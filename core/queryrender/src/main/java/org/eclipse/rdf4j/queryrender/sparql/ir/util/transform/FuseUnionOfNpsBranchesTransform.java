@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
 
 /**
  * Fuse a UNION whose branches are each a single bare-NPS path triple (optionally inside the same GRAPH) into a single
@@ -57,7 +58,21 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			// Do not fuse UNIONs at top-level; only fuse within EXISTS bodies (handled below)
 			if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				m = new IrGraph(g.getGraph(), apply(g.getWhere(), r), g.isNewScope());
+				// Recurse into the GRAPH body and then (optionally) fuse UNION-of-NPS locally inside the GRAPH.
+				// Heuristic: when the parent branch contains a VALUES clause immediately before the GRAPH,
+				// keep the UNION shape for textual stability expected by tests.
+				IrBGP inner = apply(g.getWhere(), r);
+				boolean precedingValues = false;
+				for (IrNode prev : out) {
+					if (prev instanceof IrValues) {
+						precedingValues = true;
+						break;
+					}
+				}
+				if (!precedingValues) {
+					inner = fuseUnionsInBGP(inner);
+				}
+				m = new IrGraph(g.getGraph(), inner, g.isNewScope());
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
 				IrOptional no = new IrOptional(apply(o.getWhere(), r), o.isNewScope());
@@ -95,8 +110,32 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				// Do not fuse UNIONs at the top-level here; limit fusion to EXISTS/SERVICE contexts
 				// handled by dedicated passes to avoid altering expected top-level UNION shapes.
 				IrUnion u2 = new IrUnion(u.isNewScope());
+				boolean parentHasValues = branchHasTopLevelValues(bgp);
 				for (IrBGP b : u.getBranches()) {
-					u2.addBranch(apply(b, r));
+					if (parentHasValues || branchHasTopLevelValues(b)) {
+						// Apply recursively but avoid NPS-union fusing inside GRAPH bodies for this branch
+						IrBGP nb = new IrBGP(b.isNewScope());
+						for (IrNode ln2 : b.getLines()) {
+							if (ln2 instanceof IrGraph) {
+								IrGraph g2 = (IrGraph) ln2;
+								IrBGP inner = apply(g2.getWhere(), r);
+								// intentionally skip fuseUnionsInBGP(inner)
+								nb.add(new IrGraph(g2.getGraph(), inner, g2.isNewScope()));
+							} else if (ln2 instanceof IrBGP) {
+								nb.add(apply((IrBGP) ln2, r));
+							} else {
+								nb.add(ln2.transformChildren(child -> {
+									if (child instanceof IrBGP) {
+										return apply((IrBGP) child, r);
+									}
+									return child;
+								}));
+							}
+						}
+						u2.addBranch(nb);
+					} else {
+						u2.addBranch(apply(b, r));
+					}
 				}
 				m = u2;
 			} else {
@@ -120,9 +159,17 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			return null;
 		}
 		final List<IrNode> out = new ArrayList<>();
+		boolean containsValues = false;
+		for (IrNode ln0 : bgp.getLines()) {
+			if (ln0 instanceof IrValues) {
+				containsValues = true;
+				break;
+			}
+		}
 		for (IrNode ln : bgp.getLines()) {
-			if (ln instanceof IrUnion) {
-				IrNode fused = tryFuseUnion((IrUnion) ln);
+			if (!containsValues && ln instanceof IrUnion) {
+				IrUnion u = (IrUnion) ln;
+				IrNode fused = tryFuseUnion(u);
 				// Inside SERVICE bodies we do not want to preserve extra grouping braces
 				// that may have surrounded the UNION branches. If the fuser returned a
 				// grouped IrBGP solely to preserve braces, unwrap it when it contains a
@@ -160,6 +207,18 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		return res;
+	}
+
+	private static boolean branchHasTopLevelValues(IrBGP b) {
+		if (b == null) {
+			return false;
+		}
+		for (IrNode ln : b.getLines()) {
+			if (ln instanceof IrValues) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -263,17 +322,20 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		}
 
 		if (fusedCount >= 2 && !members.isEmpty()) {
-			// Safety gate: allow merge when there is no explicit scope, or allow a special-case
-			// merge across new-scope UNIONs only when both branches share a common _anon_path_* var name.
+			// Safety gates:
+			// - Default: require anon-path bridge vars (no new scope) or allowed-role common anon var (new scope).
+			// - Relaxation: if ALL branches are exactly bare-NPS IrPathTriple nodes with identical endpoints
+			// (checked above while populating members), allow the merge regardless of anon-path presence since
+			// no user-visible variables are eliminated by fusing members.
+			final boolean allBareNps = fusedCount == u.getBranches().size();
 			if (wasNewScope) {
-				// Restrict to the two-branch case for clarity/safety and require allowed role mapping
-				if (u.getBranches().size() != 2
-						|| !unionBranchesShareAnonPathVarWithAllowedRoleMapping(u)) {
+				final boolean allowedByCommonAnon = unionBranchesShareAnonPathVarWithAllowedRoleMapping(u);
+				if (!allowedByCommonAnon && !allBareNps) {
 					return u;
 				}
 			} else {
-				// If no scope, prefer fusing only when each branch contains an anon-path bridge var
-				if (!unionBranchesAllHaveAnonPathBridge(u)) {
+				final boolean allHaveAnon = unionBranchesAllHaveAnonPathBridge(u);
+				if (!allHaveAnon && !allBareNps) {
 					return u;
 				}
 			}

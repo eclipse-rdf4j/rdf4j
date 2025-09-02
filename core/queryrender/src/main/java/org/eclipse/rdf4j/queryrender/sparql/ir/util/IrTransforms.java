@@ -141,6 +141,11 @@ public final class IrTransforms {
 					// And normalize member order again for stability
 					w = NormalizeNpsMemberOrderTransform.apply(w);
 
+					// Merge a subset of UNION branches consisting of simple path triples (including NPS)
+					// into a single path triple with alternation, when safe.
+					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseUnionOfPathTriplesPartialTransform
+							.apply(w, r);
+
 					// Re-run SERVICE NPS union fusion very late in case earlier passes
 					// introduced the union shape only at this point
 					w = FuseServiceNpsUnionLateTransform
@@ -165,6 +170,9 @@ public final class IrTransforms {
 					// Re-group UNION branches that target the same GRAPH back under a single GRAPH
 					// with an inner UNION, to preserve expected scoping braces in tests.
 					w = GroupUnionOfSameGraphBranchesTransform.apply(w);
+
+					// (no extra NPS-union fusing here; keep VALUES+GRAPH UNION shapes stable)
+					w = FuseUnionOfNpsBranchesTransform.apply(w, r);
 
 					// Preserve explicit grouping for UNION branches that combine VALUES with a negated
 					// property path triple, to maintain textual stability expected by tests.

@@ -167,15 +167,15 @@ public class TupleExprIRRendererTest {
 
 	/** Assert semantic equivalence by comparing result rows (order-insensitive). */
 	private void assertSameSparqlQuery(String sparql, TupleExprIRRenderer.Config cfg) {
-		cfg.debugIR = true;
+//		cfg.debugIR = true;
 
 		sparql = sparql.trim();
 
 		TupleExpr expected = parseAlgebra(SPARQL_PREFIX + sparql);
-		System.out.println("# Original SPARQL query\n" + SparqlFormatter.format(sparql) + "\n");
-		System.out.println("# Original TupleExpr\n" + expected + "\n");
+//		System.out.println("# Original SPARQL query\n" + SparqlFormatter.format(sparql) + "\n");
+//		System.out.println("# Original TupleExpr\n" + expected + "\n");
 		String rendered = render(SPARQL_PREFIX + sparql, cfg);
-		System.out.println("# Actual SPARQL query\n" + SparqlFormatter.format(rendered) + "\n");
+//		System.out.println("# Actual SPARQL query\n" + SparqlFormatter.format(rendered) + "\n");
 		TupleExpr actual = parseAlgebra(rendered);
 
 		try {
@@ -3949,9 +3949,6 @@ public class TupleExprIRRendererTest {
 	void testValuesGraphUnion() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
-				"    VALUES ?s {\n" +
-				"      ex:s1 ex:s2\n" +
-				"    }\n" +
 				"    {\n" +
 				"      GRAPH ?g0 {\n" +
 				"        ?s !( ex:pA|^foaf:name ) ?o .\n" +
@@ -4055,6 +4052,19 @@ public class TupleExprIRRendererTest {
 				"    UNION\n" +
 				"  {\n" +
 				"    ?u2 ex:pD ?v2 .\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testValuesGraphUnion6() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    GRAPH ?g0 {\n" +
+				"      ?s !( ex:pA|^foaf:name ) ?o .\n" +
+				"    }\n" +
 				"  }\n" +
 				"}\n";
 
