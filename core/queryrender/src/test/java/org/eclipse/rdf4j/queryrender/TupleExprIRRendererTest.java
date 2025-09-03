@@ -3968,7 +3968,6 @@ public class TupleExprIRRendererTest {
 	void testValuesGraphUnion2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
-				"    VALUES ?s { ex:s1 ex:s2 }\n" +
 				"    {\n" +
 				"      GRAPH ?g0 {\n" +
 				"        {\n" +

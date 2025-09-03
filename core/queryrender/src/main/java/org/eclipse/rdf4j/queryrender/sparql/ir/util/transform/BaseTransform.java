@@ -718,64 +718,37 @@ public class BaseTransform {
 	}
 
 	/**
-	 * New-scope UNION safety: true iff the two UNION branches share at least one _anon_path_* variable name that
-	 * appears in one of the allowed role mappings: s-s, s-o, o-s, or o-p. The roles are evaluated over simple
-	 * triple-like nodes (IrStatementPattern and IrPathTriple), unwrapping single-child BGP/GRAPH wrappers when present.
+	 * New-scope UNION safety: true iff the two UNION branches share at least one _anon_path_* variable name.
+	 *
+	 * Implementation uses the IR getVars() API to collect all Vars from each branch (including nested nodes) and then
+	 * checks for intersection on names that start with the parser bridge prefixes. This captures subject/object,
+	 * predicate vars, as well as IrPathTriple.pathVars contributed during path rewrites.
 	 */
 	public static boolean unionBranchesShareAnonPathVarWithAllowedRoleMapping(IrUnion u) {
 		if (u == null || u.getBranches().size() != 2) {
 			return false;
 		}
-		BranchRoles a = collectBranchRoles(u.getBranches().get(0));
-		BranchRoles b = collectBranchRoles(u.getBranches().get(1));
-		if (a == null || b == null) {
+		java.util.Set<org.eclipse.rdf4j.query.algebra.Var> aVars = u.getBranches().get(0).getVars();
+		java.util.Set<org.eclipse.rdf4j.query.algebra.Var> bVars = u.getBranches().get(1).getVars();
+		if (aVars == null || bVars == null || aVars.isEmpty() || bVars.isEmpty()) {
 			return false;
 		}
-		// Allowed mappings:
-		// s-s
-		if (intersects(a.s, b.s)) {
-			return true;
-		}
-		// s-o
-		if (intersects(a.s, b.o)) {
-			return true;
-		}
-		// o-s
-		if (intersects(a.o, b.s)) {
-			return true;
-		}
-		// o-p (object in one equals predicate in the other)
-		if (intersects(a.o, b.p)) {
-			return true;
-		}
-		// And the reverse for o-p to keep branches symmetric
-		if (intersects(b.o, a.p)) {
-			return true;
-		}
-		// Fallback check: after earlier NPS/path rewrites, each branch may be a (GRAPH-wrapped) IrPathTriple
-		// that carries its contributing bridge vars in IrPathTriple.pathVars. If the two branches share at
-		// least one of these variables, we allow fusing even when the UNION is new-scope, because the scope
-		// originates from parser-inserted path bridges rather than user vars.
-		Set<String> pvA = new HashSet<>();
-		Set<String> pvB = new HashSet<>();
-		collectPathVarsNames(u.getBranches().get(0), pvA);
-		collectPathVarsNames(u.getBranches().get(1), pvB);
-		if (!pvA.isEmpty() && !pvB.isEmpty() && intersects(pvA, pvB)) {
-			return true;
-		}
-		// Last resort: if both branches are single bare-NPS IrPathTriple with identical endpoints (possibly
-		// reversed), consider it safe to fuse even under new-scope unions. This preserves semantics of
-		// !(a|^b) style decompositions produced by the parser and matches renderer expectations.
-		IrPathTriple aPt = extractSingleBareNpsPathTriple(u.getBranches().get(0));
-		IrPathTriple bPt = extractSingleBareNpsPathTriple(u.getBranches().get(1));
-		if (aPt != null && bPt != null) {
-			boolean sameForward = sameVarOrValue(aPt.getSubject(), bPt.getSubject())
-					&& sameVarOrValue(aPt.getObject(), bPt.getObject());
-			boolean sameReversed = sameVarOrValue(aPt.getSubject(), bPt.getObject())
-					&& sameVarOrValue(aPt.getObject(), bPt.getSubject());
-			if (sameForward || sameReversed) {
-				return true;
+		Set<String> aNames = new HashSet<>();
+		Set<String> bNames = new HashSet<>();
+		for (org.eclipse.rdf4j.query.algebra.Var v : aVars) {
+			if (v != null && !v.hasValue() && v.getName() != null
+					&& (v.getName().startsWith(ANON_PATH_PREFIX) || v.getName().startsWith(ANON_PATH_INVERSE_PREFIX))) {
+				aNames.add(v.getName());
 			}
+		}
+		for (org.eclipse.rdf4j.query.algebra.Var v : bVars) {
+			if (v != null && !v.hasValue() && v.getName() != null
+					&& (v.getName().startsWith(ANON_PATH_PREFIX) || v.getName().startsWith(ANON_PATH_INVERSE_PREFIX))) {
+				bNames.add(v.getName());
+			}
+		}
+		if (!aNames.isEmpty() && !bNames.isEmpty() && intersects(aNames, bNames)) {
+			return true;
 		}
 		return false;
 	}

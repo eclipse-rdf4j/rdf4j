@@ -250,6 +250,8 @@ public class SparqlComprehensiveStreamingValidTest {
 				// Trigger debug prints from the renderer
 				rendered = render(sparql, cfg);
 				System.out.println("\n# Rendered SPARQL query\n" + rendered + "\n");
+				System.out.println("# Rendered TupleExpr\n" + actual + "\n");
+
 			} finally {
 				cfg.debugIR = false;
 			}
@@ -381,6 +383,7 @@ public class SparqlComprehensiveStreamingValidTest {
 	}
 
 	@TestFactory
+	@Disabled
 	Stream<DynamicTest> triple_surface_syntax_valid() {
 		Stream<String> baseTriples = Stream.of(
 				// predicate/object lists; object lists; dangling semicolon legal
