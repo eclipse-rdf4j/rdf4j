@@ -122,9 +122,11 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 						final String step = r.convertIRIToString((IRI) headJoin.getPredicate().getValue());
 						final String prefix = (headInverse ? "^" : "") + step + "/";
 						final Var newStart = headInverse ? headJoin.getObject() : headJoin.getSubject();
-						IrPathTriple np = new IrPathTriple(newStart, prefix + pt.getPathText(), pt.getObject(),
-								pt.isNewScope());
-						np.setPathVars(pt.getPathVars());
+						final org.eclipse.rdf4j.queryrender.sparql.ir.IrNode newStartOverride = headInverse
+								? headJoin.getObjectOverride()
+								: headJoin.getSubjectOverride();
+						IrPathTriple np = new IrPathTriple(newStart, newStartOverride, prefix + pt.getPathText(),
+								pt.getObject(), pt.getObjectOverride(), pt.getPathVars(), pt.isNewScope());
 						pt = np;
 						removed.add(headJoin);
 					}
@@ -163,8 +165,12 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 							final String step = r.convertIRIToString((IRI) join.getPredicate().getValue());
 							final String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
 							final Var newEnd = inverse ? join.getSubject() : join.getObject();
-							IrPathTriple np2 = new IrPathTriple(pt.getSubject(), newPath, newEnd, pt.isNewScope());
-							np2.setPathVars(pt.getPathVars());
+							final org.eclipse.rdf4j.queryrender.sparql.ir.IrNode newEndOverride = inverse
+									? join.getSubjectOverride()
+									: join.getObjectOverride();
+							IrPathTriple np2 = new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), newPath,
+									newEnd,
+									newEndOverride, pt.getPathVars(), pt.isNewScope());
 							pt = np2;
 							removed.add(join);
 						}

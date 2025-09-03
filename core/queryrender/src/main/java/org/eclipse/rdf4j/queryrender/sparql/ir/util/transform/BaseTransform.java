@@ -752,6 +752,31 @@ public class BaseTransform {
 		if (intersects(b.o, a.p)) {
 			return true;
 		}
+		// Fallback check: after earlier NPS/path rewrites, each branch may be a (GRAPH-wrapped) IrPathTriple
+		// that carries its contributing bridge vars in IrPathTriple.pathVars. If the two branches share at
+		// least one of these variables, we allow fusing even when the UNION is new-scope, because the scope
+		// originates from parser-inserted path bridges rather than user vars.
+		Set<String> pvA = new HashSet<>();
+		Set<String> pvB = new HashSet<>();
+		collectPathVarsNames(u.getBranches().get(0), pvA);
+		collectPathVarsNames(u.getBranches().get(1), pvB);
+		if (!pvA.isEmpty() && !pvB.isEmpty() && intersects(pvA, pvB)) {
+			return true;
+		}
+		// Last resort: if both branches are single bare-NPS IrPathTriple with identical endpoints (possibly
+		// reversed), consider it safe to fuse even under new-scope unions. This preserves semantics of
+		// !(a|^b) style decompositions produced by the parser and matches renderer expectations.
+		IrPathTriple aPt = extractSingleBareNpsPathTriple(u.getBranches().get(0));
+		IrPathTriple bPt = extractSingleBareNpsPathTriple(u.getBranches().get(1));
+		if (aPt != null && bPt != null) {
+			boolean sameForward = sameVarOrValue(aPt.getSubject(), bPt.getSubject())
+					&& sameVarOrValue(aPt.getObject(), bPt.getObject());
+			boolean sameReversed = sameVarOrValue(aPt.getSubject(), bPt.getObject())
+					&& sameVarOrValue(aPt.getObject(), bPt.getSubject());
+			if (sameForward || sameReversed) {
+				return true;
+			}
+		}
 		return false;
 	}
 
@@ -821,6 +846,82 @@ public class BaseTransform {
 				collectRolesRecursive((IrBGP) ln, out);
 			}
 		}
+	}
+
+	/** Collect names of variables recorded in IrPathTriple.pathVars within a BGP subtree. */
+	private static void collectPathVarsNames(IrBGP b, Set<String> out) {
+		if (b == null) {
+			return;
+		}
+		for (IrNode ln : b.getLines()) {
+			if (ln instanceof IrPathTriple) {
+				IrPathTriple pt = (IrPathTriple) ln;
+				Set<Var> pvs = pt.getPathVars();
+				if (pvs != null) {
+					for (Var v : pvs) {
+						if (v != null && !v.hasValue() && v.getName() != null && !v.getName().isEmpty()) {
+							out.add(v.getName());
+						}
+					}
+				}
+			} else if (ln instanceof IrGraph) {
+				collectPathVarsNames(((IrGraph) ln).getWhere(), out);
+			} else if (ln instanceof IrOptional) {
+				collectPathVarsNames(((IrOptional) ln).getWhere(), out);
+			} else if (ln instanceof IrMinus) {
+				collectPathVarsNames(((IrMinus) ln).getWhere(), out);
+			} else if (ln instanceof IrUnion) {
+				for (IrBGP br : ((IrUnion) ln).getBranches()) {
+					collectPathVarsNames(br, out);
+				}
+			} else if (ln instanceof IrBGP) {
+				collectPathVarsNames((IrBGP) ln, out);
+			}
+		}
+	}
+
+	/** Unwrap a branch to a single bare-NPS IrPathTriple when present; otherwise return null. */
+	private static IrPathTriple extractSingleBareNpsPathTriple(IrBGP b) {
+		if (b == null) {
+			return null;
+		}
+		IrNode node;
+		if (b.getLines() == null || b.getLines().size() != 1) {
+			return null;
+		}
+		node = b.getLines().get(0);
+		while (node instanceof IrBGP) {
+			IrBGP bb = (IrBGP) node;
+			if (bb.getLines() == null || bb.getLines().size() != 1) {
+				break;
+			}
+			node = bb.getLines().get(0);
+		}
+		if (node instanceof IrGraph) {
+			IrGraph g = (IrGraph) node;
+			IrBGP where = g.getWhere();
+			if (where == null || where.getLines() == null || where.getLines().size() != 1) {
+				return null;
+			}
+			node = where.getLines().get(0);
+			while (node instanceof IrBGP) {
+				IrBGP bb = (IrBGP) node;
+				if (bb.getLines() == null || bb.getLines().size() != 1) {
+					break;
+				}
+				node = bb.getLines().get(0);
+			}
+		}
+		if (!(node instanceof IrPathTriple)) {
+			return null;
+		}
+		IrPathTriple pt = (IrPathTriple) node;
+		String raw = pt.getPathText();
+		String norm = normalizeCompactNps(raw);
+		if (norm == null || !norm.startsWith("!(") || !norm.endsWith(")")) {
+			return null;
+		}
+		return pt;
 	}
 
 	private static void collectAnonPathVarNames(IrBGP b, Set<String> out) {
@@ -992,7 +1093,7 @@ public class BaseTransform {
 						final IrNode newStartOverride = headInverse ? head.getObjectOverride()
 								: head.getSubjectOverride();
 						pt = new IrPathTriple(newStart, newStartOverride, prefix + pt.getPathText(), pt.getObject(),
-								pt.getObjectOverride(), pt.isNewScope());
+								pt.getObjectOverride(), pt.getPathVars(), pt.isNewScope());
 						removed.add(head);
 					}
 				}
@@ -1035,7 +1136,7 @@ public class BaseTransform {
 						final Var newEnd = inverse ? join.getSubject() : join.getObject();
 						final IrNode newEndOverride = inverse ? join.getSubjectOverride() : join.getObjectOverride();
 						pt = new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), newPath, newEnd, newEndOverride,
-								pt.isNewScope());
+								pt.getPathVars(), pt.isNewScope());
 						removed.add(join);
 					}
 				}

@@ -62,7 +62,8 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 				m = fuseUnion((IrUnion) n, r);
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				IrBGP inner = containsValues ? applyNoUnion(g.getWhere(), r) : apply(g.getWhere(), r);
+				// Allow union fusing inside GRAPH bodies even when a VALUES exists in the outer BGP.
+				IrBGP inner = apply(g.getWhere(), r);
 				m = new IrGraph(g.getGraph(), inner, g.isNewScope());
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
@@ -288,7 +289,6 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 				}
 
 				IrBGP b = new IrBGP(false);
-				IrPathTriple mergedPt = new IrPathTriple(grp.s, merged, grp.o, false);
 				// Branches are simple or path triples; if path triples, union their pathVars
 				Set<Var> acc = new HashSet<>();
 				for (int idx : idxs) {
@@ -310,9 +310,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 						acc.addAll(((IrPathTriple) only).getPathVars());
 					}
 				}
-				if (!acc.isEmpty()) {
-					mergedPt.setPathVars(acc);
-				}
+				IrPathTriple mergedPt = new IrPathTriple(grp.s, merged, grp.o, false, acc);
 				if (grp.g != null) {
 					b.add(new IrGraph(grp.g, wrap(mergedPt), false));
 				} else {
