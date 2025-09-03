@@ -11,10 +11,13 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -29,6 +32,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
 
 /**
  * Within a UNION, merge a subset of branches that are single IrPathTriple (or GRAPH with single IrPathTriple), share
@@ -45,9 +49,16 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			return null;
 		}
 		List<IrNode> out = new ArrayList<>();
+		boolean containsValues = false;
+		for (IrNode ln0 : bgp.getLines()) {
+			if (ln0 instanceof IrValues) {
+				containsValues = true;
+				break;
+			}
+		}
 		for (IrNode n : bgp.getLines()) {
 			IrNode m = n;
-			if (n instanceof IrUnion) {
+			if (!containsValues && n instanceof IrUnion) {
 				m = fuseUnion((IrUnion) n, r);
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
@@ -78,9 +89,13 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 		if (u == null || u.getBranches().size() < 2) {
 			return u;
 		}
-		// Preserve explicit UNION (new variable scope) as-is; do not fuse branches inside it.
+		// Safety for new-scope UNIONs: only allow fusing when all branches share a unique common
+		// _anon_path_* variable name (parser bridge), so we don't collapse user-visible vars.
 		if (u.isNewScope()) {
-			return u;
+			Set<String> common = collectCommonAnonPathVarNames(u);
+			if (common == null || common.size() != 1) {
+				return u;
+			}
 		}
 		// Group candidate branches by (graphName,sName,oName) and remember a sample Var triple per group
 		class Key {
@@ -173,14 +188,11 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 				pathTexts.add(null);
 				continue;
 			}
-			// Exclude complex path patterns: allow only a single atomic step (optionally starting with ^),
-			// but treat a negated property set !(...) as a single atomic step even if its inner text contains '|'.
+			// Exclude only quantifiers; allow alternation and NPS and normalize during merging.
 			String trimmed = ptxt.trim();
-			boolean isNps = trimmed.startsWith("!(");
-			if (!isNps && (trimmed.contains("|") || trimmed.endsWith("?") || trimmed.endsWith("*")
-					|| trimmed.endsWith("+"))) {
+			if (trimmed.endsWith("?") || trimmed.endsWith("*") || trimmed.endsWith("+")) {
 				pathTexts.add(null);
-				continue; // skip complex paths
+				continue; // skip complex paths with quantifiers
 			}
 			pathTexts.add(trimmed);
 			String gName = g == null ? null : g.getName();
@@ -200,7 +212,6 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 		for (Group grp : groups.values()) {
 			List<Integer> idxs = grp.idxs;
 			if (idxs.size() >= 2) {
-				// Merge these branches into one alternation path
 				ArrayList<String> alts = new ArrayList<>();
 				for (int idx : idxs) {
 					String t = pathTexts.get(idx);
@@ -208,11 +219,30 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 						alts.add(t);
 					}
 				}
-				String merged = String.join("|", alts);
-				// Parenthesize alternation to be safe when fused further into sequences
-				if (alts.size() > 1) {
-					merged = "(" + merged + ")";
+				String merged;
+				if (idxs.size() == 2) {
+					List<String> aTokens = splitTopLevelAlternation(pathTexts.get(idxs.get(0)));
+					List<String> bTokens = splitTopLevelAlternation(pathTexts.get(idxs.get(1)));
+					List<String> negMembers = new ArrayList<>();
+					List<String> aNonNeg = new ArrayList<>();
+					List<String> bNonNeg = new ArrayList<>();
+					extractNegAndNonNeg(aTokens, negMembers, aNonNeg);
+					extractNegAndNonNeg(bTokens, negMembers, bNonNeg);
+					ArrayList<String> outTok = new ArrayList<>();
+					outTok.addAll(aNonNeg);
+					if (!negMembers.isEmpty()) {
+						outTok.add("!(" + String.join("|", negMembers) + ")");
+					}
+					outTok.addAll(bNonNeg);
+					merged = outTok.isEmpty() ? "(" + String.join("|", alts) + ")"
+							: "(" + String.join("|", outTok) + ")";
+				} else {
+					merged = String.join("|", alts);
+					if (alts.size() > 1) {
+						merged = "(" + merged + ")";
+					}
 				}
+
 				IrBGP b = new IrBGP(false);
 				IrPathTriple mergedPt = new IrPathTriple(grp.s, merged, grp.o, false);
 				if (grp.g != null) {
@@ -244,5 +274,144 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 		IrBGP b = new IrBGP(false);
 		b.add(pt);
 		return b;
+	}
+
+	private static Set<String> collectCommonAnonPathVarNames(IrUnion u) {
+		Set<String> common = null;
+		for (IrBGP b : u.getBranches()) {
+			Set<String> names = new HashSet<>();
+			collectAnonNamesFromNode(b, names);
+			if (names.isEmpty()) {
+				return Collections.emptySet();
+			}
+			if (common == null) {
+				common = new HashSet<>(names);
+			} else {
+				common.retainAll(names);
+				if (common.isEmpty()) {
+					return common;
+				}
+			}
+		}
+		return common == null ? Collections.emptySet() : common;
+	}
+
+	private static void collectAnonNamesFromNode(IrNode n, Set<String> out) {
+		if (n == null)
+			return;
+		if (n instanceof IrBGP) {
+			for (IrNode ln : ((IrBGP) n).getLines()) {
+				collectAnonNamesFromNode(ln, out);
+			}
+			return;
+		}
+		if (n instanceof IrGraph) {
+			collectAnonNamesFromNode(((IrGraph) n).getWhere(), out);
+			return;
+		}
+		if (n instanceof IrOptional) {
+			collectAnonNamesFromNode(((IrOptional) n).getWhere(), out);
+			return;
+		}
+		if (n instanceof IrMinus) {
+			collectAnonNamesFromNode(((IrMinus) n).getWhere(), out);
+			return;
+		}
+		if (n instanceof IrService) {
+			collectAnonNamesFromNode(((IrService) n).getWhere(), out);
+			return;
+		}
+		if (n instanceof IrUnion) {
+			for (IrBGP b : ((IrUnion) n).getBranches()) {
+				collectAnonNamesFromNode(b, out);
+			}
+			return;
+		}
+		if (n instanceof IrStatementPattern) {
+			Var s = ((IrStatementPattern) n).getSubject();
+			Var o = ((IrStatementPattern) n).getObject();
+			Var p = ((IrStatementPattern) n).getPredicate();
+			if (isAnonPathVar(s) || isAnonPathInverseVar(s))
+				out.add(s.getName());
+			if (isAnonPathVar(o) || isAnonPathInverseVar(o))
+				out.add(o.getName());
+			if (p != null && !p.hasValue() && p.getName() != null
+					&& (p.getName().startsWith(ANON_PATH_PREFIX) || p.getName().startsWith(ANON_PATH_INVERSE_PREFIX))) {
+				out.add(p.getName());
+			}
+			return;
+		}
+		if (n instanceof IrPathTriple) {
+			Var s = ((IrPathTriple) n).getSubject();
+			Var o = ((IrPathTriple) n).getObject();
+			if (isAnonPathVar(s) || isAnonPathInverseVar(s))
+				out.add(s.getName());
+			if (isAnonPathVar(o) || isAnonPathInverseVar(o))
+				out.add(o.getName());
+		}
+	}
+
+	private static List<String> splitTopLevelAlternation(String path) {
+		ArrayList<String> out = new ArrayList<>();
+		if (path == null) {
+			return out;
+		}
+		String s = path.trim();
+		if (BaseTransform.isWrapped(s)) {
+			s = s.substring(1, s.length() - 1).trim();
+		}
+		int depth = 0;
+		StringBuilder cur = new StringBuilder();
+		for (int i = 0; i < s.length(); i++) {
+			char ch = s.charAt(i);
+			if (ch == '(') {
+				depth++;
+				cur.append(ch);
+			} else if (ch == ')') {
+				depth--;
+				cur.append(ch);
+			} else if (ch == '|' && depth == 0) {
+				String tok = cur.toString().trim();
+				if (!tok.isEmpty()) {
+					out.add(tok);
+				}
+				cur.setLength(0);
+			} else {
+				cur.append(ch);
+			}
+		}
+		String tok = cur.toString().trim();
+		if (!tok.isEmpty()) {
+			out.add(tok);
+		}
+		if (out.isEmpty()) {
+			out.add(s);
+		}
+		return out;
+	}
+
+	private static void extractNegAndNonNeg(List<String> tokens, List<String> negMembers, List<String> nonNeg) {
+		if (tokens == null) {
+			return;
+		}
+		for (String t : tokens) {
+			String x = t.trim();
+			if (x.startsWith("!(") && x.endsWith(")")) {
+				String inner = x.substring(2, x.length() - 1).trim();
+				List<String> innerToks = splitTopLevelAlternation(inner);
+				for (String it : innerToks) {
+					String m = it.trim();
+					if (!m.isEmpty()) {
+						negMembers.add(m);
+					}
+				}
+			} else if (x.startsWith("!^")) {
+				negMembers.add(x.substring(1).trim());
+			} else if (x.startsWith("!") && (x.length() == 1 || x.charAt(1) != '(')) {
+				negMembers.add(x.substring(1).trim());
+			} else {
+				nonNeg.add(x);
+			}
+		}
 	}
 }
