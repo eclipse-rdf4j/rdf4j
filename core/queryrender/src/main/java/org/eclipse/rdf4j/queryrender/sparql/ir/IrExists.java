@@ -10,8 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.function.UnaryOperator;
+
+import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * Structured FILTER body for an EXISTS { ... } block holding a raw BGP.
@@ -99,5 +103,10 @@ public class IrExists extends IrNode {
 			}
 		}
 		return new IrExists(newWhere, this.isNewScope());
+	}
+
+	@Override
+	public Set<Var> getVars() {
+		return where == null ? Collections.emptySet() : where.getVars();
 	}
 }

@@ -11,8 +11,12 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.UnaryOperator;
+
+import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * Textual IR node representing a UNION with multiple branches.
@@ -76,5 +80,16 @@ public class IrUnion extends IrNode {
 				"branches=\n" + sb +
 				", newScope=" + isNewScope() +
 				'}';
+	}
+
+	@Override
+	public Set<Var> getVars() {
+		HashSet<Var> out = new HashSet<>();
+		for (IrBGP b : branches) {
+			if (b != null) {
+				out.addAll(b.getVars());
+			}
+		}
+		return out;
 	}
 }

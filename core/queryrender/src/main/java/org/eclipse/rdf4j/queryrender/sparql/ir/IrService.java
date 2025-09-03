@@ -10,7 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.Collections;
+import java.util.Set;
 import java.util.function.UnaryOperator;
+
+import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * Textual IR node for a SERVICE block.
@@ -71,5 +75,10 @@ public class IrService extends IrNode {
 			}
 		}
 		return new IrService(this.serviceRefText, this.silent, newWhere, this.isNewScope());
+	}
+
+	@Override
+	public Set<Var> getVars() {
+		return bgp == null ? Collections.emptySet() : bgp.getVars();
 	}
 }

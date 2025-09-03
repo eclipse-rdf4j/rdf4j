@@ -633,6 +633,12 @@ public final class ApplyPathsTransform extends BaseTransform {
 				IrUnion u = (IrUnion) n;
 				boolean permitNewScope = !u.isNewScope() || unionBranchesShareAnonPathVarWithAllowedRoleMapping(u);
 
+				if (!permitNewScope) {
+					unionBranchesShareAnonPathVarWithAllowedRoleMapping(u);
+					out.add(n);
+					continue;
+				}
+
 				Var subj = null, obj = null, graphRef = null;
 				final List<String> parts = new ArrayList<>();
 				boolean ok = !u.getBranches().isEmpty();

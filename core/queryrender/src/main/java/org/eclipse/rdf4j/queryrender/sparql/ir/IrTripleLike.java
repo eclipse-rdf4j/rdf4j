@@ -10,6 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.HashSet;
+import java.util.Set;
+
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 
@@ -72,4 +75,22 @@ public abstract class IrTripleLike extends IrNode {
 	 * statement pattern).
 	 */
 	public abstract String getPredicateOrPathText(TupleExprIRRenderer r);
+
+	@Override
+	public Set<Var> getVars() {
+		HashSet<Var> out = new HashSet<>();
+		if (subject != null) {
+			out.add(subject);
+		}
+		if (object != null) {
+			out.add(object);
+		}
+		if (subjectOverride != null) {
+			out.addAll(subjectOverride.getVars());
+		}
+		if (objectOverride != null) {
+			out.addAll(objectOverride.getVars());
+		}
+		return out;
+	}
 }

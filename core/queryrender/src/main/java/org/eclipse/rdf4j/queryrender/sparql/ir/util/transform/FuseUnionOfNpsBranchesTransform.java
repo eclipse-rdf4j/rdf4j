@@ -231,6 +231,8 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		IrPathTriple firstPt = null;
 		final List<String> members = new ArrayList<>();
 		int fusedCount = 0;
+		// Track anon-path var names per branch (subject/object and pathVars) to require a shared anon bridge
+		final List<java.util.Set<String>> anonPerBranch = new java.util.ArrayList<>();
 
 		for (IrBGP b : u.getBranches()) {
 			// Unwrap common single-child wrappers to reach a path triple, and capture graph ref if present.
@@ -284,6 +286,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				graphRefNewScope = gNewScope;
 				innerBgpNewScope = whereNewScope;
 				addMembers(path, members);
+				anonPerBranch.add(collectAnonNamesFromPathTriple(pt));
 				fusedCount++;
 				continue;
 			}
@@ -307,12 +310,15 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			}
 
 			addMembers(toAdd, members);
+			anonPerBranch.add(collectAnonNamesFromPathTriple(pt));
 			fusedCount++;
 		}
 
 		if (fusedCount >= 2 && !members.isEmpty()) {
 			// Safety gates:
 			// - No new scope: require anon-path bridge vars present in every branch.
+			// - Additionally, require that branches share at least one specific _anon_path_* variable name
+			// either as (subject/object) or in pathVars, to ensure we only fuse parser-generated bridges.
 			// - New scope: require a common _anon_path_* variable across branches in allowed roles.
 			if (wasNewScope) {
 				final boolean allowedByCommonAnon = unionBranchesShareAnonPathVarWithAllowedRoleMapping(u);
@@ -325,6 +331,10 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				if (!allHaveAnon) {
 					return u;
 				}
+			}
+			// Require a shared anon-path variable across the candidate branches (subject/object or pathVars)
+			if (!branchesShareSpecificAnon(anonPerBranch)) {
+				return u;
 			}
 			final String merged = "!(" + String.join("|", members) + ")";
 			IrPathTriple mergedPt = new IrPathTriple(sCanon,
@@ -423,4 +433,51 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 	}
 
 	// compact NPS normalization centralized in BaseTransform
+
+	private static java.util.Set<String> collectAnonNamesFromPathTriple(IrPathTriple pt) {
+		java.util.Set<String> out = new java.util.HashSet<>();
+		if (pt == null) {
+			return out;
+		}
+		Var s = pt.getSubject();
+		Var o = pt.getObject();
+		if (isAnonPathVar(s) || isAnonPathInverseVar(s)) {
+			out.add(s.getName());
+		}
+		if (isAnonPathVar(o) || isAnonPathInverseVar(o)) {
+			out.add(o.getName());
+		}
+		java.util.Set<Var> pvs = pt.getPathVars();
+		if (pvs != null) {
+			for (Var v : pvs) {
+				if (v != null && !v.hasValue() && v.getName() != null
+						&& (v.getName().startsWith(ANON_PATH_PREFIX)
+								|| v.getName().startsWith(ANON_PATH_INVERSE_PREFIX))) {
+					out.add(v.getName());
+				}
+			}
+		}
+		return out;
+	}
+
+	private static boolean branchesShareSpecificAnon(List<java.util.Set<String>> anonPerBranch) {
+		if (anonPerBranch == null || anonPerBranch.size() < 2) {
+			return false;
+		}
+		java.util.Set<String> inter = null;
+		for (java.util.Set<String> s : anonPerBranch) {
+			if (s == null || s.isEmpty()) {
+				return false;
+			}
+			if (inter == null) {
+				inter = new java.util.HashSet<>(s);
+			} else {
+				inter.retainAll(s);
+				if (inter.isEmpty()) {
+					return false;
+				}
+			}
+		}
+		return inter != null && !inter.isEmpty();
+	}
 }
