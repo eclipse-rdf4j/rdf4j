@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -134,8 +135,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 							IrNode endOv = (lastSp == null) ? null
 									: (lastForward ? lastSp.getObjectOverride() : lastSp.getSubjectOverride());
 							IrPathTriple ptChain = new IrPathTriple(start, startOv, String.join("/", parts), end, endOv,
-									false);
-							ptChain.setPathVars(seenAnon);
+									seenAnon, false);
 							out.add(ptChain);
 							i = j - 1; // advance past consumed
 							continue;
@@ -166,19 +166,12 @@ public final class ApplyPathsTransform extends BaseTransform {
 							nps = maybe;
 						}
 						IrPathTriple ptNps = new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps,
-								sp.getSubject(),
-								sp.getSubjectOverride(), false);
-						Set<Var> s = new HashSet<>();
-						s.add(pv);
-						ptNps.setPathVars(s);
+								sp.getSubject(), sp.getSubjectOverride(), IrPathTriple.fromStatementPatterns(sp),
+								false);
 						out.add(ptNps);
 					} else {
 						IrPathTriple ptNps = new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), nps,
-								sp.getObject(),
-								sp.getObjectOverride(), false);
-						Set<Var> s = new HashSet<>();
-						s.add(pv);
-						ptNps.setPathVars(s);
+								sp.getObject(), sp.getObjectOverride(), IrPathTriple.fromStatementPatterns(sp), false);
 						out.add(ptNps);
 					}
 					i += 1;
@@ -226,10 +219,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 							Var endVar = spB.getObject();
 							IrNode endOv = spB.getObjectOverride();
 							IrPathTriple ptSpec = new IrPathTriple(startVar, startOv, nps + "/" + tail, endVar, endOv,
-									false);
-							Set<Var> sSpec = new HashSet<>();
-							sSpec.add(pA);
-							ptSpec.setPathVars(sSpec);
+									IrPathTriple.fromStatementPatterns(spA, spB), false);
 							out.add(ptSpec);
 							i += 2;
 							continue;
@@ -251,13 +241,12 @@ public final class ApplyPathsTransform extends BaseTransform {
 					if (isAnonPathVar(ao) && sameVar(ao, bs)) {
 						String p1 = r.convertIRIToString((IRI) ap.getValue());
 						String p2 = r.convertIRIToString((IRI) bp.getValue());
-						IrPathTriple ptFF = new IrPathTriple(as, a.getSubjectOverride(), p1 + "/" + p2, bo,
-								b.getObjectOverride(), false);
+						Set<Var> s = new HashSet<>();
 						if (isAnonPathVar(ao)) {
-							Set<Var> s = new HashSet<>();
 							s.add(ao);
-							ptFF.setPathVars(s);
 						}
+						IrPathTriple ptFF = new IrPathTriple(as, a.getSubjectOverride(), p1 + "/" + p2, bo,
+								b.getObjectOverride(), s, false);
 						out.add(ptFF);
 						i += 1; // consume next
 						continue;
@@ -272,15 +261,23 @@ public final class ApplyPathsTransform extends BaseTransform {
 							if (sameVar(sp.getObject(), pt1.getSubject())) {
 								// forward chaining
 								String fused = r.convertIRIToString((IRI) p1.getValue()) + "/" + pt1.getPathText();
-								out.add(new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), fused,
-										pt1.getObject(), pt1.getObjectOverride(), false));
+								{
+									Set<Var> pathVars = new HashSet<>(pt1.getPathVars());
+									pathVars.addAll(IrPathTriple.fromStatementPatterns(sp));
+									out.add(new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), fused,
+											pt1.getObject(), pt1.getObjectOverride(), pathVars, false));
+								}
 								i += 1;
 								continue;
 							} else if (sameVar(sp.getSubject(), pt1.getObject())) {
 								// inverse chaining
 								String fused = pt1.getPathText() + "/^" + r.convertIRIToString((IRI) p1.getValue());
-								out.add(new IrPathTriple(pt1.getSubject(), pt1.getSubjectOverride(), fused,
-										sp.getObject(), sp.getObjectOverride(), false));
+								{
+									Set<Var> pathVars = new HashSet<>(pt1.getPathVars());
+									pathVars.addAll(IrPathTriple.fromStatementPatterns(sp));
+									out.add(new IrPathTriple(pt1.getSubject(), pt1.getSubjectOverride(), fused,
+											sp.getObject(), sp.getObjectOverride(), pathVars, false));
+								}
 								i += 1;
 								continue;
 							} else if (sameVar(sp.getSubject(), pt1.getSubject()) && isAnonPathVar(sp.getSubject())) {
@@ -289,8 +286,13 @@ public final class ApplyPathsTransform extends BaseTransform {
 								// This preserves bindings while eliminating the extra bridging triple.
 								String fused = "^" + r.convertIRIToString((IRI) p1.getValue()) + "/"
 										+ pt1.getPathText();
-								out.add(new IrPathTriple(sp.getObject(), sp.getObjectOverride(), fused, pt1.getObject(),
-										pt1.getObjectOverride(), false));
+								{
+									Set<Var> pathVars = new HashSet<>(pt1.getPathVars());
+									pathVars.addAll(IrPathTriple.fromStatementPatterns(sp));
+									out.add(new IrPathTriple(sp.getObject(), sp.getObjectOverride(), fused,
+											pt1.getObject(),
+											pt1.getObjectOverride(), pathVars, false));
+								}
 								i += 1;
 								continue;
 							}
@@ -306,15 +308,23 @@ public final class ApplyPathsTransform extends BaseTransform {
 								if (sameVar(sp2.getObject(), pt2.getSubject())) {
 									// forward chaining
 									String fused = r.convertIRIToString((IRI) p2.getValue()) + "/" + pt2.getPathText();
-									out.add(new IrPathTriple(sp2.getSubject(), sp2.getSubjectOverride(), fused,
-											pt2.getObject(), pt2.getObjectOverride(), false));
+									{
+										Set<Var> pathVars = new HashSet<>(pt2.getPathVars());
+										pathVars.addAll(IrPathTriple.fromStatementPatterns(sp2));
+										out.add(new IrPathTriple(sp2.getSubject(), sp2.getSubjectOverride(), fused,
+												pt2.getObject(), pt2.getObjectOverride(), pathVars, false));
+									}
 									i += 1;
 									continue;
 								} else if (sameVar(sp2.getSubject(), pt2.getObject())) {
 									// inverse chaining
 									String fused = pt2.getPathText() + "/^" + r.convertIRIToString((IRI) p2.getValue());
-									out.add(new IrPathTriple(pt2.getSubject(), pt2.getSubjectOverride(), fused,
-											sp2.getObject(), sp2.getObjectOverride(), false));
+									{
+										Set<Var> pathVars = new HashSet<>(pt2.getPathVars());
+										pathVars.addAll(IrPathTriple.fromStatementPatterns(sp2));
+										out.add(new IrPathTriple(pt2.getSubject(), pt2.getSubjectOverride(), fused,
+												sp2.getObject(), sp2.getObjectOverride(), pathVars, false));
+									}
 									i += 1;
 									continue;
 								}
@@ -372,8 +382,12 @@ public final class ApplyPathsTransform extends BaseTransform {
 						}
 						if (joinStep != null) {
 							final String fusedPath = pt.getPathText() + joinStep;
-							out.add(new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), fusedPath, endVar,
-									sp.getObjectOverride(), false));
+							{
+								Set<Var> pathVars = new HashSet<>(pt.getPathVars());
+								pathVars.addAll(IrPathTriple.fromStatementPatterns(sp));
+								out.add(new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), fusedPath, endVar,
+										sp.getObjectOverride(), pathVars, false));
+							}
 							i += 1; // consume next
 							continue;
 						}
@@ -411,8 +425,12 @@ public final class ApplyPathsTransform extends BaseTransform {
 					}
 					if (joinStep != null) {
 						final String fusedPath = pt.getPathText() + joinStep;
-						out.add(new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), fusedPath, endVar2,
-								sp.getObjectOverride(), false));
+						{
+							Set<Var> pathVars = new HashSet<>(pt.getPathVars());
+							pathVars.addAll(IrPathTriple.fromStatementPatterns(sp));
+							out.add(new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), fusedPath, endVar2,
+									sp.getObjectOverride(), pathVars, false));
+						}
 						i += 1; // consume next
 						continue;
 					}
@@ -541,8 +559,12 @@ public final class ApplyPathsTransform extends BaseTransform {
 								// idempotence
 								String pathTxt = first + "/" + altTxt;
 
+								java.util.Set<Var> fusedPathVars = new java.util.HashSet<>();
+								if (isAnonPathVar(mid)) {
+									fusedPathVars.add(mid);
+								}
 								IrPathTriple fused = new IrPathTriple(startVar, startOv, pathTxt, endVarOut,
-										endOverrideOut, false);
+										endOverrideOut, fusedPathVars, false);
 								if (graphRef != null) {
 									IrBGP inner = new IrBGP(
 											((IrGraph) n).getWhere() != null && ((IrGraph) n).getWhere().isNewScope());
@@ -581,7 +603,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 										IrNode newEndOv = joinInverse ? joinSp.getSubjectOverride()
 												: joinSp.getObjectOverride();
 										fused = new IrPathTriple(fused.getSubject(), fused.getSubjectOverride(),
-												newPath, newEnd, newEndOv, false);
+												newPath, newEnd, newEndOv, fused.getPathVars(), false);
 									}
 									// place the (possibly extended) fused path first, then remaining inner lines (skip
 									// consumed sp0 and joinSp)
@@ -609,11 +631,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 			// subsequent chaining with a following constant-predicate triple via pt + SP -> pt/IRI.
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				boolean allow = !u.isNewScope() || unionBranchesShareAnonPathVarWithAllowedRoleMapping(u);
-				if (!allow) {
-					out.add(n);
-					continue;
-				}
+				boolean permitNewScope = !u.isNewScope() || unionBranchesShareAnonPathVarWithAllowedRoleMapping(u);
 
 				Var subj = null, obj = null, graphRef = null;
 				final List<String> parts = new ArrayList<>();
@@ -698,6 +716,13 @@ public final class ApplyPathsTransform extends BaseTransform {
 					parts.add(piece);
 				}
 
+				// Allow fusion under new-scope when branches align into a safe single alternation
+				boolean allow = permitNewScope || (ok && !parts.isEmpty() && graphRef != null);
+				if (!allow) {
+					out.add(n);
+					continue;
+				}
+
 				// 2a-mixed-two: one branch is a simple IrPathTriple representing exactly two constant steps
 				// without quantifiers/alternation, and the other branch is exactly two SPs via an _anon_path_* mid,
 				// sharing identical endpoints. Fuse into a single alternation path.
@@ -706,11 +731,14 @@ public final class ApplyPathsTransform extends BaseTransform {
 						final Var s;
 						final Var o;
 						final String path;
+						final Set<Var> pathVars;
 
-						TwoLike(Var s, Var o, String path) {
+						TwoLike(Var s, Var o, String path, Set<Var> pathVars) {
 							this.s = s;
 							this.o = o;
 							this.path = path;
+							this.pathVars = (pathVars == null || pathVars.isEmpty()) ? Collections.emptySet()
+									: Set.copyOf(pathVars);
 						}
 					}
 					Function<IrBGP, TwoLike> parseTwoLike = (bg) -> {
@@ -734,7 +762,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 							if (left.isEmpty() || right.isEmpty()) {
 								return null;
 							}
-							return new TwoLike(pt.getSubject(), pt.getObject(), left + "/" + right);
+							return new TwoLike(pt.getSubject(), pt.getObject(), left + "/" + right, pt.getPathVars());
 						}
 						if (bg.getLines().size() == 2 && bg.getLines().get(0) instanceof IrStatementPattern
 								&& bg.getLines().get(1) instanceof IrStatementPattern) {
@@ -777,7 +805,8 @@ public final class ApplyPathsTransform extends BaseTransform {
 							}
 							String step1 = (firstForward ? "" : "^") + r.convertIRIToString((IRI) ap.getValue());
 							String step2 = (secondForward ? "" : "^") + r.convertIRIToString((IRI) cp.getValue());
-							return new TwoLike(sVar, oVar, step1 + "/" + step2);
+							return new TwoLike(sVar, oVar, step1 + "/" + step2,
+									IrPathTriple.fromStatementPatterns(a, c));
 						}
 						return null;
 					};
@@ -789,7 +818,10 @@ public final class ApplyPathsTransform extends BaseTransform {
 						// Ensure endpoints match (forward); if reversed, skip this case for safety.
 						if (sameVar(t0.s, t1.s) && sameVar(t0.o, t1.o)) {
 							String alt = ("(" + t0.path + ")|(" + t1.path + ")");
-							out.add(new IrPathTriple(t0.s, alt, t0.o, false));
+							Set<Var> pathVars = new HashSet<>();
+							pathVars.addAll(t0.pathVars);
+							pathVars.addAll(t1.pathVars);
+							out.add(new IrPathTriple(t0.s, alt, t0.o, false, pathVars));
 							continue;
 						}
 					}
@@ -828,7 +860,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 							if (atom != null) {
 								final String alt = (ptIdx == 0) ? ("(" + pt.getPathText() + ")|(" + atom + ")")
 										: ("(" + atom + ")|(" + pt.getPathText() + ")");
-								out.add(new IrPathTriple(wantS, alt, wantO, false));
+								out.add(new IrPathTriple(wantS, alt, wantO, false, pt.getPathVars()));
 								continue;
 							}
 						}
@@ -924,7 +956,8 @@ public final class ApplyPathsTransform extends BaseTransform {
 						if (ok2 && startVar != null && endVar != null && !steps.isEmpty()) {
 							final String alt = (steps.size() == 1) ? steps.get(0) : String.join("|", steps);
 							final String tail = "/^" + r.convertIRIToString((IRI) postPred.getValue());
-							out.add(new IrPathTriple(startVar, "(" + alt + ")" + tail, endVar, false));
+							out.add(new IrPathTriple(startVar, "(" + alt + ")" + tail, endVar, false,
+									Collections.emptySet()));
 							i += 1;
 							continue;
 						}
@@ -1005,7 +1038,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 					// For NPS we may want to orient the merged path so that it can chain with an immediate
 					// following triple (e.g., NPS/next). If the next line uses one of our endpoints, flip to
 					// ensure pt.object equals next.subject when safe.
-					IrPathTriple pt = new IrPathTriple(subj, pathTxt, obj, false);
+					IrPathTriple pt = new IrPathTriple(subj, pathTxt, obj, false, Collections.emptySet());
 					if (graphRef != null) {
 						IrBGP inner = new IrBGP(false);
 						inner.add(pt);
@@ -1080,7 +1113,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 							String path = r.convertIRIToString((IRI) ap.getValue()) + "/^"
 									+ r.convertIRIToString((IRI) bp.getValue());
 							Var end = b.getSubject();
-							out.add(new IrPathTriple(start, path, end, false));
+							out.add(new IrPathTriple(start, path, end, false, Collections.emptySet()));
 							consumed.add(n);
 							consumed.add(m);
 							break;

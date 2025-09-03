@@ -47,8 +47,8 @@ public final class NormalizeNpsMemberOrderTransform extends BaseTransform {
 				String ptxt = pt.getPathText();
 				String rew = reorderAllNps(ptxt);
 				if (!rew.equals(ptxt)) {
-					IrPathTriple np = new IrPathTriple(pt.getSubject(), rew, pt.getObject(), pt.isNewScope());
-					np.setPathVars(pt.getPathVars());
+					IrPathTriple np = new IrPathTriple(pt.getSubject(), rew, pt.getObject(), pt.isNewScope(),
+							pt.getPathVars());
 					m = np;
 				}
 			} else if (n instanceof IrGraph) {
