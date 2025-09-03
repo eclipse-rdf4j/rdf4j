@@ -143,8 +143,13 @@ public final class ServiceNpsUnionFuser {
 			inner.add(fused);
 			out = new IrGraph(graphRef, inner, false);
 		}
-		// Inside SERVICE we do not preserve UNION new-scope grouping when fusing to a single
-		// negated property set path triple; returning the fused node avoids redundant braces.
+		// Preserve explicit UNION new-scope grouping by wrapping the fused result in a grouped BGP.
+		if (u.isNewScope()) {
+			IrBGP grp = new IrBGP(true);
+			grp.add(out);
+			grp.setNewScope(true);
+			return grp;
+		}
 		return out;
 	}
 
