@@ -89,7 +89,9 @@ public final class CanonicalizeNpsByProjectionTransform extends BaseTransform {
 							if (flip) {
 								String inv = invertNegatedPropertySet(t);
 								if (inv != null) {
-									m = new IrPathTriple(o, inv, s, false);
+									IrPathTriple np = new IrPathTriple(o, inv, s, false);
+									np.setPathVars(pt.getPathVars());
+									m = np;
 								}
 							}
 						}

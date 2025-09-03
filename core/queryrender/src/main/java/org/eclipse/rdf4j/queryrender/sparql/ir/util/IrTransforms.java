@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FlattenSingletonUn
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseAltInverseTailBGPTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseServiceNpsUnionLateTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseUnionOfNpsBranchesTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseUnionOfPathTriplesPartialTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupFilterExistsWithPrecedingTriplesTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupUnionOfSameGraphBranchesTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupValuesAndNpsInUnionBranchTransform;
@@ -143,7 +144,7 @@ public final class IrTransforms {
 
 					// Merge a subset of UNION branches consisting of simple path triples (including NPS)
 					// into a single path triple with alternation, when safe.
-					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseUnionOfPathTriplesPartialTransform
+					w = FuseUnionOfPathTriplesPartialTransform
 							.apply(w, r);
 
 					// Re-run SERVICE NPS union fusion very late in case earlier passes

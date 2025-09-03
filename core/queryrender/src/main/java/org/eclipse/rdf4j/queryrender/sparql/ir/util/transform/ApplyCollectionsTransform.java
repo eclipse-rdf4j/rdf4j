@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
@@ -117,8 +118,9 @@ public final class ApplyCollectionsTransform extends BaseTransform {
 			}
 			if (ok && !items.isEmpty()) {
 				IrCollection col = new IrCollection(false);
-				for (Var v : items)
+				for (Var v : items) {
 					col.addItem(v);
+				}
 				collections.put(head, col);
 			}
 		}
@@ -147,8 +149,8 @@ public final class ApplyCollectionsTransform extends BaseTransform {
 					out.add(sp);
 					continue;
 				}
-			} else if (n instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) {
-				org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple pt = (org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple) n;
+			} else if (n instanceof IrPathTriple) {
+				IrPathTriple pt = (IrPathTriple) n;
 				// Subject replacement for path triple
 				Var subj = pt.getSubject();
 				if (subj != null && !subj.hasValue() && subj.getName() != null

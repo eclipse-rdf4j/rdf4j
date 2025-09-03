@@ -323,19 +323,17 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 
 		if (fusedCount >= 2 && !members.isEmpty()) {
 			// Safety gates:
-			// - Default: require anon-path bridge vars (no new scope) or allowed-role common anon var (new scope).
-			// - Relaxation: if ALL branches are exactly bare-NPS IrPathTriple nodes with identical endpoints
-			// (checked above while populating members), allow the merge regardless of anon-path presence since
-			// no user-visible variables are eliminated by fusing members.
-			final boolean allBareNps = fusedCount == u.getBranches().size();
+			// - No new scope: require anon-path bridge vars present in every branch.
+			// - New scope: require a common _anon_path_* variable across branches in allowed roles.
 			if (wasNewScope) {
 				final boolean allowedByCommonAnon = unionBranchesShareAnonPathVarWithAllowedRoleMapping(u);
-				if (!allowedByCommonAnon && !allBareNps) {
+				if (!allowedByCommonAnon) {
+					unionBranchesShareAnonPathVarWithAllowedRoleMapping(u);
 					return u;
 				}
 			} else {
 				final boolean allHaveAnon = unionBranchesAllHaveAnonPathBridge(u);
-				if (!allHaveAnon && !allBareNps) {
+				if (!allHaveAnon) {
 					return u;
 				}
 			}

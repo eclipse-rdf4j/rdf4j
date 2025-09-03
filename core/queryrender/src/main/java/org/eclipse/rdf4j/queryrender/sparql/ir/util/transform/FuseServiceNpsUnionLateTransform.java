@@ -11,7 +11,9 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
@@ -174,6 +176,10 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 		String merged = mergeMembersLocal(m1, add2);
 		IrPathTriple fused = new IrPathTriple(sCanon, p1.getSubjectOverride(), merged, oCanon, p1.getObjectOverride(),
 				false);
+		Set<Var> pv = new HashSet<>();
+		pv.addAll(p1.getPathVars());
+		pv.addAll(p2.getPathVars());
+		fused.setPathVars(pv);
 		IrNode out = fused;
 		if (graphRef != null) {
 			IrBGP inner = new IrBGP(innerBgpNewScope);

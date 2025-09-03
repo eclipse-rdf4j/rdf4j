@@ -10,6 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform;
@@ -24,6 +29,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParens
 public class IrPathTriple extends IrTripleLike {
 
 	private final String pathText;
+	private Set<Var> pathVars; // vars that were part of the path before fusing (e.g., anon bridge vars)
 
 	public IrPathTriple(Var subject, String pathText, Var object, boolean newScope) {
 		this(subject, null, pathText, object, null, newScope);
@@ -33,6 +39,7 @@ public class IrPathTriple extends IrTripleLike {
 			boolean newScope) {
 		super(subject, subjectOverride, object, objectOverride, newScope);
 		this.pathText = pathText;
+		this.pathVars = Collections.emptySet();
 	}
 
 	public String getPathText() {
@@ -42,6 +49,20 @@ public class IrPathTriple extends IrTripleLike {
 	@Override
 	public String getPredicateOrPathText(TupleExprIRRenderer r) {
 		return pathText;
+	}
+
+	/** Returns the set of variables that contributed to this path during fusing (e.g., anon _anon_path_* bridges). */
+	public Set<Var> getPathVars() {
+		return pathVars;
+	}
+
+	/** Assign the set of variables that contributed to this path during fusing. */
+	public void setPathVars(Set<Var> vars) {
+		if (vars == null || vars.isEmpty()) {
+			this.pathVars = Collections.emptySet();
+		} else {
+			this.pathVars = Collections.unmodifiableSet(new HashSet<>(vars));
+		}
 	}
 
 	@Override
@@ -66,4 +87,15 @@ public class IrPathTriple extends IrTripleLike {
 		p.endLine();
 	}
 
+	@Override
+	public String toString() {
+		return "IrPathTriple{" +
+				"pathText='" + pathText + '\'' +
+				", pathVars=" + Arrays.toString(pathVars.toArray()) +
+				", subject=" + subject +
+				", subjectOverride=" + subjectOverride +
+				", object=" + object +
+				", objectOverride=" + objectOverride +
+				'}';
+	}
 }

@@ -73,8 +73,10 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 				String ptxt = pt.getPathText();
 				String rew = simplify(ptxt);
 				if (!rew.equals(ptxt)) {
-					m = new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), rew, pt.getObject(),
+					IrPathTriple np = new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), rew, pt.getObject(),
 							pt.getObjectOverride(), pt.isNewScope());
+					np.setPathVars(pt.getPathVars());
+					m = np;
 				}
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
@@ -175,9 +177,9 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			// Recursively flatten inside first
 			String innerFlat = flattenNestedAlternationGroups(inner);
 			// Try to flatten one level of nested alternation groups at the top level of this group
-			java.util.List<String> parts = splitTopLevel(innerFlat, '|');
+			List<String> parts = splitTopLevel(innerFlat, '|');
 			if (parts.size() >= 2) {
-				java.util.ArrayList<String> members = new java.util.ArrayList<>();
+				ArrayList<String> members = new ArrayList<>();
 				boolean changed = false;
 				for (String seg : parts) {
 					String u = seg.trim();
