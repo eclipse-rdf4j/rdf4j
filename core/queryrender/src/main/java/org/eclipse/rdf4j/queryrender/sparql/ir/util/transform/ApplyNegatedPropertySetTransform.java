@@ -96,9 +96,11 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 									inner.add(vals);
 									inner.add(inv
 											? new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps,
-													sp.getSubject(), sp.getSubjectOverride(), false)
+													sp.getSubject(), sp.getSubjectOverride(),
+													IrPathTriple.fromStatementPatterns(sp), false)
 											: new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), nps,
-													sp.getObject(), sp.getObjectOverride(), false));
+													sp.getObject(), sp.getObjectOverride(),
+													IrPathTriple.fromStatementPatterns(sp), false));
 									out.remove(out.size() - 1);
 									out.add(new IrGraph(g.getGraph(), inner, g.isNewScope()));
 									// Skip adding this FILTER
@@ -127,9 +129,9 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 								inner.add(vals);
 								inner.add(inv
 										? new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps, sp.getSubject(),
-												sp.getSubjectOverride(), false)
+												sp.getSubjectOverride(), IrPathTriple.fromStatementPatterns(sp), false)
 										: new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), nps,
-												sp.getObject(), sp.getObjectOverride(), false));
+												sp.getObject(), sp.getObjectOverride(), IrPathTriple.fromStatementPatterns(sp), false));
 								// Replace last two with the new GRAPH
 								out.remove(out.size() - 1);
 								out.remove(out.size() - 1);
@@ -269,10 +271,10 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						newInner.add(vals);
 						if (inv) {
 							newInner.add(new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps, sp.getSubject(),
-									sp.getSubjectOverride(), false));
+									sp.getSubjectOverride(), IrPathTriple.fromStatementPatterns(sp), false));
 						} else {
 							newInner.add(new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), nps, sp.getObject(),
-									sp.getObjectOverride(), false));
+									sp.getObjectOverride(), IrPathTriple.fromStatementPatterns(sp), false));
 						}
 
 						out.add(new IrGraph(g.getGraph(), newInner, g.isNewScope()));
@@ -404,12 +406,21 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 							final String step = r.convertIRIToString((IRI) mt2.predicate.getValue());
 							final String path = npsTxt + "/" + (inverse ? "^" : "") + step;
 							final Var end = forward ? mt2.object : mt2.subject;
-							newInner.add(new IrPathTriple(subj, path, end, false));
+							IrStatementPattern srcSp = (mt1.node instanceof IrStatementPattern) ? (IrStatementPattern) mt1.node
+									: null;
+							newInner.add(new IrPathTriple(subj, path, end, false,
+									IrPathTriple.fromStatementPatterns(srcSp)));
 						} else {
-							newInner.add(new IrPathTriple(subj, npsTxt, obj, false));
+							IrStatementPattern srcSp = (mt1.node instanceof IrStatementPattern) ? (IrStatementPattern) mt1.node
+									: null;
+							newInner.add(new IrPathTriple(subj, npsTxt, obj, false,
+									IrPathTriple.fromStatementPatterns(srcSp)));
 						}
 					} else {
-						newInner.add(new IrPathTriple(subj, npsTxt, obj, false));
+						IrStatementPattern srcSp = (mt1.node instanceof IrStatementPattern) ? (IrStatementPattern) mt1.node
+								: null;
+						newInner.add(new IrPathTriple(subj, npsTxt, obj, false,
+								IrPathTriple.fromStatementPatterns(srcSp)));
 					}
 					copyAllExcept(g1.getWhere(), newInner, mt1.node);
 					if (consumedG2) {
@@ -474,7 +485,8 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					final String step = r.convertIRIToString((IRI) mt2.predicate.getValue());
 					final String path = nps + "/" + (inverse ? "^" : "") + step;
 					final Var end = forward ? mt2.object : mt2.subject;
-					newInner.add(new IrPathTriple(subj, path, end, false));
+					IrStatementPattern srcSp = (mt1.node instanceof IrStatementPattern) ? (IrStatementPattern) mt1.node : null;
+					newInner.add(new IrPathTriple(subj, path, end, false, IrPathTriple.fromStatementPatterns(srcSp)));
 				} else {
 					newInner.add(new IrPathTriple(subj, nps, obj, false));
 				}
@@ -537,10 +549,10 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						// Subject/object orientation: inverse anon var means we flip s/o for the NPS path
 						if (inv) {
 							newInner.add(new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps, sp.getSubject(),
-									sp.getSubjectOverride(), false));
+									sp.getSubjectOverride(), IrPathTriple.fromStatementPatterns(sp), false));
 						} else {
 							newInner.add(new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), nps, sp.getObject(),
-									sp.getObjectOverride(), false));
+									sp.getObjectOverride(), IrPathTriple.fromStatementPatterns(sp), false));
 						}
 						out.add(new IrGraph(g.getGraph(), newInner, g.isNewScope()));
 						i += 1; // consume filter
@@ -567,7 +579,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					if (isAnonPathInverseVar(pVar)) {
 						final String nps = "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 						out.add(new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps, sp.getSubject(),
-								sp.getSubjectOverride(), false));
+								sp.getSubjectOverride(), IrPathTriple.fromStatementPatterns(sp), false));
 						if (f.isNewScope()) {
 							propagateScopeFromConsumedFilter = true;
 						}
@@ -576,7 +588,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					} else {
 						final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 						out.add(new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), nps, sp.getObject(),
-								sp.getObjectOverride(), false));
+								sp.getObjectOverride(), IrPathTriple.fromStatementPatterns(sp), false));
 						if (f.isNewScope()) {
 							propagateScopeFromConsumedFilter = true;
 						}
@@ -698,7 +710,9 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						final String nps = "!(" + String.join("|", rev) + ")";
 						final String path = (k1Inverse ? "^" + k1Step : k1Step) + "/" + nps + "/"
 								+ (k2Inverse ? "^" + k2Step : k2Step);
-						out.add(new IrPathTriple(startVar, "(" + path + ")", endVar, false));
+						// path derived from k1, var p, and k2
+						out.add(new IrPathTriple(startVar, "(" + path + ")", endVar, false,
+								IrPathTriple.fromStatementPatterns(spVar)));
 						// Remove any earlier-emitted k1 (if it appeared before this position)
 						for (int rm = out.size() - 1; rm >= 0; rm--) {
 							if (out.get(rm) == k1) {
@@ -780,7 +794,8 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		addMembers(pA, mem);
 		addMembers(toAddB, mem);
 		String merged = "!(" + String.join("|", mem) + ")";
-		IrPathTriple mergedPt = new IrPathTriple(a.pt.getSubject(), merged, a.pt.getObject(), false);
+		IrPathTriple mergedPt = new IrPathTriple(a.pt.getSubject(), merged, a.pt.getObject(), false,
+				IrPathTriple.mergePathVars(a.pt, b.pt));
 		IrNode fused;
 		if (a.g != null) {
 			IrBGP inner = new IrBGP(false);

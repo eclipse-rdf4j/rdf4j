@@ -94,12 +94,12 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 							// Append tail step directly
 							fused = fused + "/" + r.convertIRIToString(FOAF.NAME);
 							endVar = tail.getObject();
-							out.add(new IrPathTriple(pre.getSubject(), fused, endVar, false));
+							out.add(new IrPathTriple(pre.getSubject(), fused, endVar, false, pre.getPathVars()));
 							i += 2; // consume union and tail
 							continue;
 						}
 					}
-					out.add(new IrPathTriple(pre.getSubject(), fused, endVar, false));
+					out.add(new IrPathTriple(pre.getSubject(), fused, endVar, false, pre.getPathVars()));
 					i += 1; // consume union
 					continue;
 				}
