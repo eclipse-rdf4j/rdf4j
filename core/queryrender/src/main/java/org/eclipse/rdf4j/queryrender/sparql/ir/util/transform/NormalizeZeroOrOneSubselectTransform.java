@@ -231,7 +231,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			exprInner = (steps.size() == 1) ? steps.get(0) : ("(" + String.join("|", steps) + ")");
 		}
 		final String expr = BaseTransform.applyQuantifier(exprInner, '?');
-		return new IrPathTriple(varNamed(sName), expr, varNamed(oName), false);
+		return new IrPathTriple(varNamed(sName), expr, varNamed(oName), false, java.util.Collections.emptySet());
 	}
 
 	/**
@@ -244,7 +244,8 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		Z01Analysis a = analyzeZeroOrOne(ss, r);
 		if (a != null) {
 			final String expr = BaseTransform.applyQuantifier(a.exprInner, '?');
-			final IrPathTriple pt = new IrPathTriple(varNamed(a.sName), expr, varNamed(a.oName), false);
+			final IrPathTriple pt = new IrPathTriple(varNamed(a.sName), expr, varNamed(a.oName), false,
+					java.util.Collections.emptySet());
 			if (a.allGraphWrapped && a.commonGraph != null) {
 				IrBGP innerBgp = new IrBGP(false);
 				innerBgp.add(pt);
@@ -418,7 +419,8 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		}
 
 		final String expr = BaseTransform.applyQuantifier(exprInner, '?');
-		final IrPathTriple pt = new IrPathTriple(varNamed(sName), expr, varNamed(oName), false);
+		final IrPathTriple pt = new IrPathTriple(varNamed(sName), expr, varNamed(oName), false,
+				java.util.Collections.emptySet());
 		if (allGraphWrapped && commonGraph != null) {
 			IrBGP innerBgp = new IrBGP(false);
 			innerBgp.add(pt);

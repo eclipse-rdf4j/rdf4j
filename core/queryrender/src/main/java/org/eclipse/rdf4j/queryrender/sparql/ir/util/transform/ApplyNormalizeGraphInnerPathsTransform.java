@@ -88,15 +88,15 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 					if (isAnonPathVar(bridge)) {
 						if (sameVar(bridge, sp.getSubject())) {
 							String fused = pt.getPathText() + "/" + r.convertIRIToString((IRI) pv.getValue());
-							IrPathTriple np = new IrPathTriple(pt.getSubject(), fused, sp.getObject(), false);
-							np.setPathVars(pt.getPathVars());
+							IrPathTriple np = new IrPathTriple(pt.getSubject(), fused, sp.getObject(), false,
+									pt.getPathVars());
 							out.add(np);
 							i += 1;
 							continue;
 						} else if (sameVar(bridge, sp.getObject())) {
 							String fused = pt.getPathText() + "/^" + r.convertIRIToString((IRI) pv.getValue());
-							IrPathTriple np2 = new IrPathTriple(pt.getSubject(), fused, sp.getSubject(), false);
-							np2.setPathVars(pt.getPathVars());
+							IrPathTriple np2 = new IrPathTriple(pt.getSubject(), fused, sp.getSubject(), false,
+									pt.getPathVars());
 							out.add(np2);
 							i += 1;
 							continue;

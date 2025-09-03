@@ -83,8 +83,8 @@ public class FusePathPlusTailAlternationUnionTransform extends BaseTransform {
 							final String left = (j1.inverse ? "^" : "") + step;
 							final String right = (j2.inverse ? "^" : "") + step;
 							final String fusedPath = pt.getPathText() + "/(" + left + "|" + right + ")";
-							IrPathTriple np = new IrPathTriple(pt.getSubject(), fusedPath, j1.end, false);
-							np.setPathVars(pt.getPathVars());
+							IrPathTriple np = new IrPathTriple(pt.getSubject(), fusedPath, j1.end, false,
+									pt.getPathVars());
 							out.add(np);
 							i += 1; // consume union
 							continue;

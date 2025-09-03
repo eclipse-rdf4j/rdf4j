@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -70,12 +71,12 @@ public final class FuseUnionOfSimpleTriplesTransform extends BaseTransform {
 						}
 						if (f.graph != null) {
 							IrBGP inner = new IrBGP(false);
-							IrPathTriple np = new IrPathTriple(f.s, alt, f.o, false);
+							IrPathTriple np = new IrPathTriple(f.s, alt, f.o, false, Collections.emptySet());
 							// simple triples have no anon bridge vars; leave empty
 							inner.add(np);
 							m = new IrGraph(f.graph, inner, false);
 						} else {
-							IrPathTriple npTop = new IrPathTriple(f.s, alt, f.o, false);
+							IrPathTriple npTop = new IrPathTriple(f.s, alt, f.o, false, Collections.emptySet());
 							m = npTop;
 						}
 					} else {

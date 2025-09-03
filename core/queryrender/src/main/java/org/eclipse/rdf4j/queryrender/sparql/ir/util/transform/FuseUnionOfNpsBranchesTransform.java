@@ -58,20 +58,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			// Do not fuse UNIONs at top-level; only fuse within EXISTS bodies (handled below)
 			if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				// Recurse into the GRAPH body and then (optionally) fuse UNION-of-NPS locally inside the GRAPH.
-				// Heuristic: when the parent branch contains a VALUES clause immediately before the GRAPH,
-				// keep the UNION shape for textual stability expected by tests.
+				// Recurse into the GRAPH body and fuse UNION-of-NPS locally inside the GRAPH when eligible.
 				IrBGP inner = apply(g.getWhere(), r);
-				boolean precedingValues = false;
-				for (IrNode prev : out) {
-					if (prev instanceof IrValues) {
-						precedingValues = true;
-						break;
-					}
-				}
-				if (!precedingValues) {
-					inner = fuseUnionsInBGP(inner);
-				}
+				inner = fuseUnionsInBGP(inner);
 				m = new IrGraph(g.getGraph(), inner, g.isNewScope());
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
@@ -170,15 +159,15 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			if (!containsValues && ln instanceof IrUnion) {
 				IrUnion u = (IrUnion) ln;
 				IrNode fused = tryFuseUnion(u);
-				// Inside SERVICE bodies we do not want to preserve extra grouping braces
-				// that may have surrounded the UNION branches. If the fuser returned a
-				// grouped IrBGP solely to preserve braces, unwrap it when it contains a
-				// single child node.
+				// Preserve explicit new-scope grouping braces when present; only unwrap
+				// synthetic single-child groups that do not carry new scope.
 				if (fused instanceof IrBGP) {
 					IrBGP grp = (IrBGP) fused;
-					List<IrNode> ls = grp.getLines();
-					if (ls != null && ls.size() == 1) {
-						fused = ls.get(0);
+					if (!grp.isNewScope()) {
+						List<IrNode> ls = grp.getLines();
+						if (ls != null && ls.size() == 1) {
+							fused = ls.get(0);
+						}
 					}
 				}
 				out.add(fused);
@@ -340,7 +329,8 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			final String merged = "!(" + String.join("|", members) + ")";
 			IrPathTriple mergedPt = new IrPathTriple(sCanon,
 					firstPt == null ? null : firstPt.getSubjectOverride(), merged, oCanon,
-					firstPt == null ? null : firstPt.getObjectOverride(), false);
+					firstPt == null ? null : firstPt.getObjectOverride(),
+					firstPt == null ? java.util.Collections.emptySet() : firstPt.getPathVars(), false);
 			IrNode fused;
 			if (graphRef != null) {
 				IrBGP inner = new IrBGP(innerBgpNewScope);
