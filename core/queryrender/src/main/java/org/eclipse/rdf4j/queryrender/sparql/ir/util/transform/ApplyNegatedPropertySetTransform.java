@@ -165,11 +165,25 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						newInner.setNewScope(true);
 						newInner.add(vals);
 						if (inv) {
-							newInner.add(new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps, sp.getSubject(),
-									sp.getSubjectOverride(), false));
+							IrPathTriple pt = new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps,
+									sp.getSubject(),
+									sp.getSubjectOverride(), false);
+							Set<Var> set = new HashSet<>();
+							if (sp.getPredicate() != null) {
+								set.add(sp.getPredicate());
+							}
+							pt.setPathVars(set);
+							newInner.add(pt);
 						} else {
-							newInner.add(new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), nps, sp.getObject(),
-									sp.getObjectOverride(), false));
+							IrPathTriple pt = new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), nps,
+									sp.getObject(),
+									sp.getObjectOverride(), false);
+							Set<Var> set = new HashSet<>();
+							if (sp.getPredicate() != null) {
+								set.add(sp.getPredicate());
+							}
+							pt.setPathVars(set);
+							newInner.add(pt);
 						}
 						out.add(new IrGraph(g.getGraph(), newInner, g.isNewScope()));
 						i += 2; // consume graph + filter
@@ -204,9 +218,21 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 							newInner2.setNewScope(true);
 							newInner2.add(vals2);
 							if (inv2) {
-								newInner2.add(new IrPathTriple(sp2.getObject(), nps2, sp2.getSubject(), false));
+								IrPathTriple pt2 = new IrPathTriple(sp2.getObject(), nps2, sp2.getSubject(), false);
+								Set<Var> set2 = new HashSet<>();
+								if (sp2.getPredicate() != null) {
+									set2.add(sp2.getPredicate());
+								}
+								pt2.setPathVars(set2);
+								newInner2.add(pt2);
 							} else {
-								newInner2.add(new IrPathTriple(sp2.getSubject(), nps2, sp2.getObject(), false));
+								IrPathTriple pt2 = new IrPathTriple(sp2.getSubject(), nps2, sp2.getObject(), false);
+								Set<Var> set2 = new HashSet<>();
+								if (sp2.getPredicate() != null) {
+									set2.add(sp2.getPredicate());
+								}
+								pt2.setPathVars(set2);
+								newInner2.add(pt2);
 							}
 							out.add(new IrGraph(g2.getGraph(), newInner2, g2.isNewScope()));
 							if (f2.isNewScope()) {
@@ -582,8 +608,15 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						final String inv = invertNegatedPropertySet(base);
 						final String step = r.convertIRIToString((IRI) tp.getValue());
 						final String path = inv + "/" + step;
-						out.add(new IrPathTriple(sp.getObject(), sp.getObjectOverride(), path, tail.getObject(),
-								tail.getObjectOverride(), false));
+						IrPathTriple pt3 = new IrPathTriple(sp.getObject(), sp.getObjectOverride(), path,
+								tail.getObject(),
+								tail.getObjectOverride(), false);
+						Set<Var> set3 = new HashSet<>();
+						if (sp.getPredicate() != null) {
+							set3.add(sp.getPredicate());
+						}
+						pt3.setPathVars(set3);
+						out.add(pt3);
 						i += 2; // consume filter and tail
 						continue;
 					}
