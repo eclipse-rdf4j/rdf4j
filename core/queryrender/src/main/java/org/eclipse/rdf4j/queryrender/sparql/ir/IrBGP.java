@@ -12,7 +12,9 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.UnaryOperator;
 
 /**
@@ -76,5 +78,16 @@ public class IrBGP extends IrNode {
 		return "IrBGP{" +
 				"lines=" + Arrays.toString(lines.toArray()) +
 				'}';
+	}
+
+	@Override
+	public Set<org.eclipse.rdf4j.query.algebra.Var> getVars() {
+		HashSet<org.eclipse.rdf4j.query.algebra.Var> out = new HashSet<>();
+		for (IrNode ln : lines) {
+			if (ln != null) {
+				out.addAll(ln.getVars());
+			}
+		}
+		return out;
 	}
 }
