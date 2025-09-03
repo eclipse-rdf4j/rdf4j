@@ -10,7 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.Collections;
+import java.util.Set;
 import java.util.function.UnaryOperator;
+
+import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * Textual IR node for an OPTIONAL block. The body is always printed with braces even when it contains a single line to
@@ -58,5 +62,10 @@ public class IrOptional extends IrNode {
 			}
 		}
 		return new IrOptional(newWhere, this.isNewScope());
+	}
+
+	@Override
+	public Set<Var> getVars() {
+		return bgp == null ? Collections.emptySet() : bgp.getVars();
 	}
 }

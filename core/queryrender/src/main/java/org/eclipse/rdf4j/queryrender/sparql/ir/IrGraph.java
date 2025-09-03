@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.HashSet;
+import java.util.Set;
 import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -62,5 +64,17 @@ public class IrGraph extends IrNode {
 			}
 		}
 		return new IrGraph(this.graph, newWhere, this.isNewScope());
+	}
+
+	@Override
+	public Set<Var> getVars() {
+		HashSet<Var> out = new HashSet<>();
+		if (graph != null) {
+			out.add(graph);
+		}
+		if (bgp != null) {
+			out.addAll(bgp.getVars());
+		}
+		return out;
 	}
 }

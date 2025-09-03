@@ -10,7 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.Collections;
+import java.util.Set;
 import java.util.function.UnaryOperator;
+
+import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * Base class for textual SPARQL Intermediate Representation (IR) nodes.
@@ -52,6 +56,16 @@ public abstract class IrNode {
 
 	public void setNewScope(boolean newScope) {
 		this.newScope = newScope;
+	}
+
+	/**
+	 * Collect variables referenced by this node and all of its children (if any).
+	 *
+	 * Default implementation returns an empty set; container and triple-like nodes override to include their own Vars
+	 * and recurse into child nodes.
+	 */
+	public Set<Var> getVars() {
+		return Collections.emptySet();
 	}
 
 }

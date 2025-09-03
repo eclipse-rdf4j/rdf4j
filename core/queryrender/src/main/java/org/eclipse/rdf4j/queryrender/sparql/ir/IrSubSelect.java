@@ -10,7 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.Collections;
+import java.util.Set;
 import java.util.function.UnaryOperator;
+
+import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * Textual IR node for a nested subselect inside WHERE.
@@ -51,5 +55,13 @@ public class IrSubSelect extends IrNode {
 	@Override
 	public IrNode transformChildren(UnaryOperator<IrNode> op) {
 		return this;
+	}
+
+	@Override
+	public Set<Var> getVars() {
+		if (select != null && select.getWhere() != null) {
+			return select.getWhere().getVars();
+		}
+		return Collections.emptySet();
 	}
 }
