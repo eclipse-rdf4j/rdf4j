@@ -821,7 +821,15 @@ public final class ApplyPathsTransform extends BaseTransform {
 							Set<Var> pathVars = new HashSet<>();
 							pathVars.addAll(t0.pathVars);
 							pathVars.addAll(t1.pathVars);
-							out.add(new IrPathTriple(t0.s, alt, t0.o, false, pathVars));
+							IrPathTriple fusedPt = new IrPathTriple(t0.s, alt, t0.o, false, pathVars);
+							if (u.isNewScope()) {
+								IrBGP grp = new IrBGP(true);
+								grp.setNewScope(true);
+								grp.add(fusedPt);
+								out.add(grp);
+							} else {
+								out.add(fusedPt);
+							}
 							continue;
 						}
 					}
@@ -860,7 +868,15 @@ public final class ApplyPathsTransform extends BaseTransform {
 							if (atom != null) {
 								final String alt = (ptIdx == 0) ? ("(" + pt.getPathText() + ")|(" + atom + ")")
 										: ("(" + atom + ")|(" + pt.getPathText() + ")");
-								out.add(new IrPathTriple(wantS, alt, wantO, false, pt.getPathVars()));
+								IrPathTriple fused2 = new IrPathTriple(wantS, alt, wantO, false, pt.getPathVars());
+								if (u.isNewScope()) {
+									IrBGP grp = new IrBGP(true);
+									grp.setNewScope(true);
+									grp.add(fused2);
+									out.add(grp);
+								} else {
+									out.add(fused2);
+								}
 								continue;
 							}
 						}
@@ -1042,9 +1058,25 @@ public final class ApplyPathsTransform extends BaseTransform {
 					if (graphRef != null) {
 						IrBGP inner = new IrBGP(false);
 						inner.add(pt);
-						out.add(new IrGraph(graphRef, inner, false));
+						IrGraph fusedGraph = new IrGraph(graphRef, inner, false);
+						if (u.isNewScope()) {
+							// Preserve explicit UNION scope by wrapping the fused result in an extra group
+							IrBGP grp = new IrBGP(true);
+							grp.setNewScope(true);
+							grp.add(fusedGraph);
+							out.add(grp);
+						} else {
+							out.add(fusedGraph);
+						}
 					} else {
-						out.add(pt);
+						if (u.isNewScope()) {
+							IrBGP grp = new IrBGP(true);
+							grp.setNewScope(true);
+							grp.add(pt);
+							out.add(grp);
+						} else {
+							out.add(pt);
+						}
 					}
 					continue;
 				}

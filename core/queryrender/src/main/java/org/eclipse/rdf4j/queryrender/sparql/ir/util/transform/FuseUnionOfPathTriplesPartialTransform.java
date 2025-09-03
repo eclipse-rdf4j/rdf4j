@@ -288,7 +288,10 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 					}
 				}
 
-				IrBGP b = new IrBGP(false);
+				// Preserve explicit new-scope grouping from the original UNION by marking the
+				// merged branch BGP with the same newScope flag. This ensures the renderer
+				// prints the extra pair of braces expected around the fused branch.
+				IrBGP b = new IrBGP(u.isNewScope());
 				// Branches are simple or path triples; if path triples, union their pathVars
 				Set<Var> acc = new HashSet<>();
 				for (int idx : idxs) {
