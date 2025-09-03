@@ -162,4 +162,13 @@ public class IrPathTriple extends IrTripleLike {
 				", objectOverride=" + objectOverride +
 				'}';
 	}
+
+	@Override
+	public Set<Var> getVars() {
+		HashSet<Var> out = new HashSet<>(super.getVars());
+		if (pathVars != null) {
+			out.addAll(pathVars);
+		}
+		return out;
+	}
 }
