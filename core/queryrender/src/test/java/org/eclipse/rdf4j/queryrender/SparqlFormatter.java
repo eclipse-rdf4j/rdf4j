@@ -994,13 +994,21 @@ public final class SparqlFormatter {
 
 	public static void main(String[] args) {
 		String test = "SELECT ?s ?o WHERE {\n" +
-				"  ?s ex:pC ?u1 .\n" +
-				"  FILTER EXISTS { { \n" +
-				"    ?s ex:pC ?u0 .\n" +
+				"  {\n" +
+				"    ?s ex:pC ?u2 .\n" +
 				"    FILTER EXISTS {\n" +
-				"      ?s !(ex:pA|^<http://example.org/p/I0>) ?o .\n" +
+				"        {\n" +
+				"          ?s ex:pC ?u0 .\n" +
+				"          FILTER EXISTS { { \n" +
+				"            ?s !(ex:pB|foaf:name) ?o .\n" +
+				"          } }\n" +
+				"      }\n" +
+				"        UNION\n" +
+				"      {\n" +
+				"        ?u1 ex:pD ?v1 .\n" +
+				"      }\n" +
 				"    }\n" +
-				"  } } \n" +
+				"  }\n" +
 				"}";
 
 //		System.out.println("Original:\n" + test);
