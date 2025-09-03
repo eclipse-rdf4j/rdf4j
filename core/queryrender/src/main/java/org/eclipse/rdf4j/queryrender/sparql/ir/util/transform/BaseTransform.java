@@ -251,13 +251,13 @@ public class BaseTransform {
 					// Merge a and b: s -(a.path/b.path)-> o. Keep explicit grouping to enable later canonicalization.
 					String fusedPath = "(" + a.getPathText() + ")/(" + b.getPathText() + ")";
 					out.add(new IrPathTriple(a.getSubject(), a.getSubjectOverride(), fusedPath, b.getObject(),
-							b.getObjectOverride(), false));
+							b.getObjectOverride(), IrPathTriple.mergePathVars(a, b), false));
 					i += 1; // consume b
 				} else if (sameVar(bridge, b.getObject()) && isAnonPathVar(bridge)) {
 					// Merge a and b with inverse join on b. Keep explicit grouping.
 					String fusedPath = "(" + a.getPathText() + ")/^(" + b.getPathText() + ")";
 					out.add(new IrPathTriple(a.getSubject(), a.getSubjectOverride(), fusedPath, b.getSubject(),
-							b.getSubjectOverride(), false));
+							b.getSubjectOverride(), IrPathTriple.mergePathVars(a, b), false));
 					i += 1; // consume b
 				} else {
 					// Additional cases: the bridge variable occurs as the subject of the first path triple.
@@ -280,7 +280,7 @@ public class BaseTransform {
 							}
 							String fusedPath = left + "/" + wrapForSequence(b.getPathText());
 							out.add(new IrPathTriple(a.getObject(), a.getObjectOverride(), fusedPath, b.getObject(),
-									b.getObjectOverride(), false));
+									b.getObjectOverride(), IrPathTriple.mergePathVars(a, b), false));
 							i += 1; // consume b
 							continue;
 						}
@@ -294,7 +294,7 @@ public class BaseTransform {
 							String right = wrapForInverse(b.getPathText());
 							String fusedPath = left + "/" + right;
 							out.add(new IrPathTriple(a.getObject(), a.getObjectOverride(), fusedPath, b.getSubject(),
-									b.getSubjectOverride(), false));
+									b.getSubjectOverride(), IrPathTriple.mergePathVars(a, b), false));
 							i += 1; // consume b
 							continue;
 						}
@@ -337,7 +337,7 @@ public class BaseTransform {
 							&& isAnonPathVar(spB.getObject())) {
 						String fusedPath = "^" + r.convertIRIToString((IRI) bPred.getValue()) + "/" + ptC.getPathText();
 						IrPathTriple d = new IrPathTriple(spB.getObject(), spB.getObjectOverride(), fusedPath,
-								ptC.getObject(), ptC.getObjectOverride(), false);
+								ptC.getObject(), ptC.getObjectOverride(), IrPathTriple.mergePathVars(ptC), false);
 						// Keep A; then D replaces B and C
 						out.add(ptA);
 						out.add(d);
@@ -438,13 +438,13 @@ public class BaseTransform {
 					if (sameVar(sp.getObject(), pt.getSubject()) && isAnonPathVar(pt.getSubject())) {
 						String fused = r.convertIRIToString((IRI) p.getValue()) + "/" + pt.getPathText();
 						out.add(new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), fused, pt.getObject(),
-								pt.getObjectOverride(), false));
+								pt.getObjectOverride(), IrPathTriple.mergePathVars(pt), false));
 						i += 1;
 						continue;
 					} else if (sameVar(sp.getSubject(), pt.getObject()) && isAnonPathVar(pt.getObject())) {
 						String fused = pt.getPathText() + "/^" + r.convertIRIToString((IRI) p.getValue());
 						out.add(new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), fused, sp.getObject(),
-								sp.getObjectOverride(), false));
+								sp.getObjectOverride(), IrPathTriple.mergePathVars(pt), false));
 						i += 1;
 						continue;
 					}
@@ -513,7 +513,7 @@ public class BaseTransform {
 						Var newEnd = inverse ? join.getSubject() : join.getObject();
 						IrNode newEndOverride = inverse ? join.getSubjectOverride() : join.getObjectOverride();
 						pt = new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), newPath, newEnd, newEndOverride,
-								pt.isNewScope());
+								pt.getPathVars(), pt.isNewScope());
 						removed.add(join);
 					}
 				}
