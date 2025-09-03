@@ -81,7 +81,8 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		Z01Analysis a = analyzeZeroOrOne(ss, r);
 		if (a != null) {
 			final String expr = BaseTransform.applyQuantifier(a.exprInner, '?');
-			return new IrPathTriple(varNamed(a.sName), expr, varNamed(a.oName), false);
+			return new IrPathTriple(varNamed(a.sName), expr, varNamed(a.oName), false,
+					java.util.Collections.emptySet());
 		}
 		IrSelect sel = ss.getSelect();
 		if (sel == null || sel.getWhere() == null) {
