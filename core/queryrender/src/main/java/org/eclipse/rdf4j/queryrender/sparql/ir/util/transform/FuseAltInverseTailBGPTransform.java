@@ -122,7 +122,10 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 						final String step = r.convertIRIToString((IRI) headJoin.getPredicate().getValue());
 						final String prefix = (headInverse ? "^" : "") + step + "/";
 						final Var newStart = headInverse ? headJoin.getObject() : headJoin.getSubject();
-						pt = new IrPathTriple(newStart, prefix + pt.getPathText(), pt.getObject(), pt.isNewScope());
+						IrPathTriple np = new IrPathTriple(newStart, prefix + pt.getPathText(), pt.getObject(),
+								pt.isNewScope());
+						np.setPathVars(pt.getPathVars());
+						pt = np;
 						removed.add(headJoin);
 					}
 				}
@@ -160,7 +163,9 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 							final String step = r.convertIRIToString((IRI) join.getPredicate().getValue());
 							final String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
 							final Var newEnd = inverse ? join.getSubject() : join.getObject();
-							pt = new IrPathTriple(pt.getSubject(), newPath, newEnd, pt.isNewScope());
+							IrPathTriple np2 = new IrPathTriple(pt.getSubject(), newPath, newEnd, pt.isNewScope());
+							np2.setPathVars(pt.getPathVars());
+							pt = np2;
 							removed.add(join);
 						}
 					}

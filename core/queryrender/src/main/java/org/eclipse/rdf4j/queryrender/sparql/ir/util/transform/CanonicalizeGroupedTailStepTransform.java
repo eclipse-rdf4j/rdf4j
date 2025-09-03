@@ -53,7 +53,9 @@ public final class CanonicalizeGroupedTailStepTransform extends BaseTransform {
 				// Second: normalize split-middle grouping like ((L)/(M))/((R)) -> ((L)/(M/(R)))
 				String rew = rewriteFuseSplitMiddle(afterTail);
 				if (!rew.equals(ptxt)) {
-					m = new IrPathTriple(pt.getSubject(), rew, pt.getObject(), pt.isNewScope());
+					IrPathTriple np = new IrPathTriple(pt.getSubject(), rew, pt.getObject(), pt.isNewScope());
+					np.setPathVars(pt.getPathVars());
+					m = np;
 				}
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
