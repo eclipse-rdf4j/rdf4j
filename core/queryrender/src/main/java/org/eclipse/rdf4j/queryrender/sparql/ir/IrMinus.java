@@ -10,7 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.Collections;
+import java.util.Set;
 import java.util.function.UnaryOperator;
+
+import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * Textual IR node for a MINUS { ... } block. Similar to OPTIONAL and GRAPH, this is a container around a nested BGP.
@@ -58,5 +62,10 @@ public class IrMinus extends IrNode {
 			}
 		}
 		return new IrMinus(newWhere, this.isNewScope());
+	}
+
+	@Override
+	public Set<Var> getVars() {
+		return bgp == null ? Collections.emptySet() : bgp.getVars();
 	}
 }

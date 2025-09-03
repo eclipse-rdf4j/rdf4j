@@ -49,36 +49,27 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			return null;
 		}
 		List<IrNode> out = new ArrayList<>();
-		boolean containsValues = false;
-		for (IrNode ln0 : bgp.getLines()) {
-			if (ln0 instanceof IrValues) {
-				containsValues = true;
-				break;
-			}
-		}
 		for (IrNode n : bgp.getLines()) {
 			IrNode m = n;
-			if (!containsValues && n instanceof IrUnion) {
+			if (n instanceof IrUnion) {
 				m = fuseUnion((IrUnion) n, r);
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				// Allow union fusing inside GRAPH bodies even when a VALUES exists in the outer BGP.
+				// Allow union fusing inside GRAPH bodies regardless of VALUES in the outer BGP.
 				IrBGP inner = apply(g.getWhere(), r);
 				m = new IrGraph(g.getGraph(), inner, g.isNewScope());
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(containsValues ? applyNoUnion(o.getWhere(), r) : apply(o.getWhere(), r),
+				IrOptional no = new IrOptional(apply(o.getWhere(), r),
 						o.isNewScope());
 				no.setNewScope(o.isNewScope());
 				m = no;
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
-				m = new IrMinus(containsValues ? applyNoUnion(mi.getWhere(), r) : apply(mi.getWhere(), r),
-						mi.isNewScope());
+				m = new IrMinus(apply(mi.getWhere(), r), mi.isNewScope());
 			} else if (n instanceof IrService) {
 				IrService s = (IrService) n;
-				m = new IrService(s.getServiceRefText(), s.isSilent(),
-						containsValues ? applyNoUnion(s.getWhere(), r) : apply(s.getWhere(), r), s.isNewScope());
+				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), r), s.isNewScope());
 			} else if (n instanceof IrSubSelect) {
 				// keep as-is
 			}
@@ -257,6 +248,14 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 		for (Group grp : groups.values()) {
 			List<Integer> idxs = grp.idxs;
 			if (idxs.size() >= 2) {
+				// Safety: only merge branches that share at least one _anon_path_* variable
+				// either as subject/object of the IrPathTriple or carried in pathVars. This
+				// ensures we only fuse branches that originate from parser-generated path
+				// bridges and do not collapse user-visible variables.
+				if (!branchesShareAnonPathVar(u, idxs)) {
+					// Not eligible: keep original branches intact for this group
+					continue;
+				}
 				ArrayList<String> alts = new ArrayList<>();
 				for (int idx : idxs) {
 					String t = pathTexts.get(idx);
@@ -337,6 +336,64 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			}
 		}
 		return changed ? out : u;
+	}
+
+	private static boolean branchesShareAnonPathVar(IrUnion u, List<Integer> idxs) {
+		// Build intersection of anon-path var names across all selected branches
+		Set<String> intersection = null;
+		for (int idx : idxs) {
+			IrBGP br = u.getBranches().get(idx - 1);
+			Set<String> names = collectAnonNamesFromPathTripleBranch(br);
+			if (names.isEmpty()) {
+				return false;
+			}
+			if (intersection == null) {
+				intersection = new HashSet<>(names);
+			} else {
+				intersection.retainAll(names);
+				if (intersection.isEmpty()) {
+					return false;
+				}
+			}
+		}
+		return intersection != null && !intersection.isEmpty();
+	}
+
+	private static Set<String> collectAnonNamesFromPathTripleBranch(IrBGP b) {
+		Set<String> out = new HashSet<>();
+		if (b == null || b.getLines().size() != 1) {
+			return out;
+		}
+		IrNode only = b.getLines().get(0);
+		if (only instanceof IrGraph) {
+			IrGraph g = (IrGraph) only;
+			if (g.getWhere() == null || g.getWhere().getLines().size() != 1) {
+				return out;
+			}
+			only = g.getWhere().getLines().get(0);
+		}
+		if (only instanceof IrPathTriple) {
+			IrPathTriple pt = (IrPathTriple) only;
+			Var s = pt.getSubject();
+			Var o = pt.getObject();
+			if (isAnonPathVar(s) || isAnonPathInverseVar(s)) {
+				out.add(s.getName());
+			}
+			if (isAnonPathVar(o) || isAnonPathInverseVar(o)) {
+				out.add(o.getName());
+			}
+			Set<Var> pvs = pt.getPathVars();
+			if (pvs != null) {
+				for (Var v : pvs) {
+					if (v != null && !v.hasValue() && v.getName() != null
+							&& (v.getName().startsWith(ANON_PATH_PREFIX)
+									|| v.getName().startsWith(ANON_PATH_INVERSE_PREFIX))) {
+						out.add(v.getName());
+					}
+				}
+			}
+		}
+		return out;
 	}
 
 	private static IrBGP wrap(IrPathTriple pt) {

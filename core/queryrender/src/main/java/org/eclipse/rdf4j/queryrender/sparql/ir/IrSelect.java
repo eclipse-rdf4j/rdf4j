@@ -11,8 +11,12 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.function.UnaryOperator;
+
+import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * Textual IR for a SELECT query (header + WHERE + trailing modifiers).
@@ -197,6 +201,14 @@ public class IrSelect extends IrNode {
 		if (offset >= 0) {
 			p.line("OFFSET " + offset);
 		}
+	}
+
+	@Override
+	public Set<Var> getVars() {
+		if (where != null) {
+			return where.getVars();
+		}
+		return Collections.emptySet();
 	}
 
 }

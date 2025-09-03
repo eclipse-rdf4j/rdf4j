@@ -10,7 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import java.util.Collections;
+import java.util.Set;
 import java.util.function.UnaryOperator;
+
+import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * Textual IR node for a FILTER line.
@@ -100,5 +104,13 @@ public class IrFilter extends IrNode {
 			return nf;
 		}
 		return this;
+	}
+
+	@Override
+	public Set<Var> getVars() {
+		if (body != null) {
+			return body.getVars();
+		}
+		return Collections.emptySet();
 	}
 }
