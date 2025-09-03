@@ -70,10 +70,13 @@ public final class FuseUnionOfSimpleTriplesTransform extends BaseTransform {
 						}
 						if (f.graph != null) {
 							IrBGP inner = new IrBGP(false);
-							inner.add(new IrPathTriple(f.s, alt, f.o, false));
+							IrPathTriple np = new IrPathTriple(f.s, alt, f.o, false);
+							// simple triples have no anon bridge vars; leave empty
+							inner.add(np);
 							m = new IrGraph(f.graph, inner, false);
 						} else {
-							m = new IrPathTriple(f.s, alt, f.o, false);
+							IrPathTriple npTop = new IrPathTriple(f.s, alt, f.o, false);
+							m = npTop;
 						}
 					} else {
 						// Recurse into branches
