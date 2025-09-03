@@ -57,6 +57,10 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 	private static final Pattern COMPACT_PARENED_NEGATED_TOKEN = Pattern
 			.compile("\\((!\\s*(?:<[^>]+>|[^()|/\\s]+))\\)");
 
+	// Add spaces just inside parentheses for simple alternation groups: (a|b) -> ( a|b )
+	private static final Pattern SIMPLE_ALT_GROUP = Pattern
+			.compile("(?<!!)\\(\\s*([^()]+\\|[^()]+)\\s*\\)");
+
 	// Ensure a single space just inside NPS parentheses for consistent style: !(a|^b) -> !( a|^b )
 	private static final Pattern NPS_PARENS_SPACING = Pattern
 			.compile("!\\(\\s*([^()]+?)\\s*\\)");
@@ -74,8 +78,7 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 				String rew = simplify(ptxt);
 				if (!rew.equals(ptxt)) {
 					IrPathTriple np = new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), rew, pt.getObject(),
-							pt.getObjectOverride(), pt.isNewScope());
-					np.setPathVars(pt.getPathVars());
+							pt.getObjectOverride(), pt.getPathVars(), pt.isNewScope());
 					m = np;
 				}
 			} else if (n instanceof IrGraph) {
@@ -138,12 +141,94 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			cur = normalizeBangAlternationToNps(cur);
 			// Normalize a paren group of negated tokens: (!a|!^b) -> !(a|^b)
 			cur = normalizeParenBangAlternationGroups(cur);
+			// Style: ensure a single space just inside any parentheses before grouping
+			cur = cur.replaceAll("\\((\\S)", "( $1");
+			cur = cur.replaceAll("(\\S)\\)", "$1 )");
+			// In a simple alternation group that mixes positive and negated tokens, compress the
+			// negated tokens into a single NPS member: (ex:p|!a|!^b|ex:q) -> (ex:p|!(a|^b)|ex:q)
+			cur = groupNegatedMembersInSimpleGroup(cur);
 			// Insert spaces around top-level alternations for readability
 			cur = spaceTopLevelAlternations(cur);
-			// Style: add a space just inside NPS parentheses
+			// Style: add a space just inside simple alternation parentheses
+			cur = SIMPLE_ALT_GROUP.matcher(cur).replaceAll("( $1 )");
+			// (general parentheses spacing done earlier)
+			// Finally: ensure no extra spaces inside NPS parentheses when used as a member
 			cur = NPS_PARENS_SPACING.matcher(cur).replaceAll("!($1)");
 		} while (!cur.equals(prev) && ++guard < 5);
 		return cur;
+	}
+
+	// Compact sequences of !tokens inside a simple top-level alternation group into a single NPS member.
+	private static String groupNegatedMembersInSimpleGroup(String s) {
+		StringBuilder out = new StringBuilder(s.length());
+		int i = 0;
+		while (i < s.length()) {
+			int open = s.indexOf('(', i);
+			if (open < 0) {
+				out.append(s.substring(i));
+				break;
+			}
+			out.append(s, i, open);
+			int j = open + 1;
+			int depth = 1;
+			while (j < s.length() && depth > 0) {
+				char c = s.charAt(j++);
+				if (c == '(')
+					depth++;
+				else if (c == ')')
+					depth--;
+			}
+			if (depth != 0) {
+				// unmatched parentheses; append rest and stop
+				out.append(s.substring(open));
+				break;
+			}
+			int close = j - 1;
+			String inner = s.substring(open + 1, close);
+			// Skip groups that contain nested parentheses
+			if (inner.indexOf('(') >= 0 || inner.indexOf(')') >= 0) {
+				out.append('(').append(inner).append(')');
+				i = close + 1;
+				continue;
+			}
+			String[] toks = inner.split("\\|");
+			StringBuilder rebuilt = new StringBuilder(inner.length());
+			StringBuilder neg = new StringBuilder();
+			boolean insertedGroup = false;
+			for (int k = 0; k < toks.length; k++) {
+				String tok = toks[k].trim();
+				if (tok.isEmpty())
+					continue;
+				boolean isNeg = tok.startsWith("!") && (tok.length() == 1 || tok.charAt(1) != '(');
+				if (isNeg) {
+					String member = tok.substring(1).trim();
+					if (neg.length() > 0)
+						neg.append('|');
+					neg.append(member);
+					continue;
+				}
+				// flush any pending neg group before adding a positive token
+				if (neg.length() > 0 && !insertedGroup) {
+					if (rebuilt.length() > 0)
+						rebuilt.append('|');
+					rebuilt.append("!(").append(neg).append(")");
+					neg.setLength(0);
+					insertedGroup = true;
+				}
+				if (rebuilt.length() > 0)
+					rebuilt.append('|');
+				rebuilt.append(tok);
+			}
+			// flush at end if needed
+			if (neg.length() > 0) {
+				if (rebuilt.length() > 0)
+					rebuilt.append('|');
+				rebuilt.append("!(").append(neg).append(")");
+			}
+			out.append('(').append(rebuilt).append(')');
+			i = close + 1;
+		}
+		return out.toString();
 	}
 
 	// Flatten groups that contain nested alternation groups into a single-level alternation.
