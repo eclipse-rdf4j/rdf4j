@@ -559,7 +559,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 								// idempotence
 								String pathTxt = first + "/" + altTxt;
 
-								java.util.Set<Var> fusedPathVars = new java.util.HashSet<>();
+								Set<Var> fusedPathVars = new HashSet<>();
 								if (isAnonPathVar(mid)) {
 									fusedPathVars.add(mid);
 								}
