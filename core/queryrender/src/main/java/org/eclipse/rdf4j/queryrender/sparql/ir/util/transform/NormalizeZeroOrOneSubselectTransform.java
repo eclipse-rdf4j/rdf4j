@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -82,7 +83,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		if (a != null) {
 			final String expr = BaseTransform.applyQuantifier(a.exprInner, '?');
 			return new IrPathTriple(varNamed(a.sName), expr, varNamed(a.oName), false,
-					java.util.Collections.emptySet());
+					Collections.emptySet());
 		}
 		IrSelect sel = ss.getSelect();
 		if (sel == null || sel.getWhere() == null) {
@@ -231,7 +232,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			exprInner = (steps.size() == 1) ? steps.get(0) : ("(" + String.join("|", steps) + ")");
 		}
 		final String expr = BaseTransform.applyQuantifier(exprInner, '?');
-		return new IrPathTriple(varNamed(sName), expr, varNamed(oName), false, java.util.Collections.emptySet());
+		return new IrPathTriple(varNamed(sName), expr, varNamed(oName), false, Collections.emptySet());
 	}
 
 	/**
@@ -245,7 +246,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		if (a != null) {
 			final String expr = BaseTransform.applyQuantifier(a.exprInner, '?');
 			final IrPathTriple pt = new IrPathTriple(varNamed(a.sName), expr, varNamed(a.oName), false,
-					java.util.Collections.emptySet());
+					Collections.emptySet());
 			if (a.allGraphWrapped && a.commonGraph != null) {
 				IrBGP innerBgp = new IrBGP(false);
 				innerBgp.add(pt);
@@ -420,7 +421,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 
 		final String expr = BaseTransform.applyQuantifier(exprInner, '?');
 		final IrPathTriple pt = new IrPathTriple(varNamed(sName), expr, varNamed(oName), false,
-				java.util.Collections.emptySet());
+				Collections.emptySet());
 		if (allGraphWrapped && commonGraph != null) {
 			IrBGP innerBgp = new IrBGP(false);
 			innerBgp.add(pt);

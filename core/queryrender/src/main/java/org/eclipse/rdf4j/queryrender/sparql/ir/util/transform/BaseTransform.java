@@ -728,20 +728,20 @@ public class BaseTransform {
 		if (u == null || u.getBranches().size() != 2) {
 			return false;
 		}
-		java.util.Set<org.eclipse.rdf4j.query.algebra.Var> aVars = u.getBranches().get(0).getVars();
-		java.util.Set<org.eclipse.rdf4j.query.algebra.Var> bVars = u.getBranches().get(1).getVars();
+		Set<Var> aVars = u.getBranches().get(0).getVars();
+		Set<Var> bVars = u.getBranches().get(1).getVars();
 		if (aVars == null || bVars == null || aVars.isEmpty() || bVars.isEmpty()) {
 			return false;
 		}
 		Set<String> aNames = new HashSet<>();
 		Set<String> bNames = new HashSet<>();
-		for (org.eclipse.rdf4j.query.algebra.Var v : aVars) {
+		for (Var v : aVars) {
 			if (v != null && !v.hasValue() && v.getName() != null
 					&& (v.getName().startsWith(ANON_PATH_PREFIX) || v.getName().startsWith(ANON_PATH_INVERSE_PREFIX))) {
 				aNames.add(v.getName());
 			}
 		}
-		for (org.eclipse.rdf4j.query.algebra.Var v : bVars) {
+		for (Var v : bVars) {
 			if (v != null && !v.hasValue() && v.getName() != null
 					&& (v.getName().startsWith(ANON_PATH_PREFIX) || v.getName().startsWith(ANON_PATH_INVERSE_PREFIX))) {
 				bNames.add(v.getName());

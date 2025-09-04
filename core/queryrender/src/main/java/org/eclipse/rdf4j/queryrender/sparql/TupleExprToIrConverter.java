@@ -2001,7 +2001,7 @@ public class TupleExprToIrConverter {
 			final Var subj = p.getSubjectVar();
 			final Var obj = p.getObjectVar();
 			final String expr = TupleExprToIrConverter.this.buildPathExprForArbitraryLengthPath(p);
-			final IrPathTriple pt = new IrPathTriple(subj, null, expr, obj, null, java.util.Collections.emptySet(),
+			final IrPathTriple pt = new IrPathTriple(subj, null, expr, obj, null, Collections.emptySet(),
 					false);
 			final Var ctx = getContextVarSafe(p);
 			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
