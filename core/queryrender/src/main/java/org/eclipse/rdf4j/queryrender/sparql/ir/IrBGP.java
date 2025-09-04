@@ -10,14 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
-import org.eclipse.rdf4j.query.algebra.Var;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.UnaryOperator;
+
+import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * Textual IR for a WHERE/group block: ordered list of lines/nodes.
