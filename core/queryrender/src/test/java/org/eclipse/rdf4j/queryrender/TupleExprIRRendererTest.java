@@ -3537,15 +3537,17 @@ public class TupleExprIRRendererTest {
 	void yetAnotherTest2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  GRAPH <http://graphs.example/g1> {\n" +
-				"    ?s ex:pC ?u1 . FILTER EXISTS {\n" +
+				"    ?s ex:pC ?u1 .\n" +
+				"    FILTER EXISTS {\n" +
 				"      {\n" +
-				"        ?s ex:pA ?o . OPTIONAL {\n" +
+				"        ?s ex:pA ?o .\n" +
+				"        OPTIONAL {\n" +
 				"          ?s !<http://example.org/p/I0> ?o .\n" +
 				"        }\n" +
 				"      }\n" +
 				"    }\n" +
 				"  }\n" +
-				"}\n";
+				"}";
 
 		assertSameSparqlQuery(q, cfg());
 	}
@@ -4064,6 +4066,25 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}\n";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testGraphUnionScope1() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"    GRAPH <http://graphs.example/g1> {\n" +
+				"        {\n" +
+				"          {\n" +
+				"              ?s <http://example.org/p/I2> ?o .\n" +
+				"          }\n" +
+				"        }\n" +
+				"          UNION\n" +
+				"        {\n" +
+				"          ?u1 ex:pD ?v1 .\n" +
+				"        }\n" +
+				"      }\n" +
+				"}";
 
 		assertSameSparqlQuery(q, cfg());
 	}

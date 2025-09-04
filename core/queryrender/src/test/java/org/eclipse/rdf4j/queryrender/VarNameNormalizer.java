@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
  * Pre-normalized names like _anon_7 are detected and their numbers are reserved to avoid collisions.
  * Constants (e.g., _const_*) and ordinary names (e.g., el) are left untouched.
  */
+
 /**
  * Normalizes anonymous variable tokens within algebra dumps so structurally identical trees compare equal even if
  * hashed suffixes differ.
@@ -67,8 +68,9 @@ public final class VarNameNormalizer {
 	 * trailing underscore, e.g. "_anon_having_".
 	 */
 	public static String normalizeVars(String input, List<String> families) {
-		if (input == null || input.isEmpty())
+		if (input == null || input.isEmpty()) {
 			return input;
+		}
 
 		// Sort families by descending length so that more specific prefixes (e.g., _anon_collection_) win over _anon_.
 		List<String> fams = new ArrayList<>(families);
@@ -78,8 +80,9 @@ public final class VarNameNormalizer {
 
 		// Reserved numbers per family (already present in input as digits-only tails).
 		final Map<String, SortedSet<Integer>> reserved = new HashMap<>();
-		for (String f : fams)
+		for (String f : fams) {
 			reserved.put(f, new TreeSet<>());
+		}
 
 		// Pass 1: Reserve any digits-only tails already present (e.g., _anon_17).
 		{
@@ -142,8 +145,9 @@ public final class VarNameNormalizer {
 	/** Find the first matching family prefix for this name, or null if none. */
 	private static String leadingFamily(String name, List<String> families) {
 		for (String f : families) {
-			if (name.startsWith(f))
+			if (name.startsWith(f)) {
 				return f;
+			}
 		}
 		return null;
 	}
@@ -152,10 +156,11 @@ public final class VarNameNormalizer {
 	private static int nextAvailableIndex(SortedSet<Integer> taken) {
 		int i = 1;
 		for (int used : taken) {
-			if (used == i)
+			if (used == i) {
 				i++;
-			else if (used > i)
+			} else if (used > i) {
 				break;
+			}
 		}
 		return i;
 	}

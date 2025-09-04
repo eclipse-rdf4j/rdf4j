@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -95,8 +94,9 @@ public class TupleExprAlgebraShapeTest {
 		dq.add(root);
 		while (!dq.isEmpty()) {
 			QueryModelNode n = dq.removeFirst();
-			if (pred.test(n))
+			if (pred.test(n)) {
 				res.add(n);
+			}
 			n.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
 				@Override
 				protected void meetNode(QueryModelNode node) {

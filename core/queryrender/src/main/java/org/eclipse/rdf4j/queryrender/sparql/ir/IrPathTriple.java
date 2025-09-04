@@ -73,10 +73,12 @@ public class IrPathTriple extends IrTripleLike {
 		}
 		HashSet<Var> out = new HashSet<>();
 		for (IrPathTriple pt : pts) {
-			if (pt == null)
+			if (pt == null) {
 				continue;
-			if (pt.getPathVars() != null)
+			}
+			if (pt.getPathVars() != null) {
 				out.addAll(pt.getPathVars());
+			}
 		}
 		return out.isEmpty() ? Collections.emptySet() : Collections.unmodifiableSet(out);
 	}
@@ -88,10 +90,12 @@ public class IrPathTriple extends IrTripleLike {
 		}
 		HashSet<Var> out = new HashSet<>();
 		for (IrPathTriple pt : pts) {
-			if (pt == null)
+			if (pt == null) {
 				continue;
-			if (pt.getPathVars() != null)
+			}
+			if (pt.getPathVars() != null) {
 				out.addAll(pt.getPathVars());
+			}
 		}
 		return out.isEmpty() ? Collections.emptySet() : Collections.unmodifiableSet(out);
 	}
@@ -106,24 +110,29 @@ public class IrPathTriple extends IrTripleLike {
 		}
 		HashSet<Var> out = new HashSet<>();
 		for (IrStatementPattern sp : sps) {
-			if (sp == null)
+			if (sp == null) {
 				continue;
+			}
 			Var s = sp.getSubject();
 			Var o = sp.getObject();
 			Var p = sp.getPredicate();
-			if (isAnonBridgeVar(s))
+			if (isAnonBridgeVar(s)) {
 				out.add(s);
-			if (isAnonBridgeVar(o))
+			}
+			if (isAnonBridgeVar(o)) {
 				out.add(o);
-			if (isAnonBridgeVar(p))
+			}
+			if (isAnonBridgeVar(p)) {
 				out.add(p);
+			}
 		}
 		return out.isEmpty() ? Collections.emptySet() : Collections.unmodifiableSet(out);
 	}
 
 	private static boolean isAnonBridgeVar(Var v) {
-		if (v == null || v.getName() == null)
+		if (v == null || v.getName() == null) {
 			return false;
+		}
 		// parser-generated path bridge variables
 		String n = v.getName();
 		return n.startsWith("_anon_path_") || n.startsWith("_anon_path_inverse_");

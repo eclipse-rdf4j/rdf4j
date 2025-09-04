@@ -530,8 +530,9 @@ public class SparqlPropertyPathStreamTest {
 				} else {
 					sb.append("!(");
 					for (int i = 0; i < ns.elems.size(); i++) {
-						if (i > 0)
+						if (i > 0) {
 							sb.append("|");
+						}
 						render(ns.elems.get(i), sb, Prec.ALT, compactSingleNeg);
 					}
 					sb.append(")");
@@ -539,23 +540,27 @@ public class SparqlPropertyPathStreamTest {
 			} else if (n instanceof Sequence) {
 				Sequence s = (Sequence) n;
 				boolean need = ctx.ordinal() > Prec.SEQ.ordinal();
-				if (need)
+				if (need) {
 					sb.append("(");
+				}
 				render(s.left, sb, Prec.SEQ, compactSingleNeg);
 				sb.append("/");
 				render(s.right, sb, Prec.SEQ, compactSingleNeg);
-				if (need)
+				if (need) {
 					sb.append(")");
+				}
 			} else if (n instanceof Alternative) {
 				Alternative a = (Alternative) n;
 				boolean need = ctx.ordinal() > Prec.ALT.ordinal();
-				if (need)
+				if (need) {
 					sb.append("(");
+				}
 				render(a.left, sb, Prec.ALT, compactSingleNeg);
 				sb.append("|");
 				render(a.right, sb, Prec.ALT, compactSingleNeg);
-				if (need)
+				if (need) {
 					sb.append(")");
+				}
 			} else if (n instanceof Quantified) {
 				Quantified q = (Quantified) n;
 				maybeParen(q.inner, sb, Prec.POSTFIX, compactSingleNeg);
@@ -571,11 +576,13 @@ public class SparqlPropertyPathStreamTest {
 
 		private static void maybeParen(PathNode child, StringBuilder sb, Prec parentPrec, boolean compactSingleNeg) {
 			boolean need = child.prec().ordinal() < parentPrec.ordinal();
-			if (need)
+			if (need) {
 				sb.append("(");
+			}
 			render(child, sb, child.prec(), compactSingleNeg);
-			if (need)
+			if (need) {
 				sb.append(")");
+			}
 		}
 	}
 
@@ -596,8 +603,9 @@ public class SparqlPropertyPathStreamTest {
 
 		/** Stream all PathNodes at exactly 'depth', lazily. */
 		static Stream<? extends PathNode> depth(int depth) {
-			if (depth == 0)
+			if (depth == 0) {
 				return depth0();
+			}
 			return Stream.concat(unary(depth), binary(depth));
 		}
 
@@ -664,8 +672,9 @@ public class SparqlPropertyPathStreamTest {
 
 		private static Stream<Atom> atomStream() {
 			Stream<String> base = ATOMS.stream();
-			if (INCLUDE_A_SHORTCUT)
+			if (INCLUDE_A_SHORTCUT) {
 				base = Stream.concat(Stream.of("a"), base);
+			}
 			return base.map(Atom::new);
 		}
 
@@ -676,10 +685,12 @@ public class SparqlPropertyPathStreamTest {
 
 		/** Lazy k-subsets over a small list (deterministic order, no allocations per element). */
 		private static <T> Stream<List<T>> kSubsets(List<T> list, int k) {
-			if (k < 0 || k > list.size())
+			if (k < 0 || k > list.size()) {
 				return Stream.empty();
-			if (k == 0)
+			}
+			if (k == 0) {
 				return Stream.of(Collections.emptyList());
+			}
 
 			Spliterator<List<T>> sp = new Spliterators.AbstractSpliterator<List<T>>(Long.MAX_VALUE, ORDERED) {
 				final int n = list.size();
@@ -688,11 +699,13 @@ public class SparqlPropertyPathStreamTest {
 
 				@Override
 				public boolean tryAdvance(Consumer<? super List<T>> action) {
-					if (!hasNext)
+					if (!hasNext) {
 						return false;
+					}
 					List<T> comb = new ArrayList<>(k);
-					for (int i = 0; i < k; i++)
+					for (int i = 0; i < k; i++) {
 						comb.add(list.get(idx[i]));
+					}
 					action.accept(Collections.unmodifiableList(comb));
 					hasNext = nextCombination(idx, n, k);
 					return true;
@@ -703,8 +716,9 @@ public class SparqlPropertyPathStreamTest {
 
 		private static int[] initFirst(int k) {
 			int[] idx = new int[k];
-			for (int i = 0; i < k; i++)
+			for (int i = 0; i < k; i++) {
 				idx[i] = i;
+			}
 			return idx;
 		}
 
@@ -713,8 +727,9 @@ public class SparqlPropertyPathStreamTest {
 			for (int i = k - 1; i >= 0; i--) {
 				if (idx[i] != i + n - k) {
 					idx[i]++;
-					for (int j = i + 1; j < k; j++)
+					for (int j = i + 1; j < k; j++) {
 						idx[j] = idx[j - 1] + 1;
+					}
 					return true;
 				}
 			}
@@ -772,11 +787,13 @@ public class SparqlPropertyPathStreamTest {
 		Objects.requireNonNull(seen, "seen");
 		AtomicInteger left = new AtomicInteger(limit);
 		return t -> {
-			if (seen.contains(t))
+			if (seen.contains(t)) {
 				return false;
+			}
 			int remaining = left.get();
-			if (remaining <= 0)
+			if (remaining <= 0) {
 				return false;
+			}
 			// Reserve a slot then record
 			if (left.compareAndSet(remaining, remaining - 1)) {
 				seen.add(t);
