@@ -11,7 +11,10 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
@@ -232,7 +235,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		final List<String> members = new ArrayList<>();
 		int fusedCount = 0;
 		// Track anon-path var names per branch (subject/object and pathVars) to require a shared anon bridge
-		final List<java.util.Set<String>> anonPerBranch = new java.util.ArrayList<>();
+		final List<Set<String>> anonPerBranch = new ArrayList<>();
 
 		for (IrBGP b : u.getBranches()) {
 			// Unwrap common single-child wrappers to reach a path triple, and capture graph ref if present.
@@ -340,7 +343,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			IrPathTriple mergedPt = new IrPathTriple(sCanon,
 					firstPt == null ? null : firstPt.getSubjectOverride(), merged, oCanon,
 					firstPt == null ? null : firstPt.getObjectOverride(),
-					firstPt == null ? java.util.Collections.emptySet() : firstPt.getPathVars(), false);
+					firstPt == null ? Collections.emptySet() : firstPt.getPathVars(), false);
 			IrNode fused;
 			if (graphRef != null) {
 				IrBGP inner = new IrBGP(innerBgpNewScope);
@@ -434,8 +437,8 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 
 	// compact NPS normalization centralized in BaseTransform
 
-	private static java.util.Set<String> collectAnonNamesFromPathTriple(IrPathTriple pt) {
-		java.util.Set<String> out = new java.util.HashSet<>();
+	private static Set<String> collectAnonNamesFromPathTriple(IrPathTriple pt) {
+		Set<String> out = new HashSet<>();
 		if (pt == null) {
 			return out;
 		}
@@ -447,7 +450,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		if (isAnonPathVar(o) || isAnonPathInverseVar(o)) {
 			out.add(o.getName());
 		}
-		java.util.Set<Var> pvs = pt.getPathVars();
+		Set<Var> pvs = pt.getPathVars();
 		if (pvs != null) {
 			for (Var v : pvs) {
 				if (v != null && !v.hasValue() && v.getName() != null
@@ -460,17 +463,17 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		return out;
 	}
 
-	private static boolean branchesShareSpecificAnon(List<java.util.Set<String>> anonPerBranch) {
+	private static boolean branchesShareSpecificAnon(List<Set<String>> anonPerBranch) {
 		if (anonPerBranch == null || anonPerBranch.size() < 2) {
 			return false;
 		}
-		java.util.Set<String> inter = null;
-		for (java.util.Set<String> s : anonPerBranch) {
+		Set<String> inter = null;
+		for (Set<String> s : anonPerBranch) {
 			if (s == null || s.isEmpty()) {
 				return false;
 			}
 			if (inter == null) {
-				inter = new java.util.HashSet<>(s);
+				inter = new HashSet<>(s);
 			} else {
 				inter.retainAll(s);
 				if (inter.isEmpty()) {
