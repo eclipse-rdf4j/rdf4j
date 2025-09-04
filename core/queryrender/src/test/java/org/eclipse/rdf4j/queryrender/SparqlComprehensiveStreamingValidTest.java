@@ -78,7 +78,7 @@ public class SparqlComprehensiveStreamingValidTest {
 	private static final int MAX_CONSTRUCT_TPL_CASES = 300;
 
 	// Deep nesting torture tests
-	private static final int MAX_DEEP_NEST_CASES = 500; // how many deep-nest queries to emit
+	private static final int MAX_DEEP_NEST_CASES = 5000; // how many deep-nest queries to emit
 	private static final int MAX_DEEP_NEST_DEPTH = 3; // requested depth
 	private static final int NEST_PATH_POOL_SIZE = 64; // sample of property paths to pick from
 	private static final long NEST_SEED = 0xC0DEC0DEBEEFL; // deterministic
@@ -1258,10 +1258,12 @@ public class SparqlComprehensiveStreamingValidTest {
 
 		private static String parenIfNeeded(String e) {
 			String t = e.trim();
-			if (t.startsWith("("))
+			if (t.startsWith("(")) {
 				return t;
-			if (t.contains(" ") || t.contains(","))
+			}
+			if (t.contains(" ") || t.contains(",")) {
 				return "(" + t + ")";
+			}
 			return t;
 		}
 
@@ -1501,16 +1503,18 @@ public class SparqlComprehensiveStreamingValidTest {
 		 */
 		static Stream<String> stream(int depth, int count, List<String> pathPool, long seed) {
 			Objects.requireNonNull(pathPool, "pathPool");
-			if (pathPool.isEmpty())
+			if (pathPool.isEmpty()) {
 				throw new IllegalArgumentException("pathPool must not be empty");
+			}
 
 			Spliterator<String> sp = new Spliterators.AbstractSpliterator<String>(count, ORDERED) {
 				int i = 0;
 
 				@Override
 				public boolean tryAdvance(Consumer<? super String> action) {
-					if (i >= count)
+					if (i >= count) {
 						return false;
+					}
 
 					SplittableRandom rnd = new SplittableRandom(seed + i);
 

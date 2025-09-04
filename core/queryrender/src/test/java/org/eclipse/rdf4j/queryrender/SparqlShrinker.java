@@ -1,11 +1,14 @@
 package org.eclipse.rdf4j.queryrender;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * SPARQL query shrinker / delta debugger (Java 11, no dependencies).
@@ -95,8 +98,9 @@ public final class SparqlShrinker {
 			Config cfg) throws Exception {
 		Objects.requireNonNull(original, "original");
 		Objects.requireNonNull(failureOracle, "failureOracle");
-		if (cfg == null)
+		if (cfg == null) {
 			cfg = new Config();
+		}
 
 		// Initial check: if it doesn't fail, nothing to do.
 		Guard g = new Guard(failureOracle, validityOracle, cfg);
@@ -289,15 +293,17 @@ public final class SparqlShrinker {
 		// Do repeated passes as long as we can delete one.
 		while (true) {
 			int idx = indexOfRegex(out, "(?i)\\bFROM\\s+(?:NAMED\\s+)?<[^>]+>");
-			if (idx < 0)
+			if (idx < 0) {
 				break;
+			}
 			int end = endOfLineOrClause(out, idx);
 			String cand = out.substring(0, idx) + out.substring(end);
 			if (g.accept(cand)) {
 				log.add("Removed FROM/FROM NAMED");
 				out = cand;
-			} else
+			} else {
 				break;
+			}
 		}
 		return out;
 	}
@@ -307,14 +313,16 @@ public final class SparqlShrinker {
 		String out = q;
 		while (true) {
 			Match svc = findServiceLike(out);
-			if (svc == null)
+			if (svc == null) {
 				break;
+			}
 			String cand = out.substring(0, svc.start) + svc.inner + out.substring(svc.end);
 			if (g.accept(cand)) {
 				log.add("Flattened " + svc.kind + " block");
 				out = cand;
-			} else
+			} else {
 				break; // stop trying this pattern
+			}
 		}
 		return out;
 	}
@@ -323,8 +331,9 @@ public final class SparqlShrinker {
 		String out = q;
 		while (true) {
 			Match f = findFilter(out);
-			if (f == null)
+			if (f == null) {
 				break;
+			}
 			// Try removing entire FILTER
 			String cand = out.substring(0, f.start) + out.substring(f.end);
 			if (g.accept(cand)) {
@@ -350,8 +359,9 @@ public final class SparqlShrinker {
 		String out = q;
 		while (true) {
 			Match b = findBind(out);
-			if (b == null)
+			if (b == null) {
 				break;
+			}
 			String cand = out.substring(0, b.start) + out.substring(b.end);
 			if (g.accept(cand)) {
 				log.add("Removed BIND");
@@ -367,8 +377,9 @@ public final class SparqlShrinker {
 		String out = q;
 		while (true) {
 			ValuesBlock vb = findValues(out);
-			if (vb == null)
+			if (vb == null) {
 				break;
+			}
 
 			// Strategy: try removing entire VALUES; if not acceptable, reduce rows by halving batches.
 			String remove = out.substring(0, vb.start) + out.substring(vb.end);
@@ -378,8 +389,9 @@ public final class SparqlShrinker {
 				continue;
 			}
 
-			if (vb.rows.size() <= 1)
+			if (vb.rows.size() <= 1) {
 				break; // can't shrink rows further
+			}
 
 			int n = Math.max(cfg.valuesBatchStart, 2);
 			List<List<String>> rows = new ArrayList<>(vb.rows);
@@ -400,8 +412,9 @@ public final class SparqlShrinker {
 					n = Math.min(rows.size(), n * 2);
 				}
 			}
-			if (!did)
+			if (!did) {
 				break;
+			}
 		}
 		return out;
 	}
@@ -411,8 +424,9 @@ public final class SparqlShrinker {
 		String out = q;
 		while (true) {
 			UnionMatch u = findUnion(out);
-			if (u == null)
+			if (u == null) {
 				break;
+			}
 
 			// Try keeping left only (remove UNION + right)
 			String keepLeft = out.substring(0, u.unionIdx) + out.substring(u.rightEnd + 1);
@@ -451,8 +465,9 @@ public final class SparqlShrinker {
 		String out = q;
 		while (true) {
 			Match m = findKeywordBlock(out, "OPTIONAL");
-			if (m == null)
+			if (m == null) {
 				break;
+			}
 
 			// Option A: remove entire OPTIONAL { ... }
 			String remove = out.substring(0, m.start) + out.substring(m.end);
@@ -512,8 +527,9 @@ public final class SparqlShrinker {
 			String between = q.substring(sIdx, wIdx);
 			String tail = q.substring(wIdx);
 			// If already SELECT *, nothing to do
-			if (between.matches("(?s).*\\b\\*\\b.*"))
+			if (between.matches("(?s).*\\b\\*\\b.*")) {
 				return q;
+			}
 
 			String selStar = between.replaceAll("(?is)SELECT\\s+.+", "SELECT * ");
 			String cand = head + selStar + tail;
@@ -529,15 +545,18 @@ public final class SparqlShrinker {
 		// For explicit CONSTRUCT { template } WHERE { ... } — drop extra template triples.
 		// Strategy: inside the first top-level template block after CONSTRUCT, split by '.' and drop trailing parts.
 		int cIdx = indexOfKeyword(q, "CONSTRUCT");
-		if (cIdx < 0)
+		if (cIdx < 0) {
 			return q;
+		}
 
 		int tplOpen = nextChar(q, '{', cIdx);
-		if (tplOpen < 0)
+		if (tplOpen < 0) {
 			return q;
+		}
 		int tplClose = matchBrace(q, tplOpen);
-		if (tplClose < 0)
+		if (tplClose < 0) {
 			return q;
+		}
 
 		String templateBody = q.substring(tplOpen + 1, tplClose);
 		List<int[]> dotSegs = splitByDot(templateBody);
@@ -546,8 +565,9 @@ public final class SparqlShrinker {
 		for (int i = dotSegs.size() - 1; i >= 1; i--) { // keep at least one segment
 			int[] seg = dotSegs.get(i);
 			String newBody = templateBody.substring(0, seg[0]).trim();
-			if (!newBody.endsWith("."))
+			if (!newBody.endsWith(".")) {
 				newBody = newBody + " .";
+			}
 			String cand = q.substring(0, tplOpen + 1) + "\n" + newBody + "\n" + q.substring(tplClose);
 			if (g.accept(cand)) {
 				log.add("Reduced CONSTRUCT template triples");
@@ -560,25 +580,30 @@ public final class SparqlShrinker {
 	private static String dropWhereStatements(String q, Guard g, List<String> log) throws Exception {
 		// Find first WHERE { ... } and drop dot-separated top-level statements
 		int wIdx = indexOfKeyword(q, "WHERE");
-		if (wIdx < 0)
+		if (wIdx < 0) {
 			return q;
+		}
 		int open = nextChar(q, '{', wIdx);
-		if (open < 0)
+		if (open < 0) {
 			return q;
+		}
 		int close = matchBrace(q, open);
-		if (close < 0)
+		if (close < 0) {
 			return q;
+		}
 
 		String body = q.substring(open + 1, close);
 		List<int[]> segs = splitByDot(body);
-		if (segs.size() <= 1)
+		if (segs.size() <= 1) {
 			return q;
+		}
 
 		for (int i = segs.size() - 1; i >= 0; i--) {
 			int[] seg = segs.get(i);
 			String newBody = (body.substring(0, seg[0]) + body.substring(seg[1])).trim();
-			if (!newBody.endsWith("."))
+			if (!newBody.endsWith(".")) {
 				newBody = newBody + " .";
+			}
 			String cand = q.substring(0, open + 1) + "\n" + newBody + "\n" + q.substring(close);
 			if (g.accept(cand)) {
 				log.add("Dropped WHERE statement segment");
@@ -594,8 +619,9 @@ public final class SparqlShrinker {
 
 	private static String ddminTokens(String q, Guard g, boolean spaceyJoin, List<String> log) throws Exception {
 		List<Token> toks = Tokenizer.lex(q);
-		if (toks.isEmpty())
+		if (toks.isEmpty()) {
 			return q;
+		}
 
 		// ddmin over tokens
 		List<Token> minimized = ddmin(toks, cand -> {
@@ -607,8 +633,9 @@ public final class SparqlShrinker {
 		});
 
 		String res = Tokenizer.join(minimized, spaceyJoin);
-		if (!res.equals(q))
+		if (!res.equals(q)) {
 			log.add("ddmin reduced tokens: " + toks.size() + " → " + minimized.size());
+		}
 		return res;
 	}
 
@@ -624,10 +651,12 @@ public final class SparqlShrinker {
 				int to = Math.min(c.size(), i + chunkSize);
 				List<T> subset = c.subList(i, to);
 				List<T> complement = new ArrayList<>(c.size() - subset.size());
-				if (i > 0)
+				if (i > 0) {
 					complement.addAll(c.subList(0, i));
-				if (to < c.size())
+				}
+				if (to < c.size()) {
 					complement.addAll(c.subList(to, c.size()));
+				}
 
 				if (test.test(complement)) {
 					c = complement;
@@ -637,8 +666,9 @@ public final class SparqlShrinker {
 				}
 			}
 			if (!reduced) {
-				if (n >= c.size())
+				if (n >= c.size()) {
 					break;
+				}
 				n = Math.min(c.size(), n * 2);
 			}
 		}
@@ -674,8 +704,9 @@ public final class SparqlShrinker {
 		boolean accept(String q) throws Exception {
 			attempts++;
 			boolean ok = failure.fails(q) && (!cfg.enforceValidity || (validity != null && validity.isValid(q)));
-			if (ok)
+			if (ok) {
 				accepted++;
+			}
 			return ok;
 		}
 	}
@@ -695,8 +726,9 @@ public final class SparqlShrinker {
 		int idx = 0;
 		for (int i = 0; i < words.length; i++) {
 			int j = indexOfWord(src, words[i], idx);
-			if (j < 0)
+			if (j < 0) {
 				return -1;
+			}
 			idx = j + words[i].length();
 		}
 		return idx - words[words.length - 1].length();
@@ -712,8 +744,9 @@ public final class SparqlShrinker {
 		int n = src.length();
 		for (int i = from; i < n; i++) {
 			char c = src.charAt(i);
-			if (c == '\n' || c == '\r')
+			if (c == '\n' || c == '\r') {
 				return i;
+			}
 		}
 		return n;
 	}
@@ -723,8 +756,9 @@ public final class SparqlShrinker {
 		int end = q.length();
 		for (String stop : new String[] { "LIMIT", "OFFSET", "GROUP", "HAVING" }) {
 			int s = indexOfWord(q, stop, orderIdx + 1);
-			if (s >= 0)
+			if (s >= 0) {
 				end = Math.min(end, s);
+			}
 		}
 		return end;
 	}
@@ -736,15 +770,17 @@ public final class SparqlShrinker {
 		// Keep "ORDER BY <first key>"
 		String first = body.replaceFirst(
 				"(?is)ORDER\\s+BY\\s+(.+?)(,|\\)|\\s+ASC\\(|\\s+DESC\\(|\\s+LIMIT|\\s+OFFSET|$).*", "ORDER BY $1");
-		if (!first.equals(body))
+		if (!first.equals(body)) {
 			return head + first + tail;
+		}
 		// last resort: remove everything after "ORDER BY" until next space
 		int ob = indexOfWord(body, "BY", 0);
 		if (ob >= 0) {
 			int ks = ob + 2;
 			int ke = body.indexOf(' ', ks + 1);
-			if (ke > 0)
+			if (ke > 0) {
 				return head + body.substring(0, ke) + tail;
+			}
 		}
 		return q;
 	}
@@ -754,8 +790,9 @@ public final class SparqlShrinker {
 		int end = q.length();
 		for (String stop : new String[] { "GROUP", "ORDER", "LIMIT", "OFFSET" }) {
 			int s = indexOfWord(q, stop, havingIdx + 1);
-			if (s >= 0)
+			if (s >= 0) {
 				end = Math.min(end, s);
+			}
 		}
 		return end;
 	}
@@ -764,8 +801,9 @@ public final class SparqlShrinker {
 		int end = q.length();
 		for (String stop : new String[] { "HAVING", "ORDER", "LIMIT", "OFFSET" }) {
 			int s = indexOfWord(q, stop, start + 1);
-			if (s >= 0)
+			if (s >= 0) {
 				end = Math.min(end, s);
+			}
 		}
 		return end;
 	}
@@ -778,8 +816,9 @@ public final class SparqlShrinker {
 	private static int matchBrace(String s, int openIdx) {
 		char open = s.charAt(openIdx);
 		char close = (open == '{') ? '}' : (open == '(') ? ')' : (open == '[' ? ']' : '\0');
-		if (close == '\0')
+		if (close == '\0') {
 			return -1;
+		}
 		int depth = 0;
 		boolean inStr = false;
 		char strQ = 0;
@@ -796,12 +835,13 @@ public final class SparqlShrinker {
 				}
 				continue;
 			}
-			if (c == open)
+			if (c == open) {
 				depth++;
-			else if (c == close) {
+			} else if (c == close) {
 				depth--;
-				if (depth == 0)
+				if (depth == 0) {
 					return i;
+				}
 			}
 		}
 		return -1;
@@ -821,21 +861,23 @@ public final class SparqlShrinker {
 				continue;
 			}
 			if (inStr) {
-				if (c == strQ && body.charAt(i - 1) != '\\')
+				if (c == strQ && body.charAt(i - 1) != '\\') {
 					inStr = false;
+				}
 				continue;
 			}
-			if (c == '{' || c == '(' || c == '[')
+			if (c == '{' || c == '(' || c == '[') {
 				depth++;
-			else if (c == '}' || c == ')' || c == ']')
+			} else if (c == '}' || c == ')' || c == ']') {
 				depth--;
-			else if (c == '.' && depth == 0) {
+			} else if (c == '.' && depth == 0) {
 				segs.add(new int[] { segStart, i + 1 }); // include dot
 				segStart = i + 1;
 			}
 		}
-		if (segStart < body.length())
+		if (segStart < body.length()) {
 			segs.add(new int[] { segStart, body.length() });
+		}
 		return segs;
 	}
 
@@ -886,8 +928,9 @@ public final class SparqlShrinker {
 				for (List<String> r : keep) {
 					sb.append('(');
 					for (int i = 0; i < r.size(); i++) {
-						if (i > 0)
+						if (i > 0) {
 							sb.append(' ');
+						}
 						sb.append(r.get(i));
 					}
 					sb.append(") ");
@@ -895,8 +938,9 @@ public final class SparqlShrinker {
 			} else {
 				// 1-col: header already "VALUES ?v {" form; keep rows as single terms
 				for (List<String> r : keep) {
-					if (!r.isEmpty())
+					if (!r.isEmpty()) {
 						sb.append(r.get(0)).append(' ');
+					}
 				}
 			}
 			sb.append('}');
@@ -913,37 +957,44 @@ public final class SparqlShrinker {
 				// Skip "SILENT" for SERVICE
 				if (kw.equals("SERVICE")) {
 					int s = indexOfWord(q, "SILENT", i);
-					if (s == i || s == i + 1)
+					if (s == i || s == i + 1) {
 						i = s + "SILENT".length();
+					}
 				}
 				// Skip ws, then token (IRI or var)
-				while (i < q.length() && Character.isWhitespace(q.charAt(i)))
+				while (i < q.length() && Character.isWhitespace(q.charAt(i))) {
 					i++;
-				if (i >= q.length())
+				}
+				if (i >= q.length()) {
 					break;
+				}
 
 				// Accept <...> or ?var/$var or prefixed name token; we just skip one token charwise.
 				if (q.charAt(i) == '<') {
 					int gt = q.indexOf('>', i + 1);
-					if (gt < 0)
+					if (gt < 0) {
 						break;
+					}
 					i = gt + 1;
 				} else if (q.charAt(i) == '?' || q.charAt(i) == '$') {
 					int j = i + 1;
-					while (j < q.length() && isNameChar(q.charAt(j)))
+					while (j < q.length() && isNameChar(q.charAt(j))) {
 						j++;
+					}
 					i = j;
 				} else {
 					// prefixed name
 					int j = i;
-					while (j < q.length() && isNameCharOrColon(q.charAt(j)))
+					while (j < q.length() && isNameCharOrColon(q.charAt(j))) {
 						j++;
+					}
 					i = j;
 				}
 
 				// Now expect '{'
-				while (i < q.length() && Character.isWhitespace(q.charAt(i)))
+				while (i < q.length() && Character.isWhitespace(q.charAt(i))) {
 					i++;
+				}
 				if (i >= q.length() || q.charAt(i) != '{') {
 					idx = indexOfWord(q, kw, idx + 1);
 					continue;
@@ -965,8 +1016,9 @@ public final class SparqlShrinker {
 		int idx = indexOfWord(q, kw, 0);
 		while (idx >= 0) {
 			int i = idx + kw.length();
-			while (i < q.length() && Character.isWhitespace(q.charAt(i)))
+			while (i < q.length() && Character.isWhitespace(q.charAt(i))) {
 				i++;
+			}
 			if (i < q.length() && q.charAt(i) == '{') {
 				int close = matchBrace(q, i);
 				if (close > i) {
@@ -983,19 +1035,22 @@ public final class SparqlShrinker {
 		int idx = indexOfWord(q, "FILTER", 0);
 		while (idx >= 0) {
 			int i = idx + "FILTER".length();
-			while (i < q.length() && Character.isWhitespace(q.charAt(i)))
+			while (i < q.length() && Character.isWhitespace(q.charAt(i))) {
 				i++;
+			}
 			// FILTER EXISTS { ... } or NOT EXISTS { ... }
 			int tmp = i;
 			if (matchWord(q, tmp, "NOT")) {
 				tmp = skipWord(q, tmp, "NOT");
-				while (tmp < q.length() && Character.isWhitespace(q.charAt(tmp)))
+				while (tmp < q.length() && Character.isWhitespace(q.charAt(tmp))) {
 					tmp++;
+				}
 			}
 			if (matchWord(q, tmp, "EXISTS")) {
 				tmp = skipWord(q, tmp, "EXISTS");
-				while (tmp < q.length() && Character.isWhitespace(q.charAt(tmp)))
+				while (tmp < q.length() && Character.isWhitespace(q.charAt(tmp))) {
 					tmp++;
+				}
 				if (tmp < q.length() && q.charAt(tmp) == '{') {
 					int close = matchBrace(q, tmp);
 					if (close > tmp) {
@@ -1007,8 +1062,9 @@ public final class SparqlShrinker {
 			// Otherwise assume FILTER <parenthesized expression>, remove up to matching ')'
 			if (i < q.length() && q.charAt(i) == '(') {
 				int close = matchBrace(q, i);
-				if (close > i)
+				if (close > i) {
 					return new Match(idx, close + 1, null, "FILTER");
+				}
 			}
 
 			idx = indexOfWord(q, "FILTER", idx + 1);
@@ -1020,12 +1076,14 @@ public final class SparqlShrinker {
 		int idx = indexOfWord(q, "BIND", 0);
 		while (idx >= 0) {
 			int i = idx + "BIND".length();
-			while (i < q.length() && Character.isWhitespace(q.charAt(i)))
+			while (i < q.length() && Character.isWhitespace(q.charAt(i))) {
 				i++;
+			}
 			if (i < q.length() && q.charAt(i) == '(') {
 				int close = matchBrace(q, i);
-				if (close > i)
+				if (close > i) {
 					return new Match(idx, close + 1, null, "BIND");
+				}
 			}
 			idx = indexOfWord(q, "BIND", idx + 1);
 		}
@@ -1036,22 +1094,27 @@ public final class SparqlShrinker {
 		int idx = indexOfWord(q, "VALUES", 0);
 		while (idx >= 0) {
 			int i = idx + "VALUES".length();
-			while (i < q.length() && Character.isWhitespace(q.charAt(i)))
+			while (i < q.length() && Character.isWhitespace(q.charAt(i))) {
 				i++;
-			if (i >= q.length())
+			}
+			if (i >= q.length()) {
 				break;
+			}
 
 			if (q.charAt(i) == '(') {
 				// Row form: VALUES (?x ?y) { (..).. }
 				int varClose = matchBrace(q, i);
-				if (varClose < 0)
+				if (varClose < 0) {
 					break;
+				}
 				int braceOpen = nextNonWs(q, varClose + 1);
-				if (braceOpen < 0 || q.charAt(braceOpen) != '{')
+				if (braceOpen < 0 || q.charAt(braceOpen) != '{') {
 					break;
+				}
 				int braceClose = matchBrace(q, braceOpen);
-				if (braceClose < 0)
+				if (braceClose < 0) {
 					break;
+				}
 
 				String header = q.substring(idx, braceOpen).trim() + " {";
 				String rowsTxt = q.substring(braceOpen + 1, braceClose).trim();
@@ -1060,14 +1123,17 @@ public final class SparqlShrinker {
 			} else if (q.charAt(i) == '?' || q.charAt(i) == '$') {
 				// 1-col form: VALUES ?x { a b UNDEF }
 				int afterVar = i + 1;
-				while (afterVar < q.length() && isNameChar(q.charAt(afterVar)))
+				while (afterVar < q.length() && isNameChar(q.charAt(afterVar))) {
 					afterVar++;
+				}
 				int braceOpen = nextNonWs(q, afterVar);
-				if (braceOpen < 0 || q.charAt(braceOpen) != '{')
+				if (braceOpen < 0 || q.charAt(braceOpen) != '{') {
 					break;
+				}
 				int braceClose = matchBrace(q, braceOpen);
-				if (braceClose < 0)
+				if (braceClose < 0) {
 					break;
+				}
 
 				String header = q.substring(idx, braceOpen).trim() + " {";
 				String rowsTxt = q.substring(braceOpen + 1, braceClose).trim();
@@ -1089,13 +1155,16 @@ public final class SparqlShrinker {
 			int i = 0;
 			while (true) {
 				i = skipWs(txt, i);
-				if (i >= txt.length())
+				if (i >= txt.length()) {
 					break;
-				if (txt.charAt(i) != '(')
+				}
+				if (txt.charAt(i) != '(') {
 					break;
+				}
 				int close = matchBrace(txt, i);
-				if (close < 0)
+				if (close < 0) {
 					break;
+				}
 				String row = txt.substring(i + 1, close).trim();
 				if (!row.isEmpty()) {
 					rows.add(Arrays.stream(row.split("\\s+")).collect(Collectors.toList()));
@@ -1106,12 +1175,14 @@ public final class SparqlShrinker {
 			// 1-col: tokens separated by whitespace
 			String[] parts = txt.split("\\s+");
 			for (String p : parts) {
-				if (!p.isEmpty())
+				if (!p.isEmpty()) {
 					rows.add(Collections.singletonList(p));
+				}
 			}
 		}
-		if (rows.isEmpty())
+		if (rows.isEmpty()) {
 			rows.add(Collections.singletonList("UNDEF")); // guard, though not used if caller checks accept()
+		}
 		return rows;
 	}
 
@@ -1128,32 +1199,37 @@ public final class SparqlShrinker {
 				continue;
 			}
 			if (inStr) {
-				if (c == qch && q.charAt(i - 1) != '\\')
+				if (c == qch && q.charAt(i - 1) != '\\') {
 					inStr = false;
+				}
 				continue;
 			}
-			if (c == '{')
+			if (c == '{') {
 				depth++;
-			else if (c == '}')
+			} else if (c == '}') {
 				depth--;
-			else if ((c == 'U' || c == 'u') && depth >= 1) {
+			} else if ((c == 'U' || c == 'u') && depth >= 1) {
 				// Try match "UNION"
 				if (matchWord(q, i, "UNION")) {
 					// Nearest preceding '}' at same depth+1
 					int leftClose = prevChar(q, '}', i - 1);
-					if (leftClose < 0)
+					if (leftClose < 0) {
 						continue;
+					}
 					// Find its matching '{'
 					int leftOpen = backwardsMatchBrace(q, leftClose);
-					if (leftOpen < 0)
+					if (leftOpen < 0) {
 						continue;
+					}
 					// Next '{' after UNION
 					int rightOpen = nextChar(q, '{', i + "UNION".length());
-					if (rightOpen < 0)
+					if (rightOpen < 0) {
 						continue;
+					}
 					int rightClose = matchBrace(q, rightOpen);
-					if (rightClose < 0)
+					if (rightClose < 0) {
 						continue;
+					}
 
 					return new UnionMatch(leftOpen, i, "UNION".length(), rightClose);
 				}
@@ -1163,17 +1239,20 @@ public final class SparqlShrinker {
 	}
 
 	private static int prevChar(String s, char ch, int from) {
-		for (int i = from; i >= 0; i--)
-			if (s.charAt(i) == ch)
+		for (int i = from; i >= 0; i--) {
+			if (s.charAt(i) == ch) {
 				return i;
+			}
+		}
 		return -1;
 	}
 
 	private static int backwardsMatchBrace(String s, int closeIdx) {
 		char close = s.charAt(closeIdx);
 		char open = (close == '}') ? '{' : (close == ')') ? '(' : (close == ']') ? '[' : '\0';
-		if (open == '\0')
+		if (open == '\0') {
 			return -1;
+		}
 		int depth = 0;
 		boolean inStr = false;
 		char qch = 0;
@@ -1185,28 +1264,32 @@ public final class SparqlShrinker {
 				continue;
 			}
 			if (inStr) {
-				if (c == qch && (i == 0 || s.charAt(i - 1) != '\\'))
+				if (c == qch && (i == 0 || s.charAt(i - 1) != '\\')) {
 					inStr = false;
+				}
 				continue;
 			}
-			if (c == close)
+			if (c == close) {
 				depth++;
-			else if (c == open) {
+			} else if (c == open) {
 				depth--;
-				if (depth == 0)
+				if (depth == 0) {
 					return i;
+				}
 			}
 		}
 		return -1;
 	}
 
 	private static boolean matchWord(String s, int pos, String word) {
-		if (pos < 0 || pos + word.length() > s.length())
+		if (pos < 0 || pos + word.length() > s.length()) {
 			return false;
+		}
 		String sub = s.substring(pos, pos + word.length());
 		boolean b = sub.equalsIgnoreCase(word);
-		if (!b)
+		if (!b) {
 			return false;
+		}
 		// Word boundary checks
 		boolean leftOk = (pos == 0) || !Character.isLetterOrDigit(s.charAt(pos - 1));
 		int end = pos + word.length();
@@ -1220,8 +1303,9 @@ public final class SparqlShrinker {
 
 	private static int nextNonWs(String s, int pos) {
 		int i = pos;
-		while (i < s.length() && Character.isWhitespace(s.charAt(i)))
+		while (i < s.length() && Character.isWhitespace(s.charAt(i))) {
 			i++;
+		}
 		return i < s.length() ? i : -1;
 	}
 
@@ -1274,8 +1358,9 @@ public final class SparqlShrinker {
 				}
 				// Comments: # ... EOL
 				if (c == '#') {
-					while (i < n && s.charAt(i) != '\n' && s.charAt(i) != '\r')
+					while (i < n && s.charAt(i) != '\n' && s.charAt(i) != '\r') {
 						i++;
+					}
 					continue;
 				}
 				// IRI
@@ -1301,8 +1386,9 @@ public final class SparqlShrinker {
 						}
 						j++;
 					}
-					if (j > n)
+					if (j > n) {
 						j = n;
+					}
 					out.add(new Token(s.substring(i, j), TKind.STRING));
 					i = j;
 					continue;
@@ -1310,8 +1396,9 @@ public final class SparqlShrinker {
 				// Variable
 				if (c == '?' || c == '$') {
 					int j = i + 1;
-					while (j < n && isNameChar(s.charAt(j)))
+					while (j < n && isNameChar(s.charAt(j))) {
 						j++;
+					}
 					out.add(new Token(s.substring(i, j), TKind.VAR));
 					i = j;
 					continue;
@@ -1325,8 +1412,9 @@ public final class SparqlShrinker {
 				// Word / prefixed name token (include colon and dot parts)
 				if (Character.isLetter(c) || c == '_') {
 					int j = i + 1;
-					while (j < n && isNameCharOrColon(s.charAt(j)))
+					while (j < n && isNameCharOrColon(s.charAt(j))) {
 						j++;
+					}
 					out.add(new Token(s.substring(i, j), TKind.WORD));
 					i = j;
 					continue;
@@ -1335,8 +1423,9 @@ public final class SparqlShrinker {
 				if (Character.isDigit(c)) {
 					int j = i + 1;
 					while (j < n && (Character.isDigit(s.charAt(j)) || s.charAt(j) == '.' || s.charAt(j) == 'e'
-							|| s.charAt(j) == 'E' || s.charAt(j) == '+' || s.charAt(j) == '-'))
+							|| s.charAt(j) == 'E' || s.charAt(j) == '+' || s.charAt(j) == '-')) {
 						j++;
+					}
 					out.add(new Token(s.substring(i, j), TKind.WORD));
 					i = j;
 					continue;
@@ -1349,13 +1438,15 @@ public final class SparqlShrinker {
 		}
 
 		static String join(List<Token> toks, boolean spacey) {
-			if (toks.isEmpty())
+			if (toks.isEmpty()) {
 				return "";
+			}
 			StringBuilder sb = new StringBuilder(toks.size() * 4);
 			Token prev = null;
 			for (Token t : toks) {
-				if (prev != null && spaceNeeded(prev, t, spacey))
+				if (prev != null && spaceNeeded(prev, t, spacey)) {
 					sb.append(' ');
+				}
 				sb.append(t.text);
 				prev = t;
 			}
@@ -1363,27 +1454,33 @@ public final class SparqlShrinker {
 		}
 
 		private static boolean spaceNeeded(Token a, Token b, boolean spacey) {
-			if (!spacey)
+			if (!spacey) {
 				return false;
+			}
 			// Separate word-ish tokens
 			if ((a.kind == TKind.WORD || a.kind == TKind.VAR || a.kind == TKind.STRING || a.kind == TKind.IRI)
-					&& (b.kind == TKind.WORD || b.kind == TKind.VAR || b.kind == TKind.STRING || b.kind == TKind.IRI))
+					&& (b.kind == TKind.WORD || b.kind == TKind.VAR || b.kind == TKind.STRING || b.kind == TKind.IRI)) {
 				return true;
+			}
 
 			// Around punctuation we can usually omit, but keep for safety around operators
 			String bt = b.text;
-			if ("|/^*!+=<>?".contains(bt))
+			if ("|/^*!+=<>?".contains(bt)) {
 				return true;
+			}
 			// Opening punctuation
-			if ("({[".contains(bt))
+			if ("({[".contains(bt)) {
 				return true;
+			}
 			// Closing punctuation doesn't need leading space
-			if (")}]".contains(bt))
+			if (")}]".contains(bt)) {
 				return false;
+			}
 
 			// Dots/semis/commas: ensure separation from words
-			if (".,;".contains(bt) && (a.kind == TKind.WORD || a.kind == TKind.VAR))
+			if (".,;".contains(bt) && (a.kind == TKind.WORD || a.kind == TKind.VAR)) {
 				return false;
+			}
 
 			return false;
 		}
@@ -1406,8 +1503,9 @@ public final class SparqlShrinker {
 	// Skip ASCII whitespace starting at pos; returns first non-ws index (or src.length()).
 	private static int skipWs(String s, int pos) {
 		int i = pos;
-		while (i < s.length() && Character.isWhitespace(s.charAt(i)))
+		while (i < s.length() && Character.isWhitespace(s.charAt(i))) {
 			i++;
+		}
 		return i;
 	}
 

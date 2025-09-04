@@ -89,8 +89,9 @@ public class BracesEffectTest {
 	}
 
 	private static String stripScopeMarkers(String algebraDump) {
-		if (algebraDump == null)
+		if (algebraDump == null) {
 			return null;
+		}
 		// Remove RDF4J pretty-printer markers indicating explicit variable-scope changes
 		return algebraDump.replace(" (new scope)", "");
 	}

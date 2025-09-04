@@ -173,10 +173,11 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			int depth = 1;
 			while (j < s.length() && depth > 0) {
 				char c = s.charAt(j++);
-				if (c == '(')
+				if (c == '(') {
 					depth++;
-				else if (c == ')')
+				} else if (c == ')') {
 					depth--;
+				}
 			}
 			if (depth != 0) {
 				// unmatched parentheses; append rest and stop
@@ -197,32 +198,37 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			boolean insertedGroup = false;
 			for (int k = 0; k < toks.length; k++) {
 				String tok = toks[k].trim();
-				if (tok.isEmpty())
+				if (tok.isEmpty()) {
 					continue;
+				}
 				boolean isNeg = tok.startsWith("!") && (tok.length() == 1 || tok.charAt(1) != '(');
 				if (isNeg) {
 					String member = tok.substring(1).trim();
-					if (neg.length() > 0)
+					if (neg.length() > 0) {
 						neg.append('|');
+					}
 					neg.append(member);
 					continue;
 				}
 				// flush any pending neg group before adding a positive token
 				if (neg.length() > 0 && !insertedGroup) {
-					if (rebuilt.length() > 0)
+					if (rebuilt.length() > 0) {
 						rebuilt.append('|');
+					}
 					rebuilt.append("!(").append(neg).append(")");
 					neg.setLength(0);
 					insertedGroup = true;
 				}
-				if (rebuilt.length() > 0)
+				if (rebuilt.length() > 0) {
 					rebuilt.append('|');
+				}
 				rebuilt.append(tok);
 			}
 			// flush at end if needed
 			if (neg.length() > 0) {
-				if (rebuilt.length() > 0)
+				if (rebuilt.length() > 0) {
 					rebuilt.append('|');
+				}
 				rebuilt.append("!(").append(neg).append(")");
 			}
 			out.append('(').append(rebuilt).append(')');
