@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -52,6 +53,11 @@ public class BindingSetAssignmentInlinerOptimizer implements QueryOptimizer {
 				}
 			}
 			super.meet(bsa);
+		}
+
+		@Override
+		public void meet(Service node) throws RuntimeException {
+			// do not inject bindings inside service clauses
 		}
 
 		@Override

@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -309,6 +310,31 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 		StatementPattern sp = (StatementPattern) difference.getRightArg();
 		assertThat(sp.getSubjectVar().getName()).isEqualTo("s1");
 		assertThat(sp.getSubjectVar().getValue()).isNull();
+	}
+
+	@Test
+	public void testServiceClause() {
+		String query = "SELECT * WHERE { SERVICE <urn:myService> { VALUES ?s1 { <urn:a> } ?s1 ?p1 ?o1 } }";
+
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+
+		QueryOptimizer optimizer = getOptimizer();
+		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
+
+		TupleExpr optimizedTreeRoot = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTree = ((QueryRoot) optimizedTreeRoot).getArg();
+
+		assertThat(optimizedTree).isInstanceOf(Projection.class);
+
+		Projection projection = (Projection) optimizedTree;
+
+		Service service = (Service) projection.getArg();
+
+		Join join = (Join) service.getArg();
+		Var s1 = ((StatementPattern) join.getRightArg()).getSubjectVar();
+		assertThat(s1.getName()).isEqualTo("s1");
+		assertThat(s1.hasValue()).isFalse();
+
 	}
 
 	@Override
