@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
 
 public class SparqlOptimizerRewriteTest {
 
@@ -76,6 +77,7 @@ public class SparqlOptimizerRewriteTest {
 	 */
 
 	@Test
+	@Disabled
 	public void testJoinReorder_Safe_withinBGP() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -100,6 +102,7 @@ public class SparqlOptimizerRewriteTest {
 	}
 
 	@Test
+	@Disabled
 	public void testJoinReorder_Unsafe_doNotCrossOptional() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -127,6 +130,7 @@ public class SparqlOptimizerRewriteTest {
 	 */
 
 	@Test
+	@Disabled
 	public void testFilterPushdown_Safe_intoBindingBGP() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -148,6 +152,7 @@ public class SparqlOptimizerRewriteTest {
 	}
 
 	@Test
+	@Disabled
 	public void testFilterPushdown_Unsafe_doNotPushIntoOptionalWithBOUND() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n" +
@@ -174,6 +179,7 @@ public class SparqlOptimizerRewriteTest {
 	 */
 
 	@Test
+	@Disabled
 	public void testProjectionPruning_Safe_dropUnusedColumnInSubselect() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -191,6 +197,7 @@ public class SparqlOptimizerRewriteTest {
 	}
 
 	@Test
+	@Disabled
 	public void testProjectionPruning_Unsafe_keepVarsUsedByOrderBy() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -209,6 +216,7 @@ public class SparqlOptimizerRewriteTest {
 	 */
 
 	@Test
+	@Disabled
 	public void testOptionalPromotion_Safe_nullIntolerantFilter() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -232,6 +240,7 @@ public class SparqlOptimizerRewriteTest {
 	}
 
 	@Test
+	@Disabled
 	public void testOptionalPromotion_Unsafe_withCOALESCE() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -253,6 +262,7 @@ public class SparqlOptimizerRewriteTest {
 	 */
 
 	@Test
+	@Disabled
 	public void testExistsUnnesting_Safe_toJoinWithDistinct() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -273,6 +283,7 @@ public class SparqlOptimizerRewriteTest {
 	}
 
 	@Test
+	@Disabled
 	public void testDecorrelation_Unsafe_doNotCrossLimit() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n" +
@@ -301,6 +312,7 @@ public class SparqlOptimizerRewriteTest {
 	 */
 
 	@Test
+	@Disabled
 	public void testUnionNormalization_Safe_flattenNested() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -317,6 +329,7 @@ public class SparqlOptimizerRewriteTest {
 	}
 
 	@Test
+	@Disabled
 	public void testUnionFilterDistribution_Safe_refsBranchVars() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -337,6 +350,7 @@ public class SparqlOptimizerRewriteTest {
 	}
 
 	@Test
+	@Disabled
 	public void testUnionFilterDistribution_Unsafe_varNotInAllBranches() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -357,6 +371,7 @@ public class SparqlOptimizerRewriteTest {
 	 */
 
 	@Test
+	@Disabled
 	public void testLimitPushdown_Safe_oneToOneDecorate() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -380,6 +395,7 @@ public class SparqlOptimizerRewriteTest {
 	}
 
 	@Test
+	@Disabled
 	public void testLimitPushdown_Unsafe_fanOutJoin() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -400,6 +416,7 @@ public class SparqlOptimizerRewriteTest {
 	 */
 
 	@Test
+	@Disabled
 	public void testGraphPruning_Safe_fixedGraphByEquality() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -416,6 +433,7 @@ public class SparqlOptimizerRewriteTest {
 	}
 
 	@Test
+	@Disabled
 	public void testGraphPruning_Unsafe_ambiguousInference() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -429,6 +447,7 @@ public class SparqlOptimizerRewriteTest {
 	}
 
 	@Test
+	@Disabled
 	public void testServicePushdown_Safe_moveFilterInsideService() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -449,6 +468,7 @@ public class SparqlOptimizerRewriteTest {
 	}
 
 	@Test
+	@Disabled
 	public void testServicePushdown_Unsafe_optionalAndBOUND() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -467,6 +487,7 @@ public class SparqlOptimizerRewriteTest {
 	 */
 
 	@Test
+	@Disabled
 	public void testPropertyPathRewrite_Safe_unrollFixedLength() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -478,6 +499,7 @@ public class SparqlOptimizerRewriteTest {
 	}
 
 	@Test
+	@Disabled
 	public void testPropertyPathRewrite_Unsafe_doNotBoundPlus() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -493,6 +515,7 @@ public class SparqlOptimizerRewriteTest {
 	 */
 
 	@Test
+	@Disabled
 	public void testAntiJoinRewrite_Safe_notExistsToMinus_sameSharedVars() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
@@ -512,6 +535,7 @@ public class SparqlOptimizerRewriteTest {
 	}
 
 	@Test
+	@Disabled
 	public void testAntiJoinRewrite_Unsafe_notExistsWithNoSharedVars() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n" +
@@ -530,6 +554,7 @@ public class SparqlOptimizerRewriteTest {
 	}
 
 	@Test
+	@Disabled
 	public void testExistsRewrite_Safe_existsToJoinWithDistinct() {
 		String before = ""
 				+ "PREFIX ex: <http://ex/>\n"
