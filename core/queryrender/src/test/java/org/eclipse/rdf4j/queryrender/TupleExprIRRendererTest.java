@@ -30,7 +30,10 @@ import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 
+@Execution(ExecutionMode.SAME_THREAD)
 public class TupleExprIRRendererTest {
 
 	private static final String EX = "http://ex/";
@@ -206,7 +209,7 @@ public class TupleExprIRRendererTest {
 			TupleExpr actualTe = null;
 
 			System.out.println("\n\n\n");
-			System.out.println("# Original SPARQL query\n" + sparql + "\n");
+			System.out.println("# Original SPARQL query\n" + SparqlFormatter.format(sparql) + "\n");
 			if (expectedTe != null) {
 				System.out.println("# Original TupleExpr\n" + expectedTe + "\n");
 			}
@@ -2726,12 +2729,14 @@ public class TupleExprIRRendererTest {
 	void testFilterExistsNested4() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pC ?u1 .\n" +
-				"  FILTER EXISTS { \n" +
+				"  FILTER EXISTS {\n" +
 				"    ?s ex:pC ?u0 .\n" +
-				"    { FILTER EXISTS {\n" +
-				"      ?s !(ex:pA|^<http://example.org/p/I0>) ?o .\n" +
-				"    } }\n" +
-				"  } \n" +
+				"    {\n" +
+				"      FILTER EXISTS {\n" +
+				"        ?s !(ex:pA|^<http://example.org/p/I0>) ?o .\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
 				"}";
 
 		assertSameSparqlQuery(q, cfg());
@@ -3042,16 +3047,35 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pC ?u1 .\n" +
 				"  FILTER EXISTS {\n" +
-				"    { \n" +
+				"    {\n" +
 				"      GRAPH <http://graphs.example/g0> {\n" +
 				"        ?s !foaf:knows ?o .\n" +
 				"      }\n" +
 				"    }\n" +
-				"      GRAPH <http://graphs.example/g0> {\n" +
-				"        ?s !foaf:knows2 ?o .\n" +
-				"      }\n" +
+				"    GRAPH <http://graphs.example/g0> {\n" +
+				"      ?s !foaf:knows2 ?o .\n" +
+				"    }\n" +
 				"  }\n" +
-				"}\n";
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testFilterExistsGraphScope5() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  ?s ex:pC ?u1 .\n" +
+				"  FILTER EXISTS {\n" +
+				"    GRAPH <http://graphs.example/g0> {\n" +
+				"      {\n" +
+				"        ?s !foaf:knows ?o .\n" +
+				"      }\n" +
+				"    }\n" +
+				"    GRAPH <http://graphs.example/g0> {\n" +
+				"      ?s !foaf:knows2 ?o .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
 
 		assertSameSparqlQuery(q, cfg());
 	}
@@ -3264,7 +3288,7 @@ public class TupleExprIRRendererTest {
 				"  {\n" +
 				"    GRAPH <http://graphs.example/g1> {\n" +
 				"      {\n" +
-				"        ?s ex:pC ?u0 . FILTER EXISTS {\n" +
+				"        ?s ex:pC ?u0 . \nFILTER EXISTS {\n" +
 				"          ?s !(ex:pB|^ex:pA) ?o . \n" +
 				"        }\n" +
 				"      }\n" +
@@ -3298,7 +3322,7 @@ public class TupleExprIRRendererTest {
 				"  {\n" +
 				"    GRAPH <http://graphs.example/g0> {\n" +
 				"      {\n" +
-				"        ?s ex:pC ?u0 . FILTER EXISTS {\n" +
+				"        ?s ex:pC ?u0 . \nFILTER EXISTS {\n" +
 				"          ?s ^ex:pC ?o . \n" +
 				"        }\n" +
 				"      }\n" +
@@ -4084,6 +4108,24 @@ public class TupleExprIRRendererTest {
 				"          ?u1 ex:pD ?v1 .\n" +
 				"        }\n" +
 				"      }\n" +
+				"}";
+
+		assertSameSparqlQuery(q, cfg());
+	}
+
+	@Test
+	void testServiceFilterExistsAndScope() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  SERVICE SILENT <http://services.example/sparql> {\n" +
+				"    {\n" +
+				"      ?s ex:pC ?u1 .\n" +
+				"      FILTER EXISTS {\n" +
+				"        {\n" +
+				"          ?s ^ex:pB ?o .\n" +
+				"        }\n" +
+				"      }\n" +
+				"    }\n" +
+				"  }\n" +
 				"}";
 
 		assertSameSparqlQuery(q, cfg());
