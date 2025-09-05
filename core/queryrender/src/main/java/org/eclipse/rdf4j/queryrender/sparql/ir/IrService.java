@@ -10,11 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
+import org.eclipse.rdf4j.query.algebra.Var;
+
 import java.util.Collections;
 import java.util.Set;
 import java.util.function.UnaryOperator;
-
-import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * Textual IR node for a SERVICE block.
@@ -55,12 +55,7 @@ public class IrService extends IrNode {
 		}
 		p.append(serviceRefText);
 		p.append(" ");
-		IrBGP inner = bgp;
-		// Rely solely on the transform pipeline for structural rewrites. Printing preserves
-		// whatever grouping/GRAPH context the IR carries at this point.
-		// Seriously, leave this alone! Let the inner section print itself.
-		inner.print(p); // IrBGP prints braces
-
+		bgp.print(p);
 	}
 
 	@Override

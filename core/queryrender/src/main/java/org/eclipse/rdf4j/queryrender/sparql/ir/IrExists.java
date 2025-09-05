@@ -28,6 +28,11 @@ public class IrExists extends IrNode {
 		this.where = where;
 	}
 
+	@Override
+	public void setNewScope(boolean newScope) {
+		super.setNewScope(newScope);
+	}
+
 	public IrBGP getWhere() {
 		return where;
 	}
@@ -38,23 +43,7 @@ public class IrExists extends IrNode {
 		// that callers (e.g., IrFilter) can render "... . FILTER EXISTS {" on a single line.
 		p.append("EXISTS ");
 		if (where != null) {
-			IrBGP content = where;
-			// If the EXISTS expression itself was marked as a variable-scope change
-			// (e.g., original query used an extra group: EXISTS { { GRAPH ... } }),
-			// ensure we preserve that explicit grouping even if later transforms
-			// rewrote the inner body and dropped the BGP.newScope flag.
-			if (this.isNewScope() && !content.isNewScope()) {
-				// Only synthesize an outer grouping when the EXISTS body is a single GRAPH block.
-				// This matches cases where the original query wrote EXISTS { { GRAPH ... { ... } } }
-				// and avoids over-grouping more complex bodies (which can change algebraic scope markers).
-				boolean singleGraph = content.getLines().size() == 1 && content.getLines().get(0) instanceof IrGraph;
-				if (singleGraph) {
-					IrBGP wrap = new IrBGP(true);
-					wrap.add(content);
-					content = wrap;
-				}
-			}
-			toPrint(content).print(p);
+			where.print(p);
 		} else {
 			p.openBlock();
 			p.closeBlock();
