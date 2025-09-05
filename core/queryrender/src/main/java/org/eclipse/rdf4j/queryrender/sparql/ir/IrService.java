@@ -10,11 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
-import org.eclipse.rdf4j.query.algebra.Var;
-
 import java.util.Collections;
 import java.util.Set;
 import java.util.function.UnaryOperator;
+
+import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * Textual IR node for a SERVICE block.
