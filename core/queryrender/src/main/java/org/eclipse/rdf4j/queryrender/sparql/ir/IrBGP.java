@@ -40,6 +40,11 @@ public class IrBGP extends IrNode {
 		add(where);
 	}
 
+	@Override
+	public void setNewScope(boolean newScope) {
+		super.setNewScope(newScope);
+	}
+
 	public List<IrNode> getLines() {
 		return lines;
 	}
@@ -71,7 +76,6 @@ public class IrBGP extends IrNode {
 			t = t.transformChildren(op);
 			w.add(t == null ? ln : t);
 		}
-		w.setNewScope(this.isNewScope());
 		return w;
 	}
 
