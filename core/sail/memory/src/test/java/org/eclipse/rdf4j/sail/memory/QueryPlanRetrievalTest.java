@@ -287,14 +287,14 @@ public class QueryPlanRetrievalTest {
 					"      ║  │     Bound\n" +
 					"      ║  │        Var (name=g)\n" +
 					"      ║  └── Join (JoinIterator)\n" +
-					"      ║     ╠══ Filter (new scope) [left]\n" +
+					"      ║     ╠══ Filter [left]\n" +
 					"      ║     ║  ├── And\n" +
-					"      ║     ║  │  ╠══ Bound\n" +
-					"      ║     ║  │  ║     Var (name=s)\n" +
-					"      ║     ║  │  ╚══ Compare (>)\n" +
-					"      ║     ║  │        Var (name=o)\n" +
-					"      ║     ║  │        ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"      ║     ║  │  ╠══ Compare (>)\n" +
+					"      ║     ║  │  ║     Var (name=o)\n" +
+					"      ║     ║  │  ║     ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
+					"      ║     ║  │  ╚══ Bound\n" +
+					"      ║     ║  │        Var (name=s)\n" +
 					"      ║     ║  └── StatementPattern (costEstimate=2.50, resultSizeEstimate=0)\n" +
 					"      ║     ║        s: Var (name=s)\n" +
 					"      ║     ║        p: Var (name=_const_c03ab50c_uri, value=http://example.com/p, anonymous)\n" +
@@ -325,11 +325,11 @@ public class QueryPlanRetrievalTest {
 					"         ├── And\n" +
 					"         │  ╠══ And\n" +
 					"         │  ║  ├── Compare (!=)\n" +
-					"         │  ║  │     Var (name=g)\n" +
-					"         │  ║  │     ValueConstant (value=http://example.com/Bad)\n" +
+					"         │  ║  │     Var (name=o)\n" +
+					"         │  ║  │     ValueConstant (value=\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
 					"         │  ║  └── Compare (!=)\n" +
-					"         │  ║        Var (name=o)\n" +
-					"         │  ║        ValueConstant (value=\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"         │  ║        Var (name=g)\n" +
+					"         │  ║        ValueConstant (value=http://example.com/Bad)\n" +
 					"         │  ╚══ ListMemberOperator\n" +
 					"         │        Var (name=o2)\n" +
 					"         │        ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
@@ -1334,20 +1334,19 @@ public class QueryPlanRetrievalTest {
 					"      ║     ║     p: Var (name=b)\n" +
 					"      ║     ║     o: Var (name=c)\n" +
 					"      ║     ╚══ Union (resultSizeActual=20) [right]\n" +
-					"      ║        ├── StatementPattern (new scope) (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=10)\n"
+					"      ║        ├── StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=10)\n"
 					+
 					"      ║        │     s: Var (name=c2)\n" +
 					"      ║        │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
 					"      ║        │     o: Var (name=type1)\n" +
-					"      ║        └── StatementPattern (new scope) (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=10)\n"
+					"      ║        └── StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=10)\n"
 					+
 					"      ║              s: Var (name=c2)\n" +
 					"      ║              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
 					"      ║              o: Var (name=type2)\n" +
-					"      ╚══ StatementPattern (new scope) (costEstimate=6.61, resultSizeEstimate=12, resultSizeActual=4)\n"
-					+
+					"      ╚══ StatementPattern (costEstimate=6.61, resultSizeEstimate=12, resultSizeActual=4)\n" +
 					"            s: Var (name=type)\n" +
 					"            p: Var (name=d)\n" +
 					"            o: Var (name=c)\n";
@@ -2114,28 +2113,24 @@ public class QueryPlanRetrievalTest {
 			String render = tupleExprToSparql.render(tupleExpr);
 			System.out.println(render);
 
-			assertThat(render).isEqualToNormalizingNewlines("SELECT *\n" +
-					"WHERE {\n" +
+			assertThat(render).isEqualToNormalizingNewlines("SELECT (COUNT(*) AS ?count) WHERE {\n" +
 					"  ?a <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type .\n" +
 					"  OPTIONAL {\n" +
 					"    ?a <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type .\n" +
-					"    ?type <http://www.w3.org/2000/01/rdf-schema#subClassOff> ?_anon_be3a8ae3cefc4d99a602e53eb87c77a23637 .\n"
+					"    ?type <http://www.w3.org/2000/01/rdf-schema#subClassOff>/<http://www.w3.org/2000/01/rdf-schema#subClassOff> ?superSuper .\n"
 					+
-					"    ?_anon_be3a8ae3cefc4d99a602e53eb87c77a23637 <http://www.w3.org/2000/01/rdf-schema#subClassOff> ?superSuper .\n"
-					+
-					"    FILTER ((?superSuper != <http://www.w3.org/2000/01/rdf-schema#Resource>))\n" +
+					"    FILTER (?superSuper != <http://www.w3.org/2000/01/rdf-schema#Resource>)\n" +
 					"    OPTIONAL {\n" +
 					"      {\n" +
 					"        ?superSuper <http://www.w3.org/2000/01/rdf-schema#seeAlso> ?seeAlso .\n" +
 					"      }\n" +
-					"            UNION\n" +
+					"      UNION\n" +
 					"      {\n" +
 					"        ?superSuper <http://www.w3.org/2000/01/rdf-schema#label> ?label .\n" +
 					"      }\n" +
-					"      FILTER ((?superSuper != <http://www.w3.org/2000/01/rdf-schema#Resource>))\n" +
+					"      FILTER (?superSuper != <http://www.w3.org/2000/01/rdf-schema#Resource>)\n" +
 					"    }\n" +
 					"  }\n" +
-					"  BIND(COUNT(*) AS ?count)\n" +
 					"}");
 
 //			String actual = query.explain(Explanation.Level.Optimized).toString();
@@ -2321,8 +2316,7 @@ public class QueryPlanRetrievalTest {
 			assertThat(render).isEqualToNormalizingNewlines("" +
 					"PREFIX dc: <http://purl.org/dc/elements/1.1/>\n" +
 					"PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" +
-					"SELECT ?a ?type1 ?b ?type2\n" +
-					"WHERE {\n" +
+					"SELECT ?a ?type1 ?b ?type2 WHERE {\n" +
 					"  ?a rdf:type ?type1 .\n" +
 					"  FILTER (?type1 != dc:Agent)\n" +
 					"  ?b rdf:type ?type2 .\n" +
