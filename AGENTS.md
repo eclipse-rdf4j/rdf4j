@@ -21,6 +21,22 @@ Welcome, Codex Agent! Your persistence, curiosity, and craftsmanship make a diff
 - **Network:** only when needed to fetch missing deps/plugins; then rerun the exact command **without** `-o` once, and return to offline.
 - **Large project:** some module test suites can take **5–10 minutes**. Be patient, but bias toward **targeted** runs to keep momentum.
 
+### Maven `-am` usage (house rule)
+
+`-am` (also-make) pulls in required upstream modules. That’s helpful for **compiles**, but hazardous for **tests**: Maven will advance included modules to the same lifecycle phase and run **their** tests too.
+
+**Rule of thumb**
+- ✅ Use `-am` **only** for compile/verify with tests skipped:
+  - `mvn -o -pl <module> -am -Pquick verify -DskipTests`
+  - or: `mvn -o -pl <module> -am -Pquick package`
+- ❌ Do **not** use `-am` with `test` or with `verify` when tests are enabled.
+
+**Two-step pattern (fast + safe)**
+1) **Compile deps fast (skip tests):**  
+   `mvn -o -pl <module> -am -Pquick verify -DskipTests`
+2) **Run tests (no also-make):**  
+   `mvn -o -pl <module> test`
+
 ## Quick Start (First 10 Minutes)
 1. **Discover**
   - List modules: inspect root `pom.xml` (aggregator) and the module tree (see “Maven Module Overview” below).
@@ -66,7 +82,7 @@ Welcome, Codex Agent! Your persistence, curiosity, and craftsmanship make a diff
 - **Checkpoint cadence:** inform to maintain visibility; do **not** block on approvals unless required.
 
 ## Testing Strategy
-- **Prefer module tests you touched:** `-pl <module> -am`
+- **Prefer module tests you touched:** `-pl <module>`
 - **Narrow further** to a class/method for tight loops; then broaden to the module.
 - **Expand scope** when:
   - Your change crosses module boundaries, or
@@ -80,35 +96,6 @@ Welcome, Codex Agent! Your persistence, curiosity, and craftsmanship make a diff
   - `-DtrimStackTrace=false` (full traces)
   - `-DskipITs` (focus on unit tests)
   - `-DfailIfNoTests=false` (when selecting a class that has no tests on some platforms)
-
-## RDF4J Task Recipes (pick one and run end‑to‑end)
-> Use **targeted** module builds (`-pl <module> -am`) for speed; finish with a verifying run.
-
-1. **Rio/Turtle regression (parser behavior)**
-  - Add/adjust a test in **`core/rio/turtle`** (e.g., unicode escapes or edge cases).
-  - Run: `mvn -o -pl core/rio/turtle -am -Dtest=TurtleParserTest test`
-  - Implement minimal fix in the module; format; re‑run test.
-  - Verify broader impact if needed: `mvn -o -pl core/rio verify`
-
-2. **SHACL validation tweak (sail behavior)**
-  - Reproduce/encode failing scenario in **`core/sail/shacl`** tests.
-  - Run: `mvn -o -pl core/sail/shacl test`
-  - Implement fix; add assertions; verify: `mvn -o -pl core/sail/shacl verify`
-
-3. **SPARQL parsing edge case**
-  - Add a focused test in **`core/queryparser/sparql`**.
-  - Run: `mvn -o -pl core/queryparser/sparql test`
-  - Implement and verify; if algebra/evaluation is affected, broaden to `core/query*`.
-
-4. **Repository API behavior**
-  - Write/adjust tests in **`core/repository/api`** (e.g., transaction semantics).
-  - Run: `mvn -o -pl core/repository/api test`
-  - Implement, format, and verify locally; expand to neighboring repository modules only if needed.
-
-5. **Compliance/IT stabilization**
-  - Identify a flaky/slow IT in **`compliance/*`**; fix determinism (fixed seeds, cleanup).
-  - Run focused ITs: `mvn -o -pl compliance/<area> verify -Dit.test=ITClass#method`
-  - Leave clear comments if any test remains quarantined (last resort).
 
 ## Triage Playbook
 - **Missing dep/plugin offline**
@@ -166,7 +153,7 @@ Do **not** modify existing headers’ years.
   - Adding dependencies, changing build profiles, or altering licensing.
 - **Prefer reversible moves:** take the smallest local change that unblocks progress; validate with targeted tests before expanding scope.
 - **Choose defaults**
-  - **Tests:** start with `-pl <module> -am`, then `-Dtest=Class#method` / `-Dit.test=ITClass#method`.
+  - **Tests:** start with `-pl <module>`, then `-Dtest=Class#method` / `-Dit.test=ITClass#method`.
   - **Build:** use `-o` quick/profiled commands; briefly drop `-o` to fetch missing deps, then return offline.
   - **Formatting:** run formatter/impsort/xml‑format proactively before verify.
   - **Reports:** read surefire/failsafe locally; expand scope only when necessary.
