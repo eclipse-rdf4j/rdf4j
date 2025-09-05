@@ -28,11 +28,6 @@ public class IrExists extends IrNode {
 		this.where = where;
 	}
 
-	@Override
-	public void setNewScope(boolean newScope) {
-		super.setNewScope(newScope);
-	}
-
 	public IrBGP getWhere() {
 		return where;
 	}

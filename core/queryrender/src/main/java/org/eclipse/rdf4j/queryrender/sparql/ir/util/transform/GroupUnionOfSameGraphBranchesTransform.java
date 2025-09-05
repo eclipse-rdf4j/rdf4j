@@ -62,7 +62,7 @@ public final class GroupUnionOfSameGraphBranchesTransform extends BaseTransform 
 		return res;
 	}
 
-	private static IrUnion rewriteUnion(IrUnion u) {
+	private static IrNode rewriteUnion(IrUnion u) {
 		if (!u.isNewScope()) {
 			return u;
 		}
@@ -135,6 +135,19 @@ public final class GroupUnionOfSameGraphBranchesTransform extends BaseTransform 
 			u2.addBranch(apply(branch));
 		}
 		u2.setNewScope(u.isNewScope());
+
+		// If the rewrite collapsed the UNION to a single branch (e.g., both branches
+		// were GRAPH blocks with the same graph ref), drop the outer UNION entirely
+		// and return the single branch BGP. This avoids leaving behind a degenerate
+		// UNION wrapper that would introduce extra grouping braces at print time.
+		if (u2.getBranches().size() == 1) {
+			IrBGP only = u2.getBranches().get(0);
+			if (only.getLines().size() == 1) {
+				return only.getLines().get(0); // return the single GRAPH directly (no extra braces)
+			}
+			return only;
+		}
+
 		return u2;
 	}
 
