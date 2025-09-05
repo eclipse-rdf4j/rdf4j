@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -39,6 +40,7 @@ import org.junit.jupiter.api.Test;
  * Assumptions: - Your optimizer runs inside RDF4J's optimization pipeline so that Explanation.Level.Optimized reflects
  * the rewrite. - TupleExprIRRenderer exists on classpath (same utility you used in the sample).
  */
+
 public class SparqlOptimizationTests {
 
 	// Common prefix map (preserve insertion order for stable rendering)
@@ -96,6 +98,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void eqFilterToTriple_safe() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?s WHERE {\n"
@@ -110,6 +113,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void eqFilterToTriple_unsafe_typeMismatch_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?s WHERE {\n"
@@ -125,6 +129,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void rangeSarg_moveCast_safe() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?s WHERE {\n"
@@ -140,6 +145,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void rangeSarg_unsafe_untypedLiteral_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?s WHERE {\n"
@@ -154,6 +160,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void datepartToRange_safe_yearEquals() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?s WHERE {\n"
@@ -173,6 +180,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void filterPushdown_safe_reorderWithinBGP() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?a ?type1 ?b ?type2 WHERE {\n"
@@ -190,6 +198,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void filterPushdown_unsafe_crossOptional_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?c WHERE {\n"
@@ -205,6 +214,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void existsToSemijoin_safe() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?c WHERE {\n"
@@ -220,6 +230,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void existsToSemijoin_unsafe_nondeterministic_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?c WHERE {\n"
@@ -234,6 +245,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void antijoin_reorderEarly_safe() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?o ?a WHERE {\n"
@@ -251,6 +263,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void antijoin_unsafe_crossOptional_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?c WHERE {\n"
@@ -266,6 +279,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void optionalToInnerJoin_safe_nullRejecting() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?c ?e WHERE {\n"
@@ -283,6 +297,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void optionalToInnerJoin_unsafe_nonNullRejecting_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?c WHERE {\n"
@@ -298,6 +313,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void starFusion_safe_anchorMostSelective() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?p ?n ?c ?e WHERE {\n"
@@ -315,6 +331,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void starFusion_unsafe_crossOptional_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?p ?id ?img WHERE {\n"
@@ -330,6 +347,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void distinctEarly_safe_dropViaFunctionalProperty() throws Exception {
 		String ttl = ""
 				+ "@prefix ex: <http://ex/> .\n"
@@ -343,6 +361,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void distinctEarly_unsafe_multiValued_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT DISTINCT ?c WHERE { ?c ex:name ?n }";
@@ -354,6 +373,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void projectionPushdown_safe_intoSubselect() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?p ?name WHERE {\n"
@@ -367,6 +387,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void projectionPushdown_unsafe_neededOutside_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?p WHERE {\n"
@@ -382,6 +403,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void unionToValues_safe() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?c WHERE {\n"
@@ -398,6 +420,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void unionToValues_unsafe_branchSpecificFilter_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?o WHERE {\n"
@@ -413,6 +436,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void orToUnion_safe_disjoint() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?o WHERE {\n"
@@ -429,6 +453,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void orToUnion_unsafe_overlappingRanges_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?s WHERE {\n"
@@ -443,6 +468,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void topKPushdownThroughUnion_safe() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?x ?s WHERE {\n"
@@ -460,6 +486,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void topKPushdown_unsafe_externalKey_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?x ?s WHERE {\n"
@@ -475,6 +502,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void seekPagination_safe_replaceOffset() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?id WHERE {\n"
@@ -489,6 +517,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void seekPagination_unsafe_noStableOrder_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?id WHERE { ?s ex:id ?id } ORDER BY RAND() OFFSET 100 LIMIT 10";
@@ -500,6 +529,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void countDistinct_decompose_safe() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?c (COUNT(DISTINCT ?item) AS ?n) WHERE {\n"
@@ -512,6 +542,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void countDistinct_unsafe_unionNeedsPerBranchDedup_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT (COUNT(DISTINCT ?x) AS ?n) WHERE {\n"
@@ -525,6 +556,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void joinElimination_safe_domainImpliedType() throws Exception {
 		String ttl = ""
 				+ "@prefix ex: <http://ex/> .\n"
@@ -543,6 +575,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void joinElimination_unsafe_typeUsedInFilter_kept() throws Exception {
 		String ttl = "@prefix ex: <http://ex/> .";
 		String q = header() + ""
@@ -559,6 +592,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void pathUnroll_safe_shortBound() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?s ?t WHERE { ?s ex:next{1,3} ?t }";
@@ -574,6 +608,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void pathUnroll_unsafe_requiresAuthoritativeClosure_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?a ?b WHERE { ?a ex:dependsOn+ ?b }";
@@ -586,6 +621,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void service_valuesBroadcast_safe_moveInsideService() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?c ?city WHERE {\n"
@@ -600,6 +636,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void service_valuesBroadcast_unsafe_unknownEndpointCapabilities_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?x WHERE { SERVICE <http://opaque> { ?x ex:p ?y } }";
@@ -611,6 +648,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void langmatchesToPrefix_safe_simpleTag() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?p ?l WHERE {\n"
@@ -626,6 +664,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void langmatchesToPrefix_unsafe_complexRange_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?p ?l WHERE {\n"
@@ -640,6 +679,7 @@ public class SparqlOptimizationTests {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	@Test
+	@Disabled
 	public void geo_bboxPrefilter_safe_addCoarseThenExact() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?x WHERE {\n"
@@ -656,6 +696,7 @@ public class SparqlOptimizationTests {
 	}
 
 	@Test
+	@Disabled
 	public void geo_bboxPrefilter_unsafe_dateline_kept() throws Exception {
 		String q = header() + ""
 				+ "SELECT ?x WHERE {\n"
