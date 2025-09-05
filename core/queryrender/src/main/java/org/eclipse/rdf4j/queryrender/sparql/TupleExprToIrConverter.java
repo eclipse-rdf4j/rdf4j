@@ -1615,27 +1615,14 @@ public class TupleExprToIrConverter {
 				final TupleExpr sub = ex.getSubQuery();
 				IRBuilder inner = new IRBuilder();
 				IrBGP bgp = inner.build(sub);
-				boolean newScope = false;
-				// Heuristic 1: direct FILTER at root
-				if (sub instanceof Filter) {
-					newScope = ((Filter) sub).isVariableScopeChange();
-				} else if (sub instanceof Join) {
-					// Heuristic 2: explicit Join-level scope or any Filter child marked as scope-changing
-					if (((Join) sub).isVariableScopeChange()) {
-						newScope = true;
-					} else {
-						List<TupleExpr> parts = new ArrayList<>();
-						flattenJoin(sub, parts);
-						for (TupleExpr te : parts) {
-							if (te instanceof Filter && ((Filter) te).isVariableScopeChange()) {
-								newScope = true;
-								break;
-							}
-						}
-					}
+				// If the root of the EXISTS subquery encodes an explicit variable-scope change in the
+				// algebra (e.g., StatementPattern/Join/Filter with "(new scope)"), mark the inner BGP
+				// as a new scope so that EXISTS renders with an extra brace layer: EXISTS { { ... } }.
+				if (rootHasExplicitScope(sub)) {
+					bgp.setNewScope(true);
 				}
 
-				IrExists exNode = new IrExists(bgp, newScope);
+				IrExists exNode = new IrExists(bgp, false);
 				return new IrFilter(exNode, false);
 			}
 			final String cond = TupleExprIRRenderer.stripRedundantOuterParens(r.renderExprPublic(condExpr));
@@ -1843,6 +1830,7 @@ public class TupleExprToIrConverter {
 					for (IrNode ln : wl.getLines()) {
 						sub.add(ln);
 					}
+					sub.setNewScope(true);
 					irU.addBranch(sub);
 				} else {
 					irU.addBranch(wl);
@@ -1854,6 +1842,7 @@ public class TupleExprToIrConverter {
 					for (IrNode ln : wr.getLines()) {
 						sub.add(ln);
 					}
+					sub.setNewScope(true);
 					irU.addBranch(sub);
 				} else {
 					irU.addBranch(wr);
@@ -1873,6 +1862,7 @@ public class TupleExprToIrConverter {
 					for (IrNode ln : wb.getLines()) {
 						sub.add(ln);
 					}
+					sub.setNewScope(true);
 					irU.addBranch(sub);
 				} else {
 					irU.addBranch(wb);
