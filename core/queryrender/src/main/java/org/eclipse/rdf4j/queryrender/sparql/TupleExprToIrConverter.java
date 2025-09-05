@@ -1634,18 +1634,8 @@ public class TupleExprToIrConverter {
 						}
 					}
 				}
-				// Heuristic 3: any nested scope change in the subtree (e.g., Graph-within-EXISTS containing
-				// a FILTER that RDF4J flags as a variable-scope change). This preserves explicit grouping braces
-				// from the original query such as "EXISTS { { GRAPH ... { ... } } }".
-				if (!newScope && containsVariableScopeChange(sub)) {
-					newScope = true;
-				}
-				// Preserve scope intent on the EXISTS node itself, but do not also mark the
-				// inner BGP as a new scope: IrBGP prints an extra brace layer when newScope is
-				// true, which leads to redundant grouping (triple braces) in cases where the
-				// subselect already introduces its own grouping. IrExists#print will handle
-				// special single-GRAPH bodies when explicit grouping must be preserved.
-				IrExists exNode = new IrExists(bgp, ex.isVariableScopeChange() || newScope);
+
+				IrExists exNode = new IrExists(bgp, newScope);
 				return new IrFilter(exNode, false);
 			}
 			final String cond = TupleExprIRRenderer.stripRedundantOuterParens(r.renderExprPublic(condExpr));
@@ -1678,10 +1668,10 @@ public class TupleExprToIrConverter {
 			boolean wrapRight = rootHasExplicitScope(join.getRightArg());
 
 			if (join.isVariableScopeChange()) {
-				IrBGP grp = new IrBGP(true);
+				IrBGP grp = new IrBGP(false);
 				// Left side
 				if (wrapLeft && !wl.getLines().isEmpty()) {
-					IrBGP sub = new IrBGP(true);
+					IrBGP sub = new IrBGP(false);
 					for (IrNode ln : wl.getLines()) {
 						sub.add(ln);
 					}
@@ -1693,7 +1683,7 @@ public class TupleExprToIrConverter {
 				}
 				// Right side
 				if (wrapRight && !wr.getLines().isEmpty()) {
-					IrBGP sub = new IrBGP(true);
+					IrBGP sub = new IrBGP(false);
 					for (IrNode ln : wr.getLines()) {
 						sub.add(ln);
 					}
@@ -1711,7 +1701,7 @@ public class TupleExprToIrConverter {
 			// No join-level scope: append sides in order, wrapping each side if it encodes
 			// an explicit scope change at its root.
 			if (wrapLeft && !wl.getLines().isEmpty()) {
-				IrBGP sub = new IrBGP(true);
+				IrBGP sub = new IrBGP(false);
 				for (IrNode ln : wl.getLines()) {
 					sub.add(ln);
 				}
@@ -1722,7 +1712,7 @@ public class TupleExprToIrConverter {
 				}
 			}
 			if (wrapRight && !wr.getLines().isEmpty()) {
-				IrBGP sub = new IrBGP(true);
+				IrBGP sub = new IrBGP(false);
 				for (IrNode ln : wr.getLines()) {
 					sub.add(ln);
 				}
@@ -1773,7 +1763,7 @@ public class TupleExprToIrConverter {
 		@Override
 		public void meet(final Filter f) {
 			if (f.isVariableScopeChange() && f.getArg() instanceof SingletonSet) {
-				IrBGP group = new IrBGP(true);
+				IrBGP group = new IrBGP(false);
 				group.add(buildFilterFromCondition(f.getCondition()));
 				where.add(group);
 				return;
@@ -1822,7 +1812,6 @@ public class TupleExprToIrConverter {
 			if (f.isVariableScopeChange()) {
 				IRBuilder inner = new IRBuilder();
 				IrBGP innerWhere = inner.build(arg);
-				innerWhere.setNewScope(true);
 				IrFilter irF = buildFilterFromCondition(f.getCondition());
 				innerWhere.add(irF);
 				where.add(innerWhere);
@@ -1850,7 +1839,7 @@ public class TupleExprToIrConverter {
 				IRBuilder left = new IRBuilder();
 				IrBGP wl = left.build(u.getLeftArg());
 				if (rootHasExplicitScope(u.getLeftArg()) && !wl.getLines().isEmpty()) {
-					IrBGP sub = new IrBGP(true);
+					IrBGP sub = new IrBGP(false);
 					for (IrNode ln : wl.getLines()) {
 						sub.add(ln);
 					}
@@ -1861,7 +1850,7 @@ public class TupleExprToIrConverter {
 				IRBuilder right = new IRBuilder();
 				IrBGP wr = right.build(u.getRightArg());
 				if (rootHasExplicitScope(u.getRightArg()) && !wr.getLines().isEmpty()) {
-					IrBGP sub = new IrBGP(true);
+					IrBGP sub = new IrBGP(false);
 					for (IrNode ln : wr.getLines()) {
 						sub.add(ln);
 					}
@@ -1880,7 +1869,7 @@ public class TupleExprToIrConverter {
 				IRBuilder bld = new IRBuilder();
 				IrBGP wb = bld.build(b);
 				if (rootHasExplicitScope(b) && !wb.getLines().isEmpty()) {
-					IrBGP sub = new IrBGP(true);
+					IrBGP sub = new IrBGP(false);
 					for (IrNode ln : wb.getLines()) {
 						sub.add(ln);
 					}
@@ -1982,7 +1971,7 @@ public class TupleExprToIrConverter {
 			IRBuilder right = new IRBuilder();
 			IrBGP rightWhere = right.build(diff.getRightArg());
 			if (diff.isVariableScopeChange()) {
-				IrBGP group = new IrBGP(true);
+				IrBGP group = new IrBGP(false);
 				for (IrNode ln : leftWhere.getLines()) {
 					group.add(ln);
 				}
