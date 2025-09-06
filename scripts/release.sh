@@ -78,8 +78,8 @@ if  ! [[ $(git status --porcelain -u no  --branch) == "## main...origin/main" ]]
   exit 1;
 fi
 
-mvn clean -Dmaven.clean.failOnError=false
-mvn clean -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
 mvn clean;
 
 echo "Running git pull to make sure we are up to date"
@@ -107,17 +107,17 @@ if ! git push --dry-run > /dev/null 2>&1; then
     exit 1;
 fi
 
-mvn clean -Dmaven.clean.failOnError=false
-mvn clean -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
 mvn clean;
 git checkout develop;
 git pull;
-mvn clean -Dmaven.clean.failOnError=false
-mvn clean -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
 mvn clean;
 git checkout main;
-mvn clean -Dmaven.clean.failOnError=false
-mvn clean -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
 mvn clean;
 
 
@@ -148,8 +148,8 @@ echo "MVN_VERSION_DEVELOP=\"${MVN_VERSION_DEVELOP}\"" >> temp/constants.txt
 cd ..
 
 echo "Running maven clean and install -DskipTests";
-mvn clean -Dmaven.clean.failOnError=false
-mvn clean -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
 mvn clean;
 mvn install -DskipTests;
 
@@ -185,14 +185,13 @@ git push -u origin "${BRANCH}"
 git push origin "${MVN_VERSION_RELEASE}"
 
 # Cleanup
-mvn clean -Dmaven.clean.failOnError=false
-mvn clean -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
 mvn clean
 
 # Set a new SNAPSHOT version
 echo "";
 echo "Setting the next snapshot version to: ${MVN_NEXT_SNAPSHOT_VERSION}"
-read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 
 # set maven version
@@ -230,17 +229,16 @@ git push --set-upstream origin "merge_main_into_develop_after_release_${MVN_VERS
 echo "Creating pull request to merge the merge-branch into develop"
 gh pr create -B develop --title "sync develop branch after release ${MVN_VERSION_RELEASE}" --body "Merge using merge commit rather than rebase"
 echo "It's ok to merge this PR later, so wait for the CI tests to finish."
-read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
-mvn clean -Dmaven.clean.failOnError=false
-mvn clean -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
 
 git checkout develop
-mvn clean -Dmaven.clean.failOnError=false
-mvn clean -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
 git checkout main
-mvn clean -Dmaven.clean.failOnError=false
-mvn clean -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
+mvn clean -q -Dmaven.clean.failOnError=false
 
 echo "Build javadocs"
 
@@ -259,7 +257,7 @@ mvn package -Passembly -DskipTests -Djapicmp.skip
 git checkout main
 git checkout -b "${RELEASE_NOTES_BRANCH}"
 
-tar --no-xattrs --exclude ".*" -cvzf "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" -C target/site/apidocs .
+tar --no-xattrs --exclude ".*" -cvzf "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" -C target/reports/apidocs .
 cp -f "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" "site/static/javadoc/latest.tgz"
 git add --all
 git commit -s -a -m "javadocs for ${MVN_VERSION_RELEASE}"
