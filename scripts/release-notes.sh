@@ -20,6 +20,13 @@ if ! [[ ${BRANCH} == "" ]]; then
   git pull
 fi
 
+# Derive owner/repo slug from origin remote (supports SSH and HTTPS); fallback to rdf4j.
+ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
+REPO_SLUG=$(echo "${ORIGIN_URL}" | sed -E 's#.*github.com[:/]+([^/]+/[^/.]+)(\.git)?#\1#')
+if ! [[ "${REPO_SLUG}" =~ .+/.+ ]]; then
+  REPO_SLUG="eclipse-rdf4j/rdf4j"
+fi
+
 echo ""
 echo "The script requires several external command line tools:"
 echo " - git"
@@ -39,7 +46,6 @@ if [ ! -f templates/"${RELEASE_NOTES_TEMPLATE}" ]; then
     exit 1;
 fi
 
-
 if [ ! -f templates/"${NEWS_ITEM_TEMPLATE}" ]; then
     echo "File not found!"
     echo "templates/${NEWS_ITEM_TEMPLATE}"
@@ -52,37 +58,53 @@ if [[ ${M} == "" ]]; then
   echo "Please make sure that you have cleaned up and closed the milestone connected to ${MVN_VERSION_RELEASE}";
   read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
-  SHOULD_BE_NULL_IF_MILESTONE_IS_CLOSED=$(curl  -s -H "Accept: application/vnd.github.v3+json"  https://api.github.com/repos/eclipse-rdf4j/rdf4j/milestones?state=open | jq '.[] | select(.title == "'"${MVN_VERSION_RELEASE}"'") | .number')
+  SHOULD_BE_NULL_IF_MILESTONE_IS_CLOSED=$(
+    curl -s -H "Accept: application/vnd.github.v3+json" \
+      "https://api.github.com/repos/${REPO_SLUG}/milestones?state=open" \
+    | jq '.[] | select(.title == "'"${MVN_VERSION_RELEASE}"'") | .number'
+  )
   echo "${SHOULD_BE_NULL_IF_MILESTONE_IS_CLOSED}"
-  if  ! [[ ${SHOULD_BE_NULL_IF_MILESTONE_IS_CLOSED} == "" ]]; then
-      echo "";
-      echo "Milestone not closed!";
-      echo "https://github.com/eclipse-rdf4j/rdf4j/milestone/${SHOULD_BE_NULL_IF_MILESTONE_IS_CLOSED}";
-      exit 1;
+  if ! [[ ${SHOULD_BE_NULL_IF_MILESTONE_IS_CLOSED} == "" ]]; then
+      echo ""
+      echo "Milestone not closed!"
+      echo "https://github.com/${REPO_SLUG}/milestone/${SHOULD_BE_NULL_IF_MILESTONE_IS_CLOSED}"
+      exit 1
   fi
 fi
 
-echo "Version: ${MVN_VERSION_RELEASE}";
+echo "Version: ${MVN_VERSION_RELEASE}"
 
 # first try to get the GITHUB_MILESTONE number from the closed milestones
 export GITHUB_MILESTONE
-GITHUB_MILESTONE=$(curl  -s -H "Accept: application/vnd.github.v3+json"  https://api.github.com/repos/eclipse-rdf4j/rdf4j/milestones?state=closed\&direction=desc\&sort=title | jq '.[] | select(.title == "'"${MVN_VERSION_RELEASE}"'") | .number')
+GITHUB_MILESTONE=$(
+  curl -s -H "Accept: application/vnd.github.v3+json" \
+    "https://api.github.com/repos/${REPO_SLUG}/milestones?state=closed&direction=desc&sort=title" \
+  | jq '.[] | select(.title == "'"${MVN_VERSION_RELEASE}"'") | .number'
+)
 
 # then try to get the GITHUB_MILESTONE number from the open milestones (this should only be relevant for RDF4J Milestone builds).
-if  [[ ${GITHUB_MILESTONE} == "" ]]; then
-    GITHUB_MILESTONE=$(curl  -s -H "Accept: application/vnd.github.v3+json"  https://api.github.com/repos/eclipse-rdf4j/rdf4j/milestones | jq '.[] | select(.title == "'"${MVN_VERSION_RELEASE}"'") | .number')
+if [[ ${GITHUB_MILESTONE} == "" ]]; then
+  GITHUB_MILESTONE=$(
+    curl -s -H "Accept: application/vnd.github.v3+json" \
+      "https://api.github.com/repos/${REPO_SLUG}/milestones" \
+    | jq '.[] | select(.title == "'"${MVN_VERSION_RELEASE}"'") | .number'
+  )
 fi
 
-if  [[ ${GITHUB_MILESTONE} == "" ]]; then
-    echo "";
-    echo "Milestone not found matching '${MVN_VERSION_RELEASE}'";
-    exit 1;
+if [[ ${GITHUB_MILESTONE} == "" ]]; then
+    echo ""
+    echo "Milestone not found matching '${MVN_VERSION_RELEASE}'"
+    exit 1
 fi
 
 export NUMBER_OF_CLOSED_ISSUES
-NUMBER_OF_CLOSED_ISSUES=$(curl  -s -H "Accept: application/vnd.github.v3+json"  https://api.github.com/repos/eclipse-rdf4j/rdf4j/milestones/${GITHUB_MILESTONE}  | jq '.closed_issues')
+NUMBER_OF_CLOSED_ISSUES=$(
+  curl -s -H "Accept: application/vnd.github.v3+json" \
+    "https://api.github.com/repos/${REPO_SLUG}/milestones/${GITHUB_MILESTONE}" \
+  | jq '.closed_issues'
+)
 
-echo "Milestone: https://github.com/eclipse-rdf4j/rdf4j/milestone/${GITHUB_MILESTONE}"
+echo "Milestone: https://github.com/${REPO_SLUG}/milestone/${GITHUB_MILESTONE}"
 echo "Number of closed issues: ${NUMBER_OF_CLOSED_ISSUES}"
 
 export DATETIME
@@ -96,16 +118,22 @@ echo "Collecting assigned contributors for milestone #${GITHUB_MILESTONE}..."
 # Build a distinct, comma-separated list of assignees as Markdown links.
 # If a user has a GitHub 'name', use it; otherwise use the username.
 # Requires: gh (authenticated) and jq (already listed as dependencies above).
+
+# Use explicit GET and querystring to avoid gh defaulting to POST when -f fields are provided.
+TMP_ISSUES_JSON=$(mktemp)
+if ! gh api -X GET \
+  "repos/${REPO_SLUG}/issues?milestone=${GITHUB_MILESTONE}&state=all&per_page=100" \
+  --paginate > "${TMP_ISSUES_JSON}"; then
+  echo "Error: failed to fetch issues for milestone #${GITHUB_MILESTONE} via GitHub CLI."
+  echo "Tip: run 'gh auth login' and ensure you have access to ${REPO_SLUG}."
+  rm -f "${TMP_ISSUES_JSON}"
+  exit 1
+fi
+
 ASSIGNEE_LOGINS=$(
-  gh api -H "Accept: application/vnd.github+json" \
-         repos/eclipse-rdf4j/rdf4j/issues \
-         --paginate \
-         -f milestone="${GITHUB_MILESTONE}" \
-         -f state=all \
-         -f per_page=100 \
-  | jq -r '.[].assignees[]?.login' \
-  | sort -u
+  jq -r '.[].assignees[]?.login' "${TMP_ISSUES_JSON}" | sort -u
 )
+rm -f "${TMP_ISSUES_JSON}"
 
 CONTRIBUTORS_LIST=""
 if [[ -n "${ASSIGNEE_LOGINS}" ]]; then
@@ -135,7 +163,6 @@ echo ""
 echo "Using envsubst to generate content from templates."
 RELEASE_NOTES=$(cat templates/"${RELEASE_NOTES_TEMPLATE}" | envsubst)
 NEWS_ITEM=$(cat templates/"${NEWS_ITEM_TEMPLATE}" | envsubst)
-
 
 NEWS_FILENAME=${MVN_VERSION_RELEASE_RAW}
 NEWS_FILENAME=${NEWS_FILENAME/./}
