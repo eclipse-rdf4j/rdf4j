@@ -122,9 +122,9 @@ public class QueryAlgebraUtil {
 	}
 
 	public static StatementPattern toStatementPattern(Resource subj, IRI pred, Value obj) {
-		Var s = subj == null ? new Var("s") : new Var("const_s", subj);
-		Var p = pred == null ? new Var("p") : new Var("const_p", pred);
-		Var o = obj == null ? new Var("o") : new Var("const_o", obj);
+		Var s = subj == null ? Var.of("s") : Var.of("const_s", subj);
+		Var p = pred == null ? Var.of("p") : Var.of("const_p", pred);
+		Var o = obj == null ? Var.of("o") : Var.of("const_o", obj);
 		// TODO context
 
 		return new StatementPattern(s, p, o);
@@ -426,7 +426,7 @@ public class QueryAlgebraUtil {
 		Var subj = appendVarId(stmt.getSubjectVar(), _varID, varNames, bindings);
 		Var pred = appendVarId(stmt.getPredicateVar(), _varID, varNames, bindings);
 
-		Var obj = new Var("o_" + _varID);
+		Var obj = Var.of("o_" + _varID);
 		varNames.add("o_" + _varID);
 
 		Value objValue;
@@ -457,7 +457,7 @@ public class QueryAlgebraUtil {
 	protected static Var appendVar(Var var, Set<String> varNames, BindingSet bindings) {
 		if (!var.hasValue()) {
 			if (bindings.hasBinding(var.getName())) {
-				return new Var(var.getName(), bindings.getValue(var.getName()), var.isAnonymous(), var.isConstant());
+				return Var.of(var.getName(), bindings.getValue(var.getName()), var.isAnonymous(), var.isConstant());
 			} else {
 				varNames.add(var.getName());
 			}
@@ -477,9 +477,9 @@ public class QueryAlgebraUtil {
 	protected static Var appendVarId(Var var, String varID, Set<String> varNames, BindingSet bindings) {
 		if (!var.hasValue()) {
 			if (bindings.hasBinding(var.getName())) {
-				return new Var(var.getName(), bindings.getValue(var.getName()), var.isAnonymous(), var.isConstant());
+				return Var.of(var.getName(), bindings.getValue(var.getName()), var.isAnonymous(), var.isConstant());
 			} else {
-				Var res = new Var(var.getName() + "_" + varID);
+				Var res = Var.of(var.getName() + "_" + varID);
 				varNames.add(res.getName());
 				return res;
 			}
@@ -507,7 +507,7 @@ public class QueryAlgebraUtil {
 		public void meet(Var node) throws QueryEvaluationException {
 			if (node.hasValue()) {
 				if (bindings.hasBinding(node.getName())) {
-					node.replaceWith(new Var(node.getName(), bindings.getValue(node.getName()), node.isAnonymous(),
+					node.replaceWith(Var.of(node.getName(), bindings.getValue(node.getName()), node.isAnonymous(),
 							node.isConstant()));
 				}
 			} else {

@@ -33,7 +33,7 @@ public final class RenderUtils {
 	}
 
 	/**
-	 * Return the SPARQL query string rendering of the {@link org.eclipse.rdf4j.model.Value}
+	 * Return the SPARQL query string rendering of the {@link Value}
 	 *
 	 * @param theValue the value to render
 	 * @return the value rendered in its SPARQL query string representation
@@ -44,8 +44,7 @@ public final class RenderUtils {
 	}
 
 	/**
-	 * Append the SPARQL query string rendering of the {@link org.eclipse.rdf4j.model.Value} to the supplied
-	 * {@link StringBuilder}.
+	 * Append the SPARQL query string rendering of the {@link Value} to the supplied {@link StringBuilder}.
 	 *
 	 * @param value   the value to render
 	 * @param builder the {@link StringBuilder} to append to
@@ -54,7 +53,7 @@ public final class RenderUtils {
 	public static StringBuilder toSPARQL(Value value, StringBuilder builder) {
 		if (value instanceof IRI) {
 			IRI aURI = (IRI) value;
-			builder.append("<").append(aURI.toString()).append(">");
+			builder.append("<").append(aURI).append(">");
 		} else if (value instanceof BNode) {
 			builder.append("_:").append(((BNode) value).getID());
 		} else if (value instanceof Literal) {

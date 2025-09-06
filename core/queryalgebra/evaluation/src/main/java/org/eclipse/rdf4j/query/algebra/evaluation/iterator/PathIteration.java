@@ -627,7 +627,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	private Var createAnonVar(String varName, Value v, boolean anonymous) {
 		namedIntermediateJoins.add(varName);
-		return new Var(varName, v, anonymous, false);
+		return Var.of(varName, v, anonymous, false);
 	}
 
 }
