@@ -91,6 +91,47 @@ DATETIME=$(date +"%Y-%m-%dT%H:%M:%S%z")
 echo "Datetime: ${DATETIME}"
 
 echo ""
+echo "Collecting assigned contributors for milestone #${GITHUB_MILESTONE}..."
+
+# Build a distinct, comma-separated list of assignees as Markdown links.
+# If a user has a GitHub 'name', use it; otherwise use the username.
+# Requires: gh (authenticated) and jq (already listed as dependencies above).
+ASSIGNEE_LOGINS=$(
+  gh api -H "Accept: application/vnd.github+json" \
+         repos/eclipse-rdf4j/rdf4j/issues \
+         --paginate \
+         -f milestone="${GITHUB_MILESTONE}" \
+         -f state=all \
+         -f per_page=100 \
+  | jq -r '.[].assignees[]?.login' \
+  | sort -u
+)
+
+CONTRIBUTORS_LIST=""
+if [[ -n "${ASSIGNEE_LOGINS}" ]]; then
+  while IFS= read -r login; do
+    [[ -z "${login}" ]] && continue
+    # Fetch the user's profile; prefer 'name', fallback to 'login'
+    USER_JSON=$(gh api -H "Accept: application/vnd.github+json" "/users/${login}" || echo '{}')
+    NAME=$(echo "${USER_JSON}" | jq -r '.name // empty' 2>/dev/null)
+    if [[ -z "${NAME}" || "${NAME}" == "null" ]]; then
+      DISPLAY="${login}"
+    else
+      DISPLAY="${NAME}"
+    fi
+    LINK="[${DISPLAY}](https://github.com/${login})"
+    if [[ -z "${CONTRIBUTORS_LIST}" ]]; then
+      CONTRIBUTORS_LIST="${LINK}"
+    else
+      CONTRIBUTORS_LIST="${CONTRIBUTORS_LIST}, ${LINK}"
+    fi
+  done <<< "${ASSIGNEE_LOGINS}"
+fi
+
+# Export so envsubst can replace ${LIST_OF_CONTRIBUTORS} in templates.
+export LIST_OF_CONTRIBUTORS="${CONTRIBUTORS_LIST}"
+
+echo ""
 echo "Using envsubst to generate content from templates."
 RELEASE_NOTES=$(cat templates/"${RELEASE_NOTES_TEMPLATE}" | envsubst)
 NEWS_ITEM=$(cat templates/"${NEWS_ITEM_TEMPLATE}" | envsubst)
