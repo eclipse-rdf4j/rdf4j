@@ -58,7 +58,6 @@ public class TupleExprIrNpsGraphExistsTest {
 		TupleExpr expected = parseAlgebra(q);
 
 		TupleExprIRRenderer.Config c = cfg();
-		c.debugIR = true; // ensure IR dump if mismatch
 		String rendered = new TupleExprIRRenderer(c).render(parseAlgebra(q), null).trim();
 
 		TupleExpr actual = parseAlgebra(rendered);
