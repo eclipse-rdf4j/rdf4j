@@ -54,8 +54,6 @@ public class TupleExprIRRendererExplorationTest {
 		style.prefixes.put("ex", "http://ex/");
 		style.prefixes.put("xsd", "http://www.w3.org/2001/XMLSchema#");
 		style.valuesPreserveOrder = true;
-		// Enable IR debug prints to stdout for additional context during runs
-		style.debugIR = true;
 		return style;
 	}
 
@@ -76,7 +74,6 @@ public class TupleExprIRRendererExplorationTest {
 			Files.createDirectories(dir);
 			Path file = dir.resolve(base + "_" + label + ".txt");
 			Files.writeString(file, content == null ? "" : content, StandardCharsets.UTF_8);
-			System.out.println("[explore] wrote " + file.toAbsolutePath());
 		} catch (IOException ioe) {
 			System.err.println("[explore] Failed to write " + label + ": " + ioe);
 		}
