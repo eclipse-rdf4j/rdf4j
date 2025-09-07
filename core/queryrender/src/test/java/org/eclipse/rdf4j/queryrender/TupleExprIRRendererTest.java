@@ -2098,7 +2098,7 @@ public class TupleExprIRRendererTest {
 				"    } \n" +
 				"      UNION \n" +
 				"    {\n" +
-				"      ?_x ^foaf:knows ?a .\n" +
+				"      ?a foaf:knows ?_x  .\n" +
 				"    } \n" +
 				"    OPTIONAL {\n" +
 				"      ?_x foaf:name ?n .\n" +
