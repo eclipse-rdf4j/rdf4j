@@ -2092,19 +2092,19 @@ public class TupleExprIRRendererTest {
 				"    ?a ^foaf:knows/foaf:knows/foaf:name ?n .\n" +
 				"  }\n" +
 				"    UNION\n" +
-				"  {  \n" +
-				"    { \n" +
-				"      ?a foaf:knows|ex:knows ?_x . \n" +
-				"    } \n" +
-				"      UNION \n" +
+				"  {\n" +
+				"    {\n" +
+				"      ?a foaf:knows|ex:knows ?_x .\n" +
+				"    }\n" +
+				"      UNION\n" +
 				"    {\n" +
 				"      ?a foaf:knows ?_x  .\n" +
-				"    } \n" +
+				"    }\n" +
 				"    OPTIONAL {\n" +
 				"      ?_x foaf:name ?n .\n" +
 				"    }\n" +
 				"  }\n" +
-				"}";
+				"}\n";
 		assertSameSparqlQuery(q, cfg());
 	}
 
