@@ -163,44 +163,51 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	private Var replaceValueWithNewValue(Var var, ValueFactory valueFactory) {
-
 		if (var == null) {
 			return null;
-		}
-
-		if (!var.hasValue()) {
+		} else if (!var.hasValue()) {
 			return var.clone();
+		} else {
+			Var ret = getVarWithNewValue(var, valueFactory);
+			ret.setVariableScopeChange(var.isVariableScopeChange());
+			return ret;
 		}
+	}
+
+	private static Var getVarWithNewValue(Var var, ValueFactory valueFactory) {
+		boolean constant = var.isConstant();
+		boolean anonymous = var.isAnonymous();
 
 		Value value = var.getValue();
 		if (value.isIRI()) {
-			return Var.of(var.getName(), valueFactory.createIRI(value.stringValue()));
+			return Var.of(var.getName(), valueFactory.createIRI(value.stringValue()), anonymous, constant);
 		} else if (value.isBNode()) {
-			return Var.of(var.getName(), valueFactory.createBNode(value.stringValue()));
+			return Var.of(var.getName(), valueFactory.createBNode(value.stringValue()), anonymous, constant);
 		} else if (value.isLiteral()) {
 			// preserve label + (language | datatype)
 			Literal lit = (Literal) value;
 
 			// If the literal has a language tag, recreate it with the same language
 			if (lit.getLanguage().isPresent()) {
-				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), lit.getLanguage().get()));
+				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), lit.getLanguage().get()),
+						anonymous, constant);
 			}
 
 			CoreDatatype coreDatatype = lit.getCoreDatatype();
 			if (coreDatatype != CoreDatatype.NONE) {
 				// If the literal has a core datatype, recreate it with the same core datatype
-				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), coreDatatype));
+				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), coreDatatype), anonymous,
+						constant);
 			}
 
 			// Otherwise, preserve the datatype (falls back to xsd:string if none)
 			IRI dt = lit.getDatatype();
 			if (dt != null) {
-				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), dt));
+				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), dt), anonymous, constant);
 			} else {
-				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel()));
+				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel()), anonymous, constant);
 			}
 		}
-
 		return var;
 	}
 
