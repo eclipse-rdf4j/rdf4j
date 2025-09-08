@@ -125,8 +125,18 @@ public class TupleExprToIrConverter {
 		this.r = renderer;
 	}
 
-	/** Build IrSelect without running IR transforms (used for nested subselects). */
+	/** Build IrSelect; optionally skip IR transforms (tests may require truly-raw IR). */
 	public static IrSelect toIRSelectRaw(final TupleExpr tupleExpr, TupleExprIRRenderer r) {
+		return toIRSelectRaw(tupleExpr, r, true);
+	}
+
+	/**
+	 * Build IrSelect, with control over whether to apply IR transforms.
+	 *
+	 * @param applyTransforms when true, runs the standard transform pipeline to normalize IR; when false, returns the
+	 *                        raw IR as built from the TupleExpr without additional normalization.
+	 */
+	public static IrSelect toIRSelectRaw(final TupleExpr tupleExpr, TupleExprIRRenderer r, boolean applyTransforms) {
 		final Normalized n = normalize(tupleExpr, true);
 		applyAggregateHoisting(n);
 
@@ -165,23 +175,25 @@ public class TupleExprToIrConverter {
 		final IRBuilder builder = new TupleExprToIrConverter(r).new IRBuilder();
 		ir.setWhere(builder.build(n.where));
 
-		// Apply the standard IR transform pipeline to the subselect's WHERE to ensure
-		// consistent path/NPS/property-list rewrites also occur inside nested queries.
-		// This mirrors how the top-level SELECT is handled and aligns nested subselect
-		// output with expected canonical shapes in tests.
-		IrSelect transformed = IrTransforms.transformUsingChildren(ir, r);
-		ir.setWhere(transformed.getWhere());
+		if (applyTransforms) {
+			// Apply the standard IR transform pipeline to the subselect's WHERE to ensure
+			// consistent path/NPS/property-list rewrites also occur inside nested queries.
+			// This mirrors how the top-level SELECT is handled and aligns nested subselect
+			// output with expected canonical shapes in tests.
+			IrSelect transformed = IrTransforms.transformUsingChildren(ir, r);
+			ir.setWhere(transformed.getWhere());
 
-		// Preserve explicit grouping braces around a single‑line WHERE when the original algebra
-		// indicated a variable scope change at the root of the subselect. This mirrors the logic in
-		// toIRSelect() for top‑level queries and ensures nested queries retain user grouping.
-		if (ir.getWhere() != null && ir.getWhere().getLines() != null && ir.getWhere().getLines().size() == 1
-				&& rootHasExplicitScope(n.where)) {
-			final IrNode only = ir.getWhere().getLines().get(0);
-			if (only instanceof IrStatementPattern
-					|| only instanceof IrPathTriple
-					|| only instanceof IrGraph) {
-				ir.getWhere().setNewScope(true);
+			// Preserve explicit grouping braces around a single‑line WHERE when the original algebra
+			// indicated a variable scope change at the root of the subselect. This mirrors the logic in
+			// toIRSelect() for top‑level queries and ensures nested queries retain user grouping.
+			if (ir.getWhere() != null && ir.getWhere().getLines() != null && ir.getWhere().getLines().size() == 1
+					&& rootHasExplicitScope(n.where)) {
+				final IrNode only = ir.getWhere().getLines().get(0);
+				if (only instanceof IrStatementPattern
+						|| only instanceof IrPathTriple
+						|| only instanceof IrGraph) {
+					ir.getWhere().setNewScope(true);
+				}
 			}
 		}
 
