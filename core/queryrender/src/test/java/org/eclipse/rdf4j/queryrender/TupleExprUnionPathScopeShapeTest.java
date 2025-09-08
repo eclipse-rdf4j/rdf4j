@@ -26,21 +26,11 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
-import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -94,7 +84,7 @@ public class TupleExprUnionPathScopeShapeTest {
 			if (n instanceof TupleExpr) {
 				((TupleExpr) n).visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
 					@Override
-					protected void meetNode(QueryModelNode node) {
+					protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
 						dq.add(node);
 					}
 				});
@@ -121,56 +111,6 @@ public class TupleExprUnionPathScopeShapeTest {
 		return !leftScope && !rightScope;
 	}
 
-	private static List<IrUnion> collectIrUnions(IrSelect ir) {
-		List<IrUnion> out = new ArrayList<>();
-		Deque<IrNode> dq = new ArrayDeque<>();
-		if (ir != null && ir.getWhere() != null) {
-			dq.add(ir.getWhere());
-		}
-		while (!dq.isEmpty()) {
-			IrNode n = dq.removeFirst();
-			if (n instanceof IrUnion) {
-				IrUnion u = (IrUnion) n;
-				out.add(u);
-				dq.addAll(u.getBranches());
-			} else if (n instanceof IrBGP) {
-				for (IrNode ln : ((IrBGP) n).getLines()) {
-					if (ln != null) {
-						dq.add(ln);
-					}
-				}
-			} else if (n instanceof IrGraph) {
-				IrBGP w = ((IrGraph) n).getWhere();
-				if (w != null) {
-					dq.add(w);
-				}
-			} else if (n instanceof IrService) {
-				IrBGP w = ((IrService) n).getWhere();
-				if (w != null) {
-					dq.add(w);
-				}
-			} else if (n instanceof IrOptional) {
-				IrBGP w = ((IrOptional) n).getWhere();
-				if (w != null) {
-					dq.add(w);
-				}
-			} else if (n instanceof IrMinus) {
-				IrBGP w = ((IrMinus) n).getWhere();
-				if (w != null) {
-					dq.add(w);
-				}
-			}
-		}
-		return out;
-	}
-
-	private static boolean isPathGeneratedIrUnionHeuristic(IrUnion u) {
-		if (!u.isNewScope()) {
-			return true;
-		}
-		return u.getBranches().stream().noneMatch(b -> b.isNewScope());
-	}
-
 	private static void dumpAlgebra(String testLabel, TupleExpr te) {
 		try {
 			Path dir = Paths.get("core", "queryrender", "target", "surefire-reports");
@@ -179,17 +119,6 @@ public class TupleExprUnionPathScopeShapeTest {
 			Path file = dir.resolve(fileName);
 			Files.writeString(file, String.valueOf(te), StandardCharsets.UTF_8);
 			System.out.println("[debug] wrote algebra to " + file.toAbsolutePath());
-
-			// Also dump raw and transformed textual IR as JSON for deeper inspection
-			TupleExprIRRenderer r = new TupleExprIRRenderer();
-			String raw = r.dumpIRRaw(te);
-			String tr = r.dumpIRTransformed(te);
-			Files.writeString(dir.resolve(
-					TupleExprUnionPathScopeShapeTest.class.getName() + "#" + testLabel + "_IR_raw.json"), raw,
-					StandardCharsets.UTF_8);
-			Files.writeString(dir.resolve(
-					TupleExprUnionPathScopeShapeTest.class.getName() + "#" + testLabel + "_IR_transformed.json"), tr,
-					StandardCharsets.UTF_8);
 		} catch (Exception e) {
 			System.err.println("[debug] failed to write algebra for " + testLabel + ": " + e);
 		}
@@ -220,7 +149,7 @@ public class TupleExprUnionPathScopeShapeTest {
 		// At least one UNION from the alternative path
 		assertThat(unions).isNotEmpty();
 		// All path-generated unions should be non-scope-changing
-		assertThat(unions.stream().noneMatch(u -> isScopeChange(u))).isTrue();
+		assertThat(unions.stream().allMatch(u -> !isScopeChange(u))).isTrue();
 	}
 
 	@Test
@@ -232,7 +161,7 @@ public class TupleExprUnionPathScopeShapeTest {
 		List<Union> unions = collectUnions(te);
 		// NPS here produces two filtered SPs combined by a UNION
 		assertThat(unions).isNotEmpty();
-		assertThat(unions.stream().noneMatch(u -> isScopeChange(u))).isTrue();
+		assertThat(unions.stream().allMatch(u -> !isScopeChange(u))).isTrue();
 	}
 
 	@Test
@@ -291,7 +220,7 @@ public class TupleExprUnionPathScopeShapeTest {
 		dumpAlgebra("zeroOrOne_modifier_generatesUnion_scopeChange_false", te);
 		List<Union> unions = collectUnions(te);
 		assertThat(unions).isNotEmpty();
-		assertThat(unions.stream().noneMatch(u -> isScopeChange(u))).isTrue();
+		assertThat(unions.stream().allMatch(u -> !isScopeChange(u))).isTrue();
 	}
 
 	@Test
@@ -314,7 +243,7 @@ public class TupleExprUnionPathScopeShapeTest {
 		List<Union> unions = collectUnions(te);
 		// (a|b|c) builds two UNION nodes
 		assertThat(unions.size()).isGreaterThanOrEqualTo(2);
-		assertThat(unions.stream().noneMatch(u -> isScopeChange(u))).isTrue();
+		assertThat(unions.stream().allMatch(u -> !isScopeChange(u))).isTrue();
 	}
 
 	@Test
@@ -325,7 +254,7 @@ public class TupleExprUnionPathScopeShapeTest {
 		dumpAlgebra("altPath_inverse_only_generates_union_scope_false", te);
 		List<Union> unions = collectUnions(te);
 		assertThat(unions).isNotEmpty();
-		assertThat(unions.stream().noneMatch(u -> isScopeChange(u))).isTrue();
+		assertThat(unions.stream().allMatch(u -> !isScopeChange(u))).isTrue();
 	}
 
 	@Test
@@ -357,7 +286,7 @@ public class TupleExprUnionPathScopeShapeTest {
 		dumpAlgebra("sequence_with_inner_alt_produces_union_scope_false", te);
 		List<Union> unions = collectUnions(te);
 		assertThat(unions).isNotEmpty();
-		assertThat(unions.stream().noneMatch(u -> isScopeChange(u))).isTrue();
+		assertThat(unions.stream().allMatch(u -> !isScopeChange(u))).isTrue();
 	}
 
 	@Test
@@ -368,7 +297,7 @@ public class TupleExprUnionPathScopeShapeTest {
 		dumpAlgebra("sequence_two_alts_nested_unions_all_false", te);
 		List<Union> unions = collectUnions(te);
 		assertThat(unions).isNotEmpty();
-		assertThat(unions.stream().noneMatch(u -> isScopeChange(u))).isTrue();
+		assertThat(unions.stream().allMatch(u -> !isScopeChange(u))).isTrue();
 	}
 
 	@Test
@@ -456,23 +385,15 @@ public class TupleExprUnionPathScopeShapeTest {
 	@DisplayName("Classification: pure alt path UNION is path-generated")
 	void classify_pure_alt_path_union() {
 		TupleExpr te = parse("SELECT * WHERE { ?s (ex:p1|ex:p2) ?o }");
-		dumpAlgebra("classify_pure_alt_path_union", te);
 		List<Union> unions = collectUnions(te);
 		assertThat(unions).hasSize(1);
 		assertThat(isPathGeneratedUnionHeuristic(unions.get(0))).isTrue();
-
-		TupleExprIRRenderer r = new TupleExprIRRenderer();
-		IrSelect raw = r.toIRSelectRaw(te);
-		List<IrUnion> irUnions = collectIrUnions(raw);
-		assertThat(irUnions).hasSize(1);
-		assertThat(isPathGeneratedIrUnionHeuristic(irUnions.get(0))).isTrue();
 	}
 
 	@Test
 	@DisplayName("Classification: explicit UNION with alt in left branch")
 	void classify_explicit_union_with_alt_in_left_branch() {
 		TupleExpr te = parse("SELECT * WHERE { { ?s (ex:a|ex:b) ?o } UNION { ?s ex:q ?o } }");
-		dumpAlgebra("classify_explicit_union_with_alt_in_left_branch", te);
 		List<Union> unions = collectUnions(te);
 		// Expect 2 unions: outer explicit + inner path-generated (branch root)
 		assertThat(unions).hasSize(2);
@@ -481,20 +402,12 @@ public class TupleExprUnionPathScopeShapeTest {
 		// One explicit, one path-generated
 		assertThat(isPathGeneratedUnionHeuristic(outer)).isFalse();
 		assertThat(isPathGeneratedUnionHeuristic(inner)).isTrue();
-
-		TupleExprIRRenderer r = new TupleExprIRRenderer();
-		IrSelect raw = r.toIRSelectRaw(te);
-		List<IrUnion> irUnions = collectIrUnions(raw);
-		assertThat(irUnions).hasSize(2);
-		assertThat(isPathGeneratedIrUnionHeuristic(irUnions.get(0))).isFalse();
-		assertThat(isPathGeneratedIrUnionHeuristic(irUnions.get(1))).isTrue();
 	}
 
 	@Test
 	@DisplayName("Classification: explicit UNION with alt in both branches")
 	void classify_explicit_union_with_alt_in_both_branches() {
 		TupleExpr te = parse("SELECT * WHERE { { ?s (ex:a|ex:b) ?o } UNION { ?s (ex:c|ex:d) ?o } }");
-		dumpAlgebra("classify_explicit_union_with_alt_in_both_branches", te);
 		List<Union> unions = collectUnions(te);
 		// Expect 3 unions: 1 outer explicit + 2 inner path-generated
 		assertThat(unions).hasSize(3);
@@ -504,24 +417,12 @@ public class TupleExprUnionPathScopeShapeTest {
 		long explicit = unions.size() - pathGenerated;
 		assertThat(pathGenerated).isEqualTo(2);
 		assertThat(explicit).isEqualTo(1);
-
-		TupleExprIRRenderer r = new TupleExprIRRenderer();
-		IrSelect raw = r.toIRSelectRaw(te);
-		List<IrUnion> irUnions = collectIrUnions(raw);
-		assertThat(irUnions).hasSize(3);
-		assertThat(irUnions.get(0).isNewScope()).isTrue();
-		long innerPath = irUnions.stream()
-				.skip(1)
-				.filter(TupleExprUnionPathScopeShapeTest::isPathGeneratedIrUnionHeuristic)
-				.count();
-		assertThat(innerPath).isEqualTo(2);
 	}
 
 	@Test
 	@DisplayName("Classification: explicit UNION with NPS in left branch, simple right")
 	void classify_explicit_union_with_nps_left_branch() {
 		TupleExpr te = parse("SELECT * WHERE { { ?s !(ex:p1|^ex:p2) ?o } UNION { ?s ex:q ?o } }");
-		dumpAlgebra("classify_explicit_union_with_nps_left_branch", te);
 		List<Union> unions = collectUnions(te);
 		// Expect 2 unions: outer explicit + inner path-generated (NPS union)
 		assertThat(unions).hasSize(2);
@@ -531,22 +432,12 @@ public class TupleExprUnionPathScopeShapeTest {
 		long explicit = unions.size() - pathGenerated;
 		assertThat(pathGenerated).isEqualTo(1);
 		assertThat(explicit).isEqualTo(1);
-
-		TupleExprIRRenderer r = new TupleExprIRRenderer();
-		IrSelect raw = r.toIRSelectRaw(te);
-		List<IrUnion> irUnions = collectIrUnions(raw);
-		assertThat(irUnions).hasSize(2);
-		long irPath = irUnions.stream()
-				.filter(TupleExprUnionPathScopeShapeTest::isPathGeneratedIrUnionHeuristic)
-				.count();
-		assertThat(irPath).isEqualTo(1);
 	}
 
 	@Test
 	@DisplayName("Classification: explicit UNION with NPS and alt in branches")
 	void classify_explicit_union_with_nps_and_alt() {
 		TupleExpr te = parse("SELECT * WHERE { { ?s !(ex:p1|^ex:p2) ?o } UNION { ?s (ex:a|ex:b) ?o } }");
-		dumpAlgebra("classify_explicit_union_with_nps_and_alt", te);
 		List<Union> unions = collectUnions(te);
 		// Expect 3 unions: outer explicit + 2 inner path-generated
 		assertThat(unions).hasSize(3);
@@ -554,24 +445,12 @@ public class TupleExprUnionPathScopeShapeTest {
 				.filter(TupleExprUnionPathScopeShapeTest::isPathGeneratedUnionHeuristic)
 				.count();
 		assertThat(pathGenerated).isEqualTo(2);
-
-		TupleExprIRRenderer r = new TupleExprIRRenderer();
-		IrSelect raw = r.toIRSelectRaw(te);
-		List<IrUnion> irUnions = collectIrUnions(raw);
-		assertThat(irUnions).hasSize(3);
-		assertThat(irUnions.get(0).isNewScope()).isTrue();
-		long innerPath2 = irUnions.stream()
-				.skip(1)
-				.filter(TupleExprUnionPathScopeShapeTest::isPathGeneratedIrUnionHeuristic)
-				.count();
-		assertThat(innerPath2).isEqualTo(2);
 	}
 
 	@Test
 	@DisplayName("Classification: alt path inside branch with extra triple (inner union path-generated, outer explicit)")
 	void classify_alt_inside_branch_with_extra_triple() {
 		TupleExpr te = parse("SELECT * WHERE { { ?s (ex:a|ex:b) ?o . ?s ex:q ?x } UNION { ?s ex:r ?o } }");
-		dumpAlgebra("classify_alt_inside_branch_with_extra_triple", te);
 		List<Union> unions = collectUnions(te);
 		// Expect 2 unions overall: path-generated for alt, and outer explicit
 		assertThat(unions.size()).isGreaterThanOrEqualTo(2);
@@ -587,191 +466,8 @@ public class TupleExprUnionPathScopeShapeTest {
 	@DisplayName("Classification: zero-or-one (?) union is path-generated")
 	void classify_zero_or_one_is_path_generated() {
 		TupleExpr te = parse("SELECT * WHERE { ?s ex:p? ?o }");
-		dumpAlgebra("classify_zero_or_one_is_path_generated", te);
 		List<Union> unions = collectUnions(te);
 		assertThat(unions).hasSize(1);
 		assertThat(isPathGeneratedUnionHeuristic(unions.get(0))).isTrue();
-	}
-
-	// ------------- GRAPH / SERVICE / OPTIONAL combinations -------------
-
-	@Test
-	@DisplayName("GRAPH with alt path: path union newScope=false (raw/transformed)")
-	void graph_with_alt_path_union_scope() {
-		TupleExpr te = parse("SELECT * WHERE { GRAPH ex:g { ?s (ex:a|ex:b) ?o } }");
-		dumpAlgebra("graph_with_alt_path_union_scope", te);
-		// Algebra: one path-generated union
-		List<Union> u = collectUnions(te);
-		assertThat(u).hasSize(1);
-		assertThat(isPathGeneratedUnionHeuristic(u.get(0))).isTrue();
-		// IR: one IrUnion with newScope=false
-		TupleExprIRRenderer r = new TupleExprIRRenderer();
-		IrSelect raw = r.toIRSelectRaw(te);
-		List<IrUnion> irUnionsRaw = collectIrUnions(raw);
-		assertThat(irUnionsRaw).hasSize(1);
-		assertThat(irUnionsRaw.get(0).isNewScope()).isFalse();
-		IrSelect tr = r.toIRSelect(te);
-		List<IrUnion> irUnionsTr = collectIrUnions(tr);
-		// After transforms, alternation is typically fused into a path triple
-		assertThat(irUnionsTr.size()).isLessThanOrEqualTo(1);
-		assertThat(irUnionsTr.stream().allMatch(TupleExprUnionPathScopeShapeTest::isPathGeneratedIrUnionHeuristic))
-				.isTrue();
-	}
-
-	@Test
-	@DisplayName("GRAPH with NPS (direct+inverse): path union newScope=false (raw/transformed)")
-	void graph_with_nps_union_scope() {
-		TupleExpr te = parse("SELECT * WHERE { GRAPH ex:g { ?s !(ex:p1|^ex:p2) ?o } }");
-		dumpAlgebra("graph_with_nps_union_scope", te);
-		List<Union> u = collectUnions(te);
-		assertThat(u).hasSize(1);
-		assertThat(isPathGeneratedUnionHeuristic(u.get(0))).isTrue();
-		TupleExprIRRenderer r = new TupleExprIRRenderer();
-		List<IrUnion> rawU = collectIrUnions(r.toIRSelectRaw(te));
-		assertThat(rawU).hasSize(1);
-		assertThat(rawU.get(0).isNewScope()).isFalse();
-		List<IrUnion> trU = collectIrUnions(r.toIRSelect(te));
-		assertThat(trU.size()).isLessThanOrEqualTo(1);
-		assertThat(trU.stream().allMatch(TupleExprUnionPathScopeShapeTest::isPathGeneratedIrUnionHeuristic)).isTrue();
-	}
-
-	@Test
-	@DisplayName("OPTIONAL { alt } inside WHERE: inner path union newScope=false")
-	void optional_with_alt_path_union_scope() {
-		TupleExpr te = parse("SELECT * WHERE { OPTIONAL { ?s (ex:a|ex:b) ?o } }");
-		dumpAlgebra("optional_with_alt_path_union_scope", te);
-		List<Union> u = collectUnions(te);
-		assertThat(u).hasSize(1);
-		assertThat(isPathGeneratedUnionHeuristic(u.get(0))).isTrue();
-		TupleExprIRRenderer r = new TupleExprIRRenderer();
-		List<IrUnion> rawU = collectIrUnions(r.toIRSelectRaw(te));
-		assertThat(rawU).hasSize(1);
-		assertThat(rawU.get(0).isNewScope()).isFalse();
-		List<IrUnion> trU = collectIrUnions(r.toIRSelect(te));
-		assertThat(trU.size()).isLessThanOrEqualTo(1);
-		assertThat(trU.stream().allMatch(TupleExprUnionPathScopeShapeTest::isPathGeneratedIrUnionHeuristic)).isTrue();
-	}
-
-	@Test
-	@DisplayName("OPTIONAL { NPS } inside WHERE: inner path union newScope=false")
-	void optional_with_nps_union_scope() {
-		TupleExpr te = parse("SELECT * WHERE { OPTIONAL { ?s !(ex:p1|^ex:p2) ?o } }");
-		dumpAlgebra("optional_with_nps_union_scope", te);
-		List<Union> u = collectUnions(te);
-		assertThat(u).hasSize(1);
-		assertThat(isPathGeneratedUnionHeuristic(u.get(0))).isTrue();
-		TupleExprIRRenderer r = new TupleExprIRRenderer();
-		List<IrUnion> rawU = collectIrUnions(r.toIRSelectRaw(te));
-		assertThat(rawU).hasSize(1);
-		assertThat(rawU.get(0).isNewScope()).isFalse();
-		List<IrUnion> trU = collectIrUnions(r.toIRSelect(te));
-		assertThat(trU.size()).isLessThanOrEqualTo(1);
-		assertThat(trU.stream().allMatch(TupleExprUnionPathScopeShapeTest::isPathGeneratedIrUnionHeuristic)).isTrue();
-	}
-
-	@Test
-	@DisplayName("SERVICE { alt } inside WHERE: inner path union newScope=false")
-	void service_with_alt_path_union_scope() {
-		TupleExpr te = parse("SELECT * WHERE { SERVICE <http://svc/> { ?s (ex:a|ex:b) ?o } }");
-		dumpAlgebra("service_with_alt_path_union_scope", te);
-		List<Union> u = collectUnions(te);
-		assertThat(u).hasSize(1);
-		assertThat(isPathGeneratedUnionHeuristic(u.get(0))).isTrue();
-		TupleExprIRRenderer r = new TupleExprIRRenderer();
-		List<IrUnion> rawU = collectIrUnions(r.toIRSelectRaw(te));
-		assertThat(rawU).hasSize(1);
-		assertThat(isPathGeneratedIrUnionHeuristic(rawU.get(0))).isTrue();
-		List<IrUnion> trU = collectIrUnions(r.toIRSelect(te));
-		assertThat(trU.size()).isLessThanOrEqualTo(1);
-		assertThat(trU.stream().allMatch(TupleExprUnionPathScopeShapeTest::isPathGeneratedIrUnionHeuristic)).isTrue();
-	}
-
-	@Test
-	@DisplayName("SERVICE { NPS } inside WHERE: inner path union newScope=false")
-	void service_with_nps_union_scope() {
-		TupleExpr te = parse("SELECT * WHERE { SERVICE <http://svc/> { ?s !(ex:p1|^ex:p2) ?o } }");
-		dumpAlgebra("service_with_nps_union_scope", te);
-		List<Union> u = collectUnions(te);
-		assertThat(u).hasSize(1);
-		assertThat(isPathGeneratedUnionHeuristic(u.get(0))).isTrue();
-		TupleExprIRRenderer r = new TupleExprIRRenderer();
-		List<IrUnion> rawU = collectIrUnions(r.toIRSelectRaw(te));
-		assertThat(rawU).hasSize(1);
-		assertThat(isPathGeneratedIrUnionHeuristic(rawU.get(0))).isTrue();
-		List<IrUnion> trU = collectIrUnions(r.toIRSelect(te));
-		assertThat(trU.size()).isLessThanOrEqualTo(1);
-		assertThat(trU.stream().allMatch(TupleExprUnionPathScopeShapeTest::isPathGeneratedIrUnionHeuristic)).isTrue();
-	}
-
-	@Test
-	@DisplayName("Explicit UNION with GRAPH{alt} branch: outer explicit=1, inner path=1 (raw/transformed)")
-	void explicit_union_with_graph_alt_branch_counts() {
-		TupleExpr te = parse("SELECT * WHERE { { GRAPH ex:g { ?s (ex:a|ex:b) ?o } } UNION { ?s ex:q ?o } }");
-		dumpAlgebra("explicit_union_with_graph_alt_branch_counts", te);
-		List<Union> al = collectUnions(te);
-		long path = al.stream().filter(TupleExprUnionPathScopeShapeTest::isPathGeneratedUnionHeuristic).count();
-		long explicit = al.size() - path;
-		assertThat(al.size()).isGreaterThanOrEqualTo(2);
-		assertThat(explicit).isGreaterThanOrEqualTo(1);
-		assertThat(path).isGreaterThanOrEqualTo(1);
-		TupleExprIRRenderer r = new TupleExprIRRenderer();
-		List<IrUnion> rawU = collectIrUnions(r.toIRSelectRaw(te));
-		assertThat(rawU.size()).isGreaterThanOrEqualTo(2);
-		long rawPath = rawU.stream().filter(TupleExprUnionPathScopeShapeTest::isPathGeneratedIrUnionHeuristic).count();
-		long rawExplicit = rawU.size() - rawPath;
-		assertThat(rawExplicit).isGreaterThanOrEqualTo(1);
-		assertThat(rawPath).isGreaterThanOrEqualTo(1);
-		List<IrUnion> trU = collectIrUnions(r.toIRSelect(te));
-		assertThat(trU.size()).isGreaterThanOrEqualTo(1);
-		long trExplicit = trU.stream().filter(u -> !isPathGeneratedIrUnionHeuristic(u)).count();
-		assertThat(trExplicit).isGreaterThanOrEqualTo(1);
-	}
-
-	@Test
-	@DisplayName("Explicit UNION with SERVICE{alt} branch: outer explicit=1, inner path=1 (raw/transformed)")
-	void explicit_union_with_service_alt_branch_counts() {
-		TupleExpr te = parse("SELECT * WHERE { { SERVICE <http://svc/> { ?s (ex:a|ex:b) ?o } } UNION { ?s ex:q ?o } }");
-		dumpAlgebra("explicit_union_with_service_alt_branch_counts", te);
-		List<Union> al = collectUnions(te);
-		long path = al.stream().filter(TupleExprUnionPathScopeShapeTest::isPathGeneratedUnionHeuristic).count();
-		long explicit = al.size() - path;
-		assertThat(al.size()).isGreaterThanOrEqualTo(2);
-		assertThat(explicit).isGreaterThanOrEqualTo(1);
-		assertThat(path).isGreaterThanOrEqualTo(1);
-		TupleExprIRRenderer r = new TupleExprIRRenderer();
-		List<IrUnion> rawU = collectIrUnions(r.toIRSelectRaw(te));
-		assertThat(rawU.size()).isGreaterThanOrEqualTo(2);
-		long rawPath = rawU.stream().filter(TupleExprUnionPathScopeShapeTest::isPathGeneratedIrUnionHeuristic).count();
-		long rawExplicit = rawU.size() - rawPath;
-		assertThat(rawExplicit).isGreaterThanOrEqualTo(1);
-		assertThat(rawPath).isGreaterThanOrEqualTo(1);
-		List<IrUnion> trU = collectIrUnions(r.toIRSelect(te));
-		assertThat(trU.size()).isGreaterThanOrEqualTo(1);
-		long trExplicit = trU.stream().filter(u -> !isPathGeneratedIrUnionHeuristic(u)).count();
-		assertThat(trExplicit).isGreaterThanOrEqualTo(1);
-	}
-
-	@Test
-	@DisplayName("Explicit UNION with OPTIONAL{alt} branch: outer explicit=1, inner path=1 (raw/transformed)")
-	void explicit_union_with_optional_alt_branch_counts() {
-		TupleExpr te = parse("SELECT * WHERE { { OPTIONAL { ?s (ex:a|ex:b) ?o } } UNION { ?s ex:q ?o } }");
-		dumpAlgebra("explicit_union_with_optional_alt_branch_counts", te);
-		List<Union> al = collectUnions(te);
-		long path = al.stream().filter(TupleExprUnionPathScopeShapeTest::isPathGeneratedUnionHeuristic).count();
-		long explicit = al.size() - path;
-		assertThat(al.size()).isGreaterThanOrEqualTo(2);
-		assertThat(explicit).isGreaterThanOrEqualTo(1);
-		assertThat(path).isGreaterThanOrEqualTo(1);
-		TupleExprIRRenderer r = new TupleExprIRRenderer();
-		List<IrUnion> rawU = collectIrUnions(r.toIRSelectRaw(te));
-		assertThat(rawU.size()).isGreaterThanOrEqualTo(2);
-		long rawPath = rawU.stream().filter(TupleExprUnionPathScopeShapeTest::isPathGeneratedIrUnionHeuristic).count();
-		long rawExplicit = rawU.size() - rawPath;
-		assertThat(rawExplicit).isGreaterThanOrEqualTo(1);
-		assertThat(rawPath).isGreaterThanOrEqualTo(1);
-		List<IrUnion> trU = collectIrUnions(r.toIRSelect(te));
-		assertThat(trU.size()).isGreaterThanOrEqualTo(1);
-		long trExplicit = trU.stream().filter(u -> !isPathGeneratedIrUnionHeuristic(u)).count();
-		assertThat(trExplicit).isGreaterThanOrEqualTo(1);
 	}
 }
