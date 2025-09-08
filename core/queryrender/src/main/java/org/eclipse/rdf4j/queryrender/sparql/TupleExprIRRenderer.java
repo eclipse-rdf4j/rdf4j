@@ -494,6 +494,21 @@ public class TupleExprIRRenderer {
 		return new TupleExprToIrConverter(this).toIRSelect(tupleExpr);
 	}
 
+	/** Build IR without applying IR transforms (raw). Useful for tests and debugging. */
+	public IrSelect toIRSelectRaw(final TupleExpr tupleExpr) {
+		return TupleExprToIrConverter.toIRSelectRaw(tupleExpr, this, false);
+	}
+
+	/** Dump raw IR (JSON) for debugging/tests. */
+	public String dumpIRRaw(final TupleExpr tupleExpr) {
+		return org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug.dump(toIRSelectRaw(tupleExpr));
+	}
+
+	/** Dump transformed IR (JSON) for debugging/tests. */
+	public String dumpIRTransformed(final TupleExpr tupleExpr) {
+		return org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug.dump(toIRSelect(tupleExpr));
+	}
+
 	/** Render a textual SELECT query from an {@code IrSelect} model. */
 
 	// ---------------- Rendering helpers (prefix-aware) ----------------
