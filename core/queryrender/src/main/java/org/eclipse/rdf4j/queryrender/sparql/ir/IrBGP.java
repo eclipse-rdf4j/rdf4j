@@ -35,8 +35,8 @@ public class IrBGP extends IrNode {
 		super(newScope);
 	}
 
-	public IrBGP(IrBGP where, boolean b) {
-		super(b);
+	public IrBGP(IrBGP where, boolean newScope) {
+		super(newScope);
 		add(where);
 	}
 
