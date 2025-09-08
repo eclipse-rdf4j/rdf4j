@@ -96,6 +96,14 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	 * ========================= Constructors (existing API) =========================
 	 */
 
+	/**
+	 * @deprecated since 5.1.5, use {@link #of(String, Value, boolean, boolean)} instead.
+	 * @param name
+	 * @param value
+	 * @param anonymous
+	 * @param constant
+	 */
+	@Deprecated(since = "5.1.5", forRemoval = true)
 	public Var(String name, Value value, boolean anonymous, boolean constant) {
 		this.name = name;
 		this.value = value;
@@ -169,56 +177,6 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 		 */
 		Var newVar(String name, Value value, boolean anonymous, boolean constant);
 	}
-
-	/*
-	 * ========================= Provider bootstrap (lazy, fast) =========================
-	 */
-
-	private static final class Holder {
-		private static final Provider DEFAULT = new Provider() {
-			@Override
-			public Var newVar(String name, Value value, boolean anonymous, boolean constant) {
-				return new Var(name, value, anonymous, constant);
-			}
-		};
-
-		static final Provider PROVIDER = initProvider();
-
-		private static Provider initProvider() {
-			// 1) Explicit override via system property (FQCN of Var.Provider)
-			String fqcn = System.getProperty(PROVIDER_PROPERTY);
-			if (fqcn != null && !fqcn.isEmpty()) {
-				try {
-					Class<?> cls = Class.forName(fqcn, true, Var.class.getClassLoader());
-					if (Provider.class.isAssignableFrom(cls)) {
-						@SuppressWarnings("unchecked")
-						Class<? extends Provider> pcls = (Class<? extends Provider>) cls;
-						return pcls.getDeclaredConstructor().newInstance();
-					}
-					// Fall through to discovery if class does not implement Provider
-				} catch (Throwable t) {
-					// Swallow and fall back to discovery; avoid linking to any logging framework here.
-				}
-			}
-
-			// 2) ServiceLoader discovery: pick the first provider found
-			try {
-				ServiceLoader<Provider> loader = ServiceLoader.load(Provider.class);
-				for (Provider p : loader) {
-					return p; // first one wins
-				}
-			} catch (Throwable t) {
-				// ignore and fall back
-			}
-
-			// 3) Fallback: direct construction
-			return DEFAULT;
-		}
-	}
-
-	/*
-	 * ========================= Accessors and behavior =========================
-	 */
 
 	public boolean isAnonymous() {
 		return anonymous;
@@ -305,7 +263,9 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 	@Override
 	public Var clone() {
-		return Var.of(name, value, anonymous, constant);
+		Var var = Var.of(name, value, anonymous, constant);
+		var.setVariableScopeChange(this.isVariableScopeChange());
+		return var;
 	}
 
 	/**
@@ -322,12 +282,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 		private static Provider initProvider() {
 			// 1) Explicit override via system property (FQCN of Var.Provider)
-			String fqcn = null;
-			try {
-				fqcn = System.getProperty(PROVIDER_PROPERTY);
-			} catch (SecurityException se) {
-				// Restricted environments may deny property access; ignore and fall back to discovery/default.
-			}
+			String fqcn = System.getProperty(PROVIDER_PROPERTY);
 			if (fqcn != null && !fqcn.isEmpty()) {
 				try {
 					Class<?> cls = Class.forName(fqcn, true, Var.class.getClassLoader());
