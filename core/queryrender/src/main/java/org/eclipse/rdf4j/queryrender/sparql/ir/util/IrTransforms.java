@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseUnionOfPathTri
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupFilterExistsWithPrecedingTriplesTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupUnionOfSameGraphBranchesTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.GroupValuesAndNpsInUnionBranchTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.MergeAdjacentValuesTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.MergeFilterExistsIntoPrecedingGraphTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.MergeOptionalIntoPrecedingGraphTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeFilterNotInTransform;
@@ -74,6 +75,9 @@ public final class IrTransforms {
 					IrBGP w = (IrBGP) child;
 					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
 					w = CoalesceAdjacentGraphsTransform.apply(w);
+					// Merge adjacent VALUES where provably safe (identical var lists => intersection; disjoint => cross
+					// product)
+					w = MergeAdjacentValuesTransform.apply(w);
 					// Preserve structure: prefer GRAPH { {A} UNION {B} } over
 					// { GRAPH { A } } UNION { GRAPH { B } } when both UNION branches
 					// are GRAPHs with the same graph ref.

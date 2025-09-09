@@ -141,20 +141,24 @@ public class TupleExprUnionPathScopeShapeTest {
 				}
 			} else if (n instanceof IrGraph) {
 				IrBGP w = ((IrGraph) n).getWhere();
-				if (w != null)
+				if (w != null) {
 					dq.add(w);
+				}
 			} else if (n instanceof IrService) {
 				IrBGP w = ((IrService) n).getWhere();
-				if (w != null)
+				if (w != null) {
 					dq.add(w);
+				}
 			} else if (n instanceof IrOptional) {
 				IrBGP w = ((IrOptional) n).getWhere();
-				if (w != null)
+				if (w != null) {
 					dq.add(w);
+				}
 			} else if (n instanceof IrMinus) {
 				IrBGP w = ((IrMinus) n).getWhere();
-				if (w != null)
+				if (w != null) {
 					dq.add(w);
+				}
 			}
 		}
 		return out;
