@@ -631,6 +631,12 @@ public final class ApplyPathsTransform extends BaseTransform {
 			// subsequent chaining with a following constant-predicate triple via pt + SP -> pt/IRI.
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
+				// Universal safeguard: if UNION has newScope==true and all branches have newScope==true,
+				// never fuse this UNION.
+				if (BaseTransform.unionIsExplicitAndAllBranchesScoped(u)) {
+					out.add(n);
+					continue;
+				}
 				boolean branchesAllNonScoped = true;
 				for (IrBGP br : u.getBranches()) {
 					if (br != null && br.isNewScope()) {
