@@ -1860,10 +1860,10 @@ public class TupleExprToIrConverter {
 				} else {
 					irU.addBranch(wr);
 				}
+
 				// If this UNION is a trivial alternation of single triples/paths with identical endpoints,
 				// treat it as path-generated for downstream transforms regardless of algebra scope flag.
-				if (BaseTransform
-						.unionBranchesFormSafeAlternation(irU, r)) {
+				if (BaseTransform.unionBranchesFormSafeAlternation(irU, r)) {
 					irU.setNewScope(false);
 				}
 				where.add(irU);
@@ -1887,8 +1887,8 @@ public class TupleExprToIrConverter {
 					irU.addBranch(wb);
 				}
 			}
-			if (BaseTransform
-					.unionBranchesFormSafeAlternation(irU, r)) {
+
+			if (BaseTransform.unionBranchesFormSafeAlternation(irU, r)) {
 				irU.setNewScope(false);
 			}
 			where.add(irU);

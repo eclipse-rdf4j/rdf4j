@@ -823,14 +823,13 @@ public final class ApplyPathsTransform extends BaseTransform {
 					if (t0 != null && t1 != null) {
 						// Ensure endpoints match (forward); if reversed, skip this case for safety.
 						if (sameVar(t0.s, t1.s) && sameVar(t0.o, t1.o)) {
-							String alt = ("(" + t0.path + ")|(" + t1.path + ")");
+							String alt = t0.path + "|" + t1.path;
 							Set<Var> pathVars = new HashSet<>();
 							pathVars.addAll(t0.pathVars);
 							pathVars.addAll(t1.pathVars);
 							IrPathTriple fusedPt = new IrPathTriple(t0.s, alt, t0.o, false, pathVars);
-							if (u.isNewScope()) {
+							if (u.isNewScope() && !bgp.isNewScope()) {
 								IrBGP grp = new IrBGP(true);
-								grp.setNewScope(true);
 								grp.add(fusedPt);
 								out.add(grp);
 							} else {
@@ -872,12 +871,11 @@ public final class ApplyPathsTransform extends BaseTransform {
 								atom = "^" + r.convertIRIToString((IRI) pv.getValue());
 							}
 							if (atom != null) {
-								final String alt = (ptIdx == 0) ? ("(" + pt.getPathText() + ")|(" + atom + ")")
-										: ("(" + atom + ")|(" + pt.getPathText() + ")");
+								final String alt = (ptIdx == 0) ? (pt.getPathText() + "|" + atom)
+										: (atom + "|" + pt.getPathText());
 								IrPathTriple fused2 = new IrPathTriple(wantS, alt, wantO, false, pt.getPathVars());
-								if (u.isNewScope()) {
+								if (u.isNewScope() && !bgp.isNewScope()) {
 									IrBGP grp = new IrBGP(true);
-									grp.setNewScope(true);
 									grp.add(fused2);
 									out.add(grp);
 								} else {
@@ -1065,19 +1063,17 @@ public final class ApplyPathsTransform extends BaseTransform {
 						IrBGP inner = new IrBGP(false);
 						inner.add(pt);
 						IrGraph fusedGraph = new IrGraph(graphRef, inner, false);
-						if (u.isNewScope()) {
+						if (u.isNewScope() && !bgp.isNewScope()) {
 							// Preserve explicit UNION scope by wrapping the fused result in an extra group
 							IrBGP grp = new IrBGP(true);
-							grp.setNewScope(true);
 							grp.add(fusedGraph);
 							out.add(grp);
 						} else {
 							out.add(fusedGraph);
 						}
 					} else {
-						if (u.isNewScope()) {
+						if (u.isNewScope() && !bgp.isNewScope()) {
 							IrBGP grp = new IrBGP(true);
-							grp.setNewScope(true);
 							grp.add(pt);
 							out.add(grp);
 						} else {

@@ -84,10 +84,6 @@ public final class IrTransforms {
 					w = ApplyCollectionsTransform.apply(w);
 					w = ApplyNegatedPropertySetTransform.apply(w, r);
 
-					// Lift scope from path-generated UNIONs (UNION.newScope=true and all branches non-scoped)
-					// to the containing BGP so that grouping braces are preserved even after fusion.
-					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.LiftPathUnionScopeToBgpTransform
-							.apply(w);
 					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
 
 					w = ApplyPathsFixedPointTransform.apply(w, r);
@@ -107,6 +103,8 @@ public final class IrTransforms {
 					w = MergeOptionalIntoPrecedingGraphTransform.apply(w);
 					w = FuseAltInverseTailBGPTransform.apply(w, r);
 					w = FlattenSingletonUnionsTransform.apply(w);
+//					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CollapseRedundantScopedBgpsTransform
+//							.apply(w);
 					// Re-apply guarded merge in case earlier passes reshaped the grouping to satisfy the
 					// precondition (EXISTS newScope). This remains a no-op when no explicit grouping exists.
 					w = MergeFilterExistsIntoPrecedingGraphTransform.apply(w);
