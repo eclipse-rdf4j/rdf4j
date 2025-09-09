@@ -287,14 +287,14 @@ public class QueryPlanRetrievalTest {
 					"      ║  │     Bound\n" +
 					"      ║  │        Var (name=g)\n" +
 					"      ║  └── Join (JoinIterator)\n" +
-					"      ║     ╠══ Filter [left]\n" +
+					"      ║     ╠══ Filter (new scope) [left]\n" +
 					"      ║     ║  ├── And\n" +
-					"      ║     ║  │  ╠══ Compare (>)\n" +
-					"      ║     ║  │  ║     Var (name=o)\n" +
-					"      ║     ║  │  ║     ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"      ║     ║  │  ╠══ Bound\n" +
+					"      ║     ║  │  ║     Var (name=s)\n" +
+					"      ║     ║  │  ╚══ Compare (>)\n" +
+					"      ║     ║  │        Var (name=o)\n" +
+					"      ║     ║  │        ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"      ║     ║  │  ╚══ Bound\n" +
-					"      ║     ║  │        Var (name=s)\n" +
 					"      ║     ║  └── StatementPattern (costEstimate=2.50, resultSizeEstimate=0)\n" +
 					"      ║     ║        s: Var (name=s)\n" +
 					"      ║     ║        p: Var (name=_const_c03ab50c_uri, value=http://example.com/p, anonymous)\n" +
@@ -325,11 +325,11 @@ public class QueryPlanRetrievalTest {
 					"         ├── And\n" +
 					"         │  ╠══ And\n" +
 					"         │  ║  ├── Compare (!=)\n" +
-					"         │  ║  │     Var (name=o)\n" +
-					"         │  ║  │     ValueConstant (value=\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"         │  ║  │     Var (name=g)\n" +
+					"         │  ║  │     ValueConstant (value=http://example.com/Bad)\n" +
 					"         │  ║  └── Compare (!=)\n" +
-					"         │  ║        Var (name=g)\n" +
-					"         │  ║        ValueConstant (value=http://example.com/Bad)\n" +
+					"         │  ║        Var (name=o)\n" +
+					"         │  ║        ValueConstant (value=\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
 					"         │  ╚══ ListMemberOperator\n" +
 					"         │        Var (name=o2)\n" +
 					"         │        ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
@@ -1334,19 +1334,20 @@ public class QueryPlanRetrievalTest {
 					"      ║     ║     p: Var (name=b)\n" +
 					"      ║     ║     o: Var (name=c)\n" +
 					"      ║     ╚══ Union (resultSizeActual=20) [right]\n" +
-					"      ║        ├── StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=10)\n"
+					"      ║        ├── StatementPattern (new scope) (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=10)\n"
 					+
 					"      ║        │     s: Var (name=c2)\n" +
 					"      ║        │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
 					"      ║        │     o: Var (name=type1)\n" +
-					"      ║        └── StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=10)\n"
+					"      ║        └── StatementPattern (new scope) (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=10)\n"
 					+
 					"      ║              s: Var (name=c2)\n" +
 					"      ║              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
 					"      ║              o: Var (name=type2)\n" +
-					"      ╚══ StatementPattern (costEstimate=6.61, resultSizeEstimate=12, resultSizeActual=4)\n" +
+					"      ╚══ StatementPattern (new scope) (costEstimate=6.61, resultSizeEstimate=12, resultSizeActual=4)\n"
+					+
 					"            s: Var (name=type)\n" +
 					"            p: Var (name=d)\n" +
 					"            o: Var (name=c)\n";
