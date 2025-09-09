@@ -53,13 +53,8 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 				out.add(new IrGraph(g.getGraph(), inner, g.isNewScope()));
 			} else if (n instanceof IrBGP || n instanceof IrOptional || n instanceof IrMinus || n instanceof IrUnion
 					|| n instanceof IrService) {
-				n = n.transformChildren(child -> {
-					if (child instanceof IrBGP) {
-						return apply((IrBGP) child, r);
-					}
-					return child;
-				});
-				out.add(n);
+				IrNode rec = BaseTransform.rewriteContainers(n, child -> apply(child, r));
+				out.add(rec);
 			} else {
 				out.add(n);
 			}
@@ -105,23 +100,6 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 				}
 			}
 			// Recurse into containers
-			if (n instanceof IrGraph) {
-				IrGraph g = (IrGraph) n;
-				out.add(new IrGraph(g.getGraph(), fuseAdjacentPtThenSp(g.getWhere(), r), g.isNewScope()));
-				continue;
-			}
-			if (n instanceof IrOptional) {
-				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(fuseAdjacentPtThenSp(o.getWhere(), r), o.isNewScope());
-				no.setNewScope(o.isNewScope());
-				out.add(no);
-				continue;
-			}
-			if (n instanceof IrMinus) {
-				IrMinus m = (IrMinus) n;
-				out.add(new IrMinus(fuseAdjacentPtThenSp(m.getWhere(), r), m.isNewScope()));
-				continue;
-			}
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
 				IrUnion u2 = new IrUnion(u.isNewScope());
@@ -136,13 +114,8 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 				out.add(u2);
 				continue;
 			}
-			if (n instanceof IrService) {
-				IrService s = (IrService) n;
-				out.add(new IrService(s.getServiceRefText(), s.isSilent(), fuseAdjacentPtThenSp(s.getWhere(), r),
-						s.isNewScope()));
-				continue;
-			}
-			out.add(n);
+			IrNode rec = BaseTransform.rewriteContainers(n, child -> fuseAdjacentPtThenSp(child, r));
+			out.add(rec);
 		}
 		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
