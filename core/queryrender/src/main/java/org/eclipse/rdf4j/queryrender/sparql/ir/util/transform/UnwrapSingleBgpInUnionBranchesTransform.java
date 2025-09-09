@@ -60,29 +60,26 @@ public final class UnwrapSingleBgpInUnionBranchesTransform extends BaseTransform
 			}
 			out.add(m);
 		}
-		return BaseTransform.bgpWithLines(bgp, out);
+		IrBGP res = new IrBGP(bgp.isNewScope());
+		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
+		return res;
 	}
 
 	private static IrUnion unwrapUnionBranches(IrUnion u) {
 		IrUnion u2 = new IrUnion(u.isNewScope());
 		for (IrBGP b : u.getBranches()) {
 			IrBGP cur = b;
-			boolean branchScope = b.isNewScope();
-			// Flatten exactly-one-child BGP wrappers inside UNION branches. If the inner BGP
-			// carries newScope, lift that scope to the branch and drop the inner wrapper to
-			// avoid printing double braces like "{ { ... } }".
-			while (cur.getLines().size() == 1 && cur.getLines().get(0) instanceof IrBGP) {
+			// unwrap nested single-child BGPs that do NOT carry explicit new scope
+			boolean changed = true;
+			while (changed && cur != null && cur.getLines().size() == 1
+					&& cur.getLines().get(0) instanceof IrBGP) {
 				IrBGP inner = (IrBGP) cur.getLines().get(0);
-				branchScope = branchScope || inner.isNewScope();
-				// Replace current with the inner's contents (flatten one level)
-				IrBGP flattened = new IrBGP(false);
-				for (IrNode ln : inner.getLines()) {
-					flattened.add(ln);
+				if (inner.isNewScope()) {
+					break;
 				}
-				cur = flattened;
+				cur = inner;
 			}
-			// Reapply the accumulated scope to the flattened branch BGP
-			cur.setNewScope(branchScope);
 			u2.addBranch(cur);
 		}
 		return u2;

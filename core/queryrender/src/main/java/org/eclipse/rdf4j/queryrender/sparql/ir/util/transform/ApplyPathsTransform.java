@@ -841,7 +841,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 							Set<Var> pathVars = new HashSet<>();
 							pathVars.addAll(t0.pathVars);
 							pathVars.addAll(t1.pathVars);
-							IrPathTriple fusedPt = new IrPathTriple(t0.s, alt, t0.o, false, pathVars);
+							IrPathTriple fusedPt = new IrPathTriple(t0.s, alt, t0.o, u.isNewScope(), pathVars);
 							out.add(fusedPt);
 							continue;
 						}
@@ -881,7 +881,8 @@ public final class ApplyPathsTransform extends BaseTransform {
 							if (atom != null) {
 								final String alt = (ptIdx == 0) ? (pt.getPathText() + "|" + atom)
 										: (atom + "|" + pt.getPathText());
-								IrPathTriple fused2 = new IrPathTriple(wantS, alt, wantO, false, pt.getPathVars());
+								IrPathTriple fused2 = new IrPathTriple(wantS, alt, wantO, u.isNewScope(),
+										pt.getPathVars());
 								out.add(fused2);
 								continue;
 							}

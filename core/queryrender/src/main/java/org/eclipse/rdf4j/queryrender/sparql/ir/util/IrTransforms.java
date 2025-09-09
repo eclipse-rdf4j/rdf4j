@@ -171,6 +171,11 @@ public final class IrTransforms {
 					// One more UNION-of-NPS fuser after broader path refactors to catch newly-formed shapes
 					w = FuseUnionOfNpsBranchesTransform.apply(w, r);
 
+					// Remove redundant, non-scoped single-child BGP layers inside UNION branches to
+					// avoid introducing extra brace layers in branch rendering.
+					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.UnwrapSingleBgpInUnionBranchesTransform
+							.apply(w);
+
 					// Late normalization of grouped tail steps: ensure a final tail like "/foaf:name"
 					// is rendered outside the right-hand grouping when safe
 					w = CanonicalizeGroupedTailStepTransform.apply(w, r);
