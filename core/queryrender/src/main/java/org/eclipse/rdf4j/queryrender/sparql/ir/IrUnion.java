@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
  * boundaries.
  */
 public class IrUnion extends IrNode {
-	private List<IrBGP> branches = new ArrayList<>();
+	private final List<IrBGP> branches = new ArrayList<>();
 
 	public IrUnion(boolean newScope) {
 		super(newScope);

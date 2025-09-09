@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
@@ -166,7 +167,7 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 		}
 		String t = s.trim();
 		String inner = trimSingleOuterParens(t);
-		if (inner == t) {
+		if (Objects.equals(inner, t)) {
 			return s; // not a single outer pair
 		}
 		// At this point, t is wrapped with a single pair of parentheses. Only unwrap when

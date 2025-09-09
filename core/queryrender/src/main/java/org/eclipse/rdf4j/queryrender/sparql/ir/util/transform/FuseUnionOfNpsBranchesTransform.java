@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -346,9 +345,9 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			}
 			final String merged = "!(" + String.join("|", members) + ")";
 			IrPathTriple mergedPt = new IrPathTriple(sCanon,
-					firstPt == null ? null : firstPt.getSubjectOverride(), merged, oCanon,
-					firstPt == null ? null : firstPt.getObjectOverride(),
-					firstPt == null ? Collections.emptySet() : firstPt.getPathVars(), false);
+					firstPt.getSubjectOverride(), merged, oCanon,
+					firstPt.getObjectOverride(),
+					firstPt.getPathVars(), false);
 			IrNode fused;
 			if (graphRef != null) {
 				IrBGP inner = new IrBGP(innerBgpNewScope);
@@ -485,6 +484,6 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				}
 			}
 		}
-		return inter != null && !inter.isEmpty();
+		return !inter.isEmpty();
 	}
 }

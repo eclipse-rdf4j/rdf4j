@@ -74,7 +74,7 @@ public final class UnwrapSingleBgpInUnionBranchesTransform extends BaseTransform
 			// Flatten exactly-one-child BGP wrappers inside UNION branches. If the inner BGP
 			// carries newScope, lift that scope to the branch and drop the inner wrapper to
 			// avoid printing double braces like "{ { ... } }".
-			while (cur != null && cur.getLines().size() == 1 && cur.getLines().get(0) instanceof IrBGP) {
+			while (cur.getLines().size() == 1 && cur.getLines().get(0) instanceof IrBGP) {
 				IrBGP inner = (IrBGP) cur.getLines().get(0);
 				branchScope = branchScope || inner.isNewScope();
 				// Replace current with the inner's contents (flatten one level)

@@ -67,9 +67,7 @@ public final class FlattenSingletonUnionsTransform extends BaseTransform {
 				}
 				if (u.getBranches().size() == 1) {
 					IrBGP only = u.getBranches().get(0);
-					for (IrNode ln : only.getLines()) {
-						out.add(ln);
-					}
+					out.addAll(only.getLines());
 					continue;
 				}
 			}

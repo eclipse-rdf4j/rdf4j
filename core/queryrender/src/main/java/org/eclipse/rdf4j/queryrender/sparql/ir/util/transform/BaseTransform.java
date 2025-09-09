@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -31,7 +32,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrTripleLike;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
 /**
@@ -146,6 +146,48 @@ public class BaseTransform {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Utility: rewrite container nodes by applying a given function to their inner IrBGP children. Non-container nodes
+	 * are returned unchanged. This abstracts common recursion boilerplate across many transforms and ensures newScope
+	 * and other flags are preserved consistently for containers.
+	 *
+	 * Containers handled: IrGraph, IrOptional, IrMinus, IrService, IrUnion. Nested IrBGP lines that appear directly
+	 * inside a parent IrBGP (explicit grouping) are intentionally left unchanged here — transforms should decide if and
+	 * how to recurse into such explicit groups.
+	 */
+	public static IrNode rewriteContainers(IrNode n, Function<IrBGP, IrBGP> f) {
+		if (n == null) {
+			return null;
+		}
+		if (n instanceof IrGraph) {
+			IrGraph g = (IrGraph) n;
+			return new IrGraph(g.getGraph(), f.apply(g.getWhere()), g.isNewScope());
+		}
+		if (n instanceof IrOptional) {
+			IrOptional o = (IrOptional) n;
+			return new IrOptional(f.apply(o.getWhere()), o.isNewScope());
+		}
+		if (n instanceof IrMinus) {
+			IrMinus m = (IrMinus) n;
+			return new IrMinus(f.apply(m.getWhere()), m.isNewScope());
+		}
+		if (n instanceof IrService) {
+			IrService s = (IrService) n;
+			return new IrService(s.getServiceRefText(), s.isSilent(), f.apply(s.getWhere()), s.isNewScope());
+		}
+		if (n instanceof IrUnion) {
+			IrUnion u = (IrUnion) n;
+			IrUnion u2 = new IrUnion(u.isNewScope());
+			for (IrBGP b : u.getBranches()) {
+				u2.addBranch(f.apply(b));
+			}
+			u2.setNewScope(u.isNewScope());
+			return u2;
+		}
+		// Do not auto-descend into IrBGP explicit groups here; caller decides.
+		return n;
 	}
 
 	/** Return true if the string has the given character at top level (not inside parentheses). */
@@ -781,107 +823,7 @@ public class BaseTransform {
 				bNames.add(v.getName());
 			}
 		}
-		if (!aNames.isEmpty() && !bNames.isEmpty() && intersects(aNames, bNames)) {
-			return true;
-		}
-		return false;
-	}
-
-	/**
-	 * Determine if a UNION’s branches reduce to a safe alternation over identical endpoints (optionally inside the same
-	 * GRAPH). Each branch must be exactly one triple-like (IrStatementPattern or IrPathTriple), or such a triple-like
-	 * wrapped in a single IrGraph with the same graph reference across branches. The predicate/path text must be atomic
-	 * (no top-level '|' or '/', and no quantifiers), or a simple canonical NPS '!(...)'. Endpoints must align, allowing
-	 * a simple inversion for statement patterns or for bare NPS path triples.
-	 *
-	 * This predicate is intentionally conservative and does not construct any fused node; it only checks structural
-	 * eligibility for safe alternation.
-	 */
-	public static boolean unionBranchesFormSafeAlternation(final IrUnion u, final TupleExprIRRenderer r) {
-		if (unionIsExplicitAndAllBranchesScoped(u)) {
-			return false;
-		}
-
-		if (u == null || u.getBranches() == null || u.getBranches().isEmpty()) {
-			return false;
-		}
-		Var subj = null, obj = null, graphRef = null;
-		boolean ok = true;
-		for (IrBGP b : u.getBranches()) {
-			if (!ok) {
-				break;
-			}
-			if (b == null || b.getLines() == null || b.getLines().isEmpty()) {
-				ok = false;
-				break;
-			}
-			IrNode only = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
-			IrTripleLike tl = null;
-			Var branchGraph = null;
-			if (only instanceof IrGraph) {
-				IrGraph g = (IrGraph) only;
-				IrBGP w = g.getWhere();
-				if (w == null || w.getLines() == null || w.getLines().size() != 1
-						|| !(w.getLines().get(0) instanceof IrTripleLike)) {
-					ok = false;
-					break;
-				}
-				branchGraph = g.getGraph();
-				ttl: tl = (IrTripleLike) w.getLines().get(0);
-			} else if (only instanceof IrTripleLike) {
-				tl = (IrTripleLike) only;
-			} else {
-				ok = false;
-				break;
-			}
-
-			if (branchGraph != null) {
-				if (graphRef == null) {
-					graphRef = branchGraph;
-				} else if (!sameVarOrValue(graphRef, branchGraph)) {
-					ok = false;
-					break;
-				}
-			} else if (graphRef != null) {
-				ok = false;
-				break; // mixture of GRAPH and non-GRAPH branches
-			}
-
-			final Var s = tl.getSubject();
-			final Var o = tl.getObject();
-			String piece = tl.getPredicateOrPathText(r);
-			if (piece == null) {
-				ok = false;
-				break;
-			}
-			// Require atomic or NPS path text
-			final String norm = normalizeCompactNps(piece);
-			final boolean atomic = isAtomicPathText(piece)
-					|| (norm != null && norm.startsWith("!(") && norm.endsWith(")"));
-			if (!atomic) {
-				ok = false;
-				break;
-			}
-
-			if (subj == null && obj == null) {
-				// Choose canonical endpoints preferring non-anon subject
-				if (isAnonPathVar(s) && !isAnonPathVar(o)) {
-					subj = o;
-					obj = s;
-				} else {
-					subj = s;
-					obj = o;
-				}
-			}
-			if (!(sameVar(subj, s) && sameVar(obj, o))) {
-				// Allow inversion when endpoints are reversed
-				if (!(sameVar(subj, o) && sameVar(obj, s))) {
-					ok = false;
-					break;
-				}
-			}
-		}
-		return ok;
+		return !aNames.isEmpty() && !bNames.isEmpty() && intersects(aNames, bNames);
 	}
 
 	private static boolean intersects(Set<String> a, Set<String> b) {
@@ -894,138 +836,6 @@ public class BaseTransform {
 			}
 		}
 		return false;
-	}
-
-	private static final class BranchRoles {
-		final Set<String> s = new HashSet<>();
-		final Set<String> o = new HashSet<>();
-		final Set<String> p = new HashSet<>();
-	}
-
-	private static BranchRoles collectBranchRoles(IrBGP b) {
-		if (b == null) {
-			return null;
-		}
-		BranchRoles out = new BranchRoles();
-		collectRolesRecursive(b, out);
-		// If nothing collected, return null to signal ineligibility
-		if (out.s.isEmpty() && out.o.isEmpty() && out.p.isEmpty()) {
-			return null;
-		}
-		return out;
-	}
-
-	private static void collectRolesRecursive(IrBGP w, BranchRoles out) {
-		if (w == null) {
-			return;
-		}
-		for (IrNode ln : w.getLines()) {
-			if (ln instanceof IrStatementPattern) {
-				IrStatementPattern sp = (IrStatementPattern) ln;
-				Var s = sp.getSubject();
-				Var o = sp.getObject();
-				Var p = sp.getPredicate();
-				if (isAnonPathVar(s) || isAnonPathInverseVar(s)) {
-					out.s.add(s.getName());
-				}
-				if (isAnonPathVar(o) || isAnonPathInverseVar(o)) {
-					out.o.add(o.getName());
-				}
-				if (p != null && !p.hasValue() && (isAnonPathVar(p) || isAnonPathInverseVar(p))) {
-					out.p.add(p.getName());
-				}
-			} else if (ln instanceof IrPathTriple) {
-				IrPathTriple pt = (IrPathTriple) ln;
-				Var s = pt.getSubject();
-				Var o = pt.getObject();
-				if (isAnonPathVar(s) || isAnonPathInverseVar(s)) {
-					out.s.add(s.getName());
-				}
-				if (isAnonPathVar(o) || isAnonPathInverseVar(o)) {
-					out.o.add(o.getName());
-				}
-			} else if (ln instanceof IrGraph) {
-				collectRolesRecursive(((IrGraph) ln).getWhere(), out);
-			} else if (ln instanceof IrBGP) {
-				collectRolesRecursive((IrBGP) ln, out);
-			}
-		}
-	}
-
-	/** Collect names of variables recorded in IrPathTriple.pathVars within a BGP subtree. */
-	private static void collectPathVarsNames(IrBGP b, Set<String> out) {
-		if (b == null) {
-			return;
-		}
-		for (IrNode ln : b.getLines()) {
-			if (ln instanceof IrPathTriple) {
-				IrPathTriple pt = (IrPathTriple) ln;
-				Set<Var> pvs = pt.getPathVars();
-				if (pvs != null) {
-					for (Var v : pvs) {
-						if (v != null && !v.hasValue() && v.getName() != null && !v.getName().isEmpty()) {
-							out.add(v.getName());
-						}
-					}
-				}
-			} else if (ln instanceof IrGraph) {
-				collectPathVarsNames(((IrGraph) ln).getWhere(), out);
-			} else if (ln instanceof IrOptional) {
-				collectPathVarsNames(((IrOptional) ln).getWhere(), out);
-			} else if (ln instanceof IrMinus) {
-				collectPathVarsNames(((IrMinus) ln).getWhere(), out);
-			} else if (ln instanceof IrUnion) {
-				for (IrBGP br : ((IrUnion) ln).getBranches()) {
-					collectPathVarsNames(br, out);
-				}
-			} else if (ln instanceof IrBGP) {
-				collectPathVarsNames((IrBGP) ln, out);
-			}
-		}
-	}
-
-	/** Unwrap a branch to a single bare-NPS IrPathTriple when present; otherwise return null. */
-	private static IrPathTriple extractSingleBareNpsPathTriple(IrBGP b) {
-		if (b == null) {
-			return null;
-		}
-		IrNode node;
-		if (b.getLines() == null || b.getLines().size() != 1) {
-			return null;
-		}
-		node = b.getLines().get(0);
-		while (node instanceof IrBGP) {
-			IrBGP bb = (IrBGP) node;
-			if (bb.getLines() == null || bb.getLines().size() != 1) {
-				break;
-			}
-			node = bb.getLines().get(0);
-		}
-		if (node instanceof IrGraph) {
-			IrGraph g = (IrGraph) node;
-			IrBGP where = g.getWhere();
-			if (where == null || where.getLines() == null || where.getLines().size() != 1) {
-				return null;
-			}
-			node = where.getLines().get(0);
-			while (node instanceof IrBGP) {
-				IrBGP bb = (IrBGP) node;
-				if (bb.getLines() == null || bb.getLines().size() != 1) {
-					break;
-				}
-				node = bb.getLines().get(0);
-			}
-		}
-		if (!(node instanceof IrPathTriple)) {
-			return null;
-		}
-		IrPathTriple pt = (IrPathTriple) node;
-		String raw = pt.getPathText();
-		String norm = normalizeCompactNps(raw);
-		if (norm == null || !norm.startsWith("!(") || !norm.endsWith(")")) {
-			return null;
-		}
-		return pt;
 	}
 
 	private static void collectAnonPathVarNames(IrBGP b, Set<String> out) {

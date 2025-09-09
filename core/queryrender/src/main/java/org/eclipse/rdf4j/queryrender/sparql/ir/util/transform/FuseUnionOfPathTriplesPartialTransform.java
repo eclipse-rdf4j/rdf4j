@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -72,46 +71,6 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			} else if (n instanceof IrService) {
 				IrService s = (IrService) n;
 				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), r), s.isNewScope());
-			} else if (n instanceof IrSubSelect) {
-				// keep as-is
-			}
-			out.add(m);
-		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
-		return res;
-	}
-
-	private static IrBGP applyNoUnion(IrBGP bgp, TupleExprIRRenderer r) {
-		if (bgp == null) {
-			return null;
-		}
-		List<IrNode> out = new ArrayList<>();
-		for (IrNode n : bgp.getLines()) {
-			IrNode m = n;
-			if (n instanceof IrUnion) {
-				// keep union as-is but still recurse into children without fusing
-				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion(u.isNewScope());
-				for (IrBGP b : u.getBranches()) {
-					u2.addBranch(applyNoUnion(b, r));
-				}
-				m = u2;
-			} else if (n instanceof IrGraph) {
-				IrGraph g = (IrGraph) n;
-				m = new IrGraph(g.getGraph(), applyNoUnion(g.getWhere(), r), g.isNewScope());
-			} else if (n instanceof IrOptional) {
-				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(applyNoUnion(o.getWhere(), r), o.isNewScope());
-				no.setNewScope(o.isNewScope());
-				m = no;
-			} else if (n instanceof IrMinus) {
-				IrMinus mi = (IrMinus) n;
-				m = new IrMinus(applyNoUnion(mi.getWhere(), r), mi.isNewScope());
-			} else if (n instanceof IrService) {
-				IrService s = (IrService) n;
-				m = new IrService(s.getServiceRefText(), s.isSilent(), applyNoUnion(s.getWhere(), r), s.isNewScope());
 			} else if (n instanceof IrSubSelect) {
 				// keep as-is
 			}
@@ -261,7 +220,6 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			// no-op
 		}
 
-		boolean changed = false;
 		HashSet<Integer> fusedIdxs = new HashSet<>();
 		IrUnion out = new IrUnion(u.isNewScope());
 		for (Group grp : groups.values()) {
@@ -292,8 +250,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 					List<String> bNonNeg = new ArrayList<>();
 					extractNegAndNonNeg(aTokens, negMembers, aNonNeg);
 					extractNegAndNonNeg(bTokens, negMembers, bNonNeg);
-					ArrayList<String> outTok = new ArrayList<>();
-					outTok.addAll(aNonNeg);
+					ArrayList<String> outTok = new ArrayList<>(aNonNeg);
 					if (!negMembers.isEmpty()) {
 						outTok.add("!(" + String.join("|", negMembers) + ")");
 					}
@@ -337,7 +294,6 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 				}
 				out.addBranch(b);
 				fusedIdxs.addAll(idxs);
-				changed = true;
 				// no-op
 			}
 		}
@@ -365,9 +321,9 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			return null;
 		}
 		// Iteratively unwrap nested IrBGP layers that each wrap exactly one simple node
-		IrNode cur = branch;
-		while (cur instanceof IrBGP) {
-			IrBGP b = (IrBGP) cur;
+		IrBGP cur = branch;
+		while (true) {
+			IrBGP b = cur;
 			if (b.getLines().size() != 1) {
 				break;
 			}
@@ -393,7 +349,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			replaced.add(innerOnly);
 			cur = replaced;
 		}
-		return (IrBGP) cur;
+		return cur;
 	}
 
 	private static boolean branchesShareAnonPathVar(IrUnion u, List<Integer> idxs) {
@@ -482,86 +438,6 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 		IrBGP b = new IrBGP(false);
 		b.add(pt);
 		return b;
-	}
-
-	private static Set<String> collectCommonAnonPathVarNames(IrUnion u) {
-		Set<String> common = null;
-		for (IrBGP b : u.getBranches()) {
-			Set<String> names = new HashSet<>();
-			collectAnonNamesFromNode(b, names);
-			if (names.isEmpty()) {
-				return Collections.emptySet();
-			}
-			if (common == null) {
-				common = new HashSet<>(names);
-			} else {
-				common.retainAll(names);
-				if (common.isEmpty()) {
-					return common;
-				}
-			}
-		}
-		return common == null ? Collections.emptySet() : common;
-	}
-
-	private static void collectAnonNamesFromNode(IrNode n, Set<String> out) {
-		if (n == null) {
-			return;
-		}
-		if (n instanceof IrBGP) {
-			for (IrNode ln : ((IrBGP) n).getLines()) {
-				collectAnonNamesFromNode(ln, out);
-			}
-			return;
-		}
-		if (n instanceof IrGraph) {
-			collectAnonNamesFromNode(((IrGraph) n).getWhere(), out);
-			return;
-		}
-		if (n instanceof IrOptional) {
-			collectAnonNamesFromNode(((IrOptional) n).getWhere(), out);
-			return;
-		}
-		if (n instanceof IrMinus) {
-			collectAnonNamesFromNode(((IrMinus) n).getWhere(), out);
-			return;
-		}
-		if (n instanceof IrService) {
-			collectAnonNamesFromNode(((IrService) n).getWhere(), out);
-			return;
-		}
-		if (n instanceof IrUnion) {
-			for (IrBGP b : ((IrUnion) n).getBranches()) {
-				collectAnonNamesFromNode(b, out);
-			}
-			return;
-		}
-		if (n instanceof IrStatementPattern) {
-			Var s = ((IrStatementPattern) n).getSubject();
-			Var o = ((IrStatementPattern) n).getObject();
-			Var p = ((IrStatementPattern) n).getPredicate();
-			if (isAnonPathVar(s) || isAnonPathInverseVar(s)) {
-				out.add(s.getName());
-			}
-			if (isAnonPathVar(o) || isAnonPathInverseVar(o)) {
-				out.add(o.getName());
-			}
-			if (p != null && !p.hasValue() && p.getName() != null
-					&& (p.getName().startsWith(ANON_PATH_PREFIX) || p.getName().startsWith(ANON_PATH_INVERSE_PREFIX))) {
-				out.add(p.getName());
-			}
-			return;
-		}
-		if (n instanceof IrPathTriple) {
-			Var s = ((IrPathTriple) n).getSubject();
-			Var o = ((IrPathTriple) n).getObject();
-			if (isAnonPathVar(s) || isAnonPathInverseVar(s)) {
-				out.add(s.getName());
-			}
-			if (isAnonPathVar(o) || isAnonPathInverseVar(o)) {
-				out.add(o.getName());
-			}
-		}
 	}
 
 	private static List<String> splitTopLevelAlternation(String path) {

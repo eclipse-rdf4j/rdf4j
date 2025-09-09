@@ -1160,11 +1160,6 @@ public class TupleExprIRRenderer {
 			return TupleExprIRRenderer.this.convertVarToString(v);
 		}
 
-		@Override
-		public String convertIRIToString(IRI iri) {
-			return TupleExprIRRenderer.this.convertIRIToString(iri);
-		}
-
 	}
 
 }

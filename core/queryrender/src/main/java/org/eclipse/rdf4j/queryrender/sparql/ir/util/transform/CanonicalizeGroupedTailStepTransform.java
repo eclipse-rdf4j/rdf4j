@@ -15,14 +15,9 @@ import java.util.List;
 
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
 /**
  * Normalize grouping of a final tail step like "/foaf:name" so that it appears outside the top-level grouped PT/PT
@@ -57,29 +52,11 @@ public final class CanonicalizeGroupedTailStepTransform extends BaseTransform {
 							pt.getPathVars());
 					m = np;
 				}
-			} else if (n instanceof IrGraph) {
-				IrGraph g = (IrGraph) n;
-				m = new IrGraph(g.getGraph(), apply(g.getWhere(), r), g.isNewScope());
-			} else if (n instanceof IrOptional) {
-				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere(), r), o.isNewScope());
-				no.setNewScope(o.isNewScope());
-				m = no;
-			} else if (n instanceof IrMinus) {
-				IrMinus mi = (IrMinus) n;
-				m = new IrMinus(apply(mi.getWhere(), r), mi.isNewScope());
-			} else if (n instanceof IrUnion) {
-				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion(u.isNewScope());
-				for (IrBGP b : u.getBranches()) {
-					u2.addBranch(apply(b, r));
-				}
-				m = u2;
-			} else if (n instanceof IrService) {
-				IrService s = (IrService) n;
-				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), r), s.isNewScope());
 			} else if (n instanceof IrSubSelect) {
 				// keep as-is
+			} else {
+				// Generic recursion into containers
+				m = BaseTransform.rewriteContainers(n, child -> apply(child, r));
 			}
 			out.add(m);
 		}

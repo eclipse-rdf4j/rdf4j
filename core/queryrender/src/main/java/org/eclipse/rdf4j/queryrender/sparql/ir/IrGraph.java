@@ -23,8 +23,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
  * prefix) or an unbound variable name. The body is a nested {@link IrBGP}.
  */
 public class IrGraph extends IrNode {
-	private Var graph;
-	private IrBGP bgp;
+	private final Var graph;
+	private final IrBGP bgp;
 
 	public IrGraph(Var graph, IrBGP bgp, boolean newScope) {
 		super(newScope);

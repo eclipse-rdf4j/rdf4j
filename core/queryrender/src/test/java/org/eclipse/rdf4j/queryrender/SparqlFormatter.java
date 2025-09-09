@@ -146,8 +146,6 @@ public final class SparqlFormatter {
 				if (!atLineStart) {
 					rstripLine(out, lineStart);
 					out.append('\n');
-					atLineStart = true;
-					lineStart = out.length();
 				}
 				braceIndent = Math.max(0, braceIndent - indentWidth);
 				appendIndent(out, braceIndent);
@@ -327,10 +325,7 @@ public final class SparqlFormatter {
 		if (end < s.length() && isWordChar(s.charAt(end))) {
 			return false;
 		}
-		if (pos > 0 && isWordChar(s.charAt(pos - 1))) {
-			return false;
-		}
-		return true;
+		return pos == 0 || !isWordChar(s.charAt(pos - 1));
 	}
 
 	private static boolean isWordChar(char c) {

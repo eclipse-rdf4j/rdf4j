@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
@@ -69,23 +68,6 @@ public class IrPathTriple extends IrTripleLike {
 	/** Merge pathVars from 2+ IrPathTriples into a new unmodifiable set. */
 	public static Set<Var> mergePathVars(IrPathTriple... pts) {
 		if (pts == null || pts.length == 0) {
-			return Collections.emptySet();
-		}
-		HashSet<Var> out = new HashSet<>();
-		for (IrPathTriple pt : pts) {
-			if (pt == null) {
-				continue;
-			}
-			if (pt.getPathVars() != null) {
-				out.addAll(pt.getPathVars());
-			}
-		}
-		return out.isEmpty() ? Collections.emptySet() : Collections.unmodifiableSet(out);
-	}
-
-	/** Merge pathVars from a collection of IrPathTriples. */
-	public static Set<Var> mergePathVars(Collection<IrPathTriple> pts) {
-		if (pts == null || pts.isEmpty()) {
 			return Collections.emptySet();
 		}
 		HashSet<Var> out = new HashSet<>();

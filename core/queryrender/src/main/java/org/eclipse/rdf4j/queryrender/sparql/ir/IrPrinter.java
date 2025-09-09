@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
 
 import java.util.List;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
@@ -53,7 +52,5 @@ public interface IrPrinter {
 
 	// Rendering helpers
 	String convertVarToString(Var v);
-
-	String convertIRIToString(IRI iri);
 
 }

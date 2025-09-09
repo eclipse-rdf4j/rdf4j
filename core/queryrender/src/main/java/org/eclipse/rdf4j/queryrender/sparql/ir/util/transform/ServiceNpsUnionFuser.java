@@ -41,7 +41,7 @@ public final class ServiceNpsUnionFuser {
 		// Exact-body UNION case
 		if (bgp.getLines().size() == 1 && bgp.getLines().get(0) instanceof IrUnion) {
 			IrNode fused = tryFuseUnion((IrUnion) bgp.getLines().get(0));
-			if (fused != null && (fused instanceof IrPathTriple || fused instanceof IrGraph)) {
+			if ((fused instanceof IrPathTriple || fused instanceof IrGraph)) {
 				IrBGP nw = new IrBGP(bgp.isNewScope());
 				nw.add(fused);
 				return nw;
@@ -59,7 +59,7 @@ public final class ServiceNpsUnionFuser {
 		for (IrNode ln : bgp.getLines()) {
 			if (ln instanceof IrUnion) {
 				IrNode fused = tryFuseUnion((IrUnion) ln);
-				if (fused != null && (fused instanceof IrPathTriple || fused instanceof IrGraph)) {
+				if ((fused instanceof IrPathTriple || fused instanceof IrGraph)) {
 					out.add(fused);
 					replaced = true;
 					continue;

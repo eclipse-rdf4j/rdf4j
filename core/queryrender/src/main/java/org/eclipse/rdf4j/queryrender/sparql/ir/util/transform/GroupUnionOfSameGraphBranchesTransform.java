@@ -159,6 +159,6 @@ public final class GroupUnionOfSameGraphBranchesTransform extends BaseTransform 
 		if (v.hasValue() && v.getValue() != null) {
 			return "val:" + v.getValue().stringValue();
 		}
-		return "var:" + String.valueOf(v.getName());
+		return "var:" + v.getName();
 	}
 }

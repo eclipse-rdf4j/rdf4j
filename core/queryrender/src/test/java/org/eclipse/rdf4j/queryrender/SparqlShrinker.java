@@ -43,31 +43,31 @@ public final class SparqlShrinker {
 	/** Return true iff the query still exhibits the bug (e.g., parser throws, or round-trip mismatch). */
 	@FunctionalInterface
 	public interface FailureOracle {
-		boolean fails(String query) throws Exception;
+		boolean fails(String query);
 	}
 
 	/** Return true iff the query is valid enough to consider (optional). */
 	@FunctionalInterface
 	public interface ValidityOracle {
-		boolean isValid(String query) throws Exception;
+		boolean isValid(String query);
 	}
 
 	/** Shrinker configuration. */
 	public static final class Config {
 		/** Max passes of greedy reductions before ddmin. */
-		public int maxGreedyIterations = 30;
+		public final int maxGreedyIterations = 30;
 		/** Enable token-level ddmin after greedy reductions. */
-		public boolean enableDdmin = true;
+		public final boolean enableDdmin = true;
 		/** Enforce validity using validityOracle when set. */
 		public boolean enforceValidity = false;
 		/** Hard cap on total candidate evaluations (guards endless oracles). */
-		public int maxChecks = 10_000;
+		public final int maxChecks = 10_000;
 		/** Insert spaces around operators when rejoining tokens (safer for validity). */
-		public boolean spaceyJoin = true;
+		public final boolean spaceyJoin = true;
 		/** When removing UNION branches, try removing RIGHT first (often shrinks faster). */
-		public boolean unionPreferRight = true;
+		public final boolean unionPreferRight = true;
 		/** When removing VALUES rows, target batch factor (n, then n*2...) for bisection-like shrink. */
-		public int valuesBatchStart = 8;
+		public final int valuesBatchStart = 8;
 
 		public Config enforceValidity(ValidityOracle v) {
 			this.enforceValidity = (v != null);
@@ -649,7 +649,7 @@ public final class SparqlShrinker {
 		return res;
 	}
 
-	private static <T> List<T> ddmin(List<T> items, Predicate<List<T>> test) throws Exception {
+	private static <T> List<T> ddmin(List<T> items, Predicate<List<T>> test) {
 		// Classic ddmin (Andreas Zeller)
 		List<T> c = new ArrayList<>(items);
 		int n = 2;

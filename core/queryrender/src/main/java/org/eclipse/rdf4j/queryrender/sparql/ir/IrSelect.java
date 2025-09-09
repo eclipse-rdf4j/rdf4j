@@ -39,16 +39,8 @@ public class IrSelect extends IrNode {
 		super(newScope);
 	}
 
-	public boolean isDistinct() {
-		return distinct;
-	}
-
 	public void setDistinct(boolean distinct) {
 		this.distinct = distinct;
-	}
-
-	public boolean isReduced() {
-		return reduced;
 	}
 
 	public void setReduced(boolean reduced) {
