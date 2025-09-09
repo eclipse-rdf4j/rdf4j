@@ -1060,7 +1060,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 					// For NPS we may want to orient the merged path so that it can chain with an immediate
 					// following triple (e.g., NPS/next). If the next line uses one of our endpoints, flip to
 					// ensure pt.object equals next.subject when safe.
-					IrPathTriple pt = new IrPathTriple(subj, pathTxt, obj, false, Collections.emptySet());
+					IrPathTriple pt = new IrPathTriple(subj, pathTxt, obj, u.isNewScope(), Collections.emptySet());
 					if (graphRef != null) {
 						IrBGP inner = new IrBGP(false);
 						inner.add(pt);
