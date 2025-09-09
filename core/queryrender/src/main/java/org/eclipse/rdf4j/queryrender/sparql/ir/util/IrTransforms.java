@@ -149,8 +149,12 @@ public final class IrTransforms {
 
 					// Merge a subset of UNION branches consisting of simple path triples (including NPS)
 					// into a single path triple with alternation, when safe.
-					w = FuseUnionOfPathTriplesPartialTransform
-							.apply(w, r);
+					w = FuseUnionOfPathTriplesPartialTransform.apply(w, r);
+
+					// After merging UNION branches, flatten any singleton UNIONs, including those that
+					// originated from property-path alternation (UNION.newScope=true but branch BGPs
+					// have newScope=false).
+					w = FlattenSingletonUnionsTransform.apply(w);
 
 					// Re-run SERVICE NPS union fusion very late in case earlier passes
 					// introduced the union shape only at this point
