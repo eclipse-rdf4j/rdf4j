@@ -4049,7 +4049,7 @@ public class TupleExprIRRendererTest {
 				"    VALUES ?s { ex:s1 ex:s2 }\n" +
 				"    {\n" +
 				"      GRAPH ?g0 {\n" +
-				"        ?s  ex:pA|^foaf:name  ?o .\n" +
+				"        ?s ex:pA|^foaf:name ?o .\n" +
 				"      }\n" +
 				"    }\n" +
 				"  }\n" +

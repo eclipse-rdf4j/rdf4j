@@ -151,7 +151,35 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			// Finally: ensure no extra spaces inside NPS parentheses when used as a member
 			cur = NPS_PARENS_SPACING.matcher(cur).replaceAll("!($1)");
 		} while (!cur.equals(prev) && ++guard < 5);
+
+		// If the entire path is a single parenthesized alternation group, remove the
+		// outer parentheses: (a|^b) -> a|^b. This is safe only when the whole path
+		// is that alternation (no top-level sequence operators outside).
+		cur = unwrapWholeAlternationGroup(cur);
 		return cur;
+	}
+
+	/** Remove outer parens when the entire expression is a single alternation group. */
+	private static String unwrapWholeAlternationGroup(String s) {
+		if (s == null) {
+			return null;
+		}
+		String t = s.trim();
+		String inner = trimSingleOuterParens(t);
+		if (inner == t) {
+			return s; // not a single outer pair
+		}
+		// At this point, t is wrapped with a single pair of parentheses. Only unwrap when
+		// the content is a pure top-level alternation (no top-level sequence '/')
+		List<String> alts = splitTopLevel(inner, '|');
+		if (alts.size() <= 1) {
+			return s;
+		}
+		List<String> seqCheck = splitTopLevel(inner, '/');
+		if (seqCheck.size() > 1) {
+			return s; // contains a top-level sequence; need the outer parens
+		}
+		return inner;
 	}
 
 	// Compact sequences of !tokens inside a simple top-level alternation group into a single NPS member.
