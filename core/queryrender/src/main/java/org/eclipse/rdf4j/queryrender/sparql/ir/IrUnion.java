@@ -48,7 +48,12 @@ public class IrUnion extends IrNode {
 		for (int i = 0; i < branches.size(); i++) {
 			IrBGP b = branches.get(i);
 			if (b != null) {
-				b.print(p); // IrBGP prints its own braces
+				if (b.isNewScope()) {
+					// IrUnion branches already have their own scope, so avoid printing double braces
+					new IrBGP(b.getLines(), false).print(p);
+				} else {
+					b.print(p);
+				}
 			}
 			if (i + 1 < branches.size()) {
 				p.line("UNION");
