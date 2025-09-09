@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeFilterNot
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeNpsMemberOrderTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeZeroOrOneSubselectTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ReorderFiltersInOptionalBodiesTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform;
 
 /**
  * IR transformation pipeline (best‑effort).
@@ -89,7 +90,7 @@ public final class IrTransforms {
 					w = ApplyPathsFixedPointTransform.apply(w, r);
 
 					// Final path parentheses/style simplification to match canonical expectations
-					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform.apply(w);
+					w = SimplifyPathParensTransform.apply(w);
 
 					// Late fuse: inside SERVICE, convert UNION of two bare-NPS branches into a single NPS
 					w = FuseServiceNpsUnionLateTransform
@@ -130,7 +131,7 @@ public final class IrTransforms {
 
 					w = ApplyPathsFixedPointTransform.apply(w, r);
 
-					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform.apply(w);
+					w = SimplifyPathParensTransform.apply(w);
 
 					// Normalize NPS member order after late inversions introduced by path fusions
 					w = NormalizeNpsMemberOrderTransform.apply(w);
@@ -149,6 +150,9 @@ public final class IrTransforms {
 					w = ApplyPathsFixedPointTransform.apply(w, r);
 					// And normalize member order again for stability
 					w = NormalizeNpsMemberOrderTransform.apply(w);
+
+					// (no-op) Scope preservation handled directly in union fuser by propagating
+					// IrUnion.newScope to the fused replacement branch.
 
 					// Merge a subset of UNION branches consisting of simple path triples (including NPS)
 					// into a single path triple with alternation, when safe.

@@ -4130,8 +4130,6 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-
-
 	@Test
 	void testGraphUnionScope1() {
 		String q = "SELECT ?s ?o WHERE {\n" +

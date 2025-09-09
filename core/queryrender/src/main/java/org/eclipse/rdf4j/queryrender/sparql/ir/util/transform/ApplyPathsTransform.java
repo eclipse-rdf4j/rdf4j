@@ -631,7 +631,15 @@ public final class ApplyPathsTransform extends BaseTransform {
 			// subsequent chaining with a following constant-predicate triple via pt + SP -> pt/IRI.
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				boolean permitNewScope = !u.isNewScope() || unionBranchesShareAnonPathVarWithAllowedRoleMapping(u);
+				boolean branchesAllNonScoped = true;
+				for (IrBGP br : u.getBranches()) {
+					if (br != null && br.isNewScope()) {
+						branchesAllNonScoped = false;
+						break;
+					}
+				}
+				boolean permitNewScope = !u.isNewScope() || branchesAllNonScoped
+						|| unionBranchesShareAnonPathVarWithAllowedRoleMapping(u);
 
 				if (!permitNewScope) {
 					unionBranchesShareAnonPathVarWithAllowedRoleMapping(u);
@@ -828,13 +836,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 							pathVars.addAll(t0.pathVars);
 							pathVars.addAll(t1.pathVars);
 							IrPathTriple fusedPt = new IrPathTriple(t0.s, alt, t0.o, false, pathVars);
-							if (u.isNewScope() && !bgp.isNewScope()) {
-								IrBGP grp = new IrBGP(false);
-								grp.add(fusedPt);
-								out.add(grp);
-							} else {
-								out.add(fusedPt);
-							}
+							out.add(fusedPt);
 							continue;
 						}
 					}
@@ -874,13 +876,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 								final String alt = (ptIdx == 0) ? (pt.getPathText() + "|" + atom)
 										: (atom + "|" + pt.getPathText());
 								IrPathTriple fused2 = new IrPathTriple(wantS, alt, wantO, false, pt.getPathVars());
-								if (u.isNewScope() && !bgp.isNewScope()) {
-									IrBGP grp = new IrBGP(false);
-									grp.add(fused2);
-									out.add(grp);
-								} else {
-									out.add(fused2);
-								}
+								out.add(fused2);
 								continue;
 							}
 						}

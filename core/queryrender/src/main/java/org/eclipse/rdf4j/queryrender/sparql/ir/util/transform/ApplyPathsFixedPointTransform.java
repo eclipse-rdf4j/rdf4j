@@ -43,6 +43,12 @@ public final class ApplyPathsFixedPointTransform extends BaseTransform {
 			prev = fp;
 			// Single iteration: apply path fusions and normalizations that can unlock each other
 			IrBGP next = ApplyPathsTransform.apply(cur, r);
+
+			// Lift scope only inside GRAPH bodies for path-generated unions so braces are preserved
+			// after fusing the UNION down to a single path triple.
+			next = LiftPathUnionScopeInsideGraphTransform.apply(next);
+
+			// (no-op) Scope preservation is handled by the union fuser.
 //			System.out.println(fingerprintWhere(cur, r));
 			// Fuse a pure UNION of simple triples (possibly GRAPH-wrapped) to a single alternation path
 			next = FuseUnionOfSimpleTriplesTransform.apply(next, r);

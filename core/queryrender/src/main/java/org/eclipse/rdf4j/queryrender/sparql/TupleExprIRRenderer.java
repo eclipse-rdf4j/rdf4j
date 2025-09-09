@@ -72,6 +72,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPrinter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
 
 /**
@@ -501,12 +502,12 @@ public class TupleExprIRRenderer {
 
 	/** Dump raw IR (JSON) for debugging/tests. */
 	public String dumpIRRaw(final TupleExpr tupleExpr) {
-		return org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug.dump(toIRSelectRaw(tupleExpr));
+		return IrDebug.dump(toIRSelectRaw(tupleExpr));
 	}
 
 	/** Dump transformed IR (JSON) for debugging/tests. */
 	public String dumpIRTransformed(final TupleExpr tupleExpr) {
-		return org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug.dump(toIRSelect(tupleExpr));
+		return IrDebug.dump(toIRSelect(tupleExpr));
 	}
 
 	/** Render a textual SELECT query from an {@code IrSelect} model. */

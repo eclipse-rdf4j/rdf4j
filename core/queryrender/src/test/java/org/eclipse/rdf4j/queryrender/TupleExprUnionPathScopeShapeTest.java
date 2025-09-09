@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -93,7 +94,7 @@ public class TupleExprUnionPathScopeShapeTest {
 			if (n instanceof TupleExpr) {
 				((TupleExpr) n).visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
 					@Override
-					protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
+					protected void meetNode(QueryModelNode node) {
 						dq.add(node);
 					}
 				});
