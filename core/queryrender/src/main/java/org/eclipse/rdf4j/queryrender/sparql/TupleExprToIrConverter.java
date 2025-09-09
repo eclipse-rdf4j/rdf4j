@@ -1693,7 +1693,6 @@ public class TupleExprToIrConverter {
 						grp.add(ln);
 					}
 				}
-				grp.setNewScope(true);
 				where.add(grp);
 				return;
 			}
@@ -1839,11 +1838,10 @@ public class TupleExprToIrConverter {
 				IRBuilder left = new IRBuilder();
 				IrBGP wl = left.build(u.getLeftArg());
 				if (rootHasExplicitScope(u.getLeftArg()) && !wl.getLines().isEmpty()) {
-					IrBGP sub = new IrBGP(false);
+					IrBGP sub = new IrBGP(true);
 					for (IrNode ln : wl.getLines()) {
 						sub.add(ln);
 					}
-					sub.setNewScope(true);
 					irU.addBranch(sub);
 				} else {
 					irU.addBranch(wl);
@@ -1855,7 +1853,6 @@ public class TupleExprToIrConverter {
 					for (IrNode ln : wr.getLines()) {
 						sub.add(ln);
 					}
-					sub.setNewScope(true);
 					irU.addBranch(sub);
 				} else {
 					irU.addBranch(wr);
@@ -1877,11 +1874,10 @@ public class TupleExprToIrConverter {
 				IRBuilder bld = new IRBuilder();
 				IrBGP wb = bld.build(b);
 				if (rootHasExplicitScope(b) && !wb.getLines().isEmpty()) {
-					IrBGP sub = new IrBGP(false);
+					IrBGP sub = new IrBGP(true);
 					for (IrNode ln : wb.getLines()) {
 						sub.add(ln);
 					}
-					sub.setNewScope(true);
 					irU.addBranch(sub);
 				} else {
 					irU.addBranch(wb);

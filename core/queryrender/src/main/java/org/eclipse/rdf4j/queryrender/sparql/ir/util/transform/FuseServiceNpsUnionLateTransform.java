@@ -187,7 +187,7 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 		}
 		// Preserve explicit UNION grouping braces by wrapping the fused result when the UNION carried new scope.
 		if (u.isNewScope()) {
-			IrBGP grp = new IrBGP(true);
+			IrBGP grp = new IrBGP(false);
 			grp.add(out);
 			grp.setNewScope(true);
 			return grp;

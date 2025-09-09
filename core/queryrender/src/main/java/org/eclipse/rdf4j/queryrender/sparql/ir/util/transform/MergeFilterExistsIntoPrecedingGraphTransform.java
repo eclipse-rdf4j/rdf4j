@@ -74,7 +74,7 @@ public final class MergeFilterExistsIntoPrecedingGraphTransform extends BaseTran
 						boolean canUnwrap = unwrapInto(exWhere, g1.getGraph(), unwrapped);
 						if (canUnwrap && !unwrapped.getLines().isEmpty()) {
 							// Build new GRAPH body: a single BGP containing the triple and FILTER
-							IrBGP inner = new IrBGP(true);
+							IrBGP inner = new IrBGP(false);
 							if (g1.getWhere() != null) {
 								for (IrNode ln : g1.getWhere().getLines()) {
 									inner.add(ln);
