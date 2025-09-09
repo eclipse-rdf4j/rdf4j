@@ -92,7 +92,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 									boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
 									String nps = inv ? "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")"
 											: "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
-									IrBGP inner = new IrBGP(true);
+									IrBGP inner = new IrBGP(false);
 									inner.add(vals);
 									inner.add(inv
 											? new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps,
@@ -163,9 +163,8 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						final String nps = inv
 								? "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")"
 								: "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
-						final IrBGP newInner = new IrBGP(true);
+						final IrBGP newInner = new IrBGP(false);
 						// Ensure braces inside GRAPH for the rewritten block
-						newInner.setNewScope(true);
 						newInner.add(vals);
 						if (inv) {
 							IrPathTriple pt = new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps,
@@ -207,8 +206,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 							final String nps2 = inv2
 									? "!(^" + joinIrisWithPreferredOrder(ns2.items, r) + ")"
 									: "!(" + joinIrisWithPreferredOrder(ns2.items, r) + ")";
-							final IrBGP newInner2 = new IrBGP(true);
-							newInner2.setNewScope(true);
+							final IrBGP newInner2 = new IrBGP(false);
 							newInner2.add(vals2);
 							if (inv2) {
 								IrPathTriple pt2 = new IrPathTriple(sp2.getObject(), nps2, sp2.getSubject(), false,
@@ -798,7 +796,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 			fused = mergedPt;
 		}
 		if (u.isNewScope()) {
-			IrBGP grp = new IrBGP(true);
+			IrBGP grp = new IrBGP(false);
 			grp.setNewScope(true);
 			grp.add(fused);
 			return grp;
