@@ -134,16 +134,8 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			transformed.addBranch(apply(b, r));
 		}
 		u = transformed;
-		// Heuristic: detect unions that originate from property-path alternation: UNION has
-		// newScope=true but its branches do not (parser generated). This lets us avoid adding
-		// extra grouping on the fused replacement branch.
-		boolean unionBranchesAllNonScoped = true;
-		for (IrBGP br : u.getBranches()) {
-			if (br != null && br.isNewScope()) {
-				unionBranchesAllNonScoped = false;
-				break;
-			}
-		}
+		// Use IrUnion.newScope as authoritative: the converter marks path-generated
+		// alternation unions with newScope=false. Avoid inferring via branch scopes.
 		// (no-op)
 		// Note: do not early-return on new-scope unions. We gate fusing per-group below, allowing
 		// either anon-path bridge sharing OR a conservative "safe alternation" case (identical
@@ -264,7 +256,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 		}
 
 		boolean changed = false;
-		java.util.HashSet<Integer> fusedIdxs = new java.util.HashSet<>();
+		HashSet<Integer> fusedIdxs = new HashSet<>();
 		IrUnion out = new IrUnion(u.isNewScope());
 		for (Group grp : groups.values()) {
 			List<Integer> idxs = grp.idxs;
@@ -274,7 +266,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 				// conservative safe alternation (single SP/PT without quantifiers).
 				boolean shareAnon = branchesShareAnonPathVar(u, idxs);
 				boolean safeAlt = branchesFormSafeAlternation(idxs, pathTexts);
-				boolean pathGeneratedUnion = unionBranchesAllNonScoped;
+				boolean pathGeneratedUnion = !u.isNewScope();
 				if (!(shareAnon || (pathGeneratedUnion && safeAlt))) {
 					continue;
 				}
@@ -305,10 +297,10 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 					merged = String.join("|", alts);
 				}
 
-				// Preserve explicit grouping only for explicit user UNIONs. For path-generated
-				// unions (branches all non-scoped), keep the fused branch non-scoped to avoid
-				// introducing an extra brace layer.
-				boolean branchScope = u.isNewScope() && !unionBranchesAllNonScoped;
+				// Preserve explicit grouping for unions that had new variable scope: propagate the
+				// UNION's newScope to the fused replacement branch so that braces are retained even
+				// when the UNION collapses to a single branch.
+				boolean branchScope = u.isNewScope();
 				IrBGP b = new IrBGP(branchScope);
 				// Branches are simple or path triples; if path triples, union their pathVars
 				Set<Var> acc = new HashSet<>();
