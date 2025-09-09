@@ -95,7 +95,7 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 					// cases are precisely where the extra grouping is intended.
 					boolean doWrap = f.isNewScope() || (insideExists && !avoidWrapInsideExists);
 					if (doWrap) {
-						IrBGP grp = new IrBGP(true);
+						IrBGP grp = new IrBGP(false);
 						// Preserve original local order: preceding triple(s) before the FILTER EXISTS
 						grp.add(n);
 						grp.add(f);

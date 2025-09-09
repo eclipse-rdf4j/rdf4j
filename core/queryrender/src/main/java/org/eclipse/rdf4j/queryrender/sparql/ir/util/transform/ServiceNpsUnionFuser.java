@@ -145,7 +145,7 @@ public final class ServiceNpsUnionFuser {
 		}
 		// Preserve explicit UNION new-scope grouping by wrapping the fused result in a grouped BGP.
 		if (u.isNewScope()) {
-			IrBGP grp = new IrBGP(true);
+			IrBGP grp = new IrBGP(false);
 			grp.add(out);
 			grp.setNewScope(true);
 			return grp;

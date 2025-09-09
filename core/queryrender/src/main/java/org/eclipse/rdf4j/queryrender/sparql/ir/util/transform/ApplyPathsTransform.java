@@ -829,7 +829,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 							pathVars.addAll(t1.pathVars);
 							IrPathTriple fusedPt = new IrPathTriple(t0.s, alt, t0.o, false, pathVars);
 							if (u.isNewScope() && !bgp.isNewScope()) {
-								IrBGP grp = new IrBGP(true);
+								IrBGP grp = new IrBGP(false);
 								grp.add(fusedPt);
 								out.add(grp);
 							} else {
@@ -875,7 +875,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 										: (atom + "|" + pt.getPathText());
 								IrPathTriple fused2 = new IrPathTriple(wantS, alt, wantO, false, pt.getPathVars());
 								if (u.isNewScope() && !bgp.isNewScope()) {
-									IrBGP grp = new IrBGP(true);
+									IrBGP grp = new IrBGP(false);
 									grp.add(fused2);
 									out.add(grp);
 								} else {
@@ -1065,7 +1065,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 						IrGraph fusedGraph = new IrGraph(graphRef, inner, false);
 						if (u.isNewScope() && !bgp.isNewScope()) {
 							// Preserve explicit UNION scope by wrapping the fused result in an extra group
-							IrBGP grp = new IrBGP(true);
+							IrBGP grp = new IrBGP(false);
 							grp.add(fusedGraph);
 							out.add(grp);
 						} else {
@@ -1073,7 +1073,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 						}
 					} else {
 						if (u.isNewScope() && !bgp.isNewScope()) {
-							IrBGP grp = new IrBGP(true);
+							IrBGP grp = new IrBGP(false);
 							grp.add(pt);
 							out.add(grp);
 						} else {
