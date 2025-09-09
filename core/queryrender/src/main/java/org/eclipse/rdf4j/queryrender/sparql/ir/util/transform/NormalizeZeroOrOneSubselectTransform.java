@@ -244,7 +244,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		Z01Analysis a = analyzeZeroOrOne(ss, r);
 		if (a != null) {
 			final String expr = BaseTransform.applyQuantifier(a.exprInner, '?');
-			final IrPathTriple pt = new IrPathTriple(varNamed(a.sName), expr, varNamed(a.oName), false,
+			final IrPathTriple pt = new IrPathTriple(varNamed(a.sName), expr, varNamed(a.oName), ss.isNewScope(),
 					Collections.emptySet());
 			if (a.allGraphWrapped && a.commonGraph != null) {
 				IrBGP innerBgp = new IrBGP(false);
