@@ -127,6 +127,13 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 		if (u == null || u.getBranches().size() < 2) {
 			return u;
 		}
+		// First recursively transform branches so that nested unions are simplified before
+		// attempting to fuse at this level.
+		IrUnion transformed = new IrUnion(u.isNewScope());
+		for (IrBGP b : u.getBranches()) {
+			transformed.addBranch(apply(b, r));
+		}
+		u = transformed;
 		// (no-op)
 		// Note: do not early-return on new-scope unions. We gate fusing per-group below, allowing
 		// either anon-path bridge sharing OR a conservative "safe alternation" case (identical
@@ -329,7 +336,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 				// no-op
 			}
 		}
-		// Add non-merged branches (recurse into their contents so nested unions can be processed)
+		// Add non-merged branches (already recursively transformed above)
 		for (int i = 0; i < u.getBranches().size(); i++) {
 			boolean merged = false;
 			for (Group grp : groups.values()) {
@@ -339,7 +346,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 				}
 			}
 			if (!merged) {
-				out.addBranch(apply(u.getBranches().get(i), r));
+				out.addBranch(u.getBranches().get(i));
 			}
 		}
 		return changed ? out : u;
