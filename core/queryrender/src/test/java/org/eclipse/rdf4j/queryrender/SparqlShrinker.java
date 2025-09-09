@@ -222,7 +222,6 @@ public final class SparqlShrinker {
 			if (!r12.equals(q)) {
 				q = r12;
 				progress = true;
-				continue;
 			}
 
 		} while (progress && greedyRounds < cfg.maxGreedyIterations && g.withinBudget());

@@ -227,7 +227,7 @@ public class TupleExprIRRendererTest {
 			}
 
 			try {
-				if (rendered != null && !rendered.startsWith("<render failed")) {
+				if (!rendered.startsWith("<render failed")) {
 					actualTe = parseAlgebra(rendered);
 					System.out.println("# Actual TupleExpr\n" + actualTe + "\n");
 				}
@@ -247,7 +247,7 @@ public class TupleExprIRRendererTest {
 			writeReportFile(base, "TupleExpr_actual",
 					actualTe != null ? VarNameNormalizer.normalizeVars(actualTe.toString())
 							: "<actual TupleExpr unavailable: " +
-									(rendered != null ? "parse failed" : "render failed") + ">");
+									"parse failed" + ">");
 
 			rendered = render(expectedSparql, cfg);
 
