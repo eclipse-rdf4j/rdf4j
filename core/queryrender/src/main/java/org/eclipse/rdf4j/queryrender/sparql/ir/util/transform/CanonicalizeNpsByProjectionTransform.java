@@ -95,17 +95,6 @@ public final class CanonicalizeNpsByProjectionTransform extends BaseTransform {
 						}
 					}
 				}
-			} else if (n instanceof IrGraph) {
-				IrGraph g = (IrGraph) n;
-				m = new IrGraph(g.getGraph(), apply(g.getWhere(), select), g.isNewScope());
-			} else if (n instanceof IrOptional) {
-				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere(), select), o.isNewScope());
-				no.setNewScope(o.isNewScope());
-				m = no;
-			} else if (n instanceof IrMinus) {
-				IrMinus mi = (IrMinus) n;
-				m = new IrMinus(apply(mi.getWhere(), select), mi.isNewScope());
 			} else if (n instanceof IrUnion) {
 				// Do not alter orientation inside UNION branches; preserve branch subjects/objects.
 				m = n;
@@ -127,11 +116,11 @@ public final class CanonicalizeNpsByProjectionTransform extends BaseTransform {
 				} else {
 					m = n;
 				}
-			} else if (n instanceof IrService) {
-				IrService s = (IrService) n;
-				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), select), s.isNewScope());
 			} else if (n instanceof IrSubSelect) {
 				// keep as-is
+			} else {
+				// Generic container recursion (except UNION which we keep as-is above)
+				m = BaseTransform.rewriteContainers(n, child -> apply(child, select));
 			}
 			out.add(m);
 		}
