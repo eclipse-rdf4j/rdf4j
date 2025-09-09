@@ -59,7 +59,10 @@ public final class MergeAdjacentValuesTransform extends BaseTransform {
 			out.add(BaseTransform.rewriteContainers(n, child -> apply(child)));
 			i++;
 		}
-		return BaseTransform.bgpWithLines(bgp, out);
+		IrBGP res = new IrBGP(bgp.isNewScope());
+		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
+		return res;
 	}
 
 	private static IrValues tryMerge(IrValues v1, IrValues v2) {
