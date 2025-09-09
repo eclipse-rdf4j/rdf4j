@@ -76,15 +76,14 @@ public final class CanonicalizeNpsByProjectionTransform extends BaseTransform {
 							String oName = o.getName();
 							Integer si = sName == null ? null : projIndex.get(sName);
 							Integer oi = oName == null ? null : projIndex.get(oName);
-							boolean flip = false;
+							boolean flip;
+							// Only object is projected: prefer it as subject
+							// keep as-is when neither or only subject is projected
 							if (si != null && oi != null) {
 								// Flip when the current subject appears later than the object in projection
 								flip = si > oi;
-							} else if (si == null && oi != null) {
-								// Only object is projected: prefer it as subject
-								flip = true;
 							} else {
-								flip = false; // keep as-is when neither or only subject is projected
+								flip = si == null && oi != null;
 							}
 							if (flip) {
 								String inv = invertNegatedPropertySet(t);

@@ -15,10 +15,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
@@ -42,17 +39,9 @@ public final class LiftPathUnionScopeInsideGraphTransform extends BaseTransform 
 			IrNode m = n;
 			if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				IrBGP inner = liftInGraph(g.getWhere());
-				m = new IrGraph(g.getGraph(), inner, g.isNewScope());
-			} else if (n instanceof IrOptional) {
-				IrOptional o = (IrOptional) n;
-				m = new IrOptional(apply(o.getWhere()), o.isNewScope());
-			} else if (n instanceof IrMinus) {
-				IrMinus mi = (IrMinus) n;
-				m = new IrMinus(apply(mi.getWhere()), mi.isNewScope());
-			} else if (n instanceof IrService) {
-				IrService s = (IrService) n;
-				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere()), s.isNewScope());
+				m = new IrGraph(g.getGraph(), liftInGraph(g.getWhere()), g.isNewScope());
+			} else if (n instanceof IrSubSelect) {
+				// keep as-is
 			} else if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
 				IrUnion u2 = new IrUnion(u.isNewScope());
@@ -62,8 +51,9 @@ public final class LiftPathUnionScopeInsideGraphTransform extends BaseTransform 
 				m = u2;
 			} else if (n instanceof IrBGP) {
 				m = apply((IrBGP) n);
-			} else if (n instanceof IrSubSelect) {
-				// keep as-is
+			} else {
+				// Generic recursion for container nodes
+				m = BaseTransform.rewriteContainers(n, LiftPathUnionScopeInsideGraphTransform::apply);
 			}
 			out.add(m);
 		}

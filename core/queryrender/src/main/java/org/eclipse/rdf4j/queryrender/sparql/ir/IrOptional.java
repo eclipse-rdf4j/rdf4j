@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
  * keep output shape stable for subsequent transforms and tests.
  */
 public class IrOptional extends IrNode {
-	private IrBGP bgp;
+	private final IrBGP bgp;
 
 	public IrOptional(IrBGP bgp, boolean newScope) {
 		super(newScope);

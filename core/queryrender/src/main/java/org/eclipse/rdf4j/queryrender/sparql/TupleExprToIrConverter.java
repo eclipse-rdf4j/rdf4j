@@ -102,7 +102,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.BaseTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseServiceNpsUnionLateTransform;
 
 /**
@@ -1244,8 +1243,8 @@ public class TupleExprToIrConverter {
 			if (cmp.getOperator() != CompareOp.NE) {
 				return null;
 			}
-			Var pv = null;
-			IRI bad = null;
+			Var pv;
+			IRI bad;
 			if (cmp.getLeftArg() instanceof Var && cmp.getRightArg() instanceof ValueConstant
 					&& ((ValueConstant) cmp.getRightArg()).getValue() instanceof IRI) {
 				pv = (Var) cmp.getLeftArg();
