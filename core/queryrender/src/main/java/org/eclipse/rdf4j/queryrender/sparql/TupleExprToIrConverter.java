@@ -2033,23 +2033,15 @@ public class TupleExprToIrConverter {
 			@Override
 			protected void meetNode(QueryModelNode node) {
 				if (node instanceof AbstractQueryModelNode) {
-					seen[0] = ((AbstractQueryModelNode) node).isVariableScopeChange();
+					if (((AbstractQueryModelNode) node).isVariableScopeChange()) {
+						seen[0] = true;
+						return; // early note; still visit children for completeness
+					}
 				}
 				super.meetNode(node);
 			}
 		});
-		if (seen[0]) {
-			return true;
-		}
-		// Fallback: rely on algebra string marker if reflective probing failed
-		try {
-			String s = String.valueOf(expr);
-			if (s.contains("new scope")) {
-				return true;
-			}
-		} catch (Throwable ignore) {
-		}
-		return false;
+		return seen[0];
 	}
 
 	/**
@@ -2073,21 +2065,6 @@ public class TupleExprToIrConverter {
 
 		if (e instanceof AbstractQueryModelNode) {
 			return ((AbstractQueryModelNode) e).isVariableScopeChange();
-		}
-
-		try {
-			Method m = e.getClass().getMethod("isVariableScopeChange");
-			Object v = m.invoke(e);
-			if (v instanceof Boolean) {
-				return (Boolean) v;
-			}
-		} catch (ReflectiveOperationException ignore) {
-		}
-		// Fallback: use algebra's textual marker if present
-		try {
-			String s = String.valueOf(e);
-			return s.contains("(new scope)");
-		} catch (Throwable ignore) {
 		}
 		return false;
 	}

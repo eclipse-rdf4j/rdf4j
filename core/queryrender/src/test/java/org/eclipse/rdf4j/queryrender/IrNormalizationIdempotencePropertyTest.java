@@ -55,6 +55,10 @@ public class IrNormalizationIdempotencePropertyTest {
 				"SELECT ?who WHERE { { ?who foaf:name \"Alice\" . } UNION { ?who foaf:name \"Bob\" . } }",
 				// VALUES single var
 				"SELECT ?x WHERE { VALUES (?x) { (ex:a) (UNDEF) (ex:b) } ?x foaf:name ?n . }",
+				// Adjacent VALUES with identical var list (intersection, multiplicities multiply)
+				"SELECT ?x WHERE { VALUES (?x) { (ex:a) (ex:b) (ex:b) } VALUES (?x) { (ex:b) (ex:c) } ?x foaf:name ?n . }",
+				// Adjacent VALUES with disjoint var lists (cross product)
+				"SELECT ?a ?b WHERE { VALUES (?a) { (ex:a1) (ex:a2) } VALUES (?b) { (1) (2) } }",
 				// ORDER + LIMIT/OFFSET
 				"SELECT ?n WHERE { ?s foaf:name ?n . } ORDER BY DESC(?n) LIMIT 2 OFFSET 0",
 				// GRAPH + OPTIONAL in body
@@ -77,3 +81,7 @@ public class IrNormalizationIdempotencePropertyTest {
 		return pq.getTupleExpr();
 	}
 }
+
+// Note: We intentionally do not assert full alpha-equivalence on arbitrary non-projected variables here,
+// as the provided VarNameNormalizer focuses on anonymous families (e.g., _anon_path_*). Broader alpha-equivalence
+// will be covered via dedicated utilities in a later change.
