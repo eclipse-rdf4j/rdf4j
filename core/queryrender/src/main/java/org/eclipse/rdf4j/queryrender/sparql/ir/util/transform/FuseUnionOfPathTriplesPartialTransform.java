@@ -134,6 +134,12 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			transformed.addBranch(apply(b, r));
 		}
 		u = transformed;
+
+		// Universal safeguard: do not fuse explicit user UNIONs (new scope). Path-generated unions
+		// are marked as newScope=false in the converter when safe alternation is detected.
+		if (BaseTransform.unionIsExplicitAndAllBranchesScoped(u)) {
+			return u;
+		}
 		// Use IrUnion.newScope as authoritative: the converter marks path-generated
 		// alternation unions with newScope=false. Avoid inferring via branch scopes.
 		// (no-op)
