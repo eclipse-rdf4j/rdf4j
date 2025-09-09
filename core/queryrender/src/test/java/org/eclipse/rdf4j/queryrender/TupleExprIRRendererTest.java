@@ -4118,6 +4118,21 @@ public class TupleExprIRRendererTest {
 	}
 
 	@Test
+	void testValuesGraphUnion7() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  {\n" +
+				"    GRAPH ?g0 {\n" +
+				"      ?s ex:pA|!foaf:knows ?o .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}\n";
+
+		assertSameSparqlQuery(q, cfg(), false);
+	}
+
+
+
+	@Test
 	void testGraphUnionScope1() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"    GRAPH <http://graphs.example/g1> {\n" +
