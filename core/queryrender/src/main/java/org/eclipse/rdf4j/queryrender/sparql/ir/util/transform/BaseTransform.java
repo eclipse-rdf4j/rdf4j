@@ -135,9 +135,13 @@ public class BaseTransform {
 		if (u.getBranches() == null || u.getBranches().isEmpty()) {
 			return false;
 		}
+
 		for (IrBGP b : u.getBranches()) {
-			if (b == null || !b.isNewScope()) {
-				return false;
+			if (!b.isNewScope()) {
+				if (b.getLines().size() != 1 || !b.getLines().get(0).isNewScope()) {
+					return false;
+				}
+
 			}
 		}
 		return true;
