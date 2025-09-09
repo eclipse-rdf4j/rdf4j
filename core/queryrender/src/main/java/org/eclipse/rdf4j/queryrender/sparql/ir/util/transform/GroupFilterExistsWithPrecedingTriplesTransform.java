@@ -107,31 +107,7 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 			}
 
 			// Recurse into containers
-			if (n instanceof IrBGP) {
-				out.add(apply((IrBGP) n, insideExists, true));
-			} else if (n instanceof IrGraph) {
-				IrGraph g = (IrGraph) n;
-				out.add(new IrGraph(g.getGraph(), apply(g.getWhere(), insideExists, true), g.isNewScope()));
-			} else if (n instanceof IrOptional) {
-				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere(), insideExists, true), o.isNewScope());
-				no.setNewScope(o.isNewScope());
-				out.add(no);
-			} else if (n instanceof IrMinus) {
-				IrMinus mi = (IrMinus) n;
-				out.add(new IrMinus(apply(mi.getWhere(), insideExists, true), mi.isNewScope()));
-			} else if (n instanceof IrService) {
-				IrService s = (IrService) n;
-				out.add(new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), insideExists, true),
-						s.isNewScope()));
-			} else if (n instanceof IrUnion) {
-				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion(u.isNewScope());
-				for (IrBGP b : u.getBranches()) {
-					u2.addBranch(apply(b, insideExists, true));
-				}
-				out.add(u2);
-			} else if (n instanceof IrSubSelect) {
+			if (n instanceof IrSubSelect) {
 				out.add(n); // keep
 			} else if (n instanceof IrFilter) {
 				// Recurse into EXISTS body if present
@@ -146,7 +122,12 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 					out.add(n);
 				}
 			} else {
-				out.add(n);
+				if (n instanceof IrBGP) {
+					out.add(apply((IrBGP) n, insideExists, true));
+				} else {
+					IrNode rec = BaseTransform.rewriteContainers(n, child -> apply(child, insideExists, true));
+					out.add(rec);
+				}
 			}
 			i++;
 		}

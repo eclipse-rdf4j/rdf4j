@@ -55,19 +55,9 @@ public final class ReorderFiltersInOptionalBodiesTransform extends BaseTransform
 				out.add(no);
 				continue;
 			}
-			if (n instanceof IrGraph) {
-				final IrGraph g = (IrGraph) n;
-				out.add(new IrGraph(g.getGraph(), apply(g.getWhere(), r), g.isNewScope()));
-				continue;
-			}
-			// Recurse into other containers conservatively
-			n = n.transformChildren(child -> {
-				if (child instanceof IrBGP) {
-					return apply((IrBGP) child, r);
-				}
-				return child;
-			});
-			out.add(n);
+			// Recurse into containers conservatively using shared helper
+			IrNode rec = BaseTransform.rewriteContainers(n, child -> apply(child, r));
+			out.add(rec);
 		}
 		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
