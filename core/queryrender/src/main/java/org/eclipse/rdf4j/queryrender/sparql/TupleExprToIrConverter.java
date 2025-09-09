@@ -141,8 +141,9 @@ public class TupleExprToIrConverter {
 		applyAggregateHoisting(n);
 
 		final IrSelect ir = new IrSelect(false);
+		// Canonicalize DISTINCT/REDUCED: if DISTINCT is set, REDUCED is a no-op and removed
 		ir.setDistinct(n.distinct);
-		ir.setReduced(n.reduced);
+		ir.setReduced(n.reduced && !n.distinct);
 		ir.setLimit(n.limit);
 		ir.setOffset(n.offset);
 
@@ -1007,8 +1008,9 @@ public class TupleExprToIrConverter {
 
 		final IrSelect ir = new IrSelect(false);
 		Config cfg = r.getConfig();
+		// Canonicalize DISTINCT/REDUCED: if DISTINCT is set, REDUCED is a no-op and removed
 		ir.setDistinct(n.distinct);
-		ir.setReduced(n.reduced);
+		ir.setReduced(n.reduced && !n.distinct);
 		ir.setLimit(n.limit);
 		ir.setOffset(n.offset);
 
