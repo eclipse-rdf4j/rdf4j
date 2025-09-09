@@ -220,6 +220,11 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 		if (u == null || u.getBranches().size() < 2) {
 			return u;
 		}
+
+		// Universal safeguard: if UNION has newScope==true and all branches have newScope==true, never fuse
+		if (BaseTransform.unionIsExplicitAndAllBranchesScoped(u)) {
+			return u;
+		}
 		// Track whether this UNION originated from an explicit user grouping that introduced
 		// a new scope. If we fuse such a UNION, we preserve the explicit braces by wrapping
 		// the fused result in a grouped IrBGP (see callers for context-specific unwrapping).

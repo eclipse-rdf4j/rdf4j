@@ -59,7 +59,7 @@ public class FusePathPlusTailAlternationUnionTransform extends BaseTransform {
 				IrPathTriple pt = (IrPathTriple) n;
 				IrUnion u = (IrUnion) in.get(i + 1);
 				// Do not merge across a UNION that represents an original query UNION (new scope)
-				if (u.isNewScope()) {
+				if (BaseTransform.unionIsExplicitAndAllBranchesScoped(u)) {
 					out.add(n);
 					continue;
 				}
