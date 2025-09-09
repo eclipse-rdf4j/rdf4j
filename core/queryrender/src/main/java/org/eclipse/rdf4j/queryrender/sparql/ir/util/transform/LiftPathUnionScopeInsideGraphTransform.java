@@ -18,24 +18,19 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
 /**
- * Lift the scope marker from a path-generated UNION to the containing IrBGP.
+ * Inside GRAPH bodies, lift the scope marker from a path-generated UNION (branches all non-scoped) to the containing
+ * BGP. This preserves brace grouping when the UNION is later fused into a single path triple.
  *
- * Pattern: a UNION with newScope=true whose branches all have newScope=false is indicative of a UNION created by
- * property-path alternation rather than an explicit "... } UNION { ...}" in the original query. In such cases the
- * surrounding group braces are expected even if later transforms fuse the UNION down to a single path triple.
- *
- * This transform sets the containing BGP's newScope flag to true when it contains exactly one such UNION. The flag is
- * preserved even if downstream transforms replace the UNION.
+ * Strictly limited to GRAPH bodies; no other heuristics.
  */
-public final class LiftPathUnionScopeToBgpTransform extends BaseTransform {
+public final class LiftPathUnionScopeInsideGraphTransform extends BaseTransform {
 
-	private LiftPathUnionScopeToBgpTransform() {
+	private LiftPathUnionScopeInsideGraphTransform() {
 	}
 
 	public static IrBGP apply(IrBGP bgp) {
@@ -47,12 +42,11 @@ public final class LiftPathUnionScopeToBgpTransform extends BaseTransform {
 			IrNode m = n;
 			if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
-				m = new IrGraph(g.getGraph(), apply(g.getWhere()), g.isNewScope());
+				IrBGP inner = liftInGraph(g.getWhere());
+				m = new IrGraph(g.getGraph(), inner, g.isNewScope());
 			} else if (n instanceof IrOptional) {
 				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere()), o.isNewScope());
-				no.setNewScope(o.isNewScope());
-				m = no;
+				m = new IrOptional(apply(o.getWhere()), o.isNewScope());
 			} else if (n instanceof IrMinus) {
 				IrMinus mi = (IrMinus) n;
 				m = new IrMinus(apply(mi.getWhere()), mi.isNewScope());
@@ -69,18 +63,23 @@ public final class LiftPathUnionScopeToBgpTransform extends BaseTransform {
 			} else if (n instanceof IrBGP) {
 				m = apply((IrBGP) n);
 			} else if (n instanceof IrSubSelect) {
-				// keep as is
+				// keep as-is
 			}
 			out.add(m);
 		}
 		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
+		return res;
+	}
 
-		// If this BGP consists of exactly one UNION whose branches all have newScope=false,
-		// consider it path-generated and lift the scope to this BGP so braces are preserved
-		// even if the UNION is later fused away.
-		if (out.size() == 1 && out.get(0) instanceof IrUnion) {
-			IrUnion u = (IrUnion) out.get(0);
+	private static IrBGP liftInGraph(IrBGP where) {
+		if (where == null) {
+			return null;
+		}
+		// If the GRAPH body consists of exactly one UNION whose branches all have newScope=false,
+		// set the body's newScope to true so braces are preserved post-fuse.
+		if (where.getLines().size() == 1 && where.getLines().get(0) instanceof IrUnion) {
+			IrUnion u = (IrUnion) where.getLines().get(0);
 			boolean allBranchesNonScoped = true;
 			for (IrBGP b : u.getBranches()) {
 				if (b != null && b.isNewScope()) {
@@ -89,10 +88,11 @@ public final class LiftPathUnionScopeToBgpTransform extends BaseTransform {
 				}
 			}
 			if (allBranchesNonScoped) {
-				res.setNewScope(true);
+				IrBGP res = new IrBGP(true);
+				res.add(u);
+				return res;
 			}
 		}
-
-		return res;
+		return where;
 	}
 }
