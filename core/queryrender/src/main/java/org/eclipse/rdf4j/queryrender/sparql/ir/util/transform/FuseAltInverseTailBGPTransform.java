@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
 /**
@@ -182,40 +183,13 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 			}
 
 			// Recurse into containers
-			if (n instanceof IrGraph) {
-				final IrGraph g = (IrGraph) n;
-				out.add(new IrGraph(g.getGraph(), fuseAltInverseTailBGP(g.getWhere(), r), g.isNewScope()));
+			if (n instanceof IrSubSelect) {
+				// keep as-is
+				out.add(n);
 				continue;
 			}
-			if (n instanceof IrOptional) {
-				final IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(fuseAltInverseTailBGP(o.getWhere(), r), o.isNewScope());
-				no.setNewScope(o.isNewScope());
-				out.add(no);
-				continue;
-			}
-			if (n instanceof IrMinus) {
-				final IrMinus m = (IrMinus) n;
-				out.add(new IrMinus(fuseAltInverseTailBGP(m.getWhere(), r), m.isNewScope()));
-				continue;
-			}
-			if (n instanceof IrUnion) {
-				final IrUnion u = (IrUnion) n;
-				final IrUnion u2 = new IrUnion(u.isNewScope());
-				for (IrBGP b : u.getBranches()) {
-					u2.addBranch(fuseAltInverseTailBGP(b, r));
-				}
-				out.add(u2);
-				continue;
-			}
-			if (n instanceof IrService) {
-				final IrService s = (IrService) n;
-				out.add(new IrService(s.getServiceRefText(), s.isSilent(), fuseAltInverseTailBGP(s.getWhere(), r),
-						s.isNewScope()));
-				continue;
-			}
-			// Subselects: keep as-is
-			out.add(n);
+			IrNode rec = BaseTransform.rewriteContainers(n, child -> fuseAltInverseTailBGP(child, r));
+			out.add(rec);
 		}
 
 		final IrBGP res = new IrBGP(bgp.isNewScope());

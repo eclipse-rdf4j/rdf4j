@@ -89,22 +89,11 @@ public final class FuseUnionOfSimpleTriplesTransform extends BaseTransform {
 						m = u2;
 					}
 				}
-			} else if (n instanceof IrGraph) {
-				IrGraph g = (IrGraph) n;
-				m = new IrGraph(g.getGraph(), apply(g.getWhere(), r), g.isNewScope());
-			} else if (n instanceof IrOptional) {
-				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere(), r), o.isNewScope());
-				no.setNewScope(o.isNewScope());
-				m = no;
-			} else if (n instanceof IrMinus) {
-				IrMinus mi = (IrMinus) n;
-				m = new IrMinus(apply(mi.getWhere(), r), mi.isNewScope());
-			} else if (n instanceof IrService) {
-				IrService s = (IrService) n;
-				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), r), s.isNewScope());
 			} else if (n instanceof IrSubSelect) {
 				// keep as-is
+			} else {
+				// Generic recursion into containers
+				m = BaseTransform.rewriteContainers(n, child -> apply(child, r));
 			}
 			out.add(m);
 		}

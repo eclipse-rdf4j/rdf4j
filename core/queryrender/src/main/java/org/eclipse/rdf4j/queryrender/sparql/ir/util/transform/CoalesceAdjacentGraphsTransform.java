@@ -65,33 +65,9 @@ public final class CoalesceAdjacentGraphsTransform extends BaseTransform {
 				continue;
 			}
 
-			// Recurse into containers
-			if (n instanceof IrOptional) {
-				final IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere()), o.isNewScope());
-				out.add(no);
-				continue;
-			}
-			if (n instanceof IrMinus) {
-				final IrMinus m = (IrMinus) n;
-				out.add(new IrMinus(apply(m.getWhere()), m.isNewScope()));
-				continue;
-			}
-			if (n instanceof IrUnion) {
-				final IrUnion u = (IrUnion) n;
-				final IrUnion u2 = new IrUnion(u.isNewScope());
-				for (IrBGP b : u.getBranches()) {
-					u2.addBranch(apply(b));
-				}
-				out.add(u2);
-				continue;
-			}
-			if (n instanceof IrService) {
-				final IrService s = (IrService) n;
-				out.add(new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere()), s.isNewScope()));
-				continue;
-			}
-			out.add(n);
+			// Recurse into other containers with shared helper
+			IrNode rec = BaseTransform.rewriteContainers(n, CoalesceAdjacentGraphsTransform::apply);
+			out.add(rec);
 		}
 		final IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
