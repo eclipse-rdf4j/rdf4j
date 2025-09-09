@@ -15,11 +15,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
 /**
  * Merge consecutive GRAPH blocks that reference the same graph term into a single GRAPH with a concatenated body.

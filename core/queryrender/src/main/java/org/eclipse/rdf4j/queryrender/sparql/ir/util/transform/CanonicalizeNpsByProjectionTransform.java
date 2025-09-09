@@ -19,15 +19,11 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrExists;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNot;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
