@@ -174,12 +174,8 @@ public final class FuseUnionOfSimpleTriplesTransform extends BaseTransform {
 			} else {
 				// Endpoints must match either forward or inverse
 				if (sameVar(sCommon, sp.getSubject()) && sameVar(oCommon, sp.getObject())) {
-					sVar = sp.getSubject();
-					oVar = sp.getObject();
 					steps.add(step);
 				} else if (sameVar(sCommon, sp.getObject()) && sameVar(oCommon, sp.getSubject())) {
-					sVar = sp.getObject();
-					oVar = sp.getSubject();
 					steps.add("^" + step);
 				} else {
 					return null;

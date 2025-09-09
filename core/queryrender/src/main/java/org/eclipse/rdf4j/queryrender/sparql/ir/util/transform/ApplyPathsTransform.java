@@ -921,8 +921,6 @@ public final class ApplyPathsTransform extends BaseTransform {
 						if (sVarOut == null && oVarOut == null) {
 							sVarOut = pt.getSubject();
 							oVarOut = pt.getObject();
-						} else if (!(sameVar(sVarOut, pt.getSubject()) && sameVar(oVarOut, pt.getObject()))) {
-							continue;
 						}
 					}
 				}
@@ -1024,7 +1022,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 									}
 								}
 							}
-							pathTxt = "!(" + String.join("|", members) + ")";
+							String.join("|", members);
 						} else {
 							out.add(n);
 							continue;
