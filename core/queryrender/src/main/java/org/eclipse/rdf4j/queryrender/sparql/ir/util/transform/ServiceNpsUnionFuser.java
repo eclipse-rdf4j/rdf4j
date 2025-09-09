@@ -87,7 +87,7 @@ public final class ServiceNpsUnionFuser {
 
 		// Respect explicit UNION new scopes: only fuse when both branches share an _anon_path_* variable
 		// under an allowed role mapping (s-s, s-o, o-s, o-p). Otherwise, preserve the UNION.
-		if (u.isNewScope() && !BaseTransform.unionBranchesShareAnonPathVarWithAllowedRoleMapping(u)) {
+		if (BaseTransform.unionIsExplicitAndAllBranchesScoped(u)) {
 			return u;
 		}
 

@@ -506,9 +506,18 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				final IrUnion u2 = new IrUnion(u.isNewScope());
 				u2.setNewScope(u.isNewScope());
 				for (IrBGP b : u.getBranches()) {
-					u2.addBranch(rewriteSimpleNpsOnly(b, r));
+					IrBGP rb = rewriteSimpleNpsOnly(b, r);
+					if (rb != null) {
+						rb.setNewScope(b.isNewScope());
+					}
+					u2.addBranch(rb);
 				}
 				IrNode fused = null;
+				// Universal safeguard: never fuse explicit user UNIONs with all-scoped branches
+				if (unionIsExplicitAndAllBranchesScoped(u)) {
+					out.add(u2);
+					continue;
+				}
 				if (u2.getBranches().size() == 2) {
 					boolean allow = (!u.isNewScope() && allHaveAnon) || (u.isNewScope() && shareCommonAnon);
 					if (allow) {
@@ -750,6 +759,10 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 	private static IrNode tryFuseTwoNpsBranches(IrUnion u) {
 		if (u == null || u.getBranches().size() != 2) {
 			return null;
+		}
+		// Do not fuse explicit user UNIONs where all branches carry their own scope
+		if (unionIsExplicitAndAllBranchesScoped(u)) {
+			return u;
 		}
 		PT a = extractNpsPath(u.getBranches().get(0));
 		PT b = extractNpsPath(u.getBranches().get(1));

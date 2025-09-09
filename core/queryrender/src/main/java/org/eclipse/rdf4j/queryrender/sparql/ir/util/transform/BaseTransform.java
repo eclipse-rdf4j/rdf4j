@@ -124,6 +124,25 @@ public class BaseTransform {
 		return "!(" + ia + "|" + ib + ")";
 	}
 
+	/**
+	 * Universal safeguard for explicit user UNIONs: true iff the UNION is marked as new scope and all its branches are
+	 * also marked as new scope. Such a UNION should never be fused into a single path expression.
+	 */
+	public static boolean unionIsExplicitAndAllBranchesScoped(final IrUnion u) {
+		if (u == null || !u.isNewScope()) {
+			return false;
+		}
+		if (u.getBranches() == null || u.getBranches().isEmpty()) {
+			return false;
+		}
+		for (IrBGP b : u.getBranches()) {
+			if (b == null || !b.isNewScope()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	/** Return true if the string has the given character at top level (not inside parentheses). */
 	public static boolean hasTopLevel(final String s, final char ch) {
 		if (s == null) {
@@ -672,6 +691,9 @@ public class BaseTransform {
 	 * path-decoding internals rather than user variables, so fusing to an alternation/NPS preserves semantics.
 	 */
 	public static boolean unionBranchesAllHaveAnonPathBridge(IrUnion u) {
+		if (unionIsExplicitAndAllBranchesScoped(u)) {
+			return false;
+		}
 		if (u == null || u.getBranches().isEmpty()) {
 			return false;
 		}
@@ -696,6 +718,9 @@ public class BaseTransform {
 	 * a user variable. This keeps merges conservative and avoids collapsing distinct user bindings.
 	 */
 	public static boolean unionBranchesShareCommonAnonPathVarName(IrUnion u) {
+		if (unionIsExplicitAndAllBranchesScoped(u)) {
+			return false;
+		}
 		if (u == null || u.getBranches().isEmpty()) {
 			return false;
 		}
@@ -726,6 +751,9 @@ public class BaseTransform {
 	 * predicate vars, as well as IrPathTriple.pathVars contributed during path rewrites.
 	 */
 	public static boolean unionBranchesShareAnonPathVarWithAllowedRoleMapping(IrUnion u) {
+		if (unionIsExplicitAndAllBranchesScoped(u)) {
+			return false;
+		}
 		if (u == null || u.getBranches().size() != 2) {
 			return false;
 		}
@@ -765,14 +793,19 @@ public class BaseTransform {
 	 * eligibility for safe alternation.
 	 */
 	public static boolean unionBranchesFormSafeAlternation(final IrUnion u, final TupleExprIRRenderer r) {
+		if (unionIsExplicitAndAllBranchesScoped(u)) {
+			return false;
+		}
+
 		if (u == null || u.getBranches() == null || u.getBranches().isEmpty()) {
 			return false;
 		}
 		Var subj = null, obj = null, graphRef = null;
 		boolean ok = true;
 		for (IrBGP b : u.getBranches()) {
-			if (!ok)
+			if (!ok) {
 				break;
+			}
 			if (b == null || b.getLines() == null || b.getLines().isEmpty()) {
 				ok = false;
 				break;
@@ -798,9 +831,9 @@ public class BaseTransform {
 			}
 
 			if (branchGraph != null) {
-				if (graphRef == null)
+				if (graphRef == null) {
 					graphRef = branchGraph;
-				else if (!sameVarOrValue(graphRef, branchGraph)) {
+				} else if (!sameVarOrValue(graphRef, branchGraph)) {
 					ok = false;
 					break;
 				}
