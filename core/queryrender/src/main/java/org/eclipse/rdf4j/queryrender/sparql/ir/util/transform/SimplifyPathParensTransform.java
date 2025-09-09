@@ -145,8 +145,6 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			// In a simple alternation group that mixes positive and negated tokens, compress the
 			// negated tokens into a single NPS member: (ex:p|!a|!^b|ex:q) -> (ex:p|!(a|^b)|ex:q)
 			cur = groupNegatedMembersInSimpleGroup(cur);
-			// Insert spaces around top-level alternations for readability
-			cur = spaceTopLevelAlternations(cur);
 			// Style: add a space just inside simple alternation parentheses
 			cur = SIMPLE_ALT_GROUP.matcher(cur).replaceAll("($1)");
 			// (general parentheses spacing done earlier)
@@ -472,37 +470,4 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 		return out.toString();
 	}
 
-	// Insert spaces around top-level '|' alternations for readability: a|b -> a | b
-	@SuppressWarnings("unused")
-	private static String spaceTopLevelAlternations(String s) {
-		StringBuilder out = new StringBuilder(s.length() + 8);
-		int depth = 0;
-		for (int i = 0; i < s.length(); i++) {
-			char c = s.charAt(i);
-			if (c == '(') {
-				depth++;
-				out.append(c);
-				continue;
-			}
-			if (c == ')') {
-				depth--;
-				out.append(c);
-				continue;
-			}
-			if (c == '|' && depth == 0) {
-				// ensure single spaces around
-				if (out.length() > 0 && out.charAt(out.length() - 1) != ' ') {
-					out.append(' ');
-				}
-				out.append('|');
-				int j = i + 1;
-				if (j < s.length() && s.charAt(j) != ' ') {
-					out.append(' ');
-				}
-				continue;
-			}
-			out.append(c);
-		}
-		return out.toString();
-	}
 }
