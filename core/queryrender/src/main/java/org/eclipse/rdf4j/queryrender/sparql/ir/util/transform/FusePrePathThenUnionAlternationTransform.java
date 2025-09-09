@@ -106,42 +106,12 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 			}
 
 			// Recurse into containers not already handled
-			if (n instanceof IrGraph) {
-				IrGraph g = (IrGraph) n;
-				out.add(new IrGraph(g.getGraph(), apply(g.getWhere(), r), g.isNewScope()));
-				continue;
-			}
-			if (n instanceof IrOptional) {
-				IrOptional o = (IrOptional) n;
-				IrOptional no = new IrOptional(apply(o.getWhere(), r), o.isNewScope());
-				no.setNewScope(o.isNewScope());
-				out.add(no);
-				continue;
-			}
-			if (n instanceof IrMinus) {
-				IrMinus m = (IrMinus) n;
-				out.add(new IrMinus(apply(m.getWhere(), r), m.isNewScope()));
-				continue;
-			}
-			if (n instanceof IrUnion) {
-				IrUnion u = (IrUnion) n;
-				IrUnion u2 = new IrUnion(u.isNewScope());
-				for (IrBGP b : u.getBranches()) {
-					u2.addBranch(apply(b, r));
-				}
-				out.add(u2);
-				continue;
-			}
-			if (n instanceof IrService) {
-				IrService s = (IrService) n;
-				out.add(new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), r), s.isNewScope()));
-				continue;
-			}
 			if (n instanceof IrSubSelect) {
 				out.add(n);
 				continue;
 			}
-			out.add(n);
+			IrNode rec = BaseTransform.rewriteContainers(n, child -> apply(child, r));
+			out.add(rec);
 		}
 		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
