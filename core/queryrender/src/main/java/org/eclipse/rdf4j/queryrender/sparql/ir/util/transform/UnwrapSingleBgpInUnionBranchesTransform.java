@@ -70,16 +70,22 @@ public final class UnwrapSingleBgpInUnionBranchesTransform extends BaseTransform
 		IrUnion u2 = new IrUnion(u.isNewScope());
 		for (IrBGP b : u.getBranches()) {
 			IrBGP cur = b;
-			// unwrap nested single-child BGPs that do NOT carry explicit new scope
-			boolean changed = true;
-			while (changed && cur != null && cur.getLines().size() == 1
-					&& cur.getLines().get(0) instanceof IrBGP) {
+			boolean branchScope = b.isNewScope();
+			// Flatten exactly-one-child BGP wrappers inside UNION branches. If the inner BGP
+			// carries newScope, lift that scope to the branch and drop the inner wrapper to
+			// avoid printing double braces like "{ { ... } }".
+			while (cur != null && cur.getLines().size() == 1 && cur.getLines().get(0) instanceof IrBGP) {
 				IrBGP inner = (IrBGP) cur.getLines().get(0);
-				if (inner.isNewScope()) {
-					break;
+				branchScope = branchScope || inner.isNewScope();
+				// Replace current with the inner's contents (flatten one level)
+				IrBGP flattened = new IrBGP(false);
+				for (IrNode ln : inner.getLines()) {
+					flattened.add(ln);
 				}
-				cur = inner;
+				cur = flattened;
 			}
+			// Reapply the accumulated scope to the flattened branch BGP
+			cur.setNewScope(branchScope);
 			u2.addBranch(cur);
 		}
 		return u2;
