@@ -207,6 +207,11 @@ public final class IrTransforms {
 					// Final SERVICE NPS union fusion pass after all other cleanups
 					w = FuseServiceNpsUnionLateTransform.apply(w);
 
+					// Final cleanup: ensure no redundant single-child BGP wrappers remain inside
+					// UNION branches after late passes may have regrouped content.
+					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.UnwrapSingleBgpInUnionBranchesTransform
+							.apply(w);
+
 					return w;
 				}
 				return child;

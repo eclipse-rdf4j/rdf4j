@@ -114,9 +114,10 @@ public final class GroupUnionOfSameGraphBranchesTransform extends BaseTransform 
 						IrBGP irBGP = u.getBranches().get(idx);
 						IrBGP body = ((IrGraph) irBGP.getLines().get(0)).getWhere();
 						if (irBGP.isNewScope()) {
-							// the outer irBGP had a new scope, instead of playing around with the body we just wrap it
-							// in an IrBGP which represents this new scope
-							body = new IrBGP(body, false);
+							// Preserve the branch's explicit new scope by wrapping the inner body with a
+							// new-scoped IrBGP. This ensures downstream union fusers recognize the union as
+							// explicit and avoid fusing it into a single path.
+							body = new IrBGP(body, true);
 						}
 						// Recurse inside the body before grouping and preserve explicit grouping
 						inner.addBranch(apply(body));

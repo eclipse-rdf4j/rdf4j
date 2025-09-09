@@ -88,7 +88,7 @@ public final class LiftPathUnionScopeInsideGraphTransform extends BaseTransform 
 				}
 			}
 			if (allBranchesNonScoped) {
-				IrBGP res = new IrBGP(true);
+				IrBGP res = new IrBGP(false);
 				res.add(u);
 				return res;
 			}
