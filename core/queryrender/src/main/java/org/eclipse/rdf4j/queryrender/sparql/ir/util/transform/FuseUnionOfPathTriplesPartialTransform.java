@@ -52,6 +52,9 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			IrNode m = n;
 			if (n instanceof IrUnion) {
 				m = fuseUnion((IrUnion) n, r);
+			} else if (n instanceof IrBGP) {
+				// Recurse into nested BGPs introduced to preserve explicit grouping
+				m = apply((IrBGP) n, r);
 			} else if (n instanceof IrGraph) {
 				IrGraph g = (IrGraph) n;
 				// Allow union fusing inside GRAPH bodies regardless of VALUES in the outer BGP.
@@ -124,14 +127,10 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 		if (u == null || u.getBranches().size() < 2) {
 			return u;
 		}
-		// Safety for new-scope UNIONs: only allow fusing when all branches share a unique common
-		// _anon_path_* variable name (parser bridge), so we don't collapse user-visible vars.
-		if (u.isNewScope()) {
-			Set<String> common = collectCommonAnonPathVarNames(u);
-			if (common == null || common.size() != 1) {
-				return u;
-			}
-		}
+		// (no-op)
+		// Note: do not early-return on new-scope unions. We gate fusing per-group below, allowing
+		// either anon-path bridge sharing OR a conservative "safe alternation" case (identical
+		// endpoints and graph, each branch a single PT/SP without quantifiers).
 		// Group candidate branches by (graphName,sName,oName) and remember a sample Var triple per group
 		class Key {
 			final String gName;
@@ -184,39 +183,43 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			Var sVar = null;
 			Var oVar = null;
 			String ptxt = null;
-			// Accept a single-line PT or SP, optionally GRAPH-wrapped
-			IrNode only = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
-			if (only instanceof IrGraph) {
-				IrGraph gb = (IrGraph) only;
-				g = gb.getGraph();
-				if (gb.getWhere() != null && gb.getWhere().getLines().size() == 1) {
-					IrNode innerOnly = gb.getWhere().getLines().get(0);
-					if (innerOnly instanceof IrPathTriple) {
-						IrPathTriple pt = (IrPathTriple) innerOnly;
-						sVar = pt.getSubject();
-						oVar = pt.getObject();
-						ptxt = pt.getPathText();
-					} else if (innerOnly instanceof IrStatementPattern) {
-						IrStatementPattern sp = (IrStatementPattern) innerOnly;
-						sVar = sp.getSubject();
-						oVar = sp.getObject();
-						ptxt = sp.getPredicate() != null && sp.getPredicate().hasValue()
-								? r.convertIRIToString((IRI) sp.getPredicate().getValue())
-								: null;
+			// Accept a single-line PT or SP, optionally wrapped in one or more explicit grouping BGPs and/or a GRAPH
+			IrNode cur = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
+			boolean progressed = true;
+			while (progressed && cur != null) {
+				progressed = false;
+				if (cur instanceof IrBGP) {
+					IrBGP nb = (IrBGP) cur;
+					if (nb.getLines().size() == 1) {
+						cur = nb.getLines().get(0);
+						progressed = true;
+						continue;
 					}
 				}
-			} else if (only instanceof IrPathTriple) {
-				IrPathTriple pt = (IrPathTriple) only;
+				if (cur instanceof IrGraph) {
+					IrGraph gb = (IrGraph) cur;
+					g = gb.getGraph();
+					if (gb.getWhere() != null && gb.getWhere().getLines().size() == 1) {
+						cur = gb.getWhere().getLines().get(0);
+						progressed = true;
+						continue;
+					}
+				}
+			}
+			if (cur instanceof IrPathTriple) {
+				IrPathTriple pt = (IrPathTriple) cur;
 				sVar = pt.getSubject();
 				oVar = pt.getObject();
 				ptxt = pt.getPathText();
-			} else if (only instanceof IrStatementPattern) {
-				IrStatementPattern sp = (IrStatementPattern) only;
+				// no-op
+			} else if (cur instanceof IrStatementPattern) {
+				IrStatementPattern sp = (IrStatementPattern) cur;
 				sVar = sp.getSubject();
 				oVar = sp.getObject();
 				ptxt = sp.getPredicate() != null && sp.getPredicate().hasValue()
 						? r.convertIRIToString((IRI) sp.getPredicate().getValue())
 						: null;
+				// no-op
 			}
 
 			if (sVar == null || oVar == null || ptxt == null) {
@@ -240,6 +243,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 				groups.put(k, grp);
 			}
 			grp.idxs.add(i + 1); // store 1-based idx
+			// no-op
 		}
 
 		boolean changed = false;
@@ -247,12 +251,15 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 		for (Group grp : groups.values()) {
 			List<Integer> idxs = grp.idxs;
 			if (idxs.size() >= 2) {
-				// Safety: only merge branches that share at least one _anon_path_* variable
-				// either as subject/object of the IrPathTriple or carried in pathVars. This
-				// ensures we only fuse branches that originate from parser-generated path
-				// bridges and do not collapse user-visible variables.
-				if (!branchesShareAnonPathVar(u, idxs)) {
-					// Not eligible: keep original branches intact for this group
+				// Safety: allow merging if branches share an anon path bridge OR when it's a
+				// conservative safe-alternation case (all branches are single SP/PT without
+				// quantifiers, identical endpoints/graph — ensured by grouping key).
+				boolean shareAnon = branchesShareAnonPathVar(u, idxs);
+				boolean safeAlt = branchesFormSafeAlternation(idxs, pathTexts);
+				// no-op
+				if (!(shareAnon || safeAlt)) {
+					// Only fuse when branches share an anon path bridge OR they form a
+					// conservative safe alternation (simple single PT/SP members).
 					continue;
 				}
 				ArrayList<String> alts = new ArrayList<>();
@@ -319,9 +326,10 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 				}
 				out.addBranch(b);
 				changed = true;
+				// no-op
 			}
 		}
-		// Add non-merged branches
+		// Add non-merged branches (recurse into their contents so nested unions can be processed)
 		for (int i = 0; i < u.getBranches().size(); i++) {
 			boolean merged = false;
 			for (Group grp : groups.values()) {
@@ -331,7 +339,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 				}
 			}
 			if (!merged) {
-				out.addBranch(u.getBranches().get(i));
+				out.addBranch(apply(u.getBranches().get(i), r));
 			}
 		}
 		return changed ? out : u;
@@ -393,6 +401,30 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			}
 		}
 		return out;
+	}
+
+	/**
+	 * Conservative safety predicate: all selected UNION branches correspond to a single simple path expression
+	 * (IrPathTriple or IrStatementPattern converted to a path step), without quantifiers. This is approximated by
+	 * checking that the precomputed {@code pathTexts} entry for each branch index is non-null, because earlier in
+	 * {@link #fuseUnion(IrUnion, TupleExprIRRenderer)} we only populate {@code pathTexts} when a branch is a single
+	 * PT/SP (optionally GRAPH-wrapped) and exclude any that end with '?', '*' or '+'. Endpoints and graph equality are
+	 * guaranteed by the grouping key used for {@code idxs}.
+	 */
+	private static boolean branchesFormSafeAlternation(List<Integer> idxs, List<String> pathTexts) {
+		if (idxs == null || idxs.size() < 2) {
+			return false;
+		}
+		for (int idx : idxs) {
+			if (idx <= 0 || idx >= pathTexts.size()) {
+				return false;
+			}
+			String p = pathTexts.get(idx);
+			if (p == null) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static IrBGP wrap(IrPathTriple pt) {
