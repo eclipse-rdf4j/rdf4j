@@ -169,7 +169,7 @@ public class TupleExprIRRendererTest {
 	/** Assert semantic equivalence by comparing result rows (order-insensitive). */
 
 	/** Assert semantic equivalence by comparing result rows (order-insensitive). */
-	private void assertSameSparqlQuery(String sparql, TupleExprIRRenderer.Config cfg) {
+	private void assertSameSparqlQuery(String sparql, TupleExprIRRenderer.Config cfg, boolean requireStringEquality) {
 //		cfg.debugIR = true;
 
 		sparql = sparql.trim();
@@ -186,8 +186,9 @@ public class TupleExprIRRendererTest {
 					.as("Algebra after rendering must be identical to original")
 					.isEqualTo(VarNameNormalizer.normalizeVars(expected.toString()));
 
-			// If you also want to assert the textual SPARQL match, keep this:
-			// assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
+			if (requireStringEquality) {
+				assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
+			}
 
 		} catch (Throwable t) {
 
@@ -282,7 +283,7 @@ public class TupleExprIRRendererTest {
 				"    FILTER (?age >= 18)\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -296,7 +297,7 @@ public class TupleExprIRRendererTest {
 				"    ?who foaf:name \"Bob\" .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -308,7 +309,7 @@ public class TupleExprIRRendererTest {
 				"LIMIT 2\n" +
 				"OFFSET 0";
 		// Semantic equivalence depends on ordering; still fine since we run the same query
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -321,7 +322,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"  ?x foaf:name ?n .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -332,7 +333,7 @@ public class TupleExprIRRendererTest {
 				"    (\"Bob\" ex:bob)\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -342,7 +343,7 @@ public class TupleExprIRRendererTest {
 				"  BIND(STR(?n) AS ?sn)\n" +
 				"  FILTER (STRSTARTS(?sn, \"A\"))\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -351,7 +352,7 @@ public class TupleExprIRRendererTest {
 				"  ?s ?p ?o .\n" +
 				"}";
 		// No dataset dependency issues; simple count
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -360,7 +361,7 @@ public class TupleExprIRRendererTest {
 				"  ?s ?p ?o .\n" +
 				"}\n" +
 				"GROUP BY ?s";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -369,7 +370,7 @@ public class TupleExprIRRendererTest {
 				"  ?s foaf:name ?name .\n" +
 				"}";
 		// Semantic equivalence: both queries run in the same engine; comparing string results
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -380,7 +381,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 		// We do not execute against remote SERVICE; check fixed point only:
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -396,9 +397,9 @@ public class TupleExprIRRendererTest {
 				"  ?x ex:knows?/foaf:name ?y .\n" +
 				"}";
 
-		assertSameSparqlQuery(qStar, cfg());
-		assertSameSparqlQuery(qPlus, cfg());
-		assertSameSparqlQuery(qOpt, cfg());
+		assertSameSparqlQuery(qStar, cfg(), false);
+		assertSameSparqlQuery(qPlus, cfg(), false);
+		assertSameSparqlQuery(qOpt, cfg(), false);
 	}
 
 	@Test
@@ -407,7 +408,7 @@ public class TupleExprIRRendererTest {
 				"  ?s foaf:name ?n .\n" +
 				"  FILTER (REGEX(?n, \"^a\", \"i\") || LANGMATCHES(LANG(?n), \"en\"))\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -416,7 +417,7 @@ public class TupleExprIRRendererTest {
 				"  ?s ex:age ?age .\n" +
 				"  FILTER ((DATATYPE(?age) = xsd:integer) && isLiteral(?age))\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -426,7 +427,7 @@ public class TupleExprIRRendererTest {
 				"}\n" +
 				"LIMIT 10\n" +
 				"OFFSET 1";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	// ----------- Edge/robustness cases ------------
@@ -449,7 +450,7 @@ public class TupleExprIRRendererTest {
 				"    (\"x\" \"y\")\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -465,7 +466,7 @@ public class TupleExprIRRendererTest {
 				"}\n" +
 				"GROUP BY ?s";
 		// Semantic equivalence: engine evaluates both sides consistently
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -474,7 +475,7 @@ public class TupleExprIRRendererTest {
 				"  ?s foaf:name ?n .\n" +
 				"}\n" +
 				"ORDER BY ?n DESC(?s)";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -490,7 +491,7 @@ public class TupleExprIRRendererTest {
 				"  FILTER (!(?s = ex:bob))\n" +
 				"}";
 		String r = assertFixedPoint(q, cfg());
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -503,7 +504,7 @@ public class TupleExprIRRendererTest {
 				"}";
 		String r = assertFixedPoint(q, cfg());
 		assertTrue(r.contains("EXISTS {"), "should render EXISTS");
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -514,7 +515,7 @@ public class TupleExprIRRendererTest {
 				"}";
 		String r = assertFixedPoint(q, cfg());
 		assertTrue(r.contains("STRLEN("), "fn:string-length should render as STRLEN");
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	// =========================
@@ -529,7 +530,7 @@ public class TupleExprIRRendererTest {
 				"  ?s ?p ?o .\n" +
 				"  FILTER (NOT EXISTS { ?s foaf:name ?n . })\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -540,7 +541,7 @@ public class TupleExprIRRendererTest {
 				"    ?s foaf:name ?n .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	// --- Property paths (sequence, alternation, inverse, NPS, grouping) ---
@@ -562,7 +563,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?x ?y WHERE {\n" +
 				"  ?x !(rdf:type|^rdf:type) ?y .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -578,7 +579,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ((?age + 1) AS ?age1) WHERE {\n" +
 				"  ?s ex:age ?age .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -652,7 +653,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT REDUCED ?s WHERE {\n" +
 				"  ?s ?p ?o .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -670,7 +671,7 @@ public class TupleExprIRRendererTest {
 				"  ?s ?p ?o .\n" +
 				"}\n" +
 				"OFFSET 5";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -683,8 +684,8 @@ public class TupleExprIRRendererTest {
 				"  ?s ?p ?o .\n" +
 				"}\n" +
 				"LIMIT 3";
-		assertSameSparqlQuery(q1, cfg());
-		assertSameSparqlQuery(q2, cfg());
+		assertSameSparqlQuery(q1, cfg(), false);
+		assertSameSparqlQuery(q2, cfg(), false);
 	}
 
 	@Test
@@ -768,7 +769,7 @@ public class TupleExprIRRendererTest {
 				"    (ex:bob)\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -777,7 +778,7 @@ public class TupleExprIRRendererTest {
 				"  VALUES (?s) {\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	// --- Syntactic sugar: blank node property list and collections ---
@@ -787,7 +788,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?n WHERE {\n" +
 				"  [] foaf:name ?n .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -795,7 +796,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?el WHERE {\n" +
 				"  (1 2 3) rdf:rest*/rdf:first ?el .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	// ==========================================
@@ -837,7 +838,7 @@ public class TupleExprIRRendererTest {
 				"ORDER BY DESC(?cnt) LCASE(?name)\n" +
 				"LIMIT 10\n" +
 				"OFFSET 5";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -862,7 +863,7 @@ public class TupleExprIRRendererTest {
 				"    FILTER (STRLEN(?nick) > 0)\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -893,7 +894,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -915,7 +916,7 @@ public class TupleExprIRRendererTest {
 				"ORDER BY DESC(?cnt) LCASE(?name)\n" +
 				"LIMIT 10\n" +
 				"OFFSET 5";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -949,7 +950,7 @@ public class TupleExprIRRendererTest {
 				"HAVING (SUM(?innerC) >= 1)\n" +
 				"ORDER BY DESC( ?c) STRLEN( COALESCE(?label, \"\"))\n" +
 				"LIMIT 20";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -975,7 +976,7 @@ public class TupleExprIRRendererTest {
 
 		collections();
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -991,7 +992,7 @@ public class TupleExprIRRendererTest {
 				+
 				"  FILTER (NOT EXISTS { ?s ex:blockedBy ?b . })\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1008,7 +1009,7 @@ public class TupleExprIRRendererTest {
 				"GROUP BY ?s ?n\n" +
 				"ORDER BY STRLEN(?n) DESC(?maxAge)\n" +
 				"LIMIT 50";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1033,7 +1034,7 @@ public class TupleExprIRRendererTest {
 				"}\n" +
 				"ORDER BY DESC(?aC + ?bC)\n" +
 				"LIMIT 10";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1042,7 +1043,7 @@ public class TupleExprIRRendererTest {
 				"  ?a (^foaf:knows/!(ex:helps|ex:knows|rdf:subject|rdf:type)/foaf:name) ?n .\n" +
 				"  FILTER ((LANG(?n) = \"\") || LANGMATCHES(LANG(?n), \"en\"))\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1070,7 +1071,7 @@ public class TupleExprIRRendererTest {
 				"GROUP BY ?svc ?s\n" +
 				"HAVING (SUM(?c) >= 0)\n" +
 				"ORDER BY DESC(?total)";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1095,7 +1096,7 @@ public class TupleExprIRRendererTest {
 				"GROUP BY (?k AS ?key) ?person\n" +
 				"ORDER BY ?key DESC(?c)\n" +
 				"LIMIT 100";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1106,7 +1107,7 @@ public class TupleExprIRRendererTest {
 				"GROUP BY (?b AS ?predicate)\n" +
 				"ORDER BY ?predicate\n" +
 				"LIMIT 100";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	// ================================================
@@ -1149,7 +1150,7 @@ public class TupleExprIRRendererTest {
 				"ORDER BY DESC(?cnt) LCASE(COALESCE(?label, \"\"))\n" +
 				"LIMIT 50\n" +
 				"OFFSET 10";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1174,7 +1175,7 @@ public class TupleExprIRRendererTest {
 				"ORDER BY DESC(?cnt) LCASE(COALESCE(?label, \"\"))\n" +
 				"LIMIT 50\n" +
 				"OFFSET 10";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1222,7 +1223,7 @@ public class TupleExprIRRendererTest {
 				"}\n" +
 				"ORDER BY ?kind\n" +
 				"LIMIT 1000";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1251,7 +1252,7 @@ public class TupleExprIRRendererTest {
 				"}\n" +
 				"ORDER BY ?tag ?n\n" +
 				"LIMIT 500";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1263,7 +1264,7 @@ public class TupleExprIRRendererTest {
 				"}\n" +
 				"ORDER BY ?score\n" +
 				"LIMIT 100";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	// ==========================
@@ -1282,7 +1283,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1297,7 +1298,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"  FILTER (?x = ?x)\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1311,7 +1312,7 @@ public class TupleExprIRRendererTest {
 				"    FILTER (LANGMATCHES(LANG(?label), \"en\"))\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1325,7 +1326,7 @@ public class TupleExprIRRendererTest {
 				"    FILTER (LANGMATCHES(LANG(?label), \"en\"))\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1340,7 +1341,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1351,7 +1352,7 @@ public class TupleExprIRRendererTest {
 				"    ()\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1362,7 +1363,7 @@ public class TupleExprIRRendererTest {
 				"    (2)\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1370,7 +1371,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT (ex:score(?x, ?y) AS ?s) WHERE {\n" +
 				"  ?x ex:knows ?y .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1378,7 +1379,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ^ex:knows ?o .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1386,7 +1387,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?name ?age WHERE {\n" +
 				"  ?s a ex:Person ; foaf:name ?name ; ex:age ?age .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1394,7 +1395,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s foaf:knows|ex:knows ?o .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1403,7 +1404,7 @@ public class TupleExprIRRendererTest {
 				"  ?s ?p ?o .\n" +
 				"  FILTER (?p NOT IN (rdf:type, ex:age))\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1412,7 +1413,7 @@ public class TupleExprIRRendererTest {
 				"  ?s ?p ?o .\n" +
 				"  FILTER (?p NOT IN (rdf:type, ex:age))\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1422,7 +1423,7 @@ public class TupleExprIRRendererTest {
 				"    ?s ?p ?o .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1430,7 +1431,7 @@ public class TupleExprIRRendererTest {
 		String q = "ASK WHERE {\n" +
 				"  ?s a foaf:Person .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1439,7 +1440,7 @@ public class TupleExprIRRendererTest {
 				"  ?x foaf:name ?name .\n" +
 				"}\n" +
 				"ORDER BY ?x DESC(?name)";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1453,7 +1454,7 @@ public class TupleExprIRRendererTest {
 				"    FILTER (STRLEN(STR(?label)) >= 0)\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1464,7 +1465,7 @@ public class TupleExprIRRendererTest {
 				"    (UNDEF ex:age UNDEF)\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1481,7 +1482,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	// -----------------------------
@@ -1497,7 +1498,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1508,7 +1509,7 @@ public class TupleExprIRRendererTest {
 				"    ?s foaf:knows/foaf:knows? ?o .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1519,7 +1520,7 @@ public class TupleExprIRRendererTest {
 				"    ?s foaf:knows/foaf:knows? ?o .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1527,7 +1528,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s WHERE {\n" +
 				"  FILTER (NOT EXISTS { ?s (foaf:knows|ex:knows)/^foaf:knows ?o . })\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1543,7 +1544,7 @@ public class TupleExprIRRendererTest {
 				"    ?s ^ex:knows ?o .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1553,7 +1554,7 @@ public class TupleExprIRRendererTest {
 				"    ?s (foaf:knows*/^(foaf:knows|ex:knows)) ?o .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1566,7 +1567,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1574,7 +1575,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s WHERE {\n" +
 				"  FILTER (EXISTS { { SELECT (COUNT(?x) AS ?c) WHERE { ?s foaf:knows+ ?x . } } FILTER (?c >= 0) })\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1588,7 +1589,7 @@ public class TupleExprIRRendererTest {
 				"    ?s (ex:knows|foaf:knows)+ ?o .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1600,7 +1601,7 @@ public class TupleExprIRRendererTest {
 				"    } \n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1608,7 +1609,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  SERVICE ?svc { GRAPH ?g { ?s (foaf:knows|ex:knows) ?o . } }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1618,7 +1619,7 @@ public class TupleExprIRRendererTest {
 				"  FILTER (?c >= 0)\n" +
 				"}\n" +
 				"GROUP BY ?s";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1627,7 +1628,7 @@ public class TupleExprIRRendererTest {
 				"  ?s foaf:knows+ ?o .\n" +
 				"}\n" +
 				"ORDER BY ?o";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1643,7 +1644,7 @@ public class TupleExprIRRendererTest {
 				"    ?s ex:knows/^foaf:knows ?o .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1653,7 +1654,7 @@ public class TupleExprIRRendererTest {
 				"  GRAPH ?g { ?s foaf:knows ?o . }\n" +
 				"  MINUS { ?s (ex:knows|foaf:knows) ?o . }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1663,7 +1664,7 @@ public class TupleExprIRRendererTest {
 				"    ?s !(ex:age|rdf:type)/foaf:name ?x .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1681,7 +1682,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1689,7 +1690,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s WHERE {\n" +
 				"  FILTER (EXISTS { ?s foaf:knows+/^ex:knows ?o . FILTER (BOUND(?o)) })\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1703,7 +1704,7 @@ public class TupleExprIRRendererTest {
 				"    ?s ex:knows? ?o .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1714,7 +1715,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"  FILTER (BOUND(?s) && BOUND(?o))\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1725,7 +1726,7 @@ public class TupleExprIRRendererTest {
 				"  FILTER (NOT EXISTS { ?a ex:blockedBy ?b . })" +
 				"  GRAPH ?g { ?a !(rdf:type|ex:age)/foaf:name ?x }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1749,7 +1750,7 @@ public class TupleExprIRRendererTest {
 				"    ?a !(ex:age|rdf:type)/foaf:name ?x .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1759,7 +1760,7 @@ public class TupleExprIRRendererTest {
 				"    ?a !(ex:age|rdf:type)/foaf:name ?x .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1774,7 +1775,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(expanded, cfg());
+		assertSameSparqlQuery(expanded, cfg(), false);
 
 	}
 
@@ -1790,7 +1791,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(expanded, cfg());
+		assertSameSparqlQuery(expanded, cfg(), false);
 	}
 
 	@Test
@@ -1802,7 +1803,7 @@ public class TupleExprIRRendererTest {
 				"  FILTER (?p NOT IN (rdf:type, ex:age))\n" +
 				"}";
 
-		assertSameSparqlQuery(expanded, cfg());
+		assertSameSparqlQuery(expanded, cfg(), false);
 
 	}
 
@@ -1815,7 +1816,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(expanded, cfg());
+		assertSameSparqlQuery(expanded, cfg(), false);
 
 	}
 
@@ -1849,7 +1850,7 @@ public class TupleExprIRRendererTest {
 				"HAVING (SUM(?c) >= 0)\n" +
 				"ORDER BY DESC(?total) LCASE(COALESCE(?n, \"\"))\n" +
 				"LIMIT 25";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 //	@Test
@@ -1880,7 +1881,7 @@ public class TupleExprIRRendererTest {
 				"}\n" +
 				"ORDER BY DESC(COALESCE(?avgAge, -999)) LCASE(?bestName)\n" +
 				"LIMIT 200";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1900,7 +1901,7 @@ public class TupleExprIRRendererTest {
 				"  FILTER ((?s IN (ex:a, ex:b, ex:c)) || EXISTS { ?s foaf:name ?nn . })\n" +
 				"}\n" +
 				"ORDER BY ?s ?o";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1925,7 +1926,7 @@ public class TupleExprIRRendererTest {
 				"  FILTER (BOUND(?bestName))\n" +
 				"}\n" +
 				"ORDER BY ?bestName ?s";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1936,7 +1937,7 @@ public class TupleExprIRRendererTest {
 				"  (ex:alice ex:bob ex:carol) rdf:rest*/rdf:first ?x .\n" +
 				"  FILTER (STRLEN(?n) > 0)\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1957,7 +1958,7 @@ public class TupleExprIRRendererTest {
 				"    } \n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	// -------- New deep nested OPTIONAL path tests --------
@@ -1974,7 +1975,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -1989,7 +1990,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2004,7 +2005,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2018,7 +2019,7 @@ public class TupleExprIRRendererTest {
 				"    FILTER (BOUND(?s))\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2031,7 +2032,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2039,7 +2040,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?g ?s ?n WHERE {\n" +
 				"      ?s ex:path1/ex:path2/(ex:alt1|ex:alt2) ?n .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2059,7 +2060,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	// -------- New deep nested UNION path tests --------
@@ -2082,7 +2083,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2105,7 +2106,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}\n";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2131,7 +2132,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2139,7 +2140,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s (ex:knows1|^ex:knows2) ?o . " +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2147,7 +2148,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  GRAPH ?g { ?s (ex:knows1|^ex:knows2) ?o . }" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2155,7 +2156,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s (ex:knows1|ex:knows2) ?o . " +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2177,7 +2178,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2203,7 +2204,33 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+	}
+
+	@Test
+	void deep_union_path_5_curly_braces() {
+		String q = "SELECT ?o ?s WHERE {\n" +
+				"  {\n" +
+				"    {\n" +
+				"      ?s foaf:knows/foaf:knows|ex:knows/^ex:knows ?o .\n" +
+				"    }\n" +
+				"      UNION\n" +
+				"    {\n" +
+				"      ?s ^foaf:knows/(foaf:knows|ex:knows) ?o .\n" +
+				"    }\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    {\n" +
+				"      ?o !(ex:age|rdf:type) ?s .\n" +
+				"    }\n" +
+				"      UNION\n" +
+				"    {\n" +
+				"      ?s foaf:knows? ?o .\n" +
+				"    }\n" +
+				"  }\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg(), true);
 	}
 
 	// -------- Additional SELECT tests with deeper, more nested paths --------
@@ -2215,7 +2242,7 @@ public class TupleExprIRRendererTest {
 				"      /((ex:colleagueOf|^ex:colleagueOf)/(ex:knows/foaf:knows)?)*\n" +
 				"      /(^ex:knows/(ex:knows|^ex:knows)+))/foaf:name ?n .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2223,7 +2250,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  ?s foaf:knows/^foaf:knows | !(rdf:type|^rdf:type)/ex:knows? ?n .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2231,7 +2258,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  ?s (ex:knows1/ex:knows2)* ?n .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2239,7 +2266,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  ?s (ex:knows1|ex:knows2)* ?n .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2247,7 +2274,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  ?s (ex:knows1/ex:knows2)+ ?n .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2257,7 +2284,7 @@ public class TupleExprIRRendererTest {
 				"    ?s foaf:knows/^foaf:knows | !(rdf:type|^rdf:type)/ex:knows? ?n .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2271,7 +2298,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"  ?z foaf:name ?n .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2288,7 +2315,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"  })\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2302,7 +2329,7 @@ public class TupleExprIRRendererTest {
 				"    ?s (((!(ex:g|^ex:h))/(((ex:i|^ex:j))?))/((ex:k/foaf:knows)|(^ex:l/ex:m)))/foaf:name ?n .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2316,7 +2343,7 @@ public class TupleExprIRRendererTest {
 				"    ?s (((!(^ex:h|ex:g))/(((ex:i|^ex:j))?))/((ex:k/foaf:knows)|(^ex:l/ex:m)))/foaf:name ?n .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2330,7 +2357,7 @@ public class TupleExprIRRendererTest {
 				"    ?s (((!(ex:h|^ex:g))/(((ex:i|^ex:j))?))/((ex:k/foaf:knows)|(^ex:l/ex:m)))/foaf:name ?n .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2344,7 +2371,7 @@ public class TupleExprIRRendererTest {
 				"    ?s (((!(^ex:g|ex:h))/(((ex:i|^ex:j))?))/((ex:k/foaf:knows)|(^ex:l/ex:m)))/foaf:name ?n .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2366,7 +2393,7 @@ public class TupleExprIRRendererTest {
 				"    ?s (^ex:g|ex:h)+/foaf:name ?n .\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2374,7 +2401,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  ?s !(^ex:g|ex:h)/foaf:name ?n .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2383,7 +2410,7 @@ public class TupleExprIRRendererTest {
 				"  ?s (((ex:pA|^ex:pB)/(ex:pC|^ex:pD))*/(^ex:pE/(ex:pF|^ex:pG)+)/(ex:pH/foaf:knows)?)/foaf:name ?n .\n"
 				+
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2398,7 +2425,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2408,7 +2435,7 @@ public class TupleExprIRRendererTest {
 				"  UNION\n" +
 				"  { ?s !<http://example.org/p/I02> ?o . }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2418,7 +2445,7 @@ public class TupleExprIRRendererTest {
 				"  UNION\n" +
 				"  { ?s !<http://example.org/p/I02> ?o . }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2426,7 +2453,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s !ex:pA ?o .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2434,7 +2461,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s !^ex:pA ?o .\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2444,7 +2471,7 @@ public class TupleExprIRRendererTest {
 				"  UNION\n" +
 				"  { ?o ^<http://example.org/p/I0> ?s . }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2459,7 +2486,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2470,7 +2497,7 @@ public class TupleExprIRRendererTest {
 				"  ?s ex:pD (ex:Person ex:Thing) .\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2482,7 +2509,7 @@ public class TupleExprIRRendererTest {
 				" [] ex:pE _:bnode1 .\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2497,7 +2524,7 @@ public class TupleExprIRRendererTest {
 				"  [] !(ex:pE |^ex:pE) _:bnode1 .\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2506,7 +2533,7 @@ public class TupleExprIRRendererTest {
 				"  { SELECT DISTINCT ?s WHERE { ?s ex:pA ?o } ORDER BY ?s LIMIT 10 }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2520,7 +2547,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2534,7 +2561,7 @@ public class TupleExprIRRendererTest {
 				"  } }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2552,7 +2579,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2573,7 +2600,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2594,7 +2621,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	// New tests to validate new-scope behavior and single-predicate inversion
@@ -2611,7 +2638,7 @@ public class TupleExprIRRendererTest {
 				"  { ?u1 ex:pD ?v1 . }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2626,7 +2653,7 @@ public class TupleExprIRRendererTest {
 				"  { ?u1 ex:pD ?v1 . }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2640,7 +2667,7 @@ public class TupleExprIRRendererTest {
 				"  } } \n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2657,7 +2684,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2667,7 +2694,7 @@ public class TupleExprIRRendererTest {
 				"  ?s !( ex:pA|^<http://example.org/p/I0>) ?o .\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2686,7 +2713,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2703,7 +2730,7 @@ public class TupleExprIRRendererTest {
 				"   }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2722,7 +2749,7 @@ public class TupleExprIRRendererTest {
 				"  } \n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2739,7 +2766,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2758,7 +2785,7 @@ public class TupleExprIRRendererTest {
 				"}\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2775,7 +2802,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2793,7 +2820,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2809,7 +2836,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2828,7 +2855,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2849,7 +2876,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2865,7 +2892,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2883,7 +2910,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2899,7 +2926,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2916,7 +2943,7 @@ public class TupleExprIRRendererTest {
 				"    } }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2932,7 +2959,7 @@ public class TupleExprIRRendererTest {
 				"    } }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2950,7 +2977,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2959,7 +2986,7 @@ public class TupleExprIRRendererTest {
 				"{ ?s ex:pA ?o . OPTIONAL { { ?s ^<http://example.org/p/I1> ?o . } } }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2973,7 +3000,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -2989,7 +3016,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3007,7 +3034,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3023,7 +3050,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3039,7 +3066,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3058,7 +3085,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3077,7 +3104,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3094,7 +3121,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3109,7 +3136,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3124,7 +3151,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3142,7 +3169,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3158,7 +3185,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3174,7 +3201,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3185,7 +3212,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3194,7 +3221,7 @@ public class TupleExprIRRendererTest {
 				"  ?s a ?o .  \n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3209,7 +3236,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3222,7 +3249,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3235,7 +3262,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3246,7 +3273,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3262,7 +3289,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3279,7 +3306,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3296,7 +3323,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3313,7 +3340,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3330,7 +3357,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3343,7 +3370,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3356,7 +3383,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3378,7 +3405,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3399,7 +3426,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3418,7 +3445,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3443,7 +3470,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	// ---- Additional generalization tests to ensure robustness of SERVICE + UNION + SUBSELECT grouping ----
@@ -3464,7 +3491,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3491,7 +3518,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3508,7 +3535,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3533,7 +3560,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3554,7 +3581,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3573,7 +3600,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3588,7 +3615,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3603,7 +3630,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3623,7 +3650,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3638,7 +3665,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3658,7 +3685,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3681,7 +3708,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3707,7 +3734,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3731,7 +3758,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3755,7 +3782,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3782,7 +3809,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3805,7 +3832,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3830,7 +3857,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3855,7 +3882,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3880,7 +3907,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3905,7 +3932,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3926,7 +3953,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3947,7 +3974,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3968,7 +3995,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -3987,7 +4014,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -4012,7 +4039,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -4034,7 +4061,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -4056,7 +4083,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -4078,7 +4105,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -4091,7 +4118,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}\n";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -4110,7 +4137,7 @@ public class TupleExprIRRendererTest {
 				"      }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test
@@ -4128,7 +4155,7 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 
-		assertSameSparqlQuery(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 }

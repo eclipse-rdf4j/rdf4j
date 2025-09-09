@@ -48,8 +48,20 @@ public final class FlattenSingletonUnionsTransform extends BaseTransform {
 			});
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
-				// Do not fold an explicit UNION (new scope) into a single path triple
-				if (u.isNewScope()) {
+				// Detect unions that originate from property-path alternation: they often carry
+				// newScope=true on the UNION node but have branches with newScope=false. In that
+				// case, when only one branch remains, we can safely flatten the UNION node as it
+				// is not an explicit user-authored UNION.
+				boolean branchesAllNonScoped = true;
+				for (IrBGP b : u.getBranches()) {
+					if (b != null && b.isNewScope()) {
+						branchesAllNonScoped = false;
+						break;
+					}
+				}
+				// Preserve explicit UNIONs (newScope=true) unless they are clearly path-generated
+				// and have collapsed to a single branch.
+				if (u.isNewScope() && !(branchesAllNonScoped && u.getBranches().size() == 1)) {
 					out.add(u);
 					continue;
 				}
