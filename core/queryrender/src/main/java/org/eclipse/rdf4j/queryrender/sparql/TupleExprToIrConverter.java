@@ -102,6 +102,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.BaseTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseServiceNpsUnionLateTransform;
 
 /**
@@ -1859,6 +1860,12 @@ public class TupleExprToIrConverter {
 				} else {
 					irU.addBranch(wr);
 				}
+				// If this UNION is a trivial alternation of single triples/paths with identical endpoints,
+				// treat it as path-generated for downstream transforms regardless of algebra scope flag.
+				if (BaseTransform
+						.unionBranchesFormSafeAlternation(irU, r)) {
+					irU.setNewScope(false);
+				}
 				where.add(irU);
 				return;
 			}
@@ -1879,6 +1886,10 @@ public class TupleExprToIrConverter {
 				} else {
 					irU.addBranch(wb);
 				}
+			}
+			if (BaseTransform
+					.unionBranchesFormSafeAlternation(irU, r)) {
+				irU.setNewScope(false);
 			}
 			where.add(irU);
 		}

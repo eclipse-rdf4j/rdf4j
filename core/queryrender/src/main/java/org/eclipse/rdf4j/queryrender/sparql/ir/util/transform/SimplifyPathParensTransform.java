@@ -57,11 +57,9 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 	private static final Pattern COMPACT_PARENED_NEGATED_TOKEN = Pattern
 			.compile("\\((!\\s*(?:<[^>]+>|[^()|/\\s]+))\\)");
 
-	// Add spaces just inside parentheses for simple alternation groups: (a|b) -> ( a|b )
 	private static final Pattern SIMPLE_ALT_GROUP = Pattern
 			.compile("(?<!!)\\(\\s*([^()]+\\|[^()]+)\\s*\\)");
 
-	// Ensure a single space just inside NPS parentheses for consistent style: !(a|^b) -> !( a|^b )
 	private static final Pattern NPS_PARENS_SPACING = Pattern
 			.compile("!\\(\\s*([^()]+?)\\s*\\)");
 
@@ -142,15 +140,15 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			// Normalize a paren group of negated tokens: (!a|!^b) -> !(a|^b)
 			cur = normalizeParenBangAlternationGroups(cur);
 			// Style: ensure a single space just inside any parentheses before grouping
-			cur = cur.replaceAll("\\((\\S)", "( $1");
-			cur = cur.replaceAll("(\\S)\\)", "$1 )");
+			cur = cur.replaceAll("\\((\\S)", "($1");
+			cur = cur.replaceAll("(\\S)\\)", "$1)");
 			// In a simple alternation group that mixes positive and negated tokens, compress the
 			// negated tokens into a single NPS member: (ex:p|!a|!^b|ex:q) -> (ex:p|!(a|^b)|ex:q)
 			cur = groupNegatedMembersInSimpleGroup(cur);
 			// Insert spaces around top-level alternations for readability
 			cur = spaceTopLevelAlternations(cur);
 			// Style: add a space just inside simple alternation parentheses
-			cur = SIMPLE_ALT_GROUP.matcher(cur).replaceAll("( $1 )");
+			cur = SIMPLE_ALT_GROUP.matcher(cur).replaceAll("($1)");
 			// (general parentheses spacing done earlier)
 			// Finally: ensure no extra spaces inside NPS parentheses when used as a member
 			cur = NPS_PARENS_SPACING.matcher(cur).replaceAll("!($1)");

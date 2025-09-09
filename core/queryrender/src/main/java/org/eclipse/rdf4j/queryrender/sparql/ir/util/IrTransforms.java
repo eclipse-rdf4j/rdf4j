@@ -87,6 +87,9 @@ public final class IrTransforms {
 
 					w = ApplyPathsFixedPointTransform.apply(w, r);
 
+					// Final path parentheses/style simplification to match canonical expectations
+					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform.apply(w);
+
 					// Late fuse: inside SERVICE, convert UNION of two bare-NPS branches into a single NPS
 					w = FuseServiceNpsUnionLateTransform
 							.apply(w);
@@ -123,6 +126,8 @@ public final class IrTransforms {
 					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
 
 					w = ApplyPathsFixedPointTransform.apply(w, r);
+
+					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform.apply(w);
 
 					// Normalize NPS member order after late inversions introduced by path fusions
 					w = NormalizeNpsMemberOrderTransform.apply(w);
