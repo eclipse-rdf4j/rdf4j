@@ -509,6 +509,18 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					IrBGP rb = rewriteSimpleNpsOnly(b, r);
 					if (rb != null) {
 						rb.setNewScope(b.isNewScope());
+						// Avoid introducing redundant single-child grouping: unwrap nested IrBGP layers
+						// that each contain exactly one child and do not carry explicit new scope.
+						IrBGP cur = rb;
+						while (!cur.isNewScope() && cur.getLines().size() == 1
+								&& cur.getLines().get(0) instanceof IrBGP) {
+							IrBGP inner = (IrBGP) cur.getLines().get(0);
+							if (inner.isNewScope()) {
+								break;
+							}
+							cur = inner;
+						}
+						rb = cur;
 					}
 					u2.addBranch(rb);
 				}

@@ -329,7 +329,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 						acc.addAll(((IrPathTriple) only).getPathVars());
 					}
 				}
-				IrPathTriple mergedPt = new IrPathTriple(grp.s, merged, grp.o, false, acc);
+				IrPathTriple mergedPt = new IrPathTriple(grp.s, merged, grp.o, branchScope, acc);
 				if (grp.g != null) {
 					b.add(new IrGraph(grp.g, wrap(mergedPt), false));
 				} else {

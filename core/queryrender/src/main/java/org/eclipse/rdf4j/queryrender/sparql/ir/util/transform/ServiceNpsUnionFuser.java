@@ -136,7 +136,7 @@ public final class ServiceNpsUnionFuser {
 		pv.addAll(p1.getPathVars());
 		pv.addAll(p2.getPathVars());
 		IrPathTriple fused = new IrPathTriple(sCanon, p1.getSubjectOverride(), merged, oCanon, p1.getObjectOverride(),
-				pv, false);
+				pv, u.isNewScope());
 		IrNode out = fused;
 		if (graphRef != null) {
 			IrBGP inner = new IrBGP(false);
