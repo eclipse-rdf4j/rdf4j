@@ -207,9 +207,6 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 				return null;
 			}
 		}
-		if (steps.isEmpty()) {
-			return null;
-		}
 		String exprInner;
 		// If all steps are simple negated property sets of the form !(...), merge their members into one NPS
 		boolean allNps = true;
@@ -394,9 +391,6 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 				return null;
 			}
 		}
-		if (steps.isEmpty()) {
-			return null;
-		}
 		// Merge NPS members if applicable
 		boolean allNps = true;
 		List<String> npsMembers = new ArrayList<>();
@@ -533,7 +527,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 				return null;
 			}
 			IrNode ln = first.getLines().get(0);
-			Var sVar = null, oVar = null;
+			Var sVar, oVar;
 			if (ln instanceof IrStatementPattern) {
 				IrStatementPattern sp = (IrStatementPattern) ln;
 				sVar = sp.getSubject();

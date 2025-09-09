@@ -68,7 +68,7 @@ public final class MergeOptionalIntoPrecedingGraphTransform extends BaseTransfor
 					if (sameVarOrValue(g.getGraph(), inner.getGraph()) && isSimpleOptionalBody(inner.getWhere())) {
 						simpleOw = inner.getWhere();
 					}
-				} else if (ow != null && ow.getLines().size() >= 1) {
+				} else if (ow != null && !ow.getLines().isEmpty()) {
 					// Handle OPTIONAL bodies that contain exactly one GRAPH ?g { simple } plus one or more FILTER
 					// lines.
 					// Merge into the preceding GRAPH and keep the FILTER(s) inside the OPTIONAL block.

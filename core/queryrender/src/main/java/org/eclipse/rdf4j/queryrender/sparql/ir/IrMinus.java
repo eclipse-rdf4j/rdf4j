@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
  * Textual IR node for a MINUS { ... } block. Similar to OPTIONAL and GRAPH, this is a container around a nested BGP.
  */
 public class IrMinus extends IrNode {
-	private IrBGP bgp;
+	private final IrBGP bgp;
 
 	public IrMinus(IrBGP bgp, boolean newScope) {
 		super(newScope);

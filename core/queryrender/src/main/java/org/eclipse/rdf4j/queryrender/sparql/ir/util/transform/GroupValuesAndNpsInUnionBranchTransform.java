@@ -75,7 +75,7 @@ public final class GroupValuesAndNpsInUnionBranchTransform extends BaseTransform
 	// Only consider top-level lines in the branch for grouping to ensure idempotence.
 	private static IrBGP maybeWrapBranch(IrBGP branch, boolean unionNewScope) {
 		if (branch == null) {
-			return branch;
+			return null;
 		}
 
 		boolean hasTopValues = false;

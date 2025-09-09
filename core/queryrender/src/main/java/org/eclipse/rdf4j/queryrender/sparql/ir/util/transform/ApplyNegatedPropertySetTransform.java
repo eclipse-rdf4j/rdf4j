@@ -61,7 +61,6 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		final List<IrNode> in = bgp.getLines();
 		final List<IrNode> out = new ArrayList<>();
 		final Set<IrNode> consumed = new LinkedHashSet<>();
-		boolean propagateScopeFromConsumedFilter = false;
 
 		for (int i = 0; i < in.size(); i++) {
 			IrNode n = in.get(i);
@@ -87,7 +86,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 									&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
 								IrStatementPattern sp = (IrStatementPattern) g.getWhere().getLines().get(0);
 								Var pVar = sp.getPredicate();
-								if (pVar != null && (BaseTransform.isAnonPathVar(pVar)
+								if ((BaseTransform.isAnonPathVar(pVar)
 										|| BaseTransform.isAnonPathInverseVar(pVar))) {
 									boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
 									String nps = inv ? "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")"
@@ -118,9 +117,8 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 								&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
 							IrStatementPattern sp = (IrStatementPattern) g.getWhere().getLines().get(0);
 							Var pVar = sp.getPredicate();
-							if (pVar != null
-									&& (BaseTransform.isAnonPathVar(pVar)
-											|| BaseTransform.isAnonPathInverseVar(pVar))) {
+							if ((BaseTransform.isAnonPathVar(pVar)
+									|| BaseTransform.isAnonPathInverseVar(pVar))) {
 								boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
 								String nps = inv ? "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")"
 										: "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
@@ -157,7 +155,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
 					final IrStatementPattern sp = (IrStatementPattern) g.getWhere().getLines().get(0);
 					final Var pVar = sp.getPredicate();
-					if (pVar != null && (BaseTransform.isAnonPathVar(pVar) || BaseTransform.isAnonPathInverseVar(pVar))
+					if ((BaseTransform.isAnonPathVar(pVar) || BaseTransform.isAnonPathInverseVar(pVar))
 							&& isAnonPathName(ns.varName) && !ns.items.isEmpty()) {
 						final boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
 						final String nps = inv
@@ -198,8 +196,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 							&& g2.getWhere().getLines().get(0) instanceof IrStatementPattern) {
 						final IrStatementPattern sp2 = (IrStatementPattern) g2.getWhere().getLines().get(0);
 						final Var pVar2 = sp2.getPredicate();
-						if (pVar2 != null
-								&& (BaseTransform.isAnonPathVar(pVar2) || BaseTransform.isAnonPathInverseVar(pVar2))
+						if ((BaseTransform.isAnonPathVar(pVar2) || BaseTransform.isAnonPathInverseVar(pVar2))
 								&& isAnonPathName(ns2.varName)
 								&& !ns2.items.isEmpty()) {
 							final boolean inv2 = BaseTransform.isAnonPathInverseVar(pVar2);
@@ -228,9 +225,6 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 								newInner2.add(pt2);
 							}
 							out.add(new IrGraph(g2.getGraph(), newInner2, g2.isNewScope()));
-							if (f2.isNewScope()) {
-								propagateScopeFromConsumedFilter = true;
-							}
 							i += 1; // consume grouped block
 							continue;
 						}
@@ -251,7 +245,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
 					final IrStatementPattern sp = (IrStatementPattern) g.getWhere().getLines().get(0);
 					final Var pVar = sp.getPredicate();
-					if (pVar != null && (BaseTransform.isAnonPathVar(pVar) || BaseTransform.isAnonPathInverseVar(pVar))
+					if ((BaseTransform.isAnonPathVar(pVar) || BaseTransform.isAnonPathInverseVar(pVar))
 							&& isAnonPathName(ns.varName) && !ns.items.isEmpty()) {
 						final boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
 						final String nps = inv
@@ -329,7 +323,6 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				// scan forward over consecutive FILTER lines to find an NPS filter targeting an _anon_path_ var
 				int j = i + 1;
 				NsText ns = null;
-				IrFilter npsFilter = null;
 				while (j < in.size() && in.get(j) instanceof IrFilter) {
 					final IrFilter f = (IrFilter) in.get(j);
 					final String condText = f.getConditionText();
@@ -337,7 +330,6 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						final NsText cand = parseNegatedSetText(condText);
 						if (cand != null && cand.varName != null && !cand.items.isEmpty()) {
 							ns = cand;
-							npsFilter = f;
 							break; // found the NOT IN / inequality chain on the anon path var
 						}
 					}
@@ -359,28 +351,26 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					boolean consumedG2 = false;
 					MatchTriple mt2 = null;
 					int k = j + 1;
-					if (npsFilter != null) {
-						// Skip over any additional FILTER lines between the NPS filter and the next block
-						while (k < in.size() && in.get(k) instanceof IrFilter) {
-							k++;
+					// Skip over any additional FILTER lines between the NPS filter and the next block
+					while (k < in.size() && in.get(k) instanceof IrFilter) {
+						k++;
+					}
+					if (k < in.size() && in.get(k) instanceof IrGraph) {
+						final IrGraph g2 = (IrGraph) in.get(k);
+						if (sameVarOrValue(g1.getGraph(), g2.getGraph())) {
+							mt2 = findTripleWithConstPredicateReusingObject(g2.getWhere(), mt1.object);
+							consumedG2 = (mt2 != null);
 						}
-						if (k < in.size() && in.get(k) instanceof IrGraph) {
-							final IrGraph g2 = (IrGraph) in.get(k);
-							if (sameVarOrValue(g1.getGraph(), g2.getGraph())) {
-								mt2 = findTripleWithConstPredicateReusingObject(g2.getWhere(), mt1.object);
-								consumedG2 = (mt2 != null);
-							}
-						} else if (k < in.size() && in.get(k) instanceof IrStatementPattern) {
-							// Fallback: the second triple may have been emitted outside GRAPH; if it reuses the bridge
-							// var
-							// and has a constant predicate, treat it as the tail step to be fused and consume it.
-							final IrStatementPattern sp2 = (IrStatementPattern) in.get(k);
-							final Var pv = sp2.getPredicate();
-							if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
-								if (sameVar(mt1.object, sp2.getSubject()) || sameVar(mt1.object, sp2.getObject())) {
-									mt2 = new MatchTriple(sp2, sp2.getSubject(), sp2.getPredicate(), sp2.getObject());
-									consumedG2 = true;
-								}
+					} else if (k < in.size() && in.get(k) instanceof IrStatementPattern) {
+						// Fallback: the second triple may have been emitted outside GRAPH; if it reuses the bridge
+						// var
+						// and has a constant predicate, treat it as the tail step to be fused and consume it.
+						final IrStatementPattern sp2 = (IrStatementPattern) in.get(k);
+						final Var pv = sp2.getPredicate();
+						if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
+							if (sameVar(mt1.object, sp2.getSubject()) || sameVar(mt1.object, sp2.getObject())) {
+								mt2 = new MatchTriple(sp2, sp2.getSubject(), sp2.getPredicate(), sp2.getObject());
+								consumedG2 = true;
 							}
 						}
 					}
@@ -550,7 +540,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
 					final IrStatementPattern sp = (IrStatementPattern) g.getWhere().getLines().get(0);
 					final Var pVar = sp.getPredicate();
-					if (pVar != null && (BaseTransform.isAnonPathVar(pVar) || BaseTransform.isAnonPathInverseVar(pVar))
+					if ((BaseTransform.isAnonPathVar(pVar) || BaseTransform.isAnonPathInverseVar(pVar))
 							&& pVar.getName().equals(ns.varName) && !ns.items.isEmpty()) {
 						final boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
 						final String nps = inv
@@ -591,24 +581,18 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						&& ((IrStatementPattern) in.get(i + 2)).getPredicate() != null
 						&& ((IrStatementPattern) in.get(i + 2)).getPredicate().hasValue());
 
-				if (!hasTail && pVar != null && BaseTransform.isAnonPathVar(pVar) && ns != null
+				if (!hasTail && BaseTransform.isAnonPathVar(pVar) && ns != null
 						&& pVar.getName().equals(ns.varName) && !ns.items.isEmpty()) {
 					if (isAnonPathInverseVar(pVar)) {
 						final String nps = "!(^" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 						out.add(new IrPathTriple(sp.getObject(), sp.getObjectOverride(), nps, sp.getSubject(),
 								sp.getSubjectOverride(), IrPathTriple.fromStatementPatterns(sp), false));
-						if (f.isNewScope()) {
-							propagateScopeFromConsumedFilter = true;
-						}
 						i += 1; // consume filter
 						continue;
 					} else {
 						final String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 						out.add(new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), nps, sp.getObject(),
 								sp.getObjectOverride(), IrPathTriple.fromStatementPatterns(sp), false));
-						if (f.isNewScope()) {
-							propagateScopeFromConsumedFilter = true;
-						}
 						i += 1; // consume filter
 						continue;
 					}
@@ -626,7 +610,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				final String condText = f.getConditionText();
 				final NsText ns = condText == null ? null : parseNegatedSetText(condText);
 				final IrStatementPattern tail = (IrStatementPattern) in.get(i + 2);
-				if (pVar != null && BaseTransform.isAnonPathVar(pVar) && ns != null && pVar.getName() != null
+				if (BaseTransform.isAnonPathVar(pVar) && ns != null && pVar.getName() != null
 						&& pVar.getName().equals(ns.varName) && !ns.items.isEmpty()) {
 					// Require tail to have a constant predicate and reuse the SP subject as its subject
 					final Var tp = tail.getPredicate();
@@ -656,7 +640,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				final IrFilter f2 = (IrFilter) in.get(i + 1);
 				final String condText3 = f2.getConditionText();
 				final NsText ns2 = condText3 == null ? null : parseNegatedSetText(condText3);
-				if (pVar != null && BaseTransform.isAnonPathVar(pVar) && ns2 != null
+				if (BaseTransform.isAnonPathVar(pVar) && ns2 != null
 						&& pVar.getName().equals(ns2.varName) && !ns2.items.isEmpty()) {
 					IrStatementPattern k1 = null;
 					boolean k1Inverse = false;
@@ -750,8 +734,8 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				out.add(apply((IrBGP) n, r));
 				continue;
 			}
-			if (n instanceof IrGraph || n instanceof IrOptional || n instanceof IrUnion
-					|| n instanceof IrMinus || n instanceof IrSubSelect || n instanceof IrService) {
+			if (n instanceof IrGraph || n instanceof IrOptional || n instanceof IrMinus || n instanceof IrSubSelect
+					|| n instanceof IrService) {
 				n = n.transformChildren(child -> {
 					if (child instanceof IrBGP) {
 						return apply((IrBGP) child, r);
@@ -788,9 +772,6 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		}
 		String pA = normalizeCompactNpsLocal(a.pt.getPathText());
 		String pB = normalizeCompactNpsLocal(b.pt.getPathText());
-		if (pA == null || pB == null || !pA.startsWith("!(") || !pB.startsWith(")") && !pB.startsWith("!(")) {
-			// ensure both are NPS
-		}
 		// Align orientation: if subjects/objects swapped, invert members
 		String toAddB = pB;
 		if (sameVar(a.pt.getSubject(), b.pt.getObject()) && sameVar(a.pt.getObject(), b.pt.getSubject())) {
@@ -950,7 +931,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				final IrFilter f = (IrFilter) in.get(i + 1);
 				final String condText4 = f.getConditionText();
 				final NsText ns = condText4 == null ? null : parseNegatedSetText(condText4);
-				if (pVar != null && BaseTransform.isAnonPathVar(pVar) && ns != null
+				if (BaseTransform.isAnonPathVar(pVar) && ns != null
 						&& pVar.getName().equals(ns.varName) && !ns.items.isEmpty()) {
 					String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 					final boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
@@ -980,7 +961,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						&& g.getWhere().getLines().get(0) instanceof IrStatementPattern) {
 					final IrStatementPattern sp = (IrStatementPattern) g.getWhere().getLines().get(0);
 					final Var pVar = sp.getPredicate();
-					if (pVar != null && BaseTransform.isAnonPathVar(pVar)
+					if (BaseTransform.isAnonPathVar(pVar)
 							&& pVar.getName().equals(ns.varName)) {
 						String nps = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 						final boolean inv = BaseTransform.isAnonPathInverseVar(pVar);
@@ -1042,7 +1023,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 
 		// Prefer explicit NOT IN form first
 		Matcher mNotIn = Pattern
-				.compile("(?i)(\\?[A-Za-z_][\\w]*)\\s+NOT\\s+IN\\s*\\(([^)]*)\\)")
+				.compile("(?i)(\\?[A-Za-z_]\\w*)\\s+NOT\\s+IN\\s*\\(([^)]*)\\)")
 				.matcher(s);
 		if (mNotIn.find()) {
 			String var = mNotIn.group(1);
@@ -1073,9 +1054,9 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		String var = null;
 		List<String> items = new ArrayList<>();
 		Pattern pLeft = Pattern
-				.compile("[\\s()]*\\?(?<var>[A-Za-z_][\\w]*)\\s*!=\\s*(?<iri>[^\\s()]+)[\\s()]*");
+				.compile("[\\s()]*\\?(?<var>[A-Za-z_]\\w*)\\s*!=\\s*(?<iri>[^\\s()]+)[\\s()]*");
 		Pattern pRight = Pattern
-				.compile("[\\s()]*(?<iri>[^\\s()]+)\\s*!=\\s*\\?(?<var>[A-Za-z_][\\w]*)[\\s()]*");
+				.compile("[\\s()]*(?<iri>[^\\s()]+)\\s*!=\\s*\\?(?<var>[A-Za-z_]\\w*)[\\s()]*");
 		for (String part : parts) {
 			String term = part.trim();
 			if (term.isEmpty()) {
@@ -1109,7 +1090,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 			}
 			items.add(tok);
 		}
-		if (var != null && !items.isEmpty()) {
+		if (var != null) {
 			return new NsText(var, items);
 		}
 		return null;

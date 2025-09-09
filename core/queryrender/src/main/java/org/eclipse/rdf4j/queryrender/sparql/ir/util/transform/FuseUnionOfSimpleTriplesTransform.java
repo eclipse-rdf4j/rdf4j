@@ -138,7 +138,7 @@ public final class FuseUnionOfSimpleTriplesTransform extends BaseTransform {
 
 		for (IrBGP b : u.getBranches()) {
 			// Only accept branches that are a single simple SP, optionally wrapped in a GRAPH with a single SP
-			IrStatementPattern sp = null;
+			IrStatementPattern sp;
 			Var g = null;
 			if (b.getLines().size() == 1 && b.getLines().get(0) instanceof IrStatementPattern) {
 				sp = (IrStatementPattern) b.getLines().get(0);

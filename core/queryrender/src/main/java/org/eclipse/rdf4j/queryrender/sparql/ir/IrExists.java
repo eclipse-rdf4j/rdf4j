@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
 import java.util.Collections;
-import java.util.List;
 import java.util.Set;
 import java.util.function.UnaryOperator;
 
@@ -21,7 +20,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
  * Structured FILTER body for an EXISTS { ... } block holding a raw BGP.
  */
 public class IrExists extends IrNode {
-	private IrBGP where;
+	private final IrBGP where;
 
 	public IrExists(IrBGP where, boolean newScope) {
 		super(newScope);
@@ -43,37 +42,6 @@ public class IrExists extends IrNode {
 			p.openBlock();
 			p.closeBlock();
 		}
-	}
-
-	private static IrBGP toPrint(IrBGP w) {
-		if (w == null) {
-			return null;
-		}
-		// Preserve inner grouping when the body mixes a triple-like with nested EXISTS/VALUES
-		final List<IrNode> ls = w.getLines();
-		boolean hasTripleLike = false;
-		boolean hasNestedExistsOrValues = false;
-		boolean hasOptional = false;
-		for (IrNode ln : ls) {
-			if (ln instanceof IrTripleLike) {
-				hasTripleLike = true;
-			} else if (ln instanceof IrFilter) {
-				IrFilter f = (IrFilter) ln;
-				if (f.getBody() instanceof IrExists) {
-					hasNestedExistsOrValues = true;
-				}
-			} else if (ln instanceof IrValues) {
-				hasNestedExistsOrValues = true;
-			} else if (ln instanceof IrOptional) {
-				hasOptional = true;
-			}
-		}
-		if (ls.size() >= 2 && hasTripleLike && (hasNestedExistsOrValues || hasOptional)) {
-			IrBGP wrap = new IrBGP(false);
-			wrap.add(w);
-			return wrap;
-		}
-		return w;
 	}
 
 	@Override
