@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
@@ -75,19 +76,20 @@ public final class LiftPathUnionScopeToBgpTransform extends BaseTransform {
 		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 
-		// If this BGP consists of exactly one UNION that is path-generated (union.newScope=true
-		// and all branch BGPs newScope=false), lift the scope to this BGP so braces are preserved
+		// If this BGP consists of exactly one UNION whose branches all have newScope=false,
+		// consider it path-generated and lift the scope to this BGP so braces are preserved
 		// even if the UNION is later fused away.
 		if (out.size() == 1 && out.get(0) instanceof IrUnion) {
 			IrUnion u = (IrUnion) out.get(0);
-			if (u.isNewScope()) {
-				boolean allBranchesNonScoped = true;
-				for (IrBGP b : u.getBranches()) {
-					if (b != null && b.isNewScope()) {
-						allBranchesNonScoped = false;
-						break;
-					}
+			boolean allBranchesNonScoped = true;
+			for (IrBGP b : u.getBranches()) {
+				if (b != null && b.isNewScope()) {
+					allBranchesNonScoped = false;
+					break;
 				}
+			}
+			if (allBranchesNonScoped) {
+				res.setNewScope(true);
 			}
 		}
 
