@@ -30,7 +30,7 @@ public abstract class IrNode {
 	@SuppressWarnings("unused")
 	public final String _className = this.getClass().getName();
 
-	private boolean newScope = false;
+	private boolean newScope;
 
 	public IrNode(boolean newScope) {
 		this.newScope = newScope;

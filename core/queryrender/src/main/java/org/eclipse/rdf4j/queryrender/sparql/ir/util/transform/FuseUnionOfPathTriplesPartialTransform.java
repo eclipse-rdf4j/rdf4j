@@ -176,7 +176,6 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 					if (gb.getWhere() != null && gb.getWhere().getLines().size() == 1) {
 						cur = gb.getWhere().getLines().get(0);
 						progressed = true;
-						continue;
 					}
 				}
 			}
