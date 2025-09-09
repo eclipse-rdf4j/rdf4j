@@ -567,7 +567,7 @@ public class TupleExprIRRendererTest {
 
 	@Test
 	void property_paths_grouping_precedence() {
-		String q = "SELECT ?x ?y WHERE { ?x (ex:knows/ (foaf:knows|^foaf:knows) ) ?y }";
+		String q = "SELECT ?x ?y WHERE { ?x (ex:knows/ (foaf:knows|^foaf:knows)) ?y }";
 		assertFixedPoint(q, cfg());
 	}
 
@@ -926,28 +926,28 @@ public class TupleExprIRRendererTest {
 				"    ?s a foaf:Person .\n" +
 				"    OPTIONAL {\n" +
 				"      ?s rdfs:label ?label .\n" +
-				"      FILTER ( LANGMATCHES(LANG(?label), \"en\") )\n" +
+				"      FILTER (LANGMATCHES(LANG(?label), \"en\"))\n" +
 				"    }\n" +
 				"  }\n" +
 				"    UNION\n" +
 				"  {\n" +
 				"    ?anon1 foaf:name ?label .\n" +
-				"    BIND( \"B\" AS ?src )\n" +
-				"    BIND( BNODE() AS ?s )\n" +
+				"    BIND( \"B\" AS ?src)\n" +
+				"    BIND( BNODE() AS ?s)\n" +
 				"  }\n" +
 				"  {\n" +
-				"    SELECT ?s ( COUNT(?o) AS ?innerC )\n" +
+				"    SELECT ?s (COUNT(?o) AS ?innerC)\n" +
 				"    WHERE {\n" +
 				"      ?s ?p ?o .\n" +
-				"      FILTER ( ?p != rdf:type )\n" +
+				"      FILTER (?p != rdf:type)\n" +
 				"    }\n" +
 				"    GROUP BY ?s\n" +
-				"    HAVING ( COUNT(?o) >= 0 )\n" +
+				"    HAVING (COUNT(?o) >= 0)\n" +
 				"  }\n" +
 				"}\n" +
 				"GROUP BY ?s ?label ?src\n" +
-				"HAVING ( SUM(?innerC) >= 1 )\n" +
-				"ORDER BY DESC( ?c ) STRLEN( COALESCE(?label, \"\") )\n" +
+				"HAVING (SUM(?innerC) >= 1)\n" +
+				"ORDER BY DESC( ?c) STRLEN( COALESCE(?label, \"\"))\n" +
 				"LIMIT 20";
 		assertSameSparqlQuery(q, cfg());
 	}
@@ -1257,7 +1257,7 @@ public class TupleExprIRRendererTest {
 	@Test
 	void mega_parentheses_precedence() {
 		String q = "SELECT ?s ?o (?score AS ?score2) WHERE {\n" +
-				"  ?s foaf:knows/((^foaf:knows )|ex:knows) ?o .\n" +
+				"  ?s foaf:knows/((^foaf:knows)|ex:knows) ?o .\n" +
 				"  BIND(((IF(BOUND(?o), 1, 0) + 0) * 1) AS ?score)\n" +
 				"  FILTER ((BOUND(?s) && BOUND(?o)) && REGEX(STR(?o), \"^.+$\", \"i\"))\n" +
 				"}\n" +
@@ -1710,7 +1710,7 @@ public class TupleExprIRRendererTest {
 	void deep_path_chain_with_graph_and_filter() {
 		String q = "SELECT ?g ?s ?o WHERE {\n" +
 				"  GRAPH ?g {\n" +
-				"    ?s (foaf:knows)/(((^ex:knows )|^foaf:knows)) ?o .\n" +
+				"    ?s (foaf:knows)/(((^ex:knows)|^foaf:knows)) ?o .\n" +
 				"  }\n" +
 				"  FILTER (BOUND(?s) && BOUND(?o))\n" +
 				"}";
@@ -2478,7 +2478,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?x WHERE {\n" +
 				"  _:bnode1 ex:pA ?s ;\n" +
 				"     ex:pB [ ex:pC ?x ] .\n" +
-				"  ?s ex:pD ( ex:Person ex:Thing ) .\n" +
+				"  ?s ex:pD (ex:Person ex:Thing) .\n" +
 				" [] ex:pE _:bnode1 .\n" +
 				"}";
 
@@ -2493,7 +2493,7 @@ public class TupleExprIRRendererTest {
 				"                   ex:pC ?x;\n" +
 				"                   ex:pB [ ex:pF _:bnode1 ] \n" +
 				"                 ] .\n" +
-				"  ?s ex:pD ( ex:Person ex:Thing ) .\n" +
+				"  ?s ex:pD (ex:Person ex:Thing) .\n" +
 				"  [] !(ex:pE |^ex:pE) _:bnode1 .\n" +
 				"}";
 
@@ -2651,7 +2651,7 @@ public class TupleExprIRRendererTest {
 				"    {\n" +
 				"      ?s ex:pC ?u0 .\n" +
 				"      FILTER EXISTS {\n" +
-				"        ?s !( ex:pA|^<http://example.org/p/I0> ) ?o .\n" +
+				"        ?s !( ex:pA|^<http://example.org/p/I0>) ?o .\n" +
 				"      }\n" +
 				"    }\n" +
 				"  }\n" +
@@ -2664,7 +2664,7 @@ public class TupleExprIRRendererTest {
 	void testComplexPath1() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pC ?u1 .\n" +
-				"  ?s !( ex:pA|^<http://example.org/p/I0> ) ?o .\n" +
+				"  ?s !( ex:pA|^<http://example.org/p/I0>) ?o .\n" +
 				"}";
 
 		assertSameSparqlQuery(q, cfg());
@@ -3650,7 +3650,7 @@ public class TupleExprIRRendererTest {
 				"        ?s ex:pC ?u1 . FILTER EXISTS {\n" +
 				"          {\n" +
 				"            VALUES ?s { ex:s1 ex:s2 }\n" +
-				"            ?s !( ex:pA|^ex:pC ) ?o .\n" +
+				"            ?s !( ex:pA|^ex:pC) ?o .\n" +
 				"          }\n" +
 				"        }\n" +
 				"      }\n" +
@@ -3694,7 +3694,7 @@ public class TupleExprIRRendererTest {
 				"        {\n" +
 //				"          {\n" +
 				"            GRAPH <http://graphs.example/g1> {\n" +
-				"              ?s !( ex:pA|foaf:name ) ?o .\n" +
+				"              ?s !( ex:pA|foaf:name) ?o .\n" +
 				"            }\n" +
 //				"          }\n" +
 				"        }\n" +
@@ -3719,7 +3719,7 @@ public class TupleExprIRRendererTest {
 				"      {\n" +
 				"        {\n" +
 				"          GRAPH <http://graphs.example/g1> {\n" +
-				"            ?s !( ex:pA|foaf:name ) ?o .\n" +
+				"            ?s !( ex:pA|foaf:name) ?o .\n" +
 				"          }\n" +
 				"        }\n" +
 				"      }\n" +
@@ -3868,7 +3868,7 @@ public class TupleExprIRRendererTest {
 				"        ?s ex:pC ?u0 .\n" +
 				"        FILTER EXISTS {\n" +
 				"          {\n" +
-				"            ?s !( ex:pB|foaf:name ) ?o .\n" +
+				"            ?s !( ex:pB|foaf:name) ?o .\n" +
 				"          }\n" +
 				"        }\n" +
 				"      }\n" +
@@ -3977,7 +3977,7 @@ public class TupleExprIRRendererTest {
 				"  {\n" +
 				"    {\n" +
 				"      GRAPH ?g0 {\n" +
-				"        ?s !( ex:pA|^foaf:name ) ?o .\n" +
+				"        ?s !( ex:pA|^foaf:name) ?o .\n" +
 				"      }\n" +
 				"    }\n" +
 				"  }\n" +
@@ -4046,7 +4046,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"    {\n" +
 				"      GRAPH ?g0 {\n" +
-				"        ?s !( ex:pA|^foaf:name|ex:pB ) ?o .\n" +
+				"        ?s !( ex:pA|^foaf:name|ex:pB) ?o .\n" +
 				"      }\n" +
 				"    }\n" +
 				"  }\n" +
@@ -4068,7 +4068,7 @@ public class TupleExprIRRendererTest {
 				"    }\n" +
 				"    {\n" +
 				"      GRAPH ?g0 {\n" +
-				"        ?s ( ex:pA|!(foaf:knows|^foaf:name)|ex:pB ) ?o .\n" +
+				"        ?s (ex:pA|!(foaf:knows|^foaf:name)|ex:pB) ?o .\n" +
 				"      }\n" +
 				"    }\n" +
 				"  }\n" +
@@ -4086,7 +4086,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
 				"    GRAPH ?g0 {\n" +
-				"      ?s ( ex:pA|!(foaf:knows|^foaf:name)|ex:pB ) ?o .\n" +
+				"      ?s (ex:pA|!(foaf:knows|^foaf:name)|ex:pB) ?o .\n" +
 				"    }\n" +
 				"  }\n" +
 				"}\n";
