@@ -134,6 +134,16 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			transformed.addBranch(apply(b, r));
 		}
 		u = transformed;
+		// Heuristic: detect unions that originate from property-path alternation: UNION has
+		// newScope=true but its branches do not (parser generated). This lets us avoid adding
+		// extra grouping on the fused replacement branch.
+		boolean unionBranchesAllNonScoped = true;
+		for (IrBGP br : u.getBranches()) {
+			if (br != null && br.isNewScope()) {
+				unionBranchesAllNonScoped = false;
+				break;
+			}
+		}
 		// (no-op)
 		// Note: do not early-return on new-scope unions. We gate fusing per-group below, allowing
 		// either anon-path bridge sharing OR a conservative "safe alternation" case (identical
@@ -254,19 +264,18 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 		}
 
 		boolean changed = false;
+		java.util.HashSet<Integer> fusedIdxs = new java.util.HashSet<>();
 		IrUnion out = new IrUnion(u.isNewScope());
 		for (Group grp : groups.values()) {
 			List<Integer> idxs = grp.idxs;
 			if (idxs.size() >= 2) {
-				// Safety: allow merging if branches share an anon path bridge OR when it's a
-				// conservative safe-alternation case (all branches are single SP/PT without
-				// quantifiers, identical endpoints/graph — ensured by grouping key).
+				// Safety: allow merging if branches share an anon path bridge, or when the
+				// UNION is path-generated (all branches non-scoped) and branches form a
+				// conservative safe alternation (single SP/PT without quantifiers).
 				boolean shareAnon = branchesShareAnonPathVar(u, idxs);
 				boolean safeAlt = branchesFormSafeAlternation(idxs, pathTexts);
-				// no-op
-				if (!(shareAnon || safeAlt)) {
-					// Only fuse when branches share an anon path bridge OR they form a
-					// conservative safe alternation (simple single PT/SP members).
+				boolean pathGeneratedUnion = unionBranchesAllNonScoped;
+				if (!(shareAnon || (pathGeneratedUnion && safeAlt))) {
 					continue;
 				}
 				ArrayList<String> alts = new ArrayList<>();
@@ -291,19 +300,16 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 						outTok.add("!(" + String.join("|", negMembers) + ")");
 					}
 					outTok.addAll(bNonNeg);
-					merged = outTok.isEmpty() ? "(" + String.join("|", alts) + ")"
-							: "(" + String.join("|", outTok) + ")";
+					merged = outTok.isEmpty() ? String.join("|", alts) : String.join("|", outTok);
 				} else {
 					merged = String.join("|", alts);
-					if (alts.size() > 1) {
-						merged = "(" + merged + ")";
-					}
 				}
 
-				// Preserve explicit new-scope grouping from the original UNION by marking the
-				// merged branch BGP with the same newScope flag. This ensures the renderer
-				// prints the extra pair of braces expected around the fused branch.
-				IrBGP b = new IrBGP(u.isNewScope());
+				// Preserve explicit grouping only for explicit user UNIONs. For path-generated
+				// unions (branches all non-scoped), keep the fused branch non-scoped to avoid
+				// introducing an extra brace layer.
+				boolean branchScope = u.isNewScope() && !unionBranchesAllNonScoped;
+				IrBGP b = new IrBGP(branchScope);
 				// Branches are simple or path triples; if path triples, union their pathVars
 				Set<Var> acc = new HashSet<>();
 				for (int idx : idxs) {
@@ -332,24 +338,64 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 					b.add(mergedPt);
 				}
 				out.addBranch(b);
+				fusedIdxs.addAll(idxs);
 				changed = true;
 				// no-op
 			}
 		}
 		// Add non-merged branches (already recursively transformed above)
 		for (int i = 0; i < u.getBranches().size(); i++) {
-			boolean merged = false;
-			for (Group grp : groups.values()) {
-				if (grp.idxs.size() >= 2 && grp.idxs.contains(i + 1)) {
-					merged = true;
-					break;
-				}
-			}
-			if (!merged) {
+			if (!fusedIdxs.contains(i + 1)) {
 				out.addBranch(u.getBranches().get(i));
 			}
 		}
-		return changed ? out : u;
+
+		// Local cleanup of redundant BGP layer: If a branch is a BGP that contains exactly a
+		// single inner BGP which itself contains exactly one simple node (path triple or GRAPH
+		// with single path triple), unwrap that inner BGP so the branch prints with a single
+		// brace layer.
+		IrUnion normalized = new IrUnion(out.isNewScope());
+		for (IrBGP br : out.getBranches()) {
+			normalized.addBranch(unwrapSingleBgpLayer(br));
+		}
+
+		return normalized;
+	}
+
+	private static IrBGP unwrapSingleBgpLayer(IrBGP branch) {
+		if (branch == null) {
+			return null;
+		}
+		// Iteratively unwrap nested IrBGP layers that each wrap exactly one simple node
+		IrNode cur = branch;
+		while (cur instanceof IrBGP) {
+			IrBGP b = (IrBGP) cur;
+			if (b.getLines().size() != 1) {
+				break;
+			}
+			IrNode only = b.getLines().get(0);
+			if (!(only instanceof IrBGP)) {
+				// Top-level is a BGP wrapping a non-BGP (ok)
+				break;
+			}
+			IrBGP inner = (IrBGP) only;
+			if (inner.getLines().size() != 1) {
+				break;
+			}
+			IrNode innerOnly = inner.getLines().get(0);
+			boolean simple = (innerOnly instanceof IrPathTriple)
+					|| (innerOnly instanceof IrGraph && ((IrGraph) innerOnly).getWhere() != null
+							&& ((IrGraph) innerOnly).getWhere().getLines().size() == 1
+							&& ((IrGraph) innerOnly).getWhere().getLines().get(0) instanceof IrPathTriple);
+			if (!simple) {
+				break;
+			}
+			// Replace the inner BGP with its only simple node and continue to see if more layers exist
+			IrBGP replaced = new IrBGP(b.isNewScope());
+			replaced.add(innerOnly);
+			cur = replaced;
+		}
+		return (IrBGP) cur;
 	}
 
 	private static boolean branchesShareAnonPathVar(IrUnion u, List<Integer> idxs) {

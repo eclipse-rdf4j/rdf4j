@@ -2214,17 +2214,17 @@ public class TupleExprIRRendererTest {
 				"    {\n" +
 				"      ?s foaf:knows/foaf:knows|ex:knows/^ex:knows ?o .\n" +
 				"    }\n" +
-				"      UNION\n" +
+				"    UNION\n" +
 				"    {\n" +
 				"      ?s ^foaf:knows/(foaf:knows|ex:knows) ?o .\n" +
 				"    }\n" +
 				"  }\n" +
-				"    UNION\n" +
+				"  UNION\n" +
 				"  {\n" +
 				"    {\n" +
 				"      ?o !(ex:age|rdf:type) ?s .\n" +
 				"    }\n" +
-				"      UNION\n" +
+				"    UNION\n" +
 				"    {\n" +
 				"      ?s foaf:knows? ?o .\n" +
 				"    }\n" +
@@ -4046,9 +4046,7 @@ public class TupleExprIRRendererTest {
 	void testValuesGraphUnion3() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
-				"    VALUES ?s {\n" +
-				"      ex:s1 ex:s2\n" +
-				"    }\n" +
+				"    VALUES ?s { ex:s1 ex:s2 }\n" +
 				"    {\n" +
 				"      GRAPH ?g0 {\n" +
 				"        ?s  ex:pA|^foaf:name  ?o .\n" +
@@ -4090,12 +4088,10 @@ public class TupleExprIRRendererTest {
 	void testValuesGraphUnion5() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
-				"    VALUES ?s {\n" +
-				"      ex:s1 ex:s2\n" +
-				"    }\n" +
+				"    VALUES ?s { ex:s1 ex:s2 }\n" +
 				"    {\n" +
 				"      GRAPH ?g0 {\n" +
-				"        ?s (ex:pA|!(foaf:knows|^foaf:name)|ex:pB) ?o .\n" +
+				"        ?s ex:pA|!(foaf:knows|^foaf:name)|ex:pB ?o .\n" +
 				"      }\n" +
 				"    }\n" +
 				"  }\n" +
@@ -4113,7 +4109,7 @@ public class TupleExprIRRendererTest {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
 				"    GRAPH ?g0 {\n" +
-				"      ?s (ex:pA|!(foaf:knows|^foaf:name)|ex:pB) ?o .\n" +
+				"      ?s ex:pA|!(foaf:knows|^foaf:name)|ex:pB ?o .\n" +
 				"    }\n" +
 				"  }\n" +
 				"}\n";
