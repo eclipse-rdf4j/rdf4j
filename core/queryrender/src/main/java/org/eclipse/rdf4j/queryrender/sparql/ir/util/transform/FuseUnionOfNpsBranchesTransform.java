@@ -356,7 +356,6 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				// Wrap in an extra group to preserve explicit braces that existed around the UNION branches
 				IrBGP grp = new IrBGP(false);
 				grp.add(fused);
-				grp.setNewScope(true);
 				return grp;
 			}
 			return fused;

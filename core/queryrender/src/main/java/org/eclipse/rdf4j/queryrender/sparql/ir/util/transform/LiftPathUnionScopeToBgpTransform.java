@@ -88,9 +88,6 @@ public final class LiftPathUnionScopeToBgpTransform extends BaseTransform {
 						break;
 					}
 				}
-				if (allBranchesNonScoped) {
-					res.setNewScope(true);
-				}
 			}
 		}
 

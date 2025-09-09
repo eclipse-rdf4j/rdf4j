@@ -743,9 +743,6 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 
 		final IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
-		if (propagateScopeFromConsumedFilter) {
-			res.setNewScope(true);
-		}
 		return res;
 	}
 
@@ -797,7 +794,6 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		}
 		if (u.isNewScope()) {
 			IrBGP grp = new IrBGP(false);
-			grp.setNewScope(true);
 			grp.add(fused);
 			return grp;
 		}

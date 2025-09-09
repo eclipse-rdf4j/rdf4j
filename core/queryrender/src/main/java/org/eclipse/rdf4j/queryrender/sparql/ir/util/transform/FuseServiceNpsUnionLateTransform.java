@@ -189,7 +189,6 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 		if (u.isNewScope()) {
 			IrBGP grp = new IrBGP(false);
 			grp.add(out);
-			grp.setNewScope(true);
 			return grp;
 		}
 		return out;
