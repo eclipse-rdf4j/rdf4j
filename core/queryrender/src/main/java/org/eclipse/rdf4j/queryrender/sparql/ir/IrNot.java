@@ -16,7 +16,7 @@ import java.util.function.UnaryOperator;
  * Structured FILTER body representing logical NOT applied to an inner body (e.g., NOT EXISTS {...}).
  */
 public class IrNot extends IrNode {
-	private IrNode inner;
+	private final IrNode inner;
 
 	public IrNot(IrNode inner, boolean newScope) {
 		super(newScope);

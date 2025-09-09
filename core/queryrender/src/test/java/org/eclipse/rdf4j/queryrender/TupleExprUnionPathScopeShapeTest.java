@@ -132,9 +132,7 @@ public class TupleExprUnionPathScopeShapeTest {
 			if (n instanceof IrUnion) {
 				IrUnion u = (IrUnion) n;
 				out.add(u);
-				for (IrBGP b : u.getBranches()) {
-					dq.add(b);
-				}
+				dq.addAll(u.getBranches());
 			} else if (n instanceof IrBGP) {
 				for (IrNode ln : ((IrBGP) n).getLines()) {
 					if (ln != null) {
@@ -166,7 +164,7 @@ public class TupleExprUnionPathScopeShapeTest {
 		if (!u.isNewScope()) {
 			return true;
 		}
-		return u.getBranches().stream().allMatch(b -> !b.isNewScope());
+		return u.getBranches().stream().noneMatch(b -> b.isNewScope());
 	}
 
 	private static void dumpAlgebra(String testLabel, TupleExpr te) {
@@ -218,7 +216,7 @@ public class TupleExprUnionPathScopeShapeTest {
 		// At least one UNION from the alternative path
 		assertThat(unions).isNotEmpty();
 		// All path-generated unions should be non-scope-changing
-		assertThat(unions.stream().allMatch(u -> !isScopeChange(u))).isTrue();
+		assertThat(unions.stream().noneMatch(u -> isScopeChange(u))).isTrue();
 	}
 
 	@Test
@@ -230,7 +228,7 @@ public class TupleExprUnionPathScopeShapeTest {
 		List<Union> unions = collectUnions(te);
 		// NPS here produces two filtered SPs combined by a UNION
 		assertThat(unions).isNotEmpty();
-		assertThat(unions.stream().allMatch(u -> !isScopeChange(u))).isTrue();
+		assertThat(unions.stream().noneMatch(u -> isScopeChange(u))).isTrue();
 	}
 
 	@Test
@@ -289,7 +287,7 @@ public class TupleExprUnionPathScopeShapeTest {
 		dumpAlgebra("zeroOrOne_modifier_generatesUnion_scopeChange_false", te);
 		List<Union> unions = collectUnions(te);
 		assertThat(unions).isNotEmpty();
-		assertThat(unions.stream().allMatch(u -> !isScopeChange(u))).isTrue();
+		assertThat(unions.stream().noneMatch(u -> isScopeChange(u))).isTrue();
 	}
 
 	@Test
@@ -312,7 +310,7 @@ public class TupleExprUnionPathScopeShapeTest {
 		List<Union> unions = collectUnions(te);
 		// (a|b|c) builds two UNION nodes
 		assertThat(unions.size()).isGreaterThanOrEqualTo(2);
-		assertThat(unions.stream().allMatch(u -> !isScopeChange(u))).isTrue();
+		assertThat(unions.stream().noneMatch(u -> isScopeChange(u))).isTrue();
 	}
 
 	@Test
@@ -323,7 +321,7 @@ public class TupleExprUnionPathScopeShapeTest {
 		dumpAlgebra("altPath_inverse_only_generates_union_scope_false", te);
 		List<Union> unions = collectUnions(te);
 		assertThat(unions).isNotEmpty();
-		assertThat(unions.stream().allMatch(u -> !isScopeChange(u))).isTrue();
+		assertThat(unions.stream().noneMatch(u -> isScopeChange(u))).isTrue();
 	}
 
 	@Test
@@ -355,7 +353,7 @@ public class TupleExprUnionPathScopeShapeTest {
 		dumpAlgebra("sequence_with_inner_alt_produces_union_scope_false", te);
 		List<Union> unions = collectUnions(te);
 		assertThat(unions).isNotEmpty();
-		assertThat(unions.stream().allMatch(u -> !isScopeChange(u))).isTrue();
+		assertThat(unions.stream().noneMatch(u -> isScopeChange(u))).isTrue();
 	}
 
 	@Test
@@ -366,7 +364,7 @@ public class TupleExprUnionPathScopeShapeTest {
 		dumpAlgebra("sequence_two_alts_nested_unions_all_false", te);
 		List<Union> unions = collectUnions(te);
 		assertThat(unions).isNotEmpty();
-		assertThat(unions.stream().allMatch(u -> !isScopeChange(u))).isTrue();
+		assertThat(unions.stream().noneMatch(u -> isScopeChange(u))).isTrue();
 	}
 
 	@Test

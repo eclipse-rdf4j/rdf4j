@@ -1170,7 +1170,7 @@ public class SparqlComprehensiveStreamingValidTest {
 
 		/** Small pool of expressions appropriate for SELECT ... AS ?k */
 		static List<String> selectExprPool() {
-			return Arrays.asList(
+			return Stream.of(
 					"?v + 1",
 					"(?v * 2)",
 					"STRLEN(STR(?s))",
@@ -1179,7 +1179,7 @@ public class SparqlComprehensiveStreamingValidTest {
 					"ABS(?v)",
 					"YEAR(NOW())",
 					"UCASE(STR(?name))"
-			).stream().map(ExprStreams::parenIfNeeded).collect(Collectors.toList());
+			).map(ExprStreams::parenIfNeeded).collect(Collectors.toList());
 		}
 
 		/** ORDER BY conditions: keys like "ASC(expr)", "DESC(expr)", or "(expr)". */

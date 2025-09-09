@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
  * Textual IR node for a nested subselect inside WHERE.
  */
 public class IrSubSelect extends IrNode {
-	private IrSelect select;
+	private final IrSelect select;
 
 	public IrSubSelect(IrSelect select, boolean newScope) {
 		super(newScope);

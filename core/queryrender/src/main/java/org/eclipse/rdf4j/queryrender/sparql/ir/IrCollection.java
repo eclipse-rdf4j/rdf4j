@@ -26,10 +26,6 @@ public class IrCollection extends IrNode {
 		super(newScope);
 	}
 
-	public List<Var> getItems() {
-		return items;
-	}
-
 	public void addItem(Var v) {
 		if (v != null) {
 			items.add(v);

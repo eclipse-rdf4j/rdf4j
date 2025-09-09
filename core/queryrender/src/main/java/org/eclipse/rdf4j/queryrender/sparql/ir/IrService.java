@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 public class IrService extends IrNode {
 	private final String serviceRefText;
 	private final boolean silent;
-	private IrBGP bgp;
+	private final IrBGP bgp;
 
 	public IrService(String serviceRefText, boolean silent, IrBGP bgp, boolean newScope) {
 		super(newScope);

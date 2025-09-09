@@ -156,7 +156,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 				boolean hasTail = (i + 2 < in.size() && in.get(i + 2) instanceof IrStatementPattern
 						&& ((IrStatementPattern) in.get(i + 2)).getPredicate() != null
 						&& ((IrStatementPattern) in.get(i + 2)).getPredicate().hasValue());
-				if (!hasTail && pv != null && isAnonPathVar(pv) && ns != null && pv.getName() != null
+				if (!hasTail && isAnonPathVar(pv) && ns != null && pv.getName() != null
 						&& pv.getName().equals(ns.varName) && !ns.items.isEmpty()) {
 					String nps = "!(" + ApplyNegatedPropertySetTransform.joinIrisWithPreferredOrder(ns.items, r) + ")";
 					// Respect inverse orientation hint on the anon path var: render as !^p and flip endpoints
@@ -206,7 +206,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 							midA = null;
 							startForward = true;
 						}
-						if (midA != null && sameVar(midA, spB.getSubject())) {
+						if (sameVar(midA, spB.getSubject())) {
 							// Build NPS part; invert members when the first step is inverse
 							String members = ApplyNegatedPropertySetTransform.joinIrisWithPreferredOrder(ns.items, r);
 							String nps = "!(" + members + ")";
@@ -366,9 +366,8 @@ public final class ApplyPathsTransform extends BaseTransform {
 							} else if (sameVar(pt.getObject(), sp.getObject())) {
 								candidateEnd = sp.getSubject();
 							}
-							if (candidateEnd != null
-									&& (sameVar(candidateEnd, pt2.getSubject())
-											|| sameVar(candidateEnd, pt2.getObject()))) {
+							if ((sameVar(candidateEnd, pt2.getSubject())
+									|| sameVar(candidateEnd, pt2.getObject()))) {
 								// Defer; do not consume SP here
 								out.add(n);
 								continue;
@@ -520,7 +519,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 								}
 								String step = r.convertIRIToString((IRI) pX.getValue());
 								Var end;
-								IrNode endOv = null;
+								IrNode endOv;
 								if (sameVar(mid, spX.getSubject())) {
 									// forward
 									end = spX.getObject();
@@ -661,7 +660,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 						break;
 					}
 					final IrNode only = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
-					IrTripleLike tl = null;
+					IrTripleLike tl;
 					Var branchGraph = null;
 					if (only instanceof IrGraph) {
 						IrGraph g = (IrGraph) only;
@@ -896,8 +895,6 @@ public final class ApplyPathsTransform extends BaseTransform {
 				// fuse them into a single alternation path, keeping remaining branches intact.
 				{
 					Var sVarOut = null, oVarOut = null;
-					final List<Integer> idx = new ArrayList<>();
-					final List<String> basePaths = new ArrayList<>();
 					for (int bi = 0; bi < u.getBranches().size(); bi++) {
 						IrBGP b = u.getBranches().get(bi);
 						if (b.getLines().size() != 1) {
@@ -927,8 +924,6 @@ public final class ApplyPathsTransform extends BaseTransform {
 						} else if (!(sameVar(sVarOut, pt.getSubject()) && sameVar(oVarOut, pt.getObject()))) {
 							continue;
 						}
-						idx.add(bi);
-						basePaths.add(ptxt);
 					}
 				}
 
