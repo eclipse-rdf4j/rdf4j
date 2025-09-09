@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrTripleLike;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
 /**
@@ -751,6 +752,98 @@ public class BaseTransform {
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * Determine if a UNION’s branches reduce to a safe alternation over identical endpoints (optionally inside the same
+	 * GRAPH). Each branch must be exactly one triple-like (IrStatementPattern or IrPathTriple), or such a triple-like
+	 * wrapped in a single IrGraph with the same graph reference across branches. The predicate/path text must be atomic
+	 * (no top-level '|' or '/', and no quantifiers), or a simple canonical NPS '!(...)'. Endpoints must align, allowing
+	 * a simple inversion for statement patterns or for bare NPS path triples.
+	 *
+	 * This predicate is intentionally conservative and does not construct any fused node; it only checks structural
+	 * eligibility for safe alternation.
+	 */
+	public static boolean unionBranchesFormSafeAlternation(final IrUnion u, final TupleExprIRRenderer r) {
+		if (u == null || u.getBranches() == null || u.getBranches().isEmpty()) {
+			return false;
+		}
+		Var subj = null, obj = null, graphRef = null;
+		boolean ok = true;
+		for (IrBGP b : u.getBranches()) {
+			if (!ok)
+				break;
+			if (b == null || b.getLines() == null || b.getLines().isEmpty()) {
+				ok = false;
+				break;
+			}
+			IrNode only = (b.getLines().size() == 1) ? b.getLines().get(0) : null;
+			IrTripleLike tl = null;
+			Var branchGraph = null;
+			if (only instanceof IrGraph) {
+				IrGraph g = (IrGraph) only;
+				IrBGP w = g.getWhere();
+				if (w == null || w.getLines() == null || w.getLines().size() != 1
+						|| !(w.getLines().get(0) instanceof IrTripleLike)) {
+					ok = false;
+					break;
+				}
+				branchGraph = g.getGraph();
+				ttl: tl = (IrTripleLike) w.getLines().get(0);
+			} else if (only instanceof IrTripleLike) {
+				tl = (IrTripleLike) only;
+			} else {
+				ok = false;
+				break;
+			}
+
+			if (branchGraph != null) {
+				if (graphRef == null)
+					graphRef = branchGraph;
+				else if (!sameVarOrValue(graphRef, branchGraph)) {
+					ok = false;
+					break;
+				}
+			} else if (graphRef != null) {
+				ok = false;
+				break; // mixture of GRAPH and non-GRAPH branches
+			}
+
+			final Var s = tl.getSubject();
+			final Var o = tl.getObject();
+			String piece = tl.getPredicateOrPathText(r);
+			if (piece == null) {
+				ok = false;
+				break;
+			}
+			// Require atomic or NPS path text
+			final String norm = normalizeCompactNps(piece);
+			final boolean atomic = isAtomicPathText(piece)
+					|| (norm != null && norm.startsWith("!(") && norm.endsWith(")"));
+			if (!atomic) {
+				ok = false;
+				break;
+			}
+
+			if (subj == null && obj == null) {
+				// Choose canonical endpoints preferring non-anon subject
+				if (isAnonPathVar(s) && !isAnonPathVar(o)) {
+					subj = o;
+					obj = s;
+				} else {
+					subj = s;
+					obj = o;
+				}
+			}
+			if (!(sameVar(subj, s) && sameVar(obj, o))) {
+				// Allow inversion when endpoints are reversed
+				if (!(sameVar(subj, o) && sameVar(obj, s))) {
+					ok = false;
+					break;
+				}
+			}
+		}
+		return ok;
 	}
 
 	private static boolean intersects(Set<String> a, Set<String> b) {
