@@ -48,16 +48,8 @@ public final class NormalizeFilterNotInTransform extends BaseTransform {
 				}
 			}
 
-			// Recurse into containers
-			m = m.transformChildren(new UnaryOperator<IrNode>() {
-				@Override
-				public IrNode apply(IrNode child) {
-					if (child instanceof IrBGP) {
-						return NormalizeFilterNotInTransform.apply((IrBGP) child, r);
-					}
-					return child;
-				}
-			});
+			// Recurse into containers via shared helper
+			m = BaseTransform.rewriteContainers(m, child -> NormalizeFilterNotInTransform.apply(child, r));
 			out.add(m);
 		}
 		IrBGP res = new IrBGP(bgp.isNewScope());
