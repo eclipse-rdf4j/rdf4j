@@ -36,10 +36,7 @@ public class IrStatementPattern extends IrTripleLike {
 	@Override
 	public String getPredicateOrPathText(TupleExprIRRenderer r) {
 		Var pv = getPredicate();
-		if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
-			return r.convertIRIToString((IRI) pv.getValue());
-		}
-		return null;
+		return r.convertVarIriToString(pv);
 	}
 
 	@Override
