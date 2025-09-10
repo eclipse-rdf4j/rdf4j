@@ -16,28 +16,14 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.eclipse.rdf4j.queryrender.sparql.SPARQLQueryRenderer;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 public class SPARQLQueryRenderTest {
-	private static String base;
-	private static String lineSeparator;
-	private static SPARQLParser parser;
-	private static SPARQLQueryRenderer renderer;
-
-	@BeforeAll
-	public static void beforeAll() {
-		base = "http://example.org/base/";
-		lineSeparator = System.lineSeparator();
-		parser = new SPARQLParser();
-		renderer = new SPARQLQueryRenderer();
-	}
-
-	@AfterAll
-	public static void afterAll() {
-		parser = null;
-		renderer = null;
-	}
+	private final static String base = "http://example.org/base/";
+	private final static String lineSeparator = System.lineSeparator();
 
 	@Test
 	public void renderArbitraryLengthPathTest() throws Exception {
@@ -235,12 +221,14 @@ public class SPARQLQueryRenderTest {
 
 	@Test
 	public void renderConstruct() throws Exception {
-		String query = "construct  {" + lineSeparator +
-				"  ?s ?p ?o." + lineSeparator +
-				"}" + lineSeparator +
-				"where {" + lineSeparator +
-				"  ?s ?p ?o." + lineSeparator +
-				"}";
+		StringBuffer sb = new StringBuffer();
+		sb.append("construct  {").append(lineSeparator);
+		sb.append("  ?s ?p ?o.").append(lineSeparator);
+		sb.append("}").append(lineSeparator);
+		sb.append("where {").append(lineSeparator);
+		sb.append("  ?s ?p ?o.").append(lineSeparator);
+		sb.append("}");
+		String query = sb.toString();
 		executeRenderTest(query, query);
 	}
 
@@ -602,8 +590,8 @@ public class SPARQLQueryRenderTest {
 	}
 
 	public void executeRenderTest(String query, String expected) throws Exception {
-		ParsedQuery pq = parser.parseQuery(query, base);
-		String actual = renderer.render(pq);
+		ParsedQuery pq = new SPARQLParser().parseQuery(query, base);
+		String actual = new SPARQLQueryRenderer().render(pq);
 
 		assertEquals(expected, actual);
 	}

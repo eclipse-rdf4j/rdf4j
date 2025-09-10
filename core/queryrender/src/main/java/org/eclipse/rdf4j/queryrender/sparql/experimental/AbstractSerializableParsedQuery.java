@@ -29,13 +29,13 @@ class AbstractSerializableParsedQuery {
 	 * A map that maps all subquery projections within this query to their corresponding SerializableParsedTupleQuery
 	 * instances.
 	 */
-	public final Map<Projection, SerializableParsedTupleQuery> subQueriesByProjection = new HashMap<>();
+	public Map<Projection, SerializableParsedTupleQuery> subQueriesByProjection = new HashMap<>();
 	public TupleExpr whereClause = null;
 	public Slice limit = null;
 	public BindingSetAssignment bindings = null;
 	public Map<String, ExtensionElem> extensionElements = Maps.newHashMap();
 	public Dataset dataset = null;
-	public final Map<String, Var> nonAnonymousVars = Maps.newHashMap();
+	public Map<String, Var> nonAnonymousVars = Maps.newHashMap();
 
 	public AbstractSerializableParsedQuery() {
 		super();
