@@ -42,23 +42,17 @@ public final class PrefixIndex {
 		this.entries = Collections.unmodifiableList(list);
 	}
 
-	/** Return the longest matching namespace for the given IRI, or null if none match. */
+	/** Return the first matching prefix for the given IRI, or null if none match. */
 	public PrefixHit longestMatch(final String iri) {
 		if (iri == null) {
 			return null;
 		}
-		PrefixHit best = null;
-		int bestLen = -1;
 		for (final Entry<String, String> e : entries) {
 			final String ns = e.getValue();
 			if (iri.startsWith(ns)) {
-				int len = ns.length();
-				if (len > bestLen) {
-					bestLen = len;
-					best = new PrefixHit(e.getKey(), ns);
-				}
+				return new PrefixHit(e.getKey(), ns);
 			}
 		}
-		return best;
+		return null;
 	}
 }
