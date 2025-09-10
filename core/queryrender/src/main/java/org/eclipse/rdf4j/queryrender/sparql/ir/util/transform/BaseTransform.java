@@ -482,11 +482,11 @@ public class BaseTransform {
 				IrStatementPattern spB = (IrStatementPattern) in.get(i + 1);
 				IrPathTriple ptC = (IrPathTriple) in.get(i + 2);
 				Var bPred = spB.getPredicate();
-				if (bPred != null && bPred.hasValue() && bPred.getValue() instanceof IRI) {
+				if (isConstantIriPredicate(spB)) {
 					if (sameVar(ptA.getObject(), spB.getObject()) && isAnonPathVar(ptA.getObject())
 							&& sameVar(spB.getSubject(), ptC.getSubject()) && isAnonPathVar(spB.getSubject())
 							&& isAnonPathVar(spB.getObject())) {
-						String fusedPath = "^" + r.convertIRIToString((IRI) bPred.getValue()) + "/" + ptC.getPathText();
+						String fusedPath = "^" + iri(bPred, r) + "/" + ptC.getPathText();
 						IrPathTriple d = new IrPathTriple(spB.getObject(), spB.getObjectOverride(), fusedPath,
 								ptC.getObject(), ptC.getObjectOverride(), IrPathTriple.mergePathVars(ptC), false);
 						// Keep A; then D replaces B and C
@@ -592,7 +592,7 @@ public class BaseTransform {
 			if (i + 1 < in.size() && n instanceof IrStatementPattern && in.get(i + 1) instanceof IrPathTriple) {
 				IrStatementPattern sp = (IrStatementPattern) n;
 				Var p = sp.getPredicate();
-				if (p != null && p.hasValue() && p.getValue() instanceof IRI) {
+				if (isConstantIriPredicate(sp)) {
 					IrPathTriple pt = (IrPathTriple) in.get(i + 1);
 					if (sameVar(sp.getObject(), pt.getSubject()) && isAnonPathVar(pt.getSubject())) {
 						String fused = r.convertIRIToString((IRI) p.getValue()) + "/" + pt.getPathText();
@@ -642,7 +642,7 @@ public class BaseTransform {
 						}
 						IrStatementPattern sp = (IrStatementPattern) m;
 						Var pv = sp.getPredicate();
-						if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+						if (!isConstantIriPredicate(sp)) {
 							continue;
 						}
 						// If this SP is immediately followed by a PathTriple that shares SP.subject as its subject,

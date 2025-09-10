@@ -191,9 +191,8 @@ public final class ApplyPathsTransform extends BaseTransform {
 							.parseNegatedSetText(cond);
 					IrStatementPattern spB = (IrStatementPattern) in.get(i + 2);
 					Var pB = spB.getPredicate();
-					if (ns != null && ns.varName != null && ns.varName.equals(pA.getName()) && pB != null
-							&& pB.hasValue()
-							&& pB.getValue() instanceof IRI) {
+					if (ns != null && ns.varName != null && ns.varName.equals(pA.getName())
+							&& isConstantIriPredicate(spB)) {
 						Var midA;
 						boolean startForward;
 						if (isAnonPathVar(spA.getObject())) {
@@ -213,7 +212,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 							if (!startForward) {
 								nps = invertNegatedPropertySet(nps);
 							}
-							String tail = r.convertIRIToString((IRI) pB.getValue());
+							String tail = iri(pB, r);
 							Var startVar = startForward ? spA.getSubject() : spA.getObject();
 							IrNode startOv = startForward ? spA.getSubjectOverride() : spA.getObjectOverride();
 							Var endVar = spB.getObject();
