@@ -8,11 +8,11 @@ The TupleExprt → raw IR step should have as little logic as possible, just eno
 
 - Module: core/queryrender
 - Test class: [TupleExprIRRendererTest.java](core/queryrender/src/test/java/org/eclipse/rdf4j/queryrender/TupleExprIRRendererTest.java)
-- Test class: [SparqlPropertyPathStreamTest.java](core/queryrender/src/test/java/org/eclipse/rdf4j/queryrender/SparqlPropertyPathStreamTest.java)
 
 Read the following files before you start:
  - [IrTransforms.java](core/queryrender/src/main/java/org/eclipse/rdf4j/queryrender/sparql/ir/util/IrTransforms.java)
  - [TupleExprIRRenderer.java](core/queryrender/src/main/java/org/eclipse/rdf4j/queryrender/sparql/TupleExprIRRenderer.java)
+ - [TupleExprToIrConverter.java](core/queryrender/src/main/java/org/eclipse/rdf4j/queryrender/sparql/TupleExprToIrConverter.java)
  - All the files in [ir](core/queryrender/src/main/java/org/eclipse/rdf4j/queryrender/sparql/ir)
  - All the files in [transform](core/queryrender/src/main/java/org/eclipse/rdf4j/queryrender/sparql/ir/util/transform)
 
