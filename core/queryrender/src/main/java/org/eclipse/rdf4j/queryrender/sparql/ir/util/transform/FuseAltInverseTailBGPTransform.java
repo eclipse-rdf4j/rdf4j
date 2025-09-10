@@ -54,7 +54,7 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 			}
 			final IrStatementPattern sp = (IrStatementPattern) n;
 			final Var pv = sp.getPredicate();
-			if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+			if (!isConstantIriPredicate(sp)) {
 				continue;
 			}
 			// Only index when the non-bridge end is not an anon_path_* var (safety)
@@ -88,8 +88,7 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 								continue;
 							}
 							// Constant predicate only
-							if (sp.getPredicate() == null || !sp.getPredicate().hasValue()
-									|| !(sp.getPredicate().getValue() instanceof IRI)) {
+							if (!isConstantIriPredicate(sp)) {
 								continue;
 							}
 							headJoin = sp;
@@ -104,8 +103,7 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 								if (removed.contains(sp)) {
 									continue;
 								}
-								if (sp.getPredicate() == null || !sp.getPredicate().hasValue()
-										|| !(sp.getPredicate().getValue() instanceof IRI)) {
+								if (!isConstantIriPredicate(sp)) {
 									continue;
 								}
 								headJoin = sp;
@@ -115,7 +113,7 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 						}
 					}
 					if (headJoin != null) {
-						final String step = r.convertIRIToString((IRI) headJoin.getPredicate().getValue());
+						final String step = iri(headJoin.getPredicate(), r);
 						final String prefix = (headInverse ? "^" : "") + step + "/";
 						final Var newStart = headInverse ? headJoin.getObject() : headJoin.getSubject();
 						final IrNode newStartOverride = headInverse
@@ -158,7 +156,7 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 							}
 						}
 						if (join != null) {
-							final String step = r.convertIRIToString((IRI) join.getPredicate().getValue());
+							final String step = iri(join.getPredicate(), r);
 							final String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
 							final Var newEnd = inverse ? join.getSubject() : join.getObject();
 							final IrNode newEndOverride = inverse

@@ -78,18 +78,18 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 				IrPathTriple pt = (IrPathTriple) n;
 				IrStatementPattern sp = (IrStatementPattern) in.get(i + 1);
 				Var pv = sp.getPredicate();
-				if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
+				if (isConstantIriPredicate(sp)) {
 					Var bridge = pt.getObject();
 					if (isAnonPathVar(bridge)) {
 						if (sameVar(bridge, sp.getSubject())) {
-							String fused = pt.getPathText() + "/" + r.convertIRIToString((IRI) pv.getValue());
+							String fused = pt.getPathText() + "/" + iri(pv, r);
 							IrPathTriple np = new IrPathTriple(pt.getSubject(), fused, sp.getObject(), false,
 									pt.getPathVars());
 							out.add(np);
 							i += 1;
 							continue;
 						} else if (sameVar(bridge, sp.getObject())) {
-							String fused = pt.getPathText() + "/^" + r.convertIRIToString((IRI) pv.getValue());
+							String fused = pt.getPathText() + "/^" + iri(pv, r);
 							IrPathTriple np2 = new IrPathTriple(pt.getSubject(), fused, sp.getSubject(), false,
 									pt.getPathVars());
 							out.add(np2);
