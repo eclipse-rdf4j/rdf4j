@@ -168,8 +168,8 @@ class PropertyPathSerializer extends AbstractQueryModelVisitor<RuntimeException>
 	}
 
 	static class VarInfo {
-		final Var var;
-		final boolean inverse;
+		Var var;
+		boolean inverse;
 
 		VarInfo(Var var, boolean inverse) {
 			super();

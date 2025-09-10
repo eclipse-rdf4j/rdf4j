@@ -424,6 +424,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 					}
 					if (joinStep != null) {
 						final String fusedPath = pt.getPathText() + joinStep;
+
 						{
 							Set<Var> pathVars = new HashSet<>(pt.getPathVars());
 							pathVars.addAll(IrPathTriple.fromStatementPatterns(sp));

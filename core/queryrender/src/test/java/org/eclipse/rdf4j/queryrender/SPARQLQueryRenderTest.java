@@ -15,6 +15,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.eclipse.rdf4j.queryrender.sparql.SPARQLQueryRenderer;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 public class SPARQLQueryRenderTest {
@@ -217,12 +221,14 @@ public class SPARQLQueryRenderTest {
 
 	@Test
 	public void renderConstruct() throws Exception {
-		String query = "construct  {" + lineSeparator +
-				"  ?s ?p ?o." + lineSeparator +
-				"}" + lineSeparator +
-				"where {" + lineSeparator +
-				"  ?s ?p ?o." + lineSeparator +
-				"}";
+		StringBuffer sb = new StringBuffer();
+		sb.append("construct  {").append(lineSeparator);
+		sb.append("  ?s ?p ?o.").append(lineSeparator);
+		sb.append("}").append(lineSeparator);
+		sb.append("where {").append(lineSeparator);
+		sb.append("  ?s ?p ?o.").append(lineSeparator);
+		sb.append("}");
+		String query = sb.toString();
 		executeRenderTest(query, query);
 	}
 
