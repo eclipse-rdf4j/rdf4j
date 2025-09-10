@@ -79,6 +79,23 @@ public class BaseTransform {
 
 	// --------------- Path text helpers: add parens only when needed ---------------
 
+	/** Convenience: true iff SP has a constant-IRI predicate. */
+	public static boolean isConstantIriPredicate(IrStatementPattern sp) {
+		if (sp == null) {
+			return false;
+		}
+		Var p = sp.getPredicate();
+		return p != null && p.hasValue() && p.getValue() instanceof IRI;
+	}
+
+	/** Convenience: render a constant-IRI predicate Var to text. Returns null if not a constant IRI. */
+	public static String iri(Var pred, TupleExprIRRenderer r) {
+		if (pred == null || !pred.hasValue() || !(pred.getValue() instanceof IRI)) {
+			return null;
+		}
+		return r.convertIRIToString((IRI) pred.getValue());
+	}
+
 	/**
 	 * Normalize compact negated-property-set forms into the canonical parenthesized variant. Examples: "!ex:p" ->
 	 * "!(ex:p)", "!^ex:p" -> "!(^ex:p)". Leaves already-canonical and non-NPS text unchanged.
@@ -289,6 +306,72 @@ public class BaseTransform {
 		return (isAtomicPathText(t) ? t : ("(" + t + ")")) + quant;
 	}
 
+	/** Return the index of the last occurrence of ch at top level (depth 0), or -1 if none. */
+	public static int lastTopLevelIndexOf(final String s, final char ch) {
+		if (s == null) {
+			return -1;
+		}
+		int idx = -1;
+		int depth = 0;
+		for (int i = 0; i < s.length(); i++) {
+			char c = s.charAt(i);
+			if (c == '(') {
+				depth++;
+			} else if (c == ')') {
+				depth--;
+			} else if (c == ch && depth == 0) {
+				idx = i;
+			}
+		}
+		return idx;
+	}
+
+	/** Invert a simple alternation like "A|B" or a parenthesized variant; toggles '^' on each member. */
+	public static String invertSimpleAlternation(String expr) {
+		if (expr == null) {
+			return null;
+		}
+		String t = expr.trim();
+		// strip single outer parentheses
+		if (isWrapped(t)) {
+			t = t.substring(1, t.length() - 1).trim();
+		}
+		List<String> parts = new ArrayList<>();
+		int depth = 0;
+		StringBuilder cur = new StringBuilder();
+		for (int i = 0; i < t.length(); i++) {
+			char c = t.charAt(i);
+			if (c == '(') {
+				depth++;
+				cur.append(c);
+			} else if (c == ')') {
+				depth--;
+				cur.append(c);
+			} else if (c == '|' && depth == 0) {
+				parts.add(cur.toString().trim());
+				cur.setLength(0);
+			} else {
+				cur.append(c);
+			}
+		}
+		if (cur.length() > 0) {
+			parts.add(cur.toString().trim());
+		}
+		List<String> inv = new ArrayList<>(parts.size());
+		for (String p : parts) {
+			String q = p.trim();
+			if (q.startsWith("^")) {
+				inv.add(q.substring(1));
+			} else {
+				inv.add("^" + q);
+			}
+		}
+		if (inv.size() == 1) {
+			return inv.get(0);
+		}
+		return "(" + String.join("|", inv) + ")";
+	}
+
 	public static void copyAllExcept(IrBGP from, IrBGP to, IrNode except) {
 		if (from == null) {
 			return;
@@ -372,6 +455,7 @@ public class BaseTransform {
 				out.add(n);
 			}
 		}
+
 		IrBGP res = new IrBGP(bgp.isNewScope());
 		out.forEach(res::add);
 		res.setNewScope(bgp.isNewScope());
@@ -435,6 +519,14 @@ public class BaseTransform {
 			IrNode n = in.get(i);
 			if (n instanceof IrPathTriple) {
 				IrPathTriple pt = (IrPathTriple) n;
+				// Do not attach head/tail when the path contains an alternation anywhere.
+				// Some branches may require different tails, and lifting a tail outside
+				// would alter grouping expected by renderer tests.
+				String ptxtGlobal = pt.getPathText();
+				if (ptxtGlobal != null && ptxtGlobal.indexOf('|') >= 0) {
+					out.add(pt);
+					continue;
+				}
 				String ptxt = pt.getPathText();
 				if (ptxt != null) {
 					String s = ptxt.trim();

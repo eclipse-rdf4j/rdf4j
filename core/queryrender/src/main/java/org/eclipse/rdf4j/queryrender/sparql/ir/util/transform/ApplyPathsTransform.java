@@ -75,7 +75,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 			if (n instanceof IrStatementPattern) {
 				IrStatementPattern sp0 = (IrStatementPattern) n;
 				Var p0 = sp0.getPredicate();
-				if (p0 != null && p0.hasValue() && p0.getValue() instanceof IRI) {
+				if (isConstantIriPredicate(sp0)) {
 					Var mid = null;
 					boolean startForward = false;
 					if (isAnonPathVar(sp0.getObject())) {
@@ -105,7 +105,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 							}
 							IrStatementPattern sp = (IrStatementPattern) n2;
 							Var pv = sp.getPredicate();
-							if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+							if (!isConstantIriPredicate(sp)) {
 								break;
 							}
 							boolean forward = sameVar(cur, sp.getSubject());
@@ -398,7 +398,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 				}
 				if (sp0 != null) {
 					Var p0 = sp0.getPredicate();
-					if (p0 != null && p0.hasValue() && p0.getValue() instanceof IRI) {
+					if (isConstantIriPredicate(sp0)) {
 						// Identify bridge var and start/end side
 						Var mid;
 						boolean startForward;
@@ -446,7 +446,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 									break;
 								}
 								Var pX = spX.getPredicate();
-								if (pX == null || !pX.hasValue() || !(pX.getValue() instanceof IRI)) {
+								if (!isConstantIriPredicate(spX)) {
 									ok = false;
 									break;
 								}
@@ -512,7 +512,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 										}
 										IrStatementPattern spj = (IrStatementPattern) ln;
 										Var pj = spj.getPredicate();
-										if (pj == null || !pj.hasValue() || !(pj.getValue() instanceof IRI)) {
+										if (!isConstantIriPredicate(spj)) {
 											continue;
 										}
 										if (sameVar(mid, spj.getSubject()) && !isAnonPathVar(spj.getObject())) {
@@ -862,7 +862,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 				if (i + 1 < in.size() && in.get(i + 1) instanceof IrStatementPattern) {
 					final IrStatementPattern post = (IrStatementPattern) in.get(i + 1);
 					final Var postPred = post.getPredicate();
-					if (postPred != null && postPred.hasValue() && postPred.getValue() instanceof IRI) {
+					if (isConstantIriPredicate(post)) {
 						Var startVar = null, endVar = post.getSubject();
 						final List<String> steps = new ArrayList<>();
 						boolean ok2 = true;
@@ -876,7 +876,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 							}
 							final IrStatementPattern sp = (IrStatementPattern) b.getLines().get(0);
 							final Var pv = sp.getPredicate();
-							if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+							if (!isConstantIriPredicate(sp)) {
 								ok2 = false;
 								break;
 							}
