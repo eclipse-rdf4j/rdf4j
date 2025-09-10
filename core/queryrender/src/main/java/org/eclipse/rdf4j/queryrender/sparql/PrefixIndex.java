@@ -43,7 +43,8 @@ public final class PrefixIndex {
 	}
 
 	/** Return the first matching prefix for the given IRI, or null if none match. */
-	public PrefixHit longestMatch(final String iri) {
+	/** Return the first matching prefix for the given IRI, or null. */
+	public PrefixHit firstMatch(final String iri) {
 		if (iri == null) {
 			return null;
 		}
