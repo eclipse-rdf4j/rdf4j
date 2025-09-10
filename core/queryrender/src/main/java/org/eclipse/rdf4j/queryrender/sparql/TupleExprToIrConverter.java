@@ -23,8 +23,11 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
@@ -57,6 +60,7 @@ import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -103,7 +107,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseServiceNpsUnionLateTransform;
 
 /**
  * Extracted converter that builds textual-IR from a TupleExpr.
@@ -120,6 +123,319 @@ public class TupleExprToIrConverter {
 	// ---------------- Public entry points ----------------
 	private static final int PREC_ATOM = 3;
 	private final TupleExprIRRenderer r;
+	private final Config cfg;
+	private final PrefixIndex prefixIndex;
+
+	// -------------- Local textual helpers moved from renderer --------------
+
+	private static final java.util.regex.Pattern PN_LOCAL_CHUNK = java.util.regex.Pattern
+			.compile("(?:%[0-9A-Fa-f]{2}|[-\\p{L}\\p{N}_\\u00B7]|:)+");
+
+	private static final String FN_NS = "http://www.w3.org/2005/xpath-functions#";
+	private static final Map<String, String> BUILTIN;
+	static {
+		Map<String, String> m = new LinkedHashMap<>();
+		m.put(FN_NS + "string-length", "STRLEN");
+		m.put(FN_NS + "lower-case", "LCASE");
+		m.put(FN_NS + "upper-case", "UCASE");
+		m.put(FN_NS + "substring", "SUBSTR");
+		m.put(FN_NS + "contains", "CONTAINS");
+		m.put(FN_NS + "concat", "CONCAT");
+		m.put(FN_NS + "replace", "REPLACE");
+		m.put(FN_NS + "encode-for-uri", "ENCODE_FOR_URI");
+		m.put(FN_NS + "starts-with", "STRSTARTS");
+		m.put(FN_NS + "ends-with", "STRENDS");
+		m.put(FN_NS + "numeric-abs", "ABS");
+		m.put(FN_NS + "numeric-ceil", "CEIL");
+		m.put(FN_NS + "numeric-floor", "FLOOR");
+		m.put(FN_NS + "numeric-round", "ROUND");
+		m.put(FN_NS + "year-from-dateTime", "YEAR");
+		m.put(FN_NS + "month-from-dateTime", "MONTH");
+		m.put(FN_NS + "day-from-dateTime", "DAY");
+		m.put(FN_NS + "hours-from-dateTime", "HOURS");
+		m.put(FN_NS + "minutes-from-dateTime", "MINUTES");
+		m.put(FN_NS + "seconds-from-dateTime", "SECONDS");
+		m.put(FN_NS + "timezone-from-dateTime", "TIMEZONE");
+		for (String k : new String[] { "RAND", "NOW", "ABS", "CEIL", "FLOOR", "ROUND", "YEAR", "MONTH", "DAY",
+				"HOURS", "MINUTES", "SECONDS", "TZ", "TIMEZONE", "MD5", "SHA1", "SHA224", "SHA256", "SHA384",
+				"SHA512", "UCASE", "LCASE", "SUBSTR", "STRLEN", "CONTAINS", "CONCAT", "REPLACE",
+				"ENCODE_FOR_URI", "STRSTARTS", "STRENDS", "STRBEFORE", "STRAFTER", "REGEX", "UUID", "STRUUID",
+				"STRDT", "STRLANG", "BNODE", "URI" }) {
+			m.put(k, k);
+		}
+		BUILTIN = Collections.unmodifiableMap(m);
+	}
+
+	private static String escapeLiteral(final String s) {
+		final StringBuilder b = new StringBuilder(Math.max(16, s.length()));
+		for (int i = 0; i < s.length(); i++) {
+			final char c = s.charAt(i);
+			switch (c) {
+			case '\\':
+				b.append("\\\\");
+				break;
+			case '\"':
+				b.append("\\\"");
+				break;
+			case '\n':
+				b.append("\\n");
+				break;
+			case '\r':
+				b.append("\\r");
+				break;
+			case '\t':
+				b.append("\\t");
+				break;
+			default:
+				b.append(c);
+			}
+		}
+		return b.toString();
+	}
+
+	private String convertIRIToString(final IRI iri) {
+		final String s = iri.stringValue();
+		if (cfg.usePrefixCompaction) {
+			final PrefixHit hit = prefixIndex.longestMatch(s);
+			if (hit != null) {
+				final String local = s.substring(hit.namespace.length());
+				if (isPN_LOCAL(local)) {
+					return hit.prefix + ":" + local;
+				}
+			}
+		}
+		return "<" + s + ">";
+	}
+
+	private boolean isPN_LOCAL(final String s) {
+		if (s == null || s.isEmpty()) {
+			return false;
+		}
+		if (s.charAt(s.length() - 1) == '.') {
+			return false;
+		}
+		char first = s.charAt(0);
+		if (!(first == ':' || Character.isLetter(first) || first == '_' || Character.isDigit(first))) {
+			return false;
+		}
+		int i = 0;
+		boolean needChunk = true;
+		while (i < s.length()) {
+			int j = i;
+			while (j < s.length() && s.charAt(j) != '.') {
+				j++;
+			}
+			String chunk = s.substring(i, j);
+			if (needChunk && chunk.isEmpty()) {
+				return false;
+			}
+			if (!chunk.isEmpty() && !PN_LOCAL_CHUNK.matcher(chunk).matches()) {
+				return false;
+			}
+			i = j + 1;
+			needChunk = false;
+		}
+		return true;
+	}
+
+	private String convertValueToString(final Value val) {
+		if (val instanceof IRI) {
+			return convertIRIToString((IRI) val);
+		} else if (val instanceof Literal) {
+			final Literal lit = (Literal) val;
+			if (lit.getLanguage().isPresent()) {
+				return "\"" + escapeLiteral(lit.getLabel()) + "\"@" + lit.getLanguage().get();
+			}
+			final IRI dt = lit.getDatatype();
+			final String label = lit.getLabel();
+			if (XSD.BOOLEAN.equals(dt)) {
+				return ("1".equals(label) || "true".equalsIgnoreCase(label)) ? "true" : "false";
+			}
+			if (XSD.INTEGER.equals(dt)) {
+				try {
+					return new java.math.BigInteger(label).toString();
+				} catch (NumberFormatException ignore) {
+				}
+			}
+			if (XSD.DECIMAL.equals(dt)) {
+				try {
+					return new java.math.BigDecimal(label).toPlainString();
+				} catch (NumberFormatException ignore) {
+				}
+			}
+			if (dt != null && !XSD.STRING.equals(dt)) {
+				return "\"" + escapeLiteral(label) + "\"^^" + convertIRIToString(dt);
+			}
+			return "\"" + escapeLiteral(label) + "\"";
+		} else if (val instanceof BNode) {
+			return "_:" + ((BNode) val).getID();
+		}
+		return "\"" + escapeLiteral(String.valueOf(val)) + "\"";
+	}
+
+	private String renderVarOrValue(final Var v) {
+		if (v == null) {
+			return "?_";
+		}
+		if (v.hasValue()) {
+			return convertValueToString(v.getValue());
+		}
+		if (v.isAnonymous() && !v.isConstant()) {
+			return "_:" + v.getName();
+		}
+		return "?" + v.getName();
+	}
+
+	private static String mathOp(final MathOp op) {
+		if (op == MathOp.PLUS) {
+			return "+";
+		}
+		if (op == MathOp.MINUS) {
+			return "-";
+		}
+		try {
+			if (op.name().equals("MULTIPLY") || op.name().equals("TIMES")) {
+				return "*";
+			}
+		} catch (Throwable ignore) {
+		}
+		if (op == MathOp.DIVIDE) {
+			return "/";
+		}
+		return "?";
+	}
+
+	private static String op(final CompareOp op) {
+		switch (op) {
+		case EQ:
+			return "=";
+		case NE:
+			return "!=";
+		case LT:
+			return "<";
+		case LE:
+			return "<=";
+		case GT:
+			return ">";
+		case GE:
+			return ">=";
+		default:
+			return "/*?*/";
+		}
+	}
+
+	private static String stripRedundantOuterParens(final String s) {
+		if (s == null) {
+			return null;
+		}
+		String t = s.trim();
+		if (t.length() >= 2 && t.charAt(0) == '(' && t.charAt(t.length() - 1) == ')') {
+			int depth = 0;
+			for (int i = 0; i < t.length(); i++) {
+				char ch = t.charAt(i);
+				if (ch == '(') {
+					depth++;
+				} else if (ch == ')') {
+					depth--;
+				}
+				if (depth == 0 && i < t.length() - 1) {
+					return t;
+				}
+			}
+			return t.substring(1, t.length() - 1).trim();
+		}
+		return t;
+	}
+
+	private static String asConstraint(final String s) {
+		if (s == null) {
+			return "()";
+		}
+		final String t = s.trim();
+		if (t.isEmpty()) {
+			return "()";
+		}
+		if (t.charAt(0) == '(' && t.charAt(t.length() - 1) == ')') {
+			int depth = 0;
+			for (int i = 0; i < t.length(); i++) {
+				char ch = t.charAt(i);
+				if (ch == '(') {
+					depth++;
+				} else if (ch == ')') {
+					depth--;
+				}
+				if (depth == 0 && i < t.length() - 1) {
+					break;
+				}
+				if (i == t.length() - 1 && depth == 0) {
+					return t;
+				}
+			}
+		}
+		if (t.startsWith("EXISTS ") || t.startsWith("NOT EXISTS ")) {
+			return t;
+		}
+		int lpar = t.indexOf('(');
+		if (lpar > 0 && t.endsWith(")")) {
+			String head = t.substring(0, lpar).trim();
+			if (!head.isEmpty() && head.indexOf(' ') < 0) {
+				return t;
+			}
+		}
+		return "(" + t + ")";
+	}
+
+	private static String parenthesizeIfNeededExpr(final String expr) {
+		if (expr == null) {
+			return "()";
+		}
+		final String t = expr.trim();
+		if (t.isEmpty()) {
+			return "()";
+		}
+		if (t.charAt(0) == '(' && t.charAt(t.length() - 1) == ')') {
+			int depth = 0;
+			boolean spans = true;
+			for (int i = 0; i < t.length(); i++) {
+				char ch = t.charAt(i);
+				if (ch == '(') {
+					depth++;
+				} else if (ch == ')') {
+					depth--;
+				}
+				if (depth == 0 && i < t.length() - 1) {
+					spans = false;
+					break;
+				}
+			}
+			if (spans) {
+				return t;
+			}
+		}
+		return "(" + t + ")";
+	}
+
+	private String renderExists(final Exists ex) {
+		return r.renderExprPublic(ex);
+	}
+
+	private String renderIn(final ListMemberOperator in, final boolean negate) {
+		final List<ValueExpr> args = in.getArguments();
+		if (args == null || args.isEmpty()) {
+			return "/* invalid IN */";
+		}
+		final String left = renderExpr(args.get(0));
+		final String rest = args.stream().skip(1).map(this::renderExpr).collect(Collectors.joining(", "));
+		return "(" + left + (negate ? " NOT IN (" : " IN (") + rest + "))";
+	}
+
+	private String renderAggregate(final AggregateOperator op) {
+		return r.renderExprPublic(op);
+	}
+
+	private String renderExpr(final ValueExpr e) {
+		return r.renderExprPublic(e);
+	}
 
 	private static boolean isConstIriVar(Var v) {
 		return v != null && v.hasValue() && v.getValue() instanceof IRI;
@@ -133,20 +449,20 @@ public class TupleExprToIrConverter {
 
 	public TupleExprToIrConverter(TupleExprIRRenderer renderer) {
 		this.r = renderer;
+		this.cfg = renderer.getConfig();
+		this.prefixIndex = new PrefixIndex(this.cfg.prefixes);
 	}
 
-	/** Build IrSelect; optionally skip IR transforms (tests may require truly-raw IR). */
+	/** Build IrSelect; by default apply transforms (used for subselects). */
 	public static IrSelect toIRSelectRaw(final TupleExpr tupleExpr, TupleExprIRRenderer r) {
 		return toIRSelectRaw(tupleExpr, r, true);
 	}
 
 	/**
-	 * Build IrSelect, with control over whether to apply IR transforms.
-	 *
-	 * @param applyTransforms when true, runs the standard transform pipeline to normalize IR; when false, returns the
-	 *                        raw IR as built from the TupleExpr without additional normalization.
+	 * Build IrSelect (raw). The applyTransforms argument is ignored; transforms are handled by the renderer.
 	 */
 	public static IrSelect toIRSelectRaw(final TupleExpr tupleExpr, TupleExprIRRenderer r, boolean applyTransforms) {
+		final TupleExprToIrConverter conv = new TupleExprToIrConverter(r);
 		final Normalized n = normalize(tupleExpr, true);
 		applyAggregateHoisting(n);
 
@@ -163,7 +479,7 @@ public class TupleExprToIrConverter {
 				final String alias = pe.getProjectionAlias().orElse(pe.getName());
 				final ValueExpr expr = n.selectAssignments.get(alias);
 				if (expr != null) {
-					ir.getProjection().add(new IrProjectionItem(r.renderExprPublic(expr), alias));
+					ir.getProjection().add(new IrProjectionItem(conv.renderExpr(expr), alias));
 				} else {
 					ir.getProjection().add(new IrProjectionItem(null, alias));
 				}
@@ -179,43 +495,39 @@ public class TupleExprToIrConverter {
 				}
 			}
 			for (Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
-				ir.getProjection().add(new IrProjectionItem(r.renderExprPublic(e.getValue()), e.getKey()));
+				ir.getProjection().add(new IrProjectionItem(conv.renderExpr(e.getValue()), e.getKey()));
 			}
 		}
 
 		final IRBuilder builder = new TupleExprToIrConverter(r).new IRBuilder();
 		ir.setWhere(builder.build(n.where));
 
+		// Optionally apply transforms (useful for nested subselects; top-level transforms are handled by the renderer).
 		if (applyTransforms) {
-			// Apply the standard IR transform pipeline to the subselect's WHERE to ensure
-			// consistent path/NPS/property-list rewrites also occur inside nested queries.
-			// This mirrors how the top-level SELECT is handled and aligns nested subselect
-			// output with expected canonical shapes in tests.
 			IrSelect transformed = IrTransforms.transformUsingChildren(ir, r);
 			ir.setWhere(transformed.getWhere());
 
 			// Preserve explicit grouping braces around a single‑line WHERE when the original algebra
-			// indicated a variable scope change at the root of the subselect. This mirrors the logic in
-			// toIRSelect() for top‑level queries and ensures nested queries retain user grouping.
+			// indicated a variable scope change at the root of the subselect. This mirrors the old behavior
+			// and keeps nested queries' grouping stable for tests.
 			if (ir.getWhere() != null && ir.getWhere().getLines() != null && ir.getWhere().getLines().size() == 1
 					&& rootHasExplicitScope(n.where)) {
 				final IrNode only = ir.getWhere().getLines().get(0);
-				if (only instanceof IrStatementPattern
-						|| only instanceof IrPathTriple
-						|| only instanceof IrGraph) {
+				if (only instanceof IrStatementPattern || only instanceof IrPathTriple || only instanceof IrGraph
+						|| only instanceof IrSubSelect) {
 					ir.getWhere().setNewScope(true);
 				}
 			}
 		}
 
 		for (GroupByTerm t : n.groupByTerms) {
-			ir.getGroupBy().add(new IrGroupByElem(t.expr == null ? null : r.renderExprPublic(t.expr), t.var));
+			ir.getGroupBy().add(new IrGroupByElem(t.expr == null ? null : conv.renderExpr(t.expr), t.var));
 		}
 		for (ValueExpr cond : n.havingConditions) {
-			ir.getHaving().add(TupleExprIRRenderer.stripRedundantOuterParens(renderExprForHaving(cond, n, r)));
+			ir.getHaving().add(stripRedundantOuterParens(conv.renderExprForHaving(cond, n)));
 		}
 		for (OrderElem oe : n.orderBy) {
-			ir.getOrderBy().add(new IrOrderSpec(r.renderExprPublic(oe.getExpr()), oe.isAscending()));
+			ir.getOrderBy().add(new IrOrderSpec(conv.renderExpr(oe.getExpr()), oe.isAscending()));
 		}
 		return ir;
 	}
@@ -860,12 +1172,11 @@ public class TupleExprToIrConverter {
 	}
 
 	// Render expressions for HAVING with substitution of _anon_having_* variables
-	private static String renderExprForHaving(final ValueExpr e, final Normalized n, TupleExprIRRenderer r) {
-		return renderExprWithSubstitution(e, n == null ? null : n.selectAssignments, r);
+	private String renderExprForHaving(final ValueExpr e, final Normalized n) {
+		return renderExprWithSubstitution(e, n == null ? null : n.selectAssignments);
 	}
 
-	private static String renderExprWithSubstitution(final ValueExpr e, final Map<String, ValueExpr> subs,
-			TupleExprIRRenderer r) {
+	private String renderExprWithSubstitution(final ValueExpr e, final Map<String, ValueExpr> subs) {
 		if (e == null) {
 			return "()";
 		}
@@ -875,41 +1186,40 @@ public class TupleExprToIrConverter {
 			if (!v.hasValue() && v.getName() != null && isAnonHavingName(v.getName()) && subs != null) {
 				ValueExpr repl = subs.get(v.getName());
 				if (repl != null) {
-					return r.renderExprPublic(repl);
+					return renderExpr(repl);
 				}
 			}
-			return v.hasValue() ? r.renderValuePublic(v.getValue()) : "?" + v.getName();
+			return v.hasValue() ? convertValueToString(v.getValue()) : "?" + v.getName();
 		}
 
 		if (e instanceof Not) {
-			String inner = TupleExprIRRenderer
-					.stripRedundantOuterParens(renderExprWithSubstitution(((Not) e).getArg(), subs, r));
+			String inner = stripRedundantOuterParens(renderExprWithSubstitution(((Not) e).getArg(), subs));
 			return "!" + parenthesizeIfNeeded(inner);
 		}
 		if (e instanceof And) {
 			And a = (And) e;
-			return "(" + renderExprWithSubstitution(a.getLeftArg(), subs, r) + " && "
-					+ renderExprWithSubstitution(a.getRightArg(), subs, r) + ")";
+			return "(" + renderExprWithSubstitution(a.getLeftArg(), subs) + " && "
+					+ renderExprWithSubstitution(a.getRightArg(), subs) + ")";
 		}
 		if (e instanceof Or) {
 			Or o = (Or) e;
-			return "(" + renderExprWithSubstitution(o.getLeftArg(), subs, r) + " || "
-					+ renderExprWithSubstitution(o.getRightArg(), subs, r) + ")";
+			return "(" + renderExprWithSubstitution(o.getLeftArg(), subs) + " || "
+					+ renderExprWithSubstitution(o.getRightArg(), subs) + ")";
 		}
 		if (e instanceof Compare) {
 			Compare c = (Compare) e;
-			return "(" + renderExprWithSubstitution(c.getLeftArg(), subs, r) + " "
-					+ TupleExprIRRenderer.op(c.getOperator()) + " "
-					+ renderExprWithSubstitution(c.getRightArg(), subs, r) + ")";
+			return "(" + renderExprWithSubstitution(c.getLeftArg(), subs) + " "
+					+ op(c.getOperator()) + " "
+					+ renderExprWithSubstitution(c.getRightArg(), subs) + ")";
 		}
 		if (e instanceof SameTerm) {
 			SameTerm st = (SameTerm) e;
-			return "sameTerm(" + renderExprWithSubstitution(st.getLeftArg(), subs, r) + ", "
-					+ renderExprWithSubstitution(st.getRightArg(), subs, r) + ")";
+			return "sameTerm(" + renderExprWithSubstitution(st.getLeftArg(), subs) + ", "
+					+ renderExprWithSubstitution(st.getRightArg(), subs) + ")";
 		}
 
 		// fallback to normal rendering
-		return r.renderExprPublic(e);
+		return renderExpr(e);
 	}
 
 	private static String parenthesizeIfNeeded(String s) {
@@ -1017,7 +1327,6 @@ public class TupleExprToIrConverter {
 		applyAggregateHoisting(n);
 
 		final IrSelect ir = new IrSelect(false);
-		Config cfg = r.getConfig();
 		// Canonicalize DISTINCT/REDUCED: if DISTINCT is set, REDUCED is a no-op and removed
 		ir.setDistinct(n.distinct);
 		ir.setReduced(n.reduced && !n.distinct);
@@ -1031,7 +1340,7 @@ public class TupleExprToIrConverter {
 				final String alias = pe.getProjectionAlias().orElse(pe.getName());
 				final ValueExpr expr = n.selectAssignments.get(alias);
 				if (expr != null) {
-					ir.getProjection().add(new IrProjectionItem(r.renderExprPublic(expr), alias));
+					ir.getProjection().add(new IrProjectionItem(renderExpr(expr), alias));
 				} else {
 					ir.getProjection().add(new IrProjectionItem(null, alias));
 				}
@@ -1047,60 +1356,27 @@ public class TupleExprToIrConverter {
 				}
 			}
 			for (Entry<String, ValueExpr> e : n.selectAssignments.entrySet()) {
-				ir.getProjection().add(new IrProjectionItem(r.renderExprPublic(e.getValue()), e.getKey()));
+				ir.getProjection().add(new IrProjectionItem(renderExpr(e.getValue()), e.getKey()));
 			}
 		}
 
-		// WHERE as textual-IR
+		// WHERE as textual-IR (raw)
 		final IRBuilder builder = new IRBuilder();
 		ir.setWhere(builder.build(n.where));
 
-		if (cfg.debugIR) {
-			System.out.println("# IR (raw)\n" + IrDebug.dump(ir));
-		}
-
-		// Transformations
-		final IrSelect irTransformed = IrTransforms.transformUsingChildren(ir, r);
-		ir.setWhere(irTransformed.getWhere());
-		// Extra safeguard: ensure SERVICE union-of-NPS branches are fused after all passes
-		ir.setWhere(FuseServiceNpsUnionLateTransform.apply(ir.getWhere()));
-
-		// Preserve explicit grouping braces around a single-element WHERE only when the original
-		// algebra indicated an explicit variable scope change at the root (i.e., an extra
-		// GroupGraphPattern in the source). Do NOT trigger merely because a deeper subtree contains
-		// a scope change (e.g., a LeftJoin inside a FILTER EXISTS), which would add spurious outer
-		// braces like `{ GRAPH { ... } }` around the single GRAPH pattern.
-		if (ir.getWhere() != null && ir.getWhere().getLines() != null && ir.getWhere().getLines().size() == 1) {
-			final IrNode only = ir.getWhere().getLines().get(0);
-			if ((only instanceof IrStatementPattern
-					|| only instanceof IrPathTriple || only instanceof IrGraph)
-					&& rootHasExplicitScope(n.where)) {
-				ir.getWhere().setNewScope(true);
-			} else if (only instanceof IrSubSelect
-					&& rootHasExplicitScope(n.where)) {
-				// If the root of the algebra had an explicit scope change and the only WHERE
-				// element is a subselect, reflect the extra grouping using an outer brace layer.
-				ir.getWhere().setNewScope(true);
-			}
-		}
-
-		if (cfg.debugIR) {
-			System.out.println("# IR (transformed)\n" + IrDebug.dump(ir));
-		}
-
 		// GROUP BY
 		for (GroupByTerm t : n.groupByTerms) {
-			ir.getGroupBy().add(new IrGroupByElem(t.expr == null ? null : r.renderExprPublic(t.expr), t.var));
+			ir.getGroupBy().add(new IrGroupByElem(t.expr == null ? null : renderExpr(t.expr), t.var));
 		}
 
 		// HAVING
 		for (ValueExpr cond : n.havingConditions) {
-			ir.getHaving().add(TupleExprIRRenderer.stripRedundantOuterParens(renderExprForHaving(cond, n, r)));
+			ir.getHaving().add(stripRedundantOuterParens(renderExprForHaving(cond, n)));
 		}
 
 		// ORDER BY
 		for (OrderElem oe : n.orderBy) {
-			ir.getOrderBy().add(new IrOrderSpec(r.renderExprPublic(oe.getExpr()), oe.isAscending()));
+			ir.getOrderBy().add(new IrOrderSpec(renderExpr(oe.getExpr()), oe.isAscending()));
 		}
 
 		return ir;
@@ -1649,7 +1925,7 @@ public class TupleExprToIrConverter {
 				IrExists exNode = new IrExists(bgp, false);
 				return new IrFilter(exNode, false);
 			}
-			final String cond = TupleExprIRRenderer.stripRedundantOuterParens(r.renderExprPublic(condExpr));
+			final String cond = stripRedundantOuterParens(renderExpr(condExpr));
 			return new IrFilter(cond, false);
 		}
 
@@ -1902,7 +2178,7 @@ public class TupleExprToIrConverter {
 			IRBuilder inner = new IRBuilder();
 			IrBGP w = inner.build(svc.getArg());
 			// No conversion-time fusion; rely on pipeline transforms to normalize SERVICE bodies
-			IrService irSvc = new IrService(r.renderVarOrValuePublic(svc.getServiceRef()), svc.isSilent(), w, false);
+			IrService irSvc = new IrService(renderVarOrValue(svc.getServiceRef()), svc.isSilent(), w, false);
 			boolean scope = svc.isVariableScopeChange();
 			if (scope) {
 				IrBGP grp = new IrBGP(false);
@@ -1925,7 +2201,7 @@ public class TupleExprToIrConverter {
 				List<String> row = new ArrayList<>(names.size());
 				for (String nm : names) {
 					Value val = bs.getValue(nm);
-					row.add(val == null ? "UNDEF" : r.renderValuePublic(val));
+					row.add(val == null ? "UNDEF" : convertValueToString(val));
 				}
 				v.getRows().add(row);
 			}
@@ -1940,7 +2216,7 @@ public class TupleExprToIrConverter {
 				if (expr instanceof AggregateOperator) {
 					continue; // hoisted to SELECT
 				}
-				where.add(new IrBind(r.renderExprPublic(expr), ee.getName(), false));
+				where.add(new IrBind(renderExpr(expr), ee.getName(), false));
 			}
 		}
 
@@ -2021,9 +2297,9 @@ public class TupleExprToIrConverter {
 		@Override
 		public void meet(final ZeroLengthPath p) {
 			where.add(new IrText("FILTER "
-					+ TupleExprIRRenderer.asConstraint(
-							"sameTerm(" + r.renderVarOrValuePublic(p.getSubjectVar()) + ", "
-									+ r.renderVarOrValuePublic(p.getObjectVar()) + ")"),
+					+ asConstraint(
+							"sameTerm(" + renderVarOrValue(p.getSubjectVar()) + ", "
+									+ renderVarOrValue(p.getObjectVar()) + ")"),
 					false));
 		}
 
@@ -2079,6 +2355,12 @@ public class TupleExprToIrConverter {
 		return false;
 	}
 
+	/** Public helper for renderer: whether the normalized root has explicit scope change. */
+	public static boolean hasExplicitRootScope(final TupleExpr root) {
+		final Normalized n = normalize(root, false);
+		return rootHasExplicitScope(n.where);
+	}
+
 	private static final class GroupByTerm {
 		final String var; // ?var
 		final ValueExpr expr; // null => plain ?var; otherwise (expr AS ?var)
@@ -2086,6 +2368,41 @@ public class TupleExprToIrConverter {
 		GroupByTerm(String var, ValueExpr expr) {
 			this.var = var;
 			this.expr = expr;
+		}
+	}
+
+	private static final class PrefixHit {
+		final String prefix;
+		final String namespace;
+
+		PrefixHit(final String prefix, final String namespace) {
+			this.prefix = prefix;
+			this.namespace = namespace;
+		}
+	}
+
+	private static final class PrefixIndex {
+		private final List<Entry<String, String>> entries;
+
+		PrefixIndex(final Map<String, String> prefixes) {
+			final List<Entry<String, String>> list = new ArrayList<>();
+			if (prefixes != null) {
+				list.addAll(prefixes.entrySet());
+			}
+			this.entries = Collections.unmodifiableList(list);
+		}
+
+		PrefixHit longestMatch(final String iri) {
+			if (iri == null) {
+				return null;
+			}
+			for (final Entry<String, String> e : entries) {
+				final String ns = e.getValue();
+				if (iri.startsWith(ns)) {
+					return new PrefixHit(e.getKey(), ns);
+				}
+			}
+			return null;
 		}
 	}
 
@@ -2165,7 +2482,7 @@ public class TupleExprToIrConverter {
 
 		@Override
 		public String render() {
-			return (inverse ? "^" : "") + r.convertIRIToString(iri);
+			return (inverse ? "^" : "") + convertIRIToString(iri);
 		}
 
 		@Override
