@@ -405,22 +405,32 @@ public class QueryEvaluationUtil {
 		if (!(lLang || rLang)) {
 			CoreDatatype.XSD common = getCommonDatatype(strict, ld.asXSDDatatypeOrNull(), rd.asXSDDatatypeOrNull());
 			if (common != null) {
+
 				try {
+					if (common == CoreDatatype.XSD.STRING) {
+						return l.getLabel().equals(r.getLabel());
+					}
 					if (common == CoreDatatype.XSD.DOUBLE) {
 						return l.doubleValue() == r.doubleValue();
 					}
 					if (common == CoreDatatype.XSD.FLOAT) {
 						return l.floatValue() == r.floatValue();
 					}
-					if (common == CoreDatatype.XSD.DECIMAL) {
-						return l.decimalValue().equals(r.decimalValue());
-					}
-					if (common.isIntegerDatatype()) {
-						return l.integerValue().equals(r.integerValue());
-					}
 					if (common == CoreDatatype.XSD.BOOLEAN) {
 						return l.booleanValue() == r.booleanValue();
 					}
+
+					if (l.getLabel().equals(r.getLabel())) {
+						return true;
+					}
+
+					if (common == CoreDatatype.XSD.DECIMAL) {
+						return l.decimalValue().compareTo(r.decimalValue()) == 0;
+					}
+					if (common.isIntegerDatatype()) {
+						return l.integerValue().compareTo(r.integerValue()) == 0;
+					}
+
 					if (common.isCalendarDatatype()) {
 						if (ld == rd) {
 							if (l.getLabel().equals(r.getLabel())) {
@@ -449,9 +459,7 @@ public class QueryEvaluationUtil {
 							return _eq(c);
 						}
 					}
-					if (common == CoreDatatype.XSD.STRING) {
-						return l.getLabel().equals(r.getLabel());
-					}
+
 				} catch (IllegalArgumentException iae) {
 					// lexical‑to‑value failed; fall through
 				}
