@@ -110,6 +110,9 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrText;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
+import org.eclipse.rdf4j.queryrender.sparql.util.TermRenderer;
+import org.eclipse.rdf4j.queryrender.sparql.util.TextEscapes;
+import org.eclipse.rdf4j.queryrender.sparql.util.VarUtils;
 
 /**
  * Extracted converter that builds textual-IR from a TupleExpr.
@@ -130,9 +133,6 @@ public class TupleExprToIrConverter {
 	private final PrefixIndex prefixIndex;
 
 	// -------------- Local textual helpers moved from renderer --------------
-
-	private static final java.util.regex.Pattern PN_LOCAL_CHUNK = java.util.regex.Pattern
-			.compile("(?:%[0-9A-Fa-f]{2}|[-\\p{L}\\p{N}_\\u00B7]|:)+");
 
 	private static final String FN_NS = "http://www.w3.org/2005/xpath-functions#";
 	private static final Map<String, String> BUILTIN;
@@ -169,111 +169,16 @@ public class TupleExprToIrConverter {
 		BUILTIN = Collections.unmodifiableMap(m);
 	}
 
-	private static String escapeLiteral(final String s) {
-		final StringBuilder b = new StringBuilder(Math.max(16, s.length()));
-		for (int i = 0; i < s.length(); i++) {
-			final char c = s.charAt(i);
-			switch (c) {
-			case '\\':
-				b.append("\\\\");
-				break;
-			case '\"':
-				b.append("\\\"");
-				break;
-			case '\n':
-				b.append("\\n");
-				break;
-			case '\r':
-				b.append("\\r");
-				break;
-			case '\t':
-				b.append("\\t");
-				break;
-			default:
-				b.append(c);
-			}
-		}
-		return b.toString();
-	}
+	// literal escaping moved to TextEscapes
 
 	private String convertIRIToString(final IRI iri) {
-		final String s = iri.stringValue();
-		if (cfg.usePrefixCompaction) {
-			final PrefixHit hit = prefixIndex.longestMatch(s);
-			if (hit != null) {
-				final String local = s.substring(hit.namespace.length());
-				if (isPN_LOCAL(local)) {
-					return hit.prefix + ":" + local;
-				}
-			}
-		}
-		return "<" + s + ">";
+		return TermRenderer.convertIRIToString(iri, prefixIndex, cfg.usePrefixCompaction);
 	}
 
-	private boolean isPN_LOCAL(final String s) {
-		if (s == null || s.isEmpty()) {
-			return false;
-		}
-		if (s.charAt(s.length() - 1) == '.') {
-			return false;
-		}
-		char first = s.charAt(0);
-		if (!(first == ':' || Character.isLetter(first) || first == '_' || Character.isDigit(first))) {
-			return false;
-		}
-		int i = 0;
-		boolean needChunk = true;
-		while (i < s.length()) {
-			int j = i;
-			while (j < s.length() && s.charAt(j) != '.') {
-				j++;
-			}
-			String chunk = s.substring(i, j);
-			if (needChunk && chunk.isEmpty()) {
-				return false;
-			}
-			if (!chunk.isEmpty() && !PN_LOCAL_CHUNK.matcher(chunk).matches()) {
-				return false;
-			}
-			i = j + 1;
-			needChunk = false;
-		}
-		return true;
-	}
+	// PN_LOCAL checks handled in TermRenderer via SparqlNameUtils
 
 	private String convertValueToString(final Value val) {
-		if (val instanceof IRI) {
-			return convertIRIToString((IRI) val);
-		} else if (val instanceof Literal) {
-			final Literal lit = (Literal) val;
-			if (lit.getLanguage().isPresent()) {
-				return "\"" + escapeLiteral(lit.getLabel()) + "\"@" + lit.getLanguage().get();
-			}
-			final IRI dt = lit.getDatatype();
-			final String label = lit.getLabel();
-			if (XSD.BOOLEAN.equals(dt)) {
-				return ("1".equals(label) || "true".equalsIgnoreCase(label)) ? "true" : "false";
-			}
-			if (XSD.INTEGER.equals(dt)) {
-				try {
-					return new java.math.BigInteger(label).toString();
-				} catch (NumberFormatException ignore) {
-				}
-			}
-			if (XSD.DECIMAL.equals(dt)) {
-				try {
-					return new java.math.BigDecimal(label).toPlainString();
-				} catch (NumberFormatException ignore) {
-				}
-			}
-			if (dt != null && !XSD.STRING.equals(dt)) {
-				return "\"" + escapeLiteral(label) + "\"^^" + convertIRIToString(dt);
-			}
-			return "\"" + escapeLiteral(label) + "\"";
-		} else if (val instanceof BNode) {
-			return "_:" + ((BNode) val).getID();
-		}
-		return "\"" + escapeLiteral(String.valueOf(val)) + "\"";
+		return TermRenderer.convertValueToString(val, prefixIndex, cfg.usePrefixCompaction);
 	}
 
 	private String renderVarOrValue(final Var v) {
@@ -481,7 +386,7 @@ public class TupleExprToIrConverter {
 			final ValueExpr sepExpr = a.getSeparator();
 			final String sepLex = extractSeparatorLiteral(sepExpr);
 			if (sepLex != null) {
-				sb.append("; SEPARATOR=").append('"').append(escapeLiteral(sepLex)).append('"');
+				sb.append("; SEPARATOR=").append('"').append(TextEscapes.escapeLiteral(sepLex)).append('"');
 			}
 			sb.append(")");
 			return sb.toString();
@@ -1421,13 +1326,7 @@ public class TupleExprToIrConverter {
 	}
 
 	private static boolean sameVar(Var a, Var b) {
-		if (a == null || b == null) {
-			return false;
-		}
-		if (a.hasValue() || b.hasValue()) {
-			return false;
-		}
-		return Objects.equals(a.getName(), b.getName());
+		return VarUtils.sameVar(a, b);
 	}
 
 	private static String freeVarName(Var v) {
@@ -1486,7 +1385,7 @@ public class TupleExprToIrConverter {
 	}
 
 	private static boolean isAnonPathVar(Var v) {
-		return v != null && !v.hasValue() && v.getName() != null && v.getName().startsWith("_anon_path_");
+		return VarUtils.isAnonPathVar(v);
 	}
 
 	private static boolean isAnonHavingName(String name) {

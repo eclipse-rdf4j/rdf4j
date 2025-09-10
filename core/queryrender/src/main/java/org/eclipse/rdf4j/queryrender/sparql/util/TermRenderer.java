@@ -16,7 +16,6 @@ import java.math.BigInteger;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.queryrender.sparql.PrefixIndex;
@@ -30,7 +29,7 @@ public final class TermRenderer {
 	public static String convertIRIToString(final IRI iri, final PrefixIndex index, final boolean usePrefixCompaction) {
 		final String s = iri.stringValue();
 		if (usePrefixCompaction) {
-			final PrefixHit hit = index.longestMatch(s);
+			final PrefixHit hit = index.firstMatch(s);
 			if (hit != null) {
 				final String local = s.substring(hit.namespace.length());
 				if (SparqlNameUtils.isPNLocal(local)) {
@@ -74,13 +73,6 @@ public final class TermRenderer {
 			return "\"" + TextEscapes.escapeLiteral(label) + "\"";
 		} else if (val instanceof BNode) {
 			return "_:" + ((BNode) val).getID();
-		} else if (val instanceof Triple) {
-			Triple t = (Triple) val;
-			// Render components recursively; nested triples are allowed.
-			String s = convertValueToString(t.getSubject(), index, usePrefixCompaction);
-			String p = convertValueToString(t.getPredicate(), index, usePrefixCompaction);
-			String o = convertValueToString(t.getObject(), index, usePrefixCompaction);
-			return "<<" + s + " " + p + " " + o + ">>";
 		}
 		return "\"" + TextEscapes.escapeLiteral(String.valueOf(val)) + "\"";
 	}
