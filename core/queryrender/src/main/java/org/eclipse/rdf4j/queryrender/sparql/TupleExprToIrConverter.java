@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Coalesce;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -433,9 +434,163 @@ public class TupleExprToIrConverter {
 		return r.renderExprPublic(op);
 	}
 
-	private String renderExpr(final ValueExpr e) {
-		return r.renderExprPublic(e);
-	}
+    private String renderExpr(final ValueExpr e) {
+        if (e == null) {
+            return "()";
+        }
+
+        if (e instanceof AggregateOperator) {
+            return renderAggregate((AggregateOperator) e);
+        }
+
+        if (e instanceof Not) {
+            final ValueExpr a = ((Not) e).getArg();
+            if (a instanceof Exists) {
+                return "NOT " + renderExists((Exists) a);
+            }
+            if (a instanceof ListMemberOperator) {
+                return renderIn((ListMemberOperator) a, true); // NOT IN
+            }
+            final String inner = stripRedundantOuterParens(renderExpr(a));
+            return "!" + parenthesizeIfNeededExpr(inner);
+        }
+
+        if (e instanceof Var) {
+            final Var v = (Var) e;
+            return v.hasValue() ? convertValueToString(v.getValue()) : "?" + v.getName();
+        }
+        if (e instanceof ValueConstant) {
+            return convertValueToString(((ValueConstant) e).getValue());
+        }
+
+        if (e instanceof If) {
+            final If iff = (If) e;
+            return "IF(" + renderExpr(iff.getCondition()) + ", " + renderExpr(iff.getResult()) + ", "
+                    + renderExpr(iff.getAlternative()) + ")";
+        }
+        if (e instanceof Coalesce) {
+            final java.util.List<ValueExpr> args = ((Coalesce) e).getArguments();
+            final String s = args.stream().map(this::renderExpr).collect(Collectors.joining(", "));
+            return "COALESCE(" + s + ")";
+        }
+        if (e instanceof IRIFunction) {
+            return "IRI(" + renderExpr(((IRIFunction) e).getArg()) + ")";
+        }
+        if (e instanceof IsNumeric) {
+            return "isNumeric(" + renderExpr(((IsNumeric) e).getArg()) + ")";
+        }
+
+        if (e instanceof Exists) {
+            return renderExists((Exists) e);
+        }
+
+        if (e instanceof ListMemberOperator) {
+            return renderIn((ListMemberOperator) e, false);
+        }
+
+        if (e instanceof Str) {
+            return "STR(" + renderExpr(((Str) e).getArg()) + ")";
+        }
+        if (e instanceof Datatype) {
+            return "DATATYPE(" + renderExpr(((Datatype) e).getArg()) + ")";
+        }
+        if (e instanceof Lang) {
+            return "LANG(" + renderExpr(((Lang) e).getArg()) + ")";
+        }
+        if (e instanceof Bound) {
+            return "BOUND(" + renderExpr(((Bound) e).getArg()) + ")";
+        }
+        if (e instanceof IsURI) {
+            return "isIRI(" + renderExpr(((IsURI) e).getArg()) + ")";
+        }
+        if (e instanceof IsLiteral) {
+            return "isLiteral(" + renderExpr(((IsLiteral) e).getArg()) + ")";
+        }
+        if (e instanceof IsBNode) {
+            return "isBlank(" + renderExpr(((IsBNode) e).getArg()) + ")";
+        }
+
+        if (e instanceof MathExpr) {
+            final MathExpr me = (MathExpr) e;
+            if (me.getOperator() == MathOp.MINUS &&
+                    me.getLeftArg() instanceof ValueConstant &&
+                    ((ValueConstant) me.getLeftArg()).getValue() instanceof Literal) {
+                Literal l = (Literal) ((ValueConstant) me.getLeftArg()).getValue();
+                if ("0".equals(l.getLabel())) {
+                    return "(-" + renderExpr(me.getRightArg()) + ")";
+                }
+            }
+            return "(" + renderExpr(me.getLeftArg()) + " " + mathOp(me.getOperator()) + " "
+                    + renderExpr(me.getRightArg()) + ")";
+        }
+
+        if (e instanceof And) {
+            final And a = (And) e;
+            return "(" + renderExpr(a.getLeftArg()) + " && " + renderExpr(a.getRightArg()) + ")";
+        }
+        if (e instanceof Or) {
+            final Or o = (Or) e;
+            return "(" + renderExpr(o.getLeftArg()) + " || " + renderExpr(o.getRightArg()) + ")";
+        }
+        if (e instanceof Compare) {
+            final Compare c = (Compare) e;
+            return "(" + renderExpr(c.getLeftArg()) + " " + op(c.getOperator()) + " "
+                    + renderExpr(c.getRightArg()) + ")";
+        }
+        if (e instanceof SameTerm) {
+            final SameTerm st = (SameTerm) e;
+            return "sameTerm(" + renderExpr(st.getLeftArg()) + ", " + renderExpr(st.getRightArg()) + ")";
+        }
+        if (e instanceof LangMatches) {
+            final LangMatches lm = (LangMatches) e;
+            return "LANGMATCHES(" + renderExpr(lm.getLeftArg()) + ", " + renderExpr(lm.getRightArg()) + ")";
+        }
+        if (e instanceof Regex) {
+            final Regex rr = (Regex) e;
+            final String term = renderExpr(rr.getArg());
+            final String patt = renderExpr(rr.getPatternArg());
+            if (rr.getFlagsArg() != null) {
+                return "REGEX(" + term + ", " + patt + ", " + renderExpr(rr.getFlagsArg()) + ")";
+            }
+            return "REGEX(" + term + ", " + patt + ")";
+        }
+
+        if (e instanceof FunctionCall) {
+            final FunctionCall f = (FunctionCall) e;
+            final String args = f.getArgs().stream().map(this::renderExpr).collect(Collectors.joining(", "));
+            final String uri = f.getURI();
+            String builtin = BUILTIN.get(uri);
+            if (builtin == null && uri != null) {
+                builtin = BUILTIN.get(uri.toUpperCase(java.util.Locale.ROOT));
+            }
+            if (builtin != null) {
+                if ("URI".equals(builtin)) {
+                    return "IRI(" + args + ")";
+                }
+                return builtin + "(" + args + ")";
+            }
+            if (uri != null) {
+                try {
+                    IRI iri = org.eclipse.rdf4j.model.impl.SimpleValueFactory.getInstance().createIRI(uri);
+                    return convertIRIToString(iri) + "(" + args + ")";
+                } catch (IllegalArgumentException ignore) {
+                    return "<" + uri + ">(" + args + ")";
+                }
+            }
+            return "()";
+        }
+
+        if (e instanceof BNodeGenerator) {
+            final BNodeGenerator bg = (BNodeGenerator) e;
+            final ValueExpr id = bg.getNodeIdExpr();
+            if (id == null) {
+                return "BNODE()";
+            }
+            return "BNODE(" + renderExpr(id) + ")";
+        }
+
+        return "/* unsupported expr: " + e.getClass().getSimpleName() + " */";
+    }
 
 	private static boolean isConstIriVar(Var v) {
 		return v != null && v.hasValue() && v.getValue() instanceof IRI;
