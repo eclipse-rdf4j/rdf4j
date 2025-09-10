@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
+import org.eclipse.rdf4j.queryrender.sparql.util.VarUtils;
 
 /**
  * Shared helpers and small utilities for IR transform passes.
@@ -730,13 +731,7 @@ public class BaseTransform {
 	}
 
 	public static boolean sameVar(Var a, Var b) {
-		if (a == null || b == null) {
-			return false;
-		}
-		if (a.hasValue() || b.hasValue()) {
-			return false;
-		}
-		return Objects.equals(a.getName(), b.getName());
+		return VarUtils.sameVar(a, b);
 	}
 
 	/**
@@ -744,31 +739,16 @@ public class BaseTransform {
 	 * values if both are constants. Returns false when one has a value and the other does not.
 	 */
 	public static boolean sameVarOrValue(Var a, Var b) {
-		if (a == null || b == null) {
-			return false;
-		}
-		final boolean av = a.hasValue();
-		final boolean bv = b.hasValue();
-		if (av && bv) {
-			return Objects.equals(a.getValue(), b.getValue());
-		}
-		if (!av && !bv) {
-			return Objects.equals(a.getName(), b.getName());
-		}
-		return false;
+		return VarUtils.sameVarOrValue(a, b);
 	}
 
 	public static boolean isAnonPathVar(Var v) {
-		if (v == null || v.hasValue()) {
-			return false;
-		}
-		String n = v.getName();
-		return n != null && (n.startsWith(ANON_PATH_PREFIX));
+		return VarUtils.isAnonPathVar(v);
 	}
 
 	/** True when the anonymous path var explicitly encodes inverse orientation. */
 	public static boolean isAnonPathInverseVar(Var v) {
-		return v != null && !v.hasValue() && v.getName() != null && v.getName().startsWith(ANON_PATH_INVERSE_PREFIX);
+		return VarUtils.isAnonPathInverseVar(v);
 	}
 
 	/**
