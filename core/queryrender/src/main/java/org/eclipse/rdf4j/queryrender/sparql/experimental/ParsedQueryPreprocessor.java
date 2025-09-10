@@ -113,9 +113,9 @@ import com.google.common.collect.Lists;
  */
 class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException> {
 
-	public final Map<Projection, SerializableParsedTupleQuery> queriesByProjection = new HashMap<>();
+	public Map<Projection, SerializableParsedTupleQuery> queriesByProjection = new HashMap<>();
 
-	public final Stack<SerializableParsedTupleQuery> queryProfilesStack = new Stack<>();
+	public Stack<SerializableParsedTupleQuery> queryProfilesStack = new Stack<>();
 
 	public SerializableParsedTupleQuery currentQueryProfile = new SerializableParsedTupleQuery();
 
