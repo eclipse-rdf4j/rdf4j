@@ -121,6 +121,14 @@ public class TupleExprToIrConverter {
 	private static final int PREC_ATOM = 3;
 	private final TupleExprIRRenderer r;
 
+	private static boolean isConstIriVar(Var v) {
+		return v != null && v.hasValue() && v.getValue() instanceof IRI;
+	}
+
+	private static IRI asIri(Var v) {
+		return (v != null && v.hasValue() && v.getValue() instanceof IRI) ? (IRI) v.getValue() : null;
+	}
+
 	// ---------------- Normalization and helpers ----------------
 
 	public TupleExprToIrConverter(TupleExprIRRenderer renderer) {
@@ -1155,16 +1163,16 @@ public class TupleExprToIrConverter {
 			if (part instanceof StatementPattern) {
 				StatementPattern sp = (StatementPattern) part;
 				Var pv = sp.getPredicateVar();
-				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+				if (!isConstIriVar(pv)) {
 					return null;
 				}
 				Var ss = sp.getSubjectVar();
 				Var oo = sp.getObjectVar();
 				if (sameVar(cur, ss) && (isAnonPathVar(oo) || (last && sameVar(oo, obj)))) {
-					steps.add(new PathAtom((IRI) pv.getValue(), false));
+					steps.add(new PathAtom(asIri(pv), false));
 					cur = oo;
 				} else if (sameVar(cur, oo) && (isAnonPathVar(ss) || (last && sameVar(ss, obj)))) {
-					steps.add(new PathAtom((IRI) pv.getValue(), true));
+					steps.add(new PathAtom(asIri(pv), true));
 					cur = ss;
 				} else {
 					return null;
@@ -1180,7 +1188,7 @@ public class TupleExprToIrConverter {
 					}
 					StatementPattern sp = (StatementPattern) u;
 					Var pv = sp.getPredicateVar();
-					if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+					if (!isConstIriVar(pv)) {
 						return null;
 					}
 					Var ss = sp.getSubjectVar();
@@ -1312,7 +1320,7 @@ public class TupleExprToIrConverter {
 			Var ss = sp.getSubjectVar();
 			Var oo = sp.getObjectVar();
 			Var pv = sp.getPredicateVar();
-			if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+			if (!isConstIriVar(pv)) {
 				return null;
 			}
 			boolean inv;
@@ -1415,7 +1423,7 @@ public class TupleExprToIrConverter {
 		final Var ss = sp.getSubjectVar();
 		final Var oo = sp.getObjectVar();
 		final Var pv = sp.getPredicateVar();
-		if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+		if (!isConstIriVar(pv)) {
 			return null;
 		}
 		if (sameVar(subj, ss) && sameVar(oo, obj)) {
@@ -1455,19 +1463,19 @@ public class TupleExprToIrConverter {
 					continue;
 				}
 				Var pv = sp.getPredicateVar();
-				if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+				if (!isConstIriVar(pv)) {
 					continue;
 				}
 				Var ss = sp.getSubjectVar();
 				Var oo = sp.getObjectVar();
 				if (sameVar(cur, ss) && (isAnonPathVar(oo) || sameVar(oo, o))) {
-					steps.add(new PathAtom((IRI) pv.getValue(), false));
+					steps.add(new PathAtom(asIri(pv), false));
 					cur = oo;
 					used.add(sp);
 					advanced = true;
 					break;
 				} else if (sameVar(cur, oo) && (isAnonPathVar(ss) || sameVar(ss, o))) {
-					steps.add(new PathAtom((IRI) pv.getValue(), true));
+					steps.add(new PathAtom(asIri(pv), true));
 					cur = ss;
 					used.add(sp);
 					advanced = true;
