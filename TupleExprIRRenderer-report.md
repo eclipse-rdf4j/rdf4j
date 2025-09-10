@@ -176,3 +176,4 @@ The changes above are narrowly targeted, preserve safety guarantees (no user var
 
 The transforms already contain most of the machinery; the main gap is the overly strict `newScope` gate. Relaxing it for the “safe alternation” case and wrapping the fused result to preserve grouping fixes the canonicalization while keeping semantics intact.
 
+
