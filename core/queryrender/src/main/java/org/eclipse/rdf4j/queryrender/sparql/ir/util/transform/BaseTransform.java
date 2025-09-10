@@ -595,13 +595,13 @@ public class BaseTransform {
 				if (isConstantIriPredicate(sp)) {
 					IrPathTriple pt = (IrPathTriple) in.get(i + 1);
 					if (sameVar(sp.getObject(), pt.getSubject()) && isAnonPathVar(pt.getSubject())) {
-						String fused = r.convertIRIToString((IRI) p.getValue()) + "/" + pt.getPathText();
+						String fused = iri(p, r) + "/" + pt.getPathText();
 						out.add(new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), fused, pt.getObject(),
 								pt.getObjectOverride(), IrPathTriple.mergePathVars(pt), false));
 						i += 1;
 						continue;
 					} else if (sameVar(sp.getSubject(), pt.getObject()) && isAnonPathVar(pt.getObject())) {
-						String fused = pt.getPathText() + "/^" + r.convertIRIToString((IRI) p.getValue());
+						String fused = pt.getPathText() + "/^" + iri(p, r);
 						out.add(new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), fused, sp.getObject(),
 								sp.getObjectOverride(), IrPathTriple.mergePathVars(pt), false));
 						i += 1;
@@ -667,7 +667,7 @@ public class BaseTransform {
 						}
 					}
 					if (join != null) {
-						String step = r.convertIRIToString((IRI) join.getPredicate().getValue());
+						String step = iri(join.getPredicate(), r);
 						String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
 						Var newEnd = inverse ? join.getSubject() : join.getObject();
 						IrNode newEndOverride = inverse ? join.getSubjectOverride() : join.getObjectOverride();
@@ -1093,7 +1093,7 @@ public class BaseTransform {
 						}
 					}
 					if (head != null) {
-						final String ptxt = r.convertIRIToString((IRI) head.getPredicate().getValue());
+						final String ptxt = iri(head.getPredicate(), r);
 						final String prefix = (headInverse ? "^" : "") + ptxt + "/";
 						final Var newStart = headInverse ? head.getObject() : head.getSubject();
 						final IrNode newStartOverride = headInverse ? head.getObjectOverride()
@@ -1137,7 +1137,7 @@ public class BaseTransform {
 						}
 					}
 					if (join != null) {
-						final String step = r.convertIRIToString((IRI) join.getPredicate().getValue());
+						final String step = iri(join.getPredicate(), r);
 						final String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
 						final Var newEnd = inverse ? join.getSubject() : join.getObject();
 						final IrNode newEndOverride = inverse ? join.getSubjectOverride() : join.getObjectOverride();
