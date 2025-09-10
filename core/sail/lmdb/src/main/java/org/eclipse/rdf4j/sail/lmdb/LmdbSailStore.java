@@ -197,8 +197,9 @@ class LmdbSailStore implements SailStore {
 			valueStore = new ValueStore(new File(dataDir, "values"), config);
 			tripleStore = new TripleStore(new File(dataDir, "triples"), config);
 			initialized = true;
-			sketchBasedJoinEstimator.rebuildOnceSlow();
-			sketchBasedJoinEstimator.startBackgroundRefresh(3);
+			// TODO: org.eclipse.rdf4j.sail.lmdb.QueryBenchmarkTest breaks when enabling background refresh
+//			sketchBasedJoinEstimator.rebuildOnceSlow();
+//			sketchBasedJoinEstimator.startBackgroundRefresh(3);
 		} finally {
 			if (!initialized) {
 				close();
