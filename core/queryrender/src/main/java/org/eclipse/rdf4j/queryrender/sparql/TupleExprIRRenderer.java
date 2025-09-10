@@ -11,37 +11,29 @@
 
 package org.eclipse.rdf4j.queryrender.sparql;
 
-import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
-import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.PrefixIndex;
-import org.eclipse.rdf4j.queryrender.sparql.PrefixIndex.PrefixHit;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IRTextPrinter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrPrinter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
+import org.eclipse.rdf4j.queryrender.sparql.util.TermRenderer;
 
 /**
  * TupleExprIRRenderer: user-facing façade to convert RDF4J algebra back into SPARQL text.
@@ -102,8 +94,6 @@ public class TupleExprIRRenderer {
 
 	// ---------------- Configuration ----------------
 	/** Anonymous blank node variables (originating from [] in the original query). */
-	// Pattern used for conservative Turtle PN_LOCAL acceptance per segment; overall check also prohibits trailing dots.
-	private static final Pattern PN_LOCAL_CHUNK = Pattern.compile("(?:%[0-9A-Fa-f]{2}|[-\\p{L}\\p{N}_\\u00B7]|:)+");
 
 	private final Config cfg;
 	private final PrefixIndex prefixIndex;
@@ -118,45 +108,6 @@ public class TupleExprIRRenderer {
 	}
 
 	// ---------------- Experimental textual IR API ----------------
-
-	private static String escapeLiteral(final String s) {
-		final StringBuilder b = new StringBuilder(Math.max(16, s.length()));
-		for (int i = 0; i < s.length(); i++) {
-			final char c = s.charAt(i);
-			switch (c) {
-			case '\\':
-				b.append("\\\\");
-				break;
-			case '\"':
-				b.append("\\\"");
-				break;
-			case '\n':
-				b.append("\\n");
-				break;
-			case '\r':
-				b.append("\\r");
-				break;
-			case '\t':
-				b.append("\\t");
-				break;
-			default:
-				b.append(c);
-			}
-		}
-		return b.toString();
-	}
-
-	// ---------------- Utilities: vars, aggregates, free vars ----------------
-
-	// Merge adjacent identical GRAPH blocks to improve grouping when IR emits across passes
-	private static String mergeAdjacentGraphBlocks(final String s) {
-		// Disabled for correctness: merging adjacent GRAPH blocks at the string level can
-		// accidentally elide required GRAPH keywords inside nested contexts (e.g., inside
-		// FILTER EXISTS bodies) where intervening constructs (like FILTER lines or grouping)
-		// make merges unsafe. IR transforms already coalesce adjacent graphs structurally.
-		// Keep the text as-is to preserve exact grouping expected by tests.
-		return s;
-	}
 
 	// Package-private accessors for the converter
 	Config getConfig() {
@@ -232,7 +183,7 @@ public class TupleExprIRRenderer {
 		}
 		IRTextPrinter printer = new IRTextPrinter(out, this, cfg);
 		ir.print(printer);
-		return mergeAdjacentGraphBlocks(out.toString()).trim();
+		return out.toString().trim();
 	}
 
 	// Recursively apply the transformer pipeline to a select and any nested subselects.
@@ -287,7 +238,7 @@ public class TupleExprIRRenderer {
 		// WHERE (from IR)
 		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
 		new IRTextPrinter(out, this, cfg).printWhere(ir.getWhere());
-		return mergeAdjacentGraphBlocks(out.toString()).trim();
+		return out.toString().trim();
 	}
 
 	private String renderSelectInternal(final TupleExpr tupleExpr,
@@ -328,63 +279,13 @@ public class TupleExprIRRenderer {
 	}
 
 	public String convertValueToString(final Value val) {
-		if (val instanceof IRI) {
-			return convertIRIToString((IRI) val);
-		} else if (val instanceof Literal) {
-			final Literal lit = (Literal) val;
-
-			// Language-tagged strings: always quoted@lang
-			if (lit.getLanguage().isPresent()) {
-				return "\"" + escapeLiteral(lit.getLabel()) + "\"@" + lit.getLanguage().get();
-			}
-
-			final IRI dt = lit.getDatatype();
-			final String label = lit.getLabel();
-
-			// Canonical tokens for core datatypes
-			if (XSD.BOOLEAN.equals(dt)) {
-				return ("1".equals(label) || "true".equalsIgnoreCase(label)) ? "true" : "false";
-			}
-			if (XSD.INTEGER.equals(dt)) {
-				try {
-					return new BigInteger(label).toString();
-				} catch (NumberFormatException ignore) {
-				}
-			}
-			if (XSD.DECIMAL.equals(dt)) {
-				try {
-					return new BigDecimal(label).toPlainString();
-				} catch (NumberFormatException ignore) {
-				}
-			}
-
-			// Other datatypes
-			if (dt != null && !XSD.STRING.equals(dt)) {
-				return "\"" + escapeLiteral(label) + "\"^^" + convertIRIToString(dt);
-			}
-
-			// Plain string
-			return "\"" + escapeLiteral(label) + "\"";
-		} else if (val instanceof BNode) {
-			return "_:" + ((BNode) val).getID();
-		}
-		return "\"" + escapeLiteral(String.valueOf(val)) + "\"";
+		return TermRenderer.convertValueToString(val, prefixIndex, cfg.usePrefixCompaction);
 	}
 
 	// ---- Aggregates ----
 
 	public String convertIRIToString(final IRI iri) {
-		final String s = iri.stringValue();
-		if (cfg.usePrefixCompaction) {
-			final PrefixHit hit = prefixIndex.longestMatch(s);
-			if (hit != null) {
-				final String local = s.substring(hit.namespace.length());
-				if (isPN_LOCAL(local)) {
-					return hit.prefix + ":" + local;
-				}
-			}
-		}
-		return "<" + s + ">";
+		return TermRenderer.convertIRIToString(iri, prefixIndex, cfg.usePrefixCompaction);
 	}
 
 	/**
@@ -396,39 +297,6 @@ public class TupleExprIRRenderer {
 			return convertIRIToString((IRI) v.getValue());
 		}
 		return null;
-	}
-
-	private boolean isPN_LOCAL(final String s) {
-		if (s == null || s.isEmpty()) {
-			return false;
-		}
-		if (s.charAt(s.length() - 1) == '.') {
-			return false; // no trailing dot
-		}
-		// Must start with PN_CHARS_U | ':' | [0-9]
-		char first = s.charAt(0);
-		if (!(first == ':' || Character.isLetter(first) || first == '_' || Character.isDigit(first))) {
-			return false;
-		}
-		// All chunks must be acceptable; dots allowed between chunks
-		int i = 0;
-		boolean needChunk = true;
-		while (i < s.length()) {
-			int j = i;
-			while (j < s.length() && s.charAt(j) != '.') {
-				j++;
-			}
-			String chunk = s.substring(i, j);
-			if (needChunk && chunk.isEmpty()) {
-				return false;
-			}
-			if (!chunk.isEmpty() && !PN_LOCAL_CHUNK.matcher(chunk).matches()) {
-				return false;
-			}
-			i = j + 1; // skip dot (if any)
-			needChunk = false;
-		}
-		return true;
 	}
 
 	// NOTE: NOT IN reconstruction moved into NormalizeFilterNotInTransform.
