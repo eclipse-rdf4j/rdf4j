@@ -367,7 +367,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						// and has a constant predicate, treat it as the tail step to be fused and consume it.
 						final IrStatementPattern sp2 = (IrStatementPattern) in.get(k);
 						final Var pv = sp2.getPredicate();
-						if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
+						if (isConstantIriPredicate(sp2)) {
 							if (sameVar(mt1.object, sp2.getSubject()) || sameVar(mt1.object, sp2.getObject())) {
 								mt2 = new MatchTriple(sp2, sp2.getSubject(), sp2.getPredicate(), sp2.getObject());
 								consumedG2 = true;
@@ -384,7 +384,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						final boolean forward = sameVar(mt1.object, mt2.subject);
 						final boolean inverse = !forward && sameVar(mt1.object, mt2.object);
 						if (forward || inverse) {
-							final String step = r.convertIRIToString((IRI) mt2.predicate.getValue());
+							final String step = iri(mt2.predicate, r);
 							final String path = npsTxt + "/" + (inverse ? "^" : "") + step;
 							final Var end = forward ? mt2.object : mt2.subject;
 							IrStatementPattern srcSp = (mt1.node instanceof IrStatementPattern)
@@ -655,7 +655,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						}
 						final IrStatementPattern sp = (IrStatementPattern) cand;
 						final Var pv = sp.getPredicate();
-						if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+						if (!isConstantIriPredicate(sp)) {
 							continue;
 						}
 						if (sameVar(sp.getSubject(), spVar.getSubject()) && !isAnonPathVar(sp.getObject())) {
@@ -682,7 +682,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						}
 						final IrStatementPattern sp = (IrStatementPattern) cand;
 						final Var pv = sp.getPredicate();
-						if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+						if (!isConstantIriPredicate(sp)) {
 							continue;
 						}
 						if (sameVar(sp.getSubject(), spVar.getObject()) && !isAnonPathVar(sp.getObject())) {
@@ -700,8 +700,8 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 					}
 
 					if (k1 != null && k2 != null && startVar != null && endVar != null) {
-						final String k1Step = r.convertIRIToString((IRI) k1.getPredicate().getValue());
-						final String k2Step = r.convertIRIToString((IRI) k2.getPredicate().getValue());
+						final String k1Step = iri(k1.getPredicate(), r);
+						final String k2Step = iri(k2.getPredicate(), r);
 						final List<String> rev = new ArrayList<>(ns2.items);
 						final String nps = "!(" + String.join("|", rev) + ")";
 						final String path = (k1Inverse ? "^" + k1Step : k1Step) + "/" + nps + "/"

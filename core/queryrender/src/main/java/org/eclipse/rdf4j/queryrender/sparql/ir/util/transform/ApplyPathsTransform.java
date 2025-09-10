@@ -239,8 +239,8 @@ public final class ApplyPathsTransform extends BaseTransform {
 					Var bs = b.getSubject(), bo = b.getObject();
 					// forward-forward: ?s p1 ?x . ?x p2 ?o
 					if (isAnonPathVar(ao) && sameVar(ao, bs)) {
-						String p1 = r.convertIRIToString((IRI) ap.getValue());
-						String p2 = r.convertIRIToString((IRI) bp.getValue());
+						String p1 = iri(ap, r);
+						String p2 = iri(bp, r);
 						Set<Var> s = new HashSet<>();
 						if (isAnonPathVar(ao)) {
 							s.add(ao);
@@ -256,11 +256,11 @@ public final class ApplyPathsTransform extends BaseTransform {
 					if (n instanceof IrStatementPattern && i + 1 < in.size() && in.get(i + 1) instanceof IrPathTriple) {
 						IrStatementPattern sp = (IrStatementPattern) n;
 						Var p1 = sp.getPredicate();
-						if (p1 != null && p1.hasValue() && p1.getValue() instanceof IRI) {
+						if (isConstantIriPredicate(sp)) {
 							IrPathTriple pt1 = (IrPathTriple) in.get(i + 1);
 							if (sameVar(sp.getObject(), pt1.getSubject())) {
 								// forward chaining
-								String fused = r.convertIRIToString((IRI) p1.getValue()) + "/" + pt1.getPathText();
+								String fused = iri(p1, r) + "/" + pt1.getPathText();
 								{
 									Set<Var> pathVars = new HashSet<>(pt1.getPathVars());
 									pathVars.addAll(IrPathTriple.fromStatementPatterns(sp));
@@ -271,7 +271,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 								continue;
 							} else if (sameVar(sp.getSubject(), pt1.getObject())) {
 								// inverse chaining
-								String fused = pt1.getPathText() + "/^" + r.convertIRIToString((IRI) p1.getValue());
+								String fused = pt1.getPathText() + "/^" + iri(p1, r);
 								{
 									Set<Var> pathVars = new HashSet<>(pt1.getPathVars());
 									pathVars.addAll(IrPathTriple.fromStatementPatterns(sp));
@@ -284,7 +284,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 								// SP and PT share their subject (an _anon_path_* bridge). Prefix the PT with an inverse
 								// step from the SP and start from SP.object (which may be a user var like ?y).
 								// This preserves bindings while eliminating the extra bridging triple.
-								String fused = "^" + r.convertIRIToString((IRI) p1.getValue()) + "/"
+								String fused = "^" + iri(p1, r) + "/"
 										+ pt1.getPathText();
 								{
 									Set<Var> pathVars = new HashSet<>(pt1.getPathVars());
@@ -317,7 +317,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 						IrPathTriple pt = (IrPathTriple) n;
 						IrStatementPattern sp = (IrStatementPattern) in.get(i + 1);
 						Var pv = sp.getPredicate();
-						if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
+						if (isConstantIriPredicate(sp)) {
 							// Only fuse when the bridge var (?mid) is an _anon_path_* var; otherwise we might elide a
 							// user
 							// var like ?y
@@ -800,14 +800,14 @@ public final class ApplyPathsTransform extends BaseTransform {
 					}
 					if (pt != null && sp != null) {
 						Var pv = sp.getPredicate();
-						if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
+						if (isConstantIriPredicate(sp)) {
 							final Var wantS = pt.getSubject();
 							final Var wantO = pt.getObject();
 							String atom = null;
 							if (sameVar(wantS, sp.getSubject()) && sameVar(wantO, sp.getObject())) {
-								atom = r.convertIRIToString((IRI) pv.getValue());
+								atom = iri(pv, r);
 							} else if (sameVar(wantS, sp.getObject()) && sameVar(wantO, sp.getSubject())) {
-								atom = "^" + r.convertIRIToString((IRI) pv.getValue());
+								atom = "^" + iri(pv, r);
 							}
 							if (atom != null) {
 								final String alt = (ptIdx == 0) ? (pt.getPathText() + "|" + atom)
