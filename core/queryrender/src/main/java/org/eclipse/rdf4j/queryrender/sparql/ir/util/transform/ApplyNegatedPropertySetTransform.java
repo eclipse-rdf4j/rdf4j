@@ -468,7 +468,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 				if (mt2 != null) {
 					final boolean forward = sameVar(mt1.object, mt2.subject);
 					final boolean inverse = !forward && sameVar(mt1.object, mt2.object);
-					final String step = r.convertIRIToString((IRI) mt2.predicate.getValue());
+					final String step = iri(mt2.predicate, r);
 					final String path = nps + "/" + (inverse ? "^" : "") + step;
 					final Var end = forward ? mt2.object : mt2.subject;
 					newInner.add(new IrPathTriple(subj, path, end, false, IrPathTriple.fromStatementPatterns(srcSp)));
@@ -619,7 +619,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						// Build !(items) and invert members to !(^items)
 						final String base = "!(" + joinIrisWithPreferredOrder(ns.items, r) + ")";
 						final String inv = invertNegatedPropertySet(base);
-						final String step = r.convertIRIToString((IRI) tp.getValue());
+						final String step = iri(tp, r);
 						final String path = inv + "/" + step;
 						IrPathTriple pt3 = new IrPathTriple(sp.getObject(), sp.getObjectOverride(), path,
 								tail.getObject(), tail.getObjectOverride(),

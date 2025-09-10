@@ -189,9 +189,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 				IrStatementPattern sp = (IrStatementPattern) cur;
 				sVar = sp.getSubject();
 				oVar = sp.getObject();
-				ptxt = sp.getPredicate() != null && sp.getPredicate().hasValue()
-						? r.convertIRIToString((IRI) sp.getPredicate().getValue())
-						: null;
+				ptxt = isConstantIriPredicate(sp) ? iri(sp.getPredicate(), r) : null;
 				// no-op
 			}
 
