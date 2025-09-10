@@ -29,6 +29,9 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.queryrender.sparql.PrefixIndex;
+import org.eclipse.rdf4j.queryrender.sparql.PrefixIndex.PrefixHit;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IRTextPrinter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
@@ -41,7 +44,15 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
 
 /**
- * TupleExprIRRenderer: render RDF4J algebra back into SPARQL text (via a compact internal normalization/IR step), with:
+ * TupleExprIRRenderer: user-facing façade to convert RDF4J algebra back into SPARQL text.
+ *
+ * <p>
+ * Conversion of {@link TupleExpr} into a textual IR and expression rendering is delegated to
+ * {@link TupleExprToIrConverter}. This class orchestrates IR transforms and printing, and provides a small
+ * configuration surface and convenience entrypoints.
+ * </p>
+ *
+ * Features:
  *
  * <ul>
  * <li>SELECT / ASK / DESCRIBE / CONSTRUCT forms</li>
@@ -219,7 +230,7 @@ public class TupleExprIRRenderer {
 		if (!subselect) {
 			printPrologueAndDataset(out, dataset);
 		}
-		IRTextPrinter printer = new IRTextPrinter(out);
+		IRTextPrinter printer = new IRTextPrinter(out, this, cfg);
 		ir.print(printer);
 		return mergeAdjacentGraphBlocks(out.toString()).trim();
 	}
@@ -275,7 +286,7 @@ public class TupleExprIRRenderer {
 		out.append("ASK");
 		// WHERE (from IR)
 		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
-		new IRTextPrinter(out).printWhere(ir.getWhere());
+		new IRTextPrinter(out, this, cfg).printWhere(ir.getWhere());
 		return mergeAdjacentGraphBlocks(out.toString()).trim();
 	}
 
@@ -302,7 +313,7 @@ public class TupleExprIRRenderer {
 		}
 	}
 
-	private String convertVarToString(final Var v) {
+	public String convertVarToString(final Var v) {
 		if (v == null) {
 			return "?_";
 		}
@@ -462,149 +473,6 @@ public class TupleExprIRRenderer {
 		public final List<IRI> namedGraphs = new ArrayList<>();
 		public boolean debugIR = false; // print IR before and after transforms
 		public boolean valuesPreserveOrder = false; // keep VALUES column order as given by BSA iteration
-	}
-
-	private static final class PrefixHit {
-		final String prefix;
-		final String namespace;
-
-		PrefixHit(final String prefix, final String namespace) {
-			this.prefix = prefix;
-			this.namespace = namespace;
-		}
-	}
-
-	private static final class PrefixIndex {
-		private final List<Entry<String, String>> entries;
-
-		PrefixIndex(final Map<String, String> prefixes) {
-			final List<Entry<String, String>> list = new ArrayList<>();
-			if (prefixes != null) {
-				list.addAll(prefixes.entrySet());
-			}
-			this.entries = Collections.unmodifiableList(list);
-		}
-
-		PrefixHit longestMatch(final String iri) {
-			if (iri == null) {
-				return null;
-			}
-			for (final Entry<String, String> e : entries) {
-				final String ns = e.getValue();
-				if (iri.startsWith(ns)) {
-					return new PrefixHit(e.getKey(), ns);
-				}
-			}
-			return null;
-		}
-	}
-
-	/**
-	 * Simple IR→text pretty‑printer using renderer helpers. Responsible only for layout/indentation and delegating
-	 * term/IRI rendering back to the renderer; it does not perform structural rewrites (those happen in IR transforms).
-	 */
-	private final class IRTextPrinter implements IrPrinter {
-		private final StringBuilder out;
-		private int level = 0;
-		private boolean inlineActive = false;
-
-		IRTextPrinter(StringBuilder out) {
-			this.out = out;
-		}
-
-		private void printWhere(final IrBGP w) {
-			if (w == null) {
-				openBlock();
-				closeBlock();
-				return;
-			}
-			// Pre-scan to count anonymous bnode variables to decide when to print labels
-			w.print(this);
-		}
-
-		public void printLines(final List<IrNode> lines) {
-			if (lines == null) {
-				return;
-			}
-			for (IrNode line : lines) {
-				line.print(this);
-			}
-		}
-
-		private void indent() {
-			out.append(cfg.indent.repeat(Math.max(0, level)));
-		}
-
-		@Override
-		public void startLine() {
-			if (!inlineActive) {
-				indent();
-				inlineActive = true;
-			}
-		}
-
-		@Override
-		public void append(final String s) {
-			if (!inlineActive) {
-				// If appending at the start of a line, apply indentation first
-				int len = out.length();
-				if (len == 0 || out.charAt(len - 1) == '\n') {
-					indent();
-				}
-			}
-			out.append(s);
-		}
-
-		@Override
-		public void endLine() {
-			out.append('\n');
-			inlineActive = false;
-		}
-
-		@Override
-		public void line(String s) {
-			if (inlineActive) {
-				out.append(s).append('\n');
-				inlineActive = false;
-				return;
-			}
-			indent();
-			out.append(s).append('\n');
-		}
-
-		@Override
-		public void openBlock() {
-			if (!inlineActive) {
-				indent();
-			}
-			out.append('{').append('\n');
-			level++;
-			// Opening a block completes any inline header that preceded it (e.g., "OPTIONAL ")
-			inlineActive = false;
-		}
-
-		@Override
-		public void closeBlock() {
-			level--;
-			indent();
-			out.append('}').append('\n');
-		}
-
-		@Override
-		public void pushIndent() {
-			level++;
-		}
-
-		@Override
-		public void popIndent() {
-			level--;
-		}
-
-		@Override
-		public String convertVarToString(Var v) {
-			return TupleExprIRRenderer.this.convertVarToString(v);
-		}
-
 	}
 
 }

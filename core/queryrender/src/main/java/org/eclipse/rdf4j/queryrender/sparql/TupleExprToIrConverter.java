@@ -85,6 +85,8 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.queryrender.sparql.PrefixIndex;
+import org.eclipse.rdf4j.queryrender.sparql.PrefixIndex.PrefixHit;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer.Config;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBind;
@@ -2661,41 +2663,6 @@ public class TupleExprToIrConverter {
 		GroupByTerm(String var, ValueExpr expr) {
 			this.var = var;
 			this.expr = expr;
-		}
-	}
-
-	private static final class PrefixHit {
-		final String prefix;
-		final String namespace;
-
-		PrefixHit(final String prefix, final String namespace) {
-			this.prefix = prefix;
-			this.namespace = namespace;
-		}
-	}
-
-	private static final class PrefixIndex {
-		private final List<Entry<String, String>> entries;
-
-		PrefixIndex(final Map<String, String> prefixes) {
-			final List<Entry<String, String>> list = new ArrayList<>();
-			if (prefixes != null) {
-				list.addAll(prefixes.entrySet());
-			}
-			this.entries = Collections.unmodifiableList(list);
-		}
-
-		PrefixHit longestMatch(final String iri) {
-			if (iri == null) {
-				return null;
-			}
-			for (final Entry<String, String> e : entries) {
-				final String ns = e.getValue();
-				if (iri.startsWith(ns)) {
-					return new PrefixHit(e.getKey(), ns);
-				}
-			}
-			return null;
 		}
 	}
 
