@@ -195,7 +195,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 				return null;
 			}
 			Var p = sp.getPredicate();
-			if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
+			if (!isConstantIriPredicate(sp)) {
 				return null;
 			}
 			String step = r.convertIRIToString((IRI) p.getValue());
@@ -314,7 +314,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 				allGraphWrapped = false;
 				IrStatementPattern sp = (IrStatementPattern) ln;
 				Var p = sp.getPredicate();
-				if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
+				if (!isConstantIriPredicate(sp)) {
 					return null;
 				}
 				String step = r.convertIRIToString((IRI) p.getValue());
@@ -342,7 +342,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 					} else if (!sameVar(commonGraph, g.getGraph())) {
 						return null;
 					}
-					String step = r.convertIRIToString((IRI) p.getValue());
+					String step = iri(p, r);
 					if (sameVar(varNamed(sName), sp.getSubject()) && sameVar(varNamed(oName), sp.getObject())) {
 						steps.add(step);
 					} else if (sameVar(varNamed(sName), sp.getObject())
@@ -580,7 +580,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 				if (p == null || !p.hasValue() || !(p.getValue() instanceof IRI)) {
 					return null;
 				}
-				String step = r.convertIRIToString((IRI) p.getValue());
+				String step = iri(p, r);
 				if (sameVar(varNamed(sName), sp.getSubject()) && sameVar(varNamed(oName), sp.getObject())) {
 					steps.add(step);
 				} else if (sameVar(varNamed(sName), sp.getObject()) && sameVar(varNamed(oName), sp.getSubject())) {

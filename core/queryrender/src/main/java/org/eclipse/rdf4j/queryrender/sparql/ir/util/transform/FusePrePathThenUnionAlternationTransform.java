@@ -131,9 +131,8 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 				}
 			} else if (only instanceof IrStatementPattern) {
 				IrStatementPattern sp = (IrStatementPattern) only;
-				if (sp.getPredicate() != null && sp.getPredicate().hasValue()
-						&& sp.getPredicate().getValue() instanceof IRI) {
-					String step = r.convertIRIToString((IRI) sp.getPredicate().getValue());
+				if (isConstantIriPredicate(sp)) {
+					String step = iri(sp.getPredicate(), r);
 					if (sameVar(mid, sp.getSubject())) {
 						return new Tail(sp.getObject(), step);
 					}
@@ -157,14 +156,14 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 			}
 			if (sameVar(mid, a.getSubject()) && sameVar(a.getObject(), c.getSubject())) {
 				// forward-forward
-				String step1 = r.convertIRIToString((IRI) a.getPredicate().getValue());
-				String step2 = r.convertIRIToString((IRI) c.getPredicate().getValue());
+				String step1 = iri(a.getPredicate(), r);
+				String step2 = iri(c.getPredicate(), r);
 				return new Tail(c.getObject(), step1 + "/" + step2);
 			}
 			if (sameVar(mid, a.getObject()) && sameVar(a.getSubject(), c.getObject())) {
 				// inverse-inverse
-				String step1 = "^" + r.convertIRIToString((IRI) a.getPredicate().getValue());
-				String step2 = "^" + r.convertIRIToString((IRI) c.getPredicate().getValue());
+				String step1 = "^" + iri(a.getPredicate(), r);
+				String step2 = "^" + iri(c.getPredicate(), r);
 				return new Tail(c.getSubject(), step1 + "/" + step2);
 			}
 		}
