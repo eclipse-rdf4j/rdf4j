@@ -178,7 +178,7 @@ public class TupleExprIRRenderer {
 		if (!subselect) {
 			printPrologueAndDataset(out, dataset);
 		}
-		IRTextPrinter printer = new IRTextPrinter(out, this, cfg);
+		IRTextPrinter printer = new IRTextPrinter(out, this::convertVarToString, cfg);
 		ir.print(printer);
 		return out.toString().trim();
 	}
@@ -234,7 +234,7 @@ public class TupleExprIRRenderer {
 		out.append("ASK");
 		// WHERE (from IR)
 		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
-		new IRTextPrinter(out, this, cfg).printWhere(ir.getWhere());
+		new IRTextPrinter(out, this::convertVarToString, cfg).printWhere(ir.getWhere());
 		return out.toString().trim();
 	}
 
@@ -261,7 +261,7 @@ public class TupleExprIRRenderer {
 		}
 	}
 
-	public String convertVarToString(final Var v) {
+	String convertVarToString(final Var v) {
 		if (v == null) {
 			return "?_";
 		}

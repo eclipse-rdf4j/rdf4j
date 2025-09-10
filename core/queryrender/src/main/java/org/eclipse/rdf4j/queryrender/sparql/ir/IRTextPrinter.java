@@ -11,9 +11,9 @@
 package org.eclipse.rdf4j.queryrender.sparql.ir;
 
 import java.util.List;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 
 /**
  * Simple IR→text pretty‑printer using renderer helpers. Responsible only for layout/indentation and delegating term/IRI
@@ -21,14 +21,15 @@ import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
  */
 public final class IRTextPrinter implements IrPrinter {
 	private final StringBuilder out;
-	private final TupleExprIRRenderer renderer;
-	private final TupleExprIRRenderer.Config cfg;
+	private final Function<Var, String> varFormatter;
+	private final org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer.Config cfg;
 	private int level = 0;
 	private boolean inlineActive = false;
 
-	public IRTextPrinter(StringBuilder out, TupleExprIRRenderer renderer, TupleExprIRRenderer.Config cfg) {
+	public IRTextPrinter(StringBuilder out, Function<Var, String> varFormatter,
+			org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer.Config cfg) {
 		this.out = out;
-		this.renderer = renderer;
+		this.varFormatter = varFormatter;
 		this.cfg = cfg;
 	}
 
@@ -121,6 +122,6 @@ public final class IRTextPrinter implements IrPrinter {
 
 	@Override
 	public String convertVarToString(Var v) {
-		return renderer.convertVarToString(v);
+		return varFormatter.apply(v);
 	}
 }
