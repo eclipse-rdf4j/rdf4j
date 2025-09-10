@@ -107,7 +107,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrText;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
 
 /**
@@ -2639,27 +2638,6 @@ public class TupleExprToIrConverter {
 		public void meetOther(final QueryModelNode node) {
 			where.add(new IrText("# unsupported node: " + node.getClass().getSimpleName(), false));
 		}
-	}
-
-	/** Detects if any node in the subtree explicitly marks a variable scope change. */
-	private static boolean containsVariableScopeChange(final TupleExpr expr) {
-		if (expr == null) {
-			return false;
-		}
-		final boolean[] seen = new boolean[] { false };
-		expr.visit(new AbstractQueryModelVisitor<>() {
-			@Override
-			protected void meetNode(QueryModelNode node) {
-				if (node instanceof AbstractQueryModelNode) {
-					if (((AbstractQueryModelNode) node).isVariableScopeChange()) {
-						seen[0] = true;
-						return; // early note; still visit children for completeness
-					}
-				}
-				super.meetNode(node);
-			}
-		});
-		return seen[0];
 	}
 
 	/**
