@@ -290,57 +290,6 @@ public class TupleExprIRRenderer {
 	// ---------------- Normalization shell ----------------
 
 	/**
-	 * Ensure a text snippet is valid as a SPARQL Constraint (used in FILTER/HAVING). If it already looks like a
-	 * function/built-in call (e.g., isIRI(?x), REGEX(...), EXISTS { ... }), or is already bracketted, it is returned as
-	 * is. Otherwise, wrap it in parentheses.
-	 */
-	public static String asConstraint(final String s) {
-		if (s == null) {
-			return "()";
-		}
-		final String t = s.trim();
-		if (t.isEmpty()) {
-			return "()";
-		}
-		// Already parenthesized and spanning full expression
-		if (t.charAt(0) == '(' && t.charAt(t.length() - 1) == ')') {
-			int depth = 0;
-			for (int i = 0; i < t.length(); i++) {
-				char ch = t.charAt(i);
-				if (ch == '(') {
-					depth++;
-				} else if (ch == ')') {
-					depth--;
-				}
-				if (depth == 0 && i < t.length() - 1) {
-					// closing too early -> not a single outer pair
-					break;
-				}
-				if (i == t.length() - 1 && depth == 0) {
-					return t; // single outer pair spans whole string
-				}
-			}
-		}
-
-		// EXISTS / NOT EXISTS { ... }
-		if (t.startsWith("EXISTS ") || t.startsWith("NOT EXISTS ")) {
-			return t;
-		}
-
-		// Function/built-in-like call: head(...) with no whitespace in head
-		int lpar = t.indexOf('(');
-		if (lpar > 0 && t.endsWith(")")) {
-			String head = t.substring(0, lpar).trim();
-			if (!head.isEmpty() && head.indexOf(' ') < 0) {
-				return t;
-			}
-		}
-
-		// Otherwise, bracket to form a valid Constraint
-		return "(" + t + ")";
-	}
-
-	/**
 	 * Decide if an expression should be wrapped in parentheses and return either the original expression or a
 	 * parenthesized version. Heuristic: if the expression already has surrounding parentheses or looks like a
 	 * simple/atomic term (variable, IRI, literal, number, or function call), we omit additional parentheses. Otherwise
@@ -464,20 +413,6 @@ public class TupleExprIRRenderer {
 		return cfg;
 	}
 
-	// ---------------- Block/Node printer ----------------
-
-	String renderExprPublic(final ValueExpr e) {
-		return renderExpr(e);
-	}
-
-	String renderVarOrValuePublic(final Var v) {
-		return convertVarToString(v);
-	}
-
-	String renderValuePublic(final Value v) {
-		return convertValueToString(v);
-	}
-
 	/**
 	 * Build a best‑effort textual IR for a SELECT‑form query.
 	 *
@@ -559,18 +494,17 @@ public class TupleExprIRRenderer {
 		IrSelect top = IrTransforms.transformUsingChildren(select, this);
 		// Then, transform nested subselects via a child-mapping pass
 		IrNode mapped = top.transformChildren(child -> {
-			if (child instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP) {
+			if (child instanceof IrBGP) {
 				// descend into BGP lines to replace IrSubSelects
-				org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP bgp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP) child;
-				org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP nb = new org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP(
-						bgp.getLines().isEmpty() ? false : bgp.isNewScope());
+				IrBGP bgp = (IrBGP) child;
+				IrBGP nb = new IrBGP(!bgp.getLines().isEmpty() && bgp.isNewScope());
 				nb.setNewScope(bgp.isNewScope());
-				for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode ln : bgp.getLines()) {
-					if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect) {
-						org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect ss = (org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect) ln;
+				for (IrNode ln : bgp.getLines()) {
+					if (ln instanceof IrSubSelect) {
+						IrSubSelect ss = (IrSubSelect) ln;
 						IrSelect subSel = ss.getSelect();
 						IrSelect subTx = transformIrRecursively(subSel);
-						nb.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect(subTx, ss.isNewScope()));
+						nb.add(new IrSubSelect(subTx, ss.isNewScope()));
 					} else {
 						nb.add(ln);
 					}
