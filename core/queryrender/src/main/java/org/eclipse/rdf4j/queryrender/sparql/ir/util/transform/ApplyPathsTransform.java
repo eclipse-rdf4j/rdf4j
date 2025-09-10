@@ -298,143 +298,75 @@ public final class ApplyPathsTransform extends BaseTransform {
 							}
 						}
 
-						// ---- SP followed by IrPathTriple over the bridge → fuse into a single path triple ----
-						if (n instanceof IrStatementPattern && i + 1 < in.size()
-								&& in.get(i + 1) instanceof IrPathTriple) {
-							IrStatementPattern sp2 = (IrStatementPattern) n;
-							Var p2 = sp2.getPredicate();
-							if (p2 != null && p2.hasValue() && p2.getValue() instanceof IRI) {
-								IrPathTriple pt2 = (IrPathTriple) in.get(i + 1);
-								if (sameVar(sp2.getObject(), pt2.getSubject())) {
-									// forward chaining
-									String fused = r.convertIRIToString((IRI) p2.getValue()) + "/" + pt2.getPathText();
-									{
-										Set<Var> pathVars = new HashSet<>(pt2.getPathVars());
-										pathVars.addAll(IrPathTriple.fromStatementPatterns(sp2));
-										out.add(new IrPathTriple(sp2.getSubject(), sp2.getSubjectOverride(), fused,
-												pt2.getObject(), pt2.getObjectOverride(), pathVars, false));
-									}
-									i += 1;
-									continue;
-								} else if (sameVar(sp2.getSubject(), pt2.getObject())) {
-									// inverse chaining
-									String fused = pt2.getPathText() + "/^" + r.convertIRIToString((IRI) p2.getValue());
-									{
-										Set<Var> pathVars = new HashSet<>(pt2.getPathVars());
-										pathVars.addAll(IrPathTriple.fromStatementPatterns(sp2));
-										out.add(new IrPathTriple(pt2.getSubject(), pt2.getSubjectOverride(), fused,
-												sp2.getObject(), sp2.getObjectOverride(), pathVars, false));
-									}
-									i += 1;
-									continue;
-								}
-							}
-						}
 					}
-				}
 
-				// ---- Fuse an IrPathTriple followed by a constant-predicate SP that connects to the path's object ----
-				if (n instanceof IrPathTriple && i + 1 < in.size() && in.get(i + 1) instanceof IrStatementPattern) {
-					// If there is a preceding SP that likely wants to fuse with this PT first, defer this PT+SP fusion.
-					if (i - 1 >= 0 && in.get(i - 1) instanceof IrStatementPattern) {
-						IrStatementPattern spPrev = (IrStatementPattern) in.get(i - 1);
-						IrPathTriple thisPt = (IrPathTriple) n;
-						if (sameVar(spPrev.getSubject(), thisPt.getSubject())
-								|| sameVar(spPrev.getObject(), thisPt.getSubject())) {
-							out.add(n);
-							continue;
-						}
-					}
-					IrPathTriple pt = (IrPathTriple) n;
-					IrStatementPattern sp = (IrStatementPattern) in.get(i + 1);
-					Var pv = sp.getPredicate();
-					if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
-						// Only fuse when the bridge var (?mid) is an _anon_path_* var; otherwise we might elide a user
-						// var like ?y
-						if (!isAnonPathVar(pt.getObject())) {
-							out.add(n);
-							continue;
-						}
-						// Lookahead: if there is a following IrPathTriple that shares the join end of this PT+SP,
-						// defer fusion to allow the SP+PT rule to construct a grouped right-hand path. This yields
-						// ((... )*/(^ex:d/(...)+)) grouping before appending a tail like /foaf:name.
-						if (i + 2 < in.size() && in.get(i + 2) instanceof IrPathTriple) {
-							IrPathTriple pt2 = (IrPathTriple) in.get(i + 2);
-							Var candidateEnd = null;
-							if (sameVar(pt.getObject(), sp.getSubject())) {
-								candidateEnd = sp.getObject();
-							} else if (sameVar(pt.getObject(), sp.getObject())) {
-								candidateEnd = sp.getSubject();
-							}
-							if ((sameVar(candidateEnd, pt2.getSubject())
-									|| sameVar(candidateEnd, pt2.getObject()))) {
-								// Defer; do not consume SP here
+					// ---- Fuse an IrPathTriple followed by a constant-predicate SP that connects to the path's object
+					// ----
+					if (n instanceof IrPathTriple && i + 1 < in.size() && in.get(i + 1) instanceof IrStatementPattern) {
+						// If there is a preceding SP that likely wants to fuse with this PT first, defer this PT+SP
+						// fusion.
+						if (i - 1 >= 0 && in.get(i - 1) instanceof IrStatementPattern) {
+							IrStatementPattern spPrev = (IrStatementPattern) in.get(i - 1);
+							IrPathTriple thisPt = (IrPathTriple) n;
+							if (sameVar(spPrev.getSubject(), thisPt.getSubject())
+									|| sameVar(spPrev.getObject(), thisPt.getSubject())) {
 								out.add(n);
 								continue;
 							}
 						}
-						String joinStep = null;
-						Var endVar = null;
-						if (sameVar(pt.getObject(), sp.getSubject())) {
-							joinStep = "/" + r.convertIRIToString((IRI) pv.getValue());
-							endVar = sp.getObject();
-						}
-						if (joinStep != null) {
-							final String fusedPath = pt.getPathText() + joinStep;
-							{
-								Set<Var> pathVars = new HashSet<>(pt.getPathVars());
-								pathVars.addAll(IrPathTriple.fromStatementPatterns(sp));
-								out.add(new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), fusedPath, endVar,
-										sp.getObjectOverride(), pathVars, false));
+						IrPathTriple pt = (IrPathTriple) n;
+						IrStatementPattern sp = (IrStatementPattern) in.get(i + 1);
+						Var pv = sp.getPredicate();
+						if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
+							// Only fuse when the bridge var (?mid) is an _anon_path_* var; otherwise we might elide a
+							// user
+							// var like ?y
+							if (!isAnonPathVar(pt.getObject())) {
+								out.add(n);
+								continue;
 							}
-							i += 1; // consume next
-							continue;
+							// Lookahead: if there is a following IrPathTriple that shares the join end of this PT+SP,
+							// defer fusion to allow the SP+PT rule to construct a grouped right-hand path. This yields
+							// ((... )*/(^ex:d/(...)+)) grouping before appending a tail like /foaf:name.
+							if (i + 2 < in.size() && in.get(i + 2) instanceof IrPathTriple) {
+								IrPathTriple pt2 = (IrPathTriple) in.get(i + 2);
+								Var candidateEnd = null;
+								if (sameVar(pt.getObject(), sp.getSubject())) {
+									candidateEnd = sp.getObject();
+								} else if (sameVar(pt.getObject(), sp.getObject())) {
+									candidateEnd = sp.getSubject();
+								}
+								if ((sameVar(candidateEnd, pt2.getSubject())
+										|| sameVar(candidateEnd, pt2.getObject()))) {
+									// Defer; do not consume SP here
+									out.add(n);
+									continue;
+								}
+							}
+							String joinStep = null;
+							Var endVar = null;
+							if (sameVar(pt.getObject(), sp.getSubject())) {
+								joinStep = "/" + r.convertIRIToString((IRI) pv.getValue());
+								endVar = sp.getObject();
+							}
+							if (joinStep != null) {
+								final String fusedPath = pt.getPathText() + joinStep;
+								{
+									Set<Var> pathVars = new HashSet<>(pt.getPathVars());
+									pathVars.addAll(IrPathTriple.fromStatementPatterns(sp));
+									out.add(new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), fusedPath,
+											endVar,
+											sp.getObjectOverride(), pathVars, false));
+								}
+								i += 1; // consume next
+								continue;
+							}
 						}
 					}
 				}
-			}
 
-			// ---- Fuse an IrPathTriple followed by a constant-predicate SP that connects to the path's object ----
-			if (n instanceof IrPathTriple && i + 1 < in.size() && in.get(i + 1) instanceof IrStatementPattern) {
-				// If there is a preceding SP that likely wants to fuse with this PT first, defer this PT+SP fusion.
-				if (i - 1 >= 0 && in.get(i - 1) instanceof IrStatementPattern) {
-					IrStatementPattern spPrev = (IrStatementPattern) in.get(i - 1);
-					IrPathTriple thisPt = (IrPathTriple) n;
-					if (sameVar(spPrev.getSubject(), thisPt.getSubject())
-							|| sameVar(spPrev.getObject(), thisPt.getSubject())) {
-						out.add(n);
-						continue;
-					}
-				}
-				IrPathTriple pt = (IrPathTriple) n;
-				IrStatementPattern sp = (IrStatementPattern) in.get(i + 1);
-				Var pv = sp.getPredicate();
-				if (pv != null && pv.hasValue() && pv.getValue() instanceof IRI) {
-					// Only fuse when the bridge var (?mid) is an _anon_path_* var; otherwise we might elide a user var
-					// like ?y
-					if (!isAnonPathVar(pt.getObject())) {
-						out.add(n);
-						continue;
-					}
-					String joinStep = null;
-					Var endVar2 = null;
-					if (sameVar(pt.getObject(), sp.getSubject())) {
-						joinStep = "/" + r.convertIRIToString((IRI) pv.getValue());
-						endVar2 = sp.getObject();
-					}
-					if (joinStep != null) {
-						final String fusedPath = pt.getPathText() + joinStep;
+				// removed duplicate PT+SP fusion block (handled above with deferral/lookahead)
 
-						{
-							Set<Var> pathVars = new HashSet<>(pt.getPathVars());
-							pathVars.addAll(IrPathTriple.fromStatementPatterns(sp));
-							out.add(new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), fusedPath, endVar2,
-									sp.getObjectOverride(), pathVars, false));
-						}
-						i += 1; // consume next
-						continue;
-					}
-				}
 			}
 
 			// ---- GRAPH/SP followed by UNION over bridge var → fused path inside GRAPH ----
@@ -648,7 +580,6 @@ public final class ApplyPathsTransform extends BaseTransform {
 						|| unionBranchesShareAnonPathVarWithAllowedRoleMapping(u);
 
 				if (!permitNewScope) {
-					unionBranchesShareAnonPathVarWithAllowedRoleMapping(u);
 					out.add(n);
 					continue;
 				}
@@ -983,6 +914,7 @@ public final class ApplyPathsTransform extends BaseTransform {
 
 				if (ok && !parts.isEmpty()) {
 					String pathTxt;
+					List<String> normalized = new ArrayList<>(parts.size());
 					boolean allNps = true;
 					for (String ptxt : parts) {
 						String sPart = ptxt == null ? null : ptxt.trim();
@@ -990,65 +922,22 @@ public final class ApplyPathsTransform extends BaseTransform {
 							allNps = false;
 							break;
 						}
-						// Tolerate a single pair of wrapping parentheses around the token, e.g. "(!(ex:p))"
+						// normalize compact '!ex:p' to '!(ex:p)' and strip a single outer pair of parens
 						if (sPart.length() >= 2 && sPart.charAt(0) == '(' && sPart.charAt(sPart.length() - 1) == ')') {
 							sPart = sPart.substring(1, sPart.length() - 1).trim();
 						}
 						String norm = BaseTransform.normalizeCompactNps(sPart);
+						normalized.add(norm);
 						if (norm == null || !norm.startsWith("!(") || !norm.endsWith(")")) {
 							allNps = false;
-							break;
 						}
 					}
-					if (allNps) {
-						// Merge only the simple two-branch NPS case into a single NPS; for larger unions
-						// keep the union structure intact.
-						if (parts.size() == 2) {
-							List<String> members = new ArrayList<>();
-							for (String ptxt : parts) {
-								String sPart = ptxt == null ? "" : ptxt.trim();
-								if (sPart.length() >= 2 && sPart.charAt(0) == '('
-										&& sPart.charAt(sPart.length() - 1) == ')') {
-									sPart = sPart.substring(1, sPart.length() - 1).trim();
-								}
-								String norm = BaseTransform.normalizeCompactNps(sPart);
-								String inner = norm.substring(2, norm.length() - 1);
-								if (inner.isEmpty()) {
-									continue;
-								}
-								for (String tok : inner.split("\\|")) {
-									String t = tok.trim();
-									if (!t.isEmpty()) {
-										members.add(t);
-									}
-								}
-							}
-							String.join("|", members);
-						} else {
-							out.add(n);
-							continue;
-						}
-					}
-					// If both parts are simple compact-NPS tokens like !ex:p and !^ex:q, convert to
-					// a proper negated property set !(ex:p|^ex:q) for correctness/readability.
-					boolean bothBang = parts.size() > 1;
-					for (String ptxt : parts) {
-						String sPart = ptxt == null ? null : ptxt.trim();
-						if (sPart == null || !sPart.startsWith("!") || sPart.contains("(")) {
-							bothBang = false;
-							break;
-						}
-					}
-					if (bothBang) {
-						List<String> members = new ArrayList<>();
-						for (String ptxt : parts) {
-							String sPart = ptxt.trim();
-							String inner = sPart.substring(1).trim(); // drop leading '!'
-							if (!inner.isEmpty()) {
-								members.add(inner);
-							}
-						}
-						pathTxt = "!(" + String.join("|", members) + ")";
+					// Merge exactly-two NPS branches into a single NPS; otherwise, keep UNION intact for all-NPS.
+					if (allNps && normalized.size() == 2) {
+						pathTxt = BaseTransform.mergeNpsMembers(normalized.get(0), normalized.get(1));
+					} else if (allNps) {
+						out.add(n);
+						continue;
 					} else {
 						pathTxt = (parts.size() == 1) ? parts.get(0) : "(" + String.join("|", parts) + ")";
 					}
