@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.queryrender.sparql.ir;
 import java.util.HashSet;
 import java.util.Set;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 
