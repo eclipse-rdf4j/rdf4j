@@ -1436,18 +1436,6 @@ public class TupleExprToIrConverter {
 		return (n == null || n.isEmpty()) ? null : n;
 	}
 
-	private static long getMaxLengthSafe(final ArbitraryLengthPath p) {
-		try {
-			final Method m = ArbitraryLengthPath.class.getMethod("getMaxLength");
-			final Object v = m.invoke(p);
-			if (v instanceof Number) {
-				return ((Number) v).longValue();
-			}
-		} catch (ReflectiveOperationException ignore) {
-		}
-		return -1L;
-	}
-
 	private static Var getContextVarSafe(StatementPattern sp) {
 		try {
 			Method m = StatementPattern.class.getMethod("getContextVar");
@@ -1578,14 +1566,9 @@ public class TupleExprToIrConverter {
 					"Failed to parse ArbitraryLengthPath inner expression: " + p.getPathExpression());
 		}
 		final long min = p.getMinLength();
-		final long max = getMaxLengthSafe(p);
+		final long max = -1L;
 		final PathNode q = new PathQuant(inner, min, max);
 		return (q.prec() < PREC_SEQ ? "(" + q.render() + ")" : q.render());
-	}
-
-	/** Convenience for rendering inline groups: build an IrBGP for a TupleExpr pattern. */
-	public IrBGP buildWhere(final TupleExpr pattern) {
-		return new IRBuilder().build(pattern);
 	}
 
 	private static void collectFreeVars(final TupleExpr e, final Set<String> out) {
