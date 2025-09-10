@@ -33,8 +33,8 @@ import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Coalesce;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -98,6 +98,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrNot;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOrderSpec;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrPrinter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
@@ -417,7 +418,19 @@ public class TupleExprToIrConverter {
 	}
 
 	private String renderExists(final Exists ex) {
-		return r.renderExprPublic(ex);
+		// Build IR for the subquery
+		IRBuilder inner = new IRBuilder();
+		IrBGP where = inner.build(ex.getSubQuery());
+		// Apply standard transforms for consistent property path and grouping rewrites
+		IrSelect tmp = new IrSelect(false);
+		tmp.setWhere(where);
+		IrSelect transformed = IrTransforms.transformUsingChildren(tmp, r);
+		where = transformed.getWhere();
+		StringBuilder sb = new StringBuilder(64);
+		InlinePrinter p = new InlinePrinter(sb);
+		where.print(p);
+		String group = sb.toString().replace('\n', ' ').replaceAll("\\s+", " ").trim();
+		return "EXISTS " + group;
 	}
 
 	private String renderIn(final ListMemberOperator in, final boolean negate) {
@@ -431,166 +444,331 @@ public class TupleExprToIrConverter {
 	}
 
 	private String renderAggregate(final AggregateOperator op) {
-		return r.renderExprPublic(op);
+		if (op instanceof org.eclipse.rdf4j.query.algebra.Count) {
+			final org.eclipse.rdf4j.query.algebra.Count c = (org.eclipse.rdf4j.query.algebra.Count) op;
+			final String inner = (c.getArg() == null) ? "*" : renderExpr(c.getArg());
+			return "COUNT(" + (c.isDistinct() && c.getArg() != null ? "DISTINCT " : "") + inner + ")";
+		}
+		if (op instanceof org.eclipse.rdf4j.query.algebra.Sum) {
+			final org.eclipse.rdf4j.query.algebra.Sum a = (org.eclipse.rdf4j.query.algebra.Sum) op;
+			return "SUM(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
+		}
+		if (op instanceof org.eclipse.rdf4j.query.algebra.Avg) {
+			final org.eclipse.rdf4j.query.algebra.Avg a = (org.eclipse.rdf4j.query.algebra.Avg) op;
+			return "AVG(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
+		}
+		if (op instanceof org.eclipse.rdf4j.query.algebra.Min) {
+			final org.eclipse.rdf4j.query.algebra.Min a = (org.eclipse.rdf4j.query.algebra.Min) op;
+			return "MIN(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
+		}
+		if (op instanceof org.eclipse.rdf4j.query.algebra.Max) {
+			final org.eclipse.rdf4j.query.algebra.Max a = (org.eclipse.rdf4j.query.algebra.Max) op;
+			return "MAX(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
+		}
+		if (op instanceof org.eclipse.rdf4j.query.algebra.Sample) {
+			final org.eclipse.rdf4j.query.algebra.Sample a = (org.eclipse.rdf4j.query.algebra.Sample) op;
+			return "SAMPLE(" + (a.isDistinct() ? "DISTINCT " : "") + renderExpr(a.getArg()) + ")";
+		}
+		if (op instanceof org.eclipse.rdf4j.query.algebra.GroupConcat) {
+			final org.eclipse.rdf4j.query.algebra.GroupConcat a = (org.eclipse.rdf4j.query.algebra.GroupConcat) op;
+			final StringBuilder sb = new StringBuilder();
+			sb.append("GROUP_CONCAT(");
+			if (a.isDistinct()) {
+				sb.append("DISTINCT ");
+			}
+			sb.append(renderExpr(a.getArg()));
+			final ValueExpr sepExpr = a.getSeparator();
+			final String sepLex = extractSeparatorLiteral(sepExpr);
+			if (sepLex != null) {
+				sb.append("; SEPARATOR=").append('"').append(escapeLiteral(sepLex)).append('"');
+			}
+			sb.append(")");
+			return sb.toString();
+		}
+		return "/* unsupported aggregate */";
 	}
 
-    private String renderExpr(final ValueExpr e) {
-        if (e == null) {
-            return "()";
-        }
+	/** Returns the lexical form if the expr is a plain string literal; otherwise null. */
+	private String extractSeparatorLiteral(final ValueExpr expr) {
+		if (expr == null) {
+			return null;
+		}
+		if (expr instanceof ValueConstant) {
+			final Value v = ((ValueConstant) expr).getValue();
+			if (v instanceof Literal) {
+				Literal lit = (Literal) v;
+				IRI dt = lit.getDatatype();
+				if (dt == null || XSD.STRING.equals(dt)) {
+					return lit.getLabel();
+				}
+			}
+			return null;
+		}
+		if (expr instanceof Var) {
+			final Var var = (Var) expr;
+			if (var.hasValue() && var.getValue() instanceof Literal) {
+				Literal lit = (Literal) var.getValue();
+				IRI dt = lit.getDatatype();
+				if (dt == null || XSD.STRING.equals(dt)) {
+					return lit.getLabel();
+				}
+			}
+		}
+		return null;
+	}
 
-        if (e instanceof AggregateOperator) {
-            return renderAggregate((AggregateOperator) e);
-        }
+	// Minimal inline printer to render IrBGP blocks for inline EXISTS groups
+	private final class InlinePrinter implements IrPrinter {
+		private final StringBuilder out;
+		private int level = 0;
+		private boolean inlineActive = false;
 
-        if (e instanceof Not) {
-            final ValueExpr a = ((Not) e).getArg();
-            if (a instanceof Exists) {
-                return "NOT " + renderExists((Exists) a);
-            }
-            if (a instanceof ListMemberOperator) {
-                return renderIn((ListMemberOperator) a, true); // NOT IN
-            }
-            final String inner = stripRedundantOuterParens(renderExpr(a));
-            return "!" + parenthesizeIfNeededExpr(inner);
-        }
+		InlinePrinter(StringBuilder out) {
+			this.out = out;
+		}
 
-        if (e instanceof Var) {
-            final Var v = (Var) e;
-            return v.hasValue() ? convertValueToString(v.getValue()) : "?" + v.getName();
-        }
-        if (e instanceof ValueConstant) {
-            return convertValueToString(((ValueConstant) e).getValue());
-        }
+		private void indent() {
+			out.append(cfg.indent.repeat(Math.max(0, level)));
+		}
 
-        if (e instanceof If) {
-            final If iff = (If) e;
-            return "IF(" + renderExpr(iff.getCondition()) + ", " + renderExpr(iff.getResult()) + ", "
-                    + renderExpr(iff.getAlternative()) + ")";
-        }
-        if (e instanceof Coalesce) {
-            final java.util.List<ValueExpr> args = ((Coalesce) e).getArguments();
-            final String s = args.stream().map(this::renderExpr).collect(Collectors.joining(", "));
-            return "COALESCE(" + s + ")";
-        }
-        if (e instanceof IRIFunction) {
-            return "IRI(" + renderExpr(((IRIFunction) e).getArg()) + ")";
-        }
-        if (e instanceof IsNumeric) {
-            return "isNumeric(" + renderExpr(((IsNumeric) e).getArg()) + ")";
-        }
+		@Override
+		public void startLine() {
+			if (!inlineActive) {
+				indent();
+				inlineActive = true;
+			}
+		}
 
-        if (e instanceof Exists) {
-            return renderExists((Exists) e);
-        }
+		@Override
+		public void append(String s) {
+			if (!inlineActive) {
+				int len = out.length();
+				if (len == 0 || out.charAt(len - 1) == '\n') {
+					indent();
+				}
+			}
+			out.append(s);
+		}
 
-        if (e instanceof ListMemberOperator) {
-            return renderIn((ListMemberOperator) e, false);
-        }
+		@Override
+		public void endLine() {
+			out.append('\n');
+			inlineActive = false;
+		}
 
-        if (e instanceof Str) {
-            return "STR(" + renderExpr(((Str) e).getArg()) + ")";
-        }
-        if (e instanceof Datatype) {
-            return "DATATYPE(" + renderExpr(((Datatype) e).getArg()) + ")";
-        }
-        if (e instanceof Lang) {
-            return "LANG(" + renderExpr(((Lang) e).getArg()) + ")";
-        }
-        if (e instanceof Bound) {
-            return "BOUND(" + renderExpr(((Bound) e).getArg()) + ")";
-        }
-        if (e instanceof IsURI) {
-            return "isIRI(" + renderExpr(((IsURI) e).getArg()) + ")";
-        }
-        if (e instanceof IsLiteral) {
-            return "isLiteral(" + renderExpr(((IsLiteral) e).getArg()) + ")";
-        }
-        if (e instanceof IsBNode) {
-            return "isBlank(" + renderExpr(((IsBNode) e).getArg()) + ")";
-        }
+		@Override
+		public void line(String s) {
+			if (inlineActive) {
+				out.append(s).append('\n');
+				inlineActive = false;
+				return;
+			}
+			indent();
+			out.append(s).append('\n');
+		}
 
-        if (e instanceof MathExpr) {
-            final MathExpr me = (MathExpr) e;
-            if (me.getOperator() == MathOp.MINUS &&
-                    me.getLeftArg() instanceof ValueConstant &&
-                    ((ValueConstant) me.getLeftArg()).getValue() instanceof Literal) {
-                Literal l = (Literal) ((ValueConstant) me.getLeftArg()).getValue();
-                if ("0".equals(l.getLabel())) {
-                    return "(-" + renderExpr(me.getRightArg()) + ")";
-                }
-            }
-            return "(" + renderExpr(me.getLeftArg()) + " " + mathOp(me.getOperator()) + " "
-                    + renderExpr(me.getRightArg()) + ")";
-        }
+		@Override
+		public void openBlock() {
+			if (!inlineActive) {
+				indent();
+			}
+			out.append('{').append('\n');
+			level++;
+			inlineActive = false;
+		}
 
-        if (e instanceof And) {
-            final And a = (And) e;
-            return "(" + renderExpr(a.getLeftArg()) + " && " + renderExpr(a.getRightArg()) + ")";
-        }
-        if (e instanceof Or) {
-            final Or o = (Or) e;
-            return "(" + renderExpr(o.getLeftArg()) + " || " + renderExpr(o.getRightArg()) + ")";
-        }
-        if (e instanceof Compare) {
-            final Compare c = (Compare) e;
-            return "(" + renderExpr(c.getLeftArg()) + " " + op(c.getOperator()) + " "
-                    + renderExpr(c.getRightArg()) + ")";
-        }
-        if (e instanceof SameTerm) {
-            final SameTerm st = (SameTerm) e;
-            return "sameTerm(" + renderExpr(st.getLeftArg()) + ", " + renderExpr(st.getRightArg()) + ")";
-        }
-        if (e instanceof LangMatches) {
-            final LangMatches lm = (LangMatches) e;
-            return "LANGMATCHES(" + renderExpr(lm.getLeftArg()) + ", " + renderExpr(lm.getRightArg()) + ")";
-        }
-        if (e instanceof Regex) {
-            final Regex rr = (Regex) e;
-            final String term = renderExpr(rr.getArg());
-            final String patt = renderExpr(rr.getPatternArg());
-            if (rr.getFlagsArg() != null) {
-                return "REGEX(" + term + ", " + patt + ", " + renderExpr(rr.getFlagsArg()) + ")";
-            }
-            return "REGEX(" + term + ", " + patt + ")";
-        }
+		@Override
+		public void closeBlock() {
+			level--;
+			indent();
+			out.append('}').append('\n');
+		}
 
-        if (e instanceof FunctionCall) {
-            final FunctionCall f = (FunctionCall) e;
-            final String args = f.getArgs().stream().map(this::renderExpr).collect(Collectors.joining(", "));
-            final String uri = f.getURI();
-            String builtin = BUILTIN.get(uri);
-            if (builtin == null && uri != null) {
-                builtin = BUILTIN.get(uri.toUpperCase(java.util.Locale.ROOT));
-            }
-            if (builtin != null) {
-                if ("URI".equals(builtin)) {
-                    return "IRI(" + args + ")";
-                }
-                return builtin + "(" + args + ")";
-            }
-            if (uri != null) {
-                try {
-                    IRI iri = org.eclipse.rdf4j.model.impl.SimpleValueFactory.getInstance().createIRI(uri);
-                    return convertIRIToString(iri) + "(" + args + ")";
-                } catch (IllegalArgumentException ignore) {
-                    return "<" + uri + ">(" + args + ")";
-                }
-            }
-            return "()";
-        }
+		@Override
+		public void pushIndent() {
+			level++;
+		}
 
-        if (e instanceof BNodeGenerator) {
-            final BNodeGenerator bg = (BNodeGenerator) e;
-            final ValueExpr id = bg.getNodeIdExpr();
-            if (id == null) {
-                return "BNODE()";
-            }
-            return "BNODE(" + renderExpr(id) + ")";
-        }
+		@Override
+		public void popIndent() {
+			level--;
+		}
 
-        return "/* unsupported expr: " + e.getClass().getSimpleName() + " */";
-    }
+		@Override
+		public String convertVarToString(Var v) {
+			return renderVarOrValue(v);
+		}
+
+		@Override
+		public void printLines(java.util.List<org.eclipse.rdf4j.queryrender.sparql.ir.IrNode> lines) {
+			if (lines == null) {
+				return;
+			}
+			for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode ln : lines) {
+				if (ln != null) {
+					ln.print(this);
+				}
+			}
+		}
+	}
+
+	private String renderExpr(final ValueExpr e) {
+		if (e == null) {
+			return "()";
+		}
+
+		if (e instanceof AggregateOperator) {
+			return renderAggregate((AggregateOperator) e);
+		}
+
+		if (e instanceof Not) {
+			final ValueExpr a = ((Not) e).getArg();
+			if (a instanceof Exists) {
+				return "NOT " + renderExists((Exists) a);
+			}
+			if (a instanceof ListMemberOperator) {
+				return renderIn((ListMemberOperator) a, true); // NOT IN
+			}
+			final String inner = stripRedundantOuterParens(renderExpr(a));
+			return "!" + parenthesizeIfNeededExpr(inner);
+		}
+
+		if (e instanceof Var) {
+			final Var v = (Var) e;
+			return v.hasValue() ? convertValueToString(v.getValue()) : "?" + v.getName();
+		}
+		if (e instanceof ValueConstant) {
+			return convertValueToString(((ValueConstant) e).getValue());
+		}
+
+		if (e instanceof If) {
+			final If iff = (If) e;
+			return "IF(" + renderExpr(iff.getCondition()) + ", " + renderExpr(iff.getResult()) + ", "
+					+ renderExpr(iff.getAlternative()) + ")";
+		}
+		if (e instanceof Coalesce) {
+			final java.util.List<ValueExpr> args = ((Coalesce) e).getArguments();
+			final String s = args.stream().map(this::renderExpr).collect(Collectors.joining(", "));
+			return "COALESCE(" + s + ")";
+		}
+		if (e instanceof IRIFunction) {
+			return "IRI(" + renderExpr(((IRIFunction) e).getArg()) + ")";
+		}
+		if (e instanceof IsNumeric) {
+			return "isNumeric(" + renderExpr(((IsNumeric) e).getArg()) + ")";
+		}
+
+		if (e instanceof Exists) {
+			return renderExists((Exists) e);
+		}
+
+		if (e instanceof ListMemberOperator) {
+			return renderIn((ListMemberOperator) e, false);
+		}
+
+		if (e instanceof Str) {
+			return "STR(" + renderExpr(((Str) e).getArg()) + ")";
+		}
+		if (e instanceof Datatype) {
+			return "DATATYPE(" + renderExpr(((Datatype) e).getArg()) + ")";
+		}
+		if (e instanceof Lang) {
+			return "LANG(" + renderExpr(((Lang) e).getArg()) + ")";
+		}
+		if (e instanceof Bound) {
+			return "BOUND(" + renderExpr(((Bound) e).getArg()) + ")";
+		}
+		if (e instanceof IsURI) {
+			return "isIRI(" + renderExpr(((IsURI) e).getArg()) + ")";
+		}
+		if (e instanceof IsLiteral) {
+			return "isLiteral(" + renderExpr(((IsLiteral) e).getArg()) + ")";
+		}
+		if (e instanceof IsBNode) {
+			return "isBlank(" + renderExpr(((IsBNode) e).getArg()) + ")";
+		}
+
+		if (e instanceof MathExpr) {
+			final MathExpr me = (MathExpr) e;
+			if (me.getOperator() == MathOp.MINUS &&
+					me.getLeftArg() instanceof ValueConstant &&
+					((ValueConstant) me.getLeftArg()).getValue() instanceof Literal) {
+				Literal l = (Literal) ((ValueConstant) me.getLeftArg()).getValue();
+				if ("0".equals(l.getLabel())) {
+					return "(-" + renderExpr(me.getRightArg()) + ")";
+				}
+			}
+			return "(" + renderExpr(me.getLeftArg()) + " " + mathOp(me.getOperator()) + " "
+					+ renderExpr(me.getRightArg()) + ")";
+		}
+
+		if (e instanceof And) {
+			final And a = (And) e;
+			return "(" + renderExpr(a.getLeftArg()) + " && " + renderExpr(a.getRightArg()) + ")";
+		}
+		if (e instanceof Or) {
+			final Or o = (Or) e;
+			return "(" + renderExpr(o.getLeftArg()) + " || " + renderExpr(o.getRightArg()) + ")";
+		}
+		if (e instanceof Compare) {
+			final Compare c = (Compare) e;
+			return "(" + renderExpr(c.getLeftArg()) + " " + op(c.getOperator()) + " "
+					+ renderExpr(c.getRightArg()) + ")";
+		}
+		if (e instanceof SameTerm) {
+			final SameTerm st = (SameTerm) e;
+			return "sameTerm(" + renderExpr(st.getLeftArg()) + ", " + renderExpr(st.getRightArg()) + ")";
+		}
+		if (e instanceof LangMatches) {
+			final LangMatches lm = (LangMatches) e;
+			return "LANGMATCHES(" + renderExpr(lm.getLeftArg()) + ", " + renderExpr(lm.getRightArg()) + ")";
+		}
+		if (e instanceof Regex) {
+			final Regex rr = (Regex) e;
+			final String term = renderExpr(rr.getArg());
+			final String patt = renderExpr(rr.getPatternArg());
+			if (rr.getFlagsArg() != null) {
+				return "REGEX(" + term + ", " + patt + ", " + renderExpr(rr.getFlagsArg()) + ")";
+			}
+			return "REGEX(" + term + ", " + patt + ")";
+		}
+
+		if (e instanceof FunctionCall) {
+			final FunctionCall f = (FunctionCall) e;
+			final String args = f.getArgs().stream().map(this::renderExpr).collect(Collectors.joining(", "));
+			final String uri = f.getURI();
+			String builtin = BUILTIN.get(uri);
+			if (builtin == null && uri != null) {
+				builtin = BUILTIN.get(uri.toUpperCase(java.util.Locale.ROOT));
+			}
+			if (builtin != null) {
+				if ("URI".equals(builtin)) {
+					return "IRI(" + args + ")";
+				}
+				return builtin + "(" + args + ")";
+			}
+			if (uri != null) {
+				try {
+					IRI iri = org.eclipse.rdf4j.model.impl.SimpleValueFactory.getInstance().createIRI(uri);
+					return convertIRIToString(iri) + "(" + args + ")";
+				} catch (IllegalArgumentException ignore) {
+					return "<" + uri + ">(" + args + ")";
+				}
+			}
+			return "()";
+		}
+
+		if (e instanceof BNodeGenerator) {
+			final BNodeGenerator bg = (BNodeGenerator) e;
+			final ValueExpr id = bg.getNodeIdExpr();
+			if (id == null) {
+				return "BNODE()";
+			}
+			return "BNODE(" + renderExpr(id) + ")";
+		}
+
+		return "/* unsupported expr: " + e.getClass().getSimpleName() + " */";
+	}
 
 	private static boolean isConstIriVar(Var v) {
 		return v != null && v.hasValue() && v.getValue() instanceof IRI;
@@ -2043,7 +2221,6 @@ public class TupleExprToIrConverter {
 
 	final class IRBuilder extends AbstractQueryModelVisitor<RuntimeException> {
 		private final IrBGP where = new IrBGP(false);
-		private final TupleExprIRRenderer r = TupleExprToIrConverter.this.r;
 
 		IrBGP build(final TupleExpr t) {
 			if (t == null) {
@@ -2348,7 +2525,7 @@ public class TupleExprToIrConverter {
 		public void meet(final BindingSetAssignment bsa) {
 			IrValues v = new IrValues(false);
 			List<String> names = new ArrayList<>(bsa.getBindingNames());
-			if (!r.getConfig().valuesPreserveOrder) {
+			if (!cfg.valuesPreserveOrder) {
 				Collections.sort(names);
 			}
 			v.getVarNames().addAll(names);
