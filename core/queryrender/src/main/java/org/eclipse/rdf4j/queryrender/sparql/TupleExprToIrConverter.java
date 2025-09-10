@@ -22,6 +22,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -110,6 +111,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.FuseServiceNpsUnio
  * This class mirrors the TupleExpr→IR logic originally embedded in TupleExprIRRenderer; the renderer now delegates to
  * this converter to build IR, and handles printing separately.
  */
+@Experimental
 public class TupleExprToIrConverter {
 
 	private static final int PREC_ALT = 1;
