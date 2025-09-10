@@ -645,6 +645,17 @@ public class TupleExprIRRenderer {
 		return "<" + s + ">";
 	}
 
+	/**
+	 * Convert a Var to a compact IRI string when it is bound to a constant IRI; otherwise return null. Centralizes a
+	 * common pattern used by IR nodes and helpers to avoid duplicate null/instance checks.
+	 */
+	public String convertVarIriToString(final Var v) {
+		if (v != null && v.hasValue() && v.getValue() instanceof IRI) {
+			return convertIRIToString((IRI) v.getValue());
+		}
+		return null;
+	}
+
 	private boolean isPN_LOCAL(final String s) {
 		if (s == null || s.isEmpty()) {
 			return false;
