@@ -69,9 +69,13 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrPrinter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
 
@@ -492,7 +496,29 @@ public class TupleExprIRRenderer {
 	 * for clarity and testability.
 	 */
 	public IrSelect toIRSelect(final TupleExpr tupleExpr) {
-		return new TupleExprToIrConverter(this).toIRSelect(tupleExpr);
+		// Build raw IR (no transforms) via the converter
+		IrSelect ir = new TupleExprToIrConverter(this).toIRSelect(tupleExpr);
+		if (cfg.debugIR) {
+			System.out.println("# IR (raw)\n" + IrDebug.dump(ir));
+		}
+		// Transform IR, including nested subselects, then apply top-level grouping preservation
+		IrSelect transformed = transformIrRecursively(ir);
+		// Preserve explicit grouping braces around a single‑element WHERE when the original algebra
+		// indicated a variable scope change at the root of the query.
+		if (transformed != null && transformed.getWhere() != null
+				&& transformed.getWhere().getLines() != null
+				&& transformed.getWhere().getLines().size() == 1
+				&& TupleExprToIrConverter.hasExplicitRootScope(tupleExpr)) {
+			final IrNode only = transformed.getWhere().getLines().get(0);
+			if (only instanceof IrStatementPattern || only instanceof IrPathTriple || only instanceof IrGraph
+					|| only instanceof IrSubSelect) {
+				transformed.getWhere().setNewScope(true);
+			}
+		}
+		if (cfg.debugIR) {
+			System.out.println("# IR (transformed)\n" + IrDebug.dump(transformed));
+		}
+		return transformed;
 	}
 
 	/** Build IR without applying IR transforms (raw). Useful for tests and debugging. */
@@ -522,6 +548,38 @@ public class TupleExprIRRenderer {
 		IRTextPrinter printer = new IRTextPrinter(out);
 		ir.print(printer);
 		return mergeAdjacentGraphBlocks(out.toString()).trim();
+	}
+
+	// Recursively apply the transformer pipeline to a select and any nested subselects.
+	private IrSelect transformIrRecursively(final IrSelect select) {
+		if (select == null) {
+			return null;
+		}
+		// First, transform the WHERE using standard pipeline
+		IrSelect top = IrTransforms.transformUsingChildren(select, this);
+		// Then, transform nested subselects via a child-mapping pass
+		IrNode mapped = top.transformChildren(child -> {
+			if (child instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP) {
+				// descend into BGP lines to replace IrSubSelects
+				org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP bgp = (org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP) child;
+				org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP nb = new org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP(
+						bgp.getLines().isEmpty() ? false : bgp.isNewScope());
+				nb.setNewScope(bgp.isNewScope());
+				for (org.eclipse.rdf4j.queryrender.sparql.ir.IrNode ln : bgp.getLines()) {
+					if (ln instanceof org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect) {
+						org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect ss = (org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect) ln;
+						IrSelect subSel = ss.getSelect();
+						IrSelect subTx = transformIrRecursively(subSel);
+						nb.add(new org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect(subTx, ss.isNewScope()));
+					} else {
+						nb.add(ln);
+					}
+				}
+				return nb;
+			}
+			return child;
+		});
+		return (IrSelect) mapped;
 	}
 
 	/** Backward-compatible: render as SELECT query (no dataset). */
