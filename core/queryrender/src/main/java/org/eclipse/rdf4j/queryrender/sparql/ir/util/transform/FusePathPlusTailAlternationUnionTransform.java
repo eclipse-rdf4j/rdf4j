@@ -115,18 +115,18 @@ public class FusePathPlusTailAlternationUnionTransform extends BaseTransform {
 			return null;
 		}
 		Var pv = bt.sp.getPredicate();
-		if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+		if (!isConstantIriPredicate(bt.sp)) {
 			return null;
 		}
 		Var sVar = bt.sp.getSubject();
 		Var oVar = bt.sp.getObject();
 		if (sameVar(midVar, sVar)) {
 			// forward: mid p ?end
-			return new TripleJoin(r.convertIRIToString((IRI) pv.getValue()), oVar, false);
+			return new TripleJoin(iri(pv, r), oVar, false);
 		}
 		if (sameVar(midVar, oVar)) {
 			// inverse: ?end p mid
-			return new TripleJoin(r.convertIRIToString((IRI) pv.getValue()), sVar, true);
+			return new TripleJoin(iri(pv, r), sVar, true);
 		}
 		return null;
 	}
