@@ -18,12 +18,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -85,8 +83,6 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.queryrender.sparql.PrefixIndex;
-import org.eclipse.rdf4j.queryrender.sparql.PrefixIndex.PrefixHit;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer.Config;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBind;
@@ -136,6 +132,7 @@ public class TupleExprToIrConverter {
 
 	private static final String FN_NS = "http://www.w3.org/2005/xpath-functions#";
 	private static final Map<String, String> BUILTIN;
+
 	static {
 		Map<String, String> m = new LinkedHashMap<>();
 		m.put(FN_NS + "string-length", "STRLEN");

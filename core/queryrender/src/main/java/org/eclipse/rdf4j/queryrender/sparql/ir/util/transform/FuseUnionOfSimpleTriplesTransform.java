@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
