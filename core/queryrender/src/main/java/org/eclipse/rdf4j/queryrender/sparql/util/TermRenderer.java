@@ -29,7 +29,7 @@ public final class TermRenderer {
 	public static String convertIRIToString(final IRI iri, final PrefixIndex index, final boolean usePrefixCompaction) {
 		final String s = iri.stringValue();
 		if (usePrefixCompaction) {
-			final PrefixHit hit = index.firstMatch(s);
+			final PrefixHit hit = index.longestMatch(s);
 			if (hit != null) {
 				final String local = s.substring(hit.namespace.length());
 				if (SparqlNameUtils.isPNLocal(local)) {
