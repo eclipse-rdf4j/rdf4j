@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeNpsMember
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.NormalizeZeroOrOneSubselectTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ReorderFiltersInOptionalBodiesTransform;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform;
+import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.UnwrapSingleBgpInUnionBranchesTransform;
 
 /**
  * IR transformation pipeline (best‑effort).
@@ -177,7 +178,7 @@ public final class IrTransforms {
 
 					// Remove redundant, non-scoped single-child BGP layers inside UNION branches to
 					// avoid introducing extra brace layers in branch rendering.
-					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.UnwrapSingleBgpInUnionBranchesTransform
+					w = UnwrapSingleBgpInUnionBranchesTransform
 							.apply(w);
 
 					// Late normalization of grouped tail steps: ensure a final tail like "/foaf:name"
@@ -213,7 +214,7 @@ public final class IrTransforms {
 
 					// Final cleanup: ensure no redundant single-child BGP wrappers remain inside
 					// UNION branches after late passes may have regrouped content.
-					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.UnwrapSingleBgpInUnionBranchesTransform
+					w = UnwrapSingleBgpInUnionBranchesTransform
 							.apply(w);
 
 					return w;
