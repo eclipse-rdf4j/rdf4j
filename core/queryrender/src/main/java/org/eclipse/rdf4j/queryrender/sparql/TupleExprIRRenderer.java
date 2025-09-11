@@ -331,7 +331,6 @@ public class TupleExprIRRenderer {
 		public final boolean canonicalWhitespace = true;
 		public final LinkedHashMap<String, String> prefixes = new LinkedHashMap<>();
 		// Flags
-		public final boolean strict = true; // throw on unsupported
 		// Optional dataset (top-level only) if you never pass a DatasetView at render().
 		// These are rarely used, but offered for completeness.
 		public final List<IRI> defaultGraphs = new ArrayList<>();

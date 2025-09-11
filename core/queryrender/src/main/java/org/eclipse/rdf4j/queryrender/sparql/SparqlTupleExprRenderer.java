@@ -275,8 +275,6 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		}
 
 		// try and reverse engineer the original scoping intent of the query
-		final boolean aNeedsNewScope = theFilter.getParentNode() != null
-				&& (theFilter.getParentNode() instanceof Join || theFilter.getParentNode() instanceof LeftJoin);
 
 		String aFilter = renderValueExpr(theFilter.getCondition());
 		if (theFilter.getCondition() instanceof ValueConstant || theFilter.getCondition() instanceof Var) {
