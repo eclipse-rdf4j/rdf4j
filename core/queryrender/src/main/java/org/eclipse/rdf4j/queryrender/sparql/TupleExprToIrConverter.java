@@ -106,6 +106,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrText;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
+import org.eclipse.rdf4j.queryrender.sparql.util.ExprTextUtils;
 import org.eclipse.rdf4j.queryrender.sparql.util.TermRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.util.TextEscapes;
 import org.eclipse.rdf4j.queryrender.sparql.util.VarUtils;
@@ -290,35 +291,7 @@ public class TupleExprToIrConverter {
 		return "(" + t + ")";
 	}
 
-	private static String parenthesizeIfNeededExpr(final String expr) {
-		if (expr == null) {
-			return "()";
-		}
-		final String t = expr.trim();
-		if (t.isEmpty()) {
-			return "()";
-		}
-		if (t.charAt(0) == '(' && t.charAt(t.length() - 1) == ')') {
-			int depth = 0;
-			boolean spans = true;
-			for (int i = 0; i < t.length(); i++) {
-				char ch = t.charAt(i);
-				if (ch == '(') {
-					depth++;
-				} else if (ch == ')') {
-					depth--;
-				}
-				if (depth == 0 && i < t.length() - 1) {
-					spans = false;
-					break;
-				}
-			}
-			if (spans) {
-				return t;
-			}
-		}
-		return "(" + t + ")";
-	}
+// removed local parenthesizeIfNeededExpr; use ExprTextUtils.parenthesizeIfNeededExpr instead
 
 	private String renderExists(final Exists ex) {
 		// Build IR for the subquery
@@ -532,8 +505,8 @@ public class TupleExprToIrConverter {
 			if (a instanceof ListMemberOperator) {
 				return renderIn((ListMemberOperator) a, true); // NOT IN
 			}
-			final String inner = stripRedundantOuterParens(renderExpr(a));
-			return "!" + parenthesizeIfNeededExpr(inner);
+			final String inner = ExprTextUtils.stripRedundantOuterParens(renderExpr(a));
+			return "!" + ExprTextUtils.parenthesizeIfNeededExpr(inner);
 		}
 
 		if (e instanceof Var) {
@@ -760,7 +733,7 @@ public class TupleExprToIrConverter {
 			ir.getGroupBy().add(new IrGroupByElem(t.expr == null ? null : conv.renderExpr(t.expr), t.var));
 		}
 		for (ValueExpr cond : n.havingConditions) {
-			ir.getHaving().add(stripRedundantOuterParens(conv.renderExprForHaving(cond, n)));
+			ir.getHaving().add(ExprTextUtils.stripRedundantOuterParens(conv.renderExprForHaving(cond, n)));
 		}
 		for (OrderElem oe : n.orderBy) {
 			ir.getOrderBy().add(new IrOrderSpec(conv.renderExpr(oe.getExpr()), oe.isAscending()));
@@ -1411,8 +1384,9 @@ public class TupleExprToIrConverter {
 		}
 
 		if (e instanceof Not) {
-			String inner = stripRedundantOuterParens(renderExprWithSubstitution(((Not) e).getArg(), subs));
-			return "!" + parenthesizeIfNeeded(inner);
+			String inner = ExprTextUtils
+					.stripRedundantOuterParens(renderExprWithSubstitution(((Not) e).getArg(), subs));
+			return "!" + ExprTextUtils.parenthesizeIfNeededSimple(inner);
 		}
 		if (e instanceof And) {
 			And a = (And) e;
@@ -1584,7 +1558,7 @@ public class TupleExprToIrConverter {
 
 		// HAVING
 		for (ValueExpr cond : n.havingConditions) {
-			ir.getHaving().add(stripRedundantOuterParens(renderExprForHaving(cond, n)));
+			ir.getHaving().add(ExprTextUtils.stripRedundantOuterParens(renderExprForHaving(cond, n)));
 		}
 
 		// ORDER BY
@@ -2137,7 +2111,7 @@ public class TupleExprToIrConverter {
 				IrExists exNode = new IrExists(bgp, false);
 				return new IrFilter(exNode, false);
 			}
-			final String cond = stripRedundantOuterParens(renderExpr(condExpr));
+			final String cond = ExprTextUtils.stripRedundantOuterParens(renderExpr(condExpr));
 			return new IrFilter(cond, false);
 		}
 

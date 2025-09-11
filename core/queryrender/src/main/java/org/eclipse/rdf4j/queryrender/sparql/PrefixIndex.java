@@ -45,15 +45,27 @@ public final class PrefixIndex {
 	/** Return the first matching prefix for the given IRI, or null if none match. */
 	/** Return the first matching prefix for the given IRI, or null. */
 	public PrefixHit firstMatch(final String iri) {
+		// Backward-compat helper; delegates to longestMatch
+		return longestMatch(iri);
+	}
+
+	/** Return the longest matching namespace for the given IRI, or null if none match. */
+	public PrefixHit longestMatch(final String iri) {
 		if (iri == null) {
 			return null;
 		}
+		PrefixHit best = null;
+		int bestLen = -1;
 		for (final Entry<String, String> e : entries) {
 			final String ns = e.getValue();
 			if (iri.startsWith(ns)) {
-				return new PrefixHit(e.getKey(), ns);
+				int len = ns.length();
+				if (len > bestLen) {
+					bestLen = len;
+					best = new PrefixHit(e.getKey(), ns);
+				}
 			}
 		}
-		return null;
+		return best;
 	}
 }
