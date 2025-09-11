@@ -150,9 +150,8 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	 *
 	 * @param theList the elem list to render
 	 * @return the elem list for a construct projection as a statement pattern
-	 * @throws Exception if there is an exception while rendering
 	 */
-	public StatementPattern toStatementPattern(ProjectionElemList theList) throws Exception {
+	public StatementPattern toStatementPattern(ProjectionElemList theList) {
 		ProjectionElem aSubj = theList.getElements().get(0);
 		ProjectionElem aPred = theList.getElements().get(1);
 		ProjectionElem aObj = theList.getElements().get(2);
@@ -279,7 +278,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	 * {@inheritDoc}
 	 */
 	@Override
-	public void meet(final OrderElem theOrderElem) throws Exception {
+	public void meet(final OrderElem theOrderElem) {
 		mOrdering.add(theOrderElem);
 	}
 
