@@ -366,7 +366,6 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 						// var
 						// and has a constant predicate, treat it as the tail step to be fused and consume it.
 						final IrStatementPattern sp2 = (IrStatementPattern) in.get(k);
-						final Var pv = sp2.getPredicate();
 						if (isConstantIriPredicate(sp2)) {
 							if (sameVar(mt1.object, sp2.getSubject()) || sameVar(mt1.object, sp2.getObject())) {
 								mt2 = new MatchTriple(sp2, sp2.getSubject(), sp2.getPredicate(), sp2.getObject());
@@ -654,7 +653,6 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 							continue;
 						}
 						final IrStatementPattern sp = (IrStatementPattern) cand;
-						final Var pv = sp.getPredicate();
 						if (!isConstantIriPredicate(sp)) {
 							continue;
 						}
@@ -681,7 +679,6 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 							continue;
 						}
 						final IrStatementPattern sp = (IrStatementPattern) cand;
-						final Var pv = sp.getPredicate();
 						if (!isConstantIriPredicate(sp)) {
 							continue;
 						}

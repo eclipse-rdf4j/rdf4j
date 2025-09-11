@@ -510,7 +510,6 @@ public final class ApplyPathsTransform extends BaseTransform {
 											continue;
 										}
 										IrStatementPattern spj = (IrStatementPattern) ln;
-										Var pj = spj.getPredicate();
 										if (!isConstantIriPredicate(spj)) {
 											continue;
 										}

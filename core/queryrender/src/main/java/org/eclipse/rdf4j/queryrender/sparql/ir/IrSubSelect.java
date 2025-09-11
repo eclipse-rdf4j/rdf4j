@@ -54,7 +54,15 @@ public class IrSubSelect extends IrNode {
 
 	@Override
 	public IrNode transformChildren(UnaryOperator<IrNode> op) {
-		return this;
+		IrSelect newSelect = this.select;
+		if (newSelect != null) {
+			IrNode t = op.apply(newSelect);
+			t = t.transformChildren(op);
+			if (t instanceof IrSelect) {
+				newSelect = (IrSelect) t;
+			}
+		}
+		return new IrSubSelect(newSelect, this.isNewScope());
 	}
 
 	@Override
@@ -64,4 +72,5 @@ public class IrSubSelect extends IrNode {
 		}
 		return Collections.emptySet();
 	}
+
 }

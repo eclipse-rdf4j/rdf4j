@@ -575,7 +575,6 @@ public class BaseTransform {
 							continue;
 						}
 						IrStatementPattern sp = (IrStatementPattern) m;
-						Var pv = sp.getPredicate();
 						if (!isConstantIriPredicate(sp)) {
 							continue;
 						}

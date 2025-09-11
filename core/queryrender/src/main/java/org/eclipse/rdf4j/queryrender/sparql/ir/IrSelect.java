@@ -203,4 +203,11 @@ public class IrSelect extends IrNode {
 		return Collections.emptySet();
 	}
 
+	public boolean isDistinct() {
+		return distinct;
+	}
+
+	public boolean isReduced() {
+		return reduced;
+	}
 }

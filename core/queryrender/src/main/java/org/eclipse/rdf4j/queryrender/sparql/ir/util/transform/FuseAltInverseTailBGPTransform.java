@@ -52,7 +52,6 @@ public final class FuseAltInverseTailBGPTransform extends BaseTransform {
 				continue;
 			}
 			final IrStatementPattern sp = (IrStatementPattern) n;
-			final Var pv = sp.getPredicate();
 			if (!isConstantIriPredicate(sp)) {
 				continue;
 			}

@@ -42,13 +42,6 @@ public final class PrefixIndex {
 		this.entries = Collections.unmodifiableList(list);
 	}
 
-	/** Return the first matching prefix for the given IRI, or null if none match. */
-	/** Return the first matching prefix for the given IRI, or null. */
-	public PrefixHit firstMatch(final String iri) {
-		// Backward-compat helper; delegates to longestMatch
-		return longestMatch(iri);
-	}
-
 	/** Return the longest matching namespace for the given IRI, or null if none match. */
 	public PrefixHit longestMatch(final String iri) {
 		if (iri == null) {
