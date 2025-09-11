@@ -230,29 +230,6 @@ public class TupleExprToIrConverter {
 		}
 	}
 
-	private static String stripRedundantOuterParens(final String s) {
-		if (s == null) {
-			return null;
-		}
-		String t = s.trim();
-		if (t.length() >= 2 && t.charAt(0) == '(' && t.charAt(t.length() - 1) == ')') {
-			int depth = 0;
-			for (int i = 0; i < t.length(); i++) {
-				char ch = t.charAt(i);
-				if (ch == '(') {
-					depth++;
-				} else if (ch == ')') {
-					depth--;
-				}
-				if (depth == 0 && i < t.length() - 1) {
-					return t;
-				}
-			}
-			return t.substring(1, t.length() - 1).trim();
-		}
-		return t;
-	}
-
 	private static String asConstraint(final String s) {
 		if (s == null) {
 			return "()";
@@ -1412,20 +1389,6 @@ public class TupleExprToIrConverter {
 
 		// fallback to normal rendering
 		return renderExpr(e);
-	}
-
-	private static String parenthesizeIfNeeded(String s) {
-		if (s == null) {
-			return "()";
-		}
-		String t = s.trim();
-		if (t.isEmpty()) {
-			return "()";
-		}
-		if (t.charAt(0) == '(') {
-			return t; // assume already a grouped expression
-		}
-		return "(" + t + ")";
 	}
 
 	// ---------------- Path recognition helpers ----------------
