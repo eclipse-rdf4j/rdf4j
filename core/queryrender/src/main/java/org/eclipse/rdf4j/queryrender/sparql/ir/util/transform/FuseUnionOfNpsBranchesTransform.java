@@ -140,7 +140,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			}
 			out.add(m);
 		}
-        return BaseTransform.bgpWithLines(bgp, out);
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	private static IrBGP fuseUnionsInBGP(IrBGP bgp) {
@@ -193,7 +193,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 				out.add(ln);
 			}
 		}
-        return BaseTransform.bgpWithLines(bgp, out);
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	private static boolean branchHasTopLevelValues(IrBGP b) {
@@ -413,7 +413,7 @@ public final class FuseUnionOfNpsBranchesTransform extends BaseTransform {
 			}
 			out.add(m);
 		}
-        return BaseTransform.bgpWithLines(bgp, out);
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	private static void addMembers(String npsPath, List<String> out) {

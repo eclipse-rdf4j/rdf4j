@@ -75,10 +75,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			}
 			out.add(m);
 		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
-		return res;
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	private static IrNode fuseUnion(IrUnion u, TupleExprIRRenderer r) {
@@ -437,42 +434,11 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 	}
 
 	private static List<String> splitTopLevelAlternation(String path) {
-		ArrayList<String> out = new ArrayList<>();
 		if (path == null) {
-			return out;
+			return new ArrayList<>();
 		}
-		String s = path.trim();
-		if (PathTextUtils.isWrapped(s)) {
-			s = s.substring(1, s.length() - 1).trim();
-		}
-		int depth = 0;
-		StringBuilder cur = new StringBuilder();
-		for (int i = 0; i < s.length(); i++) {
-			char ch = s.charAt(i);
-			if (ch == '(') {
-				depth++;
-				cur.append(ch);
-			} else if (ch == ')') {
-				depth--;
-				cur.append(ch);
-			} else if (ch == '|' && depth == 0) {
-				String tok = cur.toString().trim();
-				if (!tok.isEmpty()) {
-					out.add(tok);
-				}
-				cur.setLength(0);
-			} else {
-				cur.append(ch);
-			}
-		}
-		String tok = cur.toString().trim();
-		if (!tok.isEmpty()) {
-			out.add(tok);
-		}
-		if (out.isEmpty()) {
-			out.add(s);
-		}
-		return out;
+		String s = PathTextUtils.trimSingleOuterParens(path.trim());
+		return PathTextUtils.splitTopLevel(s, '|');
 	}
 
 	private static void extractNegAndNonNeg(List<String> tokens, List<String> negMembers, List<String> nonNeg) {

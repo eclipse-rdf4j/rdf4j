@@ -93,7 +93,7 @@ public class FusePathPlusTailAlternationUnionTransform extends BaseTransform {
 			}
 			out.add(n);
 		}
-        return BaseTransform.bgpWithLines(bgp, out);
+		return BaseTransform.bgpWithLines(bgp, out);
 
 	}
 

@@ -56,10 +56,7 @@ public final class GroupUnionOfSameGraphBranchesTransform extends BaseTransform 
 			});
 			out.add(m);
 		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
-		return res;
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	private static IrNode rewriteUnion(IrUnion u) {

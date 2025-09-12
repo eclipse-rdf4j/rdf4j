@@ -59,10 +59,7 @@ public final class ReorderFiltersInOptionalBodiesTransform extends BaseTransform
 			IrNode rec = BaseTransform.rewriteContainers(n, child -> apply(child, r));
 			out.add(rec);
 		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
-		return res;
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	public static IrBGP reorderFiltersWithin(IrBGP inner, TupleExprIRRenderer r) {
@@ -125,14 +122,12 @@ public final class ReorderFiltersInOptionalBodiesTransform extends BaseTransform
 				unsafeFilters.add(f);
 			}
 		}
-		final IrBGP res = new IrBGP(inner.isNewScope());
-		// head non-filters, then safe filters, then tail, then any unsafe filters at the end
-		newHead.forEach(res::add);
-		safeFilters.forEach(res::add);
-		newTail.forEach(res::add);
-		unsafeFilters.forEach(res::add);
-		res.setNewScope(inner.isNewScope());
-		return res;
+		final List<IrNode> merged = new ArrayList<>();
+		newHead.forEach(merged::add);
+		safeFilters.forEach(merged::add);
+		newTail.forEach(merged::add);
+		unsafeFilters.forEach(merged::add);
+		return BaseTransform.bgpWithLines(inner, merged);
 	}
 
 	public static Set<String> collectVarsFromLines(List<IrNode> lines, TupleExprIRRenderer r) {

@@ -109,10 +109,7 @@ public final class FusePrePathThenUnionAlternationTransform extends BaseTransfor
 			IrNode rec = BaseTransform.rewriteContainers(n, child -> apply(child, r));
 			out.add(rec);
 		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
-		return res;
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	private static Tail parseTail(IrBGP b, Var mid, TupleExprIRRenderer r) {

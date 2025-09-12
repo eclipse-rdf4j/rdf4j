@@ -135,10 +135,7 @@ public final class MergeOptionalIntoPrecedingGraphTransform extends BaseTransfor
 			}
 			out.add(n);
 		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
-		return res;
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	public static boolean isSimpleOptionalBody(IrBGP ow) {

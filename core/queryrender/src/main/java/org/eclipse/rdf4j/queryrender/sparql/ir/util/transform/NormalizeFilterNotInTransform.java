@@ -51,10 +51,7 @@ public final class NormalizeFilterNotInTransform extends BaseTransform {
 			m = BaseTransform.rewriteContainers(m, child -> NormalizeFilterNotInTransform.apply(child, r));
 			out.add(m);
 		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
-		return res;
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	// Attempt to reconstruct "?v NOT IN (a, b, ...)" from a top-level conjunction of "?v != item" terms.

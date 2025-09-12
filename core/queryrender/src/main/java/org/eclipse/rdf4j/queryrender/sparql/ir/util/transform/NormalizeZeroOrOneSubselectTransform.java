@@ -72,7 +72,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			});
 			out.add(transformed);
 		}
-        return BaseTransform.bgpWithLines(bgp, out);
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	public static IrPathTriple tryRewriteZeroOrOne(IrSubSelect ss, TupleExprIRRenderer r) {

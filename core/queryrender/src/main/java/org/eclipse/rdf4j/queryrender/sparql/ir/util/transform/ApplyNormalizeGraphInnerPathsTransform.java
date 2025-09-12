@@ -58,10 +58,7 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 				out.add(n);
 			}
 		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
-		return res;
+		return BaseTransform.bgpWithLines(bgp, out);
 
 	}
 
@@ -116,10 +113,7 @@ public final class ApplyNormalizeGraphInnerPathsTransform extends BaseTransform 
 			IrNode rec = BaseTransform.rewriteContainers(n, child -> fuseAdjacentPtThenSp(child, r));
 			out.add(rec);
 		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
-		return res;
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 }
