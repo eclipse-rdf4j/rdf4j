@@ -93,9 +93,7 @@ public class FusePathPlusTailAlternationUnionTransform extends BaseTransform {
 			}
 			out.add(n);
 		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		return res;
+        return BaseTransform.bgpWithLines(bgp, out);
 
 	}
 

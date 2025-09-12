@@ -743,9 +743,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 			out.add(n);
 		}
 
-		final IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		return res;
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	/** Attempt to fuse a two-branch UNION of NPS path triples (optionally GRAPH-wrapped) into a single NPS. */
@@ -859,10 +857,7 @@ public final class ApplyNegatedPropertySetTransform extends BaseTransform {
 		if (!fusedOnce) {
 			return rewritten;
 		}
-		IrBGP res = new IrBGP(rewritten.isNewScope());
-		out.forEach(res::add);
-		res.setNewScope(rewritten.isNewScope());
-		return res;
+		return BaseTransform.bgpWithLines(rewritten, out);
 	}
 
 	private static String normalizeCompactNpsLocal(String path) {

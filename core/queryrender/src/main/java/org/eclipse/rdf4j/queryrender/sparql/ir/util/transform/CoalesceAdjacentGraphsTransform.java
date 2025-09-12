@@ -65,8 +65,6 @@ public final class CoalesceAdjacentGraphsTransform extends BaseTransform {
 			IrNode rec = BaseTransform.rewriteContainers(n, CoalesceAdjacentGraphsTransform::apply);
 			out.add(rec);
 		}
-		final IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		return res;
+        return BaseTransform.bgpWithLines(bgp, out);
 	}
 }
