@@ -77,10 +77,7 @@ public final class NormalizeNpsMemberOrderTransform extends BaseTransform {
 			}
 			out.add(m);
 		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
-		return res;
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	static String reorderAllNps(String path) {
