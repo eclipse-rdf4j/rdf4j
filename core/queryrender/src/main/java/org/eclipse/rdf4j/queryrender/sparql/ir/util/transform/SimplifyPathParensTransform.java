@@ -290,13 +290,13 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			// Recursively flatten inside first
 			String innerFlat = flattenNestedAlternationGroups(inner);
 			// Try to flatten one level of nested alternation groups at the top level of this group
-            List<String> parts = PathTextUtils.splitTopLevel(innerFlat, '|');
+			List<String> parts = PathTextUtils.splitTopLevel(innerFlat, '|');
 			if (parts.size() >= 2) {
 				ArrayList<String> members = new ArrayList<>();
 				boolean changed = false;
 				for (String seg : parts) {
-                String u = seg.trim();
-                String uw = PathTextUtils.trimSingleOuterParens(u);
+					String u = seg.trim();
+					String uw = PathTextUtils.trimSingleOuterParens(u);
 					// If this part is a simple alternation group (no nested parens), flatten it
 					if (uw.indexOf('(') < 0 && uw.indexOf(')') < 0 && uw.indexOf('|') >= 0) {
 						for (String tok : uw.split("\\|")) {
@@ -332,7 +332,7 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			return s;
 		}
 		// Trim a single layer of wrapping parentheses if they enclose the full expression
-        String tw = PathTextUtils.trimSingleOuterParens(t);
+		String tw = PathTextUtils.trimSingleOuterParens(t);
 		// Split by top-level '|' to detect an alternation ignoring nested parentheses
 		List<String> parts = PathTextUtils.splitTopLevel(tw, '|');
 		if (parts.size() < 2) {
@@ -423,14 +423,14 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			String normalizedInner = normalizeParenBangAlternationGroups(inner);
 
 			// Attempt top-level split on '|' inside this group, ignoring nested parens
-            List<String> segs = PathTextUtils.splitTopLevel(normalizedInner, '|');
+			List<String> segs = PathTextUtils.splitTopLevel(normalizedInner, '|');
 			if (segs.size() >= 2) {
 				boolean allNeg = true;
 				ArrayList<String> members = new ArrayList<>();
 				for (String seg : segs) {
 					String u = seg.trim();
 					// Allow one layer of wrapping parens around the token
-                u = PathTextUtils.trimSingleOuterParens(u).trim();
+					u = PathTextUtils.trimSingleOuterParens(u).trim();
 					if (!u.startsWith("!")) {
 						allNeg = false;
 						break;
