@@ -81,7 +81,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				CONJUNCTIVE_CONSTRAINT_SPLITTER,
 				DISJUNCTIVE_CONSTRAINT_OPTIMIZER,
 				new OptionalUnionHoistOptimizer(),
-				new OptionalSubsetFactorOptimizerAlpha(),
+//				new OptionalSubsetFactorOptimizerAlpha(),
 				SAME_TERM_FILTER_OPTIMIZER,
 				UNION_SCOPE_CHANGE_OPTIMIZER,
 //				new FactorOptionalOptimizer(),
