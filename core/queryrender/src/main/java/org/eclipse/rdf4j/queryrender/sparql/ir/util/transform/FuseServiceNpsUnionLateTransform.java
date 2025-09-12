@@ -75,10 +75,7 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 			}
 			out.add(m);
 		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
-		return res;
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	private static IrNode fuseInService(IrService s) {
@@ -122,10 +119,7 @@ public final class FuseServiceNpsUnionLateTransform extends BaseTransform {
 			}
 			out.add(m);
 		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
-		return res;
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	private static IrNode fuseUnionNode(IrUnion u) {

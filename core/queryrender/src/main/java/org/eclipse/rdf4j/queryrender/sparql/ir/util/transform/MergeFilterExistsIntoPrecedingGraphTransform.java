@@ -140,10 +140,7 @@ public final class MergeFilterExistsIntoPrecedingGraphTransform extends BaseTran
 			out.add(n);
 		}
 
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
-		return res;
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	// Recursively unwrap nodes inside an EXISTS body into 'out', provided all GRAPH refs match 'graphRef'.
