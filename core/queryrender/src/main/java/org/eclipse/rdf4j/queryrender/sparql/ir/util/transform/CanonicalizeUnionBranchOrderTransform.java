@@ -24,8 +24,11 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 
 /**
- * Canonicalize order of UNION branches when both branches are simple, to prefer the branch whose subject matches the
- * first projected variable. This helps stabilize streaming test outputs where textual equality matters.
+ * Preserve UNION branch order while optionally normalizing inside each branch.
+ *
+ * Note: Despite the original intent expressed in earlier comments to reorder branches based on projection, the current
+ * implementation keeps original UNION branch order for textual stability and alignment with tests, and only recurses
+ * into branches to apply inner rewrites.
  */
 public final class CanonicalizeUnionBranchOrderTransform extends BaseTransform {
 	private CanonicalizeUnionBranchOrderTransform() {
