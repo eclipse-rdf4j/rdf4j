@@ -72,15 +72,13 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			});
 			out.add(transformed);
 		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		return res;
+        return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	public static IrPathTriple tryRewriteZeroOrOne(IrSubSelect ss, TupleExprIRRenderer r) {
 		Z01Analysis a = analyzeZeroOrOne(ss, r);
 		if (a != null) {
-			final String expr = BaseTransform.applyQuantifier(a.exprInner, '?');
+			final String expr = PathTextUtils.applyQuantifier(a.exprInner, '?');
 			return new IrPathTriple(varNamed(a.sName), expr, varNamed(a.oName), false,
 					Collections.emptySet());
 		}
@@ -227,7 +225,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		} else {
 			exprInner = (steps.size() == 1) ? steps.get(0) : ("(" + String.join("|", steps) + ")");
 		}
-		final String expr = BaseTransform.applyQuantifier(exprInner, '?');
+		final String expr = PathTextUtils.applyQuantifier(exprInner, '?');
 		return new IrPathTriple(varNamed(sName), expr, varNamed(oName), false, Collections.emptySet());
 	}
 
@@ -240,7 +238,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			TupleExprIRRenderer r) {
 		Z01Analysis a = analyzeZeroOrOne(ss, r);
 		if (a != null) {
-			final String expr = BaseTransform.applyQuantifier(a.exprInner, '?');
+			final String expr = PathTextUtils.applyQuantifier(a.exprInner, '?');
 			final IrPathTriple pt = new IrPathTriple(varNamed(a.sName), expr, varNamed(a.oName), ss.isNewScope(),
 					Collections.emptySet());
 			if (a.allGraphWrapped && a.commonGraph != null) {
@@ -412,7 +410,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 			exprInner = (steps.size() == 1) ? steps.get(0) : ("(" + String.join("|", steps) + ")");
 		}
 
-		final String expr = BaseTransform.applyQuantifier(exprInner, '?');
+		final String expr = PathTextUtils.applyQuantifier(exprInner, '?');
 		final IrPathTriple pt = new IrPathTriple(varNamed(sName), expr, varNamed(oName), false,
 				Collections.emptySet());
 		if (allGraphWrapped && commonGraph != null) {
