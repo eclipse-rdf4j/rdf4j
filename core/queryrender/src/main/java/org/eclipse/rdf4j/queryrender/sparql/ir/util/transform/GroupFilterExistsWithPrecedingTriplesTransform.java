@@ -126,9 +126,6 @@ public final class GroupFilterExistsWithPrecedingTriplesTransform extends BaseTr
 			}
 			i++;
 		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
-		return res;
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 }
