@@ -67,161 +67,150 @@ public final class IrTransforms {
 
 		IrNode irNode = null;
 		// Single application of the ordered passes via transformChildren().
-		// The bounded loop is kept to make it trivial to turn this into a multi‑pass fixed‑point
-		// driver in the future; current passes aim to be idempotent in one pass.
-		for (int i = 0; i < 10; i++) {
-			// Use transformChildren to rewrite WHERE/BGPs functionally in a single pass order
-			irNode = select.transformChildren(child -> {
-				if (child instanceof IrBGP) {
-					IrBGP w = (IrBGP) child;
-					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
-					w = CoalesceAdjacentGraphsTransform.apply(w);
-					// Merge adjacent VALUES where provably safe (identical var lists => intersection; disjoint => cross
-					// product)
-					w = MergeAdjacentValuesTransform.apply(w);
-					// Preserve structure: prefer GRAPH { {A} UNION {B} } over
-					// { GRAPH { A } } UNION { GRAPH { B } } when both UNION branches
-					// are GRAPHs with the same graph ref.
-					w = GroupUnionOfSameGraphBranchesTransform.apply(w);
-					// Merge FILTER EXISTS into preceding GRAPH only when the EXISTS body is marked with
-					// explicit grouping (ex.isNewScope/f.isNewScope). This preserves outside-FILTER cases
-					// while still grouping triples + EXISTS inside GRAPH when original query had braces.
-					w = MergeFilterExistsIntoPrecedingGraphTransform.apply(w);
-					w = ApplyCollectionsTransform.apply(w);
-					w = ApplyNegatedPropertySetTransform.apply(w, r);
 
-					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
+		// Use transformChildren to rewrite WHERE/BGPs functionally in a single pass order
+		irNode = select.transformChildren(child -> {
+			if (child instanceof IrBGP) {
+				IrBGP w = (IrBGP) child;
+				w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
+				w = CoalesceAdjacentGraphsTransform.apply(w);
+				// Merge adjacent VALUES where provably safe (identical var lists => intersection; disjoint => cross
+				// product)
+				w = MergeAdjacentValuesTransform.apply(w);
+				// Preserve structure: prefer GRAPH { {A} UNION {B} } over
+				// { GRAPH { A } } UNION { GRAPH { B } } when both UNION branches
+				// are GRAPHs with the same graph ref.
+				w = GroupUnionOfSameGraphBranchesTransform.apply(w);
+				// Merge FILTER EXISTS into preceding GRAPH only when the EXISTS body is marked with
+				// explicit grouping (ex.isNewScope/f.isNewScope). This preserves outside-FILTER cases
+				// while still grouping triples + EXISTS inside GRAPH when original query had braces.
+				w = MergeFilterExistsIntoPrecedingGraphTransform.apply(w);
+				w = ApplyCollectionsTransform.apply(w);
+				w = ApplyNegatedPropertySetTransform.apply(w, r);
 
-					w = ApplyPathsFixedPointTransform.apply(w, r);
+				w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
 
-					// Final path parentheses/style simplification to match canonical expectations
-					w = SimplifyPathParensTransform.apply(w);
+				w = ApplyPathsFixedPointTransform.apply(w, r);
 
-					// Late fuse: inside SERVICE, convert UNION of two bare-NPS branches into a single NPS
-					w = FuseServiceNpsUnionLateTransform
-							.apply(w);
+				// Final path parentheses/style simplification to match canonical expectations
+				w = SimplifyPathParensTransform.apply(w);
 
-					// Normalize NPS member order for stable, expected text
-					w = NormalizeNpsMemberOrderTransform.apply(w);
+				// Late fuse: inside SERVICE, convert UNION of two bare-NPS branches into a single NPS
+				w = FuseServiceNpsUnionLateTransform.apply(w);
 
-					// Collections and options later; first ensure path alternations are extended when possible
-					// Merge OPTIONAL into preceding GRAPH only when it is clearly a single-step adjunct and safe.
-					w = MergeOptionalIntoPrecedingGraphTransform.apply(w);
-					w = FuseAltInverseTailBGPTransform.apply(w, r);
-					w = FlattenSingletonUnionsTransform.apply(w);
-//					w = org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.CollapseRedundantScopedBgpsTransform
-//							.apply(w);
-					// Re-apply guarded merge in case earlier passes reshaped the grouping to satisfy the
-					// precondition (EXISTS newScope). This remains a no-op when no explicit grouping exists.
-					w = MergeFilterExistsIntoPrecedingGraphTransform.apply(w);
-					// Wrap preceding triple with FILTER EXISTS { { ... } } into a grouped block for stability
-					w = GroupFilterExistsWithPrecedingTriplesTransform.apply(w);
+				// Normalize NPS member order for stable, expected text
+				w = NormalizeNpsMemberOrderTransform.apply(w);
 
-					// After grouping, re-run a lightweight NPS rewrite inside nested groups to compact
-					// simple var-predicate + inequality filters to !(...) path triples (including inside
-					// EXISTS bodies).
-					w = ApplyNegatedPropertySetTransform.rewriteSimpleNpsOnly(w, r);
-					// Fuse UNION-of-NPS specifically under MINUS early, once branches have been rewritten to path
-					// triples
-					// Grouping/stability is driven by explicit newScope flags in IR; avoid heuristics here.
-					// Reorder OPTIONAL-level filters before nested OPTIONALs when safe (variable-availability
-					// heuristic)
-					w = ReorderFiltersInOptionalBodiesTransform.apply(w, r);
-					// Normalize chained inequalities in FILTERs to NOT IN when safe
-					w = NormalizeFilterNotInTransform.apply(w,
-							r);
+				// Collections and options later; first ensure path alternations are extended when possible
+				// Merge OPTIONAL into preceding GRAPH only when it is clearly a single-step adjunct and safe.
+				w = MergeOptionalIntoPrecedingGraphTransform.apply(w);
+				w = FuseAltInverseTailBGPTransform.apply(w, r);
+				w = FlattenSingletonUnionsTransform.apply(w);
 
-					// Preserve original orientation of bare NPS triples to match expected algebra
-					w = NormalizeZeroOrOneSubselectTransform.apply(w, r);
+				// Re-apply guarded merge in case earlier passes reshaped the grouping to satisfy the
+				// precondition (EXISTS newScope). This remains a no-op when no explicit grouping exists.
+				w = MergeFilterExistsIntoPrecedingGraphTransform.apply(w);
+				// Wrap preceding triple with FILTER EXISTS { { ... } } into a grouped block for stability
+				w = GroupFilterExistsWithPrecedingTriplesTransform.apply(w);
 
-					w = ApplyPathsFixedPointTransform.apply(w, r);
+				// After grouping, re-run a lightweight NPS rewrite inside nested groups to compact
+				// simple var-predicate + inequality filters to !(...) path triples (including inside
+				// EXISTS bodies).
+				w = ApplyNegatedPropertySetTransform.rewriteSimpleNpsOnly(w, r);
+				// Fuse UNION-of-NPS specifically under MINUS early, once branches have been rewritten to path
+				// triples
+				// Grouping/stability is driven by explicit newScope flags in IR; avoid heuristics here.
+				// Reorder OPTIONAL-level filters before nested OPTIONALs when safe (variable-availability
+				// heuristic)
+				w = ReorderFiltersInOptionalBodiesTransform.apply(w, r);
+				// Normalize chained inequalities in FILTERs to NOT IN when safe
+				w = NormalizeFilterNotInTransform.apply(w, r);
 
-					w = SimplifyPathParensTransform.apply(w);
+				// Preserve original orientation of bare NPS triples to match expected algebra
+				// (second call to zero-or-one normalization removed; already applied above)
 
-					// Normalize NPS member order after late inversions introduced by path fusions
-					w = NormalizeNpsMemberOrderTransform.apply(w);
+				w = ApplyPathsFixedPointTransform.apply(w, r);
 
-					// Canonicalize bare NPS orientation so that subject/object ordering is stable
-					// for pairs of user variables (e.g., prefer ?x !(...) ?y over ?y !(^...) ?x).
-					w = CanonicalizeBareNpsOrientationTransform.apply(w);
+				w = SimplifyPathParensTransform.apply(w);
 
-					// Late pass: re-apply NPS fusion now that earlier transforms may have
-					// reordered FILTERs/triples to be adjacent (e.g., GRAPH …, FILTER …, GRAPH …).
-					// This catches cases like Graph + NOT IN + Graph that only become adjacent
-					// after other rewrites.
-					w = ApplyNegatedPropertySetTransform.apply(w, r);
+				// Normalize NPS member order after late inversions introduced by path fusions
+				w = NormalizeNpsMemberOrderTransform.apply(w);
 
-					// One more path fixed-point to allow newly formed path triples to fuse further
-					w = ApplyPathsFixedPointTransform.apply(w, r);
-					// And normalize member order again for stability
-					w = NormalizeNpsMemberOrderTransform.apply(w);
+				// Canonicalize bare NPS orientation so that subject/object ordering is stable
+				// for pairs of user variables (e.g., prefer ?x !(...) ?y over ?y !(^...) ?x).
+				w = CanonicalizeBareNpsOrientationTransform.apply(w);
 
-					// (no-op) Scope preservation handled directly in union fuser by propagating
-					// IrUnion.newScope to the fused replacement branch.
+				// Late pass: re-apply NPS fusion now that earlier transforms may have
+				// reordered FILTERs/triples to be adjacent (e.g., GRAPH …, FILTER …, GRAPH …).
+				// This catches cases like Graph + NOT IN + Graph that only become adjacent
+				// after other rewrites.
+				w = ApplyNegatedPropertySetTransform.apply(w, r);
 
-					// Merge a subset of UNION branches consisting of simple path triples (including NPS)
-					// into a single path triple with alternation, when safe.
-					w = FuseUnionOfPathTriplesPartialTransform.apply(w, r);
+				// One more path fixed-point to allow newly formed path triples to fuse further
+				w = ApplyPathsFixedPointTransform.apply(w, r);
+				// And normalize member order again for stability
+				w = NormalizeNpsMemberOrderTransform.apply(w);
 
-					// After merging UNION branches, flatten any singleton UNIONs, including those that
-					// originated from property-path alternation (UNION.newScope=true but branch BGPs
-					// have newScope=false).
-					w = FlattenSingletonUnionsTransform.apply(w);
+				// (no-op) Scope preservation handled directly in union fuser by propagating
+				// IrUnion.newScope to the fused replacement branch.
 
-					// Re-run SERVICE NPS union fusion very late in case earlier passes
-					// introduced the union shape only at this point
-					w = FuseServiceNpsUnionLateTransform
-							.apply(w);
+				// Merge a subset of UNION branches consisting of simple path triples (including NPS)
+				// into a single path triple with alternation, when safe.
+				w = FuseUnionOfPathTriplesPartialTransform.apply(w, r);
 
-					// One more UNION-of-NPS fuser after broader path refactors to catch newly-formed shapes
-					w = FuseUnionOfNpsBranchesTransform.apply(w, r);
+				// After merging UNION branches, flatten any singleton UNIONs, including those that
+				// originated from property-path alternation (UNION.newScope=true but branch BGPs
+				// have newScope=false).
+				w = FlattenSingletonUnionsTransform.apply(w);
 
-					// Remove redundant, non-scoped single-child BGP layers inside UNION branches to
-					// avoid introducing extra brace layers in branch rendering.
-					w = UnwrapSingleBgpInUnionBranchesTransform
-							.apply(w);
+				// Re-run SERVICE NPS union fusion very late in case earlier passes
+				// introduced the union shape only at this point
+				w = FuseServiceNpsUnionLateTransform.apply(w);
 
-					// Late normalization of grouped tail steps: ensure a final tail like "/foaf:name"
-					// is rendered outside the right-hand grouping when safe
-					w = CanonicalizeGroupedTailStepTransform.apply(w, r);
+				// One more UNION-of-NPS fuser after broader path refactors to catch newly-formed shapes
+				w = FuseUnionOfNpsBranchesTransform.apply(w, r);
 
-					// Final orientation tweak for bare NPS using SELECT projection order when available
-					w = CanonicalizeNpsByProjectionTransform
-							.apply(w, select);
+				// Remove redundant, non-scoped single-child BGP layers inside UNION branches to
+				// avoid introducing extra brace layers in branch rendering.
+				w = UnwrapSingleBgpInUnionBranchesTransform.apply(w);
 
-					// Canonicalize UNION branch order to prefer the branch whose subject matches the first
-					// projected variable (textual stability for streaming tests)
-					w = CanonicalizeUnionBranchOrderTransform
-							.apply(w, select);
+				// Late normalization of grouped tail steps: ensure a final tail like "/foaf:name"
+				// is rendered outside the right-hand grouping when safe
+				w = CanonicalizeGroupedTailStepTransform.apply(w, r);
 
-					// Re-group UNION branches that target the same GRAPH back under a single GRAPH
-					// with an inner UNION, to preserve expected scoping braces in tests.
-					w = GroupUnionOfSameGraphBranchesTransform.apply(w);
+				// Final orientation tweak for bare NPS using SELECT projection order when available
+				w = CanonicalizeNpsByProjectionTransform.apply(w, select);
 
-					// (no extra NPS-union fusing here; keep VALUES+GRAPH UNION shapes stable)
-					w = FuseUnionOfNpsBranchesTransform.apply(w, r);
+				// Canonicalize UNION branch order to prefer the branch whose subject matches the first
+				// projected variable (textual stability for streaming tests)
+				w = CanonicalizeUnionBranchOrderTransform.apply(w, select);
 
-					// Preserve explicit grouping for UNION branches that combine VALUES with a negated
-					// property path triple, to maintain textual stability expected by tests.
-					w = GroupValuesAndNpsInUnionBranchTransform.apply(w);
+				// Re-group UNION branches that target the same GRAPH back under a single GRAPH
+				// with an inner UNION, to preserve expected scoping braces in tests.
+				w = GroupUnionOfSameGraphBranchesTransform.apply(w);
 
-					// Final guarded merge in case later normalization introduced explicit grouping that
-					// should be associated with the GRAPH body.
-					w = MergeFilterExistsIntoPrecedingGraphTransform.apply(w);
+				// (no extra NPS-union fusing here; keep VALUES+GRAPH UNION shapes stable)
+				w = FuseUnionOfNpsBranchesTransform.apply(w, r);
 
-					// Final SERVICE NPS union fusion pass after all other cleanups
-					w = FuseServiceNpsUnionLateTransform.apply(w);
+				// Preserve explicit grouping for UNION branches that combine VALUES with a negated
+				// property path triple, to maintain textual stability expected by tests.
+				w = GroupValuesAndNpsInUnionBranchTransform.apply(w);
 
-					// Final cleanup: ensure no redundant single-child BGP wrappers remain inside
-					// UNION branches after late passes may have regrouped content.
-					w = UnwrapSingleBgpInUnionBranchesTransform
-							.apply(w);
+				// Final guarded merge in case later normalization introduced explicit grouping that
+				// should be associated with the GRAPH body.
+				w = MergeFilterExistsIntoPrecedingGraphTransform.apply(w);
 
-					return w;
-				}
-				return child;
-			});
-		}
+				// Final SERVICE NPS union fusion pass after all other cleanups
+				w = FuseServiceNpsUnionLateTransform.apply(w);
+
+				// Final cleanup: ensure no redundant single-child BGP wrappers remain inside
+				// UNION branches after late passes may have regrouped content.
+				w = UnwrapSingleBgpInUnionBranchesTransform.apply(w);
+
+				return w;
+			}
+			return child;
+		});
 
 		// Final sweeping pass: fuse UNION-of-NPS strictly inside SERVICE bodies (handled by
 		// FuseServiceNpsUnionLateTransform). Do not apply the service fuser to the whole WHERE,
