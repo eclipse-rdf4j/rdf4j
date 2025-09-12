@@ -57,9 +57,7 @@ public final class LiftPathUnionScopeInsideGraphTransform extends BaseTransform 
 			}
 			out.add(m);
 		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		return res;
+        return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	private static IrBGP liftInGraph(IrBGP where) {

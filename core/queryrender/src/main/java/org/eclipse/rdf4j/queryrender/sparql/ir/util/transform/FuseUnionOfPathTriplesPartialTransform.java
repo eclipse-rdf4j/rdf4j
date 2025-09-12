@@ -442,7 +442,7 @@ public final class FuseUnionOfPathTriplesPartialTransform extends BaseTransform 
 			return out;
 		}
 		String s = path.trim();
-		if (BaseTransform.isWrapped(s)) {
+		if (PathTextUtils.isWrapped(s)) {
 			s = s.substring(1, s.length() - 1).trim();
 		}
 		int depth = 0;

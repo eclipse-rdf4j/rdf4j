@@ -208,37 +208,7 @@ public class BaseTransform {
 		return n;
 	}
 
-	/** Return true if the string has the given character at top level (not inside parentheses). */
-	public static boolean hasTopLevel(final String s, final char ch) {
-		return PathTextUtils.hasTopLevel(s, ch);
-	}
-
-	/** True if the text is wrapped by a single pair of outer parentheses. */
-	public static boolean isWrapped(final String s) {
-		return PathTextUtils.isWrapped(s);
-	}
-
-	/** Rough atomic check for a property path text: uses PathTextUtils to handle parens and operators. */
-	public static boolean isAtomicPathText(final String s) {
-		return PathTextUtils.isAtomicPathText(s);
-	}
-
-	/**
-	 * When using a part inside a sequence with '/', only wrap it if it contains a top-level alternation '|'.
-	 */
-	public static String wrapForSequence(final String part) {
-		return PathTextUtils.wrapForSequence(part);
-	}
-
-	/** Prefix with '^', wrapping if the inner is not atomic. */
-	public static String wrapForInverse(final String inner) {
-		return PathTextUtils.wrapForInverse(inner);
-	}
-
-	/** Apply a quantifier to a path, wrapping only when the inner is not atomic. */
-	public static String applyQuantifier(final String inner, final char quant) {
-		return PathTextUtils.applyQuantifier(inner, quant);
-	}
+	// NOTE: Depth-aware path helpers moved to PathTextUtils; call it directly at use sites.
 
 	/** Build a new IrBGP with the same scope flag and the provided lines. */
 	public static IrBGP bgpWithLines(IrBGP original, List<IrNode> lines) {
@@ -306,9 +276,9 @@ public class BaseTransform {
 						if (sameVar(aSubj, b.getSubject())) {
 							String left = invertNegatedPropertySet(aPath);
 							if (left == null) {
-								left = wrapForInverse(aPath);
+								left = PathTextUtils.wrapForInverse(aPath);
 							}
-							String fusedPath = left + "/" + wrapForSequence(b.getPathText());
+							String fusedPath = left + "/" + PathTextUtils.wrapForSequence(b.getPathText());
 							out.add(new IrPathTriple(a.getObject(), a.getObjectOverride(), fusedPath, b.getObject(),
 									b.getObjectOverride(), IrPathTriple.mergePathVars(a, b), false));
 							i += 1; // consume b
@@ -319,9 +289,9 @@ public class BaseTransform {
 						if (sameVar(aSubj, b.getObject())) {
 							String left = invertNegatedPropertySet(aPath);
 							if (left == null) {
-								left = wrapForInverse(aPath);
+								left = PathTextUtils.wrapForInverse(aPath);
 							}
-							String right = wrapForInverse(b.getPathText());
+							String right = PathTextUtils.wrapForInverse(b.getPathText());
 							String fusedPath = left + "/" + right;
 							out.add(new IrPathTriple(a.getObject(), a.getObjectOverride(), fusedPath, b.getSubject(),
 									b.getSubjectOverride(), IrPathTriple.mergePathVars(a, b), false));
