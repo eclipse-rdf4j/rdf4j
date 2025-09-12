@@ -107,10 +107,7 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			}
 			out.add(m);
 		}
-		IrBGP res = new IrBGP(bgp.isNewScope());
-		out.forEach(res::add);
-		res.setNewScope(bgp.isNewScope());
-		return res;
+		return BaseTransform.bgpWithLines(bgp, out);
 	}
 
 	public static String simplify(String s) {
@@ -166,17 +163,17 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			return null;
 		}
 		String t = s.trim();
-		String inner = trimSingleOuterParens(t);
+		String inner = PathTextUtils.trimSingleOuterParens(t);
 		if (Objects.equals(inner, t)) {
 			return s; // not a single outer pair
 		}
 		// At this point, t is wrapped with a single pair of parentheses. Only unwrap when
 		// the content is a pure top-level alternation (no top-level sequence '/')
-		List<String> alts = splitTopLevel(inner, '|');
+		List<String> alts = PathTextUtils.splitTopLevel(inner, '|');
 		if (alts.size() <= 1) {
 			return s;
 		}
-		List<String> seqCheck = splitTopLevel(inner, '/');
+		List<String> seqCheck = PathTextUtils.splitTopLevel(inner, '/');
 		if (seqCheck.size() > 1) {
 			return s; // contains a top-level sequence; need the outer parens
 		}
@@ -293,13 +290,13 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			// Recursively flatten inside first
 			String innerFlat = flattenNestedAlternationGroups(inner);
 			// Try to flatten one level of nested alternation groups at the top level of this group
-			List<String> parts = splitTopLevel(innerFlat, '|');
+            List<String> parts = PathTextUtils.splitTopLevel(innerFlat, '|');
 			if (parts.size() >= 2) {
 				ArrayList<String> members = new ArrayList<>();
 				boolean changed = false;
 				for (String seg : parts) {
-					String u = seg.trim();
-					String uw = trimSingleOuterParens(u);
+                String u = seg.trim();
+                String uw = PathTextUtils.trimSingleOuterParens(u);
 					// If this part is a simple alternation group (no nested parens), flatten it
 					if (uw.indexOf('(') < 0 && uw.indexOf(')') < 0 && uw.indexOf('|') >= 0) {
 						for (String tok : uw.split("\\|")) {
@@ -335,9 +332,9 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			return s;
 		}
 		// Trim a single layer of wrapping parentheses if they enclose the full expression
-		String tw = trimSingleOuterParens(t);
+        String tw = PathTextUtils.trimSingleOuterParens(t);
 		// Split by top-level '|' to detect an alternation ignoring nested parentheses
-		List<String> parts = splitTopLevel(tw, '|');
+		List<String> parts = PathTextUtils.splitTopLevel(tw, '|');
 		if (parts.size() < 2) {
 			return s;
 		}
@@ -345,7 +342,7 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 		for (String seg : parts) {
 			String u = seg.trim();
 			// Allow parentheses around a simple negated token: (!ex:p) -> !ex:p
-			u = trimSingleOuterParens(u);
+			u = PathTextUtils.trimSingleOuterParens(u);
 			if (!u.startsWith("!")) {
 				return s; // not all segments negated at top level
 			}
@@ -358,48 +355,7 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 		return "!(" + String.join("|", members) + ")";
 	}
 
-	private static String trimSingleOuterParens(String in) {
-		String t = in;
-		if (t.length() >= 2 && t.charAt(0) == '(' && t.charAt(t.length() - 1) == ')') {
-			int depth = 0;
-			for (int i = 0; i < t.length(); i++) {
-				char c = t.charAt(i);
-				if (c == '(') {
-					depth++;
-				} else if (c == ')') {
-					depth--;
-				}
-				if (depth == 0 && i < t.length() - 1) {
-					return in; // closes before the end -> not a single outer pair
-				}
-			}
-			// single outer pair spans entire string
-			return t.substring(1, t.length() - 1).trim();
-		}
-		return in;
-	}
-
-	private static List<String> splitTopLevel(String in, char sep) {
-		ArrayList<String> out = new ArrayList<>();
-		int depth = 0;
-		int last = 0;
-		for (int i = 0; i < in.length(); i++) {
-			char c = in.charAt(i);
-			if (c == '(') {
-				depth++;
-			} else if (c == ')') {
-				depth--;
-			} else if (c == sep && depth == 0) {
-				out.add(in.substring(last, i));
-				last = i + 1;
-			}
-		}
-		// tail
-		if (last <= in.length()) {
-			out.add(in.substring(last));
-		}
-		return out;
-	}
+	// trimSingleOuterParens and splitTopLevel now centralized in PathTextUtils
 
 	private static String dedupeParenedAlternations(String s) {
 		StringBuilder out = new StringBuilder(s.length());
@@ -467,14 +423,14 @@ public final class SimplifyPathParensTransform extends BaseTransform {
 			String normalizedInner = normalizeParenBangAlternationGroups(inner);
 
 			// Attempt top-level split on '|' inside this group, ignoring nested parens
-			List<String> segs = splitTopLevel(normalizedInner, '|');
+            List<String> segs = PathTextUtils.splitTopLevel(normalizedInner, '|');
 			if (segs.size() >= 2) {
 				boolean allNeg = true;
 				ArrayList<String> members = new ArrayList<>();
 				for (String seg : segs) {
 					String u = seg.trim();
 					// Allow one layer of wrapping parens around the token
-					u = trimSingleOuterParens(u).trim();
+                u = PathTextUtils.trimSingleOuterParens(u).trim();
 					if (!u.startsWith("!")) {
 						allNeg = false;
 						break;
