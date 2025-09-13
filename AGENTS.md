@@ -79,7 +79,7 @@ It is illegal to `-q` when running tests!
 4. **Targeted tests (tight loops)**
   - By module (incl. deps): `mvn -o -pl <module> verify  | tail -500`
   - Single class: `mvn -o -pl <module> -Dtest=ClassName verify  | tail -500`
-  - Single method: `mvn -o -pl <module> -Dtest=ClassName#method verify  | tail -500`
+  - Single method: `mvn -o -pl <module> -Dtest=ClassName#method verify | tail -500`
 5. **Inspect failures**
   - **Unit (Surefire):** `<module>/target/surefire-reports/`
   - **IT (Failsafe):** `<module>/target/failsafe-reports/`
