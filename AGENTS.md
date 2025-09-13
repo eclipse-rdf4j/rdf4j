@@ -61,7 +61,7 @@ Review bar and enforcement
 **Two-step pattern (fast + safe)**
 1) **Compile deps fast (skip tests):**  
    `mvn -o -pl <module> -am -Pquick verify`
-2) **Run tests :**  
+2) **Run tests:**  
    `mvn -o -pl <module> verify | tail -500`
 
 It is illegal to `-am` when running tests!
