@@ -366,7 +366,7 @@ rdf4j: root project
     ├── queryalgebra: Query algebra model and evaluation.
     │   ├── model: A generic query algebra for RDF queries.
     │   ├── evaluation: Evaluation strategy API and implementations for the query algebra model.
-    │   └── geosparql: Query algbebra implementations to support the evaluation of GeoSPARQL.
+    │   └── geosparql: Query algebra implementations to support the evaluation of GeoSPARQL.
     ├── queryparser: Query parser API and implementations.
     │   ├── api: Query language parsers API.
     │   └── sparql: Query language parser implementation for SPARQL.
