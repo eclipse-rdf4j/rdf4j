@@ -134,6 +134,89 @@ It is illegal to `-q` when running tests!
   - `-DskipITs` (focus on unit tests)
   - `-DfailIfNoTests=false` (when selecting a class that has no tests on some platforms)
 
+## Assertions: Make invariants explicit
+
+Assertions are executable claims about what must be true. They’re the fastest way to surface “impossible” states and to localize bugs at the line that crossed a boundary it had no business crossing. Use them both as **temporary tripwires** during investigation and as **permanent contracts** once an invariant is known to matter.
+
+**Two useful flavors**
+
+- **Temporary tripwires (debug asserts):** Add while hunting a failing test or weird behavior. Keep them cheap, contextual, and local to the suspect path. Remove after the mystery is solved **or** convert to permanent checks if the invariant is genuinely important.
+- **Permanent contracts:** Encode **preconditions** (valid inputs), **postconditions** (valid outputs), and **invariants** (state that must always hold). These stay and prevent regressions.
+
+**Where to add assertions**
+
+- At **module boundaries** and **after parsing/external calls** (validate assumptions about returned/decoded data).
+- Around **state transitions** (illegal transitions should fail loudly).
+- In **concurrency hotspots** (e.g., “lock must be held”, “no concurrent mutation”).
+- Before/after **caching, batching, or memoization** (keys, sizes, ordering, monotonicity).
+- For **exhaustive enums** in `switch` statements (treat unexpected values as hard errors).
+
+**How to write good assertions**
+
+- One fact per assert. Fail **fast**, fail **usefully**.
+- Include **stable context** in the message (ids, sizes, states) so the failure is self‑explanatory.
+- Avoid side effects in the condition or message. Assertions may be disabled in some runtimes.
+- Keep them **cheap**: no I/O, heavy allocations, or deep logging in the message.
+- Don’t use asserts for **user‑facing validation**. Raise exceptions for expected bad inputs.
+
+**Java specifics**
+
+- **Enable VM assertions in tests.** Tests must run with `-ea` so `assert` is active.
+- Use **`assert`** for debug‑only invariants that “cannot happen.” Use **exceptions** for runtime guarantees:
+    - Preconditions: `IllegalArgumentException` / `Objects.requireNonNull` (or Guava `Preconditions` if present).
+    - Invariants: `IllegalStateException`.
+- Prefer treating unexpected enum values as **hard errors** rather than adding a quiet `default` path.
+
+**Concrete examples**
+
+Precondition (permanent)
+```java
+void setPort(int port) {
+  if (port < 1 || port > 65_535) {
+    throw new IllegalArgumentException("port out of range: " + port);
+  }
+  this.port = port;
+}
+```
+
+Invariant (permanent)
+```java
+void advance(State next) {
+  if (!allowedTransitions.get(state).contains(next)) {
+    throw new IllegalStateException("Illegal transition " + state + " → " + next);
+  }
+  state = next;
+}
+```
+
+Debug tripwire (temporary; remove or convert later)
+```java
+// Narrow a flaky failure around ordering
+assert isSorted(results) : "unsorted results, size=" + results.size() + " ids=" + ids(results);
+```
+
+Unreachable (hard error)
+```java
+switch (kind) {
+  case A: return handleA();
+  case B: return handleB();
+  default:
+    throw new IllegalStateException("Unhandled kind: " + kind);
+}
+```
+
+Concurrency assumption
+```java
+synchronized void put(String k, String v) {
+  assert Thread.holdsLock(this) : "put must hold instance monitor";
+  // ...
+}
+```
+
+
+House rule: Asserts are allowed and encouraged. Removing or weakening an assertion to “make it pass” is strictly forbidden — fix the cause, not the guardrail.
+
+
 ## Triage Playbook
 - **Missing dep/plugin offline**
   - Remedy: **rerun the exact command without `-o`** once to fetch; then return offline.
