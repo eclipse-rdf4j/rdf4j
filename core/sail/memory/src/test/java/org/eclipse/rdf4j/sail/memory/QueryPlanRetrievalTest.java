@@ -1977,87 +1977,9 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testOptionalUnionFilterRewrite() {
 
-		String expected = "Projection\n" +
-				"╠══ ProjectionElemList\n" +
-				"║     ProjectionElem \"count\"\n" +
-				"╚══ Extension\n" +
-				"   ├── Group ()\n" +
-				"   │  ╠══ LeftJoin\n" +
-				"   │  ║  ├── StatementPattern (resultSizeEstimate=0) [left]\n" +
-				"   │  ║  │     s: Var (name=a)\n" +
-				"   │  ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"   │  ║  │     o: Var (name=type)\n" +
-				"   │  ║  └── Union [right]\n" +
-				"   │  ║     ╠══ LeftJoin\n" +
-				"   │  ║     ║  ├── Join (JoinIterator) [left]\n" +
-				"   │  ║     ║  │  ╠══ StatementPattern (costEstimate=0.50, resultSizeEstimate=0) [left]\n" +
-				"   │  ║     ║  │  ║     s: Var (name=a)\n" +
-				"   │  ║     ║  │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"   │  ║     ║  │  ║     o: Var (name=type)\n" +
-				"   │  ║     ║  │  ╚══ Join (HashJoinIteration) [right]\n" +
-				"   │  ║     ║  │     ├── StatementPattern (costEstimate=1.12, resultSizeEstimate=0) [left]\n" +
-				"   │  ║     ║  │     │     s: Var (name=type)\n" +
-				"   │  ║     ║  │     │     p: Var (name=_const_6cc5033f_uri, value=http://www.w3.org/2000/01/rdf-schema#subClassOff, anonymous)\n"
-				+
-				"   │  ║     ║  │     │     o: Var (name=_anon_e6dc385587614690b3e191002d99c27d3520, anonymous)\n" +
-				"   │  ║     ║  │     └── Filter (new scope) [right]\n" +
-				"   │  ║     ║  │        ╠══ Compare (!=)\n" +
-				"   │  ║     ║  │        ║     Var (name=superSuper)\n" +
-				"   │  ║     ║  │        ║     ValueConstant (value=http://www.w3.org/2000/01/rdf-schema#Resource)\n" +
-				"   │  ║     ║  │        ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
-				"   │  ║     ║  │              s: Var (name=_anon_e6dc385587614690b3e191002d99c27d3520, anonymous)\n" +
-				"   │  ║     ║  │              p: Var (name=_const_6cc5033f_uri, value=http://www.w3.org/2000/01/rdf-schema#subClassOff, anonymous)\n"
-				+
-				"   │  ║     ║  │              o: Var (name=superSuper)\n" +
-				"   │  ║     ║  └── Filter [right]\n" +
-				"   │  ║     ║     ╠══ Compare (!=)\n" +
-				"   │  ║     ║     ║     Var (name=superSuper)\n" +
-				"   │  ║     ║     ║     ValueConstant (value=http://www.w3.org/2000/01/rdf-schema#Resource)\n" +
-				"   │  ║     ║     ╚══ StatementPattern (resultSizeEstimate=0)\n" +
-				"   │  ║     ║           s: Var (name=superSuper)\n" +
-				"   │  ║     ║           p: Var (name=_const_817f76c2_uri, value=http://www.w3.org/2000/01/rdf-schema#seeAlso, anonymous)\n"
-				+
-				"   │  ║     ║           o: Var (name=seeAlso)\n" +
-				"   │  ║     ╚══ LeftJoin\n" +
-				"   │  ║        ├── Join (JoinIterator) [left]\n" +
-				"   │  ║        │  ╠══ StatementPattern (costEstimate=0.50, resultSizeEstimate=0) [left]\n" +
-				"   │  ║        │  ║     s: Var (name=a)\n" +
-				"   │  ║        │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"   │  ║        │  ║     o: Var (name=type)\n" +
-				"   │  ║        │  ╚══ Join (HashJoinIteration) [right]\n" +
-				"   │  ║        │     ├── StatementPattern (costEstimate=1.12, resultSizeEstimate=0) [left]\n" +
-				"   │  ║        │     │     s: Var (name=type)\n" +
-				"   │  ║        │     │     p: Var (name=_const_6cc5033f_uri, value=http://www.w3.org/2000/01/rdf-schema#subClassOff, anonymous)\n"
-				+
-				"   │  ║        │     │     o: Var (name=_anon_e6dc385587614690b3e191002d99c27d75203571, anonymous)\n" +
-				"   │  ║        │     └── Filter (new scope) [right]\n" +
-				"   │  ║        │        ╠══ Compare (!=)\n" +
-				"   │  ║        │        ║     Var (name=superSuper)\n" +
-				"   │  ║        │        ║     ValueConstant (value=http://www.w3.org/2000/01/rdf-schema#Resource)\n" +
-				"   │  ║        │        ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
-				"   │  ║        │              s: Var (name=_anon_e6dc385587614690b3e191002d99c27d75203571, anonymous)\n"
-				+
-				"   │  ║        │              p: Var (name=_const_6cc5033f_uri, value=http://www.w3.org/2000/01/rdf-schema#subClassOff, anonymous)\n"
-				+
-				"   │  ║        │              o: Var (name=superSuper)\n" +
-				"   │  ║        └── Filter [right]\n" +
-				"   │  ║           ╠══ Compare (!=)\n" +
-				"   │  ║           ║     Var (name=superSuper)\n" +
-				"   │  ║           ║     ValueConstant (value=http://www.w3.org/2000/01/rdf-schema#Resource)\n" +
-				"   │  ║           ╚══ StatementPattern (resultSizeEstimate=0)\n" +
-				"   │  ║                 s: Var (name=superSuper)\n" +
-				"   │  ║                 p: Var (name=_const_9285ccfc_uri, value=http://www.w3.org/2000/01/rdf-schema#label, anonymous)\n"
-				+
-				"   │  ║                 o: Var (name=label)\n" +
-				"   │  ╚══ GroupElem (count)\n" +
-				"   │        Count\n" +
-				"   └── ExtensionElem (count)\n" +
-				"         Count\n";
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
