@@ -95,6 +95,33 @@ It is illegal to `-q` when running tests!
 - Broaden if needed: only after green targeted runs, expand scope to neighboring modules when changes cross boundaries.
 - Document clearly: in your final handoff, show the failing test before the fix, the root cause, the minimal fix, and passing tests after.
 
+### Hard Gates (Do Not Proceed Unless True)
+- A failing test exists at the smallest scope (method/class) reproducing the report.
+  - Show the failing command and include a snippet of the error/stack from `target/*-reports/`.
+- No production patch before the failing test is observed and recorded.
+- Test runs avoid `-am` and `-q`.
+  - Use `-am` only with `-Pquick` to compile deps with tests skipped, then run tests without `-am`.
+- Maintain a living plan with exactly one `in_progress` step; send a short preamble before long actions.
+
+### Required Sequence
+1) Reproduce first
+   - Add the smallest failing test in the correct module.
+   - Run it directly: `mvn -o -pl <module> -Dtest=Class#method verify | tail -500`
+   - Inspect `target/surefire-reports/` (or `target/failsafe-reports/`) and capture the failure.
+2) Fix at the root (minimal, surgical)
+   - Change the correct layer; avoid widening APIs/configs.
+3) Verify locally (tight loops)
+   - Re-run the exact test selection; then run the whole module.
+4) Broaden only if necessary
+   - Expand scope when changes cross module boundaries or neighbors fail.
+5) Document clearly
+   - Include: failing output (pre‑fix), root cause, minimal fix, passing output (post‑fix).
+
+### Quick Self‑Check Before First Code Patch
+1) Do I have a failing test and its report snippet saved?
+2) Am I using legal Maven flags for tests (no `-am`, no `-q`)?
+3) Is my next step in the plan marked `in_progress` and did I state a preamble?
+4) Is my fix located at the correct source of truth, not a workaround?
 
 ## Working Loop
 - **Plan**
