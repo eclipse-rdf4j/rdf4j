@@ -1,6 +1,6 @@
-# Codex Agent Playbook
-
 Welcome, AI Agent! Your persistence, curiosity, and craftsmanship make a difference. Take your time, work methodically, validate thoroughly, and iterate. This repository is large and tests can take time — that’s expected and supported.
+
+You need to read the entire AGENTS.md file and follow all instructions exactly. Keep this fresh in your context as you work.
 
 > **Timebox:** Aim to complete each autonomous run in **15–30 minutes**.
 
@@ -9,11 +9,11 @@ Welcome, AI Agent! Your persistence, curiosity, and craftsmanship make a differe
 - **Bias to action:** when inputs are ambiguous, choose a reasonable path, state assumptions, and proceed.
 - **Ask only when blocked or irreversible:** escalate only if truly blocked (permissions, missing deps, conflicting requirements) or if a choice is high‑risk/irreversible.
 - **Definition of Done**
-  - Code formatted and imports sorted.
-  - Compiles with a quick profile / targeted modules.
-  - Relevant module tests pass; failures triaged or crisply explained.
-  - Only necessary files changed; headers correct for new files.
-  - Clear final summary: what changed, why, where, how verified, next steps.
+    - Code formatted and imports sorted.
+    - Compiles with a quick profile / targeted modules.
+    - Relevant module tests pass; failures triaged or crisply explained.
+    - Only necessary files changed; headers correct for new files.
+    - Clear final summary: what changed, why, where, how verified, next steps.
 
 ### No Monkey‑Patching or Band‑Aid Fixes (Non‑Negotiable)
 
@@ -55,7 +55,7 @@ Review bar and enforcement
 
 **Rule of thumb**
 - ✅ Use `-am` **only** for compile/verify with tests skipped (e.g. `-Pquick`).:
-  - `mvn -o -pl <module> -am -Pquick verify`
+    - `mvn -o -pl <module> -am -Pquick verify`
 - ❌ Do **not** use `-am` with `verify` when tests are enabled.
 
 **Two-step pattern (fast + safe)**
@@ -69,44 +69,52 @@ It is illegal to `-q` when running tests!
 
 ## Quick Start (First 10 Minutes)
 1. **Discover**
-  - List modules: inspect root `pom.xml` (aggregator) and the module tree (see “Maven Module Overview” below).
-  - Search fast with ripgrep: `rg -n "<symbol or string>"`
+- List modules: inspect root `pom.xml` (aggregator) and the module tree (see “Maven Module Overview” below).
+- Search fast with ripgrep: `rg -n "<symbol or string>"`
 2. **Build sanity (fast, skip tests)**
-  - **Preferred:** `mvn -o -Pquick install | tail -200`
-  - **Alternative:** `mvn -o -Pquick verify | tail -200`
+- **Preferred:** `mvn -o -Pquick install | tail -200`
+- **Alternative:** `mvn -o -Pquick verify | tail -200`
 3. **Format (Java, imports, XML)**
-  - `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+- `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 4. **Targeted tests (tight loops)**
-  - By module (incl. deps): `mvn -o -pl <module> verify  | tail -500`
-  - Single class: `mvn -o -pl <module> -Dtest=ClassName verify  | tail -500`
-  - Single method: `mvn -o -pl <module> -Dtest=ClassName#method verify | tail -500`
+- By module (incl. deps): `mvn -o -pl <module> verify  | tail -500`
+- Single class: `mvn -o -pl <module> -Dtest=ClassName verify  | tail -500`
+- Single method: `mvn -o -pl <module> -Dtest=ClassName#method verify | tail -500`
 5. **Inspect failures**
-  - **Unit (Surefire):** `<module>/target/surefire-reports/`
-  - **IT (Failsafe):** `<module>/target/failsafe-reports/`
+- **Unit (Surefire):** `<module>/target/surefire-reports/`
+- **IT (Failsafe):** `<module>/target/failsafe-reports/`
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
 
+## Bugfix Workflow (Mandatory)
+- Reproduce first: write the smallest focused test (class/method) that reproduces the reported bug. Run it and confirm it fails with the same error/stacktrace.
+- Keep the test as-is: do not weaken assertions or mute the failure. The failing test is your proof you’ve hit the right code path.
+- Fix at the root: implement the minimal, surgical change in the correct module that addresses the underlying cause (no band‑aids).
+- Verify locally: re‑run the focused test, then the surrounding module’s tests. Use targeted Maven invocations (class/method → module). Avoid `-am` with tests.
+- Broaden if needed: only after green targeted runs, expand scope to neighboring modules when changes cross boundaries.
+- Document clearly: in your final handoff, show the failing test before the fix, the root cause, the minimal fix, and passing tests after.
+
 
 ## Working Loop
 - **Plan**
-  - Break task into **small, verifiable steps**; keep one step in progress.
-  - Announce a short preamble before long actions (builds/tests).
-  - Decide and proceed autonomously; document assumptions inline.
+    - Break task into **small, verifiable steps**; keep one step in progress.
+    - Announce a short preamble before long actions (builds/tests).
+    - Decide and proceed autonomously; document assumptions inline.
 - **Change**
-  - Make minimal, surgical edits. Keep style and structure consistent.
+    - Make minimal, surgical edits. Keep style and structure consistent.
 - **Format**
-  - `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+    - `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 - **Compile (fast)**
-  - **Iterate locally:** `mvn -o -pl <module> -am -Pquick verify | tail -500`
+    - **Iterate locally:** `mvn -o -pl <module> -am -Pquick verify | tail -500`
 - **Test**
-  - Start with the smallest scope that exercises your change (class → module).
-  - For integration‑impacted changes, run module `verify` (includes ITs).
+    - Start with the smallest scope that exercises your change (class → module).
+    - For integration‑impacted changes, run module `verify` (includes ITs).
 - **Triage**
-  - Read reports; fix root cause; expand scope **only when needed**.
+    - Read reports; fix root cause; expand scope **only when needed**.
 - **Iterate**
-  - Keep moving without waiting for permission between steps. Escalate only at blocking points.
-  - Repeat until **Definition of Done** is satisfied.
+    - Keep moving without waiting for permission between steps. Escalate only at blocking points.
+    - Repeat until **Definition of Done** is satisfied.
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
@@ -122,17 +130,17 @@ It is illegal to `-q` when running tests!
 - **Prefer module tests you touched:** `-pl <module>`
 - **Narrow further** to a class/method for tight loops; then broaden to the module.
 - **Expand scope** when:
-  - Your change crosses module boundaries, or
-  - Neighbor module failures indicate integration impact.
+    - Your change crosses module boundaries, or
+    - Neighbor module failures indicate integration impact.
 - **Read reports**
-  - Surefire (unit): `target/surefire-reports/`
-  - Failsafe (IT): `target/failsafe-reports/`
+    - Surefire (unit): `target/surefire-reports/`
+    - Failsafe (IT): `target/failsafe-reports/`
 - **Helpful flags**
-  - `-Dtest=Class#method` (unit selection)
-  - `-Dit.test=ITClass#method` (integration selection)
-  - `-DtrimStackTrace=false` (full traces)
-  - `-DskipITs` (focus on unit tests)
-  - `-DfailIfNoTests=false` (when selecting a class that has no tests on some platforms)
+    - `-Dtest=Class#method` (unit selection)
+    - `-Dit.test=ITClass#method` (integration selection)
+    - `-DtrimStackTrace=false` (full traces)
+    - `-DskipITs` (focus on unit tests)
+    - `-DfailIfNoTests=false` (when selecting a class that has no tests on some platforms)
 
 ## Assertions: Make invariants explicit
 
@@ -198,10 +206,10 @@ assert isSorted(results) : "unsorted results, size=" + results.size() + " ids=" 
 Unreachable (hard error)
 ```java
 switch (kind) {
-  case A: return handleA();
+		case A: return handleA();
   case B: return handleB();
-  default:
-    throw new IllegalStateException("Unhandled kind: " + kind);
+default:
+		throw new IllegalStateException("Unhandled kind: " + kind);
 }
 ```
 
@@ -219,19 +227,19 @@ House rule: Asserts are allowed and encouraged. Removing or weakening an asserti
 
 ## Triage Playbook
 - **Missing dep/plugin offline**
-  - Remedy: **rerun the exact command without `-o`** once to fetch; then return offline.
+    - Remedy: **rerun the exact command without `-o`** once to fetch; then return offline.
 - **Compilation errors**
-  - Fix imports, generics, visibility; re‑run quick verify (skip tests) in the **module**.
+    - Fix imports, generics, visibility; re‑run quick verify (skip tests) in the **module**.
 - **Flaky/slow tests**
-  - Run the specific failing test; read its report; stabilize root cause before broad runs.
+    - Run the specific failing test; read its report; stabilize root cause before broad runs.
 - **Formatting failures**
-  - Run formatter/import/XML sort; re‑verify.
+    - Run formatter/import/XML sort; re‑verify.
 - **License header missing**
-  - Add header for **new** files only (see “Source File Headers”); **do not** change years on existing files.
+    - Add header for **new** files only (see “Source File Headers”); **do not** change years on existing files.
 
 ## Code Formatting
 - **Always run before finalizing:**
-  - `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+    - `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 - **Style:** no wildcard imports; 120‑char width; curly braces always; LF line endings.
 - **Tip:** formatting/import sort may be validated during `verify`. Running the commands proactively avoids CI/style failures.
 
@@ -265,29 +273,29 @@ Do **not** modify existing headers’ years.
 - Fast file search: `rg --files`
 - Fast content search: `rg -n "<pattern>"`
 - Read big files in chunks:
-  - `sed -n '1,200p' path/to/File.java`
-  - `sed -n '201,400p' path/to/File.java`
+    - `sed -n '1,200p' path/to/File.java`
+    - `sed -n '201,400p' path/to/File.java`
 
 ## Autonomy Rules (Act > Ask)
 - **Default:** act with assumptions. Document assumptions in your plan and final answer.
 - **Keep going:** chain steps without waiting for permission; send short progress updates before long actions.
 - **Ask only when:**
-  - Blocked by sandbox/approvals/network policy or missing secrets.
-  - The decision is destructive/irreversible, repo‑wide, or impacts public APIs.
-  - Adding dependencies, changing build profiles, or altering licensing.
+    - Blocked by sandbox/approvals/network policy or missing secrets.
+    - The decision is destructive/irreversible, repo‑wide, or impacts public APIs.
+    - Adding dependencies, changing build profiles, or altering licensing.
 - **Prefer reversible moves:** take the smallest local change that unblocks progress; validate with targeted tests before expanding scope.
 - **Choose defaults**
-  - **Tests:** start with `-pl <module>`, then `-Dtest=Class#method` / `-Dit.test=ITClass#method`.
-  - **Build:** use `-o` quick/profiled commands; briefly drop `-o` to fetch missing deps, then return offline.
-  - **Formatting:** run formatter/impsort/xml‑format proactively before verify.
-  - **Reports:** read surefire/failsafe locally; expand scope only when necessary.
+    - **Tests:** start with `-pl <module>`, then `-Dtest=Class#method` / `-Dit.test=ITClass#method`.
+    - **Build:** use `-o` quick/profiled commands; briefly drop `-o` to fetch missing deps, then return offline.
+    - **Formatting:** run formatter/impsort/xml‑format proactively before verify.
+    - **Reports:** read surefire/failsafe locally; expand scope only when necessary.
 - **Error handling**
-  - On compile/test failure: fix root cause locally, rerun targeted tests, then broaden.
-  - On flaky tests: rerun class/method; stabilize cause before repo‑wide runs.
-  - On formatting/license issues: apply prescribed commands/headers immediately.
+    - On compile/test failure: fix root cause locally, rerun targeted tests, then broaden.
+    - On flaky tests: rerun class/method; stabilize cause before repo‑wide runs.
+    - On formatting/license issues: apply prescribed commands/headers immediately.
 - **Communication**
-  - **Preambles:** 1–2 sentences grouping upcoming actions.
-  - **Updates:** inform to maintain visibility; do **not** request permission unless in “Ask only when” above.
+    - **Preambles:** 1–2 sentences grouping upcoming actions.
+    - **Updates:** inform to maintain visibility; do **not** request permission unless in “Ask only when” above.
 
 ## Answer Template (Use This)
 - **What changed:** summary of approach and rationale.
@@ -300,23 +308,23 @@ Do **not** modify existing headers’ years.
 
 ## Running Tests
 - By module:
-  - `mvn -o -pl core/sail/shacl verify | tail -500`
+    - `mvn -o -pl core/sail/shacl verify | tail -500`
 - Entire repo:
-  - `mvn -o verify` (long; only when appropriate)
+    - `mvn -o verify` (long; only when appropriate)
 - Useful flags:
-  - `-Dtest=ClassName`
-  - `-Dtest=ClassName#method`
-  - `-Dit.test=ITClass#method`
-  - `-DtrimStackTrace=false`
+    - `-Dtest=ClassName`
+    - `-Dtest=ClassName#method`
+    - `-Dit.test=ITClass#method`
+    - `-DtrimStackTrace=false`
 
 ## Build
 - **Build without tests (fast path):**
-  - `mvn -o -Pquick verify`
+    - `mvn -o -Pquick verify`
 - **Verify with tests:**
-  - Targeted module(s): `mvn -o -pl <module> verify`
-  - Entire repo: `mvn -o verify` (use only when appropriate)
+    - Targeted module(s): `mvn -o -pl <module> verify`
+    - Entire repo: `mvn -o verify` (use only when appropriate)
 - **When offline fails due to missing deps:**
-  - Re‑run the **exact** command **without** `-o` once to fetch, then return to `-o`.
+    - Re‑run the **exact** command **without** `-o` once to fetch, then return to `-o`.
 
 ## Maven Module Overview
 
