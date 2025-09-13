@@ -300,7 +300,7 @@ Do **not** modify existing headers’ years.
 
 ## Running Tests
 - By module:
-  - `mvn -o -pl core/sail/shacl verify  | tail -500`
+  - `mvn -o -pl core/sail/shacl verify | tail -500`
 - Entire repo:
   - `mvn -o verify` (long; only when appropriate)
 - Useful flags:
