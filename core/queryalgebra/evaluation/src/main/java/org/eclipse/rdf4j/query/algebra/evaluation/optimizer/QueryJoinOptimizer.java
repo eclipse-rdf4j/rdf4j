@@ -342,17 +342,19 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			// Memo table: for each (a, b), stores statistics.getCardinality(new Join(a,b))
 			Map<TupleExpr, Map<TupleExpr, Double>> cardCache = new HashMap<>();
 
-			// Helper to look up or compute & cache the cardinality of Join(a,b)
+			// Helper to look up or compute & cache the cardinality of Join(a,b).
+			// Avoid mutating the outer cache inside a computeIfAbsent lambda to prevent
+			// ConcurrentModificationException on some Map implementations/JDKs.
 			BiFunction<TupleExpr, TupleExpr, Double> getCard = (a, b) -> {
-				// ensure a‐>map exists
 				Map<TupleExpr, Double> inner = cardCache.computeIfAbsent(a, k -> new HashMap<>());
-				// cache symmetric result too
-				return inner.computeIfAbsent(b, bb -> {
-					double c = statistics.getCardinality(new Join(a, b));
-					// also store in b’s map for symmetry (optional)
-					cardCache.computeIfAbsent(b, k -> new HashMap<>()).put(a, c);
-					return c;
-				});
+				Double cached = inner.get(b);
+				if (cached != null) {
+					return cached;
+				}
+				double c = statistics.getCardinality(new Join(a, b));
+				inner.put(b, c);
+				cardCache.computeIfAbsent(b, k -> new HashMap<>()).put(a, c);
+				return c;
 			};
 
 			while (!tupleExprs.isEmpty()) {
