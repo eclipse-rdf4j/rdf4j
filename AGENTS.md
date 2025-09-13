@@ -258,7 +258,7 @@ Do **not** modify existing headers’ years.
 ## Pre‑Commit Checklist
 - **Format:** `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 - **Compile (fast path):** `mvn -o -Pquick verify | tail -200`
-- **Tests (targeted):** `mvn -o -pl <module> verify  | tail -500` (broaden scope if needed)
+- **Tests (targeted):** `mvn -o -pl <module> verify | tail -500` (broaden scope if needed)
 - **Reports:** zero new failures in `target/surefire-reports/` or `target/failsafe-reports/`, or explain precisely.
 
 ## Navigation & Search
