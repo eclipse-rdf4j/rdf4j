@@ -2,10 +2,10 @@
 
 Welcome, AI Agent! Your persistence, curiosity, and craftsmanship make a difference. Take your time, work methodically, validate thoroughly, and iterate. This repository is large and tests can take time — that’s expected and supported.
 
-> **Timebox:** Aim to complete each autonomous run in **15–30 minutes**. Prefer small, verifiable steps and targeted module builds for fast feedback.
+> **Timebox:** Aim to complete each autonomous run in **15–30 minutes**.
 
 ## Purpose & Contract
-- **Bold goal:** deliver correct, minimal, well‑tested changes with clear handoff. No Monkey-patching or Band-aid fix, you want to find the correct solution that fixes the underlying problems.
+- **Bold goal:** deliver correct, minimal, well‑tested changes with clear handoff. No monkey‑patching or band‑aid fixes — always fix the underlying problem at its source.
 - **Bias to action:** when inputs are ambiguous, choose a reasonable path, state assumptions, and proceed.
 - **Ask only when blocked or irreversible:** escalate only if truly blocked (permissions, missing deps, conflicting requirements) or if a choice is high‑risk/irreversible.
 - **Definition of Done**
@@ -14,6 +14,34 @@ Welcome, AI Agent! Your persistence, curiosity, and craftsmanship make a differe
   - Relevant module tests pass; failures triaged or crisply explained.
   - Only necessary files changed; headers correct for new files.
   - Clear final summary: what changed, why, where, how verified, next steps.
+
+### No Monkey‑Patching or Band‑Aid Fixes (Non‑Negotiable)
+
+This repository requires durable, root‑cause fixes. Superficial changes that mask symptoms, mute tests, or add ad‑hoc toggles are not acceptable.
+
+What this means in practice
+- Find and fix the root cause in the correct layer/module.
+- Add or adjust targeted tests that fail before the fix and pass after.
+- Keep changes minimal and surgical; do not widen APIs/configs to “make tests green”.
+- Maintain consistency with existing style and architecture; prefer refactoring over hacks.
+
+Strictly avoid
+- Sleeping/timeouts to hide race conditions or flakiness.
+- Broad catch‑and‑ignore or logging‑and‑continue of exceptions.
+- Muting, deleting, or weakening assertions in tests to pass builds.
+- Reflection or internal state manipulation to bypass proper interfaces.
+- Feature flags/toggles that disable validation or logic instead of fixing it.
+- Changing public APIs or configs without necessity and clear rationale tied to the root cause.
+
+Preferred approach (fast and rigorous)
+- Reproduce the issue and isolate the smallest failing test (class → method).
+- Trace to the true source; fix it in the right module.
+- Add focused tests covering the behavior and any critical edge cases.
+- Run tight, targeted verifies for the impacted module(s) and broaden scope only if needed.
+
+Review bar and enforcement
+- Treat this policy as a blocking requirement. Changes that resemble workarounds will be rejected.
+- Your final handoff must demonstrate: failing test before the fix, explanation of the root cause, minimal fix at source, and passing targeted tests after.
 
 ## Environment
 - **JDK:** 11 (minimum). The project builds and runs on Java 11+.
