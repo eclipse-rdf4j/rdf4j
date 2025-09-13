@@ -62,7 +62,7 @@ Review bar and enforcement
 1) **Compile deps fast (skip tests):**  
    `mvn -o -pl <module> -am -Pquick verify`
 2) **Run tests :**  
-   `mvn -o -pl <module> verify  | tail -500`
+   `mvn -o -pl <module> verify | tail -500`
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
