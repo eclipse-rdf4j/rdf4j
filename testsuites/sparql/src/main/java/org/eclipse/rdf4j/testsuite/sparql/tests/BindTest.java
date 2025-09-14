@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
@@ -135,7 +136,8 @@ public class BindTest extends AbstractComplianceTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb);
 		try (TupleQueryResult evaluate = tq.evaluate()) {
-			assertFalse(evaluate.hasNext(), "The query should not return a result");
+			assertFalse(evaluate.hasNext(),
+					"The query should not return a result: " + Arrays.toString(evaluate.stream().toArray()));
 		}
 	}
 

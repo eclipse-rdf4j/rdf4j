@@ -143,10 +143,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 		return a -> {
 			Value value = a.values[index];
-			if (value == NULL_VALUE) {
-				value = null;
-			}
-			if (value != null) {
+			if (value != null && value != NULL_VALUE) {
 				return new SimpleBinding(bindingName, value);
 			} else {
 				return null;
@@ -426,13 +423,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 		@Override
 		public Binding next() {
-			while (index < values.length) {
-				if (values[index] != null && values[index] != NULL_VALUE) {
-					String name = bindingNames[index];
-					Value value = values[index++];
-					return new SimpleBinding(name, value);
-				}
-				index++;
+			if (hasNext()) {
+				String name = bindingNames[index];
+				Value value = values[index++];
+				return new SimpleBinding(name, value);
 			}
 
 			throw new NoSuchElementException();
