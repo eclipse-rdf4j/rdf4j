@@ -79,13 +79,7 @@ public class ProjectionRemovalOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Projection node) throws RuntimeException {
 			super.meet(node);
-			// If a projection has no elements (e.g., originating from SELECT * after other
-			// optimizations), it contributes nothing and can be safely removed.
-			if (node.getProjectionElemList().getElements().isEmpty()) {
-				TupleExpr child = node.getArg();
-				node.getParentNode().replaceChildNode(node, child);
-				return;
-			}
+
 			VariableFinder findVariables = new VariableFinder();
 			node.visit(findVariables);
 
