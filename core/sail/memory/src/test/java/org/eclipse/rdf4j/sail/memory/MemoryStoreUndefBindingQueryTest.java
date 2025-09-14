@@ -13,10 +13,12 @@
 package org.eclipse.rdf4j.sail.memory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -81,4 +83,67 @@ public class MemoryStoreUndefBindingQueryTest {
 			assertEquals(1, count, "Expected exactly one result row");
 		}
 	}
+
+	@Test
+	public void testSubselect() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			SimpleNamespace NS1 = new SimpleNamespace("ex1", "http://example.org/");
+			SimpleNamespace NS2 = new SimpleNamespace("ex2", "http://example.org/2/");
+
+			// Add a statement so that the named graph exists
+			conn.add(Values.iri(NS1, "A1"), FOAF.KNOWS, Values.iri(NS2, "A2"),
+					Values.iri("http://example.org/"));
+
+			String sparql = "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+					+ "PREFIX owl: <http://www.w3.org/2002/07/owl#>\n"
+					+ "SELECT * WHERE { SELECT * WHERE {\n"
+					+ "  ?a ?prop ?b .\n"
+					+ "}}";
+
+			var query = conn.prepareTupleQuery(sparql);
+
+			int count = 0;
+			try (var res = query.evaluate()) {
+				while (res.hasNext()) {
+					BindingSet bs = res.next();
+					assertFalse(bs.isEmpty(), "Expected non-empty binding set");
+					assertTrue(bs.hasBinding("a"), "Expected binding, was: " + bs);
+					count++;
+				}
+			}
+			assertEquals(1, count, "Expected exactly one result row");
+		}
+	}
+
+	@Test
+	public void testSubSubselect() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			SimpleNamespace NS1 = new SimpleNamespace("ex1", "http://example.org/");
+			SimpleNamespace NS2 = new SimpleNamespace("ex2", "http://example.org/2/");
+
+			// Add a statement so that the named graph exists
+			conn.add(Values.iri(NS1, "A1"), FOAF.KNOWS, Values.iri(NS2, "A2"),
+					Values.iri("http://example.org/"));
+
+			String sparql = "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+					+ "PREFIX owl: <http://www.w3.org/2002/07/owl#>\n"
+					+ "SELECT * WHERE { SELECT * WHERE { SELECT * WHERE {\n"
+					+ "  ?a ?prop ?b .\n"
+					+ "}}}";
+
+			var query = conn.prepareTupleQuery(sparql);
+
+			int count = 0;
+			try (var res = query.evaluate()) {
+				while (res.hasNext()) {
+					BindingSet bs = res.next();
+					assertFalse(bs.isEmpty(), "Expected non-empty binding set");
+					assertTrue(bs.hasBinding("a"), "Expected binding, was: " + bs);
+					count++;
+				}
+			}
+			assertEquals(1, count, "Expected exactly one result row");
+		}
+	}
+
 }
