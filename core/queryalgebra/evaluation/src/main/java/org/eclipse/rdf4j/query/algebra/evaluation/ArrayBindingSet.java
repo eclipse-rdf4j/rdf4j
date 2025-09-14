@@ -195,7 +195,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 				this.bindingNamesSetCache = Collections.emptySet();
 			} else if (size == 1) {
 				for (int i = 0; i < this.bindingNames.length; i++) {
-					if (values[i] != null && values[i] != NULL_VALUE) {
+					if (values[i] != null) {
 						this.bindingNamesSetCache = Collections.singleton(bindingNames[i]);
 						break;
 					}
@@ -204,7 +204,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			} else {
 				LinkedHashSet<String> bindingNamesSetCache = new LinkedHashSet<>(size * 2);
 				for (int i = 0; i < this.bindingNames.length; i++) {
-					if (values[i] != null && values[i] != NULL_VALUE) {
+					if (values[i] != null) {
 						bindingNamesSetCache.add(bindingNames[i]);
 					}
 				}
@@ -284,7 +284,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		int size = 0;
 
 		for (Value value : values) {
-			if (value != null && value != NULL_VALUE) {
+			if (value != null) {
 				size++;
 			}
 		}
@@ -301,14 +301,14 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 			if (size == 1) {
 				for (int i = 0; i < bindingNames.length; i++) {
-					if (values[i] != null && values[i] != NULL_VALUE) {
+					if (values[i] != null) {
 						sortedBindingNames = Collections.singletonList(bindingNames[i]);
 					}
 				}
 			} else {
 				ArrayList<String> names = new ArrayList<>(size);
 				for (int i = 0; i < bindingNames.length; i++) {
-					if (values[i] != null && values[i] != NULL_VALUE) {
+					if (values[i] != null) {
 						names.add(bindingNames[i]);
 					}
 				}
