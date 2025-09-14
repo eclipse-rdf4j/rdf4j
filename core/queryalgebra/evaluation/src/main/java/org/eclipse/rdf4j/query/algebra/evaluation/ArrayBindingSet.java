@@ -198,7 +198,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 				this.bindingNamesSetCache = Collections.emptySet();
 			} else if (size == 1) {
 				for (int i = 0; i < this.bindingNames.length; i++) {
-					if (values[i] != null) {
+					if (values[i] != null && values[i] != NULL_VALUE) {
 						this.bindingNamesSetCache = Collections.singleton(bindingNames[i]);
 						break;
 					}
@@ -207,7 +207,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			} else {
 				LinkedHashSet<String> bindingNamesSetCache = new LinkedHashSet<>(size * 2);
 				for (int i = 0; i < this.bindingNames.length; i++) {
-					if (values[i] != null) {
+					if (values[i] != null && values[i] != NULL_VALUE) {
 						bindingNamesSetCache.add(bindingNames[i]);
 					}
 				}
@@ -287,7 +287,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		int size = 0;
 
 		for (Value value : values) {
-			if (value != null) {
+			if (value != null && value != NULL_VALUE) {
 				size++;
 			}
 		}
@@ -304,14 +304,14 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 			if (size == 1) {
 				for (int i = 0; i < bindingNames.length; i++) {
-					if (values[i] != null) {
+					if (values[i] != null && values[i] != NULL_VALUE) {
 						sortedBindingNames = Collections.singletonList(bindingNames[i]);
 					}
 				}
 			} else {
 				ArrayList<String> names = new ArrayList<>(size);
 				for (int i = 0; i < bindingNames.length; i++) {
-					if (values[i] != null) {
+					if (values[i] != null && values[i] != NULL_VALUE) {
 						names.add(bindingNames[i]);
 					}
 				}
@@ -416,7 +416,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		@Override
 		public boolean hasNext() {
 			while (index < values.length) {
-				if (values[index] != null) {
+				if (values[index] != null && values[index] != NULL_VALUE) {
 					return true;
 				}
 				index++;
@@ -427,17 +427,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		@Override
 		public Binding next() {
 			while (index < values.length) {
-				if (values[index] != null) {
+				if (values[index] != null && values[index] != NULL_VALUE) {
 					String name = bindingNames[index];
 					Value value = values[index++];
-					if (value == NULL_VALUE) {
-						value = null;
-					}
-					if (value != null) {
-						return new SimpleBinding(name, value);
-					} else {
-						return null;
-					}
+					return new SimpleBinding(name, value);
 				}
 				index++;
 			}
