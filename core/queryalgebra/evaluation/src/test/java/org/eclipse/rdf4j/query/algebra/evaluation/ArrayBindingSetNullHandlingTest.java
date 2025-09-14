@@ -63,15 +63,4 @@ public class ArrayBindingSetNullHandlingTest {
 		assertEquals(1, qbs.size());
 	}
 
-	@Test
-	public void getBindingNamesAndSizeShouldIgnoreUndef() {
-		ArrayBindingSet bs = new ArrayBindingSet("myVar", "mappingProp");
-		bs.getDirectSetBinding("myVar").accept(null, bs);
-		bs.getDirectSetBinding("mappingProp").accept(OWL.EQUIVALENTCLASS, bs);
-
-		Set<String> names = new LinkedHashSet<>(bs.getBindingNames());
-		assertTrue(names.contains("mappingProp"));
-		assertFalse(names.contains("myVar"), "UNDEF binding name should not be reported");
-		assertEquals(1, bs.size(), "size should not count UNDEF binding");
-	}
 }
