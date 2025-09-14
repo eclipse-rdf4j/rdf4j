@@ -58,8 +58,12 @@ public class WildcardProjectionProcessor extends AbstractASTVisitor {
 					whereClause.jjtAccept(collector, null);
 
 					Set<ASTSelect> selectClauses = collector.getSelectClauses();
+					// process nested SELECT wildcards deepest-first so inner subqueries are expanded
+					// before their parents collect variables
+					java.util.List<ASTSelect> ordered = new java.util.ArrayList<>(selectClauses);
+					ordered.sort(java.util.Comparator.comparingInt(WildcardProjectionProcessor::depth).reversed());
 
-					for (ASTSelect selectClause : selectClauses) {
+					for (ASTSelect selectClause : ordered) {
 						if (selectClause.isWildcard()) {
 							ASTSelectQuery q = (ASTSelectQuery) selectClause.jjtGetParent();
 
@@ -93,6 +97,16 @@ public class WildcardProjectionProcessor extends AbstractASTVisitor {
 				describeClause.setWildcard(false);
 			}
 		}
+	}
+
+	private static int depth(Node n) {
+		int d = 0;
+		Node p = n.jjtGetParent();
+		while (p != null) {
+			d++;
+			p = p.jjtGetParent();
+		}
+		return d;
 	}
 
 	private static void addQueryVars(ASTWhereClause queryBody, Node wildcardNode) throws MalformedQueryException {
