@@ -146,4 +146,122 @@ public class MemoryStoreUndefBindingQueryTest {
 		}
 	}
 
+	@Test
+	public void testSubSubselect2() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			SimpleNamespace NS1 = new SimpleNamespace("ex1", "http://example.org/");
+			SimpleNamespace NS2 = new SimpleNamespace("ex2", "http://example.org/2/");
+
+			// Add a statement so that the named graph exists
+			conn.add(Values.iri(NS1, "A1"), FOAF.KNOWS, Values.iri(NS2, "A2"),
+					Values.iri("http://example.org/"));
+
+			String sparql = "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+					+ "PREFIX owl: <http://www.w3.org/2002/07/owl#>\n"
+					+ "SELECT * WHERE { BIND(1 as ?one)\n {SELECT * WHERE { BIND(1 as ?one)\n {SELECT * WHERE { SELECT * WHERE {\n"
+					+ "  ?a ?prop ?b .\n"
+					+ "}}}}}}";
+
+			var query = conn.prepareTupleQuery(sparql);
+
+			int count = 0;
+			try (var res = query.evaluate()) {
+				while (res.hasNext()) {
+					BindingSet bs = res.next();
+					assertFalse(bs.isEmpty(), "Expected non-empty binding set");
+					assertTrue(bs.hasBinding("a"), "Expected binding, was: " + bs);
+					count++;
+				}
+			}
+			assertEquals(1, count, "Expected exactly one result row");
+		}
+	}
+
+	// Temporary helper for debugging the failing test: dump optimized plan
+	@Test
+	public void debugExplainSubSubselect() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			SimpleNamespace NS1 = new SimpleNamespace("ex1", "http://example.org/");
+			SimpleNamespace NS2 = new SimpleNamespace("ex2", "http://example.org/2/");
+
+			conn.add(Values.iri(NS1, "A1"), FOAF.KNOWS, Values.iri(NS2, "A2"),
+					Values.iri("http://example.org/"));
+
+			String sparql = "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+					+ "PREFIX owl: <http://www.w3.org/2002/07/owl#>\n"
+					+ "SELECT * WHERE { SELECT * WHERE { SELECT * WHERE {\n"
+					+ "  ?a ?prop ?b .\n"
+					+ "}}}";
+
+			var query = conn.prepareTupleQuery(sparql);
+			System.out.println("\n==== Optimized Plan (debug) ====");
+			System.out.println(query.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Optimized));
+			System.out.println("==== Executed Plan (debug) ====");
+			System.out.println(query.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Executed));
+
+			try (var res = query.evaluate()) {
+				System.out.println("==== Results (debug subsubselect) ====");
+				while (res.hasNext()) {
+					var bs = res.next();
+					System.out.println(bs);
+				}
+			}
+		}
+	}
+
+	@Test
+	public void debugExplainSubselect() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			SimpleNamespace NS1 = new SimpleNamespace("ex1", "http://example.org/");
+			SimpleNamespace NS2 = new SimpleNamespace("ex2", "http://example.org/2/");
+
+			conn.add(Values.iri(NS1, "A1"), FOAF.KNOWS, Values.iri(NS2, "A2"),
+					Values.iri("http://example.org/"));
+
+			String sparql = "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+					+ "PREFIX owl: <http://www.w3.org/2002/07/owl#>\n"
+					+ "SELECT * WHERE { SELECT * WHERE {\n"
+					+ "  ?a ?prop ?b .\n"
+					+ "}}";
+
+			var query = conn.prepareTupleQuery(sparql);
+			System.out.println("\n==== Optimized Plan (debug subselect) ====");
+			System.out.println(query.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Optimized));
+			System.out.println("==== Executed Plan (debug subselect) ====");
+			System.out.println(query.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Executed));
+
+			try (var res = query.evaluate()) {
+				while (res.hasNext()) {
+					res.next();
+				}
+			}
+		}
+	}
+
+	@Test
+	public void debugAllVariablesUsedInQueryForSubSubselect() throws Exception {
+		String sparql = "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+				+ "PREFIX owl: <http://www.w3.org/2002/07/owl#>\n"
+				+ "SELECT * WHERE { SELECT * WHERE { SELECT * WHERE {\n"
+				+ "  ?a ?prop ?b .\n"
+				+ "}}}";
+
+		var pq = org.eclipse.rdf4j.query.parser.QueryParserUtil
+				.parseQuery(org.eclipse.rdf4j.query.QueryLanguage.SPARQL, sparql, null);
+		var te = pq.getTupleExpr();
+		org.eclipse.rdf4j.query.algebra.QueryRoot root;
+		if (te instanceof org.eclipse.rdf4j.query.algebra.QueryRoot) {
+			root = (org.eclipse.rdf4j.query.algebra.QueryRoot) te;
+		} else {
+			root = new org.eclipse.rdf4j.query.algebra.QueryRoot(te);
+		}
+		String[] all = org.eclipse.rdf4j.query.algebra.evaluation.impl.ArrayBindingBasedQueryEvaluationContext
+				.findAllVariablesUsedInQuery(root);
+		System.out.println("==== allVariables (debug subsubselect) ====");
+		for (String v : all) {
+			System.out.println(v);
+		}
+		System.out.println("==== tuple expr (raw) ====");
+		System.out.println(te);
+	}
 }
