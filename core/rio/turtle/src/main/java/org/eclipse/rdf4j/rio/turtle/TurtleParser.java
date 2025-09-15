@@ -808,7 +808,11 @@ public class TurtleParser extends AbstractRDFParser {
 			// read optional fractional digits
 			if (c == '.') {
 
-				if (TurtleUtil.isWhitespace(peekCodePoint())) {
+				int next = peekCodePoint();
+				// Treat '.' as statement terminator at EOF only when we already parsed at least one digit
+				// (e.g., "30.") or when whitespace follows. Otherwise, attempt to parse as decimal
+				// which will surface a useful error for a stray '.' token.
+				if ((value.length() > 0 && next == -1) || TurtleUtil.isWhitespace(next)) {
 					// We're parsing an integer that did not have a space before
 					// the
 					// period to end the statement

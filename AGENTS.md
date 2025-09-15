@@ -510,6 +510,7 @@ Do **not** modify existing headers’ years.
 
 ## Branch & PR Workflow (Agent)
 
+- Confirm issue number first (mandatory): before creating a branch, pause and request/confirm the GitHub issue number. Do not proceed to branch creation until the issue number is provided or confirmed.
 - Name branch: `GH-<issue>-<short-slug>` (kebab‑case slug).
 - Create branch: `git checkout -b GH-XXXX-your-slug`.
 - Stage changes: `git add -A` (ensure new Java files have the required header).
