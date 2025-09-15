@@ -14,6 +14,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -124,6 +126,60 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 				request()
 						.withMethod("PUT")
 						.withPath(redirectedPath)
+						.withHeader(testHeader, testValue)
+		);
+	}
+
+	@Test
+	public void testRemoveDataTransactionFollowsRedirectOnDelete(MockServerClient client) throws Exception {
+		// Start transaction and get transaction URL
+		String transactionStartUrl = Protocol.getTransactionsLocation(getRDF4JSession().getRepositoryURL());
+		HttpRequest transactionCreateRequest = request()
+				.withMethod("POST")
+				.withPath("/rdf4j-server/repositories/test/transactions");
+		client.when(transactionCreateRequest, Times.once())
+				.respond(response().withStatusCode(201).withHeader("Location", transactionStartUrl + "/1"));
+
+		// First attempt: PUT .../transactions/1?action=DELETE responds with 301 and Location header
+		String originalPath = "/rdf4j-server/repositories/test/transactions/1";
+		String redirectedPath = "/https/rdf4j-server/repositories/test/transactions/1";
+		String redirectLocation = "http://localhost:" + client.getPort() + redirectedPath + "?action=DELETE";
+
+		client.when(
+				request()
+						.withMethod("PUT")
+						.withPath(originalPath)
+						.withQueryStringParameter("action", "DELETE"),
+				Times.once())
+				.respond(response().withStatusCode(301).withHeader("Location", redirectLocation));
+
+		// Redirect target responds successfully (204 No Content)
+		client.when(
+				request()
+						.withMethod("PUT")
+						.withPath(redirectedPath)
+						.withQueryStringParameter("action", "DELETE"),
+				Times.once())
+				.respond(response().withStatusCode(204));
+
+		// Begin transaction, then attempt removeData (DELETE action) which should follow redirect
+		getRDF4JSession().beginTransaction(IsolationLevels.SERIALIZABLE);
+		ByteArrayInputStream data = new ByteArrayInputStream("<s> <p> <o> .".getBytes(StandardCharsets.UTF_8));
+		getRDF4JSession().removeData(data, null, RDFFormat.NTRIPLES);
+
+		// Verify original and redirected requests occurred with header preserved
+		client.verify(
+				request()
+						.withMethod("PUT")
+						.withPath(originalPath)
+						.withQueryStringParameter("action", "DELETE")
+						.withHeader(testHeader, testValue)
+		);
+		client.verify(
+				request()
+						.withMethod("PUT")
+						.withPath(redirectedPath)
+						.withQueryStringParameter("action", "DELETE")
 						.withHeader(testHeader, testValue)
 		);
 	}
