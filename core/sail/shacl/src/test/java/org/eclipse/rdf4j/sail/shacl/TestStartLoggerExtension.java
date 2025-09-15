@@ -15,6 +15,8 @@ import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.BeforeTestExecutionCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.TestWatcher;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * JUnit 5 extension that prints a line to stdout when a test starts (and ends). This helps identify which test is
@@ -23,12 +25,15 @@ import org.junit.jupiter.api.extension.TestWatcher;
 public class TestStartLoggerExtension
 		implements BeforeEachCallback, BeforeTestExecutionCallback, TestWatcher {
 
+	private static final Logger logger = LoggerFactory.getLogger(TestStartLoggerExtension.class);
+
 	private static void print(String phase, ExtensionContext context) {
 		String cls = context.getTestClass().map(Class::getName).orElse("<unknown-class>");
 		String method = context.getTestMethod().map(m -> m.getName()).orElse("<unknown-method>");
 		String display = context.getDisplayName();
-		System.err.println("[TEST] " + phase + ": " + cls + "#" + method + " (" + display + ")");
-		System.err.flush();
+		System.out.println("[TEST] " + phase + ": " + cls + "#" + method + " (" + display + ")");
+		System.out.flush();
+//		context.publishReportEntry("[TEST] " + phase + ": " + cls + "#" + method + " (" + display + ")");
 	}
 
 	@Override
