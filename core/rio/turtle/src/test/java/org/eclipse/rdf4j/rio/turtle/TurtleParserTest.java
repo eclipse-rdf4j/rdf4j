@@ -90,6 +90,47 @@ public class TurtleParserTest {
 	}
 
 	@Test
+	public void testIntegerFollowedByDotAtEOF() throws IOException {
+		// Reproduces bug: integer literal immediately followed by statement terminator '.' at EOF
+		String data = prefixes + ":alice :age 30."; // no trailing whitespace/newline
+
+		parser.parse(new StringReader(data), baseURI);
+
+		assertTrue(errorCollector.getWarnings().isEmpty());
+		assertTrue(errorCollector.getErrors().isEmpty());
+		assertTrue(errorCollector.getFatalErrors().isEmpty());
+
+		assertEquals(1, statementCollector.getStatements().size());
+		Statement st = statementCollector.getStatements().iterator().next();
+		assertEquals(vf.createIRI("http://example.org/alice"), st.getSubject());
+		assertEquals(vf.createIRI("http://example.org/age"), st.getPredicate());
+		assertTrue(st.getObject() instanceof Literal);
+		Literal lit = (Literal) st.getObject();
+		assertEquals("30", lit.getLabel());
+		assertEquals(XSD.INTEGER, lit.getDatatype());
+	}
+
+	@Test
+	public void testLetterFollowedByDotAtEOF() throws IOException {
+		String data = prefixes + ":alice :age \"a\"."; // no trailing whitespace/newline
+
+		parser.parse(new StringReader(data), baseURI);
+
+		assertTrue(errorCollector.getWarnings().isEmpty());
+		assertTrue(errorCollector.getErrors().isEmpty());
+		assertTrue(errorCollector.getFatalErrors().isEmpty());
+
+		assertEquals(1, statementCollector.getStatements().size());
+		Statement st = statementCollector.getStatements().iterator().next();
+		assertEquals(vf.createIRI("http://example.org/alice"), st.getSubject());
+		assertEquals(vf.createIRI("http://example.org/age"), st.getPredicate());
+		assertTrue(st.getObject() instanceof Literal);
+		Literal lit = (Literal) st.getObject();
+		assertEquals("a", lit.getLabel());
+		assertEquals(XSD.STRING, lit.getDatatype());
+	}
+
+	@Test
 	public void testParseIllegalURIFatal() throws IOException {
 		String data = " <urn:foo_bar\\r> <urn:foo> <urn:bar> ; <urn:foo2> <urn:bar2> . <urn:foobar> <urn:food> <urn:barf> . ";
 
