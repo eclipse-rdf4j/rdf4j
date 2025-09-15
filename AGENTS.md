@@ -166,6 +166,18 @@ It is illegal to `-q` when running tests!
 
 ---
 
+## Always Install Before Tests (Required)
+
+The Maven reactor resolves inter-module dependencies from the local Maven repository (`~/.m2/repository`).
+Running `install` publishes your changed modules there so downstream modules and tests pick up the correct versions.
+
+- Always run `mvn -o -Pquick install | tail -200` before you start working. This command typically takes between 10 and 30 seconds.
+- Always run `mvn -o -pl <module> -am -Pquick install | tail -200` before any `verify` or test runs.
+- If offline resolution fails due to a missing dependency or plugin, rerun the exact `install` command once without `-o`, then return offline.
+- Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
+- Never ever change the repo location. Never use `-Dmaven.repo.local=.m2_repo`. Instead, ask for permission the first time you run `mvn -o -Pquick install | tail -200`.
+---
+
 ## Quick Start (First 10 Minutes)
 
 1. **Discover**
@@ -176,6 +188,7 @@ It is illegal to `-q` when running tests!
 
     * **Preferred:** `mvn -o -Pquick install | tail -200`
     * **Alternative:** `mvn -o -Pquick install | tail -200`
+    * This step is required before any tests. It installs artifacts to `~/.m2` so the reactor resolves fresh inter-module dependencies.
 3. **Format (Java, imports, XML)**
 
     * `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
@@ -184,6 +197,7 @@ It is illegal to `-q` when running tests!
     * By module: `mvn -o -pl <module> verify  | tail -500`
     * Single class: `mvn -o -pl <module> -Dtest=ClassName verify  | tail -500`
     * Single method: `mvn -o -pl <module> -Dtest=ClassName#method verify | tail -500`
+    * Prerequisite: ensure `mvn -o -Pquick install` (root or `-pl <module> -am`) has just run so artifacts are available in `~/.m2`.
 5. **Inspect failures**
 
     * **Unit (Surefire):** `<module>/target/surefire-reports/`
@@ -480,6 +494,39 @@ Do **not** modify existing headers’ years.
 * **Tests (targeted):** `mvn -o -pl <module> verify | tail -500` (broaden scope if needed)
 * **Reports:** zero new failures in `target/surefire-reports/` or `target/failsafe-reports/`, or explain precisely.
 * **Evidence:** include pre‑fix failing snippet and post‑fix passing summary.
+
+---
+
+## Branching & Commit Conventions
+
+- Branch names: start with `GH-XXXX` where `XXXX` is the GitHub issue number. Prefer a short, kebab‑case slug after the number when helpful, e.g., `GH-1234-add-trig-writer-check`.
+- Commit messages: start with the same prefix, `GH-XXXX <short summary>`, on every commit in the branch.
+- Keep summaries concise, in imperative mood (e.g., “Fix NPE in TriG writer”).
+- Example:
+  - Branch: `GH-1234-add-shacl-validation-metric`
+  - Commit: `GH-1234 Fix NPE when serializing empty graph`
+
+---
+
+## Branch & PR Workflow (Agent)
+
+- Name branch: `GH-<issue>-<short-slug>` (kebab‑case slug).
+- Create branch: `git checkout -b GH-XXXX-your-slug`.
+- Stage changes: `git add -A` (ensure new Java files have the required header).
+- Optional but recommended: run format + quick install.
+  - `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+  - `mvn -o -Pquick install | tail -200`
+- Commit: `git commit -m "GH-XXXX <short imperative summary>"`.
+- Push branch: `git push -u origin GH-XXXX-your-slug`.
+- Create PR using default template:
+  - Preferred: `gh pr create --title "GH-XXXX <summary>" --body-file .github/pull_request_template.md`
+  - Fallback: `gh pr create --title "GH-XXXX <summary>" --body "$(cat .github/pull_request_template.md)"`
+- Immediately fill the template (do not leave placeholders):
+  - Set `GitHub issue resolved: #XXXX`.
+  - Write a short, accurate change summary (what/why).
+  - Tick applicable checklist items only (self-contained, tests, squashed, commit message prefix, formatting if run).
+  - Include `Fixes #XXXX` to auto-close the issue on merge.
+- Target the repo default branch (e.g., `origin/HEAD`).
 
 ---
 

@@ -228,7 +228,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		@Override
 		protected double getContextCardinality(Var var) {
 			synchronized (monitor) {
-				if (var.getValue() == null) {
+				if (var == null || var.getValue() == null) {
 					return defaultContext.cardinality() - defaultContext_removed.cardinality();
 				} else {
 					return getHllCardinality(contextIndex, contextIndex_removed, var.getValue());
