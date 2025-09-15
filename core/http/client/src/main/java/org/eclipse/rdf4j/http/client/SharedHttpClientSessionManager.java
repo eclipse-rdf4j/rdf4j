@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.http.client;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -24,15 +25,20 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.http.HttpConnection;
+import org.apache.http.HttpRequest;
 import org.apache.http.HttpResponse;
+import org.apache.http.ProtocolException;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.HttpRequestRetryHandler;
 import org.apache.http.client.ServiceUnavailableRetryStrategy;
 import org.apache.http.client.config.CookieSpecs;
 import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.client.methods.RequestBuilder;
 import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.client.utils.HttpClientUtils;
 import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.DefaultRedirectStrategy;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.protocol.HttpContext;
 import org.eclipse.rdf4j.http.client.util.HttpClientBuilders;
@@ -579,6 +585,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 				.setMaxConnPerRoute(MAX_CONN_PER_ROUTE)
 				.setMaxConnTotal(MAX_CONN_TOTAL)
 				.useSystemProperties()
+				.setRedirectStrategy(new SameMethodRedirectStrategy())
 				.setDefaultRequestConfig(requestConfig)
 				.build();
 	}
@@ -593,8 +600,41 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 				.setConnectTimeout(currentConnectionTimeout)
 				.setConnectionRequestTimeout(currentConnectionRequestTimeout)
 				.setSocketTimeout(currentSocketTimeout)
+				.setRedirectsEnabled(true)
+				.setRelativeRedirectsAllowed(true)
+				.setExpectContinueEnabled(true)
 				.setCookieSpec(CookieSpecs.STANDARD)
 				.build();
+	}
+
+	/**
+	 * Redirect strategy that follows 301/302/307/308 for any HTTP method and preserves the original method and entity.
+	 */
+	private static class SameMethodRedirectStrategy extends DefaultRedirectStrategy {
+		private static final String[] REDIRECT_METHODS = new String[] { "GET", "HEAD", "POST", "PUT", "DELETE",
+				"PATCH" };
+
+		@Override
+		protected boolean isRedirectable(String method) {
+			for (String m : REDIRECT_METHODS) {
+				if (m.equalsIgnoreCase(method)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		@Override
+		public HttpUriRequest getRedirect(HttpRequest request,
+				HttpResponse response, HttpContext context)
+				throws ProtocolException {
+			URI uri = getLocationURI(request, response, context);
+			// Preserve original method and entity
+			RequestBuilder rb = RequestBuilder
+					.copy(request);
+			rb.setUri(uri);
+			return rb.build();
+		}
 	}
 
 	/**
