@@ -104,8 +104,6 @@ public class NativeStoreConnection extends SailSourceConnection implements Threa
 
 	@Override
 	protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		// mark that statements were added so reads can flush pending updates pre-emptively
-		setStatementsAdded();
 		// assume the triple is not yet present in the triple store
 		sailChangedEvent.setStatementsAdded(true);
 

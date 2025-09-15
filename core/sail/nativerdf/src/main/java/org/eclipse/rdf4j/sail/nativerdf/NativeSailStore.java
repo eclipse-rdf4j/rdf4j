@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.BackingSailSource;
 import org.eclipse.rdf4j.sail.base.Changeset;
@@ -389,7 +390,11 @@ class NativeSailStore implements SailStore {
 				throw new SailException(e);
 			} catch (RuntimeException e) {
 				logger.error("Encountered an unexpected problem while trying to commit", e);
-				throw e;
+				if (e instanceof SailException) {
+					throw e;
+				}
+				// Ensure upstream handles this as a SailException so branch flush clears pending changes
+				throw new SailException(e);
 			} finally {
 				sinkStoreAccessLock.unlock();
 			}
@@ -447,7 +452,10 @@ class NativeSailStore implements SailStore {
 		public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
 			try {
 				addStatement(subj, pred, obj, explicit, ctx);
-			} catch (IllegalArgumentException e) {
+			} catch (RuntimeException e) {
+				if (e instanceof SailException) {
+					throw e;
+				}
 				// Ensure upstream handles this as a SailException so branch flush clears pending changes
 				throw new SailException(e);
 			}
@@ -482,8 +490,10 @@ class NativeSailStore implements SailStore {
 				}
 			} catch (IOException e) {
 				throw new SailException(e);
-			} catch (IllegalArgumentException e) {
-				// Wrap invalid value types (e.g., RDF* Triple value) so upstream can rollback/clear changes
+			} catch (RuntimeException e) {
+				if (e instanceof SailException) {
+					throw e;
+				}
 				logger.error("Encountered an unexpected problem while trying to add a statement", e);
 				throw new SailException(e);
 			} finally {
@@ -545,8 +555,10 @@ class NativeSailStore implements SailStore {
 				}
 			} catch (IOException e) {
 				throw new SailException(e);
-			} catch (IllegalArgumentException e) {
-				// Wrap invalid value types (e.g., RDF* Triple value) so upstream can rollback/clear changes
+			} catch (RuntimeException e) {
+				if (e instanceof SailException) {
+					throw e;
+				}
 				logger.error("Encountered an unexpected problem while trying to add a statement", e);
 				throw new SailException(e);
 			} finally {
@@ -621,7 +633,11 @@ class NativeSailStore implements SailStore {
 				throw new SailException(e);
 			} catch (RuntimeException e) {
 				logger.error("Encountered an unexpected problem while trying to remove statements", e);
-				throw e;
+				if (e instanceof SailException) {
+					throw e;
+				}
+				// Ensure upstream handles this as a SailException so branch flush clears pending changes
+				throw new SailException(e);
 			} finally {
 				sinkStoreAccessLock.unlock();
 			}
