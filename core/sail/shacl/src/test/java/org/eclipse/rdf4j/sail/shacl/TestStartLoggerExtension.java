@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl;
 
+import org.apache.jena.base.Sys;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.BeforeTestExecutionCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
@@ -26,8 +27,8 @@ public class TestStartLoggerExtension
 		String cls = context.getTestClass().map(Class::getName).orElse("<unknown-class>");
 		String method = context.getTestMethod().map(m -> m.getName()).orElse("<unknown-method>");
 		String display = context.getDisplayName();
-		System.out.println("[TEST] " + phase + ": " + cls + "#" + method + " (" + display + ")");
-		System.out.flush();
+		System.err.println("[TEST] " + phase + ": " + cls + "#" + method + " (" + display + ")");
+		System.err.flush();
 	}
 
 	@Override
@@ -49,7 +50,7 @@ public class TestStartLoggerExtension
 
 	@Override
 	public void testFailed(ExtensionContext context, Throwable cause) {
-		print("Failed: " + cause.getClass().getSimpleName() + ": " + String.valueOf(cause.getMessage()), context);
+		print("Failed: " + cause.getClass().getSimpleName() + ": " + cause.getMessage(), context);
 	}
 
 	@Override
