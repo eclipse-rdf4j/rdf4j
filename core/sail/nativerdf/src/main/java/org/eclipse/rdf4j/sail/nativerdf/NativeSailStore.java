@@ -445,7 +445,12 @@ class NativeSailStore implements SailStore {
 
 		@Override
 		public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
-			addStatement(subj, pred, obj, explicit, ctx);
+			try {
+				addStatement(subj, pred, obj, explicit, ctx);
+			} catch (IllegalArgumentException e) {
+				// Ensure upstream handles this as a SailException so branch flush clears pending changes
+				throw new SailException(e);
+			}
 		}
 
 		@Override
@@ -477,9 +482,10 @@ class NativeSailStore implements SailStore {
 				}
 			} catch (IOException e) {
 				throw new SailException(e);
-			} catch (RuntimeException e) {
+			} catch (IllegalArgumentException e) {
+				// Wrap invalid value types (e.g., RDF* Triple value) so upstream can rollback/clear changes
 				logger.error("Encountered an unexpected problem while trying to add a statement", e);
-				throw e;
+				throw new SailException(e);
 			} finally {
 				sinkStoreAccessLock.unlock();
 			}
@@ -539,9 +545,10 @@ class NativeSailStore implements SailStore {
 				}
 			} catch (IOException e) {
 				throw new SailException(e);
-			} catch (RuntimeException e) {
+			} catch (IllegalArgumentException e) {
+				// Wrap invalid value types (e.g., RDF* Triple value) so upstream can rollback/clear changes
 				logger.error("Encountered an unexpected problem while trying to add a statement", e);
-				throw e;
+				throw new SailException(e);
 			} finally {
 				sinkStoreAccessLock.unlock();
 			}

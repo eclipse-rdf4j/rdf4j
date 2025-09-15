@@ -76,8 +76,10 @@ public class NativeStoreConnection extends SailSourceConnection implements Threa
 		try {
 			super.commitInternal();
 		} finally {
-			txnLock.release();
-			txnLock = null;
+			if (txnLock != null) {
+				txnLock.release();
+				txnLock = null;
+			}
 		}
 
 		nativeStore.notifySailChanged(sailChangedEvent);
@@ -91,8 +93,10 @@ public class NativeStoreConnection extends SailSourceConnection implements Threa
 		try {
 			super.rollbackInternal();
 		} finally {
-			txnLock.release();
-			txnLock = null;
+			if (txnLock != null) {
+				txnLock.release();
+				txnLock = null;
+			}
 		}
 		// create a fresh event object.
 		sailChangedEvent = new DefaultSailChangedEvent(nativeStore);
@@ -100,6 +104,8 @@ public class NativeStoreConnection extends SailSourceConnection implements Threa
 
 	@Override
 	protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		// mark that statements were added so reads can flush pending updates pre-emptively
+		setStatementsAdded();
 		// assume the triple is not yet present in the triple store
 		sailChangedEvent.setStatementsAdded(true);
 
