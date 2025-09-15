@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.sail.SailException;
@@ -70,7 +71,7 @@ class SailSourceBranch implements SailSource {
 
 	/**
 	 * The {@link Model} instances that should be used to store {@link SailSink#approve(Resource, IRI, Value, Resource)}
-	 * and {@link SailSink#deprecate(Resource, IRI, Value, Resource)} statements.
+	 * and {@link SailSink#deprecate(Statement)} statements.
 	 */
 	private final ModelFactory modelFactory;
 
@@ -306,7 +307,7 @@ class SailSourceBranch implements SailSource {
 					prepared = null;
 				}
 			}
-		} catch (SailException e) {
+		} catch (Throwable e) {
 			// clear changes if flush fails
 			changes.clear();
 			prepared = null;
