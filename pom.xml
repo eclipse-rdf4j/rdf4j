@@ -828,9 +828,6 @@
 						<printSummary>true</printSummary>
 						<trimStackTrace>false</trimStackTrace>
 						<!-- silence the default reporter to avoid duplicates -->
-						<consoleOutputReporter>
-							<disable>true</disable>
-						</consoleOutputReporter>
 						<!-- pretty tree output -->
 						<!--						<statelessTestsetInfoReporter implementation="org.apache.maven.plugin.surefire.extensions.junit5.JUnit5StatelessTestsetInfoTreeReporter">-->
 						<!--							<theme>UNICODE</theme>-->
