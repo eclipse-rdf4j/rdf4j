@@ -10,13 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql;
 
-import static org.assertj.core.api.Assertions.fail;
+import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.concurrent.CountDownLatch;
+import java.lang.reflect.Field;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.RepositoryException;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -31,42 +32,33 @@ public class SPARQLRepositoryCleanerTest {
 
 	@Test
 	void autoShutdownOnUnreachable() throws Exception {
-		CountDownLatch shutdownInvoked = new CountDownLatch(1);
+		SPARQLRepository repo = new SPARQLRepository("http://example.org/sparql");
 
-		runRepo(shutdownInvoked);
-
-		// Encourage GC and wait briefly for cleaner to run
-		boolean observed = false;
-		for (int i = 0; i < 20 && !observed; i++) {
-			System.gc();
-			System.runFinalization();
-			observed = shutdownInvoked.await(250, TimeUnit.MILLISECONDS);
-		}
-
-		if (!observed) {
-			fail("Expected shutDownInternal() to be invoked when SPARQLRepository became unreachable");
-		}
-	}
-
-	private static void runRepo(CountDownLatch shutdownInvoked) {
-		// Create a repository instance that signals when shutDownInternal() is invoked
-		SPARQLRepository repo = new SPARQLRepository("http://example.org/sparql") {
-			@Override
-			protected void shutDownInternal() throws RepositoryException {
-				try {
-					super.shutDownInternal();
-				} finally {
-					shutdownInvoked.countDown();
-				}
-			}
-		};
-
-		// Exercise minimal usage without hitting the network
+		// Ensure dependent client is created
 		try (RepositoryConnection conn = repo.getConnection()) {
 			// no-op
 		}
 
-		// Drop strong reference and ask GC to collect
+		SharedHttpClientSessionManager mgr = (SharedHttpClientSessionManager) repo.getHttpClientSessionManager();
+
+		// Access internal executor to verify shutdown state
+		Field f = SharedHttpClientSessionManager.class.getDeclaredField("executor");
+		f.setAccessible(true);
+		ExecutorService exec = (ExecutorService) f.get(mgr);
+
+		// Drop strong reference and encourage GC to trigger Cleaner
 		repo = null;
+
+		boolean cleaned = false;
+		for (int i = 0; i < 40 && !cleaned; i++) {
+			System.gc();
+			System.runFinalization();
+			TimeUnit.MILLISECONDS.sleep(100);
+			cleaned = exec.isShutdown() || exec.isTerminated();
+		}
+
+		assertThat(cleaned)
+				.as("dependent session manager executor should be shut down by Cleaner")
+				.isTrue();
 	}
 }
