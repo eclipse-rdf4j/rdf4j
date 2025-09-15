@@ -591,6 +591,18 @@ Do **not** modify existing headers’ years.
 * Entire repo:
 
     * `mvn -o verify` (long; only when appropriate)
+* Slow tests (entire repo):
+
+    * `mvn -o verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip | tail -500`
+* Slow tests (by module):
+
+    * `mvn -o -pl <module> verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip | tail -500`
+* Integration tests (entire repo):
+
+    * `mvn -o verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip | tail -500`
+* Integration tests (by module):
+
+    * `mvn -o -pl <module> verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip | tail -500`
 * Useful flags:
 
     * `-Dtest=ClassName`
