@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
@@ -30,10 +31,19 @@ import org.mockito.Mockito;
 public class NoChangeTest {
 
 	@Test
+	public void test() throws InterruptedException {
+		System.out.println("yay");
+		Thread.sleep(3000);
+		System.out.println("hurray");
+	}
+
+	@Test
 	public void testSkippingValidationWhenThereAreNoChanges() throws IOException, InterruptedException {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.init();
+
+		Thread.sleep(3000);
 
 		Model shapes;
 		try (InputStream stream = NoShapesTest.class.getClassLoader().getResourceAsStream("shacl.trig")) {
