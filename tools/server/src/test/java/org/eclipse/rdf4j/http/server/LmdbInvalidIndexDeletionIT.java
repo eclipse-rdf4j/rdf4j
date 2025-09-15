@@ -14,12 +14,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.config.AbstractSailImplConfig;
@@ -69,8 +72,8 @@ public class LmdbInvalidIndexDeletionIT {
 			}
 
 			@Override
-			public org.eclipse.rdf4j.model.Resource export(org.eclipse.rdf4j.model.Model m) {
-				org.eclipse.rdf4j.model.Resource node = super.export(m);
+			public Resource export(Model m) {
+				Resource node = super.export(m);
 				ValueFactory vf = SimpleValueFactory.getInstance();
 				IRI tripleIdx = vf.createIRI("http://rdf4j.org/config/sail/lmdb#tripleIndexes");
 				m.add(node, tripleIdx, vf.createLiteral(tripleIndexes));
@@ -83,11 +86,14 @@ public class LmdbInvalidIndexDeletionIT {
 
 		RemoteRepositoryManager manager = RemoteRepositoryManager.getInstance(TestServer.SERVER_URL);
 		try {
-			// Create config on server (does not initialize the underlying store yet)
-			manager.addRepositoryConfig(repoConfig);
+			try {
+				// Create config on server (does not initialize the underlying store yet)
+				manager.addRepositoryConfig(repoConfig);
+			} catch (Exception ignored) {
+			}
 
 			// Trigger initialization by opening a connection; expected to fail due to invalid index
-			Repository httpRepo = new org.eclipse.rdf4j.repository.http.HTTPRepository(
+			Repository httpRepo = new HTTPRepository(
 					Protocol.getRepositoryLocation(TestServer.SERVER_URL, id));
 			try (RepositoryConnection conn = httpRepo.getConnection()) {
 				// attempt a trivial call to ensure init
@@ -104,8 +110,9 @@ public class LmdbInvalidIndexDeletionIT {
 			try {
 				manager.removeRepository(id);
 			} catch (Exception ignore) {
+			} finally {
+				manager.shutDown();
 			}
-			manager.shutDown();
 		}
 	}
 }
