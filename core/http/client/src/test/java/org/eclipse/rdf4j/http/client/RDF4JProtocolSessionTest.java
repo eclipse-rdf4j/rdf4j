@@ -78,6 +78,57 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 	}
 
 	@Test
+	public void testCreateRepositoryFollowsRedirectOnPut(MockServerClient client) throws Exception {
+		// Simulate reverse-proxy forcing redirect on state-changing PUT
+		String originalPath = "/rdf4j-server/repositories/test";
+		String redirectedPath = "/https/rdf4j-server/repositories/test";
+		String redirectLocation = "http://localhost:" + client.getPort() + redirectedPath;
+
+		// First request responds with 301 and Location header
+		client.when(
+				request()
+						.withMethod("PUT")
+						.withPath(originalPath),
+				Times.once()
+		)
+				.respond(
+						response()
+								.withStatusCode(301)
+								.withHeader("Location", redirectLocation)
+				);
+
+		// Redirect target responds successfully
+		client.when(
+				request()
+						.withMethod("PUT")
+						.withPath(redirectedPath),
+				Times.once()
+		)
+				.respond(
+						response()
+				);
+
+		RepositoryConfig config = new RepositoryConfig("test");
+
+		// Expected: client should follow the 301 redirect and succeed without throwing
+		getRDF4JSession().createRepository(config);
+
+		// Verify both the original and redirected requests were made with additional headers preserved
+		client.verify(
+				request()
+						.withMethod("PUT")
+						.withPath(originalPath)
+						.withHeader(testHeader, testValue)
+		);
+		client.verify(
+				request()
+						.withMethod("PUT")
+						.withPath(redirectedPath)
+						.withHeader(testHeader, testValue)
+		);
+	}
+
+	@Test
 	public void testUpdateRepositoryExecutesPost(MockServerClient client) throws Exception {
 		RepositoryConfig config = new RepositoryConfig("test");
 
