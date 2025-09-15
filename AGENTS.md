@@ -521,7 +521,12 @@ Do **not** modify existing headers’ years.
 - Create PR using default template:
   - Preferred: `gh pr create --title "GH-XXXX <summary>" --body-file .github/pull_request_template.md`
   - Fallback: `gh pr create --title "GH-XXXX <summary>" --body "$(cat .github/pull_request_template.md)"`
-- Target the repo default branch (e.g., `origin/HEAD`). Add `Fixes #XXXX` in the PR body when appropriate.
+- Immediately fill the template (do not leave placeholders):
+  - Set `GitHub issue resolved: #XXXX`.
+  - Write a short, accurate change summary (what/why).
+  - Tick applicable checklist items only (self-contained, tests, squashed, commit message prefix, formatting if run).
+  - Include `Fixes #XXXX` to auto-close the issue on merge.
+- Target the repo default branch (e.g., `origin/HEAD`).
 
 ---
 
