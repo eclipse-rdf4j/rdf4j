@@ -105,9 +105,9 @@ public class RepositoryInterceptor extends ServerInterceptor {
 			request.setAttribute(REPOSITORY_KEY, new RepositoryConfigRepository(repositoryManager));
 		} else if (nextRepositoryID != null) {
 			try {
-				// For DELETE requests we must not attempt to initialize the repository,
-				// otherwise a corrupt/invalid configuration can block deletion.
-				if ("DELETE".equals(request.getMethod())) {
+				// For requests to delete a repository, we must not attempt to initialize the repository. Otherwise a
+				// corrupt/invalid configuration can block deletion.
+				if ("DELETE".equals(request.getMethod()) && request.getPathInfo().equals("/" + nextRepositoryID)) {
 					request.setAttribute(REPOSITORY_ID_KEY, nextRepositoryID);
 					return;
 				}
