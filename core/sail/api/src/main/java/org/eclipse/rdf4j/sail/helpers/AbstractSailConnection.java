@@ -107,7 +107,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * Lock used to prevent concurrent calls to update methods like addStatement, clear, commit, etc. within a
 	 * transaction.
 	 */
-	private final ExclusiveReentrantLockManager updateLock = new ExclusiveReentrantLockManager();
+	private final ExclusiveReentrantLockManager updateLock = new ExclusiveReentrantLockManager(
+			"AbstractSailConnection-updateLock");
 	private final LongAdder iterationsOpened = new LongAdder();
 	private final LongAdder iterationsClosed = new LongAdder();
 
