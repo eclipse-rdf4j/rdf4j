@@ -579,12 +579,23 @@ public abstract class AbstractSailConnection implements SailConnection {
 			activeThread.setRelease(Thread.currentThread());
 
 			verifyIsOpen();
+			Lock exclusiveLock = null;
+			InterruptedException exception = null;
+			try {
+				exclusiveLock = updateLock.getExclusiveLock();
 
-			Lock exclusiveLock = updateLock.getExclusiveLock();
+			} catch (InterruptedException e) {
+				// we really want to finish rolling back, so we retry getting the lock
+				exception = e;
+				exclusiveLock = updateLock.getExclusiveLock();
+			}
 			try {
 				if (txnActive) {
 					try {
 						rollbackInternal();
+						if (exception != null) {
+							Thread.currentThread().interrupt();
+						}
 					} finally {
 						txnActive = false;
 						txnPrepared = false;
