@@ -585,9 +585,24 @@ public abstract class AbstractSailConnection implements SailConnection {
 				exclusiveLock = updateLock.getExclusiveLock();
 
 			} catch (InterruptedException e) {
-				// we really want to finish rolling back, so we retry getting the lock
+				// we really want to finish rolling back, so we retry getting the lock even if we've been interrupted
+				logger.warn(
+						"Interrupted while trying to acquire exclusive lock to rollback transaction. Retrying one time.",
+						e);
 				exception = e;
-				exclusiveLock = updateLock.getExclusiveLock();
+				try {
+					exclusiveLock = updateLock.getExclusiveLock();
+
+				} catch (InterruptedException e2) {
+					assert false
+							: "Interrupted a second time while trying to acquire exclusive lock to rollback transaction. This should never happen during testing";
+					logger.error(
+							"Interrupted a second time while trying to acquire exclusive lock to rollback transaction. Giving up.",
+							e2);
+					Thread.currentThread().interrupt();
+					throw new SailException(
+							"Interrupted twice while trying to acquire exclusive lock to rollback transaction.", e);
+				}
 			}
 			try {
 				if (txnActive) {
@@ -607,9 +622,6 @@ public abstract class AbstractSailConnection implements SailConnection {
 			} finally {
 				exclusiveLock.release();
 			}
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new SailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
