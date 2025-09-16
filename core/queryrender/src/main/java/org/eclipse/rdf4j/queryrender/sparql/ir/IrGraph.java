@@ -1,0 +1,80 @@
+/*******************************************************************************
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
+package org.eclipse.rdf4j.queryrender.sparql.ir;
+
+import java.util.HashSet;
+import java.util.Set;
+import java.util.function.UnaryOperator;
+
+import org.eclipse.rdf4j.query.algebra.Var;
+
+/**
+ * Textual IR node representing a GRAPH block with an inner group.
+ *
+ * The graph reference is modelled as a {@link Var} so it can be either a bound IRI (rendered via {@code <...>} or
+ * prefix) or an unbound variable name. The body is a nested {@link IrBGP}.
+ */
+public class IrGraph extends IrNode {
+	private final Var graph;
+	private final IrBGP bgp;
+
+	public IrGraph(Var graph, IrBGP bgp, boolean newScope) {
+		super(newScope);
+		this.graph = graph;
+		this.bgp = bgp;
+	}
+
+	public Var getGraph() {
+		return graph;
+	}
+
+	public IrBGP getWhere() {
+		return bgp;
+	}
+
+	@Override
+	public void print(IrPrinter p) {
+		p.startLine();
+		p.append("GRAPH " + p.convertVarToString(getGraph()) + " ");
+		IrBGP inner = getWhere();
+		if (inner != null) {
+			inner.print(p); // IrBGP prints braces
+		} else {
+			p.openBlock();
+			p.closeBlock();
+		}
+	}
+
+	@Override
+	public IrNode transformChildren(UnaryOperator<IrNode> op) {
+		IrBGP newWhere = this.bgp;
+		if (newWhere != null) {
+			IrNode t = op.apply(newWhere);
+			t = t.transformChildren(op);
+			if (t instanceof IrBGP) {
+				newWhere = (IrBGP) t;
+			}
+		}
+		return new IrGraph(this.graph, newWhere, this.isNewScope());
+	}
+
+	@Override
+	public Set<Var> getVars() {
+		HashSet<Var> out = new HashSet<>();
+		if (graph != null) {
+			out.add(graph);
+		}
+		if (bgp != null) {
+			out.addAll(bgp.getVars());
+		}
+		return out;
+	}
+}

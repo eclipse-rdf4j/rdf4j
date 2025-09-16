@@ -26,4 +26,9 @@ public class ASTUnionGraphPattern extends SimpleNode {
 	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
+
+	@Override
+	public boolean isScopeChange() {
+		return super.isScopeChange();
+	}
 }

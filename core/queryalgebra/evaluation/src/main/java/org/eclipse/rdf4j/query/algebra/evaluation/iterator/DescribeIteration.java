@@ -210,9 +210,9 @@ public class DescribeIteration extends LookAheadIteration<BindingSet> {
 			return QueryEvaluationStep.EMPTY_ITERATION;
 		}
 
-		Var subjVar = new Var(VARNAME_SUBJECT, subject);
-		Var predVar = new Var(VARNAME_PREDICATE);
-		Var objVar = new Var(VARNAME_OBJECT, object);
+		Var subjVar = Var.of(VARNAME_SUBJECT, subject);
+		Var predVar = Var.of(VARNAME_PREDICATE);
+		Var objVar = Var.of(VARNAME_OBJECT, object);
 
 		StatementPattern pattern = new StatementPattern(subjVar, predVar, objVar);
 		return strategy.evaluate(pattern, parentBindings);
