@@ -610,6 +610,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 						rollbackInternal();
 						if (exception != null) {
 							Thread.currentThread().interrupt();
+							throw new SailException(exception);
 						}
 					} finally {
 						txnActive = false;

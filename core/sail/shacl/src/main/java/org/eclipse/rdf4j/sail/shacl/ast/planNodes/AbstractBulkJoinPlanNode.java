@@ -72,6 +72,7 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 		if (!newBindindingSet.isEmpty()) {
 			updateQuery(parsedQuery, newBindindingSet);
 			if (Thread.currentThread().isInterrupted()) {
+				Thread.currentThread().interrupt();
 				throw new InterruptedSailException();
 			}
 			executeQuery(right, connection, dataset, parsedQuery);
@@ -120,6 +121,7 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 					boolean hasStatement;
 
 					if (Thread.currentThread().isInterrupted()) {
+						Thread.currentThread().interrupt();
 						throw new InterruptedSailException(
 								"Thread was interrupted while checking previous state connection.");
 					}

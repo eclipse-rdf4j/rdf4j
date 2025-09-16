@@ -92,6 +92,7 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 		while (tupleIterator.hasNext() && (limit < 0 || localCounter++ < limit + 1)) {
 			if (Thread.currentThread().isInterrupted()) {
 				tupleIterator.close();
+				Thread.currentThread().interrupt();
 				throw new InterruptedSailException("Thread was interrupted during validation");
 			}
 			actualList.add(tupleIterator.next());

@@ -231,6 +231,7 @@ public class TargetChainRetriever implements PlanNode {
 					}
 
 					if (Thread.currentThread().isInterrupted()) {
+						Thread.currentThread().interrupt();
 						throw new InterruptedSailException();
 					}
 

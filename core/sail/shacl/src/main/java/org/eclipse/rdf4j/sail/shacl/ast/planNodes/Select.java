@@ -120,6 +120,7 @@ public class Select implements PlanNode {
 						}
 						if (Thread.currentThread().isInterrupted()) {
 							close();
+							Thread.currentThread().interrupt();
 							throw new InterruptedSailException("Thread was interrupted while executing SPARQL query.");
 						}
 						bindingSet = connection.evaluate(tupleExpr, dataset, EmptyBindingSet.getInstance(), true);
@@ -136,6 +137,7 @@ public class Select implements PlanNode {
 					}
 					if (Thread.currentThread().isInterrupted()) {
 						close();
+						Thread.currentThread().interrupt();
 						throw new InterruptedSailException("Thread was interrupted while executing SPARQL query.");
 					}
 
