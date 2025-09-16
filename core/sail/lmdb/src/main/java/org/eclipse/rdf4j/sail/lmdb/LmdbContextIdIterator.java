@@ -25,6 +25,8 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.locks.StampedLock;
 
+import org.eclipse.rdf4j.common.concurrent.locks.Lock;
+import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.lwjgl.PointerBuffer;
@@ -61,7 +63,7 @@ class LmdbContextIdIterator implements Closeable {
 
 	private boolean fetchNext = false;
 
-	private final StampedLock txnLock;
+	private final ReadWriteLockManager txnLockManager;
 
 	private final Thread ownerThread = Thread.currentThread();
 
@@ -72,9 +74,14 @@ class LmdbContextIdIterator implements Closeable {
 
 		this.dbi = dbi;
 		this.txnRef = txnRef;
-		this.txnLock = txnRef.lock();
+		this.txnLockManager = txnRef.lockManager();
 
-		long stamp = txnLock.readLock();
+		Lock lock;
+		try {
+			lock = txnLockManager.getReadLock();
+		} catch (InterruptedException e) {
+			throw new SailException(e);
+		}
 		try {
 			this.txnRefVersion = txnRef.version();
 			this.txn = txnRef.get();
@@ -85,12 +92,17 @@ class LmdbContextIdIterator implements Closeable {
 				cursor = pp.get(0);
 			}
 		} finally {
-			txnLock.unlockRead(stamp);
+			lock.release();
 		}
 	}
 
 	public long[] next() {
-		long stamp = txnLock.readLock();
+		Lock lock;
+		try {
+			lock = txnLockManager.getReadLock();
+		} catch (InterruptedException e) {
+			throw new SailException(e);
+		}
 		try {
 			if (txnRefVersion != txnRef.version()) {
 				// cursor must be renewed
@@ -143,17 +155,21 @@ class LmdbContextIdIterator implements Closeable {
 		} catch (IOException e) {
 			throw new SailException(e);
 		} finally {
-			txnLock.unlockRead(stamp);
+			lock.release();
 		}
 	}
 
 	private void closeInternal(boolean maybeCalledAsync) {
 		if (!closed) {
-			long stamp;
+			Lock lock;
 			if (maybeCalledAsync && ownerThread != Thread.currentThread()) {
-				stamp = txnLock.writeLock();
+				try {
+					lock = txnLockManager.getWriteLock();
+				} catch (InterruptedException e) {
+					throw new SailException(e);
+				}
 			} else {
-				stamp = 0;
+				lock = null;
 			}
 			try {
 				if (!closed) {
@@ -166,8 +182,8 @@ class LmdbContextIdIterator implements Closeable {
 				}
 			} finally {
 				closed = true;
-				if (stamp != 0) {
-					txnLock.unlockWrite(stamp);
+				if (lock != null) {
+					lock.release();
 				}
 			}
 		}

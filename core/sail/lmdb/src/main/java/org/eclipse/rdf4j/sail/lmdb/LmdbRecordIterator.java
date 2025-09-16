@@ -26,6 +26,9 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.locks.StampedLock;
 
+import org.eclipse.rdf4j.common.concurrent.locks.Lock;
+import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TripleStore.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
@@ -74,7 +77,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private boolean fetchNext = false;
 
-	private final StampedLock txnLock;
+	private final ReadWriteLockManager txnLockManager;
 
 	private final Thread ownerThread = Thread.currentThread();
 
@@ -107,9 +110,14 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 		this.dbi = index.getDB(explicit);
 		this.txnRef = txnRef;
-		this.txnLock = txnRef.lock();
+		this.txnLockManager = txnRef.lockManager();
 
-		long stamp = txnLock.readLock();
+		Lock lock;
+		try {
+			lock = txnLockManager.getReadLock();
+		} catch (InterruptedException e) {
+			throw new SailException(e);
+		}
 		try {
 			this.txnRefVersion = txnRef.version();
 			this.txn = txnRef.get();
@@ -120,13 +128,18 @@ class LmdbRecordIterator implements RecordIterator {
 				cursor = pp.get(0);
 			}
 		} finally {
-			txnLock.unlockRead(stamp);
+			lock.release();
 		}
 	}
 
 	@Override
 	public long[] next() {
-		long stamp = txnLock.readLock();
+		Lock lock;
+		try {
+			lock = txnLockManager.getReadLock();
+		} catch (InterruptedException e) {
+			throw new SailException(e);
+		}
 		try {
 			if (closed) {
 				log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
@@ -191,17 +204,21 @@ class LmdbRecordIterator implements RecordIterator {
 			closeInternal(false);
 			return null;
 		} finally {
-			txnLock.unlockRead(stamp);
+			lock.release();
 		}
 	}
 
 	private void closeInternal(boolean maybeCalledAsync) {
 		if (!closed) {
-			long stamp;
+			Lock lock;
 			if (maybeCalledAsync && ownerThread != Thread.currentThread()) {
-				stamp = txnLock.writeLock();
+				try {
+					lock = txnLockManager.getWriteLock();
+				} catch (InterruptedException e) {
+					throw new SailException(e);
+				}
 			} else {
-				stamp = 0;
+				lock = null;
 			}
 			try {
 				if (!closed) {
@@ -218,8 +235,8 @@ class LmdbRecordIterator implements RecordIterator {
 				}
 			} finally {
 				closed = true;
-				if (stamp != 0) {
-					txnLock.unlockWrite(stamp);
+				if (lock != null) {
+					lock.release();
 				}
 			}
 		}

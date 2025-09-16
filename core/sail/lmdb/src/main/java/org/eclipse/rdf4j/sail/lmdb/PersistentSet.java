@@ -39,8 +39,10 @@ import java.nio.ByteBuffer;
 import java.util.AbstractSet;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
-import java.util.concurrent.locks.StampedLock;
 
+import org.eclipse.rdf4j.common.concurrent.locks.Lock;
+import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -112,7 +114,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 		}
 	}
 
-	private synchronized boolean update(Object element, boolean add) throws IOException {
+	private synchronized boolean update(Object element, boolean add) throws IOException, InterruptedException {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			if (factory.writeTxn == 0) {
 				// start a write transaction
@@ -189,7 +191,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 		private final MDBVal valueData = MDBVal.malloc();
 		private final long cursor;
 
-		private final StampedLock txnLock;
+		private final ReadWriteLockManager txnLockManager;
 		private Txn txnRef;
 		private long txnRefVersion;
 
@@ -199,9 +201,9 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 		private ElementIterator(int dbi) {
 			try {
 				this.txnRef = factory.txnManager.createReadTxn();
-				this.txnLock = txnRef.lock();
+				this.txnLockManager = txnRef.lockManager();
 
-				long stamp = txnLock.readLock();
+				Lock lock = txnLockManager.getReadLock();
 				try {
 					this.txnRefVersion = txnRef.version();
 
@@ -211,7 +213,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 						cursor = pp.get(0);
 					}
 				} finally {
-					txnLock.unlockRead(stamp);
+					lock.release();
 				}
 			} catch (Exception e) {
 				throw new RuntimeException(e);
@@ -243,8 +245,8 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 			return current;
 		}
 
-		private T computeNext() throws IOException {
-			long stamp = txnLock.readLock();
+		private T computeNext() throws IOException, InterruptedException {
+			Lock lock = txnLockManager.getReadLock();
 			try {
 				if (txnRefVersion != txnRef.version()) {
 					// cursor must be renewed
@@ -267,7 +269,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 				close();
 				return null;
 			} finally {
-				txnLock.unlockRead(stamp);
+				lock.release();
 			}
 		}
 
@@ -275,13 +277,18 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 			if (txnRef != null) {
 				keyData.close();
 				valueData.close();
-				long stamp = txnLock.readLock();
+				Lock lock;
+				try {
+					lock = txnLockManager.getReadLock();
+				} catch (InterruptedException e) {
+					throw new SailException(e);
+				}
 				try {
 					mdb_cursor_close(cursor);
 					txnRef.close();
 					txnRef = null;
 				} finally {
-					txnLock.unlockRead(stamp);
+					lock.release();
 				}
 			}
 		}
