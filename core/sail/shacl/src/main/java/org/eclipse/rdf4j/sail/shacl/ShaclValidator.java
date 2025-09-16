@@ -124,6 +124,7 @@ public class ShaclValidator {
 				.collect(Collectors.toList());
 
 		if (Thread.currentThread().isInterrupted()) {
+			Thread.currentThread().interrupt();
 			throw new InterruptedSailException("Thread was interrupted during validation.");
 		}
 

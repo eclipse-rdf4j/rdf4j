@@ -156,6 +156,7 @@ public class ValidationTuple {
 	public int compareActiveTarget(ValidationTuple other) {
 
 		if (Thread.currentThread().isInterrupted()) {
+			Thread.currentThread().interrupt();
 			throw new InterruptedSailException("Thread was interrupted");
 		}
 
@@ -168,6 +169,7 @@ public class ValidationTuple {
 	public int compareFullTarget(ValidationTuple other) {
 
 		if (Thread.currentThread().isInterrupted()) {
+			Thread.currentThread().interrupt();
 			throw new InterruptedSailException("Thread was interrupted");
 		}
 

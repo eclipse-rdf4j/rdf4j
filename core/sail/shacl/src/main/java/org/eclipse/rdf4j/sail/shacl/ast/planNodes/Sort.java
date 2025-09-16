@@ -99,6 +99,7 @@ public class Sort implements PlanNode {
 			private void checkClosedOrInterrupted() {
 				if (Thread.currentThread().isInterrupted()) {
 					close();
+					Thread.currentThread().interrupt();
 					throw new InterruptedSailException("Thread was interrupted while sorting.");
 				}
 				if (isClosed()) {

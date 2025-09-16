@@ -16,11 +16,11 @@ import org.eclipse.rdf4j.sail.SailException;
 public class InterruptedSailException extends SailException {
 	public InterruptedSailException(String s) {
 		super(s);
-		Thread.currentThread().interrupt();
+		assert Thread.currentThread().isInterrupted();
 	}
 
 	public InterruptedSailException() {
 		super();
-		Thread.currentThread().interrupt();
+		assert Thread.currentThread().isInterrupted();
 	}
 }

@@ -262,7 +262,19 @@ public class ShutdownDuringValidationIT {
 			assertEquals(expected, size, "The repository should be empty after shutdown during validation");
 		} catch (RepositoryException ignored) {
 			System.out.println(ignored.getMessage());
-			connection.rollback();
+			try {
+				connection.rollback();
+			} catch (Exception e) {
+				if (e.getCause() instanceof InterruptedException) {
+					// ignore this exception
+				} else if (e.getCause() != null && e.getCause().getCause() instanceof InterruptedException) {
+					// ignore this exception
+				} else {
+					throw e;
+				}
+			}
+			long size = connection.size();
+			assertEquals(expected, size, "The repository should be empty after shutdown during validation");
 		}
 	}
 
@@ -297,7 +309,7 @@ public class ShutdownDuringValidationIT {
 		if (MAX_MILLIS <= 0) {
 			throw new IllegalStateException("MAX_MILLIS must be set to a positive value before running tests.");
 		}
-		int step = ((int) (MAX_MILLIS / 10));
+		int step = ((int) (MAX_MILLIS / 20));
 
 		return IntStream.iterate(1, n -> n <= MAX_MILLIS, n -> n + step);
 	}
