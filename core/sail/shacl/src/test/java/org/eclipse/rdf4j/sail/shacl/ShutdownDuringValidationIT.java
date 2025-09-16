@@ -113,7 +113,7 @@ public class ShutdownDuringValidationIT {
 			connection.add(realData);
 			thread = startShutdownThread(sleepMillis);
 
-			commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE);
+			commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE, 0);
 
 		}
 
@@ -150,7 +150,7 @@ public class ShutdownDuringValidationIT {
 			connection.add(realData);
 			thread = startShutdownThread(sleepMillis);
 
-			commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE + 1);
+			commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE + 1, 1);
 		}
 
 		waitForThread(thread);
@@ -181,7 +181,7 @@ public class ShutdownDuringValidationIT {
 			connection.add(iri, DCTERMS.ACCESS_RIGHTS, vf.createLiteral(""));
 			thread = startShutdownThread(sleepMillis);
 
-			commitAndExpect(connection, 0);
+			commitAndExpect(connection, 0, 0);
 		}
 
 		waitForThread(thread);
@@ -209,7 +209,7 @@ public class ShutdownDuringValidationIT {
 			connection.add(iri, DCTERMS.ACCESS_RIGHTS, vf.createLiteral(""));
 			thread = startShutdownThread(sleepMillis);
 
-			commitAndExpect(connection, 0);
+			commitAndExpect(connection, 0, 0);
 		}
 
 		waitForThread(thread);
@@ -240,7 +240,7 @@ public class ShutdownDuringValidationIT {
 			connection.add(realData);
 			thread = startShutdownThread(sleepMillis);
 
-			commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE + 1);
+			commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE + 1, 1);
 		}
 
 		waitForThread(thread);
@@ -254,7 +254,7 @@ public class ShutdownDuringValidationIT {
 
 	}
 
-	private static void commitAndExpect(SailRepositoryConnection connection, long expected) {
+	private static void commitAndExpect(SailRepositoryConnection connection, long expected, long failedExpected) {
 		try {
 			connection.commit();
 			assertFalse(Thread.currentThread().isInterrupted(), "The thread should not have been interrupted");
@@ -274,7 +274,8 @@ public class ShutdownDuringValidationIT {
 				}
 			}
 			long size = connection.size();
-			assertEquals(expected, size, "The repository should be empty after shutdown during validation");
+			assertEquals(failedExpected, size,
+					"The repository should be at the initial state after shutdown during validation and rollback.");
 		}
 	}
 
