@@ -528,8 +528,6 @@ public abstract class SailConcurrencyTest {
 			connection1.get().begin(IsolationLevels.NONE);
 			connection1.get().clear();
 		});
-		thread1.setName("Thread 1");
-		thread1.start();
 
 		CountDownLatch countDownLatch2 = new CountDownLatch(1);
 		Thread thread2 = new Thread(() -> {
@@ -540,6 +538,8 @@ public abstract class SailConcurrencyTest {
 
 		});
 		thread2.setName("Thread 2");
+		thread1.setName("Thread 1");
+		thread1.start();
 		thread2.start();
 
 		countDownLatch1.await();
