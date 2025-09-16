@@ -470,34 +470,28 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public LmdbValue getLazyValue(long id) throws IOException {
-		long stamp = revisionLock.readLock();
-		try {
-			// Check value cache
-			Long cacheID = id;
-			LmdbValue resultValue = cachedValue(cacheID);
+		// Check value cache
+		LmdbValue resultValue = cachedValue(id);
 
-			if (resultValue == null) {
-				switch ((byte) (id & 0x3)) {
-				case URI_VALUE:
-					resultValue = new LmdbIRI(lazyRevision, id);
-					break;
-				case LITERAL_VALUE:
-					resultValue = new LmdbLiteral(lazyRevision, id);
-					break;
-				case BNODE_VALUE:
-					resultValue = new LmdbBNode(lazyRevision, id);
-					break;
-				default:
-					throw new IOException("Unsupported value with type id " + (id & 0x3));
-				}
-				// Store value in cache
-				cacheValue(cacheID, resultValue);
+		if (resultValue == null) {
+			switch ((byte) (id & 0x3)) {
+			case URI_VALUE:
+				resultValue = new LmdbIRI(lazyRevision, id);
+				break;
+			case LITERAL_VALUE:
+				resultValue = new LmdbLiteral(lazyRevision, id);
+				break;
+			case BNODE_VALUE:
+				resultValue = new LmdbBNode(lazyRevision, id);
+				break;
+			default:
+				throw new IOException("Unsupported value with type id " + (id & 0x3));
 			}
-
-			return resultValue;
-		} finally {
-			revisionLock.unlockRead(stamp);
+			// Store value in cache
+			cacheValue(id, resultValue);
 		}
+
+		return resultValue;
 	}
 
 	/**
@@ -511,8 +505,7 @@ class ValueStore extends AbstractValueFactory {
 		long stamp = revisionLock.readLock();
 		try {
 			// Check value cache
-			Long cacheID = id;
-			LmdbValue resultValue = cachedValue(cacheID);
+			LmdbValue resultValue = cachedValue(id);
 
 			if (resultValue == null) {
 				// Value not in cache, fetch it from file
@@ -521,7 +514,7 @@ class ValueStore extends AbstractValueFactory {
 				if (data != null) {
 					resultValue = data2value(id, data, null);
 					// Store value in cache
-					cacheValue(cacheID, resultValue);
+					cacheValue(id, resultValue);
 				}
 			}
 
