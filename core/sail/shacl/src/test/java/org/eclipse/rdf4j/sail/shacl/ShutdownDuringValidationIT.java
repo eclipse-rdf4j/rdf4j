@@ -160,7 +160,7 @@ public class ShutdownDuringValidationIT {
 
 			assertThat(size)
 					.as("Repository size")
-					.isIn(0L, 1L, EXPECTED_REPOSITORY_SIZE + 1);
+					.isIn(0L, 1L, (long) (EXPECTED_REPOSITORY_SIZE + 1));
 
 		}
 
@@ -249,7 +249,7 @@ public class ShutdownDuringValidationIT {
 			long size = connection.size();
 			assertThat(size)
 					.as("Repository size")
-					.isIn(0L, 1L, EXPECTED_REPOSITORY_SIZE + 1);
+					.isIn(0L, 1L, (long) (EXPECTED_REPOSITORY_SIZE + 1));
 		}
 
 	}
