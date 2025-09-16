@@ -36,10 +36,11 @@ import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.locks.StampedLock;
 import java.util.function.Function;
 
 import org.apache.commons.io.FileUtils;
+import org.eclipse.rdf4j.common.concurrent.locks.Lock;
+import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -106,10 +107,10 @@ class PersistentSetFactory<T extends Serializable> {
 		}
 	}
 
-	void ensureResize() throws IOException {
+	void ensureResize() throws IOException, InterruptedException {
 		if (LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0)) {
-			StampedLock lock = txnManager.lock();
-			long stamp = lock.writeLock();
+			ReadWriteLockManager lockManager = txnManager.lockManager();
+			Lock lock = lockManager.getWriteLock();
 			try {
 				txnManager.deactivate();
 
@@ -124,7 +125,7 @@ class PersistentSetFactory<T extends Serializable> {
 				try {
 					txnManager.activate();
 				} finally {
-					lock.unlockWrite(stamp);
+					lock.release();
 				}
 			}
 		}

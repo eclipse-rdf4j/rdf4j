@@ -22,8 +22,12 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_reset;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.IdentityHashMap;
-import java.util.concurrent.locks.StampedLock;
 
+import org.eclipse.rdf4j.common.concurrent.locks.Lock;
+import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
+import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockMonitoring;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -36,7 +40,13 @@ class TxnManager {
 	private final Mode mode;
 	private final IdentityHashMap<Txn, Boolean> active = new IdentityHashMap<>();
 	private final long[] pool;
-	private final StampedLock lock = new StampedLock();
+	/**
+	 * Lock manager with disabled tracking of abandoned locks, for extra speed. When using this manager, take extra care
+	 * to always release acquired locks with try ... finally!
+	 */
+	private final ReadWriteLockManager lockManager = new ReadPrefReadWriteLockManager(
+			"lmdb-txn-manager", LockMonitoring.INITIAL_WAIT_TO_COLLECT
+	);
 	private final long env;
 	private volatile int poolIndex = -1;
 
@@ -105,26 +115,32 @@ class TxnManager {
 	}
 
 	<T> T doWith(Transaction<T> transaction) throws IOException {
-		long stamp = lock.readLock();
+		Lock lock;
+		try {
+			lock = lockManager.getReadLock();
+		} catch (InterruptedException e) {
+			throw new SailException(e);
+		}
 		T ret;
 		try (MemoryStack stack = stackPush()) {
 			try (Txn txn = createReadTxn()) {
 				ret = transaction.exec(stack, txn.get());
 			}
 		} finally {
-			lock.unlockRead(stamp);
+			lock.release();
 		}
 		return ret;
 	}
 
 	/**
-	 * This lock is used to globally block all transactions by using a {@link StampedLock#writeLock()}. This is required
-	 * to block transactions while automatic resizing the memory map.
+	 * This lock manager is used to globally block all transactions by using a
+	 * {@link ReadWriteLockManager#getWriteLock()}. This is required to block transactions while automatic resizing the
+	 * memory map.
 	 *
 	 * @return lock for managed transactions
 	 */
-	StampedLock lock() {
-		return lock;
+	ReadWriteLockManager lockManager() {
+		return lockManager;
 	}
 
 	void activate() throws IOException {
@@ -171,13 +187,13 @@ class TxnManager {
 		}
 
 		/**
-		 * A {@link StampedLock#readLock()} should be acquired while working with the transaction. This is required to
-		 * block transactions while automatic resizing the memory map.
+		 * A {@link ReadWriteLockManager#getReadLock()} should be acquired while working with the transaction. This is
+		 * required to block transactions while automatic resizing the memory map.
 		 *
 		 * @return lock for managed transactions
 		 */
-		StampedLock lock() {
-			return lock;
+		ReadWriteLockManager lockManager() {
+			return lockManager;
 		}
 
 		private void free(long txn) {
