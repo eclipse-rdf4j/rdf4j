@@ -355,40 +355,54 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		try {
-
 			if (readableShapesCache != null) {
-				readableShapesCache.close();
-				readableShapesCache = null;
-			}
-
-			if (writableShapesCache != null) {
-				writableShapesCache.purge();
-				writableShapesCache.close();
-				writableShapesCache = null;
-			}
-
-			if (previousStateConnection != null && previousStateConnection.isActive()) {
-				previousStateConnection.rollback();
+				try {
+					readableShapesCache.close();
+				} finally {
+					readableShapesCache = null;
+				}
 			}
 		} finally {
 			try {
-				if (shapesRepoConnection.isActive()) {
-					shapesRepoConnection.rollback();
-				}
-
-			} finally {
-
-				try {
-					if (isActive()) {
-						super.rollback();
+				if (writableShapesCache != null) {
+					try {
+						writableShapesCache.purge();
+					} finally {
+						try {
+							writableShapesCache.close();
+						} finally {
+							writableShapesCache = null;
+						}
 					}
-
+				}
+			} finally {
+				try {
+					if (previousStateConnection != null && previousStateConnection.isActive()) {
+						previousStateConnection.rollback();
+					}
 				} finally {
-					cleanup();
+					try {
+						if (serializableConnection != null && serializableConnection.isActive()) {
+							serializableConnection.rollback();
+						}
+					} finally {
+						try {
+							if (shapesRepoConnection.isActive()) {
+								shapesRepoConnection.rollback();
+							}
+						} finally {
+							try {
+								if (isActive()) {
+									super.rollback();
+								}
+							} finally {
+								cleanup();
+							}
+						}
+					}
 				}
 			}
 		}
-
 	}
 
 	private void cleanup() {
@@ -831,62 +845,86 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				}
 			} finally {
 				try {
-					if (getWrappedConnection() instanceof AbstractSailConnection) {
-						AbstractSailConnection abstractSailConnection = (AbstractSailConnection) getWrappedConnection();
-
-						abstractSailConnection.waitForOtherOperations(true);
-						for (int i = 0; i < 50 && abstractSailConnection.hasActiveIterations(); i++) {
-							try {
-								Thread.sleep(1);
-							} catch (InterruptedException e) {
-								Thread.currentThread().interrupt();
-								break;
-							}
-						}
-					}
+					waitForOperations();
 				} finally {
 					try {
-						if (isActive()) {
-							rollback();
+						if (readableShapesCache != null) {
+							readableShapesCache.close();
+							readableShapesCache = null;
 						}
 					} finally {
 						try {
-							shapesRepoConnection.close();
+							if (writableShapesCache != null) {
+								try {
+									writableShapesCache.purge();
+								} finally {
+									writableShapesCache.close();
+									writableShapesCache = null;
+								}
+							}
+						} finally {
+							innerClose();
+						}
+					}
+				}
+			}
+		}
+	}
 
+	private void innerClose() {
+		try {
+			shapesRepoConnection.close();
+
+		} finally {
+			try {
+				if (previousStateConnection != null) {
+					previousStateConnection.close();
+				}
+
+			} finally {
+				try {
+					if (serializableConnection != null) {
+						serializableConnection.close();
+					}
+				} finally {
+
+					try {
+						super.close();
+					} finally {
+						try {
+							sail.closeConnection();
 						} finally {
 							try {
-								if (previousStateConnection != null) {
-									previousStateConnection.close();
-								}
-
+								cleanupShapesReadWriteLock();
 							} finally {
 								try {
-									if (serializableConnection != null) {
-										serializableConnection.close();
-									}
+									cleanupReadWriteLock();
 								} finally {
-
 									try {
-										super.close();
+										cleanup();
 									} finally {
-										try {
-											sail.closeConnection();
-										} finally {
-											try {
-												cleanupShapesReadWriteLock();
-											} finally {
-												try {
-													cleanupReadWriteLock();
-												} finally {
-													closed = true;
-												}
-											}
-										}
+										closed = true;
 									}
 								}
 							}
 						}
 					}
+				}
+			}
+		}
+	}
+
+	private void waitForOperations() {
+		if (getWrappedConnection() instanceof AbstractSailConnection) {
+			AbstractSailConnection abstractSailConnection = (AbstractSailConnection) getWrappedConnection();
+
+			abstractSailConnection.waitForOtherOperations(true);
+			for (int i = 0; i < 50 && abstractSailConnection.hasActiveIterations(); i++) {
+				try {
+					Thread.sleep(1);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					break;
 				}
 			}
 		}

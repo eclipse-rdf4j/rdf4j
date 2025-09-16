@@ -136,7 +136,8 @@ class MemorySailStore implements SailStore {
 	/**
 	 * Lock manager used to prevent concurrent writes.
 	 */
-	private final ExclusiveReentrantLockManager txnLockManager = new ExclusiveReentrantLockManager();
+	private final ExclusiveReentrantLockManager txnLockManager = new ExclusiveReentrantLockManager(
+			"MemorySailStore-txnLockManager");
 
 	/**
 	 * Cleanup thread that removes deprecated statements when no other threads are accessing this list. Seee

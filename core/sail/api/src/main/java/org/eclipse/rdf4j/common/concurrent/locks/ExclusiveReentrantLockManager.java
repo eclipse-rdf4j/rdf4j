@@ -45,6 +45,14 @@ public class ExclusiveReentrantLockManager {
 	}
 
 	public ExclusiveReentrantLockManager(boolean trackLocks, int collectionFrequency) {
+		this(trackLocks, collectionFrequency, "ExclusiveReentrantLockManager");
+	}
+
+	public ExclusiveReentrantLockManager(String lockName) {
+		this(false, LockMonitoring.INITIAL_WAIT_TO_COLLECT, lockName);
+	}
+
+	public ExclusiveReentrantLockManager(boolean trackLocks, int collectionFrequency, String lockName) {
 
 		this.waitToCollect = collectionFrequency;
 
@@ -52,7 +60,7 @@ public class ExclusiveReentrantLockManager {
 
 			lockMonitoring = new LockTracking(
 					true,
-					"ExclusiveReentrantLockManager",
+					lockName,
 					LoggerFactory.getLogger(this.getClass()),
 					waitToCollect,
 					Lock.ExtendedSupplier.wrap(this::getExclusiveLockInner, this::tryExclusiveLockInner)
@@ -61,7 +69,7 @@ public class ExclusiveReentrantLockManager {
 		} else {
 			lockMonitoring = new LockCleaner(
 					false,
-					"ExclusiveReentrantLockManager",
+					lockName,
 					LoggerFactory.getLogger(this.getClass()),
 					Lock.ExtendedSupplier.wrap(this::getExclusiveLockInner, this::tryExclusiveLockInner)
 			);
@@ -101,6 +109,10 @@ public class ExclusiveReentrantLockManager {
 						return lock;
 					} else {
 						lockMonitoring.runCleanup();
+						Thread thread = owner.get();
+						if (thread != null && !thread.isAlive()) {
+							System.out.println("Owner thread is dead!");
+						}
 						owner.wait(waitToCollect);
 					}
 				} while (true);
