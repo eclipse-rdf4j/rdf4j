@@ -78,8 +78,7 @@ import java.util.StringTokenizer;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.Consumer;
 
-import org.eclipse.rdf4j.common.concurrent.locks.Lock;
-import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
+import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -1083,10 +1082,10 @@ class TripleStore implements Closeable {
 					try {
 						E(mdb_txn_commit(writeTxn));
 						if (recordCache != null) {
-							ReadWriteLockManager lockManager = txnManager.lockManager();
-							Lock lock;
+							StampedLongAdderLockManager lockManager = txnManager.lockManager();
+							long readStamp;
 							try {
-								lock = lockManager.getReadLock();
+								readStamp = lockManager.readLock();
 							} catch (InterruptedException e) {
 								throw new SailException(e);
 							}
@@ -1109,7 +1108,7 @@ class TripleStore implements Closeable {
 								try {
 									txnManager.activate();
 								} finally {
-									lock.release();
+									lockManager.unlockRead(readStamp);
 								}
 							}
 						} else {

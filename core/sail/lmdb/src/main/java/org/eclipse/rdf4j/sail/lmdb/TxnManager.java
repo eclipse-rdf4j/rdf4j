@@ -23,10 +23,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.IdentityHashMap;
 
-import org.eclipse.rdf4j.common.concurrent.locks.Lock;
-import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
-import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
-import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockMonitoring;
+import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.lwjgl.PointerBuffer;
@@ -40,13 +37,7 @@ class TxnManager {
 	private final Mode mode;
 	private final IdentityHashMap<Txn, Boolean> active = new IdentityHashMap<>();
 	private final long[] pool;
-	/**
-	 * Lock manager with disabled tracking of abandoned locks, for extra speed. When using this manager, take extra care
-	 * to always release acquired locks with try ... finally!
-	 */
-	private final ReadWriteLockManager lockManager = new ReadPrefReadWriteLockManager(
-			"lmdb-txn-manager", LockMonitoring.INITIAL_WAIT_TO_COLLECT
-	);
+	private final StampedLongAdderLockManager lockManager = new StampedLongAdderLockManager();
 	private final long env;
 	private volatile int poolIndex = -1;
 
@@ -115,9 +106,9 @@ class TxnManager {
 	}
 
 	<T> T doWith(Transaction<T> transaction) throws IOException {
-		Lock lock;
+		long readStamp;
 		try {
-			lock = lockManager.getReadLock();
+			readStamp = lockManager.readLock();
 		} catch (InterruptedException e) {
 			throw new SailException(e);
 		}
@@ -127,19 +118,15 @@ class TxnManager {
 				ret = transaction.exec(stack, txn.get());
 			}
 		} finally {
-			lock.release();
+			lockManager.unlockRead(readStamp);
 		}
 		return ret;
 	}
 
 	/**
-	 * This lock manager is used to globally block all transactions by using a
-	 * {@link ReadWriteLockManager#getWriteLock()}. This is required to block transactions while automatic resizing the
-	 * memory map.
-	 *
-	 * @return lock for managed transactions
+	 * Exposes the shared lock manager used to coordinate read and write transactions.
 	 */
-	ReadWriteLockManager lockManager() {
+	StampedLongAdderLockManager lockManager() {
 		return lockManager;
 	}
 
@@ -186,13 +173,7 @@ class TxnManager {
 			return txn;
 		}
 
-		/**
-		 * A {@link ReadWriteLockManager#getReadLock()} should be acquired while working with the transaction. This is
-		 * required to block transactions while automatic resizing the memory map.
-		 *
-		 * @return lock for managed transactions
-		 */
-		ReadWriteLockManager lockManager() {
+		StampedLongAdderLockManager lockManager() {
 			return lockManager;
 		}
 
