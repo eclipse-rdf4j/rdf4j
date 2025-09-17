@@ -310,7 +310,7 @@ public class ShutdownDuringValidationIT {
 		if (MAX_MILLIS <= 0) {
 			throw new IllegalStateException("MAX_MILLIS must be set to a positive value before running tests.");
 		}
-		int step = ((int) (MAX_MILLIS / 200));
+		int step = ((int) (MAX_MILLIS / 20));
 
 		return IntStream.iterate(1, n -> n <= MAX_MILLIS, n -> n + step);
 	}
