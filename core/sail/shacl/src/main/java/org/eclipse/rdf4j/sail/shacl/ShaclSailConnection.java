@@ -14,11 +14,13 @@ package org.eclipse.rdf4j.sail.shacl;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
@@ -180,7 +182,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			throw new SailException("Sail is shutdown");
 		}
 
-		shapeValidatorContainers = new ArrayList<>();
+		shapeValidatorContainers = Collections.synchronizedList(new ArrayList<>());
 		currentIsolationLevel = level;
 
 		assert addedStatements == null;
@@ -573,7 +575,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			List<ValidationResultIterator> validationResultIterators = new ArrayList<>(numberOfShapes);
 
-			var futures = new ArrayList<Future<ValidationResultIterator>>(numberOfShapes);
+			var futures = Collections.synchronizedList(new ArrayList<Future<ValidationResultIterator>>(numberOfShapes));
 			this.futures = futures;
 
 			boolean parallelValidation = numberOfShapes > 1 && isParallelValidation();
@@ -625,10 +627,15 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							throw new SailException("Connection is closed");
 						}
 						if (!Thread.currentThread().isInterrupted()) {
-
 							ValidationResultIterator validationResultIterator = future.get(100, TimeUnit.MILLISECONDS);
 							validationResultIterators.add(validationResultIterator);
 						}
+					} catch (CancellationException e) {
+						Thread.currentThread().interrupt();
+						InterruptedException interruptedException = new InterruptedException(
+								"Validation future was cancelled");
+						interruptedException.initCause(e);
+						throw interruptedException;
 					} catch (ExecutionException e) {
 						Throwable cause = e.getCause();
 						if (cause instanceof InterruptedException) {
