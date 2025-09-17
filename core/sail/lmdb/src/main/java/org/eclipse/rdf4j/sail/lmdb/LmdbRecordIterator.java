@@ -78,9 +78,9 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final Thread ownerThread = Thread.currentThread();
 
-	LmdbRecordIterator(Pool pool, TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
-		this.pool = pool;
+		this.pool = Pool.get();
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();
 		this.index = index;

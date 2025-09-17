@@ -65,8 +65,8 @@ class LmdbContextIdIterator implements Closeable {
 
 	private final Thread ownerThread = Thread.currentThread();
 
-	LmdbContextIdIterator(Pool pool, int dbi, Txn txnRef) throws IOException {
-		this.pool = pool;
+	LmdbContextIdIterator(int dbi, Txn txnRef) throws IOException {
+		this.pool = Pool.get();
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();
 
