@@ -109,10 +109,16 @@ public class ExclusiveReentrantLockManager {
 						return lock;
 					} else {
 						lockMonitoring.runCleanup();
+						lock = tryExclusiveLockInner();
+						if (lock != null) {
+							return lock;
+						}
+
 						Thread thread = owner.get();
 						if (thread != null && !thread.isAlive()) {
-							System.out.println("Owner thread is dead!");
+							logger.debug("Lock is held by dead thread: " + thread);
 						}
+
 						owner.wait(waitToCollect);
 					}
 				} while (true);
