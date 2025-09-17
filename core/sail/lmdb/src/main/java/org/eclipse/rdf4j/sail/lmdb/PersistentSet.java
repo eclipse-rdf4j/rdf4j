@@ -40,8 +40,7 @@ import java.util.AbstractSet;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-import org.eclipse.rdf4j.common.concurrent.locks.Lock;
-import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
+import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.lwjgl.PointerBuffer;
@@ -191,7 +190,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 		private final MDBVal valueData = MDBVal.malloc();
 		private final long cursor;
 
-		private final ReadWriteLockManager txnLockManager;
+		private final StampedLongAdderLockManager txnLockManager;
 		private Txn txnRef;
 		private long txnRefVersion;
 
@@ -203,7 +202,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 				this.txnRef = factory.txnManager.createReadTxn();
 				this.txnLockManager = txnRef.lockManager();
 
-				Lock lock = txnLockManager.getReadLock();
+				long readStamp = txnLockManager.readLock();
 				try {
 					this.txnRefVersion = txnRef.version();
 
@@ -213,7 +212,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 						cursor = pp.get(0);
 					}
 				} finally {
-					lock.release();
+					txnLockManager.unlockRead(readStamp);
 				}
 			} catch (Exception e) {
 				throw new RuntimeException(e);
@@ -246,7 +245,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 		}
 
 		private T computeNext() throws IOException, InterruptedException {
-			Lock lock = txnLockManager.getReadLock();
+			long readStamp = txnLockManager.readLock();
 			try {
 				if (txnRefVersion != txnRef.version()) {
 					// cursor must be renewed
@@ -269,7 +268,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 				close();
 				return null;
 			} finally {
-				lock.release();
+				txnLockManager.unlockRead(readStamp);
 			}
 		}
 
@@ -277,9 +276,9 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 			if (txnRef != null) {
 				keyData.close();
 				valueData.close();
-				Lock lock;
+				long readStamp;
 				try {
-					lock = txnLockManager.getReadLock();
+					readStamp = txnLockManager.readLock();
 				} catch (InterruptedException e) {
 					throw new SailException(e);
 				}
@@ -288,7 +287,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 					txnRef.close();
 					txnRef = null;
 				} finally {
-					lock.release();
+					txnLockManager.unlockRead(readStamp);
 				}
 			}
 		}
