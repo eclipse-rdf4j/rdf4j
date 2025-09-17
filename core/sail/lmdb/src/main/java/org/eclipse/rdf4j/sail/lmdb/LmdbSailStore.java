@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.BackingSailSource;
 import org.eclipse.rdf4j.sail.base.SailDataset;
@@ -256,7 +257,7 @@ class LmdbSailStore implements SailStore {
 									}
 								} catch (InterruptedException e) {
 									Thread.currentThread().interrupt();
-									throw new SailException(e);
+									throw new InterruptedSailException(e);
 								}
 							} finally {
 								tripleStore.close();

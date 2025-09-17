@@ -52,10 +52,11 @@ public class SparqlQueryParserCache {
 	public static TupleExpr get(String query) {
 		try {
 			return PARSER_QUERY_CACHE.get(query, () -> QUERY_PARSER.parseQuery(query, null).getTupleExpr()).clone();
-		} catch (ExecutionException e) {
+		} catch (ExecutionException | UncheckedExecutionException e) {
 			Throwable cause = e.getCause();
 			if (cause instanceof MalformedQueryException) {
-				throw ((MalformedQueryException) e.getCause());
+				logger.error("Error parsing query: \n{}", query, cause);
+				throw ((MalformedQueryException) cause);
 			}
 			if (cause instanceof RuntimeException) {
 				throw ((RuntimeException) cause);
@@ -67,12 +68,6 @@ public class SparqlQueryParserCache {
 				throw new IllegalStateException(cause);
 			}
 			throw new IllegalStateException(e);
-		} catch (UncheckedExecutionException e) {
-			if (e.getCause() instanceof MalformedQueryException) {
-				logger.error("Error parsing query: \n{}", query, e.getCause());
-				throw ((MalformedQueryException) e.getCause());
-			}
-			throw e;
 		}
 
 	}

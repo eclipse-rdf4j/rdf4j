@@ -207,6 +207,10 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 		return cachedShapes.getReadState();
 	}
 
+	public boolean isShutdown() {
+		return !initialized.get();
+	}
+
 	static class CleanableState implements Runnable {
 
 		private final AtomicBoolean initialized;
@@ -255,7 +259,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 				() -> Executors.newFixedThreadPool(AVAILABLE_PROCESSORS,
 						r -> {
 							Thread t = Executors.defaultThreadFactory().newThread(r);
-							// this thread pool does not need to stick around if the all other threads are done, because
+							// This thread pool does not need to stick around if the all other threads are done, because
 							// it is only used for SHACL validation and if all other threads have ended then there would
 							// be no thread to receive the validation results.
 							t.setDaemon(true);
@@ -442,21 +446,27 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 
 	@Override
 	public synchronized void shutDown() throws SailException {
-		if (shapesRepo != null) {
-			shapesRepo.shutDown();
-			shapesRepo = null;
-		}
-
-		cachedShapes = null;
-
-		boolean terminated = shutdownExecutorService(false);
-
 		initialized.set(false);
-		super.shutDown();
 
-		if (!terminated) {
-			shutdownExecutorService(true);
+		try {
+			boolean terminated = shutdownExecutorService(false);
+
+			if (!terminated) {
+				shutdownExecutorService(true);
+			}
+		} finally {
+			try {
+				if (shapesRepo != null) {
+					shapesRepo.shutDown();
+					shapesRepo = null;
+				}
+
+				cachedShapes = null;
+			} finally {
+				super.shutDown();
+			}
 		}
+
 	}
 
 	private boolean shutdownExecutorService(boolean forced) {
@@ -464,7 +474,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 
 		executorService.shutdown();
 		try {
-			terminated = executorService.awaitTermination(200, TimeUnit.MILLISECONDS);
+			terminated = executorService.awaitTermination(1000, TimeUnit.MILLISECONDS);
 		} catch (InterruptedException ignored) {
 			Thread.currentThread().interrupt();
 		}
@@ -480,6 +490,13 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	}
 
 	<T> Future<T> submitToExecutorService(Callable<T> runnable) {
+		if (isShutdown()) {
+			throw new SailException("ShaclSail is shutdown.");
+		}
+		if (Thread.currentThread().isInterrupted()) {
+			throw new SailException("Interrupted while submitting to executor service.");
+		}
+
 		return executorService.submit(runnable);
 	}
 

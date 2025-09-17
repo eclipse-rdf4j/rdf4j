@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 import org.slf4j.Logger;
@@ -155,6 +156,11 @@ public class ValidationTuple {
 
 	public int compareActiveTarget(ValidationTuple other) {
 
+		if (Thread.currentThread().isInterrupted()) {
+			Thread.currentThread().interrupt();
+			throw new InterruptedSailException("Thread was interrupted");
+		}
+
 		Value left = getActiveTarget();
 		Value right = other.getActiveTarget();
 
@@ -162,6 +168,11 @@ public class ValidationTuple {
 	}
 
 	public int compareFullTarget(ValidationTuple other) {
+
+		if (Thread.currentThread().isInterrupted()) {
+			Thread.currentThread().interrupt();
+			throw new InterruptedSailException("Thread was interrupted");
+		}
 
 		int min = Math.min(getFullChainSize(false), other.getFullChainSize(false));
 
@@ -219,7 +230,7 @@ public class ValidationTuple {
 				if (v == getActiveTarget()) {
 					return "T–" + v;
 				} else if (v == getValue()) {
-					return "V–" + v + "";
+					return "V–" + v;
 				}
 				return v.stringValue();
 			}).collect(Collectors.joining(" -> ")) + " }, propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +

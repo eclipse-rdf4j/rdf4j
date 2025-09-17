@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShape;
@@ -121,6 +122,11 @@ public class ShaclValidator {
 				.filter(ShapeValidationContainer::hasPlanNode)
 				.map(ShapeValidationContainer::performValidation)
 				.collect(Collectors.toList());
+
+		if (Thread.currentThread().isInterrupted()) {
+			Thread.currentThread().interrupt();
+			throw new InterruptedSailException("Thread was interrupted during validation.");
+		}
 
 		return new LazyValidationReport(collect, 10000);
 

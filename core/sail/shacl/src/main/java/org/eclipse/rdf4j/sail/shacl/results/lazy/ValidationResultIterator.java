@@ -21,6 +21,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
@@ -40,7 +41,6 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 		this.limit = limit;
 		this.tupleIterator = tupleIterator;
 		getTuples();
-
 	}
 
 	private void calculateNext() {
@@ -90,6 +90,11 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 		List<ValidationTuple> actualList = new ArrayList<>();
 		long localCounter = 0;
 		while (tupleIterator.hasNext() && (limit < 0 || localCounter++ < limit + 1)) {
+			if (Thread.currentThread().isInterrupted()) {
+				tupleIterator.close();
+				Thread.currentThread().interrupt();
+				throw new InterruptedSailException("Thread was interrupted during validation");
+			}
 			actualList.add(tupleIterator.next());
 		}
 

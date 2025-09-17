@@ -20,6 +20,8 @@ import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
 public class Sort implements PlanNode {
@@ -40,23 +42,31 @@ public class Sort implements PlanNode {
 			List<ValidationTuple> sortedTuples;
 
 			Iterator<ValidationTuple> sortedTuplesIterator;
+			CloseableIteration<? extends ValidationTuple> iterator;
 
 			protected void init() {
 				assert sortedTuples == null;
 
+				checkClosedOrInterrupted();
+
 				boolean alreadySorted;
+				List<ValidationTuple> sortedTuples = new ArrayList<>(1);
 
 				try (CloseableIteration<? extends ValidationTuple> iterator = parent.iterator()) {
-					sortedTuples = new ArrayList<>(1);
+					this.iterator = iterator;
 					alreadySorted = true;
 					ValidationTuple prev = null;
 					while (iterator.hasNext()) {
+						checkClosedOrInterrupted();
 						ValidationTuple next = iterator.next();
+						checkClosedOrInterrupted();
+
 						sortedTuples.add(next);
 
 						// quick break out if sortedTuples is guaranteed to be of size 1 since we don't need to sort
 						// it then
 						if (sortedTuples.size() == 1 && !iterator.hasNext()) {
+							this.sortedTuples = sortedTuples;
 							sortedTuplesIterator = sortedTuples.iterator();
 							return;
 						}
@@ -65,8 +75,10 @@ public class Sort implements PlanNode {
 							alreadySorted = false;
 						}
 						prev = next;
-					}
+						checkClosedOrInterrupted();
 
+					}
+					this.iterator = null;
 					assert !iterator.hasNext() : "Iterator: " + iterator;
 				}
 
@@ -80,7 +92,20 @@ public class Sort implements PlanNode {
 					}
 				}
 
+				this.sortedTuples = sortedTuples;
 				sortedTuplesIterator = sortedTuples.iterator();
+
+			}
+
+			private void checkClosedOrInterrupted() {
+				if (Thread.currentThread().isInterrupted()) {
+					close();
+					Thread.currentThread().interrupt();
+					throw new InterruptedSailException("Thread was interrupted while sorting.");
+				}
+				if (isClosed()) {
+					throw new SailException("Iterator was closed while sorting.");
+				}
 
 			}
 
@@ -98,6 +123,10 @@ public class Sort implements PlanNode {
 			public void localClose() {
 				sortedTuplesIterator = Collections.emptyIterator();
 				sortedTuples = null;
+				var iterator = this.iterator;
+				if (iterator != null) {
+					iterator.close();
+				}
 			}
 
 		};
