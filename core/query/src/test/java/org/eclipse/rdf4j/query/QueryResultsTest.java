@@ -100,9 +100,8 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testAsModel() throws QueryEvaluationException, InterruptedException {
+	public void testAsModel() throws QueryEvaluationException {
 		Model model = QueryResults.asModel(gqr);
-		Thread.sleep(3000);
 
 		assertFalse(gqr.hasNext());
 		assertNotNull(model);
