@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
@@ -214,7 +215,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			throw new SailException(e);
+			throw new InterruptedSailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -517,7 +518,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			throw new SailException(e);
+			throw new InterruptedSailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -554,8 +555,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			throw new SailException(e);
-
+			throw new InterruptedSailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -610,7 +610,9 @@ public abstract class AbstractSailConnection implements SailConnection {
 						rollbackInternal();
 						if (exception != null) {
 							Thread.currentThread().interrupt();
-							throw new SailException(exception);
+							throw new InterruptedSailException(
+									"Interrupted while acquiring lock to allow for rollback. Retried lock and rolled back transaction successfully. Re-interrupted and re-threw exception.",
+									exception);
 						}
 					} finally {
 						txnActive = false;
@@ -738,7 +740,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			throw new SailException(e);
+			throw new InterruptedSailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -798,7 +800,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			throw new SailException(e);
+			throw new InterruptedSailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -871,7 +873,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			throw new SailException(e);
+			throw new InterruptedSailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -903,7 +905,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			throw new SailException(e);
+			throw new InterruptedSailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -932,7 +934,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			throw new SailException(e);
+			throw new InterruptedSailException(e);
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -1067,7 +1069,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 				Thread.sleep(1);
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
-				throw new SailException(e);
+				throw new InterruptedSailException(e);
 			}
 		}
 
