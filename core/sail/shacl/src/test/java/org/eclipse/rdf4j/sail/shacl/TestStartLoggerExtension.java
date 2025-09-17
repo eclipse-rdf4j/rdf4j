@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.apache.jena.base.Sys;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.BeforeTestExecutionCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;

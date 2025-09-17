@@ -811,54 +811,22 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-surefire-plugin</artifactId>
-					<version>3.5.3</version>
-					<!--					<dependencies>-->
-					<!--						<dependency>-->
-					<!--							<groupId>me.fabriciorby</groupId>-->
-					<!--							<artifactId>maven-surefire-junit5-tree-reporter</artifactId>-->
-					<!--							<version>1.4.0</version>-->
-					<!--						</dependency>-->
-					<!--					</dependencies>-->
+					<version>3.5.4</version>
 					<configuration>
-						<!-- Stream test output to console in real-time -->
-						<useFile>false</useFile>
-						<argLine>-Xmx2048M</argLine>
-						<forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
-						<reportFormat>plain</reportFormat>
-						<printSummary>true</printSummary>
-						<trimStackTrace>false</trimStackTrace>
-						<!-- silence the default reporter to avoid duplicates -->
-						<!-- pretty tree output -->
-						<!--						<statelessTestsetInfoReporter implementation="org.apache.maven.plugin.surefire.extensions.junit5.JUnit5StatelessTestsetInfoTreeReporter">-->
-						<!--							<theme>UNICODE</theme>-->
-						<!--							&lt;!&ndash; ASCII also available &ndash;&gt;-->
-						<!--						</statelessTestsetInfoReporter>-->
+						<argLine>-Xmx2G</argLine>
 					</configuration>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-failsafe-plugin</artifactId>
-					<version>3.5.3</version>
-					<!--					<dependencies>-->
-					<!--						<dependency>-->
-					<!--							<groupId>me.fabriciorby</groupId>-->
-					<!--							<artifactId>maven-surefire-junit5-tree-reporter</artifactId>-->
-					<!--							<version>1.4.0</version>-->
-					<!--						</dependency>-->
-					<!--					</dependencies>-->
+					<version>3.5.4</version>
 					<configuration>
-						<!-- Stream IT output to console in real-time -->
-						<useFile>false</useFile>
 						<forkCount>1</forkCount>
 						<reuseForks>false</reuseForks>
-						<argLine>-Xmx1G</argLine>
+						<argLine>-Xmx2G</argLine>
 						<includes>
 							<include>**/*IT.java</include>
 						</includes>
-						<!-- pretty tree output for integration tests as well -->
-						<!--						<statelessTestsetInfoReporter implementation="org.apache.maven.plugin.surefire.extensions.junit5.JUnit5StatelessTestsetInfoTreeReporter">-->
-						<!--							<theme>UNICODE</theme>-->
-						<!--						</statelessTestsetInfoReporter>-->
 					</configuration>
 					<executions>
 						<execution>
