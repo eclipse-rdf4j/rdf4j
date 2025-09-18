@@ -200,4 +200,10 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		sailChangedEvent.setStatementsRemoved(true);
 	}
 
+	@Override
+	protected void closeInternal() throws SailException {
+		super.closeInternal();
+		// release thread-local pool
+		Pool.release();
+	}
 }

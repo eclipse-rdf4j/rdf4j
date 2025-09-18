@@ -78,6 +78,7 @@ import java.util.StringTokenizer;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.Consumer;
 
+import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -162,7 +163,6 @@ class TripleStore implements Closeable {
 	private long mapSize;
 	private long writeTxn;
 	private final TxnManager txnManager;
-	private final Pool pool = new Pool();
 
 	private TxnRecordCache recordCache = null;
 
@@ -390,7 +390,7 @@ class TripleStore implements Closeable {
 						TripleIndex addedIndex = new TripleIndex(fieldSeq);
 						RecordIterator[] sourceIter = { null };
 						try {
-							sourceIter[0] = new LmdbRecordIterator(pool, sourceIndex, false, -1, -1, -1, -1,
+							sourceIter[0] = new LmdbRecordIterator(sourceIndex, false, -1, -1, -1, -1,
 									explicit, txnManager.createTxn(txn));
 
 							RecordIterator it = sourceIter[0];
@@ -481,7 +481,7 @@ class TripleStore implements Closeable {
 	 * @throws IOException
 	 */
 	public LmdbContextIdIterator getContexts(Txn txn) throws IOException {
-		return new LmdbContextIdIterator(this.pool, this.contextsDbi, txn);
+		return new LmdbContextIdIterator(this.contextsDbi, txn);
 	}
 
 	/**
@@ -510,7 +510,7 @@ class TripleStore implements Closeable {
 
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
-		return new LmdbRecordIterator(pool, index, rangeSearch, subj, pred, obj, context, explicit, txn);
+		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn);
 	}
 
 	/**
@@ -675,6 +675,7 @@ class TripleStore implements Closeable {
 		}
 
 		return txnManager.doWith((stack, txn) -> {
+			Pool pool = Pool.get();
 			final Statistics s = pool.getStatistics();
 			try {
 				MDBVal maxKey = MDBVal.malloc(stack);
@@ -1081,8 +1082,13 @@ class TripleStore implements Closeable {
 					try {
 						E(mdb_txn_commit(writeTxn));
 						if (recordCache != null) {
-							StampedLock lock = txnManager.lock();
-							long stamp = lock.writeLock();
+							StampedLongAdderLockManager lockManager = txnManager.lockManager();
+							long readStamp;
+							try {
+								readStamp = lockManager.readLock();
+							} catch (InterruptedException e) {
+								throw new SailException(e);
+							}
 							try {
 								txnManager.deactivate();
 								mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
@@ -1102,7 +1108,7 @@ class TripleStore implements Closeable {
 								try {
 									txnManager.activate();
 								} finally {
-									lock.unlockWrite(stamp);
+									lockManager.unlockRead(readStamp);
 								}
 							}
 						} else {
@@ -1323,7 +1329,6 @@ class TripleStore implements Closeable {
 		void close() {
 			mdb_dbi_close(env, dbiExplicit);
 			mdb_dbi_close(env, dbiInferred);
-			pool.close();
 		}
 
 		void clear(long txn) {

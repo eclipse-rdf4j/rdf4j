@@ -19,81 +19,85 @@ import org.lwjgl.util.lmdb.MDBVal;
  * A simple pool for {@link MDBVal}, {@link ByteBuffer} and {@link Statistics} instances.
  */
 class Pool {
+	// thread-local pool instance
+	private static final ThreadLocal<Pool> threadlocal = ThreadLocal.withInitial(Pool::new);
 
 	private final MDBVal[] valPool = new MDBVal[1024];
 	private final ByteBuffer[] keyPool = new ByteBuffer[1024];
 	private final Statistics[] statisticsPool = new Statistics[512];
-	private volatile int valPoolIndex = -1;
-	private volatile int keyPoolIndex = -1;
-	private volatile int statisticsPoolIndex = -1;
+	private int valPoolIndex = -1;
+	private int keyPoolIndex = -1;
+	private int statisticsPoolIndex = -1;
 
-	MDBVal getVal() {
-		synchronized (valPool) {
-			if (valPoolIndex >= 0) {
-				return valPool[valPoolIndex--];
-			}
+	final MDBVal getVal() {
+		if (valPoolIndex >= 0) {
+			return valPool[valPoolIndex--];
 		}
 		return MDBVal.malloc();
 	}
 
-	ByteBuffer getKeyBuffer() {
-		synchronized (keyPool) {
-			if (keyPoolIndex >= 0) {
-				ByteBuffer bb = keyPool[keyPoolIndex--];
-				bb.clear();
-				return bb;
-			}
+	final ByteBuffer getKeyBuffer() {
+		if (keyPoolIndex >= 0) {
+			ByteBuffer bb = keyPool[keyPoolIndex--];
+			bb.clear();
+			return bb;
 		}
 		return MemoryUtil.memAlloc(TripleStore.MAX_KEY_LENGTH);
 	}
 
-	Statistics getStatistics() {
-		synchronized (statisticsPool) {
-			if (statisticsPoolIndex >= 0) {
-				return statisticsPool[statisticsPoolIndex--];
-			}
+	final Statistics getStatistics() {
+		if (statisticsPoolIndex >= 0) {
+			return statisticsPool[statisticsPoolIndex--];
 		}
 		return new Statistics();
 	}
 
-	void free(MDBVal val) {
-		synchronized (valPool) {
-			if (valPoolIndex < valPool.length - 1) {
-				valPool[++valPoolIndex] = val;
-			} else {
-				val.close();
-			}
+	final void free(MDBVal val) {
+		if (valPoolIndex < valPool.length - 1) {
+			valPool[++valPoolIndex] = val;
+		} else {
+			val.close();
 		}
 	}
 
-	void free(ByteBuffer bb) {
-		synchronized (keyPool) {
-			if (keyPoolIndex < keyPool.length - 1) {
-				keyPool[++keyPoolIndex] = bb;
-			} else {
-				MemoryUtil.memFree(bb);
-			}
+	final void free(ByteBuffer bb) {
+		if (keyPoolIndex < keyPool.length - 1) {
+			keyPool[++keyPoolIndex] = bb;
+		} else {
+			MemoryUtil.memFree(bb);
 		}
 	}
 
-	void free(Statistics statistics) {
-		synchronized (statisticsPool) {
-			if (statisticsPoolIndex < statisticsPool.length - 1) {
-				statisticsPool[++statisticsPoolIndex] = statistics;
-			}
+	final void free(Statistics statistics) {
+		if (statisticsPoolIndex < statisticsPool.length - 1) {
+			statisticsPool[++statisticsPoolIndex] = statistics;
 		}
 	}
 
-	void close() {
-		synchronized (valPool) {
-			while (valPoolIndex >= 0) {
-				valPool[valPoolIndex--].close();
-			}
+	final void close() {
+		while (valPoolIndex >= 0) {
+			valPool[valPoolIndex--].close();
 		}
-		synchronized (keyPool) {
-			while (keyPoolIndex >= 0) {
-				MemoryUtil.memFree(keyPool[keyPoolIndex--]);
-			}
+		while (keyPoolIndex >= 0) {
+			MemoryUtil.memFree(keyPool[keyPoolIndex--]);
 		}
+	}
+
+	/**
+	 * Get a pool instance for the current thread.
+	 *
+	 * @return a Pool instance
+	 */
+	public static Pool get() {
+		return threadlocal.get();
+	}
+
+	/**
+	 * Release the pool instance for the current thread.
+	 */
+	public static void release() {
+		Pool pool = threadlocal.get();
+		pool.close();
+		threadlocal.remove();
 	}
 }

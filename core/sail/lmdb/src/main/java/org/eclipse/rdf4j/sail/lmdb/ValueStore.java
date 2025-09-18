@@ -57,6 +57,7 @@ import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.locks.StampedLock;
@@ -123,7 +124,7 @@ class ValueStore extends AbstractValueFactory {
 	/**
 	 * A simple cache containing the [VALUE_CACHE_SIZE] most-recently used values stored by their ID.
 	 */
-	private final LmdbValue[] valueCache;
+	private final AtomicReferenceArray<LmdbValue> valueCache;
 	/**
 	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs stored by their value.
 	 */
@@ -194,7 +195,7 @@ class ValueStore extends AbstractValueFactory {
 		this.valueEvictionInterval = config.getValueEvictionInterval();
 		open();
 
-		valueCache = new LmdbValue[config.getValueCacheSize()];
+		valueCache = new AtomicReferenceArray<>(config.getValueCacheSize());
 		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
 		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
 		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
@@ -442,7 +443,7 @@ class ValueStore extends AbstractValueFactory {
 	 * @return the value object or <code>null</code> if not found
 	 */
 	LmdbValue cachedValue(long id) {
-		LmdbValue value = valueCache[(int) (id % valueCache.length)];
+		LmdbValue value = valueCache.get((int) (id % valueCache.length()));
 		if (value != null && value.getInternalID() == id) {
 			return value;
 		}
@@ -459,7 +460,7 @@ class ValueStore extends AbstractValueFactory {
 	 * @return the value object or <code>null</code> if not found
 	 */
 	void cacheValue(long id, LmdbValue value) {
-		valueCache[(int) (id % valueCache.length)] = value;
+		valueCache.lazySet((int) (id % valueCache.length()), value);
 	}
 
 	/**
@@ -470,34 +471,28 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public LmdbValue getLazyValue(long id) throws IOException {
-		long stamp = revisionLock.readLock();
-		try {
-			// Check value cache
-			Long cacheID = id;
-			LmdbValue resultValue = cachedValue(cacheID);
+		// Check value cache
+		LmdbValue resultValue = cachedValue(id);
 
-			if (resultValue == null) {
-				switch ((byte) (id & 0x3)) {
-				case URI_VALUE:
-					resultValue = new LmdbIRI(lazyRevision, id);
-					break;
-				case LITERAL_VALUE:
-					resultValue = new LmdbLiteral(lazyRevision, id);
-					break;
-				case BNODE_VALUE:
-					resultValue = new LmdbBNode(lazyRevision, id);
-					break;
-				default:
-					throw new IOException("Unsupported value with type id " + (id & 0x3));
-				}
-				// Store value in cache
-				cacheValue(cacheID, resultValue);
+		if (resultValue == null) {
+			switch ((byte) (id & 0x3)) {
+			case URI_VALUE:
+				resultValue = new LmdbIRI(lazyRevision, id);
+				break;
+			case LITERAL_VALUE:
+				resultValue = new LmdbLiteral(lazyRevision, id);
+				break;
+			case BNODE_VALUE:
+				resultValue = new LmdbBNode(lazyRevision, id);
+				break;
+			default:
+				throw new IOException("Unsupported value with type id " + (id & 0x3));
 			}
-
-			return resultValue;
-		} finally {
-			revisionLock.unlockRead(stamp);
+			// Store value in cache
+			cacheValue(id, resultValue);
 		}
+
+		return resultValue;
 	}
 
 	/**
@@ -511,8 +506,7 @@ class ValueStore extends AbstractValueFactory {
 		long stamp = revisionLock.readLock();
 		try {
 			// Check value cache
-			Long cacheID = id;
-			LmdbValue resultValue = cachedValue(cacheID);
+			LmdbValue resultValue = cachedValue(id);
 
 			if (resultValue == null) {
 				// Value not in cache, fetch it from file
@@ -521,7 +515,7 @@ class ValueStore extends AbstractValueFactory {
 				if (data != null) {
 					resultValue = data2value(id, data, null);
 					// Store value in cache
-					cacheValue(cacheID, resultValue);
+					cacheValue(id, resultValue);
 				}
 			}
 
@@ -1247,7 +1241,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	protected void clearCaches() {
-		Arrays.fill(valueCache, null);
+		for (int i = 0; i < valueCache.length(); i++) {
+			valueCache.set(i, null);
+		}
 		valueIDCache.clear();
 		namespaceCache.clear();
 		namespaceIDCache.clear();
