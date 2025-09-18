@@ -22,8 +22,9 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_reset;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.IdentityHashMap;
-import java.util.concurrent.locks.StampedLock;
 
+import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -36,7 +37,7 @@ class TxnManager {
 	private final Mode mode;
 	private final IdentityHashMap<Txn, Boolean> active = new IdentityHashMap<>();
 	private final long[] pool;
-	private final StampedLock lock = new StampedLock();
+	private final StampedLongAdderLockManager lockManager = new StampedLongAdderLockManager();
 	private final long env;
 	private volatile int poolIndex = -1;
 
@@ -105,26 +106,28 @@ class TxnManager {
 	}
 
 	<T> T doWith(Transaction<T> transaction) throws IOException {
-		long stamp = lock.readLock();
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			throw new SailException(e);
+		}
 		T ret;
 		try (MemoryStack stack = stackPush()) {
 			try (Txn txn = createReadTxn()) {
 				ret = transaction.exec(stack, txn.get());
 			}
 		} finally {
-			lock.unlockRead(stamp);
+			lockManager.unlockRead(readStamp);
 		}
 		return ret;
 	}
 
 	/**
-	 * This lock is used to globally block all transactions by using a {@link StampedLock#writeLock()}. This is required
-	 * to block transactions while automatic resizing the memory map.
-	 *
-	 * @return lock for managed transactions
+	 * Exposes the shared lock manager used to coordinate read and write transactions.
 	 */
-	StampedLock lock() {
-		return lock;
+	StampedLongAdderLockManager lockManager() {
+		return lockManager;
 	}
 
 	void activate() throws IOException {
@@ -170,14 +173,8 @@ class TxnManager {
 			return txn;
 		}
 
-		/**
-		 * A {@link StampedLock#readLock()} should be acquired while working with the transaction. This is required to
-		 * block transactions while automatic resizing the memory map.
-		 *
-		 * @return lock for managed transactions
-		 */
-		StampedLock lock() {
-			return lock;
+		StampedLongAdderLockManager lockManager() {
+			return lockManager;
 		}
 
 		private void free(long txn) {
