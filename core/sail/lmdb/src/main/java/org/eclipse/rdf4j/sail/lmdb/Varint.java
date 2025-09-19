@@ -24,6 +24,14 @@ public final class Varint {
 	private Varint() {
 	}
 
+	// Add this constant somewhere near the class top (or wherever you keep constants).
+// 0xFF tag (means 8 data bytes follow), then 0x7F FF FF FF FF FF FF FF (Long.MAX_VALUE).
+	private static final byte[] ENCODED_LONG_MAX = new byte[] {
+			(byte) 0xFF, // header: 8 payload bytes
+			0x7F, // MSB of Long.MAX_VALUE
+			(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF
+	};
+
 	/**
 	 * Encodes a value using the <a href="https://sqlite.org/src4/doc/trunk/www/varint.wiki">variable-length encoding of
 	 * SQLite</a>.
@@ -93,6 +101,12 @@ public final class Varint {
 	 * @param value value to encode
 	 */
 	public static void writeUnsigned(final ByteBuffer bb, final long value) {
+		// Fast path for Long.MAX_VALUE
+		if (value == Long.MAX_VALUE) {
+			bb.put(ENCODED_LONG_MAX);
+			return;
+		}
+
 		if (value <= 240) {
 			bb.put((byte) value);
 		} else if (value <= 2287) {
@@ -156,8 +170,10 @@ public final class Varint {
 	}
 
 	/**
-	 * Decodes a value using the <a href="https://sqlite.org/src4/doc/trunk/www/varint.wiki">variable-length encoding of
-	 * SQLite</a>.
+	 * Decodes a value using SQLite's variable-length integer encoding.
+	 *
+	 * Lead-byte layout → number of additional bytes: 0..240 → 0 241..248→ 1 249 → 2 250..255→ 3..8 (i.e., 250→3, 251→4,
+	 * …, 255→8)
 	 *
 	 * @param bb buffer for reading bytes
 	 * @return decoded value
@@ -165,22 +181,66 @@ public final class Varint {
 	 * @see #writeUnsigned(ByteBuffer, long)
 	 */
 	public static long readUnsigned(ByteBuffer bb) throws IllegalArgumentException {
-		int a0 = bb.get() & 0xFF;
+		final int a0 = bb.get() & 0xFF; // lead byte, unsigned
 
 		if (a0 <= 240) {
 			return a0;
-		} else if (a0 <= 248) {
-			int a1 = bb.get() & 0xFF;
-			return 240 + 256 * (a0 - 241) + a1;
-		} else if (a0 == 249) {
-			int a1 = bb.get() & 0xFF;
-			int a2 = bb.get() & 0xFF;
-			return 2288 + 256 * a1 + a2;
-		} else {
-			int bytes = a0 - 250 + 3;
-			return readSignificantBitsDirect(bb, bytes);
 		}
-//		return VarUInt.readUnsigned(bb);
+
+		final int extra = VARINT_EXTRA_BYTES[a0]; // 0..8 additional bytes
+
+		switch (extra) {
+		case 1: {
+			// 1 extra byte; 241..248
+			final int a1 = bb.get() & 0xFF;
+			// 240 + 256*(a0-241) + a1
+			return 240L + ((long) (a0 - 241) << 8) + a1;
+		}
+
+		case 2: {
+			// 2 extra bytes; lead byte == 249
+			final int a1 = bb.get() & 0xFF;
+			final int a2 = bb.get() & 0xFF;
+			// 2288 + 256*a1 + a2
+			return 2288L + ((long) a1 << 8) + a2;
+		}
+
+		case 3:
+		case 4:
+		case 5:
+		case 6:
+		case 7:
+		case 8:
+			return readSignificantBitsDirect(bb, extra);
+		// 3..8 extra bytes; 250..255
+		default:
+			throw new IllegalArgumentException("Bytes is higher than 8: " + extra);
+
+		}
+	}
+
+	/** Lookup: lead byte (0..255) → number of additional bytes (0..8). */
+	private static final byte[] VARINT_EXTRA_BYTES = buildVarintExtraBytes();
+
+	private static byte[] buildVarintExtraBytes() {
+		final byte[] t = new byte[256];
+
+		// 0..240 → 0 extra bytes
+		for (int i = 0; i <= 240; i++)
+			t[i] = 0;
+
+		// 241..248 → 1 extra byte
+		for (int i = 241; i <= 248; i++)
+			t[i] = 1;
+
+		// 249 → 2 extra bytes
+		t[249] = 2;
+
+		// 250..255 → 3..8 extra bytes
+		for (int i = 250; i <= 255; i++)
+			t[i] = (byte) (i - 247); // 250→3, …, 255→8
+
+		return t;
 	}
 
 	public static long readUnsignedHeap(ByteBuffer bb) throws IllegalArgumentException {

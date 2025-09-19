@@ -403,6 +403,23 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	}
 
+//	@Override
+//	public boolean equals(Object other){
+//		if(other == null) return false;
+//		if(other == this) return true;
+//
+//		if(other.getClass() != ArrayBindingSet.class){
+//			return super.equals(other);
+//		}
+//
+//		ArrayBindingSet that = (ArrayBindingSet) other;
+//
+//		// TODO make a faster equals for ArrayBindingSet
+//		return super.equals(that);
+//
+//
+//	}
+
 	private class ArrayBindingSetIterator implements Iterator<Binding> {
 
 		private int index = 0;
