@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
 import static org.eclipse.rdf4j.sail.lmdb.Varint.readListUnsigned;
 import static org.eclipse.rdf4j.sail.lmdb.Varint.writeUnsigned;
+import static org.lwjgl.system.MemoryStack.stackGet;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
@@ -85,6 +86,7 @@ import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
 import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
@@ -656,6 +658,66 @@ class TripleStore implements Closeable {
 		});
 	}
 
+	/**
+	 * Returns the exact total size of the triple pattern with the given subject, predicate, object and context. If the
+	 * subject, predicate, object or context is not specified (i.e., set to {@link LmdbValue#UNKNOWN_ID}), it will
+	 * return the size of the entire database from the mdb_stat. Otherwise, it will iterate over all matching triples
+	 * and count them.
+	 *
+	 * @param subj            Subject ID or {@link LmdbValue#UNKNOWN_ID} if not specified
+	 * @param pred            Predicate ID or {@link LmdbValue#UNKNOWN_ID} if not specified
+	 * @param obj             Object ID or {@link LmdbValue#UNKNOWN_ID} if not specified
+	 * @param context         Context ID or {@link LmdbValue#UNKNOWN_ID} if not specified
+	 * @param includeImplicit Whether to include implicit triples in the count
+	 * @return The exact size of the triple pattern
+	 */
+	protected long cardinalityExact(final TxnManager.Txn txn, final long subj, final long pred, final long obj,
+			final long context, final boolean includeImplicit)
+			throws IOException {
+
+		if (subj == LmdbValue.UNKNOWN_ID && pred == LmdbValue.UNKNOWN_ID && obj == LmdbValue.UNKNOWN_ID) {
+			try (final MemoryStack stack = MemoryStack.stackPush()) {
+				// Fast path: if all values are unknown, return the total size of the database
+				if (context == LmdbValue.UNKNOWN_ID) {
+					long cardinality = 0;
+					final TripleIndex index = getBestIndex(subj, pred, obj, context);
+
+					int dbi = index.getDB(true);
+					MDBStat stat = MDBStat.mallocStack(stack);
+					mdb_stat(txn.get(), dbi, stat);
+					cardinality += stat.ms_entries();
+
+					if (includeImplicit) {
+						dbi = index.getDB(false);
+						mdb_stat(txn.get(), dbi, stat);
+						cardinality += stat.ms_entries();
+					}
+					return cardinality;
+				} else {
+					// Fast path: if only context is specified, return the size of the given context
+					return getContextSize(txn, stack, context);
+				}
+			}
+		}
+
+		long size = 0;
+
+		try (RecordIterator explicitIter = getTriples(txn, subj, pred, obj, context, true);
+				RecordIterator implicitIter = includeImplicit
+						? getTriples(txn, subj, pred, obj, context, false)
+						: null) {
+			for (long[] quad = explicitIter.next(); quad != null; quad = explicitIter.next()) {
+				size++;
+			}
+			if (includeImplicit && implicitIter != null) {
+				for (long[] quad = implicitIter.next(); quad != null; quad = implicitIter.next()) {
+					size++;
+				}
+			}
+		}
+		return size;
+	}
+
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 
@@ -673,7 +735,6 @@ class TripleStore implements Closeable {
 				return cardinality;
 			});
 		}
-
 		return txnManager.doWith((stack, txn) -> {
 			final Statistics s = pool.getStatistics();
 			try {
@@ -908,6 +969,33 @@ class TripleStore implements Closeable {
 		}
 
 		return stAdded;
+	}
+
+	private long getContextSize(final Txn txn, final MemoryStack stack, final long context) throws IOException {
+		try {
+			stack.push();
+
+			// Prepare key
+			MDBVal idVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuffer = stack.malloc(1 + Long.BYTES);
+			Varint.writeUnsigned(keyBuffer, context);
+			keyBuffer.flip();
+			idVal.mv_data(keyBuffer);
+
+			// Prepare value holder
+			MDBVal dataVal = MDBVal.calloc(stack);
+			int rc = mdb_get(txn.get(), contextsDbi, idVal, dataVal);
+			if (rc == MDB_SUCCESS && dataVal.mv_data() != null) {
+				return Varint.readUnsigned(dataVal.mv_data());
+			} else if (rc == MDB_NOTFOUND) {
+				// Context not present in DB
+				return 0;
+			} else {
+				throw new IOException("Failed to read context size: " + mdb_strerror(rc));
+			}
+		} finally {
+			stack.pop();
+		}
 	}
 
 	private void incrementContext(MemoryStack stack, long context) throws IOException {
