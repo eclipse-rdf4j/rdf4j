@@ -122,42 +122,45 @@ public final class SignificantBytesBE {
 		return x & 0xFFFF;
 	}
 
-	private static short getShortBE(ByteBuffer bb) {
+	private static short getShortBE(ByteBuffer bb, boolean littleEndian) {
 		short s = bb.getShort();
-		return (bb.order() == ByteOrder.LITTLE_ENDIAN) ? Short.reverseBytes(s) : s;
+		return (littleEndian) ? Short.reverseBytes(s) : s;
 	}
 
-	private static int getIntBE(ByteBuffer bb) {
+	private static int getIntBE(ByteBuffer bb, boolean littleEndian) {
 		int i = bb.getInt();
-		return (bb.order() == ByteOrder.LITTLE_ENDIAN) ? Integer.reverseBytes(i) : i;
+		return (littleEndian) ? Integer.reverseBytes(i) : i;
 	}
 
-	private static long getLongBE(ByteBuffer bb) {
+	private static long getLongBE(ByteBuffer bb, boolean littleEndian) {
 		long l = bb.getLong();
-		return (bb.order() == ByteOrder.LITTLE_ENDIAN) ? Long.reverseBytes(l) : l;
+		return (littleEndian) ? Long.reverseBytes(l) : l;
 	}
 
 	public static long readDirect(ByteBuffer bb, int n) {
 		if (n < 3 || n > 8) {
 			throw new IllegalArgumentException("n must be in [3,8]");
 		}
+
+		boolean littleEndian = bb.order() == ByteOrder.LITTLE_ENDIAN;
+
 		switch (n) {
 		case 8:
-			return getLongBE(bb);
+			return getLongBE(bb, littleEndian);
 		case 7:
 			return ((bb.get() & 0xFFL) << 48)
-					| ((u32(getIntBE(bb)) << 16))
-					| (u16(getShortBE(bb)));
+					| ((u32(getIntBE(bb, littleEndian)) << 16))
+					| (u16(getShortBE(bb, littleEndian)));
 		case 6:
-			return (((long) u16(getShortBE(bb)) << 32))
-					| (u32(getIntBE(bb)));
+			return (((long) u16(getShortBE(bb, littleEndian)) << 32))
+					| (u32(getIntBE(bb, littleEndian)));
 		case 5:
 			return ((bb.get() & 0xFFL) << 32)
-					| (u32(getIntBE(bb)));
+					| (u32(getIntBE(bb, littleEndian)));
 		case 4:
-			return u32(getIntBE(bb));
+			return u32(getIntBE(bb, littleEndian));
 		case 3:
-			return (((long) u16(getShortBE(bb)) << 8))
+			return (((long) u16(getShortBE(bb, littleEndian)) << 8))
 					| (bb.get() & 0xFFL);
 		default:
 			throw new AssertionError("unreachable");
