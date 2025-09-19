@@ -14,7 +14,7 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
-import static org.eclipse.rdf4j.sail.lmdb.Varint.readListUnsigned;
+import static org.eclipse.rdf4j.sail.lmdb.Varint.readQuadUnsigned;
 import static org.eclipse.rdf4j.sail.lmdb.Varint.writeUnsigned;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
@@ -1318,7 +1318,7 @@ class TripleStore implements Closeable {
 
 		void keyToQuad(ByteBuffer key, long[] quad) {
 			// directly use index map to read values in to correct positions
-			readListUnsigned(key, indexMap, quad);
+			readQuadUnsigned(key, indexMap, quad);
 		}
 
 		@Override

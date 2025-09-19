@@ -1,4 +1,4 @@
-AGENTS.md
+# AGENTS.md
 
 Welcome, AI Agent! Your persistence, curiosity, and craftsmanship make a difference. Take your time, work methodically, validate thoroughly, and iterate. This repository is large and tests can take time — that’s expected and supported.
 
@@ -11,7 +11,7 @@ You need to read the entire AGENTS.md file and follow all instructions exactly. 
 ## Read‑Me‑Now: Zero‑Exception Test‑First Rule (Stricter)
 
 **You may not touch production code until a smallest‑scope failing automated test exists inside this repo and you have captured its report snippet.**
-No exceptions. A user‑provided stack trace or “obvious” contract violation is **not** a substitute for a failing test in the repository.
+A user‑provided stack trace or “obvious” contract violation is **not** a substitute for a failing test in the repository.
 
 **Auto‑stop:** If you realize you patched production before creating the failing test, **stop**, revert the patch, and resume from “Reproduce first”.
 
@@ -23,6 +23,32 @@ No exceptions. A user‑provided stack trace or “obvious” contract violation
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
+
+> **Clarification & carve‑out:** For **strictly behavior‑neutral refactors** that are already **fully exercised by existing tests**, you may use the **Small‑Change Fast Path** defined below. In that case you must capture **pre‑change passing evidence** at the smallest scope that hits the code you’re about to edit, then show **post‑change passing evidence** from the **same test selection**.
+> **No exceptions for any behavior‑changing change** — for those, you must follow Full TDD (Routine A).
+
+---
+
+## Two Routines: Choose Your Path
+
+**Default:** Routine A — Full TDD
+**Optional:** Routine B — Small‑Change Fast Path (tiny, low‑risk changes; see gates below)
+
+**Decision quickstart**
+
+1. **Is new externally observable behavior required?**
+   → **Yes:** Routine A (Full TDD). Add the smallest failing test first.
+   → **No:** continue.
+
+2. **Does a failing test already exist in this repo that pinpoints the issue?**
+   → **Yes:** Routine B (Bugfix with existing failing test).
+   → **No:** continue.
+
+3. **Is the edit strictly behavior‑neutral and limited in scope with clear existing tests hitting the code?**
+   → **Yes:** Routine B (Refactor/micro‑perf).
+   → **No or unsure:** Routine A.
+
+**When in doubt, choose Routine A (Full TDD).** Ambiguity is risk; tests are insurance.
 
 ---
 
@@ -39,6 +65,7 @@ It is illegal to `-q` when running tests!
     * Only necessary files changed; headers correct for new files.
     * Clear final summary: what changed, why, where, how verified, next steps.
     * **Evidence present:** failing test output (pre‑fix) and passing output (post‑fix) are both shown.
+      *For refactor Fast Path, pre‑ and post‑change **passing** snippets from the same selection are required.*
 
 ### No Monkey‑Patching or Band‑Aid Fixes (Non‑Negotiable)
 
@@ -71,21 +98,24 @@ Review bar and enforcement
 
 * Treat this policy as a blocking requirement. Changes that resemble workarounds will be rejected.
 * Your final handoff must demonstrate: failing test before the fix, explanation of the root cause, minimal fix at source, and passing targeted tests after.
+  *For refactor Fast Path, show pre‑/post‑green evidence and prove the tests hit the edited code.*
 
 ---
 
-## Enforcement & Auto‑Fail Triggers 
+## Enforcement & Auto‑Fail Triggers
 
 Your run is **invalid** and must be restarted from “Reproduce first” if any of the following occur:
 
-* You modify production code before adding and running the smallest failing test in this repo.
+* You modify production code before adding and running the smallest failing test in this repo **for behavior‑changing work**.
 * You proceed without pasting a surefire/failsafe report snippet from `target/*-reports/`.
 * Your plan does not have **exactly one** `in_progress` step.
 * You run tests using `-am` or `-q`.
 * You treat a narrative failure description or external stack trace as equivalent to an in‑repo failing test.
+* **Fast Path specific:** you cannot demonstrate that existing tests exercise the edited code (see “Hit Proof” below), or you fail to capture both pre‑ and post‑change **matching** evidence snippets.
 
 **Recovery procedure:**
 Update the plan (`in_progress: create failing test`), post a preamble, create the failing test, run it, capture the report snippet, then resume.
+For Fast Path refactors: if hit proof or scope gates fail, **switch to Full TDD** and add the smallest failing test.
 
 ---
 
@@ -114,6 +144,16 @@ Report: <module>/target/surefire-reports/<file>.txt
 Snippet:
 <copy 10–30 lines capturing the failure or success summary>
 ```
+
+**Fast Path additions**
+
+* **Pre‑green (refactor only):** capture a pre‑change passing snippet from the **most specific** test selection that hits your code (ideally a class or method).
+* **Hit Proof:** show that the selected tests exercise the edited class/method. Acceptable forms:
+
+    * Reference to an existing test class/method that directly calls the edited class/method, plus a short `rg -n` snippet showing the call site; **or**
+    * A Surefire/Failsafe output line containing the edited test class/method names; **or**
+    * A stacktrace/snippet from a deliberately failing assertion added **in a new dedicated test** (not production) that proves the path is executed (remove after proof).
+* **Post‑green:** after the patch, re‑run the **same selection** and capture a passing snippet.
 
 ---
 
@@ -149,9 +189,10 @@ Plan
 
 **Rule of thumb**
 
-* ✅ Use `-am` **only** for compile/verify with tests skipped (e.g. `-Pquick`).:
+* ✅ Use `-am` **only** for compile/verify with tests skipped (e.g. `-Pquick`):
 
     * `mvn -o -pl <module> -am -Pquick install`
+
 * ❌ Do **not** use `-am` with `verify` when tests are enabled.
 
 **Two-step pattern (fast + safe)**
@@ -171,11 +212,12 @@ It is illegal to `-q` when running tests!
 The Maven reactor resolves inter-module dependencies from the local Maven repository (`~/.m2/repository`).
 Running `install` publishes your changed modules there so downstream modules and tests pick up the correct versions.
 
-- Always run `mvn -o -Pquick install | tail -200` before you start working. This command typically takes between 10 and 30 seconds.
-- Always run `mvn -o -pl <module> -am -Pquick install | tail -200` before any `verify` or test runs.
-- If offline resolution fails due to a missing dependency or plugin, rerun the exact `install` command once without `-o`, then return offline.
-- Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
-- Never ever change the repo location. Never use `-Dmaven.repo.local=.m2_repo`. Instead, ask for permission the first time you run `mvn -o -Pquick install | tail -200`.
+* Always run `mvn -o -Pquick install | tail -200` before you start working. This command typically takes between 10 and 30 seconds.
+* Always run `mvn -o -pl <module> -am -Pquick install | tail -200` before any `verify` or test runs.
+* If offline resolution fails due to a missing dependency or plugin, rerun the exact `install` command once without `-o`, then return offline.
+* Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
+* Never ever change the repo location. Never use `-Dmaven.repo.local=.m2_repo`. Instead, ask for permission the first time you run `mvn -o -Pquick install | tail -200`.
+
 ---
 
 ## Quick Start (First 10 Minutes)
@@ -208,7 +250,11 @@ It is illegal to `-q` when running tests!
 
 ---
 
-## Bugfix Workflow (Mandatory)
+## Routine A — Full TDD (Default)
+
+> Use this for **all behavior‑changing work** and whenever Fast Path gates do not all pass.
+
+### Bugfix Workflow (Mandatory)
 
 * **Reproduce first:** write the smallest focused test (class/method) that reproduces the reported bug **inside this repo**. Run it and confirm it fails with the same error/stacktrace. **Do not proceed without this.**
 * **Keep the test as‑is:** do not weaken assertions or mute the failure. The failing test is your proof you’ve hit the right code path.
@@ -224,9 +270,6 @@ It is illegal to `-q` when running tests!
     * Show the failing command and include a snippet of the error/stack from `target/*-reports/`.
 * **No production patch before the failing test is observed and recorded.**
 * Test runs avoid `-am` and `-q`.
-
-    * Use `-am` only with `-Pquick` to compile deps with tests skipped, then run tests without `-am`.
-* Maintain a living plan with exactly one `in_progress` step; send a short preamble before long actions.
 
 ### Required Sequence
 
@@ -254,6 +297,96 @@ It is illegal to `-q` when running tests!
 2. Am I using legal Maven flags for tests (no `-am`, no `-q`)?
 3. Is my next step in the plan marked `in_progress` and did I state a preamble?
 4. Is my fix located at the correct source of truth, not a workaround?
+
+---
+
+## Routine B — Small‑Change Fast Path (Simpler)
+
+> Use **only** when the change is tiny and low‑risk **or** when a failing test already exists. This routine trims ceremony, not rigor.
+
+### Allowed cases (must satisfy at least one)
+
+1. **Bugfix with existing failing test:**
+   A test in this repo already fails and pinpoints the problem (class/method). You can reproduce it locally.
+2. **Strictly behavior‑neutral refactor / cleanup / micro‑perf:**
+   No external behavior change; edited code paths are clearly and directly hit by existing tests.
+3. **Tiny, localized feature:**
+   New, well‑scoped behavior with one clear acceptance criterion in a single module/class. You will still **add one smallest‑scope failing test first** (happy path only). If you can’t write it in minutes, this is not “tiny”.
+
+### Hard **gating constraints** (all must be true)
+
+* **Scope:** ≤ **60** non‑comment LOC changed across ≤ **3** production files in **one** module.
+* **APIs:** No public API/signature or file/serialization format changes.
+* **Cross‑cutting:** No concurrency primitives, timeouts, IO boundaries, network/protocol changes.
+* **Tests:** Existing tests directly target the edited class/method **or** you add a minimal new test that does (for tiny feature).
+* **Risk:** No schema/config migrations, no behavior depending on system time/locale, no change to error messages that tests assert on.
+
+If any gate is violated or uncertain, **switch to Routine A (Full TDD)**.
+
+### Steps (pick the matching sub‑path)
+
+**B1) Bugfix with existing failing test**
+
+1. **Sanity install:** `mvn -o -Pquick install | tail -200`
+2. **Preamble + reproduce:** run the smallest failing selection; capture **failing** evidence.
+3. **Minimal fix at source.**
+4. **Re‑run same selection;** capture **passing** evidence; then module `verify`.
+5. **Format + summary.**
+
+**B2) Refactor/cleanup/micro‑perf (behavior‑neutral)**
+
+1. **Sanity install:** `mvn -o -Pquick install | tail -200`
+2. **Hit Proof:** identify the smallest existing test selection that exercises the code (class/method).
+   Run it and capture **pre‑change passing** evidence.
+3. **Apply minimal refactor.** No semantic changes.
+4. **Re‑run the **same** selection;** capture **post‑change passing** evidence; then module `verify`.
+5. **Format + summary.**
+   If any test fails, **revert and switch to Routine A**.
+
+**B3) Tiny localized feature (micro‑TDD)**
+
+1. **Add one smallest‑scope failing test** (happy path only).
+2. **Run it; capture failing evidence.**
+3. **Minimal fix at source.**
+4. **Re‑run the same test; capture passing evidence;** then module `verify`.
+5. **Optionally add 1 edge‑case test** only if risk suggests (e.g., null/empty). Otherwise defer to follow‑up issue with rationale.
+
+### Required Evidence (Fast Path)
+
+* **Bugfix (B1):** failing snippet → passing snippet, same selection.
+* **Refactor (B2):** pre‑green snippet → post‑green snippet, same selection + **Hit Proof**.
+* **Tiny feature (B3):** failing snippet → passing snippet, same selection.
+
+**Hit Proof (B2) acceptable forms** (any one):
+
+* Show a test method that calls the edited API with an `rg -n` code pointer.
+* Show Surefire/Failsafe report naming the exact test class that targets the edited code.
+* Add a **temporary** dedicated test that asserts the call executes (e.g., simple assertion after invoking the method); remove only if superseded by permanent tests.
+
+---
+
+## Where to Draw the Line — A Short Debate
+
+> **Purist:** “All changes must start with a failing test. Otherwise, you’re guessing.”
+> **Pragmatist:** “Refactors that don’t change behavior won’t fail first; forcing artificial failures wastes time and adds noise.”
+> **Resolution (policy):**
+> *Behavior changes → Full TDD without exception.*
+> *Behavior‑neutral refactors → allowed via Fast Path **only** with strict scope gates, proof that existing tests hit the code, and pre‑/post‑green evidence. When uncertain, default to Full TDD.*
+
+**In‑scope (Fast Path) examples**
+
+* Rename private methods; extract helper; dead‑code removal.
+* Replace straightforward loop with stream (same results, no ordering change).
+* Tighten generics or nullability with no observable change.
+* Micro‑perf: cache a local computation inside a single method with deterministic inputs and existing tests that assert outputs.
+
+**Out‑of‑scope (Full TDD) examples**
+
+* Changing query results, serialization, or parsing behavior.
+* Altering error messages verified by tests.
+* Anything touching concurrency, timeouts, or IO.
+* New SPARQL function support or extended syntax (even “tiny”).
+* Cross‑module effects, or more than 60 LOC/3 files of production changes.
 
 ---
 
@@ -339,6 +472,7 @@ Logs will appear under:
 ```
 
 Notes:
+
 * Capture is **per test class**, not per method. Multiple methods in the same class share one `*-output.txt`.
 * Only output actually written to the console is captured. If your logging configuration writes solely to files, you won’t see it here.
 * Continue to include the normal **Evidence** snippet from the Surefire/Failsafe report. You may additionally quote lines from the corresponding `*-output.txt` when useful for debugging.
@@ -494,40 +628,45 @@ Do **not** modify existing headers’ years.
 * **Tests (targeted):** `mvn -o -pl <module> verify | tail -500` (broaden scope if needed)
 * **Reports:** zero new failures in `target/surefire-reports/` or `target/failsafe-reports/`, or explain precisely.
 * **Evidence:** include pre‑fix failing snippet and post‑fix passing summary.
+  *For refactor Fast Path: pre‑ and post‑green from same selection + Hit Proof.*
 
 ---
 
 ## Branching & Commit Conventions
 
-- Branch names: start with `GH-XXXX` where `XXXX` is the GitHub issue number. Prefer a short, kebab‑case slug after the number when helpful, e.g., `GH-1234-add-trig-writer-check`.
-- Commit messages: start with the same prefix, `GH-XXXX <short summary>`, on every commit in the branch.
-- Keep summaries concise, in imperative mood (e.g., “Fix NPE in TriG writer”).
-- Example:
-  - Branch: `GH-1234-add-shacl-validation-metric`
-  - Commit: `GH-1234 Fix NPE when serializing empty graph`
+* Branch names: start with `GH-XXXX` where `XXXX` is the GitHub issue number. Prefer a short, kebab‑case slug after the number when helpful, e.g., `GH-1234-add-trig-writer-check`.
+* Commit messages: start with the same prefix, `GH-XXXX <short summary>`, on every commit in the branch.
+* Keep summaries concise, in imperative mood (e.g., “Fix NPE in TriG writer”).
+* Example:
+
+    * Branch: `GH-1234-add-shacl-validation-metric`
+    * Commit: `GH-1234 Fix NPE when serializing empty graph`
 
 ---
 
 ## Branch & PR Workflow (Agent)
 
-- Confirm issue number first (mandatory): before creating a branch, pause and request/confirm the GitHub issue number. Do not proceed to branch creation until the issue number is provided or confirmed.
-- Name branch: `GH-<issue>-<short-slug>` (kebab‑case slug).
-- Create branch: `git checkout -b GH-XXXX-your-slug`.
-- Stage changes: `git add -A` (ensure new Java files have the required header).
-- Optional but recommended: run format + quick install.
-  - `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
-  - `mvn -o -Pquick install | tail -200`
-- Commit: `git commit -m "GH-XXXX <short imperative summary>"`.
-- Push branch: `git push -u origin GH-XXXX-your-slug`.
-- Create PR using default template:
-  - Preferred: `gh pr create --title "GH-XXXX <summary>" --body-file .github/pull_request_template.md`
-  - Fallback: `gh pr create --title "GH-XXXX <summary>" --body "$(cat .github/pull_request_template.md)"`
-- Immediately fill the template (do not leave placeholders):
-  - Set `GitHub issue resolved: #XXXX`.
-  - Write a short, accurate change summary (what/why).
-  - Tick applicable checklist items only (self-contained, tests, squashed, commit message prefix, formatting if run).
-  - Include `Fixes #XXXX` to auto-close the issue on merge.
-- Target the repo default branch (e.g., `origin/HEAD`).
+* Confirm issue number first (mandatory): before creating a branch, pause and request/confirm the GitHub issue number. Do not proceed to branch creation until the issue number is provided or confirmed.
+* Name branch: `GH-<issue>-<short-slug>` (kebab‑case slug).
+* Create branch: `git checkout -b GH-XXXX-your-slug`.
+* Stage changes: `git add -A` (ensure new Java files have the required header).
+* Optional but recommended: run format + quick install.
+
+    * `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+    * `mvn -o -Pquick install | tail -200`
+* Commit: `git commit -m "GH-XXXX <short imperative summary>"`
+* Push branch: `git push -u origin GH-XXXX-your-slug`
+* Create PR using default template:
+
+    * Preferred: `gh pr create --title "GH-XXXX <summary>" --body-file .github/pull_request_template.md`
+    * Fallback: `gh pr create --title "GH-XXXX <summary>" --body "$(cat .github/pull_request_template.md)"`
+* Immediately fill the template (do not leave placeholders):
+
+    * Set `GitHub issue resolved: #XXXX`.
+    * Write a short, accurate change summary (what/why).
+    * Tick applicable checklist items only (self-contained, tests, squashed, commit message prefix, formatting if run).
+    * Include `Fixes #XXXX` to auto-close the issue on merge.
+* Target the repo default branch (e.g., `origin/HEAD`).
 
 ---
 
@@ -565,8 +704,8 @@ Do **not** modify existing headers’ years.
     * On formatting/license issues: apply prescribed commands/headers immediately.
 * **Communication**
 
-    * **Preambles:** 1–2 sentences grouping upcoming actions.
-    * **Updates:** inform to maintain visibility; do **not** request permission unless in “Ask only when” above.
+    * **Preambles:** 1–2 sentences grouping upcoming actions (builds/tests).
+    * **Updates:** keep visibility; do **not** request permission unless in “Ask only when” above.
 
 ---
 
@@ -577,6 +716,7 @@ Do **not** modify existing headers’ years.
 * **Commands run:** key build/test commands.
 * **Verification:** which tests passed, where you checked reports.
 * **Evidence:** failing output (pre‑fix) and passing output (post‑fix) snippets.
+  *Refactor Fast Path: pre‑ and post‑green snippets + Hit Proof.*
 * **Assumptions:** key assumptions and autonomous decisions you made.
 * **Limitations:** anything left or risky edge cases.
 * **Next steps:** optional suggestions for follow‑ups.
@@ -610,7 +750,7 @@ Do **not** modify existing headers’ years.
 
     * `-Dtest=ClassName`
     * `-Dtest=ClassName#method`
-    * `-Dit.test=ITClass#method`
+    * `-Dit.test=ITClassName[#method]`
     * `-DtrimStackTrace=false`
 
 ---
@@ -630,11 +770,10 @@ Do **not** modify existing headers’ years.
 
 ---
 
-## Prohibited Misinterpretations 
+## Prohibited Misinterpretations
 
-* A user stack trace, reproduction script, or verbal description **is not evidence**. You must implement the smallest failing test **inside this repo**.
-* “Obvious” contract violations (e.g., iterator returns `null`) still require a failing test first. Assumptions are not substitutes for evidence.
-* “Quick fixes” are not quick if they bypass the workflow. They create audit gaps and regressions.
+* A user stack trace, reproduction script, or verbal description **is not evidence**. You must implement the smallest failing test **inside this repo** for any behavior change.
+* For refactor Fast Path, a stack trace is neither required nor sufficient; **Hit Proof** plus pre/post green snippets are mandatory.
 
 ---
 
