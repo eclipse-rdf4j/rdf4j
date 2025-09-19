@@ -605,9 +605,18 @@ class TripleStore implements Closeable {
 									it.remove();
 									continue;
 								}
-								if (component != 2 && (id & 1) == 1) {
-									// id is a literal and can only appear in object position
-									continue;
+								if (component != 2) {
+									// optimization: ensure that literals are only tested if they appear in object
+									// position
+									switch (ValueIds.getIdType(id)) {
+									case ValueIds.T_URI:
+									case ValueIds.T_BNODE:
+									case ValueIds.T_TRIPLE:
+										// fall through
+									default:
+										// id is a literal, do not test it
+										continue;
+									}
 								}
 
 								long subj = c == 0 ? id : -1, pred = c == 1 ? id : -1,
