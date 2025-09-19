@@ -14,6 +14,7 @@ import java.nio.ByteBuffer;
 
 import org.eclipse.rdf4j.sail.lmdb.util.Bytes;
 import org.eclipse.rdf4j.sail.lmdb.util.SignificantBytesBE;
+import org.eclipse.rdf4j.sail.lmdb.util.VarUInt;
 
 /**
  * Encodes and decodes unsigned values using variable-length encoding.
