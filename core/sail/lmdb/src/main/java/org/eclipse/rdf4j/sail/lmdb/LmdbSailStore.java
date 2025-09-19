@@ -216,7 +216,7 @@ class LmdbSailStore implements SailStore {
 						if (tripleStoreException != null) {
 							throw wrapTripleStoreException();
 						} else {
-							Thread.yield();
+							Thread.onSpinWait();
 						}
 					}
 				} else {
@@ -478,7 +478,7 @@ class LmdbSailStore implements SailStore {
 						if (tripleStoreException != null) {
 							throw wrapTripleStoreException();
 						} else {
-							Thread.yield();
+							Thread.onSpinWait();
 						}
 					}
 				}
@@ -491,7 +491,7 @@ class LmdbSailStore implements SailStore {
 							if (tripleStoreException != null) {
 								throw wrapTripleStoreException();
 							} else {
-								Thread.yield();
+								Thread.onSpinWait();
 							}
 						}
 					}
@@ -676,22 +676,21 @@ class LmdbSailStore implements SailStore {
 													} else if (Thread.interrupted()) {
 														throw new InterruptedException();
 													} else {
-														Thread.yield();
+														Thread.onSpinWait();
 													}
 												}
 											}
 
-											// keep thread running for at least 2ms to lock-free wait for the next
+											// keep thread running for a short while to lock-free wait for the next
 											// transaction
 											long start = 0;
 											while (running.get() && !nextTransactionAsync) {
 												if (start == 0) {
-													// System.currentTimeMillis() is expensive, so only call it when we
-													// are sure we need to wait
-													start = System.currentTimeMillis();
+													// only call System.nanoTime() if we need to wait
+													start = System.nanoTime();
 												}
 
-												if (System.currentTimeMillis() - start > 2) {
+												if (System.nanoTime() - start > 100000) {
 													synchronized (storeTxnStarted) {
 														if (!nextTransactionAsync) {
 															running.set(false);
@@ -699,7 +698,7 @@ class LmdbSailStore implements SailStore {
 														}
 													}
 												} else {
-													Thread.yield();
+													Thread.onSpinWait();
 												}
 											}
 										}
@@ -846,7 +845,7 @@ class LmdbSailStore implements SailStore {
 						if (tripleStoreException != null) {
 							throw wrapTripleStoreException();
 						} else {
-							Thread.yield();
+							Thread.onSpinWait();
 						}
 					}
 
@@ -854,7 +853,7 @@ class LmdbSailStore implements SailStore {
 						if (tripleStoreException != null) {
 							throw wrapTripleStoreException();
 						} else {
-							Thread.yield();
+							Thread.onSpinWait();
 						}
 					}
 					return removeCount[0];
@@ -932,7 +931,7 @@ class LmdbSailStore implements SailStore {
 				try {
 					logger.warn("Failed to get statements, retrying", e);
 					// try once more before giving up
-					Thread.yield();
+					Thread.onSpinWait();
 					return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
 				} catch (IOException e2) {
 					throw new SailException("Unable to get statements", e);
