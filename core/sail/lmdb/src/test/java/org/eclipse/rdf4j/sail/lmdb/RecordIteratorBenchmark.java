@@ -18,8 +18,12 @@ import java.util.concurrent.TimeUnit;
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.openjdk.jmh.Main;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
+import org.openjdk.jmh.runner.Runner;
+import org.openjdk.jmh.runner.options.Options;
+import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
  * @author Piotr Sowiński
@@ -66,5 +70,19 @@ public class RecordIteratorBenchmark {
 				}
 			}
 		}
+	}
+
+	public static void main(String[] args) throws Exception {
+		if (args != null && args.length > 0) {
+			Main.main(args);
+			return;
+		}
+
+		Options options = new OptionsBuilder()
+				.include(RecordIteratorBenchmark.class.getSimpleName() + ".iterateAll")
+				.forks(0)
+				.build();
+
+		new Runner(options).run();
 	}
 }

@@ -1390,7 +1390,7 @@ class ValueStore extends AbstractValueFactory {
 		ByteBuffer bb = ByteBuffer.wrap(data);
 		// skip type marker
 		bb.get();
-		long nsID = Varint.readUnsigned(bb);
+		long nsID = Varint.readUnsignedHeap(bb);
 		String namespace = getNamespace(nsID);
 		String localName = new String(data, bb.position(), bb.remaining(), StandardCharsets.UTF_8);
 
@@ -1417,7 +1417,7 @@ class ValueStore extends AbstractValueFactory {
 		// skip type marker
 		bb.get();
 		// Get datatype
-		long datatypeID = Varint.readUnsigned(bb);
+		long datatypeID = Varint.readUnsignedHeap(bb);
 		IRI datatype = null;
 		if (datatypeID != LmdbValue.UNKNOWN_ID) {
 			datatype = (IRI) getValue(datatypeID);

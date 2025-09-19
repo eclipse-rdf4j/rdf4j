@@ -12,6 +12,9 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.nio.ByteBuffer;
 
+import org.eclipse.rdf4j.sail.lmdb.util.Bytes;
+import org.eclipse.rdf4j.sail.lmdb.util.SignificantBytesBE;
+
 /**
  * Encodes and decodes unsigned values using variable-length encoding.
  */
@@ -162,6 +165,7 @@ public final class Varint {
 	 */
 	public static long readUnsigned(ByteBuffer bb) throws IllegalArgumentException {
 		int a0 = bb.get() & 0xFF;
+
 		if (a0 <= 240) {
 			return a0;
 		} else if (a0 <= 248) {
@@ -173,8 +177,32 @@ public final class Varint {
 			return 2288 + 256 * a1 + a2;
 		} else {
 			int bytes = a0 - 250 + 3;
-			return readSignificantBits(bb, bytes);
+			return readSignificantBitsDirect(bb, bytes);
 		}
+//		return VarUInt.readUnsigned(bb);
+	}
+
+	public static long readUnsignedHeap(ByteBuffer bb) throws IllegalArgumentException {
+		int a0 = bb.get() & 0xFF;
+
+		if (a0 <= 240) {
+			return a0;
+		} else if (a0 <= 248) {
+			int a1 = bb.get() & 0xFF;
+			return 240 + 256 * (a0 - 241) + a1;
+		} else if (a0 == 249) {
+			int a1 = bb.get() & 0xFF;
+			int a2 = bb.get() & 0xFF;
+			return 2288 + 256 * a1 + a2;
+		} else {
+			int bytes = a0 - 250 + 3;
+			return readSignificantBitsHeap(bb, bytes);
+		}
+//		else {
+//			if (bytes == 3) {
+//				return Read3BE.read3L(bb);
+//			}
+//		}
 	}
 
 	/**
@@ -203,6 +231,27 @@ public final class Varint {
 		}
 	}
 
+	private static final int[] FIRST_TO_LENGTH = buildFirstToLength();
+
+	private static int[] buildFirstToLength() {
+		int[] t = new int[256];
+		// 0..240 → 1
+		for (int i = 0; i <= 240; i++) {
+			t[i] = 1;
+		}
+		// 241..248 → 2
+		for (int i = 241; i <= 248; i++) {
+			t[i] = 2;
+		}
+		// 249 → 3
+		t[249] = 3;
+		// 250..255 → 4..9
+		for (int i = 250; i <= 255; i++) {
+			t[i] = i - 246; // 250→4, 255→9
+		}
+		return t;
+	}
+
 	/**
 	 * Determines length of an encoded varint value by inspecting the first byte.
 	 *
@@ -210,17 +259,7 @@ public final class Varint {
 	 * @return decoded value
 	 */
 	public static int firstToLength(byte a0) {
-		int a0Unsigned = a0 & 0xFF;
-		if (a0Unsigned <= 240) {
-			return 1;
-		} else if (a0Unsigned <= 248) {
-			return 2;
-		} else if (a0Unsigned == 249) {
-			return 3;
-		} else {
-			int bytes = a0Unsigned - 250 + 3;
-			return 1 + bytes;
-		}
+		return FIRST_TO_LENGTH[a0 & 0xFF];
 	}
 
 	/**
@@ -289,6 +328,13 @@ public final class Varint {
 		}
 	}
 
+	public static void readQuadUnsigned(ByteBuffer bb, int[] indexMap, long[] values) {
+		values[indexMap[0]] = readUnsigned(bb);
+		values[indexMap[1]] = readUnsigned(bb);
+		values[indexMap[2]] = readUnsigned(bb);
+		values[indexMap[3]] = readUnsigned(bb);
+	}
+
 	/**
 	 * Writes only the significant bytes of the given value in big-endian order.
 	 *
@@ -305,16 +351,24 @@ public final class Varint {
 	/**
 	 * Reads only the significant bytes of the given value in big-endian order.
 	 *
-	 * @param bb    buffer for reading bytes
-	 * @param bytes number of significant bytes
+	 * @param bb buffer for reading bytes
+	 * @param n  number of significant bytes
 	 */
-	private static long readSignificantBits(ByteBuffer bb, int bytes) {
-		bytes--;
-		long value = (long) (bb.get() & 0xFF) << (bytes * 8);
-		while (bytes-- > 0) {
-			value |= (long) (bb.get() & 0xFF) << (bytes * 8);
+	private static long readSignificantBits(ByteBuffer bb, int n) {
+		if (bb.isDirect()) {
+			return readSignificantBitsDirect(bb, n);
+		} else {
+			return readSignificantBitsHeap(bb, n);
 		}
-		return value;
+	}
+
+	private static long readSignificantBitsDirect(ByteBuffer bb, int n) {
+		return SignificantBytesBE.readDirect(bb, n);
+//		return VarUInt.readUnsigned(bb);
+	}
+
+	private static long readSignificantBitsHeap(ByteBuffer bb, int n) {
+		return SignificantBytesBE.read(bb, n);
 	}
 
 	/**
@@ -350,15 +404,31 @@ public final class Varint {
 		final boolean[] shouldMatch;
 		final int[] lengths;
 
+		// Pre-bound comparators per group index, split by "other is heap?" to avoid branches in the hot loop.
+		final Bytes.RegionComparator[] cmpIfOtherHeap;
+		final Bytes.RegionComparator[] cmpIfOtherBuffer;
+
 		public GroupMatcher(ByteBuffer value, boolean[] shouldMatch) {
+			assert shouldMatch.length == 4;
 			this.value = value;
 			this.shouldMatch = shouldMatch;
-			this.lengths = new int[shouldMatch.length];
+			this.lengths = new int[4];
+
+			final boolean aIsHeap = value.hasArray();
+			this.cmpIfOtherHeap = new Bytes.RegionComparator[4];
+			this.cmpIfOtherBuffer = new Bytes.RegionComparator[4];
+
 			int pos = 0;
-			for (int i = 0; i < lengths.length; i++) {
-				int length = firstToLength(value.get(pos));
-				lengths[i] = length;
-				pos += length;
+			for (int i = 0; i < 4; i++) {
+				int len = firstToLength(value.get(pos));
+				lengths[i] = len;
+
+				// Preselect exact function objects. Common case len<=4 maps to static LMF comparators;
+				// rare len>4 builds a capturing LMF comparator that bakes 'len'.
+				cmpIfOtherHeap[i] = Bytes.capturedComparator(aIsHeap, true, len);
+				cmpIfOtherBuffer[i] = Bytes.capturedComparator(aIsHeap, false, len);
+
+				pos += len;
 			}
 		}
 
@@ -369,16 +439,72 @@ public final class Varint {
 		public boolean matches(ByteBuffer other) {
 			int thisPos = 0;
 			int otherPos = 0;
-			for (int i = 0; i < shouldMatch.length; i++) {
-				int length = lengths[i];
-				int otherLength = firstToLength(other.get(otherPos));
-				if (shouldMatch[i]) {
-					if (length != otherLength || compareRegion(value, thisPos, other, otherPos, length) != 0) {
+
+			final Bytes.RegionComparator[] cmps = other.hasArray() ? cmpIfOtherHeap : cmpIfOtherBuffer;
+
+			{
+				int len = lengths[0];
+				int otherLen = firstToLength(other.get(otherPos));
+
+				if (shouldMatch[0]) {
+					if (len != otherLen) {
+						return false;
+					}
+					if (cmps[0].compare(value, thisPos, other, otherPos) != 0) {
 						return false;
 					}
 				}
-				thisPos += length;
-				otherPos += otherLength;
+
+				thisPos += len;
+				otherPos += otherLen;
+			}
+			{
+				int len = lengths[1];
+				int otherLen = firstToLength(other.get(otherPos));
+
+				if (shouldMatch[1]) {
+					if (len != otherLen) {
+						return false;
+					}
+					if (cmps[1].compare(value, thisPos, other, otherPos) != 0) {
+						return false;
+					}
+				}
+
+				thisPos += len;
+				otherPos += otherLen;
+			}
+			{
+				int len = lengths[2];
+				int otherLen = firstToLength(other.get(otherPos));
+
+				if (shouldMatch[2]) {
+					if (len != otherLen) {
+						return false;
+					}
+					if (cmps[2].compare(value, thisPos, other, otherPos) != 0) {
+						return false;
+					}
+				}
+
+				thisPos += len;
+				otherPos += otherLen;
+			}
+			{
+				int len = lengths[3];
+				int otherLen = firstToLength(other.get(otherPos));
+
+				if (shouldMatch[3]) {
+					if (len != otherLen) {
+						return false;
+					}
+					if (cmps[3].compare(value, thisPos, other, otherPos) != 0) {
+						return false;
+					}
+				}
+
+				thisPos += len;
+				otherPos += otherLen;
 			}
 			return true;
 		}
