@@ -15,7 +15,6 @@ import java.nio.ByteOrder;
 
 import org.eclipse.rdf4j.sail.lmdb.util.Bytes;
 import org.eclipse.rdf4j.sail.lmdb.util.SignificantBytesBE;
-import org.eclipse.rdf4j.sail.lmdb.util.VarUInt;
 
 /**
  * Encodes and decodes unsigned values using variable-length encoding.
@@ -105,15 +104,17 @@ public final class Varint {
 		// Fast path for Long.MAX_VALUE (0xFF header + 8 data bytes)
 		if (value == Long.MAX_VALUE) {
 			final ByteOrder prev = bb.order();
-			if (prev != ByteOrder.BIG_ENDIAN)
+			if (prev != ByteOrder.BIG_ENDIAN) {
 				bb.order(ByteOrder.BIG_ENDIAN);
-			try {
-				bb.put((byte) 0xFF); // header for 8 payload bytes
-				bb.putLong(Long.MAX_VALUE); // 7F FF FF FF FF FF FF FF
-			} finally {
-				if (prev != ByteOrder.BIG_ENDIAN)
-					bb.order(prev);
 			}
+
+			bb.put((byte) 0xFF); // header for 8 payload bytes
+			bb.putLong(Long.MAX_VALUE); // 7F FF FF FF FF FF FF FF
+
+			if (prev != ByteOrder.BIG_ENDIAN) {
+				bb.order(prev);
+			}
+
 			return;
 		}
 
@@ -124,29 +125,32 @@ public final class Varint {
 			// Using bit ops instead of div/mod and putShort to batch the two bytes.
 			long v = value - 240; // 1..2047
 			final ByteOrder prev = bb.order();
-			if (prev != ByteOrder.BIG_ENDIAN)
+			if (prev != ByteOrder.BIG_ENDIAN) {
 				bb.order(ByteOrder.BIG_ENDIAN);
-			try {
-				int hi = (int) (v >>> 8) + 241; // 241..248
-				int lo = (int) (v & 0xFF); // 0..255
-				bb.putShort((short) ((hi << 8) | lo));
-			} finally {
-				if (prev != ByteOrder.BIG_ENDIAN)
-					bb.order(prev);
 			}
+
+			int hi = (int) (v >>> 8) + 241; // 241..248
+			int lo = (int) (v & 0xFF); // 0..255
+			bb.putShort((short) ((hi << 8) | lo));
+
+			if (prev != ByteOrder.BIG_ENDIAN) {
+				bb.order(prev);
+			}
+
 		} else if (value <= 67823) {
 			// header 249, then 2 payload bytes (value - 2288), big-endian
 			long v = value - 2288; // 0..65535
 			bb.put((byte) 249);
 			final ByteOrder prev = bb.order();
-			if (prev != ByteOrder.BIG_ENDIAN)
+			if (prev != ByteOrder.BIG_ENDIAN) {
 				bb.order(ByteOrder.BIG_ENDIAN);
-			try {
-				bb.putShort((short) v);
-			} finally {
-				if (prev != ByteOrder.BIG_ENDIAN)
-					bb.order(prev);
 			}
+
+			bb.putShort((short) v);
+			if (prev != ByteOrder.BIG_ENDIAN) {
+				bb.order(prev);
+			}
+
 		} else {
 			int bytes = descriptor(value) + 1; // 3..8
 			bb.put((byte) (250 + (bytes - 3))); // header 250..255
@@ -158,39 +162,43 @@ public final class Varint {
 // Uses putLong/putInt/putShort to batch writes and a single leading byte if needed.
 	private static void writeSignificantBits(ByteBuffer bb, long value, int bytes) {
 		final ByteOrder prev = bb.order();
-		if (prev != ByteOrder.BIG_ENDIAN)
+		if (prev != ByteOrder.BIG_ENDIAN) {
 			bb.order(ByteOrder.BIG_ENDIAN);
-		try {
-			int i = bytes;
-
-			// If odd number of bytes, write the leading MSB first
-			if ((i & 1) != 0) {
-				bb.put((byte) (value >>> ((i - 1) * 8)));
-				i--;
-			}
-
-			// Now i is even: prefer largest chunks first
-			if (i == 8) { // exactly 8 bytes
-				bb.putLong(value);
-				return;
-			}
-
-			if (i >= 4) { // write next 4 bytes, if any
-				int shift = (i - 4) * 8;
-				bb.putInt((int) (value >>> shift));
-				i -= 4;
-			}
-
-			while (i >= 2) { // write remaining pairs
-				int shift = (i - 2) * 8;
-				bb.putShort((short) (value >>> shift));
-				i -= 2;
-			}
-			// i must be 0 here.
-		} finally {
-			if (prev != ByteOrder.BIG_ENDIAN)
-				bb.order(prev);
 		}
+
+		int i = bytes;
+
+		// If odd number of bytes, write the leading MSB first
+		if ((i & 1) != 0) {
+			bb.put((byte) (value >>> ((i - 1) * 8)));
+			i--;
+		}
+
+		// Now i is even: prefer largest chunks first
+		if (i == 8) { // exactly 8 bytes
+			bb.putLong(value);
+			if (prev != ByteOrder.BIG_ENDIAN) {
+				bb.order(prev);
+			}
+			return;
+		}
+
+		if (i >= 4) { // write next 4 bytes, if any
+			int shift = (i - 4) * 8;
+			bb.putInt((int) (value >>> shift));
+			i -= 4;
+		}
+
+		while (i >= 2) { // write remaining pairs
+			int shift = (i - 2) * 8;
+			bb.putShort((short) (value >>> shift));
+			i -= 2;
+		}
+		// i must be 0 here.
+		if (prev != ByteOrder.BIG_ENDIAN) {
+			bb.order(prev);
+		}
+
 	}
 
 	/**
@@ -260,31 +268,31 @@ public final class Varint {
 		final int extra = VARINT_EXTRA_BYTES[a0]; // 0..8 additional bytes
 
 		switch (extra) {
-			case 1: {
-				// 1 extra byte; 241..248
-				final int a1 = bb.get() & 0xFF;
-				// 240 + 256*(a0-241) + a1
-				return 240L + ((long) (a0 - 241) << 8) + a1;
-			}
+		case 1: {
+			// 1 extra byte; 241..248
+			final int a1 = bb.get() & 0xFF;
+			// 240 + 256*(a0-241) + a1
+			return 240L + ((long) (a0 - 241) << 8) + a1;
+		}
 
-			case 2: {
-				// 2 extra bytes; lead byte == 249
-				final int a1 = bb.get() & 0xFF;
-				final int a2 = bb.get() & 0xFF;
-				// 2288 + 256*a1 + a2
-				return 2288L + ((long) a1 << 8) + a2;
-			}
+		case 2: {
+			// 2 extra bytes; lead byte == 249
+			final int a1 = bb.get() & 0xFF;
+			final int a2 = bb.get() & 0xFF;
+			// 2288 + 256*a1 + a2
+			return 2288L + ((long) a1 << 8) + a2;
+		}
 
-			case 3:
-			case 4:
-			case 5:
-			case 6:
-			case 7:
-			case 8:
-				return readSignificantBitsDirect(bb, extra);
-			// 3..8 extra bytes; 250..255
-			default:
-				throw new IllegalArgumentException("Bytes is higher than 8: " + extra);
+		case 3:
+		case 4:
+		case 5:
+		case 6:
+		case 7:
+		case 8:
+			return readSignificantBitsDirect(bb, extra);
+		// 3..8 extra bytes; 250..255
+		default:
+			throw new IllegalArgumentException("Bytes is higher than 8: " + extra);
 
 		}
 	}
@@ -296,19 +304,22 @@ public final class Varint {
 		final byte[] t = new byte[256];
 
 		// 0..240 → 0 extra bytes
-		for (int i = 0; i <= 240; i++)
+		for (int i = 0; i <= 240; i++) {
 			t[i] = 0;
+		}
 
 		// 241..248 → 1 extra byte
-		for (int i = 241; i <= 248; i++)
+		for (int i = 241; i <= 248; i++) {
 			t[i] = 1;
+		}
 
 		// 249 → 2 extra bytes
 		t[249] = 2;
 
 		// 250..255 → 3..8 extra bytes
-		for (int i = 250; i <= 255; i++)
+		for (int i = 250; i <= 255; i++) {
 			t[i] = (byte) (i - 247); // 250→3, …, 255→8
+		}
 
 		return t;
 	}
