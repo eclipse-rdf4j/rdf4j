@@ -15,7 +15,6 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
 import static org.eclipse.rdf4j.sail.lmdb.Varint.readQuadUnsigned;
-import static org.eclipse.rdf4j.sail.lmdb.Varint.writeUnsigned;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
@@ -1163,11 +1162,13 @@ class TripleStore implements Closeable {
 	class TripleIndex {
 
 		private final char[] fieldSeq;
+		private final IndexKeyWriters.KeyWriter keyWriter;
 		private final int dbiExplicit, dbiInferred;
 		private final int[] indexMap;
 
 		public TripleIndex(String fieldSeq) throws IOException {
 			this.fieldSeq = fieldSeq.toCharArray();
+			this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
 			this.indexMap = getIndexes(this.fieldSeq);
 			// open database and use native sort order without comparator
 			dbiExplicit = openDatabase(env, fieldSeq, MDB_CREATE, null);
@@ -1298,22 +1299,7 @@ class TripleStore implements Closeable {
 		}
 
 		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
-			for (int i = 0; i < fieldSeq.length; i++) {
-				switch (fieldSeq[i]) {
-				case 's':
-					writeUnsigned(bb, subj);
-					break;
-				case 'p':
-					writeUnsigned(bb, pred);
-					break;
-				case 'o':
-					writeUnsigned(bb, obj);
-					break;
-				case 'c':
-					writeUnsigned(bb, context);
-					break;
-				}
-			}
+			keyWriter.write(bb, subj, pred, obj, context);
 		}
 
 		void keyToQuad(ByteBuffer key, long[] quad) {
