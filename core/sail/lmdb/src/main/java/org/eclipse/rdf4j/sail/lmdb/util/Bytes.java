@@ -100,8 +100,9 @@ public final class Bytes {
 		byte[] B = b.array();
 		int bo = b.arrayOffset() + bi;
 		int r = d(A[ao], B[bo]);
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		return d(A[ao + 1], B[bo + 1]);
 	}
 
@@ -111,11 +112,13 @@ public final class Bytes {
 		byte[] B = b.array();
 		int bo = b.arrayOffset() + bi;
 		int r = d(A[ao], B[bo]);
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		r = d(A[ao + 1], B[bo + 1]);
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		return d(A[ao + 2], B[bo + 2]);
 	}
 
@@ -125,14 +128,17 @@ public final class Bytes {
 		byte[] B = b.array();
 		int bo = b.arrayOffset() + bi;
 		int r = d(A[ao], B[bo]);
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		r = d(A[ao + 1], B[bo + 1]);
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		r = d(A[ao + 2], B[bo + 2]);
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		return d(A[ao + 3], B[bo + 3]);
 	}
 
@@ -147,8 +153,9 @@ public final class Bytes {
 		byte[] A = a.array();
 		int ao = a.arrayOffset() + ai;
 		int r = d(A[ao], b.get(bi));
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		return d(A[ao + 1], b.get(bi + 1));
 	}
 
@@ -156,11 +163,13 @@ public final class Bytes {
 		byte[] A = a.array();
 		int ao = a.arrayOffset() + ai;
 		int r = d(A[ao], b.get(bi));
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		r = d(A[ao + 1], b.get(bi + 1));
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		return d(A[ao + 2], b.get(bi + 2));
 	}
 
@@ -168,14 +177,17 @@ public final class Bytes {
 		byte[] A = a.array();
 		int ao = a.arrayOffset() + ai;
 		int r = d(A[ao], b.get(bi));
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		r = d(A[ao + 1], b.get(bi + 1));
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		r = d(A[ao + 2], b.get(bi + 2));
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		return d(A[ao + 3], b.get(bi + 3));
 	}
 
@@ -190,8 +202,9 @@ public final class Bytes {
 		byte[] B = b.array();
 		int bo = b.arrayOffset() + bi;
 		int r = d(a.get(ai), B[bo]);
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		return d(a.get(ai + 1), B[bo + 1]);
 	}
 
@@ -199,11 +212,13 @@ public final class Bytes {
 		byte[] B = b.array();
 		int bo = b.arrayOffset() + bi;
 		int r = d(a.get(ai), B[bo]);
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		r = d(a.get(ai + 1), B[bo + 1]);
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		return d(a.get(ai + 2), B[bo + 2]);
 	}
 
@@ -211,14 +226,17 @@ public final class Bytes {
 		byte[] B = b.array();
 		int bo = b.arrayOffset() + bi;
 		int r = d(a.get(ai), B[bo]);
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		r = d(a.get(ai + 1), B[bo + 1]);
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		r = d(a.get(ai + 2), B[bo + 2]);
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		return d(a.get(ai + 3), B[bo + 3]);
 	}
 
@@ -229,31 +247,37 @@ public final class Bytes {
 
 	static int cmp_AB_BB_LEN2(ByteBuffer a, int ai, ByteBuffer b, int bi) {
 		int r = d(a.get(ai), b.get(bi));
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		return d(a.get(ai + 1), b.get(bi + 1));
 	}
 
 	static int cmp_AB_BB_LEN3(ByteBuffer a, int ai, ByteBuffer b, int bi) {
 		int r = d(a.get(ai), b.get(bi));
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		r = d(a.get(ai + 1), b.get(bi + 1));
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		return d(a.get(ai + 2), b.get(bi + 2));
 	}
 
 	static int cmp_AB_BB_LEN4(ByteBuffer a, int ai, ByteBuffer b, int bi) {
 		int r = d(a.get(ai), b.get(bi));
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		r = d(a.get(ai + 1), b.get(bi + 1));
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		r = d(a.get(ai + 2), b.get(bi + 2));
-		if (r != 0)
+		if (r != 0) {
 			return r;
+		}
 		return d(a.get(ai + 3), b.get(bi + 3));
 	}
 
@@ -267,8 +291,9 @@ public final class Bytes {
 		int bo = b.arrayOffset() + bi;
 		for (int i = 0; i < len; i++) {
 			int r = d(A[ao + i], B[bo + i]);
-			if (r != 0)
+			if (r != 0) {
 				return r;
+			}
 		}
 		return 0;
 	}
@@ -278,8 +303,9 @@ public final class Bytes {
 		int ao = a.arrayOffset() + ai;
 		for (int i = 0; i < len; i++) {
 			int r = d(A[ao + i], b.get(bi + i));
-			if (r != 0)
+			if (r != 0) {
 				return r;
+			}
 		}
 		return 0;
 	}
@@ -289,8 +315,9 @@ public final class Bytes {
 		int bo = b.arrayOffset() + bi;
 		for (int i = 0; i < len; i++) {
 			int r = d(a.get(ai + i), B[bo + i]);
-			if (r != 0)
+			if (r != 0) {
 				return r;
+			}
 		}
 		return 0;
 	}
@@ -298,8 +325,9 @@ public final class Bytes {
 	static int cmp_AB_BB_LOOP(int len, ByteBuffer a, int ai, ByteBuffer b, int bi) {
 		for (int i = 0; i < len; i++) {
 			int r = d(a.get(ai + i), b.get(bi + i));
-			if (r != 0)
+			if (r != 0) {
 				return r;
+			}
 		}
 		return 0;
 	}
@@ -342,20 +370,26 @@ public final class Bytes {
 	// Factory used by GroupMatcher for len > 4, with 'len' captured
 	public static RegionComparator capturedComparator(boolean aHeap, boolean bHeap, int len) {
 		if (len <= 4) {
-			if (aHeap & bHeap)
+			if (aHeap & bHeap) {
 				return TABLE_AH_BH[len];
-			if (aHeap)
+			}
+			if (aHeap) {
 				return TABLE_AH_BB[len];
-			if (bHeap)
+			}
+			if (bHeap) {
 				return TABLE_AB_BH[len];
+			}
 			return TABLE_AB_BB[len];
 		}
-		if (aHeap & bHeap)
+		if (aHeap & bHeap) {
 			return lmfCaptureLen("cmp_AH_BH_LOOP", len);
-		if (aHeap)
+		}
+		if (aHeap) {
 			return lmfCaptureLen("cmp_AH_BB_LOOP", len);
-		if (bHeap)
+		}
+		if (bHeap) {
 			return lmfCaptureLen("cmp_AB_BH_LOOP", len);
+		}
 		return lmfCaptureLen("cmp_AB_BB_LOOP", len);
 	}
 }
