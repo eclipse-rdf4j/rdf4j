@@ -118,9 +118,13 @@ public final class Varint {
 			return;
 		}
 
-		if (value <= 240) {
+		final int length = calcLengthUnsigned(value);
+		switch (length) {
+		case 1:
 			bb.put((byte) value);
-		} else if (value <= 2287) {
+			return;
+
+		case 2: {
 			// header: 241..248, then 1 payload byte
 			// Using bit ops instead of div/mod and putShort to batch the two bytes.
 			long v = value - 240; // 1..2047
@@ -137,7 +141,10 @@ public final class Varint {
 					bb.order(prev);
 				}
 			}
-		} else if (value <= 67823) {
+			return;
+		}
+
+		case 3: {
 			// header 249, then 2 payload bytes (value - 2288), big-endian
 			long v = value - 2288; // 0..65535
 			bb.put((byte) 249);
@@ -152,10 +159,14 @@ public final class Varint {
 					bb.order(prev);
 				}
 			}
-		} else {
-			int bytes = descriptor(value) + 1; // 3..8
+			return;
+		}
+
+		default:
+			int bytes = length - 1; // payload bytes (3..8)
 			bb.put((byte) (250 + (bytes - 3))); // header 250..255
 			writeSignificantBits(bb, value, bytes); // payload (batched)
+			return;
 		}
 	}
 
