@@ -22,6 +22,11 @@ final class IndexKeyWriters {
 		void write(ByteBuffer bb, long subj, long pred, long obj, long context);
 	}
 
+	@FunctionalInterface
+	interface MatcherFactory {
+		boolean[] create(long subj, long pred, long obj, long context);
+	}
+
 	static KeyWriter forFieldSeq(String fieldSeq) {
 		switch (fieldSeq) {
 		case "spoc":
@@ -72,6 +77,61 @@ final class IndexKeyWriters {
 			return IndexKeyWriters::cosp;
 		case "cops":
 			return IndexKeyWriters::cops;
+		default:
+			throw new IllegalArgumentException("Unsupported field sequence: " + fieldSeq);
+		}
+	}
+
+	static MatcherFactory matcherFactory(String fieldSeq) {
+		switch (fieldSeq) {
+		case "spoc":
+			return IndexKeyWriters::spocShouldMatch;
+		case "spco":
+			return IndexKeyWriters::spcoShouldMatch;
+		case "sopc":
+			return IndexKeyWriters::sopcShouldMatch;
+		case "socp":
+			return IndexKeyWriters::socpShouldMatch;
+		case "scpo":
+			return IndexKeyWriters::scpoShouldMatch;
+		case "scop":
+			return IndexKeyWriters::scopShouldMatch;
+		case "psoc":
+			return IndexKeyWriters::psocShouldMatch;
+		case "psco":
+			return IndexKeyWriters::pscoShouldMatch;
+		case "posc":
+			return IndexKeyWriters::poscShouldMatch;
+		case "pocs":
+			return IndexKeyWriters::pocsShouldMatch;
+		case "pcso":
+			return IndexKeyWriters::pcsoShouldMatch;
+		case "pcos":
+			return IndexKeyWriters::pcosShouldMatch;
+		case "ospc":
+			return IndexKeyWriters::ospcShouldMatch;
+		case "oscp":
+			return IndexKeyWriters::oscpShouldMatch;
+		case "opsc":
+			return IndexKeyWriters::opscShouldMatch;
+		case "opcs":
+			return IndexKeyWriters::opcsShouldMatch;
+		case "ocsp":
+			return IndexKeyWriters::ocspShouldMatch;
+		case "ocps":
+			return IndexKeyWriters::ocpsShouldMatch;
+		case "cspo":
+			return IndexKeyWriters::cspoShouldMatch;
+		case "csop":
+			return IndexKeyWriters::csopShouldMatch;
+		case "cpso":
+			return IndexKeyWriters::cpsoShouldMatch;
+		case "cpos":
+			return IndexKeyWriters::cposShouldMatch;
+		case "cosp":
+			return IndexKeyWriters::cospShouldMatch;
+		case "cops":
+			return IndexKeyWriters::copsShouldMatch;
 		default:
 			throw new IllegalArgumentException("Unsupported field sequence: " + fieldSeq);
 		}
@@ -243,5 +303,101 @@ final class IndexKeyWriters {
 		Varint.writeUnsigned(bb, obj);
 		Varint.writeUnsigned(bb, pred);
 		Varint.writeUnsigned(bb, subj);
+	}
+
+	static boolean[] spocShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { subj > 0, pred > 0, obj > 0, context >= 0 };
+	}
+
+	static boolean[] spcoShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { subj > 0, pred > 0, context >= 0, obj > 0 };
+	}
+
+	static boolean[] sopcShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { subj > 0, obj > 0, pred > 0, context >= 0 };
+	}
+
+	static boolean[] socpShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { subj > 0, obj > 0, context >= 0, pred > 0 };
+	}
+
+	static boolean[] scpoShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { subj > 0, context >= 0, pred > 0, obj > 0 };
+	}
+
+	static boolean[] scopShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { subj > 0, context >= 0, obj > 0, pred > 0 };
+	}
+
+	static boolean[] psocShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { pred > 0, subj > 0, obj > 0, context >= 0 };
+	}
+
+	static boolean[] pscoShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { pred > 0, subj > 0, context >= 0, obj > 0 };
+	}
+
+	static boolean[] poscShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { pred > 0, obj > 0, subj > 0, context >= 0 };
+	}
+
+	static boolean[] pocsShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { pred > 0, obj > 0, context >= 0, subj > 0 };
+	}
+
+	static boolean[] pcsoShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { pred > 0, context >= 0, subj > 0, obj > 0 };
+	}
+
+	static boolean[] pcosShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { pred > 0, context >= 0, obj > 0, subj > 0 };
+	}
+
+	static boolean[] ospcShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { obj > 0, subj > 0, pred > 0, context >= 0 };
+	}
+
+	static boolean[] oscpShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { obj > 0, subj > 0, context >= 0, pred > 0 };
+	}
+
+	static boolean[] opscShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { obj > 0, pred > 0, subj > 0, context >= 0 };
+	}
+
+	static boolean[] opcsShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { obj > 0, pred > 0, context >= 0, subj > 0 };
+	}
+
+	static boolean[] ocspShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { obj > 0, context >= 0, subj > 0, pred > 0 };
+	}
+
+	static boolean[] ocpsShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { obj > 0, context >= 0, pred > 0, subj > 0 };
+	}
+
+	static boolean[] cspoShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { context >= 0, subj > 0, pred > 0, obj > 0 };
+	}
+
+	static boolean[] csopShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { context >= 0, subj > 0, obj > 0, pred > 0 };
+	}
+
+	static boolean[] cpsoShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { context >= 0, pred > 0, subj > 0, obj > 0 };
+	}
+
+	static boolean[] cposShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { context >= 0, pred > 0, obj > 0, subj > 0 };
+	}
+
+	static boolean[] cospShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { context >= 0, obj > 0, subj > 0, pred > 0 };
+	}
+
+	static boolean[] copsShouldMatch(long subj, long pred, long obj, long context) {
+		return new boolean[] { context >= 0, obj > 0, pred > 0, subj > 0 };
 	}
 }

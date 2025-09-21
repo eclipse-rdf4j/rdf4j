@@ -1163,12 +1163,14 @@ class TripleStore implements Closeable {
 
 		private final char[] fieldSeq;
 		private final IndexKeyWriters.KeyWriter keyWriter;
+		private final IndexKeyWriters.MatcherFactory matcherFactory;
 		private final int dbiExplicit, dbiInferred;
 		private final int[] indexMap;
 
 		public TripleIndex(String fieldSeq) throws IOException {
 			this.fieldSeq = fieldSeq.toCharArray();
 			this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
+			this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
 			this.indexMap = getIndexes(this.fieldSeq);
 			// open database and use native sort order without comparator
 			dbiExplicit = openDatabase(env, fieldSeq, MDB_CREATE, null);
@@ -1278,24 +1280,7 @@ class TripleStore implements Closeable {
 			toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);
 			bb.flip();
 
-			boolean[] shouldMatch = new boolean[4];
-			for (int i = 0; i < fieldSeq.length; i++) {
-				switch (fieldSeq[i]) {
-				case 's':
-					shouldMatch[i] = subj > 0;
-					break;
-				case 'p':
-					shouldMatch[i] = pred > 0;
-					break;
-				case 'o':
-					shouldMatch[i] = obj > 0;
-					break;
-				case 'c':
-					shouldMatch[i] = context >= 0;
-					break;
-				}
-			}
-			return new GroupMatcher(bb, shouldMatch);
+			return new GroupMatcher(bb, matcherFactory.create(subj, pred, obj, context));
 		}
 
 		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
