@@ -107,14 +107,14 @@ public final class Varint {
 			if (prev != ByteOrder.BIG_ENDIAN) {
 				bb.order(ByteOrder.BIG_ENDIAN);
 			}
-
-			bb.put((byte) 0xFF); // header for 8 payload bytes
-			bb.putLong(Long.MAX_VALUE); // 7F FF FF FF FF FF FF FF
-
-			if (prev != ByteOrder.BIG_ENDIAN) {
-				bb.order(prev);
+			try {
+				bb.put((byte) 0xFF); // header for 8 payload bytes
+				bb.putLong(Long.MAX_VALUE); // 7F FF FF FF FF FF FF FF
+			} finally {
+				if (prev != ByteOrder.BIG_ENDIAN) {
+					bb.order(prev);
+				}
 			}
-
 			return;
 		}
 
@@ -128,15 +128,15 @@ public final class Varint {
 			if (prev != ByteOrder.BIG_ENDIAN) {
 				bb.order(ByteOrder.BIG_ENDIAN);
 			}
-
-			int hi = (int) (v >>> 8) + 241; // 241..248
-			int lo = (int) (v & 0xFF); // 0..255
-			bb.putShort((short) ((hi << 8) | lo));
-
-			if (prev != ByteOrder.BIG_ENDIAN) {
-				bb.order(prev);
+			try {
+				int hi = (int) (v >>> 8) + 241; // 241..248
+				int lo = (int) (v & 0xFF); // 0..255
+				bb.putShort((short) ((hi << 8) | lo));
+			} finally {
+				if (prev != ByteOrder.BIG_ENDIAN) {
+					bb.order(prev);
+				}
 			}
-
 		} else if (value <= 67823) {
 			// header 249, then 2 payload bytes (value - 2288), big-endian
 			long v = value - 2288; // 0..65535
@@ -145,12 +145,13 @@ public final class Varint {
 			if (prev != ByteOrder.BIG_ENDIAN) {
 				bb.order(ByteOrder.BIG_ENDIAN);
 			}
-
-			bb.putShort((short) v);
-			if (prev != ByteOrder.BIG_ENDIAN) {
-				bb.order(prev);
+			try {
+				bb.putShort((short) v);
+			} finally {
+				if (prev != ByteOrder.BIG_ENDIAN) {
+					bb.order(prev);
+				}
 			}
-
 		} else {
 			int bytes = descriptor(value) + 1; // 3..8
 			bb.put((byte) (250 + (bytes - 3))); // header 250..255
@@ -165,40 +166,38 @@ public final class Varint {
 		if (prev != ByteOrder.BIG_ENDIAN) {
 			bb.order(ByteOrder.BIG_ENDIAN);
 		}
+		try {
+			int i = bytes;
 
-		int i = bytes;
+			// If odd number of bytes, write the leading MSB first
+			if ((i & 1) != 0) {
+				bb.put((byte) (value >>> ((i - 1) * 8)));
+				i--;
+			}
 
-		// If odd number of bytes, write the leading MSB first
-		if ((i & 1) != 0) {
-			bb.put((byte) (value >>> ((i - 1) * 8)));
-			i--;
-		}
+			// Now i is even: prefer largest chunks first
+			if (i == 8) { // exactly 8 bytes
+				bb.putLong(value);
+				return;
+			}
 
-		// Now i is even: prefer largest chunks first
-		if (i == 8) { // exactly 8 bytes
-			bb.putLong(value);
+			if (i >= 4) { // write next 4 bytes, if any
+				int shift = (i - 4) * 8;
+				bb.putInt((int) (value >>> shift));
+				i -= 4;
+			}
+
+			while (i >= 2) { // write remaining pairs
+				int shift = (i - 2) * 8;
+				bb.putShort((short) (value >>> shift));
+				i -= 2;
+			}
+			// i must be 0 here.
+		} finally {
 			if (prev != ByteOrder.BIG_ENDIAN) {
 				bb.order(prev);
 			}
-			return;
 		}
-
-		if (i >= 4) { // write next 4 bytes, if any
-			int shift = (i - 4) * 8;
-			bb.putInt((int) (value >>> shift));
-			i -= 4;
-		}
-
-		while (i >= 2) { // write remaining pairs
-			int shift = (i - 2) * 8;
-			bb.putShort((short) (value >>> shift));
-			i -= 2;
-		}
-		// i must be 0 here.
-		if (prev != ByteOrder.BIG_ENDIAN) {
-			bb.order(prev);
-		}
-
 	}
 
 	/**

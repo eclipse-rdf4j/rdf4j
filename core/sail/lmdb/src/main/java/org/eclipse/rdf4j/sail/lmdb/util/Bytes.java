@@ -142,6 +142,126 @@ public final class Bytes {
 		return d(A[ao + 3], B[bo + 3]);
 	}
 
+	static int cmp_AH_BH_LEN5(ByteBuffer a, int ai, ByteBuffer b, int bi) {
+		byte[] A = a.array();
+		int ao = a.arrayOffset() + ai;
+		byte[] B = b.array();
+		int bo = b.arrayOffset() + bi;
+		int r = d(A[ao], B[bo]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 1], B[bo + 1]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 2], B[bo + 2]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 3], B[bo + 3]);
+		if (r != 0) {
+			return r;
+		}
+		return d(A[ao + 4], B[bo + 4]);
+	}
+
+	static int cmp_AH_BH_LEN6(ByteBuffer a, int ai, ByteBuffer b, int bi) {
+		byte[] A = a.array();
+		int ao = a.arrayOffset() + ai;
+		byte[] B = b.array();
+		int bo = b.arrayOffset() + bi;
+		int r = d(A[ao], B[bo]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 1], B[bo + 1]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 2], B[bo + 2]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 3], B[bo + 3]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 4], B[bo + 4]);
+		if (r != 0) {
+			return r;
+		}
+		return d(A[ao + 5], B[bo + 5]);
+	}
+
+	static int cmp_AH_BH_LEN7(ByteBuffer a, int ai, ByteBuffer b, int bi) {
+		byte[] A = a.array();
+		int ao = a.arrayOffset() + ai;
+		byte[] B = b.array();
+		int bo = b.arrayOffset() + bi;
+		int r = d(A[ao], B[bo]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 1], B[bo + 1]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 2], B[bo + 2]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 3], B[bo + 3]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 4], B[bo + 4]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 5], B[bo + 5]);
+		if (r != 0) {
+			return r;
+		}
+		return d(A[ao + 6], B[bo + 6]);
+	}
+
+	static int cmp_AH_BH_LEN8(ByteBuffer a, int ai, ByteBuffer b, int bi) {
+		byte[] A = a.array();
+		int ao = a.arrayOffset() + ai;
+		byte[] B = b.array();
+		int bo = b.arrayOffset() + bi;
+		int r = d(A[ao], B[bo]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 1], B[bo + 1]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 2], B[bo + 2]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 3], B[bo + 3]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 4], B[bo + 4]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 5], B[bo + 5]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 6], B[bo + 6]);
+		if (r != 0) {
+			return r;
+		}
+		return d(A[ao + 7], B[bo + 7]);
+	}
+
 	// a: HEAP, b: BUFFER
 	static int cmp_AH_BB_LEN1(ByteBuffer a, int ai, ByteBuffer b, int bi) {
 		byte[] A = a.array();
@@ -189,6 +309,118 @@ public final class Bytes {
 			return r;
 		}
 		return d(A[ao + 3], b.get(bi + 3));
+	}
+
+	static int cmp_AH_BB_LEN5(ByteBuffer a, int ai, ByteBuffer b, int bi) {
+		byte[] A = a.array();
+		int ao = a.arrayOffset() + ai;
+		int r = d(A[ao], b.get(bi));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 1], b.get(bi + 1));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 2], b.get(bi + 2));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 3], b.get(bi + 3));
+		if (r != 0) {
+			return r;
+		}
+		return d(A[ao + 4], b.get(bi + 4));
+	}
+
+	static int cmp_AH_BB_LEN6(ByteBuffer a, int ai, ByteBuffer b, int bi) {
+		byte[] A = a.array();
+		int ao = a.arrayOffset() + ai;
+		int r = d(A[ao], b.get(bi));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 1], b.get(bi + 1));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 2], b.get(bi + 2));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 3], b.get(bi + 3));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 4], b.get(bi + 4));
+		if (r != 0) {
+			return r;
+		}
+		return d(A[ao + 5], b.get(bi + 5));
+	}
+
+	static int cmp_AH_BB_LEN7(ByteBuffer a, int ai, ByteBuffer b, int bi) {
+		byte[] A = a.array();
+		int ao = a.arrayOffset() + ai;
+		int r = d(A[ao], b.get(bi));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 1], b.get(bi + 1));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 2], b.get(bi + 2));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 3], b.get(bi + 3));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 4], b.get(bi + 4));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 5], b.get(bi + 5));
+		if (r != 0) {
+			return r;
+		}
+		return d(A[ao + 6], b.get(bi + 6));
+	}
+
+	static int cmp_AH_BB_LEN8(ByteBuffer a, int ai, ByteBuffer b, int bi) {
+		byte[] A = a.array();
+		int ao = a.arrayOffset() + ai;
+		int r = d(A[ao], b.get(bi));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 1], b.get(bi + 1));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 2], b.get(bi + 2));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 3], b.get(bi + 3));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 4], b.get(bi + 4));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 5], b.get(bi + 5));
+		if (r != 0) {
+			return r;
+		}
+		r = d(A[ao + 6], b.get(bi + 6));
+		if (r != 0) {
+			return r;
+		}
+		return d(A[ao + 7], b.get(bi + 7));
 	}
 
 	// a: BUFFER, b: HEAP
@@ -240,6 +472,118 @@ public final class Bytes {
 		return d(a.get(ai + 3), B[bo + 3]);
 	}
 
+	static int cmp_AB_BH_LEN5(ByteBuffer a, int ai, ByteBuffer b, int bi) {
+		byte[] B = b.array();
+		int bo = b.arrayOffset() + bi;
+		int r = d(a.get(ai), B[bo]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 1), B[bo + 1]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 2), B[bo + 2]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 3), B[bo + 3]);
+		if (r != 0) {
+			return r;
+		}
+		return d(a.get(ai + 4), B[bo + 4]);
+	}
+
+	static int cmp_AB_BH_LEN6(ByteBuffer a, int ai, ByteBuffer b, int bi) {
+		byte[] B = b.array();
+		int bo = b.arrayOffset() + bi;
+		int r = d(a.get(ai), B[bo]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 1), B[bo + 1]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 2), B[bo + 2]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 3), B[bo + 3]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 4), B[bo + 4]);
+		if (r != 0) {
+			return r;
+		}
+		return d(a.get(ai + 5), B[bo + 5]);
+	}
+
+	static int cmp_AB_BH_LEN7(ByteBuffer a, int ai, ByteBuffer b, int bi) {
+		byte[] B = b.array();
+		int bo = b.arrayOffset() + bi;
+		int r = d(a.get(ai), B[bo]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 1), B[bo + 1]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 2), B[bo + 2]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 3), B[bo + 3]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 4), B[bo + 4]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 5), B[bo + 5]);
+		if (r != 0) {
+			return r;
+		}
+		return d(a.get(ai + 6), B[bo + 6]);
+	}
+
+	static int cmp_AB_BH_LEN8(ByteBuffer a, int ai, ByteBuffer b, int bi) {
+		byte[] B = b.array();
+		int bo = b.arrayOffset() + bi;
+		int r = d(a.get(ai), B[bo]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 1), B[bo + 1]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 2), B[bo + 2]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 3), B[bo + 3]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 4), B[bo + 4]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 5), B[bo + 5]);
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 6), B[bo + 6]);
+		if (r != 0) {
+			return r;
+		}
+		return d(a.get(ai + 7), B[bo + 7]);
+	}
+
 	// a: BUFFER, b: BUFFER
 	static int cmp_AB_BB_LEN1(ByteBuffer a, int ai, ByteBuffer b, int bi) {
 		return d(a.get(ai), b.get(bi));
@@ -279,6 +623,110 @@ public final class Bytes {
 			return r;
 		}
 		return d(a.get(ai + 3), b.get(bi + 3));
+	}
+
+	static int cmp_AB_BB_LEN5(ByteBuffer a, int ai, ByteBuffer b, int bi) {
+		int r = d(a.get(ai), b.get(bi));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 1), b.get(bi + 1));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 2), b.get(bi + 2));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 3), b.get(bi + 3));
+		if (r != 0) {
+			return r;
+		}
+		return d(a.get(ai + 4), b.get(bi + 4));
+	}
+
+	static int cmp_AB_BB_LEN6(ByteBuffer a, int ai, ByteBuffer b, int bi) {
+		int r = d(a.get(ai), b.get(bi));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 1), b.get(bi + 1));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 2), b.get(bi + 2));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 3), b.get(bi + 3));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 4), b.get(bi + 4));
+		if (r != 0) {
+			return r;
+		}
+		return d(a.get(ai + 5), b.get(bi + 5));
+	}
+
+	static int cmp_AB_BB_LEN7(ByteBuffer a, int ai, ByteBuffer b, int bi) {
+		int r = d(a.get(ai), b.get(bi));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 1), b.get(bi + 1));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 2), b.get(bi + 2));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 3), b.get(bi + 3));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 4), b.get(bi + 4));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 5), b.get(bi + 5));
+		if (r != 0) {
+			return r;
+		}
+		return d(a.get(ai + 6), b.get(bi + 6));
+	}
+
+	static int cmp_AB_BB_LEN8(ByteBuffer a, int ai, ByteBuffer b, int bi) {
+		int r = d(a.get(ai), b.get(bi));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 1), b.get(bi + 1));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 2), b.get(bi + 2));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 3), b.get(bi + 3));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 4), b.get(bi + 4));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 5), b.get(bi + 5));
+		if (r != 0) {
+			return r;
+		}
+		r = d(a.get(ai + 6), b.get(bi + 6));
+		if (r != 0) {
+			return r;
+		}
+		return d(a.get(ai + 7), b.get(bi + 7));
 	}
 
 	// =========================
@@ -341,35 +789,51 @@ public final class Bytes {
 	public static final RegionComparator AH_BH_LEN2 = lmfNoCapture("cmp_AH_BH_LEN2");
 	public static final RegionComparator AH_BH_LEN3 = lmfNoCapture("cmp_AH_BH_LEN3");
 	public static final RegionComparator AH_BH_LEN4 = lmfNoCapture("cmp_AH_BH_LEN4");
+	public static final RegionComparator AH_BH_LEN5 = lmfNoCapture("cmp_AH_BH_LEN5");
+	public static final RegionComparator AH_BH_LEN6 = lmfNoCapture("cmp_AH_BH_LEN6");
+	public static final RegionComparator AH_BH_LEN7 = lmfNoCapture("cmp_AH_BH_LEN7");
+	public static final RegionComparator AH_BH_LEN8 = lmfNoCapture("cmp_AH_BH_LEN8");
 
 	public static final RegionComparator AH_BB_LEN1 = lmfNoCapture("cmp_AH_BB_LEN1");
 	public static final RegionComparator AH_BB_LEN2 = lmfNoCapture("cmp_AH_BB_LEN2");
 	public static final RegionComparator AH_BB_LEN3 = lmfNoCapture("cmp_AH_BB_LEN3");
 	public static final RegionComparator AH_BB_LEN4 = lmfNoCapture("cmp_AH_BB_LEN4");
+	public static final RegionComparator AH_BB_LEN5 = lmfNoCapture("cmp_AH_BB_LEN5");
+	public static final RegionComparator AH_BB_LEN6 = lmfNoCapture("cmp_AH_BB_LEN6");
+	public static final RegionComparator AH_BB_LEN7 = lmfNoCapture("cmp_AH_BB_LEN7");
+	public static final RegionComparator AH_BB_LEN8 = lmfNoCapture("cmp_AH_BB_LEN8");
 
 	public static final RegionComparator AB_BH_LEN1 = lmfNoCapture("cmp_AB_BH_LEN1");
 	public static final RegionComparator AB_BH_LEN2 = lmfNoCapture("cmp_AB_BH_LEN2");
 	public static final RegionComparator AB_BH_LEN3 = lmfNoCapture("cmp_AB_BH_LEN3");
 	public static final RegionComparator AB_BH_LEN4 = lmfNoCapture("cmp_AB_BH_LEN4");
+	public static final RegionComparator AB_BH_LEN5 = lmfNoCapture("cmp_AB_BH_LEN5");
+	public static final RegionComparator AB_BH_LEN6 = lmfNoCapture("cmp_AB_BH_LEN6");
+	public static final RegionComparator AB_BH_LEN7 = lmfNoCapture("cmp_AB_BH_LEN7");
+	public static final RegionComparator AB_BH_LEN8 = lmfNoCapture("cmp_AB_BH_LEN8");
 
 	public static final RegionComparator AB_BB_LEN1 = lmfNoCapture("cmp_AB_BB_LEN1");
 	public static final RegionComparator AB_BB_LEN2 = lmfNoCapture("cmp_AB_BB_LEN2");
 	public static final RegionComparator AB_BB_LEN3 = lmfNoCapture("cmp_AB_BB_LEN3");
 	public static final RegionComparator AB_BB_LEN4 = lmfNoCapture("cmp_AB_BB_LEN4");
+	public static final RegionComparator AB_BB_LEN5 = lmfNoCapture("cmp_AB_BB_LEN5");
+	public static final RegionComparator AB_BB_LEN6 = lmfNoCapture("cmp_AB_BB_LEN6");
+	public static final RegionComparator AB_BB_LEN7 = lmfNoCapture("cmp_AB_BB_LEN7");
+	public static final RegionComparator AB_BB_LEN8 = lmfNoCapture("cmp_AB_BB_LEN8");
 
-	// Convenience tables (index 1..4; index 0 unused)
+// Convenience tables (index 1..8; index 0 unused)
 	public static final RegionComparator[] TABLE_AH_BH = new RegionComparator[] { null, AH_BH_LEN1, AH_BH_LEN2,
-			AH_BH_LEN3, AH_BH_LEN4 };
+			AH_BH_LEN3, AH_BH_LEN4, AH_BH_LEN5, AH_BH_LEN6, AH_BH_LEN7, AH_BH_LEN8 };
 	public static final RegionComparator[] TABLE_AH_BB = new RegionComparator[] { null, AH_BB_LEN1, AH_BB_LEN2,
-			AH_BB_LEN3, AH_BB_LEN4 };
+			AH_BB_LEN3, AH_BB_LEN4, AH_BB_LEN5, AH_BB_LEN6, AH_BB_LEN7, AH_BB_LEN8 };
 	public static final RegionComparator[] TABLE_AB_BH = new RegionComparator[] { null, AB_BH_LEN1, AB_BH_LEN2,
-			AB_BH_LEN3, AB_BH_LEN4 };
+			AB_BH_LEN3, AB_BH_LEN4, AB_BH_LEN5, AB_BH_LEN6, AB_BH_LEN7, AB_BH_LEN8 };
 	public static final RegionComparator[] TABLE_AB_BB = new RegionComparator[] { null, AB_BB_LEN1, AB_BB_LEN2,
-			AB_BB_LEN3, AB_BB_LEN4 };
+			AB_BB_LEN3, AB_BB_LEN4, AB_BB_LEN5, AB_BB_LEN6, AB_BB_LEN7, AB_BB_LEN8 };
 
 	// Factory used by GroupMatcher for len > 4, with 'len' captured
 	public static RegionComparator capturedComparator(boolean aHeap, boolean bHeap, int len) {
-		if (len <= 4) {
+		if (len <= 8) {
 			if (aHeap & bHeap) {
 				return TABLE_AH_BH[len];
 			}
