@@ -118,13 +118,9 @@ public final class Varint {
 			return;
 		}
 
-		final int length = calcLengthUnsigned(value);
-		switch (length) {
-		case 1:
+		if (value <= 240) {
 			bb.put((byte) value);
-			return;
-
-		case 2: {
+		} else if (value <= 2287) {
 			// header: 241..248, then 1 payload byte
 			// Using bit ops instead of div/mod and putShort to batch the two bytes.
 			long v = value - 240; // 1..2047
@@ -141,10 +137,7 @@ public final class Varint {
 					bb.order(prev);
 				}
 			}
-			return;
-		}
-
-		case 3: {
+		} else if (value <= 67823) {
 			// header 249, then 2 payload bytes (value - 2288), big-endian
 			long v = value - 2288; // 0..65535
 			bb.put((byte) 249);
@@ -159,14 +152,10 @@ public final class Varint {
 					bb.order(prev);
 				}
 			}
-			return;
-		}
-
-		default:
-			int bytes = length - 1; // payload bytes (3..8)
+		} else {
+			int bytes = descriptor(value) + 1; // 3..8
 			bb.put((byte) (250 + (bytes - 3))); // header 250..255
 			writeSignificantBits(bb, value, bytes); // payload (batched)
-			return;
 		}
 	}
 
@@ -278,31 +267,31 @@ public final class Varint {
 		final int extra = VARINT_EXTRA_BYTES[a0]; // 0..8 additional bytes
 
 		switch (extra) {
-		case 1: {
-			// 1 extra byte; 241..248
-			final int a1 = bb.get() & 0xFF;
-			// 240 + 256*(a0-241) + a1
-			return 240L + ((long) (a0 - 241) << 8) + a1;
-		}
+			case 1: {
+				// 1 extra byte; 241..248
+				final int a1 = bb.get() & 0xFF;
+				// 240 + 256*(a0-241) + a1
+				return 240L + ((long) (a0 - 241) << 8) + a1;
+			}
 
-		case 2: {
-			// 2 extra bytes; lead byte == 249
-			final int a1 = bb.get() & 0xFF;
-			final int a2 = bb.get() & 0xFF;
-			// 2288 + 256*a1 + a2
-			return 2288L + ((long) a1 << 8) + a2;
-		}
+			case 2: {
+				// 2 extra bytes; lead byte == 249
+				final int a1 = bb.get() & 0xFF;
+				final int a2 = bb.get() & 0xFF;
+				// 2288 + 256*a1 + a2
+				return 2288L + ((long) a1 << 8) + a2;
+			}
 
-		case 3:
-		case 4:
-		case 5:
-		case 6:
-		case 7:
-		case 8:
-			return readSignificantBitsDirect(bb, extra);
-		// 3..8 extra bytes; 250..255
-		default:
-			throw new IllegalArgumentException("Bytes is higher than 8: " + extra);
+			case 3:
+			case 4:
+			case 5:
+			case 6:
+			case 7:
+			case 8:
+				return readSignificantBitsDirect(bb, extra);
+			// 3..8 extra bytes; 250..255
+			default:
+				throw new IllegalArgumentException("Bytes is higher than 8: " + extra);
 
 		}
 	}
