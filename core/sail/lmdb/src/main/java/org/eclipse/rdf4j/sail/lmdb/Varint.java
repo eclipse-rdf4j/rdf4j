@@ -105,12 +105,14 @@ public final class Varint {
 		// Fast path for Long.MAX_VALUE (0xFF header + 8 data bytes)
 		if (value == Long.MAX_VALUE) {
 			final ByteOrder prev = bb.order();
-			if (prev != ByteOrder.BIG_ENDIAN) bb.order(ByteOrder.BIG_ENDIAN);
+			if (prev != ByteOrder.BIG_ENDIAN)
+				bb.order(ByteOrder.BIG_ENDIAN);
 			try {
-				bb.put((byte) 0xFF);          // header for 8 payload bytes
-				bb.putLong(Long.MAX_VALUE);   // 7F FF FF FF FF FF FF FF
+				bb.put((byte) 0xFF); // header for 8 payload bytes
+				bb.putLong(Long.MAX_VALUE); // 7F FF FF FF FF FF FF FF
 			} finally {
-				if (prev != ByteOrder.BIG_ENDIAN) bb.order(prev);
+				if (prev != ByteOrder.BIG_ENDIAN)
+					bb.order(prev);
 			}
 			return;
 		}
@@ -122,29 +124,33 @@ public final class Varint {
 			// Using bit ops instead of div/mod and putShort to batch the two bytes.
 			long v = value - 240; // 1..2047
 			final ByteOrder prev = bb.order();
-			if (prev != ByteOrder.BIG_ENDIAN) bb.order(ByteOrder.BIG_ENDIAN);
+			if (prev != ByteOrder.BIG_ENDIAN)
+				bb.order(ByteOrder.BIG_ENDIAN);
 			try {
-				int hi = (int) (v >>> 8) + 241;     // 241..248
-				int lo = (int) (v & 0xFF);          // 0..255
+				int hi = (int) (v >>> 8) + 241; // 241..248
+				int lo = (int) (v & 0xFF); // 0..255
 				bb.putShort((short) ((hi << 8) | lo));
 			} finally {
-				if (prev != ByteOrder.BIG_ENDIAN) bb.order(prev);
+				if (prev != ByteOrder.BIG_ENDIAN)
+					bb.order(prev);
 			}
 		} else if (value <= 67823) {
 			// header 249, then 2 payload bytes (value - 2288), big-endian
 			long v = value - 2288; // 0..65535
 			bb.put((byte) 249);
 			final ByteOrder prev = bb.order();
-			if (prev != ByteOrder.BIG_ENDIAN) bb.order(ByteOrder.BIG_ENDIAN);
+			if (prev != ByteOrder.BIG_ENDIAN)
+				bb.order(ByteOrder.BIG_ENDIAN);
 			try {
 				bb.putShort((short) v);
 			} finally {
-				if (prev != ByteOrder.BIG_ENDIAN) bb.order(prev);
+				if (prev != ByteOrder.BIG_ENDIAN)
+					bb.order(prev);
 			}
 		} else {
-			int bytes = descriptor(value) + 1;         // 3..8
-			bb.put((byte) (250 + (bytes - 3)));        // header 250..255
-			writeSignificantBits(bb, value, bytes);    // payload (batched)
+			int bytes = descriptor(value) + 1; // 3..8
+			bb.put((byte) (250 + (bytes - 3))); // header 250..255
+			writeSignificantBits(bb, value, bytes); // payload (batched)
 		}
 	}
 
@@ -152,7 +158,8 @@ public final class Varint {
 // Uses putLong/putInt/putShort to batch writes and a single leading byte if needed.
 	private static void writeSignificantBits(ByteBuffer bb, long value, int bytes) {
 		final ByteOrder prev = bb.order();
-		if (prev != ByteOrder.BIG_ENDIAN) bb.order(ByteOrder.BIG_ENDIAN);
+		if (prev != ByteOrder.BIG_ENDIAN)
+			bb.order(ByteOrder.BIG_ENDIAN);
 		try {
 			int i = bytes;
 
@@ -163,25 +170,26 @@ public final class Varint {
 			}
 
 			// Now i is even: prefer largest chunks first
-			if (i == 8) {                      // exactly 8 bytes
+			if (i == 8) { // exactly 8 bytes
 				bb.putLong(value);
 				return;
 			}
 
-			if (i >= 4) {                      // write next 4 bytes, if any
+			if (i >= 4) { // write next 4 bytes, if any
 				int shift = (i - 4) * 8;
 				bb.putInt((int) (value >>> shift));
 				i -= 4;
 			}
 
-			while (i >= 2) {                   // write remaining pairs
+			while (i >= 2) { // write remaining pairs
 				int shift = (i - 2) * 8;
 				bb.putShort((short) (value >>> shift));
 				i -= 2;
 			}
 			// i must be 0 here.
 		} finally {
-			if (prev != ByteOrder.BIG_ENDIAN) bb.order(prev);
+			if (prev != ByteOrder.BIG_ENDIAN)
+				bb.order(prev);
 		}
 	}
 
