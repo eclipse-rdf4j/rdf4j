@@ -507,6 +507,15 @@ class TripleStore implements Closeable {
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
 	}
 
+	boolean hasTriples(boolean explicit) throws IOException {
+		TripleIndex mainIndex = indexes.get(0);
+		return txnManager.doWith((stack, txn) -> {
+			MDBStat stat = MDBStat.mallocStack(stack);
+			mdb_stat(txn, mainIndex.getDB(explicit), stat);
+			return stat.ms_entries() > 0;
+		});
+	}
+
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
 		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn);

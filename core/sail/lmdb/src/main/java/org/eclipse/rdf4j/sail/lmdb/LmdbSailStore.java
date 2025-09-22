@@ -58,6 +58,8 @@ import org.slf4j.LoggerFactory;
  */
 class LmdbSailStore implements SailStore {
 
+	private static final EmptyIteration<Statement> EMPTY_ITERATION = new EmptyIteration<>();
+
 	final Logger logger = LoggerFactory.getLogger(LmdbSailStore.class);
 
 	private final TripleStore tripleStore;
@@ -71,6 +73,7 @@ class LmdbSailStore implements SailStore {
 	private boolean multiThreadingActive;
 	private volatile boolean asyncTransactionFinished;
 	private volatile boolean nextTransactionAsync;
+	private volatile boolean mayHaveInferred;
 
 	boolean enableMultiThreading = true;
 
@@ -142,6 +145,9 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void execute() throws IOException {
+			if (!explicit) {
+				mayHaveInferred = true;
+			}
 			if (!unusedIds.isEmpty()) {
 				// these ids are used again
 				unusedIds.remove(s);
@@ -192,6 +198,7 @@ class LmdbSailStore implements SailStore {
 			namespaceStore = new NamespaceStore(dataDir);
 			valueStore = new ValueStore(new File(dataDir, "values"), config);
 			tripleStore = new TripleStore(new File(dataDir, "triples"), config);
+			mayHaveInferred = tripleStore.hasTriples(false);
 			initialized = true;
 		} finally {
 			if (!initialized) {
@@ -347,11 +354,15 @@ class LmdbSailStore implements SailStore {
 	 */
 	CloseableIteration<? extends Statement> createStatementIterator(
 			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
+		if (!explicit && !mayHaveInferred) {
+			// there are no inferred statements and the iterator should only return inferred statements
+			return EMPTY_ITERATION;
+		}
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
 			subjID = valueStore.getId(subj);
 			if (subjID == LmdbValue.UNKNOWN_ID) {
-				return new EmptyIteration<>();
+				return EMPTY_ITERATION;
 			}
 		}
 
@@ -359,7 +370,7 @@ class LmdbSailStore implements SailStore {
 		if (pred != null) {
 			predID = valueStore.getId(pred);
 			if (predID == LmdbValue.UNKNOWN_ID) {
-				return new EmptyIteration<>();
+				return EMPTY_ITERATION;
 			}
 		}
 
@@ -368,7 +379,7 @@ class LmdbSailStore implements SailStore {
 			objID = valueStore.getId(obj);
 
 			if (objID == LmdbValue.UNKNOWN_ID) {
-				return new EmptyIteration<>();
+				return EMPTY_ITERATION;
 			}
 		}
 
