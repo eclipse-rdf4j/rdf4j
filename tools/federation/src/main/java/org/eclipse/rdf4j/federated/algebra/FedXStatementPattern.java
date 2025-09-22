@@ -180,15 +180,15 @@ public abstract class FedXStatementPattern extends StatementPattern
 		// visit Var nodes and set value for matching var names
 		if (getSubjectVar().getName().equals(varName)) {
 			Var var = getSubjectVar();
-			var.replaceWith(new Var(var.getName(), value, var.isAnonymous(), var.isConstant()));
+			var.replaceWith(Var.of(var.getName(), value, var.isAnonymous(), var.isConstant()));
 		}
 		if (getPredicateVar().getName().equals(varName)) {
 			Var var = getPredicateVar();
-			var.replaceWith(new Var(var.getName(), value, var.isAnonymous(), var.isConstant()));
+			var.replaceWith(Var.of(var.getName(), value, var.isAnonymous(), var.isConstant()));
 		}
 		if (getObjectVar().getName().equals(varName)) {
 			Var var = getObjectVar();
-			var.replaceWith(new Var(var.getName(), value, var.isAnonymous(), var.isConstant()));
+			var.replaceWith(Var.of(var.getName(), value, var.isAnonymous(), var.isConstant()));
 		}
 
 		boundFilters.addBinding(varName, value);

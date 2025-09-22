@@ -69,7 +69,7 @@ public class Group extends UnaryTupleOperator {
 			groupBindings = Set.of(bindingName);
 			return;
 		} else if (groupBindings.size() == 1) {
-			groupBindings = new HashSet<>(groupBindings);
+			groupBindings = new LinkedHashSet<>(groupBindings);
 		}
 		groupBindings.add(bindingName);
 	}
@@ -105,7 +105,7 @@ public class Group extends UnaryTupleOperator {
 	}
 
 	public Set<String> getAggregateBindingNames() {
-		Set<String> bindings = new HashSet<>();
+		Set<String> bindings = new LinkedHashSet<>();
 
 		for (GroupElem binding : groupElements) {
 			bindings.add(binding.getName());
