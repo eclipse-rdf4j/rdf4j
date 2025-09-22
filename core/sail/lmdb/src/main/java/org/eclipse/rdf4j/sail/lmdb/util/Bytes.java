@@ -49,6 +49,28 @@ public final class Bytes {
 			return comparatorLen8(array, offset);
 		case 9:
 			return comparatorLen9(array, offset);
+		case 10:
+			return comparatorLen10(array, offset);
+		case 11:
+			return comparatorLen11(array, offset);
+		case 12:
+			return comparatorLen12(array, offset);
+		case 13:
+			return comparatorLen13(array, offset);
+		case 14:
+			return comparatorLen14(array, offset);
+		case 15:
+			return comparatorLen15(array, offset);
+		case 16:
+			return comparatorLen16(array, offset);
+		case 17:
+			return comparatorLen17(array, offset);
+		case 18:
+			return comparatorLen18(array, offset);
+		case 19:
+			return comparatorLen19(array, offset);
+		case 20:
+			return comparatorLen20(array, offset);
 		default:
 			return comparatorGeneric(array, offset, len);
 		}
@@ -292,6 +314,897 @@ public final class Bytes {
 				return r;
 			}
 			return d(array[i8], b.get(bi + 8));
+		};
+	}
+
+	private static RegionComparator comparatorLen10(byte[] array, int offset) {
+		final int i0 = offset;
+		final int i1 = offset + 1;
+		final int i2 = offset + 2;
+		final int i3 = offset + 3;
+		final int i4 = offset + 4;
+		final int i5 = offset + 5;
+		final int i6 = offset + 6;
+		final int i7 = offset + 7;
+		final int i8 = offset + 8;
+		final int i9 = offset + 9;
+		return (b, bi) -> {
+			int r = d(array[i0], b.get(bi));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i1], b.get(bi + 1));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i2], b.get(bi + 2));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i3], b.get(bi + 3));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i4], b.get(bi + 4));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i5], b.get(bi + 5));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i6], b.get(bi + 6));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i7], b.get(bi + 7));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i8], b.get(bi + 8));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i9], b.get(bi + 9));
+			if (r != 0) {
+				return r;
+			}
+			return 0;
+		};
+	}
+
+	private static RegionComparator comparatorLen11(byte[] array, int offset) {
+		final int i0 = offset;
+		final int i1 = offset + 1;
+		final int i2 = offset + 2;
+		final int i3 = offset + 3;
+		final int i4 = offset + 4;
+		final int i5 = offset + 5;
+		final int i6 = offset + 6;
+		final int i7 = offset + 7;
+		final int i8 = offset + 8;
+		final int i9 = offset + 9;
+		final int i10 = offset + 10;
+		return (b, bi) -> {
+			int r = d(array[i0], b.get(bi));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i1], b.get(bi + 1));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i2], b.get(bi + 2));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i3], b.get(bi + 3));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i4], b.get(bi + 4));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i5], b.get(bi + 5));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i6], b.get(bi + 6));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i7], b.get(bi + 7));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i8], b.get(bi + 8));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i9], b.get(bi + 9));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i10], b.get(bi + 10));
+			if (r != 0) {
+				return r;
+			}
+			return 0;
+		};
+	}
+
+	private static RegionComparator comparatorLen12(byte[] array, int offset) {
+		final int i0 = offset;
+		final int i1 = offset + 1;
+		final int i2 = offset + 2;
+		final int i3 = offset + 3;
+		final int i4 = offset + 4;
+		final int i5 = offset + 5;
+		final int i6 = offset + 6;
+		final int i7 = offset + 7;
+		final int i8 = offset + 8;
+		final int i9 = offset + 9;
+		final int i10 = offset + 10;
+		final int i11 = offset + 11;
+		return (b, bi) -> {
+			int r = d(array[i0], b.get(bi));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i1], b.get(bi + 1));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i2], b.get(bi + 2));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i3], b.get(bi + 3));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i4], b.get(bi + 4));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i5], b.get(bi + 5));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i6], b.get(bi + 6));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i7], b.get(bi + 7));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i8], b.get(bi + 8));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i9], b.get(bi + 9));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i10], b.get(bi + 10));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i11], b.get(bi + 11));
+			if (r != 0) {
+				return r;
+			}
+			return 0;
+		};
+	}
+
+	private static RegionComparator comparatorLen13(byte[] array, int offset) {
+		final int i0 = offset;
+		final int i1 = offset + 1;
+		final int i2 = offset + 2;
+		final int i3 = offset + 3;
+		final int i4 = offset + 4;
+		final int i5 = offset + 5;
+		final int i6 = offset + 6;
+		final int i7 = offset + 7;
+		final int i8 = offset + 8;
+		final int i9 = offset + 9;
+		final int i10 = offset + 10;
+		final int i11 = offset + 11;
+		final int i12 = offset + 12;
+		return (b, bi) -> {
+			int r = d(array[i0], b.get(bi));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i1], b.get(bi + 1));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i2], b.get(bi + 2));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i3], b.get(bi + 3));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i4], b.get(bi + 4));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i5], b.get(bi + 5));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i6], b.get(bi + 6));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i7], b.get(bi + 7));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i8], b.get(bi + 8));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i9], b.get(bi + 9));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i10], b.get(bi + 10));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i11], b.get(bi + 11));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i12], b.get(bi + 12));
+			if (r != 0) {
+				return r;
+			}
+			return 0;
+		};
+	}
+
+	private static RegionComparator comparatorLen14(byte[] array, int offset) {
+		final int i0 = offset;
+		final int i1 = offset + 1;
+		final int i2 = offset + 2;
+		final int i3 = offset + 3;
+		final int i4 = offset + 4;
+		final int i5 = offset + 5;
+		final int i6 = offset + 6;
+		final int i7 = offset + 7;
+		final int i8 = offset + 8;
+		final int i9 = offset + 9;
+		final int i10 = offset + 10;
+		final int i11 = offset + 11;
+		final int i12 = offset + 12;
+		final int i13 = offset + 13;
+		return (b, bi) -> {
+			int r = d(array[i0], b.get(bi));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i1], b.get(bi + 1));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i2], b.get(bi + 2));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i3], b.get(bi + 3));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i4], b.get(bi + 4));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i5], b.get(bi + 5));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i6], b.get(bi + 6));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i7], b.get(bi + 7));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i8], b.get(bi + 8));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i9], b.get(bi + 9));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i10], b.get(bi + 10));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i11], b.get(bi + 11));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i12], b.get(bi + 12));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i13], b.get(bi + 13));
+			if (r != 0) {
+				return r;
+			}
+			return 0;
+		};
+	}
+
+	private static RegionComparator comparatorLen15(byte[] array, int offset) {
+		final int i0 = offset;
+		final int i1 = offset + 1;
+		final int i2 = offset + 2;
+		final int i3 = offset + 3;
+		final int i4 = offset + 4;
+		final int i5 = offset + 5;
+		final int i6 = offset + 6;
+		final int i7 = offset + 7;
+		final int i8 = offset + 8;
+		final int i9 = offset + 9;
+		final int i10 = offset + 10;
+		final int i11 = offset + 11;
+		final int i12 = offset + 12;
+		final int i13 = offset + 13;
+		final int i14 = offset + 14;
+		return (b, bi) -> {
+			int r = d(array[i0], b.get(bi));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i1], b.get(bi + 1));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i2], b.get(bi + 2));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i3], b.get(bi + 3));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i4], b.get(bi + 4));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i5], b.get(bi + 5));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i6], b.get(bi + 6));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i7], b.get(bi + 7));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i8], b.get(bi + 8));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i9], b.get(bi + 9));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i10], b.get(bi + 10));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i11], b.get(bi + 11));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i12], b.get(bi + 12));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i13], b.get(bi + 13));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i14], b.get(bi + 14));
+			if (r != 0) {
+				return r;
+			}
+			return 0;
+		};
+	}
+
+	private static RegionComparator comparatorLen16(byte[] array, int offset) {
+		final int i0 = offset;
+		final int i1 = offset + 1;
+		final int i2 = offset + 2;
+		final int i3 = offset + 3;
+		final int i4 = offset + 4;
+		final int i5 = offset + 5;
+		final int i6 = offset + 6;
+		final int i7 = offset + 7;
+		final int i8 = offset + 8;
+		final int i9 = offset + 9;
+		final int i10 = offset + 10;
+		final int i11 = offset + 11;
+		final int i12 = offset + 12;
+		final int i13 = offset + 13;
+		final int i14 = offset + 14;
+		final int i15 = offset + 15;
+		return (b, bi) -> {
+			int r = d(array[i0], b.get(bi));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i1], b.get(bi + 1));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i2], b.get(bi + 2));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i3], b.get(bi + 3));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i4], b.get(bi + 4));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i5], b.get(bi + 5));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i6], b.get(bi + 6));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i7], b.get(bi + 7));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i8], b.get(bi + 8));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i9], b.get(bi + 9));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i10], b.get(bi + 10));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i11], b.get(bi + 11));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i12], b.get(bi + 12));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i13], b.get(bi + 13));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i14], b.get(bi + 14));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i15], b.get(bi + 15));
+			if (r != 0) {
+				return r;
+			}
+			return 0;
+		};
+	}
+
+	private static RegionComparator comparatorLen17(byte[] array, int offset) {
+		final int i0 = offset;
+		final int i1 = offset + 1;
+		final int i2 = offset + 2;
+		final int i3 = offset + 3;
+		final int i4 = offset + 4;
+		final int i5 = offset + 5;
+		final int i6 = offset + 6;
+		final int i7 = offset + 7;
+		final int i8 = offset + 8;
+		final int i9 = offset + 9;
+		final int i10 = offset + 10;
+		final int i11 = offset + 11;
+		final int i12 = offset + 12;
+		final int i13 = offset + 13;
+		final int i14 = offset + 14;
+		final int i15 = offset + 15;
+		final int i16 = offset + 16;
+		return (b, bi) -> {
+			int r = d(array[i0], b.get(bi));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i1], b.get(bi + 1));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i2], b.get(bi + 2));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i3], b.get(bi + 3));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i4], b.get(bi + 4));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i5], b.get(bi + 5));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i6], b.get(bi + 6));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i7], b.get(bi + 7));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i8], b.get(bi + 8));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i9], b.get(bi + 9));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i10], b.get(bi + 10));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i11], b.get(bi + 11));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i12], b.get(bi + 12));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i13], b.get(bi + 13));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i14], b.get(bi + 14));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i15], b.get(bi + 15));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i16], b.get(bi + 16));
+			if (r != 0) {
+				return r;
+			}
+			return 0;
+		};
+	}
+
+	private static RegionComparator comparatorLen18(byte[] array, int offset) {
+		final int i0 = offset;
+		final int i1 = offset + 1;
+		final int i2 = offset + 2;
+		final int i3 = offset + 3;
+		final int i4 = offset + 4;
+		final int i5 = offset + 5;
+		final int i6 = offset + 6;
+		final int i7 = offset + 7;
+		final int i8 = offset + 8;
+		final int i9 = offset + 9;
+		final int i10 = offset + 10;
+		final int i11 = offset + 11;
+		final int i12 = offset + 12;
+		final int i13 = offset + 13;
+		final int i14 = offset + 14;
+		final int i15 = offset + 15;
+		final int i16 = offset + 16;
+		final int i17 = offset + 17;
+		return (b, bi) -> {
+			int r = d(array[i0], b.get(bi));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i1], b.get(bi + 1));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i2], b.get(bi + 2));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i3], b.get(bi + 3));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i4], b.get(bi + 4));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i5], b.get(bi + 5));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i6], b.get(bi + 6));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i7], b.get(bi + 7));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i8], b.get(bi + 8));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i9], b.get(bi + 9));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i10], b.get(bi + 10));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i11], b.get(bi + 11));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i12], b.get(bi + 12));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i13], b.get(bi + 13));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i14], b.get(bi + 14));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i15], b.get(bi + 15));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i16], b.get(bi + 16));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i17], b.get(bi + 17));
+			if (r != 0) {
+				return r;
+			}
+			return 0;
+		};
+	}
+
+	private static RegionComparator comparatorLen19(byte[] array, int offset) {
+		final int i0 = offset;
+		final int i1 = offset + 1;
+		final int i2 = offset + 2;
+		final int i3 = offset + 3;
+		final int i4 = offset + 4;
+		final int i5 = offset + 5;
+		final int i6 = offset + 6;
+		final int i7 = offset + 7;
+		final int i8 = offset + 8;
+		final int i9 = offset + 9;
+		final int i10 = offset + 10;
+		final int i11 = offset + 11;
+		final int i12 = offset + 12;
+		final int i13 = offset + 13;
+		final int i14 = offset + 14;
+		final int i15 = offset + 15;
+		final int i16 = offset + 16;
+		final int i17 = offset + 17;
+		final int i18 = offset + 18;
+		return (b, bi) -> {
+			int r = d(array[i0], b.get(bi));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i1], b.get(bi + 1));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i2], b.get(bi + 2));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i3], b.get(bi + 3));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i4], b.get(bi + 4));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i5], b.get(bi + 5));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i6], b.get(bi + 6));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i7], b.get(bi + 7));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i8], b.get(bi + 8));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i9], b.get(bi + 9));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i10], b.get(bi + 10));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i11], b.get(bi + 11));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i12], b.get(bi + 12));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i13], b.get(bi + 13));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i14], b.get(bi + 14));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i15], b.get(bi + 15));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i16], b.get(bi + 16));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i17], b.get(bi + 17));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i18], b.get(bi + 18));
+			if (r != 0) {
+				return r;
+			}
+			return 0;
+		};
+	}
+
+	private static RegionComparator comparatorLen20(byte[] array, int offset) {
+		final int i0 = offset;
+		final int i1 = offset + 1;
+		final int i2 = offset + 2;
+		final int i3 = offset + 3;
+		final int i4 = offset + 4;
+		final int i5 = offset + 5;
+		final int i6 = offset + 6;
+		final int i7 = offset + 7;
+		final int i8 = offset + 8;
+		final int i9 = offset + 9;
+		final int i10 = offset + 10;
+		final int i11 = offset + 11;
+		final int i12 = offset + 12;
+		final int i13 = offset + 13;
+		final int i14 = offset + 14;
+		final int i15 = offset + 15;
+		final int i16 = offset + 16;
+		final int i17 = offset + 17;
+		final int i18 = offset + 18;
+		final int i19 = offset + 19;
+		return (b, bi) -> {
+			int r = d(array[i0], b.get(bi));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i1], b.get(bi + 1));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i2], b.get(bi + 2));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i3], b.get(bi + 3));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i4], b.get(bi + 4));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i5], b.get(bi + 5));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i6], b.get(bi + 6));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i7], b.get(bi + 7));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i8], b.get(bi + 8));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i9], b.get(bi + 9));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i10], b.get(bi + 10));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i11], b.get(bi + 11));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i12], b.get(bi + 12));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i13], b.get(bi + 13));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i14], b.get(bi + 14));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i15], b.get(bi + 15));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i16], b.get(bi + 16));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i17], b.get(bi + 17));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i18], b.get(bi + 18));
+			if (r != 0) {
+				return r;
+			}
+			r = d(array[i19], b.get(bi + 19));
+			if (r != 0) {
+				return r;
+			}
+			return 0;
 		};
 	}
 
