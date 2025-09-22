@@ -544,20 +544,22 @@ public final class Varint {
 		final ByteBuffer value;
 		final boolean[] shouldMatch;
 		final int[] lengths;
-		final boolean valueIsHeap;
+		final Bytes.RegionComparator[] cmps;
 
 		public GroupMatcher(ByteBuffer value, boolean[] shouldMatch) {
 			assert shouldMatch.length == 4;
 			this.value = value;
 			this.shouldMatch = shouldMatch;
 			this.lengths = new int[4];
-
-			this.valueIsHeap = value.hasArray();
+			assert value.hasArray();
+			this.cmps = new Bytes.RegionComparator[4];
 
 			int pos = 0;
 			for (int i = 0; i < 4; i++) {
 				int len = firstToLength(value.get(pos));
 				lengths[i] = len;
+
+				cmps[i] = Bytes.capturedComparator(len);
 
 				pos += len;
 			}
@@ -571,8 +573,6 @@ public final class Varint {
 			int thisPos = 0;
 			int otherPos = 0;
 
-			final boolean otherHeap = other.hasArray();
-
 			{
 				int len = lengths[0];
 				int otherLen = firstToLength(other.get(otherPos));
@@ -581,7 +581,7 @@ public final class Varint {
 					if (len != otherLen) {
 						return false;
 					}
-					if (Bytes.compareRegion(valueIsHeap, otherHeap, len, value, thisPos, other, otherPos) != 0) {
+					if (cmps[0].compare(value, thisPos, other, otherPos) != 0) {
 						return false;
 					}
 					if (!shouldMatch[1] && !shouldMatch[2] && !shouldMatch[3]) {
@@ -600,7 +600,7 @@ public final class Varint {
 					if (len != otherLen) {
 						return false;
 					}
-					if (Bytes.compareRegion(valueIsHeap, otherHeap, len, value, thisPos, other, otherPos) != 0) {
+					if (cmps[1].compare(value, thisPos, other, otherPos) != 0) {
 						return false;
 					}
 					if (!shouldMatch[2] && !shouldMatch[3]) {
@@ -619,7 +619,7 @@ public final class Varint {
 					if (len != otherLen) {
 						return false;
 					}
-					if (Bytes.compareRegion(valueIsHeap, otherHeap, len, value, thisPos, other, otherPos) != 0) {
+					if (cmps[2].compare(value, thisPos, other, otherPos) != 0) {
 						return false;
 					}
 					if (!shouldMatch[3]) {
@@ -638,7 +638,7 @@ public final class Varint {
 					if (len != otherLen) {
 						return false;
 					}
-					if (Bytes.compareRegion(valueIsHeap, otherHeap, len, value, thisPos, other, otherPos) != 0) {
+					if (cmps[3].compare(value, thisPos, other, otherPos) != 0) {
 						return false;
 					}
 				}
