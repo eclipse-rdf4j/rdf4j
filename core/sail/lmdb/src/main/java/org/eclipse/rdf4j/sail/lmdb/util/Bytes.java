@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.lmdb.util;
 
+import java.lang.NoSuchMethodException;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -22,7 +23,12 @@ public final class Bytes {
 	private Bytes() {
 	}
 
-	// ----- LambdaMetafactory plumbing -----
+	@FunctionalInterface
+	public interface RegionComparator {
+		int compare(ByteBuffer a, int aPos, ByteBuffer b, int bPos);
+	}
+
+	// ----- Method handle plumbing -----
 	private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
 
 	private static final MethodType REGION_TYPE = MethodType.methodType(int.class, ByteBuffer.class, int.class,
@@ -37,10 +43,58 @@ public final class Bytes {
 	private static final MethodHandle[] HANDLES_AB_BH = prebuildHandles(false, true);
 	private static final MethodHandle[] HANDLES_AB_BB = prebuildHandles(false, false);
 
+	private static final MethodHandle MH_AH_BH_LEN1 = HANDLES_AH_BH[1];
+	private static final MethodHandle MH_AH_BH_LEN2 = HANDLES_AH_BH[2];
+	private static final MethodHandle MH_AH_BH_LEN3 = HANDLES_AH_BH[3];
+	private static final MethodHandle MH_AH_BH_LEN4 = HANDLES_AH_BH[4];
+	private static final MethodHandle MH_AH_BH_LEN5 = HANDLES_AH_BH[5];
+	private static final MethodHandle MH_AH_BH_LEN6 = HANDLES_AH_BH[6];
+	private static final MethodHandle MH_AH_BH_LEN7 = HANDLES_AH_BH[7];
+	private static final MethodHandle MH_AH_BH_LEN8 = HANDLES_AH_BH[8];
+
+	private static final MethodHandle MH_AH_BB_LEN1 = HANDLES_AH_BB[1];
+	private static final MethodHandle MH_AH_BB_LEN2 = HANDLES_AH_BB[2];
+	private static final MethodHandle MH_AH_BB_LEN3 = HANDLES_AH_BB[3];
+	private static final MethodHandle MH_AH_BB_LEN4 = HANDLES_AH_BB[4];
+	private static final MethodHandle MH_AH_BB_LEN5 = HANDLES_AH_BB[5];
+	private static final MethodHandle MH_AH_BB_LEN6 = HANDLES_AH_BB[6];
+	private static final MethodHandle MH_AH_BB_LEN7 = HANDLES_AH_BB[7];
+	private static final MethodHandle MH_AH_BB_LEN8 = HANDLES_AH_BB[8];
+
+	private static final MethodHandle MH_AB_BH_LEN1 = HANDLES_AB_BH[1];
+	private static final MethodHandle MH_AB_BH_LEN2 = HANDLES_AB_BH[2];
+	private static final MethodHandle MH_AB_BH_LEN3 = HANDLES_AB_BH[3];
+	private static final MethodHandle MH_AB_BH_LEN4 = HANDLES_AB_BH[4];
+	private static final MethodHandle MH_AB_BH_LEN5 = HANDLES_AB_BH[5];
+	private static final MethodHandle MH_AB_BH_LEN6 = HANDLES_AB_BH[6];
+	private static final MethodHandle MH_AB_BH_LEN7 = HANDLES_AB_BH[7];
+	private static final MethodHandle MH_AB_BH_LEN8 = HANDLES_AB_BH[8];
+
+	private static final MethodHandle MH_AB_BB_LEN1 = HANDLES_AB_BB[1];
+	private static final MethodHandle MH_AB_BB_LEN2 = HANDLES_AB_BB[2];
+	private static final MethodHandle MH_AB_BB_LEN3 = HANDLES_AB_BB[3];
+	private static final MethodHandle MH_AB_BB_LEN4 = HANDLES_AB_BB[4];
+	private static final MethodHandle MH_AB_BB_LEN5 = HANDLES_AB_BB[5];
+	private static final MethodHandle MH_AB_BB_LEN6 = HANDLES_AB_BB[6];
+	private static final MethodHandle MH_AB_BB_LEN7 = HANDLES_AB_BB[7];
+	private static final MethodHandle MH_AB_BB_LEN8 = HANDLES_AB_BB[8];
+
 	private static final Map<Integer, MethodHandle> HANDLE_CACHE_AH_BH = new ConcurrentHashMap<>();
 	private static final Map<Integer, MethodHandle> HANDLE_CACHE_AH_BB = new ConcurrentHashMap<>();
 	private static final Map<Integer, MethodHandle> HANDLE_CACHE_AB_BH = new ConcurrentHashMap<>();
 	private static final Map<Integer, MethodHandle> HANDLE_CACHE_AB_BB = new ConcurrentHashMap<>();
+
+	private static final RegionComparator ALWAYS_ZERO = (a, ai, b, bi) -> 0;
+
+	private static final RegionComparator[] TABLE_AH_BH = buildComparatorTable(HANDLES_AH_BH);
+	private static final RegionComparator[] TABLE_AH_BB = buildComparatorTable(HANDLES_AH_BB);
+	private static final RegionComparator[] TABLE_AB_BH = buildComparatorTable(HANDLES_AB_BH);
+	private static final RegionComparator[] TABLE_AB_BB = buildComparatorTable(HANDLES_AB_BB);
+
+	private static final Map<Integer, RegionComparator> COMPARATOR_CACHE_AH_BH = new ConcurrentHashMap<>();
+	private static final Map<Integer, RegionComparator> COMPARATOR_CACHE_AH_BB = new ConcurrentHashMap<>();
+	private static final Map<Integer, RegionComparator> COMPARATOR_CACHE_AB_BH = new ConcurrentHashMap<>();
+	private static final Map<Integer, RegionComparator> COMPARATOR_CACHE_AB_BB = new ConcurrentHashMap<>();
 
 	// ----- tiny helper -----
 	private static int d(int a, int b) {
@@ -51,6 +105,15 @@ public final class Bytes {
 		MethodHandle[] table = new MethodHandle[9];
 		for (int len = 0; len <= 8; len++) {
 			table[len] = buildHandle(aHeap, bHeap, len);
+		}
+		return table;
+	}
+
+	private static RegionComparator[] buildComparatorTable(MethodHandle[] handles) {
+		RegionComparator[] table = new RegionComparator[handles.length];
+		table[0] = ALWAYS_ZERO;
+		for (int i = 1; i < handles.length; i++) {
+			table[i] = new MethodHandleRegionComparator(handles[i]);
 		}
 		return table;
 	}
@@ -118,6 +181,32 @@ public final class Bytes {
 			return HANDLE_CACHE_AB_BH;
 		}
 		return HANDLE_CACHE_AB_BB;
+	}
+
+	private static RegionComparator[] selectComparatorTable(boolean aHeap, boolean bHeap) {
+		if (aHeap && bHeap) {
+			return TABLE_AH_BH;
+		}
+		if (aHeap) {
+			return TABLE_AH_BB;
+		}
+		if (bHeap) {
+			return TABLE_AB_BH;
+		}
+		return TABLE_AB_BB;
+	}
+
+	private static Map<Integer, RegionComparator> selectComparatorCache(boolean aHeap, boolean bHeap) {
+		if (aHeap && bHeap) {
+			return COMPARATOR_CACHE_AH_BH;
+		}
+		if (aHeap) {
+			return COMPARATOR_CACHE_AH_BB;
+		}
+		if (bHeap) {
+			return COMPARATOR_CACHE_AB_BH;
+		}
+		return COMPARATOR_CACHE_AB_BB;
 	}
 
 	// =========================
@@ -819,7 +908,6 @@ public final class Bytes {
 		return 0;
 	}
 
-	// Convenience tables (index 1..8; index 0 unused)
 	public static MethodHandle comparatorHandle(boolean aHeap, boolean bHeap, int len) {
 		if (len < 0) {
 			throw new IllegalArgumentException("len must be >= 0: " + len);
@@ -830,4 +918,135 @@ public final class Bytes {
 		return selectHandleCache(aHeap, bHeap).computeIfAbsent(len, l -> buildLoopHandle(aHeap, bHeap, l));
 	}
 
+	public static final RegionComparator AH_BH_LEN1 = TABLE_AH_BH[1];
+	public static final RegionComparator AH_BH_LEN2 = TABLE_AH_BH[2];
+	public static final RegionComparator AH_BH_LEN3 = TABLE_AH_BH[3];
+	public static final RegionComparator AH_BH_LEN4 = TABLE_AH_BH[4];
+	public static final RegionComparator AH_BH_LEN5 = TABLE_AH_BH[5];
+	public static final RegionComparator AH_BH_LEN6 = TABLE_AH_BH[6];
+	public static final RegionComparator AH_BH_LEN7 = TABLE_AH_BH[7];
+	public static final RegionComparator AH_BH_LEN8 = TABLE_AH_BH[8];
+
+	public static final RegionComparator AH_BB_LEN1 = TABLE_AH_BB[1];
+	public static final RegionComparator AH_BB_LEN2 = TABLE_AH_BB[2];
+	public static final RegionComparator AH_BB_LEN3 = TABLE_AH_BB[3];
+	public static final RegionComparator AH_BB_LEN4 = TABLE_AH_BB[4];
+	public static final RegionComparator AH_BB_LEN5 = TABLE_AH_BB[5];
+	public static final RegionComparator AH_BB_LEN6 = TABLE_AH_BB[6];
+	public static final RegionComparator AH_BB_LEN7 = TABLE_AH_BB[7];
+	public static final RegionComparator AH_BB_LEN8 = TABLE_AH_BB[8];
+
+	public static final RegionComparator AB_BH_LEN1 = TABLE_AB_BH[1];
+	public static final RegionComparator AB_BH_LEN2 = TABLE_AB_BH[2];
+	public static final RegionComparator AB_BH_LEN3 = TABLE_AB_BH[3];
+	public static final RegionComparator AB_BH_LEN4 = TABLE_AB_BH[4];
+	public static final RegionComparator AB_BH_LEN5 = TABLE_AB_BH[5];
+	public static final RegionComparator AB_BH_LEN6 = TABLE_AB_BH[6];
+	public static final RegionComparator AB_BH_LEN7 = TABLE_AB_BH[7];
+	public static final RegionComparator AB_BH_LEN8 = TABLE_AB_BH[8];
+
+	public static final RegionComparator AB_BB_LEN1 = TABLE_AB_BB[1];
+	public static final RegionComparator AB_BB_LEN2 = TABLE_AB_BB[2];
+	public static final RegionComparator AB_BB_LEN3 = TABLE_AB_BB[3];
+	public static final RegionComparator AB_BB_LEN4 = TABLE_AB_BB[4];
+	public static final RegionComparator AB_BB_LEN5 = TABLE_AB_BB[5];
+	public static final RegionComparator AB_BB_LEN6 = TABLE_AB_BB[6];
+	public static final RegionComparator AB_BB_LEN7 = TABLE_AB_BB[7];
+	public static final RegionComparator AB_BB_LEN8 = TABLE_AB_BB[8];
+
+	public static RegionComparator capturedComparator(boolean aHeap, boolean bHeap, int len) {
+		if (len < 0) {
+			throw new IllegalArgumentException("len must be >= 0: " + len);
+		}
+		if (len <= 8) {
+			return selectComparatorTable(aHeap, bHeap)[len];
+		}
+		return selectComparatorCache(aHeap, bHeap)
+				.computeIfAbsent(len, l -> new MethodHandleRegionComparator(comparatorHandle(aHeap, bHeap, l)));
+	}
+
+	public static int compareRegion(boolean aHeap, boolean bHeap, int len, ByteBuffer a, int aPos, ByteBuffer b,
+			int bPos) {
+		if (len == 0) {
+			return 0;
+		}
+		if (len <= 8) {
+			if (aHeap) {
+				if (bHeap) {
+					return invokeFixed(len, MH_AH_BH_LEN1, MH_AH_BH_LEN2, MH_AH_BH_LEN3, MH_AH_BH_LEN4, MH_AH_BH_LEN5,
+							MH_AH_BH_LEN6, MH_AH_BH_LEN7, MH_AH_BH_LEN8, a, aPos, b, bPos);
+				}
+				return invokeFixed(len, MH_AH_BB_LEN1, MH_AH_BB_LEN2, MH_AH_BB_LEN3, MH_AH_BB_LEN4, MH_AH_BB_LEN5,
+						MH_AH_BB_LEN6, MH_AH_BB_LEN7, MH_AH_BB_LEN8, a, aPos, b, bPos);
+			}
+			if (bHeap) {
+				return invokeFixed(len, MH_AB_BH_LEN1, MH_AB_BH_LEN2, MH_AB_BH_LEN3, MH_AB_BH_LEN4, MH_AB_BH_LEN5,
+						MH_AB_BH_LEN6, MH_AB_BH_LEN7, MH_AB_BH_LEN8, a, aPos, b, bPos);
+			}
+			return invokeFixed(len, MH_AB_BB_LEN1, MH_AB_BB_LEN2, MH_AB_BB_LEN3, MH_AB_BB_LEN4, MH_AB_BB_LEN5,
+					MH_AB_BB_LEN6, MH_AB_BB_LEN7, MH_AB_BB_LEN8, a, aPos, b, bPos);
+		}
+		try {
+			return (int) comparatorHandle(aHeap, bHeap, len).invokeExact(a, aPos, b, bPos);
+		} catch (RuntimeException | Error e) {
+			throw e;
+		} catch (Throwable t) {
+			throw new IllegalStateException("MethodHandle invocation failed", t);
+		}
+	}
+
+	private static int invokeFixed(int len, MethodHandle mh1, MethodHandle mh2, MethodHandle mh3, MethodHandle mh4,
+			MethodHandle mh5, MethodHandle mh6, MethodHandle mh7, MethodHandle mh8, ByteBuffer a, int aPos,
+			ByteBuffer b,
+			int bPos) {
+		switch (len) {
+		case 1:
+			return invoke(mh1, a, aPos, b, bPos);
+		case 2:
+			return invoke(mh2, a, aPos, b, bPos);
+		case 3:
+			return invoke(mh3, a, aPos, b, bPos);
+		case 4:
+			return invoke(mh4, a, aPos, b, bPos);
+		case 5:
+			return invoke(mh5, a, aPos, b, bPos);
+		case 6:
+			return invoke(mh6, a, aPos, b, bPos);
+		case 7:
+			return invoke(mh7, a, aPos, b, bPos);
+		case 8:
+			return invoke(mh8, a, aPos, b, bPos);
+		default:
+			throw new IllegalArgumentException("Unsupported len: " + len);
+		}
+	}
+
+	private static int invoke(MethodHandle handle, ByteBuffer a, int aPos, ByteBuffer b, int bPos) {
+		try {
+			return (int) handle.invokeExact(a, aPos, b, bPos);
+		} catch (RuntimeException | Error e) {
+			throw e;
+		} catch (Throwable t) {
+			throw new IllegalStateException("MethodHandle invocation failed", t);
+		}
+	}
+
+	private static final class MethodHandleRegionComparator implements RegionComparator {
+		private final MethodHandle handle;
+
+		MethodHandleRegionComparator(MethodHandle handle) {
+			this.handle = handle;
+		}
+
+		@Override
+		public int compare(ByteBuffer a, int aPos, ByteBuffer b, int bPos) {
+			try {
+				return (int) handle.invokeExact(a, aPos, b, bPos);
+			} catch (RuntimeException | Error e) {
+				throw e;
+			} catch (Throwable t) {
+				throw new IllegalStateException("MethodHandle invocation failed", t);
+			}
+		}
+	}
 }
