@@ -267,31 +267,31 @@ public final class Varint {
 		final int extra = VARINT_EXTRA_BYTES[a0]; // 0..8 additional bytes
 
 		switch (extra) {
-			case 1: {
-				// 1 extra byte; 241..248
-				final int a1 = bb.get() & 0xFF;
-				// 240 + 256*(a0-241) + a1
-				return 240L + ((long) (a0 - 241) << 8) + a1;
-			}
+		case 1: {
+			// 1 extra byte; 241..248
+			final int a1 = bb.get() & 0xFF;
+			// 240 + 256*(a0-241) + a1
+			return 240L + ((long) (a0 - 241) << 8) + a1;
+		}
 
-			case 2: {
-				// 2 extra bytes; lead byte == 249
-				final int a1 = bb.get() & 0xFF;
-				final int a2 = bb.get() & 0xFF;
-				// 2288 + 256*a1 + a2
-				return 2288L + ((long) a1 << 8) + a2;
-			}
+		case 2: {
+			// 2 extra bytes; lead byte == 249
+			final int a1 = bb.get() & 0xFF;
+			final int a2 = bb.get() & 0xFF;
+			// 2288 + 256*a1 + a2
+			return 2288L + ((long) a1 << 8) + a2;
+		}
 
-			case 3:
-			case 4:
-			case 5:
-			case 6:
-			case 7:
-			case 8:
-				return readSignificantBitsDirect(bb, extra);
-			// 3..8 extra bytes; 250..255
-			default:
-				throw new IllegalArgumentException("Bytes is higher than 8: " + extra);
+		case 3:
+		case 4:
+		case 5:
+		case 6:
+		case 7:
+		case 8:
+			return readSignificantBitsDirect(bb, extra);
+		// 3..8 extra bytes; 250..255
+		default:
+			throw new IllegalArgumentException("Bytes is higher than 8: " + extra);
 
 		}
 	}
@@ -594,6 +594,9 @@ public final class Varint {
 					if (cmps[0].compare(value, thisPos, other, otherPos) != 0) {
 						return false;
 					}
+					if (!shouldMatch[1] && !shouldMatch[2] && !shouldMatch[3]) {
+						return true;
+					}
 				}
 
 				thisPos += len;
@@ -610,6 +613,9 @@ public final class Varint {
 					if (cmps[1].compare(value, thisPos, other, otherPos) != 0) {
 						return false;
 					}
+					if (!shouldMatch[2] && !shouldMatch[3]) {
+						return true;
+					}
 				}
 
 				thisPos += len;
@@ -625,6 +631,9 @@ public final class Varint {
 					}
 					if (cmps[2].compare(value, thisPos, other, otherPos) != 0) {
 						return false;
+					}
+					if (!shouldMatch[3]) {
+						return true;
 					}
 				}
 
@@ -643,9 +652,6 @@ public final class Varint {
 						return false;
 					}
 				}
-
-				thisPos += len;
-				otherPos += otherLen;
 			}
 			return true;
 		}
