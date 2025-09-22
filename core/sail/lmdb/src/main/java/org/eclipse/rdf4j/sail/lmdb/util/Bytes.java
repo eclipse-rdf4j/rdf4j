@@ -21,7 +21,7 @@ public final class Bytes {
 
 	@FunctionalInterface
 	public interface RegionComparator {
-		int compare(ByteBuffer a, int aPos, ByteBuffer b, int bPos);
+		int compare(byte[] a, int aOffset, ByteBuffer b, int bPos);
 	}
 
 	// ----- Comparator tables -----
@@ -42,19 +42,15 @@ public final class Bytes {
 	}
 
 	private static RegionComparator buildLoopComparator(int len) {
-		return (a, aPos, b, bPos) -> cmp_AH_BB_LOOP(len, a, aPos, b, bPos);
+		return (A, ao, b, bPos) -> cmp_AH_BB_LOOP(len, A, ao, b, bPos);
 	}
 
 	// a: HEAP, b: BUFFER
-	static int cmp_AH_BB_LEN1(ByteBuffer a, int ai, ByteBuffer b, int bi) {
-		byte[] A = a.array();
-		int ao = a.arrayOffset() + ai;
+	static int cmp_AH_BB_LEN1(byte[] A, int ao, ByteBuffer b, int bi) {
 		return d(A[ao], b.get(bi));
 	}
 
-	static int cmp_AH_BB_LEN2(ByteBuffer a, int ai, ByteBuffer b, int bi) {
-		byte[] A = a.array();
-		int ao = a.arrayOffset() + ai;
+	static int cmp_AH_BB_LEN2(byte[] A, int ao, ByteBuffer b, int bi) {
 		int r = d(A[ao], b.get(bi));
 		if (r != 0) {
 			return r;
@@ -62,9 +58,7 @@ public final class Bytes {
 		return d(A[ao + 1], b.get(bi + 1));
 	}
 
-	static int cmp_AH_BB_LEN3(ByteBuffer a, int ai, ByteBuffer b, int bi) {
-		byte[] A = a.array();
-		int ao = a.arrayOffset() + ai;
+	static int cmp_AH_BB_LEN3(byte[] A, int ao, ByteBuffer b, int bi) {
 		int r = d(A[ao], b.get(bi));
 		if (r != 0) {
 			return r;
@@ -76,9 +70,7 @@ public final class Bytes {
 		return d(A[ao + 2], b.get(bi + 2));
 	}
 
-	static int cmp_AH_BB_LEN4(ByteBuffer a, int ai, ByteBuffer b, int bi) {
-		byte[] A = a.array();
-		int ao = a.arrayOffset() + ai;
+	static int cmp_AH_BB_LEN4(byte[] A, int ao, ByteBuffer b, int bi) {
 		int r = d(A[ao], b.get(bi));
 		if (r != 0) {
 			return r;
@@ -94,9 +86,7 @@ public final class Bytes {
 		return d(A[ao + 3], b.get(bi + 3));
 	}
 
-	static int cmp_AH_BB_LEN5(ByteBuffer a, int ai, ByteBuffer b, int bi) {
-		byte[] A = a.array();
-		int ao = a.arrayOffset() + ai;
+	static int cmp_AH_BB_LEN5(byte[] A, int ao, ByteBuffer b, int bi) {
 		int r = d(A[ao], b.get(bi));
 		if (r != 0) {
 			return r;
@@ -116,9 +106,7 @@ public final class Bytes {
 		return d(A[ao + 4], b.get(bi + 4));
 	}
 
-	static int cmp_AH_BB_LEN6(ByteBuffer a, int ai, ByteBuffer b, int bi) {
-		byte[] A = a.array();
-		int ao = a.arrayOffset() + ai;
+	static int cmp_AH_BB_LEN6(byte[] A, int ao, ByteBuffer b, int bi) {
 		int r = d(A[ao], b.get(bi));
 		if (r != 0) {
 			return r;
@@ -142,9 +130,7 @@ public final class Bytes {
 		return d(A[ao + 5], b.get(bi + 5));
 	}
 
-	static int cmp_AH_BB_LEN7(ByteBuffer a, int ai, ByteBuffer b, int bi) {
-		byte[] A = a.array();
-		int ao = a.arrayOffset() + ai;
+	static int cmp_AH_BB_LEN7(byte[] A, int ao, ByteBuffer b, int bi) {
 		int r = d(A[ao], b.get(bi));
 		if (r != 0) {
 			return r;
@@ -172,9 +158,7 @@ public final class Bytes {
 		return d(A[ao + 6], b.get(bi + 6));
 	}
 
-	static int cmp_AH_BB_LEN8(ByteBuffer a, int ai, ByteBuffer b, int bi) {
-		byte[] A = a.array();
-		int ao = a.arrayOffset() + ai;
+	static int cmp_AH_BB_LEN8(byte[] A, int ao, ByteBuffer b, int bi) {
 		int r = d(A[ao], b.get(bi));
 		if (r != 0) {
 			return r;
@@ -209,9 +193,7 @@ public final class Bytes {
 	// =========================
 	// Impl methods (capturing len)
 	// =========================
-	static int cmp_AH_BB_LOOP(int len, ByteBuffer a, int ai, ByteBuffer b, int bi) {
-		byte[] A = a.array();
-		int ao = a.arrayOffset() + ai;
+	static int cmp_AH_BB_LOOP(int len, byte[] A, int ao, ByteBuffer b, int bi) {
 		for (int i = 0; i < len; i++) {
 			int r = d(A[ao + i], b.get(bi + i));
 			if (r != 0) {
