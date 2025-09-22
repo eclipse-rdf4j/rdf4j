@@ -11,74 +11,113 @@
 
 package org.eclipse.rdf4j.sail.lmdb.util;
 
-import java.lang.invoke.CallSite;
-import java.lang.invoke.LambdaMetafactory;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.nio.ByteBuffer;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class Bytes {
 	private Bytes() {
 	}
 
-	@FunctionalInterface
-	public interface RegionComparator {
-		int compare(ByteBuffer a, int aPos, ByteBuffer b, int bPos);
-	}
-
 	// ----- LambdaMetafactory plumbing -----
 	private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
 
-	// SAM erased signature: (Object, int, Object, int) -> int
-	private static final MethodType SAM_ERASED = MethodType.methodType(int.class, Object.class, int.class, Object.class,
-			int.class);
-
-	// The SAM signature your interface actually declares (typed, not Object):
-	private static final MethodType SAM = MethodType.methodType(int.class, ByteBuffer.class, int.class,
+	private static final MethodType REGION_TYPE = MethodType.methodType(int.class, ByteBuffer.class, int.class,
 			ByteBuffer.class, int.class);
+	private static final MethodType LOOP_TYPE = MethodType.methodType(int.class, int.class, ByteBuffer.class, int.class,
+			ByteBuffer.class, int.class);
+	private static final MethodHandle ZERO_HANDLE = MethodHandles.dropArguments(
+			MethodHandles.constant(int.class, 0), 0, ByteBuffer.class, int.class, ByteBuffer.class, int.class);
 
-	/** Build a non‑capturing RegionComparator from a static impl method. */
-	private static RegionComparator lmfNoCapture(String implName) {
-		try {
-			MethodHandle impl = LOOKUP.findStatic(Bytes.class, implName, SAM);
-			CallSite cs = LambdaMetafactory.metafactory(
-					LOOKUP,
-					"compare", // name of RegionComparator's method
-					MethodType.methodType(RegionComparator.class), // factory: () -> RegionComparator
-					SAM, // SAM method type (typed!)
-					impl, // impl method handle
-					SAM); // instantiated SAM (same as SAM here)
-			return (RegionComparator) cs.getTarget().invokeExact();
-		} catch (Throwable t) {
-			throw new ExceptionInInitializerError("LMF failed for " + implName + ": " + t);
-		}
-	}
+	private static final MethodHandle[] HANDLES_AH_BH = prebuildHandles(true, true);
+	private static final MethodHandle[] HANDLES_AH_BB = prebuildHandles(true, false);
+	private static final MethodHandle[] HANDLES_AB_BH = prebuildHandles(false, true);
+	private static final MethodHandle[] HANDLES_AB_BB = prebuildHandles(false, false);
 
-	/** Build a capturing RegionComparator that bakes in 'len' (first parameter of impl). */
-	private static RegionComparator lmfCaptureLen(String implName, int len) {
-		try {
-			MethodType implType = MethodType.methodType(
-					int.class, int.class, ByteBuffer.class, int.class, ByteBuffer.class, int.class);
-			MethodHandle impl = LOOKUP.findStatic(Bytes.class, implName, implType);
-
-			CallSite cs = LambdaMetafactory.metafactory(
-					LOOKUP,
-					"compare",
-					MethodType.methodType(RegionComparator.class, int.class), // factory: (int)->RegionComparator
-					SAM, // typed SAM
-					impl, // impl that takes (int, a, aPos, b, bPos)
-					SAM); // instantiated SAM
-			MethodHandle factory = cs.getTarget(); // (int)->RegionComparator
-			return (RegionComparator) factory.invokeExact(len);
-		} catch (Throwable t) {
-			throw new RuntimeException("LMF (capturing) failed for " + implName + ": " + t, t);
-		}
-	}
+	private static final Map<Integer, MethodHandle> HANDLE_CACHE_AH_BH = new ConcurrentHashMap<>();
+	private static final Map<Integer, MethodHandle> HANDLE_CACHE_AH_BB = new ConcurrentHashMap<>();
+	private static final Map<Integer, MethodHandle> HANDLE_CACHE_AB_BH = new ConcurrentHashMap<>();
+	private static final Map<Integer, MethodHandle> HANDLE_CACHE_AB_BB = new ConcurrentHashMap<>();
 
 	// ----- tiny helper -----
 	private static int d(int a, int b) {
 		return (a & 0xFF) - (b & 0xFF);
+	}
+
+	private static MethodHandle[] prebuildHandles(boolean aHeap, boolean bHeap) {
+		MethodHandle[] table = new MethodHandle[9];
+		for (int len = 0; len <= 8; len++) {
+			table[len] = buildHandle(aHeap, bHeap, len);
+		}
+		return table;
+	}
+
+	private static MethodHandle buildHandle(boolean aHeap, boolean bHeap, int len) {
+		if (len == 0) {
+			return ZERO_HANDLE;
+		}
+		return findHandle(methodName(aHeap, bHeap, len), REGION_TYPE);
+	}
+
+	private static MethodHandle buildLoopHandle(boolean aHeap, boolean bHeap, int len) {
+		MethodHandle loop = findHandle(loopName(aHeap, bHeap), LOOP_TYPE);
+		return MethodHandles.insertArguments(loop, 0, len);
+	}
+
+	private static MethodHandle findHandle(String name, MethodType type) {
+		try {
+			return LOOKUP.findStatic(Bytes.class, name, type);
+		} catch (NoSuchMethodException | IllegalAccessException e) {
+			throw new ExceptionInInitializerError(e);
+		}
+	}
+
+	private static String methodName(boolean aHeap, boolean bHeap, int len) {
+		StringBuilder name = new StringBuilder("cmp_");
+		name.append(aHeap ? "AH" : "AB");
+		name.append('_');
+		name.append(bHeap ? "BH" : "BB");
+		name.append("_LEN");
+		name.append(len);
+		return name.toString();
+	}
+
+	private static String loopName(boolean aHeap, boolean bHeap) {
+		StringBuilder name = new StringBuilder("cmp_");
+		name.append(aHeap ? "AH" : "AB");
+		name.append('_');
+		name.append(bHeap ? "BH" : "BB");
+		name.append("_LOOP");
+		return name.toString();
+	}
+
+	private static MethodHandle[] selectHandleTable(boolean aHeap, boolean bHeap) {
+		if (aHeap && bHeap) {
+			return HANDLES_AH_BH;
+		}
+		if (aHeap) {
+			return HANDLES_AH_BB;
+		}
+		if (bHeap) {
+			return HANDLES_AB_BH;
+		}
+		return HANDLES_AB_BB;
+	}
+
+	private static Map<Integer, MethodHandle> selectHandleCache(boolean aHeap, boolean bHeap) {
+		if (aHeap && bHeap) {
+			return HANDLE_CACHE_AH_BH;
+		}
+		if (aHeap) {
+			return HANDLE_CACHE_AH_BB;
+		}
+		if (bHeap) {
+			return HANDLE_CACHE_AB_BH;
+		}
+		return HANDLE_CACHE_AB_BB;
 	}
 
 	// =========================
@@ -780,80 +819,15 @@ public final class Bytes {
 		return 0;
 	}
 
-	// =========================
-	// Public comparators (LMF-built) and tables
-	// =========================
-
-	// Prebuilt comparators for len=1..4 (no capture)
-	public static final RegionComparator AH_BH_LEN1 = lmfNoCapture("cmp_AH_BH_LEN1");
-	public static final RegionComparator AH_BH_LEN2 = lmfNoCapture("cmp_AH_BH_LEN2");
-	public static final RegionComparator AH_BH_LEN3 = lmfNoCapture("cmp_AH_BH_LEN3");
-	public static final RegionComparator AH_BH_LEN4 = lmfNoCapture("cmp_AH_BH_LEN4");
-	public static final RegionComparator AH_BH_LEN5 = lmfNoCapture("cmp_AH_BH_LEN5");
-	public static final RegionComparator AH_BH_LEN6 = lmfNoCapture("cmp_AH_BH_LEN6");
-	public static final RegionComparator AH_BH_LEN7 = lmfNoCapture("cmp_AH_BH_LEN7");
-	public static final RegionComparator AH_BH_LEN8 = lmfNoCapture("cmp_AH_BH_LEN8");
-
-	public static final RegionComparator AH_BB_LEN1 = lmfNoCapture("cmp_AH_BB_LEN1");
-	public static final RegionComparator AH_BB_LEN2 = lmfNoCapture("cmp_AH_BB_LEN2");
-	public static final RegionComparator AH_BB_LEN3 = lmfNoCapture("cmp_AH_BB_LEN3");
-	public static final RegionComparator AH_BB_LEN4 = lmfNoCapture("cmp_AH_BB_LEN4");
-	public static final RegionComparator AH_BB_LEN5 = lmfNoCapture("cmp_AH_BB_LEN5");
-	public static final RegionComparator AH_BB_LEN6 = lmfNoCapture("cmp_AH_BB_LEN6");
-	public static final RegionComparator AH_BB_LEN7 = lmfNoCapture("cmp_AH_BB_LEN7");
-	public static final RegionComparator AH_BB_LEN8 = lmfNoCapture("cmp_AH_BB_LEN8");
-
-	public static final RegionComparator AB_BH_LEN1 = lmfNoCapture("cmp_AB_BH_LEN1");
-	public static final RegionComparator AB_BH_LEN2 = lmfNoCapture("cmp_AB_BH_LEN2");
-	public static final RegionComparator AB_BH_LEN3 = lmfNoCapture("cmp_AB_BH_LEN3");
-	public static final RegionComparator AB_BH_LEN4 = lmfNoCapture("cmp_AB_BH_LEN4");
-	public static final RegionComparator AB_BH_LEN5 = lmfNoCapture("cmp_AB_BH_LEN5");
-	public static final RegionComparator AB_BH_LEN6 = lmfNoCapture("cmp_AB_BH_LEN6");
-	public static final RegionComparator AB_BH_LEN7 = lmfNoCapture("cmp_AB_BH_LEN7");
-	public static final RegionComparator AB_BH_LEN8 = lmfNoCapture("cmp_AB_BH_LEN8");
-
-	public static final RegionComparator AB_BB_LEN1 = lmfNoCapture("cmp_AB_BB_LEN1");
-	public static final RegionComparator AB_BB_LEN2 = lmfNoCapture("cmp_AB_BB_LEN2");
-	public static final RegionComparator AB_BB_LEN3 = lmfNoCapture("cmp_AB_BB_LEN3");
-	public static final RegionComparator AB_BB_LEN4 = lmfNoCapture("cmp_AB_BB_LEN4");
-	public static final RegionComparator AB_BB_LEN5 = lmfNoCapture("cmp_AB_BB_LEN5");
-	public static final RegionComparator AB_BB_LEN6 = lmfNoCapture("cmp_AB_BB_LEN6");
-	public static final RegionComparator AB_BB_LEN7 = lmfNoCapture("cmp_AB_BB_LEN7");
-	public static final RegionComparator AB_BB_LEN8 = lmfNoCapture("cmp_AB_BB_LEN8");
-
-// Convenience tables (index 1..8; index 0 unused)
-	public static final RegionComparator[] TABLE_AH_BH = new RegionComparator[] { null, AH_BH_LEN1, AH_BH_LEN2,
-			AH_BH_LEN3, AH_BH_LEN4, AH_BH_LEN5, AH_BH_LEN6, AH_BH_LEN7, AH_BH_LEN8 };
-	public static final RegionComparator[] TABLE_AH_BB = new RegionComparator[] { null, AH_BB_LEN1, AH_BB_LEN2,
-			AH_BB_LEN3, AH_BB_LEN4, AH_BB_LEN5, AH_BB_LEN6, AH_BB_LEN7, AH_BB_LEN8 };
-	public static final RegionComparator[] TABLE_AB_BH = new RegionComparator[] { null, AB_BH_LEN1, AB_BH_LEN2,
-			AB_BH_LEN3, AB_BH_LEN4, AB_BH_LEN5, AB_BH_LEN6, AB_BH_LEN7, AB_BH_LEN8 };
-	public static final RegionComparator[] TABLE_AB_BB = new RegionComparator[] { null, AB_BB_LEN1, AB_BB_LEN2,
-			AB_BB_LEN3, AB_BB_LEN4, AB_BB_LEN5, AB_BB_LEN6, AB_BB_LEN7, AB_BB_LEN8 };
-
-	// Factory used by GroupMatcher for len > 4, with 'len' captured
-	public static RegionComparator capturedComparator(boolean aHeap, boolean bHeap, int len) {
+	// Convenience tables (index 1..8; index 0 unused)
+	public static MethodHandle comparatorHandle(boolean aHeap, boolean bHeap, int len) {
+		if (len < 0) {
+			throw new IllegalArgumentException("len must be >= 0: " + len);
+		}
 		if (len <= 8) {
-			if (aHeap & bHeap) {
-				return TABLE_AH_BH[len];
-			}
-			if (aHeap) {
-				return TABLE_AH_BB[len];
-			}
-			if (bHeap) {
-				return TABLE_AB_BH[len];
-			}
-			return TABLE_AB_BB[len];
+			return selectHandleTable(aHeap, bHeap)[len];
 		}
-		if (aHeap & bHeap) {
-			return lmfCaptureLen("cmp_AH_BH_LOOP", len);
-		}
-		if (aHeap) {
-			return lmfCaptureLen("cmp_AH_BB_LOOP", len);
-		}
-		if (bHeap) {
-			return lmfCaptureLen("cmp_AB_BH_LOOP", len);
-		}
-		return lmfCaptureLen("cmp_AB_BB_LOOP", len);
+		return selectHandleCache(aHeap, bHeap).computeIfAbsent(len, l -> buildLoopHandle(aHeap, bHeap, l));
 	}
+
 }

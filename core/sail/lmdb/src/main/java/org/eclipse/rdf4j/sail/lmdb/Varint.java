@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import java.lang.invoke.MethodHandle;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
@@ -546,8 +547,8 @@ public final class Varint {
 		final int[] lengths;
 
 		// Pre-bound comparators per group index, split by "other is heap?" to avoid branches in the hot loop.
-		final Bytes.RegionComparator[] cmpIfOtherHeap;
-		final Bytes.RegionComparator[] cmpIfOtherBuffer;
+		final MethodHandle[] cmpIfOtherHeap;
+		final MethodHandle[] cmpIfOtherBuffer;
 
 		public GroupMatcher(ByteBuffer value, boolean[] shouldMatch) {
 			assert shouldMatch.length == 4;
@@ -556,18 +557,18 @@ public final class Varint {
 			this.lengths = new int[4];
 
 			final boolean aIsHeap = value.hasArray();
-			this.cmpIfOtherHeap = new Bytes.RegionComparator[4];
-			this.cmpIfOtherBuffer = new Bytes.RegionComparator[4];
+			this.cmpIfOtherHeap = new MethodHandle[4];
+			this.cmpIfOtherBuffer = new MethodHandle[4];
 
 			int pos = 0;
 			for (int i = 0; i < 4; i++) {
 				int len = firstToLength(value.get(pos));
 				lengths[i] = len;
 
-				// Preselect exact function objects. Common case len<=4 maps to static LMF comparators;
-				// rare len>4 builds a capturing LMF comparator that bakes 'len'.
-				cmpIfOtherHeap[i] = Bytes.capturedComparator(aIsHeap, true, len);
-				cmpIfOtherBuffer[i] = Bytes.capturedComparator(aIsHeap, false, len);
+				// Preselect exact method handles. Common case len<=8 maps to specialized comparators;
+				// rare len>8 builds a capturing handle that bakes 'len'.
+				cmpIfOtherHeap[i] = Bytes.comparatorHandle(aIsHeap, true, len);
+				cmpIfOtherBuffer[i] = Bytes.comparatorHandle(aIsHeap, false, len);
 
 				pos += len;
 			}
@@ -581,7 +582,7 @@ public final class Varint {
 			int thisPos = 0;
 			int otherPos = 0;
 
-			final Bytes.RegionComparator[] cmps = other.hasArray() ? cmpIfOtherHeap : cmpIfOtherBuffer;
+			final MethodHandle[] cmps = other.hasArray() ? cmpIfOtherHeap : cmpIfOtherBuffer;
 
 			{
 				int len = lengths[0];
@@ -591,7 +592,7 @@ public final class Varint {
 					if (len != otherLen) {
 						return false;
 					}
-					if (cmps[0].compare(value, thisPos, other, otherPos) != 0) {
+					if (invoke(cmps[0], value, thisPos, other, otherPos) != 0) {
 						return false;
 					}
 					if (!shouldMatch[1] && !shouldMatch[2] && !shouldMatch[3]) {
@@ -610,7 +611,7 @@ public final class Varint {
 					if (len != otherLen) {
 						return false;
 					}
-					if (cmps[1].compare(value, thisPos, other, otherPos) != 0) {
+					if (invoke(cmps[1], value, thisPos, other, otherPos) != 0) {
 						return false;
 					}
 					if (!shouldMatch[2] && !shouldMatch[3]) {
@@ -629,7 +630,7 @@ public final class Varint {
 					if (len != otherLen) {
 						return false;
 					}
-					if (cmps[2].compare(value, thisPos, other, otherPos) != 0) {
+					if (invoke(cmps[2], value, thisPos, other, otherPos) != 0) {
 						return false;
 					}
 					if (!shouldMatch[3]) {
@@ -648,12 +649,22 @@ public final class Varint {
 					if (len != otherLen) {
 						return false;
 					}
-					if (cmps[3].compare(value, thisPos, other, otherPos) != 0) {
+					if (invoke(cmps[3], value, thisPos, other, otherPos) != 0) {
 						return false;
 					}
 				}
 			}
 			return true;
+		}
+
+		private static int invoke(MethodHandle handle, ByteBuffer a, int aPos, ByteBuffer b, int bPos) {
+			try {
+				return (int) handle.invokeExact(a, aPos, b, bPos);
+			} catch (RuntimeException | Error e) {
+				throw e;
+			} catch (Throwable t) {
+				throw new IllegalStateException("Comparator handle invocation failed", t);
+			}
 		}
 	}
 }
