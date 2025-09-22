@@ -290,6 +290,21 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public static final String LUCENE_RAMDIR_KEY = "useramdir";
 
 	/**
+	 * Set the key "fsyncInterval=&lt;t&gt;" as sail parameter to configure the interval in milliseconds in which fsync
+	 * is called on the Lucene index. Set to 0 or a negative value to call fsync synchronously after each operation.
+	 * Default is 0. Setting this parameter to a positive value will improve performance for frequent writes, but may
+	 * cause the loss of the last few operations in case of a crash.
+	 */
+	public static final String FSYNC_INTERVAL_KEY = "fsyncInterval";
+
+	/**
+	 * Set the key "fsyncMaxPendingFiles=&lt;n&gt;" as sail parameter to configure the maximum number of files pending
+	 * to be fsynced. When this number is reached, a fsync is forced to limit memory usage. Default is 5000. This
+	 * parameter only has an effect when {@link #FSYNC_INTERVAL_KEY} is set to a positive value.
+	 */
+	public static final String FSYNC_MAX_PENDING_FILES_KEY = "fsyncMaxPendingFiles";
+
+	/**
 	 * Set the key "defaultNumDocs=&lt;n&gt;" as sail parameter to limit the maximum number of documents to return from
 	 * a search query. The default is to return all documents. NB: this may involve extra cost for some SearchIndex
 	 * implementations as they may have to determine this number.
