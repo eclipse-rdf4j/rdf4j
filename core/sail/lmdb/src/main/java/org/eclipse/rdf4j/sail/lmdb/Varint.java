@@ -541,8 +541,6 @@ public final class Varint {
 	 */
 	public static class GroupMatcher {
 
-		final byte[] valueArray;
-		final int[] offsets;
 		final boolean[] shouldMatch;
 		final int[] lengths;
 		final Bytes.RegionComparator[] cmps;
@@ -552,18 +550,16 @@ public final class Varint {
 			this.shouldMatch = shouldMatch;
 			this.lengths = new int[4];
 			assert value.hasArray();
-			this.valueArray = value.array();
+			byte[] valueArray = value.array();
 			int baseOffset = value.arrayOffset();
-			this.offsets = new int[4];
 			this.cmps = new Bytes.RegionComparator[4];
 
 			int pos = 0;
 			for (int i = 0; i < 4; i++) {
 				int len = firstToLength(valueArray[baseOffset + pos]);
 				lengths[i] = len;
-				offsets[i] = baseOffset + pos;
 
-				cmps[i] = Bytes.capturedComparator(len);
+				cmps[i] = Bytes.capturedComparator(valueArray, baseOffset + pos, len);
 
 				pos += len;
 			}
@@ -584,7 +580,7 @@ public final class Varint {
 					if (len != otherLen) {
 						return false;
 					}
-					if (cmps[0].compare(valueArray, offsets[0], other, otherPos) != 0) {
+					if (cmps[0].compare(other, otherPos) != 0) {
 						return false;
 					}
 					if (!shouldMatch[1] && !shouldMatch[2] && !shouldMatch[3]) {
@@ -602,7 +598,7 @@ public final class Varint {
 					if (len != otherLen) {
 						return false;
 					}
-					if (cmps[1].compare(valueArray, offsets[1], other, otherPos) != 0) {
+					if (cmps[1].compare(other, otherPos) != 0) {
 						return false;
 					}
 					if (!shouldMatch[2] && !shouldMatch[3]) {
@@ -620,7 +616,7 @@ public final class Varint {
 					if (len != otherLen) {
 						return false;
 					}
-					if (cmps[2].compare(valueArray, offsets[2], other, otherPos) != 0) {
+					if (cmps[2].compare(other, otherPos) != 0) {
 						return false;
 					}
 					if (!shouldMatch[3]) {
@@ -638,7 +634,7 @@ public final class Varint {
 					if (len != otherLen) {
 						return false;
 					}
-					if (cmps[3].compare(valueArray, offsets[3], other, otherPos) != 0) {
+					if (cmps[3].compare(other, otherPos) != 0) {
 						return false;
 					}
 				}
