@@ -45,11 +45,17 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final TripleIndex index;
 
+	private final long subj;
+	private final long pred;
+	private final long obj;
+	private final long context;
+
 	private final long cursor;
 
 	private final MDBVal maxKey;
 
-	private final GroupMatcher groupMatcher;
+	private final boolean matchValues;
+	private GroupMatcher groupMatcher;
 
 	private final Txn txnRef;
 
@@ -81,6 +87,10 @@ class LmdbRecordIterator implements RecordIterator {
 
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
+		this.subj = subj;
+		this.pred = pred;
+		this.obj = obj;
+		this.context = context;
 		this.pool = Pool.get();
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();
@@ -100,12 +110,8 @@ class LmdbRecordIterator implements RecordIterator {
 			this.maxKey = null;
 		}
 
-		boolean matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
-		if (matchValues) {
-			this.groupMatcher = index.createMatcher(subj, pred, obj, context);
-		} else {
-			this.groupMatcher = null;
-		}
+		this.matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
+
 		this.dbi = index.getDB(explicit);
 		this.txnRef = txnRef;
 		this.txnLockManager = txnRef.lockManager();
@@ -128,6 +134,15 @@ class LmdbRecordIterator implements RecordIterator {
 		} finally {
 			txnLockManager.unlockRead(readStamp);
 		}
+	}
+
+	public GroupMatcher getGroupMatcher() {
+		if (groupMatcher != null)
+			return groupMatcher;
+		if (matchValues) {
+			this.groupMatcher = index.createMatcher(subj, pred, obj, context);
+		}
+		return groupMatcher;
 	}
 
 	@Override
@@ -188,7 +203,7 @@ class LmdbRecordIterator implements RecordIterator {
 				// if (maxKey != null && TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) > 0) {
 				if (maxKey != null && mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
 					lastResult = MDB_NOTFOUND;
-				} else if (groupMatcher != null && !groupMatcher.matches(keyData.mv_data())) {
+				} else if (getGroupMatcher() != null && !getGroupMatcher().matches(keyData.mv_data())) {
 					// value doesn't match search key/mask, fetch next value
 					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 				} else {
