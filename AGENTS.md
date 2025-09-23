@@ -24,7 +24,7 @@ A user‑provided stack trace or “obvious” contract violation is **not** a s
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
 
-> **Clarification & carve‑out:** For **strictly behavior‑neutral refactors** that are already **fully exercised by existing tests**, you may use the **Small‑Change Fast Path** defined below. In that case you must capture **pre‑change passing evidence** at the smallest scope that hits the code you’re about to edit, then show **post‑change passing evidence** from the **same test selection**.
+> **Clarification & carve‑out:** For **strictly behavior‑neutral refactors** that are already **fully exercised by existing tests**, you may use the **Change without new tests** defined below. In that case you must capture **pre‑change passing evidence** at the smallest scope that hits the code you’re about to edit, then show **post‑change passing evidence** from the **same test selection**.
 > **No exceptions for any behavior‑changing change** — for those, you must follow Full TDD (Routine A).
 
 ---
@@ -32,7 +32,7 @@ It is illegal to `-q` when running tests!
 ## Two Routines: Choose Your Path
 
 **Default:** Routine A — Full TDD
-**Optional:** Routine B — Small‑Change Fast Path (tiny, low‑risk changes; see gates below)
+**Optional:** Routine B — Change without new tests (tiny, low‑risk changes; see gates below)
 
 **Decision quickstart**
 
@@ -300,9 +300,9 @@ It is illegal to `-q` when running tests!
 
 ---
 
-## Routine B — Small‑Change Fast Path (Simpler)
+## Routine B — Change without new tests (Simpler)
 
-> Use **only** when the change is tiny and low‑risk **or** when a failing test already exists. This routine trims ceremony, not rigor.
+> Use **only** when the change is small or there is an existing failing test or this is a rewrite of existing code with existing tests or this is a refactor or this is a migration . This routine trims ceremony, not rigor.
 
 ### Allowed cases (must satisfy at least one)
 
@@ -312,66 +312,19 @@ It is illegal to `-q` when running tests!
    No external behavior change; edited code paths are clearly and directly hit by existing tests.
 3. **Tiny, localized feature:**
    New, well‑scoped behavior with one clear acceptance criterion in a single module/class. You will still **add one smallest‑scope failing test first** (happy path only). If you can’t write it in minutes, this is not “tiny”.
-
-### Hard **gating constraints** (all must be true)
-
-* **Scope:** ≤ **60** non‑comment LOC changed across ≤ **3** production files in **one** module.
-* **APIs:** No public API/signature or file/serialization format changes.
-* **Cross‑cutting:** No concurrency primitives, timeouts, IO boundaries, network/protocol changes.
-* **Tests:** Existing tests directly target the edited class/method **or** you add a minimal new test that does (for tiny feature).
-* **Risk:** No schema/config migrations, no behavior depending on system time/locale, no change to error messages that tests assert on.
-
-If any gate is violated or uncertain, **switch to Routine A (Full TDD)**.
-
-### Steps (pick the matching sub‑path)
-
-**B1) Bugfix with existing failing test**
-
-1. **Sanity install:** `mvn -o -Pquick install | tail -200`
-2. **Preamble + reproduce:** run the smallest failing selection; capture **failing** evidence.
-3. **Minimal fix at source.**
-4. **Re‑run same selection;** capture **passing** evidence; then module `verify`.
-5. **Format + summary.**
-
-**B2) Refactor/cleanup/micro‑perf (behavior‑neutral)**
-
-1. **Sanity install:** `mvn -o -Pquick install | tail -200`
-2. **Hit Proof:** identify the smallest existing test selection that exercises the code (class/method).
-   Run it and capture **pre‑change passing** evidence.
-3. **Apply minimal refactor.** No semantic changes.
-4. **Re‑run the **same** selection;** capture **post‑change passing** evidence; then module `verify`.
-5. **Format + summary.**
-   If any test fails, **revert and switch to Routine A**.
-
-**B3) Tiny localized feature (micro‑TDD)**
-
-1. **Add one smallest‑scope failing test** (happy path only).
-2. **Run it; capture failing evidence.**
-3. **Minimal fix at source.**
-4. **Re‑run the same test; capture passing evidence;** then module `verify`.
-5. **Optionally add 1 edge‑case test** only if risk suggests (e.g., null/empty). Otherwise defer to follow‑up issue with rationale.
-
-### Required Evidence (Fast Path)
-
-* **Bugfix (B1):** failing snippet → passing snippet, same selection.
-* **Refactor (B2):** pre‑green snippet → post‑green snippet, same selection + **Hit Proof**.
-* **Tiny feature (B3):** failing snippet → passing snippet, same selection.
-
-**Hit Proof (B2) acceptable forms** (any one):
-
-* Show a test method that calls the edited API with an `rg -n` code pointer.
-* Show Surefire/Failsafe report naming the exact test class that targets the edited code.
-* Add a **temporary** dedicated test that asserts the call executes (e.g., simple assertion after invoking the method); remove only if superseded by permanent tests.
-
----
+4. **Migration of existing code with existing tests:**
+   Refactoring code where existing tests already cover the behavior.
+5. **Documentation or comments only:**
+   No production code changes.
+6. ** Rerwrite of existing code with existing tests:**
+   Refactoring code where existing tests already cover the behavior.
+7. ** Refactor or migration:**
+   Refactoring code where existing tests already cover the behavior.
 
 ## Where to Draw the Line — A Short Debate
 
 > **Purist:** “All changes must start with a failing test. Otherwise, you’re guessing.”
 > **Pragmatist:** “Refactors that don’t change behavior won’t fail first; forcing artificial failures wastes time and adds noise.”
-> **Resolution (policy):**
-> *Behavior changes → Full TDD without exception.*
-> *Behavior‑neutral refactors → allowed via Fast Path **only** with strict scope gates, proof that existing tests hit the code, and pre‑/post‑green evidence. When uncertain, default to Full TDD.*
 
 **In‑scope (Fast Path) examples**
 
@@ -386,7 +339,6 @@ If any gate is violated or uncertain, **switch to Routine A (Full TDD)**.
 * Altering error messages verified by tests.
 * Anything touching concurrency, timeouts, or IO.
 * New SPARQL function support or extended syntax (even “tiny”).
-* Cross‑module effects, or more than 60 LOC/3 files of production changes.
 
 ---
 
