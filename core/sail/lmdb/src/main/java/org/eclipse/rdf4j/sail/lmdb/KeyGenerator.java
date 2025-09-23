@@ -15,23 +15,18 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.function.Supplier;
 
-import org.lwjgl.system.MemoryUtil;
-
 /**
  * KeyEncoder with a lightweight probabilistic admission filter.
  */
 final class KeyGenerator implements AutoCloseable {
 
-	static final int CACHE_THRESHOLD = 8;
-	static final int WINDOW_SIZE = 128;
+	static final int CACHE_THRESHOLD = 5;
+	static final int WINDOW_SIZE = 10000;
 
-	private static final int FILTER_BITS = 1 << 16;
+	private static final int FILTER_BITS = 1 << 12;
 	private static final int FILTER_MASK = FILTER_BITS - 1;
-	private static final int COUNTER_SLOTS = 1 << 12;
-	private static final int COUNTER_MASK = COUNTER_SLOTS - 1;
 
 	private final IndexKeyWriters.KeyWriter keyWriter;
-	private final long[] filterBits = new long[FILTER_BITS >>> 6];
 	private final CacheEntry[] cacheEntries = new CacheEntry[FILTER_BITS];
 	private final int[] counters = new int[cacheEntries.length];
 	private final int[] counterEpoch = new int[counters.length];
@@ -54,8 +49,10 @@ final class KeyGenerator implements AutoCloseable {
 		if (allowCache) {
 			CacheEntry entry = cacheEntries[filterIndex];
 			if (entry != null && entry.matches(subj, pred, obj, context)) {
+//				System.out.println("hit");
 				return entry.buffer();
 			}
+//			System.out.println("miss");
 		}
 
 		ByteBuffer buffer = supplier.get();
@@ -70,17 +67,7 @@ final class KeyGenerator implements AutoCloseable {
 		return buffer;
 	}
 
-	private boolean isFilterHit(int index) {
-		int word = index >>> 6;
-		long mask = 1L << (index & 63);
-		return (filterBits[word] & mask) != 0L;
-	}
-
-	private void setFilterBit(int index) {
-		int word = index >>> 6;
-		long mask = 1L << (index & 63);
-		filterBits[word] |= mask;
-	}
+	int max = 0;
 
 	private void maybePromote(ByteBuffer buffer, long sum, int filterIndex, long subj, long pred, long obj,
 			long context) {
@@ -89,15 +76,21 @@ final class KeyGenerator implements AutoCloseable {
 			counterEpoch[filterIndex] = epoch;
 		}
 
-		int newCount = counters[filterIndex] + 1;
+		int newCount = counters[filterIndex]++;
 		if (newCount >= CACHE_THRESHOLD) {
-			counters[filterIndex] = 0;
+//			if(max < newCount) {
+//				max = newCount;
+//				System.out.println("New max: " + max);
+//			}
 			CacheEntry existing = cacheEntries[filterIndex];
-			CacheEntry entry = createEntry(subj, pred, obj, context, buffer);
-			cacheEntries[filterIndex] = entry;
+			boolean matches = existing != null ? existing.matches(subj, pred, obj, context) : false;
+			if (!matches) {
+				CacheEntry entry = createEntry(subj, pred, obj, context, buffer);
+				cacheEntries[filterIndex] = entry;
+			}
 //			setFilterBit(filterIndex);
 		} else {
-			counters[filterIndex] = newCount;
+			// counters[filterIndex] = newCount;
 		}
 
 		if (windowCallCount++ % WINDOW_SIZE == 0) {
@@ -114,7 +107,6 @@ final class KeyGenerator implements AutoCloseable {
 
 	@Override
 	public void close() {
-		Arrays.fill(filterBits, 0L);
 		Arrays.fill(counters, 0);
 		Arrays.fill(counterEpoch, 0);
 		epoch = 0;
