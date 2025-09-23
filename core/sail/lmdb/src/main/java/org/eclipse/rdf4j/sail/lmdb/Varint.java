@@ -109,7 +109,8 @@ public final class Varint {
 				bb.put((byte) 0xFF); // header for 8 payload bytes
 				bb.putLong(Long.MAX_VALUE); // 7F FF FF FF FF FF FF FF
 				// TODO: Use this instead: bb.put(ENCODED_LONG_MAX);
-				// TODO: Do we really need to care about endianness here? Should we then have two different version of ENCODED_LONG_MAX?
+				// TODO: Do we really need to care about endianness here? Should we then have two different version of
+				// ENCODED_LONG_MAX?
 			} finally {
 				if (prev != ByteOrder.BIG_ENDIAN) {
 					bb.order(prev);
