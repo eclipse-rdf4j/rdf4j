@@ -99,16 +99,12 @@ class LmdbRecordIterator implements RecordIterator {
 		this.valueData = pool.getVal();
 		this.index = index;
 		if (rangeSearch) {
-			KeyGenerator.KeyBuffer minKey = index.getMinKey(subj, pred, obj, context,
-					() -> new KeyGenerator.KeyBuffer(pool.getKeyBuffer(), true));
-			rangeMinKeyBuf = minKey.buffer();
-			rangeMinKeyFromPool = minKey.pooled();
+			rangeMinKeyBuf = index.getMinKey(subj, pred, obj, context, pool::getKeyBuffer);
+			rangeMinKeyFromPool = !rangeMinKeyBuf.isReadOnly();
 
 			this.maxKey = pool.getVal();
-			KeyGenerator.KeyBuffer maxKey = index.getMaxKey(subj, pred, obj, context,
-					() -> new KeyGenerator.KeyBuffer(pool.getKeyBuffer(), true));
-			maxKeyBuf = maxKey.buffer();
-			maxKeyFromPool = maxKey.pooled();
+			maxKeyBuf = index.getMaxKey(subj, pred, obj, context, pool::getKeyBuffer);
+			maxKeyFromPool = !maxKeyBuf.isReadOnly();
 			this.maxKey.mv_data(maxKeyBuf);
 		} else {
 			rangeMinKeyBuf = null;
