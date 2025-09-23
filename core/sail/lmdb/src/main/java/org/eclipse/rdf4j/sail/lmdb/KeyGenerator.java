@@ -15,6 +15,8 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.lwjgl.system.MemoryUtil;
+
 final class KeyGenerator implements AutoCloseable {
 
 	static final int CACHE_THRESHOLD = 5;
@@ -63,10 +65,16 @@ final class KeyGenerator implements AutoCloseable {
 	}
 
 	KeyBuffer keyFor(long subj, long pred, long obj, long context, BufferSupplier supplier) {
-		KeySignature signature = new KeySignature(subj, pred, obj, context);
-		CacheEntry entry = cache.get(signature);
-		if (entry != null) {
-			return new KeyBuffer(entry.duplicate(), false, true);
+		return keyFor(subj, pred, obj, context, supplier, true);
+	}
+
+	KeyBuffer keyFor(long subj, long pred, long obj, long context, BufferSupplier supplier, boolean allowCache) {
+		KeySignature signature = allowCache ? new KeySignature(subj, pred, obj, context) : null;
+		if (allowCache && signature != null) {
+			CacheEntry entry = cache.get(signature);
+			if (entry != null) {
+				return new KeyBuffer(entry.duplicate(), false, true);
+			}
 		}
 
 		KeyBuffer supplied = supplier.acquire();
@@ -75,7 +83,9 @@ final class KeyGenerator implements AutoCloseable {
 		keyWriter.write(buffer, subj, pred, obj, context);
 		buffer.flip();
 
-		maybePromote(signature, supplied, buffer);
+		if (allowCache && signature != null) {
+			maybePromote(signature, supplied, buffer);
+		}
 
 		return new KeyBuffer(buffer, supplied.pooled(), false);
 	}
@@ -95,15 +105,24 @@ final class KeyGenerator implements AutoCloseable {
 
 	private CacheEntry createEntry(ByteBuffer buffer, boolean pooled) {
 		ByteBuffer duplicate = buffer.duplicate();
-		ByteBuffer copy = ByteBuffer.allocateDirect(duplicate.remaining());
+		ByteBuffer copy;
+		boolean direct;
+		if (buffer.hasArray()) {
+			copy = ByteBuffer.allocate(duplicate.remaining());
+			direct = false;
+		} else {
+			copy = MemoryUtil.memAlloc(duplicate.remaining());
+			direct = true;
+		}
 		copy.put(duplicate);
 		copy.flip();
 		buffer.rewind();
-		return new CacheEntry(copy);
+		return new CacheEntry(copy, direct);
 	}
 
 	@Override
 	public void close() {
+		cache.values().forEach(CacheEntry::close);
 		cache.clear();
 		frequencies.clear();
 		windowCalls.set(0);
@@ -111,9 +130,11 @@ final class KeyGenerator implements AutoCloseable {
 
 	private static final class CacheEntry {
 		private final ByteBuffer stored;
+		private final boolean direct;
 
-		CacheEntry(ByteBuffer stored) {
+		CacheEntry(ByteBuffer stored, boolean direct) {
 			this.stored = stored;
+			this.direct = direct;
 		}
 
 		ByteBuffer duplicate() {
@@ -124,6 +145,9 @@ final class KeyGenerator implements AutoCloseable {
 		}
 
 		void close() {
+			if (direct) {
+				MemoryUtil.memFree(stored);
+			}
 		}
 	}
 

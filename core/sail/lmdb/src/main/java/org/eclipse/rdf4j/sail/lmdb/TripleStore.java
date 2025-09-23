@@ -74,7 +74,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
-import java.util.concurrent.locks.StampedLock;
 import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
@@ -1287,9 +1286,10 @@ class TripleStore implements Closeable {
 		}
 
 		GroupMatcher createMatcher(long subj, long pred, long obj, long context) {
-			ByteBuffer bb = ByteBuffer.allocate(TripleStore.MAX_KEY_LENGTH);
-			toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);
-			bb.flip();
+			KeyGenerator.KeyBuffer keyBuffer = toKey(subj == -1 ? 0 : subj, pred == -1 ? 0 : pred,
+					obj == -1 ? 0 : obj, context == -1 ? 0 : context,
+					() -> new KeyGenerator.KeyBuffer(ByteBuffer.allocate(TripleStore.MAX_KEY_LENGTH), false));
+			ByteBuffer bb = ensureHeapBuffer(keyBuffer.buffer());
 			return new GroupMatcher(bb, matcherFactory.create(subj, pred, obj, context));
 		}
 
@@ -1308,7 +1308,8 @@ class TripleStore implements Closeable {
 			long normalizedPred = pred <= 0 ? 0 : pred;
 			long normalizedObj = obj <= 0 ? 0 : obj;
 			long normalizedContext = context <= 0 ? 0 : context;
-			return keyGenerator.keyFor(normalizedSubj, normalizedPred, normalizedObj, normalizedContext, supplier);
+			return keyGenerator.keyFor(normalizedSubj, normalizedPred, normalizedObj, normalizedContext, supplier,
+					false);
 		}
 
 		KeyGenerator.KeyBuffer getMaxKey(long subj, long pred, long obj, long context,
@@ -1317,7 +1318,19 @@ class TripleStore implements Closeable {
 			long normalizedPred = pred <= 0 ? Long.MAX_VALUE : pred;
 			long normalizedObj = obj <= 0 ? Long.MAX_VALUE : obj;
 			long normalizedContext = context < 0 ? Long.MAX_VALUE : context;
-			return keyGenerator.keyFor(normalizedSubj, normalizedPred, normalizedObj, normalizedContext, supplier);
+			return keyGenerator.keyFor(normalizedSubj, normalizedPred, normalizedObj, normalizedContext, supplier,
+					false);
+		}
+
+		private ByteBuffer ensureHeapBuffer(ByteBuffer buffer) {
+			if (buffer.hasArray()) {
+				return buffer;
+			}
+			ByteBuffer duplicate = buffer.duplicate();
+			ByteBuffer heap = ByteBuffer.allocate(duplicate.remaining());
+			heap.put(duplicate);
+			heap.flip();
+			return heap;
 		}
 
 		void keyToQuad(ByteBuffer key, long[] quad) {
