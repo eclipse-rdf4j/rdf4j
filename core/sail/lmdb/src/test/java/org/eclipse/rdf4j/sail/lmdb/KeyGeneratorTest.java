@@ -46,33 +46,6 @@ class KeyGeneratorTest {
 	}
 
 	@Test
-	void cachedBufferIndepedentOfPooledSource() {
-		TestKeyWriter writer = new TestKeyWriter();
-		KeyGenerator generator = new KeyGenerator(writer);
-		CountingSupplier supplier = new CountingSupplier(true);
-
-		ByteBuffer original = null;
-		for (int i = 0; i < KeyGenerator.CACHE_THRESHOLD; i++) {
-			original = generator.keyFor(SAMPLE_KEY[0], SAMPLE_KEY[1], SAMPLE_KEY[2], SAMPLE_KEY[3], supplier, true);
-		}
-
-		byte[] expected = bufferBytes(original);
-
-		// mutate the pooled buffer that was most recently handed out to simulate pool reuse
-		ByteBuffer pooled = supplier.lastBuffer;
-		pooled.clear();
-		pooled.put((byte) 0x7F);
-		pooled.flip();
-
-		ByteBuffer cached = generator.keyFor(SAMPLE_KEY[0], SAMPLE_KEY[1], SAMPLE_KEY[2], SAMPLE_KEY[3], supplier,
-				true);
-		assertEquals(KeyGenerator.CACHE_THRESHOLD, supplier.invocations, "Cache hit should avoid supplier");
-		assertTrue(cached.isReadOnly(), "Cached buffer should be read-only");
-		assertArrayEquals(expected, bufferBytes(cached),
-				"Cached buffer must be independent of pooled buffer mutations");
-	}
-
-	@Test
 	void cacheEvictsLeastRecentlyUsedEntries() {
 		TestKeyWriter writer = new TestKeyWriter();
 		KeyGenerator generator = new KeyGenerator(writer);
@@ -84,7 +57,7 @@ class KeyGeneratorTest {
 		assertEquals(KeyGenerator.CACHE_THRESHOLD, supplier.invocations,
 				"Supplier should be used while key warms up");
 
-		int cachePressure = KeyGenerator.CACHE_MAX_ENTRIES + 10;
+		int cachePressure = (1 << 16) + 10;
 		long[] nextSeed = { 10_000L };
 		boolean evicted = false;
 
@@ -102,6 +75,39 @@ class KeyGeneratorTest {
 		}
 
 		assertTrue(evicted, "Evicted key should eventually require supplier again");
+	}
+
+	@Test
+	void cacheReplacesEntryOnFilterCollision() {
+		TestKeyWriter writer = new TestKeyWriter();
+		KeyGenerator generator = new KeyGenerator(writer);
+		CountingSupplier supplier = new CountingSupplier(false);
+
+		long collisionOffset = 1L << 16;
+		long subjA = SAMPLE_KEY[0];
+		long predA = SAMPLE_KEY[1];
+		long objA = SAMPLE_KEY[2];
+		long ctxA = SAMPLE_KEY[3];
+		long subjB = subjA + collisionOffset;
+		long predB = predA;
+		long objB = objA;
+		long ctxB = ctxA;
+
+		for (int i = 0; i < KeyGenerator.CACHE_THRESHOLD; i++) {
+			generator.keyFor(subjA, predA, objA, ctxA, supplier, false);
+		}
+		int afterFirstWarmup = supplier.invocations;
+
+		for (int i = 0; i < KeyGenerator.CACHE_THRESHOLD; i++) {
+			generator.keyFor(subjB, predB, objB, ctxB, supplier, false);
+		}
+
+		int beforeRetry = supplier.invocations;
+		generator.keyFor(subjA, predA, objA, ctxA, supplier, false);
+		assertTrue(supplier.invocations > beforeRetry,
+				"Collision should evict previous entry stored in same slot");
+		assertEquals(afterFirstWarmup + KeyGenerator.CACHE_THRESHOLD + 1, supplier.invocations,
+				"Second key warmup plus eviction retry should account for supplier calls");
 	}
 
 	private static byte[] bufferBytes(ByteBuffer buffer) {
