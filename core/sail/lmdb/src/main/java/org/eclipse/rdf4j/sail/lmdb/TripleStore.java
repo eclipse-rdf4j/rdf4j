@@ -1175,12 +1175,14 @@ class TripleStore implements Closeable {
 		private final IndexKeyWriters.MatcherFactory matcherFactory;
 		private final int dbiExplicit, dbiInferred;
 		private final int[] indexMap;
+		private final KeyGenerator keyGenerator;
 
 		public TripleIndex(String fieldSeq) throws IOException {
 			this.fieldSeq = fieldSeq.toCharArray();
 			this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
 			this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
 			this.indexMap = getIndexes(this.fieldSeq);
+			this.keyGenerator = new KeyGenerator(this.keyWriter);
 			// open database and use native sort order without comparator
 			dbiExplicit = openDatabase(env, fieldSeq, MDB_CREATE, null);
 			dbiInferred = openDatabase(env, fieldSeq + "-inf", MDB_CREATE, null);
@@ -1288,12 +1290,34 @@ class TripleStore implements Closeable {
 			ByteBuffer bb = ByteBuffer.allocate(TripleStore.MAX_KEY_LENGTH);
 			toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);
 			bb.flip();
-
 			return new GroupMatcher(bb, matcherFactory.create(subj, pred, obj, context));
 		}
 
 		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
 			keyWriter.write(bb, subj, pred, obj, context);
+		}
+
+		KeyGenerator.KeyBuffer toKey(long subj, long pred, long obj, long context,
+				KeyGenerator.BufferSupplier supplier) {
+			return keyGenerator.keyFor(subj, pred, obj, context, supplier);
+		}
+
+		KeyGenerator.KeyBuffer getMinKey(long subj, long pred, long obj, long context,
+				KeyGenerator.BufferSupplier supplier) {
+			long normalizedSubj = subj <= 0 ? 0 : subj;
+			long normalizedPred = pred <= 0 ? 0 : pred;
+			long normalizedObj = obj <= 0 ? 0 : obj;
+			long normalizedContext = context <= 0 ? 0 : context;
+			return keyGenerator.keyFor(normalizedSubj, normalizedPred, normalizedObj, normalizedContext, supplier);
+		}
+
+		KeyGenerator.KeyBuffer getMaxKey(long subj, long pred, long obj, long context,
+				KeyGenerator.BufferSupplier supplier) {
+			long normalizedSubj = subj <= 0 ? Long.MAX_VALUE : subj;
+			long normalizedPred = pred <= 0 ? Long.MAX_VALUE : pred;
+			long normalizedObj = obj <= 0 ? Long.MAX_VALUE : obj;
+			long normalizedContext = context < 0 ? Long.MAX_VALUE : context;
+			return keyGenerator.keyFor(normalizedSubj, normalizedPred, normalizedObj, normalizedContext, supplier);
 		}
 
 		void keyToQuad(ByteBuffer key, long[] quad) {
@@ -1307,6 +1331,7 @@ class TripleStore implements Closeable {
 		}
 
 		void close() {
+			keyGenerator.close();
 			mdb_dbi_close(env, dbiExplicit);
 			mdb_dbi_close(env, dbiInferred);
 		}
