@@ -339,11 +339,6 @@ public final class Varint {
 			int bytes = a0 - 250 + 3;
 			return readSignificantBitsHeap(bb, bytes);
 		}
-//		else {
-//			if (bytes == 3) {
-//				return Read3BE.read3L(bb);
-//			}
-//		}
 	}
 
 	/**
@@ -425,6 +420,7 @@ public final class Varint {
 	 * @param values array with values to write
 	 */
 	public static void writeListUnsigned(final ByteBuffer bb, final long[] values) {
+		// TODO: Optimise for quads and also call writeUnsigned
 		for (int i = 0; i < values.length; i++) {
 			final long value = values[i];
 			if (value <= 240) {
@@ -470,6 +466,7 @@ public final class Varint {
 	}
 
 	public static void readQuadUnsigned(ByteBuffer bb, int[] indexMap, long[] values) {
+		assert indexMap.length == 4;
 		values[indexMap[0]] = readUnsigned(bb);
 		values[indexMap[1]] = readUnsigned(bb);
 		values[indexMap[2]] = readUnsigned(bb);
