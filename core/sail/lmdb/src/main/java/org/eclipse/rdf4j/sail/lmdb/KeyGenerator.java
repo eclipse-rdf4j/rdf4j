@@ -17,39 +17,29 @@ import java.util.function.Supplier;
 
 import org.lwjgl.system.MemoryUtil;
 
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.RemovalNotification;
-
 /**
  * KeyEncoder with a lightweight probabilistic admission filter.
  */
 final class KeyGenerator implements AutoCloseable {
 
-	static final int CACHE_THRESHOLD = 2;
-	static final int WINDOW_SIZE = 50;
-
-	static final int CACHE_MAX_ENTRIES = 1 << 12;
+	static final int CACHE_THRESHOLD = 8;
+	static final int WINDOW_SIZE = 128;
 
 	private static final int FILTER_BITS = 1 << 16;
 	private static final int FILTER_MASK = FILTER_BITS - 1;
-	private static final int COUNTER_SLOTS = CACHE_MAX_ENTRIES;
+	private static final int COUNTER_SLOTS = 1 << 12;
 	private static final int COUNTER_MASK = COUNTER_SLOTS - 1;
 
 	private final IndexKeyWriters.KeyWriter keyWriter;
-	private final Cache<KeySignature, CacheEntry> cache;
 	private final long[] filterBits = new long[FILTER_BITS >>> 6];
-	private final int[] counters = new int[COUNTER_SLOTS];
-	private final int[] counterEpoch = new int[COUNTER_SLOTS];
+	private final CacheEntry[] cacheEntries = new CacheEntry[FILTER_BITS];
+	private final int[] counters = new int[cacheEntries.length];
+	private final int[] counterEpoch = new int[counters.length];
 	private int epoch;
 	private int windowCallCount;
 
 	KeyGenerator(IndexKeyWriters.KeyWriter keyWriter) {
 		this.keyWriter = Objects.requireNonNull(keyWriter, "keyWriter");
-		this.cache = CacheBuilder.newBuilder()
-				.maximumSize(CACHE_MAX_ENTRIES)
-				.removalListener(this::onCacheRemoval)
-				.build();
 	}
 
 	ByteBuffer keyFor(long subj, long pred, long obj, long context, Supplier<ByteBuffer> supplier, boolean pooled) {
@@ -58,15 +48,13 @@ final class KeyGenerator implements AutoCloseable {
 
 	ByteBuffer keyFor(long subj, long pred, long obj, long context, Supplier<ByteBuffer> supplier, boolean pooled,
 			boolean allowCache) {
-		long sum = subj + pred + obj + context;
+		long sum = subj * 3 + (subj + pred) * 5 + (subj + obj) * 7 + context * 11;
 		int filterIndex = (int) (sum & FILTER_MASK);
-		KeySignature signature = null;
 
-		if (allowCache && isFilterHit(filterIndex)) {
-			signature = new KeySignature(subj, pred, obj, context);
-			CacheEntry entry = cache.getIfPresent(signature);
-			if (entry != null) {
-				return entry.stored;
+		if (allowCache) {
+			CacheEntry entry = cacheEntries[filterIndex];
+			if (entry != null && entry.matches(subj, pred, obj, context)) {
+				return entry.buffer();
 			}
 		}
 
@@ -76,7 +64,7 @@ final class KeyGenerator implements AutoCloseable {
 		buffer.flip();
 
 		if (allowCache) {
-			maybePromote(signature, buffer, sum, filterIndex, subj, pred, obj, context);
+			maybePromote(buffer, sum, filterIndex, subj, pred, obj, context);
 		}
 
 		return buffer;
@@ -94,60 +82,38 @@ final class KeyGenerator implements AutoCloseable {
 		filterBits[word] |= mask;
 	}
 
-	private void maybePromote(KeySignature signature, ByteBuffer buffer, long sum, int filterIndex, long subj,
-			long pred,
-			long obj, long context) {
-		int counterIndex = (int) (sum & COUNTER_MASK);
-		if (counterEpoch[counterIndex] != epoch) {
-			counters[counterIndex] = 0;
-			counterEpoch[counterIndex] = epoch;
+	private void maybePromote(ByteBuffer buffer, long sum, int filterIndex, long subj, long pred, long obj,
+			long context) {
+		if (counterEpoch[filterIndex] != epoch) {
+			counters[filterIndex] = 0;
+			counterEpoch[filterIndex] = epoch;
 		}
 
-		int newCount = counters[counterIndex] + 1;
+		int newCount = counters[filterIndex] + 1;
 		if (newCount >= CACHE_THRESHOLD) {
-			counters[counterIndex] = 0;
-			KeySignature key = signature;
-			if (key == null) {
-				key = new KeySignature(subj, pred, obj, context);
-			}
-			if (cache.getIfPresent(key) == null) {
-				cache.put(key, createEntry(buffer));
-			}
-			setFilterBit(filterIndex);
+			counters[filterIndex] = 0;
+			CacheEntry existing = cacheEntries[filterIndex];
+			CacheEntry entry = createEntry(subj, pred, obj, context, buffer);
+			cacheEntries[filterIndex] = entry;
+//			setFilterBit(filterIndex);
 		} else {
-			counters[counterIndex] = newCount;
+			counters[filterIndex] = newCount;
 		}
 
-		windowCallCount++;
-		if (windowCallCount >= WINDOW_SIZE) {
-			windowCallCount = 0;
+		if (windowCallCount++ % WINDOW_SIZE == 0) {
 			epoch = (epoch + 1) & Integer.MAX_VALUE;
 		}
 	}
 
-	private CacheEntry createEntry(ByteBuffer buffer) {
+	private CacheEntry createEntry(long subj, long pred, long obj, long context, ByteBuffer buffer) {
 		ByteBuffer duplicate = buffer.duplicate();
-		ByteBuffer copy;
-		boolean direct;
-		if (buffer.hasArray()) {
-			copy = ByteBuffer.allocate(duplicate.remaining());
-			direct = false;
-		} else {
-			copy = MemoryUtil.memAlloc(duplicate.remaining());
-			direct = true;
-		}
-		copy.put(duplicate);
-		copy.flip();
-		buffer.rewind();
-		ByteBuffer readOnlyView = copy.asReadOnlyBuffer();
+		ByteBuffer readOnlyView = duplicate.asReadOnlyBuffer();
 		readOnlyView.position(0);
-		return new CacheEntry(readOnlyView, direct ? copy : null);
+		return new CacheEntry(subj, pred, obj, context, readOnlyView);
 	}
 
 	@Override
 	public void close() {
-		cache.invalidateAll();
-		cache.cleanUp();
 		Arrays.fill(filterBits, 0L);
 		Arrays.fill(counters, 0);
 		Arrays.fill(counterEpoch, 0);
@@ -155,61 +121,28 @@ final class KeyGenerator implements AutoCloseable {
 		windowCallCount = 0;
 	}
 
-	private void onCacheRemoval(RemovalNotification<KeySignature, CacheEntry> notification) {
-		CacheEntry entry = notification.getValue();
-		if (entry != null) {
-			entry.close();
-		}
-	}
-
 	private static final class CacheEntry {
-		private final ByteBuffer stored;
-		private final ByteBuffer resource;
-		private final boolean direct;
-
-		CacheEntry(ByteBuffer stored, ByteBuffer resource) {
-			this.stored = stored;
-			this.resource = resource;
-			this.direct = resource != null;
-		}
-
-		void close() {
-			if (direct) {
-				MemoryUtil.memFree(resource);
-			}
-		}
-	}
-
-	private static final class KeySignature {
 		private final long subj;
 		private final long pred;
 		private final long obj;
 		private final long context;
-		private final int hash;
+		private final ByteBuffer stored;
 
-		KeySignature(long subj, long pred, long obj, long context) {
+		CacheEntry(long subj, long pred, long obj, long context, ByteBuffer stored) {
 			this.subj = subj;
 			this.pred = pred;
 			this.obj = obj;
 			this.context = context;
-			this.hash = (int) (subj + pred + obj + context);
+			this.stored = stored;
 		}
 
-		@Override
-		public boolean equals(Object obj) {
-			if (this == obj) {
-				return true;
-			}
-			if (!(obj instanceof KeySignature)) {
-				return false;
-			}
-			KeySignature other = (KeySignature) obj;
-			return subj == other.subj && pred == other.pred && this.obj == other.obj && context == other.context;
+		boolean matches(long subj, long pred, long obj, long context) {
+			return this.subj == subj && this.pred == pred && this.obj == obj && this.context == context;
 		}
 
-		@Override
-		public int hashCode() {
-			return hash;
+		ByteBuffer buffer() {
+			return stored;
 		}
+
 	}
 }
