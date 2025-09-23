@@ -14,17 +14,18 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.LongAdder;
 
 import org.lwjgl.system.MemoryUtil;
 
 final class KeyGenerator implements AutoCloseable {
 
-	static final int CACHE_THRESHOLD = 20;
-	static final int WINDOW_SIZE = 100;
+	static final int CACHE_THRESHOLD = 10;
+	static final int WINDOW_SIZE = 1000;
 
-	private static final int FILTER_BITS = 1 << 16;
+	private static final int FILTER_BITS = 1 << 18;
 	private static final int FILTER_MASK = FILTER_BITS - 1;
-	private static final int COUNTER_SLOTS = 1 << 12;
+	private static final int COUNTER_SLOTS = 1 << 14;
 	private static final int COUNTER_MASK = COUNTER_SLOTS - 1;
 
 	@FunctionalInterface
@@ -61,12 +62,15 @@ final class KeyGenerator implements AutoCloseable {
 	}
 
 	private final IndexKeyWriters.KeyWriter keyWriter;
-	private final ConcurrentHashMap<KeySignature, CacheEntry> cache = new ConcurrentHashMap<>();
-	private final long[] filterBits = new long[FILTER_BITS >>> 6];
-	private final int[] counters = new int[COUNTER_SLOTS];
-	private final int[] counterEpoch = new int[COUNTER_SLOTS];
-	private int epoch;
-	private int windowCallCount;
+	private static final ConcurrentHashMap<KeySignature, CacheEntry> cache = new ConcurrentHashMap<>();
+	private static final long[] filterBits = new long[FILTER_BITS >>> 6];
+	private static final int[] counters = new int[COUNTER_SLOTS];
+	private static final int[] counterEpoch = new int[COUNTER_SLOTS];
+	private static int epoch;
+	private static int windowCallCount;
+
+	private static LongAdder hits = new LongAdder();
+	private static LongAdder requests = new LongAdder();
 
 	KeyGenerator(IndexKeyWriters.KeyWriter keyWriter) {
 		this.keyWriter = Objects.requireNonNull(keyWriter, "keyWriter");
@@ -76,7 +80,14 @@ final class KeyGenerator implements AutoCloseable {
 		return keyFor(subj, pred, obj, context, supplier, true);
 	}
 
+	int count = 0;
+
 	KeyBuffer keyFor(long subj, long pred, long obj, long context, BufferSupplier supplier, boolean allowCache) {
+//		if(count++ % 1000000 == 0) {
+//			System.out.println("KeyGenerator cache hits: " + hits.sum() + " / " + requests.sum() + " (" + Math.floor(hits.sum() * 100.0 / requests.sum()) + "%)");
+//		}
+
+//		requests.increment();
 		long sum = subj + pred + obj + context;
 		int filterIndex = (int) (sum & FILTER_MASK);
 		if (allowCache && isFilterHit(filterIndex)) {
@@ -84,6 +95,7 @@ final class KeyGenerator implements AutoCloseable {
 
 			CacheEntry entry = cache.get(signature);
 			if (entry != null) {
+//				hits.increment();
 				return new KeyBuffer(entry.stored, false, true);
 			}
 		}
