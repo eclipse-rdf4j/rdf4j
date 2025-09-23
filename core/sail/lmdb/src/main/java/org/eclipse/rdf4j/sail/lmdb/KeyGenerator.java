@@ -11,17 +11,21 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.LongAdder;
 
 import org.lwjgl.system.MemoryUtil;
 
 final class KeyGenerator implements AutoCloseable {
 
-	static final int CACHE_THRESHOLD = 5;
+	static final int CACHE_THRESHOLD = 20;
 	static final int WINDOW_SIZE = 100;
+
+	private static final int FILTER_BITS = 1 << 16;
+	private static final int FILTER_MASK = FILTER_BITS - 1;
+	private static final int COUNTER_SLOTS = 1 << 12;
+	private static final int COUNTER_MASK = COUNTER_SLOTS - 1;
 
 	@FunctionalInterface
 	interface BufferSupplier {
@@ -58,8 +62,11 @@ final class KeyGenerator implements AutoCloseable {
 
 	private final IndexKeyWriters.KeyWriter keyWriter;
 	private final ConcurrentHashMap<KeySignature, CacheEntry> cache = new ConcurrentHashMap<>();
-	private ConcurrentHashMap<KeySignature, LongAdder> frequencies = new ConcurrentHashMap<>();
-	private final AtomicInteger windowCalls = new AtomicInteger();
+	private final long[] filterBits = new long[FILTER_BITS >>> 6];
+	private final int[] counters = new int[COUNTER_SLOTS];
+	private final int[] counterEpoch = new int[COUNTER_SLOTS];
+	private int epoch;
+	private int windowCallCount;
 
 	KeyGenerator(IndexKeyWriters.KeyWriter keyWriter) {
 		this.keyWriter = Objects.requireNonNull(keyWriter, "keyWriter");
@@ -70,8 +77,11 @@ final class KeyGenerator implements AutoCloseable {
 	}
 
 	KeyBuffer keyFor(long subj, long pred, long obj, long context, BufferSupplier supplier, boolean allowCache) {
-		KeySignature signature = allowCache ? new KeySignature(subj, pred, obj, context) : null;
-		if (allowCache) {
+		long sum = subj + pred + obj + context;
+		int filterIndex = (int) (sum & FILTER_MASK);
+		if (allowCache && isFilterHit(filterIndex)) {
+			KeySignature signature = allowCache ? new KeySignature(subj, pred, obj, context) : null;
+
 			CacheEntry entry = cache.get(signature);
 			if (entry != null) {
 				return new KeyBuffer(entry.stored, false, true);
@@ -85,24 +95,53 @@ final class KeyGenerator implements AutoCloseable {
 		buffer.flip();
 
 		if (allowCache) {
-			maybePromote(signature, supplied, buffer);
+			maybePromote(subj, pred, obj, context, supplied, buffer, sum, filterIndex);
 		}
 
 		return new KeyBuffer(buffer, supplied.pooled(), false);
 	}
 
-	private void maybePromote(KeySignature signature, KeyBuffer supplied, ByteBuffer buffer) {
-		LongAdder longAdder = frequencies.computeIfAbsent(signature, key -> new LongAdder());
-		longAdder.increment();
-		int callCount = windowCalls.incrementAndGet();
-		if (callCount >= WINDOW_SIZE) {
-			if (windowCalls.compareAndSet(callCount, 0)) {
-				frequencies = new ConcurrentHashMap<>();
-			}
+	private boolean isFilterHit(int filterIndex) {
+		int word = filterIndex >>> 6;
+		long mask = 1L << (filterIndex & 63);
+		return (filterBits[word] & mask) != 0L;
+	}
+
+	private void setFilterBit(int filterIndex) {
+		int word = filterIndex >>> 6;
+		long mask = 1L << (filterIndex & 63);
+		filterBits[word] |= mask;
+	}
+
+	private void maybePromote(long subj, long pred, long obj, long context, KeyBuffer supplied, ByteBuffer buffer,
+			long sum,
+			int filterIndex) {
+		int counterIndex = (int) (sum & COUNTER_MASK);
+		if (counterEpoch[counterIndex] != epoch) {
+			counters[counterIndex] = 0;
+			counterEpoch[counterIndex] = epoch;
 		}
-		if (longAdder.sum() > CACHE_THRESHOLD) {
-			cache.computeIfAbsent(signature, key -> createEntry(buffer, supplied.pooled()));
+		int newCount = counters[counterIndex] + 1;
+		if (newCount >= CACHE_THRESHOLD) {
+			counters[counterIndex] = 0;
+			cache.compute(new KeySignature(subj, pred, obj, context), (key, existing) -> {
+				if (existing == null) {
+					CacheEntry entry = createEntry(buffer, supplied.pooled());
+					setFilterBit(filterIndex);
+					return entry;
+				}
+				setFilterBit(filterIndex);
+				return existing;
+			});
+		} else {
+			counters[counterIndex] = newCount;
 		}
+		windowCallCount++;
+		if (windowCallCount >= WINDOW_SIZE) {
+			windowCallCount = 0;
+			epoch = (epoch + 1) & Integer.MAX_VALUE;
+		}
+
 	}
 
 	private CacheEntry createEntry(ByteBuffer buffer, boolean pooled) {
@@ -126,8 +165,13 @@ final class KeyGenerator implements AutoCloseable {
 	public void close() {
 		cache.values().forEach(CacheEntry::close);
 		cache.clear();
-		frequencies.clear();
-		windowCalls.set(0);
+		synchronized (this) {
+			Arrays.fill(filterBits, 0L);
+			Arrays.fill(counters, 0);
+			Arrays.fill(counterEpoch, 0);
+			epoch = 0;
+			windowCallCount = 0;
+		}
 	}
 
 	private static final class CacheEntry {
