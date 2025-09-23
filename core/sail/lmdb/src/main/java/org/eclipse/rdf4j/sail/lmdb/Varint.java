@@ -24,8 +24,6 @@ public final class Varint {
 	private Varint() {
 	}
 
-	// Add this constant somewhere near the class top (or wherever you keep constants).
-// 0xFF tag (means 8 data bytes follow), then 0x7F FF FF FF FF FF FF FF (Long.MAX_VALUE).
 	private static final byte[] ENCODED_LONG_MAX = new byte[] {
 			(byte) 0xFF, // header: 8 payload bytes
 			0x7F, // MSB of Long.MAX_VALUE
@@ -110,6 +108,8 @@ public final class Varint {
 			try {
 				bb.put((byte) 0xFF); // header for 8 payload bytes
 				bb.putLong(Long.MAX_VALUE); // 7F FF FF FF FF FF FF FF
+				// TODO: Use this instead: bb.put(ENCODED_LONG_MAX);
+				// TODO: Do we really need to care about endianness here? Should we then have two different version of ENCODED_LONG_MAX?
 			} finally {
 				if (prev != ByteOrder.BIG_ENDIAN) {
 					bb.order(prev);
@@ -472,19 +472,6 @@ public final class Varint {
 		values[indexMap[2]] = readUnsigned(bb);
 		values[indexMap[3]] = readUnsigned(bb);
 	}
-
-//	/**
-//	 * Writes only the significant bytes of the given value in big-endian order.
-//	 *
-//	 * @param bb    buffer for writing bytes
-//	 * @param value value to encode
-//	 * @param bytes number of significant bytes
-//	 */
-//	private static void writeSignificantBits(ByteBuffer bb, long value, int bytes) {
-//		while (bytes-- > 0) {
-//			bb.put((byte) (0xFF & (value >>> (bytes * 8))));
-//		}
-//	}
 
 	/**
 	 * Reads only the significant bytes of the given value in big-endian order.
