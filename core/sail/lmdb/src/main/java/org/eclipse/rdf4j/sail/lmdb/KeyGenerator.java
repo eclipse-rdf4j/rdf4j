@@ -14,6 +14,7 @@ import java.nio.ByteBuffer;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.LongAdder;
 
 import org.lwjgl.system.MemoryUtil;
 
@@ -57,7 +58,7 @@ final class KeyGenerator implements AutoCloseable {
 
 	private final IndexKeyWriters.KeyWriter keyWriter;
 	private final ConcurrentHashMap<KeySignature, CacheEntry> cache = new ConcurrentHashMap<>();
-	private final ConcurrentHashMap<KeySignature, AtomicInteger> frequencies = new ConcurrentHashMap<>();
+	private ConcurrentHashMap<KeySignature, LongAdder> frequencies = new ConcurrentHashMap<>();
 	private final AtomicInteger windowCalls = new AtomicInteger();
 
 	KeyGenerator(IndexKeyWriters.KeyWriter keyWriter) {
@@ -70,10 +71,10 @@ final class KeyGenerator implements AutoCloseable {
 
 	KeyBuffer keyFor(long subj, long pred, long obj, long context, BufferSupplier supplier, boolean allowCache) {
 		KeySignature signature = allowCache ? new KeySignature(subj, pred, obj, context) : null;
-		if (allowCache && signature != null) {
+		if (allowCache) {
 			CacheEntry entry = cache.get(signature);
 			if (entry != null) {
-				return new KeyBuffer(entry.duplicate(), false, true);
+				return new KeyBuffer(entry.stored, false, true);
 			}
 		}
 
@@ -83,7 +84,7 @@ final class KeyGenerator implements AutoCloseable {
 		keyWriter.write(buffer, subj, pred, obj, context);
 		buffer.flip();
 
-		if (allowCache && signature != null) {
+		if (allowCache) {
 			maybePromote(signature, supplied, buffer);
 		}
 
@@ -91,14 +92,15 @@ final class KeyGenerator implements AutoCloseable {
 	}
 
 	private void maybePromote(KeySignature signature, KeyBuffer supplied, ByteBuffer buffer) {
-		int usage = frequencies.computeIfAbsent(signature, key -> new AtomicInteger()).incrementAndGet();
+		LongAdder longAdder = frequencies.computeIfAbsent(signature, key -> new LongAdder());
+		longAdder.increment();
 		int callCount = windowCalls.incrementAndGet();
 		if (callCount >= WINDOW_SIZE) {
 			if (windowCalls.compareAndSet(callCount, 0)) {
-				frequencies.clear();
+				frequencies = new ConcurrentHashMap<>();
 			}
 		}
-		if (usage > CACHE_THRESHOLD) {
+		if (longAdder.sum() > CACHE_THRESHOLD) {
 			cache.computeIfAbsent(signature, key -> createEntry(buffer, supplied.pooled()));
 		}
 	}
@@ -163,7 +165,7 @@ final class KeyGenerator implements AutoCloseable {
 			this.pred = pred;
 			this.obj = obj;
 			this.context = context;
-			this.hash = Objects.hash(subj, pred, obj, context);
+			this.hash = (int) (subj + pred + obj + context);
 		}
 
 		@Override
