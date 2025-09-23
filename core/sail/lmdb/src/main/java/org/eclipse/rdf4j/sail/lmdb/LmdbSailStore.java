@@ -29,7 +29,6 @@ import java.util.function.Function;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -58,8 +57,6 @@ import org.slf4j.LoggerFactory;
  * A disk based {@link SailStore} implementation that keeps committed statements in a {@link TripleStore}.
  */
 class LmdbSailStore implements SailStore {
-
-	private static final EmptyIteration<Statement> EMPTY_ITERATION = new EmptyIteration<>();
 
 	final Logger logger = LoggerFactory.getLogger(LmdbSailStore.class);
 
@@ -357,13 +354,13 @@ class LmdbSailStore implements SailStore {
 			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
 		if (!explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
-			return EMPTY_ITERATION;
+			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
 		}
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
 			subjID = valueStore.getId(subj);
 			if (subjID == LmdbValue.UNKNOWN_ID) {
-				return EMPTY_ITERATION;
+				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
 			}
 		}
 
@@ -371,7 +368,7 @@ class LmdbSailStore implements SailStore {
 		if (pred != null) {
 			predID = valueStore.getId(pred);
 			if (predID == LmdbValue.UNKNOWN_ID) {
-				return EMPTY_ITERATION;
+				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
 			}
 		}
 
@@ -380,7 +377,7 @@ class LmdbSailStore implements SailStore {
 			objID = valueStore.getId(obj);
 
 			if (objID == LmdbValue.UNKNOWN_ID) {
-				return EMPTY_ITERATION;
+				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
 			}
 		}
 
