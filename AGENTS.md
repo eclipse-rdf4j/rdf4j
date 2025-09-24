@@ -593,16 +593,19 @@ Do **not** modify existing headers’ years.
     * `mvn -o verify` (long; only when appropriate)
 * Slow tests (entire repo):
 
-    * `mvn -o verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip | tail -500`
+    * `mvn -o verify -PslowTestsOnly,-skipSlowTests | tail -500`
 * Slow tests (by module):
 
-    * `mvn -o -pl <module> verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip | tail -500`
+    * `mvn -o -pl <module> verify -PslowTestsOnly,-skipSlowTests | tail -500`
+* Slow tests (specific test):
+
+  * `mvn -o -pl core/sail/shacl -PslowTestsOnly,-skipSlowTests -Dtest=ClassName#method verify | tail -500`
 * Integration tests (entire repo):
 
-    * `mvn -o verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip | tail -500`
+    * `mvn -o verify -PskipUnitTests | tail -500`
 * Integration tests (by module):
 
-    * `mvn -o -pl <module> verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip | tail -500`
+    * `mvn -o -pl <module> verify -PskipUnitTests | tail -500`
 * Useful flags:
 
     * `-Dtest=ClassName`
