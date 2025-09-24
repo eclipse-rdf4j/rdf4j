@@ -79,6 +79,7 @@ public class TransactionalIsolationSlowIT {
 						try {
 							connection.commit();
 						} catch (Throwable ignored) {
+							connection.rollback();
 						}
 
 					}
@@ -148,6 +149,7 @@ public class TransactionalIsolationSlowIT {
 						try {
 							connection.commit();
 						} catch (Throwable ignored) {
+							connection.rollback();
 						}
 					}
 
@@ -216,6 +218,8 @@ public class TransactionalIsolationSlowIT {
 						try {
 							connection.commit();
 						} catch (Throwable ignored) {
+							connection.rollback();
+
 						}
 
 					}
@@ -285,6 +289,8 @@ public class TransactionalIsolationSlowIT {
 						try {
 							connection.commit();
 						} catch (Throwable ignored) {
+							connection.rollback();
+
 						}
 					}
 

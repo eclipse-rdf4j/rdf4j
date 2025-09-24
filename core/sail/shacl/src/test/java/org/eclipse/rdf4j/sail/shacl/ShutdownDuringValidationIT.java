@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -155,6 +156,10 @@ public class ShutdownDuringValidationIT {
 				System.out.println(e);
 				return;
 			}
+			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedSailException) {
+				System.out.println(e);
+				return;
+			}
 			if (e.toString().contains("closed")) {
 				System.out.println(e);
 				return;
@@ -216,6 +221,10 @@ public class ShutdownDuringValidationIT {
 				System.out.println(e);
 				return;
 			}
+			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedSailException) {
+				System.out.println(e);
+				return;
+			}
 			if (e.toString().contains("closed")) {
 				System.out.println(e);
 				return;
@@ -271,6 +280,10 @@ public class ShutdownDuringValidationIT {
 				System.out.println(e);
 				return;
 			}
+			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedSailException) {
+				System.out.println(e);
+				return;
+			}
 			if (e.toString().contains("closed")) {
 				System.out.println(e);
 				return;
@@ -323,6 +336,10 @@ public class ShutdownDuringValidationIT {
 			}
 		} catch (Exception e) {
 			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedException) {
+				System.out.println(e);
+				return;
+			}
+			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedSailException) {
 				System.out.println(e);
 				return;
 			}
@@ -383,6 +400,10 @@ public class ShutdownDuringValidationIT {
 			}
 		} catch (Exception e) {
 			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedException) {
+				System.out.println(e);
+				return;
+			}
+			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedSailException) {
 				System.out.println(e);
 				return;
 			}

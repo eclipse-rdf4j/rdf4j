@@ -287,7 +287,11 @@ public class PrepareCommitTest {
 				try {
 					connection.commit();
 				} catch (RepositoryException e) {
+					connection.rollback();
 					throw e.getCause();
+				} catch (SailException e) {
+					connection.rollback();
+					throw e;
 				}
 			});
 
