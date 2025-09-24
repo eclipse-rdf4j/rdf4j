@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -13,12 +13,15 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
-import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -46,20 +49,23 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @Warmup(iterations = 2)
 @BenchmarkMode({ Mode.Throughput })
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-XX:+UseG1GC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 5)
+@Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class TransactionsPerSecondBenchmark {
 
-	private SailRepository repository;
-	private File file;
-
 	SailRepositoryConnection connection;
+	RandomLiteralGenerator literalGenerator;
+	Random random;
 	int i;
+	List<IRI> resources;
+	List<IRI> predicates;
+	protected SailRepository repository;
+	protected File file;
+	protected boolean forceSync = false;
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("TransactionsPerSecondBenchmark") // adapt to control which benchmark tests to run
+				.include("TransactionsPerSecondBenchmark\\.") // adapt to control which benchmarks to run
 				.forks(1)
 				.build();
 
@@ -75,12 +81,29 @@ public class TransactionsPerSecondBenchmark {
 		i = 0;
 		file = Files.newTemporaryFolder();
 
-		LmdbStore sail = new LmdbStore(file, ConfigUtil.createConfig());
+		LmdbStore sail = new LmdbStore(file, ConfigUtil.createConfig().setForceSync(forceSync));
 		repository = new SailRepository(sail);
 		connection = repository.getConnection();
+		random = new Random(1337);
+		literalGenerator = new RandomLiteralGenerator(connection.getValueFactory(), random);
+		resources = new ArrayList<>();
+		for (int i = 0; i < 10; i++) {
+			resources.add(connection.getValueFactory().createIRI("some:resource-" + i));
+		}
+		predicates = new ArrayList<>();
+		for (int i = 0; i < 10; i++) {
+			predicates.add(connection.getValueFactory().createIRI("some:predicate-" + i));
+		}
 
 		System.gc();
+	}
 
+	IRI randomResource() {
+		return resources.get(random.nextInt(resources.size()));
+	}
+
+	IRI randomPredicate() {
+		return predicates.get(random.nextInt(predicates.size()));
 	}
 
 	@TearDown(Level.Iteration)
@@ -97,14 +120,14 @@ public class TransactionsPerSecondBenchmark {
 	@Benchmark
 	public void transactions() {
 		connection.begin();
-		connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i++));
+		connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
 		connection.commit();
 	}
 
 	@Benchmark
 	public void transactionsLevelNone() {
 		connection.begin(IsolationLevels.NONE);
-		connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i++));
+		connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
 		connection.commit();
 	}
 
@@ -112,7 +135,7 @@ public class TransactionsPerSecondBenchmark {
 	public void mediumTransactionsLevelNone() {
 		connection.begin(IsolationLevels.NONE);
 		for (int k = 0; k < 10; k++) {
-			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i++ + "_" + k));
+			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
 		}
 		connection.commit();
 	}
@@ -121,7 +144,7 @@ public class TransactionsPerSecondBenchmark {
 	public void largerTransaction() {
 		connection.begin();
 		for (int k = 0; k < 10000; k++) {
-			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i++ + "_" + k));
+			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
 		}
 		connection.commit();
 	}
@@ -130,7 +153,7 @@ public class TransactionsPerSecondBenchmark {
 	public void largerTransactionLevelNone() {
 		connection.begin(IsolationLevels.NONE);
 		for (int k = 0; k < 10000; k++) {
-			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i++ + "_" + k));
+			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
 		}
 		connection.commit();
 	}
@@ -139,7 +162,7 @@ public class TransactionsPerSecondBenchmark {
 	public void veryLargerTransactionLevelNone() {
 		connection.begin(IsolationLevels.NONE);
 		for (int k = 0; k < 1000000; k++) {
-			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i++ + "_" + k));
+			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
 		}
 		connection.commit();
 	}
