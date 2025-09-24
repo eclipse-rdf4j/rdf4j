@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
@@ -58,8 +60,7 @@ public class Select implements PlanNode {
 			logger.error("Query is empty", new Throwable("This throwable is just to log the stack trace"));
 
 			// empty set
-			fragment = "" +
-					"?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c.\n" +
+			fragment = "?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c.\n" +
 					"FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c})";
 		}
 		sorted = orderBy != null;
@@ -100,7 +101,7 @@ public class Select implements PlanNode {
 	public CloseableIteration<? extends ValidationTuple> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<? extends BindingSet> bindingSet;
+			private CloseableIteration<? extends BindingSet> bindingSet;
 
 			protected void init() {
 				if (bindingSet != null) {
@@ -109,13 +110,46 @@ public class Select implements PlanNode {
 
 				try {
 					TupleExpr tupleExpr = SparqlQueryParserCache.get(query);
+					if (Thread.currentThread().isInterrupted()) {
+						close();
+						return;
+					}
 
-					bindingSet = connection.evaluate(tupleExpr, dataset, EmptyBindingSet.getInstance(), true);
+					try {
+						if (isClosed()) {
+							return;
+						}
+						if (Thread.currentThread().isInterrupted()) {
+							close();
+							Thread.currentThread().interrupt();
+							throw new InterruptedSailException("Thread was interrupted while executing SPARQL query.");
+						}
+						bindingSet = connection.evaluate(tupleExpr, dataset, EmptyBindingSet.getInstance(), true);
+
+					} catch (Throwable t) {
+						if (bindingSet != null) {
+							bindingSet.close();
+						}
+						throw t;
+					}
+
+					if (isClosed()) {
+						bindingSet.close();
+					}
+					if (Thread.currentThread().isInterrupted()) {
+						close();
+						Thread.currentThread().interrupt();
+						throw new InterruptedSailException("Thread was interrupted while executing SPARQL query.");
+					}
+
 					if (logger.isTraceEnabled()) {
 						boolean hasNext = bindingSet.hasNext();
 						logger.trace("SPARQL query (hasNext={}) \n{}", hasNext, Formatter.formatSparqlQuery(query));
 					}
 				} catch (MalformedQueryException e) {
+					if (bindingSet != null) {
+						bindingSet.close();
+					}
 					if (stackTrace != null) {
 						Exception rootCause = new Exception("Root cause");
 						rootCause.setStackTrace(stackTrace);
@@ -123,6 +157,11 @@ public class Select implements PlanNode {
 					}
 					logger.error("Malformed query:\n{}", query);
 					throw e;
+				} catch (Throwable t) {
+					if (bindingSet != null) {
+						bindingSet.close();
+					}
+					throw t;
 				}
 			}
 
@@ -135,7 +174,21 @@ public class Select implements PlanNode {
 
 			@Override
 			protected boolean localHasNext() {
-				return bindingSet.hasNext();
+				if (isClosed()) {
+					return false;
+				}
+				if (Thread.currentThread().isInterrupted()) {
+					close();
+					return false;
+				}
+
+				try {
+					return bindingSet.hasNext();
+				} catch (NoSuchElementException e) {
+					// This can happen if the connection is closed while we are iterating.
+					// In that case, we just return false.
+					return false;
+				}
 			}
 
 			@Override

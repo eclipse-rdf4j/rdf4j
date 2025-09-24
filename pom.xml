@@ -447,7 +447,7 @@
 			<dependency>
 				<groupId>org.apache.commons</groupId>
 				<artifactId>commons-lang3</artifactId>
-				<version>3.12.0</version>
+				<version>3.18.0</version>
 			</dependency>
 			<dependency>
 				<groupId>org.apache.httpcomponents</groupId>
@@ -629,7 +629,7 @@
 			<dependency>
 				<groupId>no.hasmac</groupId>
 				<artifactId>hasmac-json-ld</artifactId>
-				<version>0.9.0</version>
+				<version>0.10.1</version>
 			</dependency>
 			<!-- kerby is used by solr-->
 			<dependency>
@@ -812,19 +812,19 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-surefire-plugin</artifactId>
-					<version>3.2.5</version>
+					<version>3.5.4</version>
 					<configuration>
-						<argLine>-Xmx2048M</argLine>
+						<argLine>-Xmx2G</argLine>
 					</configuration>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-failsafe-plugin</artifactId>
-					<version>3.2.5</version>
+					<version>3.5.4</version>
 					<configuration>
 						<forkCount>1</forkCount>
 						<reuseForks>false</reuseForks>
-						<argLine>-Xmx1G</argLine>
+						<argLine>-Xmx2G</argLine>
 						<includes>
 							<include>**/*IT.java</include>
 						</includes>

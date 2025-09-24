@@ -40,7 +40,7 @@ import org.slf4j.LoggerFactory;
 public abstract class AbstractSail implements Sail {
 
 	/**
-	 * Default connection timeout on shutdown: 20,000 milliseconds.
+	 * Default connection timeout on shutdown: 20,000 milliseconds (20 seconds).
 	 */
 	protected final static long DEFAULT_CONNECTION_TIMEOUT = 20000L;
 
@@ -227,17 +227,19 @@ public abstract class AbstractSail implements Sail {
 				try {
 					SailConnection con = entry.getKey();
 
-					if (con instanceof AbstractSailConnection) {
-						AbstractSailConnection sailCon = (AbstractSailConnection) con;
-						Thread owner = sailCon.getOwner();
-						if (owner != Thread.currentThread()) {
-							owner.interrupt();
-							// wait up to 1 second for the owner thread to die
-							owner.join(1000);
-							if (owner.isAlive()) {
-								logger.error(
-										"Closing active connection due to shut down and interrupted the owning thread of the connection {} but thread is still alive after 1000 ms!",
-										owner);
+					if (con.isOpen()) {
+						if (con instanceof AbstractSailConnection) {
+							AbstractSailConnection sailCon = (AbstractSailConnection) con;
+							Thread owner = sailCon.getOwner();
+							if (owner != Thread.currentThread()) {
+								owner.interrupt();
+								// wait up to 1 second for the owner thread to die
+								owner.join(1000);
+								if (owner.isAlive() && con.isOpen()) {
+									logger.error(
+											"Closing active connection due to shut down and interrupted the owning thread of the connection {} but thread is still alive after 1000 ms!",
+											owner);
+								}
 							}
 						}
 					}
@@ -257,6 +259,9 @@ public abstract class AbstractSail implements Sail {
 			// Forcefully close any connections that are still open
 			for (Map.Entry<SailConnection, Throwable> entry : activeConnectionsCopy.entrySet()) {
 				SailConnection con = entry.getKey();
+				if (!con.isOpen()) {
+					continue;
+				}
 				Throwable stackTrace = entry.getValue();
 
 				if (stackTrace == null) {

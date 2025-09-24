@@ -17,6 +17,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -35,6 +36,7 @@ class ShapeValidationContainer {
 	private final long effectiveValidationResultsLimitPerConstraint;
 	private final boolean performanceLogging;
 	private final Logger logger;
+	private volatile CloseableIteration<? extends ValidationTuple> iterator;
 
 	public ShapeValidationContainer(Shape shape, Supplier<PlanNode> planNodeSupplier, boolean logValidationExecution,
 			boolean logValidationViolations, long effectiveValidationResultsLimitPerConstraint,
@@ -124,26 +126,36 @@ class ShapeValidationContainer {
 		return !(planNode.isGuaranteedEmpty());
 	}
 
-	public ValidationResultIterator performValidation() {
+	public ValidationResultIterator performValidation() throws SailException {
 		long before = getTimeStamp();
 		handlePreLogging();
 
 		ValidationResultIterator validationResults = null;
 
-		try (CloseableIteration<? extends ValidationTuple> iterator = planNode.iterator()) {
-			validationResults = new ValidationResultIterator(iterator, effectiveValidationResultsLimitPerConstraint);
-			return validationResults;
-		} catch (Throwable e) {
-			logger.warn("Internal error while trying to validate SHACL Shape {}", shape.getId(), e);
-			logger.warn("Internal error while trying to validate SHACL Shape\n{}", shape, e);
-			if (e instanceof Error) {
+		try {
+			try (CloseableIteration<? extends ValidationTuple> iterator = planNode.iterator()) {
+				this.iterator = iterator;
+				validationResults = new ValidationResultIterator(iterator,
+						effectiveValidationResultsLimitPerConstraint);
+				return validationResults;
+			} catch (InterruptedSailException e) {
+				logger.warn("Interrupted while validating SHACL Shape\n{}", shape, e);
 				throw e;
+			} catch (Throwable e) {
+				logger.warn("Internal error while trying to validate SHACL Shape {}", shape.getId(), e);
+				logger.warn("Internal error while trying to validate SHACL Shape\n{}", shape, e);
+				if (e instanceof Error) {
+					throw e;
+				}
+				throw new SailException(
+						"Internal error while trying to validate SHACL Shape " + shape.getId() + "\n" + shape, e);
+			} finally {
+				handlePostLogging(before, validationResults);
 			}
-			throw new SailException(
-					"Internal error while trying to validate SHACL Shape " + shape.getId() + "\n" + shape, e);
 		} finally {
-			handlePostLogging(before, validationResults);
+			this.iterator = null;
 		}
+
 	}
 
 	private long getTimeStamp() {
@@ -194,6 +206,17 @@ class ShapeValidationContainer {
 
 		}
 
+	}
+
+	public void forceClose() {
+		var iterator = this.iterator;
+		if (iterator != null) {
+			try {
+				iterator.close();
+			} finally {
+				this.iterator = null;
+			}
+		}
 	}
 
 }

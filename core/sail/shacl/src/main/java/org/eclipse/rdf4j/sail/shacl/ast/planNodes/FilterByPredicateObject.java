@@ -31,6 +31,7 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import com.google.common.util.concurrent.UncheckedExecutionException;
 
 /**
  * @author Håvard Ottestad
@@ -108,6 +109,11 @@ public class FilterByPredicateObject implements PlanNode {
 					return;
 				}
 
+				if (Thread.currentThread().isInterrupted()) {
+					close();
+					return;
+				}
+
 				internResources();
 
 				if (returnMatching && (filterOnPredicate == null || filterOnObject.length == 0)) {
@@ -127,6 +133,11 @@ public class FilterByPredicateObject implements PlanNode {
 						break;
 					default:
 						throw new IllegalStateException("Unknown filterOn: " + filterOn);
+					}
+
+					if (Thread.currentThread().isInterrupted()) {
+						close();
+						return;
 					}
 
 					boolean matches = matches(value, filterOnPredicate, filterOnObject);
@@ -239,10 +250,13 @@ public class FilterByPredicateObject implements PlanNode {
 	private Boolean matchesCached(Resource subject, IRI filterOnPredicate, Resource[] filterOnObject) {
 		try {
 			return cache.get(subject, () -> matchesUnCached(subject, filterOnPredicate, filterOnObject));
-		} catch (ExecutionException e) {
+		} catch (ExecutionException | UncheckedExecutionException e) {
 			if (e.getCause() != null) {
 				if (e.getCause() instanceof RuntimeException) {
 					throw ((RuntimeException) e.getCause());
+				}
+				if (e.getCause() instanceof Error) {
+					throw ((Error) e.getCause());
 				}
 				throw new SailException(e.getCause());
 			}

@@ -329,6 +329,7 @@ public class TransactionSettingsTest {
 				try {
 					connection.commit();
 				} catch (RepositoryException e) {
+					connection.rollback();
 					throw e.getCause();
 				}
 			});
@@ -357,6 +358,7 @@ public class TransactionSettingsTest {
 				try {
 					connection.commit();
 				} catch (RepositoryException e) {
+					connection.rollback();
 					throw e.getCause();
 				}
 			});

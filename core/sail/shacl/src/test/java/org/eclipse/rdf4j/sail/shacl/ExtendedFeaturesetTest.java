@@ -68,6 +68,7 @@ public class ExtendedFeaturesetTest {
 				try {
 					connection.commit();
 				} catch (RepositoryException e) {
+					connection.rollback();
 					throw e.getCause();
 				}
 			});
@@ -117,6 +118,7 @@ public class ExtendedFeaturesetTest {
 				try {
 					connection.commit();
 				} catch (RepositoryException e) {
+					connection.rollback();
 					throw e.getCause();
 				}
 			});

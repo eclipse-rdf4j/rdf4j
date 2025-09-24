@@ -242,7 +242,7 @@ public class ParallelBenchmark {
 						connection.commit();
 						success = true;
 					} catch (RepositoryException ignored) {
-
+						connection.rollback();
 					}
 				}
 			}

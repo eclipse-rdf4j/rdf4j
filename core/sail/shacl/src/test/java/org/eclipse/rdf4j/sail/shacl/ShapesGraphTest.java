@@ -84,7 +84,12 @@ public class ShapesGraphTest {
 				try (RepositoryConnection connection = repository.getConnection()) {
 					connection.begin();
 					connection.add(laura, RDF.TYPE, FOAF.PERSON, data2);
-					connection.commit();
+					try {
+						connection.commit();
+					} catch (RepositoryException e) {
+						connection.rollback();
+						throw e;
+					}
 				}
 			});
 
@@ -112,7 +117,12 @@ public class ShapesGraphTest {
 					connection.add(laura, FOAF.PHONE, Values.literal(2), data1);
 					connection.add(laura, FOAF.PHONE, Values.literal(3), data2);
 
-					connection.commit();
+					try {
+						connection.commit();
+					} catch (RepositoryException e) {
+						connection.rollback();
+						throw e;
+					}
 				}
 			});
 
