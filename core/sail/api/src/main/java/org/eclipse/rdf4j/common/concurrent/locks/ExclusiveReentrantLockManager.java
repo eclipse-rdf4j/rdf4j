@@ -34,7 +34,7 @@ public class ExclusiveReentrantLockManager {
 
 	private final int waitToCollect;
 
-	LockMonitoring<ExclusiveReentrantLock> lockMonitoring;
+	LockMonitoring<Lock> lockMonitoring;
 
 	public ExclusiveReentrantLockManager() {
 		this(false);
@@ -50,18 +50,18 @@ public class ExclusiveReentrantLockManager {
 
 		if (trackLocks || Properties.lockTrackingEnabled()) {
 
-			lockMonitoring = new LockTracking(
+			lockMonitoring = new LockTracking<>(
 					true,
-					"ExclusiveReentrantLockManager",
+					"ExclusiveReentrantLockManager(w/tracking)",
 					LoggerFactory.getLogger(this.getClass()),
 					waitToCollect,
 					Lock.ExtendedSupplier.wrap(this::getExclusiveLockInner, this::tryExclusiveLockInner)
 			);
 
 		} else {
-			lockMonitoring = new LockCleaner(
+			lockMonitoring = new LockCleaner<>(
 					false,
-					"ExclusiveReentrantLockManager",
+					"ExclusiveReentrantLockManager(w/cleaner)",
 					LoggerFactory.getLogger(this.getClass()),
 					Lock.ExtendedSupplier.wrap(this::getExclusiveLockInner, this::tryExclusiveLockInner)
 			);
@@ -87,6 +87,8 @@ public class ExclusiveReentrantLockManager {
 
 	}
 
+	private final AtomicLong ownerIsDead = new AtomicLong();
+
 	private Lock getExclusiveLockInner() throws InterruptedException {
 
 		synchronized (owner) {
@@ -100,11 +102,20 @@ public class ExclusiveReentrantLockManager {
 					if (lock != null) {
 						return lock;
 					} else {
+						if (!owner.get().isAlive()) {
+							long l = ownerIsDead.incrementAndGet();
+							if (l > 10) {
+								ownerIsDead.set(0);
+								continue;
+							}
+
+						}
 						lockMonitoring.runCleanup();
 						owner.wait(waitToCollect);
 					}
 				} while (true);
 			} else {
+				int deadCount = 0;
 				while (true) {
 					if (Thread.interrupted()) {
 						throw new InterruptedException();
@@ -113,6 +124,12 @@ public class ExclusiveReentrantLockManager {
 					if (lock != null) {
 						return lock;
 					} else {
+						if (!owner.get().isAlive()) {
+							System.out.println("Owner thread is dead");
+//							activeLocks.set(0);
+//							owner.set(null);
+//							continue;
+						}
 						owner.wait(waitToCollect);
 					}
 				}

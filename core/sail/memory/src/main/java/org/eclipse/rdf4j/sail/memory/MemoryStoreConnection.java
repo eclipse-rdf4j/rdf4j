@@ -72,7 +72,7 @@ public class MemoryStoreConnection extends SailSourceConnection implements Threa
 	}
 
 	@Override
-	protected void rollbackInternal() throws SailException {
+	public void rollbackInternal() throws SailException {
 		super.rollbackInternal();
 		// create a fresh event object.
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
