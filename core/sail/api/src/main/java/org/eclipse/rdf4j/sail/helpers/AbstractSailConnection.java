@@ -162,7 +162,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	protected void verifyIsOpen() throws SailException {
 		if (!((boolean) IS_OPEN.getAcquire(this))) {
-			throw new IllegalStateException("Connection has been closed");
+			throw new SailException("Connection has been closed");
 		}
 	}
 
@@ -600,7 +600,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 							"Interrupted a second time while trying to acquire exclusive lock to rollback transaction. Giving up.",
 							e2);
 					Thread.currentThread().interrupt();
-					throw new SailException(
+					throw new InterruptedSailException(
 							"Interrupted twice while trying to acquire exclusive lock to rollback transaction.", e);
 				}
 			}
@@ -1088,7 +1088,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 					} catch (Exception e) {
 						if (e instanceof InterruptedException) {
 							Thread.currentThread().interrupt();
-							throw new SailException(e);
+							throw new InterruptedSailException(e);
 						}
 						logger.warn("Exception occurred while closing unclosed iterations.", e);
 					}
