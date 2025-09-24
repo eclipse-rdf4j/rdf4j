@@ -39,6 +39,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -127,7 +128,7 @@ public class ShutdownDuringValidationIT {
 				commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE, 0);
 
 			} catch (RepositoryException e) {
-				if (e.getCause() instanceof InterruptedException) {
+				if (causedByInterruptedException(e)) {
 					return;
 				}
 				logger.error("Error during test execution", e);
@@ -146,7 +147,7 @@ public class ShutdownDuringValidationIT {
 				}
 
 			} catch (RepositoryException e) {
-				if (e.getCause() instanceof InterruptedException) {
+				if (causedByInterruptedException(e)) {
 					// ignore this exception
 					return;
 				} else {
@@ -154,7 +155,7 @@ public class ShutdownDuringValidationIT {
 				}
 			}
 		} catch (Exception e) {
-			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedException) {
+			if (e instanceof RepositoryException && causedByInterruptedException(e)) {
 				System.out.println(e);
 				return;
 			}
@@ -193,7 +194,7 @@ public class ShutdownDuringValidationIT {
 
 				commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE + 1, 1);
 			} catch (RepositoryException e) {
-				if (e.getCause() instanceof InterruptedException) {
+				if (causedByInterruptedException(e)) {
 					// ignore this exception
 					return;
 				}
@@ -211,7 +212,7 @@ public class ShutdownDuringValidationIT {
 						.isIn(0L, 1L, (long) (EXPECTED_REPOSITORY_SIZE + 1));
 
 			} catch (RepositoryException e) {
-				if (e.getCause() instanceof InterruptedException) {
+				if (causedByInterruptedException(e)) {
 					// ignore this exception
 					return;
 				} else {
@@ -219,7 +220,7 @@ public class ShutdownDuringValidationIT {
 				}
 			}
 		} catch (Exception e) {
-			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedException) {
+			if (e instanceof RepositoryException && causedByInterruptedException(e)) {
 				System.out.println(e);
 				return;
 			}
@@ -256,7 +257,7 @@ public class ShutdownDuringValidationIT {
 
 				commitAndExpect(connection, 0, 0);
 			} catch (RepositoryException e) {
-				if (e.getCause() instanceof InterruptedException) {
+				if (causedByInterruptedException(e)) {
 					// ignore this exception
 					return;
 				}
@@ -270,7 +271,7 @@ public class ShutdownDuringValidationIT {
 				assertEquals(0, size,
 						"The repository should be empty because the transaction always fails validation.");
 			} catch (RepositoryException e) {
-				if (e.getCause() instanceof InterruptedException) {
+				if (causedByInterruptedException(e)) {
 					// ignore this exception
 					return;
 				} else {
@@ -278,7 +279,7 @@ public class ShutdownDuringValidationIT {
 				}
 			}
 		} catch (Exception e) {
-			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedException) {
+			if (e instanceof RepositoryException && causedByInterruptedException(e)) {
 				System.out.println(e);
 				return;
 			}
@@ -314,7 +315,7 @@ public class ShutdownDuringValidationIT {
 
 				commitAndExpect(connection, 0, 0);
 			} catch (RepositoryException e) {
-				if (e.getCause() instanceof InterruptedException) {
+				if (causedByInterruptedException(e)) {
 					// ignore this exception
 					return;
 				}
@@ -329,7 +330,7 @@ public class ShutdownDuringValidationIT {
 				assertEquals(0, size,
 						"The repository should be empty because the transaction always fails validation.");
 			} catch (RepositoryException e) {
-				if (e.getCause() instanceof InterruptedException) {
+				if (causedByInterruptedException(e)) {
 					// ignore this exception
 					return;
 				} else {
@@ -337,7 +338,7 @@ public class ShutdownDuringValidationIT {
 				}
 			}
 		} catch (Exception e) {
-			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedException) {
+			if (e instanceof RepositoryException && causedByInterruptedException(e)) {
 				System.out.println(e);
 				return;
 			}
@@ -382,7 +383,7 @@ public class ShutdownDuringValidationIT {
 					// ignore this exception
 					return;
 				}
-				if (e.getCause() instanceof InterruptedException) {
+				if (causedByInterruptedException(e)) {
 					// ignore this exception
 					return;
 				}
@@ -403,7 +404,7 @@ public class ShutdownDuringValidationIT {
 						.as("Repository size")
 						.isIn(0L, 1L, (long) (EXPECTED_REPOSITORY_SIZE + 1));
 			} catch (RepositoryException e) {
-				if (e.getCause() instanceof InterruptedException) {
+				if (causedByInterruptedException(e)) {
 					// ignore this exception
 					return;
 				} else {
@@ -411,7 +412,7 @@ public class ShutdownDuringValidationIT {
 				}
 			}
 		} catch (Exception e) {
-			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedException) {
+			if (e instanceof RepositoryException && causedByInterruptedException(e)) {
 				System.out.println(e);
 				return;
 			}
@@ -425,6 +426,40 @@ public class ShutdownDuringValidationIT {
 			}
 			throw e;
 		}
+	}
+
+	@Test
+	void nestedInterruptedExceptionShouldBeDetected() {
+		InterruptedException interruptedException = new InterruptedException("nested");
+		SailException sailException = new SailException("wrapper", new SailException("inner", interruptedException));
+		RepositoryException repositoryException = new RepositoryException("top", sailException);
+
+		boolean handled = causedByInterruptedException(repositoryException);
+
+		assertThat(handled).as("Should detect nested InterruptedException").isTrue();
+	}
+
+	private static boolean causedByInterruptedException(Throwable throwable) {
+		return causedByInterruptedExceptionRecursion(throwable, 10);
+	}
+
+	private static boolean causedByInterruptedExceptionRecursion(Throwable throwable, int maxDepth) {
+		if (maxDepth < 0) {
+			throw new IllegalStateException("Too deep");
+		}
+		if (throwable == null) {
+			return false;
+		}
+		if (throwable instanceof InterruptedException) {
+			return true;
+		}
+		if (throwable instanceof InterruptedSailException) {
+			return true;
+		}
+		if (throwable.getCause() == throwable) {
+			return false;
+		}
+		return causedByInterruptedExceptionRecursion(throwable.getCause(), maxDepth - 1);
 	}
 
 	private static void commitAndExpect(SailRepositoryConnection connection, long expected, long failedExpected) {
@@ -442,9 +477,7 @@ public class ShutdownDuringValidationIT {
 			try {
 				connection.rollback();
 			} catch (Exception e) {
-				if (e.getCause() instanceof InterruptedException) {
-					// ignore this exception
-				} else if (e.getCause() != null && e.getCause().getCause() instanceof InterruptedException) {
+				if (causedByInterruptedException(e)) {
 					// ignore this exception
 				} else {
 					throw e;
