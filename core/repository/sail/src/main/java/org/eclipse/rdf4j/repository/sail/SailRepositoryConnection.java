@@ -231,10 +231,17 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 
 	@Override
 	public void rollback() throws RepositoryException {
+		// We still want to attempt to rollback the transaction even if the thread is interrupted. We restore the
+		// interrupted status when we are done.
+		boolean interrupted = Thread.interrupted();
 		try {
 			sailConnection.rollback();
 		} catch (SailException e) {
 			throw new RepositoryException(e);
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
 		}
 	}
 
