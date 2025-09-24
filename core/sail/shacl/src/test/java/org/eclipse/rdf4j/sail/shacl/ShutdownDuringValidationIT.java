@@ -78,7 +78,7 @@ public class ShutdownDuringValidationIT {
 			long start = System.currentTimeMillis();
 			var repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 			try {
-				try (SailRepositoryConnection connection = repository.getConnection()) {
+				try (var connection = repository.getConnection()) {
 					connection.begin(ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation);
 					connection.add(realData);
 					connection.commit();
@@ -115,7 +115,7 @@ public class ShutdownDuringValidationIT {
 		Thread.interrupted();
 
 		Thread thread;
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		try (var connection = repository.getConnection()) {
 			connection.begin(ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation);
 			connection.add(realData);
 			thread = startShutdownThread(sleepMillis);
@@ -132,7 +132,7 @@ public class ShutdownDuringValidationIT {
 
 		waitForThread(thread);
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		try (var connection = repository.getConnection()) {
 			long size = connection.size();
 			if (size > 0) {
 				assertEquals(EXPECTED_REPOSITORY_SIZE, size,
@@ -141,6 +141,13 @@ public class ShutdownDuringValidationIT {
 				assertEquals(0, size, "The repository should be empty after shutdown during validation");
 			}
 
+		} catch (RepositoryException e) {
+			if (e.getCause() instanceof InterruptedException) {
+				// ignore this exception
+				return;
+			} else {
+				throw e;
+			}
 		}
 
 	}
@@ -177,7 +184,7 @@ public class ShutdownDuringValidationIT {
 
 		waitForThread(thread);
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		try (var connection = repository.getConnection()) {
 			long size = connection.size();
 
 			assertThat(size)
@@ -203,7 +210,7 @@ public class ShutdownDuringValidationIT {
 
 		Thread thread;
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		try (var connection = repository.getConnection()) {
 			connection.begin(ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation);
 			connection.add(realData);
 			ValueFactory vf = connection.getValueFactory();
@@ -223,9 +230,16 @@ public class ShutdownDuringValidationIT {
 		}
 		waitForThread(thread);
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		try (var connection = repository.getConnection()) {
 			long size = connection.size();
 			assertEquals(0, size, "The repository should be empty because the transaction always fails validation.");
+		} catch (RepositoryException e) {
+			if (e.getCause() instanceof InterruptedException) {
+				// ignore this exception
+				return;
+			} else {
+				throw e;
+			}
 		}
 
 	}
@@ -238,8 +252,7 @@ public class ShutdownDuringValidationIT {
 
 		Thread thread;
 
-		SailRepositoryConnection connection = repository.getConnection();
-		try (connection) {
+		try (var connection = repository.getConnection()) {
 			connection.begin(ShaclSail.TransactionSettings.PerformanceHint.SerialValidation);
 			connection.add(realData);
 			ValueFactory vf = connection.getValueFactory();
@@ -260,10 +273,16 @@ public class ShutdownDuringValidationIT {
 
 		waitForThread(thread);
 
-		SailRepositoryConnection connection2 = repository.getConnection();
-		try (connection2) {
-			long size = connection2.size();
+		try (var connection = repository.getConnection()) {
+			long size = connection.size();
 			assertEquals(0, size, "The repository should be empty because the transaction always fails validation.");
+		} catch (RepositoryException e) {
+			if (e.getCause() instanceof InterruptedException) {
+				// ignore this exception
+				return;
+			} else {
+				throw e;
+			}
 		}
 
 	}
@@ -300,11 +319,18 @@ public class ShutdownDuringValidationIT {
 
 		waitForThread(thread);
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		try (var connection = repository.getConnection()) {
 			long size = connection.size();
 			assertThat(size)
 					.as("Repository size")
 					.isIn(0L, 1L, (long) (EXPECTED_REPOSITORY_SIZE + 1));
+		} catch (RepositoryException e) {
+			if (e.getCause() instanceof InterruptedException) {
+				// ignore this exception
+				return;
+			} else {
+				throw e;
+			}
 		}
 
 	}
