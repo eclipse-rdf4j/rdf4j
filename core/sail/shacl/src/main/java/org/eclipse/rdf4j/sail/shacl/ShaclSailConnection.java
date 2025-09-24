@@ -14,7 +14,6 @@ package org.eclipse.rdf4j.sail.shacl;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -569,9 +568,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						if (closed) {
 							throw new SailException("Connection is closed");
 						}
-						synchronized (this.shapeValidatorContainers) {
+						synchronized (shapeValidatorContainers) {
 							try {
-								this.shapeValidatorContainers.add(s);
+								shapeValidatorContainers.add(s);
 							} catch (Throwable t) {
 								try {
 									s.forceClose();
@@ -633,7 +632,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 				boolean done = false;
 
-				ArrayDeque<Future<ValidationResultIterator>> futures1 = new ArrayDeque<>(futures);
+				ArrayDeque<Future<ValidationResultIterator>> futures1;
+				synchronized (futures) {
+					futures1 = new ArrayDeque<>(futures);
+				}
+
 				while (!futures1.isEmpty()) {
 					Future<ValidationResultIterator> future = futures1.removeFirst();
 
@@ -854,6 +857,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			return;
 		}
 
+		closed = true;
+
 		try {
 			var originalFutures = this.futures;
 			if (originalFutures != null) {
@@ -869,7 +874,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				var originalShapeValidatorContainers = this.shapeValidatorContainers;
 				if (originalShapeValidatorContainers != null) {
 					synchronized (originalShapeValidatorContainers) {
-						for (ShapeValidationContainer shapeValidatorContainer : shapeValidatorContainers) {
+						for (ShapeValidationContainer shapeValidatorContainer : originalShapeValidatorContainers) {
 							try {
 								shapeValidatorContainer.forceClose();
 							} catch (Throwable ignored) {
@@ -936,11 +941,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								try {
 									cleanupReadWriteLock();
 								} finally {
-									try {
-										cleanup();
-									} finally {
-										closed = true;
-									}
+									cleanup();
 								}
 							}
 						}
