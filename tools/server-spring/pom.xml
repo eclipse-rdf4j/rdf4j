@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-tools</artifactId>
-		<version>5.1.6</version>
+		<version>5.1.7-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-http-server-spring</artifactId>
 	<name>RDF4J: HTTP server - core</name>
