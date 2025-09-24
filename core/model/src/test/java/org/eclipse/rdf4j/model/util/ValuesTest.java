@@ -24,6 +24,7 @@ import static org.mockito.Mockito.verify;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.Period;
 import java.util.Date;
@@ -506,6 +507,18 @@ public class ValuesTest {
 				.isInstanceOf(NullPointerException.class)
 				.hasMessageContaining("value may not be null");
 
+	}
+
+	@Test
+	public void testTemporalAccessorLiteralInstant() {
+		final Instant value = Instant.ofEpochSecond(1234567890, 12);
+		Literal literal = literal(value);
+
+		assertThat(literal).isNotNull();
+		assertThat(literal.temporalAccessorValue()).isEqualTo(value);
+		assertThat(literal.getLabel()).isEqualTo(value.toString());
+		assertThat(literal.getDatatype()).isEqualTo(XSD.DATETIMESTAMP);
+		assertThat(literal.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.DATETIMESTAMP);
 	}
 
 	@Test
