@@ -576,7 +576,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 									} catch (Throwable ignored) {
 										logger.debug("Throwable was ignored while closing connection", ignored);
 									}
-									throw new SailException("Connection is closed", t);
+									throw new SailException("Connection is closed");
 								}
 								shapeValidatorContainers.add(s);
 							} catch (Throwable t) {
@@ -638,7 +638,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								try {
 									if (closed) {
 										f.cancel(true);
-										throw new SailException("Connection is closed", t);
+										throw new SailException("Connection is closed");
 									}
 									futures.add(f);
 								} catch (Throwable t) {
