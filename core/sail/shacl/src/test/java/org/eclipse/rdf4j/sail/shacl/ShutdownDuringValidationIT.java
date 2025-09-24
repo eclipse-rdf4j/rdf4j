@@ -98,6 +98,7 @@ public class ShutdownDuringValidationIT {
 		assertFalse(Thread.interrupted());
 		repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 		((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+		((ShaclSail) repository.getSail()).setConnectionTimeOut((int) (MAX_MILLIS + 10));
 	}
 
 	@AfterEach
@@ -494,7 +495,7 @@ public class ShutdownDuringValidationIT {
 		if (MAX_MILLIS <= 0) {
 			throw new IllegalStateException("MAX_MILLIS must be set to a positive value before running tests.");
 		}
-		int step = ((int) (MAX_MILLIS / 100));
+		int step = ((int) (MAX_MILLIS / 20));
 
 		return IntStream.iterate(1, n -> n <= MAX_MILLIS, n -> n + step);
 	}

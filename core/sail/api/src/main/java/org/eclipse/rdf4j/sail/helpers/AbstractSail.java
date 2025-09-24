@@ -40,7 +40,7 @@ import org.slf4j.LoggerFactory;
 public abstract class AbstractSail implements Sail {
 
 	/**
-	 * Default connection timeout on shutdown: 20,000 milliseconds.
+	 * Default connection timeout on shutdown: 20,000 milliseconds (20 seconds).
 	 */
 	protected final static long DEFAULT_CONNECTION_TIMEOUT = 20000L;
 

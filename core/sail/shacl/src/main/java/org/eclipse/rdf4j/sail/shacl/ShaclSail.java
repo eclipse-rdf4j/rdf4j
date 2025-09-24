@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.helpers.AbstractSail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShape;
@@ -194,6 +195,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	private final AtomicBoolean initialized = new AtomicBoolean(false);
 
 	private final RevivableExecutorService executorService;
+	private int connectionTimeOutMillis = -1;
 
 	@InternalUseOnly
 	StampedLockManager.Cache<List<ContextWithShape>>.WritableState getCachedShapesForWriting()
@@ -209,6 +211,14 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 
 	public boolean isShutdown() {
 		return !initialized.get();
+	}
+
+	public void setConnectionTimeOut(int connectionTimeOutMillis) {
+		NotifyingSail baseSail = getBaseSail();
+		if (baseSail instanceof AbstractSail) {
+			((AbstractSail) baseSail).setConnectionTimeOut(connectionTimeOutMillis);
+		}
+		this.connectionTimeOutMillis = connectionTimeOutMillis;
 	}
 
 	static class CleanableState implements Runnable {
