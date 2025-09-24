@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
+import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -374,11 +375,21 @@ public class ShutdownDuringValidationIT {
 				thread = startShutdownThread(sleepMillis);
 
 				commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE + 1, 1);
-			} catch (RepositoryException e) {
+			} catch (RepositoryException | SailException e) {
+				System.out.println(e);
+				if (e instanceof InterruptedSailException) {
+					// ignore this exception
+					return;
+				}
 				if (e.getCause() instanceof InterruptedException) {
 					// ignore this exception
 					return;
 				}
+				if (e.getCause() instanceof InterruptedSailException) {
+					// ignore this exception
+					return;
+				}
+
 				logger.error("Error during test execution", e);
 				throw e;
 			}
@@ -483,7 +494,7 @@ public class ShutdownDuringValidationIT {
 		if (MAX_MILLIS <= 0) {
 			throw new IllegalStateException("MAX_MILLIS must be set to a positive value before running tests.");
 		}
-		int step = ((int) (MAX_MILLIS / 20));
+		int step = ((int) (MAX_MILLIS / 100));
 
 		return IntStream.iterate(1, n -> n <= MAX_MILLIS, n -> n + step);
 	}
