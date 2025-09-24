@@ -577,6 +577,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								} catch (Throwable ignored) {
 									logger.debug("Throwable was ignored while closing connection", ignored);
 								}
+								if (closed) {
+									throw new SailException("Connection is closed", t);
+								}
 								throw t;
 							}
 						}
@@ -610,6 +613,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 									if (sail.isShutdown()) {
 										throw new SailException("Sail is shutdown", e);
 									}
+									if (closed) {
+										throw new SailException("Connection is closed", e);
+									}
 									throw e;
 								}
 							} else {
@@ -625,6 +631,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 									futures.add(f);
 								} catch (Throwable t) {
 									f.cancel(true);
+									if (closed) {
+										throw new SailException("Connection is closed", t);
+									}
 									throw t;
 								}
 							}
