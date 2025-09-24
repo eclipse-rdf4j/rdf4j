@@ -162,7 +162,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	protected void verifyIsOpen() throws SailException {
 		if (!((boolean) IS_OPEN.getAcquire(this))) {
-			throw new SailException("Connection has been closed");
+			throw new IllegalStateException("Connection has been closed");
 		}
 	}
 

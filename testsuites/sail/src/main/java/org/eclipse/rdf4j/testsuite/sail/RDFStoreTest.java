@@ -584,7 +584,7 @@ public abstract class RDFStoreTest {
 		} catch (IllegalStateException e) {
 			// do nothing, this is expected
 		} catch (SailException e) {
-			fail(e.getMessage());
+			throw e;
 		}
 	}
 

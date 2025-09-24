@@ -308,6 +308,10 @@ public class ShutdownDuringValidationIT {
 			assertFalse(Thread.currentThread().isInterrupted(), "The thread should not have been interrupted");
 			long size = connection.size();
 			assertEquals(expected, size, "The repository should be empty after shutdown during validation");
+		} catch (IllegalStateException e) {
+			if (!e.getMessage().contains("closed")) {
+				throw e;
+			}
 		} catch (RepositoryException ignored) {
 			System.out.println(ignored.getMessage());
 			try {
