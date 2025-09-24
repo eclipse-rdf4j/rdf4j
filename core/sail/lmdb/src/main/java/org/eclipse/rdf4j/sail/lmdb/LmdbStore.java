@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
@@ -376,7 +377,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			throw new SailException(e);
+			throw new InterruptedSailException(e);
 		} finally {
 			txnLockManager.unlock();
 		}

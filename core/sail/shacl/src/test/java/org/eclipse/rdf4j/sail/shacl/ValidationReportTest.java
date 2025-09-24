@@ -45,7 +45,13 @@ public class ValidationReportTest {
 			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
 			connection.add(RDF.SUBJECT, RDF.TYPE, RDFS.RESOURCE);
 
-			connection.commit();
+			try {
+				connection.commit();
+			} catch (RepositoryException e) {
+				connection.rollback();
+				throw e;
+			}
+
 			Assertions.fail();
 
 		} catch (RepositoryException e) {
@@ -103,8 +109,12 @@ public class ValidationReportTest {
 			connection.begin();
 			connection.add(vf.createIRI("http://example.com/ns#", "node1"), RDF.TYPE,
 					vf.createIRI("http://example.com/ns#", "SecondTarget"));
-			connection.commit();
-
+			try {
+				connection.commit();
+			} catch (RepositoryException e) {
+				connection.rollback();
+				throw e;
+			}
 			Assertions.fail();
 
 		} catch (RepositoryException e) {
@@ -157,7 +167,12 @@ public class ValidationReportTest {
 			connection.prepareUpdate(IOUtils.toString(ValidationReportTest.class.getClassLoader()
 					.getResourceAsStream("test-cases/or/datatype/invalid/case1/query1.rq"), StandardCharsets.UTF_8))
 					.execute();
-			connection.commit();
+			try {
+				connection.commit();
+			} catch (RepositoryException e) {
+				connection.rollback();
+				throw e;
+			}
 			Assertions.fail();
 
 		} catch (RepositoryException e) {
@@ -222,7 +237,12 @@ public class ValidationReportTest {
 					.getResourceAsStream("test-cases/hasValueIn/simple/invalid/case1/query1.rq"),
 					StandardCharsets.UTF_8))
 					.execute();
-			connection.commit();
+			try {
+				connection.commit();
+			} catch (RepositoryException e) {
+				connection.rollback();
+				throw e;
+			}
 			Assertions.fail();
 
 		} catch (RepositoryException e) {
@@ -280,7 +300,12 @@ public class ValidationReportTest {
 					.getResourceAsStream("test-cases/hasValue/simple/invalid/case1/query1.rq"),
 					StandardCharsets.UTF_8))
 					.execute();
-			connection.commit();
+			try {
+				connection.commit();
+			} catch (RepositoryException e) {
+				connection.rollback();
+				throw e;
+			}
 			Assertions.fail();
 
 		} catch (RepositoryException e) {

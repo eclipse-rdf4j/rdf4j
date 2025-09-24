@@ -136,7 +136,8 @@ class MemorySailStore implements SailStore {
 	/**
 	 * Lock manager used to prevent concurrent writes.
 	 */
-	private final ExclusiveReentrantLockManager txnLockManager = new ExclusiveReentrantLockManager();
+	private final ExclusiveReentrantLockManager txnLockManager = new ExclusiveReentrantLockManager(
+			"MemorySailStore-txnLockManager");
 
 	/**
 	 * Cleanup thread that removes deprecated statements when no other threads are accessing this list. Seee
@@ -520,8 +521,7 @@ class MemorySailStore implements SailStore {
 
 							cleanSnapshots();
 						} catch (InterruptedException e) {
-							Thread.currentThread().interrupt();
-							logger.info("snapshot cleanup interrupted");
+							logger.debug("snapshot cleanup interrupted");
 						}
 					};
 

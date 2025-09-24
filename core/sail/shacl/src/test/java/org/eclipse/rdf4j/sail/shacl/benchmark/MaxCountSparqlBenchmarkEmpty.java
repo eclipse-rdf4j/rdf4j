@@ -243,6 +243,7 @@ public class MaxCountSparqlBenchmarkEmpty {
 			try {
 				connection.commit();
 			} catch (RepositoryException e) {
+				connection.rollback();
 				if (!(e.getCause() instanceof ShaclSailValidationException)) {
 					throw e;
 				}
@@ -288,6 +289,7 @@ public class MaxCountSparqlBenchmarkEmpty {
 			try {
 				connection.commit();
 			} catch (RepositoryException e) {
+				connection.rollback();
 				if (!(e.getCause() instanceof ShaclSailValidationException)) {
 					throw e;
 				}

@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -255,6 +256,81 @@ public class PrepareCommitTest {
 		shaclSail.shutDown();
 
 		Assertions.assertTrue(exception);
+	}
+
+	@Test
+	public void testShutdownBeforePrepare() throws IOException, InterruptedException {
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.trig");
+		Thread thread = new Thread(shaclSail::shutDown);
+
+		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
+			// due to optimizations in the ShaclSail, changes after prepare has run will only be detected if there is
+			// data in the base sail already!
+			connection.begin();
+			connection.addStatement(RDFS.RESOURCE, RDFS.LABEL, SimpleValueFactory.getInstance().createLiteral("label"));
+			connection.commit();
+
+			connection.begin();
+			connection.addStatement(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+			thread.start();
+			Thread.sleep(500);
+
+			assertThrows(SailException.class, () -> {
+				try {
+					connection.prepare();
+				} catch (RepositoryException e) {
+					throw e.getCause();
+				}
+			});
+
+			assertThrows(SailException.class, () -> {
+				try {
+					connection.commit();
+				} catch (RepositoryException e) {
+					connection.rollback();
+					throw e.getCause();
+				} catch (SailException e) {
+					connection.rollback();
+					throw e;
+				}
+			});
+
+		} finally {
+			try {
+				thread.join();
+			} catch (Exception e) {
+			}
+
+			shaclSail.shutDown();
+		}
+
+	}
+
+	@Test
+	public void testShutdownBeforeCommit() throws IOException, InterruptedException {
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.trig");
+		Thread thread = new Thread(shaclSail::shutDown);
+
+		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
+			// due to optimizations in the ShaclSail, changes after prepare has run will only be detected if there is
+			// data in the base sail already!
+			connection.begin();
+			connection.addStatement(RDFS.RESOURCE, RDFS.LABEL, SimpleValueFactory.getInstance().createLiteral("label"));
+			connection.commit();
+
+			connection.begin();
+			connection.addStatement(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+			connection.prepare();
+
+			thread.start();
+
+			connection.commit();
+
+		} finally {
+			thread.join();
+			shaclSail.shutDown();
+		}
+
 	}
 
 }

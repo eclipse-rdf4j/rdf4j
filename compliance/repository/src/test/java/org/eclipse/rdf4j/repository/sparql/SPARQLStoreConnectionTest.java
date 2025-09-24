@@ -524,4 +524,12 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	public void testClearStatementsFromContextSingleTransaction(IsolationLevel level) throws Exception {
 		super.testClearStatementsFromContextSingleTransaction(level);
 	}
+
+	@ParameterizedTest
+	@MethodSource("parameters")
+	@Disabled("relies on pending updates being visible in own connection")
+	@Override
+	public void testRollbackAfterInterrupt(IsolationLevel level) {
+		super.testRollbackAfterInterrupt(level);
+	}
 }

@@ -36,6 +36,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.slf4j.Logger;
@@ -320,6 +321,7 @@ public abstract class SailConcurrencyTest {
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdown() throws InterruptedException {
+		System.err.println("Running testConcurrentConnectionsShutdown");
 		if (store instanceof AbstractSail) {
 			((AbstractSail) store).setConnectionTimeOut(200);
 		} else if (store instanceof SailWrapper) {
@@ -365,6 +367,7 @@ public abstract class SailConcurrencyTest {
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testSerialThreads() throws InterruptedException {
+		System.err.println("Running testSerialThreads");
 		if (store instanceof AbstractSail) {
 			((AbstractSail) store).setConnectionTimeOut(200);
 		} else if (store instanceof SailWrapper) {
@@ -446,6 +449,7 @@ public abstract class SailConcurrencyTest {
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdownReadCommitted() throws InterruptedException {
+		System.err.println("Running testConcurrentConnectionsShutdownReadCommitted");
 		if (store instanceof AbstractSail) {
 			((AbstractSail) store).setConnectionTimeOut(200);
 		} else if (store instanceof SailWrapper) {
@@ -499,9 +503,11 @@ public abstract class SailConcurrencyTest {
 
 	}
 
-	@Test
+//	@Test
+	@RepeatedTest(5)
 	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdownAndClose() throws InterruptedException {
+		System.err.println("Running testConcurrentConnectionsShutdownAndClose");
 		if (store instanceof AbstractSail) {
 			((AbstractSail) store).setConnectionTimeOut(200);
 		}
@@ -522,8 +528,6 @@ public abstract class SailConcurrencyTest {
 			connection1.get().begin(IsolationLevels.NONE);
 			connection1.get().clear();
 		});
-		thread1.setName("Thread 1");
-		thread1.start();
 
 		CountDownLatch countDownLatch2 = new CountDownLatch(1);
 		Thread thread2 = new Thread(() -> {
@@ -534,6 +538,8 @@ public abstract class SailConcurrencyTest {
 
 		});
 		thread2.setName("Thread 2");
+		thread1.setName("Thread 1");
+		thread1.start();
 		thread2.start();
 
 		countDownLatch1.await();
@@ -578,6 +584,7 @@ public abstract class SailConcurrencyTest {
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdownAndCloseRollback() throws InterruptedException {
+		System.err.println("Running testConcurrentConnectionsShutdownAndCloseRollback");
 		if (store instanceof AbstractSail) {
 			((AbstractSail) store).setConnectionTimeOut(200);
 		}
