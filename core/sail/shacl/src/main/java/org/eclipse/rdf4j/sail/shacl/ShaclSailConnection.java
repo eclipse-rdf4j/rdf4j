@@ -182,7 +182,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			throw new SailException("Sail is shutdown");
 		}
 
-		shapeValidatorContainers = Collections.synchronizedList(new ArrayList<>());
+		shapeValidatorContainers = new ArrayList<>();
 		currentIsolationLevel = level;
 
 		assert addedStatements == null;
@@ -569,14 +569,24 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						if (closed) {
 							throw new SailException("Connection is closed");
 						}
-						this.shapeValidatorContainers.add(s);
+						synchronized (this.shapeValidatorContainers) {
+							try {
+								this.shapeValidatorContainers.add(s);
+							} catch (Throwable t) {
+								try {
+									s.forceClose();
+								} catch (Throwable ignored) {
+									logger.debug("Throwable was ignored while closing connection", ignored);
+								}
+								throw t;
+							}
+						}
 					})
 					.map(validationContainer -> validationContainer::performValidation);
 
 			List<ValidationResultIterator> validationResultIterators = new ArrayList<>(numberOfShapes);
 
-			var futures = Collections.synchronizedList(new ArrayList<Future<ValidationResultIterator>>(numberOfShapes));
-			this.futures = futures;
+			futures = new ArrayList<Future<ValidationResultIterator>>(numberOfShapes);
 
 			boolean parallelValidation = numberOfShapes > 1 && isParallelValidation();
 
@@ -610,7 +620,16 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							}
 						})
 						.filter(Objects::nonNull)
-						.forEach(futures::add);
+						.forEach(f -> {
+							synchronized (futures) {
+								try {
+									futures.add(f);
+								} catch (Throwable t) {
+									f.cancel(true);
+									throw t;
+								}
+							}
+						});
 
 				boolean done = false;
 
@@ -660,10 +679,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					throw new InterruptedException();
 				}
 			} finally {
-				for (Future<ValidationResultIterator> future : futures) {
-					future.cancel(true);
+				var originalFutures = this.futures;
+				synchronized (originalFutures) {
+					for (Future<ValidationResultIterator> future : originalFutures) {
+						future.cancel(true);
+					}
+					this.futures = List.of();
 				}
-				this.futures = List.of();
+
 			}
 
 			if (Thread.currentThread().isInterrupted()) {
@@ -832,23 +855,29 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		try {
-			List<Future<ValidationResultIterator>> futures = this.futures;
-			if (futures != null) {
-				for (Future<ValidationResultIterator> future : futures) {
-					future.cancel(true);
+			var originalFutures = this.futures;
+			if (originalFutures != null) {
+				synchronized (originalFutures) {
+					for (Future<ValidationResultIterator> future : futures) {
+						future.cancel(true);
+					}
+					this.futures = List.of();
 				}
 			}
 		} finally {
 			try {
-				if (shapeValidatorContainers != null) {
-					for (ShapeValidationContainer shapeValidatorContainer : shapeValidatorContainers) {
-						try {
-							shapeValidatorContainer.forceClose();
-						} catch (Throwable ignored) {
-							logger.debug("Throwable was ignored while closing connection", ignored);
+				var originalShapeValidatorContainers = this.shapeValidatorContainers;
+				if (originalShapeValidatorContainers != null) {
+					synchronized (originalShapeValidatorContainers) {
+						for (ShapeValidationContainer shapeValidatorContainer : shapeValidatorContainers) {
+							try {
+								shapeValidatorContainer.forceClose();
+							} catch (Throwable ignored) {
+								logger.debug("Throwable was ignored while closing connection", ignored);
+							}
 						}
+						shapeValidatorContainers = List.of();
 					}
-					shapeValidatorContainers.clear();
 				}
 			} finally {
 				try {
