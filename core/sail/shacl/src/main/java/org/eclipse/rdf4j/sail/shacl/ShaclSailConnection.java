@@ -570,6 +570,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						}
 						synchronized (shapeValidatorContainers) {
 							try {
+								if (closed) {
+									try {
+										s.forceClose();
+									} catch (Throwable ignored) {
+										logger.debug("Throwable was ignored while closing connection", ignored);
+									}
+									throw new SailException("Connection is closed", t);
+								}
 								shapeValidatorContainers.add(s);
 							} catch (Throwable t) {
 								try {
@@ -628,6 +636,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						.forEach(f -> {
 							synchronized (futures) {
 								try {
+									if (closed) {
+										f.cancel(true);
+										throw new SailException("Connection is closed", t);
+									}
 									futures.add(f);
 								} catch (Throwable t) {
 									f.cancel(true);
