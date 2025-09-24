@@ -1443,6 +1443,36 @@ public abstract class RepositoryConnectionTest {
 
 	@ParameterizedTest
 	@MethodSource("parameters")
+	public void testRollbackAfterInterrupt(IsolationLevel level) {
+		setupTest(level);
+
+		if (IsolationLevels.NONE.isCompatibleWith(level)) {
+			return;
+		}
+
+		testCon.begin();
+		testCon.add(bob, name, nameBob);
+		assertThat(testCon.hasStatement(bob, name, nameBob, true)).isTrue();
+
+		boolean wasInterrupted = Thread.currentThread().isInterrupted();
+		try {
+			Thread.currentThread().interrupt();
+			assertThat(Thread.currentThread().isInterrupted()).isTrue();
+
+			testCon.rollback();
+		} finally {
+			if (!wasInterrupted) {
+				Thread.interrupted();
+			}
+		}
+
+		assertThat(testCon.hasStatement(bob, name, nameBob, true)).isFalse();
+		assertThat(testCon.isEmpty()).isTrue();
+		assertThat(testCon2.isEmpty()).isTrue();
+	}
+
+	@ParameterizedTest
+	@MethodSource("parameters")
 	public void testEmptyCommit(IsolationLevel level) {
 		setupTest(level);
 
