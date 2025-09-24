@@ -623,7 +623,9 @@ public abstract class AbstractSailConnection implements SailConnection {
 							debugEnabled ? new Throwable() : null);
 				}
 			} finally {
-				exclusiveLock.release();
+				if (exclusiveLock != null) {
+					exclusiveLock.release();
+				}
 			}
 		} finally {
 			try {
