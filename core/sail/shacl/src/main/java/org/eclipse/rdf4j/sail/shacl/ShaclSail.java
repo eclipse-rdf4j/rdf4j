@@ -213,6 +213,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 		return !initialized.get();
 	}
 
+	@InternalUseOnly
 	public void setConnectionTimeOut(int connectionTimeOutMillis) {
 		NotifyingSail baseSail = getBaseSail();
 		if (baseSail instanceof AbstractSail) {
