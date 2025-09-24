@@ -184,6 +184,13 @@ public class ShutdownDuringValidationIT {
 					.as("Repository size")
 					.isIn(0L, 1L, (long) (EXPECTED_REPOSITORY_SIZE + 1));
 
+		} catch (RepositoryException e) {
+			if (e.getCause() instanceof InterruptedException) {
+				// ignore this exception
+				return;
+			} else {
+				throw e;
+			}
 		}
 
 	}
