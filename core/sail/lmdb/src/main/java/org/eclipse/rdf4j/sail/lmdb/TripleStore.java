@@ -74,8 +74,8 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.concurrent.locks.StampedLock;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
@@ -1175,14 +1175,12 @@ class TripleStore implements Closeable {
 		private final IndexKeyWriters.MatcherFactory matcherFactory;
 		private final int dbiExplicit, dbiInferred;
 		private final int[] indexMap;
-		private final KeyGenerator keyGenerator;
 
 		public TripleIndex(String fieldSeq) throws IOException {
 			this.fieldSeq = fieldSeq.toCharArray();
 			this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
 			this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
 			this.indexMap = getIndexes(this.fieldSeq);
-			this.keyGenerator = new KeyGenerator(this.keyWriter);
 			// open database and use native sort order without comparator
 			dbiExplicit = openDatabase(env, fieldSeq, MDB_CREATE, null);
 			dbiInferred = openDatabase(env, fieldSeq + "-inf", MDB_CREATE, null);
@@ -1287,44 +1285,15 @@ class TripleStore implements Closeable {
 		}
 
 		GroupMatcher createMatcher(long subj, long pred, long obj, long context) {
-			ByteBuffer keyBuffer = keyGenerator.keyFor(subj == -1 ? 0 : subj, pred == -1 ? 0 : pred,
-					obj == -1 ? 0 : obj, context == -1 ? 0 : context,
-					() -> ByteBuffer.allocate(TripleStore.MAX_KEY_LENGTH), false);
-			ByteBuffer heapBuffer = ensureHeapBuffer(keyBuffer);
-			return new GroupMatcher(heapBuffer, matcherFactory.create(subj, pred, obj, context));
+			ByteBuffer bb = ByteBuffer.allocate(TripleStore.MAX_KEY_LENGTH);
+			toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);
+			bb.flip();
+
+			return new GroupMatcher(bb, matcherFactory.create(subj, pred, obj, context));
 		}
 
 		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
 			keyWriter.write(bb, subj, pred, obj, context);
-		}
-
-		ByteBuffer getMinKey(long subj, long pred, long obj, long context, Supplier<ByteBuffer> supplier) {
-			long normalizedSubj = subj <= 0 ? 0 : subj;
-			long normalizedPred = pred <= 0 ? 0 : pred;
-			long normalizedObj = obj <= 0 ? 0 : obj;
-			long normalizedContext = context <= 0 ? 0 : context;
-			return keyGenerator.keyFor(normalizedSubj, normalizedPred, normalizedObj, normalizedContext, supplier, true,
-					false);
-		}
-
-		ByteBuffer getMaxKey(long subj, long pred, long obj, long context, Supplier<ByteBuffer> supplier) {
-			long normalizedSubj = subj <= 0 ? Long.MAX_VALUE : subj;
-			long normalizedPred = pred <= 0 ? Long.MAX_VALUE : pred;
-			long normalizedObj = obj <= 0 ? Long.MAX_VALUE : obj;
-			long normalizedContext = context < 0 ? Long.MAX_VALUE : context;
-			return keyGenerator.keyFor(normalizedSubj, normalizedPred, normalizedObj, normalizedContext, supplier, true,
-					false);
-		}
-
-		private ByteBuffer ensureHeapBuffer(ByteBuffer buffer) {
-			if (buffer.hasArray() && !buffer.isReadOnly()) {
-				return buffer;
-			}
-			ByteBuffer duplicate = buffer.duplicate();
-			ByteBuffer heap = ByteBuffer.allocate(duplicate.remaining());
-			heap.put(duplicate);
-			heap.flip();
-			return heap;
 		}
 
 		void keyToQuad(ByteBuffer key, long[] quad) {
@@ -1338,7 +1307,6 @@ class TripleStore implements Closeable {
 		}
 
 		void close() {
-			keyGenerator.close();
 			mdb_dbi_close(env, dbiExplicit);
 			mdb_dbi_close(env, dbiInferred);
 		}

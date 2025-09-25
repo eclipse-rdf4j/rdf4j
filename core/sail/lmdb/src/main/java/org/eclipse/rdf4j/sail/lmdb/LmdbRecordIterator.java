@@ -71,12 +71,9 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final MDBVal valueData;
 
-	private ByteBuffer rangeMinKeyBuf;
-	private boolean rangeMinKeyFromPool;
-	private ByteBuffer lastKeyBuf;
+	private ByteBuffer minKeyBuf;
 
 	private ByteBuffer maxKeyBuf;
-	private boolean maxKeyFromPool;
 
 	private int lastResult;
 
@@ -99,16 +96,17 @@ class LmdbRecordIterator implements RecordIterator {
 		this.valueData = pool.getVal();
 		this.index = index;
 		if (rangeSearch) {
-			rangeMinKeyBuf = index.getMinKey(subj, pred, obj, context, pool::getKeyBuffer);
-			rangeMinKeyFromPool = !rangeMinKeyBuf.isReadOnly();
+			minKeyBuf = pool.getKeyBuffer();
+			index.getMinKey(minKeyBuf, subj, pred, obj, context);
+			minKeyBuf.flip();
 
 			this.maxKey = pool.getVal();
-			maxKeyBuf = index.getMaxKey(subj, pred, obj, context, pool::getKeyBuffer);
-			maxKeyFromPool = !maxKeyBuf.isReadOnly();
+			this.maxKeyBuf = pool.getKeyBuffer();
+			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+			maxKeyBuf.flip();
 			this.maxKey.mv_data(maxKeyBuf);
 		} else {
-			rangeMinKeyBuf = null;
-			rangeMinKeyFromPool = false;
+			minKeyBuf = null;
 			this.maxKey = null;
 		}
 
@@ -165,14 +163,14 @@ class LmdbRecordIterator implements RecordIterator {
 				// cursor must be renewed
 				mdb_cursor_renew(txn, cursor);
 				if (fetchNext) {
-					// cursor must be positioned on last item, reuse buffer if available
-					if (lastKeyBuf == null) {
-						lastKeyBuf = pool.getKeyBuffer();
+					// cursor must be positioned on last item, reuse minKeyBuf if available
+					if (minKeyBuf == null) {
+						minKeyBuf = pool.getKeyBuffer();
 					}
-					lastKeyBuf.clear();
-					index.toKey(lastKeyBuf, quad[0], quad[1], quad[2], quad[3]);
-					lastKeyBuf.flip();
-					keyData.mv_data(lastKeyBuf);
+					minKeyBuf.clear();
+					index.toKey(minKeyBuf, quad[0], quad[1], quad[2], quad[3]);
+					minKeyBuf.flip();
+					keyData.mv_data(minKeyBuf);
 					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET);
 					if (lastResult != MDB_SUCCESS) {
 						// use MDB_SET_RANGE if key was deleted
@@ -191,9 +189,9 @@ class LmdbRecordIterator implements RecordIterator {
 				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 				fetchNext = false;
 			} else {
-				if (rangeMinKeyBuf != null) {
+				if (minKeyBuf != null) {
 					// set cursor to min key
-					keyData.mv_data(rangeMinKeyBuf);
+					keyData.mv_data(minKeyBuf);
 					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 				} else {
 					// set cursor to first item
@@ -240,16 +238,11 @@ class LmdbRecordIterator implements RecordIterator {
 					mdb_cursor_close(cursor);
 					pool.free(keyData);
 					pool.free(valueData);
-					if (rangeMinKeyBuf != null && rangeMinKeyFromPool) {
-						pool.free(rangeMinKeyBuf);
-					}
-					if (lastKeyBuf != null) {
-						pool.free(lastKeyBuf);
+					if (minKeyBuf != null) {
+						pool.free(minKeyBuf);
 					}
 					if (maxKey != null) {
-						if (maxKeyFromPool) {
-							pool.free(maxKeyBuf);
-						}
+						pool.free(maxKeyBuf);
 						pool.free(maxKey);
 					}
 				}
