@@ -120,15 +120,16 @@ public final class Bytes {
 			if (r != 0) {
 				return r;
 			}
-			r = d(array[i1], b.get(bi + 1));
+			b.position(bi+1);
+			r = d(array[i1], b.get());
 			if (r != 0) {
 				return r;
 			}
-			r = d(array[i2], b.get(bi + 2));
+			r = d(array[i2], b.get());
 			if (r != 0) {
 				return r;
 			}
-			return d(array[i3], b.get(bi + 3));
+			return d(array[i3], b.get());
 		};
 	}
 
