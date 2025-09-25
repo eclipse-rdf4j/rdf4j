@@ -38,7 +38,7 @@ class GroupMatcherTest {
 			for (byte[] valueLengths : ALL_LENGTH_COMBINATIONS) {
 				final byte[] lengthsRef = valueLengths;
 				long[] referenceValues = valuesForLengths(valueLengths);
-				GroupMatcher matcher = new GroupMatcher(encode(referenceValues).duplicate(), shouldMatch);
+				GroupMatcher matcher = new GroupMatcher(encode(referenceValues).duplicate().array(), shouldMatch);
 
 				for (CandidateStrategy strategy : CANDIDATE_STRATEGIES) {
 					final CandidateStrategy strategyRef = strategy;

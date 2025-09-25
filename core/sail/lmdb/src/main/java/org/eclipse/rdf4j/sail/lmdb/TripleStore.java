@@ -1289,7 +1289,7 @@ class TripleStore implements Closeable {
 			toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);
 			bb.flip();
 
-			return new GroupMatcher(bb, matcherFactory.create(subj, pred, obj, context));
+			return new GroupMatcher(bb.array(), matcherFactory.create(subj, pred, obj, context));
 		}
 
 		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {

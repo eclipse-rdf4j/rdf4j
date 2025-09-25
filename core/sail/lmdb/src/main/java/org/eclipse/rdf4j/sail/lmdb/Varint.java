@@ -521,24 +521,18 @@ public final class Varint {
 	 */
 	public static class GroupMatcher {
 
-		final int[] lengths;
-		final Bytes.RegionComparator[] cmps;
+		private final int[] lengths;
+		private final Bytes.RegionComparator[] cmps;
 		private final byte[] firstBytes;
-		private final boolean[] shouldMatch;
-		private MatchFn matcher;
+		private final MatchFn matcher;
 
-		public GroupMatcher(ByteBuffer value, boolean[] shouldMatch) {
+		public GroupMatcher(byte[] valueArray, boolean[] shouldMatch) {
 			assert shouldMatch.length == 4;
+
 			this.lengths = new int[4];
-			assert value.hasArray();
-			byte[] valueArray = value.array();
-			int baseOffset = value.arrayOffset();
-			if (baseOffset != 0) {
-				throw new AssertionError();
-			}
-			this.shouldMatch = shouldMatch;
 			this.cmps = new Bytes.RegionComparator[4];
 			this.firstBytes = new byte[4];
+			int baseOffset = 0;
 
 			// Loop is unrolled for performance. Do not change back to a loop, do not extract into method, unless you
 			// benchmark with QueryBenchmark first!
@@ -581,17 +575,11 @@ public final class Varint {
 				cmps[3] = Bytes.capturedComparator(valueArray, baseOffset, len);
 			}
 
-		}
+			this.matcher = selectMatcher(shouldMatch);
 
-		public GroupMatcher(ByteBuffer value, boolean a, boolean b, boolean c, boolean d, boolean e) {
-			this(value, new boolean[] { a, b, c, d, e });
 		}
 
 		public boolean matches(ByteBuffer other) {
-			if (this.matcher == null) {
-				this.matcher = selectMatcher(shouldMatch);
-			}
-
 			return matcher.matches(other);
 		}
 
