@@ -524,6 +524,7 @@ public final class Varint {
 		final boolean[] shouldMatch;
 		final int[] lengths;
 		final Bytes.RegionComparator[] cmps;
+		private final byte[] firstBytes;
 
 		public GroupMatcher(ByteBuffer value, boolean[] shouldMatch) {
 			assert shouldMatch.length == 4;
@@ -532,16 +533,51 @@ public final class Varint {
 			assert value.hasArray();
 			byte[] valueArray = value.array();
 			int baseOffset = value.arrayOffset();
+			if (baseOffset != 0) {
+				throw new AssertionError();
+			}
 			this.cmps = new Bytes.RegionComparator[4];
+			this.firstBytes = new byte[4];
 
-			int pos = 0;
-			for (int i = 0; i < 4; i++) {
-				int len = firstToLength(valueArray[baseOffset + pos]);
-				lengths[i] = len;
+			// Loop is unrolled for performance. Do not change back to a loop, do not extract into method, unless you
+			// benchmark with QueryBenchmark first!
+			{
+				byte fb = valueArray[0];
+				firstBytes[0] = fb;
+				int len = firstToLength(fb);
+				lengths[0] = len;
 
-				cmps[i] = Bytes.capturedComparator(valueArray, baseOffset + pos, len);
+				cmps[0] = Bytes.capturedComparator(valueArray, 0, len);
 
-				pos += len;
+				baseOffset += len;
+			}
+			{
+				byte fb = valueArray[baseOffset];
+				firstBytes[1] = fb;
+				int len = firstToLength(fb);
+				lengths[1] = len;
+
+				cmps[1] = Bytes.capturedComparator(valueArray, baseOffset, len);
+
+				baseOffset += len;
+			}
+			{
+				byte fb = valueArray[baseOffset];
+				firstBytes[2] = fb;
+				int len = firstToLength(fb);
+				lengths[2] = len;
+
+				cmps[2] = Bytes.capturedComparator(valueArray, baseOffset, len);
+
+				baseOffset += len;
+			}
+			{
+				byte fb = valueArray[baseOffset];
+				firstBytes[3] = fb;
+				int len = firstToLength(fb);
+				lengths[3] = len;
+
+				cmps[3] = Bytes.capturedComparator(valueArray, baseOffset, len);
 			}
 		}
 
@@ -550,32 +586,35 @@ public final class Varint {
 		}
 
 		public boolean matches(ByteBuffer other) {
-			int otherPos = 0;
 
+			int otherPos = 0;
+			// Loop is unrolled for performance. Do not change back to a loop, do not extract into method, unless you
+			// benchmark with QueryBenchmark first!
 			{
-				int len = lengths[0];
-				int otherLen = firstToLength(other.get(otherPos));
 
 				if (shouldMatch[0]) {
-					if (len != otherLen) {
+					byte b = other.get(0);
+					if (firstBytes[0] != b) {
 						return false;
 					}
-					if (cmps[0].compare(other, otherPos) != 0) {
+					if (cmps[0].compare(other, 0) != 0) {
 						return false;
 					}
 					if (!shouldMatch[1] && !shouldMatch[2] && !shouldMatch[3]) {
 						return true;
 					}
+					otherPos += firstToLength(b);
+				} else {
+					otherPos += firstToLength(other.get(0));
 				}
 
-				otherPos += otherLen;
 			}
 			{
-				int len = lengths[1];
-				int otherLen = firstToLength(other.get(otherPos));
 
 				if (shouldMatch[1]) {
-					if (len != otherLen) {
+					byte b = other.get(otherPos);
+
+					if (firstBytes[1] != b) {
 						return false;
 					}
 					if (cmps[1].compare(other, otherPos) != 0) {
@@ -584,16 +623,17 @@ public final class Varint {
 					if (!shouldMatch[2] && !shouldMatch[3]) {
 						return true;
 					}
-				}
+					otherPos += firstToLength(b);
 
-				otherPos += otherLen;
+				} else {
+					otherPos += firstToLength(other.get(otherPos));
+				}
 			}
 			{
-				int len = lengths[2];
-				int otherLen = firstToLength(other.get(otherPos));
-
 				if (shouldMatch[2]) {
-					if (len != otherLen) {
+					byte b = other.get(otherPos);
+
+					if (firstBytes[2] != b) {
 						return false;
 					}
 					if (cmps[2].compare(other, otherPos) != 0) {
@@ -602,21 +642,21 @@ public final class Varint {
 					if (!shouldMatch[3]) {
 						return true;
 					}
+					otherPos += firstToLength(b);
+
+				} else {
+					otherPos += firstToLength(other.get(otherPos));
 				}
 
-				otherPos += otherLen;
 			}
 			{
-				int len = lengths[3];
-				int otherLen = firstToLength(other.get(otherPos));
-
 				if (shouldMatch[3]) {
-					if (len != otherLen) {
+					byte b = other.get(otherPos);
+
+					if (firstBytes[3] != b) {
 						return false;
 					}
-					if (cmps[3].compare(other, otherPos) != 0) {
-						return false;
-					}
+					return cmps[3].compare(other, otherPos) == 0;
 				}
 			}
 			return true;
