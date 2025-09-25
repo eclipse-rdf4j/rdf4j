@@ -42,7 +42,7 @@ final class KeyGenerator implements AutoCloseable {
 	}
 
 	ByteBuffer keyFor(long subj, long pred, long obj, long context, Supplier<ByteBuffer> supplier, boolean pooled,
-					  boolean allowCache) {
+			boolean allowCache) {
 		long sum = subj * 3 + (subj + pred) * 5 + (subj + obj) * 7 + context * 11;
 		int filterIndex = (int) (sum & FILTER_MASK);
 
@@ -61,7 +61,7 @@ final class KeyGenerator implements AutoCloseable {
 		buffer.flip();
 
 		if (allowCache) {
-			if (timeSinceLastCacheThresholdIncrease + 5 > epoch && epoch% 32 == 0) {
+			if (timeSinceLastCacheThresholdIncrease + 5 > epoch && epoch % 32 == 0) {
 				// Don't promote to cache too soon after a threshold increase
 			} else {
 				maybePromote(buffer, sum, filterIndex, subj, pred, obj, context);
@@ -69,7 +69,7 @@ final class KeyGenerator implements AutoCloseable {
 			if (windowCallCount++ % WINDOW_SIZE == 0) {
 				epoch = (epoch + 1) & Integer.MAX_VALUE;
 				churn /= 2;
-				if(epoch % 128 == 0 && churn < CACHE_THRESHOLD / 2 && CACHE_THRESHOLD > 2) {
+				if (epoch % 128 == 0 && churn < CACHE_THRESHOLD / 2 && CACHE_THRESHOLD > 2) {
 					CACHE_THRESHOLD--;
 					System.out.println("Decreased cache threshold to: " + CACHE_THRESHOLD);
 					timeSinceLastCacheThresholdIncrease = epoch;
@@ -77,10 +77,8 @@ final class KeyGenerator implements AutoCloseable {
 			}
 		}
 
-
 		return buffer;
 	}
-
 
 	int max = 0;
 
@@ -91,9 +89,10 @@ final class KeyGenerator implements AutoCloseable {
 	int timeSinceLastCacheThresholdIncrease = 0;
 
 	private void maybePromote(ByteBuffer buffer, long sum, int filterIndex, long subj, long pred, long obj,
-							  long context) {
+			long context) {
 
-		// prev and prev2 store the two previous filter indices we saw, if ours mataches any of these then we can continue, if not we return
+		// prev and prev2 store the two previous filter indices we saw, if ours mataches any of these then we can
+		// continue, if not we return
 		if (filterIndex != prev && filterIndex != prev2) {
 			prev2 = prev;
 			prev = filterIndex;
@@ -135,7 +134,6 @@ final class KeyGenerator implements AutoCloseable {
 		} else {
 			// counters[filterIndex] = newCount;
 		}
-
 
 	}
 
