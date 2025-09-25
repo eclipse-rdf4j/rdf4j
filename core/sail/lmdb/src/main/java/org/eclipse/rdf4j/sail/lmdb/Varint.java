@@ -666,7 +666,7 @@ public final class Varint {
 
 		private boolean match0010(ByteBuffer other) {
 			int pos = 0;
-			pos += firstToLength(other.get(pos));
+			pos += skipAhead(other, pos);
 
 			if (firstBytes[1] == other.get(pos)) {
 				return cmps[1].compare(other, pos) == 0;
@@ -677,9 +677,8 @@ public final class Varint {
 		private boolean match0011(ByteBuffer other) {
 			if (firstBytes[0] == other.get(0)) {
 				if (cmps[0].compare(other, 0) == 0) {
-					int pos = lengths[0];
-					if (firstBytes[1] == other.get(pos)) {
-						return cmps[1].compare(other, pos) == 0;
+					if (firstBytes[1] == other.get(lengths[0])) {
+						return cmps[1].compare(other, lengths[0]) == 0;
 					}
 				}
 			}
@@ -689,8 +688,8 @@ public final class Varint {
 
 		private boolean match0100(ByteBuffer other) {
 			int pos = 0;
-			pos += firstToLength(other.get(pos));
-			pos += firstToLength(other.get(pos));
+			pos += skipAhead(other, pos);
+			pos += skipAhead(other, pos);
 
 			if (firstBytes[2] == other.get(pos)) {
 				return cmps[2].compare(other, pos) == 0;
@@ -710,7 +709,7 @@ public final class Varint {
 			} else {
 				return false;
 			}
-			pos += firstToLength(other.get(pos));
+			pos += skipAhead(other, pos);
 
 			if (firstBytes[2] == other.get(pos)) {
 				return cmps[2].compare(other, pos) == 0;
@@ -720,7 +719,7 @@ public final class Varint {
 
 		private boolean match0110(ByteBuffer other) {
 			int pos = 0;
-			pos += firstToLength(other.get(pos));
+			pos += skipAhead(other, pos);
 
 			if (firstBytes[1] == other.get(pos)) {
 				if (cmps[1].compare(other, pos) == 0) {
@@ -736,6 +735,10 @@ public final class Varint {
 				return cmps[2].compare(other, pos) == 0;
 			}
 			return false;
+		}
+
+		private int skipAhead(ByteBuffer other, int pos) {
+			return firstToLength(other.get(pos));
 		}
 
 		private boolean match0111(ByteBuffer other) {
@@ -769,9 +772,9 @@ public final class Varint {
 
 		private boolean match1000(ByteBuffer other) {
 			int pos = 0;
-			pos += firstToLength(other.get(pos));
-			pos += firstToLength(other.get(pos));
-			pos += firstToLength(other.get(pos));
+			pos += skipAhead(other, pos);
+			pos += skipAhead(other, pos);
+			pos += skipAhead(other, pos);
 
 			if (firstBytes[3] == other.get(pos)) {
 				return cmps[3].compare(other, pos) == 0;
@@ -791,8 +794,8 @@ public final class Varint {
 			} else {
 				return false;
 			}
-			pos += firstToLength(other.get(pos));
-			pos += firstToLength(other.get(pos));
+			pos += skipAhead(other, pos);
+			pos += skipAhead(other, pos);
 
 			if (firstBytes[3] == other.get(pos)) {
 				return cmps[3].compare(other, pos) == 0;
@@ -802,7 +805,7 @@ public final class Varint {
 
 		private boolean match1010(ByteBuffer other) {
 			int pos = 0;
-			pos += firstToLength(other.get(pos));
+			pos += skipAhead(other, pos);
 			if (firstBytes[1] == other.get(pos)) {
 				if (cmps[1].compare(other, pos) == 0) {
 					pos += lengths[1];
@@ -813,7 +816,7 @@ public final class Varint {
 				return false;
 			}
 
-			pos += firstToLength(other.get(pos));
+			pos += skipAhead(other, pos);
 
 			if (firstBytes[3] == other.get(pos)) {
 				return cmps[3].compare(other, pos) == 0;
@@ -844,7 +847,7 @@ public final class Varint {
 				return false;
 			}
 
-			pos += firstToLength(other.get(pos));
+			pos += skipAhead(other, pos);
 
 			if (firstBytes[3] == other.get(pos)) {
 				return cmps[3].compare(other, pos) == 0;
@@ -854,8 +857,8 @@ public final class Varint {
 
 		private boolean match1100(ByteBuffer other) {
 			int pos = 0;
-			pos += firstToLength(other.get(pos));
-			pos += firstToLength(other.get(pos));
+			pos += skipAhead(other, pos);
+			pos += skipAhead(other, pos);
 
 			if (firstBytes[2] == other.get(pos)) {
 				if (cmps[2].compare(other, pos) == 0) {
@@ -885,7 +888,7 @@ public final class Varint {
 			} else {
 				return false;
 			}
-			pos += firstToLength(other.get(pos));
+			pos += skipAhead(other, pos);
 
 			if (firstBytes[2] == other.get(pos)) {
 				if (cmps[2].compare(other, pos) == 0) {
@@ -905,7 +908,7 @@ public final class Varint {
 
 		private boolean match1110(ByteBuffer other) {
 			int pos = 0;
-			pos += firstToLength(other.get(pos));
+			pos += skipAhead(other, pos);
 
 			if (firstBytes[1] == other.get(pos)) {
 				if (cmps[1].compare(other, pos) == 0) {
