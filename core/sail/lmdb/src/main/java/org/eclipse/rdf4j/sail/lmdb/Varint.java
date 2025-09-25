@@ -21,14 +21,14 @@ import org.eclipse.rdf4j.sail.lmdb.util.SignificantBytesBE;
  */
 public final class Varint {
 
-	private Varint() {
-	}
-
 	private static final byte[] ENCODED_LONG_MAX = new byte[] {
 			(byte) 0xFF, // header: 8 payload bytes
 			0x7F, // MSB of Long.MAX_VALUE
 			(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF
 	};
+
+	private Varint() {
+	}
 
 	/**
 	 * Encodes a value using the <a href="https://sqlite.org/src4/doc/trunk/www/varint.wiki">variable-length encoding of
@@ -106,11 +106,7 @@ public final class Varint {
 				bb.order(ByteOrder.BIG_ENDIAN);
 			}
 			try {
-				bb.put((byte) 0xFF); // header for 8 payload bytes
-				bb.putLong(Long.MAX_VALUE); // 7F FF FF FF FF FF FF FF
-				// TODO: Use this instead: bb.put(ENCODED_LONG_MAX);
-				// TODO: Do we really need to care about endianness here? Should we then have two different version of
-				// ENCODED_LONG_MAX?
+				bb.put(ENCODED_LONG_MAX);
 			} finally {
 				if (prev != ByteOrder.BIG_ENDIAN) {
 					bb.order(prev);
