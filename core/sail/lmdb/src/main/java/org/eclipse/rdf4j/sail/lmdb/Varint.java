@@ -675,19 +675,15 @@ public final class Varint {
 		}
 
 		private boolean match0011(ByteBuffer other) {
-			int pos = -1;
-
 			if (firstBytes[0] == other.get(0)) {
 				if (cmps[0].compare(other, 0) == 0) {
-					pos = lengths[0];
-				} else {
-					return false;
+					int pos = lengths[0];
+					if (firstBytes[1] == other.get(pos)) {
+						return cmps[1].compare(other, pos) == 0;
+					}
 				}
 			}
 
-			if (firstBytes[1] == other.get(pos)) {
-				return cmps[1].compare(other, pos) == 0;
-			}
 			return false;
 		}
 
