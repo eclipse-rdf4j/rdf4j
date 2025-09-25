@@ -19,16 +19,16 @@ public final class Bytes {
 
 	@FunctionalInterface
 	public interface RegionComparator {
-		int compare(byte firstByte, ByteBuffer other);
+		boolean equals(byte firstByte, ByteBuffer other);
 	}
 
-	private static int d(int a, int b) {
-		return (a & 0xFF) - (b & 0xFF);
+	private static boolean equals(int a, int b) {
+		return a == b;
 	}
 
 	public static RegionComparator capturedComparator(byte[] array, int offset, int len) {
 		if (len <= 0) {
-			return (firstByte, b) -> 0;
+			return (firstByte, b) -> true;
 		}
 		switch (len) {
 		case 1:
@@ -77,943 +77,943 @@ public final class Bytes {
 	}
 
 	private static RegionComparator comparatorLen1(byte[] array, int offset) {
-		return (firstByte, b) -> d(array[offset], firstByte);
+		return (firstByte, b) -> equals(array[offset], firstByte);
 	}
 
 	private static RegionComparator comparatorLen2(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			return d(array[offset + 1], b.get());
+
+			return equals(array[offset + 1], b.get());
 		};
 	}
 
 	private static RegionComparator comparatorLen3(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			return d(array[offset + 2], b.get());
+
+			return equals(array[offset + 2], b.get());
 		};
 	}
 
 	private static RegionComparator comparatorLen4(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			return d(array[offset + 3], b.get());
+
+			return equals(array[offset + 3], b.get());
 		};
 	}
 
 	private static RegionComparator comparatorLen5(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 3], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 3], b.get())) {
+				return false;
 			}
-			return d(array[offset + 4], b.get());
+
+			return equals(array[offset + 4], b.get());
 		};
 	}
 
 	private static RegionComparator comparatorLen6(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 3], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 3], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 4], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 4], b.get())) {
+				return false;
 			}
-			return d(array[offset + 5], b.get());
+
+			return equals(array[offset + 5], b.get());
 		};
 	}
 
 	private static RegionComparator comparatorLen7(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 3], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 3], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 4], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 4], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 5], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 5], b.get())) {
+				return false;
 			}
-			return d(array[offset + 6], b.get());
+
+			return equals(array[offset + 6], b.get());
 		};
 	}
 
 	private static RegionComparator comparatorLen8(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 3], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 3], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 4], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 4], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 5], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 5], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 6], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 6], b.get())) {
+				return false;
 			}
-			return d(array[offset + 7], b.get());
+
+			return equals(array[offset + 7], b.get());
 		};
 	}
 
 	private static RegionComparator comparatorLen9(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 3], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 3], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 4], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 4], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 5], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 5], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 6], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 6], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 7], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 7], b.get())) {
+				return false;
 			}
-			return d(array[offset + 8], b.get());
+
+			return equals(array[offset + 8], b.get());
 		};
 	}
 
 	private static RegionComparator comparatorLen10(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 3], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 3], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 4], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 4], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 5], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 5], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 6], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 6], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 7], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 7], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 8], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 8], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 9], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 9], b.get())) {
+				return false;
 			}
-			return 0;
+
+			return true;
 		};
 	}
 
 	private static RegionComparator comparatorLen11(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 3], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 3], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 4], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 4], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 5], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 5], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 6], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 6], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 7], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 7], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 8], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 8], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 9], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 9], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 10], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 10], b.get())) {
+				return false;
 			}
-			return 0;
+
+			return true;
 		};
 	}
 
 	private static RegionComparator comparatorLen12(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 3], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 3], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 4], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 4], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 5], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 5], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 6], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 6], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 7], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 7], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 8], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 8], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 9], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 9], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 10], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 10], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 11], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 11], b.get())) {
+				return false;
 			}
-			return 0;
+
+			return true;
 		};
 	}
 
 	private static RegionComparator comparatorLen13(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 3], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 3], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 4], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 4], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 5], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 5], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 6], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 6], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 7], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 7], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 8], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 8], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 9], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 9], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 10], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 10], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 11], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 11], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 12], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 12], b.get())) {
+				return false;
 			}
-			return 0;
+
+			return true;
 		};
 	}
 
 	private static RegionComparator comparatorLen14(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 3], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 3], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 4], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 4], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 5], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 5], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 6], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 6], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 7], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 7], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 8], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 8], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 9], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 9], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 10], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 10], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 11], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 11], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 12], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 12], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 13], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 13], b.get())) {
+				return false;
 			}
-			return 0;
+
+			return true;
 		};
 	}
 
 	private static RegionComparator comparatorLen15(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 3], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 3], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 4], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 4], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 5], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 5], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 6], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 6], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 7], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 7], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 8], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 8], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 9], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 9], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 10], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 10], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 11], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 11], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 12], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 12], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 13], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 13], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 14], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 14], b.get())) {
+				return false;
 			}
-			return 0;
+
+			return true;
 		};
 	}
 
 	private static RegionComparator comparatorLen16(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 3], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 3], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 4], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 4], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 5], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 5], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 6], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 6], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 7], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 7], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 8], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 8], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 9], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 9], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 10], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 10], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 11], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 11], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 12], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 12], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 13], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 13], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 14], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 14], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 15], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 15], b.get())) {
+				return false;
 			}
-			return 0;
+
+			return true;
 		};
 	}
 
 	private static RegionComparator comparatorLen17(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 3], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 3], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 4], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 4], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 5], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 5], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 6], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 6], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 7], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 7], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 8], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 8], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 9], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 9], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 10], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 10], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 11], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 11], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 12], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 12], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 13], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 13], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 14], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 14], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 15], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 15], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 16], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 16], b.get())) {
+				return false;
 			}
-			return 0;
+
+			return true;
 		};
 	}
 
 	private static RegionComparator comparatorLen18(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 3], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 3], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 4], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 4], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 5], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 5], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 6], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 6], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 7], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 7], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 8], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 8], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 9], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 9], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 10], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 10], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 11], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 11], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 12], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 12], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 13], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 13], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 14], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 14], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 15], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 15], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 16], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 16], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 17], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 17], b.get())) {
+				return false;
 			}
-			return 0;
+
+			return true;
 		};
 	}
 
 	private static RegionComparator comparatorLen19(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 3], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 3], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 4], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 4], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 5], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 5], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 6], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 6], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 7], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 7], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 8], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 8], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 9], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 9], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 10], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 10], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 11], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 11], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 12], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 12], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 13], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 13], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 14], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 14], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 15], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 15], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 16], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 16], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 17], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 17], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 18], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 18], b.get())) {
+				return false;
 			}
-			return 0;
+
+			return true;
 		};
 	}
 
 	private static RegionComparator comparatorLen20(byte[] array, int offset) {
 
 		return (firstByte, b) -> {
-			int r = d(array[offset], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[offset], firstByte)) {
+				return false;
 			}
-			r = d(array[offset + 1], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 1], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 2], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 2], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 3], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 3], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 4], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 4], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 5], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 5], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 6], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 6], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 7], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 7], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 8], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 8], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 9], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 9], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 10], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 10], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 11], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 11], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 12], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 12], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 13], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 13], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 14], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 14], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 15], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 15], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 16], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 16], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 17], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 17], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 18], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 18], b.get())) {
+				return false;
 			}
-			r = d(array[offset + 19], b.get());
-			if (r != 0) {
-				return r;
+
+			if (!equals(array[offset + 19], b.get())) {
+				return false;
 			}
-			return 0;
+
+			return true;
 		};
 	}
 
@@ -1021,19 +1021,18 @@ public final class Bytes {
 		final int start = offset;
 		final int end = offset + len;
 		return (firstByte, b) -> {
-			int r = d(array[start], firstByte);
-			if (r != 0) {
-				return r;
+			if (!equals(array[start], firstByte)) {
+				return false;
 			}
+
 			int idx = start + 1;
 			while (idx < end) {
-				r = d(array[idx], b.get());
-				if (r != 0) {
-					return r;
+				if (!equals(array[idx], b.get())) {
+					return false;
 				}
 				idx++;
 			}
-			return 0;
+			return true;
 		};
 	}
 }

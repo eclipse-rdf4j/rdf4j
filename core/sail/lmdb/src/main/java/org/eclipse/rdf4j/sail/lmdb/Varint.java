@@ -648,21 +648,21 @@ public final class Varint {
 		private boolean match0001(ByteBuffer other) {
 			byte otherFirst0 = other.get();
 			if (firstBytes[0] == otherFirst0) {
-				return cmps[0].compare(otherFirst0, other) == 0;
+				return cmps[0].equals(otherFirst0, other);
 			}
 			return false;
 		}
 
 		private boolean match0010(ByteBuffer other) {
-			int pos = 0;
-			pos += skipAhead(other, pos);
+
+			skipAhead(other);
 
 			byte otherFirst1 = other.get();
 			if (firstBytes[1] == otherFirst1) {
 				if (lengths[1] == 1) {
 					return true;
 				} else {
-					return cmps[1].compare(otherFirst1, other) == 0;
+					return cmps[1].equals(otherFirst1, other);
 				}
 			}
 			return false;
@@ -671,10 +671,10 @@ public final class Varint {
 		private boolean match0011(ByteBuffer other) {
 			byte otherFirst0 = other.get();
 			if (firstBytes[0] == otherFirst0) {
-				if (lengths[0] == 1 || cmps[0].compare(otherFirst0, other) == 0) {
+				if (cmps[0].equals(otherFirst0, other)) {
 					byte otherFirst1 = other.get();
 					if (firstBytes[1] == otherFirst1) {
-						return lengths[1] == 1 || cmps[1].compare(otherFirst1, other) == 0;
+						return cmps[1].equals(otherFirst1, other);
 					}
 				}
 			}
@@ -683,13 +683,13 @@ public final class Varint {
 		}
 
 		private boolean match0100(ByteBuffer other) {
-			int pos = 0;
-			pos += skipAhead(other, pos);
-			pos += skipAhead(other, pos);
+
+			skipAhead(other);
+			skipAhead(other);
 
 			byte otherFirst2 = other.get();
 			if (firstBytes[2] == otherFirst2) {
-				return cmps[2].compare(otherFirst2, other) == 0;
+				return cmps[2].equals(otherFirst2, other);
 			}
 			return false;
 		}
@@ -699,31 +699,30 @@ public final class Varint {
 
 			byte otherFirst0 = other.get();
 			if (firstBytes[0] == otherFirst0) {
-				if (cmps[0].compare(otherFirst0, other) == 0) {
-					pos = lengths[0];
+				if (cmps[0].equals(otherFirst0, other)) {
+
 				} else {
 					return false;
 				}
 			} else {
 				return false;
 			}
-			pos += skipAhead(other, pos);
+			skipAhead(other);
 
 			byte otherFirst2 = other.get();
 			if (firstBytes[2] == otherFirst2) {
-				return cmps[2].compare(otherFirst2, other) == 0;
+				return cmps[2].equals(otherFirst2, other);
 			}
 			return false;
 		}
 
 		private boolean match0110(ByteBuffer other) {
-			int pos = 0;
-			pos += skipAhead(other, pos);
+
+			skipAhead(other);
 
 			byte otherFirst1 = other.get();
 			if (firstBytes[1] == otherFirst1) {
-				if (cmps[1].compare(otherFirst1, other) == 0) {
-					pos += lengths[1];
+				if (cmps[1].equals(otherFirst1, other)) {
 				} else {
 					return false;
 				}
@@ -733,12 +732,12 @@ public final class Varint {
 
 			byte otherFirst2 = other.get();
 			if (firstBytes[2] == otherFirst2) {
-				return cmps[2].compare(otherFirst2, other) == 0;
+				return cmps[2].equals(otherFirst2, other);
 			}
 			return false;
 		}
 
-		private int skipAhead(ByteBuffer other, int pos) {
+		private int skipAhead(ByteBuffer other) {
 			int i = firstToLength(other.get()) - 1;
 			assert i >= 0;
 			if (i > 0) {
@@ -752,8 +751,8 @@ public final class Varint {
 
 			byte otherFirst0 = other.get();
 			if (firstBytes[0] == otherFirst0) {
-				if (cmps[0].compare(otherFirst0, other) == 0) {
-					pos = lengths[0];
+				if (cmps[0].equals(otherFirst0, other)) {
+
 				} else {
 					return false;
 				}
@@ -763,8 +762,7 @@ public final class Varint {
 
 			byte otherFirst1 = other.get();
 			if (firstBytes[1] == otherFirst1) {
-				if (cmps[1].compare(otherFirst1, other) == 0) {
-					pos += lengths[1];
+				if (cmps[1].equals(otherFirst1, other)) {
 				} else {
 					return false;
 				}
@@ -774,20 +772,20 @@ public final class Varint {
 
 			byte otherFirst2 = other.get();
 			if (firstBytes[2] == otherFirst2) {
-				return cmps[2].compare(otherFirst2, other) == 0;
+				return cmps[2].equals(otherFirst2, other);
 			}
 			return false;
 		}
 
 		private boolean match1000(ByteBuffer other) {
-			int pos = 0;
-			pos += skipAhead(other, pos);
-			pos += skipAhead(other, pos);
-			pos += skipAhead(other, pos);
+
+			skipAhead(other);
+			skipAhead(other);
+			skipAhead(other);
 
 			byte otherFirst3 = other.get();
 			if (firstBytes[3] == otherFirst3) {
-				return cmps[3].compare(otherFirst3, other) == 0;
+				return cmps[3].equals(otherFirst3, other);
 			}
 			return false;
 		}
@@ -797,31 +795,30 @@ public final class Varint {
 
 			byte otherFirst0 = other.get();
 			if (firstBytes[0] == otherFirst0) {
-				if (cmps[0].compare(otherFirst0, other) == 0) {
-					pos = lengths[0];
+				if (cmps[0].equals(otherFirst0, other)) {
+
 				} else {
 					return false;
 				}
 			} else {
 				return false;
 			}
-			pos += skipAhead(other, pos);
-			pos += skipAhead(other, pos);
+			skipAhead(other);
+			skipAhead(other);
 
 			byte otherFirst3 = other.get();
 			if (firstBytes[3] == otherFirst3) {
-				return cmps[3].compare(otherFirst3, other) == 0;
+				return cmps[3].equals(otherFirst3, other);
 			}
 			return false;
 		}
 
 		private boolean match1010(ByteBuffer other) {
-			int pos = 0;
-			pos += skipAhead(other, pos);
+
+			skipAhead(other);
 			byte otherFirst1 = other.get();
 			if (firstBytes[1] == otherFirst1) {
-				if (cmps[1].compare(otherFirst1, other) == 0) {
-					pos += lengths[1];
+				if (cmps[1].equals(otherFirst1, other)) {
 				} else {
 					return false;
 				}
@@ -829,11 +826,11 @@ public final class Varint {
 				return false;
 			}
 
-			pos += skipAhead(other, pos);
+			skipAhead(other);
 
 			byte otherFirst3 = other.get();
 			if (firstBytes[3] == otherFirst3) {
-				return cmps[3].compare(otherFirst3, other) == 0;
+				return cmps[3].equals(otherFirst3, other);
 			}
 			return false;
 		}
@@ -843,8 +840,8 @@ public final class Varint {
 
 			byte otherFirst0 = other.get();
 			if (firstBytes[0] == otherFirst0) {
-				if (cmps[0].compare(otherFirst0, other) == 0) {
-					pos = lengths[0];
+				if (cmps[0].equals(otherFirst0, other)) {
+
 				} else {
 					return false;
 				}
@@ -854,8 +851,7 @@ public final class Varint {
 
 			byte otherFirst1 = other.get();
 			if (firstBytes[1] == otherFirst1) {
-				if (cmps[1].compare(otherFirst1, other) == 0) {
-					pos += lengths[1];
+				if (cmps[1].equals(otherFirst1, other)) {
 				} else {
 					return false;
 				}
@@ -863,25 +859,23 @@ public final class Varint {
 				return false;
 			}
 
-			pos += skipAhead(other, pos);
+			skipAhead(other);
 
 			byte otherFirst3 = other.get();
 			if (firstBytes[3] == otherFirst3) {
-				return cmps[3].compare(otherFirst3, other) == 0;
+				return cmps[3].equals(otherFirst3, other);
 			}
 			return false;
 		}
 
 		private boolean match1100(ByteBuffer other) {
-			int pos = 0;
-			pos += skipAhead(other, pos);
-			pos += skipAhead(other, pos);
+
+			skipAhead(other);
+			skipAhead(other);
 
 			byte otherFirst2 = other.get();
 			if (firstBytes[2] == otherFirst2) {
-				if (cmps[2].compare(otherFirst2, other) == 0) {
-					pos += lengths[2];
-				} else {
+				if (!cmps[2].equals(otherFirst2, other)) {
 					return false;
 				}
 			} else {
@@ -890,7 +884,7 @@ public final class Varint {
 
 			byte otherFirst3 = other.get();
 			if (firstBytes[3] == otherFirst3) {
-				return cmps[3].compare(otherFirst3, other) == 0;
+				return cmps[3].equals(otherFirst3, other);
 			}
 			return false;
 		}
@@ -900,20 +894,19 @@ public final class Varint {
 
 			byte otherFirst0 = other.get();
 			if (firstBytes[0] == otherFirst0) {
-				if (cmps[0].compare(otherFirst0, other) == 0) {
-					pos = lengths[0];
+				if (cmps[0].equals(otherFirst0, other)) {
+
 				} else {
 					return false;
 				}
 			} else {
 				return false;
 			}
-			pos += skipAhead(other, pos);
+			skipAhead(other);
 
 			byte otherFirst2 = other.get();
 			if (firstBytes[2] == otherFirst2) {
-				if (cmps[2].compare(otherFirst2, other) == 0) {
-					pos += lengths[2];
+				if (cmps[2].equals(otherFirst2, other)) {
 				} else {
 					return false;
 				}
@@ -923,19 +916,18 @@ public final class Varint {
 
 			byte otherFirst3 = other.get();
 			if (firstBytes[3] == otherFirst3) {
-				return cmps[3].compare(otherFirst3, other) == 0;
+				return cmps[3].equals(otherFirst3, other);
 			}
 			return false;
 		}
 
 		private boolean match1110(ByteBuffer other) {
-			int pos = 0;
-			pos += skipAhead(other, pos);
+
+			skipAhead(other);
 
 			byte otherFirst1 = other.get();
 			if (firstBytes[1] == otherFirst1) {
-				if (cmps[1].compare(otherFirst1, other) == 0) {
-					pos += lengths[1];
+				if (cmps[1].equals(otherFirst1, other)) {
 				} else {
 					return false;
 				}
@@ -945,8 +937,7 @@ public final class Varint {
 
 			byte otherFirst2 = other.get();
 			if (firstBytes[2] == otherFirst2) {
-				if (cmps[2].compare(otherFirst2, other) == 0) {
-					pos += lengths[2];
+				if (cmps[2].equals(otherFirst2, other)) {
 				} else {
 					return false;
 				}
@@ -956,7 +947,7 @@ public final class Varint {
 
 			byte otherFirst3 = other.get();
 			if (firstBytes[3] == otherFirst3) {
-				return cmps[3].compare(otherFirst3, other) == 0;
+				return cmps[3].equals(otherFirst3, other);
 			}
 			return false;
 		}
@@ -965,8 +956,8 @@ public final class Varint {
 			int pos;
 			byte otherFirst0 = other.get();
 			if (firstBytes[0] == otherFirst0) {
-				if (cmps[0].compare(otherFirst0, other) == 0) {
-					pos = lengths[0];
+				if (cmps[0].equals(otherFirst0, other)) {
+
 				} else {
 					return false;
 				}
@@ -976,8 +967,7 @@ public final class Varint {
 
 			byte otherFirst1 = other.get();
 			if (firstBytes[1] == otherFirst1) {
-				if (cmps[1].compare(otherFirst1, other) == 0) {
-					pos += lengths[1];
+				if (cmps[1].equals(otherFirst1, other)) {
 				} else {
 					return false;
 				}
@@ -987,8 +977,7 @@ public final class Varint {
 
 			byte otherFirst2 = other.get();
 			if (firstBytes[2] == otherFirst2) {
-				if (cmps[2].compare(otherFirst2, other) == 0) {
-					pos += lengths[2];
+				if (cmps[2].equals(otherFirst2, other)) {
 				} else {
 					return false;
 				}
@@ -998,7 +987,7 @@ public final class Varint {
 
 			byte otherFirst3 = other.get();
 			if (firstBytes[3] == otherFirst3) {
-				return cmps[3].compare(otherFirst3, other) == 0;
+				return cmps[3].equals(otherFirst3, other);
 			}
 			return false;
 		}
