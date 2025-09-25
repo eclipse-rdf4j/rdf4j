@@ -521,14 +521,14 @@ public final class Varint {
 	 */
 	public static class GroupMatcher {
 
-		final boolean[] shouldMatch;
 		final int[] lengths;
 		final Bytes.RegionComparator[] cmps;
 		private final byte[] firstBytes;
+		private final boolean[] shouldMatch;
+		private MatchFn matcher;
 
 		public GroupMatcher(ByteBuffer value, boolean[] shouldMatch) {
 			assert shouldMatch.length == 4;
-			this.shouldMatch = shouldMatch;
 			this.lengths = new int[4];
 			assert value.hasArray();
 			byte[] valueArray = value.array();
@@ -536,6 +536,7 @@ public final class Varint {
 			if (baseOffset != 0) {
 				throw new AssertionError();
 			}
+			this.shouldMatch = shouldMatch;
 			this.cmps = new Bytes.RegionComparator[4];
 			this.firstBytes = new byte[4];
 
@@ -579,6 +580,7 @@ public final class Varint {
 
 				cmps[3] = Bytes.capturedComparator(valueArray, baseOffset, len);
 			}
+
 		}
 
 		public GroupMatcher(ByteBuffer value, boolean a, boolean b, boolean c, boolean d, boolean e) {
@@ -586,80 +588,245 @@ public final class Varint {
 		}
 
 		public boolean matches(ByteBuffer other) {
-
-			int otherPos = 0;
-			// Loop is unrolled for performance. Do not change back to a loop, do not extract into method, unless you
-			// benchmark with QueryBenchmark first!
-			{
-
-				if (shouldMatch[0]) {
-					byte b = other.get(0);
-					if (firstBytes[0] != b) {
-						return false;
-					}
-					if (cmps[0].compare(other, 0) != 0) {
-						return false;
-					}
-					if (!shouldMatch[1] && !shouldMatch[2] && !shouldMatch[3]) {
-						return true;
-					}
-					otherPos += firstToLength(b);
-				} else {
-					otherPos += firstToLength(other.get(0));
-				}
-
+			if (this.matcher == null) {
+				this.matcher = selectMatcher(shouldMatch);
 			}
-			{
 
-				if (shouldMatch[1]) {
-					byte b = other.get(otherPos);
+			return matcher.matches(other);
+		}
 
-					if (firstBytes[1] != b) {
-						return false;
-					}
-					if (cmps[1].compare(other, otherPos) != 0) {
-						return false;
-					}
-					if (!shouldMatch[2] && !shouldMatch[3]) {
-						return true;
-					}
-					otherPos += firstToLength(b);
+		@FunctionalInterface
+		private interface MatchFn {
+			boolean matches(ByteBuffer other);
+		}
 
-				} else {
-					otherPos += firstToLength(other.get(otherPos));
-				}
+		private MatchFn selectMatcher(boolean[] shouldMatch) {
+			byte mask = 0;
+			if (shouldMatch[0]) {
+				mask |= 0b0001;
 			}
-			{
-				if (shouldMatch[2]) {
-					byte b = other.get(otherPos);
-
-					if (firstBytes[2] != b) {
-						return false;
-					}
-					if (cmps[2].compare(other, otherPos) != 0) {
-						return false;
-					}
-					if (!shouldMatch[3]) {
-						return true;
-					}
-					otherPos += firstToLength(b);
-
-				} else {
-					otherPos += firstToLength(other.get(otherPos));
-				}
-
+			if (shouldMatch[1]) {
+				mask |= 0b0010;
 			}
-			{
-				if (shouldMatch[3]) {
-					byte b = other.get(otherPos);
-
-					if (firstBytes[3] != b) {
-						return false;
-					}
-					return cmps[3].compare(other, otherPos) == 0;
-				}
+			if (shouldMatch[2]) {
+				mask |= 0b0100;
 			}
+			if (shouldMatch[3]) {
+				mask |= 0b1000;
+			}
+
+			switch (mask) {
+			case 0b0000:
+				return this::match0000;
+			case 0b0001:
+				return this::match0001;
+			case 0b0010:
+				return this::match0010;
+			case 0b0011:
+				return this::match0011;
+			case 0b0100:
+				return this::match0100;
+			case 0b0101:
+				return this::match0101;
+			case 0b0110:
+				return this::match0110;
+			case 0b0111:
+				return this::match0111;
+			case 0b1000:
+				return this::match1000;
+			case 0b1001:
+				return this::match1001;
+			case 0b1010:
+				return this::match1010;
+			case 0b1011:
+				return this::match1011;
+			case 0b1100:
+				return this::match1100;
+			case 0b1101:
+				return this::match1101;
+			case 0b1110:
+				return this::match1110;
+			case 0b1111:
+				return this::match1111;
+			default:
+				throw new IllegalStateException("Unsupported matcher mask: " + mask);
+			}
+		}
+
+		private int matchSegment(ByteBuffer other, int pos, int index, Bytes.RegionComparator cmp) {
+			byte b = other.get(pos);
+			if (firstBytes[index] != b) {
+				return -1;
+			}
+			if (cmp.compare(other, pos) != 0) {
+				return -1;
+			}
+			return pos + lengths[index];
+		}
+
+		private static int skipSegment(ByteBuffer other, int pos) {
+			return pos + firstToLength(other.get(pos));
+		}
+
+		private boolean match0000(ByteBuffer other) {
+			int pos = 0;
+			pos = skipSegment(other, pos);
+			pos = skipSegment(other, pos);
+			pos = skipSegment(other, pos);
+			skipSegment(other, pos);
 			return true;
+		}
+
+		private boolean match0001(ByteBuffer other) {
+			return matchSegment(other, 0, 0, cmps[0]) >= 0;
+		}
+
+		private boolean match0010(ByteBuffer other) {
+			int pos = 0;
+			pos = skipSegment(other, pos);
+			return matchSegment(other, pos, 1, cmps[1]) >= 0;
+		}
+
+		private boolean match0011(ByteBuffer other) {
+			int pos = matchSegment(other, 0, 0, cmps[0]);
+			if (pos < 0) {
+				return false;
+			}
+			return matchSegment(other, pos, 1, cmps[1]) >= 0;
+		}
+
+		private boolean match0100(ByteBuffer other) {
+			int pos = 0;
+			pos = skipSegment(other, pos);
+			pos = skipSegment(other, pos);
+			return matchSegment(other, pos, 2, cmps[2]) >= 0;
+		}
+
+		private boolean match0101(ByteBuffer other) {
+			int pos = matchSegment(other, 0, 0, cmps[0]);
+			if (pos < 0) {
+				return false;
+			}
+			pos = skipSegment(other, pos);
+			return matchSegment(other, pos, 2, cmps[2]) >= 0;
+		}
+
+		private boolean match0110(ByteBuffer other) {
+			int pos = 0;
+			pos = skipSegment(other, pos);
+			pos = matchSegment(other, pos, 1, cmps[1]);
+			if (pos < 0) {
+				return false;
+			}
+			return matchSegment(other, pos, 2, cmps[2]) >= 0;
+		}
+
+		private boolean match0111(ByteBuffer other) {
+			int pos = matchSegment(other, 0, 0, cmps[0]);
+			if (pos < 0) {
+				return false;
+			}
+			pos = matchSegment(other, pos, 1, cmps[1]);
+			if (pos < 0) {
+				return false;
+			}
+			return matchSegment(other, pos, 2, cmps[2]) >= 0;
+		}
+
+		private boolean match1000(ByteBuffer other) {
+			int pos = 0;
+			pos = skipSegment(other, pos);
+			pos = skipSegment(other, pos);
+			pos = skipSegment(other, pos);
+			return matchSegment(other, pos, 3, cmps[3]) >= 0;
+		}
+
+		private boolean match1001(ByteBuffer other) {
+			int pos = matchSegment(other, 0, 0, cmps[0]);
+			if (pos < 0) {
+				return false;
+			}
+			pos = skipSegment(other, pos);
+			pos = skipSegment(other, pos);
+			return matchSegment(other, pos, 3, cmps[3]) >= 0;
+		}
+
+		private boolean match1010(ByteBuffer other) {
+			int pos = 0;
+			pos = skipSegment(other, pos);
+			pos = matchSegment(other, pos, 1, cmps[1]);
+			if (pos < 0) {
+				return false;
+			}
+			pos = skipSegment(other, pos);
+			return matchSegment(other, pos, 3, cmps[3]) >= 0;
+		}
+
+		private boolean match1011(ByteBuffer other) {
+			int pos = matchSegment(other, 0, 0, cmps[0]);
+			if (pos < 0) {
+				return false;
+			}
+			pos = matchSegment(other, pos, 1, cmps[1]);
+			if (pos < 0) {
+				return false;
+			}
+			pos = skipSegment(other, pos);
+			return matchSegment(other, pos, 3, cmps[3]) >= 0;
+		}
+
+		private boolean match1100(ByteBuffer other) {
+			int pos = 0;
+			pos = skipSegment(other, pos);
+			pos = skipSegment(other, pos);
+			pos = matchSegment(other, pos, 2, cmps[2]);
+			if (pos < 0) {
+				return false;
+			}
+			return matchSegment(other, pos, 3, cmps[3]) >= 0;
+		}
+
+		private boolean match1101(ByteBuffer other) {
+			int pos = matchSegment(other, 0, 0, cmps[0]);
+			if (pos < 0) {
+				return false;
+			}
+			pos = skipSegment(other, pos);
+			pos = matchSegment(other, pos, 2, cmps[2]);
+			if (pos < 0) {
+				return false;
+			}
+			return matchSegment(other, pos, 3, cmps[3]) >= 0;
+		}
+
+		private boolean match1110(ByteBuffer other) {
+			int pos = 0;
+			pos = skipSegment(other, pos);
+			pos = matchSegment(other, pos, 1, cmps[1]);
+			if (pos < 0) {
+				return false;
+			}
+			pos = matchSegment(other, pos, 2, cmps[2]);
+			if (pos < 0) {
+				return false;
+			}
+			return matchSegment(other, pos, 3, cmps[3]) >= 0;
+		}
+
+		private boolean match1111(ByteBuffer other) {
+			int pos = matchSegment(other, 0, 0, cmps[0]);
+			if (pos < 0) {
+				return false;
+			}
+			pos = matchSegment(other, pos, 1, cmps[1]);
+			if (pos < 0) {
+				return false;
+			}
+			pos = matchSegment(other, pos, 2, cmps[2]);
+			if (pos < 0) {
+				return false;
+			}
+			return matchSegment(other, pos, 3, cmps[3]) >= 0;
 		}
 
 	}
