@@ -19,7 +19,7 @@ public final class Bytes {
 
 	@FunctionalInterface
 	public interface RegionComparator {
-		int compare(ByteBuffer other, int otherPos);
+		int compare(byte firstByte, ByteBuffer other, int otherPos);
 	}
 
 	private static int d(int a, int b) {
@@ -28,7 +28,7 @@ public final class Bytes {
 
 	public static RegionComparator capturedComparator(byte[] array, int offset, int len) {
 		if (len <= 0) {
-			return (b, bi) -> 0;
+			return (firstByte, b, bi) -> 0;
 		}
 		switch (len) {
 		case 1:
@@ -78,14 +78,14 @@ public final class Bytes {
 
 	private static RegionComparator comparatorLen1(byte[] array, int offset) {
 		final int i0 = offset;
-		return (b, bi) -> d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> d(array[i0], firstByte);
 	}
 
 	private static RegionComparator comparatorLen2(byte[] array, int offset) {
 		final int i0 = offset;
 		final int i1 = offset + 1;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -97,8 +97,8 @@ public final class Bytes {
 		final int i0 = offset;
 		final int i1 = offset + 1;
 		final int i2 = offset + 2;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -115,8 +115,8 @@ public final class Bytes {
 		final int i1 = offset + 1;
 		final int i2 = offset + 2;
 		final int i3 = offset + 3;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -138,8 +138,8 @@ public final class Bytes {
 		final int i2 = offset + 2;
 		final int i3 = offset + 3;
 		final int i4 = offset + 4;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -166,8 +166,8 @@ public final class Bytes {
 		final int i3 = offset + 3;
 		final int i4 = offset + 4;
 		final int i5 = offset + 5;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -199,8 +199,8 @@ public final class Bytes {
 		final int i4 = offset + 4;
 		final int i5 = offset + 5;
 		final int i6 = offset + 6;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -237,8 +237,8 @@ public final class Bytes {
 		final int i5 = offset + 5;
 		final int i6 = offset + 6;
 		final int i7 = offset + 7;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -280,8 +280,8 @@ public final class Bytes {
 		final int i6 = offset + 6;
 		final int i7 = offset + 7;
 		final int i8 = offset + 8;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -328,8 +328,8 @@ public final class Bytes {
 		final int i7 = offset + 7;
 		final int i8 = offset + 8;
 		final int i9 = offset + 9;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -385,8 +385,8 @@ public final class Bytes {
 		final int i8 = offset + 8;
 		final int i9 = offset + 9;
 		final int i10 = offset + 10;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -447,8 +447,8 @@ public final class Bytes {
 		final int i9 = offset + 9;
 		final int i10 = offset + 10;
 		final int i11 = offset + 11;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -514,8 +514,8 @@ public final class Bytes {
 		final int i10 = offset + 10;
 		final int i11 = offset + 11;
 		final int i12 = offset + 12;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -586,8 +586,8 @@ public final class Bytes {
 		final int i11 = offset + 11;
 		final int i12 = offset + 12;
 		final int i13 = offset + 13;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -663,8 +663,8 @@ public final class Bytes {
 		final int i12 = offset + 12;
 		final int i13 = offset + 13;
 		final int i14 = offset + 14;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -745,8 +745,8 @@ public final class Bytes {
 		final int i13 = offset + 13;
 		final int i14 = offset + 14;
 		final int i15 = offset + 15;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -832,8 +832,8 @@ public final class Bytes {
 		final int i14 = offset + 14;
 		final int i15 = offset + 15;
 		final int i16 = offset + 16;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -924,8 +924,8 @@ public final class Bytes {
 		final int i15 = offset + 15;
 		final int i16 = offset + 16;
 		final int i17 = offset + 17;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -1021,8 +1021,8 @@ public final class Bytes {
 		final int i16 = offset + 16;
 		final int i17 = offset + 17;
 		final int i18 = offset + 18;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -1123,8 +1123,8 @@ public final class Bytes {
 		final int i17 = offset + 17;
 		final int i18 = offset + 18;
 		final int i19 = offset + 19;
-		return (b, bi) -> {
-			int r = d(array[i0], b.get(bi));
+		return (firstByte, b, bi) -> {
+			int r = d(array[i0], firstByte);
 			if (r != 0) {
 				return r;
 			}
@@ -1211,11 +1211,15 @@ public final class Bytes {
 	private static RegionComparator comparatorGeneric(byte[] array, int offset, int len) {
 		final int start = offset;
 		final int end = offset + len;
-		return (b, bi) -> {
-			int idx = start;
-			int bj = bi;
+		return (firstByte, b, bi) -> {
+			int r = d(array[start], firstByte);
+			if (r != 0) {
+				return r;
+			}
+			int idx = start + 1;
+			int bj = bi + 1;
 			while (idx < end) {
-				int r = d(array[idx], b.get(bj));
+				r = d(array[idx], b.get(bj));
 				if (r != 0) {
 					return r;
 				}
