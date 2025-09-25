@@ -653,176 +653,326 @@ public final class Varint {
 			}
 		}
 
-		private static int matchSegment(ByteBuffer other, int pos, byte expectedFirstByte, int length,
-				Bytes.RegionComparator cmp) {
-			byte b = other.get(pos);
-			if (expectedFirstByte != b) {
-				return -1;
-			}
-			if (cmp.compare(other, pos) != 0) {
-				return -1;
-			}
-			return pos + length;
-		}
-
-		private static int skipSegment(ByteBuffer other, int pos) {
-			return pos + firstToLength(other.get(pos));
-		}
-
 		private boolean match0000(ByteBuffer other) {
 			return true;
 		}
 
 		private boolean match0001(ByteBuffer other) {
-			return matchSegment(other, 0, firstBytes[0], lengths[0], cmps[0]) >= 0;
+			if (firstBytes[0] == other.get(0)) {
+				return cmps[0].compare(other, 0) == 0;
+			}
+			return false;
 		}
 
 		private boolean match0010(ByteBuffer other) {
 			int pos = 0;
-			pos = skipSegment(other, pos);
-			return matchSegment(other, pos, firstBytes[1], lengths[1], cmps[1]) >= 0;
+			pos += firstToLength(other.get(pos));
+
+			if (firstBytes[1] == other.get(pos)) {
+				return cmps[1].compare(other, pos) == 0;
+			}
+			return false;
 		}
 
 		private boolean match0011(ByteBuffer other) {
-			int pos = matchSegment(other, 0, firstBytes[0], lengths[0], cmps[0]);
-			if (pos < 0) {
-				return false;
+			int pos = -1;
+
+			if (firstBytes[0] == other.get(0)) {
+				if (cmps[0].compare(other, 0) == 0) {
+					pos = lengths[0];
+				} else {
+					return false;
+				}
 			}
-			return matchSegment(other, pos, firstBytes[1], lengths[1], cmps[1]) >= 0;
+
+			if (firstBytes[1] == other.get(pos)) {
+				return cmps[1].compare(other, pos) == 0;
+			}
+			return false;
 		}
 
 		private boolean match0100(ByteBuffer other) {
 			int pos = 0;
-			pos = skipSegment(other, pos);
-			pos = skipSegment(other, pos);
-			return matchSegment(other, pos, firstBytes[2], lengths[2], cmps[2]) >= 0;
+			pos += firstToLength(other.get(pos));
+			pos += firstToLength(other.get(pos));
+
+			if (firstBytes[2] == other.get(pos)) {
+				return cmps[2].compare(other, pos) == 0;
+			}
+			return false;
 		}
 
 		private boolean match0101(ByteBuffer other) {
-			int pos = matchSegment(other, 0, firstBytes[0], lengths[0], cmps[0]);
-			if (pos < 0) {
+			int pos;
+
+			if (firstBytes[0] == other.get(0)) {
+				if (cmps[0].compare(other, 0) == 0) {
+					pos = lengths[0];
+				} else {
+					return false;
+				}
+			} else {
 				return false;
 			}
-			pos = skipSegment(other, pos);
-			return matchSegment(other, pos, firstBytes[2], lengths[2], cmps[2]) >= 0;
+			pos += firstToLength(other.get(pos));
+
+			if (firstBytes[2] == other.get(pos)) {
+				return cmps[2].compare(other, pos) == 0;
+			}
+			return false;
 		}
 
 		private boolean match0110(ByteBuffer other) {
 			int pos = 0;
-			pos = skipSegment(other, pos);
-			pos = matchSegment(other, pos, firstBytes[1], lengths[1], cmps[1]);
-			if (pos < 0) {
+			pos += firstToLength(other.get(pos));
+
+			if (firstBytes[1] == other.get(pos)) {
+				if (cmps[1].compare(other, pos) == 0) {
+					pos += lengths[1];
+				} else {
+					return false;
+				}
+			} else {
 				return false;
 			}
-			return matchSegment(other, pos, firstBytes[2], lengths[2], cmps[2]) >= 0;
+
+			if (firstBytes[2] == other.get(pos)) {
+				return cmps[2].compare(other, pos) == 0;
+			}
+			return false;
 		}
 
 		private boolean match0111(ByteBuffer other) {
-			int pos = matchSegment(other, 0, firstBytes[0], lengths[0], cmps[0]);
-			if (pos < 0) {
+			int pos;
+
+			if (firstBytes[0] == other.get(0)) {
+				if (cmps[0].compare(other, 0) == 0) {
+					pos = lengths[0];
+				} else {
+					return false;
+				}
+			} else {
 				return false;
 			}
-			pos = matchSegment(other, pos, firstBytes[1], lengths[1], cmps[1]);
-			if (pos < 0) {
+
+			if (firstBytes[1] == other.get(pos)) {
+				if (cmps[1].compare(other, pos) == 0) {
+					pos += lengths[1];
+				} else {
+					return false;
+				}
+			} else {
 				return false;
 			}
-			return matchSegment(other, pos, firstBytes[2], lengths[2], cmps[2]) >= 0;
+
+			if (firstBytes[2] == other.get(pos)) {
+				return cmps[2].compare(other, pos) == 0;
+			}
+			return false;
 		}
 
 		private boolean match1000(ByteBuffer other) {
 			int pos = 0;
-			pos = skipSegment(other, pos);
-			pos = skipSegment(other, pos);
-			pos = skipSegment(other, pos);
-			return matchSegment(other, pos, firstBytes[3], lengths[3], cmps[3]) >= 0;
+			pos += firstToLength(other.get(pos));
+			pos += firstToLength(other.get(pos));
+			pos += firstToLength(other.get(pos));
+
+			if (firstBytes[3] == other.get(pos)) {
+				return cmps[3].compare(other, pos) == 0;
+			}
+			return false;
 		}
 
 		private boolean match1001(ByteBuffer other) {
-			int pos = matchSegment(other, 0, firstBytes[0], lengths[0], cmps[0]);
-			if (pos < 0) {
+			int pos;
+
+			if (firstBytes[0] == other.get(0)) {
+				if (cmps[0].compare(other, 0) == 0) {
+					pos = lengths[0];
+				} else {
+					return false;
+				}
+			} else {
 				return false;
 			}
-			pos = skipSegment(other, pos);
-			pos = skipSegment(other, pos);
-			return matchSegment(other, pos, firstBytes[3], lengths[3], cmps[3]) >= 0;
+			pos += firstToLength(other.get(pos));
+			pos += firstToLength(other.get(pos));
+
+			if (firstBytes[3] == other.get(pos)) {
+				return cmps[3].compare(other, pos) == 0;
+			}
+			return false;
 		}
 
 		private boolean match1010(ByteBuffer other) {
 			int pos = 0;
-			pos = skipSegment(other, pos);
-			pos = matchSegment(other, pos, firstBytes[1], lengths[1], cmps[1]);
-			if (pos < 0) {
+			pos += firstToLength(other.get(pos));
+			if (firstBytes[1] == other.get(pos)) {
+				if (cmps[1].compare(other, pos) == 0) {
+					pos += lengths[1];
+				} else {
+					return false;
+				}
+			} else {
 				return false;
 			}
-			pos = skipSegment(other, pos);
-			return matchSegment(other, pos, firstBytes[3], lengths[3], cmps[3]) >= 0;
+
+			pos += firstToLength(other.get(pos));
+
+			if (firstBytes[3] == other.get(pos)) {
+				return cmps[3].compare(other, pos) == 0;
+			}
+			return false;
 		}
 
 		private boolean match1011(ByteBuffer other) {
-			int pos = matchSegment(other, 0, firstBytes[0], lengths[0], cmps[0]);
-			if (pos < 0) {
+			int pos;
+
+			if (firstBytes[0] == other.get(0)) {
+				if (cmps[0].compare(other, 0) == 0) {
+					pos = lengths[0];
+				} else {
+					return false;
+				}
+			} else {
 				return false;
 			}
-			pos = matchSegment(other, pos, firstBytes[1], lengths[1], cmps[1]);
-			if (pos < 0) {
+
+			if (firstBytes[1] == other.get(pos)) {
+				if (cmps[1].compare(other, pos) == 0) {
+					pos += lengths[1];
+				} else {
+					return false;
+				}
+			} else {
 				return false;
 			}
-			pos = skipSegment(other, pos);
-			return matchSegment(other, pos, firstBytes[3], lengths[3], cmps[3]) >= 0;
+
+			pos += firstToLength(other.get(pos));
+
+			if (firstBytes[3] == other.get(pos)) {
+				return cmps[3].compare(other, pos) == 0;
+			}
+			return false;
 		}
 
 		private boolean match1100(ByteBuffer other) {
 			int pos = 0;
-			pos = skipSegment(other, pos);
-			pos = skipSegment(other, pos);
-			pos = matchSegment(other, pos, firstBytes[2], lengths[2], cmps[2]);
-			if (pos < 0) {
+			pos += firstToLength(other.get(pos));
+			pos += firstToLength(other.get(pos));
+
+			if (firstBytes[2] == other.get(pos)) {
+				if (cmps[2].compare(other, pos) == 0) {
+					pos += lengths[2];
+				} else {
+					return false;
+				}
+			} else {
 				return false;
 			}
-			return matchSegment(other, pos, firstBytes[3], lengths[3], cmps[3]) >= 0;
+
+			if (firstBytes[3] == other.get(pos)) {
+				return cmps[3].compare(other, pos) == 0;
+			}
+			return false;
 		}
 
 		private boolean match1101(ByteBuffer other) {
-			int pos = matchSegment(other, 0, firstBytes[0], lengths[0], cmps[0]);
-			if (pos < 0) {
+			int pos;
+
+			if (firstBytes[0] == other.get(0)) {
+				if (cmps[0].compare(other, 0) == 0) {
+					pos = lengths[0];
+				} else {
+					return false;
+				}
+			} else {
 				return false;
 			}
-			pos = skipSegment(other, pos);
-			pos = matchSegment(other, pos, firstBytes[2], lengths[2], cmps[2]);
-			if (pos < 0) {
+			pos += firstToLength(other.get(pos));
+
+			if (firstBytes[2] == other.get(pos)) {
+				if (cmps[2].compare(other, pos) == 0) {
+					pos += lengths[2];
+				} else {
+					return false;
+				}
+			} else {
 				return false;
 			}
-			return matchSegment(other, pos, firstBytes[3], lengths[3], cmps[3]) >= 0;
+
+			if (firstBytes[3] == other.get(pos)) {
+				return cmps[3].compare(other, pos) == 0;
+			}
+			return false;
 		}
 
 		private boolean match1110(ByteBuffer other) {
 			int pos = 0;
-			pos = skipSegment(other, pos);
-			pos = matchSegment(other, pos, firstBytes[1], lengths[1], cmps[1]);
-			if (pos < 0) {
+			pos += firstToLength(other.get(pos));
+
+			if (firstBytes[1] == other.get(pos)) {
+				if (cmps[1].compare(other, pos) == 0) {
+					pos += lengths[1];
+				} else {
+					return false;
+				}
+			} else {
 				return false;
 			}
-			pos = matchSegment(other, pos, firstBytes[2], lengths[2], cmps[2]);
-			if (pos < 0) {
+
+			if (firstBytes[2] == other.get(pos)) {
+				if (cmps[2].compare(other, pos) == 0) {
+					pos += lengths[2];
+				} else {
+					return false;
+				}
+			} else {
 				return false;
 			}
-			return matchSegment(other, pos, firstBytes[3], lengths[3], cmps[3]) >= 0;
+
+			if (firstBytes[3] == other.get(pos)) {
+				return cmps[3].compare(other, pos) == 0;
+			}
+			return false;
 		}
 
 		private boolean match1111(ByteBuffer other) {
-			int pos = matchSegment(other, 0, firstBytes[0], lengths[0], cmps[0]);
-			if (pos < 0) {
+			int pos;
+			if (firstBytes[0] == other.get(0)) {
+				if (cmps[0].compare(other, 0) == 0) {
+					pos = lengths[0];
+				} else {
+					return false;
+				}
+			} else {
 				return false;
 			}
-			pos = matchSegment(other, pos, firstBytes[1], lengths[1], cmps[1]);
-			if (pos < 0) {
+
+			if (firstBytes[1] == other.get(pos)) {
+				if (cmps[1].compare(other, pos) == 0) {
+					pos += lengths[1];
+				} else {
+					return false;
+				}
+			} else {
 				return false;
 			}
-			pos = matchSegment(other, pos, firstBytes[2], lengths[2], cmps[2]);
-			if (pos < 0) {
+
+			if (firstBytes[2] == other.get(pos)) {
+				if (cmps[2].compare(other, pos) == 0) {
+					pos += lengths[2];
+				} else {
+					return false;
+				}
+			} else {
 				return false;
 			}
-			return matchSegment(other, pos, firstBytes[3], lengths[3], cmps[3]) >= 0;
+
+			if (firstBytes[3] == other.get(pos)) {
+				return cmps[3].compare(other, pos) == 0;
+			}
+			return false;
 		}
 
 	}
