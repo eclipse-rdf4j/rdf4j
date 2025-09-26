@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.util;
 
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
 public final class Bytes {
 	private Bytes() {
@@ -24,6 +25,17 @@ public final class Bytes {
 
 	private static boolean equals(int a, int b) {
 		return a == b;
+	}
+
+	private static short toShort(byte[] array, int offset) {
+		return (short) (((array[offset] & 0xFF) << 8) | (array[offset + 1] & 0xFF));
+	}
+
+	private static int toInt(byte[] array, int offset) {
+		return ((array[offset] & 0xFF) << 24)
+				| ((array[offset + 1] & 0xFF) << 16)
+				| ((array[offset + 2] & 0xFF) << 8)
+				| (array[offset + 3] & 0xFF);
 	}
 
 	public static RegionComparator capturedComparator(byte[] array, int offset, int len) {
@@ -93,927 +105,508 @@ public final class Bytes {
 
 	private static RegionComparator comparatorLen3(byte[] array, int offset) {
 
+		final short expected = toShort(array, offset + 1);
+		final short expectedLE = Short.reverseBytes(expected);
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
-				return false;
-			}
-
-			return equals(array[offset + 2], b.get());
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			return equals(bigEndian ? expected : expectedLE, b.getShort());
 		};
 	}
 
 	private static RegionComparator comparatorLen4(byte[] array, int offset) {
 
+		final short expected = toShort(array, offset + 1);
+		final short expectedLE = Short.reverseBytes(expected);
+		final byte expectedTail = array[offset + 3];
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			if (!equals(bigEndian ? expected : expectedLE, b.getShort())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 2], b.get())) {
-				return false;
-			}
-
-			return equals(array[offset + 3], b.get());
+			return equals(expectedTail, b.get());
 		};
 	}
 
 	private static RegionComparator comparatorLen5(byte[] array, int offset) {
 
+		final int expected = toInt(array, offset + 1);
+		final int expectedLE = Integer.reverseBytes(expected);
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 2], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 3], b.get())) {
-				return false;
-			}
-
-			return equals(array[offset + 4], b.get());
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			return equals(bigEndian ? expected : expectedLE, b.getInt());
 		};
 	}
 
 	private static RegionComparator comparatorLen6(byte[] array, int offset) {
 
+		final int expected = toInt(array, offset + 1);
+		final int expectedLE = Integer.reverseBytes(expected);
+		final byte tail = array[offset + 5];
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			if (!equals(bigEndian ? expected : expectedLE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 2], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 3], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 4], b.get())) {
-				return false;
-			}
-
-			return equals(array[offset + 5], b.get());
+			return equals(tail, b.get());
 		};
 	}
 
 	private static RegionComparator comparatorLen7(byte[] array, int offset) {
 
+		final int expected = toInt(array, offset + 1);
+		final int expectedLE = Integer.reverseBytes(expected);
+		final short expectedTail = toShort(array, offset + 5);
+		final short expectedTailLE = Short.reverseBytes(expectedTail);
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			if (!equals(bigEndian ? expected : expectedLE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 2], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 3], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 4], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 5], b.get())) {
-				return false;
-			}
-
-			return equals(array[offset + 6], b.get());
+			return equals(bigEndian ? expectedTail : expectedTailLE, b.getShort());
 		};
 	}
 
 	private static RegionComparator comparatorLen8(byte[] array, int offset) {
 
+		final int expected = toInt(array, offset + 1);
+		final int expectedLE = Integer.reverseBytes(expected);
+		final short expectedShort = toShort(array, offset + 5);
+		final short expectedShortLE = Short.reverseBytes(expectedShort);
+		final byte tail = array[offset + 7];
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			if (!equals(bigEndian ? expected : expectedLE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 2], b.get())) {
+			if (!equals(bigEndian ? expectedShort : expectedShortLE, b.getShort())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 3], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 4], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 5], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 6], b.get())) {
-				return false;
-			}
-
-			return equals(array[offset + 7], b.get());
+			return equals(tail, b.get());
 		};
 	}
 
 	private static RegionComparator comparatorLen9(byte[] array, int offset) {
 
+		final int expected1 = toInt(array, offset + 1);
+		final int expected1LE = Integer.reverseBytes(expected1);
+		final int expected2 = toInt(array, offset + 5);
+		final int expected2LE = Integer.reverseBytes(expected2);
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			if (!equals(bigEndian ? expected1 : expected1LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 2], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 3], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 4], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 5], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 6], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 7], b.get())) {
-				return false;
-			}
-
-			return equals(array[offset + 8], b.get());
+			return equals(bigEndian ? expected2 : expected2LE, b.getInt());
 		};
 	}
 
 	private static RegionComparator comparatorLen10(byte[] array, int offset) {
 
+		final int expected1 = toInt(array, offset + 1);
+		final int expected1LE = Integer.reverseBytes(expected1);
+		final int expected2 = toInt(array, offset + 5);
+		final int expected2LE = Integer.reverseBytes(expected2);
+		final byte tail = array[offset + 9];
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			if (!equals(bigEndian ? expected1 : expected1LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 2], b.get())) {
+			if (!equals(bigEndian ? expected2 : expected2LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 3], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 4], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 5], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 6], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 7], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 8], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 9], b.get())) {
-				return false;
-			}
-
-			return true;
+			return equals(tail, b.get());
 		};
 	}
 
 	private static RegionComparator comparatorLen11(byte[] array, int offset) {
 
+		final int expected1 = toInt(array, offset + 1);
+		final int expected1LE = Integer.reverseBytes(expected1);
+		final int expected2 = toInt(array, offset + 5);
+		final int expected2LE = Integer.reverseBytes(expected2);
+		final short expectedShort = toShort(array, offset + 9);
+		final short expectedShortLE = Short.reverseBytes(expectedShort);
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			if (!equals(bigEndian ? expected1 : expected1LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 2], b.get())) {
+			if (!equals(bigEndian ? expected2 : expected2LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 3], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 4], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 5], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 6], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 7], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 8], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 9], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 10], b.get())) {
-				return false;
-			}
-
-			return true;
+			return equals(bigEndian ? expectedShort : expectedShortLE, b.getShort());
 		};
 	}
 
 	private static RegionComparator comparatorLen12(byte[] array, int offset) {
 
+		final int expected1 = toInt(array, offset + 1);
+		final int expected1LE = Integer.reverseBytes(expected1);
+		final int expected2 = toInt(array, offset + 5);
+		final int expected2LE = Integer.reverseBytes(expected2);
+		final short expectedShort = toShort(array, offset + 9);
+		final short expectedShortLE = Short.reverseBytes(expectedShort);
+		final byte tail = array[offset + 11];
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			if (!equals(bigEndian ? expected1 : expected1LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 2], b.get())) {
+			if (!equals(bigEndian ? expected2 : expected2LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 3], b.get())) {
+			if (!equals(bigEndian ? expectedShort : expectedShortLE, b.getShort())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 4], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 5], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 6], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 7], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 8], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 9], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 10], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 11], b.get())) {
-				return false;
-			}
-
-			return true;
+			return equals(tail, b.get());
 		};
 	}
 
 	private static RegionComparator comparatorLen13(byte[] array, int offset) {
 
+		final int expected1 = toInt(array, offset + 1);
+		final int expected1LE = Integer.reverseBytes(expected1);
+		final int expected2 = toInt(array, offset + 5);
+		final int expected2LE = Integer.reverseBytes(expected2);
+		final int expected3 = toInt(array, offset + 9);
+		final int expected3LE = Integer.reverseBytes(expected3);
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			if (!equals(bigEndian ? expected1 : expected1LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 2], b.get())) {
+			if (!equals(bigEndian ? expected2 : expected2LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 3], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 4], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 5], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 6], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 7], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 8], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 9], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 10], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 11], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 12], b.get())) {
-				return false;
-			}
-
-			return true;
+			return equals(bigEndian ? expected3 : expected3LE, b.getInt());
 		};
 	}
 
 	private static RegionComparator comparatorLen14(byte[] array, int offset) {
 
+		final int expected1 = toInt(array, offset + 1);
+		final int expected1LE = Integer.reverseBytes(expected1);
+		final int expected2 = toInt(array, offset + 5);
+		final int expected2LE = Integer.reverseBytes(expected2);
+		final int expected3 = toInt(array, offset + 9);
+		final int expected3LE = Integer.reverseBytes(expected3);
+		final byte tail = array[offset + 13];
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			if (!equals(bigEndian ? expected1 : expected1LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 2], b.get())) {
+			if (!equals(bigEndian ? expected2 : expected2LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 3], b.get())) {
+			if (!equals(bigEndian ? expected3 : expected3LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 4], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 5], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 6], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 7], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 8], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 9], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 10], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 11], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 12], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 13], b.get())) {
-				return false;
-			}
-
-			return true;
+			return equals(tail, b.get());
 		};
 	}
 
 	private static RegionComparator comparatorLen15(byte[] array, int offset) {
 
+		final int expected1 = toInt(array, offset + 1);
+		final int expected1LE = Integer.reverseBytes(expected1);
+		final int expected2 = toInt(array, offset + 5);
+		final int expected2LE = Integer.reverseBytes(expected2);
+		final int expected3 = toInt(array, offset + 9);
+		final int expected3LE = Integer.reverseBytes(expected3);
+		final short expectedShort = toShort(array, offset + 13);
+		final short expectedShortLE = Short.reverseBytes(expectedShort);
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			if (!equals(bigEndian ? expected1 : expected1LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 2], b.get())) {
+			if (!equals(bigEndian ? expected2 : expected2LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 3], b.get())) {
+			if (!equals(bigEndian ? expected3 : expected3LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 4], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 5], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 6], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 7], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 8], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 9], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 10], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 11], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 12], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 13], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 14], b.get())) {
-				return false;
-			}
-
-			return true;
+			return equals(bigEndian ? expectedShort : expectedShortLE, b.getShort());
 		};
 	}
 
 	private static RegionComparator comparatorLen16(byte[] array, int offset) {
 
+		final int expected1 = toInt(array, offset + 1);
+		final int expected1LE = Integer.reverseBytes(expected1);
+		final int expected2 = toInt(array, offset + 5);
+		final int expected2LE = Integer.reverseBytes(expected2);
+		final int expected3 = toInt(array, offset + 9);
+		final int expected3LE = Integer.reverseBytes(expected3);
+		final short expectedShort = toShort(array, offset + 13);
+		final short expectedShortLE = Short.reverseBytes(expectedShort);
+		final byte tail = array[offset + 15];
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			if (!equals(bigEndian ? expected1 : expected1LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 2], b.get())) {
+			if (!equals(bigEndian ? expected2 : expected2LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 3], b.get())) {
+			if (!equals(bigEndian ? expected3 : expected3LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 4], b.get())) {
+			if (!equals(bigEndian ? expectedShort : expectedShortLE, b.getShort())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 5], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 6], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 7], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 8], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 9], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 10], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 11], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 12], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 13], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 14], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 15], b.get())) {
-				return false;
-			}
-
-			return true;
+			return equals(tail, b.get());
 		};
 	}
 
 	private static RegionComparator comparatorLen17(byte[] array, int offset) {
 
+		final int expected1 = toInt(array, offset + 1);
+		final int expected1LE = Integer.reverseBytes(expected1);
+		final int expected2 = toInt(array, offset + 5);
+		final int expected2LE = Integer.reverseBytes(expected2);
+		final int expected3 = toInt(array, offset + 9);
+		final int expected3LE = Integer.reverseBytes(expected3);
+		final int expected4 = toInt(array, offset + 13);
+		final int expected4LE = Integer.reverseBytes(expected4);
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			if (!equals(bigEndian ? expected1 : expected1LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 2], b.get())) {
+			if (!equals(bigEndian ? expected2 : expected2LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 3], b.get())) {
+			if (!equals(bigEndian ? expected3 : expected3LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 4], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 5], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 6], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 7], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 8], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 9], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 10], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 11], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 12], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 13], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 14], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 15], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 16], b.get())) {
-				return false;
-			}
-
-			return true;
+			return equals(bigEndian ? expected4 : expected4LE, b.getInt());
 		};
 	}
 
 	private static RegionComparator comparatorLen18(byte[] array, int offset) {
 
+		final int expected1 = toInt(array, offset + 1);
+		final int expected1LE = Integer.reverseBytes(expected1);
+		final int expected2 = toInt(array, offset + 5);
+		final int expected2LE = Integer.reverseBytes(expected2);
+		final int expected3 = toInt(array, offset + 9);
+		final int expected3LE = Integer.reverseBytes(expected3);
+		final int expected4 = toInt(array, offset + 13);
+		final int expected4LE = Integer.reverseBytes(expected4);
+		final byte tail = array[offset + 17];
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			if (!equals(bigEndian ? expected1 : expected1LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 2], b.get())) {
+			if (!equals(bigEndian ? expected2 : expected2LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 3], b.get())) {
+			if (!equals(bigEndian ? expected3 : expected3LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 4], b.get())) {
+			if (!equals(bigEndian ? expected4 : expected4LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 5], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 6], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 7], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 8], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 9], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 10], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 11], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 12], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 13], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 14], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 15], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 16], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 17], b.get())) {
-				return false;
-			}
-
-			return true;
+			return equals(tail, b.get());
 		};
 	}
 
 	private static RegionComparator comparatorLen19(byte[] array, int offset) {
 
+		final int expected1 = toInt(array, offset + 1);
+		final int expected1LE = Integer.reverseBytes(expected1);
+		final int expected2 = toInt(array, offset + 5);
+		final int expected2LE = Integer.reverseBytes(expected2);
+		final int expected3 = toInt(array, offset + 9);
+		final int expected3LE = Integer.reverseBytes(expected3);
+		final int expected4 = toInt(array, offset + 13);
+		final int expected4LE = Integer.reverseBytes(expected4);
+		final short expectedShort = toShort(array, offset + 17);
+		final short expectedShortLE = Short.reverseBytes(expectedShort);
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			if (!equals(bigEndian ? expected1 : expected1LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 2], b.get())) {
+			if (!equals(bigEndian ? expected2 : expected2LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 3], b.get())) {
+			if (!equals(bigEndian ? expected3 : expected3LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 4], b.get())) {
+			if (!equals(bigEndian ? expected4 : expected4LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 5], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 6], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 7], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 8], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 9], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 10], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 11], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 12], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 13], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 14], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 15], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 16], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 17], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 18], b.get())) {
-				return false;
-			}
-
-			return true;
+			return equals(bigEndian ? expectedShort : expectedShortLE, b.getShort());
 		};
 	}
 
 	private static RegionComparator comparatorLen20(byte[] array, int offset) {
 
+		final int expected1 = toInt(array, offset + 1);
+		final int expected1LE = Integer.reverseBytes(expected1);
+		final int expected2 = toInt(array, offset + 5);
+		final int expected2LE = Integer.reverseBytes(expected2);
+		final int expected3 = toInt(array, offset + 9);
+		final int expected3LE = Integer.reverseBytes(expected3);
+		final int expected4 = toInt(array, offset + 13);
+		final int expected4LE = Integer.reverseBytes(expected4);
+		final short expectedShort = toShort(array, offset + 17);
+		final short expectedShortLE = Short.reverseBytes(expectedShort);
+		final byte tail = array[offset + 19];
+
 		return (firstByte, b) -> {
 			if (!equals(array[offset], firstByte)) {
 				return false;
 			}
 
-			if (!equals(array[offset + 1], b.get())) {
+			boolean bigEndian = b.order() == ByteOrder.BIG_ENDIAN;
+			if (!equals(bigEndian ? expected1 : expected1LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 2], b.get())) {
+			if (!equals(bigEndian ? expected2 : expected2LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 3], b.get())) {
+			if (!equals(bigEndian ? expected3 : expected3LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 4], b.get())) {
+			if (!equals(bigEndian ? expected4 : expected4LE, b.getInt())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 5], b.get())) {
+			if (!equals(bigEndian ? expectedShort : expectedShortLE, b.getShort())) {
 				return false;
 			}
 
-			if (!equals(array[offset + 6], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 7], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 8], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 9], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 10], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 11], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 12], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 13], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 14], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 15], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 16], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 17], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 18], b.get())) {
-				return false;
-			}
-
-			if (!equals(array[offset + 19], b.get())) {
-				return false;
-			}
-
-			return true;
+			return equals(tail, b.get());
 		};
 	}
 
