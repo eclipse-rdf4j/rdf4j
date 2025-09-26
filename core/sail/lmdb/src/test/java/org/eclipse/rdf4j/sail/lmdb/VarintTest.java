@@ -10,14 +10,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class VarintTest {
+
+	private final ByteOrder[] byteOrders = new ByteOrder[] { ByteOrder.BIG_ENDIAN, ByteOrder.LITTLE_ENDIAN };
 
 	long[] values = new long[] {
 			240, 2287, 67823, 16777215, 4294967295L, 1099511627775L, 281474976710655L, 72057594037927935L,
@@ -26,28 +27,33 @@ public class VarintTest {
 
 	@Test
 	public void testVarint() {
-		ByteBuffer bb = ByteBuffer.allocate(9);
-		for (int i = 0; i < values.length; i++) {
-			bb.clear();
-			Varint.writeUnsigned(bb, values[i]);
-			bb.flip();
-			assertEquals("Encoding should use " + (i + 1) + " bytes", i + 1, bb.remaining());
-			assertEquals("Encoded and decoded value should be equal", values[i], Varint.readUnsigned(bb));
+		for (ByteOrder order : byteOrders) {
+			ByteBuffer bb = ByteBuffer.allocate(9).order(order);
+			for (int i = 0; i < values.length; i++) {
+				bb.clear();
+				Varint.writeUnsigned(bb, values[i]);
+				bb.flip();
+				Assertions.assertEquals(i + 1, bb.remaining(), "Encoding should use " + (i + 1) + " bytes");
+				Assertions.assertEquals(values[i], Varint.readUnsigned(bb),
+						"Encoded and decoded value should be equal");
+			}
 		}
 	}
 
 	@Test
 	public void testVarintList() {
-		ByteBuffer bb = ByteBuffer.allocate(2 + 4 * Long.BYTES);
-		for (int i = 0; i < values.length - 4; i++) {
-			long[] expected = new long[4];
-			System.arraycopy(values, 0, expected, 0, 4);
-			bb.clear();
-			Varint.writeListUnsigned(bb, expected);
-			bb.flip();
-			long[] actual = new long[4];
-			Varint.readListUnsigned(bb, actual);
-			assertArrayEquals("Encoded and decoded value should be equal", expected, actual);
+		for (ByteOrder order : byteOrders) {
+			ByteBuffer bb = ByteBuffer.allocate(2 + 4 * Long.BYTES).order(order);
+			for (int i = 0; i < values.length - 4; i++) {
+				long[] expected = new long[4];
+				System.arraycopy(values, 0, expected, 0, 4);
+				bb.clear();
+				Varint.writeListUnsigned(bb, expected);
+				bb.flip();
+				long[] actual = new long[4];
+				Varint.readListUnsigned(bb, actual);
+				Assertions.assertArrayEquals(expected, actual, "Encoded and decoded value should be equal");
+			}
 		}
 	}
 }
