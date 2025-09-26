@@ -22,6 +22,8 @@ public class GroupMatcher {
 
 	private final int length0;
 	private final int length1;
+	private final int length2;
+	private final int length3;
 	private final Bytes.RegionComparator cmp0;
 	private final Bytes.RegionComparator cmp1;
 	private final Bytes.RegionComparator cmp2;
@@ -63,6 +65,7 @@ public class GroupMatcher {
 			byte fb = valueArray[baseOffset];
 			this.firstByte2 = fb;
 			int len = firstToLength(fb);
+			this.length2 = len;
 
 			this.cmp2 = Bytes.capturedComparator(valueArray, baseOffset, len);
 
@@ -72,6 +75,7 @@ public class GroupMatcher {
 			byte fb = valueArray[baseOffset];
 			this.firstByte3 = fb;
 			int len = firstToLength(fb);
+			this.length3 = len;
 
 			this.cmp3 = Bytes.capturedComparator(valueArray, baseOffset, len);
 		}
@@ -149,7 +153,7 @@ public class GroupMatcher {
 	private boolean match0001(ByteBuffer other) {
 		byte otherFirst0 = other.get();
 		if (firstByte0 == otherFirst0) {
-			return cmp0.equals(otherFirst0, other);
+			return length0 == 1 || cmp0.equals(otherFirst0, other);
 		}
 		return false;
 	}
@@ -160,11 +164,7 @@ public class GroupMatcher {
 
 		byte otherFirst1 = other.get();
 		if (firstByte1 == otherFirst1) {
-			if (length1 == 1) {
-				return true;
-			} else {
-				return cmp1.equals(otherFirst1, other);
-			}
+			return length1 == 1 || cmp1.equals(otherFirst1, other);
 		}
 		return false;
 	}
@@ -190,7 +190,7 @@ public class GroupMatcher {
 
 		byte otherFirst2 = other.get();
 		if (firstByte2 == otherFirst2) {
-			return cmp2.equals(otherFirst2, other);
+			return length2 == 1 || cmp2.equals(otherFirst2, other);
 		}
 		return false;
 	}
@@ -199,17 +199,14 @@ public class GroupMatcher {
 
 		byte otherFirst0 = other.get();
 		if (firstByte0 == otherFirst0) {
-			if (!cmp0.equals(otherFirst0, other)) {
-				return false;
-			}
-		} else {
-			return false;
-		}
-		skipAhead(other);
+			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
+				skipAhead(other);
 
-		byte otherFirst2 = other.get();
-		if (firstByte2 == otherFirst2) {
-			return cmp2.equals(otherFirst2, other);
+				byte otherFirst2 = other.get();
+				if (firstByte2 == otherFirst2) {
+					return length2 == 1 || cmp2.equals(otherFirst2, other);
+				}
+			}
 		}
 		return false;
 	}
@@ -220,16 +217,12 @@ public class GroupMatcher {
 
 		byte otherFirst1 = other.get();
 		if (firstByte1 == otherFirst1) {
-			if (!cmp1.equals(otherFirst1, other)) {
-				return false;
+			if (length1 == 1 || cmp1.equals(otherFirst1, other)) {
+				byte otherFirst2 = other.get();
+				if (firstByte2 == otherFirst2) {
+					return length2 == 1 || cmp2.equals(otherFirst2, other);
+				}
 			}
-		} else {
-			return false;
-		}
-
-		byte otherFirst2 = other.get();
-		if (firstByte2 == otherFirst2) {
-			return cmp2.equals(otherFirst2, other);
 		}
 		return false;
 	}
@@ -246,25 +239,17 @@ public class GroupMatcher {
 
 		byte otherFirst0 = other.get();
 		if (firstByte0 == otherFirst0) {
-			if (!cmp0.equals(otherFirst0, other)) {
-				return false;
+			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
+				byte otherFirst1 = other.get();
+				if (firstByte1 == otherFirst1) {
+					if (length1 == 1 || cmp1.equals(otherFirst1, other)) {
+						byte otherFirst2 = other.get();
+						if (firstByte2 == otherFirst2) {
+							return length2 == 1 || cmp2.equals(otherFirst2, other);
+						}
+					}
+				}
 			}
-		} else {
-			return false;
-		}
-
-		byte otherFirst1 = other.get();
-		if (firstByte1 == otherFirst1) {
-			if (!cmp1.equals(otherFirst1, other)) {
-				return false;
-			}
-		} else {
-			return false;
-		}
-
-		byte otherFirst2 = other.get();
-		if (firstByte2 == otherFirst2) {
-			return cmp2.equals(otherFirst2, other);
 		}
 		return false;
 	}
@@ -277,7 +262,7 @@ public class GroupMatcher {
 
 		byte otherFirst3 = other.get();
 		if (firstByte3 == otherFirst3) {
-			return cmp3.equals(otherFirst3, other);
+			return length3 == 1 || cmp3.equals(otherFirst3, other);
 		}
 		return false;
 	}
@@ -286,18 +271,15 @@ public class GroupMatcher {
 
 		byte otherFirst0 = other.get();
 		if (firstByte0 == otherFirst0) {
-			if (!cmp0.equals(otherFirst0, other)) {
-				return false;
-			}
-		} else {
-			return false;
-		}
-		skipAhead(other);
-		skipAhead(other);
+			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
+				skipAhead(other);
+				skipAhead(other);
 
-		byte otherFirst3 = other.get();
-		if (firstByte3 == otherFirst3) {
-			return cmp3.equals(otherFirst3, other);
+				byte otherFirst3 = other.get();
+				if (firstByte3 == otherFirst3) {
+					return length3 == 1 || cmp3.equals(otherFirst3, other);
+				}
+			}
 		}
 		return false;
 	}
@@ -307,18 +289,14 @@ public class GroupMatcher {
 		skipAhead(other);
 		byte otherFirst1 = other.get();
 		if (firstByte1 == otherFirst1) {
-			if (!cmp1.equals(otherFirst1, other)) {
-				return false;
+			if (length1 == 1 || cmp1.equals(otherFirst1, other)) {
+				skipAhead(other);
+
+				byte otherFirst3 = other.get();
+				if (firstByte3 == otherFirst3) {
+					return length3 == 1 || cmp3.equals(otherFirst3, other);
+				}
 			}
-		} else {
-			return false;
-		}
-
-		skipAhead(other);
-
-		byte otherFirst3 = other.get();
-		if (firstByte3 == otherFirst3) {
-			return cmp3.equals(otherFirst3, other);
 		}
 		return false;
 	}
@@ -327,27 +305,19 @@ public class GroupMatcher {
 
 		byte otherFirst0 = other.get();
 		if (firstByte0 == otherFirst0) {
-			if (!cmp0.equals(otherFirst0, other)) {
-				return false;
+			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
+				byte otherFirst1 = other.get();
+				if (firstByte1 == otherFirst1) {
+					if (length1 == 1 || cmp1.equals(otherFirst1, other)) {
+						skipAhead(other);
+
+						byte otherFirst3 = other.get();
+						if (firstByte3 == otherFirst3) {
+							return length3 == 1 || cmp3.equals(otherFirst3, other);
+						}
+					}
+				}
 			}
-		} else {
-			return false;
-		}
-
-		byte otherFirst1 = other.get();
-		if (firstByte1 == otherFirst1) {
-			if (!cmp1.equals(otherFirst1, other)) {
-				return false;
-			}
-		} else {
-			return false;
-		}
-
-		skipAhead(other);
-
-		byte otherFirst3 = other.get();
-		if (firstByte3 == otherFirst3) {
-			return cmp3.equals(otherFirst3, other);
 		}
 		return false;
 	}
@@ -359,16 +329,12 @@ public class GroupMatcher {
 
 		byte otherFirst2 = other.get();
 		if (firstByte2 == otherFirst2) {
-			if (!cmp2.equals(otherFirst2, other)) {
-				return false;
+			if (length2 == 1 || cmp2.equals(otherFirst2, other)) {
+				byte otherFirst3 = other.get();
+				if (firstByte3 == otherFirst3) {
+					return length3 == 1 || cmp3.equals(otherFirst3, other);
+				}
 			}
-		} else {
-			return false;
-		}
-
-		byte otherFirst3 = other.get();
-		if (firstByte3 == otherFirst3) {
-			return cmp3.equals(otherFirst3, other);
 		}
 		return false;
 	}
@@ -377,26 +343,19 @@ public class GroupMatcher {
 
 		byte otherFirst0 = other.get();
 		if (firstByte0 == otherFirst0) {
-			if (!cmp0.equals(otherFirst0, other)) {
-				return false;
-			}
-		} else {
-			return false;
-		}
-		skipAhead(other);
+			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
+				skipAhead(other);
 
-		byte otherFirst2 = other.get();
-		if (firstByte2 == otherFirst2) {
-			if (!cmp2.equals(otherFirst2, other)) {
-				return false;
+				byte otherFirst2 = other.get();
+				if (firstByte2 == otherFirst2) {
+					if (length2 == 1 || cmp2.equals(otherFirst2, other)) {
+						byte otherFirst3 = other.get();
+						if (firstByte3 == otherFirst3) {
+							return length3 == 1 || cmp3.equals(otherFirst3, other);
+						}
+					}
+				}
 			}
-		} else {
-			return false;
-		}
-
-		byte otherFirst3 = other.get();
-		if (firstByte3 == otherFirst3) {
-			return cmp3.equals(otherFirst3, other);
 		}
 		return false;
 	}
@@ -407,25 +366,17 @@ public class GroupMatcher {
 
 		byte otherFirst1 = other.get();
 		if (firstByte1 == otherFirst1) {
-			if (!cmp1.equals(otherFirst1, other)) {
-				return false;
+			if (length1 == 1 || cmp1.equals(otherFirst1, other)) {
+				byte otherFirst2 = other.get();
+				if (firstByte2 == otherFirst2) {
+					if (length2 == 1 || cmp2.equals(otherFirst2, other)) {
+						byte otherFirst3 = other.get();
+						if (firstByte3 == otherFirst3) {
+							return length3 == 1 || cmp3.equals(otherFirst3, other);
+						}
+					}
+				}
 			}
-		} else {
-			return false;
-		}
-
-		byte otherFirst2 = other.get();
-		if (firstByte2 == otherFirst2) {
-			if (!cmp2.equals(otherFirst2, other)) {
-				return false;
-			}
-		} else {
-			return false;
-		}
-
-		byte otherFirst3 = other.get();
-		if (firstByte3 == otherFirst3) {
-			return cmp3.equals(otherFirst3, other);
 		}
 		return false;
 	}
@@ -433,34 +384,22 @@ public class GroupMatcher {
 	private boolean match1111(ByteBuffer other) {
 		byte otherFirst0 = other.get();
 		if (firstByte0 == otherFirst0) {
-			if (!cmp0.equals(otherFirst0, other)) {
-				return false;
+			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
+				byte otherFirst1 = other.get();
+				if (firstByte1 == otherFirst1) {
+					if (length1 == 1 || cmp1.equals(otherFirst1, other)) {
+						byte otherFirst2 = other.get();
+						if (firstByte2 == otherFirst2) {
+							if (length2 == 1 || cmp2.equals(otherFirst2, other)) {
+								byte otherFirst3 = other.get();
+								if (firstByte3 == otherFirst3) {
+									return length3 == 1 || cmp3.equals(otherFirst3, other);
+								}
+							}
+						}
+					}
+				}
 			}
-		} else {
-			return false;
-		}
-
-		byte otherFirst1 = other.get();
-		if (firstByte1 == otherFirst1) {
-			if (!cmp1.equals(otherFirst1, other)) {
-				return false;
-			}
-		} else {
-			return false;
-		}
-
-		byte otherFirst2 = other.get();
-		if (firstByte2 == otherFirst2) {
-			if (!cmp2.equals(otherFirst2, other)) {
-				return false;
-			}
-		} else {
-			return false;
-		}
-
-		byte otherFirst3 = other.get();
-		if (firstByte3 == otherFirst3) {
-			return cmp3.equals(otherFirst3, other);
 		}
 		return false;
 	}
