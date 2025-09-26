@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TripleStore.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
-import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
+import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBVal;

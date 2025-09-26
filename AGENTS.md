@@ -197,8 +197,8 @@ It is illegal to `-q` when running tests!
 The Maven reactor resolves inter-module dependencies from the local Maven repository (`~/.m2/repository`).
 Running `install` publishes your changed modules there so downstream modules and tests pick up the correct versions.
 
-* Always run `mvn -o -Pquick install | tail -200` before you start working. This command typically takes between 10 and 30 seconds.
-* Always run `mvn -o -pl <module> -am -Pquick install | tail -200` before any `verify` or test runs.
+* Always run `mvn -o -Pquick install | tail -200` before you start working. This command typically takes up to 30 seconds. Never use a small timeout than 30,000 ms.
+* Always run `mvn -o -Pquick install | tail -200` before any `verify` or test runs.
 * If offline resolution fails due to a missing dependency or plugin, rerun the exact `install` command once without `-o`, then return offline.
 * Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
 * Never ever change the repo location. Never use `-Dmaven.repo.local=.m2_repo`. 

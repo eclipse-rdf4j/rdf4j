@@ -10,7 +10,7 @@
 // ******************************************************************************/
 //package org.eclipse.rdf4j.sail.lmdb;
 //
-//import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
+//import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 //import org.junit.jupiter.api.DynamicTest;
 //import org.junit.jupiter.api.TestFactory;
 //
