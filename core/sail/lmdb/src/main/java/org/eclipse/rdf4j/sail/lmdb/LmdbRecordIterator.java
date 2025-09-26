@@ -160,6 +160,7 @@ class LmdbRecordIterator implements RecordIterator {
 			}
 
 			if (txnRefVersion != txnRef.version()) {
+				// TODO: None of the tests in the LMDB Store cover this case!
 				// cursor must be renewed
 				mdb_cursor_renew(txn, cursor);
 				if (fetchNext) {

@@ -449,6 +449,13 @@ public final class Varint {
 		}
 	}
 
+	public static void readQuadUnsigned(ByteBuffer bb, long[] values) {
+		values[0] = readUnsigned(bb);
+		values[1] = readUnsigned(bb);
+		values[2] = readUnsigned(bb);
+		values[3] = readUnsigned(bb);
+	}
+
 	/**
 	 * Decodes multiple values using variable-length encoding from the given buffer.
 	 *
@@ -463,7 +470,6 @@ public final class Varint {
 	}
 
 	public static void readQuadUnsigned(ByteBuffer bb, int[] indexMap, long[] values) {
-		assert indexMap.length == 4;
 		values[indexMap[0]] = readUnsigned(bb);
 		values[indexMap[1]] = readUnsigned(bb);
 		values[indexMap[2]] = readUnsigned(bb);
