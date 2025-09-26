@@ -201,8 +201,8 @@ Running `install` publishes your changed modules there so downstream modules and
 * Always run `mvn -o -pl <module> -am -Pquick install | tail -200` before any `verify` or test runs.
 * If offline resolution fails due to a missing dependency or plugin, rerun the exact `install` command once without `-o`, then return offline.
 * Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
-* Never ever change the repo location. Never use `-Dmaven.repo.local=.m2_repo`. Instead, ask for permission the first time you run `mvn -o -Pquick install | tail -200`.
-* You may need to ask for permission to write to the .m2 repo.
+* Never ever change the repo location. Never use `-Dmaven.repo.local=.m2_repo`. 
+* Always try to run these commands first to see if they run without needing any approvals from the user w.r.t. the sandboxing.
 ---
 
 ## Quick Start (First 10 Minutes)
