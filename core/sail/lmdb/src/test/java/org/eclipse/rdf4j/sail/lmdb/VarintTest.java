@@ -50,4 +50,15 @@ public class VarintTest {
 			assertArrayEquals("Encoded and decoded value should be equal", expected, actual);
 		}
 	}
+
+	@Test
+	public void testVarintReadUnsignedAtPositionThreeByteEncoding() {
+		long value = 3000L;
+		ByteBuffer bb = ByteBuffer.allocate(Varint.calcLengthUnsigned(value));
+		Varint.writeUnsigned(bb, value);
+		bb.flip();
+		assertEquals("Expected three byte encoding", 3, bb.remaining());
+		long decoded = Varint.readUnsigned(bb, 0);
+		assertEquals("Encoded and decoded value using positional read should match", value, decoded);
+	}
 }
