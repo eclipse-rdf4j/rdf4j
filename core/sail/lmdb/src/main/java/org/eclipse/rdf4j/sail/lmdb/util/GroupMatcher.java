@@ -14,7 +14,6 @@ package org.eclipse.rdf4j.sail.lmdb.util;
 import static org.eclipse.rdf4j.sail.lmdb.Varint.firstToLength;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 
 import org.eclipse.rdf4j.sail.lmdb.Varint;
 
@@ -109,80 +108,28 @@ public class GroupMatcher {
 
 		if (value0 <= 240) {
 			return new byte[] { (byte) value0 };
-		} else if (value0 <= 2287) {
+		}
 
-			// header: 241..248, then 1 payload byte
-			// Using bit ops instead of div/mod and putShort to batch the two bytes.
+		if (value0 <= 2287) {
 			long v = value0 - 240; // 1..2047
-
 			int hi = (int) (v >>> 8) + 241; // 241..248
 			int lo = (int) (v & 0xFF); // 0..255
 			return new byte[] { (byte) hi, (byte) lo };
-
-		} else if (value0 <= 67823) {
-			var buffer = ByteBuffer.allocate(3);
-
-			// header 249, then 2 payload bytes (value - 2288), big-endian
-			long v = value0 - 2288; // 0..65535
-
-			buffer.put((byte) 249);
-			final ByteOrder prev = buffer.order();
-			if (prev != ByteOrder.BIG_ENDIAN) {
-				buffer.order(ByteOrder.BIG_ENDIAN);
-			}
-			try {
-				buffer.putShort((short) v);
-			} finally {
-				if (prev != ByteOrder.BIG_ENDIAN) {
-					buffer.order(prev);
-				}
-			}
-			return buffer.array();
-		} else {
-			int bytes = Varint.descriptor(value0) + 1; // 3..8
-
-			var buffer = ByteBuffer.allocate(bytes + 1);
-
-			buffer.put((byte) (250 + (bytes - 3))); // header 250..255
-			// payload (batched)
-			final ByteOrder prev = buffer.order();
-			if (prev != ByteOrder.BIG_ENDIAN) {
-				buffer.order(ByteOrder.BIG_ENDIAN);
-			}
-			try {
-				int i = bytes;
-
-				// If odd number of bytes, write the leading MSB first
-				if ((i & 1) != 0) {
-					buffer.put((byte) (value0 >>> ((i - 1) * 8)));
-					i--;
-				}
-
-				// Now i is even: prefer largest chunks first
-				if (i == 8) { // exactly 8 bytes
-					buffer.putLong(value0);
-				} else {
-					if (i >= 4) { // write next 4 bytes, if any
-						int shift = (i - 4) * 8;
-						buffer.putInt((int) (value0 >>> shift));
-						i -= 4;
-					}
-					while (i >= 2) { // write remaining pairs
-						int shift = (i - 2) * 8;
-						buffer.putShort((short) (value0 >>> shift));
-						i -= 2;
-					} // i must be 0 here.
-				}
-
-			} finally {
-				if (prev != ByteOrder.BIG_ENDIAN) {
-					buffer.order(prev);
-				}
-			}
-			return buffer.array();
-
 		}
 
+		if (value0 <= 67823) {
+			long v = value0 - 2288; // 0..65535
+			return new byte[] { (byte) 249, (byte) (v >>> 8), (byte) v };
+		}
+
+		int bytes = Varint.descriptor(value0) + 1; // 3..8
+		byte[] result = new byte[bytes + 1];
+		result[0] = (byte) (250 + (bytes - 3)); // header 250..255
+		for (int i = 0; i < bytes; i++) {
+			int shift = (bytes - 1 - i) * 8;
+			result[1 + i] = (byte) (value0 >>> shift);
+		}
+		return result;
 	}
 
 	public boolean matches(ByteBuffer other) {
