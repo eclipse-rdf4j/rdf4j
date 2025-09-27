@@ -74,7 +74,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
-import java.util.concurrent.locks.StampedLock;
 import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
@@ -1285,11 +1284,33 @@ class TripleStore implements Closeable {
 		}
 
 		GroupMatcher createMatcher(long subj, long pred, long obj, long context) {
-			ByteBuffer bb = ByteBuffer.allocate(TripleStore.MAX_KEY_LENGTH);
+			int length = getLength(subj, pred, obj, context);
+
+			ByteBuffer bb = ByteBuffer.allocate(length);
 			toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);
 			bb.flip();
 
 			return new GroupMatcher(bb.array(), matcherFactory.create(subj, pred, obj, context));
+		}
+
+		private int getLength(long subj, long pred, long obj, long context) {
+			int length = 4;
+			if (subj > 240) {
+				length += 8;
+			}
+			if (pred > 240) {
+				length += 8;
+
+			}
+			if (obj > 240) {
+				length += 8;
+
+			}
+			if (context > 240) {
+				length += 8;
+
+			}
+			return length;
 		}
 
 		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
