@@ -356,7 +356,7 @@ public final class Varint {
 			return 240 + 256 * (a0 - 241) + a1;
 		} else if (a0 == 249) {
 			int a1 = bb.get(pos + 1) & 0xFF;
-			int a2 = bb.get(pos + 1) & 0xFF;
+			int a2 = bb.get(pos + 2) & 0xFF;
 			return 2288 + 256 * a1 + a2;
 		} else {
 			int bytes = a0 - 250 + 3;
