@@ -52,7 +52,7 @@ public class GroupMatcher {
 
 				this.length0 = valueArray.length;
 				this.firstByte0 = valueArray[0];
-				this.cmp0 = Bytes.capturedComparator(valueArray, 0, length0);
+				this.cmp0 = Bytes.capturedComparator(valueArray,  length0);
 			}
 		}
 		{
@@ -66,7 +66,7 @@ public class GroupMatcher {
 
 				this.length1 = valueArray.length;
 				this.firstByte1 = valueArray[0];
-				this.cmp1 = Bytes.capturedComparator(valueArray, 0, length1);
+				this.cmp1 = Bytes.capturedComparator(valueArray,  length1);
 			}
 		}
 		{
@@ -81,7 +81,7 @@ public class GroupMatcher {
 
 				this.length2 = valueArray.length;
 				this.firstByte2 = valueArray[0];
-				this.cmp2 = Bytes.capturedComparator(valueArray, 0, length2);
+				this.cmp2 = Bytes.capturedComparator(valueArray,  length2);
 			}
 		}
 		{
@@ -96,7 +96,7 @@ public class GroupMatcher {
 
 				this.length3 = valueArray.length;
 				this.firstByte3 = valueArray[0];
-				this.cmp3 = Bytes.capturedComparator(valueArray, 0, length3);
+				this.cmp3 = Bytes.capturedComparator(valueArray,  length3);
 			}
 		}
 

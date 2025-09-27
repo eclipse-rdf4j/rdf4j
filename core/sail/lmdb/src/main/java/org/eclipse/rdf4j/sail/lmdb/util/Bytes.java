@@ -38,78 +38,78 @@ public final class Bytes {
 				| (array[offset + 3] & 0xFF);
 	}
 
-	public static RegionComparator capturedComparator(byte[] array, int offset, int len) {
+	public static RegionComparator capturedComparator(byte[] array, int len) {
 		if (len <= 0) {
 			return (firstByte, b) -> true;
 		}
 		switch (len) {
 		case 1:
-			return comparatorLen1(array, offset);
+			return comparatorLen1(array);
 		case 2:
-			return comparatorLen2(array, offset);
+			return comparatorLen2(array);
 		case 3:
-			return comparatorLen3(array, offset);
+			return comparatorLen3(array);
 		case 4:
-			return comparatorLen4(array, offset);
+			return comparatorLen4(array);
 		case 5:
-			return comparatorLen5(array, offset);
+			return comparatorLen5(array);
 		case 6:
-			return comparatorLen6(array, offset);
+			return comparatorLen6(array);
 		case 7:
-			return comparatorLen7(array, offset);
+			return comparatorLen7(array);
 		case 8:
-			return comparatorLen8(array, offset);
+			return comparatorLen8(array);
 		case 9:
-			return comparatorLen9(array, offset);
+			return comparatorLen9(array);
 		case 10:
-			return comparatorLen10(array, offset);
+			return comparatorLen10(array);
 		case 11:
-			return comparatorLen11(array, offset);
+			return comparatorLen11(array);
 		case 12:
-			return comparatorLen12(array, offset);
+			return comparatorLen12(array);
 		case 13:
-			return comparatorLen13(array, offset);
+			return comparatorLen13(array);
 		case 14:
-			return comparatorLen14(array, offset);
+			return comparatorLen14(array);
 		case 15:
-			return comparatorLen15(array, offset);
+			return comparatorLen15(array);
 		case 16:
-			return comparatorLen16(array, offset);
+			return comparatorLen16(array);
 		case 17:
-			return comparatorLen17(array, offset);
+			return comparatorLen17(array);
 		case 18:
-			return comparatorLen18(array, offset);
+			return comparatorLen18(array);
 		case 19:
-			return comparatorLen19(array, offset);
+			return comparatorLen19(array);
 		case 20:
-			return comparatorLen20(array, offset);
+			return comparatorLen20(array);
 		default:
-			return comparatorGeneric(array, offset, len);
+			return comparatorGeneric(array, len);
 		}
 	}
 
-	private static RegionComparator comparatorLen1(byte[] array, int offset) {
-		return (firstByte, b) -> equals(array[offset], firstByte);
+	private static RegionComparator comparatorLen1(byte[] array) {
+		return (firstByte, b) -> equals(array[0], firstByte);
 	}
 
-	private static RegionComparator comparatorLen2(byte[] array, int offset) {
+	private static RegionComparator comparatorLen2(byte[] array) {
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
-			return equals(array[offset + 1], b.get());
+			return equals(array[0 + 1], b.get());
 		};
 	}
 
-	private static RegionComparator comparatorLen3(byte[] array, int offset) {
+	private static RegionComparator comparatorLen3(byte[] array) {
 
-		final short expected = toShort(array, offset + 1);
+		final short expected = toShort(array, 0 + 1);
 		final short expectedLE = Short.reverseBytes(expected);
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -118,14 +118,14 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen4(byte[] array, int offset) {
+	private static RegionComparator comparatorLen4(byte[] array) {
 
-		final short expected = toShort(array, offset + 1);
+		final short expected = toShort(array, 0 + 1);
 		final short expectedLE = Short.reverseBytes(expected);
-		final byte expectedTail = array[offset + 3];
+		final byte expectedTail = array[0 + 3];
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -138,13 +138,13 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen5(byte[] array, int offset) {
+	private static RegionComparator comparatorLen5(byte[] array) {
 
-		final int expected = toInt(array, offset + 1);
+		final int expected = toInt(array, 0 + 1);
 		final int expectedLE = Integer.reverseBytes(expected);
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -153,14 +153,14 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen6(byte[] array, int offset) {
+	private static RegionComparator comparatorLen6(byte[] array) {
 
-		final int expected = toInt(array, offset + 1);
+		final int expected = toInt(array, 0 + 1);
 		final int expectedLE = Integer.reverseBytes(expected);
-		final byte tail = array[offset + 5];
+		final byte tail = array[0 + 5];
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -173,15 +173,15 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen7(byte[] array, int offset) {
+	private static RegionComparator comparatorLen7(byte[] array) {
 
-		final int expected = toInt(array, offset + 1);
+		final int expected = toInt(array, 0 + 1);
 		final int expectedLE = Integer.reverseBytes(expected);
-		final short expectedTail = toShort(array, offset + 5);
+		final short expectedTail = toShort(array, 0 + 5);
 		final short expectedTailLE = Short.reverseBytes(expectedTail);
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -194,16 +194,16 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen8(byte[] array, int offset) {
+	private static RegionComparator comparatorLen8(byte[] array) {
 
-		final int expected = toInt(array, offset + 1);
+		final int expected = toInt(array, 0 + 1);
 		final int expectedLE = Integer.reverseBytes(expected);
-		final short expectedShort = toShort(array, offset + 5);
+		final short expectedShort = toShort(array, 0 + 5);
 		final short expectedShortLE = Short.reverseBytes(expectedShort);
-		final byte tail = array[offset + 7];
+		final byte tail = array[0 + 7];
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -220,15 +220,15 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen9(byte[] array, int offset) {
+	private static RegionComparator comparatorLen9(byte[] array) {
 
-		final int expected1 = toInt(array, offset + 1);
+		final int expected1 = toInt(array, 0 + 1);
 		final int expected1LE = Integer.reverseBytes(expected1);
-		final int expected2 = toInt(array, offset + 5);
+		final int expected2 = toInt(array, 0 + 5);
 		final int expected2LE = Integer.reverseBytes(expected2);
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -241,16 +241,16 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen10(byte[] array, int offset) {
+	private static RegionComparator comparatorLen10(byte[] array) {
 
-		final int expected1 = toInt(array, offset + 1);
+		final int expected1 = toInt(array, 0 + 1);
 		final int expected1LE = Integer.reverseBytes(expected1);
-		final int expected2 = toInt(array, offset + 5);
+		final int expected2 = toInt(array, 0 + 5);
 		final int expected2LE = Integer.reverseBytes(expected2);
-		final byte tail = array[offset + 9];
+		final byte tail = array[0 + 9];
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -267,17 +267,17 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen11(byte[] array, int offset) {
+	private static RegionComparator comparatorLen11(byte[] array) {
 
-		final int expected1 = toInt(array, offset + 1);
+		final int expected1 = toInt(array, 0 + 1);
 		final int expected1LE = Integer.reverseBytes(expected1);
-		final int expected2 = toInt(array, offset + 5);
+		final int expected2 = toInt(array, 0 + 5);
 		final int expected2LE = Integer.reverseBytes(expected2);
-		final short expectedShort = toShort(array, offset + 9);
+		final short expectedShort = toShort(array, 0 + 9);
 		final short expectedShortLE = Short.reverseBytes(expectedShort);
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -294,18 +294,18 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen12(byte[] array, int offset) {
+	private static RegionComparator comparatorLen12(byte[] array) {
 
-		final int expected1 = toInt(array, offset + 1);
+		final int expected1 = toInt(array, 0 + 1);
 		final int expected1LE = Integer.reverseBytes(expected1);
-		final int expected2 = toInt(array, offset + 5);
+		final int expected2 = toInt(array, 0 + 5);
 		final int expected2LE = Integer.reverseBytes(expected2);
-		final short expectedShort = toShort(array, offset + 9);
+		final short expectedShort = toShort(array, 0 + 9);
 		final short expectedShortLE = Short.reverseBytes(expectedShort);
-		final byte tail = array[offset + 11];
+		final byte tail = array[0 + 11];
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -326,17 +326,17 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen13(byte[] array, int offset) {
+	private static RegionComparator comparatorLen13(byte[] array) {
 
-		final int expected1 = toInt(array, offset + 1);
+		final int expected1 = toInt(array, 0 + 1);
 		final int expected1LE = Integer.reverseBytes(expected1);
-		final int expected2 = toInt(array, offset + 5);
+		final int expected2 = toInt(array, 0 + 5);
 		final int expected2LE = Integer.reverseBytes(expected2);
-		final int expected3 = toInt(array, offset + 9);
+		final int expected3 = toInt(array, 0 + 9);
 		final int expected3LE = Integer.reverseBytes(expected3);
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -353,18 +353,18 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen14(byte[] array, int offset) {
+	private static RegionComparator comparatorLen14(byte[] array) {
 
-		final int expected1 = toInt(array, offset + 1);
+		final int expected1 = toInt(array, 0 + 1);
 		final int expected1LE = Integer.reverseBytes(expected1);
-		final int expected2 = toInt(array, offset + 5);
+		final int expected2 = toInt(array, 0 + 5);
 		final int expected2LE = Integer.reverseBytes(expected2);
-		final int expected3 = toInt(array, offset + 9);
+		final int expected3 = toInt(array, 0 + 9);
 		final int expected3LE = Integer.reverseBytes(expected3);
-		final byte tail = array[offset + 13];
+		final byte tail = array[0 + 13];
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -385,19 +385,19 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen15(byte[] array, int offset) {
+	private static RegionComparator comparatorLen15(byte[] array) {
 
-		final int expected1 = toInt(array, offset + 1);
+		final int expected1 = toInt(array, 0 + 1);
 		final int expected1LE = Integer.reverseBytes(expected1);
-		final int expected2 = toInt(array, offset + 5);
+		final int expected2 = toInt(array, 0 + 5);
 		final int expected2LE = Integer.reverseBytes(expected2);
-		final int expected3 = toInt(array, offset + 9);
+		final int expected3 = toInt(array, 0 + 9);
 		final int expected3LE = Integer.reverseBytes(expected3);
-		final short expectedShort = toShort(array, offset + 13);
+		final short expectedShort = toShort(array, 0 + 13);
 		final short expectedShortLE = Short.reverseBytes(expectedShort);
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -418,20 +418,20 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen16(byte[] array, int offset) {
+	private static RegionComparator comparatorLen16(byte[] array) {
 
-		final int expected1 = toInt(array, offset + 1);
+		final int expected1 = toInt(array, 0 + 1);
 		final int expected1LE = Integer.reverseBytes(expected1);
-		final int expected2 = toInt(array, offset + 5);
+		final int expected2 = toInt(array, 0 + 5);
 		final int expected2LE = Integer.reverseBytes(expected2);
-		final int expected3 = toInt(array, offset + 9);
+		final int expected3 = toInt(array, 0 + 9);
 		final int expected3LE = Integer.reverseBytes(expected3);
-		final short expectedShort = toShort(array, offset + 13);
+		final short expectedShort = toShort(array, 0 + 13);
 		final short expectedShortLE = Short.reverseBytes(expectedShort);
-		final byte tail = array[offset + 15];
+		final byte tail = array[0 + 15];
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -456,19 +456,19 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen17(byte[] array, int offset) {
+	private static RegionComparator comparatorLen17(byte[] array) {
 
-		final int expected1 = toInt(array, offset + 1);
+		final int expected1 = toInt(array, 0 + 1);
 		final int expected1LE = Integer.reverseBytes(expected1);
-		final int expected2 = toInt(array, offset + 5);
+		final int expected2 = toInt(array, 0 + 5);
 		final int expected2LE = Integer.reverseBytes(expected2);
-		final int expected3 = toInt(array, offset + 9);
+		final int expected3 = toInt(array, 0 + 9);
 		final int expected3LE = Integer.reverseBytes(expected3);
-		final int expected4 = toInt(array, offset + 13);
+		final int expected4 = toInt(array, 0 + 13);
 		final int expected4LE = Integer.reverseBytes(expected4);
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -489,20 +489,20 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen18(byte[] array, int offset) {
+	private static RegionComparator comparatorLen18(byte[] array) {
 
-		final int expected1 = toInt(array, offset + 1);
+		final int expected1 = toInt(array, 0 + 1);
 		final int expected1LE = Integer.reverseBytes(expected1);
-		final int expected2 = toInt(array, offset + 5);
+		final int expected2 = toInt(array, 0 + 5);
 		final int expected2LE = Integer.reverseBytes(expected2);
-		final int expected3 = toInt(array, offset + 9);
+		final int expected3 = toInt(array, 0 + 9);
 		final int expected3LE = Integer.reverseBytes(expected3);
-		final int expected4 = toInt(array, offset + 13);
+		final int expected4 = toInt(array, 0 + 13);
 		final int expected4LE = Integer.reverseBytes(expected4);
-		final byte tail = array[offset + 17];
+		final byte tail = array[0 + 17];
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -527,21 +527,21 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen19(byte[] array, int offset) {
+	private static RegionComparator comparatorLen19(byte[] array) {
 
-		final int expected1 = toInt(array, offset + 1);
+		final int expected1 = toInt(array, 0 + 1);
 		final int expected1LE = Integer.reverseBytes(expected1);
-		final int expected2 = toInt(array, offset + 5);
+		final int expected2 = toInt(array, 0 + 5);
 		final int expected2LE = Integer.reverseBytes(expected2);
-		final int expected3 = toInt(array, offset + 9);
+		final int expected3 = toInt(array, 0 + 9);
 		final int expected3LE = Integer.reverseBytes(expected3);
-		final int expected4 = toInt(array, offset + 13);
+		final int expected4 = toInt(array, 0 + 13);
 		final int expected4LE = Integer.reverseBytes(expected4);
-		final short expectedShort = toShort(array, offset + 17);
+		final short expectedShort = toShort(array, 0 + 17);
 		final short expectedShortLE = Short.reverseBytes(expectedShort);
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -566,22 +566,22 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorLen20(byte[] array, int offset) {
+	private static RegionComparator comparatorLen20(byte[] array) {
 
-		final int expected1 = toInt(array, offset + 1);
+		final int expected1 = toInt(array, 0 + 1);
 		final int expected1LE = Integer.reverseBytes(expected1);
-		final int expected2 = toInt(array, offset + 5);
+		final int expected2 = toInt(array, 0 + 5);
 		final int expected2LE = Integer.reverseBytes(expected2);
-		final int expected3 = toInt(array, offset + 9);
+		final int expected3 = toInt(array, 0 + 9);
 		final int expected3LE = Integer.reverseBytes(expected3);
-		final int expected4 = toInt(array, offset + 13);
+		final int expected4 = toInt(array, 0 + 13);
 		final int expected4LE = Integer.reverseBytes(expected4);
-		final short expectedShort = toShort(array, offset + 17);
+		final short expectedShort = toShort(array, 0 + 17);
 		final short expectedShortLE = Short.reverseBytes(expectedShort);
-		final byte tail = array[offset + 19];
+		final byte tail = array[0 + 19];
 
 		return (firstByte, b) -> {
-			if (!equals(array[offset], firstByte)) {
+			if (!equals(array[0], firstByte)) {
 				return false;
 			}
 
@@ -610,9 +610,9 @@ public final class Bytes {
 		};
 	}
 
-	private static RegionComparator comparatorGeneric(byte[] array, int offset, int len) {
-		final int start = offset;
-		final int end = offset + len;
+	private static RegionComparator comparatorGeneric(byte[] array, int len) {
+		final int start = 0;
+		final int end = 0 + len;
 		return (firstByte, b) -> {
 			if (!equals(array[start], firstByte)) {
 				return false;
