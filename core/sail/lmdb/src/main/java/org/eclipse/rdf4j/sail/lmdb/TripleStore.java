@@ -14,8 +14,7 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
-import static org.eclipse.rdf4j.sail.lmdb.Varint.readListUnsigned;
-import static org.eclipse.rdf4j.sail.lmdb.Varint.writeUnsigned;
+import static org.eclipse.rdf4j.sail.lmdb.Varint.readQuadUnsigned;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
@@ -75,7 +74,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
-import java.util.concurrent.locks.StampedLock;
 import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
@@ -84,8 +82,8 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
-import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
@@ -506,6 +504,15 @@ class TripleStore implements Closeable {
 		// System.out.println("get triples: " + Arrays.asList(subj, pred, obj,context));
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
+	}
+
+	boolean hasTriples(boolean explicit) throws IOException {
+		TripleIndex mainIndex = indexes.get(0);
+		return txnManager.doWith((stack, txn) -> {
+			MDBStat stat = MDBStat.mallocStack(stack);
+			mdb_stat(txn, mainIndex.getDB(explicit), stat);
+			return stat.ms_entries() > 0;
+		});
 	}
 
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
@@ -1163,11 +1170,15 @@ class TripleStore implements Closeable {
 	class TripleIndex {
 
 		private final char[] fieldSeq;
+		private final IndexKeyWriters.KeyWriter keyWriter;
+		private final IndexKeyWriters.MatcherFactory matcherFactory;
 		private final int dbiExplicit, dbiInferred;
 		private final int[] indexMap;
 
 		public TripleIndex(String fieldSeq) throws IOException {
 			this.fieldSeq = fieldSeq.toCharArray();
+			this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
+			this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
 			this.indexMap = getIndexes(this.fieldSeq);
 			// open database and use native sort order without comparator
 			dbiExplicit = openDatabase(env, fieldSeq, MDB_CREATE, null);
@@ -1273,52 +1284,27 @@ class TripleStore implements Closeable {
 		}
 
 		GroupMatcher createMatcher(long subj, long pred, long obj, long context) {
-			ByteBuffer bb = ByteBuffer.allocate(TripleStore.MAX_KEY_LENGTH);
-			toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);
-			bb.flip();
+			long sanitizedSubj = subj == -1 ? 0 : subj;
+			long sanitizedPred = pred == -1 ? 0 : pred;
+			long sanitizedObj = obj == -1 ? 0 : obj;
+			long sanitizedContext = context == -1 ? 0 : context;
 
-			boolean[] shouldMatch = new boolean[4];
-			for (int i = 0; i < fieldSeq.length; i++) {
-				switch (fieldSeq[i]) {
-				case 's':
-					shouldMatch[i] = subj > 0;
-					break;
-				case 'p':
-					shouldMatch[i] = pred > 0;
-					break;
-				case 'o':
-					shouldMatch[i] = obj > 0;
-					break;
-				case 'c':
-					shouldMatch[i] = context >= 0;
-					break;
-				}
-			}
-			return new GroupMatcher(bb, shouldMatch);
+			long[] values = { sanitizedSubj, sanitizedPred, sanitizedObj, sanitizedContext };
+			long value0 = values[indexMap[0]];
+			long value1 = values[indexMap[1]];
+			long value2 = values[indexMap[2]];
+			long value3 = values[indexMap[3]];
+
+			return new GroupMatcher(value0, value1, value2, value3, matcherFactory.create(subj, pred, obj, context));
 		}
 
 		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
-			for (int i = 0; i < fieldSeq.length; i++) {
-				switch (fieldSeq[i]) {
-				case 's':
-					writeUnsigned(bb, subj);
-					break;
-				case 'p':
-					writeUnsigned(bb, pred);
-					break;
-				case 'o':
-					writeUnsigned(bb, obj);
-					break;
-				case 'c':
-					writeUnsigned(bb, context);
-					break;
-				}
-			}
+			keyWriter.write(bb, subj, pred, obj, context);
 		}
 
 		void keyToQuad(ByteBuffer key, long[] quad) {
 			// directly use index map to read values in to correct positions
-			readListUnsigned(key, indexMap, quad);
+			readQuadUnsigned(key, indexMap, quad);
 		}
 
 		@Override

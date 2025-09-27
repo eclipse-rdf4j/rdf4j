@@ -18,8 +18,12 @@ import java.util.concurrent.TimeUnit;
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.openjdk.jmh.Main;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
+import org.openjdk.jmh.runner.Runner;
+import org.openjdk.jmh.runner.options.Options;
+import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
  * @author Piotr Sowiński
@@ -27,10 +31,10 @@ import org.openjdk.jmh.infra.Blackhole;
 @State(Scope.Benchmark)
 @Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 4, jvmArgs = { "-Xms1G", "-Xmx1G" })
+@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
 //@Fork(value = 1, jvmArgs = {"-Xms1G", "-Xmx1G", "-XX:StartFlightRecording=jdk.CPUTimeSample#enabled=true,filename=profile.jfr,method-profiling=max","-XX:FlightRecorderOptions=stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Threads(value = 8)
-@Measurement(iterations = 10)
+@Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class RecordIteratorBenchmark {
 
@@ -66,5 +70,19 @@ public class RecordIteratorBenchmark {
 				}
 			}
 		}
+	}
+
+	public static void main(String[] args) throws Exception {
+		if (args != null && args.length > 0) {
+			Main.main(args);
+			return;
+		}
+
+		Options options = new OptionsBuilder()
+				.include(RecordIteratorBenchmark.class.getSimpleName() + ".iterateAll")
+				.forks(0)
+				.build();
+
+		new Runner(options).run();
 	}
 }

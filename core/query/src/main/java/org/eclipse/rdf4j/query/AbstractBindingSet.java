@@ -26,6 +26,9 @@ public abstract class AbstractBindingSet implements BindingSet {
 
 	@Override
 	public boolean equals(Object other) {
+		if (other == null) {
+			return false;
+		}
 		if (this == other) {
 			return true;
 		}
