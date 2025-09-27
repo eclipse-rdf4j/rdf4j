@@ -14,12 +14,16 @@ package org.eclipse.rdf4j.sail.lmdb.util;
 import static org.eclipse.rdf4j.sail.lmdb.Varint.firstToLength;
 
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+
+import org.eclipse.rdf4j.sail.lmdb.Varint;
 
 /**
  * A matcher for partial equality tests of varint lists.
  */
 public class GroupMatcher {
 
+	public static final byte[] BYTES_FOR_ZERO = { 0 };
 	private final int length0;
 	private final int length1;
 	private final int length2;
@@ -34,53 +38,150 @@ public class GroupMatcher {
 	private final byte firstByte3;
 	private final MatchFn matcher;
 
-	public GroupMatcher(byte[] valueArray, boolean[] shouldMatch) {
+	public GroupMatcher(long value0, long value1, long value2, long value3, boolean[] shouldMatch) {
 		assert shouldMatch.length == 4;
-
-		int baseOffset = 0;
 
 		// Loop is unrolled for performance. Do not change back to a loop, do not extract into method, unless you
 		// benchmark with QueryBenchmark first!
 		{
-			byte fb = valueArray[0];
-			this.firstByte0 = fb;
-			int len = firstToLength(fb);
-			this.length0 = len;
+			if (value0 == 0) {
+				this.length0 = 1;
+				this.firstByte0 = BYTES_FOR_ZERO[0];
+				this.cmp0 = null;
+			} else {
+				byte[] valueArray = getByteArray(value0);
 
-			this.cmp0 = Bytes.capturedComparator(valueArray, 0, len);
-
-			baseOffset += len;
+				this.length0 = valueArray.length;
+				this.firstByte0 = valueArray[0];
+				this.cmp0 = Bytes.capturedComparator(valueArray, 0, length0);
+			}
 		}
 		{
-			byte fb = valueArray[baseOffset];
-			this.firstByte1 = fb;
-			int len = firstToLength(fb);
-			this.length1 = len;
+			if (value1 == 0) {
+				byte[] valueArray = BYTES_FOR_ZERO;
+				this.length1 = valueArray.length;
+				this.firstByte1 = valueArray[0];
+				this.cmp1 = null;
+			} else {
+				byte[] valueArray = getByteArray(value1);
 
-			this.cmp1 = Bytes.capturedComparator(valueArray, baseOffset, len);
-
-			baseOffset += len;
+				this.length1 = valueArray.length;
+				this.firstByte1 = valueArray[0];
+				this.cmp1 = Bytes.capturedComparator(valueArray, 0, length1);
+			}
 		}
 		{
-			byte fb = valueArray[baseOffset];
-			this.firstByte2 = fb;
-			int len = firstToLength(fb);
-			this.length2 = len;
+			if (value2 == 0) {
+				byte[] valueArray = BYTES_FOR_ZERO;
 
-			this.cmp2 = Bytes.capturedComparator(valueArray, baseOffset, len);
+				this.length2 = valueArray.length;
+				this.firstByte2 = valueArray[0];
+				this.cmp2 = null;
+			} else {
+				byte[] valueArray = getByteArray(value2);
 
-			baseOffset += len;
+				this.length2 = valueArray.length;
+				this.firstByte2 = valueArray[0];
+				this.cmp2 = Bytes.capturedComparator(valueArray, 0, length2);
+			}
 		}
 		{
-			byte fb = valueArray[baseOffset];
-			this.firstByte3 = fb;
-			int len = firstToLength(fb);
-			this.length3 = len;
+			if (value3 == 0) {
+				byte[] valueArray = BYTES_FOR_ZERO;
 
-			this.cmp3 = Bytes.capturedComparator(valueArray, baseOffset, len);
+				this.length3 = valueArray.length;
+				this.firstByte3 = valueArray[0];
+				this.cmp3 = null;
+			} else {
+				byte[] valueArray = getByteArray(value3);
+
+				this.length3 = valueArray.length;
+				this.firstByte3 = valueArray[0];
+				this.cmp3 = Bytes.capturedComparator(valueArray, 0, length3);
+			}
 		}
 
 		this.matcher = selectMatcher(shouldMatch);
+
+	}
+
+	private static byte[] getByteArray(long value0) {
+
+		if (value0 <= 240) {
+			return new byte[] { (byte) value0 };
+		} else if (value0 <= 2287) {
+
+			// header: 241..248, then 1 payload byte
+			// Using bit ops instead of div/mod and putShort to batch the two bytes.
+			long v = value0 - 240; // 1..2047
+
+			int hi = (int) (v >>> 8) + 241; // 241..248
+			int lo = (int) (v & 0xFF); // 0..255
+			return new byte[] { (byte) hi, (byte) lo };
+
+		} else if (value0 <= 67823) {
+			var buffer = ByteBuffer.allocate(3);
+
+			// header 249, then 2 payload bytes (value - 2288), big-endian
+			long v = value0 - 2288; // 0..65535
+
+			buffer.put((byte) 249);
+			final ByteOrder prev = buffer.order();
+			if (prev != ByteOrder.BIG_ENDIAN) {
+				buffer.order(ByteOrder.BIG_ENDIAN);
+			}
+			try {
+				buffer.putShort((short) v);
+			} finally {
+				if (prev != ByteOrder.BIG_ENDIAN) {
+					buffer.order(prev);
+				}
+			}
+			return buffer.array();
+		} else {
+			int bytes = Varint.descriptor(value0) + 1; // 3..8
+
+			var buffer = ByteBuffer.allocate(bytes + 1);
+
+			buffer.put((byte) (250 + (bytes - 3))); // header 250..255
+			// payload (batched)
+			final ByteOrder prev = buffer.order();
+			if (prev != ByteOrder.BIG_ENDIAN) {
+				buffer.order(ByteOrder.BIG_ENDIAN);
+			}
+			try {
+				int i = bytes;
+
+				// If odd number of bytes, write the leading MSB first
+				if ((i & 1) != 0) {
+					buffer.put((byte) (value0 >>> ((i - 1) * 8)));
+					i--;
+				}
+
+				// Now i is even: prefer largest chunks first
+				if (i == 8) { // exactly 8 bytes
+					buffer.putLong(value0);
+				} else {
+					if (i >= 4) { // write next 4 bytes, if any
+						int shift = (i - 4) * 8;
+						buffer.putInt((int) (value0 >>> shift));
+						i -= 4;
+					}
+					while (i >= 2) { // write remaining pairs
+						int shift = (i - 2) * 8;
+						buffer.putShort((short) (value0 >>> shift));
+						i -= 2;
+					} // i must be 0 here.
+				}
+
+			} finally {
+				if (prev != ByteOrder.BIG_ENDIAN) {
+					buffer.order(prev);
+				}
+			}
+			return buffer.array();
+
+		}
 
 	}
 

@@ -1284,33 +1284,18 @@ class TripleStore implements Closeable {
 		}
 
 		GroupMatcher createMatcher(long subj, long pred, long obj, long context) {
-			int length = getLength(subj, pred, obj, context);
+			long sanitizedSubj = subj == -1 ? 0 : subj;
+			long sanitizedPred = pred == -1 ? 0 : pred;
+			long sanitizedObj = obj == -1 ? 0 : obj;
+			long sanitizedContext = context == -1 ? 0 : context;
 
-			ByteBuffer bb = ByteBuffer.allocate(length);
-			toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);
-			bb.flip();
+			long[] values = { sanitizedSubj, sanitizedPred, sanitizedObj, sanitizedContext };
+			long value0 = values[indexMap[0]];
+			long value1 = values[indexMap[1]];
+			long value2 = values[indexMap[2]];
+			long value3 = values[indexMap[3]];
 
-			return new GroupMatcher(bb.array(), matcherFactory.create(subj, pred, obj, context));
-		}
-
-		private int getLength(long subj, long pred, long obj, long context) {
-			int length = 4;
-			if (subj > 240) {
-				length += 8;
-			}
-			if (pred > 240) {
-				length += 8;
-
-			}
-			if (obj > 240) {
-				length += 8;
-
-			}
-			if (context > 240) {
-				length += 8;
-
-			}
-			return length;
+			return new GroupMatcher(value0, value1, value2, value3, matcherFactory.create(subj, pred, obj, context));
 		}
 
 		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {

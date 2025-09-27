@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
-import org.eclipse.rdf4j.sail.lmdb.util.Bytes;
 import org.eclipse.rdf4j.sail.lmdb.util.SignificantBytesBE;
 
 /**
@@ -21,7 +20,7 @@ import org.eclipse.rdf4j.sail.lmdb.util.SignificantBytesBE;
  */
 public final class Varint {
 
-	private static final byte[] ENCODED_LONG_MAX = new byte[] {
+	public static final byte[] ENCODED_LONG_MAX = new byte[] {
 			(byte) 0xFF, // header: 8 payload bytes
 			0x7F, // MSB of Long.MAX_VALUE
 			(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF
@@ -158,7 +157,7 @@ public final class Varint {
 
 	// Writes the top `bytes` significant bytes of `value` in big-endian order.
 // Uses putLong/putInt/putShort to batch writes and a single leading byte if needed.
-	private static void writeSignificantBits(ByteBuffer bb, long value, int bytes) {
+	public static void writeSignificantBits(ByteBuffer bb, long value, int bytes) {
 		final ByteOrder prev = bb.order();
 		if (prev != ByteOrder.BIG_ENDIAN) {
 			bb.order(ByteOrder.BIG_ENDIAN);
@@ -239,7 +238,7 @@ public final class Varint {
 	 * @param value the long value
 	 * @return the descriptor encoded as byte
 	 */
-	private static byte descriptor(long value) {
+	public static byte descriptor(long value) {
 		return value == 0 ? 0 : (byte) (7 - Long.numberOfLeadingZeros(value) / 8);
 	}
 
