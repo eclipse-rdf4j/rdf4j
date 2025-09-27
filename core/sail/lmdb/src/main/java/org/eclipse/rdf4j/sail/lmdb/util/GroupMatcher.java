@@ -43,7 +43,7 @@ public class GroupMatcher {
 		// Loop is unrolled for performance. Do not change back to a loop, do not extract into method, unless you
 		// benchmark with QueryBenchmark first!
 		{
-			if (value0 == 0) {
+			if (!shouldMatch[0]) {
 				this.length0 = 1;
 				this.firstByte0 = BYTES_FOR_ZERO[0];
 				this.cmp0 = null;
@@ -52,11 +52,11 @@ public class GroupMatcher {
 
 				this.length0 = valueArray.length;
 				this.firstByte0 = valueArray[0];
-				this.cmp0 = Bytes.capturedComparator(valueArray,  length0);
+				this.cmp0 = Bytes.capturedComparator(valueArray, length0);
 			}
 		}
 		{
-			if (value1 == 0) {
+			if (!shouldMatch[1]) {
 				byte[] valueArray = BYTES_FOR_ZERO;
 				this.length1 = valueArray.length;
 				this.firstByte1 = valueArray[0];
@@ -66,11 +66,11 @@ public class GroupMatcher {
 
 				this.length1 = valueArray.length;
 				this.firstByte1 = valueArray[0];
-				this.cmp1 = Bytes.capturedComparator(valueArray,  length1);
+				this.cmp1 = Bytes.capturedComparator(valueArray, length1);
 			}
 		}
 		{
-			if (value2 == 0) {
+			if (!shouldMatch[2]) {
 				byte[] valueArray = BYTES_FOR_ZERO;
 
 				this.length2 = valueArray.length;
@@ -81,11 +81,11 @@ public class GroupMatcher {
 
 				this.length2 = valueArray.length;
 				this.firstByte2 = valueArray[0];
-				this.cmp2 = Bytes.capturedComparator(valueArray,  length2);
+				this.cmp2 = Bytes.capturedComparator(valueArray, length2);
 			}
 		}
 		{
-			if (value3 == 0) {
+			if (!shouldMatch[3]) {
 				byte[] valueArray = BYTES_FOR_ZERO;
 
 				this.length3 = valueArray.length;
@@ -96,7 +96,7 @@ public class GroupMatcher {
 
 				this.length3 = valueArray.length;
 				this.firstByte3 = valueArray[0];
-				this.cmp3 = Bytes.capturedComparator(valueArray,  length3);
+				this.cmp3 = Bytes.capturedComparator(valueArray, length3);
 			}
 		}
 
