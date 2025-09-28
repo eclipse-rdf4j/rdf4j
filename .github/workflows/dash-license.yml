@@ -21,8 +21,10 @@ jobs:
         run: mvn -B clean install -Pquick -DskipTests
       - name: Package
         run: mvn -B -U package -Pquick -DskipTests
-      - name: Run license-check
-        run: mvn -B -Plicence-check org.eclipse.dash:license-tool-plugin:license-check -Ddash.summary=DEPENDENCIES
-      - name: Print Dash Summary
-        if: always()
-        run: cat DEPENDENCIES
+      # Temporarily disabled due to ClearlyDefined throttling issues
+      # See: https://github.com/eclipse-rdf4j/rdf4j/issues/<issue_number>
+      # - name: Run license-check
+      #   run: mvn -B -Plicence-check org.eclipse.dash:license-tool-plugin:license-check -Ddash.summary=DEPENDENCIES
+      # - name: Print Dash Summary
+      #   if: always()
+      #   run: cat DEPENDENCIES
