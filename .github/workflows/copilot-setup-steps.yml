@@ -1,0 +1,35 @@
+name: Copilot Setup Steps
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: Prepare Maven workspace
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: 11
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Validate formatting configuration
+        run: mvn -B --quiet -T 2C formatter:validate impsort:check xml-format:xml-check
+
+      - name: Quick compile (skip tests)
+        run: mvn -B --quiet -T 2C compile -DskipTests -Pquick
+
+      - name: Download Maven dependencies for offline use
+        run: mvn -B --quiet -T 2C dependency:go-offline
+
+      - name: Maven install (skip tests)
+        run: mvn -B clean install -DskipTests
