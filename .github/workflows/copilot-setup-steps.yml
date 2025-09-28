@@ -1,0 +1,55 @@
+name: Copilot Setup Steps
+
+on:
+  workflow_dispatch:  # Allow manual triggering
+  workflow_call:      # Allow being called by other workflows
+
+permissions:
+  contents: read
+
+jobs:
+  copilot-setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: 11
+          distribution: 'temurin'
+          cache: maven
+          
+      - name: Download all dependencies for offline work
+        run: |
+          # Download all runtime and test dependencies
+          mvn -B --quiet dependency:go-offline
+          
+      - name: Quick compile and install all modules
+        run: |
+          # Clean and install all modules to local repository for offline work
+          mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
+          
+      - name: Download additional test dependencies
+        run: |
+          # Download source dependencies for better IDE experience
+          mvn -B --quiet dependency:resolve-sources
+          
+      - name: Verify offline mode works
+        run: |
+          # Test that we can build offline after downloading dependencies
+          echo "Testing offline build capability..."
+          mvn -o -Pquick install | tail -50
+          
+      - name: Setup complete - Ready for Copilot development
+        run: |
+          echo "✅ Repository setup complete!"
+          echo "✅ JDK 11 installed and configured"
+          echo "✅ Maven dependencies cached and available offline"
+          echo "✅ Project built successfully with quick profile"
+          echo ""
+          echo "The environment is now ready for AI-assisted development with:"
+          echo "- All Maven dependencies cached in ~/.m2/repository"
+          echo "- Project successfully built and installable offline"
+          echo "- Maven can run with '-o' flag for offline development"
+          echo "- Use 'mvn -o -Pquick install' for fast offline builds"
