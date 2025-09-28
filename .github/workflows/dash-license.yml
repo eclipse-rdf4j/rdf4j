@@ -6,6 +6,8 @@ on:
 
 jobs:
   license-check:
+    if: ${{ false }}
+    # Disabled until ClearlyDefined throttling is resolved (see eclipse-rdf4j/rdf4j#5457)
 
     runs-on: ubuntu-latest
 
