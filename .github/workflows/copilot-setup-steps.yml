@@ -32,7 +32,7 @@ jobs:
         run: mvn -B -T 2C dependency:go-offline
 
       - name: Maven install (skip tests)
-        run: mvn -B clean install -DskipTests -Pquick
+        run: mvn -B install -DskipTests -Pquick
 
       - name: Install system dependencies for E2E tests
         run: sudo apt-get update && sudo apt-get install -y libxml2-utils
