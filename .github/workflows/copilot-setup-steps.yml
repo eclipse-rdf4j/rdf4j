@@ -1,0 +1,54 @@
+name: Copilot Setup Steps
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: Prepare Maven workspace and prime E2E dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: 11
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Validate formatting configuration
+        run: mvn -B -T 2C formatter:validate impsort:check xml-format:xml-check
+
+      - name: Quick compile (skip tests)
+        run: mvn -B -T 2C compile -DskipTests -Pquick
+
+      - name: Download Maven dependencies for offline use
+        run: mvn -B -T 2C dependency:go-offline
+
+      - name: Maven install (skip tests)
+        run: mvn -B clean install -DskipTests -Pquick
+
+      - name: Install system dependencies for E2E tests
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Install Playwright dependencies for E2E tests
+        working-directory: ./e2e
+        run: |
+          npm install
+          npx playwright install --with-deps
+
+      - name: Run end-to-end tests of RDF4J Server and Workbench
+        working-directory: ./e2e
+        run: ./run.sh
