@@ -42,6 +42,7 @@ jobs:
         with:
           node-version: 18
           cache: 'npm'
+          cache-dependency-path: ./e2e/package-lock.json
 
       - name: Install Playwright dependencies for E2E tests
         working-directory: ./e2e
