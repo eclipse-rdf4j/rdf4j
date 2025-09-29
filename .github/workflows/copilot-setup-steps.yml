@@ -16,9 +16,17 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 21
           distribution: 'temurin'
           cache: maven
+          
+      - name: Install system dependencies for e2e tests
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+        
+      - name: Install Node.js for e2e tests
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
           
       - name: Download all dependencies for offline work
         run: |
@@ -35,6 +43,14 @@ jobs:
           # Download source dependencies for better IDE experience
           mvn -B --quiet dependency:resolve-sources
           
+      - name: Install e2e test dependencies
+        working-directory: ./e2e
+        run: |
+          # Install npm dependencies for e2e tests
+          npm install
+          # Install Playwright browsers
+          npx playwright install --with-deps
+          
       - name: Verify offline mode works
         run: |
           # Test that we can build offline after downloading dependencies
@@ -44,8 +60,10 @@ jobs:
       - name: Setup complete - Ready for Copilot development
         run: |
           echo "✅ Repository setup complete!"
-          echo "✅ JDK 11 installed and configured"
+          echo "✅ JDK 21 installed and configured"
+          echo "✅ Node.js 18 installed for e2e tests"
           echo "✅ Maven dependencies cached and available offline"
+          echo "✅ E2E test dependencies installed (npm, Playwright)"
           echo "✅ Project built successfully with quick profile"
           echo ""
           echo "The environment is now ready for AI-assisted development with:"
@@ -53,3 +71,4 @@ jobs:
           echo "- Project successfully built and installable offline"
           echo "- Maven can run with '-o' flag for offline development"
           echo "- Use 'mvn -o -Pquick install' for fast offline builds"
+          echo "- E2E tests ready to run with npm and Playwright"
