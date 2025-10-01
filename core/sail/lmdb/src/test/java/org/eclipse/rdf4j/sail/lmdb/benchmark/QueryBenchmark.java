@@ -67,6 +67,9 @@ public class QueryBenchmark {
 	private static final String common_themes;
 	private static final String different_datasets_with_similar_distributions;
 	private static final String long_chain;
+	private static final String optional_lhs_filter;
+	private static final String optional_rhs_filter;
+	private static final String ordered_union_limit;
 	private static final String lots_of_optional;
 	private static final String minus;
 	private static final String nested_optionals;
@@ -74,6 +77,8 @@ public class QueryBenchmark {
 	private static final String query_distinct_predicates;
 	private static final String simple_filter_not;
 	private static final String wild_card_chain_with_common_ends;
+	private static final String sub_select;
+	private static final String multiple_sub_select;
 
 	static {
 		try {
@@ -83,6 +88,12 @@ public class QueryBenchmark {
 					getResourceAsStream("benchmarkFiles/different-datasets-with-similar-distributions.qr"),
 					StandardCharsets.UTF_8);
 			long_chain = IOUtils.toString(getResourceAsStream("benchmarkFiles/long-chain.qr"), StandardCharsets.UTF_8);
+			optional_lhs_filter = IOUtils.toString(getResourceAsStream("benchmarkFiles/optional-lhs-filter.qr"),
+					StandardCharsets.UTF_8);
+			optional_rhs_filter = IOUtils.toString(getResourceAsStream("benchmarkFiles/optional-rhs-filter.qr"),
+					StandardCharsets.UTF_8);
+			ordered_union_limit = IOUtils.toString(getResourceAsStream("benchmarkFiles/ordered-union-limit.qr"),
+					StandardCharsets.UTF_8);
 			lots_of_optional = IOUtils.toString(getResourceAsStream("benchmarkFiles/lots-of-optional.qr"),
 					StandardCharsets.UTF_8);
 			minus = IOUtils.toString(getResourceAsStream("benchmarkFiles/minus.qr"), StandardCharsets.UTF_8);
@@ -102,6 +113,9 @@ public class QueryBenchmark {
 					StandardCharsets.UTF_8);
 			wild_card_chain_with_common_ends = IOUtils.toString(
 					getResourceAsStream("benchmarkFiles/wild-card-chain-with-common-ends.qr"), StandardCharsets.UTF_8);
+			sub_select = IOUtils.toString(getResourceAsStream("benchmarkFiles/sub-select.qr"), StandardCharsets.UTF_8);
+			multiple_sub_select = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/multiple-sub-select.qr"), StandardCharsets.UTF_8);
 
 		} catch (IOException e) {
 			throw new RuntimeException(e);
@@ -241,6 +255,33 @@ public class QueryBenchmark {
 		}
 	}
 
+	@Benchmark
+	public long optional_lhs_filter() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(optional_lhs_filter)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long optional_rhs_filter() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(optional_rhs_filter)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long ordered_union_limit() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(ordered_union_limit)
+					.evaluate());
+		}
+	}
+
 //	@Benchmark
 //	public long particularly_large_join_surface() {
 //		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -266,6 +307,24 @@ public class QueryBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return count(connection
 					.prepareTupleQuery(simple_filter_not)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long sub_select() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(sub_select)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long multiple_sub_select() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(multiple_sub_select)
 					.evaluate());
 		}
 	}

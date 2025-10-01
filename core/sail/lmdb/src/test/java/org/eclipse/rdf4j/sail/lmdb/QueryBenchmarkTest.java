@@ -11,6 +11,8 @@
 
 package org.eclipse.rdf4j.sail.lmdb;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -48,6 +50,11 @@ public class QueryBenchmarkTest {
 	private static final String query3;
 	private static final String query4;
 	private static final String query5;
+	private static final String optionalLhsFilterQuery;
+	private static final String optionalRhsFilterQuery;
+	private static final String orderedUnionLimitQuery;
+	private static final String subSelectQuery;
+	private static final String multipleSubSelectQuery;
 
 	static List<Statement> statementList;
 
@@ -58,6 +65,16 @@ public class QueryBenchmarkTest {
 			query3 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query3.qr"), StandardCharsets.UTF_8);
 			query4 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query4.qr"), StandardCharsets.UTF_8);
 			query5 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query5.qr"), StandardCharsets.UTF_8);
+			optionalLhsFilterQuery = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/optional-lhs-filter.qr"), StandardCharsets.UTF_8);
+			optionalRhsFilterQuery = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/optional-rhs-filter.qr"), StandardCharsets.UTF_8);
+			orderedUnionLimitQuery = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/ordered-union-limit.qr"), StandardCharsets.UTF_8);
+			subSelectQuery = IOUtils.toString(getResourceAsStream("benchmarkFiles/sub-select.qr"),
+					StandardCharsets.UTF_8);
+			multipleSubSelectQuery = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/multiple-sub-select.qr"), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -125,6 +142,61 @@ public class QueryBenchmarkTest {
 				count = stream.count();
 			}
 			System.out.println(count);
+		}
+	}
+
+	@Test
+	public void optionalLhsFilterQueryProducesExpectedCount() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			long count;
+			try (var stream = connection.prepareTupleQuery(optionalLhsFilterQuery).evaluate().stream()) {
+				count = stream.count();
+			}
+			assertEquals(34904L, count);
+		}
+	}
+
+	@Test
+	public void optionalRhsFilterQueryProducesExpectedCount() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			long count;
+			try (var stream = connection.prepareTupleQuery(optionalRhsFilterQuery).evaluate().stream()) {
+				count = stream.count();
+			}
+			assertEquals(37917L, count);
+		}
+	}
+
+	@Test
+	public void orderedUnionLimitQueryProducesExpectedCount() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			long count;
+			try (var stream = connection.prepareTupleQuery(orderedUnionLimitQuery).evaluate().stream()) {
+				count = stream.count();
+			}
+			assertEquals(250L, count);
+		}
+	}
+
+	@Test
+	public void subSelectQueryProducesExpectedCount() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			long count;
+			try (var stream = connection.prepareTupleQuery(subSelectQuery).evaluate().stream()) {
+				count = stream.count();
+			}
+			assertEquals(16035L, count);
+		}
+	}
+
+	@Test
+	public void multipleSubSelectQueryProducesExpectedCount() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			long count;
+			try (var stream = connection.prepareTupleQuery(multipleSubSelectQuery).evaluate().stream()) {
+				count = stream.count();
+			}
+			assertEquals(27881L, count);
 		}
 	}
 
