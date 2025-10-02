@@ -22,6 +22,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
+import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
@@ -48,6 +49,8 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_reset;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -57,7 +60,6 @@ import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.locks.StampedLock;
@@ -115,6 +117,18 @@ class ValueStore extends AbstractValueFactory {
 	 * Maximum size of keys before hashing is used (size of two long values)
 	 */
 	private static final int MAX_KEY_SIZE = 16;
+
+	private static final VarHandle PREVIOUS_NAMESPACE_HANDLE;
+
+	static {
+		try {
+			PREVIOUS_NAMESPACE_HANDLE = MethodHandles.lookup()
+					.findVarHandle(ValueStore.class, "previousNamespaceEntry", Object[].class);
+		} catch (ReflectiveOperationException e) {
+			throw new ExceptionInInitializerError(e);
+		}
+	}
+
 	/**
 	 * Used to do the actual storage of values, once they're translated to byte arrays.
 	 */
@@ -126,7 +140,9 @@ class ValueStore extends AbstractValueFactory {
 	/**
 	 * A simple cache containing the [VALUE_CACHE_SIZE] most-recently used values stored by their ID.
 	 */
-	private final AtomicReferenceArray<LmdbValue> valueCache;
+	private final LmdbValue[] valueCache;
+	private final long[] valueCacheId;
+	private final int valueCacheMask;
 	/**
 	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs stored by their value.
 	 */
@@ -158,6 +174,7 @@ class ValueStore extends AbstractValueFactory {
 	private final boolean forceSync;
 	private final boolean autoGrow;
 	private boolean invalidateRevisionOnCommit = false;
+
 	/**
 	 * This lock is required to block transactions while auto-growing the map size.
 	 */
@@ -167,7 +184,7 @@ class ValueStore extends AbstractValueFactory {
 	 * An object that indicates the revision of the value store, which is used to check if cached value IDs are still
 	 * valid. In order to be valid, the ValueStoreRevision object of a LmdbValue needs to be equal to this object.
 	 */
-	private volatile ValueStoreRevision revision;
+	private volatile ValueStoreRevision.Default revision;
 	/**
 	 * A wrapper object for the revision of the value store, which is used within lazy (uninitialized values). If this
 	 * object is GCed then it is safe to finally remove the ID-value associations and to reuse IDs.
@@ -186,6 +203,15 @@ class ValueStore extends AbstractValueFactory {
 	final Set<Long> unusedRevisionIds = new HashSet<>();
 
 	private final ConcurrentCleaner cleaner = new ConcurrentCleaner();
+	private final Set<ReadTxn> readTransactions = Collections.newSetFromMap(new ConcurrentHashMap<>());
+	private final ThreadLocal<ReadTxn> threadLocalReadTxn = ThreadLocal.withInitial(() -> {
+		ReadTxn readTxn = new ReadTxn();
+		readTxn.registerIfNeeded();
+		cleaner.register(readTxn, readTxn::close);
+		return readTxn;
+	});
+
+	private Object[] previousNamespaceEntry;
 
 	ValueStore(File dir, LmdbStoreConfig config) throws IOException {
 		this.dir = dir;
@@ -194,7 +220,10 @@ class ValueStore extends AbstractValueFactory {
 		this.mapSize = config.getValueDBSize();
 		open();
 
-		valueCache = new AtomicReferenceArray<>(config.getValueCacheSize());
+		int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
+		valueCache = new LmdbValue[cacheSize];
+		valueCacheId = new long[cacheSize];
+		valueCacheMask = cacheSize - 1;
 		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
 		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
 		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
@@ -443,12 +472,24 @@ class ValueStore extends AbstractValueFactory {
 	 * @return the value object or <code>null</code> if not found
 	 */
 	LmdbValue cachedValue(long id) {
-		LmdbValue value = valueCache.get((int) (id % valueCache.length()));
+		int idx = (int) (id & valueCacheMask);
+
+		// Faster to read the long from an array than calling LmdbValue#getInternalID() on the value object. There may
+		// be race conditions, especially if the cache is small and has a high churn rate, but we can live with that
+		// since we anyway check the ID on the value object later on.
+		if (valueCacheId[idx] != id) {
+			return null;
+		}
+
+		LmdbValue value = valueCache[idx];
 		if (value != null && value.getInternalID() == id) {
 			return value;
 		}
 		return null;
 	}
+
+	long prevId;
+	long prevPrevId;
 
 	/**
 	 * Cache value by ID.
@@ -460,7 +501,17 @@ class ValueStore extends AbstractValueFactory {
 	 * @return the value object or <code>null</code> if not found
 	 */
 	void cacheValue(long id, LmdbValue value) {
-		valueCache.lazySet((int) (id % valueCache.length()), value);
+		int idx = (int) (id & valueCacheMask);
+		valueCacheId[idx] = id;
+		valueCache[idx] = value;
+	}
+
+	private static int nextPowerOfTwo(int n) {
+		if (n <= 1) {
+			return 1;
+		}
+		int highest = Integer.highestOneBit(n - 1) << 1;
+		return highest > 0 ? highest : 1 << 30;
 	}
 
 	/**
@@ -614,6 +665,7 @@ class ValueStore extends AbstractValueFactory {
 				Varint.writeUnsigned(countBb, newCount);
 				dataVal.mv_data(countBb.flip());
 				E(mdb_put(writeTxn, refCountsDbi, idVal, dataVal, 0));
+
 			} finally {
 				stack.pop();
 			}
@@ -639,6 +691,7 @@ class ValueStore extends AbstractValueFactory {
 					Varint.writeUnsigned(countBb, newCount);
 					dataVal.mv_data(countBb.flip());
 					E(mdb_put(writeTxn, refCountsDbi, idVal, dataVal, 0));
+
 				}
 			}
 			return false;
@@ -708,7 +761,6 @@ class ValueStore extends AbstractValueFactory {
 					writeTransaction((stack2, writeTxn) -> {
 						dataVal.mv_size(data.length);
 						idVal.mv_data(id2data(idBuffer(stack), newId).flip());
-
 						// store mapping of hash -> ID
 						E(mdb_put(txn, dbi, hashVal, idVal, 0));
 						// store mapping of ID -> data
@@ -799,7 +851,10 @@ class ValueStore extends AbstractValueFactory {
 	<T> T readTransaction(long env, Transaction<T> transaction) throws IOException {
 		txnLock.readLock().lock();
 		try {
-			return LmdbUtil.readTransaction(env, writeTxn, transaction);
+			if (writeTxn != 0) {
+				return LmdbUtil.readTransaction(env, writeTxn, transaction);
+			}
+			return threadLocalReadTxn.get().execute(transaction);
 		} finally {
 			txnLock.readLock().unlock();
 		}
@@ -952,6 +1007,7 @@ class ValueStore extends AbstractValueFactory {
 						}
 						// mark id as unused
 						E(mdb_put(writeTxn, unusedDbi, revIdVal, dataVal, 0));
+
 					}
 
 					deleteValueToIdMappings(stack, writeTxn, finalIds, finalNextIds);
@@ -1044,6 +1100,7 @@ class ValueStore extends AbstractValueFactory {
 									E(mdb_put(txn, dbi, hashVal, idVal, 0));
 									// delete existing mapping
 									E(mdb_cursor_del(valuesCursor, 0));
+
 								}
 							}
 						} else {
@@ -1205,6 +1262,7 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public long storeValue(Value value) throws IOException {
+
 		return getId(value, true);
 	}
 
@@ -1237,13 +1295,29 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	protected void clearCaches() {
-		for (int i = 0; i < valueCache.length(); i++) {
-			valueCache.set(i, null);
-		}
+		Arrays.fill(valueCache, null);
+		Arrays.fill(valueCacheId, 0);
 		valueIDCache.clear();
 		namespaceCache.clear();
 		namespaceIDCache.clear();
 		commonVocabulary.clear();
+		PREVIOUS_NAMESPACE_HANDLE.setRelease(this, null);
+	}
+
+	private void closeReadTransactions() {
+		txnLock.writeLock().lock();
+		try {
+			ReadTxn[] snapshot = readTransactions.toArray(new ReadTxn[0]);
+			for (ReadTxn readTxn : snapshot) {
+				readTxn.close();
+				if (readTransactions.remove(readTxn)) {
+					readTxn.unregister();
+				}
+			}
+			threadLocalReadTxn.remove();
+		} finally {
+			txnLock.writeLock().unlock();
+		}
 	}
 
 	/**
@@ -1252,10 +1326,95 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void close() throws IOException {
+
 		if (env != 0) {
+			closeReadTransactions();
 			endTransaction(false);
 			mdb_env_close(env);
 			env = 0;
+		}
+	}
+
+	private final class ReadTxn {
+
+		private long txn;
+		private boolean initialized;
+		private int depth;
+		private boolean registered;
+
+		<T> T execute(Transaction<T> transaction) throws IOException {
+			try (MemoryStack stack = MemoryStack.stackPush()) {
+				long handle = ensureTxn();
+				depth++;
+				try {
+					return transaction.exec(stack, handle);
+				} finally {
+					releaseTxn();
+				}
+			}
+		}
+
+		private long ensureTxn() throws IOException {
+			registerIfNeeded();
+			if (!initialized) {
+				txn = startTxn();
+				initialized = true;
+				return txn;
+			}
+			if (depth == 0) {
+				try {
+					E(mdb_txn_renew(txn));
+				} catch (IOException e) {
+					closeInternal();
+					txn = startTxn();
+					initialized = true;
+				}
+			}
+			return txn;
+		}
+
+		private long startTxn() throws IOException {
+			try (MemoryStack stack = MemoryStack.stackPush()) {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
+				return pp.get(0);
+			}
+		}
+
+		private void releaseTxn() {
+			if (depth == 0) {
+				return;
+			}
+			depth--;
+			if (depth == 0 && initialized) {
+				mdb_txn_reset(txn);
+			}
+		}
+
+		private void registerIfNeeded() {
+			if (!registered) {
+				readTransactions.add(this);
+				registered = true;
+			}
+		}
+
+		private void unregister() {
+			registered = false;
+		}
+
+		private void closeInternal() {
+			if (initialized) {
+				if (depth > 0) {
+					mdb_txn_reset(txn);
+					depth = 0;
+				}
+				mdb_txn_abort(txn);
+				initialized = false;
+			}
+		}
+
+		void close() {
+			closeInternal();
 		}
 	}
 
@@ -1390,7 +1549,7 @@ class ValueStore extends AbstractValueFactory {
 		ByteBuffer bb = ByteBuffer.wrap(data);
 		// skip type marker
 		bb.get();
-		long nsID = Varint.readUnsigned(bb);
+		long nsID = Varint.readUnsignedHeap(bb);
 		String namespace = getNamespace(nsID);
 		String localName = new String(data, bb.position(), bb.remaining(), StandardCharsets.UTF_8);
 
@@ -1417,7 +1576,7 @@ class ValueStore extends AbstractValueFactory {
 		// skip type marker
 		bb.get();
 		// Get datatype
-		long datatypeID = Varint.readUnsigned(bb);
+		long datatypeID = Varint.readUnsignedHeap(bb);
 		IRI datatype = null;
 		if (datatypeID != LmdbValue.UNKNOWN_ID) {
 			datatype = (IRI) getValue(datatypeID);
@@ -1484,6 +1643,11 @@ class ValueStore extends AbstractValueFactory {
 	 *-------------------------------------*/
 
 	private String getNamespace(long id) throws IOException {
+		Object[] cached = (Object[]) PREVIOUS_NAMESPACE_HANDLE.getAcquire(this);
+		if (cached != null && (long) cached[0] == id) {
+			return (String) cached[1];
+		}
+
 		Long cacheID = id;
 		String namespace = namespaceCache.get(cacheID);
 
@@ -1494,6 +1658,8 @@ class ValueStore extends AbstractValueFactory {
 				namespaceCache.put(cacheID, namespace);
 			}
 		}
+
+		PREVIOUS_NAMESPACE_HANDLE.setRelease(this, new Object[] { cacheID, namespace });
 
 		return namespace;
 	}
