@@ -13,7 +13,10 @@ package org.eclipse.rdf4j.testsuite.repository;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -114,6 +117,9 @@ public abstract class RepositoryTest {
 
 	@AfterEach
 	public void tearDown() {
+		try (RepositoryConnection connection = testRepository.getConnection()) {
+			connection.clear();
+		}
 		testRepository.shutDown();
 	}
 
@@ -164,19 +170,25 @@ public abstract class RepositoryTest {
 
 			for (int i = 0; i < 1024 * 32; i++) {
 				try (RepositoryResult<Statement> statements = conn.getStatements(null, null, null)) {
-					assertEquals(2, statements.stream().count());
+					List<Statement> collect = statements.stream().collect(Collectors.toList());
+					assertEquals(2, collect.size(), "Iteration " + i + " failed with data:\n"
+							+ collect.stream().map(Objects::toString).reduce((a, b) -> a + "\n" + b).orElse(""));
 				}
 			}
 
 			for (int i = 0; i < 1024 * 32; i++) {
 				try (RepositoryResult<Statement> statements = conn.getStatements(null, RDF.TYPE, null)) {
-					assertEquals(1, statements.stream().count());
+					List<Statement> collect = statements.stream().collect(Collectors.toList());
+					assertEquals(1, collect.size(), "Iteration " + i + " failed with data:\n"
+							+ collect.stream().map(Objects::toString).reduce((a, b) -> a + "\n" + b).orElse(""));
 				}
 			}
 
 			for (int i = 0; i < 1024 * 32; i++) {
 				try (RepositoryResult<Statement> statements = conn.getStatements(null, null, null)) {
-					assertEquals(2, statements.stream().count());
+					List<Statement> collect = statements.stream().collect(Collectors.toList());
+					assertEquals(2, collect.size(), "Iteration " + i + " failed with data:\n"
+							+ collect.stream().map(Objects::toString).reduce((a, b) -> a + "\n" + b).orElse(""));
 				}
 			}
 		}

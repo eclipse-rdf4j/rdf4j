@@ -49,9 +49,4 @@ public class ElasticsearchStoreRepositoryIT extends RepositoryTest {
 		// ignore test
 	}
 
-	@Disabled
-	@Override
-	public void getAllStatements() {
-		// ignore test for now
-	}
 }
