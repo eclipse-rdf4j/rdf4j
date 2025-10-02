@@ -128,7 +128,34 @@ public abstract class AbstractValueFactory implements ValueFactory {
 			throw new IllegalArgumentException("reserved datatype <" + datatype + ">");
 		}
 
+		if (datatype == CoreDatatype.XSD.INTEGER) {
+			if (label.length() <= 3 && !label.startsWith("+") && !label.startsWith("-")) {
+				try {
+					int v = Integer.parseInt(label);
+					if (v >= 0 && v <= 999) {
+						return smallIntLiterals[v];
+					}
+				} catch (NumberFormatException e) {
+					// ignore
+				}
+			}
+		} else if (datatype == CoreDatatype.XSD.BOOLEAN) {
+			if ("true".equals(label) || "1".equals(label)) {
+				return TRUE;
+			} else if ("false".equals(label) || "0".equals(label)) {
+				return FALSE;
+			}
+		}
+
 		return new TypedLiteral(label, datatype);
+	}
+
+	static TypedLiteral[] smallIntLiterals = new TypedLiteral[1000];
+
+	static {
+		for (int i = 0; i <= 999; i++) {
+			smallIntLiterals[i] = new TypedLiteral(i + "", CoreDatatype.XSD.INTEGER);
+		}
 	}
 
 	@Override
@@ -180,6 +207,11 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public Literal createLiteral(long value) {
 		return new NumberLiteral(value);
+	}
+
+	@Override
+	public Literal createLiteral(long value, CoreDatatype.XSD datatype) {
+		return new NumberLiteral(value, datatype);
 	}
 
 	@Override
