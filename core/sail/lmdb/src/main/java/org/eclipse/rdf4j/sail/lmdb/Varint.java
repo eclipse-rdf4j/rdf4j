@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
 /**
  * Encodes and decodes unsigned values using variable-length encoding.
@@ -89,26 +90,54 @@ public final class Varint {
 	 * @param value value to encode
 	 */
 	public static void writeUnsigned(final ByteBuffer bb, final long value) {
+		if (bb.order() == ByteOrder.BIG_ENDIAN) {
+			writeUnsignedBigEndian(bb, value);
+		} else {
+			writeUnsignedLittleEndian(bb, value);
+		}
+	}
+
+	private static void writeUnsignedBigEndian(final ByteBuffer bb, final long value) {
 		if (value <= 240) {
 			bb.put((byte) value);
 		} else if (value <= 2287) {
-			bb.put((byte) ((value - 240) / 256 + 241));
-			bb.put((byte) ((value - 240) % 256));
+			int v = (int) (value - 240);
+			bb.putShort((short) (((v >>> 8) + 241) << 8 | (v & 0xFF)));
 		} else if (value <= 67823) {
+			int v = (int) (value - 2288);
 			bb.put((byte) 249);
-			bb.put((byte) ((value - 2288) / 256));
-			bb.put((byte) ((value - 2288) % 256));
+			bb.putShort((short) ((v >>> 8) << 8 | (v & 0xFF)));
 		} else {
 			int bytes = descriptor(value) + 1;
-			bb.put((byte) (250 + (bytes - 3)));
-			writeSignificantBits(bb, value, bytes);
+			writeSignificantBitsBigEndian(bb, value, bytes);
+		}
+	}
+
+	private static void writeUnsignedLittleEndian(final ByteBuffer bb, final long value) {
+		if (value <= 240) {
+			bb.put((byte) value);
+		} else if (value <= 2287) {
+			int v = (int) (value - 240);
+			bb.putShort((short) ((v & 0xFF) << 8 | ((v >>> 8) + 241)));
+		} else if (value <= 67823) {
+			int v = (int) (value - 2288);
+			bb.put((byte) 249);
+			bb.putShort((short) ((v & 0xFF) << 8 | (v >>> 8)));
+		} else {
+			int bytes = descriptor(value) + 1;
+			bb.order(ByteOrder.BIG_ENDIAN);
+			try {
+				writeSignificantBitsBigEndian(bb, value, bytes);
+			} finally {
+				bb.order(ByteOrder.LITTLE_ENDIAN);
+			}
 		}
 	}
 
 	/**
 	 * Calculates required length in bytes to encode the given long value using variable-length encoding.
 	 *
-	 * @param value the value value
+	 * @param value the value
 	 * @return length in bytes
 	 */
 	public static int calcLengthUnsigned(long value) {
@@ -245,22 +274,8 @@ public final class Varint {
 	 * @param values array with values to write
 	 */
 	public static void writeListUnsigned(final ByteBuffer bb, final long[] values) {
-		for (int i = 0; i < values.length; i++) {
-			final long value = values[i];
-			if (value <= 240) {
-				bb.put((byte) value);
-			} else if (value <= 2287) {
-				bb.put((byte) ((value - 240) / 256 + 241));
-				bb.put((byte) ((value - 240) % 256));
-			} else if (value <= 67823) {
-				bb.put((byte) 249);
-				bb.put((byte) ((value - 2288) / 256));
-				bb.put((byte) ((value - 2288) % 256));
-			} else {
-				int bytes = descriptor(value) + 1;
-				bb.put((byte) (250 + (bytes - 3)));
-				writeSignificantBits(bb, value, bytes);
-			}
+		for (final long value : values) {
+			writeUnsigned(bb, value);
 		}
 	}
 
@@ -296,9 +311,35 @@ public final class Varint {
 	 * @param value value to encode
 	 * @param bytes number of significant bytes
 	 */
-	private static void writeSignificantBits(ByteBuffer bb, long value, int bytes) {
-		while (bytes-- > 0) {
-			bb.put((byte) (0xFF & (value >>> (bytes * 8))));
+	private static void writeSignificantBitsBigEndian(ByteBuffer bb, long value, int bytes) {
+		switch (bytes) {
+		case 3:
+			bb.putInt((int) ((((250 << 8) | ((value >>> 16) & 0xFF)) << 16) | (value & 0xFFFF)));
+			break;
+		case 4:
+			bb.put((byte) 251); // 250 + (4 - 3)
+			bb.putInt((int) (value & 0xFFFFFFFFL));
+			break;
+		case 5:
+			bb.putShort((short) ((252 << 8) | ((value >>> 32) & 0xFF)));
+			bb.putInt((int) (value & 0xFFFFFFFFL));
+			break;
+		case 6:
+			bb.put((byte) 253);
+			bb.putShort((short) ((value >>> 32) & 0xFFFF));
+			bb.putInt((int) (value & 0xFFFFFFFFL));
+			break;
+		case 7:
+			bb.putLong(((254 << 8 | ((value >>> 48) & 0xFF)) << 48) | (((value >>> 32) & 0xFFFF) << 32)
+					| (value & 0xFFFFFFFFL));
+			break;
+		case 8:
+			bb.put((byte) 255);
+			bb.putLong(value);
+			break;
+		default:
+			throw new IllegalArgumentException(
+					"Invalid number of bytes " + bytes + " for value " + value + " (must be 3..8)");
 		}
 	}
 
