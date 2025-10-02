@@ -33,6 +33,11 @@ public interface Triple extends Resource {
 		return true;
 	}
 
+	@Override
+	default Type getType() {
+		return Value.Type.Triple;
+	}
+
 	/**
 	 * Gets the subject of this triple.
 	 *

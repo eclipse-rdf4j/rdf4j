@@ -38,6 +38,11 @@ public interface IRI extends Resource {
 		return true;
 	}
 
+	@Override
+	default Type getType() {
+		return Value.Type.IRI;
+	}
+
 	/**
 	 * Gets the namespace part of this IRI.
 	 * <p>

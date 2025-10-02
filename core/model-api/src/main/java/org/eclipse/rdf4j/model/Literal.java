@@ -47,6 +47,11 @@ public interface Literal extends Value {
 		return true;
 	}
 
+	@Override
+	default Type getType() {
+		return Value.Type.Literal;
+	}
+
 	/**
 	 * Gets the label (the lexical value) of this literal.
 	 *
