@@ -51,6 +51,7 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+import java.lang.ref.Cleaner;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -59,6 +60,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -75,6 +77,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
@@ -203,14 +206,16 @@ class ValueStore extends AbstractValueFactory {
 	final Set<Long> unusedRevisionIds = new HashSet<>();
 
 	private final ConcurrentCleaner cleaner = new ConcurrentCleaner();
-	private final Set<ReadTxn> readTransactions = Collections.newSetFromMap(new ConcurrentHashMap<>());
+	private final Set<ReadTxn> readTransactions = Collections
+			.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
 	private final ThreadLocal<ReadTxn> threadLocalReadTxn = ThreadLocal.withInitial(() -> {
-		ReadTxn readTxn = new ReadTxn();
+		ReadTxn readTxn = new ReadTxn(readTransactions);
 		readTxn.registerIfNeeded();
-		cleaner.register(readTxn, readTxn::close);
+		readTxn.cleaner(cleaner);
 		return readTxn;
 	});
 
+	@SuppressWarnings("unused")
 	private Object[] previousNamespaceEntry;
 
 	ValueStore(File dir, LmdbStoreConfig config) throws IOException {
@@ -591,7 +596,7 @@ class ValueStore extends AbstractValueFactory {
 				return true;
 			}
 		} catch (IOException e) {
-			// should not happen
+			throw new SailException(e);
 		}
 		return false;
 	}
@@ -854,7 +859,7 @@ class ValueStore extends AbstractValueFactory {
 			if (writeTxn != 0) {
 				return LmdbUtil.readTransaction(env, writeTxn, transaction);
 			}
-			return threadLocalReadTxn.get().execute(transaction);
+			return threadLocalReadTxn.get().execute(transaction, env);
 		} finally {
 			txnLock.readLock().unlock();
 		}
@@ -1335,59 +1340,119 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private final class ReadTxn {
+	private static final class ReadTxn {
 
-		private long txn;
-		private boolean initialized;
-		private int depth;
+		private final State state = new State(-1);
 		private boolean registered;
 
-		<T> T execute(Transaction<T> transaction) throws IOException {
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				long handle = ensureTxn();
-				depth++;
-				try {
-					return transaction.exec(stack, handle);
-				} finally {
-					releaseTxn();
+		private final Set<ReadTxn> readTransactions;
+		private Cleaner.Cleanable cleaner;
+
+		static class State implements Runnable {
+			public long txn;
+			public long depth;
+			private boolean initialized;
+
+			public State(long txn) {
+				this.txn = txn;
+			}
+
+			@Override
+			public void run() {
+				if (initialized) {
+					var txn = this.txn;
+					this.txn = -1;
+					if (txn != -1) {
+						try {
+							if (depth > 0) {
+								mdb_txn_reset(txn);
+								depth = 0;
+							}
+						} finally {
+							mdb_txn_abort(txn);
+						}
+					}
+					initialized = false;
 				}
 			}
 		}
 
-		private long ensureTxn() throws IOException {
-			registerIfNeeded();
-			if (!initialized) {
-				txn = startTxn();
-				initialized = true;
-				return txn;
-			}
-			if (depth == 0) {
+		public ReadTxn(Set<ReadTxn> readTransactions) {
+			this.readTransactions = readTransactions;
+		}
+
+		public void cleaner(ConcurrentCleaner cleaner) {
+			this.cleaner = cleaner.register(this, state);
+		}
+
+		synchronized <T> T execute(Transaction<T> transaction, long env) throws IOException {
+			try (MemoryStack stack = MemoryStack.stackPush()) {
 				try {
-					E(mdb_txn_renew(txn));
+					ensureTxn(env);
+					state.depth++;
+					try {
+						return transaction.exec(stack, state.txn);
+					} finally {
+						releaseTxn();
+					}
+				} catch (Exception e) {
+					// Retry once
+					try {
+						System.gc();
+						Thread.sleep(1);
+						System.gc();
+						Thread.sleep(1);
+					} catch (InterruptedException ie) {
+						Thread.currentThread().interrupt();
+					}
+
+					ensureTxn(env);
+					state.depth++;
+					try {
+						return transaction.exec(stack, state.txn);
+					} finally {
+						releaseTxn();
+					}
+				}
+			}
+		}
+
+		private void ensureTxn(long env) throws IOException {
+			registerIfNeeded();
+
+			if (!state.initialized) {
+				startTxn(env);
+				state.initialized = true;
+				return;
+			}
+
+			if (state.depth == 0) {
+				try {
+					E(mdb_txn_renew(state.txn));
 				} catch (IOException e) {
 					closeInternal();
-					txn = startTxn();
-					initialized = true;
+					startTxn(env);
+					state.initialized = true;
 				}
 			}
-			return txn;
+
 		}
 
-		private long startTxn() throws IOException {
+		private void startTxn(long env) throws IOException {
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				PointerBuffer pp = stack.mallocPointer(1);
 				E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
-				return pp.get(0);
+				state.txn = pp.get(0);
 			}
 		}
 
 		private void releaseTxn() {
-			if (depth == 0) {
+			if (state.depth == 0) {
 				return;
 			}
-			depth--;
-			if (depth == 0 && initialized) {
-				mdb_txn_reset(txn);
+			state.depth--;
+			if (state.depth == 0 && state.initialized) {
+				mdb_txn_reset(state.txn);
 			}
 		}
 
@@ -1403,13 +1468,8 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		private void closeInternal() {
-			if (initialized) {
-				if (depth > 0) {
-					mdb_txn_reset(txn);
-					depth = 0;
-				}
-				mdb_txn_abort(txn);
-				initialized = false;
+			if (state.initialized) {
+				cleaner.clean();
 			}
 		}
 

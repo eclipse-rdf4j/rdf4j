@@ -1376,7 +1376,6 @@ class TripleStore implements Closeable {
 		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
 
 			boolean shouldCache = threeOfFourAreZeroOrMax(subj, pred, obj, context);
-
 			if (shouldCache) {
 				long sum = subj + pred + obj + context;
 				if (sum == 0 && subj == pred && obj == context) {
@@ -1456,20 +1455,6 @@ class TripleStore implements Closeable {
 				| ((mS & mP & (mO | mC)) | (mO & mC & (mS | mP))));// ≥3 Long.MAX_VALUE
 //				& !(zS & zP & zO & zC)    // not all zeros
 //				& !(mS & mP & mO & mC);   // not all max
-	}
-
-	public static void main(String[] args) {
-		System.out.println(threeOfFourAreZeroOrMax(0, 0, 0, 1));
-		System.out.println(threeOfFourAreZeroOrMax(0, 0, 1, 0));
-		System.out.println(threeOfFourAreZeroOrMax(0, 1, 0, 0));
-		System.out.println(threeOfFourAreZeroOrMax(1, 0, 0, 0));
-		System.out.println(threeOfFourAreZeroOrMax(Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, 1));
-		System.out.println(threeOfFourAreZeroOrMax(Long.MAX_VALUE, Long.MAX_VALUE, 1, Long.MAX_VALUE));
-		System.out.println(threeOfFourAreZeroOrMax(Long.MAX_VALUE, 1, Long.MAX_VALUE, Long.MAX_VALUE));
-		System.out.println(threeOfFourAreZeroOrMax(1, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE));
-
-		System.out.println(threeOfFourAreZeroOrMax(0, 0, 0, 0));
-		System.out.println(threeOfFourAreZeroOrMax(Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE));
 	}
 
 }
