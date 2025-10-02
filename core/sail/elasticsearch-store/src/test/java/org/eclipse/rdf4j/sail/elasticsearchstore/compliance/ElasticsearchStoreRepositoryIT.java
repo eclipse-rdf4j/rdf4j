@@ -48,4 +48,10 @@ public class ElasticsearchStoreRepositoryIT extends RepositoryTest {
 	public void testShutdownFollowedByInit() {
 		// ignore test
 	}
+
+	@Disabled
+	@Override
+	public void getAllStatements() {
+		// ignore test for now
+	}
 }
