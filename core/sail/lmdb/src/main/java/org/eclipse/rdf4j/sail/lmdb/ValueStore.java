@@ -1252,10 +1252,12 @@ class ValueStore extends AbstractValueFactory {
 
 	public void commit() throws IOException {
 		endTransaction(true);
+		threadLocalReadTxn.get().close();
 	}
 
 	public void rollback() throws IOException {
 		endTransaction(false);
+		threadLocalReadTxn.get().close();
 	}
 
 	/**
@@ -1315,9 +1317,6 @@ class ValueStore extends AbstractValueFactory {
 			ReadTxn[] snapshot = readTransactions.toArray(new ReadTxn[0]);
 			for (ReadTxn readTxn : snapshot) {
 				readTxn.close();
-				if (readTransactions.remove(readTxn)) {
-					readTxn.unregister();
-				}
 			}
 			threadLocalReadTxn.remove();
 		} finally {
@@ -1464,12 +1463,16 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		private void unregister() {
+			readTransactions.remove(this);
 			registered = false;
 		}
 
 		private void closeInternal() {
 			if (state.initialized) {
 				cleaner.clean();
+			}
+			if (registered) {
+				unregister();
 			}
 		}
 
