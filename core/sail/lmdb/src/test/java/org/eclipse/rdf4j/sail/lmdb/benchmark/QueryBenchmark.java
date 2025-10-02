@@ -49,10 +49,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 5)
+@Warmup(iterations = 10)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
-//@Fork(value = 1, jvmArgs = {"-Xms1G", "-Xmx1G", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+//@Fork(value = 1, jvmArgs = {"-Xms1G", "-Xmx1G", "-XX:StartFlightRecording=jdk.CPUTimeSample#enabled=true,filename=profile.jfr,method-profiling=max","-XX:FlightRecorderOptions=stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class QueryBenchmark {
@@ -126,8 +126,8 @@ public class QueryBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("QueryBenchmark.*") // adapt to run other benchmark tests
-				.forks(1)
+				.include("QueryBenchmark.complexQuery$") // adapt to run other benchmark tests
+				.forks(0)
 				.build();
 
 		new Runner(opt).run();
@@ -158,6 +158,92 @@ public class QueryBenchmark {
 		try (Stream<BindingSet> stream = evaluate.stream()) {
 			return stream.count();
 		}
+	}
+
+	// @Benchmark
+	public long allBenchmarks() {
+		long ret = 0;
+		long result;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result = count(connection
+					.prepareTupleQuery(query1)
+					.evaluate());
+		}
+		ret += result;
+		long result1;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result1 = count(connection
+					.prepareTupleQuery(query4)
+					.evaluate()
+			);
+		}
+		ret += result1;
+		long result2;
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result2 = count(connection
+					.prepareTupleQuery(query7_pathexpression1)
+					.evaluate());
+
+		}
+		ret += result2;
+		long result3;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result3 = count(connection
+					.prepareTupleQuery(query8_pathexpression2)
+					.evaluate());
+		}
+		ret += result3;
+		long result4;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result4 = count(connection
+					.prepareTupleQuery(different_datasets_with_similar_distributions)
+					.evaluate());
+		}
+		ret += result4;
+		long result5;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result5 = count(connection
+					.prepareTupleQuery(long_chain)
+					.evaluate());
+		}
+		ret += result5;
+		long result6;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result6 = count(connection
+					.prepareTupleQuery(lots_of_optional)
+					.evaluate());
+		}
+		ret += result6;
+		long result7;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result7 = count(connection
+					.prepareTupleQuery(minus)
+					.evaluate());
+		}
+		ret += result7;
+		long result8;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result8 = count(connection
+					.prepareTupleQuery(nested_optionals)
+					.evaluate());
+		}
+		ret += result8;
+		long result9;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result9 = count(connection
+					.prepareTupleQuery(query_distinct_predicates)
+					.evaluate());
+		}
+		ret += result9;
+		long result10;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result10 = count(connection
+					.prepareTupleQuery(simple_filter_not)
+					.evaluate());
+		}
+		ret += result10;
+		return ret;
 	}
 
 	@Benchmark

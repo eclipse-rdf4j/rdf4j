@@ -26,7 +26,7 @@ public class DefaultIndexTest {
 
 	@Test
 	public void testDefaultIndex(@TempDir File dir) throws Exception {
-		TripleStore store = new TripleStore(dir, new LmdbStoreConfig());
+		TripleStore store = new TripleStore(dir, new LmdbStoreConfig(), null);
 		store.close();
 		// check that the triple store used the default index
 		assertEquals("spoc,posc", findIndex(dir));
@@ -36,11 +36,11 @@ public class DefaultIndexTest {
 	@Test
 	public void testExistingIndex(@TempDir File dir) throws Exception {
 		// set a non-default index
-		TripleStore store = new TripleStore(dir, new LmdbStoreConfig("spoc,opsc"));
+		TripleStore store = new TripleStore(dir, new LmdbStoreConfig("spoc,opsc"), null);
 		store.close();
 		String before = findIndex(dir);
 		// check that the index is preserved with a null value
-		store = new TripleStore(dir, new LmdbStoreConfig(null));
+		store = new TripleStore(dir, new LmdbStoreConfig(null), null);
 		store.close();
 		assertEquals(before, findIndex(dir));
 		FileUtil.deleteDir(dir);
