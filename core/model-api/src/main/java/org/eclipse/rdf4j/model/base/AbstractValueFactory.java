@@ -132,7 +132,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 			if (label.length() <= 3 && !label.startsWith("+") && !label.startsWith("-")) {
 				try {
 					int v = Integer.parseInt(label);
-					if (v >= 0 && v <= 999) {
+					if (v >= 0 && v <= 999 && label.equals(Integer.toString(v))) {
 						return smallIntLiterals[v];
 					}
 				} catch (NumberFormatException e) {
