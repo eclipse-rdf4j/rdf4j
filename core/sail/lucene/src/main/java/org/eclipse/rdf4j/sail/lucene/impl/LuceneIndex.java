@@ -408,9 +408,11 @@ public class LuceneIndex extends AbstractLuceneIndex {
 								toCloseIndexWriter.close();
 							}
 						} finally {
-							// Close the directory -- if asynchronous fsync is used, this will clean
-							// up the scheduler thread too.
-							directory.close();
+							if (directory != null) {
+								// Close the directory -- if asynchronous fsync is used, this will clean
+								// up the scheduler thread too.
+								directory.close();
+							}
 						}
 					} finally {
 						if (!exceptions.isEmpty()) {
