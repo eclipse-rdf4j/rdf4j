@@ -40,7 +40,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmarks query performance with extended FOAF data.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 2)
+@Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-Xmn1G", "-XX:+UseSerialGC" })
 @Measurement(iterations = 5)

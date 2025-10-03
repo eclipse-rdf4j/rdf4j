@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.testsuite.sparql.tests.MinusTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.OptionalTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.OrderByTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.PropertyPathTest;
+import org.eclipse.rdf4j.testsuite.sparql.tests.SparqlMinusScopingTests;
 import org.eclipse.rdf4j.testsuite.sparql.tests.SubselectTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.UnionTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.ValuesTest;
@@ -151,6 +152,11 @@ public abstract class RepositorySPARQLComplianceTestSuite {
 	@TestFactory
 	Stream<DynamicTest> minus() throws RDF4JException, IOException {
 		return new MinusTest(this::getEmptyInitializedRepository).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> minusScope() throws RDF4JException, IOException {
+		return new SparqlMinusScopingTests(this::getEmptyInitializedRepository).tests();
 	}
 
 	@BeforeAll

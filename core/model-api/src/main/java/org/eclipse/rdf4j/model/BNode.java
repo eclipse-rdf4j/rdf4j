@@ -27,6 +27,11 @@ public interface BNode extends Resource {
 		return true;
 	}
 
+	@Override
+	default Type getType() {
+		return Value.Type.BNode;
+	}
+
 	/**
 	 * Retrieves this blank node's identifier.
 	 *

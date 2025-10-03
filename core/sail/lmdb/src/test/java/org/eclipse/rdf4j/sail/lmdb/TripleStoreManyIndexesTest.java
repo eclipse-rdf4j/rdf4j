@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertNotNull;
 
 import java.io.File;
 
@@ -33,7 +33,7 @@ public class TripleStoreManyIndexesTest {
 	@Test
 	public void testSixIndexes() throws Exception {
 		TripleStore tripleStore = new TripleStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc,cspo,cpos,cosp"));
+				new LmdbStoreConfig("spoc,posc,ospc,cspo,cpos,cosp"), null);
 		tripleStore.startTransaction();
 		tripleStore.storeTriple(1, 2, 3, 1, true);
 		tripleStore.commit();

@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.util.Arrays;
@@ -34,7 +33,7 @@ public class TripleStoreTest {
 
 	@BeforeEach
 	public void before(@TempDir File dataDir) throws Exception {
-		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 	}
 
 	int count(RecordIterator it) {

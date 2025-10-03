@@ -34,7 +34,7 @@ public class TripleStoreAutoGrowTest {
 	public void before(@TempDir File dataDir) throws Exception {
 		var config = new LmdbStoreConfig("spoc,posc");
 		config.setTripleDBSize(4096 * 10);
-		tripleStore = new TripleStore(dataDir, config);
+		tripleStore = new TripleStore(dataDir, config, null);
 		((Logger) LoggerFactory
 				.getLogger(TripleStore.class.getName()))
 				.setLevel(ch.qos.logback.classic.Level.DEBUG);

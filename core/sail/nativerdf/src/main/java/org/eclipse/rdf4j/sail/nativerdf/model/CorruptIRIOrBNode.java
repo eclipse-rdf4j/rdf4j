@@ -51,6 +51,11 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 	}
 
 	@Override
+	public Type getType() {
+		return IRI.super.getType();
+	}
+
+	@Override
 	public String getNamespace() {
 		return "urn:CorruptIRIOrBNode:";
 	}

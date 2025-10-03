@@ -48,4 +48,5 @@ public class ElasticsearchStoreRepositoryIT extends RepositoryTest {
 	public void testShutdownFollowedByInit() {
 		// ignore test
 	}
+
 }

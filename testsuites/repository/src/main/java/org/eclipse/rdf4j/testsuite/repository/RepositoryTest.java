@@ -10,17 +10,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.repository;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.DC;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -109,6 +117,9 @@ public abstract class RepositoryTest {
 
 	@AfterEach
 	public void tearDown() {
+		try (RepositoryConnection connection = testRepository.getConnection()) {
+			connection.clear();
+		}
 		testRepository.shutDown();
 	}
 
@@ -149,6 +160,39 @@ public abstract class RepositoryTest {
 			assertTrue(conn.hasStatement(bob, mbox, mboxBob, true));
 			assertTrue(testRepository.isInitialized());
 		}
+	}
+
+	@Test
+	public void getAllStatements() {
+		try (RepositoryConnection conn = testRepository.getConnection()) {
+			conn.add(bob, mbox, mboxBob);
+			conn.add(bob, RDF.TYPE, FOAF.PERSON);
+
+			for (int i = 0; i < 1024 * 32; i++) {
+				try (RepositoryResult<Statement> statements = conn.getStatements(null, null, null)) {
+					List<Statement> collect = statements.stream().collect(Collectors.toList());
+					assertEquals(2, collect.size(), "Iteration " + i + " failed with data:\n"
+							+ collect.stream().map(Objects::toString).reduce((a, b) -> a + "\n" + b).orElse(""));
+				}
+			}
+
+			for (int i = 0; i < 1024 * 32; i++) {
+				try (RepositoryResult<Statement> statements = conn.getStatements(null, RDF.TYPE, null)) {
+					List<Statement> collect = statements.stream().collect(Collectors.toList());
+					assertEquals(1, collect.size(), "Iteration " + i + " failed with data:\n"
+							+ collect.stream().map(Objects::toString).reduce((a, b) -> a + "\n" + b).orElse(""));
+				}
+			}
+
+			for (int i = 0; i < 1024 * 32; i++) {
+				try (RepositoryResult<Statement> statements = conn.getStatements(null, null, null)) {
+					List<Statement> collect = statements.stream().collect(Collectors.toList());
+					assertEquals(2, collect.size(), "Iteration " + i + " failed with data:\n"
+							+ collect.stream().map(Objects::toString).reduce((a, b) -> a + "\n" + b).orElse(""));
+				}
+			}
+		}
+
 	}
 
 }

@@ -14,8 +14,7 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
-import static org.eclipse.rdf4j.sail.lmdb.Varint.readListUnsigned;
-import static org.eclipse.rdf4j.sail.lmdb.Varint.writeUnsigned;
+import static org.eclipse.rdf4j.sail.lmdb.Varint.readQuadUnsigned;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
@@ -75,7 +74,8 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
-import java.util.concurrent.locks.StampedLock;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
@@ -84,8 +84,9 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
-import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
+import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
@@ -102,6 +103,11 @@ import org.slf4j.LoggerFactory;
  */
 @SuppressWarnings("deprecation")
 class TripleStore implements Closeable {
+
+	static ConcurrentHashMap<TripleIndex.KeyStats, TripleIndex.KeyStats> stats = new ConcurrentHashMap<>();
+	static long hit = 0;
+	static long fullHit = 0;
+	static long miss = 0;
 
 	/*-----------*
 	 * Constants *
@@ -154,6 +160,7 @@ class TripleStore implements Closeable {
 	 * The list of triple indexes that are used to store and retrieve triples.
 	 */
 	private final List<TripleIndex> indexes = new ArrayList<>();
+	private final ValueStore valueStore;
 
 	private long env;
 	private int contextsDbi;
@@ -187,10 +194,11 @@ class TripleStore implements Closeable {
 		}
 	};
 
-	TripleStore(File dir, LmdbStoreConfig config) throws IOException, SailException {
+	TripleStore(File dir, LmdbStoreConfig config, ValueStore valueStore) throws IOException, SailException {
 		this.dir = dir;
 		this.forceSync = config.getForceSync();
 		this.autoGrow = config.getAutoGrow();
+		this.valueStore = valueStore;
 
 		// create directory if it not exists
 		this.dir.mkdirs();
@@ -506,6 +514,15 @@ class TripleStore implements Closeable {
 		// System.out.println("get triples: " + Arrays.asList(subj, pred, obj,context));
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
+	}
+
+	boolean hasTriples(boolean explicit) throws IOException {
+		TripleIndex mainIndex = indexes.get(0);
+		return txnManager.doWith((stack, txn) -> {
+			MDBStat stat = MDBStat.mallocStack(stack);
+			mdb_stat(txn, mainIndex.getDB(explicit), stat);
+			return stat.ms_entries() > 0;
+		});
 	}
 
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
@@ -1163,11 +1180,15 @@ class TripleStore implements Closeable {
 	class TripleIndex {
 
 		private final char[] fieldSeq;
+		private final IndexKeyWriters.KeyWriter keyWriter;
+		private final IndexKeyWriters.MatcherFactory matcherFactory;
 		private final int dbiExplicit, dbiInferred;
 		private final int[] indexMap;
 
 		public TripleIndex(String fieldSeq) throws IOException {
 			this.fieldSeq = fieldSeq.toCharArray();
+			this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
+			this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
 			this.indexMap = getIndexes(this.fieldSeq);
 			// open database and use native sort order without comparator
 			dbiExplicit = openDatabase(env, fieldSeq, MDB_CREATE, null);
@@ -1273,52 +1294,131 @@ class TripleStore implements Closeable {
 		}
 
 		GroupMatcher createMatcher(long subj, long pred, long obj, long context) {
-			ByteBuffer bb = ByteBuffer.allocate(TripleStore.MAX_KEY_LENGTH);
+			int length = getLength(subj, pred, obj, context);
+
+			ByteBuffer bb = ByteBuffer.allocate(length);
 			toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);
 			bb.flip();
 
-			boolean[] shouldMatch = new boolean[4];
-			for (int i = 0; i < fieldSeq.length; i++) {
-				switch (fieldSeq[i]) {
-				case 's':
-					shouldMatch[i] = subj > 0;
-					break;
-				case 'p':
-					shouldMatch[i] = pred > 0;
-					break;
-				case 'o':
-					shouldMatch[i] = obj > 0;
-					break;
-				case 'c':
-					shouldMatch[i] = context >= 0;
-					break;
-				}
+			return new GroupMatcher(bb.array(), matcherFactory.create(subj, pred, obj, context));
+		}
+
+		private int getLength(long subj, long pred, long obj, long context) {
+			int length = 4;
+			if (subj > 240) {
+				length += 8;
 			}
-			return new GroupMatcher(bb, shouldMatch);
+			if (pred > 240) {
+				length += 8;
+
+			}
+			if (obj > 240) {
+				length += 8;
+
+			}
+			if (context > 240) {
+				length += 8;
+
+			}
+			return length;
+		}
+
+		class KeyStats {
+			long subj;
+			long pred;
+			long obj;
+			long context;
+			public LongAdder count = new LongAdder();
+
+			public KeyStats(long subj, long pred, long obj, long context) {
+				this.subj = subj;
+				this.pred = pred;
+				this.obj = obj;
+				this.context = context;
+			}
+
+			@Override
+			public final boolean equals(Object o) {
+				if (!(o instanceof KeyStats)) {
+					return false;
+				}
+
+				KeyStats keyStats = (KeyStats) o;
+				return subj == keyStats.subj && pred == keyStats.pred && obj == keyStats.obj
+						&& context == keyStats.context;
+			}
+
+			@Override
+			public int hashCode() {
+				int result = Long.hashCode(subj);
+				result = 31 * result + Long.hashCode(pred);
+				result = 31 * result + Long.hashCode(obj);
+				result = 31 * result + Long.hashCode(context);
+				return result;
+			}
+
+			public void print() {
+				if (count.sum() % 1000000 == 0) {
+
+					try {
+						System.out.println("Key " + new String(getFieldSeq()) + " "
+								+ Arrays.asList(valueStore.getValue(subj), valueStore.getValue(pred),
+										valueStore.getValue(obj), valueStore.getValue(context))
+								+ " count: " + count.sum());
+					} catch (IOException e) {
+						throw new RuntimeException(e);
+					}
+				}
+
+			}
 		}
 
 		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
-			for (int i = 0; i < fieldSeq.length; i++) {
-				switch (fieldSeq[i]) {
-				case 's':
-					writeUnsigned(bb, subj);
-					break;
-				case 'p':
-					writeUnsigned(bb, pred);
-					break;
-				case 'o':
-					writeUnsigned(bb, obj);
-					break;
-				case 'c':
-					writeUnsigned(bb, context);
-					break;
+
+			boolean shouldCache = threeOfFourAreZeroOrMax(subj, pred, obj, context);
+			if (shouldCache) {
+				long sum = subj + pred + obj + context;
+				if (sum == 0 && subj == pred && obj == context) {
+					bb.put(Varint.ALL_ZERO_QUAD);
+					return;
 				}
+
+				if (sum < 241) { // keys with sum < 241 only need 4 bytes to write and don't need caching
+					shouldCache = false;
+				}
+
 			}
+
+			// Pass through to the keyWriter with caching hint
+			keyWriter.write(bb, subj, pred, obj, context, shouldCache);
 		}
 
 		void keyToQuad(ByteBuffer key, long[] quad) {
+			readQuadUnsigned(key, indexMap, quad);
+		}
+
+		void keyToQuad(ByteBuffer key, long[] originalQuad, long[] quad) {
 			// directly use index map to read values in to correct positions
-			readListUnsigned(key, indexMap, quad);
+			if (originalQuad[indexMap[0]] != -1) {
+				Varint.skipUnsigned(key);
+			} else {
+				quad[indexMap[0]] = Varint.readUnsigned(key);
+			}
+			if (originalQuad[indexMap[1]] != -1) {
+				Varint.skipUnsigned(key);
+			} else {
+				quad[indexMap[1]] = Varint.readUnsigned(key);
+			}
+			if (originalQuad[indexMap[2]] != -1) {
+				Varint.skipUnsigned(key);
+			} else {
+				quad[indexMap[2]] = Varint.readUnsigned(key);
+			}
+			if (originalQuad[indexMap[3]] != -1) {
+				Varint.skipUnsigned(key);
+			} else {
+				quad[indexMap[3]] = Varint.readUnsigned(key);
+			}
 		}
 
 		@Override
@@ -1341,4 +1441,20 @@ class TripleStore implements Closeable {
 			mdb_drop(txn, dbiInferred, true);
 		}
 	}
+
+	static boolean threeOfFourAreZeroOrMax(long subj, long pred, long obj, long context) {
+		// Precompute the 8 equalities once (cheapest operations here)
+		boolean zS = subj == 0L, zP = pred == 0L, zO = obj == 0L, zC = context == 0L;
+		boolean mS = subj == Long.MAX_VALUE, mP = pred == Long.MAX_VALUE, mO = obj == Long.MAX_VALUE,
+				mC = context == Long.MAX_VALUE;
+
+		// ≥3-of-4 ≡ ab(c∨d) ∨ cd(a∨b). Apply once for zeros and once for maxes.
+		// Using '&' and '|' (not &&/||) keeps it branchless and predictable.
+
+		return (((zS & zP & (zO | zC)) | (zO & zC & (zS | zP)))// ≥3 zeros
+				| ((mS & mP & (mO | mC)) | (mO & mC & (mS | mP))));// ≥3 Long.MAX_VALUE
+//				& !(zS & zP & zO & zC)    // not all zeros
+//				& !(mS & mP & mO & mC);   // not all max
+	}
+
 }

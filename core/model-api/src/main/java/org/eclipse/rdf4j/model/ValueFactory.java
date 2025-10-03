@@ -156,6 +156,16 @@ public interface ValueFactory {
 	Literal createLiteral(long value);
 
 	/**
+	 * Creates a new typed numerical literal representing the specified value.
+	 *
+	 * @param value The value for the literal.
+	 * @param xsd   The XSD datatype to use.
+	 */
+	default Literal createLiteral(long value, CoreDatatype.XSD xsd) {
+		return createLiteral(Long.toString(value), xsd);
+	}
+
+	/**
 	 * Creates a new <var>xsd:float</var>-typed literal representing the specified value.
 	 *
 	 * @param value The value for the literal.

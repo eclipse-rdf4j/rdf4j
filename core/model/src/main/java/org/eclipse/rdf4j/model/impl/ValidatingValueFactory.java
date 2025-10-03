@@ -176,6 +176,11 @@ public class ValidatingValueFactory implements ValueFactory {
 	}
 
 	@Override
+	public Literal createLiteral(long value, CoreDatatype.XSD xsd) {
+		return delegate.createLiteral(value, xsd);
+	}
+
+	@Override
 	public Literal createLiteral(float value) {
 		return delegate.createLiteral(value);
 	}

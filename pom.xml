@@ -265,6 +265,32 @@
 			</build>
 		</profile>
 		<profile>
+			<id>jacoco</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.jacoco</groupId>
+						<artifactId>jacoco-maven-plugin</artifactId>
+						<version>0.8.13</version>
+						<executions>
+							<execution>
+								<goals>
+									<goal>prepare-agent</goal>
+								</goals>
+							</execution>
+							<execution>
+								<id>report</id>
+								<phase>verify</phase>
+								<goals>
+									<goal>report</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+		<profile>
 			<id>formatting</id>
 			<activation>
 				<!-- active on all Java 11 and higher builds by default -->
@@ -378,6 +404,7 @@
 		<junit.version>5.9.3</junit.version>
 		<jetty.version>9.4.54.v20240208</jetty.version>
 		<netty.version>4.1.111.Final</netty.version>
+		<argLine/>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
@@ -814,7 +841,8 @@
 					<artifactId>maven-surefire-plugin</artifactId>
 					<version>3.5.4</version>
 					<configuration>
-						<argLine>-Xmx2G</argLine>
+						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
+						<argLine>@{argLine} -Xmx2G</argLine>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -824,7 +852,8 @@
 					<configuration>
 						<forkCount>1</forkCount>
 						<reuseForks>false</reuseForks>
-						<argLine>-Xmx2G</argLine>
+						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
+						<argLine>@{argLine} -Xmx2G</argLine>
 						<includes>
 							<include>**/*IT.java</include>
 						</includes>

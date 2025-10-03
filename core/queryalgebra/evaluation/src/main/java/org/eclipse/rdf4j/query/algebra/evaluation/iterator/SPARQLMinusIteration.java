@@ -10,16 +10,19 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryResults;
 
 /**
  * An Iteration that returns the results of an Iteration (the left argument) MINUS any results that are compatible with
@@ -42,6 +45,10 @@ public class SPARQLMinusIteration extends FilterIteration<BindingSet> {
 	private Set<BindingSet> excludeSet;
 	private Set<String> excludeSetBindingNames;
 	private boolean excludeSetBindingNamesAreAllTheSame;
+	private BindingSet[] excludeSetList;
+
+	// Index of rightArg binding sets by (variable name, value) to quickly find candidates
+	private Map<String, Map<Value, BindingSet[]>> rightIndex;
 
 	/*--------------*
 	 * Constructors *
@@ -73,6 +80,7 @@ public class SPARQLMinusIteration extends FilterIteration<BindingSet> {
 		if (!initialized) {
 			// Build set of elements-to-exclude from right argument
 			excludeSet = makeSet(getRightArg());
+			excludeSetList = excludeSet.toArray(new BindingSet[0]);
 			excludeSetBindingNames = excludeSet.stream()
 					.map(BindingSet::getBindingNames)
 					.flatMap(Set::stream)
@@ -85,50 +93,108 @@ public class SPARQLMinusIteration extends FilterIteration<BindingSet> {
 				return false;
 			});
 
+			// Build right-side index by (name,value) -> list of rows
+			HashMap<String, HashMap<Value, ArrayList<BindingSet>>> tmpIndex = new HashMap<>();
+			for (BindingSet bs : excludeSetList) {
+				for (String name : bs.getBindingNames()) {
+					Value v = bs.getValue(name);
+					if (v != null) {
+						tmpIndex
+								.computeIfAbsent(name, k -> new HashMap<>())
+								.computeIfAbsent(v, k -> new ArrayList<>())
+								.add(bs);
+					}
+				}
+			}
+			var built = new HashMap<String, Map<Value, BindingSet[]>>(tmpIndex.size() * 2);
+			for (var e : tmpIndex.entrySet()) {
+				var inner = new HashMap<Value, BindingSet[]>(e.getValue().size() * 2);
+				for (var e2 : e.getValue().entrySet()) {
+					inner.put(e2.getKey(), e2.getValue().toArray(new BindingSet[0]));
+				}
+				built.put(e.getKey(), inner);
+			}
+			this.rightIndex = built;
+
 			initialized = true;
 		}
 
 		Set<String> bindingNames = bindingSet.getBindingNames();
 		boolean hasSharedBindings = false;
 
-		if (excludeSetBindingNamesAreAllTheSame) {
-			for (String bindingName : excludeSetBindingNames) {
-				if (bindingNames.contains(bindingName)) {
-					hasSharedBindings = true;
-					break;
-				}
-			}
-
-			if (!hasSharedBindings) {
-				return true;
-			}
-		}
-
-		for (BindingSet excluded : excludeSet) {
-
-			if (!excludeSetBindingNamesAreAllTheSame) {
-				hasSharedBindings = false;
-				for (String bindingName : excluded.getBindingNames()) {
-					if (bindingNames.contains(bindingName)) {
+		// Fast union check: if no variable is shared with the union of right variables, accept immediately
+		if (!excludeSetBindingNames.isEmpty()) {
+			final Set<String> left = bindingNames;
+			final Set<String> rightUnion = excludeSetBindingNames;
+			if (left.size() <= rightUnion.size()) {
+				for (String name : left) {
+					if (rightUnion.contains(name)) {
 						hasSharedBindings = true;
 						break;
 					}
 				}
-
-			}
-
-			// two bindingsets that share no variables are compatible by
-			// definition, however, the formal
-			// definition of SPARQL MINUS indicates that such disjoint sets should
-			// be filtered out.
-			// See http://www.w3.org/TR/sparql11-query/#sparqlAlgebra
-			if (hasSharedBindings) {
-				if (QueryResults.bindingSetsCompatible(excluded, bindingSet)) {
-					// at least one compatible bindingset has been found in the
-					// exclude set, therefore the object is compatible, therefore it
-					// should not be accepted.
-					return false;
+			} else {
+				for (String name : rightUnion) {
+					if (left.contains(name)) {
+						hasSharedBindings = true;
+						break;
+					}
 				}
+			}
+		}
+
+		if (!hasSharedBindings) {
+			return true;
+		}
+
+		// Use right-side index to find only candidates that match on at least one shared (name,value)
+		if (rightIndex != null && !rightIndex.isEmpty()) {
+			for (String name : bindingNames) {
+				Value leftVal = bindingSet.getValue(name);
+				if (leftVal == null) {
+					continue; // unbound on left does not participate in compatibility
+				}
+				Map<Value, BindingSet[]> byValue = rightIndex.get(name);
+				if (byValue == null) {
+					continue;
+				}
+				BindingSet[] candidates = byValue.get(leftVal);
+				if (candidates == null) {
+					continue;
+				}
+				for (int j = 0; j < candidates.length; j++) {
+					BindingSet excluded = candidates[j];
+					if (excluded.isCompatible(bindingSet)) {
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+
+		// Fallback: scan all (should be rare or small)
+		for (BindingSet excluded : excludeSetList) {
+			if (!excludeSetBindingNamesAreAllTheSame) {
+				hasSharedBindings = false;
+				final Set<String> excludedNames = excluded.getBindingNames();
+				if (bindingNames.size() <= excludedNames.size()) {
+					for (String name : bindingNames) {
+						if (excludedNames.contains(name)) {
+							hasSharedBindings = true;
+							break;
+						}
+					}
+				} else {
+					for (String name : excludedNames) {
+						if (bindingNames.contains(name)) {
+							hasSharedBindings = true;
+							break;
+						}
+					}
+				}
+			}
+			if (hasSharedBindings && excluded.isCompatible(bindingSet)) {
+				return false;
 			}
 		}
 
