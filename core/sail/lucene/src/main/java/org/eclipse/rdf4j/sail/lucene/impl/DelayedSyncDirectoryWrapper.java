@@ -10,9 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene.impl;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.Executors;
@@ -105,27 +107,20 @@ class DelayedSyncDirectoryWrapper extends FilterDirectory {
 			pendingSyncs.clear();
 		}
 
-		boolean needsMetaDataSync = this.needsMetadataSync.get();
+		boolean metaRequestedInitial = this.needsMetadataSync.get();
+		boolean metaToProcess = false;
 
 		try {
-			if (toSync.isEmpty() && !this.needsMetadataSync.get()) {
+			if (toSync.isEmpty() && !metaRequestedInitial) {
 				logger.debug("Nothing to sync");
 				// Nothing to sync
 				return;
 			}
 
 			synchronized (syncMonitor) {
-				if (!toSync.isEmpty()) {
-					try {
-						logger.debug("Syncing files");
-						super.sync(toSync);
-					} catch (Throwable e) {
-						logger.error(e.getClass().getSimpleName() + " during a periodic sync of Lucene index files", e);
-						throw e;
-					}
-				}
-				needsMetaDataSync = this.needsMetadataSync.getAndSet(false);
-				if (needsMetaDataSync) {
+				// Process metadata first if requested
+				metaToProcess = this.needsMetadataSync.getAndSet(false);
+				if (metaToProcess) {
 					try {
 						logger.debug("Syncing metadata");
 						super.syncMetaData();
@@ -135,12 +130,40 @@ class DelayedSyncDirectoryWrapper extends FilterDirectory {
 						throw e;
 					}
 				}
+
+				if (!toSync.isEmpty()) {
+					try {
+						logger.debug("Syncing files");
+						super.sync(toSync);
+					} catch (Throwable e) {
+						// Lucene files may be merged/removed between scheduling and sync.
+						// Treat missing files as benign and attempt per-file sync, ignoring those missing.
+						if (e instanceof java.nio.file.NoSuchFileException || e instanceof FileNotFoundException) {
+							for (String name : toSync) {
+								try {
+									super.sync(Collections.singleton(name));
+								} catch (java.nio.file.NoSuchFileException | FileNotFoundException ignore) {
+									// File disappeared before fsync: safe to ignore
+								} catch (Throwable t) {
+									logger.error(t.getClass().getSimpleName()
+											+ " during a periodic sync of Lucene index files (per-file)", t);
+									throw t;
+								}
+							}
+							// Consider sync successful when only missing files were encountered.
+						} else {
+							logger.error(e.getClass().getSimpleName() + " during a periodic sync of Lucene index files",
+									e);
+							throw e;
+						}
+					}
+				}
 			}
 		} catch (Throwable t) {
 			lastSyncThrowable.set(t);
 			synchronized (pendingSyncs) {
 				pendingSyncs.addAll(toSync);
-				if (needsMetaDataSync) {
+				if (metaToProcess) {
 					needsMetadataSync.set(true);
 				}
 			}
@@ -172,11 +195,12 @@ class DelayedSyncDirectoryWrapper extends FilterDirectory {
 
 	@Override
 	public void syncMetaData() throws IOException {
+		// Request a metadata sync even if a previous error is pending
+		needsMetadataSync.set(true);
 		checkException();
 		if (closed) {
 			throw new SailException("DelayedSyncDirectoryWrapper is closed");
 		}
-		needsMetadataSync.set(true);
 	}
 
 	private void checkException() throws IOException {

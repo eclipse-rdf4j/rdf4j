@@ -11,10 +11,12 @@
 package org.eclipse.rdf4j.sail.lucene.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
@@ -203,37 +205,82 @@ public class DelayedSyncDirectoryWrapperTest {
 	}
 
 	@Test
-	public void testRethrowLastSyncException() throws IOException {
+	public void testRethrowLastSyncException() throws IOException, InterruptedException {
+		CountDownLatch latch = new CountDownLatch(1);
+		CountDownLatch latch2 = new CountDownLatch(1);
 		final var dir = new FilterDirectory(new RAMDirectory()) {
 			@Override
 			public void sync(Collection<String> names) throws IOException {
-				throw new IOException("Simulated IO exception during sync");
+				try {
+					throw new IOException("Simulated IO exception during sync");
+				} finally {
+					latch.countDown();
+				}
 			}
 
 			@Override
 			public void syncMetaData() throws IOException {
-				throw new IOException("Simulated IO exception during syncMetaData");
+				try {
+					latch.await();
+				} catch (InterruptedException e) {
+					throw new RuntimeException(e);
+				}
+				try {
+					throw new IOException("Simulated IO exception during syncMetaData");
+				} finally {
+					latch2.countDown();
+				}
 			}
 		};
 		final var delayedDir = new DelayedSyncDirectoryWrapper(dir, 300, 100);
 
 		// This should not throw immediately
 		delayedDir.sync(List.of("file1", "file2"));
-		waitFor(500);
-		try {
-			delayedDir.syncMetaData();
-		} catch (IOException e) {
-			// The exception from the previous sync should be rethrown here
-			assertEquals("Simulated IO exception during sync", e.getMessage());
+		latch.await();
+		boolean exceptionThrown = false;
+		for (int i = 0; i < 10; i++) {
+			Thread.sleep(10);
+			try {
+				delayedDir.syncMetaData();
+			} catch (IOException e) {
+				if (!"Simulated IO exception during sync".equals(e.getMessage())) {
+					if (i < 9) {
+						continue;
+					}
+				}
+				// The exception from the previous sync should be rethrown here
+				assertEquals("Simulated IO exception during sync", e.getMessage());
+				exceptionThrown = true;
+			}
+
+		}
+		if (!exceptionThrown) {
+			fail("Expected IOException was not thrown");
 		}
 
-		waitFor(500);
-		try {
-			delayedDir.sync(List.of("file3"));
-		} catch (IOException e) {
-			// The exception from the previous syncMetaData should be rethrown here
-			assertEquals("Simulated IO exception during syncMetaData", e.getMessage());
+		latch2.await();
+
+		exceptionThrown = false;
+		for (int i = 0; i < 10; i++) {
+			Thread.sleep(10);
+			try {
+				delayedDir.sync(List.of("file3"));
+			} catch (IOException e) {
+				if (!"Simulated IO exception during syncMetaData".equals(e.getMessage())) {
+					if (i < 9) {
+						continue;
+					}
+				}
+				// The exception from the previous sync should be rethrown here
+				assertEquals("Simulated IO exception during syncMetaData", e.getMessage());
+				exceptionThrown = true;
+			}
 		}
+
+		if (!exceptionThrown) {
+			fail("Expected IOException was not thrown");
+		}
+
 	}
 
 	@Test
