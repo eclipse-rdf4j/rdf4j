@@ -145,7 +145,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 		// reverse the string representation of the long to ensure that the BNode IDs are not monotonically increasing
 		StringBuilder sb = new StringBuilder(Long.toString(l));
 		sb.reverse();
-		sb.append(uniqueIdPrefix).append(RANDOMIZE_LENGTH[(int) (Math.abs(l) % 9)]);
+		sb.append(uniqueIdPrefix).append(RANDOMIZE_LENGTH[(int) (Math.abs(l % RANDOMIZE_LENGTH.length))]);
 		return createBNode(sb.toString());
 	}
 

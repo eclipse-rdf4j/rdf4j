@@ -134,7 +134,7 @@ public class EvaluationStatistics {
 			long suffix = uniqueIdSuffix.getAndIncrement();
 			final Var pathVar = Var.of(
 					"_anon_path_" + uniqueIdPrefix + suffix
-							+ RANDOMIZE_LENGTH[(int) (Math.abs(suffix) % RANDOMIZE_LENGTH.length)],
+							+ RANDOMIZE_LENGTH[(int) (Math.abs(suffix % RANDOMIZE_LENGTH.length))],
 					true);
 			// cardinality of ALP is determined based on the cost of a
 			// single ?s ?p ?o ?c pattern where ?p is unbound, compensating for the fact that
