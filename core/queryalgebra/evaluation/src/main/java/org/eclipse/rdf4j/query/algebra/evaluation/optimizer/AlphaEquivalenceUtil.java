@@ -10,7 +10,9 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;

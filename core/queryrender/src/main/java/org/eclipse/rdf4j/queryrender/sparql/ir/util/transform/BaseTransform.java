@@ -32,7 +32,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
-import org.eclipse.rdf4j.queryrender.sparql.util.TermRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.util.VarUtils;
 
 /**
