@@ -36,10 +36,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/**
- * Local duplicates of selected {@link org.eclipse.rdf4j.testsuite.sparql.tests.SparqlMinusScopingTests} cases to ease
- * debugging against a concrete {@link MemoryStore} repository.
- */
 public class MemoryStoreMinusScopingDebugTest {
 
 	private static final String PREFIX = "PREFIX : <http://ex/>\n";
