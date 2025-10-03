@@ -228,6 +228,13 @@ Running `install` publishes your changed modules there so downstream modules and
 * Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
 * Never ever change the repo location. Never use `-Dmaven.repo.local=.m2_repo`.
 * Always try to run these commands first to see if they run without needing any approvals from the user w.r.t. the sandboxing.
+
+Why this is mandatory
+
+- Tests must not use `-am`. Without `-am`, Maven will not build upstream modules when you run tests; it will resolve cross‑module dependencies from the local `~/.m2/repository` instead.
+- Therefore, tests only see whatever versions were last published to `~/.m2`. If you change code in one module and then run tests in another, those tests will not see your changes unless the updated module has been installed to `~/.m2` first.
+- The reliable way to ensure all tests always use the latest code across the entire multi‑module build is to install all modules to `~/.m2` before running any tests: run `mvn -o -Pquick install` at the repository root.
+- In tight loops you may also install a specific module and its deps (`-pl <module> -am -Pquick install`) to iterate quickly, but before executing tests anywhere that depend on your changes, run a root‑level `mvn -o -Pquick install` so the latest jars are available to the reactor from `~/.m2`.
 ---
 
 ## Quick Start (First 10 Minutes)
