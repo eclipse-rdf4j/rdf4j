@@ -343,7 +343,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		sb.append(ANON_)
 				.reverse()
 				.append(uniqueIdPrefix)
-				.append(RANDOMIZE_LENGTH[(int) (l % 9)]);
+				.append(RANDOMIZE_LENGTH[(int) (Math.abs(l) % 9)]);
 		return Var.of(sb.toString(), true);
 	}
 
@@ -357,7 +357,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		sb.append(ANON_COLLECTION_)
 				.reverse()
 				.append(uniqueIdPrefix)
-				.append(RANDOMIZE_LENGTH[(int) (l % 9)]);
+				.append(RANDOMIZE_LENGTH[(int) (Math.abs(l) % 9)]);
 		return Var.of(sb.toString(), true);
 	}
 
@@ -371,7 +371,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		sb.append(ANON_BNODE_)
 				.reverse()
 				.append(uniqueIdPrefix)
-				.append(RANDOMIZE_LENGTH[(int) (l % 9)]);
+				.append(RANDOMIZE_LENGTH[(int) (Math.abs(l) % 9)]);
 
 		return Var.of(sb.toString(), true);
 	}
@@ -386,7 +386,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		sb.append(ANON_HAVING_)
 				.reverse()
 				.append(uniqueIdPrefix)
-				.append(RANDOMIZE_LENGTH[(int) (l % 9)]);
+				.append(RANDOMIZE_LENGTH[(int) (Math.abs(l) % 9)]);
 		return Var.of(sb.toString(), true);
 	}
 
@@ -410,7 +410,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		sb.append(prefix)
 				.reverse()
 				.append(uniqueIdPrefix)
-				.append(RANDOMIZE_LENGTH[(int) (l % 9)]);
+				.append(RANDOMIZE_LENGTH[(int) (Math.abs(l) % 9)]);
 		return Var.of(sb.toString(), true);
 	}
 
@@ -1113,7 +1113,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			} else {
 				long l = uniqueIdSuffix.incrementAndGet();
 				String alias = "_describe_" + uniqueIdPrefix + l
-						+ RANDOMIZE_LENGTH[(int) (l % RANDOMIZE_LENGTH.length)];
+						+ RANDOMIZE_LENGTH[(int) (Math.abs(l) % RANDOMIZE_LENGTH.length)];
 				ExtensionElem elem = new ExtensionElem(resource, alias);
 				e.addElement(elem);
 				projectionElements.addElement(new ProjectionElem(alias));
