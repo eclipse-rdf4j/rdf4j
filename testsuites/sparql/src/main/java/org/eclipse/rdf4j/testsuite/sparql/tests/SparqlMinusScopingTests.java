@@ -357,8 +357,7 @@ public class SparqlMinusScopingTests extends AbstractComplianceTest {
 						"  ?x :name ?n .\n" +
 						"  FILTER NOT EXISTS { OPTIONAL { ?x :formerName ?n } }\n" +
 						"}");
-		assertEquals(List.of(), rows,
-				"Rewriting MINUS{OPTIONAL{…}} to NOT EXISTS { OPTIONAL{…} } is wrong: the inner group always yields at least the empty mapping.");
+		assertEquals(List.of(), rows);
 	}
 
 	void T22_graph_isolation_same_g_on_both_sides_no_removal_when_values_differ(RepositoryConnection conn)
