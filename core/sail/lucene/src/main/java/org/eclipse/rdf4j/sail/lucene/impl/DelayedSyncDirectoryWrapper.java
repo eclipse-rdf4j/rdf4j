@@ -142,8 +142,11 @@ class DelayedSyncDirectoryWrapper extends FilterDirectory {
 							for (String name : toSync) {
 								try {
 									super.sync(Collections.singleton(name));
-								} catch (java.nio.file.NoSuchFileException | FileNotFoundException ignore) {
-									// File disappeared before fsync: safe to ignore
+								} catch (java.nio.file.NoSuchFileException | FileNotFoundException logged) {
+//									logger.warn(
+//											"Could not sync file {},it seems to have been removed before it could be synced. Probably fine.",
+//											name, logged);
+									throw logged;
 								} catch (Throwable t) {
 									logger.error(t.getClass().getSimpleName()
 											+ " during a periodic sync of Lucene index files (per-file)", t);
