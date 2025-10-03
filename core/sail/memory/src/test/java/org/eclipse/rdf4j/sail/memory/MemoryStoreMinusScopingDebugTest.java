@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.memory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -25,6 +26,7 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -89,6 +91,29 @@ public class MemoryStoreMinusScopingDebugTest {
 							"}");
 
 			assertEquals(List.of(), rows);
+		}
+	}
+
+	@Test
+	public void testSES2250BindErrors() {
+
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+
+			conn.prepareUpdate(QueryLanguage.SPARQL, "insert data { <urn:test:subj> <urn:test:pred> _:blank }")
+					.execute();
+
+			String qb = "SELECT * {\n" +
+					"    ?s1 ?p1 ?blank . " +
+					"    FILTER(isBlank(?blank))" +
+					"    BIND (iri(?blank) as ?biri)" +
+					"    ?biri ?p2 ?o2 ." +
+					"}";
+
+			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb);
+			try (TupleQueryResult evaluate = tq.evaluate()) {
+				assertFalse(evaluate.hasNext(),
+						"The query should not return a result: " + Arrays.toString(evaluate.stream().toArray()));
+			}
 		}
 	}
 
