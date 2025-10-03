@@ -288,7 +288,12 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 		private static Provider initProvider() {
 			// 1) Explicit override via system property (FQCN of Var.Provider)
-			String fqcn = System.getProperty(PROVIDER_PROPERTY);
+			String fqcn = null;
+			try {
+				fqcn = System.getProperty(PROVIDER_PROPERTY);
+			} catch (SecurityException se) {
+				// Restricted environments may deny property access; ignore and fall back to discovery/default.
+			}
 			if (fqcn != null && !fqcn.isEmpty()) {
 				try {
 					Class<?> cls = Class.forName(fqcn, true, Var.class.getClassLoader());
