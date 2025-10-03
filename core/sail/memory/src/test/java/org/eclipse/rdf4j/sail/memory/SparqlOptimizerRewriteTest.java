@@ -1,38 +1,15 @@
 package org.eclipse.rdf4j.sail.memory;
 
 /**
- * ****************************************************************************
- *  Copyright (c) 2025 Eclipse RDF4J contributors.
+ * **************************************************************************** Copyright (c) 2025 Eclipse RDF4J
+ * contributors.
  *
- *  All rights reserved. This program and the accompanying materials
- *  are made available under the terms of the Eclipse Distribution License v1.0
- *  which accompanies this distribution, and is available at
- *  http://www.eclipse.org/org/documents/edl-v10.php.
+ * All rights reserved. This program and the accompanying materials are made available under the terms of the Eclipse
+ * Distribution License v1.0 which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
  *
- *  SPDX-License-Identifier: BSD-3-Clause
- * ****************************************************************************
+ * SPDX-License-Identifier: BSD-3-Clause ****************************************************************************
  */
-import static org.assertj.core.api.Assertions.assertThat;
-
-import java.io.IOException;
-import java.io.StringReader;
-import java.util.LinkedHashMap;
-import java.util.Map;
-
-import org.eclipse.rdf4j.model.vocabulary.DC;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
-import org.eclipse.rdf4j.query.TupleQuery;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.explanation.Explanation;
-import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.Test;
-import org.junit.jupiter.api.Disabled;
 
 public class SparqlOptimizerRewriteTest {
 //

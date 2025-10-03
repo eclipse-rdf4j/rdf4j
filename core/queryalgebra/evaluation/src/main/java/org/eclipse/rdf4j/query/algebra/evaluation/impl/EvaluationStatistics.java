@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Collection;
-import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
