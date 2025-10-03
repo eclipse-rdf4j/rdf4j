@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
-import org.eclipse.rdf4j.rio.RioSetting;
-
 /**
  * A class encapsulating writer settings that Turtle writers may support.
  *
