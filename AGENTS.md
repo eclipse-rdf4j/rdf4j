@@ -1,4 +1,4 @@
-AGENTS.md
+# AGENTS.md
 
 Welcome, AI Agent! Your persistence, curiosity, and craftsmanship make a difference. Take your time, work methodically, validate thoroughly, and iterate. This repository is large and tests can take time — that’s expected and supported.
 
@@ -8,112 +8,165 @@ You need to read the entire AGENTS.md file and follow all instructions exactly. 
 
 ---
 
-## Read‑Me‑Now: Zero‑Exception Test‑First Rule (Stricter)
+## Read‑Me‑Now: Proportional Test‑First Rule (Default)
 
-**You may not touch production code until a smallest‑scope failing automated test exists inside this repo and you have captured its report snippet.**
-No exceptions. A user‑provided stack trace or “obvious” contract violation is **not** a substitute for a failing test in the repository.
+**Default:** Use **test‑first (TDD)** for any change that alters externally observable behavior.
 
-**Auto‑stop:** If you realize you patched production before creating the failing test, **stop**, revert the patch, and resume from “Reproduce first”.
+**Proportional exceptions:** You may **skip writing a new failing test** *only* when **all** Routine B gates (below) pass, or when using Routine C (Spike/Investigate) with **no production code changes**.
+
+**You may not touch production code for behavior‑changing work until a smallest‑scope failing automated test exists inside this repo and you have captured its report snippet.** A user‑provided stack trace or “obvious” contract violation is **not** a substitute for an in‑repo failing test.
+
+**Auto‑stop:** If you realize you patched production before creating/observing the failing test for behavior‑changing work, **stop**, revert the patch, and resume from “Reproduce first”.
 
 **Traceability trio (must appear in your handoff):**
-
-1. **Preamble** (what you’re about to do + exact commands)
-2. **Evidence** (surefire/failsafe snippet from this repo)
+1. **Descritpion** (what you’re about to do)
+2. **Evidence** (Surefire/Failsafe snippet from this repo)
 3. **Plan** (one and only one `in_progress` step)
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
 
+> **Clarification:** For **strictly behavior‑neutral refactors** that are already **fully exercised by existing tests**, or for **bugfixes with an existing failing test**, you may use **Routine B — Change without new tests**. In that case you must capture **pre‑change passing evidence** at the smallest scope that hits the code you’re about to edit, prove **Hit Proof**, then show **post‑change passing evidence** from the **same selection**.
+> **No exceptions for any behavior‑changing change** — for those, you must follow **Routine A — Full TDD**.
+
+---
+
+## Three Routines: Choose Your Path
+
+**Routine A — Full TDD (Default)**
+**Routine B — Change without new tests (Proportional, gated)**
+**Routine C — Spike/Investigate (No production changes)**
+
+### Decision quickstart
+
+1. **Is new externally observable behavior required?**
+   → **Yes:** **Routine A (Full TDD)**. Add the smallest failing test first.
+   → **No:** continue.
+
+2. **Does a failing test already exist in this repo that pinpoints the issue?**
+   → **Yes:** **Routine B (Bugfix using existing failing test).**
+   → **No:** continue.
+
+3. **Is the edit strictly behavior‑neutral, local in scope, and clearly hit by existing tests?**
+   → **Yes:** **Routine B (Refactor/micro‑perf/documentation/build).**
+   → **No or unsure:** continue.
+
+4. **Is this purely an investigation/design spike with no production code changes?**
+   → **Yes:** **Routine C (Spike/Investigate).**
+   → **No or unsure:** **Routine A.**
+
+**When in doubt, choose Routine A (Full TDD).** Ambiguity is risk; tests are insurance.
+
+---
+
+## Proportionality Model (Think before you test)
+
+Score the change on these lenses. If any are **High**, prefer **Routine A**.
+
+- **Behavioral surface:** affects outputs, serialization, parsing, APIs, error text, timing/order?
+- **Blast radius:** number of modules/classes touched; public vs internal.
+- **Reversibility:** quick revert vs migration/data change.
+- **Observability:** can existing tests or assertions expose regressions?
+- **Coverage depth:** do existing tests directly hit the edited code?
+- **Concurrency / IO / Time:** any risk here is **High** by default.
+
 ---
 
 ## Purpose & Contract
 
-* **Bold goal:** deliver correct, minimal, well‑tested changes with clear handoff. No monkey‑patching or band‑aid fixes — always fix the underlying problem at its source.
+* **Bold goal:** deliver correct, minimal, well‑tested changes with clear handoff. Fix root causes; avoid hacks.
 * **Bias to action:** when inputs are ambiguous, choose a reasonable path, state assumptions, and proceed.
-* **Ask only when blocked or irreversible:** escalate only if truly blocked (permissions, missing deps, conflicting requirements) or if a choice is high‑risk/irreversible.
+* **Ask only when blocked or irreversible:** permissions, missing deps, conflicting requirements, destructive repo‑wide changes.
 * **Definition of Done**
-
     * Code formatted and imports sorted.
     * Compiles with a quick profile / targeted modules.
     * Relevant module tests pass; failures triaged or crisply explained.
     * Only necessary files changed; headers correct for new files.
     * Clear final summary: what changed, why, where, how verified, next steps.
-    * **Evidence present:** failing test output (pre‑fix) and passing output (post‑fix) are both shown.
+    * **Evidence present:** failing test output (pre‑fix) and passing output (post‑fix) are shown for Routine A; for Routine B show **pre/post green** from the **same selection** plus **Hit Proof**.
 
 ### No Monkey‑Patching or Band‑Aid Fixes (Non‑Negotiable)
 
-This repository requires durable, root‑cause fixes. Superficial changes that mask symptoms, mute tests, or add ad‑hoc toggles are not acceptable.
+Durable, root‑cause fixes only. No muting tests, no broad catch‑and‑ignore, no widening APIs “to make green”.
 
-What this means in practice
+**Strictly avoid**
+* Sleeping/timeouts to hide flakiness.
+* Swallowing exceptions or weakening assertions.
+* Reflection/internal state manipulation to bypass interfaces.
+* Feature flags that disable validation instead of fixing logic.
+* Changing public APIs/configs without necessity tied to root cause.
 
-* Find and fix the root cause in the correct layer/module.
-* Add or adjust targeted tests that fail before the fix and pass after.
-* Keep changes minimal and surgical; do not widen APIs/configs to “make tests green”.
-* Maintain consistency with existing style and architecture; prefer refactoring over hacks.
-
-Strictly avoid
-
-* Sleeping/timeouts to hide race conditions or flakiness.
-* Broad catch‑and‑ignore or logging‑and‑continue of exceptions.
-* Muting, deleting, or weakening assertions in tests to pass builds.
-* Reflection or internal state manipulation to bypass proper interfaces.
-* Feature flags/toggles that disable validation or logic instead of fixing it.
-* Changing public APIs or configs without necessity and clear rationale tied to the root cause.
-
-Preferred approach (fast and rigorous)
-
+**Preferred approach**
 * Reproduce the issue and isolate the smallest failing test (class → method).
-* Trace to the true source; fix it in the right module.
-* Add focused tests covering the behavior and any critical edge cases.
-* Run tight, targeted verifies for the impacted module(s) and broaden scope only if needed.
-
-Review bar and enforcement
-
-* Treat this policy as a blocking requirement. Changes that resemble workarounds will be rejected.
-* Your final handoff must demonstrate: failing test before the fix, explanation of the root cause, minimal fix at source, and passing targeted tests after.
+* Trace to the true source; fix in the right module.
+* Add focused tests for behavior/edge cases (Routine A) or prove coverage/neutrality (Routine B).
+* Run tight, targeted verifies; broaden only if needed.
 
 ---
 
-## Enforcement & Auto‑Fail Triggers 
+## Enforcement & Auto‑Fail Triggers
 
-Your run is **invalid** and must be restarted from “Reproduce first” if any of the following occur:
+Your run is **invalid** and must be restarted from “Reproduce first” if any occur:
 
-* You modify production code before adding and running the smallest failing test in this repo.
-* You proceed without pasting a surefire/failsafe report snippet from `target/*-reports/`.
+* You modify production code before adding and running the smallest failing test in this repo **for behavior‑changing work**.
+* You proceed without pasting a Surefire/Failsafe report snippet from `target/*-reports/`.
 * Your plan does not have **exactly one** `in_progress` step.
 * You run tests using `-am` or `-q`.
 * You treat a narrative failure description or external stack trace as equivalent to an in‑repo failing test.
+* **Routine B specific:** you cannot demonstrate that existing tests exercise the edited code (**Hit Proof**), or you fail to capture both pre‑ and post‑change **matching** passing snippets from the same selection.
+* **Routine C breach:** you change production code while in a spike.
 
 **Recovery procedure:**
-Update the plan (`in_progress: create failing test`), post a preamble, create the failing test, run it, capture the report snippet, then resume.
+Update the plan (`in_progress: create failing test`), post a description of your next step, create the failing test, run it, capture the report snippet, then resume.
+For Routine B refactors: if any gate fails, **switch to Full TDD** and add the smallest failing test.
 
 ---
 
-## Preamble & Evidence Protocol (Mandatory)
+## Evidence Protocol (Mandatory)
 
-Before any grouped actions (builds, tests, patches), post a **short preamble**:
-
-**Preamble template**
-
-```
-Preamble: Reproduce bug at smallest scope.
-Module: <module>
-Commands:
-  mvn -o -pl <module> -Dtest=Class#method verify | tail -500
-Expectation: test fails with the reported error.
-```
-
-After each grouped action, post an **Evidence block**:
+After each grouped action, post an **Evidence block**, then continue working:
 
 **Evidence template**
-
 ```
 Evidence:
 Command: mvn -o -pl <module> -Dtest=Class#method verify
 Report: <module>/target/surefire-reports/<file>.txt
 Snippet:
-<copy 10–30 lines capturing the failure or success summary>
+\<copy 10–30 lines capturing the failure or success summary>
 ```
+
+**Routine B additions**
+* **Pre‑green:** capture a pre‑change **passing** snippet from the **most specific** test selection that hits your code (ideally a class or method).
+* **Hit Proof (choose one):**
+    * An existing test class/method that directly calls the edited class/method, plus a short `rg -n` snippet showing the call site; **or**
+    * A Surefire/Failsafe output line containing the edited class/method names; **or**
+    * A temporary assertion or deliberate, isolated failing check in a **scratch test** proving the path is executed (then remove).
+* **Post‑green:** after the patch, re‑run the **same selection** and capture a passing snippet.
+
+---
+
+### Initial Evidence Capture (Required)
+
+To avoid losing the first test evidence when later runs overwrite `target/*-reports/`, immediately persist the initial verify results to a top‑level `initial-evidence.txt` file.
+
+• On a fully green verify run:
+
+- Capture and store the last 200 lines of the Maven verify output.
+- Example (module‑scoped):
+    - `mvn -o -pl <module> verify | tee .initial-verify.log`
+    - `tail -200 .initial-verify.log > initial-evidence.txt`
+
+• On any failing verify run (unit or IT failures):
+
+- Concatenate the Surefire and/or Failsafe report text files into `initial-evidence.txt`.
+- Example (repo‑root):
+    - `find . -type f \( -path "*/target/surefire-reports/*.txt" -o -path "*/target/failsafe-reports/*.txt" \) -print0 | xargs -0 cat > initial-evidence.txt`
+
+Notes
+
+- Keep `initial-evidence.txt` at the repository root alongside your final handoff.
+- Do not rely on `target/*-reports/` for the final report; they may be overwritten by subsequent runs.
+- Continue to include the standard Evidence block(s) in your messages as usual.
 
 ---
 
@@ -122,17 +175,19 @@ Snippet:
 Maintain a **living plan** with checklist items (5–7 words each). Keep **exactly one** `in_progress`.
 
 **Plan format**
-
 ```
+
 Plan
-- [done] sanity build quick profile
-- [in_progress] add smallest failing test
-- [todo] minimal root-cause fix
-- [todo] rerun focused then module tests
-- [todo] format, verify, summary
-```
 
-**Rule:** If you deviate, update the plan **first** (switch `in_progress`), then proceed. Do not let plan and actions drift out of sync.
+* \[done] sanity build quick profile
+* \[in\_progress] add smallest failing test
+* \[todo] minimal root-cause fix
+* \[todo] rerun focused then module tests
+* \[todo] format, verify, summary
+
+````
+
+**Rule:** If you deviate, update the plan **first**, then proceed.
 
 ---
 
@@ -140,22 +195,18 @@ Plan
 
 * **JDK:** 11 (minimum). The project builds and runs on Java 11+.
 * **Maven default:** run **offline** using `-o` whenever possible.
-* **Network:** only when needed to fetch missing deps/plugins; then rerun the exact command **without** `-o` once, and return to offline.
-* **Large project:** some module test suites can take **5–10 minutes**. Be patient, but bias toward **targeted** runs to keep momentum.
+* **Network:** only to fetch missing deps/plugins; then rerun once without `-o`, and return offline.
+* **Large project:** some module test suites can take **5–10 minutes**. Prefer **targeted** runs.
 
 ### Maven `-am` usage (house rule)
 
-`-am` (also-make) pulls in required upstream modules. That’s helpful for **compiles**, but hazardous for **tests**: Maven will advance included modules to the same lifecycle phase and run **their** tests too.
+`-am` is helpful for **compiles**, hazardous for **tests**.
 
-**Rule of thumb**
-
-* ✅ Use `-am` **only** for compile/verify with tests skipped (e.g. `-Pquick`).:
-
+* ✅ Use `-am` **only** for compile/verify with tests skipped (e.g. `-Pquick`):
     * `mvn -o -pl <module> -am -Pquick install`
 * ❌ Do **not** use `-am` with `verify` when tests are enabled.
 
 **Two-step pattern (fast + safe)**
-
 1. **Compile deps fast (skip tests):**
    `mvn -o -pl <module> -am -Pquick install`
 2. **Run tests:**
@@ -171,35 +222,35 @@ It is illegal to `-q` when running tests!
 The Maven reactor resolves inter-module dependencies from the local Maven repository (`~/.m2/repository`).
 Running `install` publishes your changed modules there so downstream modules and tests pick up the correct versions.
 
-- Always run `mvn -o -Pquick install | tail -200` before you start working. This command typically takes between 10 and 30 seconds.
-- Always run `mvn -o -pl <module> -am -Pquick install | tail -200` before any `verify` or test runs.
-- If offline resolution fails due to a missing dependency or plugin, rerun the exact `install` command once without `-o`, then return offline.
-- Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
-- Never ever change the repo location. Never use `-Dmaven.repo.local=.m2_repo`. Instead, ask for permission the first time you run `mvn -o -Pquick install | tail -200`.
+* Always run `mvn -o -Pquick install | tail -200` before you start working. This command typically takes up to 30 seconds. Never use a small timeout than 30,000 ms.
+* Always run `mvn -o -Pquick install | tail -200` before any `verify` or test runs.
+* If offline resolution fails due to a missing dependency or plugin, rerun the exact `install` command once without `-o`, then return offline.
+* Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
+* Never ever change the repo location. Never use `-Dmaven.repo.local=.m2_repo`.
+* Always try to run these commands first to see if they run without needing any approvals from the user w.r.t. the sandboxing.
+
+Why this is mandatory
+
+- Tests must not use `-am`. Without `-am`, Maven will not build upstream modules when you run tests; it will resolve cross‑module dependencies from the local `~/.m2/repository` instead.
+- Therefore, tests only see whatever versions were last published to `~/.m2`. If you change code in one module and then run tests in another, those tests will not see your changes unless the updated module has been installed to `~/.m2` first.
+- The reliable way to ensure all tests always use the latest code across the entire multi‑module build is to install all modules to `~/.m2` before running any tests: run `mvn -o -Pquick install` at the repository root.
+- In tight loops you may also install a specific module and its deps (`-pl <module> -am -Pquick install`) to iterate quickly, but before executing tests anywhere that depend on your changes, run a root‑level `mvn -o -Pquick install` so the latest jars are available to the reactor from `~/.m2`.
 ---
 
 ## Quick Start (First 10 Minutes)
 
 1. **Discover**
-
-    * List modules: inspect root `pom.xml` (aggregator) and the module tree (see “Maven Module Overview” below).
+    * Inspect root `pom.xml` and module tree (see “Maven Module Overview”).
     * Search fast with ripgrep: `rg -n "<symbol or string>"`
 2. **Build sanity (fast, skip tests)**
-
-    * **Preferred:** `mvn -o -Pquick install | tail -200`
-    * **Alternative:** `mvn -o -Pquick install | tail -200`
-    * This step is required before any tests. It installs artifacts to `~/.m2` so the reactor resolves fresh inter-module dependencies.
+    * `mvn -o -Pquick install | tail -200`
 3. **Format (Java, imports, XML)**
-
     * `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 4. **Targeted tests (tight loops)**
-
-    * By module: `mvn -o -pl <module> verify  | tail -500`
-    * Single class: `mvn -o -pl <module> -Dtest=ClassName verify  | tail -500`
-    * Single method: `mvn -o -pl <module> -Dtest=ClassName#method verify | tail -500`
-    * Prerequisite: ensure `mvn -o -Pquick install` (root or `-pl <module> -am`) has just run so artifacts are available in `~/.m2`.
+    * Module: `mvn -o -pl <module> verify  | tail -500`
+    * Class: `mvn -o -pl <module> -Dtest=ClassName verify  | tail -500`
+    * Method: `mvn -o -pl <module> -Dtest=ClassName#method verify | tail -500`
 5. **Inspect failures**
-
     * **Unit (Surefire):** `<module>/target/surefire-reports/`
     * **IT (Failsafe):** `<module>/target/failsafe-reports/`
 
@@ -208,82 +259,95 @@ It is illegal to `-q` when running tests!
 
 ---
 
-## Bugfix Workflow (Mandatory)
+## Routine A — Full TDD (Default)
 
-* **Reproduce first:** write the smallest focused test (class/method) that reproduces the reported bug **inside this repo**. Run it and confirm it fails with the same error/stacktrace. **Do not proceed without this.**
-* **Keep the test as‑is:** do not weaken assertions or mute the failure. The failing test is your proof you’ve hit the right code path.
-* **Fix at the root:** implement the minimal, surgical change in the correct module that addresses the underlying cause (no band‑aids).
-* **Verify locally:** re‑run the focused test, then the surrounding module’s tests. Use targeted Maven invocations (class/method → module). Avoid `-am` with tests.
-* **Broaden if needed:** only after green targeted runs, expand scope to neighboring modules when changes cross boundaries.
-* **Document clearly:** in your final handoff, show the failing test before the fix, the root cause, the minimal fix, and passing tests after. Include **preamble** and **evidence** blocks.
+> Use for **all behavior‑changing work** and whenever Routine B gates do not all pass.
 
-### Hard Gates (Do Not Proceed Unless True)
+### Bugfix Workflow (Mandatory)
 
-* A failing test exists at the smallest scope (method/class) reproducing the report.
+* **Reproduce first:** write the smallest focused test (class/method) that reproduces the reported bug **inside this repo**. Confirm it fails.
+* **Keep the test as‑is:** do not weaken assertions or mute the failure.
+* **Fix at the root:** minimal, surgical change in the correct module.
+* **Verify locally:** re‑run the focused test, then the module’s tests. Avoid `-am`/`-q` with tests.
+* **Broaden if needed:** expand scope only after targeted greens.
+* **Document clearly:** failing output (pre‑fix), root cause, minimal fix, passing output (post‑fix).
 
-    * Show the failing command and include a snippet of the error/stack from `target/*-reports/`.
+### Hard Gates
+
+* A failing test exists at the smallest scope (method/class).
 * **No production patch before the failing test is observed and recorded.**
 * Test runs avoid `-am` and `-q`.
 
-    * Use `-am` only with `-Pquick` to compile deps with tests skipped, then run tests without `-am`.
-* Maintain a living plan with exactly one `in_progress` step; send a short preamble before long actions.
+---
 
-### Required Sequence
+## Routine B — Change without new tests (Proportional, gated)
 
-1. **Reproduce first**
+> Use **only** when at least one Allowed Case applies **and** all Routine B **Gates** pass.
 
-    * Add the smallest failing test in the correct module.
-    * Run it directly: `mvn -o -pl <module> -Dtest=Class#method verify | tail -500`
-    * Inspect `target/surefire-reports/` (or `target/failsafe-reports/`) and capture the failure.
-2. **Fix at the root (minimal, surgical)**
+### Allowed cases (one or more)
+1. **Bugfix with existing failing test** in this repo (pinpoints class/method).
+2. **Strictly behavior‑neutral refactor / cleanup / micro‑perf** with clear existing coverage hitting the edited path.
+3. **Migration/rename/autogen refresh** where behavior is already characterized by existing tests.
+4. **Build/CI/docs/logging/message changes** that do not alter runtime behavior or asserted outputs.
+5. **Data/resource tweaks** not asserted by tests and not affecting behavior.
 
-    * Change the correct layer; avoid widening APIs/configs.
-3. **Verify locally (tight loops)**
+### Routine B Gates (all must pass)
+- **Neutrality/Scope:** No externally observable behavior change. Localized edit.
+- **Hit Proof:** Demonstrate tests exercise the edited code.
+- **Pre/Post Green Match:** Same smallest‑scope selection, passing before and after.
+- **Risk Check:** No concurrency/time/IO semantics touched; no public API, serialization, parsing, or ordering changes.
+- **Reversibility:** Change is easy to revert if needed.
 
-    * Re-run the exact test selection; then run the whole module.
-4. **Broaden only if necessary**
+**If any gate fails → switch to Routine A.**
 
-    * Expand scope when changes cross module boundaries or neighbors fail.
-5. **Document clearly**
+---
 
-    * Include: failing output (pre‑fix), root cause, minimal fix, passing output (post‑fix).
+## Routine C — Spike / Investigate (No production changes)
 
-### Quick Self‑Check Before First Code Patch
+> Use for exploration, triage, design spikes, and measurement. **No production code edits.**
 
-1. Do I have a failing test and its report snippet saved?
-2. Am I using legal Maven flags for tests (no `-am`, no `-q`)?
-3. Is my next step in the plan marked `in_progress` and did I state a preamble?
-4. Is my fix located at the correct source of truth, not a workaround?
+**You may:**
+- Add temporary scratch tests, assertions, scripts, or notes.
+- Capture measurements, traces, logs.
+
+**Hand‑off must include:**
+- Description, commands, and artifacts (logs/notes).
+- Findings, options, and a proposed next routine (A or B).
+- Removal of any temporary code if not adopted.
+
+---
+
+## Where to Draw the Line — A Short Debate
+
+> **Purist:** “All changes must start with a failing test.”
+> **Pragmatist:** “For refactors that can’t fail first without faking it, prove coverage and equality of behavior.”
+
+**In‑scope for Routine B (examples)**
+* Rename private methods; extract helper; dead‑code removal.
+* Replace straightforward loop with stream (same results, same ordering).
+* Tighten generics/nullability/annotations without observable change.
+* Micro‑perf cache within a method with deterministic inputs and strong coverage.
+* Logging/message tweaks **not** asserted by tests.
+* Build/CI config that doesn’t alter runtime behavior.
+
+**Out‑of‑scope (use Routine A)**
+* Changing query results, serialization, or parsing behavior.
+* Altering error messages that tests assert.
+* Anything touching concurrency, timeouts, IO, or ordering.
+* New SPARQL function support or extended syntax (even “tiny”).
+* Public API changes or cross‑module migrations with unclear blast radius.
 
 ---
 
 ## Working Loop
 
-* **Plan**
-
-    * Break task into **small, verifiable steps**; keep one step in progress.
-    * Announce a short preamble before long actions (builds/tests).
-    * Decide and proceed autonomously; document assumptions inline.
-* **Change**
-
-    * Make minimal, surgical edits. Keep style and structure consistent.
-* **Format**
-
-    * `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
-* **Compile (fast)**
-
-    * **Iterate locally:** `mvn -o -pl <module> -am -Pquick install | tail -500`
-* **Test**
-
-    * Start with the smallest scope that exercises your change (class → module).
-    * For integration‑impacted changes, run module `verify` (includes ITs).
-* **Triage**
-
-    * Read reports; fix root cause; expand scope **only when needed**.
-* **Iterate**
-
-    * Keep moving without waiting for permission between steps. Escalate only at blocking points.
-    * Repeat until **Definition of Done** is satisfied.
+* **Plan:** small, verifiable steps; keep one `in_progress`.
+* **Change:** minimal, surgical edits; keep style/structure consistent.
+* **Format:** `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+* **Compile (fast):** `mvn -o -pl <module> -am -Pquick install | tail -500`
+* **Test:** start smallest (class/method → module). For integration, run module `verify`.
+* **Triage:** read reports; fix root cause; expand scope only when needed.
+* **Iterate:** keep momentum; escalate only when blocked or irreversible.
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
@@ -293,17 +357,12 @@ It is illegal to `-q` when running tests!
 ## Testing Strategy
 
 * **Prefer module tests you touched:** `-pl <module>`
-* **Narrow further** to a class/method for tight loops; then broaden to the module.
-* **Expand scope** when:
-
-    * Your change crosses module boundaries, or
-    * Neighbor module failures indicate integration impact.
+* **Narrow further** to a class/method; then broaden to the module.
+* **Expand scope** when changes cross boundaries or neighbor modules fail.
 * **Read reports**
-
     * Surefire (unit): `target/surefire-reports/`
     * Failsafe (IT): `target/failsafe-reports/`
 * **Helpful flags**
-
     * `-Dtest=Class#method` (unit selection)
     * `-Dit.test=ITClass#method` (integration selection)
     * `-DtrimStackTrace=false` (full traces)
@@ -311,156 +370,53 @@ It is illegal to `-q` when running tests!
     * `-DfailIfNoTests=false` (when selecting a class that has no tests on some platforms)
 
 ### Optional: Redirect test stdout/stderr to files
-
-To help automated agents inspect what a test printed to the console, you may redirect `System.out`/`System.err` to per‑class files generated by Surefire/Failsafe. This is **optional** and should be used only when it aids triage—house rules still apply (no `-am` with tests, no `-q`).
-
-**Unit tests (Surefire):**
-
 ```bash
 mvn -o -pl <module> -Dtest=ClassName[#method] -Dmaven.test.redirectTestOutputToFile=true verify | tail -500
-```
+````
 
-Logs will appear under:
+Logs under:
 
 ```
 <module>/target/surefire-reports/ClassName-output.txt
 ```
 
-**Integration tests (Failsafe):**
-
-```bash
-mvn -o -pl <module> -Dit.test=ITClassName[#method] -Dmaven.test.redirectTestOutputToFile=true verify | tail -500
-```
-
-Logs will appear under:
-
-```
-<module>/target/failsafe-reports/ITClassName-output.txt
-```
-
-Notes:
-* Capture is **per test class**, not per method. Multiple methods in the same class share one `*-output.txt`.
-* Only output actually written to the console is captured. If your logging configuration writes solely to files, you won’t see it here.
-* Continue to include the normal **Evidence** snippet from the Surefire/Failsafe report. You may additionally quote lines from the corresponding `*-output.txt` when useful for debugging.
+(Use similarly for Failsafe via `-Dit.test=`.)
 
 ---
 
 ## Assertions: Make invariants explicit
 
-Assertions are executable claims about what must be true. They’re the fastest way to surface “impossible” states and to localize bugs at the line that crossed a boundary it had no business crossing. Use them both as **temporary tripwires** during investigation and as **permanent contracts** once an invariant is known to matter.
+Assertions are executable claims about what must be true. Use **temporary tripwires** during investigation and **permanent contracts** once an invariant matters.
 
-**Two useful flavors**
-
-* **Temporary tripwires (debug asserts):** Add while hunting a failing test or weird behavior. Keep them cheap, contextual, and local to the suspect path. Remove after the mystery is solved **or** convert to permanent checks if the invariant is genuinely important.
-* **Permanent contracts:** Encode **preconditions** (valid inputs), **postconditions** (valid outputs), and **invariants** (state that must always hold). These stay and prevent regressions.
-
-**Where to add assertions**
-
-* At **module boundaries** and **after parsing/external calls** (validate assumptions about returned/decoded data).
-* Around **state transitions** (illegal transitions should fail loudly).
-* In **concurrency hotspots** (e.g., “lock must be held”, “no concurrent mutation”).
-* Before/after **caching, batching, or memoization** (keys, sizes, ordering, monotonicity).
-* For **exhaustive enums** in `switch` statements (treat unexpected values as hard errors).
-
-**How to write good assertions**
-
-* One fact per assert. Fail **fast**, fail **usefully**.
-* Include **stable context** in the message (ids, sizes, states) so the failure is self‑explanatory.
-* Avoid side effects in the condition or message. Assertions may be disabled in some runtimes.
-* Keep them **cheap**: no I/O, heavy allocations, or deep logging in the message.
-* Don’t use asserts for **user‑facing validation**. Raise exceptions for expected bad inputs.
+* One fact per assert; fail fast and usefully.
+* Include stable context in messages; avoid side effects.
+* Keep asserts cheap; don’t replace user input validation with asserts.
 
 **Java specifics**
 
-* **Enable VM assertions in tests.** Tests must run with `-ea` so `assert` is active.
-* Use **`assert`** for debug‑only invariants that “cannot happen.” Use **exceptions** for runtime guarantees:
+* Enable VM assertions in tests (`-ea`).
+* Use exceptions for runtime guarantees; `assert` for “cannot happen”.
 
-    * Preconditions: `IllegalArgumentException` / `Objects.requireNonNull` (or Guava `Preconditions` if present).
-    * Invariants: `IllegalStateException`.
-* Prefer treating unexpected enum values as **hard errors** rather than adding a quiet `default` path.
-
-**Concrete examples**
-
-Precondition (permanent)
-
-```java
-void setPort(int port) {
-  if (port < 1 || port > 65_535) {
-    throw new IllegalArgumentException("port out of range: " + port);
-  }
-  this.port = port;
-}
-```
-
-Invariant (permanent)
-
-```java
-void advance(State next) {
-  if (!allowedTransitions.get(state).contains(next)) {
-    throw new IllegalStateException("Illegal transition " + state + " → " + next);
-  }
-  state = next;
-}
-```
-
-Debug tripwire (temporary; remove or convert later)
-
-```java
-// Narrow a flaky failure around ordering
-assert isSorted(results) : "unsorted results, size=" + results.size() + " ids=" + ids(results);
-```
-
-Unreachable (hard error)
-
-```java
-switch (kind) {
-  case A: return handleA();
-  case B: return handleB();
-  default:
-    throw new IllegalStateException("Unhandled kind: " + kind);
-}
-```
-
-Concurrency assumption
-
-```java
-synchronized void put(String k, String v) {
-  assert Thread.holdsLock(this) : "put must hold instance monitor";
-  // ...
-}
-```
-
-House rule: Asserts are allowed and encouraged. Removing or weakening an assertion to “make it pass” is strictly forbidden — fix the cause, not the guardrail.
+(Concrete examples omitted here for brevity; keep your current patterns.)
 
 ---
 
 ## Triage Playbook
 
-* **Missing dep/plugin offline**
-
-    * Remedy: **rerun the exact command without `-o`** once to fetch; then return offline.
-* **Compilation errors**
-
-    * Fix imports, generics, visibility; re‑run quick install (skip tests) in the **module**.
-* **Flaky/slow tests**
-
-    * Run the specific failing test; read its report; stabilize root cause before broad runs.
-* **Formatting failures**
-
-    * Run formatter/import/XML sort; re‑verify.
-* **License header missing**
-
-    * Add header for **new** files only (see “Source File Headers”); **do not** change years on existing files.
+* **Missing dep/plugin offline:** rerun the exact command once **without** `-o`, then return offline.
+* **Compilation errors:** fix imports/generics/visibility; quick install in the module.
+* **Flaky/slow tests:** run the specific failing test; stabilize root cause before broad runs.
+* **Formatting failures:** run formatter/import/XML sort; re‑verify.
+* **License header missing:** add for **new** files only; do not change years on existing files.
 
 ---
 
 ## Code Formatting
 
-* **Always run before finalizing:**
+* Always run before finalizing:
 
     * `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
-* **Style:** no wildcard imports; 120‑char width; curly braces always; LF line endings.
-* **Tip:** formatting/import sort may be validated during `verify`. Running the commands proactively avoids CI/style failures.
+* Style: no wildcard imports; 120‑char width; curly braces always; LF endings.
 
 ---
 
@@ -481,8 +437,6 @@ Use this exact header for **new Java files only** (replace `${year}` with curren
  *******************************************************************************/
 ```
 
-Use this exact header. Be very precise.
-
 Do **not** modify existing headers’ years.
 
 ---
@@ -491,50 +445,35 @@ Do **not** modify existing headers’ years.
 
 * **Format:** `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 * **Compile (fast path):** `mvn -o -Pquick install | tail -200`
-* **Tests (targeted):** `mvn -o -pl <module> verify | tail -500` (broaden scope if needed)
-* **Reports:** zero new failures in `target/surefire-reports/` or `target/failsafe-reports/`, or explain precisely.
-* **Evidence:** include pre‑fix failing snippet and post‑fix passing summary.
+* **Tests (targeted):** `mvn -o -pl <module> verify | tail -500` (broaden as needed)
+* **Reports:** zero new failures in Surefire/Failsafe, or explain precisely.
+* **Evidence:** Routine A — failing pre‑fix + passing post‑fix.
+  Routine B — **pre/post green** from same selection + **Hit Proof**.
 
 ---
 
 ## Branching & Commit Conventions
 
-- Branch names: start with `GH-XXXX` where `XXXX` is the GitHub issue number. Prefer a short, kebab‑case slug after the number when helpful, e.g., `GH-1234-add-trig-writer-check`.
-- Commit messages: start with the same prefix, `GH-XXXX <short summary>`, on every commit in the branch.
-- Keep summaries concise, in imperative mood (e.g., “Fix NPE in TriG writer”).
-- Example:
-  - Branch: `GH-1234-add-shacl-validation-metric`
-  - Commit: `GH-1234 Fix NPE when serializing empty graph`
+* Branch names: start with `GH-XXXX` (GitHub issue number). Optional short slug, e.g., `GH-1234-trig-writer-check`.
+* Commit messages: `GH-XXXX <short imperative summary>` on every commit.
 
 ---
 
 ## Branch & PR Workflow (Agent)
 
-- Confirm issue number first (mandatory): before creating a branch, pause and request/confirm the GitHub issue number. Do not proceed to branch creation until the issue number is provided or confirmed.
-- Name branch: `GH-<issue>-<short-slug>` (kebab‑case slug).
-- Create branch: `git checkout -b GH-XXXX-your-slug`.
-- Stage changes: `git add -A` (ensure new Java files have the required header).
-- Optional but recommended: run format + quick install.
-  - `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
-  - `mvn -o -Pquick install | tail -200`
-- Commit: `git commit -m "GH-XXXX <short imperative summary>"`.
-- Push branch: `git push -u origin GH-XXXX-your-slug`.
-- Create PR using default template:
-  - Preferred: `gh pr create --title "GH-XXXX <summary>" --body-file .github/pull_request_template.md`
-  - Fallback: `gh pr create --title "GH-XXXX <summary>" --body "$(cat .github/pull_request_template.md)"`
-- Immediately fill the template (do not leave placeholders):
-  - Set `GitHub issue resolved: #XXXX`.
-  - Write a short, accurate change summary (what/why).
-  - Tick applicable checklist items only (self-contained, tests, squashed, commit message prefix, formatting if run).
-  - Include `Fixes #XXXX` to auto-close the issue on merge.
-- Target the repo default branch (e.g., `origin/HEAD`).
+* Confirm issue number first (mandatory).
+* Branch: `git checkout -b GH-XXXX-your-slug`
+* Stage: `git add -A` (ensure new Java files have the required header).
+* Optional: formatter + quick install.
+* Commit: `git commit -m "GH-XXXX <short imperative summary>"`
+* Push & PR: use the default template; fill all fields; include `Fixes #XXXX`.
 
 ---
 
 ## Navigation & Search
 
-* Fast file search: `rg --files`
-* Fast content search: `rg -n "<pattern>"`
+* Files: `rg --files`
+* Content: `rg -n "<pattern>"`
 * Read big files in chunks:
 
     * `sed -n '1,200p' path/to/File.java`
@@ -544,29 +483,17 @@ Do **not** modify existing headers’ years.
 
 ## Autonomy Rules (Act > Ask)
 
-* **Default:** act with assumptions. Document assumptions in your plan and final answer.
-* **Keep going:** chain steps without waiting for permission; send short progress updates before long actions.
-* **Ask only when:**
+* **Default:** act with assumptions; document them.
+* **Keep going:** chain steps; short progress updates before long actions.
+* **Ask only when:** blocked by sandbox/approvals/network, or change is destructive/irreversible, or impacts public APIs/dependencies/licensing.
+* **Prefer reversible moves:** smallest local change that unblocks progress; validate with targeted tests first.
 
-    * Blocked by sandbox/approvals/network policy or missing secrets.
-    * The decision is destructive/irreversible, repo‑wide, or impacts public APIs.
-    * Adding dependencies, changing build profiles, or altering licensing.
-* **Prefer reversible moves:** take the smallest local change that unblocks progress; validate with targeted tests before expanding scope.
-* **Choose defaults**
+**Defaults**
 
-    * **Tests:** start with `-pl <module>`, then `-Dtest=Class#method` / `-Dit.test=ITClass#method`.
-    * **Build:** use `-o` quick/profiled commands; briefly drop `-o` to fetch missing deps, then return offline.
-    * **Formatting:** run formatter/impsort/xml‑format proactively before verify.
-    * **Reports:** read surefire/failsafe locally; expand scope only when necessary.
-* **Error handling**
-
-    * On compile/test failure: fix root cause locally, rerun targeted tests, then broaden.
-    * On flaky tests: rerun class/method; stabilize cause before repo‑wide runs.
-    * On formatting/license issues: apply prescribed commands/headers immediately.
-* **Communication**
-
-    * **Preambles:** 1–2 sentences grouping upcoming actions.
-    * **Updates:** inform to maintain visibility; do **not** request permission unless in “Ask only when” above.
+* **Tests:** start with `-pl <module>`, then `-Dtest=Class#method` / `-Dit.test=ITClass#method`.
+* **Build:** use `-o`; drop `-o` once only to fetch; return offline.
+* **Formatting:** run formatter/import/XML before verify.
+* **Reports:** read surefire/failsafe locally; expand scope only when necessary.
 
 ---
 
@@ -576,36 +503,31 @@ Do **not** modify existing headers’ years.
 * **Files touched:** list file paths.
 * **Commands run:** key build/test commands.
 * **Verification:** which tests passed, where you checked reports.
-* **Evidence:** failing output (pre‑fix) and passing output (post‑fix) snippets.
-* **Assumptions:** key assumptions and autonomous decisions you made.
+* **Evidence:**
+  *Routine A:* failing output (pre‑fix) and passing output (post‑fix).
+  *Routine B:* pre‑ and post‑green snippets from the **same selection** + **Hit Proof**.
+  *Routine C:* artifacts from investigation (logs/notes/measurements) and proposed next steps.
+* **Assumptions:** key assumptions and autonomous decisions.
 * **Limitations:** anything left or risky edge cases.
-* **Next steps:** optional suggestions for follow‑ups.
+* **Next steps:** optional follow‑ups.
 
 ---
 
 ## Running Tests
 
-* By module:
-
-    * `mvn -o -pl core/sail/shacl verify | tail -500`
-* Entire repo:
-
-    * `mvn -o verify` (long; only when appropriate)
+* By module: `mvn -o -pl core/sail/shacl verify | tail -500`
+* Entire repo: `mvn -o verify` (long; only when appropriate)
 * Slow tests (entire repo):
-
-    * `mvn -o verify -PslowTestsOnly,-skipSlowTests | tail -500`
+  `mvn -o verify -PslowTestsOnly,-skipSlowTests | tail -500`
 * Slow tests (by module):
-
-    * `mvn -o -pl <module> verify -PslowTestsOnly,-skipSlowTests | tail -500`
+  `mvn -o -pl <module> verify -PslowTestsOnly,-skipSlowTests | tail -500`
 * Slow tests (specific test):
 
-  * `mvn -o -pl core/sail/shacl -PslowTestsOnly,-skipSlowTests -Dtest=ClassName#method verify | tail -500`
+    * `mvn -o -pl core/sail/shacl -PslowTestsOnly,-skipSlowTests -Dtest=ClassName#method verify | tail -500`
 * Integration tests (entire repo):
-
-    * `mvn -o verify -PskipUnitTests | tail -500`
+  `mvn -o verify -PskipUnitTests | tail -500`
 * Integration tests (by module):
-
-    * `mvn -o -pl <module> verify -PskipUnitTests | tail -500`
+  `mvn -o -pl <module> verify -PskipUnitTests | tail -500`
 * Useful flags:
 
     * `-Dtest=ClassName`
@@ -618,23 +540,49 @@ Do **not** modify existing headers’ years.
 ## Build
 
 * **Build without tests (fast path):**
-
-    * `mvn -o -Pquick install`
+  `mvn -o -Pquick install`
 * **Verify with tests:**
-
-    * Targeted module(s): `mvn -o -pl <module> verify`
-    * Entire repo: `mvn -o verify` (use only when appropriate)
+  Targeted module(s): `mvn -o -pl <module> verify`
+  Entire repo: `mvn -o verify` (use judiciously)
 * **When offline fails due to missing deps:**
-
-    * Re‑run the **exact** command **without** `-o` once to fetch, then return to `-o`.
+  Re‑run the **exact** command **without** `-o` once to fetch, then return to `-o`.
 
 ---
 
-## Prohibited Misinterpretations 
+## Using JaCoCo (Coverage)
 
-* A user stack trace, reproduction script, or verbal description **is not evidence**. You must implement the smallest failing test **inside this repo**.
-* “Obvious” contract violations (e.g., iterator returns `null`) still require a failing test first. Assumptions are not substitutes for evidence.
-* “Quick fixes” are not quick if they bypass the workflow. They create audit gaps and regressions.
+JaCoCo is configured via the `jacoco` Maven profile in the root POM. Surefire/Failsafe honor the prepared agent `argLine`, so no extra flags are required beyond `-Pjacoco`.
+
+- Run with coverage
+    - Module: `mvn -o -pl <module> -Pjacoco verify | tail -500`
+    - Class: `mvn -o -pl <module> -Pjacoco -Dtest=ClassName verify | tail -500`
+    - Method: `mvn -o -pl <module> -Pjacoco -Dtest=ClassName#method verify | tail -500`
+
+- Where to find reports (per module)
+    - Exec data: `<module>/target/jacoco.exec`
+    - HTML report: `<module>/target/site/jacoco/index.html`
+    - XML report: `<module>/target/site/jacoco/jacoco.xml`
+
+- Check if a specific test covers code X
+    - Run only that test (class or method) with `-Dtest=...` (see above) and `-Pjacoco`.
+    - Open the HTML report and navigate to the class/method of interest; non-zero line/branch coverage indicates the selected test touched it.
+    - For multiple tests, run them in small subsets to localize coverage quickly.
+
+- Troubleshooting
+    - If you see “Skipping JaCoCo execution due to missing execution data file”, ensure you passed `-Pjacoco` and ran the install step first.
+    - If offline resolution fails for the JaCoCo plugin, rerun the exact command once without `-o`, then return offline.
+
+- Notes
+    - The default JaCoCo reports do not list “which individual tests” hit each line. Use single-test runs to infer per-test coverage. If you need true per-test mapping, add a JUnit 5 extension that sets a JaCoCo session per test and writes per-test exec files.
+    - Do not use `-am` when running tests; keep runs targeted by module/class/method.
+
+---
+
+## Prohibited Misinterpretations
+
+* A user stack trace, reproduction script, or verbal description **is not evidence** for behavior‑changing work. You must implement the smallest failing test **inside this repo**.
+* For Routine B, a stack trace is neither required nor sufficient; **Hit Proof** plus **pre/post green** snippets are mandatory.
+* Routine C must not change production code.
 
 ---
 
