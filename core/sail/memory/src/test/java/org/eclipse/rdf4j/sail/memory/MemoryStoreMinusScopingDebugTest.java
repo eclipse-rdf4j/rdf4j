@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.memory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -113,6 +114,22 @@ public class MemoryStoreMinusScopingDebugTest {
 			try (TupleQueryResult evaluate = tq.evaluate()) {
 				assertFalse(evaluate.hasNext(),
 						"The query should not return a result: " + Arrays.toString(evaluate.stream().toArray()));
+			}
+		}
+	}
+
+	@Test
+	public void testEmptyUnion() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+
+			String query = "PREFIX : <http://example.org/> "
+					+ "SELECT ?visibility WHERE {"
+					+ "OPTIONAL { SELECT ?var WHERE { :s a :MyType . BIND (:s as ?var ) .} } ."
+					+ "BIND (IF(BOUND(?var), 'VISIBLE', 'HIDDEN') as ?visibility)"
+					+ "}";
+			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+				assertNotNull(result);
+				assertFalse(result.hasNext());
 			}
 		}
 	}
