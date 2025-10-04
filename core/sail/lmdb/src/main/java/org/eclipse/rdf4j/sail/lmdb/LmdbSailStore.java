@@ -454,19 +454,27 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 
-			// Handle the case where no contexts are specified (query all contexts)
+			// Handle context selection mirroring getStatements semantics
 			if (contexts.length == 0) {
+				// wildcard across all contexts
 				totalSize = tripleStore.cardinalityExact(txn, subjID, predID, objID, LmdbValue.UNKNOWN_ID, false);
 			} else {
 				for (Resource context : contexts) {
-					long contextID = LmdbValue.UNKNOWN_ID;
-					if (context != null) {
-						contextID = valueStore.getId(context);
-						if (contextID == LmdbValue.UNKNOWN_ID) {
-							return 0;
+					Long contextIDToCount = null;
+					if (context == null) {
+						// default graph
+						contextIDToCount = 0L;
+					} else if (!context.isTriple()) {
+						long contextID = valueStore.getId(context);
+						// skip unknown (non-existent) contexts; do not early-return
+						if (contextID != LmdbValue.UNKNOWN_ID) {
+							contextIDToCount = contextID;
 						}
 					}
-					totalSize += tripleStore.cardinalityExact(txn, subjID, predID, objID, contextID, false);
+
+					if (contextIDToCount != null) {
+						totalSize += tripleStore.cardinalityExact(txn, subjID, predID, objID, contextIDToCount, false);
+					}
 				}
 			}
 			return totalSize;
