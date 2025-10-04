@@ -1069,9 +1069,11 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			for (String encodedContext : Protocol.encodeContexts(contexts)) {
 				url.addParameter(Protocol.CONTEXT_PARAM_NAME, encodedContext);
 			}
-			if (baseURI != null && !baseURI.trim().isEmpty()) {
-				String encodedBaseURI = Protocol.encodeValue(SimpleValueFactory.getInstance().createIRI(baseURI));
-				url.setParameter(Protocol.BASEURI_PARAM_NAME, encodedBaseURI);
+			if (baseURI != null) {
+				String trimmedBaseURI = baseURI.trim();
+				if (!trimmedBaseURI.isEmpty()) {
+					url.setParameter(Protocol.BASEURI_PARAM_NAME, trimmedBaseURI);
+				}
 			}
 			if (preserveNodeIds) {
 				url.setParameter(Protocol.PRESERVE_BNODE_ID_PARAM_NAME, "true");
