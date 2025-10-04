@@ -107,6 +107,34 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
+	public void testSizeNullContextCountsDefaultGraphOnly() {
+		try (RepositoryConnection conn = repo.getConnection()) {
+			assertEquals("size(null) must count default graph only", 1, conn.size((Resource) null));
+		}
+	}
+
+	@Test
+	public void testSizeUnknownContextIsZero() {
+		try (RepositoryConnection conn = repo.getConnection()) {
+			assertEquals("size(unknownCtx) must be zero", 0, conn.size(CTX_INV));
+		}
+	}
+
+	@Test
+	public void testSizeMixedValidAndUnknownSkipsUnknown() {
+		try (RepositoryConnection conn = repo.getConnection()) {
+			assertEquals("size(valid,unknown) must equal size(valid)", 1, conn.size(CTX_1, CTX_INV));
+		}
+	}
+
+	@Test
+	public void testSizeNullAndValidCountsUnion() {
+		try (RepositoryConnection conn = repo.getConnection()) {
+			assertEquals("size(null,valid) must count default + valid", 2, conn.size((Resource) null, CTX_1));
+		}
+	}
+
+	@Test
 	public void testRemoveMultipleValidContext() {
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.remove((IRI) null, null, null, CTX_1, CTX_2);
