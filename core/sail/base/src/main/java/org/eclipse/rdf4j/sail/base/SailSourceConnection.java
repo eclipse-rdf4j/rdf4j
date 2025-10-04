@@ -1048,7 +1048,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Experimental
 	protected long getSizeFromSnapshot(final boolean includeInferred, final Resource... contexts) throws SailException {
 		try (SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred))) {
-			return branch.dataset(getIsolationLevel()).size(null, null, null, contexts);
+			try (SailDataset dataset = branch.dataset(getIsolationLevel())) {
+				return dataset.size(null, null, null, contexts);
+			}
 		}
 	}
 
