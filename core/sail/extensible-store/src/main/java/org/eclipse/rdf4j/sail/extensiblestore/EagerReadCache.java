@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 import org.slf4j.Logger;
@@ -166,7 +167,7 @@ public class EagerReadCache implements DataStructureInterface {
 				Thread.sleep(1);
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
-				throw new SailException(e);
+				throw new InterruptedSailException(e);
 			}
 
 			System.gc();
@@ -175,7 +176,7 @@ public class EagerReadCache implements DataStructureInterface {
 				Thread.sleep(1);
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
-				throw new SailException(e);
+				throw new InterruptedSailException(e);
 			}
 
 			return getFreeToAllocateMemory() < MIN_AVAILABLE_MEM;

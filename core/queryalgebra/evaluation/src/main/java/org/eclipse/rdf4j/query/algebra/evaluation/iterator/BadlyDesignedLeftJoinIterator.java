@@ -15,13 +15,10 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 /**
  * @author Arjohn Kampman
@@ -40,9 +37,13 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 	 * Constructors *
 	 *--------------*/
 
-	public BadlyDesignedLeftJoinIterator(EvaluationStrategy strategy, LeftJoin join, BindingSet inputBindings,
-			Set<String> problemVars, QueryEvaluationContext context) throws QueryEvaluationException {
-		super(strategy, join, getFilteredBindings(inputBindings, problemVars), context);
+	public BadlyDesignedLeftJoinIterator(
+			EvaluationStrategy strategy,
+			LeftJoin join,
+			BindingSet inputBindings,
+			Set<String> problemVars,
+			QueryEvaluationStep rightEvaluationStep) throws QueryEvaluationException {
+		super(strategy, join, getFilteredBindings(inputBindings, problemVars), rightEvaluationStep);
 		this.inputBindings = inputBindings;
 		this.problemVars = problemVars;
 
@@ -52,10 +53,12 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 	 * Methods *
 	 *---------*/
 
-	public BadlyDesignedLeftJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
-			QueryValueEvaluationStep joinCondition, BindingSet inputBindings, Set<String> problemVars)
+	public BadlyDesignedLeftJoinIterator(QueryEvaluationStep left,
+			BindingSet inputBindings,
+			Set<String> problemVars,
+			QueryEvaluationStep rightEvaluationStep)
 			throws QueryEvaluationException {
-		super(left, right, joinCondition, getFilteredBindings(inputBindings, problemVars), problemVars);
+		super(left, getFilteredBindings(inputBindings, problemVars), rightEvaluationStep);
 		this.inputBindings = inputBindings;
 		this.problemVars = problemVars;
 	}
@@ -65,7 +68,7 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 		BindingSet result = super.getNextElement();
 
 		// Ignore all results that are not compatible with the input bindings
-		while (result != null && !QueryResults.bindingSetsCompatible(inputBindings, result)) {
+		while (result != null && !inputBindings.isCompatible(result)) {
 			result = super.getNextElement();
 		}
 

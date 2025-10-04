@@ -8,4 +8,4 @@ For a complete overview, see [all issues fixed in ${MVN_VERSION_RELEASE}](https:
 
 ### Acknowledgements
 
-This release was made possible by contributions from ???
+This release was made possible by contributions from ${LIST_OF_CONTRIBUTORS}.

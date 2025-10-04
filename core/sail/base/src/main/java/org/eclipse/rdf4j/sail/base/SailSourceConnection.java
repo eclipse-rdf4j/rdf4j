@@ -633,7 +633,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				explicitSinks.put(null, source.sink(getIsolationLevel()));
 			}
 			assert explicitSinks.containsKey(op);
-			remove(subj, pred, obj, datasets.get(op), explicitSinks.get(op), contexts);
+			remove(subj, pred, obj, false, datasets.get(op), explicitSinks.get(op), contexts);
 		}
 		removeStatementsInternal(subj, pred, obj, contexts);
 	}
@@ -724,7 +724,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 						// only report inferred statements that don't already
 						// exist
 						addStatementInternal(subj, pred, obj, contexts);
-						notifyStatementAdded(vf.createStatement(subj, pred, obj));
+						notifyStatementAdded(vf.createStatement(subj, pred, obj), true);
 						setStatementsAdded();
 						modified = true;
 					}
@@ -747,7 +747,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 							// only report inferred statements that don't
 							// already exist
 							addStatementInternal(subj, pred, obj, ctx);
-							notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
+							notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx), true);
 							setStatementsAdded();
 							modified = true;
 						}
@@ -763,9 +763,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		if (contexts.length == 0 || (contexts.length == 1 && contexts[0] == null)) {
 			if (hasConnectionListeners()) {
 				if (!hasStatement(dataset, subj, pred, obj, NULL_CTX)) {
-					notifyStatementAdded(vf.createStatement(subj, pred, obj));
+					notifyStatementAdded(vf.createStatement(subj, pred, obj), false);
 				} else if (sink instanceof Changeset && ((Changeset) sink).hasDeprecated(subj, pred, obj, NULL_CTX)) {
-					notifyStatementAdded(vf.createStatement(subj, pred, obj));
+					notifyStatementAdded(vf.createStatement(subj, pred, obj), false);
 				}
 
 				// always approve the statement, even if it already exists
@@ -789,10 +789,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 				if (hasConnectionListeners()) {
 					if (!hasStatement(dataset, subj, pred, obj, contextsToCheck)) {
-						notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
+						notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx), false);
 					} else if (sink instanceof Changeset
 							&& ((Changeset) sink).hasDeprecated(subj, pred, obj, contextsToCheck)) {
-						notifyStatementAdded(vf.createStatement(subj, pred, obj));
+						notifyStatementAdded(vf.createStatement(subj, pred, obj), false);
 					}
 					sink.approve(subj, pred, obj, ctx);
 				} else {
@@ -816,7 +816,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				explicitOnlyDataset = branch(IncludeInferred.explicitOnly).dataset(level);
 			}
 			removeStatementsInternal(subj, pred, obj, contexts);
-			boolean removed = remove(subj, pred, obj, inferredOnlyDataset, inferredOnlySink, contexts);
+			boolean removed = remove(subj, pred, obj, true, inferredOnlyDataset, inferredOnlySink, contexts);
 			if (removed) {
 				setStatementsRemoved();
 			}
@@ -824,7 +824,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		}
 	}
 
-	private boolean remove(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink, Resource... contexts)
+	private boolean remove(Resource subj, IRI pred, Value obj, boolean inferred, SailDataset dataset, SailSink sink,
+			Resource... contexts)
 			throws SailException {
 
 		// Use deprecateByQuery if we don't need to notify anyone of which statements have been deleted.
@@ -840,7 +841,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				Statement st = iter.next();
 				sink.deprecate(st);
 				statementsRemoved = true;
-				notifyStatementRemoved(st);
+				notifyStatementRemoved(st, inferred);
 			}
 		}
 		return statementsRemoved;
@@ -858,7 +859,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			}
 			assert explicitSinks.containsKey(null);
 			if (this.hasConnectionListeners()) {
-				remove(null, null, null, datasets.get(null), explicitSinks.get(null), contexts);
+				remove(null, null, null, false, datasets.get(null), explicitSinks.get(null), contexts);
 			}
 			explicitSinks.get(null).clear(contexts);
 		}
@@ -877,7 +878,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				explicitOnlyDataset = branch(IncludeInferred.explicitOnly).dataset(level);
 			}
 			if (this.hasConnectionListeners()) {
-				remove(null, null, null, inferredOnlyDataset, inferredOnlySink, contexts);
+				remove(null, null, null, true, inferredOnlyDataset, inferredOnlySink, contexts);
 			}
 			inferredOnlySink.clear(contexts);
 			setStatementsRemoved();

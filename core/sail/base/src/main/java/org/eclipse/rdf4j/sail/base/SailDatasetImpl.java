@@ -46,7 +46,6 @@ class SailDatasetImpl implements SailDataset {
 
 	private static final EmptyIteration<Triple> TRIPLE_EMPTY_ITERATION = new EmptyIteration<>();
 	private static final EmptyIteration<Namespace> NAMESPACES_EMPTY_ITERATION = new EmptyIteration<>();
-	private static final EmptyIteration<Statement> STATEMENT_EMPTY_ITERATION = new EmptyIteration<>();
 
 	/**
 	 * {@link SailDataset} of the backing {@link SailSource}.
@@ -286,7 +285,7 @@ class SailDatasetImpl implements SailDataset {
 		} else if (iter != null) {
 			return iter;
 		} else {
-			return STATEMENT_EMPTY_ITERATION;
+			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
 		}
 	}
 

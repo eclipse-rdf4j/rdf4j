@@ -142,6 +142,7 @@ public class TransactionValidationLimitTest {
 				try {
 					connection.commit();
 				} catch (RepositoryException repositoryException) {
+					connection.rollback();
 					throw repositoryException.getCause();
 				}
 			});

@@ -201,6 +201,12 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	}
 
 	@Override
+	protected void closeInternal() throws SailException {
+		super.closeInternal();
+		// release thread-local pool
+		Pool.release();
+	}
+	@Override
 	protected long sizeInternal(Resource... contexts) throws SailException {
 		return super.getSizeFromSnapshot(false, contexts);
 	}

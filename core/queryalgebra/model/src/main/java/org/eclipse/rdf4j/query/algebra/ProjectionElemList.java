@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -148,7 +149,7 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 			clone.elements[i].setParentNode(clone);
 		}
 
-		clone.elementsList = List.of(clone.elements);
+		clone.elementsList = Arrays.asList(clone.elements);
 
 		return clone;
 	}

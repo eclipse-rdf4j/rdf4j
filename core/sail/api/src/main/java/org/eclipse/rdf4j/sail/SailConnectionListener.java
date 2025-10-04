@@ -13,12 +13,32 @@ package org.eclipse.rdf4j.sail;
 import org.eclipse.rdf4j.model.Statement;
 
 public interface SailConnectionListener {
+	/**
+	 * Notifies the listener that a statement has been added in a transaction that it has registered itself with.
+	 *
+	 * @param st       The statement that was added.
+	 * @param inferred The flag that indicates whether the statement is inferred or explicit.
+	 */
+	default void statementAdded(Statement st, boolean inferred) {
+		statementAdded(st);
+	}
+
+	/**
+	 * Notifies the listener that a statement has been removed in a transaction that it has registered itself with.
+	 *
+	 * @param st       The statement that was removed.
+	 * @param inferred The flag that indicates whether the statement was inferred or explicit.
+	 */
+	default void statementRemoved(Statement st, boolean inferred) {
+		statementRemoved(st);
+	}
 
 	/**
 	 * Notifies the listener that a statement has been added in a transaction that it has registered itself with.
 	 *
 	 * @param st The statement that was added.
 	 */
+	@Deprecated(since = "5.2.0", forRemoval = true)
 	void statementAdded(Statement st);
 
 	/**
@@ -26,5 +46,6 @@ public interface SailConnectionListener {
 	 *
 	 * @param st The statement that was removed.
 	 */
+	@Deprecated(since = "5.2.0", forRemoval = true)
 	void statementRemoved(Statement st);
 }

@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.sail.SailException;
@@ -70,7 +71,7 @@ class SailSourceBranch implements SailSource {
 
 	/**
 	 * The {@link Model} instances that should be used to store {@link SailSink#approve(Resource, IRI, Value, Resource)}
-	 * and {@link SailSink#deprecate(Resource, IRI, Value, Resource)} statements.
+	 * and {@link SailSink#deprecate(Statement)} statements.
 	 */
 	private final ModelFactory modelFactory;
 
@@ -206,22 +207,60 @@ class SailSourceBranch implements SailSource {
 			 */
 			private void removeThisFromPendingWithoutCausingDeadlock() {
 				long tryLockMillis = 10;
+				boolean interrupted = false;
 				while (pending.contains(this)) {
 					boolean locked = false;
 					try {
-						locked = semaphore.tryLock(tryLockMillis *= 2, TimeUnit.MILLISECONDS);
+						try {
+							locked = semaphore.tryLock(500, TimeUnit.MILLISECONDS);
+						} catch (InterruptedException e) {
+							interrupted = true;
+							try {
+								// retry once if interrupted
+								locked = semaphore.tryLock(500, TimeUnit.MILLISECONDS);
+								if (locked) {
+									pending.remove(this);
+									break;
+								} else {
+									if (pending.contains(this)) {
+										throw new SailException(
+												"Interrupted while trying to remove Changeset from pending list, giving up.",
+												e);
+									} else {
+										// Changeset was removed from pending by another thread, so we can exit the loop
+										break;
+									}
+
+								}
+							} catch (InterruptedException e1) {
+								if (pending.contains(this)) {
+									throw new SailException(
+											"Interrupted while trying to remove Changeset from pending list, giving up.",
+											e1);
+								} else {
+									// Changeset was removed from pending by another thread, so we can exit the loop
+									break;
+								}
+							}
+						}
 						if (locked) {
 							pending.remove(this);
+							break;
 						}
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
-						throw new SailException(e);
 					} finally {
-						if (locked) {
-							semaphore.unlock();
+						try {
+							if (locked) {
+								semaphore.unlock();
+							}
+						} finally {
+							if (interrupted) {
+								Thread.currentThread().interrupt();
+							}
 						}
+
 					}
 
+					tryLockMillis = Math.min(tryLockMillis * 2, 1000);
 				}
 			}
 
@@ -306,7 +345,7 @@ class SailSourceBranch implements SailSource {
 					prepared = null;
 				}
 			}
-		} catch (SailException e) {
+		} catch (Throwable e) {
 			// clear changes if flush fails
 			changes.clear();
 			prepared = null;

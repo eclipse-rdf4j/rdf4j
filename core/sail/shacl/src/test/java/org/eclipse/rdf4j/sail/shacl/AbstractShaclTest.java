@@ -375,17 +375,21 @@ abstract public class AbstractShaclTest {
 						connection.begin(isolationLevel);
 						connection.prepareUpdate(query).execute();
 						printCurrentState(connection);
-						connection.commit();
-					} catch (RepositoryException sailException) {
-						if (!(sailException.getCause() instanceof ShaclSailValidationException)) {
-							throw sailException;
-						}
+						try {
+							connection.commit();
 
-						Assertions.assertEquals(testCaseQueries.get(testCaseQueries.size() - 1), queryFile,
-								"Validation should only fail on the very last query");
-						exception = true;
-						logger.debug(sailException.getMessage());
-						printResults(sailException);
+						} catch (RepositoryException sailException) {
+							if (!(sailException.getCause() instanceof ShaclSailValidationException)) {
+								throw sailException;
+							}
+
+							Assertions.assertEquals(testCaseQueries.get(testCaseQueries.size() - 1), queryFile,
+									"Validation should only fail on the very last query");
+							exception = true;
+							logger.debug(sailException.getMessage());
+							printResults(sailException);
+							connection.rollback();
+						}
 					}
 				} catch (IOException e) {
 					e.printStackTrace();

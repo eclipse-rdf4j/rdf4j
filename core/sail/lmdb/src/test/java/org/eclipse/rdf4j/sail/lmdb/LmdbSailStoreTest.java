@@ -16,6 +16,8 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.*;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -25,6 +27,8 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -280,6 +284,18 @@ public class LmdbSailStoreTest {
 			Assertions.assertEquals(baseSize, conn2.size(), "conn2 should not see rolled-back additions");
 
 			conn2.commit();
+		}
+	}
+
+	@Test
+	public void testInferredSourceHasEmptyIterationWithoutInferredStatements() throws SailException {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+
+		try (SailDataset dataset = backingStore.getInferredSailSource().dataset(IsolationLevels.NONE);
+				CloseableIteration<? extends Statement> iteration = dataset.getStatements(null, null, null)) {
+			assertTrue(iteration instanceof EmptyIteration);
+			assertFalse(iteration.hasNext());
 		}
 	}
 

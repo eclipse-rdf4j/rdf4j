@@ -82,7 +82,7 @@ class ExclusiveReentrantLockManagerTest {
 
 		assertThat(memoryAppender.countEventsForLogger(ExclusiveReentrantLockManager.class.getName())).isEqualTo(2);
 		memoryAppender.assertContains(
-				"at org.eclipse.rdf4j.common.concurrent.locks.ExclusiveReentrantLockManagerTest.lambda$lock$2",
+				"at org.eclipse.rdf4j.common.concurrent.locks.ExclusiveReentrantLockManagerTest.lambda$lock$",
 				Level.WARN);
 
 	}

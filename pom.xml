@@ -54,22 +54,21 @@
 			<distributionManagement>
 				<snapshotRepository>
 					<id>ossrh</id>
-					<url>https://oss.sonatype.org/content/repositories/snapshots</url>
+					<url>https://central.sonatype.com/repository/maven-snapshots/</url>
 				</snapshotRepository>
 			</distributionManagement>
 			<build>
 				<plugins>
 					<plugin>
-						<groupId>org.sonatype.plugins</groupId>
-						<artifactId>nexus-staging-maven-plugin</artifactId>
-						<version>1.6.13</version>
+						<groupId>org.sonatype.central</groupId>
+						<artifactId>central-publishing-maven-plugin</artifactId>
+						<version>0.7.0</version>
 						<extensions>true</extensions>
 						<configuration>
-							<serverId>ossrh</serverId>
-							<nexusUrl>https://oss.sonatype.org/</nexusUrl>
-							<autoReleaseAfterClose>true</autoReleaseAfterClose>
-							<stagingProgressTimeoutMinutes>120</stagingProgressTimeoutMinutes>
-							<stagingProgressPauseDurationSeconds>10</stagingProgressPauseDurationSeconds>
+							<publishingServerId>central</publishingServerId>
+							<autoPublish>true</autoPublish>
+							<waitUntil>published</waitUntil>
+							<centralSnapshotsUrl>https://central.sonatype.com/repository/maven-snapshots/</centralSnapshotsUrl>
 						</configuration>
 					</plugin>
 					<plugin>
@@ -208,6 +207,7 @@
 				<impsort.skip>true</impsort.skip>
 				<xml-format.skip>true</xml-format.skip>
 				<japicmp.skip>true</japicmp.skip>
+				<enforcer.skip>true</enforcer.skip>
 			</properties>
 		</profile>
 		<profile>
@@ -234,8 +234,8 @@
 					<snapshots>
 						<enabled>true</enabled>
 					</snapshots>
-					<id>oss-sonatype-snapshots</id>
-					<url>https://oss.sonatype.org/content/repositories/snapshots</url>
+					<id>central-sonatype-snapshots</id>
+					<url>https://central.sonatype.com/repository/maven-snapshots/</url>
 				</repository>
 			</repositories>
 		</profile>
@@ -260,6 +260,32 @@
 							<!-- We can safely ignore the restricted label on ES, see: https://github.com/eclipse/rdf4j/pull/4355#issuecomment-1521573125 -->
 							<excludeArtifactIds>elasticsearch</excludeArtifactIds>
 						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+		<profile>
+			<id>jacoco</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.jacoco</groupId>
+						<artifactId>jacoco-maven-plugin</artifactId>
+						<version>0.8.13</version>
+						<executions>
+							<execution>
+								<goals>
+									<goal>prepare-agent</goal>
+								</goals>
+							</execution>
+							<execution>
+								<id>report</id>
+								<phase>verify</phase>
+								<goals>
+									<goal>report</goal>
+								</goals>
+							</execution>
+						</executions>
 					</plugin>
 				</plugins>
 			</build>
@@ -371,13 +397,14 @@
 		<lucene.version>8.9.0</lucene.version>
 		<solr.version>8.9.0</solr.version>
 		<elasticsearch.version>7.15.2</elasticsearch.version>
-		<spring.version>5.3.37</spring.version>
+		<spring.version>5.3.39</spring.version>
 		<guava.version>32.1.3-jre</guava.version>
 		<jmhVersion>1.37</jmhVersion>
 		<servlet.version>4.0.0</servlet.version>
 		<junit.version>5.9.3</junit.version>
 		<jetty.version>9.4.54.v20240208</jetty.version>
 		<netty.version>4.1.111.Final</netty.version>
+		<argLine/>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
@@ -428,10 +455,11 @@
 				<artifactId>commons-cli</artifactId>
 				<version>1.4</version>
 			</dependency>
+			<!-- note this affects the xlsx query result format using apache POI -->
 			<dependency>
 				<groupId>commons-io</groupId>
 				<artifactId>commons-io</artifactId>
-				<version>2.14.0</version>
+				<version>2.18.0</version>
 			</dependency>
 			<dependency>
 				<groupId>commons-codec</groupId>
@@ -446,7 +474,7 @@
 			<dependency>
 				<groupId>org.apache.commons</groupId>
 				<artifactId>commons-lang3</artifactId>
-				<version>3.12.0</version>
+				<version>3.18.0</version>
 			</dependency>
 			<dependency>
 				<groupId>org.apache.httpcomponents</groupId>
@@ -628,7 +656,7 @@
 			<dependency>
 				<groupId>no.hasmac</groupId>
 				<artifactId>hasmac-json-ld</artifactId>
-				<version>0.9.0</version>
+				<version>0.10.1</version>
 			</dependency>
 			<!-- kerby is used by solr-->
 			<dependency>
@@ -654,7 +682,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-assembly-plugin</artifactId>
-					<version>3.6.0</version>
+					<version>3.7.1</version>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
@@ -664,26 +692,25 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-clean-plugin</artifactId>
-					<version>3.3.2</version>
+					<version>3.5.0</version>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-compiler-plugin</artifactId>
-					<version>3.12.1</version>
+					<version>3.14.0</version>
 					<configuration>
 						<fork>false</fork>
-						<encoding>utf8</encoding>
 					</configuration>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-dependency-plugin</artifactId>
-					<version>3.6.1</version>
+					<version>3.8.1</version>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-deploy-plugin</artifactId>
-					<version>3.1.1</version>
+					<version>3.1.4</version>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
@@ -718,7 +745,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-jar-plugin</artifactId>
-					<version>3.3.0</version>
+					<version>3.4.2</version>
 					<configuration>
 						<archive>
 							<manifestEntries>
@@ -750,7 +777,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-javadoc-plugin</artifactId>
-					<version>3.6.3</version>
+					<version>3.11.3</version>
 					<configuration>
 						<encoding>utf8</encoding>
 						<source>11</source>
@@ -790,7 +817,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-source-plugin</artifactId>
-					<version>3.3.0</version>
+					<version>3.3.1</version>
 				</plugin>
 				<plugin>
 					<groupId>org.codehaus.mojo</groupId>
@@ -812,21 +839,21 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-surefire-plugin</artifactId>
-					<version>3.2.5</version>
+					<version>3.5.4</version>
 					<configuration>
-						<encoding>UTF-8</encoding>
-						<argLine>-Xmx2048M</argLine>
+						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
+						<argLine>@{argLine} -Xmx2G</argLine>
 					</configuration>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-failsafe-plugin</artifactId>
-					<version>3.2.5</version>
+					<version>3.5.4</version>
 					<configuration>
-						<encoding>UTF-8</encoding>
 						<forkCount>1</forkCount>
 						<reuseForks>false</reuseForks>
-						<argLine>-Xmx1G</argLine>
+						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
+						<argLine>@{argLine} -Xmx2G</argLine>
 						<includes>
 							<include>**/*IT.java</include>
 						</includes>
@@ -1052,7 +1079,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-install-plugin</artifactId>
-					<version>3.1.1</version>
+					<version>3.1.4</version>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>

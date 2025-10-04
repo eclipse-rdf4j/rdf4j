@@ -17,6 +17,13 @@ import java.io.Serializable;
  */
 public interface Value extends Serializable {
 
+	enum Type {
+		IRI,
+		BNode,
+		Literal,
+		Triple
+	}
+
 	/**
 	 * Check if the object is an instance of the given type. Typically 2x than using instanceof.
 	 * <p>
@@ -70,6 +77,21 @@ public interface Value extends Serializable {
 	 */
 	default boolean isTriple() {
 		return false;
+	}
+
+	default Type getType() {
+
+		if (isIRI()) {
+			return Type.IRI;
+		} else if (isBNode()) {
+			return Type.BNode;
+		} else if (isLiteral()) {
+			return Type.Literal;
+		} else if (isTriple()) {
+			return Type.Triple;
+		} else {
+			throw new IllegalStateException("Unknown value type");
+		}
 	}
 
 	/**

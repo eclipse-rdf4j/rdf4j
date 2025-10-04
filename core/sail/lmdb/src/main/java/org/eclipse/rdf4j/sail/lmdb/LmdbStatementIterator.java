@@ -11,8 +11,9 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.util.NoSuchElementException;
 
-import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -23,7 +24,7 @@ import org.eclipse.rdf4j.sail.SailException;
  * A statement iterator that wraps a RecordIterator containing statement records and translates these records to
  * {@link Statement} objects.
  */
-class LmdbStatementIterator extends LookAheadIteration<Statement> {
+class LmdbStatementIterator extends AbstractCloseableIteration<Statement> {
 
 	/*-----------*
 	 * Variables *
@@ -32,6 +33,7 @@ class LmdbStatementIterator extends LookAheadIteration<Statement> {
 	private final RecordIterator recordIt;
 
 	private final ValueStore valueStore;
+	private Statement nextElement;
 
 	/*--------------*
 	 * Constructors *
@@ -49,7 +51,6 @@ class LmdbStatementIterator extends LookAheadIteration<Statement> {
 	 * Methods *
 	 *---------*/
 
-	@Override
 	public Statement getNextElement() throws SailException {
 		try {
 			long[] quad = recordIt.next();
@@ -85,5 +86,53 @@ class LmdbStatementIterator extends LookAheadIteration<Statement> {
 
 	private SailException causeIOException(IOException e) {
 		return new SailException(e);
+	}
+
+	@Override
+	public final boolean hasNext() {
+		if (isClosed()) {
+			return false;
+		}
+
+		return lookAhead() != null;
+	}
+
+	@Override
+	public final Statement next() {
+		if (isClosed()) {
+			throw new NoSuchElementException("The iteration has been closed.");
+		}
+		Statement result = lookAhead();
+
+		if (result != null) {
+			nextElement = null;
+			return result;
+		} else {
+			throw new NoSuchElementException();
+		}
+	}
+
+	/**
+	 * Fetches the next element if it hasn't been fetched yet and stores it in {@link #nextElement}.
+	 *
+	 * @return The next element, or null if there are no more results.
+	 */
+	private Statement lookAhead() {
+		if (nextElement == null) {
+			nextElement = getNextElement();
+
+			if (nextElement == null) {
+				close();
+			}
+		}
+		return nextElement;
+	}
+
+	/**
+	 * Throws an {@link UnsupportedOperationException}.
+	 */
+	@Override
+	public void remove() {
+		throw new UnsupportedOperationException();
 	}
 }

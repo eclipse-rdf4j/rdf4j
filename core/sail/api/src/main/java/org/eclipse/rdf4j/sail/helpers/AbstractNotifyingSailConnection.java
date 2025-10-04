@@ -48,16 +48,26 @@ public abstract class AbstractNotifyingSailConnection extends AbstractSailConnec
 		return !listeners.isEmpty();
 	}
 
+	@Deprecated(since = "5.2.0", forRemoval = true)
 	protected void notifyStatementAdded(Statement st) {
+		notifyStatementAdded(st, false);
+	}
+
+	protected void notifyStatementAdded(Statement st, boolean inferred) {
 		for (SailConnectionListener listener : listeners) {
-			listener.statementAdded(st);
+			listener.statementAdded(st, inferred);
 		}
 
 	}
 
+	@Deprecated(since = "5.2.0", forRemoval = true)
 	protected void notifyStatementRemoved(Statement st) {
+		notifyStatementRemoved(st, false);
+	}
+
+	protected void notifyStatementRemoved(Statement st, boolean inferred) {
 		for (SailConnectionListener listener : listeners) {
-			listener.statementRemoved(st);
+			listener.statementRemoved(st, inferred);
 		}
 	}
 }

@@ -24,29 +24,38 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.concurrent.locks.StampedLock;
 
+import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TripleStore.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
-import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
+import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBVal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A record iterator that wraps a native LMDB iterator.
  */
 class LmdbRecordIterator implements RecordIterator {
+	private static final Logger log = LoggerFactory.getLogger(LmdbRecordIterator.class);
 	private final Pool pool;
 
 	private final TripleIndex index;
+
+	private final long subj;
+	private final long pred;
+	private final long obj;
+	private final long context;
 
 	private final long cursor;
 
 	private final MDBVal maxKey;
 
-	private final GroupMatcher groupMatcher;
+	private final boolean matchValues;
+	private GroupMatcher groupMatcher;
 
 	private final Txn txnRef;
 
@@ -68,17 +77,24 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private int lastResult;
 
-	private final long[] quad = new long[4];
+	private final long[] quad;
+	private final long[] originalQuad;
 
 	private boolean fetchNext = false;
 
-	private final StampedLock txnLock;
+	private final StampedLongAdderLockManager txnLockManager;
 
 	private final Thread ownerThread = Thread.currentThread();
 
-	LmdbRecordIterator(Pool pool, TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
-		this.pool = pool;
+		this.subj = subj;
+		this.pred = pred;
+		this.obj = obj;
+		this.context = context;
+		this.originalQuad = new long[] { subj, pred, obj, context };
+		this.quad = new long[] { subj, pred, obj, context };
+		this.pool = Pool.get();
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();
 		this.index = index;
@@ -97,17 +113,18 @@ class LmdbRecordIterator implements RecordIterator {
 			this.maxKey = null;
 		}
 
-		boolean matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
-		if (matchValues) {
-			this.groupMatcher = index.createMatcher(subj, pred, obj, context);
-		} else {
-			this.groupMatcher = null;
-		}
+		this.matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
+
 		this.dbi = index.getDB(explicit);
 		this.txnRef = txnRef;
-		this.txnLock = txnRef.lock();
+		this.txnLockManager = txnRef.lockManager();
 
-		long stamp = txnLock.readLock();
+		long readStamp;
+		try {
+			readStamp = txnLockManager.readLock();
+		} catch (InterruptedException e) {
+			throw new SailException(e);
+		}
 		try {
 			this.txnRefVersion = txnRef.version();
 			this.txn = txnRef.get();
@@ -118,15 +135,26 @@ class LmdbRecordIterator implements RecordIterator {
 				cursor = pp.get(0);
 			}
 		} finally {
-			txnLock.unlockRead(stamp);
+			txnLockManager.unlockRead(readStamp);
 		}
 	}
 
 	@Override
 	public long[] next() {
-		long stamp = txnLock.readLock();
+		long readStamp;
 		try {
+			readStamp = txnLockManager.readLock();
+		} catch (InterruptedException e) {
+			throw new SailException(e);
+		}
+		try {
+			if (closed) {
+				log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
+				return null;
+			}
+
 			if (txnRefVersion != txnRef.version()) {
+				// TODO: None of the tests in the LMDB Store cover this case!
 				// cursor must be renewed
 				mdb_cursor_renew(txn, cursor);
 				if (fetchNext) {
@@ -170,12 +198,12 @@ class LmdbRecordIterator implements RecordIterator {
 				// if (maxKey != null && TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) > 0) {
 				if (maxKey != null && mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
 					lastResult = MDB_NOTFOUND;
-				} else if (groupMatcher != null && !groupMatcher.matches(keyData.mv_data())) {
+				} else if (matches()) {
 					// value doesn't match search key/mask, fetch next value
 					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 				} else {
 					// Matching value found
-					index.keyToQuad(keyData.mv_data(), quad);
+					index.keyToQuad(keyData.mv_data(), originalQuad, quad);
 					// fetch next value
 					fetchNext = true;
 					return quad;
@@ -184,17 +212,33 @@ class LmdbRecordIterator implements RecordIterator {
 			closeInternal(false);
 			return null;
 		} finally {
-			txnLock.unlockRead(stamp);
+			txnLockManager.unlockRead(readStamp);
+		}
+	}
+
+	private boolean matches() {
+
+		if (groupMatcher != null) {
+			return !this.groupMatcher.matches(keyData.mv_data());
+		} else if (matchValues) {
+			this.groupMatcher = index.createMatcher(subj, pred, obj, context);
+			return !this.groupMatcher.matches(keyData.mv_data());
+		} else {
+			return false;
 		}
 	}
 
 	private void closeInternal(boolean maybeCalledAsync) {
 		if (!closed) {
-			long stamp;
+			long writeStamp = 0L;
+			boolean writeLocked = false;
 			if (maybeCalledAsync && ownerThread != Thread.currentThread()) {
-				stamp = txnLock.writeLock();
-			} else {
-				stamp = 0;
+				try {
+					writeStamp = txnLockManager.writeLock();
+					writeLocked = true;
+				} catch (InterruptedException e) {
+					throw new SailException(e);
+				}
 			}
 			try {
 				if (!closed) {
@@ -211,8 +255,8 @@ class LmdbRecordIterator implements RecordIterator {
 				}
 			} finally {
 				closed = true;
-				if (stamp != 0) {
-					txnLock.unlockWrite(stamp);
+				if (writeLocked) {
+					txnLockManager.unlockWrite(writeStamp);
 				}
 			}
 		}

@@ -128,6 +128,44 @@ public class VerifyTest extends AbstractCommandTest {
 	}
 
 	@Test
+	public final void testShaclInvalidFormat() throws IOException {
+		File report = new File(locationFile, "testShaclInvalid.nt");
+		cmd.execute("verify", copyFromRes("ok.ttl"), copyFromRes("shacl_invalid.ttl"), report.toString());
+		assertTrue(io.wasErrorWritten());
+		assertTrue(Files.size(report.toPath()) > 0);
+	}
+
+	@Test
+	public final void testShaclValidFormat() throws IOException {
+		File report = new File(locationFile, "testShaclValid.nt");
+		assertTrue(report.createNewFile());
+		cmd.execute("verify", copyFromRes("ok.ttl"), copyFromRes("shacl_valid.ttl"), report.toString());
+
+		verify(mockConsoleIO, never()).writeError(anyString());
+		assertFalse(Files.size(report.toPath()) > 0);
+		assertFalse(io.wasErrorWritten());
+	}
+
+	@Test
+	public final void testShaclInvalidToBinary() throws IOException {
+		File report = new File(locationFile, "testShaclInvalid.brf");
+		cmd.execute("verify", copyFromRes("ok.ttl"), copyFromRes("shacl_invalid.ttl"), report.toString());
+		assertTrue(io.wasErrorWritten());
+		assertTrue(Files.size(report.toPath()) > 0);
+	}
+
+	@Test
+	public final void testShaclValidToBinary() throws IOException {
+		File report = new File(locationFile, "testShaclValid.brf");
+		assertTrue(report.createNewFile());
+		cmd.execute("verify", copyFromRes("ok.ttl"), copyFromRes("shacl_valid.ttl"), report.toString());
+
+		verify(mockConsoleIO, never()).writeError(anyString());
+		assertFalse(Files.size(report.toPath()) > 0);
+		assertFalse(io.wasErrorWritten());
+	}
+
+	@Test
 	public final void testShaclValidWorkDir() throws IOException {
 		setWorkingDir(cmd);
 

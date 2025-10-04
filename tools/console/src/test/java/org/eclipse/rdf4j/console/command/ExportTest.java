@@ -69,6 +69,15 @@ public class ExportTest extends AbstractCommandTest {
 	}
 
 	@Test
+	public final void testExportAllToBinary() throws RepositoryException {
+		File binary = new File(locationFile, "all.brf");
+		cmd.execute("export", binary.getAbsolutePath());
+		assertTrue(binary.length() > 0, "File is empty");
+
+		binary.delete();
+	}
+
+	@Test
 	public final void testExportWorkDir() throws RepositoryException, IOException {
 		setWorkingDir(cmd);
 

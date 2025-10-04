@@ -402,6 +402,10 @@ public abstract class AbstractLiteral implements Literal {
 			this(value, Long.toString(value), CoreDatatype.XSD.LONG);
 		}
 
+		NumberLiteral(long value, CoreDatatype.XSD datatype) {
+			this(value, Long.toString(value), datatype);
+		}
+
 		NumberLiteral(float value) {
 			this(value, toString(value), CoreDatatype.XSD.FLOAT);
 		}

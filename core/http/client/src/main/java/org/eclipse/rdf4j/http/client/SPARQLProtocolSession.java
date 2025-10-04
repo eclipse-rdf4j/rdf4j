@@ -49,6 +49,7 @@ import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.client.methods.RequestBuilder;
 import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.entity.ContentType;
@@ -1058,44 +1059,61 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	}
 
 	protected HttpResponse execute(HttpUriRequest method) throws IOException, RDF4JException {
+		return executeWithRedirects(method, 5);
+	}
+
+	private HttpResponse executeWithRedirects(HttpUriRequest method, int redirectsLeft)
+			throws IOException, RDF4JException {
 		boolean consume = true;
 		if (params != null) {
 			method.setParams(params);
 		}
 		HttpResponse response = httpClient.execute(method, httpContext);
-
 		try {
 			int httpCode = response.getStatusLine().getStatusCode();
 			if (httpCode >= 200 && httpCode < 300 || httpCode == HttpURLConnection.HTTP_NOT_FOUND) {
 				consume = false;
 				return response; // everything OK, control flow can continue
-			} else {
-				switch (httpCode) {
-				case HttpURLConnection.HTTP_UNAUTHORIZED: // 401
-					throw new UnauthorizedException();
-				case HttpURLConnection.HTTP_UNAVAILABLE: // 503
-					throw new QueryInterruptedException();
-				default:
-					ErrorInfo errInfo = getErrorInfo(response);
-					// Throw appropriate exception
-					if (errInfo.getErrorType() == ErrorType.MALFORMED_DATA) {
-						throw new RDFParseException(errInfo.getErrorMessage());
-					} else if (errInfo.getErrorType() == ErrorType.UNSUPPORTED_FILE_FORMAT) {
-						throw new UnsupportedRDFormatException(errInfo.getErrorMessage());
-					} else if (errInfo.getErrorType() == ErrorType.MALFORMED_QUERY) {
-						throw new MalformedQueryException(errInfo.getErrorMessage());
-					} else if (errInfo.getErrorType() == ErrorType.UNSUPPORTED_QUERY_LANGUAGE) {
-						throw new UnsupportedQueryLanguageException(errInfo.getErrorMessage());
-					} else if (contentTypeIs(response, "application/shacl-validation-report")) {
-						RDFFormat format = getContentTypeSerialisation(response);
-						throw new RepositoryException(new RemoteShaclValidationException(
-								new StringReader(errInfo.toString()), "", format));
+			}
 
-					} else if (!errInfo.toString().isEmpty()) {
-						throw new RepositoryException(errInfo.toString());
-					} else {
-						throw new RepositoryException(response.getStatusLine().getReasonPhrase());
-					}
+			// Follow redirects for any method (preserving method and entity)
+			if (redirectsLeft > 0 && (httpCode == HttpURLConnection.HTTP_MOVED_PERM
+					|| httpCode == HttpURLConnection.HTTP_MOVED_TEMP || httpCode == 307 || httpCode == 308)) {
+				Header location = response.getFirstHeader("Location");
+				if (location != null) {
+					// consume and follow
+					EntityUtils.consumeQuietly(response.getEntity());
+					java.net.URI uri = java.net.URI.create(location.getValue());
+					HttpUriRequest redirect = RequestBuilder.copy(method).setUri(uri).build();
+					return executeWithRedirects(redirect, redirectsLeft - 1);
+				}
+			}
+
+			switch (httpCode) {
+			case HttpURLConnection.HTTP_UNAUTHORIZED: // 401
+				throw new UnauthorizedException();
+			case HttpURLConnection.HTTP_UNAVAILABLE: // 503
+				throw new QueryInterruptedException();
+			default:
+				ErrorInfo errInfo = getErrorInfo(response);
+				// Throw appropriate exception
+				if (errInfo.getErrorType() == ErrorType.MALFORMED_DATA) {
+					throw new RDFParseException(errInfo.getErrorMessage());
+				} else if (errInfo.getErrorType() == ErrorType.UNSUPPORTED_FILE_FORMAT) {
+					throw new UnsupportedRDFormatException(errInfo.getErrorMessage());
+				} else if (errInfo.getErrorType() == ErrorType.MALFORMED_QUERY) {
+					throw new MalformedQueryException(errInfo.getErrorMessage());
+				} else if (errInfo.getErrorType() == ErrorType.UNSUPPORTED_QUERY_LANGUAGE) {
+					throw new UnsupportedQueryLanguageException(errInfo.getErrorMessage());
+				} else if (contentTypeIs(response, "application/shacl-validation-report")) {
+					RDFFormat format = getContentTypeSerialisation(response);
+					throw new RepositoryException(new RemoteShaclValidationException(
+							new StringReader(errInfo.toString()), "", format));
+
+				} else if (!errInfo.toString().isEmpty()) {
+					throw new RepositoryException(errInfo.toString());
+				} else {
+					throw new RepositoryException(response.getStatusLine().getReasonPhrase());
 				}
 			}
 		} finally {

@@ -11,10 +11,12 @@
 package org.eclipse.rdf4j.repository.sparql;
 
 import java.io.File;
+import java.lang.ref.Cleaner;
 import java.util.Collections;
 import java.util.Map;
 
 import org.apache.http.client.HttpClient;
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
@@ -33,6 +35,8 @@ import org.eclipse.rdf4j.repository.base.AbstractRepository;
  */
 public class SPARQLRepository extends AbstractRepository implements HttpClientDependent, SessionManagerDependent {
 
+	private static final ConcurrentCleaner CLEANER = new ConcurrentCleaner();
+
 	/**
 	 * Flag indicating if quad mode is enabled in newly created {@link SPARQLConnection}s.
 	 *
@@ -48,6 +52,11 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	 * dependent life cycle
 	 */
 	private volatile SharedHttpClientSessionManager dependentClient;
+
+	/**
+	 * Cleanable registration to auto-invoke cleanup when this repository becomes unreachable.
+	 */
+	private volatile Cleaner.Cleanable cleanable;
 
 	private String username;
 
@@ -93,7 +102,17 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 			synchronized (this) {
 				result = client;
 				if (result == null) {
-					result = client = dependentClient = new SharedHttpClientSessionManager();
+					SharedHttpClientSessionManager created = new SharedHttpClientSessionManager();
+					result = client = dependentClient = created;
+					// Register a cleaner that shuts down the dependent client if this repository is GC'ed without
+					// explicit shutdown
+					cleanable = CLEANER.register(this, () -> {
+						try {
+							created.shutDown();
+						} catch (Throwable t) {
+							// ignore
+						}
+					});
 				}
 			}
 		}
@@ -109,6 +128,11 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 			dependentClient = null;
 			if (toCloseDependentClient != null) {
 				toCloseDependentClient.shutDown();
+			}
+			Cleaner.Cleanable toClean = cleanable;
+			cleanable = null;
+			if (toClean != null) {
+				toClean.clean();
 			}
 		}
 	}
@@ -213,6 +237,11 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 				toCloseDependentClient.shutDown();
 			}
 		} finally {
+			Cleaner.Cleanable toClean = cleanable;
+			cleanable = null;
+			if (toClean != null) {
+				toClean.clean();
+			}
 			// remove reference but do not shut down, client may be shared by
 			// other repos.
 			client = null;

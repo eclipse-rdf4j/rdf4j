@@ -16,6 +16,7 @@ import static javax.servlet.http.HttpServletResponse.SC_SERVICE_UNAVAILABLE;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.http.server.repository.resolver.RepositoryResolver;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.slf4j.Logger;
@@ -54,8 +56,10 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 	}
 
 	@Override
-	public ModelAndView handleQueryRequest(HttpServletRequest request, RequestMethod requestMethod,
-			HttpServletResponse response) throws HTTPException, IOException {
+	public ModelAndView handleQueryRequest(
+			HttpServletRequest request, RequestMethod requestMethod,
+			HttpServletResponse response
+	) throws HTTPException, IOException {
 
 		RepositoryConnection repositoryCon = null;
 		Object queryResponse = null;
@@ -74,11 +78,14 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			long limit = getLimit(request);
 			long offset = getOffset(request);
 			boolean distinct = isDistinct(request);
-
+			final Optional<Explanation.Level> explainLevel = getExplain(request);
 			try {
-				if (headersOnly) {
-					queryResponse = null;
-				} else {
+				if (!headersOnly) {
+					// explain param is present, return the query explanation
+					if (explainLevel.isPresent()) {
+						final Explanation explanation = explainQuery(query, explainLevel.get());
+						return getExplainQueryResponse(request, response, explanation);
+					}
 					queryResponse = evaluateQuery(query, limit, offset, distinct);
 				}
 
@@ -134,6 +141,14 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 
 	}
 
+	protected Explanation explainQuery(final Query query, final Explanation.Level explainLevel)
+			throws ServerHTTPException {
+		throw new ServerHTTPException("unimplemented explainQuery feature");
+	}
+
+	protected abstract ModelAndView getExplainQueryResponse(
+			final HttpServletRequest request, final HttpServletResponse response, final Explanation explanation);
+
 	abstract protected Object evaluateQuery(Query query, long limit, long offset, boolean distinct)
 			throws ClientHTTPException;
 
@@ -147,9 +162,11 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 	abstract protected Query getQuery(HttpServletRequest request, RepositoryConnection repositoryCon,
 			String queryString) throws IOException, HTTPException;
 
-	protected ModelAndView getModelAndView(HttpServletRequest request, HttpServletResponse response,
+	protected ModelAndView getModelAndView(
+			HttpServletRequest request, HttpServletResponse response,
 			boolean headersOnly, RepositoryConnection repositoryCon, View view, Object queryResult,
-			FileFormatServiceRegistry<? extends FileFormat, ?> registry) throws ClientHTTPException {
+			FileFormatServiceRegistry<? extends FileFormat, ?> registry
+	) throws ClientHTTPException {
 		Map<String, Object> model = new HashMap<>();
 		model.put(QueryResultView.FILENAME_HINT_KEY, "query-result");
 		model.put(QueryResultView.QUERY_RESULT_KEY, queryResult);
@@ -170,6 +187,19 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 
 	protected long getLimit(HttpServletRequest request) throws ClientHTTPException {
 		return getParam(request, Protocol.LIMIT_PARAM_NAME, 0L, Long.TYPE);
+	}
+
+	protected Optional<Explanation.Level> getExplain(HttpServletRequest request) throws ClientHTTPException {
+		final String explainString = request.getParameter(Protocol.EXPLAIN_PARAM_NAME);
+		if (explainString == null) {
+			return Optional.empty();
+		}
+		try {
+			final Explanation.Level level = Explanation.Level.valueOf(explainString);
+			return Optional.of(level);
+		} catch (final IllegalArgumentException e) {
+			throw new ClientHTTPException("Invalid explanation level: " + explainString, e);
+		}
 	}
 
 	<T> T getParam(HttpServletRequest request, String distinctParamName, T defaultValue, Class<T> clazz)

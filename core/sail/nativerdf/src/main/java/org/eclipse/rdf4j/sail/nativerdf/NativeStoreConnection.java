@@ -76,8 +76,10 @@ public class NativeStoreConnection extends SailSourceConnection implements Threa
 		try {
 			super.commitInternal();
 		} finally {
-			txnLock.release();
-			txnLock = null;
+			if (txnLock != null) {
+				txnLock.release();
+				txnLock = null;
+			}
 		}
 
 		nativeStore.notifySailChanged(sailChangedEvent);
@@ -91,8 +93,10 @@ public class NativeStoreConnection extends SailSourceConnection implements Threa
 		try {
 			super.rollbackInternal();
 		} finally {
-			txnLock.release();
-			txnLock = null;
+			if (txnLock != null) {
+				txnLock.release();
+				txnLock = null;
+			}
 		}
 		// create a fresh event object.
 		sailChangedEvent = new DefaultSailChangedEvent(nativeStore);

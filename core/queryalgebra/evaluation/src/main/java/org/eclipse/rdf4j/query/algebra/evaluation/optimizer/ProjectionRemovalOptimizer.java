@@ -79,6 +79,7 @@ public class ProjectionRemovalOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Projection node) throws RuntimeException {
 			super.meet(node);
+
 			VariableFinder findVariables = new VariableFinder();
 			node.visit(findVariables);
 

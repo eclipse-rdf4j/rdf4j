@@ -52,7 +52,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
-//@Fork(value = 1, jvmArgs = {"-Xms1G", "-Xmx1G", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+//@Fork(value = 1, jvmArgs = {"-Xms1G", "-Xmx1G", "-XX:StartFlightRecording=jdk.CPUTimeSample#enabled=true,filename=profile.jfr,method-profiling=max","-XX:FlightRecorderOptions=stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class QueryBenchmark {
@@ -67,6 +67,9 @@ public class QueryBenchmark {
 	private static final String common_themes;
 	private static final String different_datasets_with_similar_distributions;
 	private static final String long_chain;
+	private static final String optional_lhs_filter;
+	private static final String optional_rhs_filter;
+	private static final String ordered_union_limit;
 	private static final String lots_of_optional;
 	private static final String minus;
 	private static final String nested_optionals;
@@ -74,6 +77,8 @@ public class QueryBenchmark {
 	private static final String query_distinct_predicates;
 	private static final String simple_filter_not;
 	private static final String wild_card_chain_with_common_ends;
+	private static final String sub_select;
+	private static final String multiple_sub_select;
 
 	static {
 		try {
@@ -83,6 +88,12 @@ public class QueryBenchmark {
 					getResourceAsStream("benchmarkFiles/different-datasets-with-similar-distributions.qr"),
 					StandardCharsets.UTF_8);
 			long_chain = IOUtils.toString(getResourceAsStream("benchmarkFiles/long-chain.qr"), StandardCharsets.UTF_8);
+			optional_lhs_filter = IOUtils.toString(getResourceAsStream("benchmarkFiles/optional-lhs-filter.qr"),
+					StandardCharsets.UTF_8);
+			optional_rhs_filter = IOUtils.toString(getResourceAsStream("benchmarkFiles/optional-rhs-filter.qr"),
+					StandardCharsets.UTF_8);
+			ordered_union_limit = IOUtils.toString(getResourceAsStream("benchmarkFiles/ordered-union-limit.qr"),
+					StandardCharsets.UTF_8);
 			lots_of_optional = IOUtils.toString(getResourceAsStream("benchmarkFiles/lots-of-optional.qr"),
 					StandardCharsets.UTF_8);
 			minus = IOUtils.toString(getResourceAsStream("benchmarkFiles/minus.qr"), StandardCharsets.UTF_8);
@@ -102,6 +113,9 @@ public class QueryBenchmark {
 					StandardCharsets.UTF_8);
 			wild_card_chain_with_common_ends = IOUtils.toString(
 					getResourceAsStream("benchmarkFiles/wild-card-chain-with-common-ends.qr"), StandardCharsets.UTF_8);
+			sub_select = IOUtils.toString(getResourceAsStream("benchmarkFiles/sub-select.qr"), StandardCharsets.UTF_8);
+			multiple_sub_select = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/multiple-sub-select.qr"), StandardCharsets.UTF_8);
 
 		} catch (IOException e) {
 			throw new RuntimeException(e);
@@ -112,8 +126,8 @@ public class QueryBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("QueryBenchmark") // adapt to run other benchmark tests
-				.forks(1)
+				.include("QueryBenchmark.ordered_union_limit") // adapt to run other benchmark tests
+				.forks(0)
 				.build();
 
 		new Runner(opt).run();
@@ -144,6 +158,92 @@ public class QueryBenchmark {
 		try (Stream<BindingSet> stream = evaluate.stream()) {
 			return stream.count();
 		}
+	}
+
+	// @Benchmark
+	public long allBenchmarks() {
+		long ret = 0;
+		long result;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result = count(connection
+					.prepareTupleQuery(query1)
+					.evaluate());
+		}
+		ret += result;
+		long result1;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result1 = count(connection
+					.prepareTupleQuery(query4)
+					.evaluate()
+			);
+		}
+		ret += result1;
+		long result2;
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result2 = count(connection
+					.prepareTupleQuery(query7_pathexpression1)
+					.evaluate());
+
+		}
+		ret += result2;
+		long result3;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result3 = count(connection
+					.prepareTupleQuery(query8_pathexpression2)
+					.evaluate());
+		}
+		ret += result3;
+		long result4;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result4 = count(connection
+					.prepareTupleQuery(different_datasets_with_similar_distributions)
+					.evaluate());
+		}
+		ret += result4;
+		long result5;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result5 = count(connection
+					.prepareTupleQuery(long_chain)
+					.evaluate());
+		}
+		ret += result5;
+		long result6;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result6 = count(connection
+					.prepareTupleQuery(lots_of_optional)
+					.evaluate());
+		}
+		ret += result6;
+		long result7;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result7 = count(connection
+					.prepareTupleQuery(minus)
+					.evaluate());
+		}
+		ret += result7;
+		long result8;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result8 = count(connection
+					.prepareTupleQuery(nested_optionals)
+					.evaluate());
+		}
+		ret += result8;
+		long result9;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result9 = count(connection
+					.prepareTupleQuery(query_distinct_predicates)
+					.evaluate());
+		}
+		ret += result9;
+		long result10;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			result10 = count(connection
+					.prepareTupleQuery(simple_filter_not)
+					.evaluate());
+		}
+		ret += result10;
+		return ret;
 	}
 
 	@Benchmark
@@ -241,6 +341,33 @@ public class QueryBenchmark {
 		}
 	}
 
+	@Benchmark
+	public long optional_lhs_filter() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(optional_lhs_filter)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long optional_rhs_filter() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(optional_rhs_filter)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long ordered_union_limit() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(ordered_union_limit)
+					.evaluate());
+		}
+	}
+
 //	@Benchmark
 //	public long particularly_large_join_surface() {
 //		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -266,6 +393,24 @@ public class QueryBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return count(connection
 					.prepareTupleQuery(simple_filter_not)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long sub_select() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(sub_select)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long multiple_sub_select() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(multiple_sub_select)
 					.evaluate());
 		}
 	}

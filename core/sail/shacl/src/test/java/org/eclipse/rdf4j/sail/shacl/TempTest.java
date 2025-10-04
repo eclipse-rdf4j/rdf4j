@@ -129,6 +129,7 @@ public class TempTest {
 				try {
 					connection.commit();
 				} catch (RepositoryException e) {
+					connection.rollback();
 					throw e.getCause();
 				}
 			});

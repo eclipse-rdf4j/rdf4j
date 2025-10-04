@@ -313,6 +313,7 @@ public class TruncatedValidationReportTest {
 				connection.commit();
 			} catch (RepositoryException e) {
 				validationReport = ((ShaclSailValidationException) e.getCause()).getValidationReport();
+				connection.rollback();
 			}
 		}
 		return validationReport;

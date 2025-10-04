@@ -17,6 +17,7 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -53,6 +54,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	private boolean empty;
 
 	private final Value[] values;
+	private int cachedHashCode;
 
 	/**
 	 * Creates a new Array-based BindingSet for the supplied bindings names. <em>The supplied list of binding names is
@@ -143,10 +145,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 		return a -> {
 			Value value = a.values[index];
-			if (value == NULL_VALUE) {
-				value = null;
-			}
-			if (value != null) {
+			if (value != null && value != NULL_VALUE) {
 				return new SimpleBinding(bindingName, value);
 			} else {
 				return null;
@@ -295,6 +294,62 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		return size;
 	}
 
+	@Override
+	public boolean isCompatible(BindingSet other) {
+		if (isEmpty() || other.isEmpty()) {
+			return true;
+		}
+
+		if (other instanceof ArrayBindingSet) {
+			ArrayBindingSet o = (ArrayBindingSet) other;
+			// Fast path when we share the same bindingNames array (identity equality)
+
+			if (this.bindingNames == o.bindingNames) {
+				return fastIsCompatible(o);
+			}
+		}
+
+		return slowIsCompatible(other);
+	}
+
+	private boolean fastIsCompatible(ArrayBindingSet o) {
+		for (int i = 0; i < this.values.length; i++) {
+			Value v1 = this.values[i];
+			if (v1 != null && v1 != NULL_VALUE) {
+				Value v2 = o.values[i];
+				if (v2 != null && v2 != NULL_VALUE) {
+					if (v1.getType() != v2.getType()) {
+						return false;
+					}
+					if (!v1.equals(v2)) {
+						return false;
+					}
+				}
+			}
+		}
+		return true;
+	}
+
+	private boolean slowIsCompatible(BindingSet other) {
+		// General path: iterate our bound values and compare against the other's value by name
+		for (int i = 0; i < this.bindingNames.length; i++) {
+			Value v1 = this.values[i];
+			if (v1 != null && v1 != NULL_VALUE) {
+				Value v2 = other.getValue(this.bindingNames[i]);
+				if (v2 != null) {
+					if (v1.getType() != v2.getType()) {
+						return false;
+					}
+					if (!v1.equals(v2)) {
+						return false;
+					}
+				}
+			}
+		}
+
+		return true;
+	}
+
 	List<String> sortedBindingNames = null;
 
 	public List<String> getSortedBindingNames() {
@@ -382,6 +437,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	private void clearCache() {
 		bindingNamesSetCache = null;
+		cachedHashCode = 0;
 	}
 
 	public void addAll(ArrayBindingSet other) {
@@ -406,6 +462,53 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	}
 
+	@Override
+	public int hashCode() {
+		if (cachedHashCode == 0) {
+			cachedHashCode = super.hashCode();
+		}
+		return cachedHashCode;
+	}
+
+	@Override
+	public boolean equals(Object other) {
+		if (other == null) {
+			return false;
+		}
+		if (other == this) {
+			return true;
+		}
+
+		if (other.getClass() != ArrayBindingSet.class) {
+			return super.equals(other);
+		}
+
+		ArrayBindingSet o = (ArrayBindingSet) other;
+		if (empty && o.empty) {
+			return true;
+		}
+		if (empty != o.empty) {
+			return false;
+		}
+		if (size() != o.size()) {
+			return false;
+		}
+
+		if (bindingNames == o.bindingNames) {
+			for (int i = 0; i < values.length; i++) {
+				if (values[i] != o.values[i]) {
+					if (!Objects.equals(values[i], o.values[i])) {
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+
+		return super.equals(other);
+
+	}
+
 	private class ArrayBindingSetIterator implements Iterator<Binding> {
 
 		private int index = 0;
@@ -416,7 +519,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		@Override
 		public boolean hasNext() {
 			while (index < values.length) {
-				if (values[index] != null) {
+				if (values[index] != null && values[index] != NULL_VALUE) {
 					return true;
 				}
 				index++;
@@ -426,20 +529,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 		@Override
 		public Binding next() {
-			while (index < values.length) {
-				if (values[index] != null) {
-					String name = bindingNames[index];
-					Value value = values[index++];
-					if (value == NULL_VALUE) {
-						value = null;
-					}
-					if (value != null) {
-						return new SimpleBinding(name, value);
-					} else {
-						return null;
-					}
-				}
-				index++;
+			if (hasNext()) {
+				String name = bindingNames[index];
+				Value value = values[index++];
+				return new SimpleBinding(name, value);
 			}
 
 			throw new NoSuchElementException();

@@ -2,143 +2,144 @@ name: PR verify
 
 on: pull_request
 
+permissions:
+  contents: read          # checkout & other read‑only operations
+  actions: write          # allows the cancel‑workflow step to call the Actions API
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+
+  formatting-and-quick-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: 11
+          distribution: 'temurin'
+          cache: maven
+      - name: Check formatting
+        run: mvn -B --quiet -T 2C formatter:validate impsort:check xml-format:xml-check
+      - name: Quick compile
+        run: mvn -B --quiet -T 2C compile -DskipTests -Pquick
+      - name: Download all other dependencies
+        run: mvn -B --quiet -T 2C dependency:go-offline
+
+  compile:
+    needs: formatting-and-quick-compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: 11
+          distribution: 'temurin'
+          cache: maven
+      - name: Compile (mvn clean install)
+        run: mvn -B clean install -DskipTests
+
+
   build:
+    needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: true
       matrix:
-        jdk: [11, 21]
+        jdk: [ 11, 24 ]
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up JDK
-      uses: actions/setup-java@v1
-      with:
-        java-version: ${{ matrix.jdk }}
-    - name: Cache local Maven repository
-      uses: actions/cache@v4
-      with:
-        path: ~/.m2/repository
-        key: ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-${{ hashFiles('**/pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
-    - name: Check formatting
-      run: mvn -B formatter:validate impsort:check xml-format:xml-check
-    - name: Build
-      run: mvn -B -U -T 2 clean install -Pquick,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
-    - name: Test
-      run: mvn -B test -P-formatting -DskipITs -Dmaven.javadoc.skip=true
-    - name: Publish Test Report
-      if: failure()
-      uses: scacap/action-surefire-report@v1
-      with:
-        check_name: Test report - build - ${{ matrix.jdk }}
-    - name: Cancel workflow on failure
-      uses: vishnudxb/cancel-workflow@v1.2
-      if: failure()
-      with:
-        repo: eclipse/rdf4j
-        workflow_id: ${{ github.run_id }}
-        access_token: ${{ github.token }}
-  integration-tests:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-    - name: Set up JDK
-      uses: actions/setup-java@v1
-      with:
-        java-version: 11
-    - name: Cache local Maven repository
-      uses: actions/cache@v4
-      with:
-        path: ~/.m2/repository
-        key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-jdk11-maven-
-    - name: Check formatting
-      run: mvn -B formatter:validate impsort:check xml-format:xml-check
-    - name: Build
-      run: mvn -B -U -T 2 clean install -Pquick,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
-    - name: Verify
-      run: mvn -B verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip=true -Denforcer.skip=true -Danimal.sniffer.skip=true
-    - name: Publish Test Report
-      if: failure()
-      uses: scacap/action-surefire-report@v1
-      with:
-        check_name: Test report - integration-tests
-    - name: Cancel workflow on failure
-      uses: vishnudxb/cancel-workflow@v1.2
-      if: failure()
-      with:
-        repo: eclipse/rdf4j
-        workflow_id: ${{ github.run_id }}
-        access_token: ${{ github.token }}
-  slow-tests:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-    - name: Set up JDK
-      uses: actions/setup-java@v1
-      with:
-        java-version: 11
-    - name: Cache local Maven repository
-      uses: actions/cache@v4
-      with:
-        path: ~/.m2/repository
-        key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-jdk11-maven-
-    - name: Check formatting
-      run: mvn -B formatter:validate impsort:check xml-format:xml-check
-    - name: Build
-      run: mvn -B -U -T 2 clean install -Pquick,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
-    - name: Verify
-      run: mvn -B verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
-    - name: Publish Test Report
-      if: failure()
-      uses: scacap/action-surefire-report@v1
-      with:
-        check_name: Test report - slow-tests
-  package-assembly:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up JDK
-        uses: actions/setup-java@v1
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.jdk }}
+          distribution: 'temurin'
+          cache: maven
+      - name: Build
+        run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
+      - name: Test
+        run: mvn -B test -DskipITs -P-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+      - name: Publish Test Report
+        if: failure()
+        uses: scacap/action-surefire-report@v1.9.0
+        with:
+          check_name: Test report - build - ${{ matrix.jdk }}
+
+
+  integration-tests:
+    needs: formatting-and-quick-compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
         with:
           java-version: 11
-      - name: Cache local Maven repository
-        uses: actions/cache@v4
+          distribution: 'temurin'
+          cache: maven
+      - name: Build
+        run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
+      - name: Verify
+        run: mvn -B verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
+      - name: Publish Test Report
+        if: failure()
+        uses: scacap/action-surefire-report@v1.9.0
         with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-jdk11-maven-
+          check_name: Test report - integration-tests
+
+  slow-tests:
+    needs: formatting-and-quick-compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: 11
+          distribution: 'temurin'
+          cache: maven
+      - name: Build
+        run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
+      - name: Verify
+        run: mvn -B verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+      - name: Publish Test Report
+        if: failure()
+        uses: scacap/action-surefire-report@v1.9.0
+        with:
+          check_name: Test report - slow-tests
+
+  package-assembly:
+    needs: formatting-and-quick-compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: 11
+          distribution: 'temurin'
+          cache: maven
       - name: Run install
-        run: mvn -B install -DskipTests
+        run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Package assembly
         run: mvn package -Passembly -DskipTests
-      - name: Cancel workflow on failure
-        uses: vishnudxb/cancel-workflow@v1.2
-        if: failure()
-        with:
-          repo: eclipse/rdf4j
-          workflow_id: ${{ github.run_id }}
-          access_token: ${{ github.token }}
+
+
   e2e:
+    needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up JDK
-        uses: actions/setup-java@v1
+        uses: actions/setup-java@v4
         with:
           java-version: 11
-      - name: Cache local Maven repository
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-jdk11-maven-
+          distribution: 'temurin'
+          cache: maven
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y libxml2-utils
       - name: Install Node.js
@@ -148,16 +149,11 @@ jobs:
       - name: Run end-to-end tests of RDF4J Server and Workbench
         working-directory: ./e2e
         run: ./run.sh
-      - name: Cancel workflow on failure
-        uses: vishnudxb/cancel-workflow@v1.2
-        if: failure()
-        with:
-          repo: eclipse/rdf4j
-          workflow_id: ${{ github.run_id }}
-          access_token: ${{ github.token }}
+
   copyright-check:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: check copyright header present
-      run: scripts/checkCopyrightPresent.sh
+      - uses: actions/checkout@v4
+      - name: check copyright header present
+        run: scripts/checkCopyrightPresent.sh
+
