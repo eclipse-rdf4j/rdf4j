@@ -19,10 +19,7 @@ import java.io.File;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.*;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -34,9 +31,12 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * Extended test for {@link LmdbStore}.
@@ -103,6 +103,34 @@ public class LmdbSailStoreTest {
 			assertTrue("Statement 0 incorrectly removed", conn.hasStatement(S0, false));
 			assertTrue("Statement 1 incorrectly removed", conn.hasStatement(S1, false, CTX_1));
 			assertTrue("Statement 2 incorrectly removed", conn.hasStatement(S2, false, CTX_2));
+		}
+	}
+
+	@Test
+	public void testSizeNullContextCountsDefaultGraphOnly() {
+		try (RepositoryConnection conn = repo.getConnection()) {
+			assertEquals("size(null) must count default graph only", 1, conn.size((Resource) null));
+		}
+	}
+
+	@Test
+	public void testSizeUnknownContextIsZero() {
+		try (RepositoryConnection conn = repo.getConnection()) {
+			assertEquals("size(unknownCtx) must be zero", 0, conn.size(CTX_INV));
+		}
+	}
+
+	@Test
+	public void testSizeMixedValidAndUnknownSkipsUnknown() {
+		try (RepositoryConnection conn = repo.getConnection()) {
+			assertEquals("size(valid,unknown) must equal size(valid)", 1, conn.size(CTX_1, CTX_INV));
+		}
+	}
+
+	@Test
+	public void testSizeNullAndValidCountsUnion() {
+		try (RepositoryConnection conn = repo.getConnection()) {
+			assertEquals("size(null,valid) must count default + valid", 2, conn.size((Resource) null, CTX_1));
 		}
 	}
 
@@ -194,6 +222,96 @@ public class LmdbSailStoreTest {
 			assertEquals(3, result[0].stream().count());
 		} finally {
 			conn[0].close();
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(IsolationLevels.class)
+	public void testSizeIsolationLevels(final IsolationLevels isolationLevel) {
+		try (final RepositoryConnection conn1 = repo.getConnection();
+				final RepositoryConnection conn2 = repo.getConnection()) {
+			final int baseSize = 3; // S0, S1, S2
+			Assertions.assertEquals(baseSize, conn1.size(), "Size should be " + baseSize);
+			Assertions.assertEquals(baseSize, conn2.size(), "Size should be " + baseSize);
+			final int count = 100;
+			conn1.begin(isolationLevel);
+			conn2.begin(isolationLevel);
+			for (int i = 0; i < count; i++) {
+				conn1.add(F.createStatement(F.createIRI("http://example.org/" + i), RDFS.LABEL,
+						F.createLiteral("label" + i)));
+			}
+			// conn1 should see its own changes
+			Assertions.assertEquals(baseSize + count, conn1.size(), "Size should be " + (3 + count));
+
+			// LMDBStore supports: NONE, READ_COMMITTED, SNAPSHOT_READ, SNAPSHOT, and SERIALIZABLE.
+			// If an unsupported level (e.g., READ_UNCOMMITTED) is requested,
+			// a stronger supported level (e.g., READ_COMMITTED) is used instead.
+			if (isolationLevel.equals(IsolationLevels.NONE)) {
+				// conn2 should see the changes of conn1
+				Assertions.assertEquals(baseSize + count, conn2.size(), "Size should be " + (3 + count));
+			} else if (isolationLevel.equals(IsolationLevels.READ_UNCOMMITTED)) {
+				// Use a stronger level (READ_COMMITTED) instead of READ_UNCOMMITTED
+				Assertions.assertEquals(baseSize, conn2.size(), "Size should be " + (3 + count));
+			} else if (isolationLevel.equals(IsolationLevels.READ_COMMITTED)) {
+				// conn2 should not see the changes of conn1
+				Assertions.assertEquals(baseSize, conn2.size(), "Size should be " + baseSize);
+			} else if (isolationLevel.equals(IsolationLevels.SNAPSHOT_READ)) {
+				// conn2 should not see the changes of conn1
+				Assertions.assertEquals(baseSize, conn2.size(), "Size should be " + baseSize);
+			} else if (isolationLevel.equals(IsolationLevels.SNAPSHOT)) {
+				// conn2 should not see the changes of conn1
+				Assertions.assertEquals(baseSize, conn2.size(), "Size should be " + baseSize);
+			} else if (isolationLevel.equals(IsolationLevels.SERIALIZABLE)) {
+				// conn2 should not see the changes of conn1
+				Assertions.assertEquals(baseSize, conn2.size(), "Size should be " + baseSize);
+			} else {
+				Assertions.fail("Unsupported isolation level: " + isolationLevel);
+			}
+			conn1.commit();
+			// conn2 should see the changes of conn1 after commit
+			if (isolationLevel.equals(IsolationLevels.READ_COMMITTED)
+					|| isolationLevel.equals(IsolationLevels.READ_UNCOMMITTED)
+					|| isolationLevel.equals(IsolationLevels.SNAPSHOT_READ)) {
+				Assertions.assertEquals(baseSize + count, conn2.size(), "Size should be " + (3 + count));
+			}
+			conn2.commit();
+			Assertions.assertEquals(baseSize + count, conn2.size(), "Size should be " + (3 + count));
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = IsolationLevels.class, names = "NONE", mode = EnumSource.Mode.EXCLUDE)
+	public void testSizeWhenRollbackTxn(final IsolationLevels isolationLevel) {
+		try (RepositoryConnection conn1 = repo.getConnection();
+				RepositoryConnection conn2 = repo.getConnection()) {
+
+			final int baseSize = 3; // S0, S1, S2
+			Assertions.assertEquals(baseSize, conn1.size(), "Initial size in conn1 should be " + baseSize);
+			Assertions.assertEquals(baseSize, conn2.size(), "Initial size in conn2 should be " + baseSize);
+
+			final int count = 50;
+
+			conn1.begin(isolationLevel);
+			conn2.begin(isolationLevel);
+
+			for (int i = 0; i < count; i++) {
+				conn1.add(F.createStatement(F.createIRI("http://example.org/rollback/" + i), RDFS.LABEL,
+						F.createLiteral("rollback" + i)));
+			}
+
+			// conn1 sees its uncommitted changes
+			Assertions.assertEquals(baseSize + count, conn1.size(), "conn1 should see uncommitted additions");
+
+			// conn2 should NOT see uncommitted changes
+			Assertions.assertEquals(baseSize, conn2.size(), "conn2 should not see uncommitted changes");
+
+			conn1.rollback();
+
+			// After rollback, both connections should see base size
+			Assertions.assertEquals(baseSize, conn1.size(), "conn1 should not see rolled-back additions");
+			Assertions.assertEquals(baseSize, conn2.size(), "conn2 should not see rolled-back additions");
+
+			conn2.commit();
 		}
 	}
 

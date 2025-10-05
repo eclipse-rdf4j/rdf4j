@@ -16,6 +16,7 @@ import java.io.File;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -33,7 +34,7 @@ public class TripleStoreTest {
 
 	@BeforeEach
 	public void before(@TempDir File dataDir) throws Exception {
-		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null, new AtomicBoolean(false));
 	}
 
 	int count(RecordIterator it) {

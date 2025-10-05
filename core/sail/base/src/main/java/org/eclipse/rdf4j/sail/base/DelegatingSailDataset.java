@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.base;
 import java.util.Comparator;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
@@ -92,5 +93,11 @@ abstract class DelegatingSailDataset implements SailDataset {
 	@Override
 	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
+	}
+
+	@Experimental
+	@Override
+	public long size(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return delegate.size(subj, pred, obj, contexts);
 	}
 }

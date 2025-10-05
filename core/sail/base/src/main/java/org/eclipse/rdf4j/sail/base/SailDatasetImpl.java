@@ -21,6 +21,7 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -114,7 +115,7 @@ class SailDatasetImpl implements SailDataset {
 		if (added == null && removed == null) {
 			return namespaces;
 		}
-		final Iterator<Map.Entry<String, String>> addedIter = added;
+		final Iterator<Entry<String, String>> addedIter = added;
 		final Set<String> removedSet = removed;
 		return new AbstractCloseableIteration<>() {
 
@@ -381,5 +382,19 @@ class SailDatasetImpl implements SailDataset {
 			}
 		}
 		return true;
+	}
+
+	@Experimental
+	@Override
+	public long size(final Resource subj, final IRI pred, final Value obj, final Resource... contexts) {
+		// Fast path: no approved or deprecated and not cleared
+		if (!changes.hasApproved() && !changes.hasDeprecated() && !changes.isStatementCleared()) {
+			return derivedFrom.size(subj, pred, obj, contexts);
+		}
+
+		// Fallback path: iterate over all matching statements
+		try (CloseableIteration<? extends Statement> statements = getStatements(subj, pred, obj, contexts)) {
+			return statements.stream().count();
+		}
 	}
 }

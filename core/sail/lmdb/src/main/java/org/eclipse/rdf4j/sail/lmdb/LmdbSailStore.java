@@ -71,7 +71,7 @@ class LmdbSailStore implements SailStore {
 	private boolean multiThreadingActive;
 	private volatile boolean asyncTransactionFinished;
 	private volatile boolean nextTransactionAsync;
-	private volatile boolean mayHaveInferred;
+	private final AtomicBoolean mayHaveInferred = new AtomicBoolean();
 
 	boolean enableMultiThreading = true;
 
@@ -144,7 +144,7 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void execute() throws IOException {
 			if (!explicit) {
-				mayHaveInferred = true;
+				mayHaveInferred.setRelease(true);
 			}
 			if (!unusedIds.isEmpty()) {
 				// these ids are used again
@@ -196,8 +196,8 @@ class LmdbSailStore implements SailStore {
 			namespaceStore = new NamespaceStore(dataDir);
 			var valueStore = new ValueStore(new File(dataDir, "values"), config);
 			this.valueStore = valueStore;
-			tripleStore = new TripleStore(new File(dataDir, "triples"), config, valueStore);
-			mayHaveInferred = tripleStore.hasTriples(false);
+			tripleStore = new TripleStore(new File(dataDir, "triples"), config, valueStore, mayHaveInferred);
+			mayHaveInferred.setRelease(tripleStore.hasTriples(false));
 			initialized = true;
 		} finally {
 			if (!initialized) {
@@ -353,7 +353,7 @@ class LmdbSailStore implements SailStore {
 	 */
 	CloseableIteration<? extends Statement> createStatementIterator(
 			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
-		if (!explicit && !mayHaveInferred) {
+		if (!explicit && !mayHaveInferred.getAcquire()) {
 			// there are no inferred statements and the iterator should only return inferred statements
 			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
 		}
@@ -410,6 +410,79 @@ class LmdbSailStore implements SailStore {
 			return perContextIterList.get(0);
 		} else {
 			return new UnionIteration<>(perContextIterList);
+		}
+	}
+
+	/**
+	 * Returns the number of statements that match the specified pattern.
+	 *
+	 * @param subj            The subject of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @param pred            The predicate of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @param obj             The object of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @param includeImplicit Whether to include inferred statements in addition to explicit.
+	 * @param contexts        The context(s) of the pattern. Note that this parameter is a vararg and as such is
+	 *                        optional. If no contexts are supplied the method operates on the entire repository.
+	 * @return The number of statements that match the specified pattern.
+	 * @throws SailException If an error occurred while determining the size.
+	 */
+	private long size(final TxnManager.Txn txn, final Resource subj, final IRI pred, final Value obj,
+			final boolean includeImplicit, final Resource... contexts)
+			throws SailException {
+		try {
+			long totalSize = 0;
+
+			long subjID = LmdbValue.UNKNOWN_ID;
+			if (subj != null) {
+				subjID = valueStore.getId(subj);
+				if (subjID == LmdbValue.UNKNOWN_ID) {
+					return 0;
+				}
+			}
+
+			long predID = LmdbValue.UNKNOWN_ID;
+			if (pred != null) {
+				predID = valueStore.getId(pred);
+				if (predID == LmdbValue.UNKNOWN_ID) {
+					return 0;
+				}
+			}
+
+			long objID = LmdbValue.UNKNOWN_ID;
+			if (obj != null) {
+				objID = valueStore.getId(obj);
+				if (objID == LmdbValue.UNKNOWN_ID) {
+					return 0;
+				}
+			}
+
+			// Handle context selection mirroring getStatements semantics
+			if (contexts.length == 0) {
+				// wildcard across all contexts
+				totalSize = tripleStore.cardinalityExact(txn, subjID, predID, objID, LmdbValue.UNKNOWN_ID,
+						includeImplicit);
+			} else {
+				for (Resource context : contexts) {
+					Long contextIDToCount = null;
+					if (context == null) {
+						// default graph
+						contextIDToCount = 0L;
+					} else if (!context.isTriple()) {
+						long contextID = valueStore.getId(context);
+						// skip unknown (non-existent) contexts; do not early-return
+						if (contextID != LmdbValue.UNKNOWN_ID) {
+							contextIDToCount = contextID;
+						}
+					}
+
+					if (contextIDToCount != null) {
+						totalSize += tripleStore.cardinalityExact(txn, subjID, predID, objID, contextIDToCount,
+								includeImplicit);
+					}
+				}
+			}
+			return totalSize;
+		} catch (final IOException e) {
+			throw new SailException(e);
 		}
 	}
 
@@ -964,6 +1037,25 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public Comparator<Value> getComparator() {
 			return null;
+		}
+
+		@Override
+		public long size(final Resource subj, final IRI pred, final Value obj, final Resource... contexts)
+				throws SailException {
+			try {
+				if (explicit) {
+					// explicit dataset: count explicit statements only
+					return LmdbSailStore.this.size(txn, subj, pred, obj, false, contexts);
+				} else {
+					// inferred dataset: count inferred-only = (explicit+inferred) - explicit
+					long total = LmdbSailStore.this.size(txn, subj, pred, obj, true, contexts);
+					long explicitOnly = LmdbSailStore.this.size(txn, subj, pred, obj, false, contexts);
+					long inferredOnly = total - explicitOnly;
+					return inferredOnly >= 0 ? inferredOnly : 0;
+				}
+			} catch (final Exception e) {
+				throw new SailException(e);
+			}
 		}
 	}
 }

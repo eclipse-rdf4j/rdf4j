@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.File;
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
@@ -56,7 +57,7 @@ public class RecordIteratorBenchmark {
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
 		dataDir = Files.newTemporaryFolder();
-		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null, new AtomicBoolean(false));
 
 		final int statements = 1_000_000;
 		tripleStore.startTransaction();
