@@ -22,6 +22,8 @@ import static org.mockito.Mockito.when;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.Query;
@@ -167,6 +169,33 @@ public class SailRepositoryConnectionTest {
 
 		verify(sailConnection).explain(eq(Explanation.Level.Unoptimized), any(QueryRoot.class), any(), any(),
 				anyBoolean(), anyInt());
+	}
+
+	@Test
+	public void testGetIsolationLevel_shouldReturnSetLevel() {
+		// Test that getIsolationLevel() returns the level set via begin(IsolationLevel)
+		assertThat(subject.getIsolationLevel()).isNull();
+
+		subject.begin(IsolationLevels.SERIALIZABLE);
+		assertThat(subject.getIsolationLevel()).isEqualTo(IsolationLevels.SERIALIZABLE);
+
+		subject.rollback();
+
+		subject.begin(IsolationLevels.READ_COMMITTED);
+		assertThat(subject.getIsolationLevel()).isEqualTo(IsolationLevels.READ_COMMITTED);
+
+		subject.rollback();
+	}
+
+	@Test
+	public void testGetIsolationLevel_shouldReturnSetLevelFromTransactionSettings() {
+		// Test that getIsolationLevel() returns the level set via begin(TransactionSetting...)
+		assertThat(subject.getIsolationLevel()).isNull();
+
+		subject.begin(IsolationLevels.READ_UNCOMMITTED);
+		assertThat(subject.getIsolationLevel()).isEqualTo(IsolationLevels.READ_UNCOMMITTED);
+
+		subject.rollback();
 	}
 
 }
