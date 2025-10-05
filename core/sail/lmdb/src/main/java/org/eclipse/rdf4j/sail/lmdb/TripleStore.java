@@ -710,8 +710,12 @@ class TripleStore implements Closeable {
 					}
 					return cardinality;
 				} else {
-					// Fast path: if only context is specified, return the size of the given context
-					return getContextSize(txn, stack, context);
+					// Fast path: if only context is specified. Only use the precomputed
+					// context size when including implicit statements; otherwise fall through
+					// and count explicit-only via iteration below.
+					if (includeImplicit) {
+						return getContextSize(txn, stack, context);
+					}
 				}
 			}
 		}
