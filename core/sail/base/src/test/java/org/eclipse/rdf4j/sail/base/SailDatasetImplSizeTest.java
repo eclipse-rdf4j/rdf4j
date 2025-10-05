@@ -14,15 +14,24 @@ package org.eclipse.rdf4j.sail.base;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.Test;
@@ -88,8 +97,8 @@ public class SailDatasetImplSizeTest {
 			}
 
 			@Override
-			public org.eclipse.rdf4j.model.Model createEmptyModel() {
-				return new org.eclipse.rdf4j.model.impl.LinkedHashModel();
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
 			}
 		};
 
@@ -109,10 +118,10 @@ public class SailDatasetImplSizeTest {
 	 * Backing dataset that returns a concrete set of statements and supports filtering.
 	 */
 	private static final class ListBackedDataset implements SailDataset {
-		private final java.util.List<Statement> data;
+		private final List<Statement> data;
 
-		private ListBackedDataset(java.util.List<Statement> data) {
-			this.data = java.util.List.copyOf(data);
+		private ListBackedDataset(List<Statement> data) {
+			this.data = List.copyOf(data);
 		}
 
 		@Override
@@ -137,7 +146,7 @@ public class SailDatasetImplSizeTest {
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
-			java.util.stream.Stream<Statement> stream = data.stream();
+			Stream<Statement> stream = data.stream();
 			if (subj != null) {
 				stream = stream.filter(st -> subj.equals(st.getSubject()));
 			}
@@ -148,10 +157,10 @@ public class SailDatasetImplSizeTest {
 				stream = stream.filter(st -> obj.equals(st.getObject()));
 			}
 			if (contexts != null && contexts.length > 0) {
-				java.util.Set<Resource> ctxs = new java.util.HashSet<>(java.util.Arrays.asList(contexts));
+				Set<Resource> ctxs = new HashSet<>(Arrays.asList(contexts));
 				stream = stream.filter(st -> ctxs.contains(st.getContext()));
 			}
-			java.util.Iterator<Statement> it = stream.iterator();
+			Iterator<Statement> it = stream.iterator();
 			return new CloseableIteratorIteration<>(it);
 		}
 	}
@@ -159,15 +168,264 @@ public class SailDatasetImplSizeTest {
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final Resource CTX_A = VF.createIRI("urn:ctx:A");
 	private static final Resource CTX_B = VF.createIRI("urn:ctx:B");
+	private static final Resource CTX_C = VF.createIRI("urn:ctx:C");
 	private static final IRI P = VF.createIRI("urn:p");
+	private static final IRI Q = VF.createIRI("urn:q");
 
 	private static Statement st(String s, String o, Resource ctx) {
 		return VF.createStatement(VF.createIRI("urn:s:" + s), P, VF.createIRI("urn:o:" + o), ctx);
 	}
 
 	@Test
+	public void size_afterMultiContextClear_andMixedContextQueries() {
+		SailDataset backing = new ListBackedDataset(List.of(
+				st("1", "1", CTX_A),
+				st("2", "2", CTX_B),
+				st("3", "3", CTX_C)
+		));
+
+		Changeset changes = new Changeset() {
+			@Override
+			public void flush() throws SailException {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
+			}
+		};
+
+		// clear two contexts at once (A and B)
+		changes.clear(CTX_A, CTX_B);
+
+		SailDataset snapshot = new SailDatasetImpl(backing, changes);
+
+		// Global should only include C; mixed queries should reflect filters properly
+		assertAll(
+				() -> assertEquals(1L, snapshot.size(null, null, null), "only C remains globally"),
+				() -> assertEquals(0L, snapshot.size(null, null, null, CTX_A), "A cleared => empty"),
+				() -> assertEquals(0L, snapshot.size(null, null, null, CTX_B), "B cleared => empty"),
+				() -> assertEquals(1L, snapshot.size(null, null, null, CTX_C), "C remains"),
+				() -> assertEquals(1L, snapshot.size(null, null, null, CTX_B, CTX_C), "B cleared, C remains => 1")
+		);
+	}
+
+	@Test
+	public void size_withSubjPredObjFilters_afterContextClear() {
+		var s1 = VF.createIRI("urn:s:1");
+		var o1 = VF.createIRI("urn:o:1");
+		var o2 = VF.createIRI("urn:o:2");
+
+		SailDataset backing = new ListBackedDataset(List.of(
+				VF.createStatement(s1, P, o1, CTX_A),
+				VF.createStatement(s1, P, o1, CTX_B),
+				VF.createStatement(VF.createIRI("urn:s:2"), P, o2, CTX_B)
+		));
+
+		Changeset changes = new Changeset() {
+			@Override
+			public void flush() throws SailException {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
+			}
+		};
+
+		changes.clear(CTX_A);
+		SailDataset snapshot = new SailDatasetImpl(backing, changes);
+
+		assertAll(
+				() -> assertEquals(1L, snapshot.size(s1, P, null), "s1@A removed, only s1@B remains"),
+				() -> assertEquals(1L, snapshot.size(null, P, o2), "o2 only in B remains"),
+				() -> assertEquals(0L, snapshot.size(s1, P, o1, CTX_A), "A cleared => empty for filter"),
+				() -> assertEquals(1L, snapshot.size(s1, P, o1, CTX_B), "B unaffected => 1 for filter")
+		);
+	}
+
+	@Test
+	public void size_withFilters_afterGlobalClear_withApprovals() {
+		var s1 = VF.createIRI("urn:s:1");
+		var o1 = VF.createIRI("urn:o:1");
+		var o2 = VF.createIRI("urn:o:2");
+
+		SailDataset backing = new ListBackedDataset(List.of(
+				VF.createStatement(VF.createIRI("urn:s:x"), P, VF.createIRI("urn:o:x"), CTX_A)
+		));
+
+		Changeset changes = new Changeset() {
+			@Override
+			public void flush() throws SailException {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
+			}
+		};
+
+		changes.clear();
+		changes.approve(VF.createStatement(s1, P, o1, CTX_A));
+		changes.approve(VF.createStatement(s1, P, o2, CTX_B));
+
+		SailDataset snapshot = new SailDatasetImpl(backing, changes);
+
+		assertAll(
+				() -> assertEquals(2L, snapshot.size(s1, P, null), "two approved for s1 after global clear"),
+				() -> assertEquals(1L, snapshot.size(null, P, o1), "only approved o1 remains"),
+				() -> assertEquals(1L, snapshot.size(null, P, o2), "only approved o2 remains")
+		);
+	}
+
+	@Test
+	public void size_tripleTerms_afterClear_andApprovals() {
+		// create a triple value, then use it as subject and object in statements
+		var ts = VF.createTriple(VF.createIRI("urn:ts:s"), P, VF.createIRI("urn:ts:o"));
+		var to = VF.createTriple(VF.createIRI("urn:to:s"), P, VF.createIRI("urn:to:o"));
+
+		Statement subjTripleInA = VF.createStatement((Resource) ts, P, VF.createIRI("urn:o:X"), CTX_A);
+		Statement objTripleInB = VF.createStatement(VF.createIRI("urn:s:Y"), P, to, CTX_B);
+
+		SailDataset backing = new ListBackedDataset(List.of(subjTripleInA, objTripleInB));
+
+		Changeset changes = new Changeset() {
+			@Override
+			public void flush() throws SailException {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
+			}
+		};
+
+		// clear A, then approve a triple-subject statement in C
+		changes.clear(CTX_A);
+		Statement approvedInC = VF.createStatement((Resource) ts, P, VF.createIRI("urn:o:Z"), CTX_C);
+		changes.approve(approvedInC);
+
+		SailDataset snapshot = new SailDatasetImpl(backing, changes);
+
+		// Expected: removed subjTripleInA (cleared); kept objTripleInB; added approvedInC
+		assertAll(
+				() -> assertEquals(2L, snapshot.size(null, null, null), "B + approved C"),
+				() -> assertEquals(0L, snapshot.size(null, null, null, CTX_A), "A cleared"),
+				() -> assertEquals(1L, snapshot.size(null, null, null, CTX_B), "B remains"),
+				() -> assertEquals(1L, snapshot.size(null, null, null, CTX_C), "approved in C")
+		);
+	}
+
+	@Test
+	public void size_deprecatedThenApprovedDuplicate_acrossContexts() {
+		// Same SPO in two contexts in backing
+		Statement a = st("x", "y", CTX_A);
+		Statement b = st("x", "y", CTX_B);
+		SailDataset backing = new ListBackedDataset(List.of(a, b));
+
+		Changeset changes = new Changeset() {
+			@Override
+			public void flush() throws SailException {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
+			}
+		};
+
+		// Deprecate B from backing, then approve B again
+		changes.deprecate(b);
+		changes.approve(b);
+
+		SailDataset snapshot = new SailDatasetImpl(backing, changes);
+
+		// Expect both contexts visible, and no double count
+		assertAll(
+				() -> assertEquals(2L, snapshot.size(null, null, null), "A and B should both be visible"),
+				() -> assertEquals(1L, snapshot.size(null, null, null, CTX_A), "A visible"),
+				() -> assertEquals(1L, snapshot.size(null, null, null, CTX_B), "B re-approved and visible")
+		);
+	}
+
+	@Test
+	public void size_contextArrayWithDuplicatesAndNulls() {
+		// Backing has one in default (null) context and one in A
+		Statement def = VF.createStatement(VF.createIRI("urn:s:def"), P, VF.createIRI("urn:o:def"));
+		Statement inA = st("a", "a", CTX_A);
+		SailDataset backing = new ListBackedDataset(List.of(def, inA));
+
+		Changeset changes = new Changeset() {
+			@Override
+			public void flush() throws SailException {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
+			}
+		};
+
+		// Clear default graph only
+		changes.clear((Resource) null);
+
+		SailDataset snapshot = new SailDatasetImpl(backing, changes);
+
+		// Ask size with duplicate and null contexts in the query
+		assertAll(
+				() -> assertEquals(1L, snapshot.size(null, null, null), "Only A remains globally"),
+				() -> assertEquals(0L, snapshot.size(null, null, null, (Resource) null), "default graph cleared"),
+				() -> assertEquals(1L, snapshot.size(null, null, null, CTX_A, (Resource) null, CTX_A),
+						"duplicates ignored; default graph cleared; A remains")
+		);
+	}
+
+	@Test
+	public void size_additionalFilterCombinations_predOnly_objOnly_mixed() {
+		var s1 = VF.createIRI("urn:s:1");
+		var s2 = VF.createIRI("urn:s:2");
+		var o1 = VF.createIRI("urn:o:1");
+		var o2 = VF.createIRI("urn:o:2");
+
+		SailDataset backing = new ListBackedDataset(List.of(
+				VF.createStatement(s1, P, o1, CTX_A),
+				VF.createStatement(s2, P, o2, CTX_B),
+				VF.createStatement(s2, Q, o2, CTX_A)
+		));
+
+		Changeset changes = new Changeset() {
+			@Override
+			public void flush() throws SailException {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
+			}
+		};
+
+		// Clear B, then approve a new P/o2 in A for s2
+		changes.clear(CTX_B);
+		changes.approve(VF.createStatement(s2, P, o2, CTX_A));
+
+		SailDataset snapshot = new SailDatasetImpl(backing, changes);
+
+		assertAll(
+				// pred-only across all contexts: s1@A (P/o1), s2@A (P/o2 approved) => 2
+				() -> assertEquals(2L, snapshot.size(null, P, null), "two P statements after clear+approve"),
+				// obj-only: o2 now appears only in A (approved); B was cleared
+				() -> assertEquals(2L, snapshot.size(null, null, o2), "Q@A + approved P@A have o2"),
+				// mixed filter: s2,P,null => only approved one in A
+				() -> assertEquals(1L, snapshot.size(s2, P, null), "s2@P only approved in A remains"),
+				// context filter combos
+				() -> assertEquals(2L, snapshot.size(null, null, o2, CTX_A), "both P/Q@A with o2 => 2"),
+				() -> assertEquals(0L, snapshot.size(null, null, o2, CTX_B), "B cleared")
+		);
+	}
+
+	@Test
 	public void size_afterGlobalClear_countsApprovedOnly() {
-		SailDataset backing = new ListBackedDataset(java.util.List.of(
+		SailDataset backing = new ListBackedDataset(List.of(
 				st("1", "1", CTX_A),
 				st("2", "2", CTX_B)
 		));
@@ -178,8 +436,8 @@ public class SailDatasetImplSizeTest {
 			}
 
 			@Override
-			public org.eclipse.rdf4j.model.Model createEmptyModel() {
-				return new org.eclipse.rdf4j.model.impl.LinkedHashModel();
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
 			}
 		};
 
@@ -204,7 +462,7 @@ public class SailDatasetImplSizeTest {
 	@Test
 	public void size_afterContextClear_excludesClearedContextData() {
 		// backing has 2 in A and 3 in B
-		SailDataset backing = new ListBackedDataset(java.util.List.of(
+		SailDataset backing = new ListBackedDataset(List.of(
 				st("1", "1", CTX_A), st("2", "2", CTX_A),
 				st("3", "3", CTX_B), st("4", "4", CTX_B), st("5", "5", CTX_B)
 		));
@@ -215,8 +473,8 @@ public class SailDatasetImplSizeTest {
 			}
 
 			@Override
-			public org.eclipse.rdf4j.model.Model createEmptyModel() {
-				return new org.eclipse.rdf4j.model.impl.LinkedHashModel();
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
 			}
 		};
 
@@ -238,7 +496,7 @@ public class SailDatasetImplSizeTest {
 	@Test
 	public void size_afterContextClear_withApprovedInClearedContext() {
 		// backing has 1 in A and 1 in B
-		SailDataset backing = new ListBackedDataset(java.util.List.of(
+		SailDataset backing = new ListBackedDataset(List.of(
 				st("1", "1", CTX_A),
 				st("2", "2", CTX_B)
 		));
@@ -249,8 +507,8 @@ public class SailDatasetImplSizeTest {
 			}
 
 			@Override
-			public org.eclipse.rdf4j.model.Model createEmptyModel() {
-				return new org.eclipse.rdf4j.model.impl.LinkedHashModel();
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
 			}
 		};
 
@@ -281,8 +539,8 @@ public class SailDatasetImplSizeTest {
 			}
 
 			@Override
-			public org.eclipse.rdf4j.model.Model createEmptyModel() {
-				return new org.eclipse.rdf4j.model.impl.LinkedHashModel();
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
 			}
 		};
 		SailDataset snapshot = new SailDatasetImpl(backing, changes);
@@ -294,7 +552,7 @@ public class SailDatasetImplSizeTest {
 	public void size_withDeprecatedStatements_excludesDeprecatedOnes() {
 		Statement a1 = st("1", "1", CTX_A);
 		Statement b1 = st("2", "2", CTX_B);
-		SailDataset backing = new ListBackedDataset(java.util.List.of(a1, b1));
+		SailDataset backing = new ListBackedDataset(List.of(a1, b1));
 
 		Changeset changes = new Changeset() {
 			@Override
@@ -302,8 +560,8 @@ public class SailDatasetImplSizeTest {
 			}
 
 			@Override
-			public org.eclipse.rdf4j.model.Model createEmptyModel() {
-				return new org.eclipse.rdf4j.model.impl.LinkedHashModel();
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
 			}
 		};
 		// deprecate one existing statement
@@ -320,7 +578,7 @@ public class SailDatasetImplSizeTest {
 	@Test
 	public void size_withApprovedDuplicates_doesNotDoubleCount() {
 		Statement b1 = st("2", "2", CTX_B);
-		SailDataset backing = new ListBackedDataset(java.util.List.of(b1));
+		SailDataset backing = new ListBackedDataset(List.of(b1));
 
 		Changeset changes = new Changeset() {
 			@Override
@@ -328,8 +586,8 @@ public class SailDatasetImplSizeTest {
 			}
 
 			@Override
-			public org.eclipse.rdf4j.model.Model createEmptyModel() {
-				return new org.eclipse.rdf4j.model.impl.LinkedHashModel();
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
 			}
 		};
 		// approve same statement as in backing
