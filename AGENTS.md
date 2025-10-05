@@ -129,7 +129,7 @@ After each grouped action, post an **Evidence block**, then continue working:
 **Evidence template**
 ```
 Evidence:
-Command: mvn -o -pl <module> -Dtest=Class#method verify
+Command: mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=Class#method verify
 Report: <module>/target/surefire-reports/<file>.txt
 Snippet:
 \<copy 10–30 lines capturing the failure or success summary>
@@ -153,7 +153,7 @@ To avoid losing the first test evidence when later runs overwrite `target/*-repo
 
 - Capture and store the last 200 lines of the Maven verify output.
 - Example (module‑scoped):
-    - `mvn -o -pl <module> verify | tee .initial-verify.log`
+    - `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tee .initial-verify.log`
     - `tail -200 .initial-verify.log > initial-evidence.txt`
 
 • On any failing verify run (unit or IT failures):
@@ -195,6 +195,7 @@ Plan
 
 * **JDK:** 11 (minimum). The project builds and runs on Java 11+.
 * **Maven default:** run **offline** using `-o` whenever possible.
+* **Maven local repo (required):** always pass `-Dmaven.repo.local=.m2_repo` on all Maven commands (install, verify, plugins, formatting). All examples in this document implicitly assume this flag, even if omitted.
 * **Network:** only to fetch missing deps/plugins; then rerun once without `-o`, and return offline.
 * **Large project:** some module test suites can take **5–10 minutes**. Prefer **targeted** runs.
 
@@ -203,14 +204,14 @@ Plan
 `-am` is helpful for **compiles**, hazardous for **tests**.
 
 * ✅ Use `-am` **only** for compile/verify with tests skipped (e.g. `-Pquick`):
-    * `mvn -o -pl <module> -am -Pquick install`
+    * `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick install`
 * ❌ Do **not** use `-am` with `verify` when tests are enabled.
 
 **Two-step pattern (fast + safe)**
 1. **Compile deps fast (skip tests):**
-   `mvn -o -pl <module> -am -Pquick install`
+   `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick install`
 2. **Run tests:**
-   `mvn -o -pl <module> verify | tail -500`
+   `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tail -500`
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
@@ -219,22 +220,22 @@ It is illegal to `-q` when running tests!
 
 ## Always Install Before Tests (Required)
 
-The Maven reactor resolves inter-module dependencies from the local Maven repository (`~/.m2/repository`).
+The Maven reactor resolves inter-module dependencies from the configured local Maven repository (here: `.m2_repo`).
 Running `install` publishes your changed modules there so downstream modules and tests pick up the correct versions.
 
-* Always run `mvn -o -Pquick install | tail -200` before you start working. This command typically takes up to 30 seconds. Never use a small timeout than 30,000 ms.
-* Always run `mvn -o -Pquick install | tail -200` before any `verify` or test runs.
+* Always run `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install | tail -200` before you start working. This command typically takes up to 30 seconds. Never use a small timeout than 30,000 ms.
+* Always run `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install | tail -200` before any `verify` or test runs.
 * If offline resolution fails due to a missing dependency or plugin, rerun the exact `install` command once without `-o`, then return offline.
 * Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
-* Never ever change the repo location. Never use `-Dmaven.repo.local=.m2_repo`.
+* Always use a workspace-local Maven repository: append `-Dmaven.repo.local=.m2_repo` to all Maven commands (install, verify, formatter, etc.).
 * Always try to run these commands first to see if they run without needing any approvals from the user w.r.t. the sandboxing.
 
 Why this is mandatory
 
-- Tests must not use `-am`. Without `-am`, Maven will not build upstream modules when you run tests; it will resolve cross‑module dependencies from the local `~/.m2/repository` instead.
-- Therefore, tests only see whatever versions were last published to `~/.m2`. If you change code in one module and then run tests in another, those tests will not see your changes unless the updated module has been installed to `~/.m2` first.
-- The reliable way to ensure all tests always use the latest code across the entire multi‑module build is to install all modules to `~/.m2` before running any tests: run `mvn -o -Pquick install` at the repository root.
-- In tight loops you may also install a specific module and its deps (`-pl <module> -am -Pquick install`) to iterate quickly, but before executing tests anywhere that depend on your changes, run a root‑level `mvn -o -Pquick install` so the latest jars are available to the reactor from `~/.m2`.
+- Tests must not use `-am`. Without `-am`, Maven will not build upstream modules when you run tests; it will resolve cross‑module dependencies from the configured local repository (here: `.m2_repo`).
+- Therefore, tests only see whatever versions were last published to the configured local repo (`.m2_repo`). If you change code in one module and then run tests in another, those tests will not see your changes unless the updated module has been installed to `.m2_repo` first.
+- The reliable way to ensure all tests always use the latest code across the entire multi‑module build is to install all modules to the configured local repo (`.m2_repo`) before running any tests: run `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install` at the repository root.
+- In tight loops you may also install a specific module and its deps (`-pl <module> -am -Pquick install`) to iterate quickly, but before executing tests anywhere that depend on your changes, run a root‑level `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install` so the latest jars are available to the reactor from `.m2_repo`.
 ---
 
 ## Quick Start (First 10 Minutes)
@@ -243,13 +244,13 @@ Why this is mandatory
     * Inspect root `pom.xml` and module tree (see “Maven Module Overview”).
     * Search fast with ripgrep: `rg -n "<symbol or string>"`
 2. **Build sanity (fast, skip tests)**
-    * `mvn -o -Pquick install | tail -200`
+    * `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install | tail -200`
 3. **Format (Java, imports, XML)**
-    * `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+    * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 4. **Targeted tests (tight loops)**
-    * Module: `mvn -o -pl <module> verify  | tail -500`
-    * Class: `mvn -o -pl <module> -Dtest=ClassName verify  | tail -500`
-    * Method: `mvn -o -pl <module> -Dtest=ClassName#method verify | tail -500`
+    * Module: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify  | tail -500`
+    * Class: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName verify  | tail -500`
+    * Method: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName#method verify | tail -500`
 5. **Inspect failures**
     * **Unit (Surefire):** `<module>/target/surefire-reports/`
     * **IT (Failsafe):** `<module>/target/failsafe-reports/`
@@ -343,8 +344,8 @@ It is illegal to `-q` when running tests!
 
 * **Plan:** small, verifiable steps; keep one `in_progress`.
 * **Change:** minimal, surgical edits; keep style/structure consistent.
-* **Format:** `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
-* **Compile (fast):** `mvn -o -pl <module> -am -Pquick install | tail -500`
+* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+* **Compile (fast):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick install | tail -500`
 * **Test:** start smallest (class/method → module). For integration, run module `verify`.
 * **Triage:** read reports; fix root cause; expand scope only when needed.
 * **Iterate:** keep momentum; escalate only when blocked or irreversible.
@@ -371,7 +372,7 @@ It is illegal to `-q` when running tests!
 
 ### Optional: Redirect test stdout/stderr to files
 ```bash
-mvn -o -pl <module> -Dtest=ClassName[#method] -Dmaven.test.redirectTestOutputToFile=true verify | tail -500
+mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName[#method] -Dmaven.test.redirectTestOutputToFile=true verify | tail -500
 ````
 
 Logs under:
@@ -415,14 +416,16 @@ Assertions are executable claims about what must be true. Use **temporary tripwi
 
 * Always run before finalizing:
 
-    * `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+    * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 * Style: no wildcard imports; 120‑char width; curly braces always; LF endings.
 
 ---
 
 ## Source File Headers
 
-Use this exact header for **new Java files only** (replace `${year}` with current year):
+Strict requirement — copy/paste exactly. All new Java source files MUST begin with the exact header below. The text, spacing, punctuation, URL, and SPDX line must be identical. Replace `${year}` with the correct current year at the time the file is created.
+
+Hint: get the current year with `date +%Y`.
 
 ```
 /*******************************************************************************
@@ -443,9 +446,9 @@ Do **not** modify existing headers’ years.
 
 ## Pre‑Commit Checklist
 
-* **Format:** `mvn -o -q -T 2C formatter:format impsort:sort xml-format:xml-format`
-* **Compile (fast path):** `mvn -o -Pquick install | tail -200`
-* **Tests (targeted):** `mvn -o -pl <module> verify | tail -500` (broaden as needed)
+* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+* **Compile (fast path):** `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install | tail -200`
+* **Tests (targeted):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tail -500` (broaden as needed)
 * **Reports:** zero new failures in Surefire/Failsafe, or explain precisely.
 * **Evidence:** Routine A — failing pre‑fix + passing post‑fix.
   Routine B — **pre/post green** from same selection + **Hit Proof**.
@@ -515,19 +518,19 @@ Do **not** modify existing headers’ years.
 
 ## Running Tests
 
-* By module: `mvn -o -pl core/sail/shacl verify | tail -500`
-* Entire repo: `mvn -o verify` (long; only when appropriate)
+* By module: `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/shacl verify | tail -500`
+* Entire repo: `mvn -o -Dmaven.repo.local=.m2_repo verify` (long; only when appropriate)
 * Slow tests (entire repo):
-  `mvn -o verify -PslowTestsOnly,-skipSlowTests | tail -500`
+  `mvn -o -Dmaven.repo.local=.m2_repo verify -PslowTestsOnly,-skipSlowTests | tail -500`
 * Slow tests (by module):
-  `mvn -o -pl <module> verify -PslowTestsOnly,-skipSlowTests | tail -500`
+  `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify -PslowTestsOnly,-skipSlowTests | tail -500`
 * Slow tests (specific test):
 
-    * `mvn -o -pl core/sail/shacl -PslowTestsOnly,-skipSlowTests -Dtest=ClassName#method verify | tail -500`
+    * `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/shacl -PslowTestsOnly,-skipSlowTests -Dtest=ClassName#method verify | tail -500`
 * Integration tests (entire repo):
-  `mvn -o verify -PskipUnitTests | tail -500`
+  `mvn -o -Dmaven.repo.local=.m2_repo verify -PskipUnitTests | tail -500`
 * Integration tests (by module):
-  `mvn -o -pl <module> verify -PskipUnitTests | tail -500`
+  `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify -PskipUnitTests | tail -500`
 * Useful flags:
 
     * `-Dtest=ClassName`
@@ -540,10 +543,10 @@ Do **not** modify existing headers’ years.
 ## Build
 
 * **Build without tests (fast path):**
-  `mvn -o -Pquick install`
+  `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install`
 * **Verify with tests:**
-  Targeted module(s): `mvn -o -pl <module> verify`
-  Entire repo: `mvn -o verify` (use judiciously)
+  Targeted module(s): `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify`
+  Entire repo: `mvn -o -Dmaven.repo.local=.m2_repo verify` (use judiciously)
 * **When offline fails due to missing deps:**
   Re‑run the **exact** command **without** `-o` once to fetch, then return to `-o`.
 
@@ -554,9 +557,9 @@ Do **not** modify existing headers’ years.
 JaCoCo is configured via the `jacoco` Maven profile in the root POM. Surefire/Failsafe honor the prepared agent `argLine`, so no extra flags are required beyond `-Pjacoco`.
 
 - Run with coverage
-    - Module: `mvn -o -pl <module> -Pjacoco verify | tail -500`
-    - Class: `mvn -o -pl <module> -Pjacoco -Dtest=ClassName verify | tail -500`
-    - Method: `mvn -o -pl <module> -Pjacoco -Dtest=ClassName#method verify | tail -500`
+    - Module: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Pjacoco verify | tail -500`
+    - Class: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Pjacoco -Dtest=ClassName verify | tail -500`
+    - Method: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Pjacoco -Dtest=ClassName#method verify | tail -500`
 
 - Where to find reports (per module)
     - Exec data: `<module>/target/jacoco.exec`
