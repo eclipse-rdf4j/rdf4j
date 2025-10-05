@@ -423,7 +423,9 @@ Assertions are executable claims about what must be true. Use **temporary tripwi
 
 ## Source File Headers
 
-Use this exact header for **new Java files only** (replace `${year}` with current year):
+Strict requirement — copy/paste exactly. All new Java source files MUST begin with the exact header below. The text, spacing, punctuation, URL, and SPDX line must be identical. Replace `${year}` with the correct current year at the time the file is created.
+
+Hint: get the current year with `date +%Y`.
 
 ```
 /*******************************************************************************
