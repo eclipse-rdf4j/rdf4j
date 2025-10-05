@@ -71,7 +71,7 @@ class LmdbSailStore implements SailStore {
 	private boolean multiThreadingActive;
 	private volatile boolean asyncTransactionFinished;
 	private volatile boolean nextTransactionAsync;
-	private volatile boolean mayHaveInferred;
+	private final AtomicBoolean mayHaveInferred = new AtomicBoolean();
 
 	boolean enableMultiThreading = true;
 
@@ -144,7 +144,7 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void execute() throws IOException {
 			if (!explicit) {
-				mayHaveInferred = true;
+				mayHaveInferred.setRelease(true);
 			}
 			if (!unusedIds.isEmpty()) {
 				// these ids are used again
@@ -196,8 +196,8 @@ class LmdbSailStore implements SailStore {
 			namespaceStore = new NamespaceStore(dataDir);
 			var valueStore = new ValueStore(new File(dataDir, "values"), config);
 			this.valueStore = valueStore;
-			tripleStore = new TripleStore(new File(dataDir, "triples"), config, valueStore);
-			mayHaveInferred = tripleStore.hasTriples(false);
+			tripleStore = new TripleStore(new File(dataDir, "triples"), config, valueStore, mayHaveInferred);
+			mayHaveInferred.setRelease(tripleStore.hasTriples(false));
 			initialized = true;
 		} finally {
 			if (!initialized) {
@@ -353,7 +353,7 @@ class LmdbSailStore implements SailStore {
 	 */
 	CloseableIteration<? extends Statement> createStatementIterator(
 			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
-		if (!explicit && !mayHaveInferred) {
+		if (!explicit && !mayHaveInferred.getAcquire()) {
 			// there are no inferred statements and the iterator should only return inferred statements
 			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
 		}

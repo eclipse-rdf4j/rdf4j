@@ -59,7 +59,7 @@ public class LmdbContextSizeExplicitOnlyTest {
 	}
 
 	@Test
-	public void sizeContext_excludesInferred() throws Exception {
+	public void sizeContext_excludesInferred() {
 		try (SailConnection raw = store.getConnection()) {
 			LmdbStoreConnection conn = (LmdbStoreConnection) raw;
 			conn.begin();
@@ -72,6 +72,56 @@ public class LmdbContextSizeExplicitOnlyTest {
 			conn.addStatement(vf.createIRI("urn:s1"), p, vf.createLiteral("x"), ctx);
 			// one inferred in the same ctx (simulate inference via addInferredStatement)
 			conn.addInferredStatement(vf.createIRI("urn:s2"), p, vf.createLiteral("y"), ctx);
+			conn.commit();
+
+			// size must exclude inferred statements
+			long contextSize = conn.size(ctx);
+			assertEquals(1L, contextSize, "size(context) must exclude inferred statements");
+
+			long totalSize = conn.size();
+			assertEquals(1L, totalSize, "total size must exclude inferred statements");
+
+		}
+	}
+
+	@Test
+	public void sizeContext_excludesInferred2() {
+		try (SailConnection raw = store.getConnection()) {
+			LmdbStoreConnection conn = (LmdbStoreConnection) raw;
+			conn.begin();
+			ValueFactory vf = store.getValueFactory();
+
+			IRI ctx = vf.createIRI("urn:ctx");
+			IRI p = vf.createIRI("urn:p");
+
+			// one explicit in ctx
+			conn.addStatement(vf.createIRI("urn:s1"), p, vf.createLiteral("x"), ctx);
+			// one inferred in the same ctx (simulate inference via addInferredStatement)
+			conn.addInferredStatement(vf.createIRI("urn:s2"), p, vf.createLiteral("y"), ctx);
+
+			// size must exclude inferred statements
+			long contextSize = conn.size(ctx);
+			assertEquals(1L, contextSize, "size(context) must exclude inferred statements");
+
+			long totalSize = conn.size();
+			assertEquals(1L, totalSize, "total size must exclude inferred statements");
+
+			conn.commit();
+		}
+	}
+
+	@Test
+	public void sizeContext() {
+		try (SailConnection raw = store.getConnection()) {
+			LmdbStoreConnection conn = (LmdbStoreConnection) raw;
+			conn.begin();
+			ValueFactory vf = store.getValueFactory();
+
+			IRI ctx = vf.createIRI("urn:ctx");
+			IRI p = vf.createIRI("urn:p");
+
+			// one explicit in ctx
+			conn.addStatement(vf.createIRI("urn:s1"), p, vf.createLiteral("x"), ctx);
 			conn.commit();
 
 			// size must exclude inferred statements

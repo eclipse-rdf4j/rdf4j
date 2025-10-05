@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.Assert.assertNotNull;
 
 import java.io.File;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,7 +34,7 @@ public class TripleStoreManyIndexesTest {
 	@Test
 	public void testSixIndexes() throws Exception {
 		TripleStore tripleStore = new TripleStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc,cspo,cpos,cosp"), null);
+				new LmdbStoreConfig("spoc,posc,ospc,cspo,cpos,cosp"), null, new AtomicBoolean(false));
 		tripleStore.startTransaction();
 		tripleStore.storeTriple(1, 2, 3, 1, true);
 		tripleStore.commit();

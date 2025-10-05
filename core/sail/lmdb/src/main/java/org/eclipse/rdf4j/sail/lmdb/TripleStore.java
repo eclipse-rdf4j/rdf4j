@@ -75,6 +75,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 
@@ -162,6 +163,7 @@ class TripleStore implements Closeable {
 	 */
 	private final List<TripleIndex> indexes = new ArrayList<>();
 	private final ValueStore valueStore;
+	private final AtomicBoolean mayHaveInferred;
 
 	private long env;
 	private int contextsDbi;
@@ -195,11 +197,13 @@ class TripleStore implements Closeable {
 		}
 	};
 
-	TripleStore(File dir, LmdbStoreConfig config, ValueStore valueStore) throws IOException, SailException {
+	TripleStore(File dir, LmdbStoreConfig config, ValueStore valueStore, AtomicBoolean mayHaveInferred)
+			throws IOException, SailException {
 		this.dir = dir;
 		this.forceSync = config.getForceSync();
 		this.autoGrow = config.getAutoGrow();
 		this.valueStore = valueStore;
+		this.mayHaveInferred = mayHaveInferred;
 
 		// create directory if it not exists
 		this.dir.mkdirs();
@@ -713,7 +717,7 @@ class TripleStore implements Closeable {
 					// Fast path: if only context is specified. Only use the precomputed
 					// context size when including implicit statements; otherwise fall through
 					// and count explicit-only via iteration below.
-					if (includeImplicit) {
+					if (includeImplicit || !mayHaveInferred.getAcquire()) {
 						return getContextSize(txn, stack, context);
 					}
 				}

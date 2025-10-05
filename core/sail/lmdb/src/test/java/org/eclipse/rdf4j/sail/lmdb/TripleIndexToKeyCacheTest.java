@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
 import java.io.File;
 import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -32,7 +33,7 @@ class TripleIndexToKeyCacheTest {
 	@BeforeEach
 	void setup(@TempDir File dataDir) throws Exception {
 		// Create a small store; index set is irrelevant for constructing standalone TripleIndex instances
-		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null, new AtomicBoolean(false));
 	}
 
 	@AfterEach

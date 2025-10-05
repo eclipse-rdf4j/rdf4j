@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -34,7 +35,7 @@ public class TripleStoreAutoGrowTest {
 	public void before(@TempDir File dataDir) throws Exception {
 		var config = new LmdbStoreConfig("spoc,posc");
 		config.setTripleDBSize(4096 * 10);
-		tripleStore = new TripleStore(dataDir, config, null);
+		tripleStore = new TripleStore(dataDir, config, null, new AtomicBoolean(false));
 		((Logger) LoggerFactory
 				.getLogger(TripleStore.class.getName()))
 				.setLevel(ch.qos.logback.classic.Level.DEBUG);

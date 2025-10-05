@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.File;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -37,7 +38,7 @@ public class CardinalityExactTest {
 	public void before() throws Exception {
 		File dataDir = new File(tempFolder, "triplestore");
 		dataDir.mkdir();
-		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null, new AtomicBoolean(false));
 	}
 
 	private long countTriples(RecordIterator iterator) {
