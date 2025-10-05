@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.eclipse.rdf4j</groupId>
 	<artifactId>rdf4j</artifactId>
-	<version>5.1.7-SNAPSHOT</version>
+	<version>5.1.0-SNAPSHOT</version>
 	<packaging>pom</packaging>
 	<name>Eclipse RDF4J</name>
 	<description>An extensible Java framework for RDF and SPARQL</description>
@@ -265,6 +265,32 @@
 			</build>
 		</profile>
 		<profile>
+			<id>jacoco</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.jacoco</groupId>
+						<artifactId>jacoco-maven-plugin</artifactId>
+						<version>0.8.13</version>
+						<executions>
+							<execution>
+								<goals>
+									<goal>prepare-agent</goal>
+								</goals>
+							</execution>
+							<execution>
+								<id>report</id>
+								<phase>verify</phase>
+								<goals>
+									<goal>report</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+		<profile>
 			<id>formatting</id>
 			<activation>
 				<!-- active on all Java 11 and higher builds by default -->
@@ -378,6 +404,7 @@
 		<junit.version>5.9.3</junit.version>
 		<jetty.version>9.4.54.v20240208</jetty.version>
 		<netty.version>4.1.111.Final</netty.version>
+		<argLine/>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
@@ -428,10 +455,11 @@
 				<artifactId>commons-cli</artifactId>
 				<version>1.4</version>
 			</dependency>
+			<!-- note this affects the xlsx query result format using apache POI -->
 			<dependency>
 				<groupId>commons-io</groupId>
 				<artifactId>commons-io</artifactId>
-				<version>2.14.0</version>
+				<version>2.18.0</version>
 			</dependency>
 			<dependency>
 				<groupId>commons-codec</groupId>
@@ -813,7 +841,8 @@
 					<artifactId>maven-surefire-plugin</artifactId>
 					<version>3.5.4</version>
 					<configuration>
-						<argLine>-Xmx2G</argLine>
+						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
+						<argLine>@{argLine} -Xmx2G</argLine>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -823,7 +852,8 @@
 					<configuration>
 						<forkCount>1</forkCount>
 						<reuseForks>false</reuseForks>
-						<argLine>-Xmx2G</argLine>
+						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
+						<argLine>@{argLine} -Xmx2G</argLine>
 						<includes>
 							<include>**/*IT.java</include>
 						</includes>

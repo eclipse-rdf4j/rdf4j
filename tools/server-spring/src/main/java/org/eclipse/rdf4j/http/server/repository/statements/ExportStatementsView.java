@@ -21,6 +21,7 @@ import java.util.Objects;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
 import org.eclipse.rdf4j.model.IRI;
@@ -179,6 +180,8 @@ public class ExportStatementsView implements View {
 					throw new ServerHTTPException("Serialization error: " + e.getMessage(), e);
 				} catch (RepositoryException e) {
 					throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
+				} catch (ClientHTTPException e) {
+					throw new ServerHTTPException("Client error: " + e.getMessage(), e);
 				} catch (LimitedSizeReachedException ignored) {
 				}
 			}

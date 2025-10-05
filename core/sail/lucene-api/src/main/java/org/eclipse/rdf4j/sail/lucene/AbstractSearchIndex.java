@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
@@ -41,10 +42,13 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialAlgebra;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupport;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lucene.util.MapOfListMaps;
 import org.locationtech.spatial4j.context.SpatialContext;
+import org.locationtech.spatial4j.io.ShapeReader;
 import org.locationtech.spatial4j.shape.Point;
 import org.locationtech.spatial4j.shape.Shape;
 import org.slf4j.Logger;
@@ -855,6 +859,59 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		return hits;
 	}
 
+	private IRI toSpatialOp(String relation) {
+		if (GEOF.SF_INTERSECTS.stringValue().equals(relation)) {
+			return GEOF.SF_INTERSECTS;
+		} else if (GEOF.SF_DISJOINT.stringValue().equals(relation)) {
+			return GEOF.SF_DISJOINT;
+		} else if (GEOF.SF_EQUALS.stringValue().equals(relation)) {
+			return GEOF.SF_EQUALS;
+		} else if (GEOF.SF_OVERLAPS.stringValue().equals(relation)) {
+			return GEOF.SF_OVERLAPS;
+		} else if (GEOF.EH_COVERED_BY.stringValue().equals(relation)) {
+			return GEOF.SF_WITHIN;
+		} else if (GEOF.EH_COVERS.stringValue().equals(relation)) {
+			return GEOF.EH_CONTAINS;
+		} else if (GEOF.SF_WITHIN.stringValue().equals(relation)) {
+			return GEOF.SF_WITHIN;
+		} else if (GEOF.EH_CONTAINS.stringValue().equals(relation)) {
+			return GEOF.EH_CONTAINS;
+		}
+		return null;
+	}
+
+	private Shape readShape(String geo) {
+		ShapeReader reader = SpatialSupport.getSpatialContext().getFormats().getWktReader();
+		try {
+			return reader.read(geo);
+		} catch (IOException | ParseException e) {
+			throw new SailException("Can't read geo wkt shape", e);
+		}
+	}
+
+	private boolean checkSpatialOp(IRI op, Shape arg1, Shape arg2) {
+		SpatialAlgebra algebra = SpatialSupport.getSpatialAlgebra();
+		if (op == GEOF.SF_INTERSECTS) {
+			return algebra.sfIntersects(arg1, arg2);
+		}
+		if (op == GEOF.SF_DISJOINT) {
+			return algebra.sfDisjoint(arg1, arg2);
+		}
+		if (op == GEOF.SF_EQUALS) {
+			return algebra.sfEquals(arg1, arg2);
+		}
+		if (op == GEOF.SF_OVERLAPS) {
+			return algebra.sfOverlaps(arg1, arg2);
+		}
+		if (op == GEOF.SF_WITHIN) {
+			return algebra.sfWithin(arg1, arg2);
+		}
+		if (op == GEOF.EH_CONTAINS) {
+			return algebra.ehContains(arg1, arg2);
+		} else
+			throw new SailException(new IllegalArgumentException("bad spatial op : " + op));
+	}
+
 	private BindingSetCollection generateBindingSets(GeoRelationQuerySpec query,
 			Iterable<? extends DocumentResult> hits) throws SailException {
 		// Since one resource can be returned many times, it can lead now to
@@ -893,8 +950,25 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 				}
 
 				List<String> geometries = doc.getProperty(SearchFields.getPropertyField(query.getGeoProperty()));
+				boolean needValidation = geometries.size() != 1;
+				IRI spatialOp = null;
+				Shape funcGeo = null;
+				if (needValidation) {
+					spatialOp = toSpatialOp(query.getRelation());
+					funcGeo = readShape(query.getQueryGeometry().getLabel());
+				}
 				for (String geometry : geometries) {
 					QueryBindingSet derivedBindings = new QueryBindingSet();
+					if (geoVar != null) {
+						if (needValidation && spatialOp != null) {
+							Shape geo = readShape(geometry);
+
+							if (!checkSpatialOp(spatialOp, funcGeo, geo)) {
+								continue; // not inside the asked shape
+							}
+						}
+						derivedBindings.addBinding(geoVar, SearchFields.wktToLiteral(geometry));
+					}
 					if (subjVar != null) {
 						Resource resource = getResource(doc);
 						derivedBindings.addBinding(subjVar, resource);
@@ -904,9 +978,6 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 						if (ctx != null) {
 							derivedBindings.addBinding(contextVar.getName(), ctx);
 						}
-					}
-					if (geoVar != null) {
-						derivedBindings.addBinding(geoVar, SearchFields.wktToLiteral(geometry));
 					}
 					if (fVar != null) {
 						derivedBindings.addBinding(fVar, BooleanLiteral.TRUE);

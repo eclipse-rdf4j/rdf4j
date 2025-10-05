@@ -140,8 +140,11 @@ public class RepositoryInterceptor extends ServerInterceptor {
 	 * @param request the {@link HttpServletRequest} for which a {@link RepositoryConnection} is to be returned
 	 * @return a configured {@link RepositoryConnection}
 	 */
-	public static RepositoryConnection getRepositoryConnection(HttpServletRequest request) {
+	public static RepositoryConnection getRepositoryConnection(HttpServletRequest request) throws ClientHTTPException {
 		Repository repo = getRepository(request);
+		if (repo == null) {
+			throw new ClientHTTPException(SC_NOT_FOUND, "Unknown repository: " + getRepositoryID(request));
+		}
 		RepositoryConnection conn = repo.getConnection();
 		conn.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
 		conn.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);

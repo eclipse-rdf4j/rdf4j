@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.collection.factory.impl;
 
 import java.io.Serializable;
-import java.util.Arrays;
 import java.util.List;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
@@ -22,12 +21,12 @@ public class DefaultBindingSetKey implements BindingSetKey, Serializable {
 
 	private static final long serialVersionUID = 1;
 
-	private final Value[] values;
+	private final List<Value> values;
 
 	private final int hash;
 
 	public DefaultBindingSetKey(List<Value> values, int hash) {
-		this.values = values.toArray(new Value[0]);
+		this.values = values;
 		this.hash = hash;
 	}
 
@@ -39,7 +38,7 @@ public class DefaultBindingSetKey implements BindingSetKey, Serializable {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof DefaultBindingSetKey && other.hashCode() == hash) {
-			return Arrays.deepEquals(values, ((DefaultBindingSetKey) other).values);
+			return values.equals(((DefaultBindingSetKey) other).values);
 		}
 		return false;
 	}

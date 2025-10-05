@@ -37,7 +37,7 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 			EvaluationStrategy strategy, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
 		this.context = context;
-		this.setter = buildLambdaToEvaluateTheExpressions(extension, strategy, context);
+		this.setter = buildLambdaToEvaluateTheExpressions(extension, strategy, context, true);
 	}
 
 	public ExtensionIterator(CloseableIteration<BindingSet> iter,
@@ -48,14 +48,16 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 	}
 
 	public static Consumer<MutableBindingSet> buildLambdaToEvaluateTheExpressions(Extension extension,
-			EvaluationStrategy strategy, QueryEvaluationContext context) {
+			EvaluationStrategy strategy, QueryEvaluationContext context, boolean setNullOnError) {
 		Consumer<MutableBindingSet> consumer = null;
 		for (ExtensionElem extElem : extension.getElements()) {
 			ValueExpr expr = extElem.getExpr();
 			if (!(expr instanceof AggregateOperator)) {
 				QueryValueEvaluationStep prepared = strategy.precompile(extElem.getExpr(), context);
 				BiConsumer<Value, MutableBindingSet> setBinding = context.setBinding(extElem.getName());
-				consumer = andThen(consumer, targetBindings -> setValue(setBinding, prepared, targetBindings));
+				boolean setNullOnErrorLocal = setNullOnError;
+				consumer = andThen(consumer,
+						targetBindings -> setValue(setBinding, prepared, targetBindings, setNullOnErrorLocal));
 			}
 		}
 		if (consumer == null) {
@@ -67,7 +69,7 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 	}
 
 	private static void setValue(BiConsumer<Value, MutableBindingSet> setBinding, QueryValueEvaluationStep prepared,
-			MutableBindingSet targetBindings) {
+			MutableBindingSet targetBindings, boolean setNullOnError) {
 		try {
 			// we evaluate each extension element over the targetbindings, so that bindings from
 			// a previous extension element in this same extension can be used by other extension elements.
@@ -79,11 +81,13 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 				setBinding.accept(targetValue, targetBindings);
 			}
 		} catch (ValueExprEvaluationException e) {
-			// silently ignore type errors in extension arguments. They should not cause the
-			// query to fail but result in no bindings for this solution
-			// see https://www.w3.org/TR/sparql11-query/#assignment
-			// use null as place holder for unbound variables that must remain so
-			setBinding.accept(null, targetBindings);
+			// Silently ignore type errors in extension arguments. Whether to install a
+			// placeholder null-binding (variable must remain unbound) or leave it unset
+			// depends on context. By default we set a null-binding to enforce the SPARQL
+			// assignment rule; in special contexts (e.g., MINUS RHS), we may skip it.
+			if (setNullOnError) {
+				setBinding.accept(null, targetBindings);
+			}
 		}
 	}
 

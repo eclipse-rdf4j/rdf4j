@@ -540,20 +540,19 @@ public class QueryResults extends Iterations {
 	 * @return true if compatible
 	 */
 	public static boolean bindingSetsCompatible(BindingSet bs1, BindingSet bs2) {
-		Set<String> bs1BindingNames = bs1.getBindingNames();
-		if (bs1BindingNames.isEmpty()) {
+		if (bs1.isEmpty() || bs2.isEmpty()) {
 			return true;
 		}
 
-		Set<String> bs2BindingNames = bs2.getBindingNames();
-
 		for (Binding binding : bs1) {
-			if (bs2BindingNames.contains(binding.getName())) {
+			Binding other = bs2.getBinding(binding.getName());
+
+			if (other != null) {
 				Value value1 = binding.getValue();
 
 				// if a variable is unbound in one set it is compatible
 				if (value1 != null) {
-					Value value2 = bs2.getValue(binding.getName());
+					Value value2 = other.getValue();
 
 					// if a variable is unbound in one set it is compatible
 					if (value2 != null && !value1.equals(value2)) {

@@ -14,10 +14,13 @@ import java.io.ObjectStreamException;
 
 import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class LmdbIRI extends SimpleIRI implements LmdbResource {
 
 	private static final long serialVersionUID = -5888138591826143179L;
+	private static final Logger log = LoggerFactory.getLogger(LmdbIRI.class);
 
 	/*-----------*
 	 * Constants *
@@ -103,9 +106,12 @@ public class LmdbIRI extends SimpleIRI implements LmdbResource {
 		if (!initialized) {
 			synchronized (this) {
 				if (!initialized) {
-					revision.resolveValue(internalID, this);
+					boolean resolved = revision.resolveValue(internalID, this);
+					if (!resolved) {
+						log.warn("Could not resolve value");
+					}
+					initialized = resolved;
 				}
-				initialized = true;
 			}
 		}
 	}

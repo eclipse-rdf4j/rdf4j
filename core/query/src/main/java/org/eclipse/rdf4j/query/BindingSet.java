@@ -101,4 +101,19 @@ public interface BindingSet extends Iterable<Binding>, Serializable {
 	default boolean isEmpty() {
 		return size() == 0;
 	}
+
+	/**
+	 * Check whether this BindingSet is compatible with another. Two binding sets are compatible if they have equal
+	 * values for each variable that is bound in both binding sets. A variable that is unbound in either set is
+	 * considered compatible.
+	 *
+	 * <p>
+	 * Default implementation mirrors {@link QueryResults#bindingSetsCompatible(BindingSet, BindingSet)}.
+	 *
+	 * @param other the other binding set to compare with
+	 * @return true if compatible
+	 */
+	default boolean isCompatible(BindingSet other) {
+		return QueryResults.bindingSetsCompatible(this, other);
+	}
 }

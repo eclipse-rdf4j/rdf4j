@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2022 Eclipse RDF4J contributors.
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -33,19 +33,19 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
- * Benchmarks insertion performance with extended FOAF data.
+ * Benchmarks insertion performance with synthetic FOAF data.
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 2)
 @BenchmarkMode({ Mode.Throughput })
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 5)
+@Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class TransactionsPerSecondBenchmarkFoaf extends BenchmarkBaseFoaf {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("TransactionsPerSecondBenchmarkFoaf") // adapt to control which benchmark tests to run
+				.include("TransactionsPerSecondBenchmarkFoaf\\.") // adapt to control which benchmark tests to run
 				.forks(1)
 				.build();
 

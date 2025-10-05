@@ -165,6 +165,12 @@ public class SimpleValueFactory extends AbstractValueFactory {
 		return createIntegerLiteral(value, CoreDatatype.XSD.LONG);
 	}
 
+	@Override
+	public Literal createLiteral(long value, CoreDatatype.XSD xsd) {
+		assert xsd.isIntegerDatatype();
+		return createIntegerLiteral(value, xsd);
+	}
+
 	/**
 	 * Calls {@link #createNumericLiteral(Number, IRI)} with the supplied value and datatype as parameters.
 	 */

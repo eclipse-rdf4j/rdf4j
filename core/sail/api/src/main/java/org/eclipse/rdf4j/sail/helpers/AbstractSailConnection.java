@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.LockSupport;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.ExclusiveReentrantLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
@@ -775,10 +776,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 		synchronized (added) {
 			model = added.remove(op);
 		}
-		if (model != null) {
-			for (Statement st : model) {
-				addStatementInternal(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
-			}
+		if (model != null && !model.isEmpty()) {
+			bulkAddStatementsInternal(model);
 		}
 	}
 
@@ -1030,6 +1029,14 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	protected abstract void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException;
+
+	@Experimental
+	protected void bulkAddStatementsInternal(final Collection<? extends Statement> statements)
+			throws SailException {
+		for (final Statement st : statements) {
+			addStatementInternal(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
+		}
+	}
 
 	protected abstract void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException;

@@ -117,7 +117,7 @@ public class NamespacesController extends AbstractController {
 	}
 
 	private ModelAndView getClearNamespacesResult(HttpServletRequest request, HttpServletResponse response)
-			throws ServerHTTPException {
+			throws ServerHTTPException, ClientHTTPException {
 		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 			try {
 				repositoryCon.clearNamespaces();

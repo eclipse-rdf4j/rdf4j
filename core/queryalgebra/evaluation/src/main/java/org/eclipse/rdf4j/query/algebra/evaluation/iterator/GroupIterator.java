@@ -505,7 +505,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 		@Override
 		public Value getFinalValue() {
-			return vf.createLiteral(Long.toString(value), CoreDatatype.XSD.INTEGER);
+			return vf.createLiteral(value, CoreDatatype.XSD.INTEGER);
 		}
 	}
 

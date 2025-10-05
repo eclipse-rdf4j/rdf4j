@@ -38,7 +38,7 @@ public class CardinalityTest {
 	public void before() throws Exception {
 		File dataDir = new File(tempFolder, "triplestore");
 		dataDir.mkdir();
-		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 	}
 
 	int count(RecordIterator it) {
