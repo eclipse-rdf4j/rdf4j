@@ -1047,4 +1047,59 @@ public class SPARQLParserTest {
 			throw new RuntimeException(e);
 		}
 	}
+
+	@Test
+	public void testDuplicatePrefixDeclarations_SameNamespace_ShouldPass() {
+		// Test that duplicate prefix declarations with the same namespace are allowed
+		String query = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" +
+				"PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" +
+				"SELECT ?name WHERE { ?person foaf:name ?name }";
+
+		// This should not throw an exception
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+
+		ParsedQuery parsed = parser.parseQuery(query, null);
+		assertNotNull(parsed);
+	}
+
+	@Test
+	public void testDuplicatePrefixDeclarations_DifferentNamespace_ShouldFail() {
+		// Test that duplicate prefix declarations with different namespaces are rejected
+		String query = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" +
+				"PREFIX foaf: <http://example.org/different/>\n" +
+				"SELECT ?name WHERE { ?person foaf:name ?name }";
+
+		// This should throw a MalformedQueryException
+		assertThatExceptionOfType(MalformedQueryException.class)
+				.isThrownBy(() -> parser.parseQuery(query, null))
+				.withMessageContaining("Multiple prefix declarations")
+				.withMessageContaining("foaf");
+	}
+
+	@Test
+	public void testDuplicatePrefixDeclarations_EmptyPrefix_SameNamespace_ShouldPass() {
+		// Test that duplicate default prefix declarations with the same namespace are allowed
+		String query = "PREFIX : <http://example.org/ns#>\n" +
+				"PREFIX : <http://example.org/ns#>\n" +
+				"SELECT ?name WHERE { :person :name ?name }";
+
+		// This should not throw an exception
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+
+		ParsedQuery parsed = parser.parseQuery(query, null);
+		assertNotNull(parsed);
+	}
+
+	@Test
+	public void testDuplicatePrefixDeclarations_EmptyPrefix_DifferentNamespace_ShouldFail() {
+		// Test that duplicate default prefix declarations with different namespaces are rejected
+		String query = "PREFIX : <http://example.org/ns#>\n" +
+				"PREFIX : <http://example.org/different/>\n" +
+				"SELECT ?name WHERE { :person :name ?name }";
+
+		// This should throw a MalformedQueryException
+		assertThatExceptionOfType(MalformedQueryException.class)
+				.isThrownBy(() -> parser.parseQuery(query, null))
+				.withMessageContaining("Multiple prefix declarations");
+	}
 }

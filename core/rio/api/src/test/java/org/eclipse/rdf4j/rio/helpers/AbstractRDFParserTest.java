@@ -53,6 +53,14 @@ public class AbstractRDFParserTest {
 		public Resource getBNode(String id) {
 			return createNode(id);
 		}
+
+		public void setNamespace(String prefix, String namespace) {
+			super.setNamespace(prefix, namespace);
+		}
+
+		public String getNamespace(String prefix) throws RDFParseException {
+			return super.getNamespace(prefix);
+		}
 	}
 
 	@BeforeEach
@@ -88,5 +96,27 @@ public class AbstractRDFParserTest {
 		String longNodeId = "someverylongnodeidwithmorethan32characters";
 		assertThat(parser.createNode(longNodeId).stringValue())
 				.endsWith("2A372A91878F0980C8F53341D2D8A944");
+	}
+
+	@Test
+	public void testSetNamespace_DuplicateWithSameNamespace() {
+		// Test that setting the same namespace twice is allowed (last one wins)
+		parser.setNamespace("foaf", "http://xmlns.com/foaf/0.1/");
+		parser.setNamespace("foaf", "http://xmlns.com/foaf/0.1/");
+
+		// Should not throw an exception - namespace should be available
+		String namespace = parser.getNamespace("foaf");
+		assertThat(namespace).isEqualTo("http://xmlns.com/foaf/0.1/");
+	}
+
+	@Test
+	public void testSetNamespace_DuplicateWithDifferentNamespace() {
+		// Test that setting different namespaces for same prefix overwrites (existing behavior)
+		parser.setNamespace("foaf", "http://xmlns.com/foaf/0.1/");
+		parser.setNamespace("foaf", "http://example.org/different/");
+
+		// Should overwrite - current behavior of AbstractRDFParser
+		String namespace = parser.getNamespace("foaf");
+		assertThat(namespace).isEqualTo("http://example.org/different/");
 	}
 }
