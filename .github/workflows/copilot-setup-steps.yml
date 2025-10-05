@@ -23,16 +23,16 @@ jobs:
           cache: maven
 
       - name: Validate formatting configuration
-        run: mvn -B -T 2C formatter:validate impsort:check xml-format:xml-check
+        run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo formatter:validate impsort:check xml-format:xml-check
 
       - name: Quick compile (skip tests)
-        run: mvn -B -T 2C compile -DskipTests -Pquick
+        run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo compile -DskipTests -Pquick
 
       - name: Download Maven dependencies for offline use
-        run: mvn -B -T 2C dependency:go-offline
+        run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo dependency:go-offline
 
       - name: Maven install (skip tests)
-        run: mvn -B install -DskipTests -Pquick
+        run: mvn -B -Dmaven.repo.local=.m2_repo install -DskipTests -Pquick
 
       - name: Install system dependencies for E2E tests
         run: sudo apt-get update && sudo apt-get install -y libxml2-utils
