@@ -568,23 +568,23 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 						}
 
 						if (operator.equals(valueExpr)) {
-							AggregateOperator clonedOperator = operator.clone();
-							group.addGroupElement(new GroupElem(alias, clonedOperator));
+							// For simple aggregations like COUNT(?s), clone the operator to avoid
+							// parent reference conflicts when it's added to both GroupElem and ExtensionElem
+							group.addGroupElement(new GroupElem(alias, operator.clone()));
 							extension.setArg(group);
-							System.out.println("Original operator ID: " + System.identityHashCode(operator));
-							System.out.println("Cloned operator ID: " + System.identityHashCode(clonedOperator));
 						} else {
 							ValueExpr expr = (ValueExpr) operator.getParentNode();
 
 							Extension anonymousExtension = new Extension();
 							Var anonVar = createAnonVar();
 							expr.replaceChildNode(operator, anonVar);
+							// Clone the operator for the ExtensionElem to avoid parent reference conflicts
 							anonymousExtension.addElement(new ExtensionElem(operator.clone(), anonVar.getName()));
 
 							anonymousExtension.setArg(result);
 							result = anonymousExtension;
 							group.addGroupElement(new GroupElem(anonVar.getName(), operator));
-							
+
 							// Update the group's argument to point to the new result structure
 							if (!isExistingGroup) {
 								group.setArg(result);
@@ -600,7 +600,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				// SELECT expressions need to be captured as an extension, so that original and alias are
 				// available for the ORDER BY clause (which gets applied _before_ projection). See GH-4066
 				// and https://www.w3.org/TR/sparql11-query/#sparqlSolMod .
-				ExtensionElem extElem = new ExtensionElem(valueExpr, alias);
+				// Clone valueExpr if it contains aggregates to avoid parent reference conflicts
+				ValueExpr extValueExpr = !collector.getOperators().isEmpty() ? valueExpr.clone() : valueExpr;
+				ExtensionElem extElem = new ExtensionElem(extValueExpr, alias);
 				extension.addElement(extElem);
 				elem.setSourceExpression(extElem);
 			} else if (child instanceof ASTVar) {
