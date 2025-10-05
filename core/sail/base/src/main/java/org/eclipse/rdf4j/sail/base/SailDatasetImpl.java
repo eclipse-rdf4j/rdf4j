@@ -387,8 +387,8 @@ class SailDatasetImpl implements SailDataset {
 	@Experimental
 	@Override
 	public long size(final Resource subj, final IRI pred, final Value obj, final Resource... contexts) {
-		// Fast path: no approved or deprecated
-		if (!changes.hasApproved() && !changes.hasDeprecated()) {
+		// Fast path: no approved or deprecated and not cleared
+		if (!changes.hasApproved() && !changes.hasDeprecated() && !changes.isStatementCleared()) {
 			return derivedFrom.size(subj, pred, obj, contexts);
 		}
 
