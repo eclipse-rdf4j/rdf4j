@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  setup:
+  copilot-setup-steps:
     name: Prepare Maven workspace and prime E2E dependencies
     runs-on: ubuntu-latest
     steps:
