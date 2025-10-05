@@ -568,20 +568,27 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 						}
 
 						if (operator.equals(valueExpr)) {
-							group.addGroupElement(new GroupElem(alias, operator));
+							AggregateOperator clonedOperator = operator.clone();
+							group.addGroupElement(new GroupElem(alias, clonedOperator));
 							extension.setArg(group);
+							System.out.println("Original operator ID: " + System.identityHashCode(operator));
+							System.out.println("Cloned operator ID: " + System.identityHashCode(clonedOperator));
 						} else {
 							ValueExpr expr = (ValueExpr) operator.getParentNode();
 
 							Extension anonymousExtension = new Extension();
 							Var anonVar = createAnonVar();
 							expr.replaceChildNode(operator, anonVar);
-							anonymousExtension.addElement(new ExtensionElem(operator, anonVar.getName()));
+							anonymousExtension.addElement(new ExtensionElem(operator.clone(), anonVar.getName()));
 
 							anonymousExtension.setArg(result);
 							result = anonymousExtension;
 							group.addGroupElement(new GroupElem(anonVar.getName(), operator));
-
+							
+							// Update the group's argument to point to the new result structure
+							if (!isExistingGroup) {
+								group.setArg(result);
+							}
 						}
 
 						if (!isExistingGroup) {

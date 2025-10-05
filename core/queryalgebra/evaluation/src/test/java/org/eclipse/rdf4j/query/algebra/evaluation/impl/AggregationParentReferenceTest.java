@@ -28,6 +28,9 @@ public class AggregationParentReferenceTest {
 
 		TupleExpr expr = new SPARQLParser().parseQuery(query, null).getTupleExpr();
 
+		// Print the structure before parent reference check
+		System.out.println("Structure: " + expr);
+
 		// This should not throw an AssertionError about parent references
 		new ParentReferenceChecker(null).optimize(expr, new SimpleDataset(), new EmptyBindingSet());
 	}
