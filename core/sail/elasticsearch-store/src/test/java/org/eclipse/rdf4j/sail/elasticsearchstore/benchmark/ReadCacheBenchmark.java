@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStore;
+import org.junit.jupiter.api.Assumptions;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -76,13 +77,15 @@ public class ReadCacheBenchmark {
 		// JMH does not correctly set JAVA_HOME. Change the JAVA_HOME below if you the following error:
 		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
 		// PATH
-		TestHelpers.openClient();
+		Assumptions.assumeTrue(TestHelpers.openClient(), "Docker not available for Elasticsearch tests");
 
-		repoWithoutCache = new SailRepository(new ElasticsearchStore("localhost", TestHelpers.PORT,
-				TestHelpers.CLUSTER, "testindex1", ExtensibleStore.Cache.NONE));
+		repoWithoutCache = new SailRepository(
+				new ElasticsearchStore(TestHelpers.getHost(), TestHelpers.getTransportPort(),
+						TestHelpers.getClusterName(), "testindex1", ExtensibleStore.Cache.NONE));
 
 		repoWithCache = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex2"));
+				new ElasticsearchStore(TestHelpers.getHost(), TestHelpers.getTransportPort(),
+						TestHelpers.getClusterName(), "testindex2"));
 		try (SailRepositoryConnection connection = repoWithCache.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.clear();

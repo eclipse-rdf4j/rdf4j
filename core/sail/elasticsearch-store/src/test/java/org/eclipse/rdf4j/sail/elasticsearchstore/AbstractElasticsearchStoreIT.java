@@ -11,22 +11,22 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import java.io.IOException;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 
-import org.elasticsearch.action.admin.indices.get.GetIndexRequest;
+import org.elasticsearch.ElasticsearchStatusException;
+import org.elasticsearch.action.admin.indices.refresh.RefreshRequest;
+import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.client.Request;
 import org.elasticsearch.client.RequestOptions;
-import org.elasticsearch.client.Requests;
-import org.elasticsearch.client.transport.TransportClient;
-import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.transport.TransportAddress;
+import org.elasticsearch.client.indices.GetIndexRequest;
+import org.elasticsearch.client.indices.GetIndexResponse;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
-import org.elasticsearch.transport.client.PreBuiltTransportClient;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,19 +34,31 @@ public abstract class AbstractElasticsearchStoreIT {
 
 	private static final Logger logger = LoggerFactory.getLogger(AbstractElasticsearchStoreIT.class);
 
+	private static boolean dockerAvailable;
+
 	@BeforeAll
 	public static void beforeClass() {
-		TestHelpers.openClient();
+		dockerAvailable = TestHelpers.openClient();
 	}
 
 	@AfterAll
 	public static void afterClass() throws IOException {
-		TestHelpers.closeClient();
+		if (dockerAvailable) {
+			TestHelpers.closeClient();
+		}
+	}
+
+	@BeforeEach
+	public void requireDocker() {
+		Assumptions.assumeTrue(dockerAvailable, "Docker not available for Elasticsearch tests");
 	}
 
 	@AfterEach
 	public void after() throws IOException {
-		TestHelpers.getClient().indices().refresh(Requests.refreshRequest("*"), RequestOptions.DEFAULT);
+		if (!dockerAvailable) {
+			return;
+		}
+		TestHelpers.getClient().indices().refresh(new RefreshRequest("*"), RequestOptions.DEFAULT);
 		printAllDocs();
 		deleteAllIndexes();
 	}
@@ -56,7 +68,7 @@ public abstract class AbstractElasticsearchStoreIT {
 			if (!index.equals(".geoip_databases")) {
 				logger.info("INDEX: " + index);
 				SearchResponse res = TestHelpers.getClient()
-						.search(Requests.searchRequest(index), RequestOptions.DEFAULT);
+						.search(new SearchRequest(index), RequestOptions.DEFAULT);
 				SearchHits hits = res.getHits();
 				for (SearchHit hit : hits) {
 					logger.info(" doc " + hit.getSourceAsString());
@@ -69,24 +81,24 @@ public abstract class AbstractElasticsearchStoreIT {
 		for (String index : getIndexes()) {
 			if (!index.equals(".geoip_databases")) {
 				logger.info("deleting index: " + index);
-				TestHelpers.getClient().indices().delete(Requests.deleteIndexRequest(index), RequestOptions.DEFAULT);
+				TestHelpers.getClient().getLowLevelClient().performRequest(new Request("DELETE", "/" + index));
 			}
 		}
 	}
 
-	protected String[] getIndexes() {
-		Settings settings = Settings.builder().put("cluster.name", TestHelpers.CLUSTER).build();
-		try (TransportClient client = new PreBuiltTransportClient(settings)) {
-			client.addTransportAddress(
-					new TransportAddress(InetAddress.getByName("localhost"), TestHelpers.PORT));
-
-			return client.admin()
-					.indices()
-					.getIndex(new GetIndexRequest())
-					.actionGet()
-					.getIndices();
-		} catch (UnknownHostException e) {
-			throw new IllegalStateException(e);
+	protected String[] getIndexes() throws IOException {
+		if (!dockerAvailable) {
+			return new String[0];
+		}
+		GetIndexRequest request = new GetIndexRequest("*");
+		try {
+			if (!TestHelpers.getClient().indices().exists(request, RequestOptions.DEFAULT)) {
+				return new String[0];
+			}
+			GetIndexResponse response = TestHelpers.getClient().indices().get(request, RequestOptions.DEFAULT);
+			return response.getIndices();
+		} catch (ElasticsearchStatusException e) {
+			return new String[0];
 		}
 	}
 }

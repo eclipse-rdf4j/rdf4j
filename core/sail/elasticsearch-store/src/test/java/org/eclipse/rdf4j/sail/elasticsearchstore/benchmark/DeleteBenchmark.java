@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStore;
+import org.junit.jupiter.api.Assumptions;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -58,10 +59,11 @@ public class DeleteBenchmark {
 		// JMH does not correctly set JAVA_HOME. Change the JAVA_HOME below if you the following error:
 		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
 		// PATH
-		TestHelpers.openClient();
+		Assumptions.assumeTrue(TestHelpers.openClient(), "Docker not available for Elasticsearch tests");
 
 		elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex",
+				new ElasticsearchStore(TestHelpers.getHost(), TestHelpers.getTransportPort(),
+						TestHelpers.getClusterName(), "testindex",
 						ExtensibleStore.Cache.NONE));
 
 		System.gc();

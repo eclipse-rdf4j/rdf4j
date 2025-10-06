@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
@@ -40,13 +41,17 @@ public class InferenceIT extends AbstractElasticsearchStoreIT {
 
 	@BeforeAll
 	public static void beforeClass() {
-		TestHelpers.openClient();
-		singletonClientProvider = new SingletonClientProvider("localhost", TestHelpers.PORT, TestHelpers.CLUSTER);
+		Assumptions.assumeTrue(TestHelpers.openClient(), "Docker not available for Elasticsearch tests");
+		singletonClientProvider = new SingletonClientProvider(TestHelpers.getHost(), TestHelpers.getTransportPort(),
+				TestHelpers.getClusterName());
 	}
 
 	@AfterAll
 	public static void afterClassSingleton() throws Exception {
-		singletonClientProvider.close();
+		if (singletonClientProvider != null) {
+			singletonClientProvider.close();
+			singletonClientProvider = null;
+		}
 		TestHelpers.closeClient();
 	}
 

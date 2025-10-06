@@ -17,22 +17,39 @@ import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.eclipse.rdf4j.testsuite.repository.SparqlRegexTest;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 
 public class ElasticsearchStoreSparqlRegexIT extends SparqlRegexTest {
 
 	private static SingletonClientProvider clientPool;
+	private static boolean dockerAvailable;
 
 	@BeforeAll
 	public static void beforeClass() {
-		TestHelpers.openClient();
-		clientPool = new SingletonClientProvider("localhost", TestHelpers.PORT, TestHelpers.CLUSTER);
+		dockerAvailable = TestHelpers.openClient();
+		if (!dockerAvailable) {
+			return;
+		}
+		clientPool = new SingletonClientProvider(TestHelpers.getHost(), TestHelpers.getTransportPort(),
+				TestHelpers.getClusterName());
+	}
+
+	@BeforeEach
+	public void requireDocker() {
+		Assumptions.assumeTrue(dockerAvailable, "Docker not available for Elasticsearch tests");
 	}
 
 	@AfterAll
 	public static void afterClass() throws Exception {
-		clientPool.close();
-		TestHelpers.closeClient();
+		if (clientPool != null) {
+			clientPool.close();
+			clientPool = null;
+		}
+		if (dockerAvailable) {
+			TestHelpers.closeClient();
+		}
 	}
 
 	@Override
