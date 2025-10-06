@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -194,6 +195,22 @@ public class SailRepositoryConnectionTest {
 
 		subject.begin(IsolationLevels.READ_UNCOMMITTED);
 		assertThat(subject.getIsolationLevel()).isEqualTo(IsolationLevels.READ_UNCOMMITTED);
+
+		subject.rollback();
+	}
+
+	@Test
+	public void testGetIsolationLevel_shouldReturnDefaultLevelWhenNotExplicitlySet() {
+		// Test that getIsolationLevel() returns the default isolation level when begin() is called without parameters
+		assertThat(subject.getIsolationLevel()).isNull();
+
+		// Create a mock sail that returns the default isolation level
+		Sail mockSail = mock(Sail.class);
+		when(mockSail.getDefaultIsolationLevel()).thenReturn(IsolationLevels.READ_COMMITTED);
+		when(sailRepository.getSail()).thenReturn(mockSail);
+
+		subject.begin();
+		assertThat(subject.getIsolationLevel()).isEqualTo(IsolationLevels.READ_COMMITTED);
 
 		subject.rollback();
 	}
