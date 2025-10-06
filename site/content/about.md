@@ -31,6 +31,10 @@ This is useful if you are already using Elasticsearch for other things in your p
 A good usecase is if you need reference data or an ontology for your application. The built-in read cache makes it a good choice for data that updates infrequently,
 though for most usecases the NativeStore will be considerably faster.
 
+{{< alert title="Licensing note" color="warning" >}}
+Elasticsearch itself is distributed under the Elastic License (with SSPL as an alternative). If you intend to use the optional Elasticsearch-backed features in RDF4J, please make sure to evaluate whether the licensing terms of Elasticsearch align with the needs of your project before adopting it.
+{{< /alert >}}
+
 On top of these core databases, RDF4J offers a number of functional extensions. These extensions add functionality such as improved full-text search, RDFS inferencing, rule-based reasoning and validation using SHACL/SPIN, and geospatial querying support. For more information see the [RDF4J documentation](/documentation).
 
 ### Third party database solutions
