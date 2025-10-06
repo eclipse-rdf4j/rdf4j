@@ -1,0 +1,75 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.noggit</groupId>
+  <artifactId>noggit</artifactId>
+  <packaging>jar</packaging>
+  <version>0.8</version>
+  <name>Noggit</name>
+  <url>http://github.com/yonik/noggit</url>
+  <description>Noggit is the world's fastest streaming JSON parser for Java.</description>
+  
+  <parent>
+    <groupId>org.sonatype.oss</groupId>
+    <artifactId>oss-parent</artifactId>
+    <version>7</version>
+  </parent>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <scm>
+    <connection>scm:git:git@github.com:yonik/noggit.git</connection>
+    <developerConnection>scm:git:git@github.com:yonik/noggit.git</developerConnection>
+    <url>git@github.com:yonik/noggit.git</url>
+  </scm>
+
+  <developers>
+    <developer>
+      <email>yseeley@gmail.com</email>
+      <name>Yonik Seeley</name>
+      <url>https://github.com/yonik</url>
+      <id>yonik</id>
+    </developer>
+  </developers>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+  
+
+  <dependencies>
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <version>3.8.1</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.1</version>
+        <configuration>
+          <source>1.5</source>
+          <target>1.5</target>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-eclipse-plugin</artifactId>
+        <version>2.9</version>
+      </plugin>     
+    </plugins>
+  </build>
+
+</project>
+
+

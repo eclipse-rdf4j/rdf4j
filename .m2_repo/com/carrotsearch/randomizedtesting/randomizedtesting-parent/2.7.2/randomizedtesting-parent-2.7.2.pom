@@ -1,0 +1,692 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <prerequisites>
+    <maven>${minimum.maven.version}</maven>
+  </prerequisites>
+
+  <groupId>com.carrotsearch.randomizedtesting</groupId>
+  <artifactId>randomizedtesting-parent</artifactId>
+  <version>2.7.2</version>
+  <packaging>pom</packaging>
+
+  <name>RandomizedTesting Parent POM</name>
+  <url>https://github.com/randomizedtesting/randomizedtesting</url>
+  <description>JUnit test runner and plugins for running JUnit tests with pseudo-randomness.</description>
+  <inceptionYear>2011</inceptionYear>
+
+  <organization>
+    <name>Carrot Search s.c.</name>
+    <url>http://carrotsearch.com</url>
+  </organization>
+
+  <developers>
+    <developer>
+      <name>Carrot Search s.c.</name>
+      <email>info@carrotsearch.com</email>
+      <organization>Carrot Search s.c.</organization>
+      <organizationUrl>http://www.carrotsearch.com</organizationUrl>
+    </developer>
+  </developers>
+
+  <licenses>
+    <license>
+      <name>The Apache Software License, Version 2.0</name>
+      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <distributionManagement>
+    <site>
+      <id>site</id>
+      <url>scm:git:git@github.com:randomizedtesting/randomizedtesting.git</url>
+    </site>
+  </distributionManagement>
+
+  <scm>
+    <connection>scm:git:git@github.com:randomizedtesting/randomizedtesting.git</connection>
+    <developerConnection>scm:git:git@github.com:randomizedtesting/randomizedtesting.git</developerConnection>
+    <url>git@github.com:randomizedtesting/randomizedtesting.git</url>
+  </scm>
+
+  <properties>
+    <minimum.maven.version>3.2.5</minimum.maven.version>
+
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+    <maven.compiler.source>1.8</maven.compiler.source>
+    <maven.compiler.target>1.8</maven.compiler.target>
+
+    <gpg.passphrase></gpg.passphrase>
+
+    <version.junit>4.12</version.junit>
+    <version.ant>1.9.11</version.ant>
+    <version.assertj>2.2.0</version.assertj>
+
+    <version.maven-antrun-plugin>1.8</version.maven-antrun-plugin>
+    <version.maven-enforcer-plugin>3.0.0-M1</version.maven-enforcer-plugin>
+    <version.maven-clean-plugin>3.0.0</version.maven-clean-plugin>
+    <version.maven-javadoc-plugin>3.0.0</version.maven-javadoc-plugin>
+    <version.maven-surefire-plugin>3.0.0-M1</version.maven-surefire-plugin>
+    <version.forbiddenapis>2.5</version.forbiddenapis>
+  </properties>
+
+  <modules>
+    <module>randomized-runner</module>
+    <module>junit4-ant</module>
+    <module>junit4-maven-plugin</module>
+    <module>junit4-maven-plugin-tests</module>
+    <module>examples/maven</module>
+    <module>examples/ant</module>
+    <module>examples/security-manager</module>
+  </modules>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.apache.ant</groupId>
+        <artifactId>ant</artifactId>
+        <version>${version.ant}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.apache.ant</groupId>
+        <artifactId>ant-junit</artifactId>
+        <version>${version.ant}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.dom4j</groupId>
+        <artifactId>dom4j</artifactId>
+        <version>2.1.1</version>
+      </dependency>
+
+      <dependency>
+        <groupId>com.google.guava</groupId>
+        <artifactId>guava</artifactId>
+        <version>25.0-jre</version>
+        <exclusions>
+          <exclusion>
+            <artifactId>jsr305</artifactId>
+            <groupId>com.google.code.findbugs</groupId>
+          </exclusion>
+          <exclusion>
+            <groupId>com.google.errorprone</groupId>
+            <artifactId>error_prone_annotations</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>com.google.j2objc</groupId>
+            <artifactId>j2objc-annotations</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>animal-sniffer-annotations</artifactId>
+          </exclusion>
+        </exclusions>
+      </dependency>
+
+      <dependency>
+        <groupId>org.ow2.asm</groupId>
+        <artifactId>asm</artifactId>
+        <version>6.2.1</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.simpleframework</groupId>
+        <artifactId>simple-xml</artifactId>
+        <version>2.7.1</version>
+      </dependency>
+
+      <dependency>
+        <groupId>junit</groupId>
+        <artifactId>junit</artifactId>
+        <version>${version.junit}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.assertj</groupId>
+        <artifactId>assertj-core</artifactId>
+        <version>${version.assertj}</version>
+        <scope>test</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-site-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>attach-descriptor</id>
+            <goals>
+              <goal>attach-descriptor</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-site-plugin</artifactId>
+          <version>3.5.1</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-clean-plugin</artifactId>
+          <version>${version.maven-clean-plugin}</version>
+          <configuration>
+            <failOnError>false</failOnError>
+            <excludeDefaultDirectories>true</excludeDefaultDirectories>
+            <filesets>
+              <fileset>
+                <directory>${project.build.directory}</directory>
+                <excludes>
+                  <exclude>eclipse/**</exclude>
+                  <exclude>idea/**</exclude>
+                </excludes>
+              </fileset>
+            </filesets>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-deploy-plugin</artifactId>
+          <version>2.8.2</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-plugin-plugin</artifactId>
+          <version>3.5</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-source-plugin</artifactId>
+          <version>3.0.1</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-assembly-plugin</artifactId>
+          <version>2.6</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-jar-plugin</artifactId>
+          <version>3.0.2</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-install-plugin</artifactId>
+          <version>2.5.2</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-resources-plugin</artifactId>
+          <version>3.0.1</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-enforcer-plugin</artifactId>
+          <version>${version.maven-enforcer-plugin}</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-dependency-plugin</artifactId>
+          <version>2.10</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.5.1</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-gpg-plugin</artifactId>
+          <version>1.6</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>${version.maven-surefire-plugin}</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-antrun-plugin</artifactId>
+          <version>${version.maven-antrun-plugin}</version>
+
+          <dependencies>
+            <dependency>
+              <groupId>org.apache.ant</groupId>
+              <artifactId>ant</artifactId>
+              <version>${version.ant}</version>
+            </dependency>
+            <dependency>
+              <groupId>org.apache.ant</groupId>
+              <artifactId>ant-junit</artifactId>
+              <version>${version.ant}</version>
+            </dependency>
+          </dependencies>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.felix</groupId>
+          <artifactId>maven-bundle-plugin</artifactId>
+          <version>3.2.0</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-project-info-reports-plugin</artifactId>
+          <version>2.9</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-javadoc-plugin</artifactId>
+          <version>${version.maven-javadoc-plugin}</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-invoker-plugin</artifactId>
+          <version>2.0.0</version>
+        </plugin>
+        
+        <plugin>
+          <groupId>de.thetaphi</groupId>
+          <artifactId>forbiddenapis</artifactId>
+          <version>${version.forbiddenapis}</version>
+
+          <executions>
+            <execution>
+              <id>check-forbidden-apis</id>
+              <phase>verify</phase>
+              <goals>
+                <goal>check</goal>
+              </goals>
+              <configuration>
+                <targetVersion>1.8</targetVersion>
+                <failOnUnsupportedJava>false</failOnUnsupportedJava>
+                <failOnUnresolvableSignatures>false</failOnUnresolvableSignatures>
+                <failOnMissingClasses>true</failOnMissingClasses>
+                <excludes><!-- Override in subprojects. --></excludes>
+                <suppressAnnotations>
+                  <suppressAnnotation>**.SuppressForbidden</suppressAnnotation>
+                </suppressAnnotations>
+                <bundledSignatures>
+                  <bundledSignature>jdk-unsafe</bundledSignature>
+                  <bundledSignature>jdk-deprecated</bundledSignature>
+                  <bundledSignature>jdk-system-out</bundledSignature>
+                  <bundledSignature>jdk-non-portable</bundledSignature>
+                </bundledSignatures>
+                <signaturesArtifacts>
+                <!-- 
+                  <signaturesArtifact>
+                    <groupId>com.carrotsearch.lingo4g</groupId>
+                    <artifactId>lingo4g-public-forbiddenapis</artifactId> 
+                    <version>${project.version}</version>
+                    <type>jar</type>
+                    <path>com/carrotsearch/lingo4g/forbiddenapis/java-signatures.txt</path>
+                  </signaturesArtifact>
+                  <signaturesArtifact>
+                    <groupId>com.carrotsearch.lingo4g</groupId>
+                    <artifactId>lingo4g-public-forbiddenapis</artifactId> 
+                    <version>${project.version}</version>
+                    <type>jar</type>
+                    <path>com/carrotsearch/lingo4g/forbiddenapis/thirdparty-signatures.txt</path>
+                  </signaturesArtifact>
+                   -->
+                </signaturesArtifacts>
+              </configuration>
+            </execution>
+          </executions>
+        </plugin>        
+      </plugins>
+    </pluginManagement>
+  </build>
+
+  <profiles>
+    <profile>
+      <id>quick</id>
+      <properties>
+        <skipTests>true</skipTests>
+        <invoker.skip>true</invoker.skip>
+      </properties>
+    </profile>
+
+    <profile>
+      <id>profile.ide.eclipse-m2e</id>
+
+      <activation>
+        <property>
+          <name>m2e.version</name>
+        </property>
+      </activation>
+
+      <build>
+        <!-- 
+        Disable for now, we have target-relative classpaths in tests
+        <directory>target/eclipse</directory>
+         -->
+
+        <pluginManagement>
+          <plugins>
+            <plugin>
+              <groupId>org.eclipse.m2e</groupId>
+              <artifactId>lifecycle-mapping</artifactId>
+              <version>1.0.0</version>
+              <configuration>
+                <lifecycleMappingMetadata>
+                  <pluginExecutions>
+                    <pluginExecution>
+                      <pluginExecutionFilter>
+                        <groupId>org.apache.felix</groupId>
+                        <artifactId>maven-bundle-plugin</artifactId>
+                        <versionRange>[1.0.0,)</versionRange>
+                        <goals>
+                          <goal>manifest</goal>
+                        </goals>
+                      </pluginExecutionFilter>
+                      <action>
+                        <ignore />
+                      </action>
+                    </pluginExecution>
+
+                    <pluginExecution>
+                      <pluginExecutionFilter>
+                        <groupId>de.thetaphi</groupId>
+                        <artifactId>forbiddenapis</artifactId>
+                        <versionRange>[1.0.0,)</versionRange>
+                        <goals>
+                          <goal>testCheck</goal>
+                          <goal>check</goal>
+                        </goals>
+                      </pluginExecutionFilter>
+                      <action>
+                        <ignore />
+                      </action>
+                    </pluginExecution>
+
+                    <pluginExecution>
+                      <pluginExecutionFilter>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-plugin-plugin</artifactId>
+                        <versionRange>[3.4,)</versionRange>
+                        <goals>
+                          <goal>descriptor</goal>
+                          <goal>helpmojo</goal>
+                        </goals>
+                      </pluginExecutionFilter>
+                      <action>
+                        <ignore></ignore>
+                      </action>
+                    </pluginExecution>
+                  </pluginExecutions>
+                </lifecycleMappingMetadata>
+              </configuration>
+            </plugin>
+
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-site-plugin</artifactId>
+              <configuration>
+                <chmod>true</chmod>
+                <inputEncoding>UTF-8</inputEncoding>
+                <outputEncoding>UTF-8</outputEncoding>
+              </configuration>
+            </plugin>
+
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-scm-publish-plugin</artifactId>
+              <version>1.1</version>
+              <configuration>
+                <scmBranch>gh-pages</scmBranch>
+              </configuration>
+            </plugin>
+          </plugins>
+        </pluginManagement>
+      </build>
+    </profile>
+
+    <profile>
+      <id>eclipse</id>
+      <build>
+        <defaultGoal>compile antrun:run</defaultGoal>
+        <pluginManagement>
+          <plugins>
+            <plugin>
+              <artifactId>maven-antrun-plugin</artifactId>
+              <version>${version.maven-antrun-plugin}</version>
+              <executions>
+                <execution>
+                  <id>default-cli</id>
+                  <phase>none</phase>
+                  <inherited>false</inherited>
+                  <configuration>
+                    <target>
+                      <presetdef name="copy">
+                        <copy overwrite="true" />
+                      </presetdef>
+                      <condition property="onwin">
+                        <os family="windows" />
+                      </condition>
+
+                      <fileset id="id:settings" dir="etc/eclipse/settings" />
+                      <copy todir="examples/ant/.settings">
+                        <fileset refid="id:settings" />
+                      </copy>
+                      <copy todir="examples/maven/.settings">
+                        <fileset refid="id:settings" />
+                      </copy>
+                      <copy todir="examples/security-manager/.settings">
+                        <fileset refid="id:settings" />
+                      </copy>
+                      <copy todir="junit4-ant/.settings">
+                        <fileset refid="id:settings" />
+                      </copy>
+                      <copy todir="junit4-maven-plugin/.settings">
+                        <fileset refid="id:settings" />
+                      </copy>
+                      <copy todir="junit4-maven-plugin-tests/.settings">
+                        <fileset refid="id:settings" />
+                      </copy>
+                      <copy todir="randomized-runner/.settings">
+                        <fileset refid="id:settings" />
+                      </copy>
+                    </target>
+                  </configuration>
+                  <goals>
+                    <goal>run</goal>
+                  </goals>
+                </execution>
+              </executions>
+              <dependencies>
+                <dependency>
+                  <groupId>org.apache.ant</groupId>
+                  <artifactId>ant</artifactId>
+                  <version>${version.ant}</version>
+                </dependency>
+              </dependencies>
+            </plugin>
+          </plugins>
+        </pluginManagement>
+      </build>
+    </profile>
+
+    <profile>
+      <id>sonatype-oss-release</id>
+
+      <distributionManagement>
+        <snapshotRepository>
+          <id>sonatype-nexus-snapshots</id>
+          <name>Sonatype Nexus Snapshots</name>
+          <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+        </snapshotRepository>
+        <repository>
+          <id>sonatype-nexus-staging</id>
+          <name>Sonatype Nexus Releases</name>
+          <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+        </repository>
+      </distributionManagement>
+
+      <repositories>
+        <repository>
+          <id>sonatype-nexus-snapshots</id>
+          <name>Sonatype Nexus Snapshots</name>
+          <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+          <releases>
+            <enabled>false</enabled>
+          </releases>
+          <snapshots>
+            <enabled>true</enabled>
+          </snapshots>
+        </repository>
+      </repositories>
+
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <configuration>
+              <excludes>
+                <exclude>**/*.gz</exclude>
+                <exclude>**/*.zip</exclude>
+              </excludes>
+            </configuration>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <configuration>
+              <encoding>${project.build.sourceEncoding}</encoding>
+              <windowtitle>${project.name} v${project.version} API Documentation</windowtitle>
+              <doctitle>${project.name} v${project.version} API Documentation</doctitle>
+              <charset>UTF-8</charset>
+              <detectJavaApiLink>false</detectJavaApiLink>
+            </configuration>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <configuration>
+              <excludeResources>true</excludeResources>
+            </configuration>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals>
+                  <goal>jar-no-fork</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>doclint-java8-disable</id>
+      <activation>
+        <jdk>[1.8,)</jdk>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <configuration>
+              <doclint>none</doclint>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+
+  <reporting>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-project-info-reports-plugin</artifactId>
+        <configuration>
+          <dependencyLocationsEnabled>false</dependencyLocationsEnabled>
+        </configuration>
+        <reportSets>
+          <reportSet>
+            <reports>
+              <report>summary</report>
+              <report>index</report>
+              <report>dependencies</report>
+              <report>issue-tracking</report>
+              <report>scm</report>
+              <report>plugins</report>
+            </reports>
+          </reportSet>
+        </reportSets>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <configuration>
+          <encoding>UTF-8</encoding>
+          <attach>true</attach>
+          <quiet>true</quiet>
+        </configuration>
+        <reportSets>
+          <reportSet>
+            <id>non-aggregate</id>
+            <reports>
+              <report>javadoc</report>
+            </reports>
+          </reportSet>
+        </reportSets>
+      </plugin>
+      <plugin>
+        <artifactId>maven-plugin-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </reporting>
+</project>

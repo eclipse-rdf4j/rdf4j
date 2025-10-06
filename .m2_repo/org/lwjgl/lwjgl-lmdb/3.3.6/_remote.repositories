@@ -1,0 +1,11 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Mon Oct 06 14:01:01 UTC 2025
+lwjgl-lmdb-3.3.6.pom>central=
+lwjgl-lmdb-3.3.6-natives-windows.jar>central=
+lwjgl-lmdb-3.3.6-natives-macos-arm64.jar>central=
+lwjgl-lmdb-3.3.6-natives-linux.jar>central=
+lwjgl-lmdb-3.3.6-natives-linux-arm64.jar>central=
+lwjgl-lmdb-3.3.6-natives-linux-ppc64le.jar>central=
+lwjgl-lmdb-3.3.6.jar>central=
+lwjgl-lmdb-3.3.6-natives-macos.jar>central=
+lwjgl-lmdb-3.3.6-natives-windows-arm64.jar>central=

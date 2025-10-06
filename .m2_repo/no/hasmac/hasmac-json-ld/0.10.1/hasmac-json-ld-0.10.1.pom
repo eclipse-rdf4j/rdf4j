@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>no.hasmac</groupId>
+  <artifactId>hasmac-json-ld</artifactId>
+  <version>0.10.1</version>
+  <name>HASMAC JSON-LD 1.1</name>
+  <description>A more performant JSON-LD 1.1 Processor &amp; API forked from Titanium JSON-LD.</description>
+  <url>https://github.com/HASMAC-AS/hasmac-json-ld</url>
+  <inceptionYear>2020</inceptionYear>
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>http://apache.org/licenses/LICENSE-2.0</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <id>hasmac-no</id>
+      <name>Håvard M. Ottestad</name>
+      <email>havard.ottestad@hasmac.no</email>
+      <organization>HASMAC AS</organization>
+      <organizationUrl>https://github.com/HASMAC-AS</organizationUrl>
+    </developer>
+  </developers>
+  <scm>
+    <connection>scm:git:git@github.com:HASMAC-AS/hasmac-json-ld.git</connection>
+    <developerConnection>scm:git:git@github.com:HASMAC-AS/hasmac-json-ld.git</developerConnection>
+    <url>https://github.com/HASMAC-AS/hasmac-json-ld</url>
+  </scm>
+  <dependencies>
+    <dependency>
+      <groupId>jakarta.json</groupId>
+      <artifactId>jakarta.json-api</artifactId>
+      <version>2.0.1</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.glassfish</groupId>
+      <artifactId>jakarta.json</artifactId>
+      <version>2.0.1</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+      <version>33.4.7-jre</version>
+      <scope>compile</scope>
+    </dependency>
+  </dependencies>
+</project>

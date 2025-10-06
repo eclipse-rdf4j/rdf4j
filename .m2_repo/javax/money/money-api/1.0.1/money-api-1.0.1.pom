@@ -1,0 +1,950 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- CREDIT SUISSE IS WILLING TO LICENSE THIS SPECIFICATION TO YOU ONLY UPON 
+	THE CONDITION THAT YOU ACCEPT ALL OF THE TERMS CONTAINED IN THIS AGREEMENT. 
+	PLEASE READ THE TERMS AND CONDITIONS OF THIS AGREEMENT CAREFULLY. BY DOWNLOADING 
+	THIS SPECIFICATION, YOU ACCEPT THE TERMS AND CONDITIONS OF THE AGREEMENT. 
+	IF YOU ARE NOT WILLING TO BE BOUND BY IT, SELECT THE "DECLINE" BUTTON AT 
+	THE BOTTOM OF THIS PAGE. Specification: JSR-354 Money and Currency API ("Specification") 
+	Copyright (c) 2012-2015, Credit Suisse All rights reserved. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+	<modelVersion>4.0.0</modelVersion>
+
+	<groupId>javax.money</groupId>
+	<artifactId>money-api</artifactId>
+	<packaging>bundle</packaging>
+
+	<version>1.0.1</version>
+	<name>JSR 354 (Money and Currency API)</name>
+	<url>http://java.net/projects/javamoney</url>
+	<inceptionYear>2012</inceptionYear>
+	<description>JSR 354 provides an API for representing, transporting, and performing comprehensive calculations with Money and Currency.</description>
+
+	<properties>
+
+		<moduleDir>.</moduleDir>
+
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+		<jdkVersion>1.8</jdkVersion>
+		<maven.compile.targetLevel>${jdkVersion}</maven.compile.targetLevel>
+		<maven.compile.sourceLevel>${jdkVersion}</maven.compile.sourceLevel>
+		<basedir>.</basedir>
+		<!-- Dependency versions -->
+		<testng.version>6.8.5</testng.version>
+	</properties>
+
+	<organization>
+		<name>JSR 354 - Expert Group</name>
+		<url>http://javamoney.org</url>
+	</organization>
+
+	<developers>
+		<developer>
+			<id>atsticks</id>
+			<name>Anatole Tresch</name>
+			<organization>Credit Suisse</organization>
+			<roles>
+				<role>Specification Lead</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>keilw</id>
+			<name>Werner Keil</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>tom-huesler</id>
+			<name>Thomas Hüsler</name>
+			<organization>Espalier Technologies</organization>
+			<timezone>GMT+1</timezone>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>otaviojava</id>
+			<name>Otávio Santana</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>simasch</id>
+			<name>Simon Martinelli</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>chrisphe</id>
+			<name>Christopher Pheby</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>jeffprestes</id>
+			<name>Jefferson Prestes</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>jezdavies</id>
+			<name>Jeremy Davies</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>-</id>
+			<name>Manuela Grindei</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>-</id>
+			<name>Benjamin Cotton</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>jodastephen</id>
+			<name>Stephen Colebourne</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>-</id>
+			<name>Greg Bakos</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>-</id>
+			<name>Tony Jewell</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>rajmahendra</id>
+			<name>Rajmahendra Hegde</name>
+			<email>rajmahendra@gmail.com</email>
+			<organization>JUG Chennai</organization>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>-</id>
+			<name>Scott James</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>-</id>
+			<name>Matthias Buecker</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>-</id>
+			<name>Sanjay Nagpal</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>-</id>
+			<name>Mohamed Taman</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>crazybob</id>
+			<name>Bob Lee</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+		<developer>
+			<id>-</id>
+			<name>Arumugam Swaminathan</name>
+			<roles>
+				<role>Expert Group Member</role>
+			</roles>
+		</developer>
+	</developers>
+
+	<ciManagement>
+		<system>Travis CI</system>
+		<url>https://travis-ci.org/JavaMoney/jsr354-api</url>
+	</ciManagement>
+
+	<mailingLists>
+		<mailingList>
+			<name>JSR354 Issues List</name>
+			<subscribe>https://java.net/projects/javamoney/lists</subscribe>
+			<unsubscribe>https://java.net/projects/javamoney/lists</unsubscribe>
+			<archive>https://java.net/projects/javamoney/lists/issues/archive</archive>
+			<post>issues@javamoney.java.net</post>
+		</mailingList>
+		<mailingList>
+			<name>JSR354 Public Mailing List</name>
+			<subscribe>https://java.net/projects/javamoney/lists</subscribe>
+			<unsubscribe>https://java.net/projects/javamoney/lists</unsubscribe>
+			<archive>http://java.net/projects/javamoney/lists/jcurrency_mail/archive</archive>
+			<post>jcurrency_mail@javamoney.java.net</post>
+		</mailingList>
+	</mailingLists>
+
+	<issueManagement>
+		<system>JIRA</system>
+		<url>http://java.net/jira/browse/JAVAMONEY</url>
+	</issueManagement>
+
+	<licenses>
+		<license>
+			<name>Spec Evaluation License</name>
+			<comments>Spec</comments>
+			<url>EVALUATION-LICENSE.txt</url>
+			<distribution>repo</distribution>
+		</license>
+		<license>
+			<name>Spec Implementation License</name>
+			<comments>Spec</comments>
+			<url>IMPLEMENTATION-LICENSE.txt</url>
+			<distribution>repo</distribution>
+		</license>
+	</licenses>
+
+	<prerequisites>
+		<maven>3.0.4</maven>
+	</prerequisites>
+
+	<scm>
+		<connection>scm:git:https://github.com/JavaMoney/jsr354-api.git</connection>
+		<tag>master</tag>
+		<developerConnection>scm:git:https://github.com/JavaMoney/jsr354-api.git</developerConnection>
+		<url>https://github.com/JavaMoney/jsr354-api</url>
+	</scm>
+
+    <distributionManagement>
+        <repository>
+            <id>bintray-release</id>
+            <name>oss-jfrog-artifactory-releases</name>
+            <url>https://oss.jfrog.org/artifactory/oss-release-local</url>
+        </repository>
+        <snapshotRepository>
+            <id>bintray-snapshot</id>
+            <name>oss-jfrog-artifactory-snapshots</name>
+            <url>https://oss.jfrog.org/artifactory/oss-snapshot-local</url>
+        </snapshotRepository>
+    </distributionManagement>
+
+	<repositories>
+		<repository>
+			<snapshots>
+				<enabled>false</enabled>
+			</snapshots>
+			<id>bintray-release</id>
+			<name>libs-release</name>
+			<url>http://oss.jfrog.org/artifactory/libs-release</url>
+		</repository>
+		<repository>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+			<id>bintray-snapshot</id>
+			<name>libs-snapshot</name>
+			<url>http://oss.jfrog.org/artifactory/libs-snapshot</url>
+		</repository>
+	</repositories>
+
+
+	<profiles>
+        <profile>
+            <id>travis</id>
+            <activation>
+                <property>
+                    <name>env.TRAVIS</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.jacoco</groupId>
+                        <artifactId>jacoco-maven-plugin</artifactId>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.eluder.coveralls</groupId>
+                        <artifactId>coveralls-maven-plugin</artifactId>
+                        <version>2.2.0</version>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+		<profile>
+			<id>release-sign-artifacts</id>
+			<activation>
+				<property>
+					<name>performRelease</name>
+					<value>true</value>
+				</property>
+			</activation>
+			<build>
+				<pluginManagement>
+					<plugins>
+						<plugin>
+							<groupId>org.apache.maven.plugins</groupId>
+							<artifactId>maven-gpg-plugin</artifactId>
+							<version>1.4</version>
+						</plugin>
+					</plugins>
+				</pluginManagement>
+				<plugins>
+					<plugin>
+						<!-- Usage: mvn clean deploy -Dgpg.passphrase=yourpassphrase ; Or sign 
+							already deployed artifact: mvn gpg:sign-and-deploy-file -DpomFile=target/myapp-1.0.pom 
+							-Dfile=target/myapp-1.0.jar -Durl=https://oss.sonatype.org/service/local/staging/deploy/maven2/ 
+							-DrepositoryId=sonatype-nexus-staging -->
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-gpg-plugin</artifactId>
+						<configuration>
+							<defaultKeyring>false</defaultKeyring>
+							<keyname>0E3BCC9A</keyname>
+						</configuration>
+						<executions>
+							<execution>
+								<id>sign-artifacts</id>
+								<phase>verify</phase>
+								<goals>
+									<goal>sign</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-javadoc-plugin</artifactId>
+						<executions>
+							<execution>
+								<id>attach-javadocs</id>
+								<goals>
+									<goal>jar</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-source-plugin</artifactId>
+						<executions>
+							<execution>
+								<id>attach-sources</id>
+								<goals>
+									<goal>jar</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.testng</groupId>
+				<artifactId>testng</artifactId>
+				<version>${testng.version}</version>
+				<scope>test</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
+	<dependencies>
+		<dependency>
+			<groupId>org.testng</groupId>
+			<artifactId>testng</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<defaultGoal>install</defaultGoal>
+
+		<extensions>
+			<extension>
+				<groupId>org.apache.maven.wagon</groupId>
+				<artifactId>wagon-ssh</artifactId>
+				<version>2.4</version>
+			</extension>
+			<extension>
+				<groupId>org.apache.maven.wagon</groupId>
+				<artifactId>wagon-webdav-jackrabbit</artifactId>
+				<version>2.2</version>
+			</extension>
+		</extensions>
+
+		<pluginManagement>
+			<plugins>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-site-plugin</artifactId>
+					<version>3.1</version>
+				</plugin>
+				<!-- ======================================================= -->
+				<!-- Packaging (OSGi bundle) -->
+				<!-- ======================================================= -->
+				<plugin>
+					<groupId>org.apache.felix</groupId>
+					<artifactId>maven-bundle-plugin</artifactId>
+					<version>2.5.3</version>
+					<extensions>true</extensions>
+					<!-- 
+					<configuration>
+						<instructions>
+							<Export-Package>javax.money.*</Export-Package>
+							<Private-Package>!*</Private-Package>
+						</instructions>
+					</configuration>
+					 -->
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-clean-plugin</artifactId>
+					<version>2.5</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-deploy-plugin</artifactId>
+					<version>2.7</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-resources-plugin</artifactId>
+					<version>2.6</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-jar-plugin</artifactId>
+					<version>2.6</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-war-plugin</artifactId>
+					<version>2.4</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-surefire-plugin</artifactId>
+					<version>2.15</version>
+					<configuration>
+						<skipTests>false</skipTests>
+						<trimStackTrace>false</trimStackTrace>
+						<forkMode>once</forkMode>
+						<useSystemClassLoader>true</useSystemClassLoader>
+						<includes>
+							<include>**/*Test.java</include>
+						</includes>
+						<excludes>
+							<exclude>**/Abstract*.java</exclude>
+						</excludes>
+					</configuration>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-compiler-plugin</artifactId>
+					<version>3.1</version>
+					<configuration>
+						<debug>true</debug>
+						<optimize>true</optimize>
+						<verbose>false</verbose>
+						<source>${maven.compile.sourceLevel}</source>
+						<target>${maven.compile.targetLevel}</target>
+						<compilerArgument>-g</compilerArgument>
+						<encoding>${project.build.sourceEncoding}</encoding>
+					</configuration>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-assembly-plugin</artifactId>
+					<version>2.4</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-install-plugin</artifactId>
+					<version>2.4</version>
+					<executions>
+						<execution>
+							<goals>
+								<goal>install</goal>
+							</goals>
+							<configuration>
+								<createChecksum>true</createChecksum>
+							</configuration>
+						</execution>
+					</executions>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-dependency-plugin</artifactId>
+					<version>2.8</version>
+				</plugin>
+
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-javadoc-plugin</artifactId>
+					<version>2.9.1</version>
+					<executions>
+						<execution>
+							<id>attach-javadocs</id>
+							<goals>
+								<goal>jar</goal>
+							</goals>
+						</execution>
+					</executions>
+					<configuration>
+						<additionalparam>-Xdoclint:none</additionalparam>
+						<detectLinks>false</detectLinks>
+						<keywords>true</keywords>
+						<linksource>false</linksource>
+						<failOnError>false</failOnError>
+						<source>1.8</source>
+						<verbose>false</verbose>
+					</configuration>
+				</plugin>
+				<plugin>
+					<artifactId>maven-source-plugin</artifactId>
+					<groupId>org.apache.maven.plugins</groupId>
+					<version>2.2.1</version>
+					<executions>
+						<execution>
+							<id>attach-sources</id>
+							<phase>package</phase>
+							<goals>
+								<goal>jar-no-fork</goal>
+							</goals>
+						</execution>
+					</executions>
+				</plugin>
+				<plugin>
+					<groupId>org.codehaus.mojo</groupId>
+					<artifactId>versions-maven-plugin</artifactId>
+					<version>2.1</version>
+				</plugin>
+				<plugin>
+					<groupId>org.asciidoctor</groupId>
+					<artifactId>asciidoctor-maven-plugin</artifactId>
+					<version>1.5.0</version>
+				</plugin>
+				<plugin>
+					<groupId>org.jacoco</groupId>
+					<artifactId>jacoco-maven-plugin</artifactId>
+					<version>0.7.2.201409121644</version>
+				</plugin>
+				<!--This plugin's configuration is used to store Eclipse m2e settings 
+					only. It has no influence on the Maven build itself. -->
+				<plugin>
+					<groupId>org.eclipse.m2e</groupId>
+					<artifactId>lifecycle-mapping</artifactId>
+					<version>1.0.0</version>
+					<configuration>
+						<lifecycleMappingMetadata>
+							<pluginExecutions>
+								<pluginExecution>
+									<pluginExecutionFilter>
+										<groupId>org.jacoco</groupId>
+										<artifactId>
+											jacoco-maven-plugin
+										</artifactId>
+										<versionRange>
+											[0.7.2.201409121644,)
+										</versionRange>
+										<goals>
+											<goal>prepare-agent</goal>
+										</goals>
+									</pluginExecutionFilter>
+									<action>
+										<ignore></ignore>
+									</action>
+								</pluginExecution>
+							</pluginExecutions>
+						</lifecycleMappingMetadata>
+					</configuration>
+				</plugin>
+			</plugins>
+		</pluginManagement>
+		<plugins>
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-javadoc-plugin</artifactId>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-source-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>attach-sources</id>
+						<!-- phase>verify</phase -->
+						<goals>
+							<goal>jar</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>versions-maven-plugin</artifactId>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-enforcer-plugin</artifactId>
+				<version>1.3.1</version>
+				<executions>
+					<execution>
+						<id>enforce-versions</id>
+						<goals>
+							<goal>enforce</goal>
+						</goals>
+						<configuration>
+							<rules>
+								<requireMavenVersion>
+									<version>3.0.4</version>
+								</requireMavenVersion>
+								<requireJavaVersion>
+									<version>1.7.0</version>
+								</requireJavaVersion>
+								<!-- <bannedDependencies> <excludes> <exclude>commons-logging:*</exclude> 
+									</excludes> </bannedDependencies> -->
+								<requirePluginVersions>
+									<banLatest>true</banLatest>
+									<banRelease>true</banRelease>
+									<banSnapshots>true</banSnapshots>
+									<!-- <unCheckedPluginList>org.codehaus.mojo:sonar-maven-plugin</unCheckedPluginList> -->
+								</requirePluginVersions>
+							</rules>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<!-- ======================================================= -->
+			<!-- Packaging (OSGi bundle) -->
+			<!-- ======================================================= -->
+			<plugin>
+				<groupId>org.apache.felix</groupId>
+				<artifactId>maven-bundle-plugin</artifactId>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+				<configuration>
+					<archive>
+						<manifest>
+							<addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+						</manifest>
+						<manifestEntries>
+							<Specification-Title>${project.name}</Specification-Title>
+							<Specification-Version>${project.version}</Specification-Version>
+							<Specification-Vendor>Credit Suisse AG</Specification-Vendor>
+							<Implementation-Vendor>${project.organization.name}</Implementation-Vendor>
+							<Implementation-URL>http://www.javamoney.org</Implementation-URL>
+						</manifestEntries>
+					</archive>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.asciidoctor</groupId>
+				<artifactId>asciidoctor-maven-plugin</artifactId>
+				<version>1.5.2</version>
+				<dependencies>
+					<dependency>
+						<groupId>org.asciidoctor</groupId>
+						<artifactId>asciidoctorj-pdf</artifactId>
+						<version>1.5.0-alpha.6</version>
+					</dependency>
+				</dependencies>
+				<configuration>
+					<sourceDirectory>src/main/asciidoc</sourceDirectory>
+					<baseDir>${project.basedir}</baseDir>
+					<imagesDir>src/main/asciidoc/images/</imagesDir>
+					<embedAssets>true</embedAssets>
+					<!-- eruby>erubis</eruby -->
+				</configuration>
+				<executions>
+					<execution>
+						<id>output-html</id>
+						<phase>prepare-package</phase>
+						<goals>
+							<goal>process-asciidoc</goal>
+						</goals>
+						<configuration>
+							<outputDirectory>target/docs</outputDirectory>
+							<sourceHighlighter>coderay</sourceHighlighter>
+							<backend>html</backend>
+						</configuration>
+					</execution>
+					<execution>
+						<id>output-pdf</id>
+						<phase>prepare-package</phase>
+						<goals>
+							<goal>process-asciidoc</goal>
+						</goals>
+						<configuration>
+							<backend>pdf</backend>
+							<!-- WARNING callout bullets don't yet work with CodeRay -->
+							<sourceHighlighter>coderay</sourceHighlighter>
+							<attributes>
+								<pagenums />
+								<toc />
+								<idprefix />
+								<idseparator>-</idseparator>
+							</attributes>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+
+
+	<reporting>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-javadoc-plugin</artifactId>
+				<version>2.9.1</version>
+				<inherited>true</inherited>
+				<reportSets>
+					<reportSet>
+						<inherited>true</inherited>
+						<reports>
+							<report>aggregate</report>
+						</reports>
+						<configuration>
+							<detectLinks>true</detectLinks>
+							<keywords>true</keywords>
+							<linksource>true</linksource>
+							<source>${project.build.sourceCompilerLevel}</source>
+							<verbose>true</verbose>
+							<aggregate>true</aggregate>
+							<doclet>org.umlgraph.doclet.UmlGraphDoc</doclet>
+							<docletArtifact>
+								<groupId>org.umlgraph</groupId>
+								<artifactId>umlgraph</artifactId>
+								<version>5.6</version>
+							</docletArtifact>
+							<show>private</show>
+							<additionalparam>
+								-Xdoclint:none
+								-inferrel -inferdep -quiet -hide java.*
+								-collpackages java.util.*
+								-postfixpackage -nodefontname Tahoma
+								-nodefontsize 9
+								-nodefontpackagesize 7 -outputencoding UTF-8
+							</additionalparam>
+						</configuration>
+					</reportSet>
+				</reportSets>
+			</plugin>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>jdepend-maven-plugin</artifactId>
+				<version>2.0-beta-2</version>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-report-plugin</artifactId>
+				<version>2.15</version>
+				<configuration>
+					<aggregate>true</aggregate>
+					<xrefLocation>${project.reporting.outputDirectory}/../xref-test</xrefLocation>
+					<linkXRef>true</linkXRef>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-pmd-plugin</artifactId>
+				<version>3.0.1</version>
+				<configuration>
+					<targetJdk>${maven.compile.targetLevel}</targetJdk>
+					<format>xml</format>
+					<linkXRef>true</linkXRef>
+					<aggregate>true</aggregate>
+					<sourceEncoding>${project.build.sourceEncoding}</sourceEncoding>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>taglist-maven-plugin</artifactId>
+				<version>2.4</version>
+				<configuration>
+					<aggregate>true</aggregate>
+					<encoding>${project.build.sourceEncoding}</encoding>
+					<tagListOptions>
+						<tagClasses>
+							<tagClass>
+								<displayName>Important fixes that have to be done until the
+									next
+									release
+								</displayName>
+								<tags>
+									<tag>
+										<matchString>FIXME</matchString>
+										<matchType>ignoreCase</matchType>
+									</tag>
+								</tags>
+							</tagClass>
+							<tagClass>
+								<displayName>Things to verify and to check</displayName>
+								<tags>
+									<tag>
+										<matchString>// check:</matchString>
+										<matchType>ignoreCase</matchType>
+									</tag>
+								</tags>
+							</tagClass>
+							<tagClass>
+								<displayName>Just things to do</displayName>
+								<tags>
+									<tag>
+										<matchString>todo</matchString>
+										<matchType>ignoreCase</matchType>
+									</tag>
+									<tag>
+										<matchString>@todo</matchString>
+										<matchType>ignoreCase</matchType>
+									</tag>
+									<tag>
+										<matchString>XXX</matchString>
+										<matchType>ignoreCase</matchType>
+									</tag>
+								</tags>
+							</tagClass>
+						</tagClasses>
+					</tagListOptions>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jxr-plugin</artifactId>
+				<version>2.3</version>
+				<configuration>
+					<aggregate>true</aggregate>
+					<linkJavadoc>true</linkJavadoc>
+					<aggregate>true</aggregate>
+					<javadocDir>${project.name}/apidocs</javadocDir>
+					<!-- stylesheet>${basedir}/src/site/css/javamoneys-jdoc.css</stylesheet -->
+					<windowTitle>JSR 354 - Java Money API Sources</windowTitle>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-dependency-plugin</artifactId>
+				<version>2.8</version>
+			</plugin>
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>0.7.2.201409121644</version>
+				<configuration>
+					<destFile>${basedir}/target/coverage-reports/jacoco-unit.exec</destFile>
+					<dataFile>${basedir}/target/coverage-reports/jacoco-unit.exec</dataFile>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>findbugs-maven-plugin</artifactId>
+				<version>2.5.2</version>
+				<configuration>
+					<xrefLocation>${project.reporting.outputDirectory}/../xref</xrefLocation>
+					<xmlOutput>true</xmlOutput>
+					<effort>Max</effort>
+					<threshold>Low</threshold>
+					<failOnError>false</failOnError>
+					<findbugsXmlOutput>true</findbugsXmlOutput>
+					<findbugsXmlOutputDirectory>target/site</findbugsXmlOutputDirectory>
+					<xrefLocation>xref/</xrefLocation>
+				</configuration>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-project-info-reports-plugin</artifactId>
+				<version>2.7</version>
+			</plugin>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>findbugs-maven-plugin</artifactId>
+				<version>2.5.2</version>
+				<configuration>
+					<xrefLocation>${project.reporting.outputDirectory}/../xref</xrefLocation>
+					<xmlOutput>true</xmlOutput>
+					<effort>Max</effort>
+					<threshold>Low</threshold>
+					<failOnError>false</failOnError>
+					<findbugsXmlOutput>true</findbugsXmlOutput>
+					<findbugsXmlOutputDirectory>target/site</findbugsXmlOutputDirectory>
+					<xrefLocation>xref/</xrefLocation>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-site-plugin</artifactId>
+			</plugin>
+		</plugins>
+	</reporting>
+</project>

@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright (c) 2011, 2021 Oracle and/or its affiliates. All rights reserved.
+
+    This program and the accompanying materials are made available under the
+    terms of the Eclipse Public License v. 2.0, which is available at
+    http://www.eclipse.org/legal/epl-2.0.
+
+    This Source Code may also be made available under the following Secondary
+    Licenses when the conditions for such availability set forth in the
+    Eclipse Public License v. 2.0 are satisfied: GNU General Public License,
+    version 2 with the GNU Classpath Exception, which is available at
+    https://www.gnu.org/software/classpath/license.html.
+
+    SPDX-License-Identifier: EPL-2.0 OR GPL-2.0 WITH Classpath-exception-2.0
+
+-->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.glassfish</groupId>
+        <artifactId>json</artifactId>
+        <version>2.0.1</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <groupId>org.glassfish</groupId>
+    <artifactId>jakarta.json</artifactId>
+    <packaging>bundle</packaging>
+    <version>2.0.1</version>
+    <name>JSON-P Default Provider</name>
+    <description>Default provider for Jakarta JSON Processing</description>
+    <url>https://github.com/eclipse-ee4j/jsonp</url>
+
+    <properties>
+        <packages.private>org.glassfish.json</packages.private>
+        <packages.export>jakarta.json.*,org.glassfish.json.api</packages.export>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.glassfish.build</groupId>
+                <artifactId>spec-version-maven-plugin</artifactId>
+                <configuration>
+                    <spec>
+                        <nonFinal>${non.final}</nonFinal>
+                        <jarType>impl</jarType>
+                        <specVersion>${spec_version}</specVersion>
+                        <newSpecVersion>${new_spec_version}</newSpecVersion>
+                        <specImplVersion>${new_spec_impl_version}</specImplVersion>
+                        <implVersion>${impl_version}</implVersion>
+                        <newImplVersion>${new_impl_version}</newImplVersion>
+                        <apiPackage>${api_package}</apiPackage>
+                        <implNamespace>${impl_namespace}</implNamespace>
+                    </spec>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>set-spec-properties</goal>
+                            <!-- TODO:
+                            glassfish-spec-version-maven-plugin needs to be updated
+                            in order to check 'jakarta.' prefixed values in manifest entries
+                            -->
+                            <!--<goal>check-module</goal>-->
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <configuration>
+                    <skipSource>true</skipSource>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>sources-as-resources</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <resources>
+                                <resource>
+                                    <directory>src/main/java/org</directory>
+                                </resource>
+                            </resources>
+                            <outputDirectory>${project.build.directory}/sources/org</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>unpack-module-info</id>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>unpack-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <includeArtifactIds>jakarta.json-api</includeArtifactIds>
+                            <outputDirectory>${project.build.directory}/binaries</outputDirectory>
+                            <includes>module-info.class</includes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>unpack-client-sources</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>unpack</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>jakarta.json</groupId>
+                                    <artifactId>jakarta.json-api</artifactId>
+                                    <version>${jakarta.json-api.version}</version>
+                                    <classifier>sources</classifier>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/sources</outputDirectory>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>attach-source-jar</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>sources</classifier>
+                            <classesDirectory>${project.build.directory}/sources</classesDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!--
+              This plugin is reponsible for packaging artifacts
+              as OSGi bundles.  Please refer to
+              http://felix.apache.org/site/apache-felix-maven-bundle-plugin-bnd.html
+              for more information about how to use this plugin.
+            -->
+            <plugin>
+                <groupId>org.apache.felix</groupId>
+                <artifactId>maven-bundle-plugin</artifactId>
+                <extensions>true</extensions>
+                <executions>
+                    <execution>
+                        <id>default-bundle</id>
+                        <goals>
+                            <goal>bundle</goal>
+                        </goals>
+                        <configuration>
+                            <instructions>
+                                <Bundle-Version>${spec.bundle.version}</Bundle-Version>
+                                <Bundle-SymbolicName>${spec.bundle.symbolic-name}</Bundle-SymbolicName>
+                                <Extension-Name>${spec.extension.name}</Extension-Name>
+                                <Implementation-Version>${spec.implementation.version}</Implementation-Version>
+                                <Specification-Vendor>Eclipse Foundation</Specification-Vendor>
+                                <Specification-Version>${spec.specification.version}</Specification-Version>
+                                <Export-Package>${packages.export}</Export-Package>
+                                <Private-Package>${packages.private}</Private-Package>
+                                <_donotcopy>.*services.*</_donotcopy>
+                                <!-- as of 5.1.1 this won't add appropriate uses jakarta.json.spi.JsonProvider; to module-info -->
+                                <!--<_jpms-module-info>jakarta.json</_jpms-module-info>-->
+                                <Include-Resource>{maven-resources},target/binaries/module-info.class</Include-Resource>
+                            </instructions>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>main-artifact-module</id>
+                        <goals>
+                            <goal>bundle</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>module</classifier>
+                            <instructions>
+                                <Bundle-Version>${spec.bundle.version}</Bundle-Version>
+                                <Bundle-SymbolicName>${spec.bundle.symbolic-name}.module</Bundle-SymbolicName>
+                                <Extension-Name>${spec.extension.name}</Extension-Name>
+                                <Implementation-Version>${spec.implementation.version}</Implementation-Version>
+                                <Specification-Version>${spec.specification.version}</Specification-Version>
+                                <Export-Package>org.glassfish.json.api</Export-Package>
+                                <Private-Package>${packages.private}</Private-Package>
+                                <Include-Resource>{maven-resources},target/classes/module-info.class</Include-Resource>
+                            </instructions>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <configuration>
+                    <sourcepath>target/sources</sourcepath>
+                    <archive>
+                        <manifest>
+                            <addDefaultEntries>false</addDefaultEntries>
+                        </manifest>
+                    </archive>
+                    <release>11</release>
+                    <notimestamp>true</notimestamp>
+                    <docfilessubdirs>true</docfilessubdirs>
+                    <description>JSON Processing API documentation</description>
+                    <doctitle>JSON Processing API documentation</doctitle>
+                    <windowtitle>JSON Processing API documentation</windowtitle>
+                    <header><![CDATA[<br>JSON Processing API v${project.version}]]></header>
+                    <bottom><![CDATA[
+Comments to: <a href="mailto:jsonp-dev@eclipse.org">jsonp-dev@eclipse.org</a>.<br>
+Copyright &#169; 2019, 2020 Eclipse Foundation. All rights reserved.<br>
+Use is subject to <a href="{@docRoot}/doc-files/speclicense.html" target="_top">license terms</a>.]]>
+                    </bottom>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+    <dependencies>
+        <dependency>
+            <groupId>jakarta.json</groupId>
+            <artifactId>jakarta.json-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

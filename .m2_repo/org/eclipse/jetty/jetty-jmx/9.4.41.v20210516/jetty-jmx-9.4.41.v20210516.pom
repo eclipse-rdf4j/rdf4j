@@ -1,0 +1,35 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <parent>
+    <groupId>org.eclipse.jetty</groupId>
+    <artifactId>jetty-project</artifactId>
+    <version>9.4.41.v20210516</version>
+  </parent>
+  <modelVersion>4.0.0</modelVersion>
+  <artifactId>jetty-jmx</artifactId>
+  <name>Jetty :: JMX Management</name>
+  <description>JMX management artifact for jetty.</description>
+  <properties>
+    <bundle-symbolic-name>${project.groupId}.jmx</bundle-symbolic-name>
+    <spotbugs.onlyAnalyze>org.eclipse.jetty.jmx.*</spotbugs.onlyAnalyze>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>org.eclipse.jetty.toolchain</groupId>
+      <artifactId>jetty-test-helper</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.jetty</groupId>
+      <artifactId>jetty-util</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.openpojo</groupId>
+      <artifactId>openpojo</artifactId>
+      <version>0.8.13</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+</project>

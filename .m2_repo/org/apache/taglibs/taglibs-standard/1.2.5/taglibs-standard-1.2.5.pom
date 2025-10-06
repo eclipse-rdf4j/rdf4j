@@ -1,0 +1,117 @@
+<?xml version="1.0"?>
+<!--
+   Licensed to the Apache Software Foundation (ASF) under one or more
+   contributor license agreements.  See the NOTICE file distributed with
+   this work for additional information regarding copyright ownership.
+   The ASF licenses this file to You under the Apache License, Version 2.0
+   (the "License"); you may not use this file except in compliance with
+   the License.  You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+-->
+<!-- TODO:
+    Enable Cactus tests
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.apache.taglibs</groupId>
+    <artifactId>taglibs-parent</artifactId>
+    <version>3</version>
+  </parent>
+
+  <packaging>pom</packaging>
+
+  <artifactId>taglibs-standard</artifactId>
+  <version>1.2.5</version>
+  <name>Apache Standard Taglib</name>
+
+  <inceptionYear>2001</inceptionYear>
+  <description>
+    An implementation of the JSP Standard Tag Library (JSTL).
+  </description>
+
+  <url>http://tomcat.apache.org/taglibs/standard-${project.version}</url>
+
+  <scm>
+    <connection>scm:svn:http://svn.apache.org/repos/asf/tomcat/taglibs/standard/tags/taglibs-standard-1.2.5</connection>
+    <developerConnection>scm:svn:https://svn.apache.org/repos/asf/tomcat/taglibs/standard/tags/taglibs-standard-1.2.5</developerConnection>
+    <url>http://svn.apache.org/viewvc/tomcat/taglibs/standard/tags/taglibs-standard-1.2.5</url>
+  </scm>
+
+  <ciManagement>
+    <system>jenkins</system>
+    <url>https://builds.apache.org/job/taglib-standard/</url>
+  </ciManagement>
+
+  <developers>
+    <developer><name>Pierre Delisle</name></developer>
+    <developer><name>Shawn Bayern</name></developer>
+    <developer><name>Nathan Abramson</name></developer>
+    <developer><name>Hans Bergsten</name></developer>
+    <developer><name>Scott Hasse</name></developer>
+    <developer><name>Justyna Horwat</name></developer>
+    <developer><name>Mark Kolb</name></developer>
+    <developer><name>Jan Luehe</name></developer>
+    <developer><name>Glenn Nielsen</name></developer>
+    <developer><name>Dmitri Plotnikov</name></developer>
+    <developer><name>Felipe Leme</name></developer>
+    <developer><name>Henri Yandell</name></developer>
+    <developer><name>Bjorn Townsend</name></developer>
+    <developer><name>Jeremy Boynes</name></developer>
+    <developer><name>Konstantin Kolinko</name></developer>
+  </developers>
+
+  <contributors>
+    <contributor><name>Robert Goff</name></contributor>
+  </contributors>
+
+  <modules>
+    <module>build-tools</module>
+    <module>spec</module>
+    <module>impl</module>
+    <module>compat</module>
+    <module>jstlel</module>
+<!--
+    <module>standard-test</module>
+-->
+  </modules>
+  <profiles>
+    <profile>
+      <id>apache-release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.rat</groupId>
+            <artifactId>apache-rat-plugin</artifactId>
+            <version>0.10</version>
+            <executions>
+              <execution>
+                <phase>verify</phase>
+                <goals>
+                  <goal>check</goal>
+                </goals>
+              </execution>
+            </executions>
+            <configuration>
+              <excludes>
+                <exclude>standard-test/src/test/resources/org/apache/taglibs/standard/tag/el/core/TestOutTag.txt</exclude>
+                <exclude>CHANGES.txt</exclude>
+                <exclude>DEPENDENCIES</exclude>
+                <exclude>README_bin.txt</exclude>
+                <exclude>README_src.txt</exclude>
+                <exclude>RELEASING</exclude>
+              </excludes>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

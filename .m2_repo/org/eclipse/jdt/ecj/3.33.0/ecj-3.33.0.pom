@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.eclipse.jdt</groupId>
+  <artifactId>ecj</artifactId>
+  <version>3.33.0</version>
+  <name>Eclipse Compiler for Java(TM)</name>
+  <description>Eclipse Compiler for Java(TM)</description>
+  <url>https://projects.eclipse.org/projects/eclipse.jdt</url>
+  <licenses>
+    <license>
+      <name>Eclipse Public License - v 2.0</name>
+      <url>https://www.eclipse.org/legal/epl-2.0/</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+  <organization>
+    <name>Eclipse Foundation</name>
+    <url>https://www.eclipse.org/</url>
+  </organization>
+  <issueManagement>
+    <system>Github</system>
+    <url>https://github.com/eclipse-jdt/eclipse.jdt.core/issues</url>
+  </issueManagement>
+  <scm>
+    <connection>scm:git:https://github.com/eclipse-jdt/eclipse.jdt.core.git</connection>
+    <url>https://github.com/eclipse-jdt/eclipse.jdt.core</url>
+  </scm>
+  <developers>
+    <developer>
+      <url>https://projects.eclipse.org/projects/eclipse.jdt/who</url>
+    </developer>
+  </developers>
+</project>
