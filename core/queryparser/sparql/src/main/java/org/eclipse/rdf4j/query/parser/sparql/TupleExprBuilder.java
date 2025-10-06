@@ -449,7 +449,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 				// create an extension linking the operator to the variable
 				// name.
-				ExtensionElem pe = new ExtensionElem(operator, alias);
+				ExtensionElem pe = new ExtensionElem(operator.clone(), alias);
 				extension.addElement(pe);
 
 				// add the aggregate operator to the group.
@@ -494,7 +494,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					// name.
 					String alias = var.getName();
 
-					ExtensionElem pe = new ExtensionElem(operator, alias);
+					ExtensionElem pe = new ExtensionElem(operator.clone(), alias);
 					extension.addElement(pe);
 
 					// add the aggregate operator to the group.
@@ -576,7 +576,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 							Extension anonymousExtension = new Extension();
 							Var anonVar = createAnonVar();
 							expr.replaceChildNode(operator, anonVar);
-							anonymousExtension.addElement(new ExtensionElem(operator, anonVar.getName()));
+							anonymousExtension.addElement(new ExtensionElem(operator.clone(), anonVar.getName()));
 
 							anonymousExtension.setArg(result);
 							result = anonymousExtension;
@@ -593,7 +593,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				// SELECT expressions need to be captured as an extension, so that original and alias are
 				// available for the ORDER BY clause (which gets applied _before_ projection). See GH-4066
 				// and https://www.w3.org/TR/sparql11-query/#sparqlSolMod .
-				ExtensionElem extElem = new ExtensionElem(valueExpr, alias);
+				ExtensionElem extElem = new ExtensionElem(cloneIfAggregate(valueExpr), alias);
 				extension.addElement(extElem);
 				elem.setSourceExpression(extElem);
 			} else if (child instanceof ASTVar) {
@@ -661,6 +661,13 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 
 		return result;
+	}
+
+	private ValueExpr cloneIfAggregate(ValueExpr valueExpr) {
+		if (valueExpr instanceof AggregateOperator) {
+			return ((AggregateOperator) valueExpr).clone();
+		}
+		return valueExpr;
 	}
 
 	private static boolean isIllegalCombinedWithGroupByExpression(ValueExpr expr, List<ProjectionElem> elements,

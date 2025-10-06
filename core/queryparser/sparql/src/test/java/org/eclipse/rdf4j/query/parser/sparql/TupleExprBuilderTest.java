@@ -17,17 +17,27 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTServiceGraphPattern;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUpdateSequence;
@@ -72,6 +82,113 @@ public class TupleExprBuilderTest {
 			e.printStackTrace();
 			fail("should parse simple select query");
 		}
+	}
+
+	@Test
+	public void testAggregateProjectionParentReferences() throws Exception {
+		String query = "SELECT (COUNT(?s) AS ?count) WHERE { ?s ?p ?o }";
+
+		ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
+		TupleExpr tupleExpr = builder.visit(qc, null);
+
+		assertThat(tupleExpr).isInstanceOf(Projection.class);
+		Projection projection = (Projection) tupleExpr;
+
+		assertThat(projection.getArg()).isInstanceOf(Extension.class);
+		Extension extension = (Extension) projection.getArg();
+
+		assertThat(extension.getArg()).isInstanceOf(Group.class);
+		Group group = (Group) extension.getArg();
+
+		assertThat(group.getGroupElements()).hasSize(1);
+		GroupElem groupElem = group.getGroupElements().get(0);
+		AggregateOperator operator = groupElem.getOperator();
+
+		assertThat(operator).isInstanceOf(Count.class);
+		assertThat(operator.getParentNode()).isSameAs(groupElem);
+
+		assertThat(extension.getElements()).hasSize(1);
+		ExtensionElem extensionElem = extension.getElements().get(0);
+		ValueExpr extExpr = extensionElem.getExpr();
+
+		assertThat(extExpr).isInstanceOf(Count.class);
+		assertThat(extExpr.getParentNode()).isSameAs(extensionElem);
+		assertThat(extExpr).isNotSameAs(operator);
+	}
+
+	@Test
+	public void testAggregateOrderByParentReferences() throws Exception {
+		String query = "SELECT (COUNT(?s) AS ?count) WHERE { ?s ?p ?o } ORDER BY (COUNT(?s))";
+
+		ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
+		TupleExpr tupleExpr = builder.visit(qc, null);
+
+		AggregateOperatorContext context = collectAggregateOperators(tupleExpr);
+
+		assertThat(context.groupOperators).isNotEmpty();
+		assertThat(context.extensionOperators).hasSizeGreaterThanOrEqualTo(2);
+
+		for (AggregateOperator operator : context.groupOperators) {
+			assertThat(operator.getParentNode()).isInstanceOf(GroupElem.class);
+		}
+
+		for (AggregateOperator operator : context.extensionOperators) {
+			assertThat(operator.getParentNode()).isInstanceOf(ExtensionElem.class);
+			assertThat(context.containsSameInstanceInGroup(operator)).isFalse();
+		}
+	}
+
+	@Test
+	public void testAggregateHavingParentReferences() throws Exception {
+		String query = "SELECT (COUNT(?s) AS ?count) WHERE { ?s ?p ?o } HAVING (COUNT(?s) > 1)";
+
+		ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
+		TupleExpr tupleExpr = builder.visit(qc, null);
+
+		AggregateOperatorContext context = collectAggregateOperators(tupleExpr);
+
+		assertThat(context.groupOperators).isNotEmpty();
+		assertThat(context.extensionOperators).hasSizeGreaterThanOrEqualTo(2);
+
+		for (AggregateOperator operator : context.groupOperators) {
+			assertThat(operator.getParentNode()).isInstanceOf(GroupElem.class);
+		}
+
+		for (AggregateOperator operator : context.extensionOperators) {
+			assertThat(operator.getParentNode()).isInstanceOf(ExtensionElem.class);
+			assertThat(context.containsSameInstanceInGroup(operator)).isFalse();
+		}
+
+		Filter filter = findNode(tupleExpr, Filter.class);
+		assertThat(filter).isNotNull();
+	}
+
+	@Test
+	public void testAggregateGroupConditionParentReferences() throws Exception {
+		String query = "SELECT (COUNT(?s) AS ?count) WHERE { ?s ?p ?o } GROUP BY (COUNT(?s) AS ?groupCount)";
+
+		ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
+		TupleExpr tupleExpr = builder.visit(qc, null);
+
+		AggregateOperatorContext context = collectAggregateOperators(tupleExpr);
+		assertThat(context.groupOperators).isNotEmpty();
+		assertThat(context.extensionOperators).isNotEmpty();
+
+		for (AggregateOperator operator : context.groupOperators) {
+			assertThat(operator.getParentNode()).isInstanceOf(GroupElem.class);
+		}
+
+		for (AggregateOperator operator : context.extensionOperators) {
+			assertThat(operator.getParentNode()).isInstanceOf(ExtensionElem.class);
+			assertThat(context.containsSameInstanceInGroup(operator)).isFalse();
+		}
+
+		ExtensionElem groupAliasExtension = findExtensionElem(tupleExpr, "groupCount");
+		assertThat(groupAliasExtension).isNotNull();
+		assertThat(groupAliasExtension.getExpr()).isInstanceOf(AggregateOperator.class);
+		AggregateOperator groupAliasOperator = (AggregateOperator) groupAliasExtension.getExpr();
+		assertThat(groupAliasOperator.getParentNode()).isSameAs(groupAliasExtension);
+		assertThat(context.containsSameInstanceInGroup(groupAliasOperator)).isFalse();
 	}
 
 	@Test
@@ -313,6 +430,80 @@ public class TupleExprBuilderTest {
 
 		public List<String> getGraphPatterns() {
 			return graphPatterns;
+		}
+	}
+
+	private AggregateOperatorContext collectAggregateOperators(TupleExpr tupleExpr) {
+		AggregateOperatorContext context = new AggregateOperatorContext();
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(GroupElem node) {
+				AggregateOperator operator = node.getOperator();
+				context.groupOperators.add(operator);
+				context.groupIdentities.put(operator, Boolean.TRUE);
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(ExtensionElem node) {
+				ValueExpr expr = node.getExpr();
+				if (expr instanceof AggregateOperator) {
+					context.extensionOperators.add((AggregateOperator) expr);
+				}
+				super.meet(node);
+			}
+		});
+		return context;
+	}
+
+	private <T> T findNode(TupleExpr tupleExpr, Class<T> type) {
+		class Finder extends AbstractQueryModelVisitor<RuntimeException> {
+			private T result;
+
+			@Override
+			protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
+				if (result != null) {
+					return;
+				}
+				if (type.isInstance(node)) {
+					result = type.cast(node);
+				} else {
+					super.meetNode(node);
+				}
+			}
+		}
+
+		Finder finder = new Finder();
+		tupleExpr.visit(finder);
+		return finder.result;
+	}
+
+	private ExtensionElem findExtensionElem(TupleExpr tupleExpr, String name) {
+		class Finder extends AbstractQueryModelVisitor<RuntimeException> {
+			private ExtensionElem result;
+
+			@Override
+			public void meet(ExtensionElem node) {
+				if (result == null && name.equals(node.getName())) {
+					result = node;
+					return;
+				}
+				super.meet(node);
+			}
+		}
+
+		Finder finder = new Finder();
+		tupleExpr.visit(finder);
+		return finder.result;
+	}
+
+	private static final class AggregateOperatorContext {
+		private final List<AggregateOperator> groupOperators = new ArrayList<>();
+		private final Map<AggregateOperator, Boolean> groupIdentities = new IdentityHashMap<>();
+		private final List<AggregateOperator> extensionOperators = new ArrayList<>();
+
+		boolean containsSameInstanceInGroup(AggregateOperator operator) {
+			return groupIdentities.containsKey(operator);
 		}
 	}
 }
