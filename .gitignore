@@ -18,6 +18,7 @@ target/
 **/.cache
 pom.xml.versionsBackup
 dependency-reduced-pom.xml
+.m2_repo/
 
 # GEdit generated stuff
 *.*~
