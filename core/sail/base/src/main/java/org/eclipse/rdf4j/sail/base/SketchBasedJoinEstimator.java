@@ -43,19 +43,57 @@ import org.slf4j.LoggerFactory;
  * Sketch‑based selectivity and join‑size estimator for RDF4J.
  *
  * <p>
- * **Changes from the original**<br>
- * – Replaces the <em>Build&nbsp;+&nbsp;Read</em> split with a single mutable {@code State}.<br>
- * – Keeps the original <em>tomb‑stone</em> approach by storing a mirror set of “delete” sketches in every
- * {@code State}.<br>
- * – Double‑buffer publication (bufA / bufB) is retained, so all readers stay lock‑free and wait‑free. Only code that
- * was strictly necessary to achieve those goals has been modified.
+ * Features:
+ * <ul>
+ * <li>Θ‑Sketches over S, P, O, C singles and all six pairs.</li>
+ * <li>Lock‑free reads; double‑buffered rebuilds.</li>
+ * <li>Incremental {@code addStatement} / {@code deleteStatement} with tombstone sketches and A‑NOT‑B subtraction.</li>
+ * <li>Configurable via {@link Config} and system properties (see below).</li>
+ * </ul>
  * </p>
  *
+ * <h3>Configuration</h3>
+ *
+ * <p>
+ * Applications should prefer {@link #SketchBasedJoinEstimator(SailStore, Config)} to set options programmatically. For
+ * convenience, {@link #SketchBasedJoinEstimator(SailStore, int, long, long)} delegates to {@link Config#defaults()} and
+ * will pick up system properties as well.
+ * </p>
+ *
+ * <h4>System properties (overlay)</h4>
+ * <p>
+ * All options can be overridden at construction time by JVM system properties with prefix
+ * {@code org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.}. When present, the system property value takes
+ * precedence over the corresponding value provided through {@link Config}. Supported keys (defaults shown in
+ * {@link Config}):
+ * </p>
  * <ul>
- * <li>Θ‑Sketches over S, P, O, C singles and all six pairs.</li>
- * <li>Lock‑free reads; double‑buffered rebuilds.</li>
- * <li>Incremental {@code addStatement} / {@code deleteStatement} with tombstone sketches and A‑NOT‑B subtraction.</li>
+ * <li>{@code nominalEntries} (int ≥ 4)</li>
+ * <li>{@code doubleArrayBuckets} (boolean)</li>
+ * <li>{@code sketchK} (int &gt; 0 ⇒ explicit K; otherwise derived)</li>
+ * <li>{@code throttleEveryN} (long)</li>
+ * <li>{@code throttleMillis} (long)</li>
+ * <li>{@code refreshSleepMillis} (long)</li>
+ * <li>{@code defaultContextString} (String)</li>
+ * <li>{@code roundJoinEstimates} (boolean)</li>
+ * <li>{@code stalenessAgeSlaMillis} (long)</li>
+ * <li>{@code stalenessWeightAge} (double)</li>
+ * <li>{@code stalenessWeightDelta} (double)</li>
+ * <li>{@code stalenessWeightTomb} (double)</li>
+ * <li>{@code stalenessWeightChurn} (double)</li>
+ * <li>{@code stalenessDeltaCap} (double)</li>
+ * <li>{@code stalenessChurnMultiplier} (double)</li>
  * </ul>
+ *
+ * <p>
+ * Example (configure default context and reduce refresh cadence):
+ * </p>
+ *
+ * <pre>{@code
+ * System.setProperty("org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.defaultContextString", "urn:ctx");
+ * System.setProperty("org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.refreshSleepMillis", "500");
+ * var est = new SketchBasedJoinEstimator(store, Config.defaults().withNominalEntries(128));
+ * }</pre>
  */
 public class SketchBasedJoinEstimator {
 
@@ -102,6 +140,13 @@ public class SketchBasedJoinEstimator {
 	private final int nominalEntries; // ← bucket count for array indices
 	private final long throttleEveryN;
 	private final long throttleMillis;
+	private final long refreshSleepMillis;
+	private final String defaultContextString;
+	private final long stalenessAgeSlaMs;
+	private final double wAge, wDelta, wTomb, wChurn;
+	private final double deltaCap;
+	private final double churnMultiplier;
+	private final boolean roundJoinEstimates;
 
 	/** Two interchangeable buffers; one of them is always the current snapshot. */
 	private final State bufA, bufB;
@@ -130,22 +175,84 @@ public class SketchBasedJoinEstimator {
 	/* Construction */
 	/* ────────────────────────────────────────────────────────────── */
 
-	public SketchBasedJoinEstimator(SailStore sailStore, int nominalEntries,
-			long throttleEveryN, long throttleMillis) {
-		nominalEntries *= 2;
+	/**
+	 * Convenience constructor that uses {@link Config#defaults()} with the given basics. All options can still be
+	 * overridden via system properties (see class‑level Javadoc).
+	 */
+	public SketchBasedJoinEstimator(SailStore sailStore, int nominalEntries, long throttleEveryN, long throttleMillis) {
+		this(sailStore, Config.defaults()
+				.withNominalEntries(nominalEntries)
+				.withThrottleEveryN(throttleEveryN)
+				.withThrottleMillis(throttleMillis));
+	}
 
-//		System.out.println("RdfJoinEstimator: Using nominalEntries = " + nominalEntries +
-//				", throttleEveryN = " + throttleEveryN + ", throttleMillis = " + throttleMillis);
+	/**
+	 * Full configuration constructor.
+	 *
+	 * <p>
+	 * Values from {@code cfg} are overlaid by system properties with prefix
+	 * {@code org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.}. If a property is set, it takes precedence. See
+	 * class‑level Javadoc for the list of keys.
+	 * </p>
+	 */
+	public SketchBasedJoinEstimator(SailStore sailStore, Config cfg) {
+		Objects.requireNonNull(cfg, "cfg");
+
+		// Base from provided config
+		int nEntries = cfg.nominalEntries;
+		boolean dbl = cfg.doubleArrayBuckets;
+		long thrEvery = cfg.throttleEveryN;
+		long thrMs = cfg.throttleMillis;
+		long refreshMs = cfg.refreshSleepMillis;
+		String defCtx = cfg.defaultContextString;
+		long slaMs = cfg.stalenessAgeSlaMillis;
+		double wA = cfg.stalenessWeightAge;
+		double wD = cfg.stalenessWeightDelta;
+		double wT = cfg.stalenessWeightTomb;
+		double wC = cfg.stalenessWeightChurn;
+		double dCap = cfg.stalenessDeltaCap;
+		double churnMult = cfg.stalenessChurnMultiplier;
+		boolean roundEst = cfg.roundJoinEstimates;
+		int kCfg = cfg.sketchK;
+
+		// Overlay from system properties (take precedence)
+		nEntries = propInt("nominalEntries", nEntries);
+		dbl = propBool("doubleArrayBuckets", dbl);
+		thrEvery = propLong("throttleEveryN", thrEvery);
+		thrMs = propLong("throttleMillis", thrMs);
+		refreshMs = propLong("refreshSleepMillis", refreshMs);
+		defCtx = propString("defaultContextString", defCtx);
+		slaMs = propLong("stalenessAgeSlaMillis", slaMs);
+		wA = propDouble("stalenessWeightAge", wA);
+		wD = propDouble("stalenessWeightDelta", wD);
+		wT = propDouble("stalenessWeightTomb", wT);
+		wC = propDouble("stalenessWeightChurn", wC);
+		dCap = propDouble("stalenessDeltaCap", dCap);
+		churnMult = propDouble("stalenessChurnMultiplier", churnMult);
+		roundEst = propBool("roundJoinEstimates", roundEst);
+		int kProp = propIntOrNegOne("sketchK", kCfg);
+
+		int buckets = dbl ? (nEntries * 2) : nEntries;
+		int k = (kProp > 0) ? kProp : (kCfg > 0 ? kCfg : (buckets * 8));
 
 		this.sailStore = sailStore;
-		this.nominalEntries = nominalEntries; // used for array bucket count
-		this.throttleEveryN = throttleEveryN;
-		this.throttleMillis = throttleMillis;
+		this.nominalEntries = buckets;
+		this.throttleEveryN = thrEvery;
+		this.throttleMillis = thrMs;
+		this.refreshSleepMillis = refreshMs;
+		this.defaultContextString = defCtx;
+		this.stalenessAgeSlaMs = slaMs;
+		this.wAge = wA;
+		this.wDelta = wD;
+		this.wTomb = wT;
+		this.wChurn = wC;
+		this.deltaCap = dCap;
+		this.churnMultiplier = churnMult;
+		this.roundJoinEstimates = roundEst;
 
-		// k for DataSketches is larger than bucket count; keep original multiplier
-		this.bufA = new State(nominalEntries * 8, this.nominalEntries);
-		this.bufB = new State(nominalEntries * 8, this.nominalEntries);
-		this.current = usingA ? bufA : bufB; // start with an empty snapshot
+		this.bufA = new State(k, this.nominalEntries);
+		this.bufB = new State(k, this.nominalEntries);
+		this.current = usingA ? bufA : bufB;
 	}
 
 	/* Suggest k (=nominalEntries) so the estimator stays ≤ heap/16. */
@@ -213,7 +320,7 @@ public class SketchBasedJoinEstimator {
 				boolean stale = isStale(stalenessThreshold);
 				if (!stale && seenTriples > 0) {
 					try {
-						Thread.sleep(1000);
+						Thread.sleep(refreshSleepMillis);
 					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
 						break;
@@ -230,7 +337,7 @@ public class SketchBasedJoinEstimator {
 				}
 
 				try {
-					Thread.sleep(1000);
+					Thread.sleep(refreshSleepMillis);
 				} catch (InterruptedException ie) {
 					Thread.currentThread().interrupt();
 					break;
@@ -572,8 +679,8 @@ public class SketchBasedJoinEstimator {
 			/* join‑size estimate */
 			double newSize = interDistinct * leftAvg * rightAvg;
 
-			/* round to nearest whole solution count (optional) */
-			this.resultSize = Math.round(newSize);
+			/* round to nearest whole solution count if enabled */
+			this.resultSize = roundJoinEstimates ? Math.round(newSize) : newSize;
 
 			/* carry forward */
 			this.bindings = inter;
@@ -1100,12 +1207,12 @@ public class SketchBasedJoinEstimator {
 		return null;
 	}
 
-	private static String str(Resource r) {
-		return r == null ? "urn:default-context" : r.stringValue();
+	private String str(Resource r) {
+		return r == null ? defaultContextString : r.stringValue();
 	}
 
-	private static String str(Value v) {
-		return v == null ? "urn:default-context" : v.stringValue();
+	private String str(Value v) {
+		return v == null ? defaultContextString : v.stringValue();
 	}
 
 	private static String sig(String s, String p, String o, String c) {
@@ -1312,13 +1419,13 @@ public class SketchBasedJoinEstimator {
 				snap.delSingleTriples.get(Component.S));
 		double readdOverlapOnIncAdds = distinctIncAdds <= 0.0 ? 0.0 : (readdOverlap / distinctIncAdds);
 
-		// Combined score (dimensionless). Emphasize churn risk.
-		double ageScore = normalize(age, TimeUnit.MINUTES.toMillis(10)); // 10 min SLA by default
-		double deltaScore = clamp(deltaRatio, 0.0, 10.0); // cap to avoid runaway
+		// Combined score (dimensionless). Emphasize churn risk (configurable).
+		double ageScore = normalize(age, stalenessAgeSlaMs);
+		double deltaScore = clamp(deltaRatio, 0.0, deltaCap);
 		double tombScore = (tombSingle + tombPairs + tombCompl) / 3.0;
-		double churnScore = clamp(readdOverlapOnIncAdds * 3.0, 0.0, 3.0); // up‑weight churn
+		double churnScore = clamp(readdOverlapOnIncAdds * churnMultiplier, 0.0, churnMultiplier);
 
-		double score = ageScore * 0.20 + deltaScore * 0.20 + tombScore * 0.20 + churnScore * 0.40;
+		double score = ageScore * wAge + deltaScore * wDelta + tombScore * wTomb + churnScore * wChurn;
 
 		return new Staleness(
 				age,
@@ -1513,5 +1620,187 @@ public class SketchBasedJoinEstimator {
 			arr.set(idx, sk);
 		}
 		sk.update(value);
+	}
+
+	/* ────────────────────────────────────────────────────────────── */
+	/* System property helpers */
+	/* ────────────────────────────────────────────────────────────── */
+
+	private static final String PROP_PREFIX = "org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.";
+
+	private static String propString(String name, String def) {
+		String v = System.getProperty(PROP_PREFIX + name);
+		return v != null ? v : def;
+	}
+
+	private static int propInt(String name, int def) {
+		String v = System.getProperty(PROP_PREFIX + name);
+		if (v == null)
+			return def;
+		try {
+			return Integer.parseInt(v.trim());
+		} catch (Exception e) {
+			return def;
+		}
+	}
+
+	private static int propIntOrNegOne(String name, int def) {
+		String v = System.getProperty(PROP_PREFIX + name);
+		if (v == null)
+			return def;
+		try {
+			return Integer.parseInt(v.trim());
+		} catch (Exception e) {
+			return def;
+		}
+	}
+
+	private static long propLong(String name, long def) {
+		String v = System.getProperty(PROP_PREFIX + name);
+		if (v == null)
+			return def;
+		try {
+			return Long.parseLong(v.trim());
+		} catch (Exception e) {
+			return def;
+		}
+	}
+
+	private static double propDouble(String name, double def) {
+		String v = System.getProperty(PROP_PREFIX + name);
+		if (v == null)
+			return def;
+		try {
+			return Double.parseDouble(v.trim());
+		} catch (Exception e) {
+			return def;
+		}
+	}
+
+	private static boolean propBool(String name, boolean def) {
+		String v = System.getProperty(PROP_PREFIX + name);
+		if (v == null)
+			return def;
+		return Boolean.parseBoolean(v.trim());
+	}
+
+	/* ────────────────────────────────────────────────────────────── */
+	/* Configuration (public) */
+	/* ────────────────────────────────────────────────────────────── */
+
+	/**
+	 * Configuration for {@link SketchBasedJoinEstimator}.
+	 *
+	 * <p>
+	 * Defaults are chosen to preserve previous behaviour: array buckets are doubled relative to
+	 * {@link #withNominalEntries(int)} and sketch {@code K} defaults to {@code 8 * buckets} if not explicitly provided
+	 * via {@link #withSketchK(int)}.
+	 * </p>
+	 */
+	public static final class Config {
+		// capacity & layout
+		int nominalEntries = 128;
+		boolean doubleArrayBuckets = true;
+		int sketchK = -1; // <= 0 → derive from buckets
+
+		// rebuild throttling
+		long throttleEveryN = Integer.MAX_VALUE;
+		long throttleMillis = 0L;
+
+		// refresh cadence
+		long refreshSleepMillis = 1000L;
+
+		// semantics
+		String defaultContextString = "urn:default-context";
+		boolean roundJoinEstimates = true;
+
+		// staleness
+		long stalenessAgeSlaMillis = TimeUnit.MINUTES.toMillis(10);
+		double stalenessWeightAge = 0.20;
+		double stalenessWeightDelta = 0.20;
+		double stalenessWeightTomb = 0.20;
+		double stalenessWeightChurn = 0.40;
+		double stalenessDeltaCap = 10.0;
+		double stalenessChurnMultiplier = 3.0;
+
+		/** Return a new config with all defaults. */
+		public static Config defaults() {
+			return new Config();
+		}
+
+		/** Base array bucket count (must be ≥ 4). */
+		public Config withNominalEntries(int n) {
+			this.nominalEntries = Math.max(4, n);
+			return this;
+		}
+
+		/** Disable default bucket doubling for array indexes. */
+		public Config withoutDoubleArrayBuckets() {
+			this.doubleArrayBuckets = false;
+			return this;
+		}
+
+		/** Explicit sketch K. If omitted (≤0), derived as {@code 8 * buckets}. */
+		public Config withSketchK(int k) {
+			this.sketchK = k;
+			return this;
+		}
+
+		/** Sleep every N scanned statements during a full rebuild. */
+		public Config withThrottleEveryN(long n) {
+			this.throttleEveryN = n;
+			return this;
+		}
+
+		/** Milliseconds to sleep when throttling during a rebuild. */
+		public Config withThrottleMillis(long ms) {
+			this.throttleMillis = ms;
+			return this;
+		}
+
+		/** Background refresh thread sleep between checks/rebuilds in milliseconds. */
+		public Config withRefreshSleepMillis(long ms) {
+			this.refreshSleepMillis = ms;
+			return this;
+		}
+
+		/** Label used when a statement has {@code null} context. */
+		public Config withDefaultContext(String s) {
+			this.defaultContextString = Objects.requireNonNull(s);
+			return this;
+		}
+
+		/** Round join size estimates to the nearest integer. */
+		public Config withRoundJoinEstimates(boolean round) {
+			this.roundJoinEstimates = round;
+			return this;
+		}
+
+		/** Service‑level objective for snapshot age used in the staleness score. */
+		public Config withStalenessAgeSlaMillis(long ms) {
+			this.stalenessAgeSlaMillis = ms;
+			return this;
+		}
+
+		/** Weights for age, delta, tombstone pressure and churn components in the staleness score. */
+		public Config withStalenessWeights(double age, double delta, double tomb, double churn) {
+			this.stalenessWeightAge = age;
+			this.stalenessWeightDelta = delta;
+			this.stalenessWeightTomb = tomb;
+			this.stalenessWeightChurn = churn;
+			return this;
+		}
+
+		/** Upper bound applied to the delta component before weighting. */
+		public Config withStalenessDeltaCap(double cap) {
+			this.stalenessDeltaCap = cap;
+			return this;
+		}
+
+		/** Multiplier applied to churn ratio prior to clamping/weighting. */
+		public Config withStalenessChurnMultiplier(double m) {
+			this.stalenessChurnMultiplier = m;
+			return this;
+		}
 	}
 }
