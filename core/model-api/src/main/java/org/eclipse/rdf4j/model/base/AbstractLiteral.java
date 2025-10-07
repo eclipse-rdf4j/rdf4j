@@ -32,6 +32,9 @@ import static java.util.Objects.requireNonNull;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.DateTimeException;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
@@ -704,15 +707,24 @@ public abstract class AbstractLiteral implements Literal {
 
 			this.value = value;
 
-			datatype = DATATYPES.get(key(value));
+			TemporalAccessor lexicalValue = value;
 
-			if (datatype == null) {
+			CoreDatatype.XSD detectedDatatype = DATATYPES.get(key(lexicalValue));
+
+			if (detectedDatatype == null && value.isSupported(ChronoField.INSTANT_SECONDS)) {
+				Instant instant = Instant.from(value);
+				lexicalValue = OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
+				detectedDatatype = DATATYPES.get(key(lexicalValue));
+			}
+
+			if (detectedDatatype == null) {
 				throw new IllegalArgumentException(String.format(
 						"value <%s> cannot be represented by an XML Schema date/time datatype", value
 				));
 			}
 
-			this.label = FORMATTERS.get(datatype).format(value);
+			datatype = detectedDatatype;
+			this.label = FORMATTERS.get(datatype).format(lexicalValue);
 		}
 
 		@Override

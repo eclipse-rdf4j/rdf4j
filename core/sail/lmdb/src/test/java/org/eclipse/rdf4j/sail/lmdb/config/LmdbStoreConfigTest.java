@@ -22,6 +22,8 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -64,6 +66,17 @@ class LmdbStoreConfigTest {
 	}
 
 	// TODO: Add more tests for other properties
+
+	@Test
+	void setIterationCacheSyncThresholdShouldApplyToCreatedStore() {
+		final long threshold = 42;
+		final LmdbStoreConfig config = new LmdbStoreConfig();
+		config.setIterationCacheSyncThreshold(threshold);
+
+		final LmdbStore store = new LmdbStore(config);
+
+		assertThat(store.getIterationCacheSyncThreshold()).isEqualTo(threshold);
+	}
 
 	/**
 	 * Generic method to test parsing and exporting of config properties.
