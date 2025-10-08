@@ -11,16 +11,15 @@
 
 package org.eclipse.rdf4j.sail.nativerdf.model;
 
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-
+import com.google.common.net.UrlEscapers;
 import org.apache.commons.codec.binary.Hex;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStoreRevision;
 
-import com.google.common.net.UrlEscapers;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
 /**
  * CorruptIRIOrBNode is used when a NativeValue cannot be read from the ValueStore and if soft failure is enabled
@@ -64,7 +63,16 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 	@Override
 	public String getLocalName() {
 		byte[] data = getData();
-		if (data != null && data.length < 1024) {
+		if (data != null && data.length > 0) {
+
+			// truncate data to first 1024 bytes
+			if (data.length > 1024) {
+				byte[] truncated = new byte[1024];
+				System.arraycopy(data, 0, truncated, 0, 1024);
+				data = truncated;
+			}
+
+
 			int offset = Math.min(5, data.length);
 			int limit = data.length;
 			// find first occurrence of 0x00 0x00 0x00 and stop there

@@ -50,13 +50,20 @@ public class CorruptLiteral extends CorruptValue implements Literal {
 	public String getLabel() {
 		byte[] data = getData();
 		try {
-			if (data != null && data.length < 1024) {
-				return "CorruptUnknownValue with ID " + getInternalID() + " with possible data: "
+ 			if (data != null && data.length > 0) {
+				// truncate data to first 1024 bytes
+				if (data.length > 1024) {
+					byte[] truncated = new byte[1024];
+					System.arraycopy(data, 0, truncated, 0, 1024);
+					data = truncated;
+				}
+
+				return this.getClass().getSimpleName()+" with ID " + getInternalID() + " with possible data: "
 						+ new String(data, StandardCharsets.UTF_8);
 			}
 		} catch (Throwable ignored) {
 		}
-		return "CorruptUnknownValue_with_ID_" + getInternalID();
+		return this.getClass().getSimpleName()+" with ID " + getInternalID();
 	}
 
 	@Override
