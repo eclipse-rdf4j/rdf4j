@@ -17,6 +17,8 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
+import java.util.OptionalLong;
+import java.util.zip.CRC32C;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
@@ -45,6 +47,8 @@ import org.eclipse.rdf4j.sail.nativerdf.model.NativeIRI;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeLiteral;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeResource;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueKind;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,7 +60,7 @@ import org.slf4j.LoggerFactory;
  *          one release to the next.
  */
 @InternalUseOnly
-public class ValueStore extends SimpleValueFactory {
+public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 
 	private static final Logger logger = LoggerFactory.getLogger(ValueStore.class);
 
@@ -96,6 +100,8 @@ public class ValueStore extends SimpleValueFactory {
 	 * Used to do the actual storage of values, once they're translated to byte arrays.
 	 */
 	private final DataStore dataStore;
+	private final ValueStoreWAL wal;
+	private final ThreadLocal<Long> walPendingLsn;
 
 	/**
 	 * Lock manager used to prevent the removal of values over multiple method calls. Note that values can still be
@@ -144,6 +150,11 @@ public class ValueStore extends SimpleValueFactory {
 
 	public ValueStore(File dataDir, boolean forceSync, int valueCacheSize, int valueIDCacheSize, int namespaceCacheSize,
 			int namespaceIDCacheSize) throws IOException {
+		this(dataDir, forceSync, valueCacheSize, valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize, null);
+	}
+
+	public ValueStore(File dataDir, boolean forceSync, int valueCacheSize, int valueIDCacheSize, int namespaceCacheSize,
+			int namespaceIDCacheSize, ValueStoreWAL wal) throws IOException {
 		super();
 		dataStore = new DataStore(dataDir, FILENAME_PREFIX, forceSync);
 
@@ -151,6 +162,9 @@ public class ValueStore extends SimpleValueFactory {
 		valueIDCache = new ConcurrentCache<>(valueIDCacheSize);
 		namespaceCache = new ConcurrentCache<>(namespaceCacheSize);
 		namespaceIDCache = new ConcurrentCache<>(namespaceIDCacheSize);
+
+		this.wal = wal;
+		this.walPendingLsn = wal != null ? ThreadLocal.withInitial(() -> ValueStoreWAL.NO_LSN) : null;
 
 		setNewRevision();
 
@@ -370,6 +384,7 @@ public class ValueStore extends SimpleValueFactory {
 		// store which will handle duplicates
 		byte[] valueData = value2data(value, true);
 
+		int previousMaxID = walEnabled() ? dataStore.getMaxID() : 0;
 		int id = dataStore.storeData(valueData);
 
 		NativeValue nv = isOwnValue ? (NativeValue) value : getNativeValue(value);
@@ -379,6 +394,10 @@ public class ValueStore extends SimpleValueFactory {
 
 		// Update cache
 		valueIDCache.put(nv, id);
+
+		if (walEnabled() && id > previousMaxID) {
+			logMintedValue(id, nv);
+		}
 
 		return id;
 	}
@@ -422,6 +441,7 @@ public class ValueStore extends SimpleValueFactory {
 	 *
 	 * @throws IOException If an I/O error occurred.
 	 */
+	@Override
 	public void close() throws IOException {
 		dataStore.close();
 	}
@@ -687,7 +707,11 @@ public class ValueStore extends SimpleValueFactory {
 
 		int id;
 		if (create) {
+			int previousMaxID = walEnabled() ? dataStore.getMaxID() : 0;
 			id = dataStore.storeData(namespaceData);
+			if (walEnabled() && id > previousMaxID) {
+				logNamespaceMint(id, namespace);
+			}
 		} else {
 			id = dataStore.getID(namespaceData);
 		}
@@ -697,6 +721,106 @@ public class ValueStore extends SimpleValueFactory {
 		}
 
 		return id;
+	}
+
+	public OptionalLong drainPendingWalHighWaterMark() {
+		if (walPendingLsn == null) {
+			return OptionalLong.empty();
+		}
+		long lsn = walPendingLsn.get();
+		if (lsn <= ValueStoreWAL.NO_LSN) {
+			return OptionalLong.empty();
+		}
+		walPendingLsn.set(ValueStoreWAL.NO_LSN);
+		return OptionalLong.of(lsn);
+	}
+
+	public void awaitWalDurable(long lsn) throws IOException {
+		if (!walEnabled() || lsn <= ValueStoreWAL.NO_LSN) {
+			return;
+		}
+		try {
+			wal.awaitDurable(lsn);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while awaiting WAL durability", e);
+		}
+	}
+
+	private void logMintedValue(int id, Value value) throws IOException {
+		WalDescription description = describeValue(value);
+		int hash = computeWalHash(description.kind, description.lexical, description.datatype, description.language);
+		long lsn = wal.logMint(id, description.kind, description.lexical, description.datatype, description.language,
+				hash);
+		recordWalLsn(lsn);
+	}
+
+	private void logNamespaceMint(int id, String namespace) throws IOException {
+		int hash = computeWalHash(ValueKind.NAMESPACE, namespace, "", "");
+		long lsn = wal.logMint(id, ValueKind.NAMESPACE, namespace, "", "", hash);
+		recordWalLsn(lsn);
+	}
+
+	private void recordWalLsn(long lsn) {
+		if (walPendingLsn == null || lsn <= ValueStoreWAL.NO_LSN) {
+			return;
+		}
+		long current = walPendingLsn.get();
+		if (lsn > current) {
+			walPendingLsn.set(lsn);
+		}
+	}
+
+	private WalDescription describeValue(Value value) {
+		if (value instanceof IRI) {
+			return new WalDescription(ValueKind.IRI, value.stringValue(), "", "");
+		} else if (value instanceof BNode) {
+			return new WalDescription(ValueKind.BNODE, value.stringValue(), "", "");
+		} else if (value instanceof Literal) {
+			Literal literal = (Literal) value;
+			String lang = literal.getLanguage().orElse("");
+			String datatype = literal.getDatatype() != null ? literal.getDatatype().stringValue() : "";
+			return new WalDescription(ValueKind.LITERAL, literal.getLabel(), datatype, lang);
+		} else {
+			throw new IllegalArgumentException("value parameter should be a URI, BNode or Literal");
+		}
+	}
+
+	private int computeWalHash(ValueKind kind, String lexical, String datatype, String language) {
+		CRC32C crc32c = new CRC32C();
+		crc32c.update((byte) kind.code());
+		updateCrc(crc32c, lexical);
+		crc32c.update((byte) 0);
+		updateCrc(crc32c, datatype);
+		crc32c.update((byte) 0);
+		updateCrc(crc32c, language);
+		return (int) crc32c.getValue();
+	}
+
+	private void updateCrc(CRC32C crc32c, String value) {
+		if (value == null || value.isEmpty()) {
+			return;
+		}
+		byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+		crc32c.update(bytes, 0, bytes.length);
+	}
+
+	private boolean walEnabled() {
+		return wal != null;
+	}
+
+	private static final class WalDescription {
+		final ValueKind kind;
+		final String lexical;
+		final String datatype;
+		final String language;
+
+		WalDescription(ValueKind kind, String lexical, String datatype, String language) {
+			this.kind = kind;
+			this.lexical = lexical == null ? "" : lexical;
+			this.datatype = datatype == null ? "" : datatype;
+			this.language = language == null ? "" : language;
+		}
 	}
 
 	private String getNamespace(int id) throws IOException {
