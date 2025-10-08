@@ -11,18 +11,21 @@
 
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.File;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -41,10 +44,85 @@ public class NativeStoreValueStoreCorruptionTest {
 
 		String lang = buildLanguageTag(256);
 
+		assertThrows(RepositoryException.class, () -> {
+
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(connection.getValueFactory().createIRI("urn:subj"),
+						connection.getValueFactory().createIRI("urn:pred"),
+						connection.getValueFactory().createLiteral("value", lang));
+				connection.commit();
+			}
+		});
+
+		repo.shutDown();
+
+		SailRepository reopened = new SailRepository(new NativeStore(dataDir));
+		reopened.init();
+
+		try (RepositoryConnection connection = reopened.getConnection()) {
+			try (RepositoryResult<Statement> statements = connection.getStatements(null, null, null, true)) {
+				List<Statement> list = Iterations.asList(statements);
+				assertEquals(0, list.size());
+			}
+		}
+
+		reopened.shutDown();
+	}
+
+	@Test
+	public void longLanguageTagShouldNotCorruptValueStoreIncremental() throws Exception {
+		SailRepository repo = new SailRepository(new NativeStore(dataDir));
+		repo.init();
+
+		for (int i = 0; i < 256; i++) {
+			String lang = buildLanguageTag(i);
+
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(connection.getValueFactory().createIRI("urn:subj"),
+						connection.getValueFactory().createIRI("urn:pred"),
+						connection.getValueFactory().createLiteral("value", lang));
+				connection.commit();
+			}
+
+			repo.shutDown();
+
+			SailRepository reopened = new SailRepository(new NativeStore(dataDir));
+			reopened.init();
+
+			try (RepositoryConnection connection = reopened.getConnection()) {
+				try (RepositoryResult<Statement> statements = connection.getStatements(null, null, null, true)) {
+					List<Statement> list = Iterations.asList(statements);
+					assertEquals(1, list.size());
+					Literal literal = (Literal) list.get(0).getObject();
+					assertEquals(lang, literal.getLanguage().orElseThrow());
+				}
+			}
+
+			try (SailRepositoryConnection connection = reopened.getConnection()) {
+				connection.clear();
+			}
+
+			reopened.shutDown();
+		}
+	}
+
+	@Test
+	public void longDatatypeShouldNotCorruptValueStore() throws Exception {
+		SailRepository repo = new SailRepository(new NativeStore(dataDir));
+		repo.init();
+
+		String longDatatype = buildIRIOfLength(5000);
+
 		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
 			connection.add(connection.getValueFactory().createIRI("urn:subj"),
 					connection.getValueFactory().createIRI("urn:pred"),
-					connection.getValueFactory().createLiteral("value", lang));
+					connection.getValueFactory()
+							.createLiteral("value",
+									connection.getValueFactory().createIRI(longDatatype)));
+			connection.commit();
 		}
 
 		repo.shutDown();
@@ -52,18 +130,131 @@ public class NativeStoreValueStoreCorruptionTest {
 		SailRepository reopened = new SailRepository(new NativeStore(dataDir));
 		reopened.init();
 
-		assertDoesNotThrow(() -> {
-			try (RepositoryConnection connection = reopened.getConnection()) {
-				RepositoryResult<Statement> statements = connection.getStatements(null, null, null, true);
+		try (RepositoryConnection connection = reopened.getConnection()) {
+			try (RepositoryResult<Statement> statements = connection.getStatements(null, null, null, true)) {
 				List<Statement> list = Iterations.asList(statements);
 				assertEquals(1, list.size());
-
 				Literal literal = (Literal) list.get(0).getObject();
-				assertEquals(lang, literal.getLanguage().orElseThrow());
+				assertEquals(longDatatype, literal.getDatatype().stringValue());
 			}
-		});
+		}
 
 		reopened.shutDown();
+	}
+
+	@Test
+	public void longLabelShouldNotCorruptValueStore() throws Exception {
+		SailRepository repo = new SailRepository(new NativeStore(dataDir));
+		repo.init();
+
+		String longLabel = buildString(20000);
+
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.add(connection.getValueFactory().createIRI("urn:subj"),
+					connection.getValueFactory().createIRI("urn:pred"),
+					connection.getValueFactory().createLiteral(longLabel));
+			connection.commit();
+		}
+
+		repo.shutDown();
+
+		SailRepository reopened = new SailRepository(new NativeStore(dataDir));
+		reopened.init();
+
+		try (RepositoryConnection connection = reopened.getConnection()) {
+			try (RepositoryResult<Statement> statements = connection.getStatements(null, null, null, true)) {
+				List<Statement> list = Iterations.asList(statements);
+				assertEquals(1, list.size());
+				Literal literal = (Literal) list.get(0).getObject();
+				assertEquals(longLabel, literal.getLabel());
+			}
+		}
+
+		reopened.shutDown();
+	}
+
+	@Test
+	public void longIRIShouldNotCorruptValueStore() throws Exception {
+		SailRepository repo = new SailRepository(new NativeStore(dataDir));
+		repo.init();
+
+		String longIri = buildIRIOfLength(5000);
+
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.add(connection.getValueFactory().createIRI(longIri),
+					connection.getValueFactory().createIRI("urn:pred"),
+					connection.getValueFactory().createLiteral("value"));
+			connection.commit();
+		}
+
+		repo.shutDown();
+
+		SailRepository reopened = new SailRepository(new NativeStore(dataDir));
+		reopened.init();
+
+		try (RepositoryConnection connection = reopened.getConnection()) {
+			try (RepositoryResult<Statement> statements = connection.getStatements(null, null, null, true)) {
+				List<Statement> list = Iterations.asList(statements);
+				assertEquals(1, list.size());
+				Statement st = list.get(0);
+				assertEquals(longIri, st.getSubject().stringValue());
+			}
+		}
+
+		reopened.shutDown();
+	}
+
+	@Test
+	public void longBNodeShouldNotCorruptValueStore() throws Exception {
+		SailRepository repo = new SailRepository(new NativeStore(dataDir));
+		repo.init();
+
+		String longBnodeId = buildString(10000);
+
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.add(connection.getValueFactory().createBNode(longBnodeId),
+					connection.getValueFactory().createIRI("urn:pred"),
+					connection.getValueFactory().createLiteral("value"));
+			connection.commit();
+		}
+
+		repo.shutDown();
+
+		SailRepository reopened = new SailRepository(new NativeStore(dataDir));
+		reopened.init();
+
+		try (RepositoryConnection connection = reopened.getConnection()) {
+			try (RepositoryResult<Statement> statements = connection.getStatements(null, null, null, true)) {
+				List<Statement> list = Iterations.asList(statements);
+				assertEquals(1, list.size());
+				Statement st = list.get(0);
+				// ensure subject is a BNode with the long id
+				assertEquals(longBnodeId, st.getSubject().stringValue());
+			}
+		}
+
+		reopened.shutDown();
+	}
+
+	private String buildString(int targetLength) {
+		StringBuilder builder = new StringBuilder(targetLength);
+		while (builder.length() < targetLength) {
+			builder.append('x');
+		}
+		return builder.toString();
+	}
+
+	private String buildIRIOfLength(int targetLength) {
+		String base = "http://example.org/";
+		StringBuilder builder = new StringBuilder(targetLength);
+		builder.append(base);
+		while (builder.length() < targetLength) {
+			builder.append('a');
+		}
+		return builder.toString();
 	}
 
 	private String buildLanguageTag(int targetLength) {

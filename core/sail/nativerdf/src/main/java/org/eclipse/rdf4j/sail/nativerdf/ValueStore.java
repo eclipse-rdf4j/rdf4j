@@ -562,6 +562,10 @@ public class ValueStore extends SimpleValueFactory {
 		if (lang.isPresent()) {
 			langData = lang.get().getBytes(StandardCharsets.UTF_8);
 			langDataLength = langData.length;
+			if (langDataLength > 255) {
+				throw new IllegalArgumentException(
+						"Language tag too long (length " + langDataLength + " > maximum 255): " + lang.get());
+			}
 		}
 
 		// Get label in UTF-8
@@ -571,7 +575,7 @@ public class ValueStore extends SimpleValueFactory {
 		byte[] literalData = new byte[6 + langDataLength + labelData.length];
 		literalData[0] = LITERAL_VALUE;
 		ByteArrayUtil.putInt(datatypeID, literalData, 1);
-		literalData[5] = (byte) langDataLength;
+		literalData[5] = (byte) (langDataLength & 0xFF);
 		if (langData != null) {
 			ByteArrayUtil.put(langData, literalData, 6);
 		}
@@ -648,7 +652,7 @@ public class ValueStore extends SimpleValueFactory {
 
 			// Get language tag
 			String lang = null;
-			int langLength = data[5];
+			int langLength = data[5] & 0xFF;
 			if (langLength > 0) {
 				lang = new String(data, 6, langLength, StandardCharsets.UTF_8);
 			}
