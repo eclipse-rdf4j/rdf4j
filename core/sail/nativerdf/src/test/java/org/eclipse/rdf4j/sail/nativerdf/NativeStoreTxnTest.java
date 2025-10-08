@@ -17,9 +17,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.io.NioFile;
 import org.eclipse.rdf4j.model.IRI;
@@ -83,10 +85,20 @@ public class NativeStoreTxnTest {
 		File repoDir = repo.getDataDir();
 		System.out.println("Data dir: " + repoDir);
 
-		for (File file : repoDir.listFiles()) {
+		File[] repoFiles = repoDir.listFiles();
+		assertNotNull(repoFiles);
+
+		for (File file : repoFiles) {
 			System.out.println("# " + file.getName());
 		}
-		assertEquals(15, repoDir.listFiles().length);
+		assertTrue(Arrays.stream(repoFiles)
+				.anyMatch(file -> ValueStoreWriteAheadLog.DEFAULT_FILENAME.equals(file.getName())));
+
+		long nonWalCount = Arrays.stream(repoFiles)
+				.filter(file -> !ValueStoreWriteAheadLog.DEFAULT_FILENAME.equals(file.getName()))
+				.count();
+
+		assertEquals(15, nonWalCount);
 
 		// make sure there is no txncacheXXX.dat file
 		assertFalse(Files.list(repoDir.getAbsoluteFile().toPath())

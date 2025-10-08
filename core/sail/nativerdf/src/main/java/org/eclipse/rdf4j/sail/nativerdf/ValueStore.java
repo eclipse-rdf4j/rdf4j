@@ -97,6 +97,8 @@ public class ValueStore extends SimpleValueFactory {
 	 */
 	private final DataStore dataStore;
 
+	private final ValueStoreWriteAheadLog writeAheadLog;
+
 	/**
 	 * Lock manager used to prevent the removal of values over multiple method calls. Note that values can still be
 	 * added when read locks are active.
@@ -146,6 +148,7 @@ public class ValueStore extends SimpleValueFactory {
 			int namespaceIDCacheSize) throws IOException {
 		super();
 		dataStore = new DataStore(dataDir, FILENAME_PREFIX, forceSync);
+		writeAheadLog = new ValueStoreWriteAheadLog(dataDir, forceSync);
 
 		valueCache = new ConcurrentCache<>(valueCacheSize);
 		valueIDCache = new ConcurrentCache<>(valueIDCacheSize);
@@ -370,7 +373,8 @@ public class ValueStore extends SimpleValueFactory {
 		// store which will handle duplicates
 		byte[] valueData = value2data(value, true);
 
-		int id = dataStore.storeData(valueData);
+		DataStore.StoreResult storeResult = dataStore.storeDataWithInfo(valueData);
+		int id = storeResult.getId();
 
 		NativeValue nv = isOwnValue ? (NativeValue) value : getNativeValue(value);
 
@@ -379,6 +383,10 @@ public class ValueStore extends SimpleValueFactory {
 
 		// Update cache
 		valueIDCache.put(nv, id);
+
+		if (storeResult.isNewlyCreated()) {
+			writeAheadLog.recordValue(id, nv);
+		}
 
 		return id;
 	}
@@ -400,6 +408,7 @@ public class ValueStore extends SimpleValueFactory {
 				namespaceIDCache.clear();
 
 				setNewRevision();
+				writeAheadLog.reset();
 			} finally {
 				writeLock.release();
 			}
@@ -414,6 +423,7 @@ public class ValueStore extends SimpleValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void sync() throws IOException {
+		writeAheadLog.sync();
 		dataStore.sync();
 	}
 
@@ -423,7 +433,23 @@ public class ValueStore extends SimpleValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void close() throws IOException {
-		dataStore.close();
+		IOException suppressed = null;
+		try {
+			writeAheadLog.close();
+		} catch (IOException e) {
+			suppressed = e;
+		}
+		try {
+			dataStore.close();
+		} catch (IOException e) {
+			if (suppressed != null) {
+				e.addSuppressed(suppressed);
+			}
+			throw e;
+		}
+		if (suppressed != null) {
+			throw suppressed;
+		}
 	}
 
 	/**
@@ -687,7 +713,11 @@ public class ValueStore extends SimpleValueFactory {
 
 		int id;
 		if (create) {
-			id = dataStore.storeData(namespaceData);
+			DataStore.StoreResult storeResult = dataStore.storeDataWithInfo(namespaceData);
+			id = storeResult.getId();
+			if (storeResult.isNewlyCreated()) {
+				writeAheadLog.recordNamespace(id, namespace);
+			}
 		} else {
 			id = dataStore.getID(namespaceData);
 		}

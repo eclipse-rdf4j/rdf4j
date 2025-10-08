@@ -123,18 +123,42 @@ public class DataStore implements Closeable {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public int storeData(byte[] data) throws IOException {
+		return storeDataWithInfo(data).getId();
+	}
+
+	public StoreResult storeDataWithInfo(byte[] data) throws IOException {
 		assert data != null : "data must not be null";
 
 		int id = getID(data);
+		boolean created = false;
 
 		if (id == -1) {
 			// Data not stored yet, store it under a new ID.
 			long offset = dataFile.storeData(data);
 			id = idFile.storeOffset(offset);
 			hashFile.storeID(getDataHash(data), id);
+			created = true;
 		}
 
-		return id;
+		return new StoreResult(id, created);
+	}
+
+	public static final class StoreResult {
+		private final int id;
+		private final boolean newlyCreated;
+
+		StoreResult(int id, boolean newlyCreated) {
+			this.id = id;
+			this.newlyCreated = newlyCreated;
+		}
+
+		public int getId() {
+			return id;
+		}
+
+		public boolean isNewlyCreated() {
+			return newlyCreated;
+		}
 	}
 
 	/**
