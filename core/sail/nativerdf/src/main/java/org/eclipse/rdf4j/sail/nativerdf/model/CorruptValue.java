@@ -107,7 +107,7 @@ public class CorruptValue implements NativeValue {
 		}
 
 		byte[] truncated = new byte[limit - offset];
-		System.arraycopy(data, offset, limit, 0, limit - offset);
+		System.arraycopy(data, offset, truncated, 0, limit - offset);
 		data = truncated;
 
 		// truncate data to first 2048 bytes
