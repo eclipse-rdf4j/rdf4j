@@ -50,7 +50,7 @@ public class CorruptLiteral extends CorruptValue implements Literal {
 	public String getLabel() {
 		byte[] data = getData();
 		try {
- 			if (data != null && data.length > 0) {
+			if (data != null && data.length > 0) {
 				// truncate data to first 1024 bytes
 				if (data.length > 1024) {
 					byte[] truncated = new byte[1024];
@@ -58,12 +58,12 @@ public class CorruptLiteral extends CorruptValue implements Literal {
 					data = truncated;
 				}
 
-				return this.getClass().getSimpleName()+" with ID " + getInternalID() + " with possible data: "
+				return this.getClass().getSimpleName() + " with ID " + getInternalID() + " with possible data: "
 						+ new String(data, StandardCharsets.UTF_8);
 			}
 		} catch (Throwable ignored) {
 		}
-		return this.getClass().getSimpleName()+" with ID " + getInternalID();
+		return this.getClass().getSimpleName() + " with ID " + getInternalID();
 	}
 
 	@Override

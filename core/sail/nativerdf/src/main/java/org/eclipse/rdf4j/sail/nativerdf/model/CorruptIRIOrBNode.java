@@ -11,15 +11,16 @@
 
 package org.eclipse.rdf4j.sail.nativerdf.model;
 
-import com.google.common.net.UrlEscapers;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+
 import org.apache.commons.codec.binary.Hex;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStoreRevision;
 
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
+import com.google.common.net.UrlEscapers;
 
 /**
  * CorruptIRIOrBNode is used when a NativeValue cannot be read from the ValueStore and if soft failure is enabled
@@ -71,7 +72,6 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 				System.arraycopy(data, 0, truncated, 0, 1024);
 				data = truncated;
 			}
-
 
 			int offset = Math.min(5, data.length);
 			int limit = data.length;

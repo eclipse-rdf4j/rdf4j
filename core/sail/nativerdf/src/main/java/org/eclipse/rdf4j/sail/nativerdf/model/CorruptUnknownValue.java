@@ -54,7 +54,8 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 		byte[] data = getData();
 		try {
 			if (data != null && data.length > 0) {
-				String prefix = this.getClass().getSimpleName()+" with ID " + getInternalID() + " with possible data: ";
+				String prefix = this.getClass().getSimpleName() + " with ID " + getInternalID()
+						+ " with possible data: ";
 
 				// truncate data to first 1024 bytes
 				if (data.length > 1024) {
@@ -137,7 +138,7 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 			}
 		} catch (Throwable ignored) {
 		}
-		return this.getClass().getSimpleName()+ " with ID " + getInternalID();
+		return this.getClass().getSimpleName() + " with ID " + getInternalID();
 	}
 
 	@Override
