@@ -65,29 +65,25 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 	public String getLocalName() {
 		byte[] data = getData();
 		if (data != null && data.length > 0) {
-
-			// truncate data to first 1024 bytes
-			if (data.length > 1024) {
-				byte[] truncated = new byte[1024];
-				System.arraycopy(data, 0, truncated, 0, 1024);
-				data = truncated;
-			}
-
-			int offset = Math.min(5, data.length);
-			int limit = data.length;
-			// find first occurrence of 0x00 0x00 0x00 and stop there
-			for (int i = offset; i + 2 < data.length; i++) {
-				if (data[i] == 0x00 && data[i + 1] == 0x00 && data[i + 2] == 0x00) {
-					limit = i;
+			// check if all bytes are zero
+			boolean allZero = true;
+			for (byte b : data) {
+				if (b != 0) {
+					allZero = false;
 					break;
 				}
 			}
-			int length = Math.max(0, limit - offset);
+
+			if (allZero) {
+				return "CORRUPT_ID_" + getInternalID() + "_all_" + data.length + "_data_bytes_are_0x00";
+			}
+
+			data = truncateData(data);
 
 			// 1) Try full UTF-8 decode of the slice
-			if (length > 0) {
+			if (data.length > 0) {
 				try {
-					String utf8 = new String(data, offset, length, StandardCharsets.UTF_8);
+					String utf8 = new String(data, StandardCharsets.UTF_8);
 					// If replacement character is not present, we got a clean decode
 					if (utf8.indexOf('\uFFFD') < 0) {
 						return "CORRUPT_" + UrlEscapers.urlPathSegmentEscaper().escape(utf8);
@@ -100,8 +96,8 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 			// 2) Try to narrow down to a valid UTF-8 decodable substring (avoid replacement char)
 			String recoveredUtf8 = null;
 			int bestByteLen = 0;
-			for (int start = offset; start < limit; start++) {
-				for (int end = limit; end > start; end--) {
+			for (int start = 0; start < data.length; start++) {
+				for (int end = data.length; end > start; end--) {
 					int candidateLen = end - start;
 					if (candidateLen <= bestByteLen) {
 						break; // can't beat current best
@@ -125,12 +121,12 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 			// 3) Try ASCII: find the longest contiguous run of printable US-ASCII bytes and use that
 			int bestAsciiStart = -1;
 			int bestAsciiLen = 0;
-			int i = offset;
-			while (i < limit) {
+			int i = 0;
+			while (i < data.length) {
 				// printable ASCII range 0x20 (space) to 0x7E (~)
 				if (data[i] >= 0x20 && data[i] <= 0x7E) {
 					int runStart = i;
-					while (i < limit && data[i] >= 0x20 && data[i] <= 0x7E) {
+					while (i < data.length && data[i] >= 0x20 && data[i] <= 0x7E) {
 						i++;
 					}
 					int runLen = i - runStart;
@@ -148,10 +144,10 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 			}
 
 			// 4) Fallback: hex-encode the entire raw data
-			return "CORRUPT_" + Hex.encodeHexString(Arrays.copyOfRange(data, 0, limit));
+			return "CORRUPT_" + Hex.encodeHexString(Arrays.copyOfRange(data, 0, data.length));
 		}
 
-		return "CORRUPT";
+		return "CORRUPT_ID_" + getInternalID();
 	}
 
 	@Override

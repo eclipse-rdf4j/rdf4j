@@ -118,6 +118,30 @@ public class DataFile implements Closeable {
 	}
 
 	/**
+	 * Returns the current file size (after flushing any pending writes).
+	 */
+	public long getFileSize() throws IOException {
+		flush();
+		return nioFileSize;
+	}
+
+	/**
+	 * Attempts to recover data bytes between two known entry offsets when the length field at {@code startOffset} is
+	 * corrupt (e.g., zero). This returns up to {@code endOffset - startOffset - 4} bytes starting after the length
+	 * field, capped to a reasonable maximum to avoid large allocations.
+	 */
+	public byte[] tryRecoverBetweenOffsets(long startOffset, long endOffset) throws IOException {
+		flush();
+		if (endOffset <= startOffset + 4) {
+			return new byte[0];
+		}
+		long available = endOffset - (startOffset + 4);
+		int cap = 32 * 1024 * 1024; // 32MB cap for recovery
+		int toRead = (int) Math.min(Math.max(available, 0), cap);
+		return nioFile.readBytes(startOffset + 4L, toRead);
+	}
+
+	/**
 	 * Stores the specified data and returns the byte-offset at which it has been stored.
 	 *
 	 * @param data The data to store, must not be <var>null</var>.

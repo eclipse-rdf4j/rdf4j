@@ -16,6 +16,7 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStoreRevision;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * CorruptUnknownValue is used when a NativeValue cannot be read from the ValueStore and if soft failure is enabled
@@ -42,9 +44,9 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 	public CorruptUnknownValue(ValueStoreRevision revision, int internalID, byte[] data) {
 		super(revision, internalID, data);
 		var truncated = data;
-		if (truncated.length > 1024) {
-			truncated = new byte[1024];
-			System.arraycopy(data, 0, truncated, 0, 1024);
+		if (truncated.length > 2048) {
+			truncated = new byte[2048];
+			System.arraycopy(data, 0, truncated, 0, 2048);
 		}
 		this.hex = Hex.encodeHexString(truncated);
 	}
@@ -54,29 +56,28 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 		byte[] data = getData();
 		try {
 			if (data != null && data.length > 0) {
-				String prefix = this.getClass().getSimpleName() + " with ID " + getInternalID()
-						+ " with possible data: ";
-
-				// truncate data to first 1024 bytes
-				if (data.length > 1024) {
-					byte[] truncated = new byte[1024];
-					System.arraycopy(data, 0, truncated, 0, 1024);
-					data = truncated;
-				}
-
-				int offset = 0;
-				int limit = data.length;
-				// Find first occurrence of 0x00 0x00 0x00 and stop parsing at that point
-				for (int i = offset; i + 2 < data.length; i++) {
-					if (data[i] == 0x00 && data[i + 1] == 0x00 && data[i + 2] == 0x00) {
-						limit = i;
+				// check if all bytes are zero
+				boolean allZero = true;
+				for (byte b : data) {
+					if (b != 0) {
+						allZero = false;
 						break;
 					}
 				}
 
+				if (allZero) {
+					return this.getClass().getSimpleName() + " with ID " + getInternalID()
+							+ " all data bytes are 0x00, tried to read " + data.length + " bytes";
+				}
+
+				String prefix = this.getClass().getSimpleName() + " with ID " + getInternalID()
+						+ " with possible data: ";
+
+				data = truncateData(data);
+
 				// 1) Try full UTF-8 decode
 				try {
-					String utf8 = new String(data, offset, Math.max(0, limit - offset), StandardCharsets.UTF_8);
+					String utf8 = new String(data, StandardCharsets.UTF_8);
 					if (utf8.indexOf('\uFFFD') < 0) {
 						return prefix + utf8;
 					}
@@ -87,8 +88,8 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 				// 2) Longest clean UTF-8 substring (no replacement char)
 				String recoveredUtf8 = null;
 				int bestLen = 0;
-				for (int start = offset; start < limit; start++) {
-					for (int end = limit; end > start; end--) {
+				for (int start = 0; start < data.length; start++) {
+					for (int end = data.length; end > start; end--) {
 						int len = end - start;
 						if (len <= bestLen) {
 							break; // can't beat best
@@ -112,11 +113,11 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 				// 3) Longest contiguous printable ASCII run
 				int bestAsciiStart = -1;
 				int bestAsciiLen = 0;
-				int i = offset;
-				while (i < limit) {
+				int i = 0;
+				while (i < data.length) {
 					if (data[i] >= 0x20 && data[i] <= 0x7E) {
 						int runStart = i;
-						while (i < limit && data[i] >= 0x20 && data[i] <= 0x7E) {
+						while (i < data.length && data[i] >= 0x20 && data[i] <= 0x7E) {
 							i++;
 						}
 						int runLen = i - runStart;
@@ -134,7 +135,7 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 				}
 
 				// 4) Fallback to hex of full data
-				return prefix + Hex.encodeHexString(Arrays.copyOfRange(data, 0, limit));
+				return prefix + Hex.encodeHexString(Arrays.copyOfRange(data, 0, data.length));
 			}
 		} catch (Throwable ignored) {
 		}

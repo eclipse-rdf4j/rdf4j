@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.nativerdf.model;
 
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStoreRevision;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * CorruptValue is used when a NativeValue cannot be read from the ValueStore and if soft failure is enabled
@@ -84,6 +85,38 @@ public class CorruptValue implements NativeValue {
 		}
 
 		return super.equals(o);
+	}
+
+	static byte[] truncateData(byte[] data) {
+		int offset = 0;
+		int limit = data.length;
+		// Only consider 0x00 0x00 0x00 AFTER a non-zero byte has been seen
+		boolean seenNonZero = false;
+		for (int j = offset; j + 2 < data.length; j++) {
+			if (!seenNonZero) {
+				if (data[j] != 0) {
+					offset = j;
+					seenNonZero = true;
+				}
+				continue;
+			}
+			if (data[j] == 0x00 && data[j + 1] == 0x00 && data[j + 2] == 0x00) {
+				limit = j;
+				break;
+			}
+		}
+
+		byte[] truncated = new byte[limit - offset];
+		System.arraycopy(data, offset, limit, 0, limit - offset);
+		data = truncated;
+
+		// truncate data to first 2048 bytes
+		if (data.length > 2048) {
+			truncated = new byte[2048];
+			System.arraycopy(data, 0, truncated, 0, 2048);
+			data = truncated;
+		}
+		return data;
 	}
 
 }
