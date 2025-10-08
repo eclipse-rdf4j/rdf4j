@@ -56,4 +56,3 @@ e2e/test-results
 /tools/server/.lwjgl/
 /tools/server/.lwjgl/
 .m2_repo/
-ExternalNativeStoreCountIT.java
