@@ -39,6 +39,7 @@
 	</licenses>
 	<modules>
 		<module>assembly-descriptors</module>
+		<module>build-tools</module>
 		<module>core</module>
 		<module>tools</module>
 		<module>spring-components</module>
@@ -871,6 +872,21 @@
 							<phase>verify</phase>
 							<goals>
 								<goal>verify</goal>
+							</goals>
+						</execution>
+					</executions>
+				</plugin>
+				<plugin>
+					<groupId>org.eclipse.rdf4j</groupId>
+					<artifactId>rdf4j-build-tools</artifactId>
+					<version>${project.version}</version>
+					<inherited>false</inherited>
+					<executions>
+						<execution>
+							<id>verify-new-files</id>
+							<phase>verify</phase>
+							<goals>
+								<goal>check-new-files</goal>
 							</goals>
 						</execution>
 					</executions>
