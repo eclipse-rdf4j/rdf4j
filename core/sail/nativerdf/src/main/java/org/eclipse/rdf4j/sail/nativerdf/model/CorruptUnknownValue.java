@@ -137,4 +137,9 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 		return super.equals(o);
 	}
 
+	@Override
+	public String toString() {
+		return getLabel();
+	}
+
 }
