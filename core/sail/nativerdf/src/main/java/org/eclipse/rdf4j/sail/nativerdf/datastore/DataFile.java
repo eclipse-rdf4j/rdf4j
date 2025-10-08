@@ -225,9 +225,14 @@ public class DataFile implements Closeable {
 				// sensible
 				// max of 200
 				dataLengthApproximateAverage = (int) (Math.min(200,
-						((dataLengthApproximateAverage / 100.0) * 99) + (dataLength / 100.0)));
+						Math.abs(((dataLengthApproximateAverage / 100.0) * 99) + (dataLength / 100.0))));
 
-				return Arrays.copyOfRange(data, 4, dataLength + 4);
+				int i = dataLength + 4;
+				if (i < 0 || i > data.length) {
+					throw new IOException("Corrupt data record at offset " + offset + ". Data length: " + dataLength);
+				}
+
+				return Arrays.copyOfRange(data, 4, i);
 
 			} else {
 

@@ -335,7 +335,7 @@ public class ValueStore extends SimpleValueFactory {
 	 * @return The ID that has been assigned to the value.
 	 * @throws IOException If an I/O error occurred.
 	 */
-	public int storeValue(Value value) throws IOException {
+	public synchronized int storeValue(Value value) throws IOException {
 		// Try to get the internal ID from the value itself
 		boolean isOwnValue = isOwnValue(value);
 
