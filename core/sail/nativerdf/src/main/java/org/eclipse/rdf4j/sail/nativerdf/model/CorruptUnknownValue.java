@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.nativerdf.model;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -62,10 +63,19 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 					data = truncated;
 				}
 
+				int offset = 0;
+				int limit = data.length;
+				// Find first occurrence of 0x00 0x00 0x00 and stop parsing at that point
+				for (int i = offset; i + 2 < data.length; i++) {
+					if (data[i] == 0x00 && data[i + 1] == 0x00 && data[i + 2] == 0x00) {
+						limit = i;
+						break;
+					}
+				}
 
 				// 1) Try full UTF-8 decode
 				try {
-					String utf8 = new String(data, StandardCharsets.UTF_8);
+					String utf8 = new String(data, offset, Math.max(0, limit - offset), StandardCharsets.UTF_8);
 					if (utf8.indexOf('\uFFFD') < 0) {
 						return prefix + utf8;
 					}
@@ -76,8 +86,8 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 				// 2) Longest clean UTF-8 substring (no replacement char)
 				String recoveredUtf8 = null;
 				int bestLen = 0;
-				for (int start = 0; start < data.length; start++) {
-					for (int end = data.length; end > start; end--) {
+				for (int start = offset; start < limit; start++) {
+					for (int end = limit; end > start; end--) {
 						int len = end - start;
 						if (len <= bestLen) {
 							break; // can't beat best
@@ -101,11 +111,11 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 				// 3) Longest contiguous printable ASCII run
 				int bestAsciiStart = -1;
 				int bestAsciiLen = 0;
-				int i = 0;
-				while (i < data.length) {
+				int i = offset;
+				while (i < limit) {
 					if (data[i] >= 0x20 && data[i] <= 0x7E) {
 						int runStart = i;
-						while (i < data.length && data[i] >= 0x20 && data[i] <= 0x7E) {
+						while (i < limit && data[i] >= 0x20 && data[i] <= 0x7E) {
 							i++;
 						}
 						int runLen = i - runStart;
@@ -123,7 +133,7 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 				}
 
 				// 4) Fallback to hex of full data
-				return prefix + Hex.encodeHexString(data);
+				return prefix + Hex.encodeHexString(Arrays.copyOfRange(data, 0, limit));
 			}
 		} catch (Throwable ignored) {
 		}

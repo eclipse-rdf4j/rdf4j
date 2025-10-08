@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.nativerdf.model;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
 import org.apache.commons.codec.binary.Hex;
 import org.eclipse.rdf4j.model.BNode;
@@ -65,7 +66,15 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 		byte[] data = getData();
 		if (data != null && data.length < 1024) {
 			int offset = Math.min(5, data.length);
-			int length = data.length - offset;
+			int limit = data.length;
+			// find first occurrence of 0x00 0x00 0x00 and stop there
+			for (int i = offset; i + 2 < data.length; i++) {
+				if (data[i] == 0x00 && data[i + 1] == 0x00 && data[i + 2] == 0x00) {
+					limit = i;
+					break;
+				}
+			}
+			int length = Math.max(0, limit - offset);
 
 			// 1) Try full UTF-8 decode of the slice
 			if (length > 0) {
@@ -83,8 +92,8 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 			// 2) Try to narrow down to a valid UTF-8 decodable substring (avoid replacement char)
 			String recoveredUtf8 = null;
 			int bestByteLen = 0;
-			for (int start = offset; start < data.length; start++) {
-				for (int end = data.length; end > start; end--) {
+			for (int start = offset; start < limit; start++) {
+				for (int end = limit; end > start; end--) {
 					int candidateLen = end - start;
 					if (candidateLen <= bestByteLen) {
 						break; // can't beat current best
@@ -109,11 +118,11 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 			int bestAsciiStart = -1;
 			int bestAsciiLen = 0;
 			int i = offset;
-			while (i < data.length) {
+			while (i < limit) {
 				// printable ASCII range 0x20 (space) to 0x7E (~)
 				if (data[i] >= 0x20 && data[i] <= 0x7E) {
 					int runStart = i;
-					while (i < data.length && data[i] >= 0x20 && data[i] <= 0x7E) {
+					while (i < limit && data[i] >= 0x20 && data[i] <= 0x7E) {
 						i++;
 					}
 					int runLen = i - runStart;
@@ -131,7 +140,7 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 			}
 
 			// 4) Fallback: hex-encode the entire raw data
-			return "CORRUPT_" + Hex.encodeHexString(data);
+			return "CORRUPT_" + Hex.encodeHexString(Arrays.copyOfRange(data, 0, limit));
 		}
 
 		return "CORRUPT";

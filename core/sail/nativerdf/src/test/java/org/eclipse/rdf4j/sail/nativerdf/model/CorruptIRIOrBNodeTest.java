@@ -74,4 +74,29 @@ public class CorruptIRIOrBNodeTest {
 		assertTrue(localName.startsWith("CORRUPT_"), "Should be prefixed with CORRUPT_");
 		assertEquals("CORRUPT_" + expectedHex, localName);
 	}
+
+	@Test
+	public void stopsParsingAtTripleZeroSentinel() {
+		byte[] header = new byte[] { 0, 0, 0, 0, 0 };
+		byte[] valid = "abc".getBytes(StandardCharsets.UTF_8);
+		byte[] sentinel = new byte[] { 0, 0, 0 };
+		byte[] tail = "tail".getBytes(StandardCharsets.UTF_8);
+
+		byte[] data = new byte[header.length + valid.length + sentinel.length + tail.length];
+		int pos = 0;
+		System.arraycopy(header, 0, data, pos, header.length);
+		pos += header.length;
+		System.arraycopy(valid, 0, data, pos, valid.length);
+		pos += valid.length;
+		System.arraycopy(sentinel, 0, data, pos, sentinel.length);
+		pos += sentinel.length;
+		System.arraycopy(tail, 0, data, pos, tail.length);
+
+		CorruptIRIOrBNode node = nodeWithData(data);
+		String localName = node.getLocalName();
+
+		assertTrue(localName.startsWith("CORRUPT_"));
+		assertTrue(localName.contains("abc"), "Should recover text before sentinel");
+		assertTrue(!localName.contains("tail"), "Should not parse past sentinel");
+	}
 }

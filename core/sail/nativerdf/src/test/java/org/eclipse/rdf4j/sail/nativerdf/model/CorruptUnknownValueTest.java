@@ -61,4 +61,26 @@ public class CorruptUnknownValueTest {
 		assertTrue(label.startsWith("CorruptUnknownValue with ID 456 with possible data: "));
 		assertTrue(label.contains(expectedHex), "Should fall back to hex encoding when undecodable");
 	}
+
+	@Test
+	public void stopsParsingAtTripleZeroSentinel() {
+		byte[] valid = "xyz".getBytes(StandardCharsets.UTF_8);
+		byte[] sentinel = new byte[] { 0, 0, 0 };
+		byte[] tail = "end".getBytes(StandardCharsets.UTF_8);
+
+		byte[] data = new byte[valid.length + sentinel.length + tail.length];
+		int pos = 0;
+		System.arraycopy(valid, 0, data, pos, valid.length);
+		pos += valid.length;
+		System.arraycopy(sentinel, 0, data, pos, sentinel.length);
+		pos += sentinel.length;
+		System.arraycopy(tail, 0, data, pos, tail.length);
+
+		CorruptUnknownValue v = valueWithData(data);
+		String label = v.getLabel();
+
+		assertTrue(label.startsWith("CorruptUnknownValue with ID 456 with possible data: "));
+		assertTrue(label.contains("xyz"), "Should use data before sentinel");
+		assertTrue(!label.contains("end"), "Should not parse past sentinel");
+	}
 }
