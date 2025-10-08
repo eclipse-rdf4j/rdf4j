@@ -64,12 +64,73 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 	public String getLocalName() {
 		byte[] data = getData();
 		if (data != null && data.length < 1024) {
-			try {
-				String localName = new String(data, 5, data.length - 5, StandardCharsets.UTF_8);
-				return "CORRUPT_" + UrlEscapers.urlPathSegmentEscaper().escape(localName);
-			} catch (Throwable ignored) {
+			int offset = Math.min(5, data.length);
+			int length = data.length - offset;
+
+			// 1) Try full UTF-8 decode of the slice
+			if (length > 0) {
+				try {
+					String utf8 = new String(data, offset, length, StandardCharsets.UTF_8);
+					// If replacement character is not present, we got a clean decode
+					if (utf8.indexOf('\uFFFD') < 0) {
+						return "CORRUPT_" + UrlEscapers.urlPathSegmentEscaper().escape(utf8);
+					}
+				} catch (Throwable ignored) {
+					// fall through to recovery strategies
+				}
 			}
 
+			// 2) Try to narrow down to a valid UTF-8 decodable substring (avoid replacement char)
+			String recoveredUtf8 = null;
+			int bestByteLen = 0;
+			for (int start = offset; start < data.length; start++) {
+				for (int end = data.length; end > start; end--) {
+					int candidateLen = end - start;
+					if (candidateLen <= bestByteLen) {
+						break; // can't beat current best
+					}
+					try {
+						String s = new String(data, start, candidateLen, StandardCharsets.UTF_8);
+						if (s.indexOf('\uFFFD') < 0) {
+							recoveredUtf8 = s;
+							bestByteLen = candidateLen;
+							break; // no need to try smaller end for this start
+						}
+					} catch (Throwable ignored) {
+						// continue scanning
+					}
+				}
+			}
+			if (recoveredUtf8 != null && !recoveredUtf8.isEmpty()) {
+				return "CORRUPT_" + UrlEscapers.urlPathSegmentEscaper().escape(recoveredUtf8);
+			}
+
+			// 3) Try ASCII: find the longest contiguous run of printable US-ASCII bytes and use that
+			int bestAsciiStart = -1;
+			int bestAsciiLen = 0;
+			int i = offset;
+			while (i < data.length) {
+				// printable ASCII range 0x20 (space) to 0x7E (~)
+				if (data[i] >= 0x20 && data[i] <= 0x7E) {
+					int runStart = i;
+					while (i < data.length && data[i] >= 0x20 && data[i] <= 0x7E) {
+						i++;
+					}
+					int runLen = i - runStart;
+					if (runLen > bestAsciiLen) {
+						bestAsciiLen = runLen;
+						bestAsciiStart = runStart;
+					}
+				} else {
+					i++;
+				}
+			}
+			if (bestAsciiLen > 0) {
+				String ascii = new String(data, bestAsciiStart, bestAsciiLen, StandardCharsets.US_ASCII);
+				return "CORRUPT_" + UrlEscapers.urlPathSegmentEscaper().escape(ascii);
+			}
+
+			// 4) Fallback: hex-encode the entire raw data
 			return "CORRUPT_" + Hex.encodeHexString(data);
 		}
 
