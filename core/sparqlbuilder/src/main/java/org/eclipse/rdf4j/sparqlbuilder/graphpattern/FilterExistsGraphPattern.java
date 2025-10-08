@@ -11,6 +11,8 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.graphpattern;
 
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
+
 /**
  * A SPARQL Graph Pattern Filter
  *
@@ -43,6 +45,13 @@ class FilterExistsGraphPattern extends GroupGraphPattern {
 		}
 		filterExists.append(EXISTS).append(" ");
 
-		return filterExists.append(super.getQueryString()).toString();
+		String innerPattern = super.getQueryString();
+		String trimmedPattern = innerPattern.trim();
+
+		if (!trimmedPattern.startsWith("{")) {
+			innerPattern = SparqlBuilderUtils.getBracedString(innerPattern);
+		}
+
+		return filterExists.append(innerPattern).toString();
 	}
 }
