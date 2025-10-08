@@ -18,10 +18,10 @@ import java.util.List;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -33,7 +33,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 @Testcontainers
-class ElasticsearchSailIT {
+class ElasticsearchSailTextIT {
 
 	private static final DockerImageName ES_IMAGE = DockerImageName
 			.parse("docker.elastic.co/elasticsearch/elasticsearch:7.15.2");
@@ -47,83 +47,120 @@ class ElasticsearchSailIT {
 			.waitingFor(Wait.forListeningPort());
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
-	private static final IRI EX_LABEL = VF.createIRI("http://example.org/label");
+	private static final IRI EX_TITLE = VF.createIRI("http://example.org/title");
+	private static final IRI EX_COMMENT = VF.createIRI("http://example.org/comment");
 
 	@BeforeAll
-	static void checkRunning() {
-		assertTrue(elastic.isRunning(), "Elasticsearch testcontainer must be running");
+	static void up() {
+		assertTrue(elastic.isRunning());
 	}
 
 	@AfterAll
-	static void stop() {
-		// container is stopped automatically by @Container lifecycle
+	static void down() {
+		// handled by @Container
 	}
 
-	@Test
-	void indexAndSearchByProperty() throws Exception {
-		// Arrange: create a LuceneSail backed by ElasticsearchIndex
+	private static SailRepository newRepository() {
 		String host = elastic.getHost();
 		Integer transport = elastic.getMappedPort(9300);
 
 		LuceneSail lucene = new LuceneSail();
 		lucene.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
-		// provide ES Transport address (host:port)
 		lucene.setParameter(ElasticsearchIndex.TRANSPORT_KEY, host + ":" + transport);
-		// be lenient about cluster name matching/sniffing in tests
 		lucene.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "yellow");
 		lucene.setParameter(ElasticsearchIndex.WAIT_FOR_NO_RELOCATING_SHARDS_KEY, "true");
 		lucene.setParameter(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "client.transport.ignore_cluster_name",
 				"true");
 		lucene.setParameter(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "client.transport.sniff", "false");
-
-		MemoryStore base = new MemoryStore();
-		lucene.setBaseSail(base);
+		lucene.setBaseSail(new MemoryStore());
 
 		SailRepository repo = new SailRepository(lucene);
 		repo.init();
+		return repo;
+	}
 
+	@Test
+	void highlightAcrossAllProperties() {
+		SailRepository repo = newRepository();
 		ValueFactory vf = repo.getValueFactory();
-		IRI exS = vf.createIRI("http://example.org/s");
+		IRI s1 = vf.createIRI("http://example.org/s1");
+		IRI s2 = vf.createIRI("http://example.org/s2");
+		IRI s3 = vf.createIRI("http://example.org/s3");
 
 		try (SailRepositoryConnection cx = repo.getConnection()) {
 			cx.begin();
-			cx.add(exS, EX_LABEL, vf.createLiteral("The quick brown fox jumps"));
-			cx.add(vf.createIRI("http://example.org/t2"), EX_LABEL, vf.createLiteral("A lazy dog"));
+			cx.add(s1, EX_TITLE, vf.createLiteral("The quick brown fox jumps"));
+			cx.add(s1, EX_COMMENT, vf.createLiteral("Over the lazy dog"));
+			cx.add(s2, EX_TITLE, vf.createLiteral("Some other text"));
+			cx.add(s3, EX_COMMENT, vf.createLiteral("quick again appears here"));
 			cx.commit();
 		}
 
-		// Act: run a LuceneSail search over the property with snippet/score
 		String q = String.join("\n",
 				"PREFIX search: <http://www.openrdf.org/contrib/lucenesail#>",
-				"PREFIX ex: <http://example.org/>",
-				"SELECT ?s ?score ?snip WHERE {",
+				"SELECT ?s ?snip WHERE {",
 				"  ?s search:matches [",
-				"    search:property ex:label ;",
 				"    search:query \"quick\" ;",
-				"    search:score ?score ;",
 				"    search:snippet ?snip",
 				"  ] .",
 				"}");
 
-		List<String> subjects = new ArrayList<>();
+		List<String> snippets = new ArrayList<>();
+		List<String> results = new ArrayList<>();
 		try (SailRepositoryConnection cx = repo.getConnection()) {
 			var tq = cx.prepareTupleQuery(q);
 			try (var res = tq.evaluate()) {
 				while (res.hasNext()) {
 					var bs = res.next();
-					subjects.add(bs.getValue("s").stringValue());
-					// score should exist and be numeric
-					assertNotNull(bs.getValue("score"));
-					// snippet is optional but should appear for matches
-					assertNotNull(bs.getValue("snip"));
+					results.add(bs.getValue("s").stringValue());
+					snippets.add(bs.getValue("snip").stringValue());
 				}
 			}
 		}
 
-		// Assert: the subject with the 'quick' literal is returned
-		assertTrue(subjects.contains(exS.stringValue()), "Expected match for subject with 'quick'");
+		assertTrue(results.contains(s1.stringValue()));
+		assertTrue(results.contains(s3.stringValue()));
+		assertFalse(results.contains(s2.stringValue()));
+		assertTrue(snippets.stream().anyMatch(s -> s.contains(SearchFields.HIGHLIGHTER_PRE_TAG)));
 
-		// Cleanup
+		repo.shutDown();
+	}
+
+	@Test
+	void limitNumDocs() {
+		SailRepository repo = newRepository();
+		ValueFactory vf = repo.getValueFactory();
+		for (int i = 0; i < 3; i++) {
+			IRI s = vf.createIRI("http://example.org/r" + i);
+			try (SailRepositoryConnection cx = repo.getConnection()) {
+				cx.begin();
+				cx.add(s, EX_TITLE, vf.createLiteral("fox fox fox"));
+				cx.commit();
+			}
+		}
+
+		String q = String.join("\n",
+				"PREFIX search: <http://www.openrdf.org/contrib/lucenesail#>",
+				"SELECT ?s WHERE {",
+				"  ?s search:matches [",
+				"    search:query \"fox\" ;",
+				"    search:numDocs \"1\"",
+				"  ] .",
+				"}");
+
+		int count;
+		try (SailRepositoryConnection cx = repo.getConnection()) {
+			var tq = cx.prepareTupleQuery(q);
+			try (var res = tq.evaluate()) {
+				count = 0;
+				while (res.hasNext()) {
+					res.next();
+					count++;
+				}
+			}
+		}
+
+		assertEquals(1, count, "Expected query to limit results to 1");
 		repo.shutDown();
 	}
 }

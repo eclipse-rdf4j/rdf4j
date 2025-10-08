@@ -13,12 +13,13 @@ package org.eclipse.rdf4j.sail.elasticsearch;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.repository.RepositoryResult;
+import org.eclipse.rdf4j.model.vocabulary.GEO;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
@@ -33,7 +34,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 @Testcontainers
-class ElasticsearchSailIT {
+class ElasticsearchSailGeoIT {
 
 	private static final DockerImageName ES_IMAGE = DockerImageName
 			.parse("docker.elastic.co/elasticsearch/elasticsearch:7.15.2");
@@ -47,83 +48,73 @@ class ElasticsearchSailIT {
 			.waitingFor(Wait.forListeningPort());
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
-	private static final IRI EX_LABEL = VF.createIRI("http://example.org/label");
 
 	@BeforeAll
-	static void checkRunning() {
-		assertTrue(elastic.isRunning(), "Elasticsearch testcontainer must be running");
+	static void up() {
+		assertTrue(elastic.isRunning());
 	}
 
 	@AfterAll
-	static void stop() {
-		// container is stopped automatically by @Container lifecycle
-	}
+	static void down() {
+		/* @Container lifecycle */ }
 
-	@Test
-	void indexAndSearchByProperty() throws Exception {
-		// Arrange: create a LuceneSail backed by ElasticsearchIndex
+	private static SailRepository newRepository() {
 		String host = elastic.getHost();
 		Integer transport = elastic.getMappedPort(9300);
 
 		LuceneSail lucene = new LuceneSail();
 		lucene.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
-		// provide ES Transport address (host:port)
 		lucene.setParameter(ElasticsearchIndex.TRANSPORT_KEY, host + ":" + transport);
-		// be lenient about cluster name matching/sniffing in tests
 		lucene.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "yellow");
 		lucene.setParameter(ElasticsearchIndex.WAIT_FOR_NO_RELOCATING_SHARDS_KEY, "true");
 		lucene.setParameter(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "client.transport.ignore_cluster_name",
 				"true");
 		lucene.setParameter(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "client.transport.sniff", "false");
-
-		MemoryStore base = new MemoryStore();
-		lucene.setBaseSail(base);
+		lucene.setBaseSail(new MemoryStore());
 
 		SailRepository repo = new SailRepository(lucene);
 		repo.init();
+		return repo;
+	}
 
+	@Test
+	void withinDistanceMetre_samePointMatches() {
+		SailRepository repo = newRepository();
 		ValueFactory vf = repo.getValueFactory();
-		IRI exS = vf.createIRI("http://example.org/s");
+		IRI s1 = vf.createIRI("http://example.org/pt1");
+		IRI s2 = vf.createIRI("http://example.org/pt2");
 
 		try (SailRepositoryConnection cx = repo.getConnection()) {
 			cx.begin();
-			cx.add(exS, EX_LABEL, vf.createLiteral("The quick brown fox jumps"));
-			cx.add(vf.createIRI("http://example.org/t2"), EX_LABEL, vf.createLiteral("A lazy dog"));
+			cx.add(s1, GEO.AS_WKT, vf.createLiteral("POINT (1 2)", GEO.WKT_LITERAL));
+			cx.add(s2, GEO.AS_WKT, vf.createLiteral("POINT (10 10)", GEO.WKT_LITERAL));
 			cx.commit();
 		}
 
-		// Act: run a LuceneSail search over the property with snippet/score
 		String q = String.join("\n",
-				"PREFIX search: <http://www.openrdf.org/contrib/lucenesail#>",
-				"PREFIX ex: <http://example.org/>",
-				"SELECT ?s ?score ?snip WHERE {",
-				"  ?s search:matches [",
-				"    search:property ex:label ;",
-				"    search:query \"quick\" ;",
-				"    search:score ?score ;",
-				"    search:snippet ?snip",
-				"  ] .",
+				"PREFIX geo: <http://www.opengis.net/ont/geosparql#>",
+				"PREFIX geof: <http://www.opengis.net/def/function/geosparql/>",
+				"PREFIX uom: <http://www.opengis.net/def/uom/OGC/1.0/>",
+				"SELECT ?s ?w WHERE {",
+				"  ?s geo:asWKT ?w .",
+				"  FILTER(geof:distance(\"POINT (1 2)\"^^geo:wktLiteral, ?w, uom:metre) < 1000)",
 				"}");
 
-		List<String> subjects = new ArrayList<>();
+		List<String> results = new ArrayList<>();
 		try (SailRepositoryConnection cx = repo.getConnection()) {
 			var tq = cx.prepareTupleQuery(q);
 			try (var res = tq.evaluate()) {
 				while (res.hasNext()) {
 					var bs = res.next();
-					subjects.add(bs.getValue("s").stringValue());
-					// score should exist and be numeric
-					assertNotNull(bs.getValue("score"));
-					// snippet is optional but should appear for matches
-					assertNotNull(bs.getValue("snip"));
+					results.add(bs.getValue("s").stringValue());
 				}
 			}
 		}
+		System.out.println(Arrays.toString(results.toArray()));
 
-		// Assert: the subject with the 'quick' literal is returned
-		assertTrue(subjects.contains(exS.stringValue()), "Expected match for subject with 'quick'");
+		assertTrue(results.contains(s1.stringValue()));
+		assertFalse(results.contains(s2.stringValue()));
 
-		// Cleanup
 		repo.shutDown();
 	}
 }
