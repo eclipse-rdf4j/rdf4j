@@ -4,8 +4,6 @@ Welcome, AI Agent! Your persistence, curiosity, and craftsmanship make a differe
 
 You need to read the entire AGENTS.md file and follow all instructions exactly. Keep this fresh in your context as you work.
 
-> **Timebox:** Aim to complete each autonomous run in **15–30 minutes**.
-
 ---
 
 ## Read‑Me‑Now: Proportional Test‑First Rule (Default)
@@ -27,55 +25,88 @@ It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
 
 > **Clarification:** For **strictly behavior‑neutral refactors** that are already **fully exercised by existing tests**, or for **bugfixes with an existing failing test**, you may use **Routine B — Change without new tests**. In that case you must capture **pre‑change passing evidence** at the smallest scope that hits the code you’re about to edit, prove **Hit Proof**, then show **post‑change passing evidence** from the **same selection**.
-> **No exceptions for any behavior‑changing change** — for those, you must follow **Routine A — Full TDD**.
+> **No exceptions for any behavior‑changing change** — for those, you must follow **Routine A — Full TDD** or **Routine D — ExecPlans**.
 
 ---
 
-## Three Routines: Choose Your Path
+## Four Routines: Choose Your Path
 
 **Routine A — Full TDD (Default)**
 **Routine B — Change without new tests (Proportional, gated)**
 **Routine C — Spike/Investigate (No production changes)**
+**Routine D — ExecPlans: Complex features or significant refactors**
 
 ### Decision quickstart
 
-1. **Is new externally observable behavior required?**
-   → **Yes:** **Routine A (Full TDD)**. Add the smallest failing test first.
+1. **Is ExecPlans required (complex feature, significant refactor or requested by the user)?**
+   → **Yes:** **Routine D (ExecPlans)**. Use an ExecPlan (as described in .agent/PLANS.md) from design to implementation.
    → **No:** continue.
 
-2. **Does a failing test already exist in this repo that pinpoints the issue?**
-   → **Yes:** **Routine B (Bugfix using existing failing test).**
-   → **No:** continue.
+2**Is new externally observable behavior required?**
+→ **Yes:** **Routine A (Full TDD)**. Add the smallest failing test first.
+→ **No:** continue.
 
-3. **Is the edit strictly behavior‑neutral, local in scope, and clearly hit by existing tests?**
-   → **Yes:** **Routine B (Refactor/micro‑perf/documentation/build).**
-   → **No or unsure:** continue.
+3**Does a failing test already exist in this repo that pinpoints the issue?**
+→ **Yes:** **Routine B (Bugfix using existing failing test).**
+→ **No:** continue.
 
-4. **Is this purely an investigation/design spike with no production code changes?**
-   → **Yes:** **Routine C (Spike/Investigate).**
-   → **No or unsure:** **Routine A.**
+4**Is the edit strictly behavior‑neutral, local in scope, and clearly hit by existing tests?**
+→ **Yes:** **Routine B (Refactor/micro‑perf/documentation/build).**
+→ **No or unsure:** continue.
+
+5**Is this purely an investigation/design spike with no production code changes?**
+→ **Yes:** **Routine C (Spike/Investigate).**
+→ **No or unsure:** **Routine A.**
 
 **When in doubt, choose Routine A (Full TDD).** Ambiguity is risk; tests are insurance.
 
 ---
 
+## ExecPlans
+
+When writing complex features or significant refactors, use an ExecPlan (as described in PLANS.md) from design to implementation.
+
 ## PIOSEE Decision Model (Adopted)
 
-Use PIOSEE on every task to structure thinking and execution. It complements the routines below and ties directly into the Traceability trio (Description, Evidence, Plan).
+Use this as a compact, repeatable loop for anything from a one‑line bug fix to a multi‑quarter program.
 
-- Problem: restate the task in one sentence, note constraints/timebox, and identify likely routine (A/B/C).
-- Information: inspect modules and AGENTS.md, gather environment constraints, locate existing tests/reports, and search code to localize the work.
-- Options: list 2–3 viable approaches (routine choice, test scope, fix location) and weigh them with the Proportionality Model.
-- Select: choose one option and routine; update the Living Plan with exactly one `in_progress` step.
-- Execute: follow the Working Loop and house rules; for Routine A add the smallest failing test first; capture an Evidence block after each grouped action.
-- Evaluate: check against the Definition of Done; if gaps remain, adjust the plan or change routine; record final Evidence and a brief retrospective.
+### P — **Problem**
 
-PIOSEE → Traceability trio mapping
-- P/I/O → Description
-- S → Plan (one `in_progress`)
-- E/E → Evidence and Verification
+**Goal:** State the core problem and what “good” looks like.
+**Ask:** Who’s affected? What outcome is required? What happens if we do nothing?
+**Tip:** Include measurable target(s): error rate ↓, latency p95 ↓, revenue ↑, risk ↓.
 
-For documentation‑only edits and other Routine B cases, still run PIOSEE briefly to confirm neutrality and reversibility.
+### I — **Information**
+
+**Goal:** Gather only the facts needed to move.
+**Ask:** What do logs/metrics/user feedback say? What constraints (security, compliance, budget, SLA/SLO)? What assumptions must we test?
+
+### O — **Options**
+
+**Goal:** Generate viable ways forward, including “do nothing.”
+**Ask:** What are 2–4 distinct approaches (patch, redesign, buy vs. build, defer)? What risks, costs, and second‑order effects?
+**Tip:** Check guardrails: reliability, security/privacy, accessibility, performance, operability, unit economics.
+
+### S — **Select**
+
+**Goal:** Decide deliberately and document why.
+**Ask:** Which option best meets the success criteria under constraints? Who is the decision owner? What’s the fallback/abort condition?
+**Tip:** Use lightweight scoring (e.g., Impact×Confidence÷Effort) to avoid bike‑shedding.
+
+### E — **Execute**
+
+**Goal:** Ship safely and visibly.
+**Ask:** What is the smallest safe slice? How do we de‑risk (feature flag, canary, dark launch, rollback)? Who owns what?
+**Checklist:** Traces/logs/alerts; security & privacy checks; docs & changelog; incident plan if relevant.
+
+### E — **Evaluate**
+
+**Goal:** Verify outcomes and learn.
+**Ask:** Did metrics hit targets? Any regressions or side effects? What will we keep/change next loop?
+**Output:** Post‑release review (or retro), decision log entry, follow‑ups (tickets), debt captured.
+**Tip:** If outcomes miss, either **iterate** (new Options) or **reframe** (back to Problem).
+
+---
 
 ### Benchmarking workflow (repository-wide)
 
@@ -83,7 +114,7 @@ The `scripts/run-single-benchmark.sh` helper is the supported path for spot-chec
 
 ## Proportionality Model (Think before you test)
 
-Score the change on these lenses. If any are **High**, prefer **Routine A**.
+Score the change on these lenses. If any are **High**, prefer **Routine A or D**.
 
 - **Behavioral surface:** affects outputs, serialization, parsing, APIs, error text, timing/order?
 - **Blast radius:** number of modules/classes touched; public vs internal.
@@ -105,7 +136,7 @@ Score the change on these lenses. If any are **High**, prefer **Routine A**.
     * Relevant module tests pass; failures triaged or crisply explained.
     * Only necessary files changed; headers correct for new files.
     * Clear final summary: what changed, why, where, how verified, next steps.
-    * **Evidence present:** failing test output (pre‑fix) and passing output (post‑fix) are shown for Routine A; for Routine B show **pre/post green** from the **same selection** plus **Hit Proof**.
+    * **Evidence present:** failing test output (pre‑fix) and passing output (post‑fix) are shown for Routine A; for Routine B show **pre/post green** from the **same selection** plus **Hit Proof**; for Routine D NO EVIDENCE.
 
 ### No Monkey‑Patching or Band‑Aid Fixes (Non‑Negotiable)
 
@@ -245,8 +276,8 @@ It is illegal to `-q` when running tests!
 The Maven reactor resolves inter-module dependencies from the configured local Maven repository (here: `.m2_repo`).
 Running `install` publishes your changed modules there so downstream modules and tests pick up the correct versions.
 
-* Always run `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install | tail -200` before you start working. This command typically takes up to 30 seconds. Never use a small timeout than 30,000 ms.
-* Always run `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install | tail -200` before any `verify` or test runs.
+* Always run `mvn -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200` before you start working. This command typically takes up to 30 seconds. Never use a shorter timeout than 30,000 ms.
+* Always run `mvn -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200` before any `verify` or test runs.
 * If offline resolution fails due to a missing dependency or plugin, rerun the exact `install` command once without `-o`, then return offline.
 * Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
 * Always use a workspace-local Maven repository: append `-Dmaven.repo.local=.m2_repo` to all Maven commands (install, verify, formatter, etc.).
@@ -340,6 +371,14 @@ It is illegal to `-q` when running tests!
 
 ---
 
+## Routine D — ExecPlans
+
+> Use for **complex features or significant refactors**.
+
+When writing complex features or significant refactors, use an ExecPlan (as described in .agent/PLANS.md) from design to implementation.
+
+---
+
 ## Where to Draw the Line — A Short Debate
 
 > **Purist:** “All changes must start with a failing test.”
@@ -353,7 +392,7 @@ It is illegal to `-q` when running tests!
 * Logging/message tweaks **not** asserted by tests.
 * Build/CI config that doesn’t alter runtime behavior.
 
-**Out‑of‑scope (use Routine A)**
+**Out‑of‑scope (use Routine A/D)**
 * Changing query results, serialization, or parsing behavior.
 * Altering error messages that tests assert.
 * Anything touching concurrency, timeouts, IO, or ordering.
@@ -365,7 +404,7 @@ It is illegal to `-q` when running tests!
 ## Working Loop
 
 * **PIOSEE first:** restate Problem, gather Information, list Options; then Select, Execute, Evaluate.
-* **Plan:** small, verifiable steps; keep one `in_progress`.
+* **Plan:** small, verifiable steps; keep one `in_progress`, or follow PLANS.md (ExecPlans)
 * **Change:** minimal, surgical edits; keep style/structure consistent.
 * **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 * **Compile (fast):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick install | tail -500`
@@ -442,6 +481,11 @@ Assertions are executable claims about what must be true. Use **temporary tripwi
     * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 * Style: no wildcard imports; 120‑char width; curly braces always; LF endings.
 
+### Import hygiene (always)
+
+* Add explicit imports for every dependency you use instead of sprinkling fully qualified names through the code.
+* When an import exists, reference the simple class name; repeating the package inline is noisy and easy to get wrong.
+
 ---
 
 ## Source File Headers
@@ -505,6 +549,23 @@ Do **not** modify existing headers’ years.
     * `sed -n '1,200p' path/to/File.java`
     * `sed -n '201,400p' path/to/File.java`
 
+### Inspecting Git Changes Without Reverting
+
+* Never run `git checkout -- <file>` or `git restore --worktree <file>` just to peek at history — those commands mutate the working tree, try to grab `.git/index.lock`, and often require escalated privileges in this environment. Prefer read-only inspection.
+* To compare your edits against the last commit, use `git diff -- path/to/File.java` (working tree) or `git diff --cached -- path/to/File.java` (staged changes). Add `HEAD` to diff against the committed baseline explicitly: `git diff HEAD -- path/to/File.java`.
+* To view a committed version without touching the working tree, stream it directly: `git show HEAD:path/to/File.java | sed -n '1,120p'`. Swap `HEAD` with any commit hash or ref (`HEAD~2`, `feature~3`, etc.) to inspect older revisions.
+* When you need a disposable copy of a historical file, write it to a temp file instead of checking it out:  
+  `tmp=$(mktemp /tmp/file.XXXXXX); git show <commit>:path/to/File.java > "$tmp"; ${EDITOR:-less} "$tmp"`. Remove the temp file when done.
+* `git log -n 5 -- path/to/File.java` and `git show <commit> --stat -- path/to/File.java` are also safe ways to understand how the file evolved — all without altering the repo state.
+* Need to compare against a specific commit (local or remote) instead of just `HEAD`? Use `git diff <commit> -- path/to/File.java` or `git diff origin/main -- path/to/File.java` to see exactly what changed relative to that reference while keeping the working tree untouched.
+* For a quick read-only side-by-side, rely on process substitution: `diff -u <(git show HEAD:path/to/File.java) <(cat path/to/File.java)` displays how your edits differ from the committed version without staging or resetting anything. `git difftool -y HEAD -- path/to/File.java` is another safe option if you prefer an external viewer.
+* To study an older revision in depth, first list the relevant commits with `git log --oneline --follow -- path/to/File.java`, then stream any revision to a temp file for offline inspection:  
+  `tmp=$(mktemp /tmp/rdf4j-file.XXXXXX)`  
+  `git show <commit>:path/to/File.java > "$tmp"`  
+  `${EDITOR:-less} "$tmp" && rm "$tmp"`  
+  This pattern never touches the tracked file and avoids locking `.git/index`.
+* Need a whole-directory snapshot for archaeology? `git archive <commit> path/to/dir | tar -x -C /tmp/readonly-snapshot` extracts a copy under `/tmp` that you can browse freely, then delete when finished.
+
 ---
 
 ## Autonomy Rules (Act > Ask)
@@ -534,6 +595,7 @@ Do **not** modify existing headers’ years.
   *Routine A:* failing output (pre‑fix) and passing output (post‑fix).
   *Routine B:* pre‑ and post‑green snippets from the **same selection** + **Hit Proof**.
   *Routine C:* artifacts from investigation (logs/notes/measurements) and proposed next steps.
+  *Routine D:* NO EVIDENCE REQUIRED.
 * **Assumptions:** key assumptions and autonomous decisions.
 * **Limitations:** anything left or risky edge cases.
 * **Next steps:** optional follow‑ups.

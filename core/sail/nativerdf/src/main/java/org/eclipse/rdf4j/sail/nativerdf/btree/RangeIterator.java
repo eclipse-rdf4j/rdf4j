@@ -11,7 +11,8 @@
 package org.eclipse.rdf4j.sail.nativerdf.btree;
 
 import java.io.IOException;
-import java.util.LinkedList;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
@@ -35,14 +36,11 @@ class RangeIterator implements RecordIterator, NodeListener {
 	private final AtomicBoolean revisitValue = new AtomicBoolean();
 
 	/**
-	 * Tracks the parent nodes of {@link #currentNode}.
+	 * Tracks parent nodes, child indices and handles for {@link #currentNode}.
 	 */
-	private final LinkedList<Node> parentNodeStack = new LinkedList<>();
+	private final Deque<StackFrame> parentStack = new ArrayDeque<>();
 
-	/**
-	 * Tracks the index of child nodes in parent nodes.
-	 */
-	private final LinkedList<Integer> parentIndexStack = new LinkedList<>();
+	private NodeListenerHandle currentNodeHandle;
 
 	private volatile int currentIdx;
 
@@ -97,7 +95,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 			return;
 		}
 
-		nextCurrentNode.register(this);
+		currentNodeHandle = nextCurrentNode.register(this);
 		currentIdx = 0;
 
 		// Search first value >= minValue, or the left-most value in case
@@ -173,11 +171,8 @@ class RangeIterator implements RecordIterator, NodeListener {
 					closed = true;
 					tree.btreeLock.readLock().lock();
 					try {
-						while (popStacks()) {
-						}
-
-						assert parentNodeStack.isEmpty();
-						assert parentIndexStack.isEmpty();
+						clearTraversalState();
+						assert parentStack.isEmpty();
 					} finally {
 						tree.btreeLock.readLock().unlock();
 					}
@@ -187,31 +182,57 @@ class RangeIterator implements RecordIterator, NodeListener {
 	}
 
 	private void pushStacks(Node newChildNode) {
-		newChildNode.register(this);
-		parentNodeStack.add(currentNode);
-		parentIndexStack.add(currentIdx);
+		NodeListenerHandle childHandle = newChildNode.register(this);
+		parentStack.addLast(new StackFrame(currentNode, currentIdx, currentNodeHandle));
 		currentNode = newChildNode;
+		currentNodeHandle = childHandle;
 		currentIdx = 0;
 	}
 
 	private synchronized boolean popStacks() throws IOException {
-		Node nextCurrentNode = currentNode;
-		if (nextCurrentNode == null) {
-			// There's nothing to pop
+		if (currentNode == null && parentStack.isEmpty()) {
 			return false;
 		}
 
-		nextCurrentNode.deregister(this);
-		nextCurrentNode.release();
-
-		if (!parentNodeStack.isEmpty()) {
-			currentNode = parentNodeStack.removeLast();
-			currentIdx = parentIndexStack.removeLast();
+		releaseCurrentFrame();
+		StackFrame previous = parentStack.pollLast();
+		if (previous != null) {
+			currentNode = previous.node;
+			currentIdx = previous.childIndex;
+			currentNodeHandle = previous.handle;
 			return true;
-		} else {
-			currentNode = null;
-			currentIdx = 0;
-			return false;
+		}
+
+		currentNode = null;
+		currentIdx = 0;
+		currentNodeHandle = null;
+		return false;
+	}
+
+	private void clearTraversalState() throws IOException {
+		while (currentNode != null || !parentStack.isEmpty()) {
+			releaseCurrentFrame();
+			StackFrame previous = parentStack.pollLast();
+			if (previous == null) {
+				currentNode = null;
+				currentIdx = 0;
+				currentNodeHandle = null;
+				break;
+			}
+			currentNode = previous.node;
+			currentIdx = previous.childIndex;
+			currentNodeHandle = previous.handle;
+		}
+	}
+
+	private void releaseCurrentFrame() throws IOException {
+		Node nextCurrentNode = currentNode;
+		if (nextCurrentNode != null) {
+			if (currentNodeHandle != null) {
+				currentNodeHandle.remove();
+				currentNodeHandle = null;
+			}
+			nextCurrentNode.release();
 		}
 	}
 
@@ -224,13 +245,11 @@ class RangeIterator implements RecordIterator, NodeListener {
 				currentIdx++;
 			}
 		} else {
-			for (int i = 0; i < parentNodeStack.size(); i++) {
-				if (node == parentNodeStack.get(i)) {
-					int parentIdx = parentIndexStack.get(i);
-					if (addedIndex < parentIdx) {
-						parentIndexStack.set(i, parentIdx + 1);
+			for (StackFrame frame : parentStack) {
+				if (node == frame.node) {
+					if (addedIndex < frame.childIndex) {
+						frame.childIndex++;
 					}
-
 					break;
 				}
 			}
@@ -248,11 +267,10 @@ class RangeIterator implements RecordIterator, NodeListener {
 				currentIdx--;
 			}
 		} else {
-			for (int i = 0; i < parentNodeStack.size(); i++) {
-				if (node == parentNodeStack.get(i)) {
-					int parentIdx = parentIndexStack.get(i);
-					if (removedIndex < parentIdx) {
-						parentIndexStack.set(i, parentIdx - 1);
+			for (StackFrame frame : parentStack) {
+				if (node == frame.node) {
+					if (removedIndex < frame.childIndex) {
+						frame.childIndex--;
 					}
 
 					break;
@@ -286,23 +304,24 @@ class RangeIterator implements RecordIterator, NodeListener {
 				revisitValue.set(true);
 			}
 		} else {
-			for (int i = 0; i < parentNodeStack.size(); i++) {
-				Node stackNode = parentNodeStack.get(i);
-
-				if (stackNode == rightChildNode) {
-					int stackIdx = parentIndexStack.get(i);
+			for (StackFrame frame : parentStack) {
+				if (frame.node == rightChildNode) {
+					int stackIdx = frame.childIndex;
 
 					if (stackIdx == 0) {
-						// this node is no longer the parent, replace with left
-						// sibling
-						rightChildNode.deregister(this);
+						// this node is no longer the parent, replace with left sibling
+						NodeListenerHandle replacedHandle = frame.handle;
+						if (replacedHandle != null) {
+							replacedHandle.remove();
+						}
 						rightChildNode.release();
 
 						leftChildNode.use();
-						leftChildNode.register(this);
+						NodeListenerHandle leftHandle = leftChildNode.register(this);
 
-						parentNodeStack.set(i, leftChildNode);
-						parentIndexStack.set(i, leftChildNode.getValueCount());
+						frame.node = leftChildNode;
+						frame.handle = leftHandle;
+						frame.childIndex = leftChildNode.getValueCount();
 					}
 
 					break;
@@ -315,23 +334,24 @@ class RangeIterator implements RecordIterator, NodeListener {
 
 	@Override
 	public boolean rotatedRight(Node node, int valueIndex, Node leftChildNode, Node rightChildNode) throws IOException {
-		for (int i = 0; i < parentNodeStack.size(); i++) {
-			Node stackNode = parentNodeStack.get(i);
-
-			if (stackNode == leftChildNode) {
-				int stackIdx = parentIndexStack.get(i);
+		for (StackFrame frame : parentStack) {
+			if (frame.node == leftChildNode) {
+				int stackIdx = frame.childIndex;
 
 				if (stackIdx == leftChildNode.getValueCount()) {
-					// this node is no longer the parent, replace with right
-					// sibling
-					leftChildNode.deregister(this);
+					// this node is no longer the parent, replace with right sibling
+					NodeListenerHandle replacedHandle = frame.handle;
+					if (replacedHandle != null) {
+						replacedHandle.remove();
+					}
 					leftChildNode.release();
 
 					rightChildNode.use();
-					rightChildNode.register(this);
+					NodeListenerHandle rightHandle = rightChildNode.register(this);
 
-					parentNodeStack.set(i, rightChildNode);
-					parentIndexStack.set(i, 0);
+					frame.node = rightChildNode;
+					frame.handle = rightHandle;
+					frame.childIndex = 0;
 				}
 
 				break;
@@ -350,31 +370,40 @@ class RangeIterator implements RecordIterator, NodeListener {
 		Node nextCurrentNode = currentNode;
 		if (node == nextCurrentNode) {
 			if (currentIdx > medianIdx) {
+				if (currentNodeHandle != null) {
+					currentNodeHandle.remove();
+					currentNodeHandle = null;
+				}
 				nextCurrentNode.release();
 				deregister = true;
 
 				newNode.use();
-				newNode.register(this);
+				NodeListenerHandle newHandle = newNode.register(this);
 
 				currentNode = newNode;
+				currentNodeHandle = newHandle;
 				currentIdx -= medianIdx + 1;
 			}
 		} else {
-			for (int i = 0; i < parentNodeStack.size(); i++) {
-				Node parentNode = parentNodeStack.get(i);
-
-				if (node == parentNode) {
-					int parentIdx = parentIndexStack.get(i);
+			for (StackFrame frame : parentStack) {
+				if (node == frame.node) {
+					int parentIdx = frame.childIndex;
 
 					if (parentIdx > medianIdx) {
+						NodeListenerHandle replacedHandle = frame.handle;
+						if (replacedHandle != null) {
+							replacedHandle.remove();
+						}
+						Node parentNode = frame.node;
 						parentNode.release();
 						deregister = true;
 
 						newNode.use();
-						newNode.register(this);
+						NodeListenerHandle newHandle = newNode.register(this);
 
-						parentNodeStack.set(i, newNode);
-						parentIndexStack.set(i, parentIdx - medianIdx - 1);
+						frame.node = newNode;
+						frame.handle = newHandle;
+						frame.childIndex = parentIdx - medianIdx - 1;
 					}
 
 					break;
@@ -393,27 +422,36 @@ class RangeIterator implements RecordIterator, NodeListener {
 
 		Node nextCurrentNode = currentNode;
 		if (sourceNode == nextCurrentNode) {
+			if (currentNodeHandle != null) {
+				currentNodeHandle.remove();
+				currentNodeHandle = null;
+			}
 			nextCurrentNode.release();
 			deregister = true;
 
 			targetNode.use();
-			targetNode.register(this);
+			NodeListenerHandle newHandle = targetNode.register(this);
 
 			currentNode = targetNode;
+			currentNodeHandle = newHandle;
 			currentIdx += mergeIdx;
 		} else {
-			for (int i = 0; i < parentNodeStack.size(); i++) {
-				Node parentNode = parentNodeStack.get(i);
-
-				if (sourceNode == parentNode) {
+			for (StackFrame frame : parentStack) {
+				if (sourceNode == frame.node) {
+					NodeListenerHandle replacedHandle = frame.handle;
+					if (replacedHandle != null) {
+						replacedHandle.remove();
+					}
+					Node parentNode = frame.node;
 					parentNode.release();
 					deregister = true;
 
 					targetNode.use();
-					targetNode.register(this);
+					NodeListenerHandle newHandle = targetNode.register(this);
 
-					parentNodeStack.set(i, targetNode);
-					parentIndexStack.set(i, mergeIdx + parentIndexStack.get(i));
+					frame.node = targetNode;
+					frame.handle = newHandle;
+					frame.childIndex = mergeIdx + frame.childIndex;
 
 					break;
 				}
@@ -428,5 +466,17 @@ class RangeIterator implements RecordIterator, NodeListener {
 		return "RangeIterator{" +
 				"tree=" + tree +
 				'}';
+	}
+
+	private static final class StackFrame {
+		Node node;
+		int childIndex;
+		NodeListenerHandle handle;
+
+		StackFrame(Node node, int childIndex, NodeListenerHandle handle) {
+			this.node = node;
+			this.childIndex = childIndex;
+			this.handle = handle;
+		}
 	}
 }

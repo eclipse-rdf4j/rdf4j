@@ -15,6 +15,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.commons.io.IOUtils;
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -60,21 +62,39 @@ public class QueryBenchmarkTest {
 
 	@BeforeAll
 	public static void beforeClass(@TempDir File dataDir) throws IOException {
+		System.out.println("Before class");
 
 		repository = new SailRepository(new NativeStore(dataDir, "spoc,ospc,psoc"));
 
+		System.out.println("Adding statements");
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
 			connection.commit();
 		}
 
+		System.out.println("Getting statements");
+
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 
-			statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
+			try (RepositoryResult<Statement> statements = connection.getStatements(null, RDF.TYPE, null, false)) {
+				statementList = new ArrayList<>();
+				int i = 0;
+				while (statements.hasNext()) {
+					if (i++ % 10000 == 0) {
+						System.out.println("Loaded " + i + " statements");
+					}
+					statementList.add(statements.next());
+				}
+			}
+
 		}
 
+		System.out.println("GC");
+
 		System.gc();
+
+		System.out.println("Done");
 
 	}
 
@@ -91,6 +111,7 @@ public class QueryBenchmarkTest {
 
 	@Test
 	public void groupByQuery() {
+		System.out.println("groupByQuery");
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count = connection
 					.prepareTupleQuery(query1)
@@ -103,6 +124,7 @@ public class QueryBenchmarkTest {
 
 	@Test
 	public void complexQuery() {
+		System.out.println("complexQuery");
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count = connection
 					.prepareTupleQuery(query4)
@@ -115,6 +137,7 @@ public class QueryBenchmarkTest {
 
 	@Test
 	public void distinctPredicatesQuery() {
+		System.out.println("distinctPredicatesQuery");
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count = connection
 					.prepareTupleQuery(query5)
@@ -127,6 +150,7 @@ public class QueryBenchmarkTest {
 
 	@Test
 	public void removeByQuery() {
+		System.out.println("removeByQuery");
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.remove((Resource) null, RDF.TYPE, null);
@@ -141,6 +165,7 @@ public class QueryBenchmarkTest {
 
 	@Test
 	public void removeByQueryReadCommitted() {
+		System.out.println("removeByQueryReadCommitted");
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
 			connection.remove((Resource) null, RDF.TYPE, null);
@@ -155,6 +180,7 @@ public class QueryBenchmarkTest {
 
 	@Test
 	public void simpleUpdateQueryIsolationReadCommitted() {
+		System.out.println("simpleUpdateQueryIsolationReadCommitted");
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
 			connection.prepareUpdate(query2).execute();
@@ -172,6 +198,7 @@ public class QueryBenchmarkTest {
 
 	@Test
 	public void simpleUpdateQueryIsolationNone() {
+		System.out.println("simpleUpdateQueryIsolationNone");
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);

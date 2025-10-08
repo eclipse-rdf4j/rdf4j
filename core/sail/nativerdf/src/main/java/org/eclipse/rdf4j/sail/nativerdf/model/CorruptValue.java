@@ -32,6 +32,7 @@ public class CorruptValue implements NativeValue {
 	private final byte[] data;
 	private volatile ValueStoreRevision revision;
 	private volatile int internalID;
+	private transient NativeValue recovered; // optional recovered value constructed from WAL
 
 	public CorruptValue(ValueStoreRevision revision, int internalID, byte[] data) {
 		setInternalID(internalID, revision);
@@ -66,6 +67,21 @@ public class CorruptValue implements NativeValue {
 	 */
 	public byte[] getData() {
 		return data;
+	}
+
+	/**
+	 * Set a recovered value corresponding to this corrupt entry. The recovered value should be a NativeValue with its
+	 * internal ID set to the same ID as this corrupt value.
+	 */
+	public void setRecovered(NativeValue recovered) {
+		this.recovered = recovered;
+	}
+
+	/**
+	 * Returns a recovered value if one was attached; may be null if recovery failed.
+	 */
+	public NativeValue getRecovered() {
+		return recovered;
 	}
 
 	@Override

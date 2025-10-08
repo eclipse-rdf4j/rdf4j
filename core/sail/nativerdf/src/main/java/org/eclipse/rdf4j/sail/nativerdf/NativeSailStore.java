@@ -12,6 +12,11 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -19,9 +24,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.OptionalLong;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -45,7 +53,10 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
+import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,14 +68,18 @@ import org.slf4j.LoggerFactory;
 class NativeSailStore implements SailStore {
 
 	final Logger logger = LoggerFactory.getLogger(NativeSailStore.class);
+	private static final Pattern WAL_SEGMENT_PATTERN = Pattern.compile("wal-\\d+\\.v1(?:\\.gz)?");
 
 	private final TripleStore tripleStore;
+
+	private final ValueStoreWAL valueStoreWal;
 
 	private final ValueStore valueStore;
 
 	private final NamespaceStore namespaceStore;
 
 	private final ContextStore contextStore;
+	private final boolean walEnabled;
 
 	/**
 	 * A lock to control concurrent access by {@link NativeSailSink} to the TripleStore, ValueStore, and NamespaceStore.
@@ -83,26 +98,207 @@ class NativeSailStore implements SailStore {
 	 */
 	public NativeSailStore(File dataDir, String tripleIndexes) throws IOException, SailException {
 		this(dataDir, tripleIndexes, false, ValueStore.VALUE_CACHE_SIZE, ValueStore.VALUE_ID_CACHE_SIZE,
-				ValueStore.NAMESPACE_CACHE_SIZE, ValueStore.NAMESPACE_ID_CACHE_SIZE);
+				ValueStore.NAMESPACE_CACHE_SIZE, ValueStore.NAMESPACE_ID_CACHE_SIZE,
+				-1L, -1, -1, null, -1L, -1L, null, false, false, true);
 	}
 
 	/**
 	 * Creates a new {@link NativeSailStore}.
 	 */
+
 	public NativeSailStore(File dataDir, String tripleIndexes, boolean forceSync, int valueCacheSize,
-			int valueIDCacheSize, int namespaceCacheSize, int namespaceIDCacheSize) throws IOException, SailException {
+			int valueIDCacheSize, int namespaceCacheSize, int namespaceIDCacheSize, long walMaxSegmentBytes,
+			int walQueueCapacity, int walBatchBufferBytes,
+			ValueStoreWalConfig.SyncPolicy walSyncPolicy,
+			long walSyncIntervalMillis, long walIdlePollIntervalMillis, String walDirectoryName)
+			throws IOException, SailException {
+		this(dataDir, tripleIndexes, forceSync, valueCacheSize, valueIDCacheSize, namespaceCacheSize,
+				namespaceIDCacheSize, walMaxSegmentBytes, walQueueCapacity, walBatchBufferBytes, walSyncPolicy,
+				walSyncIntervalMillis, walIdlePollIntervalMillis, walDirectoryName, false, false, true);
+	}
+
+	public NativeSailStore(File dataDir, String tripleIndexes, boolean forceSync, int valueCacheSize,
+			int valueIDCacheSize, int namespaceCacheSize, int namespaceIDCacheSize, long walMaxSegmentBytes,
+			int walQueueCapacity, int walBatchBufferBytes,
+			ValueStoreWalConfig.SyncPolicy walSyncPolicy,
+			long walSyncIntervalMillis, long walIdlePollIntervalMillis, String walDirectoryName,
+			boolean walSyncBootstrapOnOpen, boolean walAutoRecoverOnOpen, boolean walEnabled)
+			throws IOException, SailException {
+		this.walEnabled = walEnabled;
+		NamespaceStore createdNamespaceStore = null;
+		ValueStoreWAL createdWal = null;
+		ValueStore createdValueStore = null;
+		TripleStore createdTripleStore = null;
+		ContextStore createdContextStore = null;
 		boolean initialized = false;
 		try {
-			namespaceStore = new NamespaceStore(dataDir);
-			valueStore = new ValueStore(dataDir, forceSync, valueCacheSize, valueIDCacheSize, namespaceCacheSize,
-					namespaceIDCacheSize);
-			tripleStore = new TripleStore(dataDir, tripleIndexes, forceSync);
-			contextStore = new ContextStore(this, dataDir);
+			createdNamespaceStore = new NamespaceStore(dataDir);
+			Path walDir = dataDir.toPath()
+					.resolve(walDirectoryName != null && !walDirectoryName.isEmpty() ? walDirectoryName
+							: ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
+			boolean enableWal = shouldEnableWal(dataDir, walDir);
+			ValueStoreWalConfig walConfig = null;
+			if (enableWal) {
+				String storeUuid = loadOrCreateWalUuid(walDir);
+				ValueStoreWalConfig.Builder walBuilder = ValueStoreWalConfig.builder()
+						.walDirectory(walDir)
+						.storeUuid(storeUuid);
+				if (walMaxSegmentBytes > 0) {
+					walBuilder.maxSegmentBytes(walMaxSegmentBytes);
+				}
+				if (walQueueCapacity > 0) {
+					walBuilder.queueCapacity(walQueueCapacity);
+				}
+				if (walBatchBufferBytes > 0) {
+					walBuilder.batchBufferBytes(walBatchBufferBytes);
+				}
+				if (walSyncPolicy != null) {
+					walBuilder.syncPolicy(walSyncPolicy);
+				}
+				if (walSyncIntervalMillis >= 0) {
+					walBuilder.syncInterval(Duration.ofMillis(walSyncIntervalMillis));
+				}
+				if (walIdlePollIntervalMillis >= 0) {
+					walBuilder.idlePollInterval(Duration.ofMillis(walIdlePollIntervalMillis));
+				}
+				// propagate bootstrap mode
+				walBuilder.syncBootstrapOnOpen(walSyncBootstrapOnOpen);
+				walBuilder.recoverValueStoreOnOpen(walAutoRecoverOnOpen);
+				walConfig = walBuilder.build();
+				createdWal = ValueStoreWAL.open(walConfig);
+			} else {
+				createdWal = null;
+			}
+			createdValueStore = new ValueStore(dataDir, forceSync, valueCacheSize, valueIDCacheSize,
+					namespaceCacheSize, namespaceIDCacheSize, createdWal);
+			createdTripleStore = new TripleStore(dataDir, tripleIndexes, forceSync);
+
+			// Assign fields required by ContextStore before constructing it
+			namespaceStore = createdNamespaceStore;
+			valueStoreWal = createdWal;
+			valueStore = createdValueStore;
+			tripleStore = createdTripleStore;
+
+			// Now ContextStore can safely read from this store
+			createdContextStore = new ContextStore(this, dataDir);
 			initialized = true;
 		} finally {
 			if (!initialized) {
-				close();
+				closeQuietly(createdContextStore);
+				closeQuietly(createdTripleStore);
+				closeQuietly(createdValueStore);
+				closeQuietly(createdWal);
+				closeQuietly(createdNamespaceStore);
 			}
+		}
+		// Finalize assignment of contextStore
+		contextStore = createdContextStore;
+	}
+
+	private String loadOrCreateWalUuid(Path walDir) throws IOException {
+		Files.createDirectories(walDir);
+		Path file = walDir.resolve("store.uuid");
+		if (Files.exists(file)) {
+			return Files.readString(file, StandardCharsets.UTF_8).trim();
+		}
+		String uuid = UUID.randomUUID().toString();
+		Files.writeString(file, uuid, StandardCharsets.UTF_8, StandardOpenOption.CREATE,
+				StandardOpenOption.TRUNCATE_EXISTING);
+		return uuid;
+	}
+
+	private boolean shouldEnableWal(File dataDir, Path walDir) throws IOException {
+		if (!walEnabled) {
+			if (logger.isDebugEnabled()) {
+				if (hasExistingWalSegments(walDir)) {
+					logger.debug(
+							"ValueStore WAL is disabled via configuration but {} contains WAL segments; ignoring them.",
+							walDir);
+				} else {
+					logger.debug("ValueStore WAL disabled via configuration for {}", dataDir);
+				}
+			}
+
+			return false;
+		}
+		// Respect read-only data directories: do not enable WAL when we can't write
+		if (!dataDir.canWrite()) {
+			return false;
+		}
+		if (hasExistingWalSegments(walDir)) {
+//			writeBootstrapMarker(walDir, "enabled-existing-wal");
+			return true;
+		}
+		try (DataStore values = new DataStore(dataDir, "values", false)) {
+			if (values.getMaxID() > 0) {
+//				writeBootstrapMarker(walDir, "enabled-rebuild-existing-values");
+				return true;
+			}
+		}
+//		writeBootstrapMarker(walDir, "enabled-empty-store");
+		return true;
+	}
+
+	private boolean hasExistingWalSegments(Path walDir) throws IOException {
+		if (!Files.isDirectory(walDir)) {
+			return false;
+		}
+		try (var stream = Files.list(walDir)) {
+			return stream.anyMatch(path -> WAL_SEGMENT_PATTERN.matcher(path.getFileName().toString()).matches());
+		}
+	}
+
+	private void writeBootstrapMarker(Path walDir, String state) {
+		try {
+			Files.createDirectories(walDir);
+			Path marker = walDir.resolve("bootstrap.info");
+			String content = "state=" + state + "\n";
+			Files.writeString(marker, content, StandardCharsets.UTF_8, StandardOpenOption.CREATE,
+					StandardOpenOption.TRUNCATE_EXISTING);
+		} catch (IOException e) {
+			logger.warn("Failed to write WAL bootstrap marker", e);
+		}
+	}
+
+	private void closeQuietly(ContextStore store) {
+		if (store != null) {
+			store.close();
+		}
+	}
+
+	private void closeQuietly(TripleStore store) {
+		if (store != null) {
+			try {
+				store.close();
+			} catch (IOException e) {
+				logger.warn("Failed to close triple store", e);
+			}
+		}
+	}
+
+	private void closeQuietly(ValueStore store) {
+		if (store != null) {
+			try {
+				store.close();
+			} catch (IOException e) {
+				logger.warn("Failed to close value store", e);
+			}
+		}
+	}
+
+	private void closeQuietly(ValueStoreWAL wal) {
+		if (wal != null) {
+			try {
+				wal.close();
+			} catch (IOException e) {
+				logger.warn("Failed to close value store WAL", e);
+			}
+		}
+	}
+
+	private void closeQuietly(NamespaceStore store) {
+		if (store != null) {
+			store.close();
 		}
 	}
 
@@ -129,8 +325,14 @@ class NativeSailStore implements SailStore {
 							valueStore.close();
 						}
 					} finally {
-						if (tripleStore != null) {
-							tripleStore.close();
+						try {
+							if (valueStoreWal != null) {
+								valueStoreWal.close();
+							}
+						} finally {
+							if (tripleStore != null) {
+								tripleStore.close();
+							}
 						}
 					}
 				}
@@ -353,9 +555,20 @@ class NativeSailStore implements SailStore {
 			this.explicit = explicit;
 		}
 
+		private long walHighWaterMark = ValueStoreWAL.NO_LSN;
+
 		@Override
 		public void close() {
 			// no-op
+		}
+
+		private int storeValueId(Value value) throws IOException {
+			int id = valueStore.storeValue(value);
+			OptionalLong walLsn = valueStore.drainPendingWalHighWaterMark();
+			if (walLsn.isPresent()) {
+				walHighWaterMark = Math.max(walHighWaterMark, walLsn.getAsLong());
+			}
+			return id;
 		}
 
 		@Override
@@ -368,6 +581,10 @@ class NativeSailStore implements SailStore {
 			sinkStoreAccessLock.lock();
 			try {
 				try {
+					if (walHighWaterMark > ValueStoreWAL.NO_LSN) {
+						valueStore.awaitWalDurable(walHighWaterMark);
+						walHighWaterMark = ValueStoreWAL.NO_LSN;
+					}
 					valueStore.sync();
 				} finally {
 					try {
@@ -472,13 +689,13 @@ class NativeSailStore implements SailStore {
 					Value obj = statement.getObject();
 					Resource context = statement.getContext();
 
-					int subjID = valueStore.storeValue(subj);
-					int predID = valueStore.storeValue(pred);
-					int objID = valueStore.storeValue(obj);
+					int subjID = storeValueId(subj);
+					int predID = storeValueId(pred);
+					int objID = storeValueId(obj);
 
 					int contextID = 0;
 					if (context != null) {
-						contextID = valueStore.storeValue(context);
+						contextID = storeValueId(context);
 					}
 
 					boolean wasNew = tripleStore.storeTriple(subjID, predID, objID, contextID, explicit);
@@ -532,9 +749,9 @@ class NativeSailStore implements SailStore {
 			sinkStoreAccessLock.lock();
 			try {
 				startTriplestoreTransaction();
-				int subjID = valueStore.storeValue(subj);
-				int predID = valueStore.storeValue(pred);
-				int objID = valueStore.storeValue(obj);
+				int subjID = storeValueId(subj);
+				int predID = storeValueId(pred);
+				int objID = storeValueId(obj);
 
 				if (contexts.length == 0) {
 					contexts = new Resource[] { null };
@@ -543,7 +760,7 @@ class NativeSailStore implements SailStore {
 				for (Resource context : contexts) {
 					int contextID = 0;
 					if (context != null) {
-						contextID = valueStore.storeValue(context);
+						contextID = storeValueId(context);
 					}
 
 					boolean wasNew = tripleStore.storeTriple(subjID, predID, objID, contextID, explicit);
