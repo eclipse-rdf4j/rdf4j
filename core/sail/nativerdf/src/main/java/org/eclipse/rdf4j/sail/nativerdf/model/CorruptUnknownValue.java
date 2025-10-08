@@ -16,7 +16,6 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Optional;
-import java.util.stream.Stream;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
@@ -27,7 +26,6 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStoreRevision;
-import org.jetbrains.annotations.NotNull;
 
 /**
  * CorruptUnknownValue is used when a NativeValue cannot be read from the ValueStore and if soft failure is enabled
@@ -53,6 +51,10 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 
 	@Override
 	public String getLabel() {
+		if (getInternalID() == 14313522) {
+			System.out.println();
+		}
+
 		byte[] data = getData();
 		try {
 			if (data != null && data.length > 0) {
@@ -106,7 +108,7 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 						}
 					}
 				}
-				if (recoveredUtf8 != null && !recoveredUtf8.isEmpty()) {
+				if (recoveredUtf8 != null && !recoveredUtf8.trim().isEmpty()) {
 					return prefix + recoveredUtf8;
 				}
 
@@ -131,11 +133,14 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 				}
 				if (bestAsciiLen > 0) {
 					String ascii = new String(data, bestAsciiStart, bestAsciiLen, StandardCharsets.US_ASCII);
-					return prefix + ascii;
+					if (!ascii.trim().isEmpty()) {
+						return prefix + ascii;
+					}
 				}
 
 				// 4) Fallback to hex of full data
-				return prefix + Hex.encodeHexString(Arrays.copyOfRange(data, 0, data.length));
+				return prefix + "COULD NOT DECODE. SHOWING HEX: "
+						+ Hex.encodeHexString(Arrays.copyOfRange(data, 0, data.length));
 			}
 		} catch (Throwable ignored) {
 		}

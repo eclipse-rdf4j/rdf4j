@@ -85,8 +85,8 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 				try {
 					String utf8 = new String(data, StandardCharsets.UTF_8);
 					// If replacement character is not present, we got a clean decode
-					if (utf8.indexOf('\uFFFD') < 0) {
-						return "CORRUPT_" + UrlEscapers.urlPathSegmentEscaper().escape(utf8);
+					if (utf8.indexOf('\uFFFD') < 0 && !utf8.trim().isEmpty()) {
+						return "CORRUPT_ID_" + getInternalID() + "_" + UrlEscapers.urlPathSegmentEscaper().escape(utf8);
 					}
 				} catch (Throwable ignored) {
 					// fall through to recovery strategies
@@ -114,8 +114,9 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 					}
 				}
 			}
-			if (recoveredUtf8 != null && !recoveredUtf8.isEmpty()) {
-				return "CORRUPT_" + UrlEscapers.urlPathSegmentEscaper().escape(recoveredUtf8);
+			if (recoveredUtf8 != null && !recoveredUtf8.trim().isEmpty()) {
+				return "CORRUPT_ID_" + getInternalID() + "_"
+						+ UrlEscapers.urlPathSegmentEscaper().escape(recoveredUtf8);
 			}
 
 			// 3) Try ASCII: find the longest contiguous run of printable US-ASCII bytes and use that
@@ -140,11 +141,14 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 			}
 			if (bestAsciiLen > 0) {
 				String ascii = new String(data, bestAsciiStart, bestAsciiLen, StandardCharsets.US_ASCII);
-				return "CORRUPT_" + UrlEscapers.urlPathSegmentEscaper().escape(ascii);
+				if (!ascii.trim().isEmpty()) {
+					return "CORRUPT_ID_" + getInternalID() + "_" + UrlEscapers.urlPathSegmentEscaper().escape(ascii);
+				}
 			}
 
 			// 4) Fallback: hex-encode the entire raw data
-			return "CORRUPT_" + Hex.encodeHexString(Arrays.copyOfRange(data, 0, data.length));
+			return "CORRUPT_ID_" + getInternalID() + "_HEX_"
+					+ Hex.encodeHexString(Arrays.copyOfRange(data, 0, data.length));
 		}
 
 		return "CORRUPT_ID_" + getInternalID();
