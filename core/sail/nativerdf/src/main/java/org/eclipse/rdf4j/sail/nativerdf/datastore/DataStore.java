@@ -35,6 +35,8 @@ public class DataStore implements Closeable {
 	 * Variables *
 	 *-----------*/
 
+	private static final Logger logger = LoggerFactory.getLogger(DataStore.class);
+
 	private final DataFile dataFile;
 
 	private final IDFile idFile;
@@ -77,11 +79,16 @@ public class DataStore implements Closeable {
 	public byte[] getData(int id) throws IOException {
 		assert id > 0 : "id must be larger than 0, is: " + id;
 
-		// Data not in cache or cache not used, fetch from file
 		long offset = idFile.getOffset(id);
+		byte[] data = null;
 
 		if (offset != 0L) {
 			byte[] data = dataFile.getData(offset);
+			if (logger.isDebugEnabled()) {
+				logger.debug("getData thread={} id={} offset={} resultLength={}", threadName(), id, offset,
+						data != null ? data.length : -1);
+			}
+
 			if (data.length == 0 && NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
 				try {
 					long offsetNoCache = idFile.getOffsetNoCache(id);
@@ -185,7 +192,7 @@ public class DataStore implements Closeable {
 			return data;
 		}
 
-		return null;
+		return data;
 	}
 
 	/**
@@ -200,21 +207,34 @@ public class DataStore implements Closeable {
 
 		int id;
 
-		// Value not in cache or cache not used, fetch from file
 		int hash = getDataHash(queryData);
+		if (logger.isDebugEnabled()) {
+			logger.debug("getID start thread={} hash={} summary={}", threadName(), hash, summarize(queryData));
+		}
+
 		HashFile.IDIterator iter = hashFile.getIDIterator(hash);
 		try {
 			while ((id = iter.next()) >= 0) {
 				long offset = idFile.getOffset(id);
 				byte[] data = dataFile.getData(offset);
+				boolean match = Arrays.equals(queryData, data);
 
-				if (Arrays.equals(queryData, data)) {
-					// Matching data found
+				if (logger.isDebugEnabled()) {
+					logger.debug(
+							"getID candidate thread={} hash={} candidateId={} offset={} match={} candidateSummary={}",
+							threadName(), hash, id, offset, match, summarize(data));
+				}
+
+				if (match) {
 					break;
 				}
 			}
 		} finally {
 			iter.close();
+		}
+
+		if (logger.isDebugEnabled()) {
+			logger.debug("getID result thread={} hash={} id={}", threadName(), hash, id);
 		}
 
 		return id;
@@ -237,16 +257,29 @@ public class DataStore implements Closeable {
 	 * @return The ID that has been assigned to the value.
 	 * @throws IOException If an I/O error occurred.
 	 */
-	public int storeData(byte[] data) throws IOException {
+	public synchronized int storeData(byte[] data) throws IOException {
 		assert data != null : "data must not be null";
+
+		if (logger.isDebugEnabled()) {
+			int hash = getDataHash(data);
+			logger.debug("storeData start thread={} hash={} summary={}", threadName(), hash, summarize(data));
+		}
 
 		int id = getID(data);
 
 		if (id == -1) {
-			// Data not stored yet, store it under a new ID.
+			int hash = getDataHash(data);
 			long offset = dataFile.storeData(data);
 			id = idFile.storeOffset(offset);
-			hashFile.storeID(getDataHash(data), id);
+			hashFile.storeID(hash, id);
+			if (logger.isDebugEnabled()) {
+				logger.debug("storeData stored thread={} hash={} id={} offset={} summary={}", threadName(), hash, id,
+						offset, summarize(data));
+			}
+		} else if (logger.isDebugEnabled()) {
+			int hash = getDataHash(data);
+			logger.debug("storeData reuse thread={} hash={} existingId={} summary={}", threadName(), hash, id,
+					summarize(data));
 		}
 
 		return id;
@@ -258,6 +291,9 @@ public class DataStore implements Closeable {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void sync() throws IOException {
+		if (logger.isDebugEnabled()) {
+			logger.debug("sync thread={} invoked", threadName());
+		}
 		hashFile.sync();
 		idFile.sync();
 		dataFile.sync();
@@ -269,6 +305,9 @@ public class DataStore implements Closeable {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void clear() throws IOException {
+		if (logger.isDebugEnabled()) {
+			logger.debug("clear thread={} invoked", threadName());
+		}
 		try {
 			hashFile.clear();
 		} finally {
@@ -305,6 +344,17 @@ public class DataStore implements Closeable {
 	 * @param data The data to calculate the hash code for.
 	 * @return A hash code for the supplied data.
 	 */
+	private static String summarize(byte[] data) {
+		if (data == null) {
+			return "null";
+		}
+		return "len=" + data.length + ",hash=" + Arrays.hashCode(data);
+	}
+
+	private static String threadName() {
+		return Thread.currentThread().getName();
+	}
+
 	private int getDataHash(byte[] data) {
 		CRC32 crc32 = new CRC32();
 		crc32.update(data);

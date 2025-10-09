@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.NoSuchElementException;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.io.NioFile;
 import org.slf4j.Logger;
@@ -49,6 +50,12 @@ public class DataFile implements Closeable {
 	private static final byte FILE_FORMAT_VERSION = 1;
 
 	private static final long HEADER_LENGTH = MAGIC_NUMBER.length + 1;
+
+	// Guard parameters
+	private static final long LARGE_READ_THRESHOLD = 128L * 1024 * 1024; // 128MB
+	private static final int SOFT_FAIL_CAP_BYTES = 32 * 1024 * 1024; // 32MB
+	private static final boolean SIMULATE_LOW_HEAP_FOR_TESTS = Boolean
+			.getBoolean("org.eclipse.rdf4j.sail.nativerdf.datastore.DataFile.simulateLowHeapForTests");
 
 	/*-----------*
 	 * Variables *
@@ -147,7 +154,7 @@ public class DataFile implements Closeable {
 	 * @param data The data to store, must not be <var>null</var>.
 	 * @return The byte-offset in the file at which the data was stored.
 	 */
-	public long storeData(byte[] data) throws IOException {
+	synchronized public long storeData(byte[] data) throws IOException {
 		assert data != null : "data must not be null";
 
 		long offset = nioFileSize;
@@ -197,7 +204,7 @@ public class DataFile implements Closeable {
 
 	}
 
-	private int remainingBufferCapacity() {
+	synchronized private int remainingBufferCapacity() {
 		return buffer.capacity() - buffer.position();
 	}
 
@@ -227,16 +234,8 @@ public class DataFile implements Closeable {
 				(data[2] << 8) & 0x0000ff00 |
 				(data[3]) & 0x000000ff;
 
-		// If the data length is larger than 750MB, we are likely reading the wrong data. Probably data corruption. The
-		// limit of 750MB was chosen based on results from experimenting in the NativeSailStoreCorruptionTest class.
-		if (dataLength > 128 * 1024 * 1024) {
-			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
-				logger.error(
-						"Data length is {}MB which is larger than 750MB. This is likely data corruption. Truncating length to 32 MB.",
-						dataLength / ((1024 * 1024)));
-				dataLength = 32 * 1024 * 1024;
-			}
-		}
+		// Validate and possibly reduce the length before allocating a large array
+		dataLength = guardedDataLength(dataLength);
 
 		try {
 
@@ -248,16 +247,22 @@ public class DataFile implements Closeable {
 				// adjust the approximate average with 1 part actual length and 99 parts previous average up to a
 				// sensible
 				// max of 200
-				dataLengthApproximateAverage = (int) (Math.min(200,
+				dataLengthApproximateAverage = (int) Math.max(0, Math.min(200,
 						((dataLengthApproximateAverage / 100.0) * 99) + (dataLength / 100.0)));
 
-				return Arrays.copyOfRange(data, 4, dataLength + 4);
+				int i = dataLength + 4;
+				if (i < 0 || i > data.length) {
+					throw new IOException("Corrupt data record at offset " + offset + ". Data length: " + dataLength);
+				}
+
+				return Arrays.copyOfRange(data, 4, i);
 
 			} else {
 
 				// adjust the approximate average, but favour the actual dataLength since dataLength predictions misses
 				// are costly
-				dataLengthApproximateAverage = Math.min(200, (dataLengthApproximateAverage + dataLength) / 2);
+				dataLengthApproximateAverage = Math.max(0,
+						Math.min(200, (dataLengthApproximateAverage + dataLength) / 2));
 
 				// we didn't read enough data so we need to execute a new read
 				data = new byte[dataLength];
@@ -267,7 +272,7 @@ public class DataFile implements Closeable {
 				return data;
 			}
 		} catch (OutOfMemoryError e) {
-			if (dataLength > 128 * 1024 * 1024) {
+			if (dataLength > LARGE_READ_THRESHOLD) {
 				logger.error(
 						"Trying to read large amounts of data may be a sign of data corruption. Consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes to true");
 			}
@@ -277,11 +282,64 @@ public class DataFile implements Closeable {
 	}
 
 	/**
+	 * For very large reads, ensure there appears to be sufficient free heap to allocate the requested record. If soft
+	 * fail mode is enabled and insufficient memory is observed, returns a reduced cap to allow recovery; otherwise
+	 * throws an IOException with guidance for remediation.
+	 */
+	private static int guardedDataLength(int requested) throws IOException {
+		if (requested <= 0) {
+			return requested;
+		}
+		// Soft-fail corruption cap remains in effect for oversized claims
+		if (requested > LARGE_READ_THRESHOLD && SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
+			logger.error(
+					"Data length is {}MB which is larger than {}MB. This is likely data corruption. Truncating length to {} MB.",
+					requested / (1024 * 1024), LARGE_READ_THRESHOLD / (1024 * 1024),
+					SOFT_FAIL_CAP_BYTES / (1024 * 1024));
+			return SOFT_FAIL_CAP_BYTES;
+		}
+
+		if (requested <= LARGE_READ_THRESHOLD) {
+			return requested;
+		}
+
+		Runtime rt = Runtime.getRuntime();
+		for (int i = 0; i < 6; i++) { // initial check + up to 5 GC attempts
+			long allocated = rt.totalMemory() - rt.freeMemory();
+			long free = SIMULATE_LOW_HEAP_FOR_TESTS ? 0 : (rt.maxMemory() - allocated);
+			if (free >= requested) {
+				return requested;
+			}
+			if (i < 5) {
+				System.gc();
+				try {
+					TimeUnit.MILLISECONDS.sleep(1);
+				} catch (InterruptedException ie) {
+					Thread.currentThread().interrupt();
+					break;
+				}
+			}
+		}
+
+		long allocated = rt.totalMemory() - rt.freeMemory();
+		long free = SIMULATE_LOW_HEAP_FOR_TESTS ? 0 : (rt.maxMemory() - allocated);
+		if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
+			logger.error(
+					"Attempt to read {} MB but only {} MB free heap available. Truncating to {} MB due to soft-fail mode.",
+					requested / (1024 * 1024), free / (1024 * 1024), SOFT_FAIL_CAP_BYTES / (1024 * 1024));
+			return SOFT_FAIL_CAP_BYTES;
+		}
+		throw new IOException("Attempt to read " + (requested / (1024 * 1024)) + " MB but only "
+				+ (free / (1024 * 1024))
+				+ " MB free heap available. This may indicate corrupted data length. Consider enabling soft-fail mode via system property 'org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes'=true to attempt recovery.");
+	}
+
+	/**
 	 * Discards all stored data.
 	 *
 	 * @throws IOException If an I/O error occurred.
 	 */
-	public void clear() throws IOException {
+	synchronized public void clear() throws IOException {
 		nioFile.truncate(HEADER_LENGTH);
 		nioFileSize = HEADER_LENGTH;
 		buffer.clear();
@@ -290,7 +348,7 @@ public class DataFile implements Closeable {
 	/**
 	 * Syncs any unstored data to the hash file.
 	 */
-	public void sync() throws IOException {
+	synchronized public void sync() throws IOException {
 		flush();
 
 		if (forceSync) {
@@ -298,7 +356,7 @@ public class DataFile implements Closeable {
 		}
 	}
 
-	public void sync(boolean force) throws IOException {
+	synchronized public void sync(boolean force) throws IOException {
 		flush();
 
 		nioFile.force(force);
@@ -310,9 +368,9 @@ public class DataFile implements Closeable {
 	 * @throws IOException
 	 */
 	@Override
-	public void close() throws IOException {
+	synchronized public void close() throws IOException {
 		flush();
-
+		nioFile.force(true);
 		nioFile.close();
 	}
 

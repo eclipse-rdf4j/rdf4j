@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.common.io;
 
 import java.io.Closeable;
+import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -22,6 +23,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.EnumSet;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 /**
  * File wrapper that protects against concurrent file closing events due to e.g. {@link Thread#interrupt() thread
@@ -44,6 +46,13 @@ public final class NioFile implements Closeable {
 	private final Set<StandardOpenOption> openOptions;
 
 	private volatile FileChannel fc;
+
+	/**
+	 * Disable strict guards via system property to maintain legacy behavior without additional exceptions. Property:
+	 * org.eclipse.rdf4j.common.io.niofile.disableStrictGuards (default: false)
+	 */
+	private static final boolean STRICT_GUARDS = !Boolean
+			.getBoolean("org.eclipse.rdf4j.common.io.niofile.disableStrictGuards");
 
 	private volatile boolean explictlyClosed;
 
@@ -238,12 +247,24 @@ public final class NioFile implements Closeable {
 	 * @throws IOException
 	 */
 	public int write(ByteBuffer buf, long offset) throws IOException {
+		final int startPosition = buf.position();
 		while (true) {
 			try {
-				return fc.write(buf, offset);
+				// Ensure the entire buffer is written, even if the underlying channel performs a partial write
+				while (buf.hasRemaining()) {
+					long position = offset + (buf.position() - startPosition);
+					int n = fc.write(buf, position);
+					if (n == 0) {
+						// Avoid tight spin in pathological cases: reattempt write
+						// FileChannel positional writes may occasionally return 0 without progress
+						continue;
+					}
+				}
+				return buf.position() - startPosition;
 			} catch (ClosedByInterruptException e) {
 				throw e;
 			} catch (ClosedChannelException e) {
+				// Preserve already-consumed bytes on retry
 				reopen(e);
 			}
 		}
@@ -258,12 +279,29 @@ public final class NioFile implements Closeable {
 	 * @throws IOException
 	 */
 	public int read(ByteBuffer buf, long offset) throws IOException {
+		final int startPosition = buf.position();
 		while (true) {
 			try {
-				return fc.read(buf, offset);
+				while (buf.hasRemaining()) {
+					long position = offset + (buf.position() - startPosition);
+					int n = fc.read(buf, position);
+					if (n < 0) {
+						// Preserve FileChannel contract: if no bytes were read and EOF is reached, return -1
+						if (buf.position() == startPosition) {
+							return -1;
+						}
+						break; // EOF after having read some bytes
+					}
+					if (n == 0) {
+						// Avoid tight spin; allow retry in case of transient 0-byte read
+						continue;
+					}
+				}
+				return buf.position() - startPosition;
 			} catch (ClosedByInterruptException e) {
 				throw e;
 			} catch (ClosedChannelException e) {
+				// Preserve already-consumed bytes on retry
 				reopen(e);
 			}
 		}
@@ -277,7 +315,10 @@ public final class NioFile implements Closeable {
 	 * @throws IOException
 	 */
 	public void writeBytes(byte[] value, long offset) throws IOException {
-		write(ByteBuffer.wrap(value), offset);
+		int write = write(ByteBuffer.wrap(value), offset);
+		if (STRICT_GUARDS && write != value.length) {
+			throw new IOException("Incomplete writeBytes: expected " + value.length + ", wrote " + write);
+		}
 	}
 
 	/**
@@ -290,7 +331,10 @@ public final class NioFile implements Closeable {
 	 */
 	public byte[] readBytes(long offset, int length) throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(length);
-		read(buf, offset);
+		int read = read(buf, offset);
+		if (STRICT_GUARDS && read < length) {
+			throw new EOFException("Unexpected EOF in readBytes: expected " + length + ", read " + read);
+		}
 		return buf.array();
 	}
 
@@ -326,7 +370,10 @@ public final class NioFile implements Closeable {
 	public void writeLong(long value, long offset) throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(8);
 		buf.putLong(0, value);
-		write(buf, offset);
+		int write = write(buf, offset);
+		if (STRICT_GUARDS && write != 8) {
+			throw new IOException("Incomplete writeLong: wrote " + write);
+		}
 	}
 
 	/**
@@ -338,7 +385,10 @@ public final class NioFile implements Closeable {
 	 */
 	public long readLong(long offset) throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(8);
-		read(buf, offset);
+		int read = read(buf, offset);
+		if (STRICT_GUARDS && read < 8) {
+			throw new EOFException("Unexpected EOF in readLong: read " + read);
+		}
 		return buf.getLong(0);
 	}
 
@@ -352,7 +402,10 @@ public final class NioFile implements Closeable {
 	public void writeInt(int value, long offset) throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(4);
 		buf.putInt(0, value);
-		write(buf, offset);
+		int write = write(buf, offset);
+		if (STRICT_GUARDS && write != 4) {
+			throw new IOException("Incomplete writeInt: wrote " + write);
+		}
 	}
 
 	/**
@@ -364,7 +417,10 @@ public final class NioFile implements Closeable {
 	 */
 	public int readInt(long offset) throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(4);
-		read(buf, offset);
+		int read = read(buf, offset);
+		if (STRICT_GUARDS && read < 4) {
+			throw new EOFException("Unexpected EOF in readInt: read " + read);
+		}
 		return buf.getInt(0);
 	}
 }
