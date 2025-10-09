@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
-
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -22,7 +20,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
-
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -19,7 +17,6 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -28,7 +25,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -116,9 +112,9 @@ public class ValueStorePartialWriteCorruptionTest {
 		valueStore.close();
 		valueStore = new ValueStore(dataDir);
 
-        // After the write-loop fix in NioFile, partial low-level writes are retried until complete.
-        // Therefore, checkConsistency should not throw anymore.
-        valueStore.checkConsistency();
+		// After the write-loop fix in NioFile, partial low-level writes are retried until complete.
+		// Therefore, checkConsistency should not throw anymore.
+		valueStore.checkConsistency();
 	}
 
 	private static String buildString(int len) {
