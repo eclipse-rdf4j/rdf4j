@@ -13,10 +13,16 @@ package org.eclipse.rdf4j.sail.nativerdf.datastore;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.zip.CRC32;
 
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
+import org.eclipse.rdf4j.sail.nativerdf.ValueStore;
+import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Class that provides indexed storage and retrieval of arbitrary length data.
@@ -35,6 +41,9 @@ public class DataStore implements Closeable {
 
 	private final HashFile hashFile;
 
+	private static final Logger logger = LoggerFactory.getLogger(DataStore.class);
+	private ValueStore valueStore;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -47,6 +56,11 @@ public class DataStore implements Closeable {
 		dataFile = new DataFile(new File(dataDir, filePrefix + ".dat"), forceSync);
 		idFile = new IDFile(new File(dataDir, filePrefix + ".id"), forceSync);
 		hashFile = new HashFile(new File(dataDir, filePrefix + ".hash"), forceSync);
+	}
+
+	public DataStore(File dataDir, String filePrefix, boolean forceSync, ValueStore valueStore) throws IOException {
+		this(dataDir, filePrefix, forceSync);
+		this.valueStore = valueStore;
 	}
 
 	/*---------*
@@ -67,7 +81,108 @@ public class DataStore implements Closeable {
 		long offset = idFile.getOffset(id);
 
 		if (offset != 0L) {
-			return dataFile.getData(offset);
+			byte[] data = dataFile.getData(offset);
+			if (data.length == 0 && NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
+				try {
+					long offsetNoCache = idFile.getOffsetNoCache(id);
+					if (offset != offsetNoCache) {
+						logger.error("IDFile cache mismatch for id {}: cached={}, raw={}. Using raw.", id, offset,
+								offsetNoCache);
+						offset = offsetNoCache;
+						data = dataFile.getData(offset);
+					}
+				} catch (IOException e) {
+					// If raw read fails, keep cached offset
+				}
+
+				// Attempt recovery by using neighboring offsets to infer the bounds
+				long startData = offset + 4; // default start if no previous valid entry
+				// Find previous entry end: prevOffset + 4 + prevLength
+				int prev = id - 1;
+				for (; prev >= 1; prev--) {
+					long po = idFile.getOffset(prev);
+					try {
+						long poRaw = idFile.getOffsetNoCache(prev);
+						if (po != poRaw) {
+							logger.error("IDFile cache mismatch for prev id {}: cached={}, raw={}. Using raw.", prev,
+									po, poRaw);
+							po = poRaw;
+						}
+					} catch (IOException e) {
+						// use cached po if raw read fails
+					}
+					if (po > 0L) {
+						try {
+							byte[] prevData = dataFile.getData(po);
+							if (prevData != null && prevData.length > 0) {
+								try {
+									if (valueStore != null && Thread.currentThread().getStackTrace().length < 512) {
+										NativeValue nativeValue = valueStore.data2value(prev, prevData);
+										logger.warn("Data in previous ID ({}) is: {}", prev, nativeValue);
+									} else {
+										logger.warn("Data in previous ID ({}) is: {}", prev,
+												new String(prevData, StandardCharsets.UTF_8));
+									}
+								} catch (Exception ignored) {
+								}
+								startData = po + 4L + prevData.length;
+								break;
+							}
+						} catch (Exception ignored) {
+						}
+					}
+				}
+
+				// Find next entry start as the end bound
+				long endOffset = 0L;
+				int maxId = idFile.getMaxID();
+				int next = id + 1;
+				for (; next <= maxId; next++) {
+					long no = idFile.getOffset(next);
+					try {
+						long noRaw = idFile.getOffsetNoCache(next);
+						if (no != noRaw) {
+							logger.error("IDFile cache mismatch for next id {}: cached={}, raw={}. Using raw.", next,
+									no, noRaw);
+							no = noRaw;
+						}
+					} catch (IOException e) {
+						// use cached value if raw read fails
+					}
+					if (no > 0L) {
+
+						try {
+							byte[] nextData = dataFile.getData(no);
+							if (nextData != null && nextData.length > 0) {
+								try {
+									if (valueStore != null && Thread.currentThread().getStackTrace().length < 512) {
+										NativeValue nativeValue = valueStore.data2value(next, nextData);
+										logger.warn("Data in next ID ({}) is: {}", next, nativeValue);
+									} else {
+										logger.warn("Data in next ID ({}) is: {}", next,
+												new String(nextData, StandardCharsets.UTF_8));
+									}
+								} catch (Exception ignored) {
+								}
+								endOffset = no;
+								break;
+							}
+						} catch (Exception e) {
+						}
+
+					}
+				}
+				if (endOffset == 0L) {
+					// Fallback: use current file size as end bound
+					endOffset = dataFile.getFileSize();
+				}
+				if (endOffset > startData) {
+					// tryRecoverBetweenOffsets expects an offset to a 4-byte length, so pass (startData - 4)
+					byte[] recovered = dataFile.tryRecoverBetweenOffsets(Math.max(0L, startData - 4L), endOffset);
+					throw new RecoveredDataException(id, recovered);
+				}
+			}
+			return data;
 		}
 
 		return null;
