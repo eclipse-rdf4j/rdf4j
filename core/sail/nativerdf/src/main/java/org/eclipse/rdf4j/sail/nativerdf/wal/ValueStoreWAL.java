@@ -32,7 +32,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 
 	public static final long NO_LSN = -1L;
 
-	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d{8})\\.v1");
+	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d{8})\\.v1(?:\\.gz)?");
 
 	private final WalConfig config;
 	private final BlockingQueue<WalRecord> queue;
