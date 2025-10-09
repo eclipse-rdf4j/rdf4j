@@ -52,6 +52,7 @@ import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
 import org.eclipse.rdf4j.sail.nativerdf.wal.WalReader;
 import org.eclipse.rdf4j.sail.nativerdf.wal.WalRecord;
 import org.eclipse.rdf4j.sail.nativerdf.wal.WalRecovery;
+import org.eclipse.rdf4j.sail.nativerdf.wal.WalSearch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -711,14 +712,13 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 		if (wal == null) {
 			return;
 		}
-		try (WalReader reader = WalReader.open(wal.config())) {
-			WalRecovery recovery = new WalRecovery();
-			java.util.Map<Integer, WalRecord> dict = recovery.replay(reader);
-			WalRecord rec = dict.get(id);
-			if (rec == null) {
+		try {
+			WalSearch search = WalSearch.open(wal.config());
+			Value v = search.findValueById(id);
+			if (v == null) {
 				return;
 			}
-			NativeValue nv = fromWalRecord(rec);
+			NativeValue nv = getNativeValue(v);
 			if (nv != null) {
 				nv.setInternalID(id, revision);
 				holder.setRecovered(nv);
