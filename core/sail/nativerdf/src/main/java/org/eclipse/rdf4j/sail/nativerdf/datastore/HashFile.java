@@ -297,12 +297,21 @@ public class HashFile implements Closeable {
 
 	public void sync(boolean force) throws IOException {
 		sync();
-		nioFile.force(force);
+		if (!forceSync && force) {
+			nioFile.force(false);
+		}
 	}
 
 	@Override
 	public void close() throws IOException {
-		nioFile.close();
+		// Persist current header (bucketCount, bucketSize, itemCount) before closing
+		// to ensure readers after reopen see the correct table layout even if no
+		// explicit sync() was called after structural changes (e.g., rehash).
+		try {
+			sync(true);
+		} finally {
+			nioFile.close();
+		}
 	}
 
 	/*-----------------*
@@ -494,6 +503,7 @@ public class HashFile implements Closeable {
 			// Discard the temp file
 		}
 		tmpFile.delete();
+		sync(true);
 	}
 
 	/*------------------------*

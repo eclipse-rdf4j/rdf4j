@@ -123,7 +123,7 @@ public class DataFile implements Closeable {
 	 * @param data The data to store, must not be <var>null</var>.
 	 * @return The byte-offset in the file at which the data was stored.
 	 */
-	public long storeData(byte[] data) throws IOException {
+	synchronized public long storeData(byte[] data) throws IOException {
 		assert data != null : "data must not be null";
 
 		long offset = nioFileSize;
@@ -173,7 +173,7 @@ public class DataFile implements Closeable {
 
 	}
 
-	private int remainingBufferCapacity() {
+	synchronized private int remainingBufferCapacity() {
 		return buffer.capacity() - buffer.position();
 	}
 
@@ -224,16 +224,22 @@ public class DataFile implements Closeable {
 				// adjust the approximate average with 1 part actual length and 99 parts previous average up to a
 				// sensible
 				// max of 200
-				dataLengthApproximateAverage = (int) (Math.min(200,
+				dataLengthApproximateAverage = (int) Math.max(0, Math.min(200,
 						((dataLengthApproximateAverage / 100.0) * 99) + (dataLength / 100.0)));
 
-				return Arrays.copyOfRange(data, 4, dataLength + 4);
+				int i = dataLength + 4;
+				if (i < 0 || i > data.length) {
+					throw new IOException("Corrupt data record at offset " + offset + ". Data length: " + dataLength);
+				}
+
+				return Arrays.copyOfRange(data, 4, i);
 
 			} else {
 
 				// adjust the approximate average, but favour the actual dataLength since dataLength predictions misses
 				// are costly
-				dataLengthApproximateAverage = Math.min(200, (dataLengthApproximateAverage + dataLength) / 2);
+				dataLengthApproximateAverage = Math.max(0,
+						Math.min(200, (dataLengthApproximateAverage + dataLength) / 2));
 
 				// we didn't read enough data so we need to execute a new read
 				data = new byte[dataLength];
@@ -257,7 +263,7 @@ public class DataFile implements Closeable {
 	 *
 	 * @throws IOException If an I/O error occurred.
 	 */
-	public void clear() throws IOException {
+	synchronized public void clear() throws IOException {
 		nioFile.truncate(HEADER_LENGTH);
 		nioFileSize = HEADER_LENGTH;
 		buffer.clear();
@@ -266,7 +272,7 @@ public class DataFile implements Closeable {
 	/**
 	 * Syncs any unstored data to the hash file.
 	 */
-	public void sync() throws IOException {
+	synchronized public void sync() throws IOException {
 		flush();
 
 		if (forceSync) {
@@ -274,7 +280,7 @@ public class DataFile implements Closeable {
 		}
 	}
 
-	public void sync(boolean force) throws IOException {
+	synchronized public void sync(boolean force) throws IOException {
 		flush();
 
 		nioFile.force(force);
@@ -286,9 +292,9 @@ public class DataFile implements Closeable {
 	 * @throws IOException
 	 */
 	@Override
-	public void close() throws IOException {
+	synchronized public void close() throws IOException {
 		flush();
-
+		nioFile.force(true);
 		nioFile.close();
 	}
 
