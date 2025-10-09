@@ -49,6 +49,9 @@ import org.eclipse.rdf4j.sail.nativerdf.model.NativeResource;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueKind;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
+import org.eclipse.rdf4j.sail.nativerdf.wal.WalReader;
+import org.eclipse.rdf4j.sail.nativerdf.wal.WalRecord;
+import org.eclipse.rdf4j.sail.nativerdf.wal.WalRecovery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -608,7 +611,9 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 		if (data.length == 0) {
 			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
 				logger.error("Soft fail on corrupt data: Empty data array for value with id {}", id);
-				return new CorruptUnknownValue(revision, id, data);
+				CorruptUnknownValue v = new CorruptUnknownValue(revision, id, data);
+				tryRecoverFromWal(id, v);
+				return v;
 			}
 			throw new SailException("Empty data array for value with id " + id
 					+ " consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes to true");
@@ -623,7 +628,9 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 		default:
 			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
 				logger.error("Soft fail on corrupt data: Invalid type {} for value with id {}", data[0], id);
-				return new CorruptUnknownValue(revision, id, data);
+				CorruptUnknownValue v = new CorruptUnknownValue(revision, id, data);
+				tryRecoverFromWal(id, v);
+				return v;
 			}
 			throw new SailException("Invalid type " + data[0] + " for value with id " + id
 					+ "  consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes to true");
@@ -643,7 +650,9 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 		} catch (Throwable e) {
 			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES
 					&& (e instanceof Exception || e instanceof AssertionError)) {
-				return (T) new CorruptIRI(revision, id, namespace, data);
+				CorruptIRI v = new CorruptIRI(revision, id, namespace, data);
+				tryRecoverFromWal(id, v);
+				return (T) v;
 			}
 			logger.warn(
 					"NativeStore is possibly corrupt. To attempt to repair or retrieve the data, read the documentation on http://rdf4j.org about the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes");
@@ -686,11 +695,60 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 		} catch (Throwable e) {
 			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES
 					&& (e instanceof Exception || e instanceof AssertionError)) {
-				return (T) new CorruptLiteral(revision, id, data);
+				CorruptLiteral v = new CorruptLiteral(revision, id, data);
+				tryRecoverFromWal(id, v);
+				return (T) v;
 			}
 			throw e;
 		}
 
+	}
+
+	private void tryRecoverFromWal(int id, CorruptValue holder) {
+		if (wal == null) {
+			return;
+		}
+		try (WalReader reader = WalReader.open(wal.config())) {
+			WalRecovery recovery = new WalRecovery();
+			java.util.Map<Integer, WalRecord> dict = recovery.replay(reader);
+			WalRecord rec = dict.get(id);
+			if (rec == null) {
+				return;
+			}
+			NativeValue nv = fromWalRecord(rec);
+			if (nv != null) {
+				nv.setInternalID(id, revision);
+				holder.setRecovered(nv);
+				logger.info("Recovered value for id {} from WAL as {}", id, nv.stringValue());
+			}
+		} catch (IOException ioe) {
+			// ignore recovery failures
+		}
+	}
+
+	private NativeValue fromWalRecord(WalRecord rec) {
+		switch (rec.valueKind()) {
+		case IRI:
+			return createIRI(rec.lexical());
+		case BNODE:
+			return createBNode(rec.lexical());
+		case LITERAL: {
+			String lang = rec.language();
+			String dt = rec.datatype();
+			if (lang != null && !lang.isEmpty()) {
+				return createLiteral(rec.lexical(), lang);
+			} else if (dt != null && !dt.isEmpty()) {
+				return createLiteral(rec.lexical(), createIRI(dt));
+			} else {
+				return createLiteral(rec.lexical());
+			}
+		}
+		case NAMESPACE:
+			// not a value; nothing to recover
+			return null;
+		default:
+			return null;
+		}
 	}
 
 	private String data2namespace(byte[] data) {

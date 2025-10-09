@@ -14,11 +14,16 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 import java.util.zip.CRC32C;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
+
 public final class WalReader implements AutoCloseable {
 
-	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-\\d{8}\\.v1");
+	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d{8})\\.v1(?:\\.gz)?");
 
 	private final WalConfig config;
+	private final JsonFactory jsonFactory = new JsonFactory();
 
 	private WalReader(WalConfig config) {
 		this.config = Objects.requireNonNull(config, "config");
@@ -34,6 +39,10 @@ public final class WalReader implements AutoCloseable {
 		long lastValidLsn = ValueStoreWAL.NO_LSN;
 
 		for (Path segment : segments) {
+			if (segment.getFileName().toString().endsWith(".gz")) {
+				lastValidLsn = scanGzipSegment(segment, records, lastValidLsn);
+				continue;
+			}
 			try (FileChannel channel = FileChannel.open(segment, StandardOpenOption.READ)) {
 				ByteBuffer header = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
 				while (true) {
@@ -73,17 +82,15 @@ public final class WalReader implements AutoCloseable {
 						return new ScanResult(records, lastValidLsn);
 					}
 
-					String json = new String(jsonBytes, ValueStoreWAL.UTF8);
-					char type = extractType(json);
-					if (type == 'M') {
-						WalRecord record = parseMintRecord(json);
+					Parsed parsed = parseJson(jsonBytes);
+					if (parsed.type == 'M') {
+						WalRecord record = new WalRecord(parsed.lsn, parsed.id, parsed.kind, parsed.lex, parsed.dt,
+								parsed.lang, parsed.hash);
 						records.add(record);
 						lastValidLsn = record.lsn();
 					} else {
-						// ignore other record types for now
-						long lsn = parseLong(json, "lsn", ValueStoreWAL.NO_LSN);
-						if (lsn > lastValidLsn) {
-							lastValidLsn = lsn;
+						if (parsed.lsn > lastValidLsn) {
+							lastValidLsn = parsed.lsn;
 						}
 					}
 				}
@@ -93,145 +100,119 @@ public final class WalReader implements AutoCloseable {
 		return new ScanResult(records, lastValidLsn);
 	}
 
+	private long scanGzipSegment(Path segment, List<WalRecord> out, long lastValidLsn) throws IOException {
+		try (java.util.zip.GZIPInputStream in = new java.util.zip.GZIPInputStream(Files.newInputStream(segment))) {
+			while (true) {
+				int length = readIntLE(in);
+				if (length <= 0 || length > config.batchBufferBytes() * 4) {
+					return lastValidLsn;
+				}
+				byte[] jsonBytes = in.readNBytes(length);
+				if (jsonBytes.length < length) {
+					return lastValidLsn;
+				}
+				int expectedCrc = readIntLE(in);
+				CRC32C crc32c = new CRC32C();
+				crc32c.update(jsonBytes, 0, jsonBytes.length);
+				if ((int) crc32c.getValue() != expectedCrc) {
+					return lastValidLsn;
+				}
+				Parsed parsed = parseJson(jsonBytes);
+				if (parsed.type == 'M') {
+					WalRecord record = new WalRecord(parsed.lsn, parsed.id, parsed.kind, parsed.lex, parsed.dt,
+							parsed.lang, parsed.hash);
+					out.add(record);
+					lastValidLsn = record.lsn();
+				} else if (parsed.lsn > lastValidLsn) {
+					lastValidLsn = parsed.lsn;
+				}
+			}
+		}
+	}
+
+	private static int readIntLE(java.io.InputStream in) throws IOException {
+		byte[] b = in.readNBytes(4);
+		if (b.length < 4) {
+			return -1;
+		}
+		return ((b[0] & 0xFF)) | ((b[1] & 0xFF) << 8) | ((b[2] & 0xFF) << 16) | ((b[3] & 0xFF) << 24);
+	}
+
 	private List<Path> listSegments() throws IOException {
-		List<Path> segments = new ArrayList<>();
+		class Item {
+			final Path path;
+			final int seq;
+
+			Item(Path path, int seq) {
+				this.path = path;
+				this.seq = seq;
+			}
+		}
+		List<Item> items = new ArrayList<>();
 		if (!Files.isDirectory(config.walDirectory())) {
-			return segments;
+			return List.of();
 		}
 		try (var stream = Files.list(config.walDirectory())) {
-			stream.filter(path -> SEGMENT_PATTERN.matcher(path.getFileName().toString()).matches())
-					.sorted(Comparator.naturalOrder())
-					.forEach(segments::add);
+			stream.forEach(p -> {
+				var m = SEGMENT_PATTERN.matcher(p.getFileName().toString());
+				if (m.matches()) {
+					int seq = Integer.parseInt(m.group(1));
+					items.add(new Item(p, seq));
+				}
+			});
+		}
+		items.sort(Comparator.comparingInt(it -> it.seq));
+		List<Path> segments = new ArrayList<>(items.size());
+		for (Item it : items) {
+			segments.add(it.path);
 		}
 		return segments;
 	}
 
-	private static char extractType(String json) {
-		int idx = json.indexOf("\"t\"");
-		if (idx < 0) {
-			return '?';
-		}
-		int colon = json.indexOf(':', idx);
-		if (colon < 0) {
-			return '?';
-		}
-		for (int i = colon + 1; i < json.length(); i++) {
-			char c = json.charAt(i);
-			if (c == '"') {
-				int end = json.indexOf('"', i + 1);
-				if (end > i) {
-					return json.charAt(i + 1);
+	private Parsed parseJson(byte[] jsonBytes) throws IOException {
+		Parsed parsed = new Parsed();
+		try (JsonParser jp = jsonFactory.createParser(jsonBytes)) {
+			if (jp.nextToken() != JsonToken.START_OBJECT) {
+				return parsed;
+			}
+			while (jp.nextToken() != JsonToken.END_OBJECT) {
+				String field = jp.getCurrentName();
+				jp.nextToken();
+				if ("t".equals(field)) {
+					String t = jp.getValueAsString("");
+					parsed.type = t.isEmpty() ? '?' : t.charAt(0);
+				} else if ("lsn".equals(field)) {
+					parsed.lsn = jp.getValueAsLong(ValueStoreWAL.NO_LSN);
+				} else if ("id".equals(field)) {
+					parsed.id = jp.getValueAsInt(0);
+				} else if ("vk".equals(field)) {
+					String code = jp.getValueAsString("");
+					parsed.kind = ValueKind.fromCode(code);
+				} else if ("lex".equals(field)) {
+					parsed.lex = jp.getValueAsString("");
+				} else if ("dt".equals(field)) {
+					parsed.dt = jp.getValueAsString("");
+				} else if ("lang".equals(field)) {
+					parsed.lang = jp.getValueAsString("");
+				} else if ("hash".equals(field)) {
+					parsed.hash = jp.getValueAsInt(0);
+				} else {
+					jp.skipChildren();
 				}
-				return '?';
-			} else if (!Character.isWhitespace(c)) {
-				return c;
 			}
 		}
-		return '?';
+		return parsed;
 	}
 
-	private WalRecord parseMintRecord(String json) {
-		long lsn = parseLong(json, "lsn", 0L);
-		int id = (int) parseLong(json, "id", 0L);
-		String valueKindCode = parseString(json, "vk");
-		ValueKind kind = ValueKind.fromCode(valueKindCode);
-		String lexical = parseString(json, "lex");
-		String datatype = parseString(json, "dt");
-		String language = parseString(json, "lang");
-		int hash = (int) parseLong(json, "hash", 0L);
-		return new WalRecord(lsn, id, kind, lexical, datatype, language, hash);
-	}
-
-	private static long parseLong(String json, String key, long defaultValue) {
-		int idx = json.indexOf('"' + key + '"');
-		if (idx < 0) {
-			return defaultValue;
-		}
-		int colon = json.indexOf(':', idx);
-		if (colon < 0) {
-			return defaultValue;
-		}
-		int start = colon + 1;
-		while (start < json.length() && Character.isWhitespace(json.charAt(start))) {
-			start++;
-		}
-		int end = start;
-		while (end < json.length()) {
-			char c = json.charAt(end);
-			if (c == ',' || c == '}') {
-				break;
-			}
-			end++;
-		}
-		if (start >= end) {
-			return defaultValue;
-		}
-		try {
-			return Long.parseLong(json.substring(start, end).trim());
-		} catch (NumberFormatException e) {
-			return defaultValue;
-		}
-	}
-
-	private static String parseString(String json, String key) {
-		int idx = json.indexOf('"' + key + '"');
-		if (idx < 0) {
-			return "";
-		}
-		int colon = json.indexOf(':', idx);
-		if (colon < 0) {
-			return "";
-		}
-		int quote = json.indexOf('"', colon);
-		if (quote < 0) {
-			return "";
-		}
-		StringBuilder sb = new StringBuilder();
-		for (int i = quote + 1; i < json.length(); i++) {
-			char c = json.charAt(i);
-			if (c == '"') {
-				return sb.toString();
-			} else if (c == '\\') {
-				if (i + 1 >= json.length()) {
-					break;
-				}
-				char esc = json.charAt(++i);
-				switch (esc) {
-				case '"':
-				case '\\':
-				case '/':
-					sb.append(esc);
-					break;
-				case 'b':
-					sb.append('\b');
-					break;
-				case 'f':
-					sb.append('\f');
-					break;
-				case 'n':
-					sb.append('\n');
-					break;
-				case 'r':
-					sb.append('\r');
-					break;
-				case 't':
-					sb.append('\t');
-					break;
-				case 'u':
-					if (i + 4 < json.length()) {
-						String hex = json.substring(i + 1, i + 5);
-						sb.append((char) Integer.parseInt(hex, 16));
-						i += 4;
-					}
-					break;
-				default:
-					sb.append(esc);
-				}
-			} else {
-				sb.append(c);
-			}
-		}
-		return sb.toString();
+	private static final class Parsed {
+		char type = '?';
+		long lsn = ValueStoreWAL.NO_LSN;
+		int id = 0;
+		ValueKind kind = ValueKind.NAMESPACE;
+		String lex = "";
+		String dt = "";
+		String lang = "";
+		int hash = 0;
 	}
 
 	@Override

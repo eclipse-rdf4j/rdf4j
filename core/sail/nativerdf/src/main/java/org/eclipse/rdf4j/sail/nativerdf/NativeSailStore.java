@@ -120,6 +120,14 @@ class NativeSailStore implements SailStore {
 			createdValueStore = new ValueStore(dataDir, forceSync, valueCacheSize, valueIDCacheSize,
 					namespaceCacheSize, namespaceIDCacheSize, createdWal);
 			createdTripleStore = new TripleStore(dataDir, tripleIndexes, forceSync);
+
+			// Assign fields required by ContextStore before constructing it
+			namespaceStore = createdNamespaceStore;
+			valueStoreWal = createdWal;
+			valueStore = createdValueStore;
+			tripleStore = createdTripleStore;
+
+			// Now ContextStore can safely read from this store
 			createdContextStore = new ContextStore(this, dataDir);
 			initialized = true;
 		} finally {
@@ -131,10 +139,7 @@ class NativeSailStore implements SailStore {
 				closeQuietly(createdNamespaceStore);
 			}
 		}
-		namespaceStore = createdNamespaceStore;
-		valueStoreWal = createdWal;
-		valueStore = createdValueStore;
-		tripleStore = createdTripleStore;
+		// Finalize assignment of contextStore
 		contextStore = createdContextStore;
 	}
 

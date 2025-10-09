@@ -21,6 +21,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.zip.CRC32C;
+import java.util.zip.GZIPOutputStream;
+
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
 
 public final class ValueStoreWAL implements AutoCloseable {
 
@@ -329,7 +333,11 @@ public final class ValueStoreWAL implements AutoCloseable {
 		}
 
 		private void rotateSegment() throws IOException {
+			Path toCompress = segmentPath;
 			closeQuietly(segmentChannel);
+			if (toCompress != null) {
+				gzipAndDelete(toCompress);
+			}
 			openNextSegment();
 		}
 
@@ -345,11 +353,38 @@ public final class ValueStoreWAL implements AutoCloseable {
 			}
 		}
 
+		private void gzipAndDelete(Path src) {
+			try (var in = Files.newInputStream(src);
+					var out = new GZIPOutputStream(
+							Files.newOutputStream(src.resolveSibling(src.getFileName().toString() + ".gz")))) {
+				byte[] buf = new byte[1 << 16];
+				int r;
+				while ((r = in.read(buf)) >= 0) {
+					out.write(buf, 0, r);
+				}
+				out.finish();
+				Files.deleteIfExists(src);
+			} catch (IOException e) {
+				// best-effort compression; continue silently in this context
+			}
+		}
+
 		private void writeHeader() throws IOException {
-			String json = String.format(
-					"{\"t\":\"V\",\"ver\":1,\"store\":\"%s\",\"engine\":\"valuestore\",\"created\":%d,\"segment\":%d}",
-					config.storeUuid(), Instant.now().getEpochSecond(), segmentSequence);
-			byte[] jsonBytes = json.getBytes(UTF8);
+			JsonFactory factory = new JsonFactory();
+			java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream(256);
+			try (JsonGenerator gen = factory.createGenerator(baos)) {
+				gen.writeStartObject();
+				gen.writeStringField("t", "V");
+				gen.writeNumberField("ver", 1);
+				gen.writeStringField("store", config.storeUuid());
+				gen.writeStringField("engine", "valuestore");
+				gen.writeNumberField("created", Instant.now().getEpochSecond());
+				gen.writeNumberField("segment", segmentSequence);
+				gen.writeEndObject();
+			}
+			// NDJSON: newline-delimited JSON
+			baos.write('\n');
+			byte[] jsonBytes = baos.toByteArray();
 			ByteBuffer buffer = ByteBuffer.allocate(4 + jsonBytes.length + 4).order(ByteOrder.LITTLE_ENDIAN);
 			buffer.putInt(jsonBytes.length);
 			buffer.put(jsonBytes);
@@ -368,61 +403,24 @@ public final class ValueStoreWAL implements AutoCloseable {
 			return (int) crc32c.getValue();
 		}
 
-		private byte[] encode(WalRecord record) {
-			StringBuilder sb = new StringBuilder();
-			sb.append('{');
-			sb.append("\"t\":\"M\",");
-			sb.append("\"lsn\":").append(record.lsn()).append(',');
-			sb.append("\"id\":").append(record.id()).append(',');
-			sb.append("\"vk\":\"").append(record.valueKind().code()).append("\",");
-			appendStringField(sb, "lex", record.lexical());
-			sb.append(',');
-			appendStringField(sb, "dt", record.datatype());
-			sb.append(',');
-			appendStringField(sb, "lang", record.language());
-			sb.append(',');
-			sb.append("\"hash\":").append(record.hash());
-			sb.append('}');
-			return sb.toString().getBytes(UTF8);
-		}
-
-		private void appendStringField(StringBuilder sb, String name, String value) {
-			sb.append('"').append(name).append('"').append(':').append('"');
-			if (value != null) {
-				for (int i = 0; i < value.length(); i++) {
-					char c = value.charAt(i);
-					switch (c) {
-					case '\\':
-						sb.append("\\\\");
-						break;
-					case '"':
-						sb.append("\\\"");
-						break;
-					case '\b':
-						sb.append("\\b");
-						break;
-					case '\f':
-						sb.append("\\f");
-						break;
-					case '\n':
-						sb.append("\\n");
-						break;
-					case '\r':
-						sb.append("\\r");
-						break;
-					case '\t':
-						sb.append("\\t");
-						break;
-					default:
-						if (c < 0x20) {
-							sb.append(String.format("\\u%04x", (int) c));
-						} else {
-							sb.append(c);
-						}
-					}
-				}
+		private byte[] encode(WalRecord record) throws IOException {
+			JsonFactory factory = new JsonFactory();
+			java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream(256);
+			try (JsonGenerator gen = factory.createGenerator(baos)) {
+				gen.writeStartObject();
+				gen.writeStringField("t", "M");
+				gen.writeNumberField("lsn", record.lsn());
+				gen.writeNumberField("id", record.id());
+				gen.writeStringField("vk", String.valueOf(record.valueKind().code()));
+				gen.writeStringField("lex", record.lexical() == null ? "" : record.lexical());
+				gen.writeStringField("dt", record.datatype() == null ? "" : record.datatype());
+				gen.writeStringField("lang", record.language() == null ? "" : record.language());
+				gen.writeNumberField("hash", record.hash());
+				gen.writeEndObject();
 			}
-			sb.append('"');
+			// NDJSON: newline-delimited JSON
+			baos.write('\n');
+			return baos.toByteArray();
 		}
 
 		private void closeQuietly(FileChannel channel) {

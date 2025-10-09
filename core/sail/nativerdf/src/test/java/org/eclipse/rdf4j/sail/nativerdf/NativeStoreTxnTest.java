@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.io.NioFile;
 import org.eclipse.rdf4j.model.IRI;
@@ -86,7 +87,11 @@ public class NativeStoreTxnTest {
 		for (File file : repoDir.listFiles()) {
 			System.out.println("# " + file.getName());
 		}
-		assertEquals(15, repoDir.listFiles().length);
+		// With WAL enabled a 'wal' directory may be present; exclude it from the legacy count
+		int nonWalCount = (int) Arrays.stream(repoDir.listFiles())
+				.filter(f -> !"wal".equals(f.getName()))
+				.count();
+		assertEquals(15, nonWalCount);
 
 		// make sure there is no txncacheXXX.dat file
 		assertFalse(Files.list(repoDir.getAbsoluteFile().toPath())
