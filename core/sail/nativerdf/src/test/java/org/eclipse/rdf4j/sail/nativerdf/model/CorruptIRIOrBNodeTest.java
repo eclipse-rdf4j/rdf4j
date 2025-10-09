@@ -68,11 +68,24 @@ public class CorruptIRIOrBNodeTest {
 		System.arraycopy(body, 0, data, header.length, body.length);
 
 		CorruptIRIOrBNode node = nodeWithData(data);
-		String expectedHex = Hex.encodeHexString(data);
+		String expectedHex = Hex.encodeHexString(stripLeavingZeros(data));
 
 		String localName = node.getLocalName();
 		assertTrue(localName.startsWith("CORRUPT_"), "Should be prefixed with CORRUPT_");
-		assertEquals("CORRUPT_" + expectedHex, localName);
+		assertEquals("CORRUPT_ID_" + node.getInternalID() + "_HEX_" + expectedHex, localName);
+	}
+
+	private byte[] stripLeavingZeros(byte[] data) {
+		int firstNonZero = 0;
+		for (int i = 0; i < data.length; i++) {
+			if (data[i] != 0) {
+				firstNonZero = i;
+				break;
+			}
+		}
+		byte[] stripped = new byte[data.length - firstNonZero];
+		System.arraycopy(data, firstNonZero, stripped, 0, stripped.length);
+		return stripped;
 	}
 
 	@Test

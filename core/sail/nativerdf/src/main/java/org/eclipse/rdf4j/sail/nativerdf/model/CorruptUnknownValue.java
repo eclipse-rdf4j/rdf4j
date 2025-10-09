@@ -42,11 +42,15 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 	public CorruptUnknownValue(ValueStoreRevision revision, int internalID, byte[] data) {
 		super(revision, internalID, data);
 		var truncated = data;
-		if (truncated.length > 2048) {
+		if (truncated != null && truncated.length > 2048) {
 			truncated = new byte[2048];
 			System.arraycopy(data, 0, truncated, 0, 2048);
 		}
-		this.hex = Hex.encodeHexString(truncated);
+		if (truncated != null) {
+			this.hex = Hex.encodeHexString(truncated);
+		} else {
+			this.hex = "";
+		}
 	}
 
 	@Override

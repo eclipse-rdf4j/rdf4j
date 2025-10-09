@@ -116,7 +116,7 @@ public class DataStore implements Closeable {
 							byte[] prevData = dataFile.getData(po);
 							if (prevData != null && prevData.length > 0) {
 								try {
-									if (valueStore != null) {
+									if (valueStore != null && Thread.currentThread().getStackTrace().length < 512) {
 										NativeValue nativeValue = valueStore.data2value(prev, prevData);
 										logger.warn("Data in previous ID ({}) is: {}", prev, nativeValue);
 									} else {
@@ -155,7 +155,7 @@ public class DataStore implements Closeable {
 							byte[] nextData = dataFile.getData(no);
 							if (nextData != null && nextData.length > 0) {
 								try {
-									if (valueStore != null) {
+									if (valueStore != null && Thread.currentThread().getStackTrace().length < 512) {
 										NativeValue nativeValue = valueStore.data2value(next, nextData);
 										logger.warn("Data in next ID ({}) is: {}", next, nativeValue);
 									} else {
