@@ -301,6 +301,9 @@ public final class NioFile implements Closeable {
 	 */
 	public void writeBytes(byte[] value, long offset) throws IOException {
 		int write = write(ByteBuffer.wrap(value), offset);
+		if (write != value.length) {
+			throw new IOException("Incomplete writeBytes: expected " + value.length + ", wrote " + write);
+		}
 	}
 
 	/**
@@ -314,6 +317,9 @@ public final class NioFile implements Closeable {
 	public byte[] readBytes(long offset, int length) throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(length);
 		int read = read(buf, offset);
+		if (read < length) {
+			throw new IOException("Unexpected EOF in readBytes: expected " + length + ", read " + read);
+		}
 		return buf.array();
 	}
 
@@ -350,6 +356,9 @@ public final class NioFile implements Closeable {
 		ByteBuffer buf = ByteBuffer.allocate(8);
 		buf.putLong(0, value);
 		int write = write(buf, offset);
+		if (write != 8) {
+			throw new IOException("Incomplete writeLong: wrote " + write);
+		}
 	}
 
 	/**
@@ -362,6 +371,9 @@ public final class NioFile implements Closeable {
 	public long readLong(long offset) throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(8);
 		int read = read(buf, offset);
+		if (read < 8) {
+			throw new IOException("Unexpected EOF in readLong: read " + read);
+		}
 		return buf.getLong(0);
 	}
 
@@ -376,6 +388,9 @@ public final class NioFile implements Closeable {
 		ByteBuffer buf = ByteBuffer.allocate(4);
 		buf.putInt(0, value);
 		int write = write(buf, offset);
+		if (write != 4) {
+			throw new IOException("Incomplete writeInt: wrote " + write);
+		}
 	}
 
 	/**
@@ -388,6 +403,9 @@ public final class NioFile implements Closeable {
 	public int readInt(long offset) throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(4);
 		int read = read(buf, offset);
+		if (read < 4) {
+			throw new IOException("Unexpected EOF in readInt: read " + read);
+		}
 		return buf.getInt(0);
 	}
 }
