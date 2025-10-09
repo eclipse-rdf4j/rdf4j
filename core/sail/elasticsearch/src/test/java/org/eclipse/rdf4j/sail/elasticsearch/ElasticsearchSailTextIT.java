@@ -65,6 +65,7 @@ class ElasticsearchSailTextIT {
 		Integer transport = elastic.getMappedPort(9300);
 
 		LuceneSail lucene = new LuceneSail();
+		lucene.setParameter(ElasticsearchIndex.INDEX_NAME_KEY, "es-it-" + Long.toHexString(System.nanoTime()));
 		lucene.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
 		lucene.setParameter(ElasticsearchIndex.TRANSPORT_KEY, host + ":" + transport);
 		lucene.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "yellow");
@@ -161,6 +162,162 @@ class ElasticsearchSailTextIT {
 		}
 
 		assertEquals(1, count, "Expected query to limit results to 1");
+		repo.shutDown();
+	}
+
+	@Test
+	void propertyVarBindingAndSnippet() {
+		SailRepository repo = newRepository();
+		ValueFactory vf = repo.getValueFactory();
+		IRI s1 = vf.createIRI("http://example.org/s1");
+		IRI s2 = vf.createIRI("http://example.org/s2");
+
+		try (SailRepositoryConnection cx = repo.getConnection()) {
+			cx.begin();
+			cx.add(s1, EX_TITLE, vf.createLiteral("quick fox"));
+			cx.add(s2, EX_COMMENT, vf.createLiteral("quick dog"));
+			cx.commit();
+		}
+
+		String q = String.join("\n",
+				"PREFIX search: <http://www.openrdf.org/contrib/lucenesail#>",
+				"PREFIX ex: <http://example.org/>",
+				"SELECT ?s ?p ?snip WHERE {",
+				"  ?s search:matches [",
+				"    search:query \"quick\" ;",
+				"    search:property ?p ;",
+				"    search:snippet ?snip",
+				"  ] .",
+				"}");
+
+		List<String> props = new ArrayList<>();
+		List<String> subjects = new ArrayList<>();
+		try (SailRepositoryConnection cx = repo.getConnection()) {
+			var tq = cx.prepareTupleQuery(q);
+			try (var res = tq.evaluate()) {
+				while (res.hasNext()) {
+					var bs = res.next();
+					subjects.add(bs.getValue("s").stringValue());
+					props.add(bs.getValue("p").stringValue());
+				}
+			}
+		}
+
+		assertTrue(subjects.contains(s1.stringValue()));
+		assertTrue(subjects.contains(s2.stringValue()));
+		assertTrue(props.contains(EX_TITLE.stringValue()));
+		assertTrue(props.contains(EX_COMMENT.stringValue()));
+
+		repo.shutDown();
+	}
+
+	@Test
+	void propertyFilterReturnsOnlyMatchingProperty() {
+		SailRepository repo = newRepository();
+		ValueFactory vf = repo.getValueFactory();
+		IRI s1 = vf.createIRI("http://example.org/s1");
+		IRI s2 = vf.createIRI("http://example.org/s2");
+
+		try (SailRepositoryConnection cx = repo.getConnection()) {
+			cx.begin();
+			cx.add(s1, EX_TITLE, vf.createLiteral("contains quick"));
+			cx.add(s2, EX_COMMENT, vf.createLiteral("contains quick"));
+			cx.commit();
+		}
+
+		String q = String.join("\n",
+				"PREFIX search: <http://www.openrdf.org/contrib/lucenesail#>",
+				"PREFIX ex: <http://example.org/>",
+				"SELECT ?s WHERE {",
+				"  ?s search:matches [",
+				"    search:property ex:title ;",
+				"    search:query \"quick\"",
+				"  ] .",
+				"}");
+
+		List<String> results = new ArrayList<>();
+		try (SailRepositoryConnection cx = repo.getConnection()) {
+			var tq = cx.prepareTupleQuery(q);
+			try (var res = tq.evaluate()) {
+				while (res.hasNext()) {
+					results.add(res.next().getValue("s").stringValue());
+				}
+			}
+		}
+
+		assertTrue(results.contains(s1.stringValue()));
+		assertFalse(results.contains(s2.stringValue()));
+
+		repo.shutDown();
+	}
+
+	@Test
+	void multiParamQueryUnsupported() {
+		SailRepository repo = newRepository();
+
+		// Two search:query statements inside same matches node -> ElasticsearchIndex should reject
+		String q = String.join("\n",
+				"PREFIX search: <http://www.openrdf.org/contrib/lucenesail#>",
+				"SELECT ?s WHERE {",
+				"  ?s search:matches [",
+				"    search:query \"a\" ;",
+				"    search:query \"b\"",
+				"  ] .",
+				"}");
+
+		try (SailRepositoryConnection cx = repo.getConnection()) {
+			var tq = cx.prepareTupleQuery(q);
+			assertThrows(Exception.class, () -> {
+				try (var res = tq.evaluate()) {
+					while (res.hasNext()) {
+						res.next();
+					}
+				}
+			});
+		}
+
+		repo.shutDown();
+	}
+
+	@Test
+	void textQueryRestrictedByGraphContext() {
+		SailRepository repo = newRepository();
+		ValueFactory vf = repo.getValueFactory();
+		IRI s1 = vf.createIRI("http://example.org/s1");
+		IRI s2 = vf.createIRI("http://example.org/s2");
+		IRI ctx1 = vf.createIRI("http://example.org/ctx1");
+		IRI ctx2 = vf.createIRI("http://example.org/ctx2");
+
+		try (SailRepositoryConnection cx = repo.getConnection()) {
+			cx.begin();
+			cx.add(s1, EX_TITLE, vf.createLiteral("quick term"), ctx1);
+			cx.add(s2, EX_TITLE, vf.createLiteral("quick term"), ctx2);
+			cx.commit();
+		}
+
+		String q = String.join("\n",
+				"PREFIX search: <http://www.openrdf.org/contrib/lucenesail#>",
+				"PREFIX ex: <http://example.org/>",
+				"SELECT ?s WHERE {",
+				"  GRAPH <" + ctx1 + "> { ?s ex:title ?o . }",
+				"  ?s search:matches [",
+				"    search:property ex:title ;",
+				"    search:query \"quick\"",
+				"  ] .",
+				"}");
+
+		List<String> results = new ArrayList<>();
+		try (SailRepositoryConnection cx = repo.getConnection()) {
+			var tq = cx.prepareTupleQuery(q);
+			try (var res = tq.evaluate()) {
+				while (res.hasNext()) {
+					results.add(res.next().getValue("s").stringValue());
+				}
+			}
+		}
+
+		assertTrue(results.contains(s1.stringValue()));
+		assertFalse(results.contains(s2.stringValue()));
 		repo.shutDown();
 	}
 }

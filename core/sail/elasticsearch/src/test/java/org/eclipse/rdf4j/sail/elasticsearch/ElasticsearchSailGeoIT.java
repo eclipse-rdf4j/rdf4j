@@ -63,6 +63,7 @@ class ElasticsearchSailGeoIT {
 		Integer transport = elastic.getMappedPort(9300);
 
 		LuceneSail lucene = new LuceneSail();
+		lucene.setParameter(ElasticsearchIndex.INDEX_NAME_KEY, "es-it-" + Long.toHexString(System.nanoTime()));
 		lucene.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
 		lucene.setParameter(ElasticsearchIndex.TRANSPORT_KEY, host + ":" + transport);
 		lucene.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "yellow");
