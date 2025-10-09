@@ -10,33 +10,24 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
-import java.util.Collection;
-import java.util.List;
-
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.testsuite.rdf4j.sail.lucene.AbstractLuceneSailTest;
 import org.elasticsearch.client.transport.TransportClient;
-import org.elasticsearch.index.reindex.ReindexPlugin;
-import org.elasticsearch.plugins.Plugin;
-import org.elasticsearch.test.ESIntegTestCase;
-import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-@ClusterScope(numDataNodes = 1)
-public class ElasticsearchSailTest extends ESIntegTestCase {
+public class ElasticsearchSailTest extends ElasticsearchTestContainerSupport {
 
 	AbstractLuceneSailTest delegateTest;
+	TransportClient client;
 
 	@Before
-	@Override
 	public void setUp() throws Exception {
-		super.setUp();
-		TransportClient client = (TransportClient) internalCluster().transportClient();
+		client = createTransportClient();
 		delegateTest = new AbstractLuceneSailTest() {
 
 			@Override
@@ -46,30 +37,21 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 						client.settings().get("cluster.name"));
 				sail.setParameter(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
 				sail.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
-				sail.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "green");
+				sail.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "yellow");
 				sail.setParameter(ElasticsearchIndex.WAIT_FOR_NODES_KEY, ">=1");
 			}
 		};
 		delegateTest.setUp();
 	}
 
-	@Override
-	protected Collection<Class<? extends Plugin>> transportClientPlugins() {
-		return List.of(ReindexPlugin.class);
-	}
-
-	@Override
-	protected Collection<Class<? extends Plugin>> nodePlugins() {
-		return List.of(ReindexPlugin.class);
-	}
-
 	@After
-	@Override
 	public void tearDown() throws Exception {
 		try {
-			delegateTest.tearDown();
+			if (delegateTest != null) {
+				delegateTest.tearDown();
+			}
 		} finally {
-			super.tearDown();
+			closeQuietly(client);
 		}
 	}
 

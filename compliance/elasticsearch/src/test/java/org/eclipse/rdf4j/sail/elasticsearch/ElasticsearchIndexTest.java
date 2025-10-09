@@ -10,8 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.io.IOException;
-import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -31,19 +37,14 @@ import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.index.reindex.ReindexPlugin;
-import org.elasticsearch.plugins.Plugin;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
-import org.elasticsearch.test.ESIntegTestCase;
-import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-@ClusterScope(numDataNodes = 1)
-public class ElasticsearchIndexTest extends ESIntegTestCase {
+public class ElasticsearchIndexTest extends ElasticsearchTestContainerSupport {
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
@@ -97,39 +98,28 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 	ElasticsearchIndex index;
 
 	@Before
-	@Override
 	public void setUp() throws Exception {
-		super.setUp();
-		client = (TransportClient) internalCluster().transportClient();
+		client = createTransportClient();
 
 		Properties sailProperties = new Properties();
 		sailProperties.put(ElasticsearchIndex.TRANSPORT_KEY, client.transportAddresses().get(0).toString());
 		sailProperties.put(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name",
 				client.settings().get("cluster.name"));
 		sailProperties.put(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
-		sailProperties.put(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "green");
+		sailProperties.put(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "yellow");
 		sailProperties.put(ElasticsearchIndex.WAIT_FOR_NODES_KEY, ">=1");
 		index = new ElasticsearchIndex();
 		index.initialize(sailProperties);
 	}
 
-	@Override
-	protected Collection<Class<? extends Plugin>> transportClientPlugins() {
-		return List.of(ReindexPlugin.class);
-	}
-
-	@Override
-	protected Collection<Class<? extends Plugin>> nodePlugins() {
-		return List.of(ReindexPlugin.class);
-	}
-
 	@After
-	@Override
 	public void tearDown() throws Exception {
 		try {
-			index.shutDown();
+			if (index != null) {
+				index.shutDown();
+			}
 		} finally {
-			super.tearDown();
+			closeQuietly(client);
 		}
 
 		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(false);

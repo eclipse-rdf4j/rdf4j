@@ -29,7 +29,10 @@ public class ClientProviderWithDebugStats implements ClientProvider {
 
 	public ClientProviderWithDebugStats(String hostname, int port, String clusterName) {
 		try {
-			Settings settings = Settings.builder().put("cluster.name", clusterName).build();
+			Settings settings = Settings.builder()
+					.put("cluster.name", clusterName)
+					.put("client.transport.sniff", false)
+					.build();
 			TransportClient client = new PreBuiltTransportClient(settings);
 			client.addTransportAddress(new TransportAddress(InetAddress.getByName(hostname), port));
 			this.client = new ClientWithStats(client);
