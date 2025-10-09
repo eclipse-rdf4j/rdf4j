@@ -511,6 +511,10 @@ public class ValueStore extends SimpleValueFactory {
 		int maxID = dataStore.getMaxID();
 		for (int id = 1; id <= maxID; id++) {
 			byte[] data = dataStore.getData(id);
+			if (data == null || data.length == 0) {
+				// Defensive guard against truncated/empty records which otherwise cause AIOOBE in isNamespaceData
+				throw new SailException("Empty data array for value with id " + id);
+			}
 			if (isNamespaceData(data)) {
 				String namespace = data2namespace(data);
 				try {

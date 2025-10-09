@@ -240,7 +240,18 @@ public final class NioFile implements Closeable {
 	public int write(ByteBuffer buf, long offset) throws IOException {
 		while (true) {
 			try {
-				return fc.write(buf, offset);
+				int totalWritten = 0;
+				// Ensure the entire buffer is written, even if the underlying channel performs a partial write
+				while (buf.hasRemaining()) {
+					int n = fc.write(buf, offset + totalWritten);
+					if (n == 0) {
+						// Avoid tight spin in pathological cases: reattempt write
+						// FileChannel positional writes may occasionally return 0 without progress
+						continue;
+					}
+					totalWritten += n;
+				}
+				return totalWritten;
 			} catch (ClosedByInterruptException e) {
 				throw e;
 			} catch (ClosedChannelException e) {
@@ -260,7 +271,19 @@ public final class NioFile implements Closeable {
 	public int read(ByteBuffer buf, long offset) throws IOException {
 		while (true) {
 			try {
-				return fc.read(buf, offset);
+				int totalRead = 0;
+				while (buf.hasRemaining()) {
+					int n = fc.read(buf, offset + totalRead);
+					if (n < 0) {
+						break; // EOF
+					}
+					if (n == 0) {
+						// Avoid tight spin; allow retry in case of transient 0-byte read
+						continue;
+					}
+					totalRead += n;
+				}
+				return totalRead;
 			} catch (ClosedByInterruptException e) {
 				throw e;
 			} catch (ClosedChannelException e) {
@@ -277,7 +300,7 @@ public final class NioFile implements Closeable {
 	 * @throws IOException
 	 */
 	public void writeBytes(byte[] value, long offset) throws IOException {
-		write(ByteBuffer.wrap(value), offset);
+		int write = write(ByteBuffer.wrap(value), offset);
 	}
 
 	/**
@@ -290,7 +313,7 @@ public final class NioFile implements Closeable {
 	 */
 	public byte[] readBytes(long offset, int length) throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(length);
-		read(buf, offset);
+		int read = read(buf, offset);
 		return buf.array();
 	}
 
@@ -326,7 +349,7 @@ public final class NioFile implements Closeable {
 	public void writeLong(long value, long offset) throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(8);
 		buf.putLong(0, value);
-		write(buf, offset);
+		int write = write(buf, offset);
 	}
 
 	/**
@@ -338,7 +361,7 @@ public final class NioFile implements Closeable {
 	 */
 	public long readLong(long offset) throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(8);
-		read(buf, offset);
+		int read = read(buf, offset);
 		return buf.getLong(0);
 	}
 
@@ -352,7 +375,7 @@ public final class NioFile implements Closeable {
 	public void writeInt(int value, long offset) throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(4);
 		buf.putInt(0, value);
-		write(buf, offset);
+		int write = write(buf, offset);
 	}
 
 	/**
@@ -364,7 +387,7 @@ public final class NioFile implements Closeable {
 	 */
 	public int readInt(long offset) throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(4);
-		read(buf, offset);
+		int read = read(buf, offset);
 		return buf.getInt(0);
 	}
 }
