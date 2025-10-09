@@ -9,10 +9,13 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.regex.Pattern;
 import java.util.zip.CRC32C;
+import java.util.zip.GZIPInputStream;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
@@ -24,9 +27,24 @@ public final class WalReader implements AutoCloseable {
 
 	private final WalConfig config;
 	private final JsonFactory jsonFactory = new JsonFactory();
+	// Streaming iteration state
+	private final List<Path> segments;
+	private int segIndex = -1;
+	private FileChannel channel;
+	private GZIPInputStream gzIn;
+	private boolean stop;
+	private boolean eos; // end-of-segment indicator for current stream
+	private long lastValidLsn = ValueStoreWAL.NO_LSN;
 
 	private WalReader(WalConfig config) {
 		this.config = Objects.requireNonNull(config, "config");
+		List<Path> segs;
+		try {
+			segs = listSegments();
+		} catch (IOException e) {
+			segs = List.of();
+		}
+		this.segments = segs;
 	}
 
 	public static WalReader open(WalConfig config) {
@@ -34,102 +52,54 @@ public final class WalReader implements AutoCloseable {
 	}
 
 	public ScanResult scan() throws IOException {
-		List<Path> segments = listSegments();
 		List<WalRecord> records = new ArrayList<>();
-		long lastValidLsn = ValueStoreWAL.NO_LSN;
-
-		for (Path segment : segments) {
-			if (segment.getFileName().toString().endsWith(".gz")) {
-				lastValidLsn = scanGzipSegment(segment, records, lastValidLsn);
-				continue;
+		try (WalReader reader = WalReader.open(config)) {
+			Iterator<WalRecord> it = reader.iterator();
+			while (it.hasNext()) {
+				records.add(it.next());
 			}
-			try (FileChannel channel = FileChannel.open(segment, StandardOpenOption.READ)) {
-				ByteBuffer header = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
-				while (true) {
-					header.clear();
-					int read = channel.read(header);
-					if (read == -1) {
-						break;
-					}
-					if (read < 4) {
-						// truncated record, stop scanning
-						return new ScanResult(records, lastValidLsn);
-					}
-					header.flip();
-					int length = header.getInt();
-					// Accept frames up to the configured max segment size to allow oversized records
-					if (length <= 0 || (long) length > config.maxSegmentBytes()) {
-						return new ScanResult(records, lastValidLsn);
-					}
-
-					ByteBuffer dataBuffer = ByteBuffer.allocate(length);
-					int bytesRead = channel.read(dataBuffer);
-					if (bytesRead < length) {
-						return new ScanResult(records, lastValidLsn);
-					}
-
-					ByteBuffer crcBuffer = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
-					int crcRead = channel.read(crcBuffer);
-					if (crcRead < 4) {
-						return new ScanResult(records, lastValidLsn);
-					}
-					crcBuffer.flip();
-					int expectedCrc = crcBuffer.getInt();
-
-					byte[] jsonBytes = dataBuffer.array();
-					CRC32C crc32c = new CRC32C();
-					crc32c.update(jsonBytes, 0, jsonBytes.length);
-					if ((int) crc32c.getValue() != expectedCrc) {
-						return new ScanResult(records, lastValidLsn);
-					}
-
-					Parsed parsed = parseJson(jsonBytes);
-					if (parsed.type == 'M') {
-						WalRecord record = new WalRecord(parsed.lsn, parsed.id, parsed.kind, parsed.lex, parsed.dt,
-								parsed.lang, parsed.hash);
-						records.add(record);
-						lastValidLsn = record.lsn();
-					} else {
-						if (parsed.lsn > lastValidLsn) {
-							lastValidLsn = parsed.lsn;
-						}
-					}
-				}
-			}
+			return new ScanResult(records, reader.lastValidLsn());
 		}
-
-		return new ScanResult(records, lastValidLsn);
 	}
 
-	private long scanGzipSegment(Path segment, List<WalRecord> out, long lastValidLsn) throws IOException {
-		try (java.util.zip.GZIPInputStream in = new java.util.zip.GZIPInputStream(Files.newInputStream(segment))) {
-			while (true) {
-				int length = readIntLE(in);
-				// Accept frames up to the configured max segment size to allow oversized records
-				if (length <= 0 || (long) length > config.maxSegmentBytes()) {
-					return lastValidLsn;
-				}
-				byte[] jsonBytes = in.readNBytes(length);
-				if (jsonBytes.length < length) {
-					return lastValidLsn;
-				}
-				int expectedCrc = readIntLE(in);
-				CRC32C crc32c = new CRC32C();
-				crc32c.update(jsonBytes, 0, jsonBytes.length);
-				if ((int) crc32c.getValue() != expectedCrc) {
-					return lastValidLsn;
-				}
-				Parsed parsed = parseJson(jsonBytes);
-				if (parsed.type == 'M') {
-					WalRecord record = new WalRecord(parsed.lsn, parsed.id, parsed.kind, parsed.lex, parsed.dt,
-							parsed.lang, parsed.hash);
-					out.add(record);
-					lastValidLsn = record.lsn();
-				} else if (parsed.lsn > lastValidLsn) {
-					lastValidLsn = parsed.lsn;
-				}
-			}
+	/** On-demand iterator over minted WAL records. */
+	public Iterator<WalRecord> iterator() {
+		return new RecordIterator();
+	}
+
+	/** Highest valid LSN observed during reading (iterator/scan). */
+	public long lastValidLsn() {
+		return lastValidLsn;
+	}
+
+	// Iterator utils: open/close segments and read single records
+	private boolean openNextSegment() throws IOException {
+		closeCurrentSegment();
+		segIndex++;
+		if (segIndex >= segments.size()) {
+			return false;
 		}
+		Path p = segments.get(segIndex);
+		if (p.getFileName().toString().endsWith(".gz")) {
+			gzIn = new GZIPInputStream(Files.newInputStream(p));
+			channel = null;
+		} else {
+			channel = FileChannel.open(p, StandardOpenOption.READ);
+			gzIn = null;
+		}
+		return true;
+	}
+
+	private void closeCurrentSegment() throws IOException {
+		if (channel != null && channel.isOpen()) {
+			channel.close();
+		}
+		channel = null;
+		if (gzIn != null) {
+			gzIn.close();
+		}
+		gzIn = null;
+		eos = false;
 	}
 
 	private static int readIntLE(java.io.InputStream in) throws IOException {
@@ -169,6 +139,173 @@ public final class WalReader implements AutoCloseable {
 			segments.add(it.path);
 		}
 		return segments;
+	}
+
+	private WalRecord readOneFromChannel() throws IOException {
+		ByteBuffer header = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
+		header.clear();
+		int read = channel.read(header);
+		if (read == -1) {
+			eos = true;
+			return null; // clean end of segment
+		}
+		if (read < 4) {
+			stop = true; // truncated header
+			return null;
+		}
+		header.flip();
+		int length = header.getInt();
+		if (length <= 0 || (long) length > config.maxSegmentBytes()) {
+			stop = true;
+			return null;
+		}
+		byte[] data = new byte[length];
+		ByteBuffer dataBuf = ByteBuffer.wrap(data);
+		int total = 0;
+		while (total < length) {
+			int n = channel.read(dataBuf);
+			if (n < 0) {
+				stop = true; // truncated record
+				return null;
+			}
+			total += n;
+		}
+		ByteBuffer crcBuf = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
+		int crcRead = channel.read(crcBuf);
+		if (crcRead < 4) {
+			stop = true;
+			return null;
+		}
+		crcBuf.flip();
+		int expectedCrc = crcBuf.getInt();
+		CRC32C crc32c = new CRC32C();
+		crc32c.update(data, 0, data.length);
+		if ((int) crc32c.getValue() != expectedCrc) {
+			stop = true;
+			return null;
+		}
+		Parsed parsed = parseJson(data);
+		if (parsed.type == 'M') {
+			WalRecord r = new WalRecord(parsed.lsn, parsed.id, parsed.kind, parsed.lex, parsed.dt, parsed.lang,
+					parsed.hash);
+			lastValidLsn = r.lsn();
+			return r;
+		}
+		if (parsed.lsn > lastValidLsn) {
+			lastValidLsn = parsed.lsn;
+		}
+		// non-minted record within segment; continue reading same segment
+		eos = false;
+		return null;
+	}
+
+	private WalRecord readOneFromGzip() throws IOException {
+		int length = readIntLE(gzIn);
+		if (length == -1) {
+			eos = true;
+			return null; // end of stream cleanly
+		}
+		if (length <= 0 || (long) length > config.maxSegmentBytes()) {
+			stop = true;
+			return null;
+		}
+		byte[] data = gzIn.readNBytes(length);
+		if (data.length < length) {
+			stop = true; // truncated
+			return null;
+		}
+		int expectedCrc = readIntLE(gzIn);
+		CRC32C crc32c = new CRC32C();
+		crc32c.update(data, 0, data.length);
+		if ((int) crc32c.getValue() != expectedCrc) {
+			stop = true;
+			return null;
+		}
+		Parsed parsed = parseJson(data);
+		if (parsed.type == 'M') {
+			WalRecord r = new WalRecord(parsed.lsn, parsed.id, parsed.kind, parsed.lex, parsed.dt, parsed.lang,
+					parsed.hash);
+			lastValidLsn = r.lsn();
+			return r;
+		}
+		if (parsed.lsn > lastValidLsn) {
+			lastValidLsn = parsed.lsn;
+		}
+		// non-minted record within segment; keep reading
+		eos = false;
+		return null;
+	}
+
+	private final class RecordIterator implements Iterator<WalRecord> {
+		private WalRecord next;
+		private boolean prepared;
+
+		@Override
+		public boolean hasNext() {
+			if (prepared) {
+				return next != null;
+			}
+			try {
+				prepareNext();
+			} catch (IOException e) {
+				stop = true;
+				next = null;
+			}
+			prepared = true;
+			return next != null;
+		}
+
+		@Override
+		public WalRecord next() {
+			if (!hasNext()) {
+				throw new NoSuchElementException();
+			}
+			prepared = false;
+			WalRecord r = next;
+			next = null;
+			return r;
+		}
+
+		private void prepareNext() throws IOException {
+			next = null;
+			if (stop) {
+				return;
+			}
+			while (true) {
+				if (channel == null && gzIn == null) {
+					if (!openNextSegment()) {
+						return; // no more segments
+					}
+				}
+				if (gzIn != null) {
+					WalRecord r = readOneFromGzip();
+					if (r != null) {
+						next = r;
+						return;
+					}
+					if (stop) {
+						return;
+					}
+					if (eos) {
+						closeCurrentSegment();
+					}
+					continue;
+				}
+				if (channel != null) {
+					WalRecord r = readOneFromChannel();
+					if (r != null) {
+						next = r;
+						return;
+					}
+					if (stop) {
+						return;
+					}
+					if (eos) {
+						closeCurrentSegment();
+					}
+				}
+			}
+		}
 	}
 
 	private Parsed parseJson(byte[] jsonBytes) throws IOException {
@@ -219,7 +356,11 @@ public final class WalReader implements AutoCloseable {
 
 	@Override
 	public void close() {
-		// no state to close
+		try {
+			closeCurrentSegment();
+		} catch (IOException e) {
+			// ignore on close
+		}
 	}
 
 	public static final class ScanResult {

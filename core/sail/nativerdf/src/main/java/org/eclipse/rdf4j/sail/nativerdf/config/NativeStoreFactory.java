@@ -75,6 +75,10 @@ public class NativeStoreFactory implements SailFactory {
 				nativeStore.setIterationCacheSyncThreshold(nativeConfig.getIterationCacheSyncThreshold());
 			}
 
+			if (nativeConfig.getWalMaxSegmentBytes() > 0) {
+				nativeStore.setWalMaxSegmentBytes(nativeConfig.getWalMaxSegmentBytes());
+			}
+
 			EvaluationStrategyFactory evalStratFactory = nativeConfig.getEvaluationStrategyFactory();
 			if (evalStratFactory != null) {
 				nativeStore.setEvaluationStrategyFactory(evalStratFactory);

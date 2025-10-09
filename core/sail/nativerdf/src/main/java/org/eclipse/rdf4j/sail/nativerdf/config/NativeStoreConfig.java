@@ -38,6 +38,9 @@ public class NativeStoreConfig extends BaseSailConfig {
 	private int namespaceCacheSize = -1;
 	private int namespaceIDCacheSize = -1;
 
+	// WAL: expose max segment bytes via config (optional)
+	private long walMaxSegmentBytes = -1L;
+
 	public NativeStoreConfig() {
 		super(NativeStoreFactory.SAIL_TYPE);
 	}
@@ -104,6 +107,14 @@ public class NativeStoreConfig extends BaseSailConfig {
 		this.namespaceIDCacheSize = namespaceIDCacheSize;
 	}
 
+	public long getWalMaxSegmentBytes() {
+		return walMaxSegmentBytes;
+	}
+
+	public void setWalMaxSegmentBytes(long walMaxSegmentBytes) {
+		this.walMaxSegmentBytes = walMaxSegmentBytes;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		if (Configurations.useLegacyConfig()) {
@@ -131,6 +142,11 @@ public class NativeStoreConfig extends BaseSailConfig {
 		if (namespaceIDCacheSize >= 0) {
 			m.add(implNode, CONFIG.Native.namespaceIDCacheSize, literal(namespaceIDCacheSize));
 		}
+		// new config property under CONFIG namespace: native:walMaxSegmentBytes
+		if (walMaxSegmentBytes >= 0) {
+			m.add(implNode, org.eclipse.rdf4j.model.util.Values.iri(CONFIG.NS, "walMaxSegmentBytes"),
+					literal(walMaxSegmentBytes));
+		}
 
 		return implNode;
 	}
@@ -157,6 +173,7 @@ public class NativeStoreConfig extends BaseSailConfig {
 		if (namespaceIDCacheSize >= 0) {
 			m.add(implNode, NAMESPACE_ID_CACHE_SIZE, literal(namespaceIDCacheSize));
 		}
+		// legacy export does not define a schema term; omit for legacy
 
 		return implNode;
 	}
@@ -222,6 +239,19 @@ public class NativeStoreConfig extends BaseSailConfig {
 							throw new SailConfigException(
 									"Integer value required for " + CONFIG.Native.namespaceIDCacheSize
 											+ " property, found " + lit);
+						}
+					});
+
+			// parse walMaxSegmentBytes from CONFIG namespace if present
+			Configurations
+					.getLiteralValue(m, implNode,
+							org.eclipse.rdf4j.model.util.Values.iri(CONFIG.NS, "walMaxSegmentBytes"), null)
+					.ifPresent(lit -> {
+						try {
+							setWalMaxSegmentBytes(lit.longValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException(
+									"Long value required for native:walMaxSegmentBytes property, found " + lit);
 						}
 					});
 		} catch (ModelException e) {

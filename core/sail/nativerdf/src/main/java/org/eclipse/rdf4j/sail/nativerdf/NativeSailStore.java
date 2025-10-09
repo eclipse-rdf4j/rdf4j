@@ -43,7 +43,6 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.BackingSailSource;
 import org.eclipse.rdf4j.sail.base.Changeset;
@@ -94,14 +93,16 @@ class NativeSailStore implements SailStore {
 	 */
 	public NativeSailStore(File dataDir, String tripleIndexes) throws IOException, SailException {
 		this(dataDir, tripleIndexes, false, ValueStore.VALUE_CACHE_SIZE, ValueStore.VALUE_ID_CACHE_SIZE,
-				ValueStore.NAMESPACE_CACHE_SIZE, ValueStore.NAMESPACE_ID_CACHE_SIZE);
+				ValueStore.NAMESPACE_CACHE_SIZE, ValueStore.NAMESPACE_ID_CACHE_SIZE, -1L);
 	}
 
 	/**
 	 * Creates a new {@link NativeSailStore}.
 	 */
+
 	public NativeSailStore(File dataDir, String tripleIndexes, boolean forceSync, int valueCacheSize,
-			int valueIDCacheSize, int namespaceCacheSize, int namespaceIDCacheSize) throws IOException, SailException {
+			int valueIDCacheSize, int namespaceCacheSize, int namespaceIDCacheSize, long walMaxSegmentBytes)
+			throws IOException, SailException {
 		NamespaceStore createdNamespaceStore = null;
 		ValueStoreWAL createdWal = null;
 		ValueStore createdValueStore = null;
@@ -112,10 +113,11 @@ class NativeSailStore implements SailStore {
 			createdNamespaceStore = new NamespaceStore(dataDir);
 			Path walDir = dataDir.toPath().resolve("wal");
 			String storeUuid = loadOrCreateWalUuid(walDir);
-			WalConfig walConfig = WalConfig.builder()
-					.walDirectory(walDir)
-					.storeUuid(storeUuid)
-					.build();
+			WalConfig.Builder walBuilder = WalConfig.builder().walDirectory(walDir).storeUuid(storeUuid);
+			if (walMaxSegmentBytes > 0) {
+				walBuilder.maxSegmentBytes(walMaxSegmentBytes);
+			}
+			WalConfig walConfig = walBuilder.build();
 			createdWal = ValueStoreWAL.open(walConfig);
 			createdValueStore = new ValueStore(dataDir, forceSync, valueCacheSize, valueIDCacheSize,
 					namespaceCacheSize, namespaceIDCacheSize, createdWal);

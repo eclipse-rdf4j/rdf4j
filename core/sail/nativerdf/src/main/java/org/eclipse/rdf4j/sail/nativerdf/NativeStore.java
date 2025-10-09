@@ -182,6 +182,9 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 */
 	private final LockManager disabledIsolationLockManager = new LockManager(debugEnabled());
 
+	// Optional WAL configuration propagated into NativeSailStore
+	private long walMaxSegmentBytes = -1L;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -260,6 +263,14 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	public void setNamespaceIDCacheSize(int namespaceIDCacheSize) {
 		this.namespaceIDCacheSize = namespaceIDCacheSize;
+	}
+
+	public void setWalMaxSegmentBytes(long walMaxSegmentBytes) {
+		this.walMaxSegmentBytes = walMaxSegmentBytes;
+	}
+
+	public long getWalMaxSegmentBytes() {
+		return walMaxSegmentBytes;
 	}
 
 	/**
@@ -354,7 +365,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 						StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
 			}
 			final NativeSailStore mainStore = new NativeSailStore(dataDir, tripleIndexes, forceSync, valueCacheSize,
-					valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize);
+					valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize, walMaxSegmentBytes);
 			this.store = new SnapshotSailStore(mainStore, () -> new MemoryOverflowIntoNativeStore()) {
 
 				@Override
