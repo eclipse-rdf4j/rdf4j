@@ -57,7 +57,8 @@ public final class WalReader implements AutoCloseable {
 					}
 					header.flip();
 					int length = header.getInt();
-					if (length <= 0 || length > config.batchBufferBytes() * 4) {
+					// Accept frames up to the configured max segment size to allow oversized records
+					if (length <= 0 || (long) length > config.maxSegmentBytes()) {
 						return new ScanResult(records, lastValidLsn);
 					}
 
@@ -104,7 +105,8 @@ public final class WalReader implements AutoCloseable {
 		try (java.util.zip.GZIPInputStream in = new java.util.zip.GZIPInputStream(Files.newInputStream(segment))) {
 			while (true) {
 				int length = readIntLE(in);
-				if (length <= 0 || length > config.batchBufferBytes() * 4) {
+				// Accept frames up to the configured max segment size to allow oversized records
+				if (length <= 0 || (long) length > config.maxSegmentBytes()) {
 					return lastValidLsn;
 				}
 				byte[] jsonBytes = in.readNBytes(length);

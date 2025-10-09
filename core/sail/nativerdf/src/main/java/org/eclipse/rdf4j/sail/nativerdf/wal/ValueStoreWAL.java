@@ -291,13 +291,30 @@ public final class ValueStoreWAL implements AutoCloseable {
 				flushBuffer();
 				rotateSegment();
 			}
-			if (ioBuffer.remaining() < framedLength) {
+			// Write header length (4 bytes)
+			if (ioBuffer.remaining() < 4) {
 				flushBuffer();
 			}
 			ioBuffer.putInt(jsonBytes.length);
-			ioBuffer.put(jsonBytes);
+
+			// Write JSON payload in chunks to avoid BufferOverflowException
+			int offset = 0;
+			while (offset < jsonBytes.length) {
+				if (ioBuffer.remaining() == 0) {
+					flushBuffer();
+				}
+				int toWrite = Math.min(ioBuffer.remaining(), jsonBytes.length - offset);
+				ioBuffer.put(jsonBytes, offset, toWrite);
+				offset += toWrite;
+			}
+
+			// Write CRC (4 bytes)
 			int crc = checksum(jsonBytes);
+			if (ioBuffer.remaining() < 4) {
+				flushBuffer();
+			}
 			ioBuffer.putInt(crc);
+
 			segmentBytes += framedLength;
 			lastAppendedLsn.set(record.lsn());
 		}
