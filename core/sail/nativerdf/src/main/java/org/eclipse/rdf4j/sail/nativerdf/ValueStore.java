@@ -67,6 +67,9 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 
 	private static final Logger logger = LoggerFactory.getLogger(ValueStore.class);
 
+	private static final String WAL_RECOVERY_LOG_PROP = "org.eclipse.rdf4j.sail.nativerdf.wal.recoveryLog";
+	private static final String WAL_RECOVERY_LOG = System.getProperty(WAL_RECOVERY_LOG_PROP, "debug").toLowerCase();
+
 	/**
 	 * The default value cache size.
 	 */
@@ -719,10 +722,27 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 			if (nv != null) {
 				nv.setInternalID(id, revision);
 				holder.setRecovered(nv);
-				logger.info("Recovered value for id {} from WAL as {}", id, nv.stringValue());
+				logRecovered(id, nv);
 			}
 		} catch (IOException ioe) {
 			// ignore recovery failures
+		}
+	}
+
+	private void logRecovered(int id, NativeValue nv) {
+		switch (WAL_RECOVERY_LOG) {
+		case "trace":
+			if (logger.isTraceEnabled()) {
+				logger.trace("Recovered value for id {} from WAL as {}", id, nv.stringValue());
+			}
+			break;
+		case "debug":
+			if (logger.isDebugEnabled()) {
+				logger.debug("Recovered value for id {} from WAL as {}", id, nv.stringValue());
+			}
+			break;
+		default:
+			// off or unknown: no-op
 		}
 	}
 
