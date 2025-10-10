@@ -482,8 +482,15 @@ public final class ValueStoreWAL implements AutoCloseable {
 			}
 			long forced = lastAppendedLsn.get();
 			lastForcedLsn.set(forced);
-			if (requestedForceLsn.get() <= forced) {
-				requestedForceLsn.set(NO_LSN);
+			// Clear pending force request without dropping newer requests that may arrive concurrently.
+			// Use CAS to only clear if the observed value is still <= forced; if another thread published
+			// a higher LSN in the meantime, we must not overwrite it with NO_LSN.
+			long cur = requestedForceLsn.get();
+			while (cur != NO_LSN && cur <= forced) {
+				if (requestedForceLsn.compareAndSet(cur, NO_LSN)) {
+					break;
+				}
+				cur = requestedForceLsn.get();
 			}
 			synchronized (ackMonitor) {
 				ackMonitor.notifyAll();
