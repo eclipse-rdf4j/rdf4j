@@ -16,10 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
-import java.util.List;
 import java.util.UUID;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.Test;
@@ -31,7 +28,7 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class ValueStoreWALMonotonicSegmentTest {
 
-	private static final Pattern SEGMENT_GZ = Pattern.compile("wal-(\\d{8})\\.v1\\.gz");
+	private static final Pattern SEGMENT_GZ = Pattern.compile("wal-(\\d+)\\.v1\\.gz");
 
 	@TempDir
 	Path tempDir;
@@ -48,9 +45,10 @@ class ValueStoreWALMonotonicSegmentTest {
 				.build();
 
 		// 1) Start WAL and generate enough records to produce at least one compressed segment
+		int minted = 200;
 		long lastLsn;
 		try (ValueStoreWAL wal = ValueStoreWAL.open(cfg)) {
-			lastLsn = mintMany(wal, 200);
+			lastLsn = mintMany(wal, minted);
 			wal.awaitDurable(lastLsn);
 		}
 
@@ -65,7 +63,8 @@ class ValueStoreWALMonotonicSegmentTest {
 		// 2) Restart WAL; on open it creates the next bare segment immediately
 		int expectedNext = maxCompressedSeq(walDir) + 1;
 		try (ValueStoreWAL wal = ValueStoreWAL.open(cfg)) {
-			// no-op; opening creates the new segment file
+			long lsn = wal.logMint(minted + 1, ValueKind.LITERAL, "restart", "http://example/dt", "", 17);
+			wal.awaitDurable(lsn);
 		}
 
 		int openedSeq = currentBareSegmentSeq(walDir);
@@ -84,21 +83,15 @@ class ValueStoreWALMonotonicSegmentTest {
 	}
 
 	private static int maxCompressedSeq(Path walDir) throws IOException {
-		List<String> names;
-		try (var stream = Files.list(walDir)) {
-			names = stream
-					.map(p -> p.getFileName().toString())
-					.filter(n -> SEGMENT_GZ.matcher(n).matches())
-					.sorted(Comparator.naturalOrder())
-					.collect(java.util.stream.Collectors.toList());
-		}
 		int max = 0;
-		for (String n : names) {
-			Matcher m = SEGMENT_GZ.matcher(n);
-			if (m.matches()) {
-				int seq = Integer.parseInt(m.group(1));
-				if (seq > max)
-					max = seq;
+		try (var stream = Files.list(walDir)) {
+			for (Path path : (Iterable<Path>) stream::iterator) {
+				if (SEGMENT_GZ.matcher(path.getFileName().toString()).matches()) {
+					int seq = ValueStoreWAL.readSegmentSequence(path);
+					if (seq > max) {
+						max = seq;
+					}
+				}
 			}
 		}
 		return max;
@@ -131,8 +124,10 @@ class ValueStoreWALMonotonicSegmentTest {
 			for (Path p : (Iterable<Path>) stream::iterator) {
 				String name = p.getFileName().toString();
 				if (name.startsWith("wal-") && name.endsWith(".v1")) {
-					String num = name.substring("wal-".length(), "wal-".length() + 8);
-					seq = Integer.parseInt(num);
+					int current = ValueStoreWAL.readSegmentSequence(p);
+					if (current > seq) {
+						seq = current;
+					}
 				}
 			}
 		}

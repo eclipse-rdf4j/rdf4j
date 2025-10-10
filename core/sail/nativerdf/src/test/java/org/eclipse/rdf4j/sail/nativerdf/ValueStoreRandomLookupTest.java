@@ -57,7 +57,7 @@ import com.fasterxml.jackson.core.JsonToken;
 
 class ValueStoreRandomLookupTest {
 
-	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d{8})\\.v1(?:\\.gz)?");
+	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d+)\\.v1(?:\\.gz)?");
 	private static final JsonFactory JSON_FACTORY = new JsonFactory();
 
 	@TempDir
@@ -127,7 +127,7 @@ class ValueStoreRandomLookupTest {
 			}
 
 			List<Path> orderedSegments = new ArrayList<>(statsBySegment.keySet());
-			orderedSegments.sort(Comparator.comparingInt(ValueStoreRandomLookupTest::extractSequence));
+			orderedSegments.sort(Comparator.comparingInt(p -> statsBySegment.get(p).sequence()));
 			assertThat(orderedSegments).isNotEmpty();
 			Path firstSegment = orderedSegments.get(0);
 			Path currentSegment = orderedSegments.get(orderedSegments.size() - 1);
@@ -218,14 +218,14 @@ class ValueStoreRandomLookupTest {
 			for (Path path : stream.collect(Collectors.toList())) {
 				Matcher matcher = SEGMENT_PATTERN.matcher(path.getFileName().toString());
 				if (matcher.matches()) {
-					stats.put(path, analyzeSingleSegment(path, matcher, config));
+					stats.put(path, analyzeSingleSegment(path, config));
 				}
 			}
 		}
 		return stats;
 	}
 
-	private static SegmentStats analyzeSingleSegment(Path path, Matcher matcher, WalConfig config) throws IOException {
+	private static SegmentStats analyzeSingleSegment(Path path, WalConfig config) throws IOException {
 		boolean compressed = path.getFileName().toString().endsWith(".gz");
 		byte[] content;
 		if (compressed) {
@@ -235,7 +235,8 @@ class ValueStoreRandomLookupTest {
 		} else {
 			content = Files.readAllBytes(path);
 		}
-		SegmentStats stats = new SegmentStats(path, Integer.parseInt(matcher.group(1)), compressed, content);
+		int sequence = headerSequence(content);
+		SegmentStats stats = new SegmentStats(path, sequence, compressed, content);
 		ByteBuffer buffer = ByteBuffer.wrap(content).order(ByteOrder.LITTLE_ENDIAN);
 		while (buffer.remaining() >= Integer.BYTES) {
 			int frameStart = buffer.position();
@@ -266,12 +267,21 @@ class ValueStoreRandomLookupTest {
 		return stats;
 	}
 
-	private static int extractSequence(Path path) {
-		Matcher matcher = SEGMENT_PATTERN.matcher(path.getFileName().toString());
-		if (!matcher.matches()) {
-			return -1;
+	private static int headerSequence(byte[] content) throws IOException {
+		ByteBuffer buffer = ByteBuffer.wrap(content).order(ByteOrder.LITTLE_ENDIAN);
+		if (buffer.remaining() < Integer.BYTES) {
+			return 0;
 		}
-		return Integer.parseInt(matcher.group(1));
+		int headerLen = buffer.getInt();
+		if (headerLen <= 0 || buffer.remaining() < headerLen + Integer.BYTES) {
+			return 0;
+		}
+		byte[] header = new byte[headerLen];
+		buffer.get(header);
+		// skip header crc
+		buffer.getInt();
+		ParsedRecord parsed = ParsedRecord.parse(header);
+		return parsed.segment;
 	}
 
 	private static long crc32(byte[] content, int limit) {
@@ -315,12 +325,14 @@ class ValueStoreRandomLookupTest {
 		final int id;
 		final long crc32;
 		final ValueKind kind;
+		final int segment;
 
-		ParsedRecord(char type, int id, long crc32, ValueKind kind) {
+		ParsedRecord(char type, int id, long crc32, ValueKind kind, int segment) {
 			this.type = type;
 			this.id = id;
 			this.crc32 = crc32;
 			this.kind = kind;
+			this.segment = segment;
 		}
 
 		static ParsedRecord parse(byte[] json) throws IOException {
@@ -329,6 +341,7 @@ class ValueStoreRandomLookupTest {
 				int id = 0;
 				long crc32 = 0L;
 				ValueKind kind = ValueKind.NAMESPACE;
+				int segment = 0;
 				while (parser.nextToken() != null) {
 					JsonToken token = parser.currentToken();
 					if (token == JsonToken.FIELD_NAME) {
@@ -344,12 +357,14 @@ class ValueStoreRandomLookupTest {
 						} else if ("vk".equals(field)) {
 							String code = parser.getValueAsString("");
 							kind = ValueKind.fromCode(code);
+						} else if ("segment".equals(field)) {
+							segment = parser.getValueAsInt(0);
 						} else {
 							parser.skipChildren();
 						}
 					}
 				}
-				return new ParsedRecord(type, id, crc32, kind);
+				return new ParsedRecord(type, id, crc32, kind, segment);
 			}
 		}
 	}
