@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.common.io;
 
 import java.io.Closeable;
+import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -22,6 +23,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.EnumSet;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 /**
  * File wrapper that protects against concurrent file closing events due to e.g. {@link Thread#interrupt() thread
@@ -44,6 +46,13 @@ public final class NioFile implements Closeable {
 	private final Set<StandardOpenOption> openOptions;
 
 	private volatile FileChannel fc;
+
+	/**
+	 * Disable strict guards via system property to maintain legacy behavior without additional exceptions. Property:
+	 * org.eclipse.rdf4j.common.io.niofile.disableStrictGuards (default: false)
+	 */
+	private static final boolean STRICT_GUARDS = !Boolean
+			.getBoolean("org.eclipse.rdf4j.common.io.niofile.disableStrictGuards");
 
 	private volatile boolean explictlyClosed;
 
@@ -125,6 +134,46 @@ public final class NioFile implements Closeable {
 	public synchronized void close() throws IOException {
 		explictlyClosed = true;
 		fc.close();
+	}
+
+	private static final long LARGE_READ_THRESHOLD = 128L * 1024 * 1024; // 128MB
+
+	/**
+	 * Ensure that there appears to be sufficient free heap memory to satisfy a large read request. Attempts up to 5 GC
+	 * cycles with a short pause between to reclaim memory. If still insufficient, throws an IOException with guidance
+	 * that this may indicate corruption and how to enable soft-fail mode.
+	 */
+	private static void ensureHeapForLargeRead(long bytes) throws IOException {
+		if (!STRICT_GUARDS) {
+			return;
+		}
+		if (bytes <= LARGE_READ_THRESHOLD) {
+			return;
+		}
+		Runtime rt = Runtime.getRuntime();
+		for (int i = 0; i < 6; i++) { // initial check + up to 5 GC attempts
+			long allocated = rt.totalMemory() - rt.freeMemory();
+			long free = rt.maxMemory() - allocated;
+			if (free >= bytes) {
+				return;
+			}
+			if (i < 5) {
+				System.gc();
+				try {
+					TimeUnit.SECONDS.sleep(1);
+				} catch (InterruptedException ie) {
+					Thread.currentThread().interrupt();
+					break;
+				}
+			}
+		}
+		long mb = bytes / (1024 * 1024);
+		long allocated = rt.totalMemory() - rt.freeMemory();
+		long free = rt.maxMemory() - allocated;
+		long freeMb = free / (1024 * 1024);
+		throw new IOException(
+				"Attempt to read " + mb + " MB but only " + freeMb
+						+ " MB free heap available. This may indicate corrupted data length. Consider enabling soft-fail mode via system property 'org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes=true' to attempt recovery.");
 	}
 
 	/**
@@ -269,6 +318,8 @@ public final class NioFile implements Closeable {
 	 * @throws IOException
 	 */
 	public int read(ByteBuffer buf, long offset) throws IOException {
+		// For very large reads, ensure we have enough free heap headroom for the buffer contents
+		ensureHeapForLargeRead(buf.remaining());
 		while (true) {
 			try {
 				int totalRead = 0;
@@ -301,7 +352,7 @@ public final class NioFile implements Closeable {
 	 */
 	public void writeBytes(byte[] value, long offset) throws IOException {
 		int write = write(ByteBuffer.wrap(value), offset);
-		if (write != value.length) {
+		if (STRICT_GUARDS && write != value.length) {
 			throw new IOException("Incomplete writeBytes: expected " + value.length + ", wrote " + write);
 		}
 	}
@@ -315,10 +366,11 @@ public final class NioFile implements Closeable {
 	 * @throws IOException
 	 */
 	public byte[] readBytes(long offset, int length) throws IOException {
+		ensureHeapForLargeRead(length);
 		ByteBuffer buf = ByteBuffer.allocate(length);
 		int read = read(buf, offset);
-		if (read < length) {
-			throw new IOException("Unexpected EOF in readBytes: expected " + length + ", read " + read);
+		if (STRICT_GUARDS && read < length) {
+			throw new EOFException("Unexpected EOF in readBytes: expected " + length + ", read " + read);
 		}
 		return buf.array();
 	}
@@ -356,7 +408,7 @@ public final class NioFile implements Closeable {
 		ByteBuffer buf = ByteBuffer.allocate(8);
 		buf.putLong(0, value);
 		int write = write(buf, offset);
-		if (write != 8) {
+		if (STRICT_GUARDS && write != 8) {
 			throw new IOException("Incomplete writeLong: wrote " + write);
 		}
 	}
@@ -371,8 +423,8 @@ public final class NioFile implements Closeable {
 	public long readLong(long offset) throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(8);
 		int read = read(buf, offset);
-		if (read < 8) {
-			throw new IOException("Unexpected EOF in readLong: read " + read);
+		if (STRICT_GUARDS && read < 8) {
+			throw new EOFException("Unexpected EOF in readLong: read " + read);
 		}
 		return buf.getLong(0);
 	}
@@ -388,7 +440,7 @@ public final class NioFile implements Closeable {
 		ByteBuffer buf = ByteBuffer.allocate(4);
 		buf.putInt(0, value);
 		int write = write(buf, offset);
-		if (write != 4) {
+		if (STRICT_GUARDS && write != 4) {
 			throw new IOException("Incomplete writeInt: wrote " + write);
 		}
 	}
@@ -403,8 +455,8 @@ public final class NioFile implements Closeable {
 	public int readInt(long offset) throws IOException {
 		ByteBuffer buf = ByteBuffer.allocate(4);
 		int read = read(buf, offset);
-		if (read < 4) {
-			throw new IOException("Unexpected EOF in readInt: read " + read);
+		if (STRICT_GUARDS && read < 4) {
+			throw new EOFException("Unexpected EOF in readInt: read " + read);
 		}
 		return buf.getInt(0);
 	}
