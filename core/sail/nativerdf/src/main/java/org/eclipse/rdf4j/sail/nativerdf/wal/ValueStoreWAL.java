@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.wal;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -23,7 +24,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -55,6 +55,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 	public static final long NO_LSN = -1L;
 
 	static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d+)\\.v1(?:\\.gz)?");
+	public static final int MAX_FRAME_BYTES = 512 * 1024 * 1024; // 512 MiB safety cap
 
 	private final WalConfig config;
 	private final BlockingQueue<WalRecord> queue;
@@ -573,7 +574,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 				out.finish();
 				// Verify gzip contains full original data plus summary by reading back and counting bytes
 				long decompressedBytes = 0L;
-				try (var gin = new java.util.zip.GZIPInputStream(Files.newInputStream(gz))) {
+				try (var gin = new GZIPInputStream(Files.newInputStream(gz))) {
 					while ((r = gin.read(buf)) >= 0) {
 						decompressedBytes += r;
 					}
@@ -599,7 +600,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 
 		private byte[] buildSummaryFrame(int lastMintedId, long crc32Value) throws IOException {
 			JsonFactory factory = new JsonFactory();
-			java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream(128);
+			ByteArrayOutputStream baos = new ByteArrayOutputStream(128);
 			try (JsonGenerator gen = factory.createGenerator(baos)) {
 				gen.writeStartObject();
 				gen.writeStringField("t", "S");
@@ -622,7 +623,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 
 		private void writeHeader(int firstId) throws IOException {
 			JsonFactory factory = new JsonFactory();
-			java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream(256);
+			ByteArrayOutputStream baos = new ByteArrayOutputStream(256);
 			try (JsonGenerator gen = factory.createGenerator(baos)) {
 				gen.writeStartObject();
 				gen.writeStringField("t", "V");
@@ -657,7 +658,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 
 		private byte[] encode(WalRecord record) throws IOException {
 			JsonFactory factory = new JsonFactory();
-			java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream(256);
+			ByteArrayOutputStream baos = new ByteArrayOutputStream(256);
 			try (JsonGenerator gen = factory.createGenerator(baos)) {
 				gen.writeStartObject();
 				gen.writeStringField("t", "M");

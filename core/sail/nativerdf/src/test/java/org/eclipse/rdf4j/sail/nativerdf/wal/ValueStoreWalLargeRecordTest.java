@@ -68,4 +68,50 @@ class ValueStoreWalLargeRecordTest {
 					&& r.lexical().length() == sizeBytes);
 		}
 	}
+
+	@Test
+	void logsLargeLiteralWithSmallSegmentLimit() throws Exception {
+		Path walDir = tempDir.resolve("wal-small");
+		Files.createDirectories(walDir);
+		WalConfig config = WalConfig.builder()
+				.walDirectory(walDir)
+				.storeUuid(UUID.randomUUID().toString())
+				.maxSegmentBytes(32 * 1024)
+				.build();
+
+		int sizeBytes = 50 * 1024; // 50 KiB > segment limit
+		String large = "b".repeat(sizeBytes);
+		Literal literal = SimpleValueFactory.getInstance().createLiteral(large);
+
+		try (ValueStoreWAL wal = ValueStoreWAL.open(config)) {
+			File valueDir = tempDir.resolve("values-small").toFile();
+			Files.createDirectories(valueDir.toPath());
+			try (ValueStore store = new ValueStore(valueDir, false, ValueStore.VALUE_CACHE_SIZE,
+					ValueStore.VALUE_ID_CACHE_SIZE, ValueStore.NAMESPACE_CACHE_SIZE,
+					ValueStore.NAMESPACE_ID_CACHE_SIZE, wal)) {
+				store.storeValue(literal);
+				OptionalLong lsn = store.drainPendingWalHighWaterMark();
+				assertThat(lsn).isPresent();
+				wal.awaitDurable(lsn.getAsLong());
+			}
+		}
+
+		try (WalReader reader = WalReader.open(config)) {
+			WalReader.ScanResult scan = reader.scan();
+			assertThat(scan.records())
+					.anyMatch(r -> r.valueKind() == ValueKind.LITERAL && r.lexical().equals(large));
+		}
+
+		WalSearch search = WalSearch.open(config);
+		ValueKind[] foundKind = new ValueKind[1];
+		try (WalReader reader = WalReader.open(config)) {
+			for (WalRecord rec : reader.scan().records()) {
+				if (rec.lexical().equals(large)) {
+					foundKind[0] = rec.valueKind();
+					break;
+				}
+			}
+		}
+		assertThat(foundKind[0]).isEqualTo(ValueKind.LITERAL);
+	}
 }

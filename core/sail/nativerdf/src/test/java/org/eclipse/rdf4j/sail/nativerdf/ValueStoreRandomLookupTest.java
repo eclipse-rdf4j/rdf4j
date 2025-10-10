@@ -36,6 +36,7 @@ import java.util.stream.Collectors;
 import java.util.zip.CRC32;
 import java.util.zip.GZIPInputStream;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -43,6 +44,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreConfig;
 import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueKind;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
 import org.eclipse.rdf4j.sail.nativerdf.wal.WalConfig;
 import org.eclipse.rdf4j.sail.nativerdf.wal.WalReader;
 import org.eclipse.rdf4j.sail.nativerdf.wal.WalRecord;
@@ -67,17 +69,19 @@ class ValueStoreRandomLookupTest {
 	@Test
 	void randomLookup50() throws Exception {
 		NativeStoreConfig cfg = new NativeStoreConfig("spoc,ospc,psoc");
-		cfg.setWalMaxSegmentBytes(1 << 13);
+		cfg.setWalMaxSegmentBytes(1024 * 1024 * 4);
 		NativeStore store = (NativeStore) new org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreFactory().getSail(cfg);
 		store.setDataDir(dataDir);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
 			try (InputStream in = getClass().getClassLoader()
 					.getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl")) {
 				assertThat(in).as("benchmarkFiles/datagovbe-valid.ttl should be on classpath").isNotNull();
 				connection.add(in, "", RDFFormat.TURTLE);
 			}
+			connection.commit();
 		}
 		repository.shutDown();
 		Path walDir = dataDir.toPath().resolve("wal");
@@ -242,7 +246,7 @@ class ValueStoreRandomLookupTest {
 		while (buffer.remaining() >= Integer.BYTES) {
 			int frameStart = buffer.position();
 			int length = buffer.getInt();
-			if (length <= 0 || length > config.maxSegmentBytes()) {
+			if (length <= 0 || length > ValueStoreWAL.MAX_FRAME_BYTES) {
 				break;
 			}
 			if (buffer.remaining() < length + Integer.BYTES) {

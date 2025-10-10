@@ -24,7 +24,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.regex.Pattern;
 import java.util.zip.CRC32C;
 import java.util.zip.GZIPInputStream;
@@ -58,20 +57,10 @@ public final class WalSearch {
 	}
 
 	public Value findValueById(int id) throws IOException {
-		List<Path> segments = listSegments();
-		if (segments.isEmpty())
+		List<SegFirst> firsts = listSegmentFirsts();
+		if (firsts.isEmpty()) {
 			return null;
-
-		// Precompute first minted ID per segment (skip segments with none)
-		List<SegFirst> firsts = new ArrayList<>(segments.size());
-		for (Path seg : segments) {
-			OptionalInt f = firstMintedId(seg);
-			if (f.isPresent()) {
-				firsts.add(new SegFirst(seg, f.getAsInt()));
-			}
 		}
-		if (firsts.isEmpty())
-			return null;
 
 		// Binary search for last segment whose firstId <= id
 		int lo = 0, hi = firsts.size() - 1, best = -1;
@@ -103,17 +92,8 @@ public final class WalSearch {
 		}
 	}
 
-	private List<Path> listSegments() throws IOException {
-		class Item {
-			final Path path;
-			final long firstId;
-
-			Item(Path p, long firstId) {
-				this.path = p;
-				this.firstId = firstId;
-			}
-		}
-		List<Item> items = new ArrayList<>();
+	private List<SegFirst> listSegmentFirsts() throws IOException {
+		List<SegFirst> items = new ArrayList<>();
 		if (!Files.isDirectory(config.walDirectory())) {
 			return List.of();
 		}
@@ -122,83 +102,14 @@ public final class WalSearch {
 				var m = SEGMENT_PATTERN.matcher(p.getFileName().toString());
 				if (m.matches()) {
 					long firstId = Long.parseLong(m.group(1));
-					items.add(new Item(p, firstId));
+					if (firstId >= Integer.MIN_VALUE && firstId <= Integer.MAX_VALUE) {
+						items.add(new SegFirst(p, (int) firstId));
+					}
 				}
 			});
 		}
-		items.sort(Comparator.comparingLong(it -> it.firstId));
-		List<Path> out = new ArrayList<>(items.size());
-		for (Item it : items)
-			out.add(it.path);
-		return out;
-	}
-
-	private OptionalInt firstMintedId(Path segment) throws IOException {
-		if (segment.getFileName().toString().endsWith(".gz")) {
-			try (GZIPInputStream in = new GZIPInputStream(Files.newInputStream(segment))) {
-				return readFirstMintedId(in);
-			}
-		}
-		try (FileChannel ch = FileChannel.open(segment, StandardOpenOption.READ)) {
-			ByteBuffer header = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
-			while (true) {
-				header.clear();
-				int r = ch.read(header);
-				if (r == -1)
-					return OptionalInt.empty();
-				if (r < 4)
-					return OptionalInt.empty();
-				header.flip();
-				int length = header.getInt();
-				if (length <= 0 || (long) length > config.maxSegmentBytes())
-					return OptionalInt.empty();
-				byte[] data = new byte[length];
-				ByteBuffer dataBuf = ByteBuffer.wrap(data);
-				int total = 0;
-				while (total < length) {
-					int n = ch.read(dataBuf);
-					if (n < 0)
-						return OptionalInt.empty();
-					total += n;
-				}
-				ByteBuffer crcBuf = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
-				int crcRead = ch.read(crcBuf);
-				if (crcRead < 4)
-					return OptionalInt.empty();
-				crcBuf.flip();
-				int expectedCrc = crcBuf.getInt();
-				CRC32C crc32c = new CRC32C();
-				crc32c.update(data, 0, data.length);
-				if ((int) crc32c.getValue() != expectedCrc)
-					return OptionalInt.empty();
-				Parsed p = parseJson(data);
-				if (p.type == 'M') {
-					return OptionalInt.of(p.id);
-				}
-				// else: continue to next frame (skip headers or other types)
-			}
-		}
-	}
-
-	private OptionalInt readFirstMintedId(InputStream in) throws IOException {
-		while (true) {
-			int length = readIntLE(in);
-			if (length == -1)
-				return OptionalInt.empty();
-			if (length <= 0 || (long) length > config.maxSegmentBytes())
-				return OptionalInt.empty();
-			byte[] data = in.readNBytes(length);
-			if (data.length < length)
-				return OptionalInt.empty();
-			int expectedCrc = readIntLE(in);
-			CRC32C crc32c = new CRC32C();
-			crc32c.update(data, 0, data.length);
-			if ((int) crc32c.getValue() != expectedCrc)
-				return OptionalInt.empty();
-			Parsed p = parseJson(data);
-			if (p.type == 'M')
-				return OptionalInt.of(p.id);
-		}
+		items.sort(Comparator.comparingInt(it -> it.firstId));
+		return items;
 	}
 
 	private Optional<Value> scanSegmentForId(Path segment, int targetId) throws IOException {
@@ -208,7 +119,7 @@ public final class WalSearch {
 					int length = readIntLE(in);
 					if (length == -1)
 						return Optional.empty();
-					if (length <= 0 || (long) length > config.maxSegmentBytes())
+					if (length <= 0 || (long) length > ValueStoreWAL.MAX_FRAME_BYTES)
 						return Optional.empty();
 					byte[] data = in.readNBytes(length);
 					if (data.length < length)
@@ -220,7 +131,10 @@ public final class WalSearch {
 						return Optional.empty();
 					Parsed p = parseJson(data);
 					if (p.type == 'M' && p.id == targetId) {
-						return Optional.of(toValue(p));
+						Value value = toValue(p);
+						if (value != null) {
+							return Optional.of(value);
+						}
 					}
 				}
 			}
@@ -236,7 +150,7 @@ public final class WalSearch {
 					return Optional.empty();
 				header.flip();
 				int length = header.getInt();
-				if (length <= 0 || (long) length > config.maxSegmentBytes())
+				if (length <= 0 || (long) length > ValueStoreWAL.MAX_FRAME_BYTES)
 					return Optional.empty();
 				byte[] data = new byte[length];
 				ByteBuffer dataBuf = ByteBuffer.wrap(data);
@@ -259,7 +173,10 @@ public final class WalSearch {
 					return Optional.empty();
 				Parsed p = parseJson(data);
 				if (p.type == 'M' && p.id == targetId) {
-					return Optional.of(toValue(p));
+					Value value = toValue(p);
+					if (value != null) {
+						return Optional.of(value);
+					}
 				}
 			}
 		}

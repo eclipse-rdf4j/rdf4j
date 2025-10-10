@@ -213,7 +213,7 @@ public final class WalReader implements AutoCloseable {
 		}
 		header.flip();
 		int length = header.getInt();
-		if (length <= 0 || (long) length > config.maxSegmentBytes()) {
+		if (length <= 0 || (long) length > ValueStoreWAL.MAX_FRAME_BYTES) {
 			stop = true;
 			return null;
 		}
@@ -263,7 +263,7 @@ public final class WalReader implements AutoCloseable {
 			eos = true;
 			return null; // end of stream cleanly
 		}
-		if (length <= 0 || (long) length > config.maxSegmentBytes()) {
+		if (length <= 0 || (long) length > ValueStoreWAL.MAX_FRAME_BYTES) {
 			stop = true;
 			return null;
 		}

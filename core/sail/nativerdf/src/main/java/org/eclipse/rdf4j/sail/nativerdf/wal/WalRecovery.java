@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.sail.nativerdf.wal;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
