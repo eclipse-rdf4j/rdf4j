@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.NoSuchElementException;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.io.NioFile;
 import org.slf4j.Logger;
@@ -49,6 +50,12 @@ public class DataFile implements Closeable {
 	private static final byte FILE_FORMAT_VERSION = 1;
 
 	private static final long HEADER_LENGTH = MAGIC_NUMBER.length + 1;
+
+	// Guard parameters
+	private static final long LARGE_READ_THRESHOLD = 128L * 1024 * 1024; // 128MB
+	private static final int SOFT_FAIL_CAP_BYTES = 32 * 1024 * 1024; // 32MB
+	private static final boolean SIMULATE_LOW_HEAP_FOR_TESTS = Boolean
+			.getBoolean("org.eclipse.rdf4j.sail.nativerdf.datastore.DataFile.simulateLowHeapForTests");
 
 	/*-----------*
 	 * Variables *
@@ -203,16 +210,8 @@ public class DataFile implements Closeable {
 				(data[2] << 8) & 0x0000ff00 |
 				(data[3]) & 0x000000ff;
 
-		// If the data length is larger than 750MB, we are likely reading the wrong data. Probably data corruption. The
-		// limit of 750MB was chosen based on results from experimenting in the NativeSailStoreCorruptionTest class.
-		if (dataLength > 128 * 1024 * 1024) {
-			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
-				logger.error(
-						"Data length is {}MB which is larger than 750MB. This is likely data corruption. Truncating length to 32 MB.",
-						dataLength / ((1024 * 1024)));
-				dataLength = 32 * 1024 * 1024;
-			}
-		}
+		// Validate and possibly reduce the length before allocating a large array
+		dataLength = guardedDataLength(dataLength);
 
 		try {
 
@@ -249,13 +248,66 @@ public class DataFile implements Closeable {
 				return data;
 			}
 		} catch (OutOfMemoryError e) {
-			if (dataLength > 128 * 1024 * 1024) {
+			if (dataLength > LARGE_READ_THRESHOLD) {
 				logger.error(
 						"Trying to read large amounts of data may be a sign of data corruption. Consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes to true");
 			}
 			throw e;
 		}
 
+	}
+
+	/**
+	 * For very large reads, ensure there appears to be sufficient free heap to allocate the requested record. If soft
+	 * fail mode is enabled and insufficient memory is observed, returns a reduced cap to allow recovery; otherwise
+	 * throws an IOException with guidance for remediation.
+	 */
+	private static int guardedDataLength(int requested) throws IOException {
+		if (requested <= 0) {
+			return requested;
+		}
+		// Soft-fail corruption cap remains in effect for oversized claims
+		if (requested > LARGE_READ_THRESHOLD && SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
+			logger.error(
+					"Data length is {}MB which is larger than {}MB. This is likely data corruption. Truncating length to {} MB.",
+					requested / (1024 * 1024), LARGE_READ_THRESHOLD / (1024 * 1024),
+					SOFT_FAIL_CAP_BYTES / (1024 * 1024));
+			return SOFT_FAIL_CAP_BYTES;
+		}
+
+		if (requested <= LARGE_READ_THRESHOLD) {
+			return requested;
+		}
+
+		Runtime rt = Runtime.getRuntime();
+		for (int i = 0; i < 6; i++) { // initial check + up to 5 GC attempts
+			long allocated = rt.totalMemory() - rt.freeMemory();
+			long free = SIMULATE_LOW_HEAP_FOR_TESTS ? 0 : (rt.maxMemory() - allocated);
+			if (free >= requested) {
+				return requested;
+			}
+			if (i < 5) {
+				System.gc();
+				try {
+					TimeUnit.MILLISECONDS.sleep(1);
+				} catch (InterruptedException ie) {
+					Thread.currentThread().interrupt();
+					break;
+				}
+			}
+		}
+
+		long allocated = rt.totalMemory() - rt.freeMemory();
+		long free = SIMULATE_LOW_HEAP_FOR_TESTS ? 0 : (rt.maxMemory() - allocated);
+		if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
+			logger.error(
+					"Attempt to read {} MB but only {} MB free heap available. Truncating to {} MB due to soft-fail mode.",
+					requested / (1024 * 1024), free / (1024 * 1024), SOFT_FAIL_CAP_BYTES / (1024 * 1024));
+			return SOFT_FAIL_CAP_BYTES;
+		}
+		throw new IOException("Attempt to read " + (requested / (1024 * 1024)) + " MB but only "
+				+ (free / (1024 * 1024))
+				+ " MB free heap available. This may indicate corrupted data length. Consider enabling soft-fail mode via system property 'org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes'=true to attempt recovery.");
 	}
 
 	/**

@@ -136,46 +136,6 @@ public final class NioFile implements Closeable {
 		fc.close();
 	}
 
-	private static final long LARGE_READ_THRESHOLD = 128L * 1024 * 1024; // 128MB
-
-	/**
-	 * Ensure that there appears to be sufficient free heap memory to satisfy a large read request. Attempts up to 5 GC
-	 * cycles with a short pause between to reclaim memory. If still insufficient, throws an IOException with guidance
-	 * that this may indicate corruption and how to enable soft-fail mode.
-	 */
-	private static void ensureHeapForLargeRead(long bytes) throws IOException {
-		if (!STRICT_GUARDS) {
-			return;
-		}
-		if (bytes <= LARGE_READ_THRESHOLD) {
-			return;
-		}
-		Runtime rt = Runtime.getRuntime();
-		for (int i = 0; i < 6; i++) { // initial check + up to 5 GC attempts
-			long allocated = rt.totalMemory() - rt.freeMemory();
-			long free = rt.maxMemory() - allocated;
-			if (free >= bytes) {
-				return;
-			}
-			if (i < 5) {
-				System.gc();
-				try {
-					TimeUnit.SECONDS.sleep(1);
-				} catch (InterruptedException ie) {
-					Thread.currentThread().interrupt();
-					break;
-				}
-			}
-		}
-		long mb = bytes / (1024 * 1024);
-		long allocated = rt.totalMemory() - rt.freeMemory();
-		long free = rt.maxMemory() - allocated;
-		long freeMb = free / (1024 * 1024);
-		throw new IOException(
-				"Attempt to read " + mb + " MB but only " + freeMb
-						+ " MB free heap available. This may indicate corrupted data length. Consider enabling soft-fail mode via system property 'org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes=true' to attempt recovery.");
-	}
-
 	/**
 	 * Check if a file was closed explicitly.
 	 *
@@ -318,8 +278,6 @@ public final class NioFile implements Closeable {
 	 * @throws IOException
 	 */
 	public int read(ByteBuffer buf, long offset) throws IOException {
-		// For very large reads, ensure we have enough free heap headroom for the buffer contents
-		ensureHeapForLargeRead(buf.remaining());
 		while (true) {
 			try {
 				int totalRead = 0;
@@ -370,7 +328,6 @@ public final class NioFile implements Closeable {
 	 * @throws IOException
 	 */
 	public byte[] readBytes(long offset, int length) throws IOException {
-		ensureHeapForLargeRead(length);
 		ByteBuffer buf = ByteBuffer.allocate(length);
 		int read = read(buf, offset);
 		if (STRICT_GUARDS && read < length) {
