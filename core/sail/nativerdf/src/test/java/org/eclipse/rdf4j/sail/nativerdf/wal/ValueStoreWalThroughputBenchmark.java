@@ -38,7 +38,7 @@ import org.openjdk.jmh.annotations.Threads;
 @Measurement(iterations = 3)
 @Fork(1)
 @State(Scope.Benchmark)
-public class WalThroughputBenchmark {
+public class ValueStoreWalThroughputBenchmark {
 
 	@Param({ "COMMIT", "INTERVAL", "ALWAYS" })
 	public String syncPolicy;
@@ -49,7 +49,7 @@ public class WalThroughputBenchmark {
 	@Param({ "0", "1000" })
 	public int ackEvery;
 
-	private WalConfig config;
+	private ValueStoreWalConfig config;
 	private ValueStoreWAL wal;
 	private String lexical;
 	private final AtomicInteger seq = new AtomicInteger();
@@ -57,10 +57,10 @@ public class WalThroughputBenchmark {
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
 		Path walDir = Files.createTempDirectory("wal-bench-");
-		WalConfig.Builder builder = WalConfig.builder()
+		ValueStoreWalConfig.Builder builder = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString());
-		builder.syncPolicy(WalConfig.SyncPolicy.valueOf(syncPolicy));
+		builder.syncPolicy(ValueStoreWalConfig.SyncPolicy.valueOf(syncPolicy));
 		config = builder.build();
 		wal = ValueStoreWAL.open(config);
 		lexical = randomAscii(payloadBytes);
@@ -77,7 +77,7 @@ public class WalThroughputBenchmark {
 	@Threads(8)
 	public void logMint_literal() throws IOException, InterruptedException {
 		int id = seq.incrementAndGet();
-		long lsn = wal.logMint(id, ValueKind.LITERAL, lexical, "", "", 0);
+		long lsn = wal.logMint(id, ValueStoreWalValueKind.LITERAL, lexical, "", "", 0);
 		if (ackEvery > 0) {
 			// acknowledge durability occasionally
 			if ((id % ackEvery) == 0) {
@@ -90,7 +90,7 @@ public class WalThroughputBenchmark {
 	@Threads(8)
 	public void logMint_iri() throws IOException, InterruptedException {
 		int id = seq.incrementAndGet();
-		long lsn = wal.logMint(id, ValueKind.IRI, "http://example.com/" + id, "", "", 0);
+		long lsn = wal.logMint(id, ValueStoreWalValueKind.IRI, "http://example.com/" + id, "", "", 0);
 		if (ackEvery > 0) {
 			if ((id % ackEvery) == 0) {
 				wal.awaitDurable(lsn);

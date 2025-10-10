@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.sail.nativerdf.ValueStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class WalReaderJacksonTest {
+class ValueStoreWalReaderJacksonTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
@@ -39,7 +39,7 @@ class WalReaderJacksonTest {
 	void scanReturnsMintedRecordsWithEscapes() throws Exception {
 		Path walDir = tempDir.resolve("wal");
 		Files.createDirectories(walDir);
-		WalConfig config = WalConfig.builder()
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())
 				.build();
@@ -62,16 +62,16 @@ class WalReaderJacksonTest {
 			}
 		}
 
-		try (WalReader reader = WalReader.open(config)) {
-			WalReader.ScanResult scan = reader.scan();
-			List<WalRecord> records = scan.records();
+		try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
+			ValueStoreWalReader.ScanResult scan = reader.scan();
+			List<ValueStoreWalRecord> records = scan.records();
 			assertThat(records).isNotEmpty();
 			assertThat(records.stream()
-					.anyMatch(r -> r.valueKind() == ValueKind.IRI
+					.anyMatch(r -> r.valueKind() == ValueStoreWalValueKind.IRI
 							&& r.lexical().equals("http://example.com/resource")))
 					.isTrue();
 			assertThat(records.stream()
-					.anyMatch(r -> r.valueKind() == ValueKind.LITERAL
+					.anyMatch(r -> r.valueKind() == ValueStoreWalValueKind.LITERAL
 							&& r.lexical().equals(specialText)))
 					.isTrue();
 			assertThat(scan.lastValidLsn()).isGreaterThan(ValueStoreWAL.NO_LSN);

@@ -38,7 +38,7 @@ class ValueStoreWALMonotonicSegmentTest {
 		Path walDir = tempDir.resolve("wal");
 		Files.createDirectories(walDir);
 
-		WalConfig cfg = WalConfig.builder()
+		ValueStoreWalConfig cfg = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())
 				.maxSegmentBytes(4096) // small to force rotation and gzip
@@ -63,7 +63,7 @@ class ValueStoreWALMonotonicSegmentTest {
 		// 2) Restart WAL; on open it creates the next bare segment immediately
 		int expectedNext = maxCompressedSeq(walDir) + 1;
 		try (ValueStoreWAL wal = ValueStoreWAL.open(cfg)) {
-			long lsn = wal.logMint(minted + 1, ValueKind.LITERAL, "restart", "http://example/dt", "", 17);
+			long lsn = wal.logMint(minted + 1, ValueStoreWalValueKind.LITERAL, "restart", "http://example/dt", "", 17);
 			wal.awaitDurable(lsn);
 		}
 
@@ -77,7 +77,7 @@ class ValueStoreWALMonotonicSegmentTest {
 		long lsn = -1;
 		for (int i = 0; i < count; i++) {
 			// Minimal payload; IDs and hashes vary to avoid identical frames
-			lsn = wal.logMint(i + 1, ValueKind.LITERAL, "lex-" + i, "http://example/dt", "", 31 * i);
+			lsn = wal.logMint(i + 1, ValueStoreWalValueKind.LITERAL, "lex-" + i, "http://example/dt", "", 31 * i);
 		}
 		return lsn;
 	}
@@ -87,7 +87,7 @@ class ValueStoreWALMonotonicSegmentTest {
 		try (var stream = Files.list(walDir)) {
 			for (Path path : (Iterable<Path>) stream::iterator) {
 				if (SEGMENT_GZ.matcher(path.getFileName().toString()).matches()) {
-					int seq = WalTestUtils.readSegmentSequence(path);
+					int seq = ValueStoreWalTestUtils.readSegmentSequence(path);
 					if (seq > max) {
 						max = seq;
 					}
@@ -124,7 +124,7 @@ class ValueStoreWALMonotonicSegmentTest {
 			for (Path p : (Iterable<Path>) stream::iterator) {
 				String name = p.getFileName().toString();
 				if (name.startsWith("wal-") && name.endsWith(".v1")) {
-					int current = WalTestUtils.readSegmentSequence(p);
+					int current = ValueStoreWalTestUtils.readSegmentSequence(p);
 					if (current > seq) {
 						seq = current;
 					}

@@ -50,10 +50,10 @@ import org.eclipse.rdf4j.sail.nativerdf.model.NativeIRI;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeLiteral;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeResource;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
-import org.eclipse.rdf4j.sail.nativerdf.wal.ValueKind;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
-import org.eclipse.rdf4j.sail.nativerdf.wal.WalRecord;
-import org.eclipse.rdf4j.sail.nativerdf.wal.WalSearch;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalRecord;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalSearch;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalValueKind;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -727,7 +727,7 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 			return;
 		}
 		try {
-			WalSearch search = WalSearch.open(wal.config());
+			ValueStoreWalSearch search = ValueStoreWalSearch.open(wal.config());
 			Value v = search.findValueById(id);
 			if (v == null) {
 				return;
@@ -760,7 +760,7 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 		}
 	}
 
-	private NativeValue fromWalRecord(WalRecord rec) {
+	private NativeValue fromWalRecord(ValueStoreWalRecord rec) {
 		switch (rec.valueKind()) {
 		case IRI:
 			return createIRI(rec.lexical());
@@ -840,7 +840,7 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 	}
 
 	private void logMintedValue(int id, Value value) throws IOException {
-		WalDescription description = describeValue(value);
+		ValueStoreWalDescription description = describeValue(value);
 		int hash = computeWalHash(description.kind, description.lexical, description.datatype, description.language);
 		long lsn = wal.logMint(id, description.kind, description.lexical, description.datatype, description.language,
 				hash);
@@ -848,8 +848,8 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 	}
 
 	private void logNamespaceMint(int id, String namespace) throws IOException {
-		int hash = computeWalHash(ValueKind.NAMESPACE, namespace, "", "");
-		long lsn = wal.logMint(id, ValueKind.NAMESPACE, namespace, "", "", hash);
+		int hash = computeWalHash(ValueStoreWalValueKind.NAMESPACE, namespace, "", "");
+		long lsn = wal.logMint(id, ValueStoreWalValueKind.NAMESPACE, namespace, "", "", hash);
 		recordWalLsn(lsn);
 	}
 
@@ -936,22 +936,22 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 		}
 	}
 
-	private WalDescription describeValue(Value value) {
+	private ValueStoreWalDescription describeValue(Value value) {
 		if (value instanceof IRI) {
-			return new WalDescription(ValueKind.IRI, value.stringValue(), "", "");
+			return new ValueStoreWalDescription(ValueStoreWalValueKind.IRI, value.stringValue(), "", "");
 		} else if (value instanceof BNode) {
-			return new WalDescription(ValueKind.BNODE, value.stringValue(), "", "");
+			return new ValueStoreWalDescription(ValueStoreWalValueKind.BNODE, value.stringValue(), "", "");
 		} else if (value instanceof Literal) {
 			Literal literal = (Literal) value;
 			String lang = literal.getLanguage().orElse("");
 			String datatype = literal.getDatatype() != null ? literal.getDatatype().stringValue() : "";
-			return new WalDescription(ValueKind.LITERAL, literal.getLabel(), datatype, lang);
+			return new ValueStoreWalDescription(ValueStoreWalValueKind.LITERAL, literal.getLabel(), datatype, lang);
 		} else {
 			throw new IllegalArgumentException("value parameter should be a URI, BNode or Literal");
 		}
 	}
 
-	private int computeWalHash(ValueKind kind, String lexical, String datatype, String language) {
+	private int computeWalHash(ValueStoreWalValueKind kind, String lexical, String datatype, String language) {
 		CRC32C crc32c = new CRC32C();
 		crc32c.update((byte) kind.code());
 		updateCrc(crc32c, lexical);
@@ -974,13 +974,13 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 		return wal != null;
 	}
 
-	private static final class WalDescription {
-		final ValueKind kind;
+	private static final class ValueStoreWalDescription {
+		final ValueStoreWalValueKind kind;
 		final String lexical;
 		final String datatype;
 		final String language;
 
-		WalDescription(ValueKind kind, String lexical, String datatype, String language) {
+		ValueStoreWalDescription(ValueStoreWalValueKind kind, String lexical, String datatype, String language) {
 			this.kind = kind;
 			this.lexical = lexical == null ? "" : lexical;
 			this.datatype = datatype == null ? "" : datatype;

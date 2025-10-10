@@ -72,7 +72,7 @@ class ValueStoreWalCorruptRecoveryTest {
 	void corruptValueIsRecoveredFromWal() throws Exception {
 		Path walDir = tempDir.resolve("wal");
 		Files.createDirectories(walDir);
-		WalConfig config = WalConfig.builder()
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())
 				.build();
@@ -124,7 +124,10 @@ class ValueStoreWalCorruptRecoveryTest {
 	void corruptIriIsRecoveredFromWal() throws Exception {
 		Path walDir = tempDir.resolve("wal2");
 		Files.createDirectories(walDir);
-		WalConfig config = WalConfig.builder().walDirectory(walDir).storeUuid(UUID.randomUUID().toString()).build();
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
+				.walDirectory(walDir)
+				.storeUuid(UUID.randomUUID().toString())
+				.build();
 
 		File valueDir = tempDir.resolve("values2").toFile();
 		Files.createDirectories(valueDir.toPath());
@@ -168,7 +171,10 @@ class ValueStoreWalCorruptRecoveryTest {
 	void corruptBNodeIsRecoveredFromWal() throws Exception {
 		Path walDir = tempDir.resolve("wal3");
 		Files.createDirectories(walDir);
-		WalConfig config = WalConfig.builder().walDirectory(walDir).storeUuid(UUID.randomUUID().toString()).build();
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
+				.walDirectory(walDir)
+				.storeUuid(UUID.randomUUID().toString())
+				.build();
 
 		File valueDir = tempDir.resolve("values3").toFile();
 		Files.createDirectories(valueDir.toPath());
@@ -265,7 +271,7 @@ class ValueStoreWalCorruptRecoveryTest {
 		Path walDir = tempDir.resolve("wal-lit-" + UUID.randomUUID())
 				.resolve("wal");
 		Files.createDirectories(walDir);
-		WalConfig config = WalConfig.builder()
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())
 				.build();

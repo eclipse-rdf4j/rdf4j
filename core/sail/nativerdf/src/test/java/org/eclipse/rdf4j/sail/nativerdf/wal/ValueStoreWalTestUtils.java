@@ -27,11 +27,11 @@ import com.fasterxml.jackson.core.JsonToken;
 /**
  * Test utility helpers for inspecting ValueStore WAL segments.
  */
-public final class WalTestUtils {
+public final class ValueStoreWalTestUtils {
 
 	private static final JsonFactory JSON_FACTORY = new JsonFactory();
 
-	private WalTestUtils() {
+	private ValueStoreWalTestUtils() {
 	}
 
 	public static int readSegmentSequence(Path segmentPath) throws IOException {

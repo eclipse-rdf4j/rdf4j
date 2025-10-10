@@ -39,7 +39,7 @@ class ValueStoreWALForceOnRotateTest {
 		Path walDir = tempDir.resolve("wal");
 		Files.createDirectories(walDir);
 
-		WalConfig cfg = WalConfig.builder()
+		ValueStoreWalConfig cfg = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())
 				.maxSegmentBytes(1 << 20) // 1MB; size irrelevant since we call rotate directly
@@ -47,7 +47,7 @@ class ValueStoreWALForceOnRotateTest {
 
 		try (ValueStoreWAL wal = ValueStoreWAL.open(cfg)) {
 			// Mint a single record to ensure lastAppendedLsn > lastForcedLsn so a force would be required.
-			long lsn = wal.logMint(1, ValueKind.LITERAL, "x", "http://dt", "", 123);
+			long lsn = wal.logMint(1, ValueStoreWalValueKind.LITERAL, "x", "http://dt", "", 123);
 
 			// Wait until the writer thread has actually appended the record (no force requested!)
 			waitUntilLastAppendedAtLeast(wal, lsn);

@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class WalRecoveryRebuildTest {
+class ValueStoreWalRecoveryRebuildTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
@@ -45,7 +45,7 @@ class WalRecoveryRebuildTest {
 	void rebuildAssignsExactIds() throws Exception {
 		Path walDir = tempDir.resolve("wal");
 		Files.createDirectories(walDir);
-		WalConfig config = WalConfig.builder()
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())
 				.build();
@@ -68,9 +68,9 @@ class WalRecoveryRebuildTest {
 			}
 		}
 
-		Map<Integer, WalRecord> dictionary;
-		try (WalReader reader = WalReader.open(config)) {
-			WalRecovery recovery = new WalRecovery();
+		Map<Integer, ValueStoreWalRecord> dictionary;
+		try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
+			ValueStoreWalRecovery recovery = new ValueStoreWalRecovery();
 			dictionary = new LinkedHashMap<>(recovery.replay(reader));
 		}
 		assertThat(dictionary).isNotEmpty();
@@ -79,18 +79,18 @@ class WalRecoveryRebuildTest {
 		File dataDir = tempDir.resolve("rebuilt").toFile();
 		Files.createDirectories(dataDir.toPath());
 		try (DataStore ds = new DataStore(dataDir, "values", false)) {
-			for (WalRecord rec : dictionary.values()) {
-				if (rec.valueKind() == ValueKind.NAMESPACE) {
+			for (ValueStoreWalRecord rec : dictionary.values()) {
+				if (rec.valueKind() == ValueStoreWalValueKind.NAMESPACE) {
 					ds.storeData(rec.lexical().getBytes(StandardCharsets.UTF_8));
-				} else if (rec.valueKind() == ValueKind.IRI) {
+				} else if (rec.valueKind() == ValueStoreWalValueKind.IRI) {
 					ds.storeData(encodeIri(rec.lexical(), ds));
-				} else if (rec.valueKind() == ValueKind.BNODE) {
+				} else if (rec.valueKind() == ValueStoreWalValueKind.BNODE) {
 					byte[] idData = rec.lexical().getBytes(StandardCharsets.UTF_8);
 					byte[] bnode = new byte[1 + idData.length];
 					bnode[0] = 0x2; // BNODE tag
 					org.eclipse.rdf4j.common.io.ByteArrayUtil.put(idData, bnode, 1);
 					ds.storeData(bnode);
-				} else if (rec.valueKind() == ValueKind.LITERAL) {
+				} else if (rec.valueKind() == ValueStoreWalValueKind.LITERAL) {
 					ds.storeData(encodeLiteral(rec.lexical(), rec.datatype(), rec.language(), ds));
 				}
 			}
@@ -101,7 +101,7 @@ class WalRecoveryRebuildTest {
 		try (ValueStore vs = new ValueStore(dataDir, false, ValueStore.VALUE_CACHE_SIZE,
 				ValueStore.VALUE_ID_CACHE_SIZE, ValueStore.NAMESPACE_CACHE_SIZE,
 				ValueStore.NAMESPACE_ID_CACHE_SIZE, null)) {
-			for (WalRecord rec : dictionary.values()) {
+			for (ValueStoreWalRecord rec : dictionary.values()) {
 				switch (rec.valueKind()) {
 				case IRI:
 					assertThat(vs.getID(VF.createIRI(rec.lexical()))).isEqualTo(rec.id());
@@ -128,7 +128,7 @@ class WalRecoveryRebuildTest {
 	void missingSegmentMarksIncomplete() throws Exception {
 		Path walDir = tempDir.resolve("wal-missing");
 		Files.createDirectories(walDir);
-		WalConfig config = WalConfig.builder()
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())
 				.maxSegmentBytes(1 << 12)
@@ -158,9 +158,9 @@ class WalRecoveryRebuildTest {
 		assertThat(segments).hasSizeGreaterThan(1);
 		Files.deleteIfExists(segments.get(0));
 
-		WalRecovery recovery = new WalRecovery();
-		WalRecovery.ReplayReport report;
-		try (WalReader reader = WalReader.open(config)) {
+		ValueStoreWalRecovery recovery = new ValueStoreWalRecovery();
+		ValueStoreWalRecovery.ReplayReport report;
+		try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
 			report = recovery.replayWithReport(reader);
 		}
 		assertThat(report.complete()).isFalse();

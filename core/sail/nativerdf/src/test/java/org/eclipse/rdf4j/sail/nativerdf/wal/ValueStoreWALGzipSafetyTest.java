@@ -34,7 +34,7 @@ class ValueStoreWALGzipSafetyTest {
 	void gzipContainsFullData() throws Exception {
 		Path walDir = tempDir.resolve("wal2");
 		Files.createDirectories(walDir);
-		WalConfig cfg = WalConfig.builder()
+		ValueStoreWalConfig cfg = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())
 				.maxSegmentBytes(4096)
@@ -44,7 +44,7 @@ class ValueStoreWALGzipSafetyTest {
 		try (ValueStoreWAL wal = ValueStoreWAL.open(cfg)) {
 			lastLsn = -1;
 			for (int i = 0; i < 500; i++) {
-				lastLsn = wal.logMint(i + 1, ValueKind.LITERAL, "v" + i, "http://dt", "", i * 31);
+				lastLsn = wal.logMint(i + 1, ValueStoreWalValueKind.LITERAL, "v" + i, "http://dt", "", i * 31);
 			}
 			wal.awaitDurable(lastLsn);
 		}

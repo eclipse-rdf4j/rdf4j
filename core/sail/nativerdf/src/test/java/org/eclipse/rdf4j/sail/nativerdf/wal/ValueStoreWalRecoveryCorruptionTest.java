@@ -134,16 +134,16 @@ class ValueStoreWalRecoveryCorruptionTest {
 		String storeUuid = Files.exists(uuidFile) ? Files.readString(uuidFile, StandardCharsets.UTF_8).trim()
 				: UUID.randomUUID().toString();
 
-		WalConfig config = WalConfig.builder().walDirectory(walDir).storeUuid(storeUuid).build();
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder().walDirectory(walDir).storeUuid(storeUuid).build();
 
-		Map<Integer, WalRecord> dictionary;
-		try (WalReader reader = WalReader.open(config)) {
-			WalRecovery recovery = new WalRecovery();
+		Map<Integer, ValueStoreWalRecord> dictionary;
+		try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
+			ValueStoreWalRecovery recovery = new ValueStoreWalRecovery();
 			dictionary = new LinkedHashMap<>(recovery.replay(reader));
 		}
 
 		try (DataStore ds = new DataStore(dataDir.toFile(), "values", false)) {
-			for (WalRecord record : dictionary.values()) {
+			for (ValueStoreWalRecord record : dictionary.values()) {
 				switch (record.valueKind()) {
 				case NAMESPACE: {
 					byte[] nsBytes = record.lexical().getBytes(StandardCharsets.UTF_8);
@@ -215,18 +215,18 @@ class ValueStoreWalRecoveryCorruptionTest {
 	private void validateDictionaryMatchesWal(Path dataDir) throws Exception {
 		Path walDir = dataDir.resolve("wal");
 		String storeUuid = Files.readString(walDir.resolve("store.uuid"), StandardCharsets.UTF_8).trim();
-		WalConfig config = WalConfig.builder().walDirectory(walDir).storeUuid(storeUuid).build();
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder().walDirectory(walDir).storeUuid(storeUuid).build();
 
-		Map<Integer, WalRecord> dictionary;
-		try (WalReader reader = WalReader.open(config)) {
-			WalRecovery recovery = new WalRecovery();
+		Map<Integer, ValueStoreWalRecord> dictionary;
+		try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
+			ValueStoreWalRecovery recovery = new ValueStoreWalRecovery();
 			dictionary = new LinkedHashMap<>(recovery.replay(reader));
 		}
 
 		try (ValueStore vs = new ValueStore(dataDir.toFile(), false, ValueStore.VALUE_CACHE_SIZE,
 				ValueStore.VALUE_ID_CACHE_SIZE, ValueStore.NAMESPACE_CACHE_SIZE, ValueStore.NAMESPACE_ID_CACHE_SIZE,
 				null)) {
-			for (WalRecord record : dictionary.values()) {
+			for (ValueStoreWalRecord record : dictionary.values()) {
 				switch (record.valueKind()) {
 				case IRI: {
 					IRI iri = VF.createIRI(record.lexical());

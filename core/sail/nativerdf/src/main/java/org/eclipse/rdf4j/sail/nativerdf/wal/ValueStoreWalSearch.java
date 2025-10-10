@@ -41,19 +41,19 @@ import com.fasterxml.jackson.core.JsonToken;
  * Strategy: scan the first minted record in each segment to determine the segment likely containing the ID, then scan
  * only that segment to find and return the Value.
  */
-public final class WalSearch {
+public final class ValueStoreWalSearch {
 
 	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d+)\\.v1(?:\\.gz)?");
 
-	private final WalConfig config;
+	private final ValueStoreWalConfig config;
 	private final JsonFactory jsonFactory = new JsonFactory();
 
-	private WalSearch(WalConfig config) {
+	private ValueStoreWalSearch(ValueStoreWalConfig config) {
 		this.config = Objects.requireNonNull(config, "config");
 	}
 
-	public static WalSearch open(WalConfig config) {
-		return new WalSearch(config);
+	public static ValueStoreWalSearch open(ValueStoreWalConfig config) {
+		return new ValueStoreWalSearch(config);
 	}
 
 	public Value findValueById(int id) throws IOException {
@@ -207,7 +207,7 @@ public final class WalSearch {
 					parsed.id = jp.getValueAsInt(0);
 				} else if ("vk".equals(field)) {
 					String code = jp.getValueAsString("");
-					parsed.kind = ValueKind.fromCode(code);
+					parsed.kind = ValueStoreWalValueKind.fromCode(code);
 				} else if ("lex".equals(field)) {
 					parsed.lex = jp.getValueAsString("");
 				} else if ("dt".equals(field)) {
@@ -246,7 +246,7 @@ public final class WalSearch {
 		char type = '?';
 		long lsn = ValueStoreWAL.NO_LSN;
 		int id = 0;
-		ValueKind kind = ValueKind.NAMESPACE;
+		ValueStoreWalValueKind kind = ValueStoreWalValueKind.NAMESPACE;
 		String lex = "";
 		String dt = "";
 		String lang = "";

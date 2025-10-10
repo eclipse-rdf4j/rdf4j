@@ -35,7 +35,7 @@ class ValueStoreWalLargeRecordTest {
 		// Create a WAL with default config (1 MiB batch buffer)
 		Path walDir = tempDir.resolve("wal");
 		Files.createDirectories(walDir);
-		WalConfig config = WalConfig.builder()
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())
 				.build();
@@ -62,9 +62,9 @@ class ValueStoreWalLargeRecordTest {
 		}
 
 		// Sanity: ensure scan can see the record and its size matches
-		try (WalReader reader = WalReader.open(config)) {
-			WalReader.ScanResult scan = reader.scan();
-			assertThat(scan.records()).anyMatch(r -> r.valueKind() == ValueKind.LITERAL
+		try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
+			ValueStoreWalReader.ScanResult scan = reader.scan();
+			assertThat(scan.records()).anyMatch(r -> r.valueKind() == ValueStoreWalValueKind.LITERAL
 					&& r.lexical().length() == sizeBytes);
 		}
 	}
@@ -73,7 +73,7 @@ class ValueStoreWalLargeRecordTest {
 	void logsLargeLiteralWithSmallSegmentLimit() throws Exception {
 		Path walDir = tempDir.resolve("wal-small");
 		Files.createDirectories(walDir);
-		WalConfig config = WalConfig.builder()
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())
 				.maxSegmentBytes(32 * 1024)
@@ -96,22 +96,22 @@ class ValueStoreWalLargeRecordTest {
 			}
 		}
 
-		try (WalReader reader = WalReader.open(config)) {
-			WalReader.ScanResult scan = reader.scan();
+		try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
+			ValueStoreWalReader.ScanResult scan = reader.scan();
 			assertThat(scan.records())
-					.anyMatch(r -> r.valueKind() == ValueKind.LITERAL && r.lexical().equals(large));
+					.anyMatch(r -> r.valueKind() == ValueStoreWalValueKind.LITERAL && r.lexical().equals(large));
 		}
 
-		WalSearch search = WalSearch.open(config);
-		ValueKind[] foundKind = new ValueKind[1];
-		try (WalReader reader = WalReader.open(config)) {
-			for (WalRecord rec : reader.scan().records()) {
+		ValueStoreWalSearch search = ValueStoreWalSearch.open(config);
+		ValueStoreWalValueKind[] foundKind = new ValueStoreWalValueKind[1];
+		try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
+			for (ValueStoreWalRecord rec : reader.scan().records()) {
 				if (rec.lexical().equals(large)) {
 					foundKind[0] = rec.valueKind();
 					break;
 				}
 			}
 		}
-		assertThat(foundKind[0]).isEqualTo(ValueKind.LITERAL);
+		assertThat(foundKind[0]).isEqualTo(ValueStoreWalValueKind.LITERAL);
 	}
 }

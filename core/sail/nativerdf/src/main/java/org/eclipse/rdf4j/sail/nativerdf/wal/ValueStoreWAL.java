@@ -57,8 +57,8 @@ public final class ValueStoreWAL implements AutoCloseable {
 	static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d+)\\.v1(?:\\.gz)?");
 	public static final int MAX_FRAME_BYTES = 512 * 1024 * 1024; // 512 MiB safety cap
 
-	private final WalConfig config;
-	private final BlockingQueue<WalRecord> queue;
+	private final ValueStoreWalConfig config;
+	private final BlockingQueue<ValueStoreWalRecord> queue;
 	private final AtomicLong nextLsn = new AtomicLong();
 	private final AtomicLong lastAppendedLsn = new AtomicLong(NO_LSN);
 	private final AtomicLong lastForcedLsn = new AtomicLong(NO_LSN);
@@ -78,7 +78,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 	private final boolean initialSegmentsPresent;
 	private final int initialMaxSegmentSeq;
 
-	private ValueStoreWAL(WalConfig config) throws IOException {
+	private ValueStoreWAL(ValueStoreWalConfig config) throws IOException {
 		this.config = Objects.requireNonNull(config, "config");
 		Files.createDirectories(config.walDirectory());
 		Files.createDirectories(config.snapshotsDirectory());
@@ -105,19 +105,19 @@ public final class ValueStoreWAL implements AutoCloseable {
 		this.writerThread.start();
 	}
 
-	public static ValueStoreWAL open(WalConfig config) throws IOException {
+	public static ValueStoreWAL open(ValueStoreWalConfig config) throws IOException {
 		return new ValueStoreWAL(config);
 	}
 
-	public WalConfig config() {
+	public ValueStoreWalConfig config() {
 		return config;
 	}
 
-	public long logMint(int id, ValueKind kind, String lexical, String datatype, String language, int hash)
+	public long logMint(int id, ValueStoreWalValueKind kind, String lexical, String datatype, String language, int hash)
 			throws IOException {
 		ensureOpen();
 		long lsn = nextLsn.incrementAndGet();
-		WalRecord record = new WalRecord(lsn, id, kind, lexical, datatype, language, hash);
+		ValueStoreWalRecord record = new ValueStoreWalRecord(lsn, id, kind, lexical, datatype, language, hash);
 		enqueue(record);
 		return lsn;
 	}
@@ -187,7 +187,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 		requestedForceLsn.updateAndGet(prev -> Math.max(prev, lsn));
 	}
 
-	private void enqueue(WalRecord record) throws IOException {
+	private void enqueue(ValueStoreWalRecord record) throws IOException {
 		boolean offered = false;
 		int spins = 0;
 		while (!offered) {
@@ -326,7 +326,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 			try {
 				long lastSyncCheck = System.nanoTime();
 				while (running || !queue.isEmpty()) {
-					WalRecord record;
+					ValueStoreWalRecord record;
 					try {
 						record = queue.poll(config.idlePollInterval().toNanos(), TimeUnit.NANOSECONDS);
 					} catch (InterruptedException e) {
@@ -340,14 +340,15 @@ public final class ValueStoreWAL implements AutoCloseable {
 					}
 					boolean pendingForce = requestedForceLsn.get() > NO_LSN
 							&& requestedForceLsn.get() > lastForcedLsn.get();
-					boolean syncIntervalElapsed = config.syncPolicy() == WalConfig.SyncPolicy.INTERVAL
+					boolean syncIntervalElapsed = config.syncPolicy() == ValueStoreWalConfig.SyncPolicy.INTERVAL
 							&& System.nanoTime() - lastSyncCheck >= config.syncInterval().toNanos();
 					if (record == null) {
-						if (pendingForce || config.syncPolicy() == WalConfig.SyncPolicy.ALWAYS || syncIntervalElapsed) {
+						if (pendingForce || config.syncPolicy() == ValueStoreWalConfig.SyncPolicy.ALWAYS
+								|| syncIntervalElapsed) {
 							flushAndForce();
 							lastSyncCheck = System.nanoTime();
 						}
-					} else if (config.syncPolicy() == WalConfig.SyncPolicy.ALWAYS) {
+					} else if (config.syncPolicy() == ValueStoreWalConfig.SyncPolicy.ALWAYS) {
 						flushAndForce();
 						lastSyncCheck = System.nanoTime();
 					} else if (pendingForce && requestedForceLsn.get() <= lastAppendedLsn.get()) {
@@ -386,7 +387,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 			if (Files.exists(segmentPath)) {
 				return;
 			}
-			if (config.syncPolicy() == WalConfig.SyncPolicy.ALWAYS) {
+			if (config.syncPolicy() == ValueStoreWalConfig.SyncPolicy.ALWAYS) {
 				throw new IOException("Current WAL segment has been removed: " + segmentPath);
 			}
 			logger.error("Detected deletion of active WAL segment {}; continuing with a new segment",
@@ -424,7 +425,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 			}
 		}
 
-		private void append(WalRecord record) throws IOException {
+		private void append(ValueStoreWalRecord record) throws IOException {
 			ensureSegmentWritable();
 			if (segmentChannel == null) {
 				startSegment(record.id());
@@ -656,7 +657,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 			return (int) crc32c.getValue();
 		}
 
-		private byte[] encode(WalRecord record) throws IOException {
+		private byte[] encode(ValueStoreWalRecord record) throws IOException {
 			JsonFactory factory = new JsonFactory();
 			ByteArrayOutputStream baos = new ByteArrayOutputStream(256);
 			try (JsonGenerator gen = factory.createGenerator(baos)) {

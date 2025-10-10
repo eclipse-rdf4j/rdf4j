@@ -55,7 +55,7 @@ import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
 import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
-import org.eclipse.rdf4j.sail.nativerdf.wal.WalConfig;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -117,9 +117,11 @@ class NativeSailStore implements SailStore {
 			Path walDir = dataDir.toPath().resolve("wal");
 			String storeUuid = loadOrCreateWalUuid(walDir);
 			boolean enableWal = shouldEnableWal(dataDir, walDir);
-			WalConfig walConfig = null;
+			ValueStoreWalConfig walConfig = null;
 			if (enableWal) {
-				WalConfig.Builder walBuilder = WalConfig.builder().walDirectory(walDir).storeUuid(storeUuid);
+				ValueStoreWalConfig.Builder walBuilder = ValueStoreWalConfig.builder()
+						.walDirectory(walDir)
+						.storeUuid(storeUuid);
 				if (walMaxSegmentBytes > 0) {
 					walBuilder.maxSegmentBytes(walMaxSegmentBytes);
 				}

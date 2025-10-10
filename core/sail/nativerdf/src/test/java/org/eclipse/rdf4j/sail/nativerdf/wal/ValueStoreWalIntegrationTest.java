@@ -41,7 +41,7 @@ class ValueStoreWalIntegrationTest {
 	void logsMintedValueRecords() throws Exception {
 		Path walDir = tempDir.resolve("wal");
 		Files.createDirectories(walDir);
-		WalConfig config = WalConfig.builder()
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())
 				.build();
@@ -61,19 +61,19 @@ class ValueStoreWalIntegrationTest {
 				wal.awaitDurable(lsn.getAsLong());
 			}
 
-			WalReader reader = WalReader.open(config);
-			WalReader.ScanResult scan = reader.scan();
+			ValueStoreWalReader reader = ValueStoreWalReader.open(config);
+			ValueStoreWalReader.ScanResult scan = reader.scan();
 			reader.close();
 
 			assertThat(scan.records()).hasSize(3);
 			assertThat(scan.records())
-					.anyMatch(record -> record.valueKind() == ValueKind.NAMESPACE
+					.anyMatch(record -> record.valueKind() == ValueStoreWalValueKind.NAMESPACE
 							&& record.lexical().equals(XMLSchema.NAMESPACE));
 			assertThat(scan.records())
-					.anyMatch(record -> record.valueKind() == ValueKind.IRI
+					.anyMatch(record -> record.valueKind() == ValueStoreWalValueKind.IRI
 							&& record.lexical().equals(XMLSchema.STRING.stringValue()));
 			assertThat(scan.records())
-					.anyMatch(record -> record.valueKind() == ValueKind.LITERAL
+					.anyMatch(record -> record.valueKind() == ValueStoreWalValueKind.LITERAL
 							&& record.lexical().equals("hello")
 							&& record.datatype().equals(XMLSchema.STRING.stringValue()));
 		}
@@ -83,7 +83,7 @@ class ValueStoreWalIntegrationTest {
 	void recoveryRebuildsMintedEntries() throws Exception {
 		Path walDir = tempDir.resolve("wal2");
 		Files.createDirectories(walDir);
-		WalConfig config = WalConfig.builder()
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())
 				.build();
@@ -106,14 +106,15 @@ class ValueStoreWalIntegrationTest {
 			}
 		}
 
-		try (WalReader reader = WalReader.open(config)) {
-			WalRecovery recovery = new WalRecovery();
-			Map<Integer, WalRecord> dictionary = recovery.replay(reader);
+		try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
+			ValueStoreWalRecovery recovery = new ValueStoreWalRecovery();
+			Map<Integer, ValueStoreWalRecord> dictionary = recovery.replay(reader);
 			assertThat(dictionary).isNotEmpty();
 			assertThat(dictionary.values())
-					.anyMatch(record -> record.valueKind() == ValueKind.LITERAL && record.lexical().equals("world"));
+					.anyMatch(record -> record.valueKind() == ValueStoreWalValueKind.LITERAL
+							&& record.lexical().equals("world"));
 			assertThat(dictionary.values())
-					.anyMatch(record -> record.valueKind() == ValueKind.IRI
+					.anyMatch(record -> record.valueKind() == ValueStoreWalValueKind.IRI
 							&& record.lexical().equals("http://example.com/resource"));
 		}
 	}
@@ -136,7 +137,7 @@ class ValueStoreWalIntegrationTest {
 
 		Path walDir = tempDir.resolve("wal-existing");
 		Files.createDirectories(walDir);
-		WalConfig config = WalConfig.builder()
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())
 				.build();
@@ -154,22 +155,22 @@ class ValueStoreWalIntegrationTest {
 				wal.awaitDurable(lsn.getAsLong());
 			}
 
-			WalRecovery recovery = new WalRecovery();
-			Map<Integer, WalRecord> dictionary = Map.of();
+			ValueStoreWalRecovery recovery = new ValueStoreWalRecovery();
+			Map<Integer, ValueStoreWalRecord> dictionary = Map.of();
 			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
 			boolean hasExistingIri = false;
 			boolean hasExistingLiteral = false;
 			while (System.nanoTime() < deadline && (!hasExistingIri || !hasExistingLiteral)) {
-				try (WalReader reader = WalReader.open(config)) {
+				try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
 					dictionary = recovery.replay(reader);
 				}
 				hasExistingIri = dictionary.values()
 						.stream()
-						.anyMatch(record -> record.valueKind() == ValueKind.IRI
+						.anyMatch(record -> record.valueKind() == ValueStoreWalValueKind.IRI
 								&& record.lexical().equals(existingIri.stringValue()));
 				hasExistingLiteral = dictionary.values()
 						.stream()
-						.anyMatch(record -> record.valueKind() == ValueKind.LITERAL
+						.anyMatch(record -> record.valueKind() == ValueStoreWalValueKind.LITERAL
 								&& record.lexical().equals(existingLiteral.getLabel())
 								&& Objects.toString(record.language(), "")
 										.equals(existingLiteral.getLanguage().orElse("")));
@@ -181,7 +182,7 @@ class ValueStoreWalIntegrationTest {
 			assertThat(hasExistingIri).isTrue();
 			assertThat(hasExistingLiteral).isTrue();
 			assertThat(dictionary.values())
-					.anyMatch(record -> record.valueKind() == ValueKind.IRI
+					.anyMatch(record -> record.valueKind() == ValueStoreWalValueKind.IRI
 							&& record.lexical().equals(newIri.stringValue()));
 		}
 

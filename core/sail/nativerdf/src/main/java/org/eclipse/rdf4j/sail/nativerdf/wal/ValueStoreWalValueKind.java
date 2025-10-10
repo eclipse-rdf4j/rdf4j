@@ -14,7 +14,7 @@ package org.eclipse.rdf4j.sail.nativerdf.wal;
 /**
  * Enumeration of value kinds that may be persisted in the value store WAL.
  */
-public enum ValueKind {
+public enum ValueStoreWalValueKind {
 
 	IRI('I'),
 	BNODE('B'),
@@ -23,7 +23,7 @@ public enum ValueKind {
 
 	private final char code;
 
-	ValueKind(char code) {
+	ValueStoreWalValueKind(char code) {
 		this.code = code;
 	}
 
@@ -31,12 +31,12 @@ public enum ValueKind {
 		return code;
 	}
 
-	public static ValueKind fromCode(String code) {
+	public static ValueStoreWalValueKind fromCode(String code) {
 		if (code == null || code.isEmpty()) {
 			throw new IllegalArgumentException("Missing value kind code");
 		}
 		char c = code.charAt(0);
-		for (ValueKind kind : values()) {
+		for (ValueStoreWalValueKind kind : values()) {
 			if (kind.code == c) {
 				return kind;
 			}

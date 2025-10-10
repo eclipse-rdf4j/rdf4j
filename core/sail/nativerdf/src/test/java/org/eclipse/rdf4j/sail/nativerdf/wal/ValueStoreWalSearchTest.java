@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class WalSearchTest {
+class ValueStoreWalSearchTest {
 
 	@TempDir
 	File dataDir;
@@ -55,20 +55,20 @@ class WalSearchTest {
 
 		Path walDir = dataDir.toPath().resolve("wal");
 		String storeUuid = Files.readString(walDir.resolve("store.uuid"), StandardCharsets.UTF_8).trim();
-		WalConfig cfgRead = WalConfig.builder().walDirectory(walDir).storeUuid(storeUuid).build();
+		ValueStoreWalConfig cfgRead = ValueStoreWalConfig.builder().walDirectory(walDir).storeUuid(storeUuid).build();
 
 		// Build dictionary of minted values from WAL and pick a random entry
-		Map<Integer, WalRecord> dict;
-		try (WalReader reader = WalReader.open(cfgRead)) {
-			dict = new WalRecovery().replay(reader);
+		Map<Integer, ValueStoreWalRecord> dict;
+		try (ValueStoreWalReader reader = ValueStoreWalReader.open(cfgRead)) {
+			dict = new ValueStoreWalRecovery().replay(reader);
 		}
 		assertThat(dict).isNotEmpty();
 		Integer[] ids = dict.keySet().toArray(Integer[]::new);
 		Integer pickId = ids[new Random().nextInt(ids.length)];
 
-		WalSearch search = WalSearch.open(cfgRead);
+		ValueStoreWalSearch search = ValueStoreWalSearch.open(cfgRead);
 		Value found = search.findValueById(pickId);
-		assertThat(found).as("WalSearch should find value by id").isNotNull();
+		assertThat(found).as("ValueStoreWalSearch should find value by id").isNotNull();
 
 		// Cross-check against ValueStore
 		try (ValueStore vs = new ValueStore(dataDir, false)) {

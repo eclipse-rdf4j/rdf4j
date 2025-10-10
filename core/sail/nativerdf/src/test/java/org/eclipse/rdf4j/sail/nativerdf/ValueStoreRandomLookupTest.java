@@ -43,14 +43,14 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreConfig;
 import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
-import org.eclipse.rdf4j.sail.nativerdf.wal.ValueKind;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
-import org.eclipse.rdf4j.sail.nativerdf.wal.WalConfig;
-import org.eclipse.rdf4j.sail.nativerdf.wal.WalReader;
-import org.eclipse.rdf4j.sail.nativerdf.wal.WalRecord;
-import org.eclipse.rdf4j.sail.nativerdf.wal.WalRecovery;
-import org.eclipse.rdf4j.sail.nativerdf.wal.WalSearch;
-import org.eclipse.rdf4j.sail.nativerdf.wal.WalTestUtils;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalReader;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalRecord;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalRecovery;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalSearch;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalTestUtils;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalValueKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -93,21 +93,25 @@ class ValueStoreRandomLookupTest {
 			int maxId = ds.getMaxID();
 			assertThat(maxId).isGreaterThan(0);
 
-			WalConfig walConfig = WalConfig.builder().walDirectory(walDir).storeUuid(storeUuid).build();
+			ValueStoreWalConfig walConfig = ValueStoreWalConfig.builder()
+					.walDirectory(walDir)
+					.storeUuid(storeUuid)
+					.build();
 			Map<Path, SegmentStats> statsBySegment = analyzeSegments(walDir, walConfig);
 			assertThat(statsBySegment).isNotEmpty();
 
-			WalRecovery recovery = new WalRecovery();
-			Map<Integer, WalRecord> dict;
-			try (WalReader reader = WalReader.open(walConfig)) {
+			ValueStoreWalRecovery recovery = new ValueStoreWalRecovery();
+			Map<Integer, ValueStoreWalRecord> dict;
+			try (ValueStoreWalReader reader = ValueStoreWalReader.open(walConfig)) {
 				dict = recovery.replay(reader);
 			}
 			assertThat(dict).isNotEmpty();
 
 			List<Integer> ids = new ArrayList<>();
-			for (Map.Entry<Integer, WalRecord> entry : dict.entrySet()) {
-				ValueKind kind = entry.getValue().valueKind();
-				if (kind == ValueKind.IRI || kind == ValueKind.BNODE || kind == ValueKind.LITERAL) {
+			for (Map.Entry<Integer, ValueStoreWalRecord> entry : dict.entrySet()) {
+				ValueStoreWalValueKind kind = entry.getValue().valueKind();
+				if (kind == ValueStoreWalValueKind.IRI || kind == ValueStoreWalValueKind.BNODE
+						|| kind == ValueStoreWalValueKind.LITERAL) {
 					ids.add(entry.getKey());
 				}
 			}
@@ -164,7 +168,7 @@ class ValueStoreRandomLookupTest {
 				}
 			}
 
-			WalSearch search = WalSearch.open(walConfig);
+			ValueStoreWalSearch search = ValueStoreWalSearch.open(walConfig);
 			int walMatches = 0;
 			for (int i = 0; i < 50; i++) {
 				int id = ids.get(random.nextInt(ids.size()));
@@ -214,7 +218,7 @@ class ValueStoreRandomLookupTest {
 		}
 	}
 
-	private static Map<Path, SegmentStats> analyzeSegments(Path walDir, WalConfig config) throws IOException {
+	private static Map<Path, SegmentStats> analyzeSegments(Path walDir, ValueStoreWalConfig config) throws IOException {
 		Map<Path, SegmentStats> stats = new HashMap<>();
 		if (!Files.isDirectory(walDir)) {
 			return stats;
@@ -230,7 +234,7 @@ class ValueStoreRandomLookupTest {
 		return stats;
 	}
 
-	private static SegmentStats analyzeSingleSegment(Path path, WalConfig config) throws IOException {
+	private static SegmentStats analyzeSingleSegment(Path path, ValueStoreWalConfig config) throws IOException {
 		boolean compressed = path.getFileName().toString().endsWith(".gz");
 		byte[] content;
 		if (compressed) {
@@ -240,7 +244,7 @@ class ValueStoreRandomLookupTest {
 		} else {
 			content = Files.readAllBytes(path);
 		}
-		int sequence = WalTestUtils.readSegmentSequence(content);
+		int sequence = ValueStoreWalTestUtils.readSegmentSequence(content);
 		SegmentStats stats = new SegmentStats(path, sequence, compressed, content);
 		ByteBuffer buffer = ByteBuffer.wrap(content).order(ByteOrder.LITTLE_ENDIAN);
 		while (buffer.remaining() >= Integer.BYTES) {
@@ -257,8 +261,8 @@ class ValueStoreRandomLookupTest {
 			buffer.getInt();
 			ParsedRecord record = ParsedRecord.parse(json);
 			if (record.type == 'M') {
-				if (record.kind == ValueKind.IRI || record.kind == ValueKind.BNODE
-						|| record.kind == ValueKind.LITERAL) {
+				if (record.kind == ValueStoreWalValueKind.IRI || record.kind == ValueStoreWalValueKind.BNODE
+						|| record.kind == ValueStoreWalValueKind.LITERAL) {
 					stats.mintedIds.add(record.id);
 				}
 				stats.highestMintedId = Math.max(stats.highestMintedId, record.id);
@@ -312,10 +316,10 @@ class ValueStoreRandomLookupTest {
 		final char type;
 		final int id;
 		final long crc32;
-		final ValueKind kind;
+		final ValueStoreWalValueKind kind;
 		final int segment;
 
-		ParsedRecord(char type, int id, long crc32, ValueKind kind, int segment) {
+		ParsedRecord(char type, int id, long crc32, ValueStoreWalValueKind kind, int segment) {
 			this.type = type;
 			this.id = id;
 			this.crc32 = crc32;
@@ -328,7 +332,7 @@ class ValueStoreRandomLookupTest {
 				char type = '?';
 				int id = 0;
 				long crc32 = 0L;
-				ValueKind kind = ValueKind.NAMESPACE;
+				ValueStoreWalValueKind kind = ValueStoreWalValueKind.NAMESPACE;
 				int segment = 0;
 				while (parser.nextToken() != null) {
 					JsonToken token = parser.currentToken();
@@ -344,7 +348,7 @@ class ValueStoreRandomLookupTest {
 							crc32 = parser.getValueAsLong(0L);
 						} else if ("vk".equals(field)) {
 							String code = parser.getValueAsString("");
-							kind = ValueKind.fromCode(code);
+							kind = ValueStoreWalValueKind.fromCode(code);
 						} else if ("segment".equals(field)) {
 							segment = parser.getValueAsInt(0);
 						} else {

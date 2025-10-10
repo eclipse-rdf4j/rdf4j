@@ -27,9 +27,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Tests for a streaming/iterator-style WalReader API that yields one record at a time in order.
+ * Tests for a streaming/iterator-style ValueStoreWalReader API that yields one record at a time in order.
  */
-class WalReaderIteratorTest {
+class ValueStoreWalReaderIteratorTest {
 
 	@TempDir
 	Path tempDir;
@@ -38,7 +38,7 @@ class WalReaderIteratorTest {
 	void iteratesRecordsInOrderAndMatchesScan() throws Exception {
 		Path walDir = tempDir.resolve("wal");
 		Files.createDirectories(walDir);
-		WalConfig config = WalConfig.builder()
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())
 				.build();
@@ -61,21 +61,21 @@ class WalReaderIteratorTest {
 		}
 
 		// Existing API for comparison
-		List<WalRecord> scanned;
+		List<ValueStoreWalRecord> scanned;
 		long lastValidLsn;
-		try (WalReader reader = WalReader.open(config)) {
-			WalReader.ScanResult res = reader.scan();
+		try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
+			ValueStoreWalReader.ScanResult res = reader.scan();
 			scanned = res.records();
 			lastValidLsn = res.lastValidLsn();
 		}
 
 		// New iterator API (to be implemented): iterate without preloading all
-		List<WalRecord> iterated = new ArrayList<>();
+		List<ValueStoreWalRecord> iterated = new ArrayList<>();
 		long iterLast = ValueStoreWAL.NO_LSN;
-		try (WalReader reader = WalReader.open(config)) {
-			Iterator<WalRecord> it = reader.iterator(); // expected new API
+		try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
+			Iterator<ValueStoreWalRecord> it = reader.iterator(); // expected new API
 			while (it.hasNext()) {
-				WalRecord r = it.next();
+				ValueStoreWalRecord r = it.next();
 				iterated.add(r);
 				if (r.lsn() > iterLast) {
 					iterLast = r.lsn();

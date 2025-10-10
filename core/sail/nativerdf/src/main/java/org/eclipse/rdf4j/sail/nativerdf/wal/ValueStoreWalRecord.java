@@ -13,20 +13,20 @@ package org.eclipse.rdf4j.sail.nativerdf.wal;
 import java.util.Objects;
 
 /**
- * Representation of a single WAL record describing a minted value.
+ * Representation of a single ValueStore WAL record describing a minted value.
  */
-public final class WalRecord {
+public final class ValueStoreWalRecord {
 
 	private final long lsn;
 	private final int id;
-	private final ValueKind valueKind;
+	private final ValueStoreWalValueKind valueKind;
 	private final String lexical;
 	private final String datatype;
 	private final String language;
 	private final int hash;
 
-	public WalRecord(long lsn, int id, ValueKind valueKind, String lexical, String datatype, String language,
-			int hash) {
+	public ValueStoreWalRecord(long lsn, int id, ValueStoreWalValueKind valueKind, String lexical, String datatype,
+			String language, int hash) {
 		this.lsn = lsn;
 		this.id = id;
 		this.valueKind = Objects.requireNonNull(valueKind, "valueKind");
@@ -44,7 +44,7 @@ public final class WalRecord {
 		return id;
 	}
 
-	public ValueKind valueKind() {
+	public ValueStoreWalValueKind valueKind() {
 		return valueKind;
 	}
 

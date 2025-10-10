@@ -14,7 +14,10 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Objects;
 
-public final class WalConfig {
+/**
+ * Configuration for the ValueStore WAL implementation.
+ */
+public final class ValueStoreWalConfig {
 
 	public enum SyncPolicy {
 		ALWAYS,
@@ -32,7 +35,7 @@ public final class WalConfig {
 	private final Duration syncInterval;
 	private final Duration idlePollInterval;
 
-	private WalConfig(Builder builder) {
+	private ValueStoreWalConfig(Builder builder) {
 		this.walDirectory = builder.walDirectory;
 		this.snapshotsDirectory = builder.snapshotsDirectory;
 		this.storeUuid = builder.storeUuid;
@@ -147,7 +150,7 @@ public final class WalConfig {
 			return this;
 		}
 
-		public WalConfig build() {
+		public ValueStoreWalConfig build() {
 			if (walDirectory == null) {
 				throw new IllegalStateException("walDirectory must be set");
 			}
@@ -166,7 +169,7 @@ public final class WalConfig {
 			if (batchBufferBytes <= 4096) {
 				throw new IllegalStateException("batchBufferBytes must be > 4KB");
 			}
-			return new WalConfig(this);
+			return new ValueStoreWalConfig(this);
 		}
 	}
 }

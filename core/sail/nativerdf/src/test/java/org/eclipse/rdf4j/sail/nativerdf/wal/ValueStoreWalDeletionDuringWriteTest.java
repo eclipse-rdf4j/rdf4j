@@ -41,7 +41,7 @@ class ValueStoreWalDeletionDuringWriteTest {
 	@Test
 	void asyncWalContinuesAfterCurrentSegmentDeletion() throws Exception {
 		Path walDir = tempDir.resolve("wal");
-		WalConfig config = WalConfig.builder()
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())
 				.maxSegmentBytes(1 << 12)
@@ -72,9 +72,9 @@ class ValueStoreWalDeletionDuringWriteTest {
 			drainAndAwait(store);
 		}
 
-		try (WalReader reader = WalReader.open(config);
+		try (ValueStoreWalReader reader = ValueStoreWalReader.open(config);
 				DataStore ds = new DataStore(valuesDir.toFile(), "values")) {
-			WalRecovery recovery = new WalRecovery();
+			ValueStoreWalRecovery recovery = new ValueStoreWalRecovery();
 			var dictionary = recovery.replay(reader);
 			assertThat(afterDeletion).isNotEmpty();
 			assertThat(dictionary.keySet()).as("WAL should retain post-deletion ids")

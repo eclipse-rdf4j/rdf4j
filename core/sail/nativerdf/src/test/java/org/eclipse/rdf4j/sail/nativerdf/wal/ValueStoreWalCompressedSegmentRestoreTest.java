@@ -37,9 +37,9 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 
 /**
- * Restores a value record from a compressed WAL segment by performing a binary search on segment first LSNs.
+ * Restores a value record from a compressed ValueStore WAL segment by performing a binary search on segment first LSNs.
  */
-class WalCompressedSegmentRestoreTest {
+class ValueStoreWalCompressedSegmentRestoreTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final Pattern SEGMENT_GZ = Pattern.compile("wal-(\\d+)\\.v1\\.gz");
@@ -52,7 +52,7 @@ class WalCompressedSegmentRestoreTest {
 		// Force multiple segments by limiting segment size
 		Path walDir = tempDir.resolve("wal");
 		Files.createDirectories(walDir);
-		WalConfig config = WalConfig.builder()
+		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())
 				.maxSegmentBytes(4096) // small to ensure rotation + gzip
@@ -109,7 +109,7 @@ class WalCompressedSegmentRestoreTest {
 		Path candidate = compressed.get(segIdx);
 
 		// Scan the candidate compressed segment to find our target and restore its lexical
-		WalRecord rec = scanSegmentForLsn(candidate, targetLsn);
+		ValueStoreWalRecord rec = scanSegmentForLsn(candidate, targetLsn);
 		assertThat(rec).withFailMessage("target LSN not found in compressed segment").isNotNull();
 		assertThat(rec.lexical()).isEqualTo(targetLex);
 	}
@@ -175,7 +175,7 @@ class WalCompressedSegmentRestoreTest {
 		}
 	}
 
-	private static WalRecord scanSegmentForLsn(Path gz, long targetLsn) throws IOException {
+	private static ValueStoreWalRecord scanSegmentForLsn(Path gz, long targetLsn) throws IOException {
 		try (GZIPInputStream in = new GZIPInputStream(Files.newInputStream(gz))) {
 			// skip header
 			int headerLen = readIntLE(in);
@@ -200,7 +200,7 @@ class WalCompressedSegmentRestoreTest {
 					return null;
 				Parsed p = parseJson(jsonBytes);
 				if (p.type == 'M' && p.lsn == targetLsn) {
-					return new WalRecord(p.lsn, p.id, p.kind, p.lex, p.dt, p.lang, p.hash);
+					return new ValueStoreWalRecord(p.lsn, p.id, p.kind, p.lex, p.dt, p.lang, p.hash);
 				}
 			}
 		}
@@ -233,7 +233,7 @@ class WalCompressedSegmentRestoreTest {
 					parsed.id = jp.getValueAsInt(0);
 				} else if ("vk".equals(field)) {
 					String code = jp.getValueAsString("");
-					parsed.kind = ValueKind.fromCode(code);
+					parsed.kind = ValueStoreWalValueKind.fromCode(code);
 				} else if ("lex".equals(field)) {
 					parsed.lex = jp.getValueAsString("");
 				} else if ("dt".equals(field)) {
@@ -254,7 +254,7 @@ class WalCompressedSegmentRestoreTest {
 		char type = '?';
 		long lsn = ValueStoreWAL.NO_LSN;
 		int id = 0;
-		ValueKind kind = ValueKind.NAMESPACE;
+		ValueStoreWalValueKind kind = ValueStoreWalValueKind.NAMESPACE;
 		String lex = "";
 		String dt = "";
 		String lang = "";

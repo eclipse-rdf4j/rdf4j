@@ -34,12 +34,12 @@ import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 
-public final class WalReader implements AutoCloseable {
+public final class ValueStoreWalReader implements AutoCloseable {
 
 	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d+)\\.v1(?:\\.gz)?");
-	private static final Logger logger = LoggerFactory.getLogger(WalReader.class);
+	private static final Logger logger = LoggerFactory.getLogger(ValueStoreWalReader.class);
 
-	private final WalConfig config;
+	private final ValueStoreWalConfig config;
 	private final JsonFactory jsonFactory = new JsonFactory();
 	// Streaming iteration state
 	private final List<SegmentEntry> segments;
@@ -54,7 +54,7 @@ public final class WalReader implements AutoCloseable {
 	private boolean currentSegmentCompressed;
 	private boolean currentSegmentSummarySeen;
 
-	private WalReader(WalConfig config) {
+	private ValueStoreWalReader(ValueStoreWalConfig config) {
 		this.config = Objects.requireNonNull(config, "config");
 		List<SegmentEntry> segs;
 		try {
@@ -69,14 +69,14 @@ public final class WalReader implements AutoCloseable {
 		this.currentSegmentSummarySeen = false;
 	}
 
-	public static WalReader open(WalConfig config) {
-		return new WalReader(config);
+	public static ValueStoreWalReader open(ValueStoreWalConfig config) {
+		return new ValueStoreWalReader(config);
 	}
 
 	public ScanResult scan() throws IOException {
-		List<WalRecord> records = new ArrayList<>();
-		try (WalReader reader = WalReader.open(config)) {
-			Iterator<WalRecord> it = reader.iterator();
+		List<ValueStoreWalRecord> records = new ArrayList<>();
+		try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
+			Iterator<ValueStoreWalRecord> it = reader.iterator();
 			while (it.hasNext()) {
 				records.add(it.next());
 			}
@@ -85,7 +85,7 @@ public final class WalReader implements AutoCloseable {
 	}
 
 	/** On-demand iterator over minted WAL records. */
-	public Iterator<WalRecord> iterator() {
+	public Iterator<ValueStoreWalRecord> iterator() {
 		return new RecordIterator();
 	}
 
@@ -199,7 +199,7 @@ public final class WalReader implements AutoCloseable {
 		return false;
 	}
 
-	private WalRecord readOneFromChannel() throws IOException {
+	private ValueStoreWalRecord readOneFromChannel() throws IOException {
 		ByteBuffer header = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
 		header.clear();
 		int read = channel.read(header);
@@ -244,7 +244,8 @@ public final class WalReader implements AutoCloseable {
 		}
 		Parsed parsed = parseJson(data);
 		if (parsed.type == 'M') {
-			WalRecord r = new WalRecord(parsed.lsn, parsed.id, parsed.kind, parsed.lex, parsed.dt, parsed.lang,
+			ValueStoreWalRecord r = new ValueStoreWalRecord(parsed.lsn, parsed.id, parsed.kind, parsed.lex, parsed.dt,
+					parsed.lang,
 					parsed.hash);
 			lastValidLsn = r.lsn();
 			return r;
@@ -257,7 +258,7 @@ public final class WalReader implements AutoCloseable {
 		return null;
 	}
 
-	private WalRecord readOneFromGzip() throws IOException {
+	private ValueStoreWalRecord readOneFromGzip() throws IOException {
 		int length = readIntLE(gzIn);
 		if (length == -1) {
 			eos = true;
@@ -281,7 +282,8 @@ public final class WalReader implements AutoCloseable {
 		}
 		Parsed parsed = parseJson(data);
 		if (parsed.type == 'M') {
-			WalRecord r = new WalRecord(parsed.lsn, parsed.id, parsed.kind, parsed.lex, parsed.dt, parsed.lang,
+			ValueStoreWalRecord r = new ValueStoreWalRecord(parsed.lsn, parsed.id, parsed.kind, parsed.lex, parsed.dt,
+					parsed.lang,
 					parsed.hash);
 			lastValidLsn = r.lsn();
 			return r;
@@ -297,8 +299,8 @@ public final class WalReader implements AutoCloseable {
 		return null;
 	}
 
-	private final class RecordIterator implements Iterator<WalRecord> {
-		private WalRecord next;
+	private final class RecordIterator implements Iterator<ValueStoreWalRecord> {
+		private ValueStoreWalRecord next;
 		private boolean prepared;
 
 		@Override
@@ -317,12 +319,12 @@ public final class WalReader implements AutoCloseable {
 		}
 
 		@Override
-		public WalRecord next() {
+		public ValueStoreWalRecord next() {
 			if (!hasNext()) {
 				throw new NoSuchElementException();
 			}
 			prepared = false;
-			WalRecord r = next;
+			ValueStoreWalRecord r = next;
 			next = null;
 			return r;
 		}
@@ -339,7 +341,7 @@ public final class WalReader implements AutoCloseable {
 					}
 				}
 				if (gzIn != null) {
-					WalRecord r = readOneFromGzip();
+					ValueStoreWalRecord r = readOneFromGzip();
 					if (r != null) {
 						next = r;
 						return;
@@ -353,7 +355,7 @@ public final class WalReader implements AutoCloseable {
 					continue;
 				}
 				if (channel != null) {
-					WalRecord r = readOneFromChannel();
+					ValueStoreWalRecord r = readOneFromChannel();
 					if (r != null) {
 						next = r;
 						return;
@@ -389,7 +391,7 @@ public final class WalReader implements AutoCloseable {
 					parsed.id = jp.getValueAsInt(0);
 				} else if ("vk".equals(field)) {
 					String code = jp.getValueAsString("");
-					parsed.kind = ValueKind.fromCode(code);
+					parsed.kind = ValueStoreWalValueKind.fromCode(code);
 				} else if ("lex".equals(field)) {
 					parsed.lex = jp.getValueAsString("");
 				} else if ("dt".equals(field)) {
@@ -426,7 +428,7 @@ public final class WalReader implements AutoCloseable {
 		char type = '?';
 		long lsn = ValueStoreWAL.NO_LSN;
 		int id = 0;
-		ValueKind kind = ValueKind.NAMESPACE;
+		ValueStoreWalValueKind kind = ValueStoreWalValueKind.NAMESPACE;
 		String lex = "";
 		String dt = "";
 		String lang = "";
@@ -448,17 +450,17 @@ public final class WalReader implements AutoCloseable {
 	}
 
 	public static final class ScanResult {
-		private final List<WalRecord> records;
+		private final List<ValueStoreWalRecord> records;
 		private final long lastValidLsn;
 		private final boolean complete;
 
-		public ScanResult(List<WalRecord> records, long lastValidLsn, boolean complete) {
+		public ScanResult(List<ValueStoreWalRecord> records, long lastValidLsn, boolean complete) {
 			this.records = List.copyOf(records);
 			this.lastValidLsn = lastValidLsn;
 			this.complete = complete;
 		}
 
-		public List<WalRecord> records() {
+		public List<ValueStoreWalRecord> records() {
 			return records;
 		}
 
