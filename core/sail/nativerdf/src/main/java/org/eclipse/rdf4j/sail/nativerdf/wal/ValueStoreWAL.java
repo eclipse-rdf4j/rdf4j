@@ -99,6 +99,19 @@ public final class ValueStoreWAL implements AutoCloseable {
 		DirectoryState state = analyzeDirectory(config.walDirectory());
 		this.initialSegmentsPresent = state.hasSegments;
 		this.initialMaxSegmentSeq = state.maxSequence;
+		// Seed next LSN from existing WAL, if any, to ensure monotonic LSNs across restarts
+		if (initialSegmentsPresent) {
+			try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
+				var it = reader.iterator();
+				while (it.hasNext()) {
+					it.next();
+				}
+				long last = reader.lastValidLsn();
+				if (last > NO_LSN) {
+					nextLsn.set(last);
+				}
+			}
+		}
 		this.logWriter = new LogWriter(initialMaxSegmentSeq);
 		this.writerThread = new Thread(logWriter, "ValueStoreWalWriter-" + config.storeUuid());
 		this.writerThread.setDaemon(true);
