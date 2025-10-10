@@ -115,10 +115,10 @@ class NativeSailStore implements SailStore {
 		try {
 			createdNamespaceStore = new NamespaceStore(dataDir);
 			Path walDir = dataDir.toPath().resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
-			String storeUuid = loadOrCreateWalUuid(walDir);
 			boolean enableWal = shouldEnableWal(dataDir, walDir);
 			ValueStoreWalConfig walConfig = null;
 			if (enableWal) {
+				String storeUuid = loadOrCreateWalUuid(walDir);
 				ValueStoreWalConfig.Builder walBuilder = ValueStoreWalConfig.builder()
 						.walDirectory(walDir)
 						.storeUuid(storeUuid);
@@ -169,6 +169,10 @@ class NativeSailStore implements SailStore {
 	}
 
 	private boolean shouldEnableWal(File dataDir, Path walDir) throws IOException {
+		// Respect read-only data directories: do not enable WAL when we can't write
+		if (!dataDir.canWrite()) {
+			return false;
+		}
 		if (hasExistingWalSegments(walDir)) {
 			writeBootstrapMarker(walDir, "enabled-existing-wal");
 			return true;
