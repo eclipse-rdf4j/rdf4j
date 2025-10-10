@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -89,7 +90,7 @@ public class NativeStoreTxnTest {
 		}
 		// With WAL enabled a 'wal' directory may be present; exclude it from the legacy count
 		int nonWalCount = (int) Arrays.stream(repoDir.listFiles())
-				.filter(f -> !"wal".equals(f.getName()))
+				.filter(f -> !ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME.equals(f.getName()))
 				.count();
 		assertEquals(15, nonWalCount);
 

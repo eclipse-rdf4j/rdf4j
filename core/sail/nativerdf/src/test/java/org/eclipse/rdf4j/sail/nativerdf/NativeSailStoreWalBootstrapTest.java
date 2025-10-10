@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -41,7 +42,7 @@ class NativeSailStoreWalBootstrapTest {
 			nativeStore.shutDown();
 		}
 
-		Path walDir = tempDir.resolve("wal");
+		Path walDir = tempDir.resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 		Path marker = walDir.resolve("bootstrap.info");
 		assertThat(Files.exists(marker)).isTrue();
 		String markerContent = Files.readString(marker, StandardCharsets.UTF_8);

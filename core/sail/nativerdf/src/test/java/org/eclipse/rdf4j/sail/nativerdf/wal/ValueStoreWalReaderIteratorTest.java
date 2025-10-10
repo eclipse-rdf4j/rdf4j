@@ -36,7 +36,7 @@ class ValueStoreWalReaderIteratorTest {
 
 	@Test
 	void iteratesRecordsInOrderAndMatchesScan() throws Exception {
-		Path walDir = tempDir.resolve("wal");
+		Path walDir = tempDir.resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 		Files.createDirectories(walDir);
 		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)

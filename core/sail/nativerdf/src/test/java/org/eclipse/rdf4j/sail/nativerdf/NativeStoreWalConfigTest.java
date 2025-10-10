@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreConfig;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreFactory;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -58,7 +59,7 @@ class NativeStoreWalConfigTest {
 		repo.shutDown();
 
 		// Verify multiple WAL segments were created due to small max size
-		Path walDir = dataDir.toPath().resolve("wal");
+		Path walDir = dataDir.toPath().resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 		assertThat(Files.isDirectory(walDir)).isTrue();
 		try (var stream = Files.list(walDir)) {
 			List<Path> segments = stream

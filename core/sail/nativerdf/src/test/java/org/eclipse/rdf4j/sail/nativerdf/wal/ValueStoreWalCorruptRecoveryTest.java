@@ -70,7 +70,7 @@ class ValueStoreWalCorruptRecoveryTest {
 
 	@Test
 	void corruptValueIsRecoveredFromWal() throws Exception {
-		Path walDir = tempDir.resolve("wal");
+		Path walDir = tempDir.resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 		Files.createDirectories(walDir);
 		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
@@ -269,7 +269,7 @@ class ValueStoreWalCorruptRecoveryTest {
 
 	private void runCorruptAndRecoverLiteralTest(Literal lit) throws Exception {
 		Path walDir = tempDir.resolve("wal-lit-" + UUID.randomUUID())
-				.resolve("wal");
+				.resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 		Files.createDirectories(walDir);
 		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)

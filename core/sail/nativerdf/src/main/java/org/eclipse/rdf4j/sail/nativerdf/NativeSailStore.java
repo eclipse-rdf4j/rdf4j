@@ -114,7 +114,7 @@ class NativeSailStore implements SailStore {
 		boolean initialized = false;
 		try {
 			createdNamespaceStore = new NamespaceStore(dataDir);
-			Path walDir = dataDir.toPath().resolve("wal");
+			Path walDir = dataDir.toPath().resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 			String storeUuid = loadOrCreateWalUuid(walDir);
 			boolean enableWal = shouldEnableWal(dataDir, walDir);
 			ValueStoreWalConfig walConfig = null;

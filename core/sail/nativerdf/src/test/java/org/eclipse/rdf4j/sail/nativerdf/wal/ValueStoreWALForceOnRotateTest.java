@@ -36,7 +36,7 @@ class ValueStoreWALForceOnRotateTest {
 
 	@Test
 	void rotationForcesPreviousSegment() throws Exception {
-		Path walDir = tempDir.resolve("wal");
+		Path walDir = tempDir.resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 		Files.createDirectories(walDir);
 
 		ValueStoreWalConfig cfg = ValueStoreWalConfig.builder()

@@ -19,6 +19,8 @@ import java.util.Objects;
  */
 public final class ValueStoreWalConfig {
 
+	public static final String DEFAULT_DIRECTORY_NAME = "value-store-wal";
+
 	public enum SyncPolicy {
 		ALWAYS,
 		INTERVAL,

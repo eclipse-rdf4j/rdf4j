@@ -33,7 +33,7 @@ class ValueStoreWalLargeRecordTest {
 	@Test
 	void logsLargeLiteralExceedingBuffer() throws Exception {
 		// Create a WAL with default config (1 MiB batch buffer)
-		Path walDir = tempDir.resolve("wal");
+		Path walDir = tempDir.resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 		Files.createDirectories(walDir);
 		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)

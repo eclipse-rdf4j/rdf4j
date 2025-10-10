@@ -40,7 +40,7 @@ class ValueStoreWalDeletionDuringWriteTest {
 
 	@Test
 	void asyncWalContinuesAfterCurrentSegmentDeletion() throws Exception {
-		Path walDir = tempDir.resolve("wal");
+		Path walDir = tempDir.resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
 				.storeUuid(UUID.randomUUID().toString())

@@ -84,7 +84,7 @@ class ValueStoreRandomLookupTest {
 			connection.commit();
 		}
 		repository.shutDown();
-		Path walDir = dataDir.toPath().resolve("wal");
+		Path walDir = dataDir.toPath().resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 		String storeUuid = Files.readString(walDir.resolve("store.uuid"), StandardCharsets.UTF_8).trim();
 
 		try (DataStore ds = new DataStore(dataDir, "values");

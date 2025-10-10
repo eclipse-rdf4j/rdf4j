@@ -129,7 +129,7 @@ class ValueStoreWalRecoveryCorruptionTest {
 	}
 
 	private void recoverValueStoreFromWal(Path dataDir) throws Exception {
-		Path walDir = dataDir.resolve("wal");
+		Path walDir = dataDir.resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 		Path uuidFile = walDir.resolve("store.uuid");
 		String storeUuid = Files.exists(uuidFile) ? Files.readString(uuidFile, StandardCharsets.UTF_8).trim()
 				: UUID.randomUUID().toString();
@@ -213,7 +213,7 @@ class ValueStoreWalRecoveryCorruptionTest {
 	}
 
 	private void validateDictionaryMatchesWal(Path dataDir) throws Exception {
-		Path walDir = dataDir.resolve("wal");
+		Path walDir = dataDir.resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 		String storeUuid = Files.readString(walDir.resolve("store.uuid"), StandardCharsets.UTF_8).trim();
 		ValueStoreWalConfig config = ValueStoreWalConfig.builder().walDirectory(walDir).storeUuid(storeUuid).build();
 

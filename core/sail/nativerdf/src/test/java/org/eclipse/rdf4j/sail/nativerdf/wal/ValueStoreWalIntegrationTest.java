@@ -39,7 +39,7 @@ class ValueStoreWalIntegrationTest {
 
 	@Test
 	void logsMintedValueRecords() throws Exception {
-		Path walDir = tempDir.resolve("wal");
+		Path walDir = tempDir.resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 		Files.createDirectories(walDir);
 		ValueStoreWalConfig config = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)
