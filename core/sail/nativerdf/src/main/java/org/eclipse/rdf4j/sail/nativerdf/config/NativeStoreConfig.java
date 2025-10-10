@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.config;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.FORCE_SYNC;
 import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.NAMESPACE_CACHE_SIZE;
@@ -144,7 +145,7 @@ public class NativeStoreConfig extends BaseSailConfig {
 		}
 		// new config property under CONFIG namespace: native:walMaxSegmentBytes
 		if (walMaxSegmentBytes >= 0) {
-			m.add(implNode, org.eclipse.rdf4j.model.util.Values.iri(CONFIG.NS, "walMaxSegmentBytes"),
+			m.add(implNode, iri(CONFIG.NS, "walMaxSegmentBytes"),
 					literal(walMaxSegmentBytes));
 		}
 
@@ -244,8 +245,7 @@ public class NativeStoreConfig extends BaseSailConfig {
 
 			// parse walMaxSegmentBytes from CONFIG namespace if present
 			Configurations
-					.getLiteralValue(m, implNode,
-							org.eclipse.rdf4j.model.util.Values.iri(CONFIG.NS, "walMaxSegmentBytes"), null)
+					.getLiteralValue(m, implNode, iri(CONFIG.NS, "walMaxSegmentBytes"))
 					.ifPresent(lit -> {
 						try {
 							setWalMaxSegmentBytes(lit.longValue());

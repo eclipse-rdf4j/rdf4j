@@ -350,6 +350,8 @@ public final class ValueStoreWAL implements AutoCloseable {
 		}
 
 		private void rotateSegment() throws IOException {
+			// Ensure durability of all records appended to the current segment before closing/rotating.
+			flushAndForce();
 			Path toCompress = segmentPath;
 			closeQuietly(segmentChannel);
 			if (toCompress != null) {
@@ -371,18 +373,43 @@ public final class ValueStoreWAL implements AutoCloseable {
 		}
 
 		private void gzipAndDelete(Path src) {
-			try (var in = Files.newInputStream(src);
-					var out = new GZIPOutputStream(
-							Files.newOutputStream(src.resolveSibling(src.getFileName().toString() + ".gz")))) {
+			Path gz = src.resolveSibling(src.getFileName().toString() + ".gz");
+			long srcSize;
+			try {
+				srcSize = Files.size(src);
+			} catch (IOException e) {
+				// If we can't stat the file, don't attempt compression
+				return;
+			}
+			try (var in = Files.newInputStream(src); var out = new GZIPOutputStream(Files.newOutputStream(gz))) {
 				byte[] buf = new byte[1 << 16];
 				int r;
 				while ((r = in.read(buf)) >= 0) {
 					out.write(buf, 0, r);
 				}
 				out.finish();
+				// Verify gzip contains full original data by reading back and counting bytes
+				long decompressedBytes = 0L;
+				try (var gin = new java.util.zip.GZIPInputStream(Files.newInputStream(gz))) {
+					while ((r = gin.read(buf)) >= 0) {
+						decompressedBytes += r;
+					}
+				}
+				if (decompressedBytes != srcSize) {
+					// Verification failed: keep original, remove corrupt gzip
+					try {
+						Files.deleteIfExists(gz);
+					} catch (IOException ignore) {
+					}
+					return;
+				}
 				Files.deleteIfExists(src);
 			} catch (IOException e) {
-				// best-effort compression; continue silently in this context
+				// Compression failed: do not delete original; clean up partial gzip if present
+				try {
+					Files.deleteIfExists(gz);
+				} catch (IOException ignore) {
+				}
 			}
 		}
 
