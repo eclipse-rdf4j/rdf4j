@@ -87,7 +87,7 @@ class ValueStoreWALMonotonicSegmentTest {
 		try (var stream = Files.list(walDir)) {
 			for (Path path : (Iterable<Path>) stream::iterator) {
 				if (SEGMENT_GZ.matcher(path.getFileName().toString()).matches()) {
-					int seq = ValueStoreWAL.readSegmentSequence(path);
+					int seq = WalTestUtils.readSegmentSequence(path);
 					if (seq > max) {
 						max = seq;
 					}
@@ -124,7 +124,7 @@ class ValueStoreWALMonotonicSegmentTest {
 			for (Path p : (Iterable<Path>) stream::iterator) {
 				String name = p.getFileName().toString();
 				if (name.startsWith("wal-") && name.endsWith(".v1")) {
-					int current = ValueStoreWAL.readSegmentSequence(p);
+					int current = WalTestUtils.readSegmentSequence(p);
 					if (current > seq) {
 						seq = current;
 					}

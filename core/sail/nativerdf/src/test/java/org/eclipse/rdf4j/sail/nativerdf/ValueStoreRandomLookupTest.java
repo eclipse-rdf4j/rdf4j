@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.sail.nativerdf.wal.WalReader;
 import org.eclipse.rdf4j.sail.nativerdf.wal.WalRecord;
 import org.eclipse.rdf4j.sail.nativerdf.wal.WalRecovery;
 import org.eclipse.rdf4j.sail.nativerdf.wal.WalSearch;
+import org.eclipse.rdf4j.sail.nativerdf.wal.WalTestUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -235,7 +236,7 @@ class ValueStoreRandomLookupTest {
 		} else {
 			content = Files.readAllBytes(path);
 		}
-		int sequence = headerSequence(content);
+		int sequence = WalTestUtils.readSegmentSequence(content);
 		SegmentStats stats = new SegmentStats(path, sequence, compressed, content);
 		ByteBuffer buffer = ByteBuffer.wrap(content).order(ByteOrder.LITTLE_ENDIAN);
 		while (buffer.remaining() >= Integer.BYTES) {
@@ -265,23 +266,6 @@ class ValueStoreRandomLookupTest {
 			}
 		}
 		return stats;
-	}
-
-	private static int headerSequence(byte[] content) throws IOException {
-		ByteBuffer buffer = ByteBuffer.wrap(content).order(ByteOrder.LITTLE_ENDIAN);
-		if (buffer.remaining() < Integer.BYTES) {
-			return 0;
-		}
-		int headerLen = buffer.getInt();
-		if (headerLen <= 0 || buffer.remaining() < headerLen + Integer.BYTES) {
-			return 0;
-		}
-		byte[] header = new byte[headerLen];
-		buffer.get(header);
-		// skip header crc
-		buffer.getInt();
-		ParsedRecord parsed = ParsedRecord.parse(header);
-		return parsed.segment;
 	}
 
 	private static long crc32(byte[] content, int limit) {
