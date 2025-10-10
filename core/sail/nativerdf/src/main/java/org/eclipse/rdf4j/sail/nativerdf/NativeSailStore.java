@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -107,7 +108,7 @@ class NativeSailStore implements SailStore {
 	public NativeSailStore(File dataDir, String tripleIndexes, boolean forceSync, int valueCacheSize,
 			int valueIDCacheSize, int namespaceCacheSize, int namespaceIDCacheSize, long walMaxSegmentBytes,
 			int walQueueCapacity, int walBatchBufferBytes,
-			org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig.SyncPolicy walSyncPolicy,
+			ValueStoreWalConfig.SyncPolicy walSyncPolicy,
 			long walSyncIntervalMillis, long walIdlePollIntervalMillis, String walDirectoryName)
 			throws IOException, SailException {
 		NamespaceStore createdNamespaceStore = null;
@@ -141,10 +142,10 @@ class NativeSailStore implements SailStore {
 					walBuilder.syncPolicy(walSyncPolicy);
 				}
 				if (walSyncIntervalMillis >= 0) {
-					walBuilder.syncInterval(java.time.Duration.ofMillis(walSyncIntervalMillis));
+					walBuilder.syncInterval(Duration.ofMillis(walSyncIntervalMillis));
 				}
 				if (walIdlePollIntervalMillis >= 0) {
-					walBuilder.idlePollInterval(java.time.Duration.ofMillis(walIdlePollIntervalMillis));
+					walBuilder.idlePollInterval(Duration.ofMillis(walIdlePollIntervalMillis));
 				}
 				walConfig = walBuilder.build();
 				createdWal = ValueStoreWAL.open(walConfig);

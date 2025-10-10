@@ -25,6 +25,7 @@ import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -88,7 +89,7 @@ class ValueStoreWalRecoveryRebuildTest {
 					byte[] idData = rec.lexical().getBytes(StandardCharsets.UTF_8);
 					byte[] bnode = new byte[1 + idData.length];
 					bnode[0] = 0x2; // BNODE tag
-					org.eclipse.rdf4j.common.io.ByteArrayUtil.put(idData, bnode, 1);
+					ByteArrayUtil.put(idData, bnode, 1);
 					ds.storeData(bnode);
 				} else if (rec.valueKind() == ValueStoreWalValueKind.LITERAL) {
 					ds.storeData(encodeLiteral(rec.lexical(), rec.datatype(), rec.language(), ds));
@@ -177,8 +178,8 @@ class ValueStoreWalRecoveryRebuildTest {
 		byte[] localBytes = local.getBytes(StandardCharsets.UTF_8);
 		byte[] data = new byte[1 + 4 + localBytes.length];
 		data[0] = 0x1; // URI tag
-		org.eclipse.rdf4j.common.io.ByteArrayUtil.putInt(nsId, data, 1);
-		org.eclipse.rdf4j.common.io.ByteArrayUtil.put(localBytes, data, 5);
+		ByteArrayUtil.putInt(nsId, data, 1);
+		ByteArrayUtil.put(localBytes, data, 5);
 		return data;
 	}
 
@@ -193,12 +194,12 @@ class ValueStoreWalRecoveryRebuildTest {
 		byte[] labelBytes = label.getBytes(StandardCharsets.UTF_8);
 		byte[] data = new byte[1 + 4 + 1 + langBytes.length + labelBytes.length];
 		data[0] = 0x3; // LITERAL tag
-		org.eclipse.rdf4j.common.io.ByteArrayUtil.putInt(dtId, data, 1);
+		ByteArrayUtil.putInt(dtId, data, 1);
 		data[5] = (byte) (langBytes.length & 0xFF);
 		if (langBytes.length > 0) {
-			org.eclipse.rdf4j.common.io.ByteArrayUtil.put(langBytes, data, 6);
+			ByteArrayUtil.put(langBytes, data, 6);
 		}
-		org.eclipse.rdf4j.common.io.ByteArrayUtil.put(labelBytes, data, 6 + langBytes.length);
+		ByteArrayUtil.put(labelBytes, data, 6 + langBytes.length);
 		return data;
 	}
 }

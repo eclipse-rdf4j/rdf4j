@@ -18,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.zip.GZIPOutputStream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -104,7 +105,7 @@ class ValueStoreWALMonotonicSegmentTest {
 				if (name.startsWith("wal-") && name.endsWith(".v1")) {
 					Path gz = p.resolveSibling(name + ".gz");
 					try (var in = Files.newInputStream(p);
-							var out = new java.util.zip.GZIPOutputStream(Files.newOutputStream(gz))) {
+							var out = new GZIPOutputStream(Files.newOutputStream(gz))) {
 						byte[] buf = new byte[1 << 16];
 						int r;
 						while ((r = in.read(buf)) >= 0) {

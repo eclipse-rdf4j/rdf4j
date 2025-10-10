@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.config.SailFactory;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
 
 /**
  * A {@link SailFactory} that creates {@link NativeStore}s based on RDF configuration data.
@@ -87,7 +88,7 @@ public class NativeStoreFactory implements SailFactory {
 			}
 			if (nativeConfig.getWalSyncPolicy() != null) {
 				try {
-					nativeStore.setWalSyncPolicy(org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig.SyncPolicy
+					nativeStore.setWalSyncPolicy(ValueStoreWalConfig.SyncPolicy
 							.valueOf(nativeConfig.getWalSyncPolicy().toUpperCase()));
 				} catch (IllegalArgumentException e) {
 					throw new SailConfigException("Invalid walSyncPolicy: " + nativeConfig.getWalSyncPolicy());

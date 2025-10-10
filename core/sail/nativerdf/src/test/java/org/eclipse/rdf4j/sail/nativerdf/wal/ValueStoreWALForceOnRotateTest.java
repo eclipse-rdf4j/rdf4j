@@ -17,10 +17,16 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.ReadableByteChannel;
+import java.nio.channels.WritableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -72,8 +78,8 @@ class ValueStoreWALForceOnRotateTest {
 	private static void waitUntilLastAppendedAtLeast(ValueStoreWAL wal, long targetLsn) throws Exception {
 		Field f = ValueStoreWAL.class.getDeclaredField("lastAppendedLsn");
 		f.setAccessible(true);
-		java.util.concurrent.atomic.AtomicLong lastAppended = (java.util.concurrent.atomic.AtomicLong) f.get(wal);
-		long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+		AtomicLong lastAppended = (AtomicLong) f.get(wal);
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
 		while (System.nanoTime() < deadline) {
 			if (lastAppended.get() >= targetLsn) {
 				return;
@@ -150,19 +156,19 @@ class ValueStoreWALForceOnRotateTest {
 		}
 
 		@Override
-		public long transferTo(long position, long count, java.nio.channels.WritableByteChannel target)
+		public long transferTo(long position, long count, WritableByteChannel target)
 				throws IOException {
 			return delegate.transferTo(position, count, target);
 		}
 
 		@Override
-		public long transferFrom(java.nio.channels.ReadableByteChannel src, long position, long count)
+		public long transferFrom(ReadableByteChannel src, long position, long count)
 				throws IOException {
 			return delegate.transferFrom(src, position, count);
 		}
 
 		@Override
-		public java.nio.MappedByteBuffer map(MapMode mode, long position, long size) throws IOException {
+		public MappedByteBuffer map(MapMode mode, long position, long size) throws IOException {
 			return delegate.map(mode, position, size);
 		}
 
@@ -182,12 +188,12 @@ class ValueStoreWALForceOnRotateTest {
 		}
 
 		@Override
-		public java.nio.channels.FileLock lock(long position, long size, boolean shared) throws IOException {
+		public FileLock lock(long position, long size, boolean shared) throws IOException {
 			return delegate.lock(position, size, shared);
 		}
 
 		@Override
-		public java.nio.channels.FileLock tryLock(long position, long size, boolean shared) throws IOException {
+		public FileLock tryLock(long position, long size, boolean shared) throws IOException {
 			return delegate.tryLock(position, size, shared);
 		}
 	}

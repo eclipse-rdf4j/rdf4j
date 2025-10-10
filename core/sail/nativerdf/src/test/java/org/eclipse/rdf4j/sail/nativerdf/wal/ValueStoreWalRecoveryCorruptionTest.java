@@ -13,15 +13,21 @@ package org.eclipse.rdf4j.sail.nativerdf.wal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.BufferedOutputStream;
+import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
+import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -113,7 +119,7 @@ class ValueStoreWalRecoveryCorruptionTest {
 
 		Path valuesDat = dataDir.toPath().resolve("values.dat");
 		if (Files.exists(valuesDat)) {
-			Files.newByteChannel(valuesDat, java.util.Set.of(java.nio.file.StandardOpenOption.WRITE))
+			Files.newByteChannel(valuesDat, Set.of(StandardOpenOption.WRITE))
 					.truncate(0)
 					.close();
 		}
@@ -159,7 +165,7 @@ class ValueStoreWalRecoveryCorruptionTest {
 					byte[] idData = record.lexical().getBytes(StandardCharsets.UTF_8);
 					byte[] bnode = new byte[1 + idData.length];
 					bnode[0] = 0x2;
-					org.eclipse.rdf4j.common.io.ByteArrayUtil.put(idData, bnode, 1);
+					ByteArrayUtil.put(idData, bnode, 1);
 					ds.storeData(bnode);
 					break;
 				}
@@ -187,8 +193,8 @@ class ValueStoreWalRecoveryCorruptionTest {
 		byte[] localBytes = local.getBytes(StandardCharsets.UTF_8);
 		byte[] data = new byte[1 + 4 + localBytes.length];
 		data[0] = 0x1;
-		org.eclipse.rdf4j.common.io.ByteArrayUtil.putInt(nsId, data, 1);
-		org.eclipse.rdf4j.common.io.ByteArrayUtil.put(localBytes, data, 5);
+		ByteArrayUtil.putInt(nsId, data, 1);
+		ByteArrayUtil.put(localBytes, data, 5);
 		return data;
 	}
 
@@ -203,12 +209,12 @@ class ValueStoreWalRecoveryCorruptionTest {
 		byte[] labelBytes = label.getBytes(StandardCharsets.UTF_8);
 		byte[] data = new byte[1 + 4 + 1 + langBytes.length + labelBytes.length];
 		data[0] = 0x3;
-		org.eclipse.rdf4j.common.io.ByteArrayUtil.putInt(dtId, data, 1);
+		ByteArrayUtil.putInt(dtId, data, 1);
 		data[5] = (byte) (langBytes.length & 0xFF);
 		if (langBytes.length > 0) {
-			org.eclipse.rdf4j.common.io.ByteArrayUtil.put(langBytes, data, 6);
+			ByteArrayUtil.put(langBytes, data, 6);
 		}
-		org.eclipse.rdf4j.common.io.ByteArrayUtil.put(labelBytes, data, 6 + langBytes.length);
+		ByteArrayUtil.put(labelBytes, data, 6 + langBytes.length);
 		return data;
 	}
 
@@ -271,8 +277,8 @@ class ValueStoreWalRecoveryCorruptionTest {
 			return;
 		}
 		Files.createDirectories(dataDir);
-		try (var out = new java.io.DataOutputStream(
-				new java.io.BufferedOutputStream(new java.io.FileOutputStream(file.toFile())))) {
+		try (var out = new DataOutputStream(
+				new BufferedOutputStream(new FileOutputStream(file.toFile())))) {
 			out.write(new byte[] { 'n', 'c', 'f' });
 			out.writeByte(1);
 			out.writeInt(0);

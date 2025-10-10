@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.nativerdf.wal;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
@@ -132,7 +133,7 @@ public final class ValueStoreWalReader implements AutoCloseable {
 		currentSegmentSummarySeen = false;
 	}
 
-	private static int readIntLE(java.io.InputStream in) throws IOException {
+	private static int readIntLE(InputStream in) throws IOException {
 		byte[] b = in.readNBytes(4);
 		if (b.length < 4) {
 			return -1;

@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreConfig;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreFactory;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
@@ -90,7 +91,7 @@ class NativeStoreWalConfigTest {
 
 		SailStore sailStore = sail.getSailStore();
 		// unwrap SnapshotSailStore to get underlying NativeSailStore
-		java.lang.reflect.Field backingField = org.eclipse.rdf4j.sail.base.SnapshotSailStore.class
+		Field backingField = SnapshotSailStore.class
 				.getDeclaredField("backingStore");
 		backingField.setAccessible(true);
 		NativeSailStore nss = (NativeSailStore) backingField.get(sailStore);

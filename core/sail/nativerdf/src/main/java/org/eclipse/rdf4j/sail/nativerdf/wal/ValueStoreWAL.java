@@ -50,8 +50,6 @@ public final class ValueStoreWAL implements AutoCloseable {
 
 	private static final Logger logger = LoggerFactory.getLogger(ValueStoreWAL.class);
 
-	static final Charset UTF8 = StandardCharsets.UTF_8;
-
 	public static final long NO_LSN = -1L;
 
 	static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d+)\\.v1(?:\\.gz)?");
@@ -152,10 +150,6 @@ public final class ValueStoreWAL implements AutoCloseable {
 		if (writerFailure != null) {
 			throw propagate(writerFailure);
 		}
-	}
-
-	public long lastForcedLsn() {
-		return lastForcedLsn.get();
 	}
 
 	public boolean hasInitialSegments() {
@@ -321,6 +315,9 @@ public final class ValueStoreWAL implements AutoCloseable {
 		private int segmentLastMintedId;
 		private int segmentFirstMintedId;
 		private final ByteBuffer ioBuffer;
+		// Reuse JSON infrastructure to reduce allocations per record
+		private final JsonFactory jsonFactory = new JsonFactory();
+		private final ReusableByteArrayOutputStream jsonBuffer = new ReusableByteArrayOutputStream(256);
 		private volatile boolean running = true;
 
 		LogWriter(int existingSegments) {
@@ -417,7 +414,6 @@ public final class ValueStoreWAL implements AutoCloseable {
 			}
 			ioBuffer.clear();
 			closeQuietly(segmentChannel);
-			Path previousPath = segmentPath;
 			int previousFirstId = segmentFirstMintedId;
 			int previousLastId = segmentLastMintedId;
 			segmentChannel = null;
@@ -443,8 +439,9 @@ public final class ValueStoreWAL implements AutoCloseable {
 			if (segmentChannel == null) {
 				startSegment(record.id());
 			}
-			byte[] jsonBytes = encode(record);
-			int framedLength = 4 + jsonBytes.length + 4;
+			// Encode JSON for the record into reusable buffer without copying
+			int jsonLength = encodeIntoReusableBuffer(record);
+			int framedLength = 4 + jsonLength + 4;
 			if (segmentBytes + framedLength > config.maxSegmentBytes()) {
 				flushBuffer();
 				finishCurrentSegment();
@@ -454,21 +451,22 @@ public final class ValueStoreWAL implements AutoCloseable {
 			if (ioBuffer.remaining() < 4) {
 				flushBuffer();
 			}
-			ioBuffer.putInt(jsonBytes.length);
+			ioBuffer.putInt(jsonLength);
 
 			// Write JSON payload in chunks to avoid BufferOverflowException
 			int offset = 0;
-			while (offset < jsonBytes.length) {
+			byte[] jsonBytes = jsonBuffer.buffer();
+			while (offset < jsonLength) {
 				if (ioBuffer.remaining() == 0) {
 					flushBuffer();
 				}
-				int toWrite = Math.min(ioBuffer.remaining(), jsonBytes.length - offset);
+				int toWrite = Math.min(ioBuffer.remaining(), jsonLength - offset);
 				ioBuffer.put(jsonBytes, offset, toWrite);
 				offset += toWrite;
 			}
 
 			// Write CRC (4 bytes)
-			int crc = checksum(jsonBytes);
+			int crc = checksum(jsonBytes, jsonLength);
 			if (ioBuffer.remaining() < 4) {
 				flushBuffer();
 			}
@@ -672,15 +670,18 @@ public final class ValueStoreWAL implements AutoCloseable {
 		}
 
 		private int checksum(byte[] data) {
+			return checksum(data, data.length);
+		}
+
+		private int checksum(byte[] data, int len) {
 			crc32c.reset();
-			crc32c.update(data, 0, data.length);
+			crc32c.update(data, 0, len);
 			return (int) crc32c.getValue();
 		}
 
-		private byte[] encode(ValueStoreWalRecord record) throws IOException {
-			JsonFactory factory = new JsonFactory();
-			ByteArrayOutputStream baos = new ByteArrayOutputStream(256);
-			try (JsonGenerator gen = factory.createGenerator(baos)) {
+		private int encodeIntoReusableBuffer(ValueStoreWalRecord record) throws IOException {
+			jsonBuffer.reset();
+			try (JsonGenerator gen = jsonFactory.createGenerator(jsonBuffer)) {
 				gen.writeStartObject();
 				gen.writeStringField("t", "M");
 				gen.writeNumberField("lsn", record.lsn());
@@ -692,9 +693,8 @@ public final class ValueStoreWAL implements AutoCloseable {
 				gen.writeNumberField("hash", record.hash());
 				gen.writeEndObject();
 			}
-			// NDJSON: newline-delimited JSON
-			baos.write('\n');
-			return baos.toByteArray();
+			jsonBuffer.write('\n'); // NDJSON newline
+			return jsonBuffer.size();
 		}
 
 		private void closeQuietly(FileChannel channel) {
@@ -704,6 +704,17 @@ public final class ValueStoreWAL implements AutoCloseable {
 				} catch (IOException ignore) {
 					// ignore
 				}
+			}
+		}
+
+		// Minimal extension to access internal buffer without copying
+		private final class ReusableByteArrayOutputStream extends ByteArrayOutputStream {
+			ReusableByteArrayOutputStream(int size) {
+				super(size);
+			}
+
+			byte[] buffer() {
+				return this.buf;
 			}
 		}
 	}

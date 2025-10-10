@@ -11,6 +11,8 @@
 package org.eclipse.rdf4j.sail.nativerdf.wal;
 
 import java.lang.reflect.Field;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -26,12 +28,12 @@ import org.junit.jupiter.api.io.TempDir;
 class ValueStoreWALRetainPendingForceTest {
 
 	@TempDir
-	java.nio.file.Path tempDir;
+	Path tempDir;
 
 	@Test
 	void backToBackAwaitDoesNotHang() throws Exception {
 		var walDir = tempDir.resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
-		java.nio.file.Files.createDirectories(walDir);
+		Files.createDirectories(walDir);
 
 		ValueStoreWalConfig cfg = ValueStoreWalConfig.builder()
 				.walDirectory(walDir)

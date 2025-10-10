@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.nativerdf.wal;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -34,7 +35,7 @@ public final class ValueStoreWalRecovery {
 		private final boolean complete;
 
 		public ReplayReport(Map<Integer, ValueStoreWalRecord> dictionary, boolean complete) {
-			this.dictionary = java.util.Collections
+			this.dictionary = Collections
 					.unmodifiableMap(new LinkedHashMap<>(dictionary));
 			this.complete = complete;
 		}

@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.sail.nativerdf.NativeStore.SOFT_FAIL_ON_CORRUPT_
 import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -480,7 +481,7 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 				String namespace = data2namespace(data);
 				try {
 					if (id == getNamespaceID(namespace, false)
-							&& java.net.URI.create(namespace + "part").isAbsolute()) {
+							&& URI.create(namespace + "part").isAbsolute()) {
 						continue;
 					}
 				} catch (IllegalArgumentException e) {
@@ -952,7 +953,7 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 	}
 
 	private int computeWalHash(ValueStoreWalValueKind kind, String lexical, String datatype, String language) {
-		CRC32C crc32c = new CRC32C();
+		CRC32C crc32c = CRC32C_HOLDER.get();
 		crc32c.update((byte) kind.code());
 		updateCrc(crc32c, lexical);
 		crc32c.update((byte) 0);
@@ -973,6 +974,8 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 	private boolean walEnabled() {
 		return wal != null;
 	}
+
+	private static final ThreadLocal<CRC32C> CRC32C_HOLDER = ThreadLocal.withInitial(CRC32C::new);
 
 	private static final class ValueStoreWalDescription {
 		final ValueStoreWalValueKind kind;

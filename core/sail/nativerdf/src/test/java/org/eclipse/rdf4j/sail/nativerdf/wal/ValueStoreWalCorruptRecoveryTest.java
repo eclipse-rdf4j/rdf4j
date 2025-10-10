@@ -35,6 +35,7 @@ import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStore;
@@ -237,8 +238,8 @@ class ValueStoreWalCorruptRecoveryTest {
 				VF.createLiteral("simple-string"),
 				VF.createLiteral("hello", "en"),
 				VF.createLiteral("42", dt),
-				VF.createLiteral("123", org.eclipse.rdf4j.model.base.CoreDatatype.XSD.INTEGER),
-				VF.createLiteral("abc", dt, org.eclipse.rdf4j.model.base.CoreDatatype.NONE),
+				VF.createLiteral("123", CoreDatatype.XSD.INTEGER),
+				VF.createLiteral("abc", dt, CoreDatatype.NONE),
 
 				// Booleans and numerics
 				VF.createLiteral(true),
@@ -247,7 +248,7 @@ class ValueStoreWalCorruptRecoveryTest {
 				VF.createLiteral((short) 12),
 				VF.createLiteral(34),
 				VF.createLiteral(56L),
-				VF.createLiteral(56L, org.eclipse.rdf4j.model.base.CoreDatatype.XSD.LONG),
+				VF.createLiteral(56L, CoreDatatype.XSD.LONG),
 				VF.createLiteral(1.5f),
 				VF.createLiteral(2.5d),
 				VF.createLiteral(new BigInteger("789")),

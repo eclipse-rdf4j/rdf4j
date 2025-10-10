@@ -41,7 +41,9 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreConfig;
+import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreFactory;
 import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
@@ -70,7 +72,7 @@ class ValueStoreRandomLookupTest {
 	void randomLookup50() throws Exception {
 		NativeStoreConfig cfg = new NativeStoreConfig("spoc,ospc,psoc");
 		cfg.setWalMaxSegmentBytes(1024 * 1024 * 4);
-		NativeStore store = (NativeStore) new org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreFactory().getSail(cfg);
+		NativeStore store = (NativeStore) new NativeStoreFactory().getSail(cfg);
 		store.setDataDir(dataDir);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -176,7 +178,7 @@ class ValueStoreRandomLookupTest {
 				Value value = null;
 				try {
 					value = vs.getValue(id);
-				} catch (org.eclipse.rdf4j.sail.SailException e) {
+				} catch (SailException e) {
 					if (!deletedIds.contains(id)) {
 						throw e;
 					}
@@ -227,14 +229,14 @@ class ValueStoreRandomLookupTest {
 			for (Path path : stream.collect(Collectors.toList())) {
 				Matcher matcher = SEGMENT_PATTERN.matcher(path.getFileName().toString());
 				if (matcher.matches()) {
-					stats.put(path, analyzeSingleSegment(path, config));
+					stats.put(path, analyzeSingleSegment(path));
 				}
 			}
 		}
 		return stats;
 	}
 
-	private static SegmentStats analyzeSingleSegment(Path path, ValueStoreWalConfig config) throws IOException {
+	private static SegmentStats analyzeSingleSegment(Path path) throws IOException {
 		boolean compressed = path.getFileName().toString().endsWith(".gz");
 		byte[] content;
 		if (compressed) {
