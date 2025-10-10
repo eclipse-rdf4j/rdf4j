@@ -27,13 +27,17 @@ import java.util.regex.Pattern;
 import java.util.zip.CRC32C;
 import java.util.zip.GZIPInputStream;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 
 public final class WalReader implements AutoCloseable {
 
-	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d{8})\\.v1(?:\\.gz)?");
+	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d+)\\.v1(?:\\.gz)?");
+	private static final Logger logger = LoggerFactory.getLogger(WalReader.class);
 
 	private final WalConfig config;
 	private final JsonFactory jsonFactory = new JsonFactory();
@@ -139,12 +143,14 @@ public final class WalReader implements AutoCloseable {
 	private List<SegmentEntry> listSegments() throws IOException {
 		class Item {
 			final Path path;
-			final int seq;
+			final long firstId;
+			final int sequence;
 			final boolean compressed;
 
-			Item(Path path, int seq, boolean compressed) {
+			Item(Path path, long firstId, int sequence, boolean compressed) {
 				this.path = path;
-				this.seq = seq;
+				this.firstId = firstId;
+				this.sequence = sequence;
 				this.compressed = compressed;
 			}
 		}
@@ -156,16 +162,22 @@ public final class WalReader implements AutoCloseable {
 			stream.forEach(p -> {
 				var m = SEGMENT_PATTERN.matcher(p.getFileName().toString());
 				if (m.matches()) {
-					int seq = Integer.parseInt(m.group(1));
+					long firstId = Long.parseLong(m.group(1));
 					boolean compressed = p.getFileName().toString().endsWith(".gz");
-					items.add(new Item(p, seq, compressed));
+					int sequence = 0;
+					try {
+						sequence = ValueStoreWAL.readSegmentSequence(p);
+					} catch (IOException e) {
+						logger.warn("Failed to read WAL segment header for {}", p.getFileName(), e);
+					}
+					items.add(new Item(p, firstId, sequence, compressed));
 				}
 			});
 		}
-		items.sort(Comparator.comparingInt(it -> it.seq));
+		items.sort(Comparator.comparingInt(it -> it.sequence));
 		List<SegmentEntry> segments = new ArrayList<>(items.size());
 		for (Item it : items) {
-			segments.add(new SegmentEntry(it.path, it.seq, it.compressed));
+			segments.add(new SegmentEntry(it.path, it.firstId, it.sequence, it.compressed));
 		}
 		return segments;
 	}
@@ -174,12 +186,12 @@ public final class WalReader implements AutoCloseable {
 		if (entries.isEmpty()) {
 			return false;
 		}
-		int expected = entries.get(0).seq;
+		int expected = entries.get(0).sequence;
 		if (expected > 1) {
 			return true;
 		}
 		for (SegmentEntry entry : entries) {
-			if (entry.seq != expected) {
+			if (entry.sequence != expected) {
 				return true;
 			}
 			expected++;
@@ -398,12 +410,14 @@ public final class WalReader implements AutoCloseable {
 
 	private static final class SegmentEntry {
 		final Path path;
-		final int seq;
+		final long firstId;
+		final int sequence;
 		final boolean compressed;
 
-		SegmentEntry(Path path, int seq, boolean compressed) {
+		SegmentEntry(Path path, long firstId, int sequence, boolean compressed) {
 			this.path = path;
-			this.seq = seq;
+			this.firstId = firstId;
+			this.sequence = sequence;
 			this.compressed = compressed;
 		}
 	}

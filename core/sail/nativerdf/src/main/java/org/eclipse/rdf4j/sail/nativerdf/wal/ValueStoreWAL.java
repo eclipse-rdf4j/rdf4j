@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.nativerdf.wal;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.ClosedChannelException;
@@ -22,6 +23,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -32,6 +35,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.zip.CRC32;
 import java.util.zip.CRC32C;
+import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 import org.slf4j.Logger;
@@ -39,6 +43,8 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 
 public final class ValueStoreWAL implements AutoCloseable {
 
@@ -48,7 +54,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 
 	public static final long NO_LSN = -1L;
 
-	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d{8})\\.v1(?:\\.gz)?");
+	static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d+)\\.v1(?:\\.gz)?");
 
 	private final WalConfig config;
 	private final BlockingQueue<WalRecord> queue;
@@ -68,6 +74,9 @@ public final class ValueStoreWAL implements AutoCloseable {
 	private final FileChannel lockChannel;
 	private final FileLock directoryLock;
 
+	private final boolean initialSegmentsPresent;
+	private final int initialMaxSegmentSeq;
+
 	private ValueStoreWAL(WalConfig config) throws IOException {
 		this.config = Objects.requireNonNull(config, "config");
 		Files.createDirectories(config.walDirectory());
@@ -86,8 +95,10 @@ public final class ValueStoreWAL implements AutoCloseable {
 		}
 
 		this.queue = new ArrayBlockingQueue<>(config.queueCapacity());
-		int nextSegment = determineNextSegmentSequence(config.walDirectory());
-		this.logWriter = new LogWriter(nextSegment);
+		DirectoryState state = analyzeDirectory(config.walDirectory());
+		this.initialSegmentsPresent = state.hasSegments;
+		this.initialMaxSegmentSeq = state.maxSequence;
+		this.logWriter = new LogWriter(initialMaxSegmentSeq);
 		this.writerThread = new Thread(logWriter, "ValueStoreWalWriter-" + config.storeUuid());
 		this.writerThread.setDaemon(true);
 		this.writerThread.start();
@@ -131,6 +142,14 @@ public final class ValueStoreWAL implements AutoCloseable {
 
 	public long lastForcedLsn() {
 		return lastForcedLsn.get();
+	}
+
+	public boolean hasInitialSegments() {
+		return initialSegmentsPresent;
+	}
+
+	public boolean isClosed() {
+		return closed;
 	}
 
 	@Override
@@ -205,23 +224,76 @@ public final class ValueStoreWAL implements AutoCloseable {
 		return new IOException("WAL writer failure", throwable);
 	}
 
-	private int determineNextSegmentSequence(Path walDirectory) throws IOException {
+	private DirectoryState analyzeDirectory(Path walDirectory) throws IOException {
 		if (!Files.isDirectory(walDirectory)) {
-			return 1;
+			return new DirectoryState(false, 0);
 		}
-		int max = 0;
+		int maxSequence = 0;
+		boolean hasSegments = false;
+		List<Path> paths;
 		try (var stream = Files.list(walDirectory)) {
-			for (Path path : stream.collect(Collectors.toList())) {
-				Matcher matcher = SEGMENT_PATTERN.matcher(path.getFileName().toString());
-				if (matcher.matches()) {
-					int seq = Integer.parseInt(matcher.group(1));
-					if (seq > max) {
-						max = seq;
+			paths = stream.collect(Collectors.toList());
+		}
+		for (Path path : paths) {
+			Matcher matcher = SEGMENT_PATTERN.matcher(path.getFileName().toString());
+			if (matcher.matches()) {
+				hasSegments = true;
+				try {
+					int segment = readSegmentSequence(path);
+					if (segment > maxSequence) {
+						maxSequence = segment;
+					}
+				} catch (IOException e) {
+					logger.warn("Failed to read WAL segment header for {}", path.getFileName(), e);
+				}
+			}
+		}
+		return new DirectoryState(hasSegments, maxSequence);
+	}
+
+	static int readSegmentSequence(Path path) throws IOException {
+		boolean compressed = path.getFileName().toString().endsWith(".gz");
+		try (var rawIn = Files.newInputStream(path);
+				InputStream in = compressed ? new GZIPInputStream(rawIn) : rawIn) {
+			byte[] lenBytes = in.readNBytes(4);
+			if (lenBytes.length < 4) {
+				return 0;
+			}
+			ByteBuffer lenBuf = ByteBuffer.wrap(lenBytes).order(ByteOrder.LITTLE_ENDIAN);
+			int frameLen = lenBuf.getInt();
+			if (frameLen <= 0) {
+				return 0;
+			}
+			byte[] jsonBytes = in.readNBytes(frameLen);
+			if (jsonBytes.length < frameLen) {
+				return 0;
+			}
+			// skip CRC
+			in.readNBytes(4);
+			JsonFactory factory = new JsonFactory();
+			try (JsonParser parser = factory.createParser(jsonBytes)) {
+				while (parser.nextToken() != JsonToken.END_OBJECT) {
+					if (parser.currentToken() == JsonToken.FIELD_NAME) {
+						String field = parser.getCurrentName();
+						parser.nextToken();
+						if ("segment".equals(field)) {
+							return parser.getIntValue();
+						}
 					}
 				}
 			}
 		}
-		return max + 1;
+		return 0;
+	}
+
+	private static final class DirectoryState {
+		final boolean hasSegments;
+		final int maxSequence;
+
+		DirectoryState(boolean hasSegments, int maxSequence) {
+			this.hasSegments = hasSegments;
+			this.maxSequence = maxSequence;
+		}
 	}
 
 	private final class LogWriter implements Runnable {
@@ -233,15 +305,19 @@ public final class ValueStoreWAL implements AutoCloseable {
 		private int segmentSequence;
 		private long segmentBytes;
 		private int segmentLastMintedId;
+		private int segmentFirstMintedId;
 		private final ByteBuffer ioBuffer;
 		private volatile boolean running = true;
 
-		LogWriter(int initialSegment) throws IOException {
-			this.segmentSequence = initialSegment - 1;
+		LogWriter(int existingSegments) {
+			this.segmentSequence = existingSegments;
 			this.batchSize = config.batchBufferBytes();
 			this.ioBuffer = ByteBuffer.allocateDirect(batchSize).order(ByteOrder.LITTLE_ENDIAN);
+			this.segmentChannel = null;
+			this.segmentPath = null;
+			this.segmentBytes = 0L;
 			this.segmentLastMintedId = 0;
-			openNextSegment();
+			this.segmentFirstMintedId = 0;
 		}
 
 		@Override
@@ -303,7 +379,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 		}
 
 		private void ensureSegmentWritable() throws IOException {
-			if (segmentPath == null) {
+			if (segmentPath == null || segmentChannel == null) {
 				return;
 			}
 			if (Files.exists(segmentPath)) {
@@ -314,7 +390,6 @@ public final class ValueStoreWAL implements AutoCloseable {
 			}
 			logger.error("Detected deletion of active WAL segment {}; continuing with a new segment",
 					segmentPath.getFileName());
-			int previousLastId = segmentLastMintedId;
 			ByteBuffer pending = null;
 			if (ioBuffer.position() > 0) {
 				ByteBuffer duplicate = ioBuffer.duplicate();
@@ -327,23 +402,38 @@ public final class ValueStoreWAL implements AutoCloseable {
 			}
 			ioBuffer.clear();
 			closeQuietly(segmentChannel);
-			openNextSegment();
-			segmentLastMintedId = previousLastId;
-			if (pending != null) {
-				while (pending.hasRemaining()) {
-					segmentChannel.write(pending);
+			Path previousPath = segmentPath;
+			int previousFirstId = segmentFirstMintedId;
+			int previousLastId = segmentLastMintedId;
+			segmentChannel = null;
+			segmentPath = null;
+			segmentBytes = 0L;
+			segmentFirstMintedId = 0;
+			if (previousFirstId > 0) {
+				startSegment(previousFirstId, false);
+				segmentLastMintedId = previousLastId;
+				if (pending != null) {
+					while (pending.hasRemaining()) {
+						segmentChannel.write(pending);
+					}
+					segmentBytes += pending.limit();
 				}
-				segmentBytes += pending.limit();
+			} else {
+				segmentLastMintedId = previousLastId;
 			}
 		}
 
 		private void append(WalRecord record) throws IOException {
 			ensureSegmentWritable();
+			if (segmentChannel == null) {
+				startSegment(record.id());
+			}
 			byte[] jsonBytes = encode(record);
 			int framedLength = 4 + jsonBytes.length + 4;
 			if (segmentBytes + framedLength > config.maxSegmentBytes()) {
 				flushBuffer();
-				rotateSegment();
+				finishCurrentSegment();
+				startSegment(record.id());
 			}
 			// Write header length (4 bytes)
 			if (ioBuffer.remaining() < 4) {
@@ -400,6 +490,10 @@ public final class ValueStoreWAL implements AutoCloseable {
 
 		private void flushBuffer() throws IOException {
 			ensureSegmentWritable();
+			if (segmentChannel == null) {
+				ioBuffer.clear();
+				return;
+			}
 			ioBuffer.flip();
 			while (ioBuffer.hasRemaining()) {
 				segmentChannel.write(ioBuffer);
@@ -407,29 +501,51 @@ public final class ValueStoreWAL implements AutoCloseable {
 			ioBuffer.clear();
 		}
 
-		private void rotateSegment() throws IOException {
-			// Ensure durability of all records appended to the current segment before closing/rotating.
+		private void finishCurrentSegment() throws IOException {
+			if (segmentChannel == null) {
+				return;
+			}
 			flushAndForce();
 			int summaryLastId = segmentLastMintedId;
 			Path toCompress = segmentPath;
 			closeQuietly(segmentChannel);
+			segmentChannel = null;
+			segmentPath = null;
+			segmentBytes = 0L;
+			segmentFirstMintedId = 0;
+			segmentLastMintedId = 0;
 			if (toCompress != null) {
 				gzipAndDelete(toCompress, summaryLastId);
 			}
-			openNextSegment();
 		}
 
-		private void openNextSegment() throws IOException {
-			segmentSequence++;
-			String fileName = String.format("wal-%08d.v1", segmentSequence);
-			segmentPath = config.walDirectory().resolve(fileName);
-			segmentChannel = FileChannel.open(segmentPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE,
-					StandardOpenOption.APPEND);
-			segmentBytes = Files.size(segmentPath);
-			if (segmentBytes == 0L) {
-				writeHeader();
+		private void startSegment(int firstId) throws IOException {
+			startSegment(firstId, true);
+		}
+
+		private void startSegment(int firstId, boolean incrementSequence) throws IOException {
+			if (incrementSequence) {
+				segmentSequence++;
 			}
+			segmentPath = config.walDirectory().resolve(buildSegmentFileName(firstId));
+			if (Files.exists(segmentPath)) {
+				logger.warn("Overwriting existing WAL segment {}", segmentPath.getFileName());
+			}
+			segmentChannel = FileChannel.open(segmentPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE,
+					StandardOpenOption.TRUNCATE_EXISTING);
+			segmentBytes = 0L;
+			segmentFirstMintedId = firstId;
 			segmentLastMintedId = 0;
+			writeHeader(firstId);
+		}
+
+		@SuppressWarnings("unused")
+		private void rotateSegment() throws IOException {
+			finishCurrentSegment();
+		}
+
+		private String buildSegmentFileName(int firstId) {
+			return "wal-" + firstId + ".v1";
 		}
 
 		private void gzipAndDelete(Path src, int lastMintedId) {
@@ -504,7 +620,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 			return framed;
 		}
 
-		private void writeHeader() throws IOException {
+		private void writeHeader(int firstId) throws IOException {
 			JsonFactory factory = new JsonFactory();
 			java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream(256);
 			try (JsonGenerator gen = factory.createGenerator(baos)) {
@@ -515,6 +631,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 				gen.writeStringField("engine", "valuestore");
 				gen.writeNumberField("created", Instant.now().getEpochSecond());
 				gen.writeNumberField("segment", segmentSequence);
+				gen.writeNumberField("firstId", firstId);
 				gen.writeEndObject();
 			}
 			// NDJSON: newline-delimited JSON

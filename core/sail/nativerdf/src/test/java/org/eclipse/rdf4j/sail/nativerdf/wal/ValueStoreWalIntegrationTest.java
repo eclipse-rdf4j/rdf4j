@@ -16,8 +16,10 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Objects;
 import java.util.OptionalLong;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -113,6 +115,82 @@ class ValueStoreWalIntegrationTest {
 			assertThat(dictionary.values())
 					.anyMatch(record -> record.valueKind() == ValueKind.IRI
 							&& record.lexical().equals("http://example.com/resource"));
+		}
+	}
+
+	@Test
+	void enablingWalOnPopulatedStoreRebuildsExistingEntries() throws Exception {
+		Path valuesPath = tempDir.resolve("values-existing");
+		Files.createDirectories(valuesPath);
+		File valueDir = valuesPath.toFile();
+
+		IRI existingIri = VF.createIRI("http://example.com/existing/one");
+		Literal existingLiteral = VF.createLiteral("existing-literal", "en");
+
+		try (ValueStore store = new ValueStore(valueDir, false, ValueStore.VALUE_CACHE_SIZE,
+				ValueStore.VALUE_ID_CACHE_SIZE, ValueStore.NAMESPACE_CACHE_SIZE,
+				ValueStore.NAMESPACE_ID_CACHE_SIZE, null)) {
+			store.storeValue(existingIri);
+			store.storeValue(existingLiteral);
+		}
+
+		Path walDir = tempDir.resolve("wal-existing");
+		Files.createDirectories(walDir);
+		WalConfig config = WalConfig.builder()
+				.walDirectory(walDir)
+				.storeUuid(UUID.randomUUID().toString())
+				.build();
+
+		IRI newIri = VF.createIRI("http://example.com/new");
+
+		try (ValueStoreWAL wal = ValueStoreWAL.open(config);
+				ValueStore store = new ValueStore(valueDir, false, ValueStore.VALUE_CACHE_SIZE,
+						ValueStore.VALUE_ID_CACHE_SIZE, ValueStore.NAMESPACE_CACHE_SIZE,
+						ValueStore.NAMESPACE_ID_CACHE_SIZE, wal)) {
+
+			store.storeValue(newIri);
+			OptionalLong lsn = store.drainPendingWalHighWaterMark();
+			if (lsn.isPresent()) {
+				wal.awaitDurable(lsn.getAsLong());
+			}
+
+			WalRecovery recovery = new WalRecovery();
+			Map<Integer, WalRecord> dictionary = Map.of();
+			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+			boolean hasExistingIri = false;
+			boolean hasExistingLiteral = false;
+			while (System.nanoTime() < deadline && (!hasExistingIri || !hasExistingLiteral)) {
+				try (WalReader reader = WalReader.open(config)) {
+					dictionary = recovery.replay(reader);
+				}
+				hasExistingIri = dictionary.values()
+						.stream()
+						.anyMatch(record -> record.valueKind() == ValueKind.IRI
+								&& record.lexical().equals(existingIri.stringValue()));
+				hasExistingLiteral = dictionary.values()
+						.stream()
+						.anyMatch(record -> record.valueKind() == ValueKind.LITERAL
+								&& record.lexical().equals(existingLiteral.getLabel())
+								&& Objects.toString(record.language(), "")
+										.equals(existingLiteral.getLanguage().orElse("")));
+				if (!hasExistingIri || !hasExistingLiteral) {
+					TimeUnit.MILLISECONDS.sleep(25);
+				}
+			}
+
+			assertThat(hasExistingIri).isTrue();
+			assertThat(hasExistingLiteral).isTrue();
+			assertThat(dictionary.values())
+					.anyMatch(record -> record.valueKind() == ValueKind.IRI
+							&& record.lexical().equals(newIri.stringValue()));
+		}
+
+		try (var stream = Files.list(walDir)) {
+			assertThat(stream
+					.filter(Files::isRegularFile)
+					.map(path -> path.getFileName().toString())
+					.filter(name -> name.startsWith("wal-")))
+					.allMatch(name -> name.matches("wal-[1-9]\\d*\\.v1(?:\\.gz)?"));
 		}
 	}
 }

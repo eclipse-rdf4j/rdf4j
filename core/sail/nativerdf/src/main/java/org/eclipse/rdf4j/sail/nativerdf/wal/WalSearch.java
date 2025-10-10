@@ -44,7 +44,7 @@ import com.fasterxml.jackson.core.JsonToken;
  */
 public final class WalSearch {
 
-	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d{8})\\.v1(?:\\.gz)?");
+	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d+)\\.v1(?:\\.gz)?");
 
 	private final WalConfig config;
 	private final JsonFactory jsonFactory = new JsonFactory();
@@ -106,11 +106,11 @@ public final class WalSearch {
 	private List<Path> listSegments() throws IOException {
 		class Item {
 			final Path path;
-			final int seq;
+			final long firstId;
 
-			Item(Path p, int s) {
-				path = p;
-				seq = s;
+			Item(Path p, long firstId) {
+				this.path = p;
+				this.firstId = firstId;
 			}
 		}
 		List<Item> items = new ArrayList<>();
@@ -121,12 +121,12 @@ public final class WalSearch {
 			stream.forEach(p -> {
 				var m = SEGMENT_PATTERN.matcher(p.getFileName().toString());
 				if (m.matches()) {
-					int seq = Integer.parseInt(m.group(1));
-					items.add(new Item(p, seq));
+					long firstId = Long.parseLong(m.group(1));
+					items.add(new Item(p, firstId));
 				}
 			});
 		}
-		items.sort(Comparator.comparingInt(it -> it.seq));
+		items.sort(Comparator.comparingLong(it -> it.firstId));
 		List<Path> out = new ArrayList<>(items.size());
 		for (Item it : items)
 			out.add(it.path);

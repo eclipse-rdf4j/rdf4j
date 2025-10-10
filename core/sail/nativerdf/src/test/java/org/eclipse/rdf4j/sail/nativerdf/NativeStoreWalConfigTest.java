@@ -62,7 +62,7 @@ class NativeStoreWalConfigTest {
 		assertThat(Files.isDirectory(walDir)).isTrue();
 		try (var stream = Files.list(walDir)) {
 			List<Path> segments = stream
-					.filter(p -> p.getFileName().toString().matches("wal-\\d{8}\\.v1(\\.gz)?"))
+					.filter(p -> p.getFileName().toString().matches("wal-[1-9]\\d*\\.v1(\\.gz)?"))
 					.collect(Collectors.toList());
 			assertThat(segments.size()).as("expect >1 wal segments after forced rotation").isGreaterThan(1);
 		}

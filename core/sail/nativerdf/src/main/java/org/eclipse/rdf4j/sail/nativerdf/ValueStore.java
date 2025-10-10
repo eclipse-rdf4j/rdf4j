@@ -18,6 +18,9 @@ import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.zip.CRC32C;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -109,6 +112,7 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 	private final DataStore dataStore;
 	private final ValueStoreWAL wal;
 	private final ThreadLocal<Long> walPendingLsn;
+	private volatile CompletableFuture<Void> walBootstrapFuture;
 
 	/**
 	 * Lock manager used to prevent the removal of values over multiple method calls. Note that values can still be
@@ -174,6 +178,7 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 		this.walPendingLsn = wal != null ? ThreadLocal.withInitial(() -> ValueStoreWAL.NO_LSN) : null;
 
 		setNewRevision();
+		maybeScheduleWalBootstrap();
 
 	}
 
@@ -450,6 +455,17 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 	 */
 	@Override
 	public void close() throws IOException {
+		CompletableFuture<Void> bootstrap = walBootstrapFuture;
+		if (bootstrap != null) {
+			try {
+				bootstrap.join();
+			} catch (CompletionException e) {
+				Throwable cause = e.getCause() == null ? e : e.getCause();
+				logger.warn("ValueStore WAL bootstrap failed during close", cause);
+			} catch (CancellationException e) {
+				logger.warn("ValueStore WAL bootstrap was cancelled during close");
+			}
+		}
 		dataStore.close();
 	}
 
@@ -837,6 +853,79 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 		int hash = computeWalHash(ValueKind.NAMESPACE, namespace, "", "");
 		long lsn = wal.logMint(id, ValueKind.NAMESPACE, namespace, "", "", hash);
 		recordWalLsn(lsn);
+	}
+
+	private void maybeScheduleWalBootstrap() {
+		if (!walEnabled()) {
+			return;
+		}
+		if (wal.hasInitialSegments()) {
+			return;
+		}
+		if (walBootstrapFuture != null) {
+			return;
+		}
+		int maxId = dataStore.getMaxID();
+		if (maxId <= 0) {
+			return;
+		}
+		CompletableFuture<Void> future = CompletableFuture.runAsync(() -> rebuildWalFromExistingValues(maxId));
+		walBootstrapFuture = future;
+		future.whenComplete((unused, throwable) -> {
+			if (throwable != null) {
+				logger.warn("ValueStore WAL bootstrap failed", throwable);
+			}
+		});
+	}
+
+	private void rebuildWalFromExistingValues(int maxId) {
+		try {
+			for (int id = 1; id <= maxId; id++) {
+				if (Thread.currentThread().isInterrupted()) {
+					Thread.currentThread().interrupt();
+					return;
+				}
+				if (wal.isClosed()) {
+					return;
+				}
+				byte[] data;
+				try {
+					data = dataStore.getData(id);
+				} catch (IOException e) {
+					logger.warn("Failed to read value {} while rebuilding WAL", id, e);
+					continue;
+				}
+				if (data == null) {
+					continue;
+				}
+				try {
+					if (isNamespaceData(data)) {
+						String namespace = data2namespace(data);
+						logNamespaceMint(id, namespace);
+					} else {
+						NativeValue value = data2value(id, data);
+						if (value != null) {
+							logMintedValue(id, value);
+						}
+					}
+				} catch (IOException e) {
+					if (wal.isClosed()) {
+						return;
+					}
+					logger.warn("Failed to rebuild WAL entry for id {}", id, e);
+				} catch (RuntimeException e) {
+					logger.warn("Unexpected failure while rebuilding WAL entry for id {}", id, e);
+				}
+			}
+			if (!wal.isClosed()) {
+				OptionalLong pending = drainPendingWalHighWaterMark();
+				if (pending.isPresent()) {
+					awaitWalDurable(pending.getAsLong());
+				}
+			}
+		} catch (Throwable t) {
+			logger.warn("Error while rebuilding ValueStore WAL", t);
+		}
 	}
 
 	private void recordWalLsn(long lsn) {

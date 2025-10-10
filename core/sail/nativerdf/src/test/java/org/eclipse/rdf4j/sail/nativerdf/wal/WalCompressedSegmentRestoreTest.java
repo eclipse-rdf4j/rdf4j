@@ -42,7 +42,7 @@ import com.fasterxml.jackson.core.JsonToken;
 class WalCompressedSegmentRestoreTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
-	private static final Pattern SEGMENT_GZ = Pattern.compile("wal-(\\d{8})\\.v1\\.gz");
+	private static final Pattern SEGMENT_GZ = Pattern.compile("wal-(\\d+)\\.v1\\.gz");
 
 	@TempDir
 	Path tempDir;
@@ -128,16 +128,30 @@ class WalCompressedSegmentRestoreTest {
 	}
 
 	private static List<Path> listCompressedSegments(Path walDir) throws IOException {
-		List<Path> segments = new ArrayList<>();
+		class Item {
+			final Path path;
+			final long firstId;
+
+			Item(Path path, long firstId) {
+				this.path = path;
+				this.firstId = firstId;
+			}
+		}
+		List<Item> items = new ArrayList<>();
 		try (var stream = Files.list(walDir)) {
 			stream.forEach(p -> {
 				Matcher m = SEGMENT_GZ.matcher(p.getFileName().toString());
 				if (m.matches()) {
-					segments.add(p);
+					long firstId = Long.parseLong(m.group(1));
+					items.add(new Item(p, firstId));
 				}
 			});
 		}
-		segments.sort(Comparator.comparing(p -> p.getFileName().toString()));
+		items.sort(Comparator.comparingLong(it -> it.firstId));
+		List<Path> segments = new ArrayList<>(items.size());
+		for (Item item : items) {
+			segments.add(item.path);
+		}
 		return segments;
 	}
 

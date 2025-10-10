@@ -67,7 +67,7 @@ import org.slf4j.LoggerFactory;
 class NativeSailStore implements SailStore {
 
 	final Logger logger = LoggerFactory.getLogger(NativeSailStore.class);
-	private static final Pattern WAL_SEGMENT_PATTERN = Pattern.compile("wal-\\d{8}\\.v1(?:\\.gz)?");
+	private static final Pattern WAL_SEGMENT_PATTERN = Pattern.compile("wal-\\d+\\.v1(?:\\.gz)?");
 
 	private final TripleStore tripleStore;
 
@@ -168,12 +168,13 @@ class NativeSailStore implements SailStore {
 
 	private boolean shouldEnableWal(File dataDir, Path walDir) throws IOException {
 		if (hasExistingWalSegments(walDir)) {
+			writeBootstrapMarker(walDir, "enabled-existing-wal");
 			return true;
 		}
 		try (DataStore values = new DataStore(dataDir, "values", false)) {
 			if (values.getMaxID() > 0) {
-				writeBootstrapMarker(walDir, "disabled-existing-values");
-				return false;
+				writeBootstrapMarker(walDir, "enabled-rebuild-existing-values");
+				return true;
 			}
 		}
 		writeBootstrapMarker(walDir, "enabled-empty-store");
