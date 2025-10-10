@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.nativerdf;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -24,8 +25,10 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreConfig;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreFactory;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -67,5 +70,44 @@ class NativeStoreWalConfigTest {
 					.collect(Collectors.toList());
 			assertThat(segments.size()).as("expect >1 wal segments after forced rotation").isGreaterThan(1);
 		}
+	}
+
+	@Test
+	void mapsAllWalConfigOptions() throws Exception {
+		NativeStoreConfig cfg = new NativeStoreConfig("spoc");
+		cfg.setWalMaxSegmentBytes(1 << 20); // 1 MiB
+		cfg.setWalQueueCapacity(1234);
+		cfg.setWalBatchBufferBytes(1 << 14); // 16 KiB
+		cfg.setWalSyncPolicy("ALWAYS");
+		cfg.setWalSyncIntervalMillis(50);
+		cfg.setWalIdlePollIntervalMillis(5);
+		cfg.setWalDirectoryName("custom-wal-dir");
+
+		NativeStoreFactory factory = new NativeStoreFactory();
+		NativeStore sail = (NativeStore) factory.getSail(cfg);
+		sail.setDataDir(dataDir);
+		sail.init();
+
+		SailStore sailStore = sail.getSailStore();
+		// unwrap SnapshotSailStore to get underlying NativeSailStore
+		java.lang.reflect.Field backingField = org.eclipse.rdf4j.sail.base.SnapshotSailStore.class
+				.getDeclaredField("backingStore");
+		backingField.setAccessible(true);
+		NativeSailStore nss = (NativeSailStore) backingField.get(sailStore);
+
+		Field walField = NativeSailStore.class.getDeclaredField("valueStoreWal");
+		walField.setAccessible(true);
+		ValueStoreWAL wal = (ValueStoreWAL) walField.get(nss);
+		ValueStoreWalConfig walCfg = wal.config();
+
+		assertThat(walCfg.maxSegmentBytes()).isEqualTo(1 << 20);
+		assertThat(walCfg.queueCapacity()).isEqualTo(1234);
+		assertThat(walCfg.batchBufferBytes()).isEqualTo(1 << 14);
+		assertThat(walCfg.syncPolicy()).isEqualTo(ValueStoreWalConfig.SyncPolicy.ALWAYS);
+		assertThat(walCfg.syncInterval().toMillis()).isEqualTo(50);
+		assertThat(walCfg.idlePollInterval().toMillis()).isEqualTo(5);
+		Path expectedWalDir = dataDir.toPath().resolve("custom-wal-dir");
+		assertThat(walCfg.walDirectory()).isEqualTo(expectedWalDir);
+		assertThat(walCfg.snapshotsDirectory()).isEqualTo(expectedWalDir.resolve("snapshots"));
 	}
 }

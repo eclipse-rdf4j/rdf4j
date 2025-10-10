@@ -96,7 +96,8 @@ class NativeSailStore implements SailStore {
 	 */
 	public NativeSailStore(File dataDir, String tripleIndexes) throws IOException, SailException {
 		this(dataDir, tripleIndexes, false, ValueStore.VALUE_CACHE_SIZE, ValueStore.VALUE_ID_CACHE_SIZE,
-				ValueStore.NAMESPACE_CACHE_SIZE, ValueStore.NAMESPACE_ID_CACHE_SIZE, -1L);
+				ValueStore.NAMESPACE_CACHE_SIZE, ValueStore.NAMESPACE_ID_CACHE_SIZE,
+				-1L, -1, -1, null, -1L, -1L, null);
 	}
 
 	/**
@@ -104,7 +105,10 @@ class NativeSailStore implements SailStore {
 	 */
 
 	public NativeSailStore(File dataDir, String tripleIndexes, boolean forceSync, int valueCacheSize,
-			int valueIDCacheSize, int namespaceCacheSize, int namespaceIDCacheSize, long walMaxSegmentBytes)
+			int valueIDCacheSize, int namespaceCacheSize, int namespaceIDCacheSize, long walMaxSegmentBytes,
+			int walQueueCapacity, int walBatchBufferBytes,
+			org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig.SyncPolicy walSyncPolicy,
+			long walSyncIntervalMillis, long walIdlePollIntervalMillis, String walDirectoryName)
 			throws IOException, SailException {
 		NamespaceStore createdNamespaceStore = null;
 		ValueStoreWAL createdWal = null;
@@ -114,7 +118,9 @@ class NativeSailStore implements SailStore {
 		boolean initialized = false;
 		try {
 			createdNamespaceStore = new NamespaceStore(dataDir);
-			Path walDir = dataDir.toPath().resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
+			Path walDir = dataDir.toPath()
+					.resolve(walDirectoryName != null && !walDirectoryName.isEmpty() ? walDirectoryName
+							: ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 			boolean enableWal = shouldEnableWal(dataDir, walDir);
 			ValueStoreWalConfig walConfig = null;
 			if (enableWal) {
@@ -124,6 +130,21 @@ class NativeSailStore implements SailStore {
 						.storeUuid(storeUuid);
 				if (walMaxSegmentBytes > 0) {
 					walBuilder.maxSegmentBytes(walMaxSegmentBytes);
+				}
+				if (walQueueCapacity > 0) {
+					walBuilder.queueCapacity(walQueueCapacity);
+				}
+				if (walBatchBufferBytes > 0) {
+					walBuilder.batchBufferBytes(walBatchBufferBytes);
+				}
+				if (walSyncPolicy != null) {
+					walBuilder.syncPolicy(walSyncPolicy);
+				}
+				if (walSyncIntervalMillis >= 0) {
+					walBuilder.syncInterval(java.time.Duration.ofMillis(walSyncIntervalMillis));
+				}
+				if (walIdlePollIntervalMillis >= 0) {
+					walBuilder.idlePollInterval(java.time.Duration.ofMillis(walIdlePollIntervalMillis));
 				}
 				walConfig = walBuilder.build();
 				createdWal = ValueStoreWAL.open(walConfig);
