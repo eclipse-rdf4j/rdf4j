@@ -18,8 +18,6 @@ import java.nio.ByteOrder;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -79,7 +77,6 @@ public final class ValueStoreWAL implements AutoCloseable {
 	private ValueStoreWAL(ValueStoreWalConfig config) throws IOException {
 		this.config = Objects.requireNonNull(config, "config");
 		Files.createDirectories(config.walDirectory());
-		Files.createDirectories(config.snapshotsDirectory());
 
 		Path lockFile = config.walDirectory().resolve("lock");
 		lockChannel = FileChannel.open(lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
@@ -557,11 +554,6 @@ public final class ValueStoreWAL implements AutoCloseable {
 			segmentFirstMintedId = firstId;
 			segmentLastMintedId = 0;
 			writeHeader(firstId);
-		}
-
-		@SuppressWarnings("unused")
-		private void rotateSegment() throws IOException {
-			finishCurrentSegment();
 		}
 
 		private String buildSegmentFileName(int firstId) {

@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.regex.Pattern;
+import java.util.zip.CRC32;
 import java.util.zip.CRC32C;
 import java.util.zip.GZIPInputStream;
 
@@ -54,6 +55,8 @@ public final class ValueStoreWalReader implements AutoCloseable {
 	private boolean summaryMissing;
 	private boolean currentSegmentCompressed;
 	private boolean currentSegmentSummarySeen;
+	// CRC32 of the original (uncompressed) segment contents, accumulated while reading a compressed segment.
+	private CRC32 currentSegmentCrc32;
 
 	private ValueStoreWalReader(ValueStoreWalConfig config) {
 		this.config = Objects.requireNonNull(config, "config");
@@ -109,9 +112,11 @@ public final class ValueStoreWalReader implements AutoCloseable {
 		if (currentSegmentCompressed) {
 			gzIn = new GZIPInputStream(Files.newInputStream(p));
 			channel = null;
+			currentSegmentCrc32 = new CRC32();
 		} else {
 			channel = FileChannel.open(p, StandardOpenOption.READ);
 			gzIn = null;
+			currentSegmentCrc32 = null;
 		}
 		return true;
 	}
@@ -120,6 +125,7 @@ public final class ValueStoreWalReader implements AutoCloseable {
 		if (currentSegmentCompressed && !currentSegmentSummarySeen) {
 			summaryMissing = true;
 		}
+		currentSegmentCrc32 = null;
 		if (channel != null && channel.isOpen()) {
 			channel.close();
 		}
@@ -282,6 +288,17 @@ public final class ValueStoreWalReader implements AutoCloseable {
 			return null;
 		}
 		Parsed parsed = parseJson(data);
+		// For compressed segments, accumulate CRC32 over the original segment bytes (lenLE + data + crcLE)
+		if (currentSegmentCrc32 != null && parsed.type != 'S') {
+			// length in little-endian
+			ByteBuffer lenBuf = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(length);
+			lenBuf.flip();
+			currentSegmentCrc32.update(lenBuf.array(), 0, 4);
+			currentSegmentCrc32.update(data, 0, data.length);
+			ByteBuffer crcBuf = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(expectedCrc);
+			crcBuf.flip();
+			currentSegmentCrc32.update(crcBuf.array(), 0, 4);
+		}
 		if (parsed.type == 'M') {
 			ValueStoreWalRecord r = new ValueStoreWalRecord(parsed.lsn, parsed.id, parsed.kind, parsed.lex, parsed.dt,
 					parsed.lang,
@@ -291,6 +308,14 @@ public final class ValueStoreWalReader implements AutoCloseable {
 		}
 		if (parsed.type == 'S') {
 			currentSegmentSummarySeen = true;
+			// Validate CRC32 of segment contents against summary
+			if (currentSegmentCrc32 != null) {
+				long computed = currentSegmentCrc32.getValue() & 0xFFFFFFFFL;
+				if (parsed.summaryCrc32 != computed) {
+					// mark stream as invalid/incomplete
+					stop = true;
+				}
+			}
 		}
 		if (parsed.lsn > lastValidLsn) {
 			lastValidLsn = parsed.lsn;
