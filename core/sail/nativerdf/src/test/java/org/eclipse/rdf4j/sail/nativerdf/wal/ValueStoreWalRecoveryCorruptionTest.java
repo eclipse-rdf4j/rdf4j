@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStore;
 import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
@@ -50,6 +51,7 @@ class ValueStoreWalRecoveryCorruptionTest {
 	Path tempDir;
 
 	@Test
+	@Timeout(10)
 	void rebuildsAfterDeletingAllValueFiles() throws Exception {
 		File dataDir = tempDir.resolve("store").toFile();
 		dataDir.mkdirs();
@@ -92,6 +94,7 @@ class ValueStoreWalRecoveryCorruptionTest {
 	}
 
 	@Test
+	@Timeout(10)
 	void rebuildsAfterCorruptingValuesDat() throws Exception {
 		File dataDir = tempDir.resolve("store2").toFile();
 		dataDir.mkdirs();

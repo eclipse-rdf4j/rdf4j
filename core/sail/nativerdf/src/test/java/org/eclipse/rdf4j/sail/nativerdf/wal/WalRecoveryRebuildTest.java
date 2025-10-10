@@ -19,8 +19,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -119,6 +122,48 @@ class WalRecoveryRebuildTest {
 				}
 			}
 		}
+	}
+
+	@Test
+	void missingSegmentMarksIncomplete() throws Exception {
+		Path walDir = tempDir.resolve("wal-missing");
+		Files.createDirectories(walDir);
+		WalConfig config = WalConfig.builder()
+				.walDirectory(walDir)
+				.storeUuid(UUID.randomUUID().toString())
+				.maxSegmentBytes(1 << 12)
+				.build();
+
+		Path valueDir = tempDir.resolve("values-missing");
+		Files.createDirectories(valueDir);
+		try (ValueStoreWAL wal = ValueStoreWAL.open(config);
+				ValueStore store = new ValueStore(valueDir.toFile(), false, ValueStore.VALUE_CACHE_SIZE,
+						ValueStore.VALUE_ID_CACHE_SIZE, ValueStore.NAMESPACE_CACHE_SIZE,
+						ValueStore.NAMESPACE_ID_CACHE_SIZE, wal)) {
+			for (int i = 0; i < 200; i++) {
+				store.storeValue(VF.createIRI("http://example.com/value/" + i));
+			}
+			OptionalLong lsn = store.drainPendingWalHighWaterMark();
+			if (lsn.isPresent()) {
+				store.awaitWalDurable(lsn.getAsLong());
+			}
+		}
+
+		List<Path> segments;
+		try (var stream = Files.list(walDir)) {
+			segments = stream.filter(p -> p.getFileName().toString().startsWith("wal-"))
+					.sorted()
+					.collect(Collectors.toList());
+		}
+		assertThat(segments).hasSizeGreaterThan(1);
+		Files.deleteIfExists(segments.get(0));
+
+		WalRecovery recovery = new WalRecovery();
+		WalRecovery.ReplayReport report;
+		try (WalReader reader = WalReader.open(config)) {
+			report = recovery.replayWithReport(reader);
+		}
+		assertThat(report.complete()).isFalse();
 	}
 
 	private byte[] encodeIri(String lexical, DataStore ds) throws IOException {

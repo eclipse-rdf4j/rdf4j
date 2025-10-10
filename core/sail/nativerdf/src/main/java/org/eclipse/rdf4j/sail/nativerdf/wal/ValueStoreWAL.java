@@ -30,13 +30,19 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.zip.CRC32;
 import java.util.zip.CRC32C;
 import java.util.zip.GZIPOutputStream;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 
 public final class ValueStoreWAL implements AutoCloseable {
+
+	private static final Logger logger = LoggerFactory.getLogger(ValueStoreWAL.class);
 
 	static final Charset UTF8 = StandardCharsets.UTF_8;
 
@@ -226,6 +232,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 		private Path segmentPath;
 		private int segmentSequence;
 		private long segmentBytes;
+		private int segmentLastMintedId;
 		private final ByteBuffer ioBuffer;
 		private volatile boolean running = true;
 
@@ -233,6 +240,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 			this.segmentSequence = initialSegment - 1;
 			this.batchSize = config.batchBufferBytes();
 			this.ioBuffer = ByteBuffer.allocateDirect(batchSize).order(ByteOrder.LITTLE_ENDIAN);
+			this.segmentLastMintedId = 0;
 			openNextSegment();
 		}
 
@@ -294,7 +302,43 @@ public final class ValueStoreWAL implements AutoCloseable {
 			closeQuietly(segmentChannel);
 		}
 
+		private void ensureSegmentWritable() throws IOException {
+			if (segmentPath == null) {
+				return;
+			}
+			if (Files.exists(segmentPath)) {
+				return;
+			}
+			if (config.syncPolicy() == WalConfig.SyncPolicy.ALWAYS) {
+				throw new IOException("Current WAL segment has been removed: " + segmentPath);
+			}
+			logger.error("Detected deletion of active WAL segment {}; continuing with a new segment",
+					segmentPath.getFileName());
+			int previousLastId = segmentLastMintedId;
+			ByteBuffer pending = null;
+			if (ioBuffer.position() > 0) {
+				ByteBuffer duplicate = ioBuffer.duplicate();
+				duplicate.flip();
+				if (duplicate.hasRemaining()) {
+					pending = ByteBuffer.allocate(duplicate.remaining());
+					pending.put(duplicate);
+					pending.flip();
+				}
+			}
+			ioBuffer.clear();
+			closeQuietly(segmentChannel);
+			openNextSegment();
+			segmentLastMintedId = previousLastId;
+			if (pending != null) {
+				while (pending.hasRemaining()) {
+					segmentChannel.write(pending);
+				}
+				segmentBytes += pending.limit();
+			}
+		}
+
 		private void append(WalRecord record) throws IOException {
+			ensureSegmentWritable();
 			byte[] jsonBytes = encode(record);
 			int framedLength = 4 + jsonBytes.length + 4;
 			if (segmentBytes + framedLength > config.maxSegmentBytes()) {
@@ -326,6 +370,9 @@ public final class ValueStoreWAL implements AutoCloseable {
 			ioBuffer.putInt(crc);
 
 			segmentBytes += framedLength;
+			if (record.id() > segmentLastMintedId) {
+				segmentLastMintedId = record.id();
+			}
 			lastAppendedLsn.set(record.lsn());
 		}
 
@@ -352,6 +399,7 @@ public final class ValueStoreWAL implements AutoCloseable {
 		}
 
 		private void flushBuffer() throws IOException {
+			ensureSegmentWritable();
 			ioBuffer.flip();
 			while (ioBuffer.hasRemaining()) {
 				segmentChannel.write(ioBuffer);
@@ -362,10 +410,11 @@ public final class ValueStoreWAL implements AutoCloseable {
 		private void rotateSegment() throws IOException {
 			// Ensure durability of all records appended to the current segment before closing/rotating.
 			flushAndForce();
+			int summaryLastId = segmentLastMintedId;
 			Path toCompress = segmentPath;
 			closeQuietly(segmentChannel);
 			if (toCompress != null) {
-				gzipAndDelete(toCompress);
+				gzipAndDelete(toCompress, summaryLastId);
 			}
 			openNextSegment();
 		}
@@ -380,32 +429,40 @@ public final class ValueStoreWAL implements AutoCloseable {
 			if (segmentBytes == 0L) {
 				writeHeader();
 			}
+			segmentLastMintedId = 0;
 		}
 
-		private void gzipAndDelete(Path src) {
+		private void gzipAndDelete(Path src, int lastMintedId) {
 			Path gz = src.resolveSibling(src.getFileName().toString() + ".gz");
 			long srcSize;
 			try {
 				srcSize = Files.size(src);
 			} catch (IOException e) {
 				// If we can't stat the file, don't attempt compression
+				logger.warn("Skipping compression of WAL segment {} because it is no longer accessible",
+						src.getFileName());
 				return;
 			}
+			byte[] summaryFrame;
+			CRC32 crc32 = new CRC32();
 			try (var in = Files.newInputStream(src); var out = new GZIPOutputStream(Files.newOutputStream(gz))) {
 				byte[] buf = new byte[1 << 16];
 				int r;
 				while ((r = in.read(buf)) >= 0) {
 					out.write(buf, 0, r);
+					crc32.update(buf, 0, r);
 				}
+				summaryFrame = buildSummaryFrame(lastMintedId, crc32.getValue());
+				out.write(summaryFrame);
 				out.finish();
-				// Verify gzip contains full original data by reading back and counting bytes
+				// Verify gzip contains full original data plus summary by reading back and counting bytes
 				long decompressedBytes = 0L;
 				try (var gin = new java.util.zip.GZIPInputStream(Files.newInputStream(gz))) {
 					while ((r = gin.read(buf)) >= 0) {
 						decompressedBytes += r;
 					}
 				}
-				if (decompressedBytes != srcSize) {
+				if (decompressedBytes != srcSize + summaryFrame.length) {
 					// Verification failed: keep original, remove corrupt gzip
 					try {
 						Files.deleteIfExists(gz);
@@ -416,11 +473,35 @@ public final class ValueStoreWAL implements AutoCloseable {
 				Files.deleteIfExists(src);
 			} catch (IOException e) {
 				// Compression failed: do not delete original; clean up partial gzip if present
+				logger.warn("Failed to compress WAL segment {}: {}", src.getFileName(), e.getMessage());
 				try {
 					Files.deleteIfExists(gz);
 				} catch (IOException ignore) {
 				}
 			}
+		}
+
+		private byte[] buildSummaryFrame(int lastMintedId, long crc32Value) throws IOException {
+			JsonFactory factory = new JsonFactory();
+			java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream(128);
+			try (JsonGenerator gen = factory.createGenerator(baos)) {
+				gen.writeStartObject();
+				gen.writeStringField("t", "S");
+				gen.writeNumberField("lastId", lastMintedId);
+				gen.writeNumberField("crc32", crc32Value & 0xFFFFFFFFL);
+				gen.writeEndObject();
+			}
+			baos.write('\n');
+			byte[] jsonBytes = baos.toByteArray();
+			ByteBuffer buffer = ByteBuffer.allocate(4 + jsonBytes.length + 4).order(ByteOrder.LITTLE_ENDIAN);
+			buffer.putInt(jsonBytes.length);
+			buffer.put(jsonBytes);
+			int crc = checksum(jsonBytes);
+			buffer.putInt(crc);
+			buffer.flip();
+			byte[] framed = new byte[buffer.remaining()];
+			buffer.get(framed);
+			return framed;
 		}
 
 		private void writeHeader() throws IOException {

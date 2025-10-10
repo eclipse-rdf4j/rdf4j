@@ -59,6 +59,24 @@ It is illegal to `-q` when running tests!
 
 ---
 
+## PIOSEE Decision Model (Adopted)
+
+Use PIOSEE on every task to structure thinking and execution. It complements the routines below and ties directly into the Traceability trio (Description, Evidence, Plan).
+
+- Problem: restate the task in one sentence, note constraints/timebox, and identify likely routine (A/B/C).
+- Information: inspect modules and AGENTS.md, gather environment constraints, locate existing tests/reports, and search code to localize the work.
+- Options: list 2–3 viable approaches (routine choice, test scope, fix location) and weigh them with the Proportionality Model.
+- Select: choose one option and routine; update the Living Plan with exactly one `in_progress` step.
+- Execute: follow the Working Loop and house rules; for Routine A add the smallest failing test first; capture an Evidence block after each grouped action.
+- Evaluate: check against the Definition of Done; if gaps remain, adjust the plan or change routine; record final Evidence and a brief retrospective.
+
+PIOSEE → Traceability trio mapping
+- P/I/O → Description
+- S → Plan (one `in_progress`)
+- E/E → Evidence and Verification
+
+For documentation‑only edits and other Routine B cases, still run PIOSEE briefly to confirm neutrality and reversibility.
+
 ## Proportionality Model (Think before you test)
 
 Score the change on these lenses. If any are **High**, prefer **Routine A**.
@@ -342,6 +360,7 @@ It is illegal to `-q` when running tests!
 
 ## Working Loop
 
+* **PIOSEE first:** restate Problem, gather Information, list Options; then Select, Execute, Evaluate.
 * **Plan:** small, verifiable steps; keep one `in_progress`.
 * **Change:** minimal, surgical edits; keep style/structure consistent.
 * **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
@@ -506,6 +525,7 @@ Do **not** modify existing headers’ years.
 * **Files touched:** list file paths.
 * **Commands run:** key build/test commands.
 * **Verification:** which tests passed, where you checked reports.
+* **PIOSEE trace (concise):** P/I/O summary, selected option/routine, key evaluate outcomes.
 * **Evidence:**
   *Routine A:* failing output (pre‑fix) and passing output (post‑fix).
   *Routine B:* pre‑ and post‑green snippets from the **same selection** + **Hit Proof**.

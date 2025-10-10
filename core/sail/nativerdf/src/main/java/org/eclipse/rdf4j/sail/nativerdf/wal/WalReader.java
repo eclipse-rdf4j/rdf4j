@@ -38,23 +38,31 @@ public final class WalReader implements AutoCloseable {
 	private final WalConfig config;
 	private final JsonFactory jsonFactory = new JsonFactory();
 	// Streaming iteration state
-	private final List<Path> segments;
+	private final List<SegmentEntry> segments;
 	private int segIndex = -1;
 	private FileChannel channel;
 	private GZIPInputStream gzIn;
 	private boolean stop;
 	private boolean eos; // end-of-segment indicator for current stream
 	private long lastValidLsn = ValueStoreWAL.NO_LSN;
+	private final boolean missingSegments;
+	private boolean summaryMissing;
+	private boolean currentSegmentCompressed;
+	private boolean currentSegmentSummarySeen;
 
 	private WalReader(WalConfig config) {
 		this.config = Objects.requireNonNull(config, "config");
-		List<Path> segs;
+		List<SegmentEntry> segs;
 		try {
 			segs = listSegments();
 		} catch (IOException e) {
 			segs = List.of();
 		}
 		this.segments = segs;
+		this.missingSegments = hasSequenceGaps(segs);
+		this.summaryMissing = false;
+		this.currentSegmentCompressed = false;
+		this.currentSegmentSummarySeen = false;
 	}
 
 	public static WalReader open(WalConfig config) {
@@ -68,7 +76,7 @@ public final class WalReader implements AutoCloseable {
 			while (it.hasNext()) {
 				records.add(it.next());
 			}
-			return new ScanResult(records, reader.lastValidLsn());
+			return new ScanResult(records, reader.lastValidLsn(), reader.isComplete());
 		}
 	}
 
@@ -89,8 +97,11 @@ public final class WalReader implements AutoCloseable {
 		if (segIndex >= segments.size()) {
 			return false;
 		}
-		Path p = segments.get(segIndex);
-		if (p.getFileName().toString().endsWith(".gz")) {
+		SegmentEntry entry = segments.get(segIndex);
+		Path p = entry.path;
+		currentSegmentCompressed = entry.compressed;
+		currentSegmentSummarySeen = false;
+		if (currentSegmentCompressed) {
 			gzIn = new GZIPInputStream(Files.newInputStream(p));
 			channel = null;
 		} else {
@@ -101,6 +112,9 @@ public final class WalReader implements AutoCloseable {
 	}
 
 	private void closeCurrentSegment() throws IOException {
+		if (currentSegmentCompressed && !currentSegmentSummarySeen) {
+			summaryMissing = true;
+		}
 		if (channel != null && channel.isOpen()) {
 			channel.close();
 		}
@@ -110,6 +124,8 @@ public final class WalReader implements AutoCloseable {
 		}
 		gzIn = null;
 		eos = false;
+		currentSegmentCompressed = false;
+		currentSegmentSummarySeen = false;
 	}
 
 	private static int readIntLE(java.io.InputStream in) throws IOException {
@@ -120,14 +136,16 @@ public final class WalReader implements AutoCloseable {
 		return ((b[0] & 0xFF)) | ((b[1] & 0xFF) << 8) | ((b[2] & 0xFF) << 16) | ((b[3] & 0xFF) << 24);
 	}
 
-	private List<Path> listSegments() throws IOException {
+	private List<SegmentEntry> listSegments() throws IOException {
 		class Item {
 			final Path path;
 			final int seq;
+			final boolean compressed;
 
-			Item(Path path, int seq) {
+			Item(Path path, int seq, boolean compressed) {
 				this.path = path;
 				this.seq = seq;
+				this.compressed = compressed;
 			}
 		}
 		List<Item> items = new ArrayList<>();
@@ -139,16 +157,34 @@ public final class WalReader implements AutoCloseable {
 				var m = SEGMENT_PATTERN.matcher(p.getFileName().toString());
 				if (m.matches()) {
 					int seq = Integer.parseInt(m.group(1));
-					items.add(new Item(p, seq));
+					boolean compressed = p.getFileName().toString().endsWith(".gz");
+					items.add(new Item(p, seq, compressed));
 				}
 			});
 		}
 		items.sort(Comparator.comparingInt(it -> it.seq));
-		List<Path> segments = new ArrayList<>(items.size());
+		List<SegmentEntry> segments = new ArrayList<>(items.size());
 		for (Item it : items) {
-			segments.add(it.path);
+			segments.add(new SegmentEntry(it.path, it.seq, it.compressed));
 		}
 		return segments;
+	}
+
+	private boolean hasSequenceGaps(List<SegmentEntry> entries) {
+		if (entries.isEmpty()) {
+			return false;
+		}
+		int expected = entries.get(0).seq;
+		if (expected > 1) {
+			return true;
+		}
+		for (SegmentEntry entry : entries) {
+			if (entry.seq != expected) {
+				return true;
+			}
+			expected++;
+		}
+		return false;
 	}
 
 	private WalRecord readOneFromChannel() throws IOException {
@@ -237,6 +273,9 @@ public final class WalReader implements AutoCloseable {
 					parsed.hash);
 			lastValidLsn = r.lsn();
 			return r;
+		}
+		if (parsed.type == 'S') {
+			currentSegmentSummarySeen = true;
 		}
 		if (parsed.lsn > lastValidLsn) {
 			lastValidLsn = parsed.lsn;
@@ -334,6 +373,8 @@ public final class WalReader implements AutoCloseable {
 					parsed.lsn = jp.getValueAsLong(ValueStoreWAL.NO_LSN);
 				} else if ("id".equals(field)) {
 					parsed.id = jp.getValueAsInt(0);
+				} else if ("lastId".equals(field)) {
+					parsed.id = jp.getValueAsInt(0);
 				} else if ("vk".equals(field)) {
 					String code = jp.getValueAsString("");
 					parsed.kind = ValueKind.fromCode(code);
@@ -345,12 +386,26 @@ public final class WalReader implements AutoCloseable {
 					parsed.lang = jp.getValueAsString("");
 				} else if ("hash".equals(field)) {
 					parsed.hash = jp.getValueAsInt(0);
+				} else if ("crc32".equals(field)) {
+					parsed.summaryCrc32 = jp.getValueAsLong(0L);
 				} else {
 					jp.skipChildren();
 				}
 			}
 		}
 		return parsed;
+	}
+
+	private static final class SegmentEntry {
+		final Path path;
+		final int seq;
+		final boolean compressed;
+
+		SegmentEntry(Path path, int seq, boolean compressed) {
+			this.path = path;
+			this.seq = seq;
+			this.compressed = compressed;
+		}
 	}
 
 	private static final class Parsed {
@@ -362,6 +417,7 @@ public final class WalReader implements AutoCloseable {
 		String dt = "";
 		String lang = "";
 		int hash = 0;
+		long summaryCrc32 = 0L;
 	}
 
 	@Override
@@ -373,13 +429,19 @@ public final class WalReader implements AutoCloseable {
 		}
 	}
 
+	boolean isComplete() {
+		return !missingSegments && !summaryMissing && !stop;
+	}
+
 	public static final class ScanResult {
 		private final List<WalRecord> records;
 		private final long lastValidLsn;
+		private final boolean complete;
 
-		public ScanResult(List<WalRecord> records, long lastValidLsn) {
+		public ScanResult(List<WalRecord> records, long lastValidLsn, boolean complete) {
 			this.records = List.copyOf(records);
 			this.lastValidLsn = lastValidLsn;
+			this.complete = complete;
 		}
 
 		public List<WalRecord> records() {
@@ -388,6 +450,10 @@ public final class WalReader implements AutoCloseable {
 
 		public long lastValidLsn() {
 			return lastValidLsn;
+		}
+
+		public boolean complete() {
+			return complete;
 		}
 	}
 }

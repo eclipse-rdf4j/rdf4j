@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -51,6 +52,7 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
+import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
 import org.eclipse.rdf4j.sail.nativerdf.wal.WalConfig;
@@ -65,6 +67,7 @@ import org.slf4j.LoggerFactory;
 class NativeSailStore implements SailStore {
 
 	final Logger logger = LoggerFactory.getLogger(NativeSailStore.class);
+	private static final Pattern WAL_SEGMENT_PATTERN = Pattern.compile("wal-\\d{8}\\.v1(?:\\.gz)?");
 
 	private final TripleStore tripleStore;
 
@@ -113,12 +116,18 @@ class NativeSailStore implements SailStore {
 			createdNamespaceStore = new NamespaceStore(dataDir);
 			Path walDir = dataDir.toPath().resolve("wal");
 			String storeUuid = loadOrCreateWalUuid(walDir);
-			WalConfig.Builder walBuilder = WalConfig.builder().walDirectory(walDir).storeUuid(storeUuid);
-			if (walMaxSegmentBytes > 0) {
-				walBuilder.maxSegmentBytes(walMaxSegmentBytes);
+			boolean enableWal = shouldEnableWal(dataDir, walDir);
+			WalConfig walConfig = null;
+			if (enableWal) {
+				WalConfig.Builder walBuilder = WalConfig.builder().walDirectory(walDir).storeUuid(storeUuid);
+				if (walMaxSegmentBytes > 0) {
+					walBuilder.maxSegmentBytes(walMaxSegmentBytes);
+				}
+				walConfig = walBuilder.build();
+				createdWal = ValueStoreWAL.open(walConfig);
+			} else {
+				createdWal = null;
 			}
-			WalConfig walConfig = walBuilder.build();
-			createdWal = ValueStoreWAL.open(walConfig);
 			createdValueStore = new ValueStore(dataDir, forceSync, valueCacheSize, valueIDCacheSize,
 					namespaceCacheSize, namespaceIDCacheSize, createdWal);
 			createdTripleStore = new TripleStore(dataDir, tripleIndexes, forceSync);
@@ -155,6 +164,41 @@ class NativeSailStore implements SailStore {
 		Files.writeString(file, uuid, StandardCharsets.UTF_8, StandardOpenOption.CREATE,
 				StandardOpenOption.TRUNCATE_EXISTING);
 		return uuid;
+	}
+
+	private boolean shouldEnableWal(File dataDir, Path walDir) throws IOException {
+		if (hasExistingWalSegments(walDir)) {
+			return true;
+		}
+		try (DataStore values = new DataStore(dataDir, "values", false)) {
+			if (values.getMaxID() > 0) {
+				writeBootstrapMarker(walDir, "disabled-existing-values");
+				return false;
+			}
+		}
+		writeBootstrapMarker(walDir, "enabled-empty-store");
+		return true;
+	}
+
+	private boolean hasExistingWalSegments(Path walDir) throws IOException {
+		if (!Files.isDirectory(walDir)) {
+			return false;
+		}
+		try (var stream = Files.list(walDir)) {
+			return stream.anyMatch(path -> WAL_SEGMENT_PATTERN.matcher(path.getFileName().toString()).matches());
+		}
+	}
+
+	private void writeBootstrapMarker(Path walDir, String state) {
+		try {
+			Files.createDirectories(walDir);
+			Path marker = walDir.resolve("bootstrap.info");
+			String content = "state=" + state + "\n";
+			Files.writeString(marker, content, StandardCharsets.UTF_8, StandardOpenOption.CREATE,
+					StandardOpenOption.TRUNCATE_EXISTING);
+		} catch (IOException e) {
+			logger.warn("Failed to write WAL bootstrap marker", e);
+		}
 	}
 
 	private void closeQuietly(ContextStore store) {
