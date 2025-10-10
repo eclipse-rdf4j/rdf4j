@@ -9,7 +9,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.nativerdf.valuestorewal;
+package org.eclipse.rdf4j.sail.nativerdf.wal;
 
 /**
  * Enumeration of value kinds that may be persisted in the value store WAL.

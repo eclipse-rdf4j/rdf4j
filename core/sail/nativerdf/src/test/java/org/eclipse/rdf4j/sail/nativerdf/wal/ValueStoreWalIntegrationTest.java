@@ -8,7 +8,7 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.nativerdf.valuestorewal;
+package org.eclipse.rdf4j.sail.nativerdf.wal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
