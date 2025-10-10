@@ -9,7 +9,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.nativerdf.wal;
+package org.eclipse.rdf4j.sail.nativerdf.valuestorewal;
 
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.results.format.ResultFormatType;

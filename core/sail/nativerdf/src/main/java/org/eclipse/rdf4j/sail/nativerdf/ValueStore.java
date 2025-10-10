@@ -50,10 +50,10 @@ import org.eclipse.rdf4j.sail.nativerdf.model.NativeIRI;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeLiteral;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeResource;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
-import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
-import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalRecord;
-import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalSearch;
-import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalValueKind;
+import org.eclipse.rdf4j.sail.nativerdf.valuestorewal.ValueStoreWAL;
+import org.eclipse.rdf4j.sail.nativerdf.valuestorewal.ValueStoreWalRecord;
+import org.eclipse.rdf4j.sail.nativerdf.valuestorewal.ValueStoreWalSearch;
+import org.eclipse.rdf4j.sail.nativerdf.valuestorewal.ValueStoreWalValueKind;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -69,7 +69,7 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 
 	private static final Logger logger = LoggerFactory.getLogger(ValueStore.class);
 
-	private static final String WAL_RECOVERY_LOG_PROP = "org.eclipse.rdf4j.sail.nativerdf.wal.recoveryLog";
+	private static final String WAL_RECOVERY_LOG_PROP = "org.eclipse.rdf4j.sail.nativerdf.valuestorewal.recoveryLog";
 	private static final String WAL_RECOVERY_LOG = System.getProperty(WAL_RECOVERY_LOG_PROP, "debug").toLowerCase();
 
 	/**

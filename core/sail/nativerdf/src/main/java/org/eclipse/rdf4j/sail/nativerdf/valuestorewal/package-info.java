@@ -19,6 +19,6 @@
 
 @Experimental
 
-package org.eclipse.rdf4j.sail.nativerdf.wal;
+package org.eclipse.rdf4j.sail.nativerdf.valuestorewal;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
