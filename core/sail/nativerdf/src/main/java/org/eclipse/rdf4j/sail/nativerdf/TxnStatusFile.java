@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
 
+import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
 
@@ -127,8 +128,13 @@ class TxnStatusFile {
 		if (disabled) {
 			return TxnStatus.NONE;
 		}
-
-		byte[] bytes = nioFile.readBytes(0, 1);
+		byte[] bytes;
+		try {
+			bytes = nioFile.readBytes(0, 1);
+		} catch (EOFException e) {
+			// empty file = NONE status
+			return TxnStatus.NONE;
+		}
 
 		TxnStatus status;
 
