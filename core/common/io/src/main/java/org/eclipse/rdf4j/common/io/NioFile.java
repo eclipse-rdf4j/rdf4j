@@ -326,7 +326,11 @@ public final class NioFile implements Closeable {
 				while (buf.hasRemaining()) {
 					int n = fc.read(buf, offset + totalRead);
 					if (n < 0) {
-						break; // EOF
+						// Preserve FileChannel contract: if no bytes were read and EOF is reached, return -1
+						if (totalRead == 0) {
+							return -1;
+						}
+						break; // EOF after having read some bytes
 					}
 					if (n == 0) {
 						// Avoid tight spin; allow retry in case of transient 0-byte read
