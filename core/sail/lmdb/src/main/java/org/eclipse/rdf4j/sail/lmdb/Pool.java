@@ -22,8 +22,8 @@ class Pool {
 	// thread-local pool instance
 	private static final ThreadLocal<Pool> threadlocal = ThreadLocal.withInitial(Pool::new);
 
-	private final MDBVal[] valPool = new MDBVal[1024];
-	private final ByteBuffer[] keyPool = new ByteBuffer[1024];
+	private final MDBVal[] valPool = new MDBVal[2048];
+	private final ByteBuffer[] keyPool = new ByteBuffer[2048];
 	private final Statistics[] statisticsPool = new Statistics[512];
 	private int valPoolIndex = -1;
 	private int keyPoolIndex = -1;

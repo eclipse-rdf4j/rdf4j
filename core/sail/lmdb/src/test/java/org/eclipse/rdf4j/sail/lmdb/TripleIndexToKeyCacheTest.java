@@ -22,8 +22,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Focused tests that directly exercise TripleStore.TripleIndex#toKey to provide coverage for behavior-neutral
- * optimizations such as internal key encoding caching.
+ * Focused tests that directly exercise TripleStore.TripleIndex#toEntry to provide coverage for behavior-neutral
+ * optimizations such as internal encoding caching.
  */
 class TripleIndexToKeyCacheTest {
 
@@ -52,20 +52,23 @@ class TripleIndexToKeyCacheTest {
 
 		TripleStore.TripleIndex index = tripleStore.new TripleIndex("spoc");
 
-		int len = Varint.calcListLengthUnsigned(subj, pred, obj, context);
-		ByteBuffer actual = ByteBuffer.allocate(len);
-		index.toKey(actual, subj, pred, obj, context);
-		actual.flip();
+		ByteBuffer actualKey = ByteBuffer.allocate(Varint.calcLengthUnsigned(subj) + Varint.calcLengthUnsigned(pred));
+		ByteBuffer actualValue = ByteBuffer.allocate(2 * (Long.BYTES + 1));
+		index.toEntry(actualKey, actualValue, subj, pred, obj, context);
+		actualKey.flip();
+		actualValue.flip();
 
 		// Expected: varints in spoc order
-		ByteBuffer expected = ByteBuffer.allocate(len);
-		Varint.writeUnsigned(expected, subj);
-		Varint.writeUnsigned(expected, pred);
-		Varint.writeUnsigned(expected, obj);
-		Varint.writeUnsigned(expected, context);
-		expected.flip();
+		ByteBuffer expectedKey = ByteBuffer.allocate(actualKey.capacity());
+		Varint.writeUnsigned(expectedKey, subj);
+		Varint.writeUnsigned(expectedKey, pred);
+		ByteBuffer expectedValue = ByteBuffer.allocate(actualValue.capacity());
+		Varint.writeUnsigned(expectedValue, obj);
+		Varint.writeUnsigned(expectedValue, context);
+		expectedValue.position(actualValue.capacity());
 
-		assertArrayEquals(expected.array(), actual.array());
+		assertArrayEquals(expectedKey.array(), actualKey.array());
+		assertArrayEquals(expectedValue.array(), actualValue.array());
 	}
 
 	@Test
@@ -78,19 +81,22 @@ class TripleIndexToKeyCacheTest {
 
 		TripleStore.TripleIndex index = tripleStore.new TripleIndex("posc");
 
-		int len = Varint.calcListLengthUnsigned(subj, pred, obj, context);
-		ByteBuffer actual = ByteBuffer.allocate(len);
-		index.toKey(actual, subj, pred, obj, context);
-		actual.flip();
+		ByteBuffer actualKey = ByteBuffer.allocate(Varint.calcLengthUnsigned(subj) + Varint.calcLengthUnsigned(pred));
+		ByteBuffer actualValue = ByteBuffer.allocate(2 * (Long.BYTES + 1));
+		index.toEntry(actualKey, actualValue, subj, pred, obj, context);
+		actualKey.flip();
+		actualValue.flip();
 
-		// Expected: varints in posc order
-		ByteBuffer expected = ByteBuffer.allocate(len);
-		Varint.writeUnsigned(expected, pred);
-		Varint.writeUnsigned(expected, obj);
-		Varint.writeUnsigned(expected, subj);
-		Varint.writeUnsigned(expected, context);
-		expected.flip();
+		// Expected: varints in spoc order
+		ByteBuffer expectedKey = ByteBuffer.allocate(actualKey.capacity());
+		Varint.writeUnsigned(expectedKey, pred);
+		Varint.writeUnsigned(expectedKey, obj);
+		ByteBuffer expectedValue = ByteBuffer.allocate(actualValue.capacity());
+		Varint.writeUnsigned(expectedValue, subj);
+		Varint.writeUnsigned(expectedValue, context);
+		expectedValue.position(actualValue.capacity());
 
-		assertArrayEquals(expected.array(), actual.array());
+		assertArrayEquals(expectedKey.array(), actualKey.array());
+		assertArrayEquals(expectedValue.array(), actualValue.array());
 	}
 }

@@ -197,7 +197,11 @@ final class TxnRecordCache {
 
 		public Record next() {
 			if (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == MDB_SUCCESS) {
-				Varint.readListUnsigned(keyData.mv_data(), quad);
+				ByteBuffer keyBuf = keyData.mv_data();
+				quad[0] = Varint.readUnsigned(keyBuf);
+				quad[1] = Varint.readUnsigned(keyBuf);
+				quad[2] = Varint.readUnsigned(keyBuf);
+				quad[3] = Varint.readUnsigned(keyBuf);
 				byte op = valueData.mv_data().get(0);
 				Record r = new Record();
 				r.quad = quad;

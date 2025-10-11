@@ -11,9 +11,12 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST_DUP;
+import static org.lwjgl.util.lmdb.LMDB.MDB_GET_BOTH_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT_DUP;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT_NODUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
-import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
@@ -21,6 +24,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
+import static org.lwjgl.util.lmdb.LMDB.mdb_dcmp;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -29,7 +33,7 @@ import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TripleStore.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
-import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
+import org.eclipse.rdf4j.sail.lmdb.util.EntryMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBVal;
@@ -40,22 +44,19 @@ import org.slf4j.LoggerFactory;
  * A record iterator that wraps a native LMDB iterator.
  */
 class LmdbRecordIterator implements RecordIterator {
+
 	private static final Logger log = LoggerFactory.getLogger(LmdbRecordIterator.class);
 	private final Pool pool;
 
 	private final TripleIndex index;
 
-	private final long subj;
-	private final long pred;
-	private final long obj;
-	private final long context;
-
 	private final long cursor;
 
 	private final MDBVal maxKey;
+	private final MDBVal maxValue;
 
 	private final boolean matchValues;
-	private GroupMatcher groupMatcher;
+	private EntryMatcher matcher;
 
 	private final Txn txnRef;
 
@@ -73,12 +74,14 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private ByteBuffer minKeyBuf;
 
-	private ByteBuffer maxKeyBuf;
+	private ByteBuffer minValueBuf;
 
-	private int lastResult;
+	private final ByteBuffer maxKeyBuf;
+
+	private final ByteBuffer maxValueBuf;
 
 	private final long[] quad;
-	private final long[] originalQuad;
+	private final long[] patternQuad;
 
 	private boolean fetchNext = false;
 
@@ -86,31 +89,41 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final Thread ownerThread = Thread.currentThread();
 
-	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+	private final int indexScore;
+
+	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
-		this.subj = subj;
-		this.pred = pred;
-		this.obj = obj;
-		this.context = context;
-		this.originalQuad = new long[] { subj, pred, obj, context };
+		this.patternQuad = new long[] { subj, pred, obj, context };
 		this.quad = new long[] { subj, pred, obj, context };
 		this.pool = Pool.get();
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();
 		this.index = index;
-		if (rangeSearch) {
+		this.indexScore = indexScore;
+		// prepare min and max keys if index can be used
+		// otherwise, leave as null to indicate full scan
+		if (indexScore > 0) {
 			minKeyBuf = pool.getKeyBuffer();
-			index.getMinKey(minKeyBuf, subj, pred, obj, context);
+			minValueBuf = pool.getKeyBuffer();
+			index.getMinEntry(minKeyBuf, minValueBuf, subj, pred, obj, context);
 			minKeyBuf.flip();
+			minValueBuf.flip();
 
 			this.maxKey = pool.getVal();
+			this.maxValue = pool.getVal();
 			this.maxKeyBuf = pool.getKeyBuffer();
-			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+			this.maxValueBuf = pool.getKeyBuffer();
+			index.getMaxEntry(maxKeyBuf, maxValueBuf, subj, pred, obj, context);
 			maxKeyBuf.flip();
+			maxValueBuf.flip();
 			this.maxKey.mv_data(maxKeyBuf);
+			this.maxValue.mv_data(maxValueBuf);
 		} else {
 			minKeyBuf = null;
 			this.maxKey = null;
+			this.maxValue = null;
+			this.maxKeyBuf = null;
+			this.maxValueBuf = null;
 		}
 
 		this.matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
@@ -147,6 +160,7 @@ class LmdbRecordIterator implements RecordIterator {
 		} catch (InterruptedException e) {
 			throw new SailException(e);
 		}
+		int lastResult;
 		try {
 			if (closed) {
 				log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
@@ -161,15 +175,21 @@ class LmdbRecordIterator implements RecordIterator {
 					// cursor must be positioned on last item, reuse minKeyBuf if available
 					if (minKeyBuf == null) {
 						minKeyBuf = pool.getKeyBuffer();
+						minValueBuf = pool.getKeyBuffer();
 					}
 					minKeyBuf.clear();
-					index.toKey(minKeyBuf, quad[0], quad[1], quad[2], quad[3]);
+					index.toEntry(minKeyBuf, minValueBuf, quad[0], quad[1], quad[2], quad[3]);
 					minKeyBuf.flip();
+					minValueBuf.flip();
 					keyData.mv_data(minKeyBuf);
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET);
-					if (lastResult != MDB_SUCCESS) {
-						// use MDB_SET_RANGE if key was deleted
-						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+					// use set range if entry was deleted
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+					if (lastResult == MDB_SUCCESS) {
+						valueData.mv_data(minValueBuf);
+						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_GET_BOTH_RANGE);
+						if (lastResult != MDB_SUCCESS) {
+							lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST_DUP);
+						}
 					}
 					if (lastResult != MDB_SUCCESS) {
 						closeInternal(false);
@@ -180,14 +200,32 @@ class LmdbRecordIterator implements RecordIterator {
 				this.txnRefVersion = txnRef.version();
 			}
 
+			boolean isDupValue = false;
 			if (fetchNext) {
-				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT_DUP);
+				if (lastResult != MDB_SUCCESS) {
+					// no more duplicates, move to next key
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT_NODUP);
+				} else {
+					isDupValue = true;
+				}
 				fetchNext = false;
 			} else {
 				if (minKeyBuf != null) {
 					// set cursor to min key
 					keyData.mv_data(minKeyBuf);
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+					// set range on key is only required if less than the first two key elements are fixed
+					lastResult = indexScore >= 2 ? MDB_SUCCESS
+							: mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+					if (lastResult == MDB_SUCCESS) {
+						valueData.mv_data(minValueBuf);
+						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_GET_BOTH_RANGE);
+						if (lastResult != MDB_SUCCESS) {
+							lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST_DUP);
+						} else {
+							isDupValue = indexScore >= 2;
+						}
+					}
 				} else {
 					// set cursor to first item
 					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
@@ -196,14 +234,22 @@ class LmdbRecordIterator implements RecordIterator {
 
 			while (lastResult == MDB_SUCCESS) {
 				// if (maxKey != null && TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) > 0) {
-				if (maxKey != null && mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
+				int keyDiff;
+				if (maxKey != null &&
+						(keyDiff = isDupValue ? 0 : mdb_cmp(txn, dbi, keyData, maxKey)) >= 0
+						&& (keyDiff > 0 || mdb_dcmp(txn, dbi, valueData, maxValue) > 0)) {
 					lastResult = MDB_NOTFOUND;
-				} else if (matches()) {
+				} else if (notMatches(isDupValue)) {
 					// value doesn't match search key/mask, fetch next value
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT_DUP);
+					if (lastResult != MDB_SUCCESS) {
+						// no more duplicates, move to next key
+						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT_NODUP);
+					}
+					isDupValue = false;
 				} else {
 					// Matching value found
-					index.keyToQuad(keyData.mv_data(), originalQuad, quad);
+					index.entryToQuad(keyData.mv_data(), valueData.mv_data(), patternQuad, quad);
 					// fetch next value
 					fetchNext = true;
 					return quad;
@@ -216,13 +262,17 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 	}
 
-	private boolean matches() {
-
-		if (groupMatcher != null) {
-			return !this.groupMatcher.matches(keyData.mv_data());
+	private boolean notMatches(boolean testValueOnly) {
+		if (matcher != null) {
+			if (testValueOnly) {
+				// already positioned on correct key, no need to match key again
+				return !this.matcher.matchesValue(valueData.mv_data());
+			}
+			return !this.matcher.matches(keyData.mv_data(), valueData.mv_data());
 		} else if (matchValues) {
-			this.groupMatcher = index.createMatcher(subj, pred, obj, context);
-			return !this.groupMatcher.matches(keyData.mv_data());
+			// lazy init of group matcher
+			this.matcher = index.createMatcher(patternQuad[0], patternQuad[1], patternQuad[2], patternQuad[3]);
+			return !this.matcher.matches(keyData.mv_data(), valueData.mv_data());
 		} else {
 			return false;
 		}
@@ -247,10 +297,13 @@ class LmdbRecordIterator implements RecordIterator {
 					pool.free(valueData);
 					if (minKeyBuf != null) {
 						pool.free(minKeyBuf);
+						pool.free(minValueBuf);
 					}
 					if (maxKey != null) {
 						pool.free(maxKeyBuf);
 						pool.free(maxKey);
+						pool.free(maxValueBuf);
+						pool.free(maxValue);
 					}
 				}
 			} finally {
