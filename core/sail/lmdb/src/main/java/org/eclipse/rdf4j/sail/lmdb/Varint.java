@@ -42,6 +42,7 @@ public final class Varint {
 	};
 
 	static final byte[] ALL_ZERO_QUAD = new byte[] { 0, 0, 0, 0 };
+	static final byte[] ALL_ZERO_PAIR = new byte[] { 0, 0 };
 
 	private Varint() {
 	}
