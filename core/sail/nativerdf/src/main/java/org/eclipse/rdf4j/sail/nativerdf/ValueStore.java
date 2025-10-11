@@ -954,6 +954,8 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 
 	private int computeWalHash(ValueStoreWalValueKind kind, String lexical, String datatype, String language) {
 		CRC32C crc32c = CRC32C_HOLDER.get();
+		// Reset the checksum to ensure each computed hash reflects only the current value
+		crc32c.reset();
 		crc32c.update((byte) kind.code());
 		updateCrc(crc32c, lexical);
 		crc32c.update((byte) 0);
