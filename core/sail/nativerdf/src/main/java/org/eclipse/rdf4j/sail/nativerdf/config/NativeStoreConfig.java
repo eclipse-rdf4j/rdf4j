@@ -38,6 +38,17 @@ public class NativeStoreConfig extends BaseSailConfig {
 	private int namespaceCacheSize = -1;
 	private int namespaceIDCacheSize = -1;
 
+	// WAL: expose max segment bytes via config (optional)
+	private long walMaxSegmentBytes = -1L;
+
+	// Additional WAL configuration options
+	private int walQueueCapacity = -1;
+	private int walBatchBufferBytes = -1;
+	private String walSyncPolicy; // expects one of ValueStoreWalConfig.SyncPolicy
+	private long walSyncIntervalMillis = -1L;
+	private long walIdlePollIntervalMillis = -1L;
+	private String walDirectoryName; // relative to dataDir
+
 	public NativeStoreConfig() {
 		super(NativeStoreFactory.SAIL_TYPE);
 	}
@@ -104,6 +115,62 @@ public class NativeStoreConfig extends BaseSailConfig {
 		this.namespaceIDCacheSize = namespaceIDCacheSize;
 	}
 
+	public long getWalMaxSegmentBytes() {
+		return walMaxSegmentBytes;
+	}
+
+	public void setWalMaxSegmentBytes(long walMaxSegmentBytes) {
+		this.walMaxSegmentBytes = walMaxSegmentBytes;
+	}
+
+	public int getWalQueueCapacity() {
+		return walQueueCapacity;
+	}
+
+	public void setWalQueueCapacity(int walQueueCapacity) {
+		this.walQueueCapacity = walQueueCapacity;
+	}
+
+	public int getWalBatchBufferBytes() {
+		return walBatchBufferBytes;
+	}
+
+	public void setWalBatchBufferBytes(int walBatchBufferBytes) {
+		this.walBatchBufferBytes = walBatchBufferBytes;
+	}
+
+	public String getWalSyncPolicy() {
+		return walSyncPolicy;
+	}
+
+	public void setWalSyncPolicy(String walSyncPolicy) {
+		this.walSyncPolicy = walSyncPolicy;
+	}
+
+	public long getWalSyncIntervalMillis() {
+		return walSyncIntervalMillis;
+	}
+
+	public void setWalSyncIntervalMillis(long walSyncIntervalMillis) {
+		this.walSyncIntervalMillis = walSyncIntervalMillis;
+	}
+
+	public long getWalIdlePollIntervalMillis() {
+		return walIdlePollIntervalMillis;
+	}
+
+	public void setWalIdlePollIntervalMillis(long walIdlePollIntervalMillis) {
+		this.walIdlePollIntervalMillis = walIdlePollIntervalMillis;
+	}
+
+	public String getWalDirectoryName() {
+		return walDirectoryName;
+	}
+
+	public void setWalDirectoryName(String walDirectoryName) {
+		this.walDirectoryName = walDirectoryName;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		if (Configurations.useLegacyConfig()) {
@@ -131,6 +198,28 @@ public class NativeStoreConfig extends BaseSailConfig {
 		if (namespaceIDCacheSize >= 0) {
 			m.add(implNode, CONFIG.Native.namespaceIDCacheSize, literal(namespaceIDCacheSize));
 		}
+		// WAL configuration properties
+		if (walMaxSegmentBytes >= 0) {
+			m.add(implNode, CONFIG.Native.walMaxSegmentBytes, literal(walMaxSegmentBytes));
+		}
+		if (walQueueCapacity > 0) {
+			m.add(implNode, CONFIG.Native.walQueueCapacity, literal(walQueueCapacity));
+		}
+		if (walBatchBufferBytes > 0) {
+			m.add(implNode, CONFIG.Native.walBatchBufferBytes, literal(walBatchBufferBytes));
+		}
+		if (walSyncPolicy != null) {
+			m.add(implNode, CONFIG.Native.walSyncPolicy, literal(walSyncPolicy));
+		}
+		if (walSyncIntervalMillis >= 0) {
+			m.add(implNode, CONFIG.Native.walSyncIntervalMillis, literal(walSyncIntervalMillis));
+		}
+		if (walIdlePollIntervalMillis >= 0) {
+			m.add(implNode, CONFIG.Native.walIdlePollIntervalMillis, literal(walIdlePollIntervalMillis));
+		}
+		if (walDirectoryName != null) {
+			m.add(implNode, CONFIG.Native.walDirectoryName, literal(walDirectoryName));
+		}
 
 		return implNode;
 	}
@@ -157,6 +246,7 @@ public class NativeStoreConfig extends BaseSailConfig {
 		if (namespaceIDCacheSize >= 0) {
 			m.add(implNode, NAMESPACE_ID_CACHE_SIZE, literal(namespaceIDCacheSize));
 		}
+		// legacy export does not define a schema term; omit for legacy
 
 		return implNode;
 	}
@@ -224,6 +314,63 @@ public class NativeStoreConfig extends BaseSailConfig {
 											+ " property, found " + lit);
 						}
 					});
+
+			// WAL configuration properties
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.walMaxSegmentBytes)
+					.ifPresent(lit -> {
+						try {
+							setWalMaxSegmentBytes(lit.longValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException("Long value required for "
+									+ CONFIG.Native.walMaxSegmentBytes + " property, found " + lit);
+						}
+					});
+
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.walQueueCapacity)
+					.ifPresent(lit -> {
+						try {
+							setWalQueueCapacity(lit.intValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException("Integer value required for "
+									+ CONFIG.Native.walQueueCapacity + " property, found " + lit);
+						}
+					});
+
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.walBatchBufferBytes)
+					.ifPresent(lit -> {
+						try {
+							setWalBatchBufferBytes(lit.intValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException("Integer value required for "
+									+ CONFIG.Native.walBatchBufferBytes + " property, found " + lit);
+						}
+					});
+
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.walSyncPolicy)
+					.ifPresent(lit -> setWalSyncPolicy(lit.getLabel()));
+
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.walSyncIntervalMillis)
+					.ifPresent(lit -> {
+						try {
+							setWalSyncIntervalMillis(lit.longValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException("Long value required for "
+									+ CONFIG.Native.walSyncIntervalMillis + " property, found " + lit);
+						}
+					});
+
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.walIdlePollIntervalMillis)
+					.ifPresent(lit -> {
+						try {
+							setWalIdlePollIntervalMillis(lit.longValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException("Long value required for "
+									+ CONFIG.Native.walIdlePollIntervalMillis + " property, found " + lit);
+						}
+					});
+
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.walDirectoryName)
+					.ifPresent(lit -> setWalDirectoryName(lit.getLabel()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
