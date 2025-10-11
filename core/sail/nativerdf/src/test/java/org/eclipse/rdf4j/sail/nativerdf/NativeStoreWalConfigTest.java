@@ -83,6 +83,7 @@ class NativeStoreWalConfigTest {
 		cfg.setWalSyncIntervalMillis(50);
 		cfg.setWalIdlePollIntervalMillis(5);
 		cfg.setWalDirectoryName("custom-wal-dir");
+		cfg.setWalSyncBootstrapOnOpen(true);
 
 		NativeStoreFactory factory = new NativeStoreFactory();
 		NativeStore sail = (NativeStore) factory.getSail(cfg);
@@ -110,5 +111,6 @@ class NativeStoreWalConfigTest {
 		Path expectedWalDir = dataDir.toPath().resolve("custom-wal-dir");
 		assertThat(walCfg.walDirectory()).isEqualTo(expectedWalDir);
 		assertThat(walCfg.snapshotsDirectory()).isEqualTo(expectedWalDir.resolve("snapshots"));
+		assertThat(walCfg.syncBootstrapOnOpen()).isTrue();
 	}
 }

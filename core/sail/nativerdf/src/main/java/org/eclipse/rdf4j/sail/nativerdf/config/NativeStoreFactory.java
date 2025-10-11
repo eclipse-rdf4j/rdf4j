@@ -103,6 +103,8 @@ public class NativeStoreFactory implements SailFactory {
 			if (nativeConfig.getWalDirectoryName() != null) {
 				nativeStore.setWalDirectoryName(nativeConfig.getWalDirectoryName());
 			}
+			// New: allow configuring synchronous WAL bootstrap during open
+			nativeStore.setWalSyncBootstrapOnOpen(nativeConfig.getWalSyncBootstrapOnOpen());
 
 			EvaluationStrategyFactory evalStratFactory = nativeConfig.getEvaluationStrategyFactory();
 			if (evalStratFactory != null) {

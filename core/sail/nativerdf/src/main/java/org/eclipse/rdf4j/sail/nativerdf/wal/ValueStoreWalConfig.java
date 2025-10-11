@@ -36,6 +36,7 @@ public final class ValueStoreWalConfig {
 	private final SyncPolicy syncPolicy;
 	private final Duration syncInterval;
 	private final Duration idlePollInterval;
+	private final boolean syncBootstrapOnOpen;
 
 	private ValueStoreWalConfig(Builder builder) {
 		this.walDirectory = builder.walDirectory;
@@ -47,6 +48,7 @@ public final class ValueStoreWalConfig {
 		this.syncPolicy = builder.syncPolicy;
 		this.syncInterval = builder.syncInterval;
 		this.idlePollInterval = builder.idlePollInterval;
+		this.syncBootstrapOnOpen = builder.syncBootstrapOnOpen;
 	}
 
 	public Path walDirectory() {
@@ -85,6 +87,14 @@ public final class ValueStoreWalConfig {
 		return idlePollInterval;
 	}
 
+	/**
+	 * When true, the ValueStore will synchronously rebuild the WAL from existing values during open before allowing any
+	 * new values to be added. When false (default), bootstrap runs asynchronously in the background.
+	 */
+	public boolean syncBootstrapOnOpen() {
+		return syncBootstrapOnOpen;
+	}
+
 	public static Builder builder() {
 		return new Builder();
 	}
@@ -100,6 +110,7 @@ public final class ValueStoreWalConfig {
 		private SyncPolicy syncPolicy = SyncPolicy.COMMIT;
 		private Duration syncInterval = Duration.ofMillis(2);
 		private Duration idlePollInterval = Duration.ofMillis(1);
+		private boolean syncBootstrapOnOpen = false;
 
 		private Builder() {
 		}
@@ -149,6 +160,14 @@ public final class ValueStoreWalConfig {
 
 		public Builder idlePollInterval(Duration idlePollInterval) {
 			this.idlePollInterval = Objects.requireNonNull(idlePollInterval, "idlePollInterval");
+			return this;
+		}
+
+		/**
+		 * Control whether WAL bootstrap happens synchronously during open. Default is false.
+		 */
+		public Builder syncBootstrapOnOpen(boolean syncBootstrapOnOpen) {
+			this.syncBootstrapOnOpen = syncBootstrapOnOpen;
 			return this;
 		}
 

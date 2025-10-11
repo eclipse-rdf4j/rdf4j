@@ -861,20 +861,31 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 		if (wal.hasInitialSegments()) {
 			return;
 		}
-		if (walBootstrapFuture != null) {
-			return;
-		}
 		int maxId = dataStore.getMaxID();
 		if (maxId <= 0) {
 			return;
 		}
-		CompletableFuture<Void> future = CompletableFuture.runAsync(() -> rebuildWalFromExistingValues(maxId));
-		walBootstrapFuture = future;
-		future.whenComplete((unused, throwable) -> {
-			if (throwable != null) {
-				logger.warn("ValueStore WAL bootstrap failed", throwable);
+		boolean syncBootstrap = false;
+		try {
+			syncBootstrap = wal.config().syncBootstrapOnOpen();
+		} catch (Throwable ignore) {
+			// defensive: if config not accessible, default to async
+		}
+		if (syncBootstrap) {
+			// Perform bootstrap synchronously before allowing any further operations
+			rebuildWalFromExistingValues(maxId);
+		} else {
+			if (walBootstrapFuture != null) {
+				return;
 			}
-		});
+			CompletableFuture<Void> future = CompletableFuture.runAsync(() -> rebuildWalFromExistingValues(maxId));
+			walBootstrapFuture = future;
+			future.whenComplete((unused, throwable) -> {
+				if (throwable != null) {
+					logger.warn("ValueStore WAL bootstrap failed", throwable);
+				}
+			});
+		}
 	}
 
 	private void rebuildWalFromExistingValues(int maxId) {

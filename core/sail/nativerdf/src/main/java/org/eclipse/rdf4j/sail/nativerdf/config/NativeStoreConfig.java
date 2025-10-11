@@ -49,6 +49,9 @@ public class NativeStoreConfig extends BaseSailConfig {
 	private long walIdlePollIntervalMillis = -1L;
 	private String walDirectoryName; // relative to dataDir
 
+	// When true, WAL bootstrap runs synchronously during open before accepting new values
+	private boolean walSyncBootstrapOnOpen = false;
+
 	public NativeStoreConfig() {
 		super(NativeStoreFactory.SAIL_TYPE);
 	}
@@ -171,6 +174,14 @@ public class NativeStoreConfig extends BaseSailConfig {
 		this.walDirectoryName = walDirectoryName;
 	}
 
+	public boolean getWalSyncBootstrapOnOpen() {
+		return walSyncBootstrapOnOpen;
+	}
+
+	public void setWalSyncBootstrapOnOpen(boolean walSyncBootstrapOnOpen) {
+		this.walSyncBootstrapOnOpen = walSyncBootstrapOnOpen;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		if (Configurations.useLegacyConfig()) {
@@ -219,6 +230,10 @@ public class NativeStoreConfig extends BaseSailConfig {
 		}
 		if (walDirectoryName != null) {
 			m.add(implNode, CONFIG.Native.walDirectoryName, literal(walDirectoryName));
+		}
+		// Only export when true to avoid noise
+		if (walSyncBootstrapOnOpen) {
+			m.add(implNode, CONFIG.Native.walSyncBootstrapOnOpen, literal(true));
 		}
 
 		return implNode;
@@ -371,6 +386,16 @@ public class NativeStoreConfig extends BaseSailConfig {
 
 			Configurations.getLiteralValue(m, implNode, CONFIG.Native.walDirectoryName)
 					.ifPresent(lit -> setWalDirectoryName(lit.getLabel()));
+
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.walSyncBootstrapOnOpen)
+					.ifPresent(lit -> {
+						try {
+							setWalSyncBootstrapOnOpen(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException("Boolean value required for "
+									+ CONFIG.Native.walSyncBootstrapOnOpen + " property, found " + lit);
+						}
+					});
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}

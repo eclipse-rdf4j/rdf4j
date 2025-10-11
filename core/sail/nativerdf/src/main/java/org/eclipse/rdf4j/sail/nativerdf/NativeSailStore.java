@@ -111,6 +111,17 @@ class NativeSailStore implements SailStore {
 			ValueStoreWalConfig.SyncPolicy walSyncPolicy,
 			long walSyncIntervalMillis, long walIdlePollIntervalMillis, String walDirectoryName)
 			throws IOException, SailException {
+		this(dataDir, tripleIndexes, forceSync, valueCacheSize, valueIDCacheSize, namespaceCacheSize,
+				namespaceIDCacheSize, walMaxSegmentBytes, walQueueCapacity, walBatchBufferBytes, walSyncPolicy,
+				walSyncIntervalMillis, walIdlePollIntervalMillis, walDirectoryName, false);
+	}
+
+	public NativeSailStore(File dataDir, String tripleIndexes, boolean forceSync, int valueCacheSize,
+			int valueIDCacheSize, int namespaceCacheSize, int namespaceIDCacheSize, long walMaxSegmentBytes,
+			int walQueueCapacity, int walBatchBufferBytes,
+			ValueStoreWalConfig.SyncPolicy walSyncPolicy,
+			long walSyncIntervalMillis, long walIdlePollIntervalMillis, String walDirectoryName,
+			boolean walSyncBootstrapOnOpen) throws IOException, SailException {
 		NamespaceStore createdNamespaceStore = null;
 		ValueStoreWAL createdWal = null;
 		ValueStore createdValueStore = null;
@@ -147,6 +158,8 @@ class NativeSailStore implements SailStore {
 				if (walIdlePollIntervalMillis >= 0) {
 					walBuilder.idlePollInterval(Duration.ofMillis(walIdlePollIntervalMillis));
 				}
+				// propagate bootstrap mode
+				walBuilder.syncBootstrapOnOpen(walSyncBootstrapOnOpen);
 				walConfig = walBuilder.build();
 				createdWal = ValueStoreWAL.open(walConfig);
 			} else {
