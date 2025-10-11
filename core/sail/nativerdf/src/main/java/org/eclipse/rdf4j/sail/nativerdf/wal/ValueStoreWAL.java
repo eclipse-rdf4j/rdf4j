@@ -536,6 +536,15 @@ public final class ValueStoreWAL implements AutoCloseable {
 			}
 		}
 
+		/**
+		 * Rotate the current WAL segment. This is a small wrapper used by tests to ensure that rotation forces the
+		 * previous segment to disk before closing it. New segments will be started lazily on the next append.
+		 */
+		@SuppressWarnings("unused")
+		private void rotateSegment() throws IOException {
+			finishCurrentSegment();
+		}
+
 		private void startSegment(int firstId) throws IOException {
 			startSegment(firstId, true);
 		}
