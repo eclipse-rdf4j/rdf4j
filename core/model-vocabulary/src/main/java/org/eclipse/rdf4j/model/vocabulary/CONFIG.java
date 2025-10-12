@@ -276,6 +276,26 @@ public class CONFIG {
 		 * <var>tag:rdf4j.org,2023:config/native.namespaceIDCacheSize</var>
 		 */
 		public final static IRI namespaceIDCacheSize = createIRI(NAMESPACE, "native.namespaceIDCacheSize");
+
+		// ValueStore WAL configuration properties
+		/** <var>tag:rdf4j.org,2023:config/native.walMaxSegmentBytes</var> */
+		public final static IRI walMaxSegmentBytes = createIRI(NAMESPACE, "native.walMaxSegmentBytes");
+		/** <var>tag:rdf4j.org,2023:config/native.walQueueCapacity</var> */
+		public final static IRI walQueueCapacity = createIRI(NAMESPACE, "native.walQueueCapacity");
+		/** <var>tag:rdf4j.org,2023:config/native.walBatchBufferBytes</var> */
+		public final static IRI walBatchBufferBytes = createIRI(NAMESPACE, "native.walBatchBufferBytes");
+		/** <var>tag:rdf4j.org,2023:config/native.walSyncPolicy</var> */
+		public final static IRI walSyncPolicy = createIRI(NAMESPACE, "native.walSyncPolicy");
+		/** <var>tag:rdf4j.org,2023:config/native.walSyncIntervalMillis</var> */
+		public final static IRI walSyncIntervalMillis = createIRI(NAMESPACE, "native.walSyncIntervalMillis");
+		/** <var>tag:rdf4j.org,2023:config/native.walIdlePollIntervalMillis</var> */
+		public final static IRI walIdlePollIntervalMillis = createIRI(NAMESPACE, "native.walIdlePollIntervalMillis");
+		/** <var>tag:rdf4j.org,2023:config/native.walDirectoryName</var> */
+		public final static IRI walDirectoryName = createIRI(NAMESPACE, "native.walDirectoryName");
+		/** <var>tag:rdf4j.org,2023:config/native.walSyncBootstrapOnOpen</var> */
+		public final static IRI walSyncBootstrapOnOpen = createIRI(NAMESPACE, "native.walSyncBootstrapOnOpen");
+		/** <var>tag:rdf4j.org,2023:config/native.walAutoRecoverOnOpen</var> */
+		public final static IRI walAutoRecoverOnOpen = createIRI(NAMESPACE, "native.walAutoRecoverOnOpen");
 	}
 
 	/**
