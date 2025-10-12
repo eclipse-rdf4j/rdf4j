@@ -105,6 +105,8 @@ public class NativeStoreFactory implements SailFactory {
 			}
 			// New: allow configuring synchronous WAL bootstrap during open
 			nativeStore.setWalSyncBootstrapOnOpen(nativeConfig.getWalSyncBootstrapOnOpen());
+			// New: allow configuring auto-recovery of ValueStore from WAL during open
+			nativeStore.setWalAutoRecoverOnOpen(nativeConfig.getWalAutoRecoverOnOpen());
 
 			EvaluationStrategyFactory evalStratFactory = nativeConfig.getEvaluationStrategyFactory();
 			if (evalStratFactory != null) {

@@ -116,12 +116,12 @@ class NativeSailStore implements SailStore {
 				walSyncIntervalMillis, walIdlePollIntervalMillis, walDirectoryName, false);
 	}
 
-	public NativeSailStore(File dataDir, String tripleIndexes, boolean forceSync, int valueCacheSize,
-			int valueIDCacheSize, int namespaceCacheSize, int namespaceIDCacheSize, long walMaxSegmentBytes,
-			int walQueueCapacity, int walBatchBufferBytes,
-			ValueStoreWalConfig.SyncPolicy walSyncPolicy,
-			long walSyncIntervalMillis, long walIdlePollIntervalMillis, String walDirectoryName,
-			boolean walSyncBootstrapOnOpen) throws IOException, SailException {
+    public NativeSailStore(File dataDir, String tripleIndexes, boolean forceSync, int valueCacheSize,
+            int valueIDCacheSize, int namespaceCacheSize, int namespaceIDCacheSize, long walMaxSegmentBytes,
+            int walQueueCapacity, int walBatchBufferBytes,
+            ValueStoreWalConfig.SyncPolicy walSyncPolicy,
+            long walSyncIntervalMillis, long walIdlePollIntervalMillis, String walDirectoryName,
+            boolean walSyncBootstrapOnOpen, boolean walAutoRecoverOnOpen) throws IOException, SailException {
 		NamespaceStore createdNamespaceStore = null;
 		ValueStoreWAL createdWal = null;
 		ValueStore createdValueStore = null;
@@ -159,7 +159,8 @@ class NativeSailStore implements SailStore {
 					walBuilder.idlePollInterval(Duration.ofMillis(walIdlePollIntervalMillis));
 				}
 				// propagate bootstrap mode
-				walBuilder.syncBootstrapOnOpen(walSyncBootstrapOnOpen);
+                walBuilder.syncBootstrapOnOpen(walSyncBootstrapOnOpen);
+                walBuilder.recoverValueStoreOnOpen(walAutoRecoverOnOpen);
 				walConfig = walBuilder.build();
 				createdWal = ValueStoreWAL.open(walConfig);
 			} else {

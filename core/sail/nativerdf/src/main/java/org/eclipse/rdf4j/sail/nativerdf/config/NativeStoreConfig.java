@@ -52,6 +52,9 @@ public class NativeStoreConfig extends BaseSailConfig {
 	// When true, WAL bootstrap runs synchronously during open before accepting new values
 	private boolean walSyncBootstrapOnOpen = false;
 
+	// When true, reconstruct ValueStore from WAL during open if empty/missing
+	private boolean walAutoRecoverOnOpen = false;
+
 	public NativeStoreConfig() {
 		super(NativeStoreFactory.SAIL_TYPE);
 	}
@@ -182,6 +185,14 @@ public class NativeStoreConfig extends BaseSailConfig {
 		this.walSyncBootstrapOnOpen = walSyncBootstrapOnOpen;
 	}
 
+	public boolean getWalAutoRecoverOnOpen() {
+		return walAutoRecoverOnOpen;
+	}
+
+	public void setWalAutoRecoverOnOpen(boolean walAutoRecoverOnOpen) {
+		this.walAutoRecoverOnOpen = walAutoRecoverOnOpen;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		if (Configurations.useLegacyConfig()) {
@@ -234,6 +245,9 @@ public class NativeStoreConfig extends BaseSailConfig {
 		// Only export when true to avoid noise
 		if (walSyncBootstrapOnOpen) {
 			m.add(implNode, CONFIG.Native.walSyncBootstrapOnOpen, literal(true));
+		}
+		if (walAutoRecoverOnOpen) {
+			m.add(implNode, CONFIG.Native.walAutoRecoverOnOpen, literal(true));
 		}
 
 		return implNode;
@@ -386,6 +400,26 @@ public class NativeStoreConfig extends BaseSailConfig {
 
 			Configurations.getLiteralValue(m, implNode, CONFIG.Native.walDirectoryName)
 					.ifPresent(lit -> setWalDirectoryName(lit.getLabel()));
+
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.walSyncBootstrapOnOpen)
+					.ifPresent(lit -> {
+						try {
+							setWalSyncBootstrapOnOpen(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException("Boolean value required for "
+									+ CONFIG.Native.walSyncBootstrapOnOpen + " property, found " + lit);
+						}
+					});
+
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.walAutoRecoverOnOpen)
+					.ifPresent(lit -> {
+						try {
+							setWalAutoRecoverOnOpen(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException("Boolean value required for "
+									+ CONFIG.Native.walAutoRecoverOnOpen + " property, found " + lit);
+						}
+					});
 
 			Configurations.getLiteralValue(m, implNode, CONFIG.Native.walSyncBootstrapOnOpen)
 					.ifPresent(lit -> {

@@ -294,6 +294,8 @@ public class CONFIG {
 		public final static IRI walDirectoryName = createIRI(NAMESPACE, "native.walDirectoryName");
 		/** <var>tag:rdf4j.org,2023:config/native.walSyncBootstrapOnOpen</var> */
 		public final static IRI walSyncBootstrapOnOpen = createIRI(NAMESPACE, "native.walSyncBootstrapOnOpen");
+		/** <var>tag:rdf4j.org,2023:config/native.walAutoRecoverOnOpen</var> */
+		public final static IRI walAutoRecoverOnOpen = createIRI(NAMESPACE, "native.walAutoRecoverOnOpen");
 	}
 
 	/**

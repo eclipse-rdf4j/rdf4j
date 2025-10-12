@@ -192,6 +192,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	private long walIdlePollIntervalMillis = -1L;
 	private String walDirectoryName = null;
 	private boolean walSyncBootstrapOnOpen = false;
+	private boolean walAutoRecoverOnOpen = false;
 
 	/*--------------*
 	 * Constructors *
@@ -338,6 +339,15 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 		return walSyncBootstrapOnOpen;
 	}
 
+	/** Enable automatic ValueStore recovery from WAL during open. */
+	public void setWalAutoRecoverOnOpen(boolean walAutoRecoverOnOpen) {
+		this.walAutoRecoverOnOpen = walAutoRecoverOnOpen;
+	}
+
+	public boolean isWalAutoRecoverOnOpen() {
+		return walAutoRecoverOnOpen;
+	}
+
 	/**
 	 * @return Returns the {@link EvaluationStrategy}.
 	 */
@@ -444,7 +454,8 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 					walSyncIntervalMillis,
 					walIdlePollIntervalMillis,
 					walDirectoryName,
-					walSyncBootstrapOnOpen);
+					walSyncBootstrapOnOpen,
+					walAutoRecoverOnOpen);
 			this.store = new SnapshotSailStore(mainStore, () -> new MemoryOverflowIntoNativeStore()) {
 
 				@Override

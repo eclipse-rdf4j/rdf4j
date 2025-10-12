@@ -176,8 +176,8 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 		this.wal = wal;
 		this.walPendingLsn = wal != null ? ThreadLocal.withInitial(() -> ValueStoreWAL.NO_LSN) : null;
 
-		setNewRevision();
-		maybeScheduleWalBootstrap();
+			setNewRevision();
+			maybeScheduleWalBootstrap();
 
 	}
 
@@ -678,8 +678,6 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 			throw e;
 		}
 
-	}
-
 	private NativeBNode data2bnode(int id, byte[] data) {
 		String nodeID = new String(data, 1, data.length - 1, StandardCharsets.UTF_8);
 		return new NativeBNode(revision, nodeID, id);
@@ -1144,4 +1142,99 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 			}
 		}
 	}
+
+	private void autoRecoverValueStoreIfConfigured() {
+		if (!walEnabled()) {
+			return;
+		}
+		boolean recover = false;
+		try {
+			recover = wal.config().recoverValueStoreOnOpen();
+		} catch (Throwable ignore) {
+			recover = false;
+		}
+		if (!recover) {
+			return;
+		}
+		if (!wal.hasInitialSegments()) {
+			return;
+		}
+		// If ValueStore is empty, attempt recovery from WAL
+		if (dataStore.getMaxID() == 0) {
+			try (ValueStoreWalReader reader = ValueStoreWalReader.open(wal.config())) {
+				ValueStoreWalRecovery recovery = new ValueStoreWalRecovery();
+				Map<Integer, ValueStoreWalRecord> dict = new LinkedHashMap<>(recovery.replay(reader));
+				for (ValueStoreWalRecord rec : dict.values()) {
+					switch (rec.valueKind()) {
+					case NAMESPACE: {
+						byte[] nsBytes = rec.lexical().getBytes(StandardCharsets.UTF_8);
+						dataStore.storeData(nsBytes);
+						break;
+					}
+					case IRI: {
+						byte[] iriBytes = encodeIri(rec.lexical(), dataStore);
+						dataStore.storeData(iriBytes);
+						break;
+					}
+					case BNODE: {
+						byte[] idData = rec.lexical().getBytes(StandardCharsets.UTF_8);
+						byte[] bnode = new byte[1 + idData.length];
+						bnode[0] = 0x2;
+						ByteArrayUtil.put(idData, bnode, 1);
+						dataStore.storeData(bnode);
+						break;
+					}
+					case LITERAL: {
+						byte[] litBytes = encodeLiteral(rec.lexical(), rec.datatype(), rec.language(), dataStore);
+						dataStore.storeData(litBytes);
+						break;
+					}
+					default:
+						break;
+					}
+				}
+				dataStore.sync();
+			} catch (Exception e) {
+				logger.warn("ValueStore auto-recovery from WAL failed", e);
+			}
+		}
+	}
+
+	private byte[] encodeIri(String lexical, DataStore ds) throws IOException {
+		IRI iri = createIRI(lexical);
+		String ns = iri.getNamespace();
+		String local = iri.getLocalName();
+		int nsId = ds.getID(ns.getBytes(StandardCharsets.UTF_8));
+		if (nsId == -1) {
+			nsId = ds.storeData(ns.getBytes(StandardCharsets.UTF_8));
+		}
+		byte[] localBytes = local.getBytes(StandardCharsets.UTF_8);
+		byte[] data = new byte[1 + 4 + localBytes.length];
+		data[0] = URI_VALUE;
+		ByteArrayUtil.putInt(nsId, data, 1);
+		ByteArrayUtil.put(localBytes, data, 5);
+		return data;
+	}
+
+
+	private byte[] encodeLiteral(String label, String datatype, String language, DataStore ds) throws IOException {
+		int dtId = NativeValue.UNKNOWN_ID;
+		if (datatype != null && !datatype.isEmpty()) {
+			byte[] dtBytes = encodeIri(datatype, ds);
+			int id = ds.getID(dtBytes);
+			dtId = id == -1 ? ds.storeData(dtBytes) : id;
+		}
+		byte[] langBytes = language == null ? new byte[0] : language.getBytes(StandardCharsets.UTF_8);
+		byte[] labelBytes = label.getBytes(StandardCharsets.UTF_8);
+		byte[] data = new byte[1 + 4 + 1 + langBytes.length + labelBytes.length];
+		data[0] = LITERAL_VALUE;
+		ByteArrayUtil.putInt(dtId, data, 1);
+		data[5] = (byte) (langBytes.length & 0xFF);
+		if (langBytes.length > 0) {
+			ByteArrayUtil.put(langBytes, data, 6);
+		}
+		ByteArrayUtil.put(labelBytes, data, 6 + langBytes.length);
+		return data;
+	}
+
 }

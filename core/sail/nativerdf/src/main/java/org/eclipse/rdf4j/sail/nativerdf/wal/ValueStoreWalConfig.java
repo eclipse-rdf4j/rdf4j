@@ -37,6 +37,7 @@ public final class ValueStoreWalConfig {
 	private final Duration syncInterval;
 	private final Duration idlePollInterval;
 	private final boolean syncBootstrapOnOpen;
+	private final boolean recoverValueStoreOnOpen;
 
 	private ValueStoreWalConfig(Builder builder) {
 		this.walDirectory = builder.walDirectory;
@@ -49,6 +50,7 @@ public final class ValueStoreWalConfig {
 		this.syncInterval = builder.syncInterval;
 		this.idlePollInterval = builder.idlePollInterval;
 		this.syncBootstrapOnOpen = builder.syncBootstrapOnOpen;
+		this.recoverValueStoreOnOpen = builder.recoverValueStoreOnOpen;
 	}
 
 	public Path walDirectory() {
@@ -95,6 +97,14 @@ public final class ValueStoreWalConfig {
 		return syncBootstrapOnOpen;
 	}
 
+	/**
+	 * When true, the ValueStore will attempt to reconstruct missing or empty ValueStore files from the WAL during open
+	 * before allowing any operations.
+	 */
+	public boolean recoverValueStoreOnOpen() {
+		return recoverValueStoreOnOpen;
+	}
+
 	public static Builder builder() {
 		return new Builder();
 	}
@@ -111,6 +121,7 @@ public final class ValueStoreWalConfig {
 		private Duration syncInterval = Duration.ofMillis(2);
 		private Duration idlePollInterval = Duration.ofMillis(1);
 		private boolean syncBootstrapOnOpen = false;
+		private boolean recoverValueStoreOnOpen = false;
 
 		private Builder() {
 		}
@@ -168,6 +179,12 @@ public final class ValueStoreWalConfig {
 		 */
 		public Builder syncBootstrapOnOpen(boolean syncBootstrapOnOpen) {
 			this.syncBootstrapOnOpen = syncBootstrapOnOpen;
+			return this;
+		}
+
+		/** Enable automatic ValueStore recovery from WAL during open. */
+		public Builder recoverValueStoreOnOpen(boolean recoverValueStoreOnOpen) {
+			this.recoverValueStoreOnOpen = recoverValueStoreOnOpen;
 			return this;
 		}
 
