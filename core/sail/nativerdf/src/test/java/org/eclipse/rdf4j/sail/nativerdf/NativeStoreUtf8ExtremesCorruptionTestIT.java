@@ -27,6 +27,7 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -39,7 +40,8 @@ import org.junit.jupiter.api.io.TempDir;
  * If corruption occurs, the subsequent checkConsistency() call will throw, causing this test to fail. This test is
  * designed as a reproducer (expected to fail when corruption is possible) rather than an assertion of correctness.
  */
-public class NativeStoreUtf8ExtremesCorruptionTest {
+@Tag("slow")
+public class NativeStoreUtf8ExtremesCorruptionTestIT {
 
 	@TempDir
 	File dataDir;

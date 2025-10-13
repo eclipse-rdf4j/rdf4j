@@ -27,6 +27,7 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -35,7 +36,8 @@ import org.junit.jupiter.api.io.TempDir;
  * concurrent reader forces frequent DataFile.flush() via reads. The race between flush() offset calculation and
  * direct-write size updates can misplace buffered bytes, corrupting records.
  */
-public class DataFileDirectWriteFlushRaceReproducerTest {
+@Tag("slow")
+public class DataFileDirectWriteFlushRaceReproducerTestIT {
 
 	@TempDir
 	File dataDir;

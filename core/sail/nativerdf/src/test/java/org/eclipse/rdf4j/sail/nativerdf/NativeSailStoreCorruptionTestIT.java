@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
@@ -47,9 +48,10 @@ import org.slf4j.LoggerFactory;
 /**
  * Tests how the NativeStore handles corruption in the data files.
  */
-public class NativeSailStoreCorruptionTest {
+@Tag("slow")
+public class NativeSailStoreCorruptionTestIT {
 
-	private static final Logger logger = LoggerFactory.getLogger(NativeSailStoreCorruptionTest.class);
+	private static final Logger logger = LoggerFactory.getLogger(NativeSailStoreCorruptionTestIT.class);
 
 	@TempDir
 	File tempFolder;

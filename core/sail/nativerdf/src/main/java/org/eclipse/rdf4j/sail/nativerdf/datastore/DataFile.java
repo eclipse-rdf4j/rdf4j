@@ -54,8 +54,8 @@ public class DataFile implements Closeable {
 	// Guard parameters
 	private static final long LARGE_READ_THRESHOLD = 128L * 1024 * 1024; // 128MB
 	private static final int SOFT_FAIL_CAP_BYTES = 32 * 1024 * 1024; // 32MB
-	private static final boolean SIMULATE_LOW_HEAP_FOR_TESTS = Boolean
-			.getBoolean("org.eclipse.rdf4j.sail.nativerdf.datastore.DataFile.simulateLowHeapForTests");
+	private static final String SIMULATE_LOW_HEAP_FOR_TESTS_PROPERTY = "org.eclipse.rdf4j.sail.nativerdf.datastore.DataFile.simulateLowHeapForTests";
+	private final boolean simulateLowHeapForTests = Boolean.getBoolean(SIMULATE_LOW_HEAP_FOR_TESTS_PROPERTY);
 
 	/*-----------*
 	 * Variables *
@@ -286,7 +286,7 @@ public class DataFile implements Closeable {
 	 * fail mode is enabled and insufficient memory is observed, returns a reduced cap to allow recovery; otherwise
 	 * throws an IOException with guidance for remediation.
 	 */
-	private static int guardedDataLength(int requested) throws IOException {
+	private int guardedDataLength(int requested) throws IOException {
 		if (requested <= 0) {
 			return requested;
 		}
@@ -306,7 +306,7 @@ public class DataFile implements Closeable {
 		Runtime rt = Runtime.getRuntime();
 		for (int i = 0; i < 6; i++) { // initial check + up to 5 GC attempts
 			long allocated = rt.totalMemory() - rt.freeMemory();
-			long free = SIMULATE_LOW_HEAP_FOR_TESTS ? 0 : (rt.maxMemory() - allocated);
+			long free = simulateLowHeapForTests ? 0 : (rt.maxMemory() - allocated);
 			if (free >= requested) {
 				return requested;
 			}
@@ -322,7 +322,7 @@ public class DataFile implements Closeable {
 		}
 
 		long allocated = rt.totalMemory() - rt.freeMemory();
-		long free = SIMULATE_LOW_HEAP_FOR_TESTS ? 0 : (rt.maxMemory() - allocated);
+		long free = simulateLowHeapForTests ? 0 : (rt.maxMemory() - allocated);
 		if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
 			logger.error(
 					"Attempt to read {} MB but only {} MB free heap available. Truncating to {} MB due to soft-fail mode.",
