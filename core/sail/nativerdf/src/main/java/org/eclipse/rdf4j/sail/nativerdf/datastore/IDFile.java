@@ -231,6 +231,19 @@ public class IDFile implements Closeable {
 	}
 
 	/**
+	 * Gets the offset directly from the underlying file, bypassing any caches. Useful for validating cached results
+	 * when diagnosing corruption.
+	 *
+	 * @param id The ID to get the offset for, must be larger than 0.
+	 * @return the raw offset stored for the id
+	 * @throws IOException if an I/O error occurs
+	 */
+	public long getOffsetNoCache(int id) throws IOException {
+		assert id > 0 : "id must be larger than 0, is: " + id;
+		return nioFile.readLong(ITEM_SIZE * id);
+	}
+
+	/**
 	 * Discards all stored data.
 	 *
 	 * @throws IOException If an I/O error occurred.

@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
+import org.eclipse.rdf4j.sail.nativerdf.datastore.RecoveredDataException;
 import org.eclipse.rdf4j.sail.nativerdf.model.CorruptIRI;
 import org.eclipse.rdf4j.sail.nativerdf.model.CorruptIRIOrBNode;
 import org.eclipse.rdf4j.sail.nativerdf.model.CorruptLiteral;
@@ -145,7 +146,7 @@ public class ValueStore extends SimpleValueFactory {
 	public ValueStore(File dataDir, boolean forceSync, int valueCacheSize, int valueIDCacheSize, int namespaceCacheSize,
 			int namespaceIDCacheSize) throws IOException {
 		super();
-		dataStore = new DataStore(dataDir, FILENAME_PREFIX, forceSync);
+		dataStore = new DataStore(dataDir, FILENAME_PREFIX, forceSync, this);
 
 		valueCache = new ConcurrentCache<>(valueCacheSize);
 		valueIDCache = new ConcurrentCache<>(valueIDCacheSize);
@@ -194,15 +195,31 @@ public class ValueStore extends SimpleValueFactory {
 		NativeValue resultValue = valueCache.get(cacheID);
 
 		if (resultValue == null) {
-			// Value not in cache, fetch it from file
-			byte[] data = dataStore.getData(id);
-
-			if (data != null) {
-				resultValue = data2value(id, data);
-
-				if (!(resultValue instanceof CorruptValue)) {
-					// Store value in cache
-					valueCache.put(cacheID, resultValue);
+			try {
+				// Value not in cache, fetch it from file
+				byte[] data = dataStore.getData(id);
+				if (data != null) {
+					resultValue = data2value(id, data);
+					if (!(resultValue instanceof CorruptValue)) {
+						// Store value in cache
+						valueCache.put(cacheID, resultValue);
+					}
+				}
+			} catch (RecoveredDataException rde) {
+				byte[] recovered = rde.getData();
+				if (recovered != null && recovered.length > 0) {
+					byte t = recovered[0];
+					if (t == URI_VALUE) {
+						resultValue = new CorruptIRI(revision, id, null, recovered);
+					} else if (t == BNODE_VALUE) {
+						resultValue = new CorruptIRIOrBNode(revision, id, recovered);
+					} else if (t == LITERAL_VALUE) {
+						resultValue = new CorruptLiteral(revision, id, recovered);
+					} else {
+						resultValue = new CorruptUnknownValue(revision, id, recovered);
+					}
+				} else {
+					resultValue = new CorruptUnknownValue(revision, id, recovered);
 				}
 			}
 		}
@@ -434,21 +451,30 @@ public class ValueStore extends SimpleValueFactory {
 	public void checkConsistency() throws SailException, IOException {
 		int maxID = dataStore.getMaxID();
 		for (int id = 1; id <= maxID; id++) {
-			byte[] data = dataStore.getData(id);
-			if (isNamespaceData(data)) {
-				String namespace = data2namespace(data);
-				try {
-					if (id == getNamespaceID(namespace, false)
-							&& java.net.URI.create(namespace + "part").isAbsolute()) {
-						continue;
+			try {
+				byte[] data = dataStore.getData(id);
+				if (isNamespaceData(data)) {
+					String namespace = data2namespace(data);
+					try {
+						if (id == getNamespaceID(namespace, false)
+								&& java.net.URI.create(namespace + "part").isAbsolute()) {
+							continue;
+						}
+					} catch (IllegalArgumentException e) {
+						// throw SailException
 					}
-				} catch (IllegalArgumentException e) {
-					// throw SailException
+					throw new SailException(
+							"Store must be manually exported and imported to fix namespaces like " + namespace);
+				} else {
+					Value value = this.data2value(id, data);
+					if (id != this.getID(copy(value))) {
+						throw new SailException(
+								"Store must be manually exported and imported to merge values like " + value);
+					}
 				}
-				throw new SailException(
-						"Store must be manually exported and imported to fix namespaces like " + namespace);
-			} else {
-				Value value = this.data2value(id, data);
+			} catch (RecoveredDataException rde) {
+				// Treat as a corrupt unknown value during consistency check
+				Value value = new CorruptUnknownValue(revision, id, rde.getData());
 				if (id != this.getID(copy(value))) {
 					throw new SailException(
 							"Store must be manually exported and imported to merge values like " + value);
@@ -584,7 +610,8 @@ public class ValueStore extends SimpleValueFactory {
 		return data[0] != URI_VALUE && data[0] != BNODE_VALUE && data[0] != LITERAL_VALUE;
 	}
 
-	private NativeValue data2value(int id, byte[] data) throws IOException {
+	@InternalUseOnly
+	public NativeValue data2value(int id, byte[] data) throws IOException {
 		if (data.length == 0) {
 			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
 				logger.error("Soft fail on corrupt data: Empty data array for value with id {}", id);
@@ -704,8 +731,12 @@ public class ValueStore extends SimpleValueFactory {
 		String namespace = namespaceCache.get(cacheID);
 
 		if (namespace == null) {
-			byte[] namespaceData = dataStore.getData(id);
-			namespace = data2namespace(namespaceData);
+			try {
+				byte[] namespaceData = dataStore.getData(id);
+				namespace = data2namespace(namespaceData);
+			} catch (RecoveredDataException rde) {
+				namespace = data2namespace(rde.getData());
+			}
 
 			namespaceCache.put(cacheID, namespace);
 		}
@@ -829,13 +860,18 @@ public class ValueStore extends SimpleValueFactory {
 
 		int maxID = valueStore.dataStore.getMaxID();
 		for (int id = 1; id <= maxID; id++) {
-			byte[] data = valueStore.dataStore.getData(id);
-			if (valueStore.isNamespaceData(data)) {
-				String ns = valueStore.data2namespace(data);
-				System.out.println("[" + id + "] " + ns);
-			} else {
-				Value value = valueStore.data2value(id, data);
-				System.out.println("[" + id + "] " + value.toString());
+			try {
+				byte[] data = valueStore.dataStore.getData(id);
+				if (valueStore.isNamespaceData(data)) {
+					String ns = valueStore.data2namespace(data);
+					System.out.println("[" + id + "] " + ns);
+				} else {
+					Value value = valueStore.data2value(id, data);
+					System.out.println("[" + id + "] " + value.toString());
+				}
+			} catch (RecoveredDataException rde) {
+				System.out.println("[" + id + "] CorruptUnknownValue:"
+						+ new CorruptUnknownValue(valueStore.revision, id, rde.getData()));
 			}
 		}
 	}

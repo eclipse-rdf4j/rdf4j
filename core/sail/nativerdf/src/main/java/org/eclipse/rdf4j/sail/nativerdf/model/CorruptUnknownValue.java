@@ -14,10 +14,12 @@ package org.eclipse.rdf4j.sail.nativerdf.model;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
+import org.apache.commons.codec.binary.Hex;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -35,22 +37,114 @@ import org.eclipse.rdf4j.sail.nativerdf.ValueStoreRevision;
 public class CorruptUnknownValue extends CorruptValue implements Literal {
 
 	private static final long serialVersionUID = -6650510290226676279L;
+	private final String hex;
 
 	public CorruptUnknownValue(ValueStoreRevision revision, int internalID, byte[] data) {
 		super(revision, internalID, data);
+		var truncated = data;
+		if (truncated != null && truncated.length > 2048) {
+			truncated = new byte[2048];
+			System.arraycopy(data, 0, truncated, 0, 2048);
+		}
+		if (truncated != null) {
+			this.hex = Hex.encodeHexString(truncated);
+		} else {
+			this.hex = "";
+		}
 	}
 
 	@Override
 	public String getLabel() {
 		byte[] data = getData();
 		try {
-			if (data != null && data.length < 1024) {
-				return "CorruptUnknownValue with ID " + getInternalID() + " with possible data: "
-						+ new String(data, StandardCharsets.UTF_8);
+			if (data != null && data.length > 0) {
+				// check if all bytes are zero
+				boolean allZero = true;
+				for (byte b : data) {
+					if (b != 0) {
+						allZero = false;
+						break;
+					}
+				}
+
+				if (allZero) {
+					return this.getClass().getSimpleName() + " with ID " + getInternalID()
+							+ " all data bytes are 0x00, tried to read " + data.length + " bytes";
+				}
+
+				String prefix = this.getClass().getSimpleName() + " with ID " + getInternalID()
+						+ " with possible data: ";
+
+				data = truncateData(data);
+
+				// 1) Try full UTF-8 decode
+				try {
+					String utf8 = new String(data, StandardCharsets.UTF_8);
+					if (utf8.indexOf('\uFFFD') < 0) {
+						return prefix + utf8;
+					}
+				} catch (Throwable ignored) {
+					// continue with recovery paths
+				}
+
+				// 2) Longest clean UTF-8 substring (no replacement char)
+				String recoveredUtf8 = null;
+				int bestLen = 0;
+				for (int start = 0; start < data.length; start++) {
+					for (int end = data.length; end > start; end--) {
+						int len = end - start;
+						if (len <= bestLen) {
+							break; // can't beat best
+						}
+						try {
+							String s = new String(data, start, len, StandardCharsets.UTF_8);
+							if (s.indexOf('\uFFFD') < 0) {
+								recoveredUtf8 = s;
+								bestLen = len;
+								break; // shorter end won't beat this start
+							}
+						} catch (Throwable ignored) {
+							// keep scanning
+						}
+					}
+				}
+				if (recoveredUtf8 != null && !recoveredUtf8.trim().isEmpty()) {
+					return prefix + recoveredUtf8;
+				}
+
+				// 3) Longest contiguous printable ASCII run
+				int bestAsciiStart = -1;
+				int bestAsciiLen = 0;
+				int i = 0;
+				while (i < data.length) {
+					if (data[i] >= 0x20 && data[i] <= 0x7E) {
+						int runStart = i;
+						while (i < data.length && data[i] >= 0x20 && data[i] <= 0x7E) {
+							i++;
+						}
+						int runLen = i - runStart;
+						if (runLen > bestAsciiLen) {
+							bestAsciiLen = runLen;
+							bestAsciiStart = runStart;
+						}
+					} else {
+						i++;
+					}
+				}
+				if (bestAsciiLen > 0) {
+					String ascii = new String(data, bestAsciiStart, bestAsciiLen, StandardCharsets.US_ASCII);
+					if (!ascii.trim().isEmpty()) {
+						return prefix + ascii;
+					}
+				}
+
+				// 4) Fallback to hex of full data
+				return prefix + "COULD NOT DECODE. SHOWING HEX: "
+						+ Hex.encodeHexString(Arrays.copyOfRange(data, 0, data.length));
 			}
 		} catch (Throwable ignored) {
 		}
-		return "CorruptUnknownValue_with_ID_" + getInternalID();
+		return this.getClass().getSimpleName() + " with ID " + getInternalID();
 	}
 
 	@Override
@@ -135,6 +229,11 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 		}
 
 		return super.equals(o);
+	}
+
+	@Override
+	public String toString() {
+		return getLabel();
 	}
 
 }
