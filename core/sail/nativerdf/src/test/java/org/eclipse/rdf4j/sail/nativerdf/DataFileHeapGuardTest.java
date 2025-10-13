@@ -10,10 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Path;
 
 import org.eclipse.rdf4j.common.io.NioFile;
@@ -24,37 +26,35 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Verifies that DataFile enforces a large-allocation guard during reads when the (test-only) simulation property is
- * enabled. This ensures the guard lives in DataFile rather than in low-level NIO helpers.
+ * Verifies that DataFile enforces a large-allocation guard during reads and that the guard can be tuned through system
+ * properties.
  */
 public class DataFileHeapGuardTest {
+
+	private static final String SOFT_FAIL_PROP = "org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes";
 
 	@TempDir
 	File tmp;
 
 	@BeforeEach
 	public void setUp() {
-		// Ensure soft-fail is disabled so the guard throws instead of capping silently
-		System.clearProperty("org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes");
+		System.clearProperty(SOFT_FAIL_PROP);
 	}
 
 	@Test
 	public void getData_largeLength_triggersGuardIOException() throws Exception {
 		Path p = tmp.toPath().resolve("guard.dat");
 
-		// Initialize a valid DataFile (writes header)
 		try (DataFile df = new DataFileWithSimulatedLowHeap(p.toFile())) {
-			// nothing else
+			// write header
 		}
 
-		// Manually write a record length > 128MB at the first record offset (immediately after the 4-byte header)
 		try (NioFile nf = new NioFile(p.toFile())) {
 			long headerOffset = 4; // MAGIC_NUMBER(3) + version(1)
-			int huge = 129 * 1024 * 1024; // 129MB
+			int huge = DataFile.LARGE_READ_THRESHOLD + 1; // 129MB
 			nf.writeInt(huge, headerOffset);
 		}
 
-		// With simulated low heap, DataFile should throw IOException before attempting huge allocation
 		try (DataFile df = new DataFileWithSimulatedLowHeap(p.toFile())) {
 			assertThrows(IOException.class, () -> df.getData(4));
 		}
@@ -67,7 +67,8 @@ public class DataFileHeapGuardTest {
 
 		@Override
 		public long getFreeMemory(Runtime rt) {
-			return 128 * 1024 * 1024; // 128MB
+			return DataFile.LARGE_READ_THRESHOLD / 2;
 		}
 	}
+
 }

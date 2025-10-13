@@ -53,7 +53,9 @@ public class DataFile implements Closeable {
 	private static final long HEADER_LENGTH = MAGIC_NUMBER.length + 1;
 
 	// Guard parameters
-	private static final long LARGE_READ_THRESHOLD = 128L * 1024 * 1024; // 128MB
+	private static final int FALLBACK_LARGE_READ_THRESHOLD = 128 * 1024 * 1024; // 128MB fallback
+	public static final String LARGE_READ_THRESHOLD_PROPERTY = "org.eclipse.rdf4j.sail.nativerdf.datastore.DataFile.largeReadThresholdBytes";
+	public static final int LARGE_READ_THRESHOLD = getConfiguredLargeReadThreshold();
 	private static final int SOFT_FAIL_CAP_BYTES = 32 * 1024 * 1024; // 32MB
 
 	/*-----------*
@@ -289,6 +291,7 @@ public class DataFile implements Closeable {
 		if (requested <= 0) {
 			return requested;
 		}
+
 		// Soft-fail corruption cap remains in effect for oversized claims
 		if (requested > LARGE_READ_THRESHOLD && SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
 			logger.error(
@@ -336,6 +339,44 @@ public class DataFile implements Closeable {
 		// this method is overridden in tests to simulate low-heap conditions
 		long allocated = rt.totalMemory() - rt.freeMemory();
 		return (rt.maxMemory() - allocated);
+	}
+
+	private static int getConfiguredLargeReadThreshold() {
+		int defaultThreshold = defaultLargeReadThreshold();
+		String configured = System.getProperty(LARGE_READ_THRESHOLD_PROPERTY);
+		if (configured == null || configured.isBlank()) {
+			logger.debug(
+					"Using default large read threshold of {} MB. To configure, set system property {} to a positive integer value in bytes.",
+					defaultThreshold / (1024 * 1024), LARGE_READ_THRESHOLD_PROPERTY);
+			return defaultThreshold;
+		}
+		try {
+			int parsed = Integer.parseInt(configured.trim());
+			if (parsed <= 0) {
+				logger.warn(
+						"Ignoring non-positive value {} for system property {}. Falling back to {} MB.",
+						configured, LARGE_READ_THRESHOLD_PROPERTY, defaultThreshold / (1024 * 1024));
+				return defaultThreshold;
+			}
+			return parsed;
+		} catch (NumberFormatException e) {
+			logger.warn(
+					"Ignoring non-numeric value {} for system property {}. Falling back to {} MB.",
+					configured, LARGE_READ_THRESHOLD_PROPERTY, defaultThreshold / (1024 * 1024));
+			return defaultThreshold;
+		}
+	}
+
+	private static int defaultLargeReadThreshold() {
+		long maxMemory = Runtime.getRuntime().maxMemory();
+		if (maxMemory <= 0) {
+			return FALLBACK_LARGE_READ_THRESHOLD;
+		}
+		long threshold = maxMemory / 16L;
+		if (threshold <= 0) {
+			return FALLBACK_LARGE_READ_THRESHOLD;
+		}
+		return Math.toIntExact(Math.min(threshold, Integer.MAX_VALUE));
 	}
 
 	/**
