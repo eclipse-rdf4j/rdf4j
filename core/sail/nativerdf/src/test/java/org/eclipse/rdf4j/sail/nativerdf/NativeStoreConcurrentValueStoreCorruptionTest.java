@@ -23,12 +23,14 @@ import java.util.concurrent.Future;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * Exercises the {@link ValueStore} obtained from an initialized {@link NativeStore} with highly concurrent writes. The
  * workload mirrors {@link ValueStoreConcurrentWriteCorruptionTest} but goes through {@link NativeStore} to demonstrate
  * that the embedded {@link ValueStore} can still become corrupted.
  */
+@Isolated
 public class NativeStoreConcurrentValueStoreCorruptionTest {
 
 	@TempDir

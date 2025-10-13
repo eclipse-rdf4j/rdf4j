@@ -29,6 +29,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * Attempts to deterministically reproduce corruption caused by a race between {@code DataFile.flush()} and concurrent
@@ -41,6 +42,7 @@ import org.junit.jupiter.api.io.TempDir;
  * flush offset using the current {@code nioFileSize} while copying a smaller snapshot of the buffer content, producing
  * misaligned writes.
  */
+@Isolated
 public class DataFileFlushRaceReproducerTest {
 
 	@TempDir

@@ -30,11 +30,13 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * Reproduces a corrupt ValueStore by tampering with the values.dat type byte and verifies that reading statements fails
  * when soft-fail is disabled.
  */
+@Isolated
 public class NativeStoreValueStoreCorruptionReproductionTest {
 
 	@TempDir

@@ -30,6 +30,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * Attempts to reproduce a corrupt NativeStore by iteratively storing IRIs and BNodes whose UTF-8 encodings exercise
@@ -41,6 +42,7 @@ import org.junit.jupiter.api.io.TempDir;
  * designed as a reproducer (expected to fail when corruption is possible) rather than an assertion of correctness.
  */
 @Tag("slow")
+@Isolated
 public class NativeStoreUtf8ExtremesCorruptionTestIT {
 
 	@TempDir

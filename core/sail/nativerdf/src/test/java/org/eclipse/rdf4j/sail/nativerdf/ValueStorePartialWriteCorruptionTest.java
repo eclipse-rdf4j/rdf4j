@@ -30,6 +30,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * Induces ValueStore corruption by simulating partial file writes at the channel level. This test replaces the
@@ -37,6 +38,7 @@ import org.junit.jupiter.api.io.TempDir;
  * bytes written than requested. Since DataFile/NioFile do not loop to ensure full writes, this can leave truncated
  * records (e.g., zeroed payloads or invalid length prefixes), reproducing the user-observed symptoms.
  */
+@Isolated
 public class ValueStorePartialWriteCorruptionTest {
 
 	@TempDir

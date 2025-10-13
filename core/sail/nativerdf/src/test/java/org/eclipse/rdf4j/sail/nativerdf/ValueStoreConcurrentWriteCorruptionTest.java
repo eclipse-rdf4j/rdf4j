@@ -28,12 +28,14 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * Induces concurrent writes directly against {@link ValueStore} to demonstrate a race condition that corrupts the
  * underlying values data files. This does not go through {@link NativeStore}'s internal locking and therefore
  * deliberately stresses {@link org.eclipse.rdf4j.sail.nativerdf.datastore.DataFile} concurrent write behavior.
  */
+@Isolated
 public class ValueStoreConcurrentWriteCorruptionTest {
 
 	@TempDir

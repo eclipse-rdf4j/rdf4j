@@ -30,6 +30,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * Reproduces a corruption scenario where a mix of small (buffered) and large (direct-write) values are written while a
@@ -37,6 +38,7 @@ import org.junit.jupiter.api.io.TempDir;
  * direct-write size updates can misplace buffered bytes, corrupting records.
  */
 @Tag("slow")
+@Isolated
 public class DataFileDirectWriteFlushRaceReproducerTestIT {
 
 	@TempDir

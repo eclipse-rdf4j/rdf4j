@@ -31,6 +31,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * Reproduces a corruption scenario using only public repository APIs. Multiple writer threads perform rapid
@@ -43,6 +44,7 @@ import org.junit.jupiter.api.io.TempDir;
  * affected implementations.
  */
 @Tag("slow")
+@Isolated
 public class NativeStoreRepositoryCorruptionReproducerTestIT {
 
 	@TempDir

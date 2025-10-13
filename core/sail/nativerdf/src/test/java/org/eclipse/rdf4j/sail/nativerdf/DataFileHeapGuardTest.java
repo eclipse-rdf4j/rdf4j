@@ -10,39 +10,38 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.nio.file.Path;
 
 import org.eclipse.rdf4j.common.io.NioFile;
 import org.eclipse.rdf4j.sail.nativerdf.datastore.DataFile;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * Verifies that DataFile enforces a large-allocation guard during reads and that the guard can be tuned through system
  * properties.
  */
+@Isolated
 public class DataFileHeapGuardTest {
-
-	private static final String SOFT_FAIL_PROP = "org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes";
 
 	@TempDir
 	File tmp;
 
 	@BeforeEach
 	public void setUp() {
-		System.clearProperty(SOFT_FAIL_PROP);
+		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = false;
 	}
 
 	@Test
 	public void getData_largeLength_triggersGuardIOException() throws Exception {
+		System.out.println("DataFile.LARGE_READ_THRESHOLD " + DataFile.LARGE_READ_THRESHOLD);
+		System.out.println("DataFile.LARGE_READ_THRESHOLD " + DataFile.LARGE_READ_THRESHOLD / 1024 / 1024 + "MB");
 		Path p = tmp.toPath().resolve("guard.dat");
 
 		try (DataFile df = new DataFileWithSimulatedLowHeap(p.toFile())) {
@@ -51,7 +50,7 @@ public class DataFileHeapGuardTest {
 
 		try (NioFile nf = new NioFile(p.toFile())) {
 			long headerOffset = 4; // MAGIC_NUMBER(3) + version(1)
-			int huge = DataFile.LARGE_READ_THRESHOLD + 1; // 129MB
+			int huge = DataFile.LARGE_READ_THRESHOLD + 1;
 			nf.writeInt(huge, headerOffset);
 		}
 
