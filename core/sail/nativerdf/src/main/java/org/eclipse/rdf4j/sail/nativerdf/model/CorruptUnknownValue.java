@@ -55,10 +55,6 @@ public class CorruptUnknownValue extends CorruptValue implements Literal {
 
 	@Override
 	public String getLabel() {
-		if (getInternalID() == 14313522) {
-			System.out.println();
-		}
-
 		byte[] data = getData();
 		try {
 			if (data != null && data.length > 0) {

@@ -610,6 +610,7 @@ public class ValueStore extends SimpleValueFactory {
 		return data[0] != URI_VALUE && data[0] != BNODE_VALUE && data[0] != LITERAL_VALUE;
 	}
 
+	@InternalUseOnly
 	public NativeValue data2value(int id, byte[] data) throws IOException {
 		if (data.length == 0) {
 			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
