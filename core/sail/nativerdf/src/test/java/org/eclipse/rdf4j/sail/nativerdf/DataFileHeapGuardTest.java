@@ -29,28 +29,13 @@ import org.junit.jupiter.api.io.TempDir;
  */
 public class DataFileHeapGuardTest {
 
-	private static final String SIMULATE_LOW_HEAP_PROP = "org.eclipse.rdf4j.sail.nativerdf.datastore.DataFile.simulateLowHeapForTests";
-
 	@TempDir
 	File tmp;
 
-	private String prev;
-
 	@BeforeEach
 	public void setUp() {
-		prev = System.getProperty(SIMULATE_LOW_HEAP_PROP);
-		System.setProperty(SIMULATE_LOW_HEAP_PROP, "true");
 		// Ensure soft-fail is disabled so the guard throws instead of capping silently
 		System.clearProperty("org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes");
-	}
-
-	@AfterEach
-	public void tearDown() {
-		if (prev == null) {
-			System.clearProperty(SIMULATE_LOW_HEAP_PROP);
-		} else {
-			System.setProperty(SIMULATE_LOW_HEAP_PROP, prev);
-		}
 	}
 
 	@Test
@@ -58,7 +43,7 @@ public class DataFileHeapGuardTest {
 		Path p = tmp.toPath().resolve("guard.dat");
 
 		// Initialize a valid DataFile (writes header)
-		try (DataFile df = new DataFile(p.toFile())) {
+		try (DataFile df = new DataFileWithSimulatedLowHeap(p.toFile())) {
 			// nothing else
 		}
 
@@ -70,8 +55,19 @@ public class DataFileHeapGuardTest {
 		}
 
 		// With simulated low heap, DataFile should throw IOException before attempting huge allocation
-		try (DataFile df = new DataFile(p.toFile())) {
+		try (DataFile df = new DataFileWithSimulatedLowHeap(p.toFile())) {
 			assertThrows(IOException.class, () -> df.getData(4));
+		}
+	}
+
+	static class DataFileWithSimulatedLowHeap extends DataFile {
+		public DataFileWithSimulatedLowHeap(File file) throws IOException {
+			super(file);
+		}
+
+		@Override
+		public long getFreeMemory(Runtime rt) {
+			return 128 * 1024 * 1024; // 128MB
 		}
 	}
 }
