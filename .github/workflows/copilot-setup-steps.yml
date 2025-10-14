@@ -22,6 +22,17 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      - name: Prepare custom Maven repository directory
+        run: mkdir -p .m2_repo
+
+      - name: Cache custom Maven repository
+        uses: actions/cache@v4
+        with:
+          path: .m2_repo
+          key: ${{ runner.os }}-m2-repo-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2-repo-
+
       - name: Validate formatting configuration
         run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo formatter:validate impsort:check xml-format:xml-check
 

@@ -264,7 +264,7 @@ public class IDFile implements Closeable {
 	}
 
 	public void sync(boolean force) throws IOException {
-		nioFile.force(false);
+		nioFile.force(force);
 	}
 
 	/**
