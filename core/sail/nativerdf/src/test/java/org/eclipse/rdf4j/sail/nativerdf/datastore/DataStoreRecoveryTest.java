@@ -20,11 +20,13 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * Tests recovery in DataStore.getData when the stored data length is zero but neighboring ID offsets exist. The
  * recovery uses the next ID's offset to infer the correct data length.
  */
+@Isolated
 public class DataStoreRecoveryTest {
 
 	@TempDir
