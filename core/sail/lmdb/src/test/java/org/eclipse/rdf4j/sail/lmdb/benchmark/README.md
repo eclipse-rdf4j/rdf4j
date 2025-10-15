@@ -1,0 +1,19 @@
+Benchmark                                                     Mode  Cnt    Score    Error  Units
+QueryBenchmark.complexQuery                                   avgt    5    3.724 ±  0.083  ms/op
+QueryBenchmark.different_datasets_with_similar_distributions  avgt    5    2.118 ±  0.089  ms/op
+QueryBenchmark.groupByQuery                                   avgt    5    0.916 ±  0.019  ms/op
+QueryBenchmark.long_chain                                     avgt    5  641.809 ±  6.881  ms/op
+      QueryBenchmark.minus                                          avgt    5   10.472 ±  0.556  ms/op
+QueryBenchmark.multiple_sub_select                            avgt    5   55.949 ±  3.581  ms/op
+QueryBenchmark.nested_optionals                               avgt    5  171.423 ± 39.898  ms/op
+QueryBenchmark.optional_lhs_filter                            avgt    5   36.728 ±  2.244  ms/op
+QueryBenchmark.optional_rhs_filter                            avgt    5   51.788 ±  2.241  ms/op
+QueryBenchmark.ordered_union_limit                            avgt    5   73.121 ±  4.403  ms/op
+QueryBenchmark.pathExpressionQuery1                           avgt    5   20.738 ±  0.385  ms/op
+QueryBenchmark.pathExpressionQuery2                           avgt    5    4.546 ±  0.338  ms/op
+QueryBenchmark.query_distinct_predicates                      avgt    5   47.712 ±  1.803  ms/op
+QueryBenchmark.simple_filter_not                              avgt    5    5.641 ±  0.151  ms/op
+QueryBenchmark.sub_select                                     avgt    5   72.550 ± 10.050  ms/op
+QueryBenchmarkFoaf.groupByCount                               avgt    5  721.870 ± 16.816  ms/op
+QueryBenchmarkFoaf.groupByCountSorted                         avgt    5  651.351 ± 19.324  ms/op
+QueryBenchmarkFoaf.personsAndFriends                          avgt    5  213.945 ±  7.394  ms/op
