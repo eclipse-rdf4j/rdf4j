@@ -124,6 +124,22 @@ public abstract class AbstractIRI implements IRI {
 			}
 		}
 
+		@Override
+		public int hashCode() {
+			return iri.hashCode();
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (o == this) {
+				return true;
+			}
+			if (!(o instanceof IRI)) {
+				return false;
+			}
+			return iri.equals(o.toString());
+		}
+
 	}
 
 }
