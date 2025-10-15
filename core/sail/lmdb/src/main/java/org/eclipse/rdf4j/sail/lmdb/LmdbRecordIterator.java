@@ -111,7 +111,17 @@ class LmdbRecordIterator implements RecordIterator {
 			maxKeyBuf.flip();
 			this.maxKey.mv_data(maxKeyBuf);
 		} else {
-			minKeyBuf = null;
+			// Even when we can't bound with a prefix (no rangeSearch), we can still
+			// position the cursor closer to the first potentially matching key when
+			// there are any constraints (matchValues). This avoids scanning from the
+			// absolute beginning for patterns like ?p ?o constC etc.
+			if (subj > 0 || pred > 0 || obj > 0 || context >= 0) {
+				minKeyBuf = pool.getKeyBuffer();
+				index.getMinKey(minKeyBuf, subj, pred, obj, context);
+				minKeyBuf.flip();
+			} else {
+				minKeyBuf = null;
+			}
 			this.maxKey = null;
 		}
 
@@ -131,10 +141,36 @@ class LmdbRecordIterator implements RecordIterator {
 			this.txnRefVersion = txnRef.version();
 			this.txn = txnRef.get();
 
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				PointerBuffer pp = stack.mallocPointer(1);
-				E(mdb_cursor_open(txn, dbi, pp));
-				cursor = pp.get(0);
+			// Try to reuse a pooled cursor only for read-only transactions; otherwise open a new one
+			if (txnRef.isReadOnly()) {
+				long pooled = pool.getCursor(dbi, index);
+				if (pooled != 0L) {
+					long c = pooled;
+					try {
+						E(mdb_cursor_renew(txn, c));
+					} catch (IOException renewEx) {
+						// Renewal failed (e.g., incompatible txn). Close pooled cursor and open a fresh one.
+						mdb_cursor_close(c);
+						try (MemoryStack stack = MemoryStack.stackPush()) {
+							PointerBuffer pp = stack.mallocPointer(1);
+							E(mdb_cursor_open(txn, dbi, pp));
+							c = pp.get(0);
+						}
+					}
+					cursor = c;
+				} else {
+					try (MemoryStack stack = MemoryStack.stackPush()) {
+						PointerBuffer pp = stack.mallocPointer(1);
+						E(mdb_cursor_open(txn, dbi, pp));
+						cursor = pp.get(0);
+					}
+				}
+			} else {
+				try (MemoryStack stack = MemoryStack.stackPush()) {
+					PointerBuffer pp = stack.mallocPointer(1);
+					E(mdb_cursor_open(txn, dbi, pp));
+					cursor = pp.get(0);
+				}
 			}
 		} finally {
 			txnLockManager.unlockRead(readStamp);
@@ -249,7 +285,11 @@ class LmdbRecordIterator implements RecordIterator {
 			}
 			try {
 				if (!closed) {
-					mdb_cursor_close(cursor);
+					if (txnRef.isReadOnly()) {
+						pool.freeCursor(dbi, index, cursor);
+					} else {
+						mdb_cursor_close(cursor);
+					}
 					pool.free(keyData);
 					pool.free(valueData);
 					if (minKeyBuf != null) {

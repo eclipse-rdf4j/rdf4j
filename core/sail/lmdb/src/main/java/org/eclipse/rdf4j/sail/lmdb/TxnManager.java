@@ -131,7 +131,7 @@ class TxnManager {
 	 * @return the txn reference object
 	 */
 	Txn createTxn(long txn) {
-		return new Txn(txn) {
+		return new Txn(txn, false) {
 			@Override
 			public void close() {
 				// do nothing
@@ -146,7 +146,7 @@ class TxnManager {
 	 * @throws IOException if the transaction cannot be started for some reason
 	 */
 	Txn createReadTxn() throws IOException {
-		Txn txnRef = new Txn(createReadTxnInternal());
+		Txn txnRef = new Txn(createReadTxnInternal(), true);
 		synchronized (active) {
 			active.put(txnRef, Boolean.TRUE);
 		}
@@ -162,7 +162,7 @@ class TxnManager {
 	 * </p>
 	 */
 	Txn createReadTxnUntracked() throws IOException {
-		Txn txnRef = new Txn(createReadTxnInternal());
+		Txn txnRef = new Txn(createReadTxnInternal(), true);
 		synchronized (active) {
 			active.put(txnRef, Boolean.FALSE);
 		}
@@ -274,9 +274,11 @@ class TxnManager {
 		private long version;
 		private boolean txnActive = true;
 		private boolean closed;
+		private final boolean readOnly;
 
-		Txn(long txn) {
+		Txn(long txn, boolean readOnly) {
 			this.txn = txn;
+			this.readOnly = readOnly;
 		}
 
 		long get() {
@@ -384,6 +386,10 @@ class TxnManager {
 
 		long version() {
 			return version;
+		}
+
+		boolean isReadOnly() {
+			return readOnly;
 		}
 	}
 
