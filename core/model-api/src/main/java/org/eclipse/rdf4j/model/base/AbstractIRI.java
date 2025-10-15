@@ -58,8 +58,6 @@ public abstract class AbstractIRI implements IRI {
 					cachedHashCode = cached;
 				}
 			}
-			cached = stringValue().hashCode();
-			cachedHashCode = cached;
 		}
 		return cached;
 	}
