@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 
-class TripleIndex {
+class TripleIndex implements TripleStore.DupIndex {
 	static final int MAX_KEY_LENGTH = 4 * 9;
 
 	// triples are represented by 4 varints for subject, predicate, object and context
@@ -112,7 +112,7 @@ class TripleIndex {
 		return dupsortEnabled;
 	}
 
-	int getDupDB(boolean explicit) {
+	public int getDupDB(boolean explicit) {
 		return explicit ? dbiDupExplicit : dbiDupInferred;
 	}
 
@@ -275,7 +275,7 @@ class TripleIndex {
 		return length;
 	}
 
-	void toDupKeyPrefix(ByteBuffer bb, long subj, long pred, long obj, long context) {
+	public void toDupKeyPrefix(ByteBuffer bb, long subj, long pred, long obj, long context) {
 		for (int i = 0; i < 2; i++) {
 			switch (fieldSeq[i]) {
 			case 's':
