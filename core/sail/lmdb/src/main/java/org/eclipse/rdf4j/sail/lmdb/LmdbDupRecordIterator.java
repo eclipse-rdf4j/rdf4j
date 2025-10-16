@@ -102,11 +102,7 @@ class LmdbDupRecordIterator implements RecordIterator {
 			this.txnRefVersion = txnRef.version();
 			this.txn = txnRef.get();
 
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				PointerBuffer pp = stack.mallocPointer(1);
-				E(mdb_cursor_open(txn, dupDbi, pp));
-				cursor = pp.get(0);
-			}
+			cursor = openCursor(txn, dupDbi, txnRef.isReadOnly());
 
 			prefixKeyBuf = pool.getKeyBuffer();
 			prefixValues = new long[2];
@@ -365,7 +361,11 @@ class LmdbDupRecordIterator implements RecordIterator {
 			}
 			try {
 				if (!closed) {
-					mdb_cursor_close(cursor);
+					if (txnRef.isReadOnly()) {
+						pool.freeCursor(dupDbi, index, cursor);
+					} else {
+						mdb_cursor_close(cursor);
+					}
 					pool.free(keyData);
 					pool.free(valueData);
 					if (prefixKeyBuf != null) {
@@ -387,6 +387,25 @@ class LmdbDupRecordIterator implements RecordIterator {
 			fallback.close();
 		} else {
 			closeInternal(true);
+		}
+	}
+
+	private long openCursor(long txn, int dbi, boolean tryReuse) throws IOException {
+		if (tryReuse) {
+			long pooled = pool.getCursor(dbi, index);
+			if (pooled != 0L) {
+				try {
+					E(mdb_cursor_renew(txn, pooled));
+					return pooled;
+				} catch (IOException renewEx) {
+					mdb_cursor_close(pooled);
+				}
+			}
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, dbi, pp));
+			return pp.get(0);
 		}
 	}
 }
