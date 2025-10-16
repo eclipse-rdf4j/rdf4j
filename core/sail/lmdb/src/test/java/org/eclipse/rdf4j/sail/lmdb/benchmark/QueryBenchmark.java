@@ -126,7 +126,9 @@ public class QueryBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("QueryBenchmark.ordered_union_limit") // adapt to run other benchmark tests
+				.include("QueryBenchmark.complexQuery") // adapt to run other benchmark tests
+				.warmupIterations(0)
+				.measurementIterations(10)
 				.forks(0)
 				.build();
 
