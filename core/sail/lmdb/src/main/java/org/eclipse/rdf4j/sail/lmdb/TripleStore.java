@@ -155,6 +155,8 @@ class TripleStore implements Closeable {
 	private int pageSize;
 	private final boolean autoGrow;
 	private final boolean pageCardinalityEstimator;
+	private final boolean dupsortIndices;
+	private final boolean dupsortRead;
 	private long mapSize;
 	private long writeTxn;
 	private final TxnManager txnManager;
@@ -194,8 +196,8 @@ class TripleStore implements Closeable {
 			env = pp.get(0);
 		}
 
-		// 1 for contexts, 48 for all possible triple indexes (24 explicit + 24 inferred)
-		E(mdb_env_set_maxdbs(env, 49));
+		// 1 for contexts, 48 for all possible triple indexes, 48 optional dupsort companion indexes.
+		E(mdb_env_set_maxdbs(env, 97));
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
@@ -219,6 +221,8 @@ class TripleStore implements Closeable {
 
 		txnManager = new TxnManager(env, Mode.RESET);
 		pageEstimator = pageCardinalityEstimator ? new LmdbPageCardinalityEstimator(dataMdbFile) : null;
+		this.dupsortIndices = !properties.isLoaded() && config.isDupsortIndices();
+		this.dupsortRead = config.isDupsortRead();
 
 		try {
 			String indexSpecStr = config.getTripleIndexes();
@@ -325,7 +329,7 @@ class TripleStore implements Closeable {
 	private void initIndexes(Set<String> indexSpecs) throws IOException {
 		for (String fieldSeq : orderIndexSpecs(indexSpecs)) {
 			logger.trace("Initializing index '{}'...", fieldSeq);
-			indexes.add(new TripleIndex(fieldSeq));
+			indexes.add(new TripleIndex(fieldSeq, dupsortIndices));
 		}
 	}
 
@@ -528,7 +532,7 @@ class TripleStore implements Closeable {
 					for (String fieldSeq : addedIndexSpecs) {
 						logger.debug("Initializing new index '{}'...", fieldSeq);
 
-						TripleIndex addedIndex = new TripleIndex(fieldSeq);
+						TripleIndex addedIndex = new TripleIndex(fieldSeq, dupsortIndices);
 						RecordIterator[] sourceIter = { null };
 						try {
 							sourceIter[0] = new LmdbRecordIterator(sourceIndex, false, -1, -1, -1, -1,
@@ -690,7 +694,40 @@ class TripleStore implements Closeable {
 
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
+		if (dupsortRead && index.isDupsortEnabled()
+				&& leadingBoundCount(index.getFieldSeq(), subj, pred, obj, context) >= 2) {
+			return new LmdbDupRecordIterator(index, subj, pred, obj, context, explicit, txn);
+		}
 		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn);
+	}
+
+	private int leadingBoundCount(char[] fieldSeq, long subj, long pred, long obj, long context) {
+		int count = 0;
+		for (int i = 0; i < fieldSeq.length; i++) {
+			boolean bound;
+			switch (fieldSeq[i]) {
+			case 's':
+				bound = subj >= 0;
+				break;
+			case 'p':
+				bound = pred >= 0;
+				break;
+			case 'o':
+				bound = obj >= 0;
+				break;
+			case 'c':
+				bound = context >= 0;
+				break;
+			default:
+				bound = false;
+			}
+			if (bound) {
+				count++;
+			} else {
+				break;
+			}
+		}
+		return count;
 	}
 
 	/**
@@ -1220,6 +1257,48 @@ class TripleStore implements Closeable {
 			boolean foundImplicit = false;
 			if (explicit && stAdded) {
 				foundImplicit = mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS;
+				if (foundImplicit && mainIndex.isDupsortEnabled()) {
+					// Also remove from inferred dup DB when promoting to explicit
+					int frame = stack.getPointer();
+					try {
+						ByteBuffer dupKeyBuf = stack.malloc(MAX_KEY_LENGTH);
+						ByteBuffer dupValBuf = stack.malloc(Long.BYTES * 2);
+						dupKeyBuf.clear();
+						mainIndex.toDupKeyPrefix(dupKeyBuf, subj, pred, obj, context);
+						dupKeyBuf.flip();
+						dupValBuf.clear();
+						mainIndex.toDupValue(dupValBuf, subj, pred, obj, context);
+						dupValBuf.flip();
+						MDBVal dupKeyVal = MDBVal.malloc(stack);
+						MDBVal dupDataVal = MDBVal.malloc(stack);
+						dupKeyVal.mv_data(dupKeyBuf);
+						dupDataVal.mv_data(dupValBuf);
+						E(mdb_del(writeTxn, mainIndex.getDupDB(false), dupKeyVal, dupDataVal));
+					} finally {
+						stack.setPointer(frame);
+					}
+				}
+			}
+
+			if (stAdded && mainIndex.isDupsortEnabled()) {
+				int frame = stack.getPointer();
+				try {
+					ByteBuffer dupKeyBuf = stack.malloc(MAX_KEY_LENGTH);
+					ByteBuffer dupValBuf = stack.malloc(Long.BYTES * 2);
+					dupKeyBuf.clear();
+					mainIndex.toDupKeyPrefix(dupKeyBuf, subj, pred, obj, context);
+					dupKeyBuf.flip();
+					dupValBuf.clear();
+					mainIndex.toDupValue(dupValBuf, subj, pred, obj, context);
+					dupValBuf.flip();
+					MDBVal dupKeyVal = MDBVal.malloc(stack);
+					MDBVal dupDataVal = MDBVal.malloc(stack);
+					dupKeyVal.mv_data(dupKeyBuf);
+					dupDataVal.mv_data(dupValBuf);
+					E(mdb_put(writeTxn, mainIndex.getDupDB(explicit), dupKeyVal, dupDataVal, 0));
+				} finally {
+					stack.setPointer(frame);
+				}
 			}
 
 			if (stAdded) {
@@ -1236,6 +1315,27 @@ class TripleStore implements Closeable {
 						E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
 					}
 					E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
+
+					if (index.isDupsortEnabled()) {
+						int frame = stack.getPointer();
+						try {
+							ByteBuffer dupKeyBuf = stack.malloc(MAX_KEY_LENGTH);
+							ByteBuffer dupValBuf = stack.malloc(Long.BYTES * 2);
+							dupKeyBuf.clear();
+							index.toDupKeyPrefix(dupKeyBuf, subj, pred, obj, context);
+							dupKeyBuf.flip();
+							dupValBuf.clear();
+							index.toDupValue(dupValBuf, subj, pred, obj, context);
+							dupValBuf.flip();
+							MDBVal dupKeyVal = MDBVal.malloc(stack);
+							MDBVal dupDataVal = MDBVal.malloc(stack);
+							dupKeyVal.mv_data(dupKeyBuf);
+							dupDataVal.mv_data(dupValBuf);
+							E(mdb_put(writeTxn, index.getDupDB(explicit), dupKeyVal, dupDataVal, 0));
+						} finally {
+							stack.setPointer(frame);
+						}
+					}
 				}
 
 				incrementContext(stack, context);
@@ -1700,6 +1800,29 @@ class TripleStore implements Closeable {
 					keyValue.mv_data(keyBuf);
 
 					E(mdb_del(writeTxn, index.getDB(explicit), keyValue, null));
+
+					if (index.isDupsortEnabled()) {
+						int frame = stack.getPointer();
+						try {
+							ByteBuffer dupKeyBuf = stack.malloc(MAX_KEY_LENGTH);
+							ByteBuffer dupValBuf = stack.malloc(Long.BYTES * 2);
+							dupKeyBuf.clear();
+							index.toDupKeyPrefix(dupKeyBuf, quad[SUBJ_IDX], quad[PRED_IDX], quad[OBJ_IDX],
+									quad[CONTEXT_IDX]);
+							dupKeyBuf.flip();
+							dupValBuf.clear();
+							index.toDupValue(dupValBuf, quad[SUBJ_IDX], quad[PRED_IDX], quad[OBJ_IDX],
+									quad[CONTEXT_IDX]);
+							dupValBuf.flip();
+							MDBVal dupKeyVal = MDBVal.malloc(stack);
+							MDBVal dupDataVal = MDBVal.malloc(stack);
+							dupKeyVal.mv_data(dupKeyBuf);
+							dupDataVal.mv_data(dupValBuf);
+							E(mdb_del(writeTxn, index.getDupDB(explicit), dupKeyVal, dupDataVal));
+						} finally {
+							stack.setPointer(frame);
+						}
+					}
 				}
 
 				decrementContext(stack, quad[CONTEXT_IDX]);
@@ -1741,8 +1864,48 @@ class TripleStore implements Closeable {
 
 						if (r.add) {
 							E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
+							if (index.isDupsortEnabled()) {
+								int frame = stack.getPointer();
+								try {
+									ByteBuffer dupKeyBuf = stack.malloc(MAX_KEY_LENGTH);
+									ByteBuffer dupValBuf = stack.malloc(Long.BYTES * 2);
+									dupKeyBuf.clear();
+									index.toDupKeyPrefix(dupKeyBuf, r.quad[0], r.quad[1], r.quad[2], r.quad[3]);
+									dupKeyBuf.flip();
+									dupValBuf.clear();
+									index.toDupValue(dupValBuf, r.quad[0], r.quad[1], r.quad[2], r.quad[3]);
+									dupValBuf.flip();
+									MDBVal dupKeyVal = MDBVal.malloc(stack);
+									MDBVal dupDataVal = MDBVal.malloc(stack);
+									dupKeyVal.mv_data(dupKeyBuf);
+									dupDataVal.mv_data(dupValBuf);
+									E(mdb_put(writeTxn, index.getDupDB(explicit), dupKeyVal, dupDataVal, 0));
+								} finally {
+									stack.setPointer(frame);
+								}
+							}
 						} else {
 							E(mdb_del(writeTxn, index.getDB(explicit), keyVal, null));
+							if (index.isDupsortEnabled()) {
+								int frame = stack.getPointer();
+								try {
+									ByteBuffer dupKeyBuf = stack.malloc(MAX_KEY_LENGTH);
+									ByteBuffer dupValBuf = stack.malloc(Long.BYTES * 2);
+									dupKeyBuf.clear();
+									index.toDupKeyPrefix(dupKeyBuf, r.quad[0], r.quad[1], r.quad[2], r.quad[3]);
+									dupKeyBuf.flip();
+									dupValBuf.clear();
+									index.toDupValue(dupValBuf, r.quad[0], r.quad[1], r.quad[2], r.quad[3]);
+									dupValBuf.flip();
+									MDBVal dupKeyVal = MDBVal.malloc(stack);
+									MDBVal dupDataVal = MDBVal.malloc(stack);
+									dupKeyVal.mv_data(dupKeyBuf);
+									dupDataVal.mv_data(dupValBuf);
+									E(mdb_del(writeTxn, index.getDupDB(explicit), dupKeyVal, dupDataVal));
+								} finally {
+									stack.setPointer(frame);
+								}
+							}
 						}
 					}
 
@@ -1853,9 +2016,12 @@ class TripleStore implements Closeable {
 		private final StatementFieldValueAccessor[] fieldValueAccessors;
 		private final StatementFieldValueAccessor leadingFieldValueAccessor;
 		private final int dbiExplicit, dbiInferred;
+		private final boolean dupsortEnabled;
+		private final int dbiDupExplicit;
+		private final int dbiDupInferred;
 		private final int[] indexMap;
 
-		public TripleIndex(String fieldSeq) throws IOException {
+		public TripleIndex(String fieldSeq, boolean dupsortEnabled) throws IOException {
 			this.fieldSeq = fieldSeq.toCharArray();
 			this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
 			this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
@@ -1865,6 +2031,19 @@ class TripleStore implements Closeable {
 			// open database and use native sort order without comparator
 			dbiExplicit = openDatabaseWithTxn(writeTxn, fieldSeq, MDB_CREATE);
 			dbiInferred = openDatabaseWithTxn(writeTxn, fieldSeq + "-inf", MDB_CREATE);
+			this.dupsortEnabled = dupsortEnabled;
+			if (dupsortEnabled) {
+				int flags = MDB_CREATE | org.lwjgl.util.lmdb.LMDB.MDB_DUPSORT | org.lwjgl.util.lmdb.LMDB.MDB_DUPFIXED;
+				dbiDupExplicit = openDatabaseWithTxn(writeTxn, fieldSeq + "-dup", flags);
+				dbiDupInferred = openDatabaseWithTxn(writeTxn, fieldSeq + "-dup-inf", flags);
+			} else {
+				dbiDupExplicit = 0;
+				dbiDupInferred = 0;
+			}
+		}
+
+		public TripleIndex(String fieldSeq) throws IOException {
+			this(fieldSeq, false);
 		}
 
 		public char[] getFieldSeq() {
@@ -1896,6 +2075,73 @@ class TripleStore implements Closeable {
 			default:
 				throw new IllegalArgumentException("Unknown index field: " + field);
 			}
+		}
+
+		public boolean isDupsortEnabled() {
+			return dupsortEnabled;
+		}
+
+		public int getDupDB(boolean explicit) {
+			return explicit ? dbiDupExplicit : dbiDupInferred;
+		}
+
+		void toDupKeyPrefix(ByteBuffer bb, long subj, long pred, long obj, long context) {
+			long s = subj, p = pred, o = obj, c = context;
+			for (int i = 0; i < 2; i++) {
+				char f = fieldSeq[i];
+				switch (f) {
+				case 's':
+					Varint.writeUnsigned(bb, s);
+					break;
+				case 'p':
+					Varint.writeUnsigned(bb, p);
+					break;
+				case 'o':
+					Varint.writeUnsigned(bb, o);
+					break;
+				case 'c':
+					Varint.writeUnsigned(bb, c);
+					break;
+				}
+			}
+		}
+
+		void toDupValue(ByteBuffer bb, long subj, long pred, long obj, long context) {
+			// write last two fields as two longs
+			char f3 = fieldSeq[2];
+			char f4 = fieldSeq[3];
+			long v3;
+			switch (f3) {
+			case 's':
+				v3 = subj;
+				break;
+			case 'p':
+				v3 = pred;
+				break;
+			case 'o':
+				v3 = obj;
+				break;
+			default:
+				v3 = context;
+				break;
+			}
+			long v4;
+			switch (f4) {
+			case 's':
+				v4 = subj;
+				break;
+			case 'p':
+				v4 = pred;
+				break;
+			case 'o':
+				v4 = obj;
+				break;
+			default:
+				v4 = context;
+				break;
+			}
+			bb.putLong(v3);
+			bb.putLong(v4);
 		}
 
 		protected int[] getIndexes(char[] fieldSeq) {
@@ -2064,16 +2310,28 @@ class TripleStore implements Closeable {
 		void close() {
 			mdb_dbi_close(env, dbiExplicit);
 			mdb_dbi_close(env, dbiInferred);
+			if (dupsortEnabled) {
+				mdb_dbi_close(env, dbiDupExplicit);
+				mdb_dbi_close(env, dbiDupInferred);
+			}
 		}
 
 		void clear(long txn) {
 			mdb_drop(txn, dbiExplicit, false);
 			mdb_drop(txn, dbiInferred, false);
+			if (dupsortEnabled) {
+				mdb_drop(txn, dbiDupExplicit, false);
+				mdb_drop(txn, dbiDupInferred, false);
+			}
 		}
 
 		void destroy(long txn) {
 			mdb_drop(txn, dbiExplicit, true);
 			mdb_drop(txn, dbiInferred, true);
+			if (dupsortEnabled) {
+				mdb_drop(txn, dbiDupExplicit, true);
+				mdb_drop(txn, dbiDupInferred, true);
+			}
 		}
 	}
 

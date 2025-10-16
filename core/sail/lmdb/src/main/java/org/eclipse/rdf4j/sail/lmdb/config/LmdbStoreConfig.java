@@ -96,6 +96,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private boolean pageCardinalityEstimator = true;
 
+	private boolean dupsortIndices = true;
+
+	private boolean dupsortRead = true;
+
 	private long valueEvictionInterval = Duration.ofSeconds(60).toMillis();
 
 	private boolean valueHashCacheEnabled = false;
@@ -267,6 +271,24 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public LmdbStoreConfig setPageCardinalityEstimator(boolean pageCardinalityEstimator) {
 		this.pageCardinalityEstimator = pageCardinalityEstimator;
+		return this;
+	}
+
+	public boolean isDupsortIndices() {
+		return dupsortIndices;
+	}
+
+	public LmdbStoreConfig setDupsortIndices(boolean dupsortIndices) {
+		this.dupsortIndices = dupsortIndices;
+		return this;
+	}
+
+	public boolean isDupsortRead() {
+		return dupsortRead;
+	}
+
+	public LmdbStoreConfig setDupsortRead(boolean dupsortRead) {
+		this.dupsortRead = dupsortRead;
 		return this;
 	}
 
@@ -505,6 +527,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			m.add(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE,
 					vf.createLiteral(backgroundRawSamplingMaxMillisPerCycle));
 		}
+		if (dupsortIndices) {
+			m.add(implNode, LmdbStoreSchema.DUPSORT_INDICES, vf.createLiteral(true));
+		}
+		if (dupsortRead) {
+			m.add(implNode, LmdbStoreSchema.DUPSORT_READ, vf.createLiteral(true));
+		}
 		return implNode;
 	}
 
@@ -637,7 +665,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 						} catch (NumberFormatException e) {
 							throw new SailConfigException(
 									"Long value required for " + LmdbStoreSchema.VALUE_EVICTION_INTERVAL
-											+ " property, found " + lit);
+										+ " property, found " + lit);
 						}
 					});
 
@@ -746,6 +774,25 @@ public class LmdbStoreConfig extends BaseSailConfig {
 					m.getStatements(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE, null))
 					.ifPresent(lit -> setBackgroundRawSamplingMaxMillisPerCycle(parseLong(lit,
 							LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.DUPSORT_INDICES, null)).ifPresent(lit -> {
+				try {
+					setDupsortIndices(lit.booleanValue());
+				} catch (IllegalArgumentException e) {
+					throw new SailConfigException(
+							"Boolean value required for " + LmdbStoreSchema.DUPSORT_INDICES + " property, found "
+									+ lit);
+				}
+			});
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.DUPSORT_READ, null)).ifPresent(lit -> {
+				try {
+					setDupsortRead(lit.booleanValue());
+				} catch (IllegalArgumentException e) {
+					throw new SailConfigException(
+							"Boolean value required for " + LmdbStoreSchema.DUPSORT_READ + " property, found "
+								+ lit);
+				}
+			});
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
