@@ -10,14 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb.model;
 
-import java.io.ObjectStreamException;
-import java.util.Objects;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.ObjectStreamException;
+import java.util.Objects;
 
 public class LmdbIRI implements LmdbResource, IRI {
 
@@ -151,53 +151,49 @@ public class LmdbIRI implements LmdbResource, IRI {
 	public boolean equals(Object o) {
 		if (this == o) {
 			return true;
-		}
-
-		if (o == null) {
+		} else if (o instanceof LmdbIRI) {
+			return equalsLmdbIRI(((LmdbIRI) o));
+		} else if (o instanceof IRI) {
+			IRI other = (IRI) o;
+			return stringValue().equals(other.stringValue());
+		} else {
 			return false;
 		}
 
-		if (o.getClass() == LmdbIRI.class) {
-			if (internalID == UNKNOWN_ID) {
-				boolean equals = stringValue().equals(((IRI) o).stringValue());
-				if (equals && revision.equals(((LmdbIRI) o).revision)) {
-					internalID = ((LmdbIRI) o).internalID;
+	}
+
+	private boolean equalsLmdbIRI(LmdbIRI o) {
+		if (internalID == UNKNOWN_ID) {
+			boolean equals = stringValue().equals(o.stringValue());
+			if (equals && revision.equals(o.revision)) {
+				internalID = o.internalID;
+			}
+			return equals;
+		} else if (revision.equals(o.revision)) {
+			if (o.internalID == UNKNOWN_ID) {
+				boolean equals = stringValue().equals(o.stringValue());
+				if (equals) {
+					o.internalID = this.internalID;
 				}
 				return equals;
-			}
-
-			LmdbIRI otherLmdbURI = (LmdbIRI) o;
-
-			if (revision.equals(otherLmdbURI.revision)) {
-				if (otherLmdbURI.internalID == UNKNOWN_ID) {
-					boolean equals = stringValue().equals(((IRI) o).stringValue());
-					if (equals) {
-						otherLmdbURI.internalID = this.internalID;
-					}
-					return equals;
-				}
-
+			} else {
 				// LmdbURI's from the same revision of the same lmdb store, with
 				// both ID's set
-				boolean equal = internalID == otherLmdbURI.internalID;
+				boolean equal = internalID == o.internalID;
 				if (equal) {
 					if (iriString == null) {
-						iriString = otherLmdbURI.iriString;
-						localNameIdx = otherLmdbURI.localNameIdx;
-					} else if (otherLmdbURI.iriString == null) {
-						otherLmdbURI.iriString = iriString;
-						otherLmdbURI.localNameIdx = localNameIdx;
+						iriString = o.iriString;
+						localNameIdx = o.localNameIdx;
+					} else if (o.iriString == null) {
+						o.iriString = iriString;
+						o.localNameIdx = localNameIdx;
 					}
 				}
 				return equal;
 			}
+		} else {
+			return stringValue().equals(o.stringValue());
 		}
-
-		if (!(o instanceof IRI)) {
-			return false;
-		}
-
-		return stringValue().equals(((IRI) o).stringValue());
 	}
 
 	@Override

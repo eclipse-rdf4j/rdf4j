@@ -541,6 +541,8 @@ class TripleStore implements Closeable {
 
 	private int leadingBoundCount(char[] fieldSeq, long subj, long pred, long obj, long context) {
 		int count = 0;
+
+
 		for (int i = 0; i < fieldSeq.length; i++) {
 			boolean bound;
 			switch (fieldSeq[i]) {
