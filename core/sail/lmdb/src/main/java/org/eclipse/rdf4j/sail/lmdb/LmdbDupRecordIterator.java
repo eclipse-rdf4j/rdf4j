@@ -110,24 +110,43 @@ class LmdbDupRecordIterator implements RecordIterator {
 			long adjPred = pred < 0 ? 0 : pred;
 			long adjObj = obj < 0 ? 0 : obj;
 			long adjContext = context < 0 ? 0 : context;
-			for (int i = 0; i < 2; i++) {
-				char f = fieldSeq[i];
+			{
+				char f = fieldSeq[0];
 				long v;
 				switch (f) {
-				case 's':
-					v = adjSubj;
-					break;
-				case 'p':
-					v = adjPred;
-					break;
-				case 'o':
-					v = adjObj;
-					break;
-				default:
-					v = adjContext;
-					break;
+					case 's':
+						v = adjSubj;
+						break;
+					case 'p':
+						v = adjPred;
+						break;
+					case 'o':
+						v = adjObj;
+						break;
+					default:
+						v = adjContext;
+						break;
 				}
-				prefixValues[i] = v;
+				prefixValues[0] = v;
+			}
+			{
+				char f = fieldSeq[1];
+				long v;
+				switch (f) {
+					case 's':
+						v = adjSubj;
+						break;
+					case 'p':
+						v = adjPred;
+						break;
+					case 'o':
+						v = adjObj;
+						break;
+					default:
+						v = adjContext;
+						break;
+				}
+				prefixValues[1] = v;
 			}
 			prefixKeyBuf.clear();
 			index.toDupKeyPrefix(prefixKeyBuf, adjSubj, adjPred, adjObj, adjContext);
@@ -246,9 +265,19 @@ class LmdbDupRecordIterator implements RecordIterator {
 
 	private int comparePrefix() {
 		ByteBuffer key = keyData.mv_data().duplicate();
-		for (int i = 0; i < 2; i++) {
+		{
 			long actual = Varint.readUnsigned(key);
-			long expected = prefixValues[i];
+			long expected = prefixValues[0];
+			if (actual < expected) {
+				return -1;
+			}
+			if (actual > expected) {
+				return 1;
+			}
+		}
+		{
+			long actual = Varint.readUnsigned(key);
+			long expected = prefixValues[1];
 			if (actual < expected) {
 				return -1;
 			}
@@ -286,22 +315,40 @@ class LmdbDupRecordIterator implements RecordIterator {
 
 	private void fillQuadFromPrefixAndValue(long v3, long v4) {
 		int pi = 0;
-		for (int i = 0; i < 2; i++) {
-			char f = fieldSeq[i];
+		{
+			char f = fieldSeq[0];
 			long v = prefixValues[pi++];
 			switch (f) {
-			case 's':
-				quad[0] = v;
-				break;
-			case 'p':
-				quad[1] = v;
-				break;
-			case 'o':
-				quad[2] = v;
-				break;
-			case 'c':
-				quad[3] = v;
-				break;
+				case 's':
+					quad[0] = v;
+					break;
+				case 'p':
+					quad[1] = v;
+					break;
+				case 'o':
+					quad[2] = v;
+					break;
+				case 'c':
+					quad[3] = v;
+					break;
+			}
+		}
+		{
+			char f = fieldSeq[1];
+			long v = prefixValues[pi++];
+			switch (f) {
+				case 's':
+					quad[0] = v;
+					break;
+				case 'p':
+					quad[1] = v;
+					break;
+				case 'o':
+					quad[2] = v;
+					break;
+				case 'c':
+					quad[3] = v;
+					break;
 			}
 		}
 		char f = fieldSeq[2];
