@@ -12,6 +12,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabaseWithTxn;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
+import static org.lwjgl.util.lmdb.LMDB.MDB_DUPFIXED;
+import static org.lwjgl.util.lmdb.LMDB.MDB_DUPSORT;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 
@@ -51,11 +53,19 @@ class TripleIndex {
 	final StatementFieldValueAccessor[] fieldValueAccessors;
 	final StatementFieldValueAccessor leadingFieldValueAccessor;
 	private final int dbiExplicit, dbiInferred;
+	private final boolean dupsortEnabled;
+	private final int dbiDupExplicit;
+	private final int dbiDupInferred;
 	private final int[] indexMap;
 	private final long env;
 	private String name;
 
 	TripleIndex(String name, String fieldSeq, boolean createInferredIndex, long env, long writeTxn) throws IOException {
+		this(name, fieldSeq, createInferredIndex, env, writeTxn, false);
+	}
+
+	TripleIndex(String name, String fieldSeq, boolean createInferredIndex, long env, long writeTxn,
+			boolean dupsortEnabled) throws IOException {
 		this.name = name;
 		this.fieldSeq = fieldSeq.toCharArray();
 		this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
@@ -71,6 +81,15 @@ class TripleIndex {
 		} else {
 			dbiInferred = -1;
 		}
+		this.dupsortEnabled = dupsortEnabled;
+		if (dupsortEnabled) {
+			int flags = MDB_CREATE | MDB_DUPSORT | MDB_DUPFIXED;
+			dbiDupExplicit = openDatabaseWithTxn(writeTxn, getDupName(true), flags);
+			dbiDupInferred = createInferredIndex ? openDatabaseWithTxn(writeTxn, getDupName(false), flags) : -1;
+		} else {
+			dbiDupExplicit = -1;
+			dbiDupInferred = -1;
+		}
 	}
 
 	public char[] getFieldSeq() {
@@ -81,8 +100,20 @@ class TripleIndex {
 		return name + (explicit ? name : name + "-inf");
 	}
 
+	private String getDupName(boolean explicit) {
+		return getName(explicit) + "-dup";
+	}
+
 	int getDB(boolean explicit) {
 		return explicit ? dbiExplicit : dbiInferred;
+	}
+
+	boolean isDupsortEnabled() {
+		return dupsortEnabled;
+	}
+
+	int getDupDB(boolean explicit) {
+		return explicit ? dbiDupExplicit : dbiDupInferred;
 	}
 
 	private StatementFieldValueAccessor[] createFieldValueAccessors(char[] fieldSeq) {
@@ -244,6 +275,42 @@ class TripleIndex {
 		return length;
 	}
 
+	void toDupKeyPrefix(ByteBuffer bb, long subj, long pred, long obj, long context) {
+		for (int i = 0; i < 2; i++) {
+			switch (fieldSeq[i]) {
+			case 's':
+				Varint.writeUnsigned(bb, subj);
+				break;
+			case 'p':
+				Varint.writeUnsigned(bb, pred);
+				break;
+			case 'o':
+				Varint.writeUnsigned(bb, obj);
+				break;
+			case 'c':
+				Varint.writeUnsigned(bb, context);
+				break;
+			default:
+				throw new IllegalArgumentException("Unknown index field: " + fieldSeq[i]);
+			}
+		}
+	}
+
+	void toDupValue(ByteBuffer bb, long subj, long pred, long obj, long context) {
+		bb.putLong(getFieldValue(fieldSeq[2], subj, pred, obj, context));
+		bb.putLong(getFieldValue(fieldSeq[3], subj, pred, obj, context));
+	}
+
+	private long getFieldValue(char field, long subj, long pred, long obj, long context) {
+		return switch (field) {
+		case 's' -> subj;
+		case 'p' -> pred;
+		case 'o' -> obj;
+		case 'c' -> context;
+		default -> throw new IllegalArgumentException("Unknown index field: " + field);
+		};
+	}
+
 	void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
 		boolean shouldCache = threeOfFourAreZeroOrMax(subj, pred, obj, context);
 		if (shouldCache) {
@@ -300,6 +367,12 @@ class TripleIndex {
 		if (dbiInferred != -1) {
 			mdb_dbi_close(env, dbiInferred);
 		}
+		if (dbiDupExplicit != -1) {
+			mdb_dbi_close(env, dbiDupExplicit);
+		}
+		if (dbiDupInferred != -1) {
+			mdb_dbi_close(env, dbiDupInferred);
+		}
 	}
 
 	void clear(long txn) {
@@ -307,12 +380,24 @@ class TripleIndex {
 		if (dbiInferred != -1) {
 			mdb_drop(txn, dbiInferred, false);
 		}
+		if (dbiDupExplicit != -1) {
+			mdb_drop(txn, dbiDupExplicit, false);
+		}
+		if (dbiDupInferred != -1) {
+			mdb_drop(txn, dbiDupInferred, false);
+		}
 	}
 
 	void destroy(long txn) {
 		mdb_drop(txn, dbiExplicit, true);
 		if (dbiInferred != -1) {
 			mdb_drop(txn, dbiInferred, true);
+		}
+		if (dbiDupExplicit != -1) {
+			mdb_drop(txn, dbiDupExplicit, true);
+		}
+		if (dbiDupInferred != -1) {
+			mdb_drop(txn, dbiDupInferred, true);
 		}
 	}
 
