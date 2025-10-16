@@ -53,6 +53,12 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> {
 
 	public Statement getNextElement() throws SailException {
 		try {
+
+			if (Thread.currentThread().isInterrupted()) {
+				close();
+				throw new SailException("The iteration has been interrupted");
+			}
+
 			long[] quad = recordIt.next();
 			if (quad == null) {
 				return null;

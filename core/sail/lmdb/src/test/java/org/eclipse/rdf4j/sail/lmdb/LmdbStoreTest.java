@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.io.File;
 
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -59,5 +60,23 @@ public class LmdbStoreTest extends RDFNotifyingStoreTest {
 		con = sail.getConnection();
 
 		assertEquals(RDF.NAMESPACE, con.getNamespace("rdf"));
+	}
+
+	@Test
+	public void testPredicateObjectDupIteration() throws Exception {
+		con.begin();
+		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);
+		con.addStatement(painting, RDF.TYPE, RDFS.CLASS);
+		con.commit();
+
+		int count = 0;
+		try (var statements = con.getStatements(null, RDF.TYPE, RDFS.CLASS, true)) {
+			while (statements.hasNext()) {
+				statements.next();
+				count++;
+			}
+		}
+
+		assertEquals(2, count);
 	}
 }
