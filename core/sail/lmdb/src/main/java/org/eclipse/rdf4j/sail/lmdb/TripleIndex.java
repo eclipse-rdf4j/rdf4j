@@ -57,6 +57,7 @@ class TripleIndex implements TripleStore.DupIndex {
 	private final int dbiDupExplicit;
 	private final int dbiDupInferred;
 	private final int[] indexMap;
+	private final PatternScoreFunction patternScoreFunction;
 	private final long env;
 	private String name;
 
@@ -73,6 +74,7 @@ class TripleIndex implements TripleStore.DupIndex {
 		this.fieldValueAccessors = createFieldValueAccessors(this.fieldSeq);
 		this.leadingFieldValueAccessor = this.fieldValueAccessors[0];
 		this.indexMap = getIndexes(this.fieldSeq);
+		this.patternScoreFunction = PatternScoreFunctions.forFieldSeq(fieldSeq);
 		this.env = env;
 		// open database and use native sort order without comparator
 		dbiExplicit = openDatabaseWithTxn(writeTxn, getName(true), MDB_CREATE);
@@ -188,45 +190,7 @@ class TripleIndex implements TripleStore.DupIndex {
 	 * the index will perform a sequential scan.
 	 */
 	public int getPatternScore(long subj, long pred, long obj, long context) {
-		int score = 0;
-
-		for (char field : fieldSeq) {
-			switch (field) {
-			case 's':
-				if (subj >= 0) {
-					score++;
-				} else {
-					return score;
-				}
-				break;
-			case 'p':
-				if (pred >= 0) {
-					score++;
-				} else {
-					return score;
-				}
-				break;
-			case 'o':
-				if (obj >= 0) {
-					score++;
-				} else {
-					return score;
-				}
-				break;
-			case 'c':
-				if (context >= 0) {
-					score++;
-				} else {
-					return score;
-				}
-				break;
-			default:
-				throw new RuntimeException("invalid character '" + field + "' in field sequence: "
-						+ new String(fieldSeq));
-			}
-		}
-
-		return score;
+		return patternScoreFunction.score(subj, pred, obj, context);
 	}
 
 	void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
