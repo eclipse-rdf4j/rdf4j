@@ -209,7 +209,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 	}
 
 	@Override
-	public int hashCode() {
+	public final int hashCode() {
 		if (internalID != UNKNOWN_ID) {
 			int cachedHash = revision.getStoredHash(internalID);
 			if (cachedHash != 0) {

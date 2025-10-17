@@ -1950,9 +1950,14 @@ class TripleStore implements Closeable {
 		}
 
 		private void writeLongLittleEndian(ByteBuffer buffer, long value) {
-			for (int i = 0; i < Long.BYTES; i++) {
-				buffer.put((byte) ((value >> (i * 8)) & 0xFF));
-			}
+			buffer.put((byte) ((value >> (0)) & 0xFF));
+			buffer.put((byte) ((value >> (8)) & 0xFF));
+			buffer.put((byte) ((value >> (2 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (3 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (4 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (5 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (6 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (7 * 8)) & 0xFF));
 		}
 	}
 
