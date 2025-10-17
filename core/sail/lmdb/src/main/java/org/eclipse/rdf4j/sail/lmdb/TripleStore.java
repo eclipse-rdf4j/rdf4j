@@ -148,6 +148,7 @@ class TripleStore implements Closeable {
 	 * The list of triple indexes that are used to store and retrieve triples.
 	 */
 	private final List<TripleIndex> indexes = new ArrayList<>();
+	private volatile TripleIndex[] bestIndexLookup = new TripleIndex[IndexPattern.lookupSize()];
 	private final SubjectPredicateIndex subjectPredicateIndex;
 	private final ValueStore valueStore;
 
@@ -361,6 +362,8 @@ class TripleStore implements Closeable {
 			}
 			return null;
 		});
+
+		rebuildBestIndexLookup();
 	}
 
 	private Set<String> orderIndexSpecs(Set<String> indexSpecs) {
@@ -618,6 +621,7 @@ class TripleStore implements Closeable {
 			indexes.add(currentIndexes.remove(fieldSeq));
 		}
 		resetAlignedWriteCursorState();
+		rebuildBestIndexLookup();
 	}
 
 	@Override
@@ -1137,6 +1141,21 @@ class TripleStore implements Closeable {
 	}
 
 	protected TripleIndex getBestIndex(long subj, long pred, long obj, long context) {
+		TripleIndex[] lookup = bestIndexLookup;
+		int mask = IndexPattern.toMask(subj, pred, obj, context);
+		TripleIndex bestIndex = lookup[mask];
+		if (bestIndex != null) {
+			return bestIndex;
+		}
+
+		bestIndex = selectBestIndex(subj, pred, obj, context);
+		if (bestIndex != null) {
+			lookup[mask] = bestIndex;
+		}
+		return bestIndex;
+	}
+
+	private TripleIndex selectBestIndex(long subj, long pred, long obj, long context) {
 		int bestScore = -1;
 		TripleIndex bestIndex = null;
 
@@ -1210,6 +1229,88 @@ class TripleStore implements Closeable {
 			return Component.C;
 		default:
 			throw new IllegalArgumentException("invalid index field: " + field);
+		}
+	}
+
+	private void rebuildBestIndexLookup() {
+		TripleIndex[] newLookup = new TripleIndex[IndexPattern.lookupSize()];
+		if (!indexes.isEmpty()) {
+			for (IndexPattern pattern : IndexPattern.values()) {
+				TripleIndex bestIndex = selectBestIndex(pattern.subjValue, pattern.predValue, pattern.objValue,
+						pattern.contextValue);
+				newLookup[pattern.mask] = bestIndex;
+			}
+		}
+		bestIndexLookup = newLookup;
+	}
+
+	private enum IndexPattern {
+		NONE(-1, -1, -1, -1),
+		S(0, -1, -1, -1),
+		P(-1, 0, -1, -1),
+		SP(0, 0, -1, -1),
+		O(-1, -1, 0, -1),
+		SO(0, -1, 0, -1),
+		PO(-1, 0, 0, -1),
+		SPO(0, 0, 0, -1),
+		C(-1, -1, -1, 0),
+		SC(0, -1, -1, 0),
+		PC(-1, 0, -1, 0),
+		SPC(0, 0, -1, 0),
+		OC(-1, -1, 0, 0),
+		SOC(0, -1, 0, 0),
+		POC(-1, 0, 0, 0),
+		SPOC(0, 0, 0, 0);
+
+		private final long subjValue;
+		private final long predValue;
+		private final long objValue;
+		private final long contextValue;
+		private final int mask;
+
+		IndexPattern(long subjValue, long predValue, long objValue, long contextValue) {
+			this.subjValue = subjValue;
+			this.predValue = predValue;
+			this.objValue = objValue;
+			this.contextValue = contextValue;
+			int mask = 0;
+			if (subjValue >= 0) {
+				mask |= 1;
+			}
+			if (predValue >= 0) {
+				mask |= 1 << 1;
+			}
+			if (objValue >= 0) {
+				mask |= 1 << 2;
+			}
+			if (contextValue >= 0) {
+				mask |= 1 << 3;
+			}
+			this.mask = mask;
+		}
+
+		private static final IndexPattern[] LOOKUP = buildLookup();
+
+		private static IndexPattern[] buildLookup() {
+			IndexPattern[] lookup = new IndexPattern[1 << 4];
+			for (IndexPattern pattern : values()) {
+				lookup[pattern.mask] = pattern;
+			}
+			return lookup;
+		}
+
+		static int toMask(long s, long p, long o, long c) {
+			// For a signed long, (x >>> 63) == 0 when x >= 0, == 1 when x < 0.
+			// XOR with 1 flips that so we get 1 when x >= 0, 0 when x < 0.
+			long b0 = (s >>> 63) ^ 1L;
+			long b1 = (p >>> 63) ^ 1L;
+			long b2 = (o >>> 63) ^ 1L;
+			long b3 = (c >>> 63) ^ 1L;
+			return (int) (b0 | (b1 << 1) | (b2 << 2) | (b3 << 3));
+		}
+
+		static int lookupSize() {
+			return LOOKUP.length;
 		}
 	}
 
