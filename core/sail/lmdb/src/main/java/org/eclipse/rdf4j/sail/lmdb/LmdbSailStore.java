@@ -382,10 +382,12 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		List<Long> contextIDList = new ArrayList<>(contexts.length);
+		List<Long> contextIDList;
 		if (contexts.length == 0) {
-			contextIDList.add(LmdbValue.UNKNOWN_ID);
+			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, LmdbValue.UNKNOWN_ID, explicit);
+			return new LmdbStatementIterator(records, valueStore);
 		} else {
+			contextIDList = new ArrayList<>(contexts.length);
 			for (Resource context : contexts) {
 				if (context == null) {
 					contextIDList.add(0L);
