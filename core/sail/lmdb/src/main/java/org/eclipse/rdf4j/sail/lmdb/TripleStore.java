@@ -1496,6 +1496,11 @@ class TripleStore implements Closeable {
 		int getPatternScore(long subj, long pred, long obj, long context);
 	}
 
+	@FunctionalInterface
+	private interface PatternScoreFunction {
+		int score(long subj, long pred, long obj, long context);
+	}
+
 	class TripleIndex implements DupIndex {
 
 		private final char[] fieldSeq;
@@ -1506,12 +1511,14 @@ class TripleStore implements Closeable {
 		private final int dbiDupExplicit;
 		private final int dbiDupInferred;
 		private final int[] indexMap;
+		private final PatternScoreFunction patternScoreFunction;
 
 		public TripleIndex(String fieldSeq, boolean dupsortEnabled) throws IOException {
 			this.fieldSeq = fieldSeq.toCharArray();
 			this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
 			this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
 			this.indexMap = getIndexes(this.fieldSeq);
+			this.patternScoreFunction = PatternScoreFunctions.forFieldSeq(fieldSeq);
 			// open database and use native sort order without comparator
 			dbiExplicit = openDatabase(env, fieldSeq, MDB_CREATE, null);
 			dbiInferred = openDatabase(env, fieldSeq + "-inf", MDB_CREATE, null);
@@ -1656,45 +1663,7 @@ class TripleStore implements Closeable {
 		 * that the index will perform a sequential scan.
 		 */
 		public int getPatternScore(long subj, long pred, long obj, long context) {
-			int score = 0;
-
-			for (char field : fieldSeq) {
-				switch (field) {
-				case 's':
-					if (subj >= 0) {
-						score++;
-					} else {
-						return score;
-					}
-					break;
-				case 'p':
-					if (pred >= 0) {
-						score++;
-					} else {
-						return score;
-					}
-					break;
-				case 'o':
-					if (obj >= 0) {
-						score++;
-					} else {
-						return score;
-					}
-					break;
-				case 'c':
-					if (context >= 0) {
-						score++;
-					} else {
-						return score;
-					}
-					break;
-				default:
-					throw new RuntimeException("invalid character '" + field + "' in field sequence: "
-							+ new String(fieldSeq));
-				}
-			}
-
-			return score;
+			return patternScoreFunction.score(subj, pred, obj, context);
 		}
 
 		void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
@@ -1859,6 +1828,451 @@ class TripleStore implements Closeable {
 		void destroy(long txn) {
 			mdb_drop(txn, dbiExplicit, true);
 			mdb_drop(txn, dbiInferred, true);
+		}
+	}
+
+	private static final class PatternScoreFunctions {
+
+		private PatternScoreFunctions() {
+		}
+
+		private static PatternScoreFunction forFieldSeq(String fieldSeq) {
+			switch (fieldSeq) {
+			case "spoc":
+				return PatternScoreFunctions::score_spoc;
+			case "spco":
+				return PatternScoreFunctions::score_spco;
+			case "sopc":
+				return PatternScoreFunctions::score_sopc;
+			case "socp":
+				return PatternScoreFunctions::score_socp;
+			case "scpo":
+				return PatternScoreFunctions::score_scpo;
+			case "scop":
+				return PatternScoreFunctions::score_scop;
+			case "psoc":
+				return PatternScoreFunctions::score_psoc;
+			case "psco":
+				return PatternScoreFunctions::score_psco;
+			case "posc":
+				return PatternScoreFunctions::score_posc;
+			case "pocs":
+				return PatternScoreFunctions::score_pocs;
+			case "pcso":
+				return PatternScoreFunctions::score_pcso;
+			case "pcos":
+				return PatternScoreFunctions::score_pcos;
+			case "ospc":
+				return PatternScoreFunctions::score_ospc;
+			case "oscp":
+				return PatternScoreFunctions::score_oscp;
+			case "opsc":
+				return PatternScoreFunctions::score_opsc;
+			case "opcs":
+				return PatternScoreFunctions::score_opcs;
+			case "ocsp":
+				return PatternScoreFunctions::score_ocsp;
+			case "ocps":
+				return PatternScoreFunctions::score_ocps;
+			case "cspo":
+				return PatternScoreFunctions::score_cspo;
+			case "csop":
+				return PatternScoreFunctions::score_csop;
+			case "cpso":
+				return PatternScoreFunctions::score_cpso;
+			case "cpos":
+				return PatternScoreFunctions::score_cpos;
+			case "cosp":
+				return PatternScoreFunctions::score_cosp;
+			case "cops":
+				return PatternScoreFunctions::score_cops;
+			default:
+				throw new IllegalArgumentException("Unsupported field sequence: " + fieldSeq);
+			}
+		}
+
+		private static int score_spoc(long subj, long pred, long obj, long context) {
+			if (subj < 0) {
+				return 0;
+			}
+			if (pred < 0) {
+				return 1;
+			}
+			if (obj < 0) {
+				return 2;
+			}
+			if (context < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_spco(long subj, long pred, long obj, long context) {
+			if (subj < 0) {
+				return 0;
+			}
+			if (pred < 0) {
+				return 1;
+			}
+			if (context < 0) {
+				return 2;
+			}
+			if (obj < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_sopc(long subj, long pred, long obj, long context) {
+			if (subj < 0) {
+				return 0;
+			}
+			if (obj < 0) {
+				return 1;
+			}
+			if (pred < 0) {
+				return 2;
+			}
+			if (context < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_socp(long subj, long pred, long obj, long context) {
+			if (subj < 0) {
+				return 0;
+			}
+			if (obj < 0) {
+				return 1;
+			}
+			if (context < 0) {
+				return 2;
+			}
+			if (pred < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_scpo(long subj, long pred, long obj, long context) {
+			if (subj < 0) {
+				return 0;
+			}
+			if (context < 0) {
+				return 1;
+			}
+			if (pred < 0) {
+				return 2;
+			}
+			if (obj < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_scop(long subj, long pred, long obj, long context) {
+			if (subj < 0) {
+				return 0;
+			}
+			if (context < 0) {
+				return 1;
+			}
+			if (obj < 0) {
+				return 2;
+			}
+			if (pred < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_psoc(long subj, long pred, long obj, long context) {
+			if (pred < 0) {
+				return 0;
+			}
+			if (subj < 0) {
+				return 1;
+			}
+			if (obj < 0) {
+				return 2;
+			}
+			if (context < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_psco(long subj, long pred, long obj, long context) {
+			if (pred < 0) {
+				return 0;
+			}
+			if (subj < 0) {
+				return 1;
+			}
+			if (context < 0) {
+				return 2;
+			}
+			if (obj < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_posc(long subj, long pred, long obj, long context) {
+			if (pred < 0) {
+				return 0;
+			}
+			if (obj < 0) {
+				return 1;
+			}
+			if (subj < 0) {
+				return 2;
+			}
+			if (context < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_pocs(long subj, long pred, long obj, long context) {
+			if (pred < 0) {
+				return 0;
+			}
+			if (obj < 0) {
+				return 1;
+			}
+			if (context < 0) {
+				return 2;
+			}
+			if (subj < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_pcso(long subj, long pred, long obj, long context) {
+			if (pred < 0) {
+				return 0;
+			}
+			if (context < 0) {
+				return 1;
+			}
+			if (subj < 0) {
+				return 2;
+			}
+			if (obj < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_pcos(long subj, long pred, long obj, long context) {
+			if (pred < 0) {
+				return 0;
+			}
+			if (context < 0) {
+				return 1;
+			}
+			if (obj < 0) {
+				return 2;
+			}
+			if (subj < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_ospc(long subj, long pred, long obj, long context) {
+			if (obj < 0) {
+				return 0;
+			}
+			if (subj < 0) {
+				return 1;
+			}
+			if (pred < 0) {
+				return 2;
+			}
+			if (context < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_oscp(long subj, long pred, long obj, long context) {
+			if (obj < 0) {
+				return 0;
+			}
+			if (subj < 0) {
+				return 1;
+			}
+			if (context < 0) {
+				return 2;
+			}
+			if (pred < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_opsc(long subj, long pred, long obj, long context) {
+			if (obj < 0) {
+				return 0;
+			}
+			if (pred < 0) {
+				return 1;
+			}
+			if (subj < 0) {
+				return 2;
+			}
+			if (context < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_opcs(long subj, long pred, long obj, long context) {
+			if (obj < 0) {
+				return 0;
+			}
+			if (pred < 0) {
+				return 1;
+			}
+			if (context < 0) {
+				return 2;
+			}
+			if (subj < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_ocsp(long subj, long pred, long obj, long context) {
+			if (obj < 0) {
+				return 0;
+			}
+			if (context < 0) {
+				return 1;
+			}
+			if (subj < 0) {
+				return 2;
+			}
+			if (pred < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_ocps(long subj, long pred, long obj, long context) {
+			if (obj < 0) {
+				return 0;
+			}
+			if (context < 0) {
+				return 1;
+			}
+			if (pred < 0) {
+				return 2;
+			}
+			if (subj < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_cspo(long subj, long pred, long obj, long context) {
+			if (context < 0) {
+				return 0;
+			}
+			if (subj < 0) {
+				return 1;
+			}
+			if (pred < 0) {
+				return 2;
+			}
+			if (obj < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_csop(long subj, long pred, long obj, long context) {
+			if (context < 0) {
+				return 0;
+			}
+			if (subj < 0) {
+				return 1;
+			}
+			if (obj < 0) {
+				return 2;
+			}
+			if (pred < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_cpso(long subj, long pred, long obj, long context) {
+			if (context < 0) {
+				return 0;
+			}
+			if (pred < 0) {
+				return 1;
+			}
+			if (subj < 0) {
+				return 2;
+			}
+			if (obj < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_cpos(long subj, long pred, long obj, long context) {
+			if (context < 0) {
+				return 0;
+			}
+			if (pred < 0) {
+				return 1;
+			}
+			if (obj < 0) {
+				return 2;
+			}
+			if (subj < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_cosp(long subj, long pred, long obj, long context) {
+			if (context < 0) {
+				return 0;
+			}
+			if (obj < 0) {
+				return 1;
+			}
+			if (subj < 0) {
+				return 2;
+			}
+			if (pred < 0) {
+				return 3;
+			}
+			return 4;
+		}
+
+		private static int score_cops(long subj, long pred, long obj, long context) {
+			if (context < 0) {
+				return 0;
+			}
+			if (obj < 0) {
+				return 1;
+			}
+			if (pred < 0) {
+				return 2;
+			}
+			if (subj < 0) {
+				return 3;
+			}
+			return 4;
 		}
 	}
 
