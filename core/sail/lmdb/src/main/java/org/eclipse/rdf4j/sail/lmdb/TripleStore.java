@@ -1447,8 +1447,25 @@ class TripleStore implements Closeable {
 		@Override
 		public void toDupKeyPrefix(ByteBuffer bb, long subj, long pred, long obj, long context) {
 			long s = subj, p = pred, o = obj, c = context;
-			for (int i = 0; i < 2; i++) {
-				char f = fieldSeq[i];
+			{
+				char f = fieldSeq[0];
+				switch (f) {
+				case 's':
+					Varint.writeUnsigned(bb, s);
+					break;
+				case 'p':
+					Varint.writeUnsigned(bb, p);
+					break;
+				case 'o':
+					Varint.writeUnsigned(bb, o);
+					break;
+				case 'c':
+					Varint.writeUnsigned(bb, c);
+					break;
+				}
+			}
+			{
+				char f = fieldSeq[1];
 				switch (f) {
 				case 's':
 					Varint.writeUnsigned(bb, s);
@@ -1853,9 +1870,14 @@ class TripleStore implements Closeable {
 		}
 
 		private void writeLongLittleEndian(ByteBuffer buffer, long value) {
-			for (int i = 0; i < Long.BYTES; i++) {
-				buffer.put((byte) ((value >> (i * 8)) & 0xFF));
-			}
+			buffer.put((byte) ((value >> (0)) & 0xFF));
+			buffer.put((byte) ((value >> (8)) & 0xFF));
+			buffer.put((byte) ((value >> (2 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (3 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (4 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (5 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (6 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (7 * 8)) & 0xFF));
 		}
 	}
 

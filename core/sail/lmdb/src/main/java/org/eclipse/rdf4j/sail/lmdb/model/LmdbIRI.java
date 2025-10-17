@@ -197,7 +197,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 	}
 
 	@Override
-	public int hashCode() {
+	public final int hashCode() {
 		if (this.iriString != null) {
 			return this.iriString.hashCode();
 		}
