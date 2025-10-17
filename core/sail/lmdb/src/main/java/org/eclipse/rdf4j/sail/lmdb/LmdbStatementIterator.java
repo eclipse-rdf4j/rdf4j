@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.IOException;
 import java.util.NoSuchElementException;
 
-import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.sail.SailException;
  * A statement iterator that wraps a RecordIterator containing statement records and translates these records to
  * {@link Statement} objects.
  */
-class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implements IndexReportingIterator {
+class LmdbStatementIterator implements CloseableIteration<Statement>, IndexReportingIterator {
 
 	/*-----------*
 	 * Variables *
@@ -35,6 +35,10 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 
 	private final ValueStore valueStore;
 	private Statement nextElement;
+	/**
+	 * Flag indicating whether this iteration has been closed.
+	 */
+	private boolean closed = false;
 
 	/*--------------*
 	 * Constructors *
@@ -86,7 +90,6 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 		}
 	}
 
-	@Override
 	protected void handleClose() throws SailException {
 		recordIt.close();
 	}
@@ -161,5 +164,25 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	@Override
 	public long getSourceRowsFilteredActual() {
 		return recordIt.getSourceRowsFilteredActual();
+	}
+
+	/**
+	 * Checks whether this CloseableIteration has been closed.
+	 *
+	 * @return <var>true</var> if the CloseableIteration has been closed, <var>false</var> otherwise.
+	 */
+	public final boolean isClosed() {
+		return closed;
+	}
+
+	/**
+	 * Calls {@link #handleClose()} upon first call and makes sure the resource closures are only executed once.
+	 */
+	@Override
+	public final void close() {
+		if (!closed) {
+			closed = true;
+			handleClose();
+		}
 	}
 }
