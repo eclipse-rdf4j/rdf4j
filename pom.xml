@@ -656,7 +656,7 @@
 			<dependency>
 				<groupId>no.hasmac</groupId>
 				<artifactId>hasmac-json-ld</artifactId>
-				<version>0.10.1</version>
+				<version>0.10.2</version>
 			</dependency>
 			<!-- kerby is used by solr-->
 			<dependency>

@@ -58,8 +58,6 @@ public abstract class AbstractIRI implements IRI {
 					cachedHashCode = cached;
 				}
 			}
-			cached = stringValue().hashCode();
-			cachedHashCode = cached;
 		}
 		return cached;
 	}
@@ -124,6 +122,22 @@ public abstract class AbstractIRI implements IRI {
 				return 0; // unexpected: colon presence already tested in factory methods
 
 			}
+		}
+
+		@Override
+		public int hashCode() {
+			return iri.hashCode();
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (o == this) {
+				return true;
+			}
+			if (!(o instanceof IRI)) {
+				return false;
+			}
+			return iri.equals(o.toString());
 		}
 
 	}

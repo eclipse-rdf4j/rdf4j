@@ -50,7 +50,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        jdk: [ 11, 24 ]
+        jdk: [ 11, 25 ]
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK

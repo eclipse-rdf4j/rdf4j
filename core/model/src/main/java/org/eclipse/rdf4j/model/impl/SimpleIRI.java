@@ -123,4 +123,20 @@ public class SimpleIRI extends AbstractIRI {
 		return iriString.substring(localNameIdx);
 	}
 
+	@Override
+	public int hashCode() {
+		return iriString.hashCode();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (o == this) {
+			return true;
+		}
+		if (!(o instanceof IRI)) {
+			return false;
+		}
+
+		return iriString.equals(o.toString());
+	}
 }
