@@ -13,11 +13,13 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.lwjgl.util.lmdb.LMDB.MDB_GET_MULTIPLE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT_MULTIPLE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_KEY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_count;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
@@ -72,6 +74,10 @@ class LmdbDupRecordIterator implements RecordIterator {
 
 	private int lastResult;
 	private boolean closed = false;
+
+	// Duplicate counting for the current key
+	private long dupTotalCount;
+	private long dupEmittedCount;
 
 	private final RecordIterator fallback;
 	private final FallbackSupplier fallbackSupplier;
@@ -157,6 +163,7 @@ class LmdbDupRecordIterator implements RecordIterator {
 			}
 
 			while (true) {
+				// Emit from current duplicate block if available
 				if (dupBuf != null && dupPos + (Long.BYTES * 2) <= dupLimit) {
 					long v3;
 					long v4;
@@ -170,33 +177,35 @@ class LmdbDupRecordIterator implements RecordIterator {
 						dupPos += Long.BYTES * 2;
 					}
 					fillQuadFromPrefixAndValue(v3, v4);
+					dupEmittedCount++;
 					return quad;
 				}
 
-				closeInternal(false);
-				return null;
+				// Current block exhausted; try next duplicate block if this key still has more
+				if (dupEmittedCount < dupTotalCount) {
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT_MULTIPLE);
+					if (lastResult == MDB_SUCCESS) {
+						resetDuplicateBuffer(valueData.mv_data());
+						continue;
+					}
+				}
 
-//				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT_MULTIPLE);
-//				if (lastResult == MDB_SUCCESS) {
-//					resetDuplicateBuffer(valueData.mv_data());
-//					continue;
-//				}
-//
-//				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-//				if (lastResult != MDB_SUCCESS) {
-//					closeInternal(false);
-//					return null;
-//				}
-//				if (!currentKeyHasPrefix()) {
-//					if (!adjustCursorToPrefix()) {
-//						closeInternal(false);
-//						return null;
-//					}
-//				}
-//				if (!primeDuplicateBlock()) {
-//					closeInternal(false);
-//					return null;
-//				}
+				// Advance to next key and re-prime if still within the requested prefix
+				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+				if (lastResult != MDB_SUCCESS) {
+					closeInternal(false);
+					return null;
+				}
+				if (!currentKeyHasPrefix()) {
+					if (!adjustCursorToPrefix()) {
+						closeInternal(false);
+						return null;
+					}
+				}
+				if (!primeDuplicateBlock()) {
+					closeInternal(false);
+					return null;
+				}
 			}
 		} catch (IOException e) {
 			throw new SailException(e);
@@ -261,12 +270,24 @@ class LmdbDupRecordIterator implements RecordIterator {
 		lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_GET_MULTIPLE);
 		if (lastResult == MDB_SUCCESS) {
 			resetDuplicateBuffer(valueData.mv_data());
+			refreshDuplicateCount();
+			dupEmittedCount = 0L;
 			return dupBuf != null && dupLimit - dupPos >= Long.BYTES * 2;
 		} else if (lastResult == MDB_NOTFOUND) {
 			return false;
 		} else {
 			resetDuplicateBuffer(valueData.mv_data());
+			refreshDuplicateCount();
+			dupEmittedCount = 0L;
 			return dupBuf != null && dupLimit - dupPos >= Long.BYTES * 2;
+		}
+	}
+
+	private void refreshDuplicateCount() throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer pb = stack.mallocPointer(1);
+			E(mdb_cursor_count(cursor, pb));
+			dupTotalCount = pb.get(0);
 		}
 	}
 
