@@ -113,8 +113,8 @@ class SubjectPredicateIndexDistributionRegressionTest {
 			long countl = QueryResults.count(lmdbConn.getStatements(DATASET_IRI, DCTERMS.LANGUAGE, null, true));
 			long countm = QueryResults.count(memoryConn.getStatements(DATASET_IRI, DCTERMS.LANGUAGE, null, true));
 
-			assertEquals(3, countl);
-			assertEquals(3, countm);
+			assertEquals(3, countm, "Expected 3 languages for dataset in Memory store");
+			assertEquals(3, countl, "Expected 3 languages for dataset in LMDB store");
 
 		} finally {
 			lmdbRepository.shutDown();
