@@ -33,12 +33,18 @@ class StoreProperties {
 	 * The key used to store the triple indexes specification that specifies which triple indexes exist.
 	 */
 	static final String INDEXES_KEY = "triple-indexes";
+	/**
+	 * The key used to store whether dupsort indices are enabled.
+	 */
+	static final String DUPSORT_INDICES_KEY = "dupsort-indices";
 
 	protected final File propertiesFile;
 
 	protected String version;
 
 	protected String tripleIndexes;
+
+	protected String dupsortIndices;
 
 	protected boolean loaded;
 
@@ -67,6 +73,7 @@ class StoreProperties {
 			}
 			version = properties.getProperty(VERSION_KEY);
 			tripleIndexes = properties.getProperty(INDEXES_KEY);
+			dupsortIndices = properties.getProperty(DUPSORT_INDICES_KEY);
 			loaded = true;
 		});
 		return loaded;
@@ -86,6 +93,9 @@ class StoreProperties {
 			}
 			if (tripleIndexes != null) {
 				properties.setProperty(INDEXES_KEY, tripleIndexes);
+			}
+			if (dupsortIndices != null) {
+				properties.setProperty(DUPSORT_INDICES_KEY, dupsortIndices);
 			}
 			File parent = file.getParentFile();
 			if (parent != null) {
@@ -120,6 +130,16 @@ class StoreProperties {
 
 	StoreProperties setTripleIndexes(String tripleIndexes) {
 		this.tripleIndexes = tripleIndexes;
+		this.dirty = true;
+		return this;
+	}
+
+	String getDupsortIndices() {
+		return dupsortIndices;
+	}
+
+	StoreProperties setDupsortIndices(String dupsortIndices) {
+		this.dupsortIndices = dupsortIndices;
 		this.dirty = true;
 		return this;
 	}

@@ -223,13 +223,13 @@ class TripleStore implements Closeable {
 
 		txnManager = new TxnManager(env, Mode.RESET);
 		pageEstimator = pageCardinalityEstimator ? new LmdbPageCardinalityEstimator(dataMdbFile) : null;
-		this.dupsortIndices = !properties.isLoaded() && config.isDupsortIndices();
 		this.dupsortRead = config.isDupsortRead();
 
 		try {
 			String indexSpecStr = config.getTripleIndexes();
 			if (!properties.isLoaded()) {
 				// newly created lmdb store
+				this.dupsortIndices = config.isDupsortIndices();
 				Set<String> indexSpecs = parseIndexSpecList(indexSpecStr);
 
 				if (indexSpecs.isEmpty()) {
@@ -243,6 +243,7 @@ class TripleStore implements Closeable {
 				endTransaction(true);
 				initializePageAndMapSize(config.getTripleDBSize());
 			} else {
+				this.dupsortIndices = determineExistingDupsortSetting(config.isDupsortIndices());
 				// Initialize existing indexes
 				Set<String> indexSpecs = getIndexSpecs();
 				startTransaction();
@@ -269,12 +270,55 @@ class TripleStore implements Closeable {
 				// Store up-to-date properties
 				properties.setTripleIndexes(indexSpecStr);
 			}
+			String dupsortValue = Boolean.toString(dupsortIndices);
+			if (!dupsortValue.equals(properties.getDupsortIndices())) {
+				properties.setDupsortIndices(dupsortValue);
+			}
 		} catch (IOException | SailException e) {
 			endTransaction(false);
 			throw e;
 		}
 
 		resetAlignedWriteCursorState();
+	}
+
+	private boolean determineExistingDupsortSetting(boolean requestedDupsort) throws IOException {
+		String storedValue = properties.getDupsortIndices();
+		if (storedValue != null) {
+			return Boolean.parseBoolean(storedValue);
+		}
+		if (hasSubjectPredicateDupIndex()) {
+			return true;
+		}
+		if (requestedDupsort) {
+			logger.debug("Dupsort indices requested but not present on disk for store at {}", dir);
+		}
+		return false;
+	}
+
+	private boolean hasSubjectPredicateDupIndex() throws IOException {
+		return readTransaction(env, (stack, txn) -> {
+			IntBuffer ip = stack.mallocInt(1);
+
+			int rc = mdb_dbi_open(txn, "sp-dup", 0, ip);
+			if (rc == MDB_NOTFOUND) {
+				return false;
+			}
+			E(rc);
+			int explicitDbi = ip.get(0);
+			try {
+				rc = mdb_dbi_open(txn, "sp-dup-inf", 0, ip);
+				if (rc == MDB_NOTFOUND) {
+					return false;
+				}
+				E(rc);
+				int inferredDbi = ip.get(0);
+				mdb_dbi_close(env, inferredDbi);
+				return true;
+			} finally {
+				mdb_dbi_close(env, explicitDbi);
+			}
+		});
 	}
 
 	private Set<String> getIndexSpecs() throws SailException {
@@ -702,6 +746,8 @@ class TripleStore implements Closeable {
 				subj, pred, obj, context, explicit, txn);
 		if (dupsortRead && subjectPredicateIndex != null && subj >= 0 && pred >= 0 && obj == -1 && context == -1) {
 			assert context == -1 && obj == -1 : "subject-predicate index can only be used for (s,p,?,?) patterns";
+			// Use SP dup iterator, but union with the standard iterator to guard against any edge cases
+			// in SP storage/retrieval; de-duplicate at the record level.
 			return new LmdbDupRecordIterator(subjectPredicateIndex, subj, pred, explicit, txn,
 					fallbackSupplier);
 		}
@@ -2051,6 +2097,17 @@ class TripleStore implements Closeable {
 					}
 				}
 
+				// Ensure sufficient space before writing to the subject-predicate dup index
+				if (requiresResize()) {
+					// resize map if required
+					E(mdb_txn_commit(writeTxn));
+					mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+					E(mdb_env_set_mapsize(env, mapSize));
+					logger.debug("resized map to {}", mapSize);
+					E(mdb_txn_begin(env, NULL, 0, pp));
+					writeTxn = pp.get(0);
+				}
+
 				if (subjectPredicateIndex != null && r != null) {
 					if (r.add) {
 						subjectPredicateIndex.put(writeTxn, r.quad[0], r.quad[1], r.quad[2], r.quad[3], explicit,
@@ -2988,6 +3045,7 @@ class TripleStore implements Closeable {
 				toDupKeyPrefix(dupKeyBuf, subj, pred, obj, context);
 				dupKeyBuf.flip();
 				dupValBuf.clear();
+				// store as two 8-byte little-endian longs
 				writeLongLittleEndian(dupValBuf, obj);
 				writeLongLittleEndian(dupValBuf, context);
 				dupValBuf.flip();

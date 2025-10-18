@@ -64,6 +64,31 @@ class SubjectPredicateIndexTest {
 	}
 
 	@Test
+	void subjectPredicateDupsortPersistsAcrossRestart() throws Exception {
+		tripleStore.close();
+
+		LmdbStoreConfig config = new LmdbStoreConfig("posc");
+		config.setDupsortIndices(true);
+		config.setDupsortRead(true);
+		tripleStore = new TripleStore(dataDir, config, null);
+
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(1, 2, 5, 0, true);
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn();
+				RecordIterator iter = tripleStore.getTriples(txn, 1, 2, -1, -1, true)) {
+			assertThat(iter).isInstanceOf(LmdbDupRecordIterator.class);
+
+			int count = 0;
+			while (iter.next() != null) {
+				count++;
+			}
+			assertEquals(3, count);
+		}
+	}
+
+	@Test
 	void predicateObjectPatternFallsBackToStandardIterator() throws Exception {
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn();
 				RecordIterator iter = tripleStore.getTriples(txn, -1, 2, 3, -1, true)) {
