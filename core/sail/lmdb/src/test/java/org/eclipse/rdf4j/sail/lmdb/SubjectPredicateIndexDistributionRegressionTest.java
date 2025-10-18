@@ -10,6 +10,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Path;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -30,17 +41,6 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Path;
-import java.util.Collections;
-import java.util.List;
-import java.util.UUID;
-import java.util.stream.Collectors;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class SubjectPredicateIndexDistributionRegressionTest {
 
@@ -95,7 +95,7 @@ class SubjectPredicateIndexDistributionRegressionTest {
 		memoryRepository.init();
 
 		try (SailRepositoryConnection lmdbConn = lmdbRepository.getConnection();
-			 SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
+				SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
 			loadDataset(lmdbConn);
 			loadDataset(memoryConn);
 
@@ -311,7 +311,7 @@ class SubjectPredicateIndexDistributionRegressionTest {
 		memoryRepository.init();
 
 		try (SailRepositoryConnection lmdbConn = lmdbRepository.getConnection();
-			 SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
+				SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
 			loadDataset(lmdbConn);
 			loadDataset(memoryConn);
 
@@ -336,7 +336,7 @@ class SubjectPredicateIndexDistributionRegressionTest {
 		memoryRepository.init();
 
 		try (SailRepositoryConnection lmdbConn = lmdbRepository.getConnection();
-			 SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
+				SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
 			loadDataset(lmdbConn);
 			loadDataset(memoryConn);
 
@@ -361,7 +361,7 @@ class SubjectPredicateIndexDistributionRegressionTest {
 		memoryRepository.init();
 
 		try (SailRepositoryConnection lmdbConn = lmdbRepository.getConnection();
-			 SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
+				SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
 			loadDataset(lmdbConn);
 			loadDataset(memoryConn);
 
@@ -386,7 +386,7 @@ class SubjectPredicateIndexDistributionRegressionTest {
 		memoryRepository.init();
 
 		try (SailRepositoryConnection lmdbConn = lmdbRepository.getConnection();
-			 SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
+				SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
 			loadDataset(lmdbConn);
 			loadDataset(memoryConn);
 
@@ -412,7 +412,7 @@ class SubjectPredicateIndexDistributionRegressionTest {
 		memoryRepository.init();
 
 		try (SailRepositoryConnection lmdbConn = lmdbRepository.getConnection();
-			 SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
+				SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
 			loadSimpleDataset(lmdbConn);
 			loadSimpleDataset(memoryConn);
 
