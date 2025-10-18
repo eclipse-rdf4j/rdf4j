@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.File;
+import java.lang.reflect.Field;
 
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -74,6 +75,36 @@ class SubjectPredicateIndexTest {
 
 		tripleStore.startTransaction();
 		tripleStore.storeTriple(1, 2, 5, 0, true);
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn();
+				RecordIterator iter = tripleStore.getTriples(txn, 1, 2, -1, -1, true)) {
+			assertThat(iter).isInstanceOf(LmdbDupRecordIterator.class);
+
+			int count = 0;
+			while (iter.next() != null) {
+				count++;
+			}
+			assertEquals(3, count);
+		}
+	}
+
+	@Test
+	void subjectPredicateDupsortCacheFlushMaintainsIndex() throws Exception {
+		tripleStore.startTransaction();
+
+		TxnRecordCache cache = new TxnRecordCache(dataDir);
+		try {
+			cache.storeRecord(new long[] { 1, 2, 5, 0 }, true);
+			Field recordCacheField = TripleStore.class.getDeclaredField("recordCache");
+			recordCacheField.setAccessible(true);
+			recordCacheField.set(tripleStore, cache);
+
+			tripleStore.updateFromCache();
+			recordCacheField.set(tripleStore, null);
+		} finally {
+			// updateFromCache closes the cache, nothing to do here
+		}
 		tripleStore.commit();
 
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn();

@@ -1895,8 +1895,8 @@ class TripleStore implements Closeable {
 					}
 
 					if (subjectPredicateIndex != null) {
-						// Ensure sufficient space before writing to the subject-predicate dup index.
 						if (requiresResize()) {
+							// resize map if required before touching the dup index
 							E(mdb_txn_commit(writeTxn));
 							mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
 							E(mdb_env_set_mapsize(env, mapSize));
