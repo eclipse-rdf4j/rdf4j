@@ -1431,26 +1431,25 @@ class TripleStore implements Closeable {
 							}
 						}
 					}
-				}
 
-				// Ensure sufficient space before writing to the subject-predicate dup index
-				if (requiresResize()) {
-					// resize map if required
-					E(mdb_txn_commit(writeTxn));
-					mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-					E(mdb_env_set_mapsize(env, mapSize));
-					logger.debug("resized map to {}", mapSize);
-					E(mdb_txn_begin(env, NULL, 0, pp));
-					writeTxn = pp.get(0);
-				}
+					if (subjectPredicateIndex != null) {
+						if (requiresResize()) {
+							// resize map if required before touching the dup index
+							E(mdb_txn_commit(writeTxn));
+							mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+							E(mdb_env_set_mapsize(env, mapSize));
+							logger.debug("resized map to {}", mapSize);
+							E(mdb_txn_begin(env, NULL, 0, pp));
+							writeTxn = pp.get(0);
+						}
 
-				if (subjectPredicateIndex != null && r != null) {
-					if (r.add) {
-						subjectPredicateIndex.put(writeTxn, r.quad[0], r.quad[1], r.quad[2], r.quad[3], explicit,
-								stack);
-					} else {
-						subjectPredicateIndex.delete(writeTxn, r.quad[0], r.quad[1], r.quad[2], r.quad[3], explicit,
-								stack);
+						if (r.add) {
+							subjectPredicateIndex.put(writeTxn, r.quad[0], r.quad[1], r.quad[2], r.quad[3], explicit,
+									stack);
+						} else {
+							subjectPredicateIndex.delete(writeTxn, r.quad[0], r.quad[1], r.quad[2], r.quad[3], explicit,
+									stack);
+						}
 					}
 				}
 			}
