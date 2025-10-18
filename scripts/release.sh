@@ -1,6 +1,12 @@
 #!/bin/bash
 
-cd ..
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# shellcheck disable=SC1090
+source "${SCRIPT_DIR}/lib/javadoc.sh"
+
+cd "${REPO_ROOT}"
 
 increment_version() {
  local v=$1
@@ -257,7 +263,14 @@ mvn package -Passembly -DskipTests -Djapicmp.skip
 git checkout main
 git checkout -b "${RELEASE_NOTES_BRANCH}"
 
-tar --no-xattrs --exclude ".*" -cvzf "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" -C target/reports/apidocs .
+if ! JAVADOC_DIR="$(resolve_javadoc_dir "${REPO_ROOT}")"; then
+  echo "" >&2
+  echo "Could not locate aggregated javadocs. Ensure the package step completed successfully." >&2
+  echo "" >&2
+  exit 1
+fi
+
+tar --no-xattrs --exclude ".*" -cvzf "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" -C "${JAVADOC_DIR}" .
 cp -f "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" "site/static/javadoc/latest.tgz"
 git add --all
 git commit -s -a -m "javadocs for ${MVN_VERSION_RELEASE}"
