@@ -99,10 +99,22 @@ class SubjectPredicateIndexDistributionRegressionTest {
 			loadDataset(lmdbConn);
 			loadDataset(memoryConn);
 
+			System.out.println("LMDB's count of languages for dataset: ");
+			String lmdbRes = QueryResults.toString(lmdbConn.getStatements(DATASET_IRI, DCTERMS.LANGUAGE, null, true),
+					"\n");
+			System.out.println(lmdbRes);
+
+			System.out.println();
+			System.out.println("MemoryStore's count of languages for dataset: ");
+			String memRes = QueryResults.toString(memoryConn.getStatements(DATASET_IRI, DCTERMS.LANGUAGE, null, true),
+					"\n");
+			System.out.println(memRes);
+
 			long countl = QueryResults.count(lmdbConn.getStatements(DATASET_IRI, DCTERMS.LANGUAGE, null, true));
 			long countm = QueryResults.count(memoryConn.getStatements(DATASET_IRI, DCTERMS.LANGUAGE, null, true));
 
-			assertEquals(countl, countm);
+			assertEquals(3, countl);
+			assertEquals(3, countm);
 
 		} finally {
 			lmdbRepository.shutDown();
