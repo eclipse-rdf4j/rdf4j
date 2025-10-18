@@ -11,10 +11,8 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
-import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST_DUP;
-import static org.lwjgl.util.lmdb.LMDB.MDB_GET_CURRENT;
+import static org.lwjgl.util.lmdb.LMDB.MDB_GET_MULTIPLE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_KEY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
@@ -26,6 +24,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
@@ -37,9 +36,6 @@ import org.lwjgl.util.lmdb.MDBVal;
 
 /**
  * A dupsort/dupfixed-optimized record iterator using MDB_GET_MULTIPLE/NEXT_MULTIPLE to reduce JNI calls.
- *
- * This iterator is hard coded to only work with the SP index and assumes that the object and context keys are free
- * (-1),
  */
 class LmdbDupRecordIterator implements RecordIterator {
 
@@ -70,9 +66,9 @@ class LmdbDupRecordIterator implements RecordIterator {
 	private ByteBuffer prefixKeyBuf;
 	private long[] prefixValues;
 
-	private boolean hasCurrentDuplicate = false;
-	private long currentObj;
-	private long currentContext;
+	private ByteBuffer dupBuf;
+	private int dupPos;
+	private int dupLimit;
 
 	private int lastResult;
 	private boolean closed = false;
@@ -121,8 +117,7 @@ class LmdbDupRecordIterator implements RecordIterator {
 
 			boolean positioned = positionOnPrefix();
 			if (positioned) {
-				// Ensure we start at the first duplicate for the (s,p) key
-				positioned = loadDuplicate(MDB_FIRST_DUP);
+				positioned = primeDuplicateBlock();
 			}
 			if (!positioned) {
 				closeInternal(false);
@@ -155,25 +150,53 @@ class LmdbDupRecordIterator implements RecordIterator {
 			if (txnRefVersion != txnRef.version()) {
 				E(mdb_cursor_renew(txn, cursor));
 				txnRefVersion = txnRef.version();
-				if (!positionOnPrefix() || !loadDuplicate(MDB_FIRST_DUP)) {
+				if (!positionOnPrefix() || !primeDuplicateBlock()) {
 					closeInternal(false);
 					return null;
 				}
 			}
 
 			while (true) {
-				if (!hasCurrentDuplicate) {
-					closeInternal(false);
-					return null;
+				if (dupBuf != null && dupPos + (Long.BYTES * 2) <= dupLimit) {
+					long v3;
+					long v4;
+					if (true) {
+						v3 = readLittleEndianLong(dupBuf, dupPos);
+						v4 = readLittleEndianLong(dupBuf, dupPos + Long.BYTES);
+						dupPos += Long.BYTES * 2;
+					} else {
+						v3 = dupBuf.getLong(dupPos);
+						v4 = dupBuf.getLong(dupPos + Long.BYTES);
+						dupPos += Long.BYTES * 2;
+					}
+					fillQuadFromPrefixAndValue(v3, v4);
+					return quad;
 				}
 
-				long v3 = currentObj;
-				long v4 = currentContext;
-				if (!loadDuplicate(MDB_NEXT_DUP)) {
-					hasCurrentDuplicate = false;
-				}
-				fillQuadFromPrefixAndValue(v3, v4);
-				return quad;
+				closeInternal(false);
+				return null;
+
+//				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT_MULTIPLE);
+//				if (lastResult == MDB_SUCCESS) {
+//					resetDuplicateBuffer(valueData.mv_data());
+//					continue;
+//				}
+//
+//				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+//				if (lastResult != MDB_SUCCESS) {
+//					closeInternal(false);
+//					return null;
+//				}
+//				if (!currentKeyHasPrefix()) {
+//					if (!adjustCursorToPrefix()) {
+//						closeInternal(false);
+//						return null;
+//					}
+//				}
+//				if (!primeDuplicateBlock()) {
+//					closeInternal(false);
+//					return null;
+//				}
 			}
 		} catch (IOException e) {
 			throw new SailException(e);
@@ -234,26 +257,35 @@ class LmdbDupRecordIterator implements RecordIterator {
 		return 0;
 	}
 
-	private boolean loadDuplicate(int op) throws IOException {
-		lastResult = mdb_cursor_get(cursor, keyData, valueData, op);
+	private boolean primeDuplicateBlock() throws IOException {
+		lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_GET_MULTIPLE);
 		if (lastResult == MDB_SUCCESS) {
-			readCurrentDuplicate(valueData.mv_data());
-			hasCurrentDuplicate = true;
-			return true;
+			resetDuplicateBuffer(valueData.mv_data());
+			return dupBuf != null && dupLimit - dupPos >= Long.BYTES * 2;
 		} else if (lastResult == MDB_NOTFOUND) {
-			hasCurrentDuplicate = false;
 			return false;
 		} else {
-			throw new IOException("Failed to load duplicate, lmdb error code: " + lastResult);
+			resetDuplicateBuffer(valueData.mv_data());
+			return dupBuf != null && dupLimit - dupPos >= Long.BYTES * 2;
 		}
 	}
 
-	private void readCurrentDuplicate(ByteBuffer buffer) {
-		ByteBuffer duplicate = buffer.duplicate();
-		int offset = duplicate.position();
-		// values are stored as two 8-byte little-endian longs
-		currentObj = readLittleEndianLong(duplicate, offset);
-		currentContext = readLittleEndianLong(duplicate, offset + Long.BYTES);
+	private void resetDuplicateBuffer(ByteBuffer buffer) {
+		if (buffer == null) {
+			dupBuf = null;
+			dupPos = dupLimit = 0;
+		} else {
+			ByteBuffer source = buffer.duplicate();
+			source.position(buffer.position());
+			source.limit(buffer.limit());
+			ByteBuffer copy = ByteBuffer.allocate(source.remaining());
+			copy.put(source);
+			copy.flip();
+			copy.order(ByteOrder.nativeOrder());
+			dupBuf = copy;
+			dupPos = dupBuf.position();
+			dupLimit = dupBuf.limit();
+		}
 	}
 
 	private void fillQuadFromPrefixAndValue(long v3, long v4) {
