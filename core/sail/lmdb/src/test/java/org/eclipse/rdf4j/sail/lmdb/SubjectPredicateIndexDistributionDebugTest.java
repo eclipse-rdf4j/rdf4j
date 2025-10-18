@@ -52,10 +52,12 @@ class SubjectPredicateIndexDistributionDebugTest {
 			loadDataset(memoryConn);
 
 			List<String> lmdbLangs = getLanguages(lmdbConn);
+			List<String> lmdbExplicit = getLanguagesExplicitOnly(lmdbConn);
 			List<String> memLangs = getLanguages(memoryConn);
 
-			System.out.println("LMDB languages:  " + lmdbLangs);
-			System.out.println("MEM  languages:  " + memLangs);
+			System.out.println("LMDB languages (incl inf):  " + lmdbLangs);
+			System.out.println("LMDB languages (explicit): " + lmdbExplicit);
+			System.out.println("MEM  languages:            " + memLangs);
 		} finally {
 			lmdbRepository.shutDown();
 			memoryRepository.shutDown();
@@ -186,6 +188,18 @@ class SubjectPredicateIndexDistributionDebugTest {
 		var vf = SimpleValueFactory.getInstance();
 		var dataset = vf.createIRI(DATASET_IRI);
 		try (var iter = connection.getStatements(dataset, DCTERMS.LANGUAGE, null, true)) {
+			return Iterations.stream(iter)
+					.map(Statement::getObject)
+					.map(Value::stringValue)
+					.sorted()
+					.collect(Collectors.toList());
+		}
+	}
+
+	private static List<String> getLanguagesExplicitOnly(SailRepositoryConnection connection) {
+		var vf = SimpleValueFactory.getInstance();
+		var dataset = vf.createIRI(DATASET_IRI);
+		try (var iter = connection.getStatements(dataset, DCTERMS.LANGUAGE, null, false)) {
 			return Iterations.stream(iter)
 					.map(Statement::getObject)
 					.map(Value::stringValue)
