@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_GET_CURRENT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT_DUP;
@@ -120,7 +121,8 @@ class LmdbDupRecordIterator implements RecordIterator {
 
 			boolean positioned = positionOnPrefix();
 			if (positioned) {
-				positioned = loadDuplicate(MDB_GET_CURRENT);
+				// Ensure we start at the first duplicate for the (s,p) key
+				positioned = loadDuplicate(MDB_FIRST_DUP);
 			}
 			if (!positioned) {
 				closeInternal(false);
@@ -153,7 +155,7 @@ class LmdbDupRecordIterator implements RecordIterator {
 			if (txnRefVersion != txnRef.version()) {
 				E(mdb_cursor_renew(txn, cursor));
 				txnRefVersion = txnRef.version();
-				if (!positionOnPrefix() || !loadDuplicate(MDB_GET_CURRENT)) {
+				if (!positionOnPrefix() || !loadDuplicate(MDB_FIRST_DUP)) {
 					closeInternal(false);
 					return null;
 				}
@@ -249,6 +251,7 @@ class LmdbDupRecordIterator implements RecordIterator {
 	private void readCurrentDuplicate(ByteBuffer buffer) {
 		ByteBuffer duplicate = buffer.duplicate();
 		int offset = duplicate.position();
+		// values are stored as two 8-byte little-endian longs
 		currentObj = readLittleEndianLong(duplicate, offset);
 		currentContext = readLittleEndianLong(duplicate, offset + Long.BYTES);
 	}

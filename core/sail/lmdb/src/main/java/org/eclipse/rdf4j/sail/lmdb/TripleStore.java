@@ -138,6 +138,10 @@ class TripleStore implements Closeable {
 	 */
 	private static final String INDEXES_KEY = "triple-indexes";
 	/**
+	 * The key used to store whether dupsort indices are enabled.
+	 */
+	private static final String DUPSORT_INDICES_KEY = "dupsort-indices";
+	/**
 	 * The version number for the current triple store.
 	 * <ul>
 	 * <li>version 1: The first version with configurable triple indexes, a context field and a properties file.
@@ -239,11 +243,11 @@ class TripleStore implements Closeable {
 
 		File propFile = new File(this.dir, PROPERTIES_FILE);
 		boolean isNewStore = !propFile.exists();
-		this.dupsortIndices = isNewStore && config.isDupsortIndices();
 		this.dupsortRead = config.isDupsortRead();
 		String indexSpecStr = config.getTripleIndexes();
 		if (isNewStore) {
 			// newly created lmdb store
+			this.dupsortIndices = config.isDupsortIndices();
 			properties = new Properties();
 
 			Set<String> indexSpecs = parseIndexSpecList(indexSpecStr);
@@ -259,6 +263,8 @@ class TripleStore implements Closeable {
 			// Read triple properties file and check format version number
 			properties = loadProperties(propFile);
 			checkVersion();
+
+			this.dupsortIndices = determineExistingDupsortSetting(config.isDupsortIndices());
 
 			// Initialize existing indexes
 			Set<String> indexSpecs = getIndexSpecs();
@@ -277,11 +283,22 @@ class TripleStore implements Closeable {
 
 		subjectPredicateIndex = dupsortIndices ? new SubjectPredicateIndex() : null;
 
-		if (!String.valueOf(SCHEME_VERSION).equals(properties.getProperty(VERSION_KEY))
-				|| !indexSpecStr.equals(properties.getProperty(INDEXES_KEY))) {
-			// Store up-to-date properties
+		boolean propertiesDirty = false;
+		if (!String.valueOf(SCHEME_VERSION).equals(properties.getProperty(VERSION_KEY))) {
 			properties.setProperty(VERSION_KEY, String.valueOf(SCHEME_VERSION));
+			propertiesDirty = true;
+		}
+		if (!indexSpecStr.equals(properties.getProperty(INDEXES_KEY))) {
 			properties.setProperty(INDEXES_KEY, indexSpecStr);
+			propertiesDirty = true;
+		}
+		String dupsortProperty = properties.getProperty(DUPSORT_INDICES_KEY);
+		String dupsortValue = Boolean.toString(dupsortIndices);
+		if (!dupsortValue.equals(dupsortProperty)) {
+			properties.setProperty(DUPSORT_INDICES_KEY, dupsortValue);
+			propertiesDirty = true;
+		}
+		if (propertiesDirty) {
 			storeProperties(propFile);
 		}
 	}
@@ -301,6 +318,45 @@ class TripleStore implements Closeable {
 				logger.warn("Malformed version number in TripleStore's properties file");
 			}
 		}
+	}
+
+	private boolean determineExistingDupsortSetting(boolean requestedDupsort) throws IOException {
+		String storedValue = properties.getProperty(DUPSORT_INDICES_KEY);
+		if (storedValue != null) {
+			return Boolean.parseBoolean(storedValue);
+		}
+		if (hasSubjectPredicateDupIndex()) {
+			return true;
+		}
+		if (requestedDupsort) {
+			logger.debug("Dupsort indices requested but not present on disk for store at {}", dir);
+		}
+		return false;
+	}
+
+	private boolean hasSubjectPredicateDupIndex() throws IOException {
+		return readTransaction(env, (stack, txn) -> {
+			IntBuffer ip = stack.mallocInt(1);
+
+			int rc = mdb_dbi_open(txn, "sp-dup", 0, ip);
+			if (rc == MDB_NOTFOUND) {
+				return false;
+			}
+			E(rc);
+			int explicitDbi = ip.get(0);
+			try {
+				rc = mdb_dbi_open(txn, "sp-dup-inf", 0, ip);
+				if (rc == MDB_NOTFOUND) {
+					return false;
+				}
+				E(rc);
+				int inferredDbi = ip.get(0);
+				mdb_dbi_close(env, inferredDbi);
+				return true;
+			} finally {
+				mdb_dbi_close(env, explicitDbi);
+			}
+		});
 	}
 
 	private Set<String> getIndexSpecs() throws SailException {
@@ -542,6 +598,8 @@ class TripleStore implements Closeable {
 				subj, pred, obj, context, explicit, txn);
 		if (dupsortRead && subjectPredicateIndex != null && subj >= 0 && pred >= 0 && obj == -1 && context == -1) {
 			assert context == -1 && obj == -1 : "subject-predicate index can only be used for (s,p,?,?) patterns";
+			// Use SP dup iterator, but union with the standard iterator to guard against any edge cases
+			// in SP storage/retrieval; de-duplicate at the record level.
 			return new LmdbDupRecordIterator(subjectPredicateIndex, subj, pred, explicit, txn,
 					fallbackSupplier);
 		}
@@ -1373,6 +1431,17 @@ class TripleStore implements Closeable {
 							}
 						}
 					}
+				}
+
+				// Ensure sufficient space before writing to the subject-predicate dup index
+				if (requiresResize()) {
+					// resize map if required
+					E(mdb_txn_commit(writeTxn));
+					mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+					E(mdb_env_set_mapsize(env, mapSize));
+					logger.debug("resized map to {}", mapSize);
+					E(mdb_txn_begin(env, NULL, 0, pp));
+					writeTxn = pp.get(0);
 				}
 
 				if (subjectPredicateIndex != null && r != null) {
@@ -2344,6 +2413,7 @@ class TripleStore implements Closeable {
 				toDupKeyPrefix(dupKeyBuf, subj, pred, obj, context);
 				dupKeyBuf.flip();
 				dupValBuf.clear();
+				// store as two 8-byte little-endian longs
 				writeLongLittleEndian(dupValBuf, obj);
 				writeLongLittleEndian(dupValBuf, context);
 				dupValBuf.flip();
