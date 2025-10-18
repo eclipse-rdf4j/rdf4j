@@ -43,6 +43,17 @@ public class Iterations {
 		}
 	}
 
+	public static long count(CloseableIteration<?> iteration) {
+		try (iteration) {
+			long count = 0;
+			while (iteration.hasNext()) {
+				iteration.next();
+				count++;
+			}
+			return count;
+		}
+	}
+
 	/**
 	 * Get a Set containing all elements obtained from the specified iteration.
 	 *
