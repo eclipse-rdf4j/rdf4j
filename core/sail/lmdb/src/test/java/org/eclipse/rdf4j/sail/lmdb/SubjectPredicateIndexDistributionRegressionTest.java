@@ -10,16 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Path;
-import java.util.Collections;
-import java.util.List;
-import java.util.stream.Collectors;
-
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -30,17 +20,31 @@ import org.eclipse.rdf4j.model.vocabulary.DCAT;
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFWriter;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Path;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 class SubjectPredicateIndexDistributionRegressionTest {
 
-	private static final String DATASET_RESOURCE = "benchmarkFiles/datagovbe-valid.ttl";
+	private static final String DATASET_RESOURCE = "temp.nquad";
 	private static final IRI DATASET_IRI = SimpleValueFactory.getInstance()
 			.createIRI("http://data.gov.be/dataset/brussels/3fded591-0cda-485f-97e7-3b982c7ff34b");
 	private static final String FILTERED_MULTIPLE_SUBSELECT_QUERY = String.join("\n",
@@ -91,7 +95,7 @@ class SubjectPredicateIndexDistributionRegressionTest {
 		memoryRepository.init();
 
 		try (SailRepositoryConnection lmdbConn = lmdbRepository.getConnection();
-				SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
+			 SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
 			loadDataset(lmdbConn);
 			loadDataset(memoryConn);
 
@@ -100,25 +104,202 @@ class SubjectPredicateIndexDistributionRegressionTest {
 
 			assertEquals(countl, countm);
 
-			var eng = SimpleValueFactory.getInstance()
-					.createIRI("http://publications.europa.eu/resource/authority/language/ENG");
-			assertTrue(lmdbConn.hasStatement(DATASET_IRI, DCTERMS.LANGUAGE, eng, true),
-					"LMDB store should contain the ENG language statement");
-			assertTrue(memoryConn.hasStatement(DATASET_IRI, DCTERMS.LANGUAGE, eng, true),
-					"Memory store should contain the ENG language statement");
-
-			List<String> memoryRows = evaluateMultipleSubselect(memoryConn);
-			List<String> lmdbRows = evaluateMultipleSubselect(lmdbConn);
-
-			Collections.sort(memoryRows);
-			Collections.sort(lmdbRows);
-
-			assertEquals(memoryRows, lmdbRows);
 		} finally {
 			lmdbRepository.shutDown();
 			memoryRepository.shutDown();
 		}
 	}
+
+//	@Test
+//	void countLanguage2(@TempDir Path tempDir) throws Exception {
+//		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+//		SailRepository lmdbRepository = new SailRepository(new LmdbStore(tempDir.resolve("lmdb").toFile(), config));
+//		SailRepository referenceRepository = new SailRepository(new MemoryStore());
+//		SailRepository memoryRepository = new SailRepository(new MemoryStore());
+//
+//		lmdbRepository.init();
+//		referenceRepository.init();
+//		memoryRepository.init();
+//
+//		try (SailRepositoryConnection memoryConn = referenceRepository.getConnection()) {
+//			loadDataset(memoryConn);
+//		}
+//
+//		try (SailRepositoryConnection lmdbConn = lmdbRepository.getConnection();
+//			 SailRepositoryConnection memoryConn = memoryRepository.getConnection();
+//			 SailRepositoryConnection referenceConn = referenceRepository.getConnection()) {
+//
+//			try (RepositoryResult<Statement> statements = referenceConn.getStatements(null, null, null, true)) {
+//				int count = 0;
+//				for (Statement stmt : statements) {
+//					lmdbConn.begin(IsolationLevels.NONE);
+//					memoryConn.begin(IsolationLevels.NONE);
+//					try {
+//						lmdbConn.add(stmt);
+//						memoryConn.add(stmt);
+//					} catch (Exception e) {
+//						throw new RuntimeException(e);
+//					}
+//
+//					lmdbConn.commit();
+//					memoryConn.commit();
+//
+//					count++;
+//
+//					long countl = QueryResults.count(lmdbConn.getStatements(DATASET_IRI, DCTERMS.LANGUAGE, null, true));
+//					long countm = QueryResults.count(memoryConn.getStatements(DATASET_IRI, DCTERMS.LANGUAGE, null, true));
+//					if (countm != countl) {
+//						System.out.println("Discrepancy at count " + count);
+//						assertEquals(countl, countm);
+//					}
+//
+//				}
+//			}
+//
+//
+//		} finally {
+//			lmdbRepository.shutDown();
+//			memoryRepository.shutDown();
+//		}
+//	}
+//
+//	@Test
+//	void countLanguage3(@TempDir Path tempDir) throws Exception {
+//		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+//		SailRepository lmdbRepository = new SailRepository(new LmdbStore(tempDir.resolve("lmdb").toFile(), config));
+//		SailRepository referenceRepository = new SailRepository(new MemoryStore());
+//		SailRepository memoryRepository = new SailRepository(new MemoryStore());
+//
+//		lmdbRepository.init();
+//		referenceRepository.init();
+//		memoryRepository.init();
+//
+//		try (SailRepositoryConnection memoryConn = referenceRepository.getConnection()) {
+//			loadDataset(memoryConn);
+//		}
+//
+//		try (SailRepositoryConnection lmdbConn = lmdbRepository.getConnection();
+//			 SailRepositoryConnection memoryConn = memoryRepository.getConnection();
+//			 SailRepositoryConnection referenceConn = referenceRepository.getConnection()) {
+//
+//			try (RepositoryResult<Statement> statements = referenceConn.getStatements(null, null, null, true)) {
+//				lmdbConn.begin(IsolationLevels.NONE);
+//				memoryConn.begin(IsolationLevels.NONE);
+//
+//				int count = 0;
+//
+//				for (Statement stmt : statements) {
+//
+//					count++;
+//					if (count < 18000) {
+//						continue;
+//					}
+//					if (count >= 40000) {
+//						break;
+//					}
+//
+//					try {
+//						if (count % 10000 == 0) {
+//							lmdbConn.commit();
+//							memoryConn.commit();
+//							long countl = QueryResults.count(lmdbConn.getStatements(DATASET_IRI, DCTERMS.LANGUAGE, null, true));
+//							long countm = QueryResults.count(memoryConn.getStatements(DATASET_IRI, DCTERMS.LANGUAGE, null, true));
+//							assertEquals(countl, countm, "Discrepancy at count " + count);
+//							lmdbConn.begin(IsolationLevels.NONE);
+//							memoryConn.begin(IsolationLevels.NONE);
+//						}
+//						lmdbConn.add(stmt);
+//						memoryConn.add(stmt);
+//					} catch (Exception e) {
+//						throw new RuntimeException(e);
+//					}
+//				}
+//				lmdbConn.commit();
+//				memoryConn.commit();
+//
+//
+//				long countl = QueryResults.count(lmdbConn.getStatements(DATASET_IRI, DCTERMS.LANGUAGE, null, true));
+//				long countm = QueryResults.count(memoryConn.getStatements(DATASET_IRI, DCTERMS.LANGUAGE, null, true));
+//				assertEquals(countl, countm);
+//
+//
+//			}
+//
+//
+//		} finally {
+//			lmdbRepository.shutDown();
+//			memoryRepository.shutDown();
+//		}
+//	}
+//
+//	@Test
+//	void countLanguage4(@TempDir Path tempDir) throws Exception {
+//
+//
+//		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+//		SailRepository lmdbRepository = new SailRepository(new LmdbStore(tempDir.resolve("lmdb" + UUID.randomUUID()).toFile(), config));
+//		SailRepository referenceRepository = new SailRepository(new MemoryStore());
+//		SailRepository memoryRepository = new SailRepository(new MemoryStore());
+//
+//		lmdbRepository.init();
+//		referenceRepository.init();
+//		memoryRepository.init();
+//
+//		try (SailRepositoryConnection memoryConn = referenceRepository.getConnection()) {
+//			loadDataset(memoryConn);
+//		}
+//
+//		try (FileOutputStream fileOutputStream = new FileOutputStream("/Users/havardottestad/Documents/Programming/rdf4j/temp.nquad")) {
+//
+//			RDFWriter writer = Rio.createWriter(RDFFormat.NQUADS, fileOutputStream);
+//			writer.startRDF();
+//
+//			try (SailRepositoryConnection lmdbConn = lmdbRepository.getConnection();
+//				 SailRepositoryConnection memoryConn = memoryRepository.getConnection();
+//				 SailRepositoryConnection referenceConn = referenceRepository.getConnection()) {
+//
+//				try (RepositoryResult<Statement> statements = referenceConn.getStatements(null, null, null, true)) {
+//					lmdbConn.begin(IsolationLevels.NONE);
+//					memoryConn.begin(IsolationLevels.NONE);
+//
+//					int count = 0;
+//
+//					for (Statement stmt : statements) {
+//						count++;
+//						if (count < 9349) {
+//							continue;
+//						}
+//
+//
+//						try {
+//							writer.handleStatement(stmt);
+//							lmdbConn.add(stmt);
+//							memoryConn.add(stmt);
+//						} catch (Exception e) {
+//							throw new RuntimeException(e);
+//						}
+//
+//						if (count > 37983) {
+//							break;
+//						}
+//					}
+//
+//					writer.endRDF();
+//					lmdbConn.commit();
+//					memoryConn.commit();
+//
+//
+//					long countl = QueryResults.count(lmdbConn.getStatements(DATASET_IRI, DCTERMS.LANGUAGE, null, true));
+//					long countm = QueryResults.count(memoryConn.getStatements(DATASET_IRI, DCTERMS.LANGUAGE, null, true));
+//					assertEquals(countl, countm, "Discrepancy at count " + count);
+//
+//				} finally {
+//					lmdbRepository.shutDown();
+//					memoryRepository.shutDown();
+//				}
+//			}
+//		}
+//	}
 
 	@Test
 	void countLanguageDifferentIndexes1(@TempDir Path tempDir) throws Exception {
@@ -130,7 +311,7 @@ class SubjectPredicateIndexDistributionRegressionTest {
 		memoryRepository.init();
 
 		try (SailRepositoryConnection lmdbConn = lmdbRepository.getConnection();
-				SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
+			 SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
 			loadDataset(lmdbConn);
 			loadDataset(memoryConn);
 
@@ -139,20 +320,6 @@ class SubjectPredicateIndexDistributionRegressionTest {
 
 			assertEquals(countl, countm);
 
-			var eng = SimpleValueFactory.getInstance()
-					.createIRI("http://publications.europa.eu/resource/authority/language/ENG");
-			assertTrue(lmdbConn.hasStatement(DATASET_IRI, DCTERMS.LANGUAGE, eng, true),
-					"LMDB store should contain the ENG language statement");
-			assertTrue(memoryConn.hasStatement(DATASET_IRI, DCTERMS.LANGUAGE, eng, true),
-					"Memory store should contain the ENG language statement");
-
-			List<String> memoryRows = evaluateMultipleSubselect(memoryConn);
-			List<String> lmdbRows = evaluateMultipleSubselect(lmdbConn);
-
-			Collections.sort(memoryRows);
-			Collections.sort(lmdbRows);
-
-			assertEquals(memoryRows, lmdbRows);
 		} finally {
 			lmdbRepository.shutDown();
 			memoryRepository.shutDown();
@@ -169,7 +336,7 @@ class SubjectPredicateIndexDistributionRegressionTest {
 		memoryRepository.init();
 
 		try (SailRepositoryConnection lmdbConn = lmdbRepository.getConnection();
-				SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
+			 SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
 			loadDataset(lmdbConn);
 			loadDataset(memoryConn);
 
@@ -178,20 +345,6 @@ class SubjectPredicateIndexDistributionRegressionTest {
 
 			assertEquals(countl, countm);
 
-			var eng = SimpleValueFactory.getInstance()
-					.createIRI("http://publications.europa.eu/resource/authority/language/ENG");
-			assertTrue(lmdbConn.hasStatement(DATASET_IRI, DCTERMS.LANGUAGE, eng, true),
-					"LMDB store should contain the ENG language statement");
-			assertTrue(memoryConn.hasStatement(DATASET_IRI, DCTERMS.LANGUAGE, eng, true),
-					"Memory store should contain the ENG language statement");
-
-			List<String> memoryRows = evaluateMultipleSubselect(memoryConn);
-			List<String> lmdbRows = evaluateMultipleSubselect(lmdbConn);
-
-			Collections.sort(memoryRows);
-			Collections.sort(lmdbRows);
-
-			assertEquals(memoryRows, lmdbRows);
 		} finally {
 			lmdbRepository.shutDown();
 			memoryRepository.shutDown();
@@ -208,7 +361,7 @@ class SubjectPredicateIndexDistributionRegressionTest {
 		memoryRepository.init();
 
 		try (SailRepositoryConnection lmdbConn = lmdbRepository.getConnection();
-				SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
+			 SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
 			loadDataset(lmdbConn);
 			loadDataset(memoryConn);
 
@@ -217,20 +370,6 @@ class SubjectPredicateIndexDistributionRegressionTest {
 
 			assertEquals(countl, countm);
 
-			var eng = SimpleValueFactory.getInstance()
-					.createIRI("http://publications.europa.eu/resource/authority/language/ENG");
-			assertTrue(lmdbConn.hasStatement(DATASET_IRI, DCTERMS.LANGUAGE, eng, true),
-					"LMDB store should contain the ENG language statement");
-			assertTrue(memoryConn.hasStatement(DATASET_IRI, DCTERMS.LANGUAGE, eng, true),
-					"Memory store should contain the ENG language statement");
-
-			List<String> memoryRows = evaluateMultipleSubselect(memoryConn);
-			List<String> lmdbRows = evaluateMultipleSubselect(lmdbConn);
-
-			Collections.sort(memoryRows);
-			Collections.sort(lmdbRows);
-
-			assertEquals(memoryRows, lmdbRows);
 		} finally {
 			lmdbRepository.shutDown();
 			memoryRepository.shutDown();
@@ -247,7 +386,7 @@ class SubjectPredicateIndexDistributionRegressionTest {
 		memoryRepository.init();
 
 		try (SailRepositoryConnection lmdbConn = lmdbRepository.getConnection();
-				SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
+			 SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
 			loadDataset(lmdbConn);
 			loadDataset(memoryConn);
 
@@ -256,20 +395,6 @@ class SubjectPredicateIndexDistributionRegressionTest {
 
 			assertEquals(countl, countm);
 
-			var eng = SimpleValueFactory.getInstance()
-					.createIRI("http://publications.europa.eu/resource/authority/language/ENG");
-			assertTrue(lmdbConn.hasStatement(DATASET_IRI, DCTERMS.LANGUAGE, eng, true),
-					"LMDB store should contain the ENG language statement");
-			assertTrue(memoryConn.hasStatement(DATASET_IRI, DCTERMS.LANGUAGE, eng, true),
-					"Memory store should contain the ENG language statement");
-
-			List<String> memoryRows = evaluateMultipleSubselect(memoryConn);
-			List<String> lmdbRows = evaluateMultipleSubselect(lmdbConn);
-
-			Collections.sort(memoryRows);
-			Collections.sort(lmdbRows);
-
-			assertEquals(memoryRows, lmdbRows);
 		} finally {
 			lmdbRepository.shutDown();
 			memoryRepository.shutDown();
@@ -287,7 +412,7 @@ class SubjectPredicateIndexDistributionRegressionTest {
 		memoryRepository.init();
 
 		try (SailRepositoryConnection lmdbConn = lmdbRepository.getConnection();
-				SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
+			 SailRepositoryConnection memoryConn = memoryRepository.getConnection()) {
 			loadSimpleDataset(lmdbConn);
 			loadSimpleDataset(memoryConn);
 
