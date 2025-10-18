@@ -36,6 +36,8 @@ import org.lwjgl.util.lmdb.MDBVal;
 
 /**
  * A dupsort/dupfixed-optimized record iterator using MDB_GET_MULTIPLE/NEXT_MULTIPLE to reduce JNI calls.
+ *
+ * This iterator is hard coded to only work with the SP index and assumes that the object and context keys are free (-1),
  */
 class LmdbDupRecordIterator implements RecordIterator {
 
