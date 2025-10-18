@@ -61,7 +61,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -541,7 +540,8 @@ class TripleStore implements Closeable {
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
 		LmdbDupRecordIterator.FallbackSupplier fallbackSupplier = () -> new LmdbRecordIterator(index, doRangeSearch,
 				subj, pred, obj, context, explicit, txn);
-		if (dupsortRead && subjectPredicateIndex != null && subj >= 0 && pred >= 0 && obj < 0 && context < 0) {
+		if (dupsortRead && subjectPredicateIndex != null && subj >= 0 && pred >= 0 && obj == -1 && context == -1) {
+			assert context == -1 && obj == -1 : "subject-predicate index can only be used for (s,p,?,?) patterns";
 			return new LmdbDupRecordIterator(subjectPredicateIndex, subj, pred, explicit, txn,
 					fallbackSupplier);
 		}
