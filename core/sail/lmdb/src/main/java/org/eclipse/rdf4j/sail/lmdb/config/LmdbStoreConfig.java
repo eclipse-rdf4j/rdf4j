@@ -247,11 +247,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (valueEvictionInterval != Duration.ofSeconds(60).toMillis()) {
 			m.add(implNode, LmdbStoreSchema.VALUE_EVICTION_INTERVAL, vf.createLiteral(valueEvictionInterval));
 		}
-		if (dupsortIndices) {
-			m.add(implNode, LmdbStoreSchema.DUPSORT_INDICES, vf.createLiteral(true));
+		// Persist only when deviating from defaults (defaults: true)
+		if (!dupsortIndices) {
+			m.add(implNode, LmdbStoreSchema.DUPSORT_INDICES, vf.createLiteral(false));
 		}
-		if (dupsortRead) {
-			m.add(implNode, LmdbStoreSchema.DUPSORT_READ, vf.createLiteral(true));
+		if (!dupsortRead) {
+			m.add(implNode, LmdbStoreSchema.DUPSORT_READ, vf.createLiteral(false));
 		}
 		return implNode;
 	}

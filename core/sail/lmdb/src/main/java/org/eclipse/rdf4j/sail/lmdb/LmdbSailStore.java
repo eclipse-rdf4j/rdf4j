@@ -67,6 +67,11 @@ class LmdbSailStore implements SailStore {
 
 	private final ValueStore valueStore;
 
+	// Precomputed lookup: for each bound-mask (bits for S=1,P=2,O=4,C=8), the union of
+	// supported StatementOrder across all configured indexes that are compatible with that mask.
+	@SuppressWarnings("unchecked")
+	private volatile EnumSet<StatementOrder>[] supportedOrdersLookup = (EnumSet<StatementOrder>[]) new EnumSet[16];
+
 	private final ExecutorService tripleStoreExecutor = Executors.newCachedThreadPool();
 	private final CircularBuffer<Operation> opQueue = new CircularBuffer<>(1024);
 	private volatile Throwable tripleStoreException;
@@ -205,6 +210,103 @@ class LmdbSailStore implements SailStore {
 		} finally {
 			if (!initialized) {
 				close();
+			}
+		}
+	}
+
+	private static int bitFor(char f) {
+		switch (f) {
+		case 's':
+			return 1;
+		case 'p':
+			return 1 << 1;
+		case 'o':
+			return 1 << 2;
+		case 'c':
+			return 1 << 3;
+		default:
+			return 0;
+		}
+	}
+
+	private static StatementOrder orderFor(char f) {
+		switch (f) {
+		case 's':
+			return StatementOrder.S;
+		case 'p':
+			return StatementOrder.P;
+		case 'o':
+			return StatementOrder.O;
+		case 'c':
+			return StatementOrder.C;
+		default:
+			throw new IllegalArgumentException("Unknown field: " + f);
+		}
+	}
+
+	private static boolean isIndexCompatible(char[] seq, int mask) {
+		boolean seenUnbound = false;
+		for (char f : seq) {
+			boolean bound = (mask & bitFor(f)) != 0;
+			if (!bound) {
+				seenUnbound = true;
+			} else if (seenUnbound) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private EnumSet<StatementOrder>[] getSupportedOrdersLookup() {
+		EnumSet<StatementOrder>[] local = supportedOrdersLookup;
+		if (local[0] == null) {
+			synchronized (this) {
+				local = supportedOrdersLookup;
+				if (local[0] == null) {
+					buildSupportedOrdersLookup(local);
+				}
+			}
+		}
+		return local;
+	}
+
+	private void buildSupportedOrdersLookup(EnumSet<StatementOrder>[] table) {
+		for (int i = 0; i < table.length; i++) {
+			table[i] = EnumSet.noneOf(StatementOrder.class);
+		}
+		List<TripleStore.TripleIndex> indexes = tripleStore.getAllIndexes();
+		char[][] seqs = new char[indexes.size()][];
+		for (int i = 0; i < indexes.size(); i++) {
+			seqs[i] = indexes.get(i).getFieldSeq();
+		}
+		for (int mask = 0; mask < 16; mask++) {
+			EnumSet<StatementOrder> set = table[mask];
+			boolean anyCompatible = false;
+			for (char[] seq : seqs) {
+				if (!isIndexCompatible(seq, mask)) {
+					continue;
+				}
+				anyCompatible = true;
+				// add bound dimensions once per compatible index; set deduplicates
+				if ((mask & 1) != 0)
+					set.add(StatementOrder.S);
+				if ((mask & (1 << 1)) != 0)
+					set.add(StatementOrder.P);
+				if ((mask & (1 << 2)) != 0)
+					set.add(StatementOrder.O);
+				if ((mask & (1 << 3)) != 0)
+					set.add(StatementOrder.C);
+
+				// add first free variable per index
+				for (char f : seq) {
+					if ((mask & bitFor(f)) == 0) {
+						set.add(orderFor(f));
+						break;
+					}
+				}
+			}
+			if (!anyCompatible) {
+				set.clear();
 			}
 		}
 	}
@@ -993,7 +1095,8 @@ class LmdbSailStore implements SailStore {
 				// order
 				// without a k-way merge. In that case, fall back to default behavior (unordered union).
 				if (contexts != null && contexts.length > 1) {
-					throw new IllegalArgumentException("LMDB SailStore does not support ordered scans over multiple contexts");
+					throw new IllegalArgumentException(
+							"LMDB SailStore does not support ordered scans over multiple contexts");
 				}
 
 				long contextID;
@@ -1013,8 +1116,6 @@ class LmdbSailStore implements SailStore {
 						return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
 					}
 				}
-
-//				System.out.println("HERE");
 
 				// Pick an index that can provide the requested order given current bindings
 				TripleStore.TripleIndex chosen = chooseIndexForOrder(statementOrder, subjID, predID, objID, contextID);
@@ -1045,38 +1146,19 @@ class LmdbSailStore implements SailStore {
 			boolean cBound = false;
 			if (contexts != null && contexts.length == 1) {
 				Resource ctx = contexts[0];
-				// null context is a concrete value (default graph)
-				cBound = ctx == null || (ctx != null && !ctx.isTriple());
-			}
-
-			EnumSet<StatementOrder> supported = EnumSet.noneOf(StatementOrder.class);
-			// Scan available indexes and collect orders supported by compatible ones
-			for (TripleStore.TripleIndex index : tripleStore.getAllIndexes()) {
-				char[] seq = index.getFieldSeq();
-				if (!isIndexCompatible(seq, sBound, pBound, oBound, cBound)) {
-					continue;
-				}
-
-				// Add bound dimensions: they are trivially ordered (single value)
-				if (sBound)
-					supported.add(StatementOrder.S);
-				if (pBound)
-					supported.add(StatementOrder.P);
-				if (oBound)
-					supported.add(StatementOrder.O);
-				if (cBound)
-					supported.add(StatementOrder.C);
-
-				// Add the first free variable in this index sequence
-				for (char f : seq) {
-					if (!isBound(f, sBound, pBound, oBound, cBound)) {
-						supported.add(toStatementOrder(f));
-						break;
-					}
+				if (ctx == null) {
+					cBound = true;
+				} else if (!ctx.isTriple()) {
+					cBound = true;
+				} else {
+					// triple context not supported for ordered scans
+					return Set.of();
 				}
 			}
 
-			return supported;
+			int mask = (sBound ? 1 : 0) | (pBound ? (1 << 1) : 0) | (oBound ? (1 << 2) : 0) | (cBound ? (1 << 3) : 0);
+			EnumSet<StatementOrder> res = getSupportedOrdersLookup()[mask];
+			return res.isEmpty() ? Set.of() : EnumSet.copyOf(res);
 		}
 
 		private boolean isIndexCompatible(char[] seq, boolean sBound, boolean pBound, boolean oBound, boolean cBound) {
