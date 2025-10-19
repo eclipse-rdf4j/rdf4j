@@ -219,7 +219,8 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 		}
 
 		if (currentLeftValueAndPeekEquals == -1) {
-			boolean equals =leftPeekValue != null && currentLeftValue.getType() == leftPeekValue.getType() && currentLeftValue.equals(leftPeekValue);
+			boolean equals = leftPeekValue != null && currentLeftValue.getType() == leftPeekValue.getType()
+					&& currentLeftValue.equals(leftPeekValue);
 			if (equals) {
 				currentLeftValue = leftPeekValue;
 				currentLeftValueAndPeekEquals = 0;
