@@ -541,11 +541,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			m.add(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE,
 					vf.createLiteral(backgroundRawSamplingMaxMillisPerCycle));
 		}
-		if (dupsortIndices) {
-			m.add(implNode, LmdbStoreSchema.DUPSORT_INDICES, vf.createLiteral(true));
+		// Persist only when deviating from defaults (defaults: true)
+		if (!dupsortIndices) {
+			m.add(implNode, LmdbStoreSchema.DUPSORT_INDICES, vf.createLiteral(false));
 		}
-		if (dupsortRead) {
-			m.add(implNode, LmdbStoreSchema.DUPSORT_READ, vf.createLiteral(true));
+		if (!dupsortRead) {
+			m.add(implNode, LmdbStoreSchema.DUPSORT_READ, vf.createLiteral(false));
 		}
 		return implNode;
 	}

@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.model;
 
 import java.io.ObjectStreamException;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.impl.SimpleBNode;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 
@@ -119,7 +120,18 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 			}
 		}
 
-		return super.equals(o);
+		if (o instanceof BNode) {
+			init();
+			return super.equals(o);
+		}
+
+		return false;
+	}
+
+	@Override
+	public int hashCode() {
+		init();
+		return super.hashCode();
 	}
 
 	@Override

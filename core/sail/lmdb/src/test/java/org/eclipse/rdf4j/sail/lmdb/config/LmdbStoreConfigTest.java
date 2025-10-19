@@ -191,6 +191,18 @@ class LmdbStoreConfigTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { true, false })
+	void testThatLmdbStoreConfigParseAndExportDupsortIndices(final boolean dupsortIndices) {
+		testParseAndExport(
+				LmdbStoreSchema.DUPSORT_INDICES,
+				Values.literal(dupsortIndices),
+				LmdbStoreConfig::isDupsortIndices,
+				dupsortIndices,
+				!dupsortIndices
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
 	void testThatLmdbStoreConfigParseAndExportInlineLiterals(final boolean inlineLiterals) {
 		testParseAndExport(
 				INLINE_LITERALS,
@@ -198,6 +210,18 @@ class LmdbStoreConfigTest {
 				LmdbStoreConfig::getInlineLiterals,
 				inlineLiterals,
 				!inlineLiterals
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void testThatLmdbStoreConfigParseAndExportDupsortRead(final boolean dupsortRead) {
+		testParseAndExport(
+				LmdbStoreSchema.DUPSORT_READ,
+				Values.literal(dupsortRead),
+				LmdbStoreConfig::isDupsortRead,
+				dupsortRead,
+				!dupsortRead
 		);
 	}
 
