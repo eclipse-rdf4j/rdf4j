@@ -1002,6 +1002,11 @@ class TripleStore implements Closeable {
 		bestIndexLookup = newLookup;
 	}
 
+	// Package-private: allow LMDB dataset to inspect available indexes for order support
+	List<TripleIndex> getAllIndexes() {
+		return indexes;
+	}
+
 	private enum IndexPattern {
 		NONE(-1, -1, -1, -1),
 		S(0, -1, -1, -1),

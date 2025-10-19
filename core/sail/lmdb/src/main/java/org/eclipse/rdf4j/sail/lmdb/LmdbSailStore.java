@@ -16,6 +16,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -29,6 +30,7 @@ import java.util.function.Function;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
+import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -40,6 +42,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.BackingSailSource;
@@ -955,17 +958,221 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj,
 				IRI pred, Value obj, Resource... contexts) throws SailException {
-			throw new UnsupportedOperationException("Not implemented yet");
+			try {
+				// Fast reject: inferred-only dataset but store has no inferred
+				if (!explicit && !mayHaveInferred) {
+					return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+				}
+
+				// Resolve value ids
+				long subjID = LmdbValue.UNKNOWN_ID;
+				if (subj != null) {
+					subjID = valueStore.getId(subj);
+					if (subjID == LmdbValue.UNKNOWN_ID) {
+						return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+					}
+				}
+
+				long predID = LmdbValue.UNKNOWN_ID;
+				if (pred != null) {
+					predID = valueStore.getId(pred);
+					if (predID == LmdbValue.UNKNOWN_ID) {
+						return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+					}
+				}
+
+				long objID = LmdbValue.UNKNOWN_ID;
+				if (obj != null) {
+					objID = valueStore.getId(obj);
+					if (objID == LmdbValue.UNKNOWN_ID) {
+						return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+					}
+				}
+
+				// Context handling: if more than one context is requested, we cannot efficiently guarantee a global
+				// order
+				// without a k-way merge. In that case, fall back to default behavior (unordered union).
+				if (contexts != null && contexts.length > 1) {
+					throw new IllegalArgumentException("LMDB SailStore does not support ordered scans over multiple contexts");
+				}
+
+				long contextID;
+				if (contexts == null || contexts.length == 0) {
+					contextID = LmdbValue.UNKNOWN_ID; // wildcard over all contexts
+				} else {
+					Resource ctx = contexts[0];
+					if (ctx == null) {
+						contextID = 0L; // default graph
+					} else if (!ctx.isTriple()) {
+						contextID = valueStore.getId(ctx);
+						if (contextID == LmdbValue.UNKNOWN_ID) {
+							return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+						}
+					} else {
+						// RDF* triple as context not supported by LMDB index order; fall back to default behavior
+						return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
+					}
+				}
+
+//				System.out.println("HERE");
+
+				// Pick an index that can provide the requested order given current bindings
+				TripleStore.TripleIndex chosen = chooseIndexForOrder(statementOrder, subjID, predID, objID, contextID);
+				if (chosen == null) {
+					// No compatible index for ordered scan; fall back to default iterator
+					return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
+				}
+
+				boolean rangeSearch = chosen.getPatternScore(subjID, predID, objID, contextID) > 0;
+				RecordIterator records = new LmdbRecordIterator(chosen, rangeSearch, subjID, predID, objID, contextID,
+						explicit, txn);
+				return new LmdbStatementIterator(records, valueStore);
+			} catch (IOException e) {
+				throw new SailException("Unable to get ordered statements", e);
+			}
 		}
 
 		@Override
 		public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
-			return Set.of();
+			// If multiple contexts are specified, LMDB currently returns a union without a global ordering guarantee
+			if (contexts != null && contexts.length > 1) {
+				return Set.of();
+			}
+
+			boolean sBound = subj != null;
+			boolean pBound = pred != null;
+			boolean oBound = obj != null;
+			boolean cBound = false;
+			if (contexts != null && contexts.length == 1) {
+				Resource ctx = contexts[0];
+				// null context is a concrete value (default graph)
+				cBound = ctx == null || (ctx != null && !ctx.isTriple());
+			}
+
+			EnumSet<StatementOrder> supported = EnumSet.noneOf(StatementOrder.class);
+			// Scan available indexes and collect orders supported by compatible ones
+			for (TripleStore.TripleIndex index : tripleStore.getAllIndexes()) {
+				char[] seq = index.getFieldSeq();
+				if (!isIndexCompatible(seq, sBound, pBound, oBound, cBound)) {
+					continue;
+				}
+
+				// Add bound dimensions: they are trivially ordered (single value)
+				if (sBound)
+					supported.add(StatementOrder.S);
+				if (pBound)
+					supported.add(StatementOrder.P);
+				if (oBound)
+					supported.add(StatementOrder.O);
+				if (cBound)
+					supported.add(StatementOrder.C);
+
+				// Add the first free variable in this index sequence
+				for (char f : seq) {
+					if (!isBound(f, sBound, pBound, oBound, cBound)) {
+						supported.add(toStatementOrder(f));
+						break;
+					}
+				}
+			}
+
+			return supported;
+		}
+
+		private boolean isIndexCompatible(char[] seq, boolean sBound, boolean pBound, boolean oBound, boolean cBound) {
+			boolean seenUnbound = false;
+			for (char f : seq) {
+				boolean bound = isBound(f, sBound, pBound, oBound, cBound);
+				if (!bound) {
+					seenUnbound = true;
+				} else if (seenUnbound) {
+					// bound after an unbound earlier field -> cannot use index prefix, not compatible
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private boolean isBound(char f, boolean sBound, boolean pBound, boolean oBound, boolean cBound) {
+			switch (f) {
+			case 's':
+				return sBound;
+			case 'p':
+				return pBound;
+			case 'o':
+				return oBound;
+			case 'c':
+				return cBound;
+			default:
+				return false;
+			}
+		}
+
+		private StatementOrder toStatementOrder(char f) {
+			switch (f) {
+			case 's':
+				return StatementOrder.S;
+			case 'p':
+				return StatementOrder.P;
+			case 'o':
+				return StatementOrder.O;
+			case 'c':
+				return StatementOrder.C;
+			default:
+				throw new IllegalArgumentException("Unknown field: " + f);
+			}
+		}
+
+		private TripleStore.TripleIndex chooseIndexForOrder(StatementOrder order, long s, long p, long o, long c)
+				throws IOException {
+			boolean sBound = s >= 0;
+			boolean pBound = p >= 0;
+			boolean oBound = o >= 0;
+			boolean cBound = c >= 0; // 0 is a concrete (null) context; unknown is -1
+
+			for (TripleStore.TripleIndex index : tripleStore.getAllIndexes()) {
+				char[] seq = index.getFieldSeq();
+				if (!isIndexCompatible(seq, sBound, pBound, oBound, cBound)) {
+					continue;
+				}
+
+				// If requested order variable is bound, any compatible index will do
+				if ((order == StatementOrder.S && sBound) || (order == StatementOrder.P && pBound)
+						|| (order == StatementOrder.O && oBound) || (order == StatementOrder.C && cBound)) {
+					return index;
+				}
+
+				// Otherwise, ensure the requested variable is the first unbound dimension in this index
+				for (char f : seq) {
+					boolean bound = isBound(f, sBound, pBound, oBound, cBound);
+					if (!bound) {
+						if (toStatementOrder(f) == order) {
+							return index;
+						} else {
+							break; // first unbound is different -> this index can't provide the requested order
+						}
+					}
+				}
+			}
+
+			return null;
 		}
 
 		@Override
 		public Comparator<Value> getComparator() {
-			return null;
+			return (v1, v2) -> {
+				try {
+					long id1 = valueStore.getId(v1);
+					long id2 = valueStore.getId(v2);
+					if (id1 != LmdbValue.UNKNOWN_ID && id2 != LmdbValue.UNKNOWN_ID) {
+						return Long.compare(id1, id2);
+					}
+				} catch (IOException ignore) {
+					// fall through to lexical comparator
+				}
+				// Fallback to standard SPARQL value comparator when IDs are not available
+				return new ValueComparator().compare(v1, v2);
+			};
 		}
 	}
 }

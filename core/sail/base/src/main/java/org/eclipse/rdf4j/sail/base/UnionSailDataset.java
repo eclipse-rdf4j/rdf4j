@@ -223,7 +223,9 @@ class UnionSailDataset implements SailDataset {
 		Comparator<Value> comparator1 = dataset1.getComparator();
 		Comparator<Value> comparator2 = dataset2.getComparator();
 
-		assert (comparator1 == null && comparator2 == null) || (comparator1 != null && comparator2 != null);
+		if (comparator1 == null || comparator2 == null) {
+			return null;
+		}
 
 		return comparator1;
 	}
