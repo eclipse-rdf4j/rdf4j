@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -71,6 +72,15 @@ class LmdbSailStore implements SailStore {
 	// supported StatementOrder across all configured indexes that are compatible with that mask.
 	@SuppressWarnings("unchecked")
 	private volatile EnumSet<StatementOrder>[] supportedOrdersLookup = (EnumSet<StatementOrder>[]) new EnumSet[16];
+
+	@SuppressWarnings("unchecked")
+	private volatile java.util.List<TripleStore.TripleIndex>[] compatibleIndexesByMask = (java.util.List<TripleStore.TripleIndex>[]) new java.util.List[16];
+
+	// firstFreeOrderByIndexAndMask[indexPos][mask] -> first free StatementOrder in that index for that mask, or null
+	private volatile StatementOrder[][] firstFreeOrderByIndexAndMask;
+
+	// Map index instance -> its stable position used in the lookup arrays
+	private volatile Map<TripleStore.TripleIndex, Integer> indexPositionMap;
 
 	private final ExecutorService tripleStoreExecutor = Executors.newCachedThreadPool();
 	private final CircularBuffer<Operation> opQueue = new CircularBuffer<>(1024);
@@ -273,21 +283,43 @@ class LmdbSailStore implements SailStore {
 	private void buildSupportedOrdersLookup(EnumSet<StatementOrder>[] table) {
 		for (int i = 0; i < table.length; i++) {
 			table[i] = EnumSet.noneOf(StatementOrder.class);
+			compatibleIndexesByMask[i] = new ArrayList<>();
 		}
 		List<TripleStore.TripleIndex> indexes = tripleStore.getAllIndexes();
 		char[][] seqs = new char[indexes.size()][];
 		for (int i = 0; i < indexes.size(); i++) {
 			seqs[i] = indexes.get(i).getFieldSeq();
 		}
+		// Build index position map
+		Map<TripleStore.TripleIndex, Integer> posMap = new java.util.IdentityHashMap<>();
+		for (int i = 0; i < indexes.size(); i++) {
+			posMap.put(indexes.get(i), i);
+		}
+		StatementOrder[][] firstFree = new StatementOrder[indexes.size()][16];
+		for (int i = 0; i < indexes.size(); i++) {
+			char[] seq = seqs[i];
+			for (int mask = 0; mask < 16; mask++) {
+				StatementOrder first = null;
+				for (char f : seq) {
+					if ((mask & bitFor(f)) == 0) {
+						first = orderFor(f);
+						break;
+					}
+				}
+				firstFree[i][mask] = first;
+			}
+		}
 		for (int mask = 0; mask < 16; mask++) {
 			EnumSet<StatementOrder> set = table[mask];
 			boolean anyCompatible = false;
-			for (char[] seq : seqs) {
+			for (int i = 0; i < indexes.size(); i++) {
+				char[] seq = seqs[i];
 				if (!isIndexCompatible(seq, mask)) {
 					continue;
 				}
 				anyCompatible = true;
-				// add bound dimensions once per compatible index; set deduplicates
+				compatibleIndexesByMask[mask].add(indexes.get(i));
+				// add bound dimensions (trivial order)
 				if ((mask & 1) != 0)
 					set.add(StatementOrder.S);
 				if ((mask & (1 << 1)) != 0)
@@ -296,19 +328,19 @@ class LmdbSailStore implements SailStore {
 					set.add(StatementOrder.O);
 				if ((mask & (1 << 3)) != 0)
 					set.add(StatementOrder.C);
-
-				// add first free variable per index
-				for (char f : seq) {
-					if ((mask & bitFor(f)) == 0) {
-						set.add(orderFor(f));
-						break;
-					}
+				// add first free variable for this index & mask if present
+				StatementOrder first = firstFree[i][mask];
+				if (first != null) {
+					set.add(first);
 				}
 			}
 			if (!anyCompatible) {
 				set.clear();
 			}
 		}
+		// publish
+		this.firstFreeOrderByIndexAndMask = firstFree;
+		this.indexPositionMap = posMap;
 	}
 
 	@Override
@@ -1207,36 +1239,33 @@ class LmdbSailStore implements SailStore {
 
 		private TripleStore.TripleIndex chooseIndexForOrder(StatementOrder order, long s, long p, long o, long c)
 				throws IOException {
+			// ensure metadata initialized
+			getSupportedOrdersLookup();
 			boolean sBound = s >= 0;
 			boolean pBound = p >= 0;
 			boolean oBound = o >= 0;
 			boolean cBound = c >= 0; // 0 is a concrete (null) context; unknown is -1
 
-			for (TripleStore.TripleIndex index : tripleStore.getAllIndexes()) {
-				char[] seq = index.getFieldSeq();
-				if (!isIndexCompatible(seq, sBound, pBound, oBound, cBound)) {
-					continue;
-				}
-
-				// If requested order variable is bound, any compatible index will do
-				if ((order == StatementOrder.S && sBound) || (order == StatementOrder.P && pBound)
-						|| (order == StatementOrder.O && oBound) || (order == StatementOrder.C && cBound)) {
-					return index;
-				}
-
-				// Otherwise, ensure the requested variable is the first unbound dimension in this index
-				for (char f : seq) {
-					boolean bound = isBound(f, sBound, pBound, oBound, cBound);
-					if (!bound) {
-						if (toStatementOrder(f) == order) {
-							return index;
-						} else {
-							break; // first unbound is different -> this index can't provide the requested order
-						}
+			int mask = (sBound ? 1 : 0) | (pBound ? (1 << 1) : 0) | (oBound ? (1 << 2) : 0) | (cBound ? (1 << 3) : 0);
+			java.util.List<TripleStore.TripleIndex> compat = compatibleIndexesByMask[mask];
+			if (compat == null || compat.isEmpty()) {
+				return null;
+			}
+			// If requested order var is bound, any compatible index will do
+			if ((order == StatementOrder.S && sBound) || (order == StatementOrder.P && pBound)
+					|| (order == StatementOrder.O && oBound) || (order == StatementOrder.C && cBound)) {
+				return compat.get(0);
+			}
+			// Else pick one whose first free variable matches
+			for (TripleStore.TripleIndex index : compat) {
+				Integer pos = indexPositionMap.get(index);
+				if (pos != null) {
+					StatementOrder first = firstFreeOrderByIndexAndMask[pos][mask];
+					if (first == order) {
+						return index;
 					}
 				}
 			}
-
 			return null;
 		}
 
