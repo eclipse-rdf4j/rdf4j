@@ -200,52 +200,51 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 		}
 
 		Statement create(long[] quad) throws IOException {
-			Resource s;
+			final ValueStore vs = this.valueStore;
+
+			// subject
+			Resource s = this.cachedS;
 			if (sBound) {
-				if (cachedS == null) {
-					cachedS = (Resource) valueStore.getLazyValue(quad[TripleIndex.SUBJ_IDX]);
+				if (s == null) {
+					s = this.cachedS = (Resource) vs.getLazyValue(quad[TripleIndex.SUBJ_IDX]);
 				}
-				s = cachedS;
 			} else {
-				s = (Resource) valueStore.getLazyValue(quad[TripleIndex.SUBJ_IDX]);
+				s = (Resource) vs.getLazyValue(quad[TripleIndex.SUBJ_IDX]);
 			}
 
-			IRI p;
+			// predicate
+			IRI p = this.cachedP;
 			if (pBound) {
-				if (cachedP == null) {
-					cachedP = (IRI) valueStore.getLazyValue(quad[TripleIndex.PRED_IDX]);
+				if (p == null) {
+					p = this.cachedP = (IRI) vs.getLazyValue(quad[TripleIndex.PRED_IDX]);
 				}
-				p = cachedP;
 			} else {
-				p = (IRI) valueStore.getLazyValue(quad[TripleIndex.PRED_IDX]);
+				p = (IRI) vs.getLazyValue(quad[TripleIndex.PRED_IDX]);
 			}
 
-			Value o;
+			// object
+			Value o = this.cachedO;
 			if (oBound) {
-				if (cachedO == null) {
-					cachedO = valueStore.getLazyValue(quad[TripleIndex.OBJ_IDX]);
+				if (o == null) {
+					o = this.cachedO = vs.getLazyValue(quad[TripleIndex.OBJ_IDX]);
 				}
-				o = cachedO;
 			} else {
-				o = valueStore.getLazyValue(quad[TripleIndex.OBJ_IDX]);
+				o = vs.getLazyValue(quad[TripleIndex.OBJ_IDX]);
 			}
 
-			Resource c = null;
-			long contextID = quad[TripleIndex.CONTEXT_IDX];
+			// context
+			final long contextID = quad[TripleIndex.CONTEXT_IDX];
+			Resource c = this.cachedC;
 			if (cBound) {
-				if (cachedC == null) {
-					if (contextID != 0) {
-						cachedC = (Resource) valueStore.getLazyValue(contextID);
-					} else {
-						cachedC = null; // default graph
-					}
+				if (c == null) {
+					c = this.cachedC = (contextID != 0) ? (Resource) vs.getLazyValue(contextID) : null;
 				}
-				c = cachedC;
-			} else if (contextID != 0) {
-				c = (Resource) valueStore.getLazyValue(contextID);
+				// if cBound and cachedC already set, ignore contextID (preserves original semantics)
+			} else {
+				c = (contextID != 0) ? (Resource) vs.getLazyValue(contextID) : null;
 			}
 
-			return valueStore.createStatement(s, p, o, c);
+			return vs.createStatement(s, p, o, c);
 		}
 	}
 }
