@@ -522,7 +522,30 @@ class LmdbSailStore implements SailStore {
 		List<Long> contextIDList;
 		if (contexts.length == 0) {
 			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, LmdbValue.UNKNOWN_ID, explicit);
-			return new LmdbStatementIterator(records, valueStore);
+			boolean sBound = subj != null;
+			boolean pBound = pred != null;
+			boolean oBound = obj != null;
+			Resource cachedS = null;
+			IRI cachedP = null;
+			Value cachedO = null;
+			if (sBound && subj instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+					&& valueStore.getRevision()
+							.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) subj).getValueStoreRevision())) {
+				cachedS = subj;
+			}
+			if (pBound && pred instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+					&& valueStore.getRevision()
+							.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) pred).getValueStoreRevision())) {
+				cachedP = pred;
+			}
+			if (oBound && obj instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+					&& valueStore.getRevision()
+							.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) obj).getValueStoreRevision())) {
+				cachedO = obj;
+			}
+			LmdbStatementIterator.StatementCreator creator = new LmdbStatementIterator.StatementCreator(valueStore,
+					cachedS, cachedP, cachedO, null, sBound, pBound, oBound, false);
+			return new LmdbStatementIterator(records, creator);
 		} else {
 			contextIDList = new ArrayList<>(contexts.length);
 			for (Resource context : contexts) {
@@ -542,7 +565,40 @@ class LmdbSailStore implements SailStore {
 
 		for (long contextID : contextIDList) {
 			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
-			perContextIterList.add(new LmdbStatementIterator(records, valueStore));
+			boolean sBound = subj != null;
+			boolean pBound = pred != null;
+			boolean oBound = obj != null;
+			Resource cachedS = null;
+			IRI cachedP = null;
+			Value cachedO = null;
+			Resource cachedC = null;
+			if (sBound && subj instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+					&& valueStore.getRevision()
+							.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) subj).getValueStoreRevision())) {
+				cachedS = subj;
+			}
+			if (pBound && pred instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+					&& valueStore.getRevision()
+							.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) pred).getValueStoreRevision())) {
+				cachedP = pred;
+			}
+			if (oBound && obj instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+					&& valueStore.getRevision()
+							.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) obj).getValueStoreRevision())) {
+				cachedO = obj;
+			}
+			// If exactly one context was provided and is revision-compatible LmdbValue, pass it
+			if (contexts.length == 1) {
+				Resource ctx = contexts[0];
+				if (ctx != null && !ctx.isTriple() && ctx instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+						&& valueStore.getRevision()
+								.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) ctx).getValueStoreRevision())) {
+					cachedC = ctx;
+				}
+			}
+			LmdbStatementIterator.StatementCreator creator = new LmdbStatementIterator.StatementCreator(valueStore,
+					cachedS, cachedP, cachedO, cachedC, sBound, pBound, oBound, true);
+			perContextIterList.add(new LmdbStatementIterator(records, creator));
 		}
 
 		if (perContextIterList.size() == 1) {
@@ -1159,7 +1215,52 @@ class LmdbSailStore implements SailStore {
 				boolean rangeSearch = chosen.getPatternScore(subjID, predID, objID, contextID) > 0;
 				RecordIterator records = new LmdbRecordIterator(chosen, rangeSearch, subjID, predID, objID, contextID,
 						explicit, txn);
-				return new LmdbStatementIterator(records, valueStore);
+
+				boolean sBound = subj != null;
+				boolean pBound = pred != null;
+				boolean oBound = obj != null;
+				boolean cBound;
+				if (contexts == null || contexts.length == 0) {
+					cBound = false;
+				} else {
+					cBound = true; // exactly one context allowed at this point
+				}
+
+				Resource cachedS = null;
+				IRI cachedP = null;
+				Value cachedO = null;
+				Resource cachedC = null;
+
+				if (sBound && subj instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+						&& valueStore.getRevision()
+								.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) subj).getValueStoreRevision())) {
+					cachedS = subj;
+				}
+				if (pBound && pred instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+						&& valueStore.getRevision()
+								.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) pred).getValueStoreRevision())) {
+					cachedP = pred;
+				}
+				if (oBound && obj instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+						&& valueStore.getRevision()
+								.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) obj).getValueStoreRevision())) {
+					cachedO = obj;
+				}
+
+				if (cBound && contexts != null && contexts.length == 1) {
+					Resource ctx = contexts[0];
+					if (ctx != null && !ctx.isTriple()
+							&& ctx instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+							&& valueStore.getRevision()
+									.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) ctx)
+											.getValueStoreRevision())) {
+						cachedC = ctx;
+					}
+				}
+
+				LmdbStatementIterator.StatementCreator creator = new LmdbStatementIterator.StatementCreator(valueStore,
+						cachedS, cachedP, cachedO, cachedC, sBound, pBound, oBound, cBound);
+				return new LmdbStatementIterator(records, creator);
 			} catch (IOException e) {
 				throw new SailException("Unable to get ordered statements", e);
 			}

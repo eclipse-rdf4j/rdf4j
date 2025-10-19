@@ -33,6 +33,7 @@ class LmdbStatementIterator implements CloseableIteration<Statement> {
 	private final RecordIterator recordIt;
 
 	private final ValueStore valueStore;
+	private final StatementCreator statementCreator;
 	private Statement nextElement;
 	/**
 	 * Flag indicating whether this iteration has been closed.
@@ -44,11 +45,23 @@ class LmdbStatementIterator implements CloseableIteration<Statement> {
 	 *--------------*/
 
 	/**
-	 * Creates a new LmdbStatementIterator.
+	 * Creates a new LmdbStatementIterator with the default statement creation logic.
 	 */
 	public LmdbStatementIterator(RecordIterator recordIt, ValueStore valueStore) {
 		this.recordIt = recordIt;
 		this.valueStore = valueStore;
+		this.statementCreator = new StatementCreator(valueStore, false, false, false, false);
+	}
+
+	/**
+	 * Creates a new LmdbStatementIterator using a custom statement creator. The provided {@link StatementCreator} is
+	 * responsible for creating the Values and Statement for each record and can cache bound values so the iterator
+	 * always returns LmdbValue-backed instances.
+	 */
+	public LmdbStatementIterator(RecordIterator recordIt, StatementCreator statementCreator) {
+		this.recordIt = recordIt;
+		this.valueStore = null;
+		this.statementCreator = statementCreator;
 	}
 
 	/*---------*
@@ -68,22 +81,7 @@ class LmdbStatementIterator implements CloseableIteration<Statement> {
 				return null;
 			}
 
-			long subjID = quad[TripleStore.SUBJ_IDX];
-			Resource subj = (Resource) valueStore.getLazyValue(subjID);
-
-			long predID = quad[TripleStore.PRED_IDX];
-			IRI pred = (IRI) valueStore.getLazyValue(predID);
-
-			long objID = quad[TripleStore.OBJ_IDX];
-			Value obj = valueStore.getLazyValue(objID);
-
-			Resource context = null;
-			long contextID = quad[TripleStore.CONTEXT_IDX];
-			if (contextID != 0) {
-				context = (Resource) valueStore.getLazyValue(contextID);
-			}
-
-			return valueStore.createStatement(subj, pred, obj, context);
+			return statementCreator.create(quad);
 		} catch (IOException e) {
 			throw causeIOException(e);
 		}
@@ -162,6 +160,94 @@ class LmdbStatementIterator implements CloseableIteration<Statement> {
 		if (!closed) {
 			closed = true;
 			handleClose();
+		}
+	}
+
+	/**
+	 * Statement creator that can cache bound values (S, P, O, and/or C) the first time they are seen via
+	 * {@link ValueStore#getLazyValue(long)} and reuse them for subsequent records. This ensures bound values are always
+	 * returned as LmdbValue-backed instances.
+	 */
+	static final class StatementCreator {
+		private final ValueStore valueStore;
+		private final boolean sBound;
+		private final boolean pBound;
+		private final boolean oBound;
+		private final boolean cBound;
+
+		private Resource cachedS;
+		private IRI cachedP;
+		private Value cachedO;
+		private Resource cachedC;
+
+		StatementCreator(ValueStore valueStore, boolean sBound, boolean pBound, boolean oBound, boolean cBound) {
+			this.valueStore = valueStore;
+			this.sBound = sBound;
+			this.pBound = pBound;
+			this.oBound = oBound;
+			this.cBound = cBound;
+		}
+
+		StatementCreator(ValueStore valueStore, Resource cachedS, IRI cachedP, Value cachedO, Resource cachedC,
+				boolean sBound, boolean pBound, boolean oBound, boolean cBound) {
+			this.valueStore = valueStore;
+			this.cachedS = cachedS;
+			this.cachedP = cachedP;
+			this.cachedO = cachedO;
+			this.cachedC = cachedC;
+			this.sBound = sBound;
+			this.pBound = pBound;
+			this.oBound = oBound;
+			this.cBound = cBound;
+		}
+
+		Statement create(long[] quad) throws IOException {
+			Resource s;
+			if (sBound) {
+				if (cachedS == null) {
+					cachedS = (Resource) valueStore.getLazyValue(quad[TripleStore.SUBJ_IDX]);
+				}
+				s = cachedS;
+			} else {
+				s = (Resource) valueStore.getLazyValue(quad[TripleStore.SUBJ_IDX]);
+			}
+
+			IRI p;
+			if (pBound) {
+				if (cachedP == null) {
+					cachedP = (IRI) valueStore.getLazyValue(quad[TripleStore.PRED_IDX]);
+				}
+				p = cachedP;
+			} else {
+				p = (IRI) valueStore.getLazyValue(quad[TripleStore.PRED_IDX]);
+			}
+
+			Value o;
+			if (oBound) {
+				if (cachedO == null) {
+					cachedO = valueStore.getLazyValue(quad[TripleStore.OBJ_IDX]);
+				}
+				o = cachedO;
+			} else {
+				o = valueStore.getLazyValue(quad[TripleStore.OBJ_IDX]);
+			}
+
+			Resource c = null;
+			long contextID = quad[TripleStore.CONTEXT_IDX];
+			if (cBound) {
+				if (cachedC == null) {
+					if (contextID != 0) {
+						cachedC = (Resource) valueStore.getLazyValue(contextID);
+					} else {
+						cachedC = null; // default graph
+					}
+				}
+				c = cachedC;
+			} else if (contextID != 0) {
+				c = (Resource) valueStore.getLazyValue(contextID);
+			}
+
+			return valueStore.createStatement(s, p, o, c);
 		}
 	}
 }

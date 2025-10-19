@@ -180,6 +180,8 @@ class UnionSailDataset implements SailDataset {
 			iteration1 = dataset1.getStatements(statementOrder, subj, pred, obj, contexts);
 			iteration2 = dataset2.getStatements(statementOrder, subj, pred, obj, contexts);
 			Comparator<Statement> cmp = statementOrder.getComparator(dataset1.getComparator());
+			assert dataset1.getComparator() != null && dataset2.getComparator() != null
+					: "At this point the code assumes both datasets have a comparator, since otherwise getStatements without order would have been used";
 			return DualUnionIteration.getWildcardInstance(cmp, iteration1, iteration2);
 		} catch (Throwable t) {
 			try {
