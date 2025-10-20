@@ -165,17 +165,9 @@ class LmdbDupRecordIterator implements RecordIterator {
 			while (true) {
 				// Emit from current duplicate block if available
 				if (dupBuf != null && dupPos + (Long.BYTES * 2) <= dupLimit) {
-					long v3;
-					long v4;
-					if (true) {
-						v3 = readLittleEndianLong(dupBuf, dupPos);
-						v4 = readLittleEndianLong(dupBuf, dupPos + Long.BYTES);
-						dupPos += Long.BYTES * 2;
-					} else {
-						v3 = dupBuf.getLong(dupPos);
-						v4 = dupBuf.getLong(dupPos + Long.BYTES);
-						dupPos += Long.BYTES * 2;
-					}
+					long v3 = readBigEndianLong(dupBuf, dupPos);
+					long v4 = readBigEndianLong(dupBuf, dupPos + Long.BYTES);
+					dupPos += Long.BYTES * 2;
 					fillQuadFromPrefixAndValue(v3, v4);
 					dupEmittedCount++;
 					return quad;
@@ -302,7 +294,6 @@ class LmdbDupRecordIterator implements RecordIterator {
 			ByteBuffer copy = ByteBuffer.allocate(source.remaining());
 			copy.put(source);
 			copy.flip();
-			copy.order(ByteOrder.nativeOrder());
 			dupBuf = copy;
 			dupPos = dupBuf.position();
 			dupLimit = dupBuf.limit();
@@ -394,10 +385,10 @@ class LmdbDupRecordIterator implements RecordIterator {
 		return fallbackSupplier.get();
 	}
 
-	private long readLittleEndianLong(ByteBuffer buffer, int offset) {
+	private long readBigEndianLong(ByteBuffer buffer, int offset) {
 		long value = 0L;
 		for (int i = 0; i < Long.BYTES; i++) {
-			value |= (buffer.get(offset + i) & 0xFFL) << (i * 8);
+			value = (value << 8) | (buffer.get(offset + i) & 0xFFL);
 		}
 		return value;
 	}
