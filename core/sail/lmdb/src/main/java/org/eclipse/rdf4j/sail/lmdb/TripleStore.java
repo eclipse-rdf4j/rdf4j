@@ -2417,9 +2417,9 @@ class TripleStore implements Closeable {
 				toDupKeyPrefix(dupKeyBuf, subj, pred, obj, context);
 				dupKeyBuf.flip();
 				dupValBuf.clear();
-				// store as two 8-byte little-endian longs
-				writeLongLittleEndian(dupValBuf, obj);
-				writeLongLittleEndian(dupValBuf, context);
+				// store as two 8-byte big-endian longs to preserve LMDB's lexicographic ordering
+				writeLongBigEndian(dupValBuf, obj);
+				writeLongBigEndian(dupValBuf, context);
 				dupValBuf.flip();
 				MDBVal dupKeyVal = MDBVal.malloc(stack);
 				MDBVal dupDataVal = MDBVal.malloc(stack);
@@ -2441,8 +2441,8 @@ class TripleStore implements Closeable {
 				toDupKeyPrefix(dupKeyBuf, subj, pred, obj, context);
 				dupKeyBuf.flip();
 				dupValBuf.clear();
-				writeLongLittleEndian(dupValBuf, obj);
-				writeLongLittleEndian(dupValBuf, context);
+				writeLongBigEndian(dupValBuf, obj);
+				writeLongBigEndian(dupValBuf, context);
 				dupValBuf.flip();
 				MDBVal dupKeyVal = MDBVal.malloc(stack);
 				MDBVal dupDataVal = MDBVal.malloc(stack);
@@ -2459,15 +2459,15 @@ class TripleStore implements Closeable {
 			mdb_dbi_close(env, dbiDupInferred);
 		}
 
-		private void writeLongLittleEndian(ByteBuffer buffer, long value) {
-			buffer.put((byte) ((value >> (0)) & 0xFF));
-			buffer.put((byte) ((value >> (8)) & 0xFF));
-			buffer.put((byte) ((value >> (2 * 8)) & 0xFF));
-			buffer.put((byte) ((value >> (3 * 8)) & 0xFF));
-			buffer.put((byte) ((value >> (4 * 8)) & 0xFF));
-			buffer.put((byte) ((value >> (5 * 8)) & 0xFF));
-			buffer.put((byte) ((value >> (6 * 8)) & 0xFF));
+		private void writeLongBigEndian(ByteBuffer buffer, long value) {
 			buffer.put((byte) ((value >> (7 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (6 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (5 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (4 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (3 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (2 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (1 * 8)) & 0xFF));
+			buffer.put((byte) ((value >> (0)) & 0xFF));
 		}
 	}
 
