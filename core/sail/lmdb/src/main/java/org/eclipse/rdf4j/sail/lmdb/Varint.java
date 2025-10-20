@@ -446,24 +446,22 @@ public final class Varint {
 	 * @param values array with values to write
 	 */
 	public static void writeListUnsigned(final ByteBuffer bb, final long[] values) {
-		// TODO: Optimise for quads and also call writeUnsigned
 		for (int i = 0; i < values.length; i++) {
-			final long value = values[i];
-			if (value <= 240) {
-				bb.put((byte) value);
-			} else if (value <= 2287) {
-				bb.put((byte) ((value - 240) / 256 + 241));
-				bb.put((byte) ((value - 240) % 256));
-			} else if (value <= 67823) {
-				bb.put((byte) 249);
-				bb.put((byte) ((value - 2288) / 256));
-				bb.put((byte) ((value - 2288) % 256));
-			} else {
-				int bytes = descriptor(value) + 1;
-				bb.put((byte) (250 + (bytes - 3)));
-				writeSignificantBits(bb, value, bytes);
-			}
+			writeUnsigned(bb, values[i]);
 		}
+	}
+
+	/**
+	 * Encodes multiple values using variable-length encoding into the given buffer.
+	 *
+	 * @param bb     buffer for writing bytes
+	 * @param values array with values to write
+	 */
+	public static void writeQuadUnsigned(final ByteBuffer bb, final long[] values) {
+		writeUnsigned(bb, values[0]);
+		writeUnsigned(bb, values[1]);
+		writeUnsigned(bb, values[2]);
+		writeUnsigned(bb, values[3]);
 	}
 
 	/**
