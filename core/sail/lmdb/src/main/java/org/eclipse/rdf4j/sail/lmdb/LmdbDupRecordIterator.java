@@ -19,7 +19,6 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_SET_KEY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
-import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_count;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
@@ -46,13 +45,19 @@ class LmdbDupRecordIterator implements RecordIterator {
 		RecordIterator get() throws IOException;
 	}
 
+	/** Toggle copying of duplicate blocks for extra safety (defaults to zero-copy views). */
+	private static final boolean COPY_DUP_BLOCKS = Boolean.getBoolean("rdf4j.lmdb.copyDupBlocks");
+
+	/** Size in bytes of one (v3,v4) tuple. */
+	private static final int DUP_PAIR_BYTES = Long.BYTES * 2;
+
 	private final Pool pool;
 	private final DupIndex index;
 	private final int dupDbi;
 	private final long cursor;
 
 	private final Txn txnRef;
-	private final long txn;
+	private long txn; // refreshed on txn version changes
 	private long txnRefVersion;
 	private final StampedLongAdderLockManager txnLockManager;
 	private final Thread ownerThread = Thread.currentThread();
@@ -60,24 +65,22 @@ class LmdbDupRecordIterator implements RecordIterator {
 	private final MDBVal keyData;
 	private final MDBVal valueData;
 
+	/** Reused output buffer required by the RecordIterator API. */
 	private final long[] quad;
-	private final long[] originalQuad;
 
-	private final boolean matchValues;
+	/** Scalars defining the prefix to scan (subject, predicate). */
+	private final long prefixSubj;
+	private final long prefixPred;
 
 	private ByteBuffer prefixKeyBuf;
-	private long[] prefixValues;
 
+	/** Current duplicate block view and read indices. */
 	private ByteBuffer dupBuf;
 	private int dupPos;
 	private int dupLimit;
 
 	private int lastResult;
 	private boolean closed = false;
-
-	// Duplicate counting for the current key
-	private long dupTotalCount;
-	private long dupEmittedCount;
 
 	private final RecordIterator fallback;
 	private final FallbackSupplier fallbackSupplier;
@@ -86,9 +89,16 @@ class LmdbDupRecordIterator implements RecordIterator {
 			boolean explicit, Txn txnRef, FallbackSupplier fallbackSupplier) throws IOException {
 		this.index = index;
 
-		this.quad = new long[] { subj, pred, -1, -1 };
-		this.originalQuad = new long[] { subj, pred, -1, -1 };
-		this.matchValues = subj > 0 || pred > 0;
+		// Output buffer (s,p are constant for the life of this iterator)
+		this.quad = new long[4];
+		this.quad[0] = subj;
+		this.quad[1] = pred;
+		this.quad[2] = -1L;
+		this.quad[3] = -1L;
+
+		this.prefixSubj = subj;
+		this.prefixPred = pred;
+
 		this.fallbackSupplier = fallbackSupplier;
 
 		this.pool = Pool.get();
@@ -113,12 +123,10 @@ class LmdbDupRecordIterator implements RecordIterator {
 			cursor = openCursor(txn, dupDbi, txnRef.isReadOnly());
 
 			prefixKeyBuf = pool.getKeyBuffer();
-			prefixValues = new long[] { subj, pred };
 			prefixKeyBuf.clear();
-			Varint.writeUnsigned(prefixKeyBuf, subj);
-			Varint.writeUnsigned(prefixKeyBuf, pred);
-
-//			index.toDupKeyPrefix(prefixKeyBuf, subj, pred, 0, 0);
+			Varint.writeUnsigned(prefixKeyBuf, prefixSubj);
+			Varint.writeUnsigned(prefixKeyBuf, prefixPred);
+			// index.toDupKeyPrefix(prefixKeyBuf, subj, pred, 0, 0);
 			prefixKeyBuf.flip();
 
 			boolean positioned = positionOnPrefix();
@@ -153,7 +161,9 @@ class LmdbDupRecordIterator implements RecordIterator {
 				return null;
 			}
 
+			// Txn renewal if the TxnManager rotated its underlying LMDB txn
 			if (txnRefVersion != txnRef.version()) {
+				this.txn = txnRef.get();
 				E(mdb_cursor_renew(txn, cursor));
 				txnRefVersion = txnRef.version();
 				if (!positionOnPrefix() || !primeDuplicateBlock()) {
@@ -163,41 +173,41 @@ class LmdbDupRecordIterator implements RecordIterator {
 			}
 
 			while (true) {
-				// Emit from current duplicate block if available
-				if (dupBuf != null && dupPos + (Long.BYTES * 2) <= dupLimit) {
-					long v3 = readBigEndianLong(dupBuf, dupPos);
-					long v4 = readBigEndianLong(dupBuf, dupPos + Long.BYTES);
-					dupPos += Long.BYTES * 2;
-					fillQuadFromPrefixAndValue(v3, v4);
-					dupEmittedCount++;
+				// Fast-path: emit from current duplicate block if at least one pair remains
+				if (dupBuf != null && dupLimit - dupPos >= DUP_PAIR_BYTES) {
+					long v3 = dupBuf.getLong(dupPos);
+					long v4 = dupBuf.getLong(dupPos + Long.BYTES);
+					dupPos += DUP_PAIR_BYTES;
+
+					// s,p are constant; update only the tail
+					quad[2] = v3;
+					quad[3] = v4;
 					return quad;
 				}
 
-				// Current block exhausted; try next duplicate block if this key still has more
-				if (dupEmittedCount < dupTotalCount) {
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT_MULTIPLE);
-					if (lastResult == MDB_SUCCESS) {
-						resetDuplicateBuffer(valueData.mv_data());
-						continue;
-					}
+				// Ask LMDB for the next duplicate block under the same key
+				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT_MULTIPLE);
+				if (lastResult == MDB_SUCCESS) {
+					resetDuplicateBuffer(valueData.mv_data());
+					continue;
+				}
+				if (lastResult != MDB_NOTFOUND) {
+					E(lastResult);
 				}
 
-				// Advance to next key and re-prime if still within the requested prefix
-				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-				if (lastResult != MDB_SUCCESS) {
-					closeInternal(false);
-					return null;
-				}
-				if (!currentKeyHasPrefix()) {
-					if (!adjustCursorToPrefix()) {
+				// No more duplicate blocks for this key; advance to next key in range
+				do {
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					if (lastResult != MDB_SUCCESS) {
 						closeInternal(false);
 						return null;
 					}
-				}
-				if (!primeDuplicateBlock()) {
-					closeInternal(false);
-					return null;
-				}
+					// Ensure we're still within the requested (subj,pred) prefix
+					if (!currentKeyHasPrefix() && !adjustCursorToPrefix()) {
+						closeInternal(false);
+						return null;
+					}
+				} while (!primeDuplicateBlock()); // skip any keys without a duplicate block (defensive)
 			}
 		} catch (IOException e) {
 			throw new SailException(e);
@@ -206,8 +216,11 @@ class LmdbDupRecordIterator implements RecordIterator {
 		}
 	}
 
+	/* ---------- Positioning & Prefix handling ---------- */
+
 	private boolean positionOnPrefix() throws IOException {
 		keyData.mv_data(prefixKeyBuf);
+
 		lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_KEY);
 		if (lastResult == MDB_NOTFOUND) {
 			lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
@@ -233,88 +246,82 @@ class LmdbDupRecordIterator implements RecordIterator {
 		return cmp == 0;
 	}
 
+	/**
+	 * Compare current cursor key with (prefixSubj, prefixPred) without allocating a duplicate buffer.
+	 */
 	private int comparePrefix() {
-		ByteBuffer key = keyData.mv_data().duplicate();
-		{
-			long actual = Varint.readUnsigned(key);
-			long expected = prefixValues[0];
-			if (actual < expected) {
-				return -1;
+		ByteBuffer key = keyData.mv_data();
+		final int pos = key.position();
+		try {
+			long a0 = Varint.readUnsigned(key);
+			int c0 = Long.compare(a0, prefixSubj);
+			if (c0 != 0) {
+				return c0;
 			}
-			if (actual > expected) {
-				return 1;
-			}
+			long a1 = Varint.readUnsigned(key);
+			return Long.compare(a1, prefixPred);
+		} finally {
+			key.position(pos); // restore buffer position
 		}
-		{
-			long actual = Varint.readUnsigned(key);
-			long expected = prefixValues[1];
-			if (actual < expected) {
-				return -1;
-			}
-			if (actual > expected) {
-				return 1;
-			}
-		}
-		return 0;
-	}
-
-	private boolean primeDuplicateBlock() throws IOException {
-		lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_GET_MULTIPLE);
-		if (lastResult == MDB_SUCCESS) {
-			resetDuplicateBuffer(valueData.mv_data());
-			refreshDuplicateCount();
-			dupEmittedCount = 0L;
-			return dupBuf != null && dupLimit - dupPos >= Long.BYTES * 2;
-		} else if (lastResult == MDB_NOTFOUND) {
-			return false;
-		} else {
-			resetDuplicateBuffer(valueData.mv_data());
-			refreshDuplicateCount();
-			dupEmittedCount = 0L;
-			return dupBuf != null && dupLimit - dupPos >= Long.BYTES * 2;
-		}
-	}
-
-	private void refreshDuplicateCount() throws IOException {
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			PointerBuffer pb = stack.mallocPointer(1);
-			E(mdb_cursor_count(cursor, pb));
-			dupTotalCount = pb.get(0);
-		}
-	}
-
-	private void resetDuplicateBuffer(ByteBuffer buffer) {
-		if (buffer == null) {
-			dupBuf = null;
-			dupPos = dupLimit = 0;
-		} else {
-			ByteBuffer source = buffer.duplicate();
-			source.position(buffer.position());
-			source.limit(buffer.limit());
-			ByteBuffer copy = ByteBuffer.allocate(source.remaining());
-			copy.put(source);
-			copy.flip();
-			dupBuf = copy;
-			dupPos = dupBuf.position();
-			dupLimit = dupBuf.limit();
-		}
-	}
-
-	private void fillQuadFromPrefixAndValue(long v3, long v4) {
-		quad[0] = prefixValues[0];
-		quad[1] = prefixValues[1];
-		quad[2] = v3;
-		quad[3] = v4;
 	}
 
 	private boolean currentKeyHasPrefix() {
 		return comparePrefix() == 0;
 	}
 
-	private boolean matchesQuad() {
-		return (originalQuad[0] < 0 || quad[0] == originalQuad[0])
-				&& (originalQuad[1] < 0 || quad[1] == originalQuad[1]);
+	/* ---------- Duplicate block priming ---------- */
+
+	/**
+	 * Prime the duplicate buffer for the current key using MDB_GET_MULTIPLE.
+	 */
+	private boolean primeDuplicateBlock() throws IOException {
+		lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_GET_MULTIPLE);
+		if (lastResult == MDB_SUCCESS) {
+			resetDuplicateBuffer(valueData.mv_data());
+			return dupBuf != null && dupLimit - dupPos >= DUP_PAIR_BYTES;
+		}
+		if (lastResult == MDB_NOTFOUND) {
+			resetDuplicateBuffer(null);
+			return false;
+		}
+		E(lastResult);
+		return false; // unreachable
 	}
+
+	/**
+	 * Prepare a readable view over the LMDB-provided value buffer. Default: zero-copy {@code slice()}. If
+	 * COPY_DUP_BLOCKS is true, heap-copy for extra safety.
+	 */
+	private void resetDuplicateBuffer(ByteBuffer buffer) {
+		if (buffer == null) {
+			dupBuf = null;
+			dupPos = dupLimit = 0;
+			return;
+		}
+
+		if (!COPY_DUP_BLOCKS) {
+			// Zero-copy: view over [position, limit) of the native buffer
+			ByteBuffer view = buffer.slice();
+			view.order(ByteOrder.BIG_ENDIAN);
+			dupBuf = view;
+			dupPos = view.position(); // 0
+			dupLimit = view.limit();
+		} else {
+			// Conservative path: copy to Java heap to decouple lifetime from cursor operations
+			ByteBuffer src = buffer.duplicate();
+			src.position(buffer.position());
+			src.limit(buffer.limit());
+			ByteBuffer copy = ByteBuffer.allocate(src.remaining());
+			copy.put(src);
+			copy.flip();
+			copy.order(ByteOrder.BIG_ENDIAN);
+			dupBuf = copy;
+			dupPos = dupBuf.position();
+			dupLimit = dupBuf.limit();
+		}
+	}
+
+	/* ---------- Lifecycle ---------- */
 
 	private void closeInternal(boolean maybeCalledAsync) {
 		if (!closed) {
@@ -383,13 +390,5 @@ class LmdbDupRecordIterator implements RecordIterator {
 			return null;
 		}
 		return fallbackSupplier.get();
-	}
-
-	private long readBigEndianLong(ByteBuffer buffer, int offset) {
-		long value = 0L;
-		for (int i = 0; i < Long.BYTES; i++) {
-			value = (value << 8) | (buffer.get(offset + i) & 0xFFL);
-		}
-		return value;
 	}
 }
