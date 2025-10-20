@@ -123,7 +123,7 @@ final class TxnRecordCache {
 			MDBVal keyVal = MDBVal.malloc(stack);
 			MDBVal dataVal = MDBVal.calloc(stack);
 			ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
-			Varint.writeListUnsigned(keyBuf, quad);
+			Varint.writeQuadUnsigned(keyBuf, quad);
 			keyBuf.flip();
 			keyVal.mv_data(keyBuf);
 
@@ -152,7 +152,7 @@ final class TxnRecordCache {
 			// use calloc to get an empty data value
 			MDBVal dataVal = MDBVal.calloc(stack);
 			ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
-			Varint.writeListUnsigned(keyBuf, quad);
+			Varint.writeQuadUnsigned(keyBuf, quad);
 			keyBuf.flip();
 			keyVal.mv_data(keyBuf);
 
@@ -224,7 +224,7 @@ final class TxnRecordCache {
 
 		public Record next() {
 			if (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == MDB_SUCCESS) {
-				Varint.readListUnsigned(keyData.mv_data(), quad);
+				Varint.readQuadUnsigned(keyData.mv_data(), quad);
 				byte op = Objects.requireNonNull(valueData.mv_data()).get(0);
 				Record r = new Record();
 				r.quad = quad;

@@ -129,10 +129,10 @@ public class VarintTest {
 			long[] expected = new long[4];
 			System.arraycopy(values, 0, expected, 0, 4);
 			bb.clear();
-			Varint.writeListUnsigned(bb, expected);
+			Varint.writeQuadUnsigned(bb, expected);
 			bb.flip();
 			long[] actual = new long[4];
-			Varint.readListUnsigned(bb, actual);
+			Varint.readQuadUnsigned(bb, actual);
 			assertArrayEquals("Encoded and decoded value should be equal", expected, actual);
 		}
 	}
