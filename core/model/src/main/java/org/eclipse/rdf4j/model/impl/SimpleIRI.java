@@ -123,4 +123,20 @@ public class SimpleIRI extends AbstractIRI {
 		return iriString.substring(localNameIdx);
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o instanceof SimpleIRI) {
+			// Fast-path for same concrete type: compare internal string directly
+			return this.iriString.equals(((SimpleIRI) o).iriString);
+		}
+		if (o instanceof IRI) {
+			// Cross-type equality by lexical form
+			return stringValue().equals(((IRI) o).stringValue());
+		}
+		return false;
+	}
+
 }

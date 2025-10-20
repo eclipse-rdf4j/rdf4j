@@ -124,6 +124,22 @@ public abstract class AbstractIRI implements IRI {
 			}
 		}
 
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (o instanceof GenericIRI) {
+				// Fast-path for same concrete type: compare internal string directly
+				return this.iri.equals(((GenericIRI) o).iri);
+			}
+			if (o instanceof IRI) {
+				// Cross-type equality by lexical form
+				return stringValue().equals(((IRI) o).stringValue());
+			}
+			return false;
+		}
+
 	}
 
 }
