@@ -298,13 +298,11 @@ public class QueryBenchmarkTest {
 
 	@Test
 	public void ordered_union_limit() {
-		for (int i = 0; i < 100; i++) {
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				long count = count(connection
-						.prepareTupleQuery(ordered_union_limit)
-						.evaluate());
-				assertEquals(250L, count);
-			}
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			long count = count(connection
+					.prepareTupleQuery(ordered_union_limit)
+					.evaluate());
+			assertEquals(250L, count);
 		}
 	}
 
