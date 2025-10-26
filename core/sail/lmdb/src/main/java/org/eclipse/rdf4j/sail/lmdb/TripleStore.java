@@ -78,6 +78,7 @@ import java.util.function.IntConsumer;
 import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
@@ -104,7 +105,20 @@ import org.slf4j.LoggerFactory;
  * an actual RDF value.
  */
 @SuppressWarnings("deprecation")
-class TripleStore implements Closeable {
+@InternalUseOnly
+public class TripleStore implements Closeable {
+
+	/*-----------*
+	 * Constants *
+	 *-----------*/
+
+	// triples are represented by 4 varints for subject, predicate, object and context
+	public static final int SUBJ_IDX = TripleIndex.SUBJ_IDX;
+	public static final int PRED_IDX = TripleIndex.PRED_IDX;
+	public static final int OBJ_IDX = TripleIndex.OBJ_IDX;
+	public static final int CONTEXT_IDX = TripleIndex.CONTEXT_IDX;
+
+	static final int MAX_KEY_LENGTH = TripleIndex.MAX_KEY_LENGTH;
 
 	/**
 	 * The default triple indexes.
