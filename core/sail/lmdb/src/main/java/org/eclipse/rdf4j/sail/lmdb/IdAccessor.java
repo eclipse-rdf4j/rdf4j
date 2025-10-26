@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -10,28 +10,22 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import java.io.Closeable;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 
 /**
- * An iterator that iterates over records, for example those in a key-value database.
+ * Read-only accessor for variable ID lookups against a record long[] produced by a RecordIterator.
  */
 @InternalUseOnly
-public interface RecordIterator extends Closeable {
+public interface IdAccessor {
+	long getId(long[] record, String varName);
+
+	Set<String> getVariableNames();
 
 	/**
-	 * Returns the next record.
-	 *
-	 * @return A record that or <tt>null</tt> if all records have been returned.
+	 * Returns the index inside the {@code long[]} record where the given variable's ID is stored. Implementations
+	 * should return {@code -1} when the variable is not part of the record.
 	 */
-	long[] next();
-
-	/**
-	 * Closes the iterator, freeing any resources that it uses. Once closed, the iterator will not return any more
-	 * records.
-	 *
-	 */
-	@Override
-	void close();
+	int getRecordIndex(String varName);
 }

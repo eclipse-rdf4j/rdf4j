@@ -42,6 +42,10 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
@@ -61,6 +65,18 @@ import org.slf4j.LoggerFactory;
  * A disk based {@link SailStore} implementation that keeps committed statements in a {@link TripleStore}.
  */
 class LmdbSailStore implements SailStore {
+
+	private static final RecordIterator EMPTY_RECORD_ITERATOR = new RecordIterator() {
+		@Override
+		public long[] next() {
+			return null;
+		}
+
+		@Override
+		public void close() {
+			// no-op
+		}
+	};
 
 	final Logger logger = LoggerFactory.getLogger(LmdbSailStore.class);
 
@@ -1089,7 +1105,7 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	private final class LmdbSailDataset implements SailDataset {
+	private final class LmdbSailDataset implements SailDataset, LmdbEvaluationDataset {
 
 		private final boolean explicit;
 		private final Txn txn;
@@ -1098,6 +1114,7 @@ class LmdbSailStore implements SailStore {
 			this.explicit = explicit;
 			try {
 				this.txn = tripleStore.getTxnManager().createReadTxn();
+				LmdbEvaluationStrategy.setCurrentDataset(this);
 			} catch (IOException e) {
 				throw new SailException(e);
 			}
@@ -1105,8 +1122,12 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void close() {
-			// close the associated txn
-			txn.close();
+			try {
+				// close the associated txn
+				txn.close();
+			} finally {
+				LmdbEvaluationStrategy.clearCurrentDataset();
+			}
 		}
 
 		@Override
@@ -1336,6 +1357,170 @@ class LmdbSailStore implements SailStore {
 			default:
 				throw new IllegalArgumentException("Unknown field: " + f);
 			}
+		}
+
+		@Override
+		public RecordIterator getRecordIterator(StatementPattern pattern, BindingSet bindings)
+				throws QueryEvaluationException {
+			try {
+				Value subj = resolveValue(pattern.getSubjectVar(), bindings);
+				if (subj != null && !(subj instanceof Resource)) {
+					return emptyRecordIterator();
+				}
+				Value pred = resolveValue(pattern.getPredicateVar(), bindings);
+				if (pred != null && !(pred instanceof IRI)) {
+					return emptyRecordIterator();
+				}
+				Value obj = resolveValue(pattern.getObjectVar(), bindings);
+
+				long subjID = resolveId(subj);
+				if (subj != null && subjID == LmdbValue.UNKNOWN_ID) {
+					return emptyRecordIterator();
+				}
+
+				long predID = resolveId(pred);
+				if (pred != null && predID == LmdbValue.UNKNOWN_ID) {
+					return emptyRecordIterator();
+				}
+
+				long objID = resolveId(obj);
+				if (obj != null && objID == LmdbValue.UNKNOWN_ID) {
+					return emptyRecordIterator();
+				}
+
+				Value contextValue = resolveValue(pattern.getContextVar(), bindings);
+				long contextID;
+				if (contextValue == null) {
+					contextID = LmdbValue.UNKNOWN_ID;
+				} else if (contextValue instanceof Resource) {
+					Resource ctx = (Resource) contextValue;
+					if (ctx.isTriple()) {
+						return emptyRecordIterator();
+					}
+					contextID = resolveId(ctx);
+					if (contextID == LmdbValue.UNKNOWN_ID) {
+						return emptyRecordIterator();
+					}
+				} else {
+					return emptyRecordIterator();
+				}
+
+				return tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
+			} catch (IOException e) {
+				throw new QueryEvaluationException("Unable to create LMDB record iterator", e);
+			}
+		}
+
+		@Override
+		public RecordIterator getRecordIterator(StatementPattern pattern, LmdbIdVarBinding idBinding)
+				throws QueryEvaluationException {
+			try {
+				// Resolve subject
+				long subjID = resolveIdFromVarOrBinding(pattern.getSubjectVar(), idBinding, true);
+				if (subjID == Long.MIN_VALUE) { // incompatible type
+					return emptyRecordIterator();
+				}
+
+				// Resolve predicate
+				long predID = resolveIdFromVarOrBinding(pattern.getPredicateVar(), idBinding, false);
+				if (predID == Long.MIN_VALUE) {
+					return emptyRecordIterator();
+				}
+
+				// Resolve object
+				long objID = resolveIdFromVarOrBinding(pattern.getObjectVar(), idBinding, null);
+				if (objID == Long.MIN_VALUE) {
+					return emptyRecordIterator();
+				}
+
+				// Resolve context
+				org.eclipse.rdf4j.query.algebra.Var ctxVar = pattern.getContextVar();
+				long contextID;
+				if (ctxVar == null) {
+					contextID = LmdbValue.UNKNOWN_ID;
+				} else if (ctxVar.hasValue()) {
+					Value ctxValue = ctxVar.getValue();
+					if (ctxValue instanceof Resource) {
+						Resource ctx = (Resource) ctxValue;
+						if (ctx.isTriple()) {
+							return emptyRecordIterator();
+						}
+						contextID = resolveId(ctx);
+						if (contextID == LmdbValue.UNKNOWN_ID) {
+							return emptyRecordIterator();
+						}
+					} else {
+						return emptyRecordIterator();
+					}
+				} else {
+					// variable context; if bound on left, use that; 0 represents default graph
+					long bound = idBinding == null ? LmdbValue.UNKNOWN_ID : idBinding.getIdOrUnknown(ctxVar.getName());
+					contextID = bound;
+				}
+
+				return tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
+			} catch (IOException e) {
+				throw new QueryEvaluationException("Unable to create LMDB record iterator", e);
+			}
+		}
+
+		private long resolveIdFromVarOrBinding(org.eclipse.rdf4j.query.algebra.Var var, LmdbIdVarBinding idBinding,
+				Boolean resourceType) throws IOException {
+			if (var == null) {
+				return LmdbValue.UNKNOWN_ID;
+			}
+			if (var.hasValue()) {
+				Value v = var.getValue();
+				if (resourceType == Boolean.TRUE && !(v instanceof Resource)) {
+					return Long.MIN_VALUE; // incompatible type
+				}
+				if (resourceType == Boolean.FALSE && !(v instanceof IRI)) {
+					return Long.MIN_VALUE; // incompatible type
+				}
+				long id = resolveId(v);
+				return id == LmdbValue.UNKNOWN_ID ? Long.MIN_VALUE : id;
+			}
+			long bound = idBinding == null ? LmdbValue.UNKNOWN_ID : idBinding.getIdOrUnknown(var.getName());
+			return bound;
+		}
+
+		@Override
+		public ValueStore getValueStore() {
+			return valueStore;
+		}
+
+		private RecordIterator emptyRecordIterator() {
+			return EMPTY_RECORD_ITERATOR;
+		}
+
+		private Value resolveValue(Var var, BindingSet bindings) {
+			if (var == null) {
+				return null;
+			}
+			if (var.hasValue()) {
+				return var.getValue();
+			}
+			if (bindings != null) {
+				Value bound = bindings.getValue(var.getName());
+				if (bound != null) {
+					return bound;
+				}
+			}
+			return null;
+		}
+
+		private long resolveId(Value value) throws IOException {
+			if (value == null) {
+				return LmdbValue.UNKNOWN_ID;
+			}
+			if (value instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) {
+				org.eclipse.rdf4j.sail.lmdb.model.LmdbValue lmdbValue = (org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) value;
+				if (valueStore.getRevision().equals(lmdbValue.getValueStoreRevision())) {
+					return lmdbValue.getInternalID();
+				}
+			}
+			long id = valueStore.getId(value);
+			return id;
 		}
 
 		private TripleStore.TripleIndex chooseIndexForOrder(StatementOrder order, long s, long p, long o, long c)

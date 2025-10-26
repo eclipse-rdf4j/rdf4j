@@ -78,6 +78,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
@@ -102,7 +103,8 @@ import org.slf4j.LoggerFactory;
  * an actual RDF value.
  */
 @SuppressWarnings("deprecation")
-class TripleStore implements Closeable {
+@InternalUseOnly
+public class TripleStore implements Closeable {
 
 	static ConcurrentHashMap<TripleIndex.KeyStats, TripleIndex.KeyStats> stats = new ConcurrentHashMap<>();
 	static long hit = 0;
@@ -114,10 +116,10 @@ class TripleStore implements Closeable {
 	 *-----------*/
 
 	// triples are represented by 4 varints for subject, predicate, object and context
-	static final int SUBJ_IDX = 0;
-	static final int PRED_IDX = 1;
-	static final int OBJ_IDX = 2;
-	static final int CONTEXT_IDX = 3;
+	public static final int SUBJ_IDX = 0;
+	public static final int PRED_IDX = 1;
+	public static final int OBJ_IDX = 2;
+	public static final int CONTEXT_IDX = 3;
 
 	static final int MAX_KEY_LENGTH = 4 * 9;
 

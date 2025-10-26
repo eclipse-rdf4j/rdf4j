@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -10,28 +10,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import java.io.Closeable;
+import java.util.Optional;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 
 /**
- * An iterator that iterates over records, for example those in a key-value database.
+ * Exposes LMDB-specific resources from a
+ * {@link org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext}.
  */
 @InternalUseOnly
-public interface RecordIterator extends Closeable {
+public interface LmdbDatasetContext {
 
-	/**
-	 * Returns the next record.
-	 *
-	 * @return A record that or <tt>null</tt> if all records have been returned.
-	 */
-	long[] next();
+	Optional<LmdbEvaluationDataset> getLmdbDataset();
 
-	/**
-	 * Closes the iterator, freeing any resources that it uses. Once closed, the iterator will not return any more
-	 * records.
-	 *
-	 */
-	@Override
-	void close();
+	Optional<ValueStore> getValueStore();
 }
