@@ -1,70 +1,12 @@
-# You are a very strong reasoner and planner. Use these critical instructions to structure your plans, thoughts, and responses.
+# AGENTS.md
 
-Before taking any action (either tool calls *or* responses to the user), you must proactively, methodically, and independently plan and reason about:
+Welcome, AI Agent! Your persistence, curiosity, and craftsmanship make a difference. Take your time, work methodically, validate thoroughly, and iterate. This repository is large and tests can take time — that’s expected and supported.
 
-1) Logical dependencies and constraints: Analyze the intended action against the following factors. Resolve conflicts in order of importance:
-
-   1.1) Policy-based rules, mandatory prerequisites, and constraints.
-
-   1.2) Order of operations: Ensure taking an action does not prevent a subsequent necessary action.
-
-     1.2.1) The user may request actions in a random order, but you may need to reorder operations to maximize successful completion of the task.
-
-   1.3) Other prerequisites (information and/or actions needed).
-
-   1.4) Explicit user constraints or preferences.
-
-2) Risk assessment: What are the consequences of taking the action? Will the new state cause any future issues?
-
-   2.1) For exploratory tasks (like searches), missing *optional* parameters is a LOW risk.  
-   **Prefer calling the tool with the available information over asking the user, unless** your `Rule 1` (Logical Dependencies) reasoning determines that optional information is required for a later step in your plan.
-
-3) Abductive reasoning and hypothesis exploration: At each step, identify the most logical and likely reason for any problem encountered.
-
-   3.1) Look beyond immediate or obvious causes. The most likely reason may not be the simplest and may require deeper inference.
-
-   3.2) Hypotheses may require additional research. Each hypothesis may take multiple steps to test.
-
-   3.3) Prioritize hypotheses based on likelihood, but do not discard less likely ones prematurely. A low-probability event may still be the root cause.
-
-4) Outcome evaluation and adaptability: Does the previous observation require any changes to your plan?
-
-   4.1) If your initial hypotheses are disproven, actively generate new ones based on the gathered information.
-
-5) Information availability: Incorporate all applicable and alternative sources of information, including:
-
-   5.1) Using available tools and their capabilities  
-   5.2) All policies, rules, checklists, and constraints  
-   5.3) Previous observations and conversation history  
-   5.4) Information only available by asking the user
-
-6) Precision and Grounding: Ensure your reasoning is extremely precise and relevant to each exact ongoing situation.
-
-   6.1) Verify your claims by quoting the exact applicable information (including policies) when referring to them.
-
-7) Completeness: Ensure that all requirements, constraints, options, and preferences are exhaustively incorporated into your plan.
-
-   7.1) Resolve conflicts using the order of importance in #1.
-
-   7.2) Avoid premature conclusions: There may be multiple relevant options for a given situation.
-
-     7.2.1) To check for whether an option is relevant, reason about all information sources from #5.  
-
-     7.2.2) You may need to consult the user to even know whether something is applicable. Do not assume it is not applicable without checking.
-
-   7.3) Review applicable sources of information from #5 to confirm which are relevant to the current state.
-
-8) Persistence and patience: Do not give up unless all the reasoning above is exhausted.
-
-   8.1) Don't be dissuaded by time taken or user frustration.
-
-   8.2) This persistence must be intelligent: On *transient* errors (e.g. please try again), you *must* retry **unless an explicit retry limit (e.g., max x tries) has been reached**. If such a limit is hit, you *must* stop. On *other* errors, you must change your strategy or arguments, not repeat the same failed call.
-
-9) Inhibit your response: only take an action after all the above reasoning is completed. Once you've taken an action, you cannot take it back.
+You need to read the entire AGENTS.md file and follow all instructions exactly. Keep this fresh in your context as you work.
 
 ---
 
-## Read‑Me‑Now: Proportional Test‑First Rule
+## Read‑Me‑Now: Proportional Test‑First Rule (Default)
 
 **Default:** Use **test‑first (TDD)** for any change that alters externally observable behavior.
 
@@ -81,7 +23,6 @@ Before taking any action (either tool calls *or* responses to the user), you mus
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
-Always keep untracked artifacts!
 
 > **Clarification:** For **strictly behavior‑neutral refactors** that are already **fully exercised by existing tests**, or for **bugfixes with an existing failing test**, you may use **Routine B — Change without new tests**. In that case you must capture **pre‑change passing evidence** at the smallest scope that hits the code you’re about to edit, prove **Hit Proof**, then show **post‑change passing evidence** from the **same selection**.
 > **No exceptions for any behavior‑changing change** — for those, you must follow **Routine A — Full TDD** or **Routine D — ExecPlans**.
@@ -90,48 +31,82 @@ Always keep untracked artifacts!
 
 ## Four Routines: Choose Your Path
 
-**Routine A — Full TDD**
+**Routine A — Full TDD (Default)**
 **Routine B — Change without new tests (Proportional, gated)**
 **Routine C — Spike/Investigate (No production changes)**
 **Routine D — ExecPlans: Complex features or significant refactors**
 
 ### Decision quickstart
 
-1. **Is ExecPlans required (complex feature, significant refactor, etc. or explicitly requested by the user)?**
+1. **Is ExecPlans required (complex feature, significant refactor or requested by the user)?**
    → **Yes:** **Routine D (ExecPlans)**. Use an ExecPlan (as described in .agent/PLANS.md) from design to implementation.
    → **No:** continue.
 
-3. **Does a failing test already exist in this repo that pinpoints the issue?**
-→ **Yes:** **Routine B (Bugfix using existing failing test).**
-→ **No:** continue.
-
-4. **Is the edit strictly behavior‑neutral, local in scope, and clearly hit by existing tests?**
-→ **Yes:** **Routine B (Refactor/micro‑perf/documentation/build).**
-→ **No or unsure:** continue.
-
-5. **Is new externally observable behavior required?**
+2**Is new externally observable behavior required?**
    → **Yes:** **Routine A (Full TDD)**. Add the smallest failing test first.
    → **No:** continue.
 
-6. **Is this purely an investigation/design spike with no production code changes?**
+3**Does a failing test already exist in this repo that pinpoints the issue?**
+   → **Yes:** **Routine B (Bugfix using existing failing test).**
+   → **No:** continue.
+
+4**Is the edit strictly behavior‑neutral, local in scope, and clearly hit by existing tests?**
+   → **Yes:** **Routine B (Refactor/micro‑perf/documentation/build).**
+   → **No or unsure:** continue.
+
+5**Is this purely an investigation/design spike with no production code changes?**
    → **Yes:** **Routine C (Spike/Investigate).**
    → **No or unsure:** **Routine A.**
 
+**When in doubt, choose Routine A (Full TDD).** Ambiguity is risk; tests are insurance.
+
 ---
 
 ## ExecPlans
 
 When writing complex features or significant refactors, use an ExecPlan (as described in PLANS.md) from design to implementation.
 
-## ExecPlans
+## PIOSEE Decision Model (Adopted)
 
-When writing complex features or significant refactors, use an ExecPlan (as described in PLANS.md) from design to implementation.
+Use this as a compact, repeatable loop for anything from a one‑line bug fix to a multi‑quarter program.
+
+### P — **Problem**
+
+**Goal:** State the core problem and what “good” looks like.
+**Ask:** Who’s affected? What outcome is required? What happens if we do nothing?
+**Tip:** Include measurable target(s): error rate ↓, latency p95 ↓, revenue ↑, risk ↓.
+
+### I — **Information**
+
+**Goal:** Gather only the facts needed to move.
+**Ask:** What do logs/metrics/user feedback say? What constraints (security, compliance, budget, SLA/SLO)? What assumptions must we test?
+
+### O — **Options**
+
+**Goal:** Generate viable ways forward, including “do nothing.”
+**Ask:** What are 2–4 distinct approaches (patch, redesign, buy vs. build, defer)? What risks, costs, and second‑order effects?
+**Tip:** Check guardrails: reliability, security/privacy, accessibility, performance, operability, unit economics.
+
+### S — **Select**
+
+**Goal:** Decide deliberately and document why.
+**Ask:** Which option best meets the success criteria under constraints? Who is the decision owner? What’s the fallback/abort condition?
+**Tip:** Use lightweight scoring (e.g., Impact×Confidence÷Effort) to avoid bike‑shedding.
+
+### E — **Execute**
+
+**Goal:** Ship safely and visibly.
+**Ask:** What is the smallest safe slice? How do we de‑risk (feature flag, canary, dark launch, rollback)? Who owns what?
+**Checklist:** Traces/logs/alerts; security & privacy checks; docs & changelog; incident plan if relevant.
+
+### E — **Evaluate**
+
+**Goal:** Verify outcomes and learn.
+**Ask:** Did metrics hit targets? Any regressions or side effects? What will we keep/change next loop?
+**Output:** Post‑release review (or retro), decision log entry, follow‑ups (tickets), debt captured.
+**Tip:** If outcomes miss, either **iterate** (new Options) or **reframe** (back to Problem).
 
 ---
-
-### Benchmarking workflow (repository-wide)
-
-The `scripts/run-single-benchmark.sh` helper is the supported path for spot-checking performance optimisations. It builds the chosen module with the `benchmarks` profile, constrains the benchmark selection to a single `@Benchmark` method, and when `--enable-jfr` is supplied it enforces repeatable profiling defaults (no warmup, ten 10-second measurements, one fork) while clearly reporting the destination of the generated JFR recording. Lean on this script whenever you need a reproducible measurement harness.
 
 ## Proportionality Model (Think before you test)
 
@@ -203,10 +178,10 @@ After each grouped action, post an **Evidence block**, then continue working:
 **Evidence template**
 ```
 Evidence:
-Command: python3 .codex/skills/mvnf/scripts/mvnf.py Class#method (preferred) OR mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=Class#method verify
+Command: mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=Class#method verify
 Report: <module>/target/surefire-reports/<file>.txt
 Snippet:
-\<copy 1–30 lines capturing the failure or success summary>
+\<copy 10–30 lines capturing the failure or success summary>
 ```
 
 **Routine B additions**
@@ -225,11 +200,8 @@ To avoid losing the first test evidence when later runs overwrite `target/*-repo
 
 • On a fully green verify run:
 
-- Capture and store the last 200 lines of the verify output.
-- Example (mvnf):
-    - `python3 .codex/skills/mvnf/scripts/mvnf.py <module> --retain-logs --stream`
-    - `tail -200 "$(ls -t logs/mvnf/*-verify.log | head -1)" > initial-evidence.txt`
-- Example (manual Maven):
+- Capture and store the last 200 lines of the Maven verify output.
+- Example (module‑scoped):
     - `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tee .initial-verify.log`
     - `tail -200 .initial-verify.log > initial-evidence.txt`
 
@@ -270,7 +242,7 @@ Plan
 
 ## Environment
 
-* **JDK:** 25 (minimum). The project builds and runs on Java 25+.
+* **JDK:** 11 (minimum). The project builds and runs on Java 11+.
 * **Maven default:** run **offline** using `-o` whenever possible.
 * **Maven local repo (required):** always pass `-Dmaven.repo.local=.m2_repo` on all Maven commands (install, verify, plugins, formatting). All examples in this document implicitly assume this flag, even if omitted.
 * **Network:** only to fetch missing deps/plugins; then rerun once without `-o`, and return offline.
@@ -281,18 +253,17 @@ Plan
 `-am` is helpful for **compiles**, hazardous for **tests**.
 
 * ✅ Use `-am` **only** for compile/verify with tests skipped (e.g. `-Pquick`):
-    * `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install`
+    * `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick install`
 * ❌ Do **not** use `-am` with `verify` when tests are enabled.
 
 **Two-step pattern (fast + safe)**
 1. **Compile deps fast (skip tests):**
-   `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install`
+   `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick install`
 2. **Run tests:**
-   `python3 .codex/skills/mvnf/scripts/mvnf.py <module> --retain-logs --stream` or `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tail -500` 
+   `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tail -500`
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
-Always keep untracked artifacts!
 
 ---
 
@@ -301,32 +272,19 @@ Always keep untracked artifacts!
 The Maven reactor resolves inter-module dependencies from the configured local Maven repository (here: `.m2_repo`).
 Running `install` publishes your changed modules there so downstream modules and tests pick up the correct versions.
 
-* Always run `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200` before you start working. This command typically takes up to 30 seconds. Never use a shorter timeout than 60,000 ms.
-* Always run `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200` before any `verify` or test runs.
-* If offline resolution fails due to a missing dependency or plugin, run the command without `-o`: `mvn -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`, then return offline.
-* If it fails for any other reason, run the command without `-T 1C`: `mvn -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`.
+* Always run `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install | tail -200` before you start working. This command typically takes up to 30 seconds. Never use a small timeout than 30,000 ms.
+* Always run `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install | tail -200` before any `verify` or test runs.
+* If offline resolution fails due to a missing dependency or plugin, rerun the exact `install` command once without `-o`, then return offline.
 * Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
 * Always use a workspace-local Maven repository: append `-Dmaven.repo.local=.m2_repo` to all Maven commands (install, verify, formatter, etc.).
 * Always try to run these commands first to see if they run without needing any approvals from the user w.r.t. the sandboxing.
-* If you run tests via `mvnf`, it already performs module clean + root `-Pquick` install before verify.
 
 Why this is mandatory
 
 - Tests must not use `-am`. Without `-am`, Maven will not build upstream modules when you run tests; it will resolve cross‑module dependencies from the configured local repository (here: `.m2_repo`).
 - Therefore, tests only see whatever versions were last published to the configured local repo (`.m2_repo`). If you change code in one module and then run tests in another, those tests will not see your changes unless the updated module has been installed to `.m2_repo` first.
-- The reliable way to ensure all tests always use the latest code across the entire multi‑module build is to install all modules to the configured local repo (`.m2_repo`) before running any tests: run `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install` at the repository root.
-- In tight loops you may also install a specific module and its deps (`-pl <module> -am -Pquick clean install`) to iterate quickly, but before executing tests anywhere that depend on your changes, run a root‑level `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install` so the latest jars are available to the reactor from `.m2_repo`.
----
-
-## Skills (Preferred Runners)
-
-Prefer these skills over manual Maven test commands. Manual commands remain available as a fallback when needed.
-
-- `mvnf`: Consistent test runner that does module clean, root `-Pquick` install, then module verify or a single test class/method. Use this as the default way to run tests. Logs are deleted on success unless `--retain-logs`.
-- `debug-surefire`: Runs Surefire tests in JDWP wait-for-debugger mode so you can attach a debugger (jdb/IDE) and step through tests.
-
-If you need manual control or a skill does not fit, use the Maven commands below.
-
+- The reliable way to ensure all tests always use the latest code across the entire multi‑module build is to install all modules to the configured local repo (`.m2_repo`) before running any tests: run `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install` at the repository root.
+- In tight loops you may also install a specific module and its deps (`-pl <module> -am -Pquick install`) to iterate quickly, but before executing tests anywhere that depend on your changes, run a root‑level `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install` so the latest jars are available to the reactor from `.m2_repo`.
 ---
 
 ## Quick Start (First 10 Minutes)
@@ -335,30 +293,23 @@ If you need manual control or a skill does not fit, use the Maven commands below
     * Inspect root `pom.xml` and module tree (see “Maven Module Overview”).
     * Search fast with ripgrep: `rg -n "<symbol or string>"`
 2. **Build sanity (fast, skip tests)**
-    * `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`
+    * `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install | tail -200`
 3. **Format (Java, imports, XML)**
-    * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C process-resources`
-    * Ensure every touched Java file has the correct agent signature comment (`// Some portions generated by Codex` for Codex, `// Some portions generated by Co-Pilot` for GitHub Co-Pilot) inserted immediately below the header before formatting.
-    * Before invoking the formatter, `cd scripts && ./checkCopyrightPresent.sh` (or use `pushd/popd`) to ensure every new or edited source file still carries the required header; fix any findings before formatting.
-4. **Targeted tests (tight loops, prefer `mvnf`)**
-    * Module: `python3 .codex/skills/mvnf/scripts/mvnf.py <module>`
-    * Class: `python3 .codex/skills/mvnf/scripts/mvnf.py ClassName`
-    * Method: `python3 .codex/skills/mvnf/scripts/mvnf.py ClassName#method`
-    * Optional Maven fallback:
-      * Module: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify  | tail -500`
-      * Class: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName verify  | tail -500`
-      * Method: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName#method verify | tail -500`
+    * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+4. **Targeted tests (tight loops)**
+    * Module: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify  | tail -500`
+    * Class: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName verify  | tail -500`
+    * Method: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName#method verify | tail -500`
 5. **Inspect failures**
     * **Unit (Surefire):** `<module>/target/surefire-reports/`
     * **IT (Failsafe):** `<module>/target/failsafe-reports/`
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
-Always keep untracked artifacts!
 
 ---
 
-## Routine A — Full TDD
+## Routine A — Full TDD (Default)
 
 > Use for **all behavior‑changing work** and whenever Routine B gates do not all pass.
 
@@ -389,7 +340,6 @@ Always keep untracked artifacts!
 3. **Migration/rename/autogen refresh** where behavior is already characterized by existing tests.
 4. **Build/CI/docs/logging/message changes** that do not alter runtime behavior or asserted outputs.
 5. **Data/resource tweaks** not asserted by tests and not affecting behavior.
-6. **Benchmark-only changes** (benchmark sources, harness scripts, or benchmark data) that do not alter production behavior.
 
 ### Routine B Gates (all must pass)
 - **Neutrality/Scope:** No externally observable behavior change. Localized edit.
@@ -449,37 +399,36 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 
 ## Working Loop
 
+* **PIOSEE first:** restate Problem, gather Information, list Options; then Select, Execute, Evaluate.
 * **Plan:** small, verifiable steps; keep one `in_progress`, or follow PLANS.md (ExecPlans)
 * **Change:** minimal, surgical edits; keep style/structure consistent.
-* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C  process-resources`
-* **Compile (fast):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install | tail -500`
-* **Test (prefer `mvnf`):** start smallest (class/method → module); use `--it` for integration tests. Use manual Maven only when you need profiles/flags not supported by `mvnf`.
+* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+* **Compile (fast):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick install | tail -500`
+* **Test:** start smallest (class/method → module). For integration, run module `verify`.
 * **Triage:** read reports; fix root cause; expand scope only when needed.
 * **Iterate:** keep momentum; escalate only when blocked or irreversible.
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
-Always keep untracked artifacts!
 
 ---
 
 ## Testing Strategy
 
-* **Prefer `mvnf`:** start with `python3 .codex/skills/mvnf/scripts/mvnf.py Class#method`, then `Class`, then `<module>`.
-* **Integration tests:** use `--it` (e.g., `python3 .codex/skills/mvnf/scripts/mvnf.py --it ITClass#method`).
+* **Prefer module tests you touched:** `-pl <module>`
 * **Narrow further** to a class/method; then broaden to the module.
 * **Expand scope** when changes cross boundaries or neighbor modules fail.
 * **Read reports**
     * Surefire (unit): `target/surefire-reports/`
     * Failsafe (IT): `target/failsafe-reports/`
-* **Manual Maven fallback flags (when `mvnf` doesn't fit)**
+* **Helpful flags**
     * `-Dtest=Class#method` (unit selection)
     * `-Dit.test=ITClass#method` (integration selection)
     * `-DtrimStackTrace=false` (full traces)
     * `-DskipITs` (focus on unit tests)
     * `-DfailIfNoTests=false` (when selecting a class that has no tests on some platforms)
 
-### Optional: Redirect test stdout/stderr to files (manual Maven)
+### Optional: Redirect test stdout/stderr to files
 ```bash
 mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName[#method] -Dmaven.test.redirectTestOutputToFile=true verify | tail -500
 ````
@@ -525,13 +474,8 @@ Assertions are executable claims about what must be true. Use **temporary tripwi
 
 * Always run before finalizing:
 
-    * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C  process-resources`
+    * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 * Style: no wildcard imports; 120‑char width; curly braces always; LF endings.
-
-### Import hygiene (always)
-
-* Add explicit imports for every dependency you use instead of sprinkling fully qualified names through the code.
-* When an import exists, reference the simple class name; repeating the package inline is noisy and easy to get wrong.
 
 ---
 
@@ -556,17 +500,13 @@ Hint: get the current year with `date +%Y`.
 
 Do **not** modify existing headers’ years.
 
-Right below the header block, insert an agent signature comment: Codex agents must add `// Some portions generated by Codex`, and GitHub Co-Pilot agents must add `// Some portions generated by Co-Pilot`. Align the wording with whatever agent name you are currently operating under.
-
-Immediately after creating any new Java source file, add the signature comment (per rule above) and run `cd scripts && ./checkCopyrightPresent.sh` (or an equivalent pushd/popd invocation) so you catch missing copyright/SPDX lines before moving on.
-
 ---
 
 ## Pre‑Commit Checklist
 
-* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C  process-resources`
-* **Compile (fast path):** `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`
-* **Tests (targeted, prefer `mvnf`):** `python3 .codex/skills/mvnf/scripts/mvnf.py <module>` (broaden as needed; use Maven fallback if you need profiles/flags)
+* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+* **Compile (fast path):** `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install | tail -200`
+* **Tests (targeted):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tail -500` (broaden as needed)
 * **Reports:** zero new failures in Surefire/Failsafe, or explain precisely.
 * **Evidence:** Routine A — failing pre‑fix + passing post‑fix.
   Routine B — **pre/post green** from same selection + **Hit Proof**.
@@ -577,23 +517,17 @@ Immediately after creating any new Java source file, add the signature comment (
 
 * Branch names: start with `GH-XXXX` (GitHub issue number). Optional short slug, e.g., `GH-1234-trig-writer-check`.
 * Commit messages: `GH-XXXX <short imperative summary>` on every commit.
-* If no GitHub issue number was provided, do **not** block progress by asking for one — use `GH-0000` and explicitly call this out in your final summary/handoff.
-* If the current branch name already starts with `GH-XXXX-...` and the user did not provide an issue number, reuse that `GH-XXXX` prefix for any branch/commit labeling in this task.
 
 ---
 
 ## Branch & PR Workflow (Agent)
 
-* Determine the `GH-XXXX` label (in priority order):
-  * If the user provided an issue number, use it.
-  * Else, if the current git branch name starts with `GH-XXXX-...`, reuse that prefix.
-  * Else, use `GH-0000` and note the missing issue number in the final summary/handoff.
-* Do not interrupt feature work to ask for an issue number; complete the request first, then apply the best-available `GH-XXXX` label when/if branching/committing is needed.
+* Confirm issue number first (mandatory).
 * Branch: `git checkout -b GH-XXXX-your-slug`
 * Stage: `git add -A` (ensure new Java files have the required header).
 * Optional: formatter + quick install.
 * Commit: `git commit -m "GH-XXXX <short imperative summary>"`
-* Push & PR: use the default template; fill all fields; include `Fixes #XXXX` when an issue exists (if using `GH-0000`, omit `Fixes #...` and note the missing issue number in the final summary/handoff).
+* Push & PR: use the default template; fill all fields; include `Fixes #XXXX`.
 
 ---
 
@@ -606,23 +540,6 @@ Immediately after creating any new Java source file, add the signature comment (
     * `sed -n '1,200p' path/to/File.java`
     * `sed -n '201,400p' path/to/File.java`
 
-### Inspecting Git Changes Without Reverting
-
-* Never run `git checkout -- <file>` or `git restore --worktree <file>` just to peek at history — those commands mutate the working tree, try to grab `.git/index.lock`, and often require escalated privileges in this environment. Prefer read-only inspection.
-* To compare your edits against the last commit, use `git diff -- path/to/File.java` (working tree) or `git diff --cached -- path/to/File.java` (staged changes). Add `HEAD` to diff against the committed baseline explicitly: `git diff HEAD -- path/to/File.java`.
-* To view a committed version without touching the working tree, stream it directly: `git show HEAD:path/to/File.java | sed -n '1,120p'`. Swap `HEAD` with any commit hash or ref (`HEAD~2`, `feature~3`, etc.) to inspect older revisions.
-* When you need a disposable copy of a historical file, write it to a temp file instead of checking it out:  
-  `tmp=$(mktemp /tmp/file.XXXXXX); git show <commit>:path/to/File.java > "$tmp"; ${EDITOR:-less} "$tmp"`. Remove the temp file when done.
-* `git log -n 5 -- path/to/File.java` and `git show <commit> --stat -- path/to/File.java` are also safe ways to understand how the file evolved — all without altering the repo state.
-* Need to compare against a specific commit (local or remote) instead of just `HEAD`? Use `git diff <commit> -- path/to/File.java` or `git diff origin/main -- path/to/File.java` to see exactly what changed relative to that reference while keeping the working tree untouched.
-* For a quick read-only side-by-side, rely on process substitution: `diff -u <(git show HEAD:path/to/File.java) <(cat path/to/File.java)` displays how your edits differ from the committed version without staging or resetting anything. `git difftool -y HEAD -- path/to/File.java` is another safe option if you prefer an external viewer.
-* To study an older revision in depth, first list the relevant commits with `git log --oneline --follow -- path/to/File.java`, then stream any revision to a temp file for offline inspection:  
-  `tmp=$(mktemp /tmp/rdf4j-file.XXXXXX)`  
-  `git show <commit>:path/to/File.java > "$tmp"`  
-  `${EDITOR:-less} "$tmp" && rm "$tmp"`  
-  This pattern never touches the tracked file and avoids locking `.git/index`.
-* Need a whole-directory snapshot for archaeology? `git archive <commit> path/to/dir | tar -x -C /tmp/readonly-snapshot` extracts a copy under `/tmp` that you can browse freely, then delete when finished.
-
 ---
 
 ## Autonomy Rules (Act > Ask)
@@ -634,7 +551,7 @@ Immediately after creating any new Java source file, add the signature comment (
 
 **Defaults**
 
-* **Tests:** start with `python3 .codex/skills/mvnf/scripts/mvnf.py Class#method` (or `--it ITClass#method`), then broaden to class/module. Use Maven flags only when `mvnf` cannot express the required profile/flags.
+* **Tests:** start with `-pl <module>`, then `-Dtest=Class#method` / `-Dit.test=ITClass#method`.
 * **Build:** use `-o`; drop `-o` once only to fetch; return offline.
 * **Formatting:** run formatter/import/XML before verify.
 * **Reports:** read surefire/failsafe locally; expand scope only when necessary.
@@ -647,6 +564,7 @@ Immediately after creating any new Java source file, add the signature comment (
 * **Files touched:** list file paths.
 * **Commands run:** key build/test commands.
 * **Verification:** which tests passed, where you checked reports.
+* **PIOSEE trace (concise):** P/I/O summary, selected option/routine, key evaluate outcomes.
 * **Evidence:**
   *Routine A:* failing output (pre‑fix) and passing output (post‑fix).
   *Routine B:* pre‑ and post‑green snippets from the **same selection** + **Hit Proof**.
@@ -660,16 +578,6 @@ Immediately after creating any new Java source file, add the signature comment (
 
 ## Running Tests
 
-**Preferred (`mvnf`)**
-
-* Module: `python3 .codex/skills/mvnf/scripts/mvnf.py core/sail/shacl`
-* Class: `python3 .codex/skills/mvnf/scripts/mvnf.py ShaclSailTest`
-* Method: `python3 .codex/skills/mvnf/scripts/mvnf.py ShaclSailTest#testSomething`
-* Integration test: `python3 .codex/skills/mvnf/scripts/mvnf.py --it ShaclSailIT#testSomething`
-* Keep logs on success: add `--retain-logs`
-
-**Manual Maven fallback (profiles/extra flags/full repo)**
-
 * By module: `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/shacl verify | tail -500`
 * Entire repo: `mvn -o -Dmaven.repo.local=.m2_repo verify` (long; only when appropriate)
 * Slow tests (entire repo):
@@ -677,6 +585,7 @@ Immediately after creating any new Java source file, add the signature comment (
 * Slow tests (by module):
   `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify -PslowTestsOnly,-skipSlowTests | tail -500`
 * Slow tests (specific test):
+
     * `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/shacl -PslowTestsOnly,-skipSlowTests -Dtest=ClassName#method verify | tail -500`
 * Integration tests (entire repo):
   `mvn -o -Dmaven.repo.local=.m2_repo verify -PskipUnitTests | tail -500`
@@ -694,10 +603,10 @@ Immediately after creating any new Java source file, add the signature comment (
 ## Build
 
 * **Build without tests (fast path):**
-  `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install`
-* **Verify with tests (prefer `mvnf`):**
-  Targeted module(s): `python3 .codex/skills/mvnf/scripts/mvnf.py <module>`
-  Entire repo (fallback): `mvn -o -Dmaven.repo.local=.m2_repo verify` (use judiciously)
+  `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install`
+* **Verify with tests:**
+  Targeted module(s): `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify`
+  Entire repo: `mvn -o -Dmaven.repo.local=.m2_repo verify` (use judiciously)
 * **When offline fails due to missing deps:**
   Re‑run the **exact** command **without** `-o` once to fetch, then return to `-o`.
 
@@ -706,8 +615,6 @@ Immediately after creating any new Java source file, add the signature comment (
 ## Using JaCoCo (Coverage)
 
 JaCoCo is configured via the `jacoco` Maven profile in the root POM. Surefire/Failsafe honor the prepared agent `argLine`, so no extra flags are required beyond `-Pjacoco`.
-
-- Use manual Maven here (profiles are not supported by `mvnf`).
 
 - Run with coverage
     - Module: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Pjacoco verify | tail -500`
@@ -818,6 +725,7 @@ rdf4j: root project
     │   ├── lmdb: Sail implementation that stores data to disk using LMDB.
     │   ├── lucene-api: StackableSail API offering full-text search on literals, based on Apache Lucene.
     │   ├── lucene: StackableSail implementation offering full-text search on literals, based on Apache Lucene.
+    │   ├── solr: StackableSail implementation offering full-text search on literals, based on Solr.
     │   ├── elasticsearch: StackableSail implementation offering full-text search on literals, based on Elastic Search.
     │   ├── elasticsearch-store: Store for utilizing Elasticsearch as a triplestore.
     │   └── extensible-store: Store that can be extended with a simple user-made backend.
@@ -857,6 +765,7 @@ rdf4j: root project
     ├── model: RDF4J: Model compliance tests
     ├── sparql: Tests for the SPARQL query language implementation
     ├── lucene: Compliance Tests for LuceneSail.
+    ├── solr: Tests for Solr Sail.
     ├── elasticsearch: Tests for Elasticsearch.
     └── geosparql: Tests for the GeoSPARQL query language implementation
 ├── examples: Examples and HowTos for use of RDF4J in Java
@@ -868,18 +777,13 @@ rdf4j: root project
 
 * Don’t commit or push unless explicitly asked.
 * Don’t add new dependencies without explicit approval.
-* Never revert unrelated working tree changes
 
 ### Version Control Conventions
 
 * Branch names must always start with the GitHub issue identifier in the form `GH-XXXX`, where `XXXX` is the numeric issue number.
 * Every commit message must be prefixed with the corresponding `GH-XXXX` label.
-* Exception (no issue number available):
-  * Prefer reusing the current branch prefix if it already starts with `GH-XXXX-...`.
-  * Otherwise, use `GH-0000` and explicitly mention the missing issue number in the final summary/handoff.
+* Exception: if no GitHub issue number is available for the task, clearly note this in your handoff and align with the requester on an appropriate branch/commit prefix before proceeding.
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
-Always keep untracked artifacts!
-
 You must follow these rules and instructions exactly as stated.
