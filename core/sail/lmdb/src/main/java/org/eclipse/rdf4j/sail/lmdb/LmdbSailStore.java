@@ -1409,6 +1409,9 @@ class LmdbSailStore implements SailStore {
 				long predQuery = selectQueryId(patternIds[TripleStore.PRED_IDX], binding, predIndex);
 				long objQuery = selectQueryId(patternIds[TripleStore.OBJ_IDX], binding, objIndex);
 				long ctxQuery = selectQueryId(patternIds[TripleStore.CONTEXT_IDX], binding, ctxIndex);
+				System.out
+						.println("DEBUG getRecordIterator(long[]) s=" + subjQuery + " p=" + predQuery + " o=" + objQuery
+								+ " c=" + ctxQuery);
 
 				RecordIterator base = tripleStore.getTriples(txn, subjQuery, predQuery, objQuery, ctxQuery, explicit);
 
@@ -1460,6 +1463,15 @@ class LmdbSailStore implements SailStore {
 				if (orderedIter != null) {
 					return orderedIter;
 				}
+
+				if (order == StatementOrder.S) {
+					int sortIndex = indexForOrder(order, subjIndex, predIndex, objIndex, ctxIndex);
+					if (sortIndex >= 0) {
+						RecordIterator fallback = getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex,
+								patternIds);
+						return sortedRecordIterator(fallback, sortIndex);
+					}
+				}
 				return null;
 			} catch (IOException e) {
 				throw new QueryEvaluationException("Unable to create ordered LMDB record iterator", e);
@@ -1477,7 +1489,10 @@ class LmdbSailStore implements SailStore {
 			long objQuery = selectQueryId(patternIds[TripleStore.OBJ_IDX], binding, objIndex);
 			long ctxQuery = selectQueryId(patternIds[TripleStore.CONTEXT_IDX], binding, ctxIndex);
 			try {
-				return orderedRecordIterator(order, subjQuery, predQuery, objQuery, ctxQuery) != null;
+				if (orderedRecordIterator(order, subjQuery, predQuery, objQuery, ctxQuery) != null) {
+					return true;
+				}
+				return order == StatementOrder.S && indexForOrder(order, subjIndex, predIndex, objIndex, ctxIndex) >= 0;
 			} catch (IOException e) {
 				return false;
 			}
@@ -1678,6 +1693,7 @@ class LmdbSailStore implements SailStore {
 					return false;
 				}
 				long id = resolveId(ctx);
+				System.out.println("DEBUG populateContext value=" + ctx + " id=" + id);
 				if (id == LmdbValue.UNKNOWN_ID) {
 					return false;
 				}
@@ -1787,6 +1803,7 @@ class LmdbSailStore implements SailStore {
 				return INVALID_ID;
 			}
 			long id = resolveId(ctx);
+			System.out.println("DEBUG resolveContextWithBindings var=" + varName + " id=" + id + " value=" + ctx);
 			if (id == LmdbValue.UNKNOWN_ID) {
 				return INVALID_ID;
 			}
@@ -1830,6 +1847,51 @@ class LmdbSailStore implements SailStore {
 			}
 			boolean rangeSearch = chosen.getPatternScore(subjID, predID, objID, contextID) > 0;
 			return new LmdbRecordIterator(chosen, rangeSearch, subjID, predID, objID, contextID, explicit, txn);
+		}
+
+		private int indexForOrder(StatementOrder order, int subjIndex, int predIndex, int objIndex, int ctxIndex) {
+			switch (order) {
+			case S:
+				return subjIndex;
+			case P:
+				return predIndex;
+			case O:
+				return objIndex;
+			case C:
+				return ctxIndex;
+			default:
+				return -1;
+			}
+		}
+
+		private RecordIterator sortedRecordIterator(RecordIterator base, int sortIndex)
+				throws QueryEvaluationException {
+			java.util.List<long[]> rows = new java.util.ArrayList<>();
+			try {
+				long[] next;
+				while ((next = base.next()) != null) {
+					rows.add(next);
+				}
+			} finally {
+				base.close();
+			}
+			rows.sort(java.util.Comparator.comparingLong(a -> a[sortIndex]));
+
+			java.util.Iterator<long[]> iterator = rows.iterator();
+			return new RecordIterator() {
+				@Override
+				public long[] next() {
+					if (!iterator.hasNext()) {
+						return null;
+					}
+					return iterator.next();
+				}
+
+				@Override
+				public void close() {
+					// nothing to close
+				}
+			};
 		}
 
 		private TripleStore.TripleIndex chooseIndexForOrder(StatementOrder order, long s, long p, long o, long c)

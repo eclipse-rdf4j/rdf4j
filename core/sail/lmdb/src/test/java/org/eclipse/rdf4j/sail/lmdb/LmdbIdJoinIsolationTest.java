@@ -109,6 +109,7 @@ class LmdbIdJoinIsolationTest {
 			try (TupleQueryResult result = tupleQuery.evaluate()) {
 				beforeClear = Iterations.asList(result);
 			}
+			System.out.println("DEBUG beforeClear results=" + beforeClear);
 			assertThat(beforeClear).hasSize(1);
 			assertThat(beforeClear.get(0).getValue("person")).isEqualTo(alice);
 			assertThat(beforeClear.get(0).getValue("liked")).isEqualTo(pizza);
@@ -123,6 +124,7 @@ class LmdbIdJoinIsolationTest {
 			try (TupleQueryResult result = tupleQuery.evaluate()) {
 				afterClear = Iterations.asList(result);
 			}
+			System.out.println("DEBUG afterClear results=" + afterClear);
 			assertThat(afterClear).isEmpty();
 			conn2.commit();
 

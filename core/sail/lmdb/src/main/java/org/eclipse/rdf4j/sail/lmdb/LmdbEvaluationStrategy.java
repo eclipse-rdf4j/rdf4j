@@ -87,11 +87,47 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 			List<StatementPattern> patterns = new ArrayList<>();
 			if (LmdbIdBGPQueryEvaluationStep.flattenBGP(node, patterns)
 					&& !patterns.isEmpty()) {
-				return new LmdbIdBGPQueryEvaluationStep(node, patterns, context, defaultStep);
+				LmdbIdBGPQueryEvaluationStep step = new LmdbIdBGPQueryEvaluationStep(node, patterns, context,
+						defaultStep);
+				if (step.shouldUseFallbackImmediately()) {
+					Optional<ValueStore> valueStoreOpt = ((LmdbDatasetContext) context).getValueStore();
+					if (valueStoreOpt.isPresent()) {
+						LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(tripleSource,
+								valueStoreOpt.get());
+						QueryEvaluationContext overlayContext = new LmdbDelegatingQueryEvaluationContext(context,
+								overlay,
+								valueStoreOpt.get());
+						LmdbIdBGPQueryEvaluationStep overlayStep = new LmdbIdBGPQueryEvaluationStep(node, patterns,
+								overlayContext, defaultStep);
+						overlayStep.applyAlgorithmTag();
+						return overlayStep;
+					}
+					return defaultStep;
+				}
+				step.applyAlgorithmTag();
+				return step;
 			}
 			// Fallback to two-pattern ID join
 			if (node.getLeftArg() instanceof StatementPattern && node.getRightArg() instanceof StatementPattern) {
-				return new LmdbIdJoinQueryEvaluationStep(this, node, context, defaultStep);
+				LmdbIdJoinQueryEvaluationStep step = new LmdbIdJoinQueryEvaluationStep(this, node, context,
+						defaultStep);
+				if (step.shouldUseFallbackImmediately()) {
+					Optional<ValueStore> valueStoreOpt = ((LmdbDatasetContext) context).getValueStore();
+					if (valueStoreOpt.isPresent()) {
+						LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(tripleSource,
+								valueStoreOpt.get());
+						QueryEvaluationContext overlayContext = new LmdbDelegatingQueryEvaluationContext(context,
+								overlay,
+								valueStoreOpt.get());
+						LmdbIdJoinQueryEvaluationStep overlayStep = new LmdbIdJoinQueryEvaluationStep(this, node,
+								overlayContext, defaultStep);
+						overlayStep.applyAlgorithmTag(node);
+						return overlayStep;
+					}
+					return defaultStep;
+				}
+				step.applyAlgorithmTag(node);
+				return step;
 			}
 		}
 		return defaultStep;
