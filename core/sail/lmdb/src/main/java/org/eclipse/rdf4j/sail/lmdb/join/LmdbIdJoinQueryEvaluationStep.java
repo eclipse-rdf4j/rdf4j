@@ -10,12 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb.join;
 
+import java.io.IOException;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -43,6 +45,7 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private final Set<String> sharedVariables;
 	private final LmdbDatasetContext datasetContext;
 	private final QueryEvaluationStep fallbackStep;
+	private final boolean fallbackImmediately;
 
 	public LmdbIdJoinQueryEvaluationStep(EvaluationStrategy strategy, Join join, QueryEvaluationContext context,
 			QueryEvaluationStep fallbackStep) {
@@ -63,7 +66,13 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 		this.sharedVariables = computeSharedVariables(leftInfo, rightInfo);
 		this.fallbackStep = fallbackStep;
 
-		join.setAlgorithm(LmdbIdJoinIterator.class.getSimpleName());
+		boolean allowCreate = this.datasetContext.getLmdbDataset()
+				.map(LmdbEvaluationDataset::hasTransactionChanges)
+				.orElse(LmdbEvaluationStrategy.hasActiveConnectionChanges());
+		ValueStore valueStore = this.datasetContext.getValueStore().orElse(null);
+		this.fallbackImmediately = valueStore == null
+				|| (!allowCreate && (!constantsResolvable(leftPattern, valueStore, allowCreate)
+						|| !constantsResolvable(rightPattern, valueStore, allowCreate)));
 
 	}
 
@@ -74,9 +83,84 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 		return Collections.unmodifiableSet(shared);
 	}
 
+	public boolean shouldUseFallbackImmediately() {
+		return fallbackImmediately;
+	}
+
+	public void applyAlgorithmTag(Join join) {
+		join.setAlgorithm(LmdbIdJoinIterator.class.getSimpleName());
+	}
+
+	private static boolean constantsResolvable(StatementPattern pattern, ValueStore valueStore, boolean allowCreate) {
+		try {
+			org.eclipse.rdf4j.query.algebra.Var subj = pattern.getSubjectVar();
+			if (subj != null && subj.hasValue()) {
+				if (!resolveConstantId(valueStore, subj.getValue(), true, false, allowCreate)) {
+					return false;
+				}
+			}
+			org.eclipse.rdf4j.query.algebra.Var pred = pattern.getPredicateVar();
+			if (pred != null && pred.hasValue()) {
+				if (!resolveConstantId(valueStore, pred.getValue(), false, true, allowCreate)) {
+					return false;
+				}
+			}
+			org.eclipse.rdf4j.query.algebra.Var obj = pattern.getObjectVar();
+			if (obj != null && obj.hasValue()) {
+				if (!resolveConstantId(valueStore, obj.getValue(), false, false, allowCreate)) {
+					return false;
+				}
+			}
+			org.eclipse.rdf4j.query.algebra.Var ctx = pattern.getContextVar();
+			if (ctx != null && ctx.hasValue()) {
+				if (!resolveConstantId(valueStore, ctx.getValue(), true, false, allowCreate)) {
+					return false;
+				}
+			}
+			return true;
+		} catch (IOException e) {
+			return false;
+		}
+	}
+
+	private static boolean resolveConstantId(ValueStore valueStore, Value value, boolean requireResource,
+			boolean requireIri, boolean allowCreate) throws IOException {
+		if (requireResource && !(value instanceof org.eclipse.rdf4j.model.Resource)) {
+			return false;
+		}
+		if (requireIri && !(value instanceof org.eclipse.rdf4j.model.IRI)) {
+			return false;
+		}
+		if (value instanceof org.eclipse.rdf4j.model.Resource
+				&& ((org.eclipse.rdf4j.model.Resource) value).isTriple()) {
+			return false;
+		}
+		if (value instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) {
+			org.eclipse.rdf4j.sail.lmdb.model.LmdbValue lmdbValue = (org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) value;
+			if (lmdbValue.getValueStoreRevision().getValueStore() == valueStore) {
+				long id = lmdbValue.getInternalID();
+				if (id != org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID) {
+					return true;
+				}
+			}
+		}
+		long id = valueStore.getId(value);
+		if (id == org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID && !allowCreate) {
+			valueStore.refreshReadTxn();
+			id = valueStore.getId(value);
+		}
+		if (id == org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID && allowCreate) {
+			id = valueStore.getId(value, true);
+		}
+		return id != org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
+	}
+
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		if (fallbackStep != null && LmdbEvaluationStrategy.hasActiveConnectionChanges()) {
+			return fallbackStep.evaluate(bindings);
+		}
+		if (fallbackImmediately && fallbackStep != null) {
 			return fallbackStep.evaluate(bindings);
 		}
 		try {

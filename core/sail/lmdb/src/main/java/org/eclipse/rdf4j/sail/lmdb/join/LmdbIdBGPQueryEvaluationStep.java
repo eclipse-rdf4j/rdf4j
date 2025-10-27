@@ -51,6 +51,8 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 	private final Join root;
 	private final QueryEvaluationStep fallbackStep;
 	private final boolean hasInvalidPattern;
+	private final boolean createdDynamicIds;
+	private final boolean allowCreateConstantIds;
 
 	public LmdbIdBGPQueryEvaluationStep(Join root, List<StatementPattern> patterns, QueryEvaluationContext context,
 			QueryEvaluationStep fallbackStep) {
@@ -65,14 +67,22 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		ValueStore valueStore = this.datasetContext.getValueStore()
 				.orElseThrow(() -> new IllegalStateException("LMDB ID BGP join requires ValueStore access"));
 
+		boolean allowCreate = this.datasetContext.getLmdbDataset()
+				.map(LmdbEvaluationDataset::hasTransactionChanges)
+				.orElseGet(LmdbEvaluationStrategy::hasActiveConnectionChanges);
+		this.allowCreateConstantIds = allowCreate;
+
 		List<RawPattern> rawPatterns = new ArrayList<>(patterns.size());
 		boolean invalid = false;
+		boolean created = false;
 		for (StatementPattern pattern : patterns) {
-			RawPattern raw = RawPattern.create(pattern, valueStore);
+			RawPattern raw = RawPattern.create(pattern, valueStore, allowCreate);
 			rawPatterns.add(raw);
 			invalid |= raw.invalid;
+			created |= raw.createdIds;
 		}
 		this.hasInvalidPattern = invalid;
+		this.createdDynamicIds = created;
 
 		if (rawPatterns.isEmpty()) {
 			throw new IllegalArgumentException("Basic graph pattern must contain at least one statement pattern");
@@ -93,7 +103,13 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			planList.add(raw.toPlan(finalInfo));
 		}
 		this.plans = planList;
+	}
 
+	public boolean shouldUseFallbackImmediately() {
+		return hasInvalidPattern && fallbackStep != null && !allowCreateConstantIds;
+	}
+
+	public void applyAlgorithmTag() {
 		markJoinTreeWithIdAlgorithm(root);
 	}
 
@@ -108,7 +124,15 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				return fallbackStep.evaluate(bindings);
 			}
 			if (hasInvalidPattern) {
-				return new EmptyIteration<>();
+				if (fallbackStep != null) {
+					System.out.println("DEBUG BGP fallback: invalid pattern");
+				}
+				return fallbackStep != null ? fallbackStep.evaluate(bindings) : new EmptyIteration<>();
+			}
+			if (!dataset.hasTransactionChanges() && createdDynamicIds && fallbackStep != null
+					&& !allowCreateConstantIds) {
+				System.out.println("DEBUG BGP fallback: dynamic id without transaction changes");
+				return fallbackStep.evaluate(bindings);
 			}
 
 			ValueStore valueStore = dataset.getValueStore();
@@ -278,9 +302,10 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		private final String ctxVar;
 		private final LmdbIdJoinIterator.PatternInfo patternInfo;
 		private final boolean invalid;
+		private final boolean createdIds;
 
 		private RawPattern(long[] patternIds, String subjVar, String predVar, String objVar, String ctxVar,
-				LmdbIdJoinIterator.PatternInfo patternInfo, boolean invalid) {
+				LmdbIdJoinIterator.PatternInfo patternInfo, boolean invalid, boolean createdIds) {
 			this.patternIds = patternIds;
 			this.subjVar = subjVar;
 			this.predVar = predVar;
@@ -288,23 +313,26 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			this.ctxVar = ctxVar;
 			this.patternInfo = patternInfo;
 			this.invalid = invalid;
+			this.createdIds = createdIds;
 		}
 
-		static RawPattern create(StatementPattern pattern, ValueStore valueStore) {
+		static RawPattern create(StatementPattern pattern, ValueStore valueStore, boolean allowCreate) {
 			long[] ids = new long[4];
 			Arrays.fill(ids, LmdbValue.UNKNOWN_ID);
 
 			boolean invalid = false;
+			boolean createdAny = false;
 
 			Var subj = pattern.getSubjectVar();
 			String subjVar = null;
 			if (subj != null) {
 				if (subj.hasValue()) {
-					long id = constantId(valueStore, subj.getValue(), true, false);
-					if (id == Long.MIN_VALUE) {
+					ConstantIdResult result = constantId(valueStore, subj.getValue(), true, false, allowCreate);
+					if (result.isInvalid()) {
 						invalid = true;
 					} else {
-						ids[TripleStore.SUBJ_IDX] = id;
+						ids[TripleStore.SUBJ_IDX] = result.id;
+						createdAny |= result.created;
 					}
 				} else {
 					subjVar = subj.getName();
@@ -315,11 +343,12 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			String predVar = null;
 			if (pred != null) {
 				if (pred.hasValue()) {
-					long id = constantId(valueStore, pred.getValue(), false, true);
-					if (id == Long.MIN_VALUE) {
+					ConstantIdResult result = constantId(valueStore, pred.getValue(), false, true, allowCreate);
+					if (result.isInvalid()) {
 						invalid = true;
 					} else {
-						ids[TripleStore.PRED_IDX] = id;
+						ids[TripleStore.PRED_IDX] = result.id;
+						createdAny |= result.created;
 					}
 				} else {
 					predVar = pred.getName();
@@ -330,11 +359,12 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			String objVar = null;
 			if (obj != null) {
 				if (obj.hasValue()) {
-					long id = constantId(valueStore, obj.getValue(), false, false);
-					if (id == Long.MIN_VALUE) {
+					ConstantIdResult result = constantId(valueStore, obj.getValue(), false, false, allowCreate);
+					if (result.isInvalid()) {
 						invalid = true;
 					} else {
-						ids[TripleStore.OBJ_IDX] = id;
+						ids[TripleStore.OBJ_IDX] = result.id;
+						createdAny |= result.created;
 					}
 				} else {
 					objVar = obj.getName();
@@ -345,11 +375,12 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			String ctxVar = null;
 			if (ctx != null) {
 				if (ctx.hasValue()) {
-					long id = constantId(valueStore, ctx.getValue(), true, false);
-					if (id == Long.MIN_VALUE) {
+					ConstantIdResult result = constantId(valueStore, ctx.getValue(), true, false, allowCreate);
+					if (result.isInvalid()) {
 						invalid = true;
 					} else {
-						ids[TripleStore.CONTEXT_IDX] = id;
+						ids[TripleStore.CONTEXT_IDX] = result.id;
+						createdAny |= result.created;
 					}
 				} else {
 					ctxVar = ctx.getName();
@@ -357,7 +388,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			}
 
 			LmdbIdJoinIterator.PatternInfo info = LmdbIdJoinIterator.PatternInfo.create(pattern);
-			return new RawPattern(ids, subjVar, predVar, objVar, ctxVar, info, invalid);
+			return new RawPattern(ids, subjVar, predVar, objVar, ctxVar, info, invalid, createdAny);
 		}
 
 		PatternPlan toPlan(IdBindingInfo finalInfo) {
@@ -369,16 +400,16 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			return varName == null ? -1 : info.getIndex(varName);
 		}
 
-		private static long constantId(ValueStore valueStore, Value value, boolean requireResource,
-				boolean requireIri) {
+		private static ConstantIdResult constantId(ValueStore valueStore, Value value, boolean requireResource,
+				boolean requireIri, boolean allowCreate) {
 			if (requireResource && !(value instanceof Resource)) {
-				return Long.MIN_VALUE;
+				return ConstantIdResult.invalid();
 			}
 			if (requireIri && !(value instanceof IRI)) {
-				return Long.MIN_VALUE;
+				return ConstantIdResult.invalid();
 			}
 			if (value instanceof Resource && ((Resource) value).isTriple()) {
-				return Long.MIN_VALUE;
+				return ConstantIdResult.invalid();
 			}
 			try {
 				if (value instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) {
@@ -386,14 +417,56 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 					if (lmdbValue.getValueStoreRevision().getValueStore() == valueStore) {
 						long id = lmdbValue.getInternalID();
 						if (id != LmdbValue.UNKNOWN_ID) {
-							return id;
+							return ConstantIdResult.existing(id);
 						}
 					}
 				}
 				long id = valueStore.getId(value);
-				return id == LmdbValue.UNKNOWN_ID ? Long.MIN_VALUE : id;
+				if (id == LmdbValue.UNKNOWN_ID && !allowCreate) {
+					valueStore.refreshReadTxn();
+					id = valueStore.getId(value);
+				}
+				if (id == LmdbValue.UNKNOWN_ID) {
+					if (!allowCreate) {
+						return ConstantIdResult.invalid();
+					}
+					id = valueStore.getId(value, true);
+					if (id == LmdbValue.UNKNOWN_ID) {
+						return ConstantIdResult.invalid();
+					}
+					return ConstantIdResult.created(id);
+				}
+				return ConstantIdResult.existing(id);
 			} catch (IOException e) {
-				return Long.MIN_VALUE;
+				return ConstantIdResult.invalid();
+			}
+		}
+
+		private static final class ConstantIdResult {
+			private final long id;
+			private final boolean created;
+			private final boolean valid;
+
+			private ConstantIdResult(long id, boolean created, boolean valid) {
+				this.id = id;
+				this.created = created;
+				this.valid = valid;
+			}
+
+			static ConstantIdResult invalid() {
+				return new ConstantIdResult(Long.MIN_VALUE, false, false);
+			}
+
+			static ConstantIdResult existing(long id) {
+				return new ConstantIdResult(id, false, true);
+			}
+
+			static ConstantIdResult created(long id) {
+				return new ConstantIdResult(id, true, true);
+			}
+
+			boolean isInvalid() {
+				return !valid;
 			}
 		}
 	}

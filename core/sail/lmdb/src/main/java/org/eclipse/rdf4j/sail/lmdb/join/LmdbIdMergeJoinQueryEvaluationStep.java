@@ -83,6 +83,13 @@ public class LmdbIdMergeJoinQueryEvaluationStep implements QueryEvaluationStep {
 		this.fallbackStep = fallbackStep;
 		this.fallbackAlgorithmName = fallbackStep != null ? join.getAlgorithmName() : null;
 
+		if (leftPattern.getStatementOrder() == null) {
+			leftPattern.setOrder(orderVar);
+		}
+		if (rightPattern.getStatementOrder() == null) {
+			rightPattern.setOrder(orderVar);
+		}
+
 		ValueStore valueStore = this.datasetContext.getValueStore()
 				.orElseThrow(() -> new IllegalStateException("LMDB merge join requires ValueStore access"));
 
@@ -94,8 +101,11 @@ public class LmdbIdMergeJoinQueryEvaluationStep implements QueryEvaluationStep {
 		info = IdBindingInfo.combine(info, rightInfo);
 		this.bindingInfo = info;
 
-		this.leftPlan = leftRaw.toPlan(info, leftPattern.getStatementOrder());
-		this.rightPlan = rightRaw.toPlan(info, rightPattern.getStatementOrder());
+		StatementOrder leftOrder = determineOrder(leftPattern, leftInfo);
+		StatementOrder rightOrder = determineOrder(rightPattern, rightInfo);
+
+		this.leftPlan = leftRaw.toPlan(info, leftOrder);
+		this.rightPlan = rightRaw.toPlan(info, rightOrder);
 	}
 
 	@Override
@@ -119,13 +129,6 @@ public class LmdbIdMergeJoinQueryEvaluationStep implements QueryEvaluationStep {
 			long[] initialBinding = createInitialBinding(bindingInfo, bindings, valueStore);
 			if (initialBinding == null) {
 				return new EmptyIteration<>();
-			}
-
-			if (!dataset.supportsOrder(initialBinding, leftPlan.subjIndex, leftPlan.predIndex, leftPlan.objIndex,
-					leftPlan.ctxIndex, leftPlan.patternIds, leftPlan.order)
-					|| !dataset.supportsOrder(initialBinding, rightPlan.subjIndex, rightPlan.predIndex,
-							rightPlan.objIndex, rightPlan.ctxIndex, rightPlan.patternIds, rightPlan.order)) {
-				return evaluateFallback(bindings);
 			}
 
 			RecordIterator leftIterator = dataset.getOrderedRecordIterator(initialBinding, leftPlan.subjIndex,
@@ -215,6 +218,32 @@ public class LmdbIdMergeJoinQueryEvaluationStep implements QueryEvaluationStep {
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
+	}
+
+	private StatementOrder determineOrder(StatementPattern pattern, LmdbIdJoinIterator.PatternInfo info) {
+		StatementOrder order = pattern.getStatementOrder();
+		if (order != null) {
+			return order;
+		}
+
+		if (mergeVariable == null) {
+			return null;
+		}
+
+		int mask = info.getPositionsMask(mergeVariable);
+		if ((mask & (1 << TripleStore.SUBJ_IDX)) != 0) {
+			return StatementOrder.S;
+		}
+		if ((mask & (1 << TripleStore.PRED_IDX)) != 0) {
+			return StatementOrder.P;
+		}
+		if ((mask & (1 << TripleStore.OBJ_IDX)) != 0) {
+			return StatementOrder.O;
+		}
+		if ((mask & (1 << TripleStore.CONTEXT_IDX)) != 0) {
+			return StatementOrder.C;
+		}
+		return null;
 	}
 
 	private static final class PatternPlan {
@@ -353,6 +382,9 @@ public class LmdbIdMergeJoinQueryEvaluationStep implements QueryEvaluationStep {
 					}
 				}
 				long id = valueStore.getId(value);
+				if (id == LmdbValue.UNKNOWN_ID) {
+					id = valueStore.getId(value, true);
+				}
 				return id == LmdbValue.UNKNOWN_ID ? Long.MIN_VALUE : id;
 			} catch (IOException e) {
 				return Long.MIN_VALUE;
