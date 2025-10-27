@@ -48,6 +48,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	 * The transaction lock held by this connection during transactions.
 	 */
 	private volatile Lock txnLock;
+	private volatile boolean hasPendingChanges;
 
 	/*--------------*
 	 * Constructors *
@@ -90,6 +91,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		try {
 			super.commitInternal();
 		} finally {
+			hasPendingChanges = false;
 			if (txnLock != null && txnLock.isActive()) {
 				txnLock.release();
 			}
@@ -106,6 +108,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		try {
 			super.rollbackInternal();
 		} finally {
+			hasPendingChanges = false;
 			if (txnLock != null && txnLock.isActive()) {
 				txnLock.release();
 			}
@@ -118,6 +121,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		// assume the triple is not yet present in the triple store
 		sailChangedEvent.setStatementsAdded(true);
+		hasPendingChanges = true;
 	}
 
 	@Override
@@ -125,6 +129,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		boolean ret = super.addInferredStatement(subj, pred, obj, contexts);
 		// assume the triple is not yet present in the triple store
 		sailChangedEvent.setStatementsAdded(true);
+		hasPendingChanges = true;
 		return ret;
 	}
 
@@ -132,35 +137,87 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset,
 			BindingSet bindings, boolean includeInferred) throws SailException {
-		// ensure that all elements of the binding set are initialized (lazy values are resolved)
-		return new IterationWrapper<BindingSet>(
-				super.evaluateInternal(tupleExpr, dataset, bindings, includeInferred)) {
-			@Override
-			public BindingSet next() throws QueryEvaluationException {
-				BindingSet bs = super.next();
-				bs.forEach(b -> initValue(b.getValue()));
-				return bs;
+		boolean flagPushed = false;
+		boolean success = false;
+		if (hasPendingChanges) {
+			LmdbEvaluationStrategy.pushConnectionChangesFlag(true);
+			flagPushed = true;
+		} else {
+			LmdbEvaluationStrategy.pushConnectionChangesFlag(false);
+			flagPushed = true;
+		}
+		try {
+			CloseableIteration<? extends BindingSet> base = super.evaluateInternal(tupleExpr, dataset, bindings,
+					includeInferred);
+			success = true;
+			// ensure that all elements of the binding set are initialized (lazy values are resolved)
+			return new IterationWrapper<BindingSet>(base) {
+				@Override
+				public BindingSet next() throws QueryEvaluationException {
+					BindingSet bs = super.next();
+					bs.forEach(b -> initValue(b.getValue()));
+					return bs;
+				}
+
+				@Override
+				protected void handleClose() throws QueryEvaluationException {
+					try {
+						super.handleClose();
+					} finally {
+						LmdbEvaluationStrategy.popConnectionChangesFlag();
+					}
+				}
+			};
+		} catch (RuntimeException e) {
+			throw e;
+		} finally {
+			if (!success && flagPushed) {
+				LmdbEvaluationStrategy.popConnectionChangesFlag();
 			}
-		};
+		}
 	}
 
 	@Override
 	protected CloseableIteration<? extends Statement> getStatementsInternal(Resource subj, IRI pred,
 			Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException {
-		return new IterationWrapper<Statement>(
-				super.getStatementsInternal(subj, pred, obj, includeInferred, contexts)) {
-			@Override
-			public Statement next() throws SailException {
-				// ensure that all elements of the statement are initialized (lazy values are resolved)
-				Statement stmt = super.next();
-				initValue(stmt.getSubject());
-				initValue(stmt.getPredicate());
-				initValue(stmt.getObject());
-				initValue(stmt.getContext());
-				return stmt;
+		boolean flagPushed = false;
+		if (hasPendingChanges) {
+			LmdbEvaluationStrategy.pushConnectionChangesFlag(true);
+			flagPushed = true;
+		} else {
+			LmdbEvaluationStrategy.pushConnectionChangesFlag(false);
+			flagPushed = true;
+		}
+		try {
+			return new IterationWrapper<Statement>(
+					super.getStatementsInternal(subj, pred, obj, includeInferred, contexts)) {
+				@Override
+				public Statement next() throws SailException {
+					// ensure that all elements of the statement are initialized (lazy values are resolved)
+					Statement stmt = super.next();
+					initValue(stmt.getSubject());
+					initValue(stmt.getPredicate());
+					initValue(stmt.getObject());
+					initValue(stmt.getContext());
+					return stmt;
+				}
+
+				@Override
+				protected void handleClose() throws SailException {
+					try {
+						super.handleClose();
+					} finally {
+						LmdbEvaluationStrategy.popConnectionChangesFlag();
+					}
+				}
+			};
+		} catch (RuntimeException e) {
+			if (flagPushed) {
+				LmdbEvaluationStrategy.popConnectionChangesFlag();
 			}
-		};
+			throw e;
+		}
 	}
 
 	/**
@@ -178,6 +235,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
 		sailChangedEvent.setStatementsRemoved(true);
+		hasPendingChanges = true;
 	}
 
 	@Override
@@ -185,6 +243,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			throws SailException {
 		boolean ret = super.removeInferredStatement(subj, pred, obj, contexts);
 		sailChangedEvent.setStatementsRemoved(true);
+		hasPendingChanges = true;
 		return ret;
 	}
 
@@ -192,12 +251,14 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	protected void clearInternal(Resource... contexts) throws SailException {
 		super.clearInternal(contexts);
 		sailChangedEvent.setStatementsRemoved(true);
+		hasPendingChanges = true;
 	}
 
 	@Override
 	public void clearInferred(Resource... contexts) throws SailException {
 		super.clearInferred(contexts);
 		sailChangedEvent.setStatementsRemoved(true);
+		hasPendingChanges = true;
 	}
 
 	@Override

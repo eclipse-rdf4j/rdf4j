@@ -16,7 +16,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -27,6 +26,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -37,8 +37,6 @@ import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleSource;
 import org.eclipse.rdf4j.sail.base.SailSource;
@@ -149,7 +147,7 @@ public class LmdbIdBGPEvaluationTest {
 			// Simulate a thread-local dataset reference that points to the baseline dataset
 			LmdbEvaluationStrategy.setCurrentDataset(threadLocal);
 			try {
-				LmdbIdBGPQueryEvaluationStep step = new LmdbIdBGPQueryEvaluationStep(join, patterns, ctx);
+				LmdbIdBGPQueryEvaluationStep step = new LmdbIdBGPQueryEvaluationStep(join, patterns, ctx, null);
 				try (CloseableIteration<BindingSet> iter = step.evaluate(EmptyBindingSet.getInstance())) {
 					List<BindingSet> results = org.eclipse.rdf4j.common.iteration.Iterations.asList(iter);
 					// We expect 1 result because the overlay supplies the missing 'likes' triple.
@@ -163,5 +161,120 @@ public class LmdbIdBGPEvaluationTest {
 			branch.close();
 			repository.shutDown();
 		}
+	}
+
+	@Test
+	public void bgpUsesIdArrayIterator(@TempDir java.nio.file.Path tempDir) throws Exception {
+		LmdbStore store = new LmdbStore(tempDir.toFile());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI alice = vf.createIRI(NS, "alice");
+		IRI bob = vf.createIRI(NS, "bob");
+		IRI knows = vf.createIRI(NS, "knows");
+		IRI likes = vf.createIRI(NS, "likes");
+		IRI pizza = vf.createIRI(NS, "pizza");
+
+		try (RepositoryConnection conn = repository.getConnection()) {
+			conn.add(alice, knows, bob);
+			conn.add(alice, likes, pizza);
+		}
+
+		String query = "SELECT ?person ?item\n" +
+				"WHERE {\n" +
+				"  ?person <http://example.com/knows> ?other .\n" +
+				"  ?person <http://example.com/likes> ?item .\n" +
+				"}";
+
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		TupleExpr tupleExpr = parsed.getTupleExpr();
+		TupleExpr current = tupleExpr;
+		if (current instanceof org.eclipse.rdf4j.query.algebra.QueryRoot) {
+			current = ((org.eclipse.rdf4j.query.algebra.QueryRoot) current).getArg();
+		}
+		if (current instanceof org.eclipse.rdf4j.query.algebra.Projection) {
+			current = ((org.eclipse.rdf4j.query.algebra.Projection) current).getArg();
+		}
+		if (!(current instanceof Join)) {
+			throw new AssertionError("expected Join at root of algebra");
+		}
+		Join join = (Join) current;
+
+		List<org.eclipse.rdf4j.query.algebra.StatementPattern> patterns = new ArrayList<>();
+		boolean flattened = LmdbIdBGPQueryEvaluationStep.flattenBGP(join, patterns);
+		assertThat(flattened).isTrue();
+		assertThat(patterns).hasSize(2);
+
+		SailSource branch = store.getBackingStore().getExplicitSailSource();
+		SailDataset dataset = branch.dataset(IsolationLevels.SNAPSHOT_READ);
+
+		try {
+			LmdbEvaluationDataset lmdbDataset = (LmdbEvaluationDataset) dataset;
+			RecordingDataset recordingDataset = new RecordingDataset(lmdbDataset);
+
+			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
+
+			QueryEvaluationContext ctx = new LmdbQueryEvaluationContext(null, tripleSource.getValueFactory(),
+					tripleSource.getComparator(), recordingDataset, lmdbDataset.getValueStore());
+
+			LmdbIdBGPQueryEvaluationStep step = new LmdbIdBGPQueryEvaluationStep(join, patterns, ctx, null);
+
+			try (CloseableIteration<BindingSet> iter = step.evaluate(EmptyBindingSet.getInstance())) {
+				List<BindingSet> results = org.eclipse.rdf4j.common.iteration.Iterations.asList(iter);
+				assertThat(results).hasSize(1);
+			}
+
+			assertThat(recordingDataset.wasLegacyApiUsed()).isFalse();
+			assertThat(recordingDataset.wasArrayApiUsed()).isTrue();
+		} finally {
+			dataset.close();
+			branch.close();
+			repository.shutDown();
+		}
+	}
+
+	private static final class RecordingDataset implements LmdbEvaluationDataset {
+		private final LmdbEvaluationDataset delegate;
+
+		RecordingDataset(LmdbEvaluationDataset delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public RecordIterator getRecordIterator(org.eclipse.rdf4j.query.algebra.StatementPattern pattern,
+				BindingSet bindings) {
+			legacyApiUsed = true;
+			return delegate.getRecordIterator(pattern, bindings);
+		}
+
+		@Override
+		public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+				int ctxIndex,
+				long[] patternIds) throws QueryEvaluationException {
+			arrayApiUsed = true;
+			return delegate.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+		}
+
+		boolean wasLegacyApiUsed() {
+			return legacyApiUsed;
+		}
+
+		boolean wasArrayApiUsed() {
+			return arrayApiUsed;
+		}
+
+		@Override
+		public ValueStore getValueStore() {
+			return delegate.getValueStore();
+		}
+
+		@Override
+		public boolean hasTransactionChanges() {
+			return delegate.hasTransactionChanges();
+		}
+
+		private boolean legacyApiUsed;
+		private boolean arrayApiUsed;
 	}
 }

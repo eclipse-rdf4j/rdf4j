@@ -11,12 +11,12 @@
 package org.eclipse.rdf4j.sail.lmdb.join;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
+import java.util.Optional;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -38,63 +37,65 @@ import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
- * Builds a left-deep chain of ID-only join iterators for an entire BGP and materializes bindings only once.
+ * Query evaluation step that wires up the LMDB merge join iterator.
  */
-public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
+public class LmdbIdMergeJoinQueryEvaluationStep implements QueryEvaluationStep {
 
-	private static final String ID_JOIN_ALGORITHM = LmdbIdJoinIterator.class.getSimpleName();
-
-	private final List<PatternPlan> plans;
-	private final IdBindingInfo finalInfo;
+	private final PatternPlan leftPlan;
+	private final PatternPlan rightPlan;
+	private final IdBindingInfo bindingInfo;
 	private final QueryEvaluationContext context;
 	private final LmdbDatasetContext datasetContext;
-	private final Join root;
+	private final Join join;
+	private final LmdbIdJoinIterator.PatternInfo leftInfo;
+	private final LmdbIdJoinIterator.PatternInfo rightInfo;
+	private final String mergeVariable;
 	private final QueryEvaluationStep fallbackStep;
 	private final boolean hasInvalidPattern;
+	private final String fallbackAlgorithmName;
 
-	public LmdbIdBGPQueryEvaluationStep(Join root, List<StatementPattern> patterns, QueryEvaluationContext context,
+	public LmdbIdMergeJoinQueryEvaluationStep(Join join, QueryEvaluationContext context,
 			QueryEvaluationStep fallbackStep) {
-		if (!(context instanceof LmdbDatasetContext)) {
-			throw new IllegalArgumentException("LMDB ID BGP join requires LMDB query evaluation context");
+		if (!(join.getLeftArg() instanceof StatementPattern) || !(join.getRightArg() instanceof StatementPattern)) {
+			throw new IllegalArgumentException("LMDB merge join requires StatementPattern operands");
 		}
-		this.root = root;
+		if (!(context instanceof LmdbDatasetContext)) {
+			throw new IllegalArgumentException("LMDB merge join requires LMDB query evaluation context");
+		}
+		if (!join.isMergeJoin()) {
+			throw new IllegalArgumentException("Merge join flag must be set on the Join node");
+		}
+		Var orderVar = join.getOrder();
+		if (orderVar == null) {
+			throw new IllegalArgumentException("Merge join requires join order variable to be set");
+		}
+
 		this.context = context;
 		this.datasetContext = (LmdbDatasetContext) context;
+		this.join = join;
+
+		StatementPattern leftPattern = (StatementPattern) join.getLeftArg();
+		StatementPattern rightPattern = (StatementPattern) join.getRightArg();
+
+		this.mergeVariable = orderVar.getName();
+		this.leftInfo = LmdbIdJoinIterator.PatternInfo.create(leftPattern);
+		this.rightInfo = LmdbIdJoinIterator.PatternInfo.create(rightPattern);
 		this.fallbackStep = fallbackStep;
+		this.fallbackAlgorithmName = fallbackStep != null ? join.getAlgorithmName() : null;
 
 		ValueStore valueStore = this.datasetContext.getValueStore()
-				.orElseThrow(() -> new IllegalStateException("LMDB ID BGP join requires ValueStore access"));
+				.orElseThrow(() -> new IllegalStateException("LMDB merge join requires ValueStore access"));
 
-		List<RawPattern> rawPatterns = new ArrayList<>(patterns.size());
-		boolean invalid = false;
-		for (StatementPattern pattern : patterns) {
-			RawPattern raw = RawPattern.create(pattern, valueStore);
-			rawPatterns.add(raw);
-			invalid |= raw.invalid;
-		}
-		this.hasInvalidPattern = invalid;
+		RawPattern leftRaw = RawPattern.create(leftPattern, valueStore);
+		RawPattern rightRaw = RawPattern.create(rightPattern, valueStore);
+		this.hasInvalidPattern = leftRaw.invalid || rightRaw.invalid;
 
-		if (rawPatterns.isEmpty()) {
-			throw new IllegalArgumentException("Basic graph pattern must contain at least one statement pattern");
-		}
+		IdBindingInfo info = IdBindingInfo.fromFirstPattern(leftInfo);
+		info = IdBindingInfo.combine(info, rightInfo);
+		this.bindingInfo = info;
 
-		IdBindingInfo info = null;
-		for (RawPattern raw : rawPatterns) {
-			if (info == null) {
-				info = IdBindingInfo.fromFirstPattern(raw.patternInfo);
-			} else {
-				info = IdBindingInfo.combine(info, raw.patternInfo);
-			}
-		}
-		this.finalInfo = info;
-
-		List<PatternPlan> planList = new ArrayList<>(rawPatterns.size());
-		for (RawPattern raw : rawPatterns) {
-			planList.add(raw.toPlan(finalInfo));
-		}
-		this.plans = planList;
-
-		markJoinTreeWithIdAlgorithm(root);
+		this.leftPlan = leftRaw.toPlan(info, leftPattern.getStatementOrder());
+		this.rightPlan = rightRaw.toPlan(info, rightPattern.getStatementOrder());
 	}
 
 	@Override
@@ -110,34 +111,65 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			if (hasInvalidPattern) {
 				return new EmptyIteration<>();
 			}
+			if (leftPlan.order == null || rightPlan.order == null) {
+				return evaluateFallback(bindings);
+			}
 
 			ValueStore valueStore = dataset.getValueStore();
-			long[] initialBinding = createInitialBinding(finalInfo, bindings, valueStore);
+			long[] initialBinding = createInitialBinding(bindingInfo, bindings, valueStore);
 			if (initialBinding == null) {
 				return new EmptyIteration<>();
 			}
 
-			PatternPlan firstPlan = plans.get(0);
-			RecordIterator iter = dataset.getRecordIterator(initialBinding, firstPlan.subjIndex, firstPlan.predIndex,
-					firstPlan.objIndex, firstPlan.ctxIndex, firstPlan.patternIds);
-
-			for (int i = 1; i < plans.size(); i++) {
-				iter = new BindingJoinRecordIterator(iter, dataset, plans.get(i));
+			if (!dataset.supportsOrder(initialBinding, leftPlan.subjIndex, leftPlan.predIndex, leftPlan.objIndex,
+					leftPlan.ctxIndex, leftPlan.patternIds, leftPlan.order)
+					|| !dataset.supportsOrder(initialBinding, rightPlan.subjIndex, rightPlan.predIndex,
+							rightPlan.objIndex, rightPlan.ctxIndex, rightPlan.patternIds, rightPlan.order)) {
+				return evaluateFallback(bindings);
 			}
 
-			return new LmdbIdFinalBindingSetIteration(iter, finalInfo, context, bindings, valueStore);
+			RecordIterator leftIterator = dataset.getOrderedRecordIterator(initialBinding, leftPlan.subjIndex,
+					leftPlan.predIndex, leftPlan.objIndex, leftPlan.ctxIndex, leftPlan.patternIds, leftPlan.order);
+			if (leftIterator == null) {
+				return evaluateFallback(bindings);
+			}
+
+			RecordIterator rightIterator = dataset.getOrderedRecordIterator(initialBinding, rightPlan.subjIndex,
+					rightPlan.predIndex, rightPlan.objIndex, rightPlan.ctxIndex, rightPlan.patternIds, rightPlan.order);
+			if (rightIterator == null) {
+				try {
+					leftIterator.close();
+				} catch (Exception ignore) {
+				}
+				return evaluateFallback(bindings);
+			}
+
+			join.setAlgorithm(LmdbIdMergeJoinIterator.class.getSimpleName());
+			return new LmdbIdMergeJoinIterator(leftIterator, rightIterator, leftInfo, rightInfo, mergeVariable, context,
+					bindings, valueStore);
 		} catch (QueryEvaluationException e) {
 			throw e;
 		}
 	}
 
+	private CloseableIteration<BindingSet> evaluateFallback(BindingSet bindings) {
+		if (fallbackAlgorithmName != null) {
+			join.setAlgorithm(fallbackAlgorithmName);
+		}
+		if (fallbackStep != null) {
+			return fallbackStep.evaluate(bindings);
+		}
+		return new EmptyIteration<>();
+	}
+
 	private LmdbEvaluationDataset resolveDataset() {
-		java.util.Optional<LmdbEvaluationDataset> fromContext = datasetContext.getLmdbDataset();
+		Optional<LmdbEvaluationDataset> fromContext = datasetContext.getLmdbDataset();
 		if (fromContext.isPresent()) {
 			return fromContext.get();
 		}
 		return LmdbEvaluationStrategy.getCurrentDataset()
-				.orElseThrow(() -> new IllegalStateException("No active LMDB dataset available for join evaluation"));
+				.orElseThrow(
+						() -> new IllegalStateException("No active LMDB dataset available for merge join evaluation"));
 	}
 
 	private static long[] createInitialBinding(IdBindingInfo info, BindingSet bindings, ValueStore valueStore)
@@ -185,88 +217,22 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		}
 	}
 
-	public static boolean flattenBGP(TupleExpr expr, List<StatementPattern> out) {
-		if (expr instanceof StatementPattern) {
-			out.add((StatementPattern) expr);
-			return true;
-		}
-		if (expr instanceof Join) {
-			Join j = (Join) expr;
-			// merge joins only; we avoid mergeJoin or other special joins
-			if (j.isMergeJoin()) {
-				return false;
-			}
-			return flattenBGP(j.getLeftArg(), out) && flattenBGP(j.getRightArg(), out);
-		}
-		return false;
-	}
-
-	private static void markJoinTreeWithIdAlgorithm(TupleExpr expr) {
-		if (expr instanceof Join) {
-			Join join = (Join) expr;
-			join.setAlgorithm(ID_JOIN_ALGORITHM);
-			markJoinTreeWithIdAlgorithm(join.getLeftArg());
-			markJoinTreeWithIdAlgorithm(join.getRightArg());
-		}
-	}
-
-	private static final class BindingJoinRecordIterator implements RecordIterator {
-		private final RecordIterator left;
-		private final LmdbEvaluationDataset dataset;
-		private final PatternPlan plan;
-		private RecordIterator currentRight;
-
-		private BindingJoinRecordIterator(RecordIterator left, LmdbEvaluationDataset dataset, PatternPlan plan) {
-			this.left = left;
-			this.dataset = dataset;
-			this.plan = plan;
-		}
-
-		@Override
-		public long[] next() throws QueryEvaluationException {
-			while (true) {
-				if (currentRight != null) {
-					long[] next = currentRight.next();
-					if (next != null) {
-						return next;
-					}
-					currentRight.close();
-					currentRight = null;
-				}
-
-				long[] leftBinding = left.next();
-				if (leftBinding == null) {
-					return null;
-				}
-
-				currentRight = dataset.getRecordIterator(leftBinding, plan.subjIndex, plan.predIndex, plan.objIndex,
-						plan.ctxIndex, plan.patternIds);
-			}
-		}
-
-		@Override
-		public void close() {
-			if (currentRight != null) {
-				currentRight.close();
-				currentRight = null;
-			}
-			left.close();
-		}
-	}
-
 	private static final class PatternPlan {
 		private final long[] patternIds;
 		private final int subjIndex;
 		private final int predIndex;
 		private final int objIndex;
 		private final int ctxIndex;
+		private final StatementOrder order;
 
-		private PatternPlan(long[] patternIds, int subjIndex, int predIndex, int objIndex, int ctxIndex) {
+		private PatternPlan(long[] patternIds, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+				StatementOrder order) {
 			this.patternIds = patternIds;
 			this.subjIndex = subjIndex;
 			this.predIndex = predIndex;
 			this.objIndex = objIndex;
 			this.ctxIndex = ctxIndex;
+			this.order = order;
 		}
 	}
 
@@ -276,24 +242,21 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		private final String predVar;
 		private final String objVar;
 		private final String ctxVar;
-		private final LmdbIdJoinIterator.PatternInfo patternInfo;
 		private final boolean invalid;
 
 		private RawPattern(long[] patternIds, String subjVar, String predVar, String objVar, String ctxVar,
-				LmdbIdJoinIterator.PatternInfo patternInfo, boolean invalid) {
+				boolean invalid) {
 			this.patternIds = patternIds;
 			this.subjVar = subjVar;
 			this.predVar = predVar;
 			this.objVar = objVar;
 			this.ctxVar = ctxVar;
-			this.patternInfo = patternInfo;
 			this.invalid = invalid;
 		}
 
 		static RawPattern create(StatementPattern pattern, ValueStore valueStore) {
 			long[] ids = new long[4];
 			Arrays.fill(ids, LmdbValue.UNKNOWN_ID);
-
 			boolean invalid = false;
 
 			Var subj = pattern.getSubjectVar();
@@ -356,13 +319,12 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				}
 			}
 
-			LmdbIdJoinIterator.PatternInfo info = LmdbIdJoinIterator.PatternInfo.create(pattern);
-			return new RawPattern(ids, subjVar, predVar, objVar, ctxVar, info, invalid);
+			return new RawPattern(ids, subjVar, predVar, objVar, ctxVar, invalid);
 		}
 
-		PatternPlan toPlan(IdBindingInfo finalInfo) {
-			return new PatternPlan(patternIds.clone(), indexFor(subjVar, finalInfo),
-					indexFor(predVar, finalInfo), indexFor(objVar, finalInfo), indexFor(ctxVar, finalInfo));
+		PatternPlan toPlan(IdBindingInfo bindingInfo, StatementOrder order) {
+			return new PatternPlan(patternIds.clone(), indexFor(subjVar, bindingInfo), indexFor(predVar, bindingInfo),
+					indexFor(objVar, bindingInfo), indexFor(ctxVar, bindingInfo), order);
 		}
 
 		private static int indexFor(String varName, IdBindingInfo info) {

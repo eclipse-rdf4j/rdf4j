@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdBGPQueryEvaluationStep;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdJoinQueryEvaluationStep;
+import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdMergeJoinQueryEvaluationStep;
 
 /**
  * Evaluation strategy that can use LMDB-specific join iterators.
@@ -38,6 +39,7 @@ import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdJoinQueryEvaluationStep;
 public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 
 	private static final ThreadLocal<LmdbEvaluationDataset> CURRENT_DATASET = new ThreadLocal<>();
+	private static final ThreadLocal<ConnectionChangeState> CONNECTION_CHANGES = new ThreadLocal<>();
 
 	LmdbEvaluationStrategy(TripleSource tripleSource, Dataset dataset, FederatedServiceResolver serviceResolver,
 			long iterationCacheSyncThreshold, EvaluationStatistics evaluationStatistics, boolean trackResultSize) {
@@ -50,8 +52,10 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 	public QueryEvaluationStep precompile(TupleExpr expr) {
 		LmdbEvaluationDataset datasetRef = CURRENT_DATASET.get();
 		ValueStore valueStore = datasetRef != null ? datasetRef.getValueStore() : null;
-		// Prefer the active LMDB dataset for ID-join evaluation to avoid premature materialization.
-		LmdbEvaluationDataset effectiveDataset = datasetRef != null ? datasetRef : null;
+		LmdbEvaluationDataset effectiveDataset = datasetRef;
+		if (connectionHasChanges() && valueStore != null) {
+			effectiveDataset = new LmdbOverlayEvaluationDataset(tripleSource, valueStore);
+		}
 		LmdbQueryEvaluationContext baseContext = new LmdbQueryEvaluationContext(dataset, tripleSource.getValueFactory(),
 				tripleSource.getComparator(), effectiveDataset, valueStore);
 		QueryEvaluationContext context = baseContext;
@@ -67,24 +71,30 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 
 	@Override
 	protected QueryEvaluationStep prepare(Join node, QueryEvaluationContext context) {
+		QueryEvaluationStep defaultStep = super.prepare(node, context);
 		if (context instanceof LmdbDatasetContext && ((LmdbDatasetContext) context).getLmdbDataset().isPresent()) {
 			LmdbEvaluationDataset ds = ((LmdbDatasetContext) context).getLmdbDataset().get();
 			// If the active transaction has uncommitted changes, avoid ID-only join shortcuts.
-			if (ds.hasTransactionChanges()) {
-				return super.prepare(node, context);
+			if (ds.hasTransactionChanges() || connectionHasChanges()) {
+				return defaultStep;
+			}
+
+			if (node.isMergeJoin() && node.getOrder() != null && node.getLeftArg() instanceof StatementPattern
+					&& node.getRightArg() instanceof StatementPattern) {
+				return new LmdbIdMergeJoinQueryEvaluationStep(node, context, defaultStep);
 			}
 			// Try to flatten a full BGP of statement patterns
 			List<StatementPattern> patterns = new ArrayList<>();
 			if (LmdbIdBGPQueryEvaluationStep.flattenBGP(node, patterns)
 					&& !patterns.isEmpty()) {
-				return new LmdbIdBGPQueryEvaluationStep(node, patterns, context);
+				return new LmdbIdBGPQueryEvaluationStep(node, patterns, context, defaultStep);
 			}
 			// Fallback to two-pattern ID join
 			if (node.getLeftArg() instanceof StatementPattern && node.getRightArg() instanceof StatementPattern) {
-				return new LmdbIdJoinQueryEvaluationStep(this, node, context);
+				return new LmdbIdJoinQueryEvaluationStep(this, node, context, defaultStep);
 			}
 		}
-		return super.prepare(node, context);
+		return defaultStep;
 	}
 
 	static void setCurrentDataset(LmdbEvaluationDataset dataset) {
@@ -97,5 +107,44 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 
 	public static Optional<LmdbEvaluationDataset> getCurrentDataset() {
 		return Optional.ofNullable(CURRENT_DATASET.get());
+	}
+
+	static void pushConnectionChangesFlag(boolean hasUncommittedChanges) {
+		if (!hasUncommittedChanges && CONNECTION_CHANGES.get() == null) {
+			return;
+		}
+
+		ConnectionChangeState state = CONNECTION_CHANGES.get();
+		if (state == null) {
+			state = new ConnectionChangeState();
+			CONNECTION_CHANGES.set(state);
+		}
+		state.depth++;
+		state.hasChanges |= hasUncommittedChanges;
+	}
+
+	static void popConnectionChangesFlag() {
+		ConnectionChangeState state = CONNECTION_CHANGES.get();
+		if (state == null) {
+			return;
+		}
+		state.depth--;
+		if (state.depth <= 0) {
+			CONNECTION_CHANGES.remove();
+		}
+	}
+
+	private static boolean connectionHasChanges() {
+		ConnectionChangeState state = CONNECTION_CHANGES.get();
+		return state != null && state.hasChanges;
+	}
+
+	public static boolean hasActiveConnectionChanges() {
+		return connectionHasChanges();
+	}
+
+	private static final class ConnectionChangeState {
+		private int depth;
+		private boolean hasChanges;
 	}
 }

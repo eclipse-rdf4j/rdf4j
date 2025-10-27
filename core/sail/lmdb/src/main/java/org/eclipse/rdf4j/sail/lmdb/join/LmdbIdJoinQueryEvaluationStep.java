@@ -42,8 +42,10 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private final LmdbIdJoinIterator.PatternInfo rightInfo;
 	private final Set<String> sharedVariables;
 	private final LmdbDatasetContext datasetContext;
+	private final QueryEvaluationStep fallbackStep;
 
-	public LmdbIdJoinQueryEvaluationStep(EvaluationStrategy strategy, Join join, QueryEvaluationContext context) {
+	public LmdbIdJoinQueryEvaluationStep(EvaluationStrategy strategy, Join join, QueryEvaluationContext context,
+			QueryEvaluationStep fallbackStep) {
 		if (!(join.getLeftArg() instanceof StatementPattern) || !(join.getRightArg() instanceof StatementPattern)) {
 			throw new IllegalArgumentException("LMDB ID join requires StatementPattern operands");
 		}
@@ -59,6 +61,7 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 		this.leftInfo = LmdbIdJoinIterator.PatternInfo.create(leftPattern);
 		this.rightInfo = LmdbIdJoinIterator.PatternInfo.create(rightPattern);
 		this.sharedVariables = computeSharedVariables(leftInfo, rightInfo);
+		this.fallbackStep = fallbackStep;
 
 		join.setAlgorithm(LmdbIdJoinIterator.class.getSimpleName());
 
@@ -73,8 +76,14 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		if (fallbackStep != null && LmdbEvaluationStrategy.hasActiveConnectionChanges()) {
+			return fallbackStep.evaluate(bindings);
+		}
 		try {
 			LmdbEvaluationDataset dataset = resolveDataset();
+			if (fallbackStep != null && dataset.hasTransactionChanges()) {
+				return fallbackStep.evaluate(bindings);
+			}
 			ValueStore valueStore = dataset.getValueStore();
 			RecordIterator leftIterator = dataset.getRecordIterator(leftPattern, bindings);
 

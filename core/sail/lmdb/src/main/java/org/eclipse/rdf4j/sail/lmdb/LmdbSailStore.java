@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
@@ -31,7 +32,6 @@ import java.util.function.Function;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -1363,6 +1363,133 @@ class LmdbSailStore implements SailStore {
 		public RecordIterator getRecordIterator(StatementPattern pattern, BindingSet bindings)
 				throws QueryEvaluationException {
 			try {
+				PatternArrays arrays = describePattern(pattern);
+				if (!arrays.valid) {
+					return emptyRecordIterator();
+				}
+				long subjID = resolveIdWithBindings(arrays.ids[TripleStore.SUBJ_IDX],
+						arrays.varNames[TripleStore.SUBJ_IDX],
+						bindings, true, false);
+				if (subjID == INVALID_ID) {
+					return emptyRecordIterator();
+				}
+
+				long predID = resolveIdWithBindings(arrays.ids[TripleStore.PRED_IDX],
+						arrays.varNames[TripleStore.PRED_IDX],
+						bindings, false, true);
+				if (predID == INVALID_ID) {
+					return emptyRecordIterator();
+				}
+
+				long objID = resolveIdWithBindings(arrays.ids[TripleStore.OBJ_IDX],
+						arrays.varNames[TripleStore.OBJ_IDX],
+						bindings, false, false);
+				if (objID == INVALID_ID) {
+					return emptyRecordIterator();
+				}
+
+				long contextID = resolveContextWithBindings(arrays.ids[TripleStore.CONTEXT_IDX],
+						arrays.varNames[TripleStore.CONTEXT_IDX], bindings);
+				if (contextID == INVALID_ID) {
+					return emptyRecordIterator();
+				}
+
+				return tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
+			} catch (IOException e) {
+				throw new QueryEvaluationException("Unable to create LMDB record iterator", e);
+			}
+		}
+
+		@Override
+		public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+				int ctxIndex,
+				long[] patternIds) throws QueryEvaluationException {
+			try {
+				long subjQuery = selectQueryId(patternIds[TripleStore.SUBJ_IDX], binding, subjIndex);
+				long predQuery = selectQueryId(patternIds[TripleStore.PRED_IDX], binding, predIndex);
+				long objQuery = selectQueryId(patternIds[TripleStore.OBJ_IDX], binding, objIndex);
+				long ctxQuery = selectQueryId(patternIds[TripleStore.CONTEXT_IDX], binding, ctxIndex);
+
+				RecordIterator base = tripleStore.getTriples(txn, subjQuery, predQuery, objQuery, ctxQuery, explicit);
+
+				return new RecordIterator() {
+					@Override
+					public long[] next() throws QueryEvaluationException {
+						try {
+							long[] quad;
+							while ((quad = base.next()) != null) {
+								long[] merged = mergeBinding(binding, quad[TripleStore.SUBJ_IDX],
+										quad[TripleStore.PRED_IDX],
+										quad[TripleStore.OBJ_IDX], quad[TripleStore.CONTEXT_IDX], subjIndex, predIndex,
+										objIndex, ctxIndex);
+								if (merged != null) {
+									return merged;
+								}
+							}
+							return null;
+						} catch (QueryEvaluationException e) {
+							throw e;
+						} catch (Exception e) {
+							throw new QueryEvaluationException(e);
+						}
+					}
+
+					@Override
+					public void close() {
+						base.close();
+					}
+				};
+			} catch (IOException e) {
+				throw new QueryEvaluationException("Unable to create LMDB record iterator", e);
+			}
+		}
+
+		@Override
+		public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+				int ctxIndex, long[] patternIds, StatementOrder order) throws QueryEvaluationException {
+			if (order == null) {
+				return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+			}
+			try {
+				long subjQuery = selectQueryId(patternIds[TripleStore.SUBJ_IDX], binding, subjIndex);
+				long predQuery = selectQueryId(patternIds[TripleStore.PRED_IDX], binding, predIndex);
+				long objQuery = selectQueryId(patternIds[TripleStore.OBJ_IDX], binding, objIndex);
+				long ctxQuery = selectQueryId(patternIds[TripleStore.CONTEXT_IDX], binding, ctxIndex);
+
+				RecordIterator orderedIter = orderedRecordIterator(order, subjQuery, predQuery, objQuery, ctxQuery);
+				if (orderedIter != null) {
+					return orderedIter;
+				}
+				return null;
+			} catch (IOException e) {
+				throw new QueryEvaluationException("Unable to create ordered LMDB record iterator", e);
+			}
+		}
+
+		@Override
+		public boolean supportsOrder(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+				long[] patternIds, StatementOrder order) {
+			if (order == null) {
+				return true;
+			}
+			long subjQuery = selectQueryId(patternIds[TripleStore.SUBJ_IDX], binding, subjIndex);
+			long predQuery = selectQueryId(patternIds[TripleStore.PRED_IDX], binding, predIndex);
+			long objQuery = selectQueryId(patternIds[TripleStore.OBJ_IDX], binding, objIndex);
+			long ctxQuery = selectQueryId(patternIds[TripleStore.CONTEXT_IDX], binding, ctxIndex);
+			try {
+				return orderedRecordIterator(order, subjQuery, predQuery, objQuery, ctxQuery) != null;
+			} catch (IOException e) {
+				return false;
+			}
+		}
+
+		@Override
+		public RecordIterator getOrderedRecordIterator(StatementPattern pattern, BindingSet bindings,
+				StatementOrder order) throws QueryEvaluationException {
+			if (order == null) {
+				return getRecordIterator(pattern, bindings);
+			}
+			try {
 				Value subj = resolveValue(pattern.getSubjectVar(), bindings);
 				if (subj != null && !(subj instanceof Resource)) {
 					return emptyRecordIterator();
@@ -1405,88 +1532,26 @@ class LmdbSailStore implements SailStore {
 					return emptyRecordIterator();
 				}
 
-				return tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
+				RecordIterator orderedIter = orderedRecordIterator(order, subjID, predID, objID, contextID);
+				if (orderedIter != null) {
+					return orderedIter;
+				}
+				return null;
 			} catch (IOException e) {
-				throw new QueryEvaluationException("Unable to create LMDB record iterator", e);
+				throw new QueryEvaluationException("Unable to create ordered LMDB record iterator", e);
 			}
-		}
-
-		@Override
-		public RecordIterator getRecordIterator(StatementPattern pattern, LmdbIdVarBinding idBinding)
-				throws QueryEvaluationException {
-			try {
-				// Resolve subject
-				long subjID = resolveIdFromVarOrBinding(pattern.getSubjectVar(), idBinding, true);
-				if (subjID == Long.MIN_VALUE) { // incompatible type
-					return emptyRecordIterator();
-				}
-
-				// Resolve predicate
-				long predID = resolveIdFromVarOrBinding(pattern.getPredicateVar(), idBinding, false);
-				if (predID == Long.MIN_VALUE) {
-					return emptyRecordIterator();
-				}
-
-				// Resolve object
-				long objID = resolveIdFromVarOrBinding(pattern.getObjectVar(), idBinding, null);
-				if (objID == Long.MIN_VALUE) {
-					return emptyRecordIterator();
-				}
-
-				// Resolve context
-				org.eclipse.rdf4j.query.algebra.Var ctxVar = pattern.getContextVar();
-				long contextID;
-				if (ctxVar == null) {
-					contextID = LmdbValue.UNKNOWN_ID;
-				} else if (ctxVar.hasValue()) {
-					Value ctxValue = ctxVar.getValue();
-					if (ctxValue instanceof Resource) {
-						Resource ctx = (Resource) ctxValue;
-						if (ctx.isTriple()) {
-							return emptyRecordIterator();
-						}
-						contextID = resolveId(ctx);
-						if (contextID == LmdbValue.UNKNOWN_ID) {
-							return emptyRecordIterator();
-						}
-					} else {
-						return emptyRecordIterator();
-					}
-				} else {
-					// variable context; if bound on left, use that; 0 represents default graph
-					long bound = idBinding == null ? LmdbValue.UNKNOWN_ID : idBinding.getIdOrUnknown(ctxVar.getName());
-					contextID = bound;
-				}
-
-				return tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
-			} catch (IOException e) {
-				throw new QueryEvaluationException("Unable to create LMDB record iterator", e);
-			}
-		}
-
-		private long resolveIdFromVarOrBinding(org.eclipse.rdf4j.query.algebra.Var var, LmdbIdVarBinding idBinding,
-				Boolean resourceType) throws IOException {
-			if (var == null) {
-				return LmdbValue.UNKNOWN_ID;
-			}
-			if (var.hasValue()) {
-				Value v = var.getValue();
-				if (resourceType == Boolean.TRUE && !(v instanceof Resource)) {
-					return Long.MIN_VALUE; // incompatible type
-				}
-				if (resourceType == Boolean.FALSE && !(v instanceof IRI)) {
-					return Long.MIN_VALUE; // incompatible type
-				}
-				long id = resolveId(v);
-				return id == LmdbValue.UNKNOWN_ID ? Long.MIN_VALUE : id;
-			}
-			long bound = idBinding == null ? LmdbValue.UNKNOWN_ID : idBinding.getIdOrUnknown(var.getName());
-			return bound;
 		}
 
 		@Override
 		public ValueStore getValueStore() {
 			return valueStore;
+		}
+
+		@Override
+		public boolean hasTransactionChanges() {
+			// storeTxnStarted is flipped to true when a writer begins and only cleared
+			// after commit/rollback, so a true value indicates pending uncommitted changes.
+			return storeTxnStarted.get();
 		}
 
 		private RecordIterator emptyRecordIterator() {
@@ -1509,6 +1574,237 @@ class LmdbSailStore implements SailStore {
 			return null;
 		}
 
+		private static final long INVALID_ID = Long.MIN_VALUE;
+
+		private PatternArrays describePattern(StatementPattern pattern) throws IOException {
+			long[] ids = new long[4];
+			String[] varNames = new String[4];
+			boolean valid = true;
+
+			valid &= populateSubject(pattern.getSubjectVar(), ids, varNames);
+			valid &= populatePredicate(pattern.getPredicateVar(), ids, varNames);
+			valid &= populateObject(pattern.getObjectVar(), ids, varNames);
+			valid &= populateContext(pattern.getContextVar(), ids, varNames);
+
+			return new PatternArrays(ids, varNames, valid);
+		}
+
+		private boolean populateSubject(org.eclipse.rdf4j.query.algebra.Var var, long[] ids, String[] varNames)
+				throws IOException {
+			if (var == null) {
+				ids[TripleStore.SUBJ_IDX] = LmdbValue.UNKNOWN_ID;
+				varNames[TripleStore.SUBJ_IDX] = null;
+				return true;
+			}
+			if (var.hasValue()) {
+				Value value = var.getValue();
+				if (!(value instanceof Resource)) {
+					return false;
+				}
+				long id = resolveId(value);
+				if (id == LmdbValue.UNKNOWN_ID) {
+					return false;
+				}
+				ids[TripleStore.SUBJ_IDX] = id;
+				varNames[TripleStore.SUBJ_IDX] = null;
+				return true;
+			}
+			ids[TripleStore.SUBJ_IDX] = LmdbValue.UNKNOWN_ID;
+			varNames[TripleStore.SUBJ_IDX] = var.getName();
+			return true;
+		}
+
+		private boolean populatePredicate(org.eclipse.rdf4j.query.algebra.Var var, long[] ids, String[] varNames)
+				throws IOException {
+			if (var == null) {
+				ids[TripleStore.PRED_IDX] = LmdbValue.UNKNOWN_ID;
+				varNames[TripleStore.PRED_IDX] = null;
+				return true;
+			}
+			if (var.hasValue()) {
+				Value value = var.getValue();
+				if (!(value instanceof IRI)) {
+					return false;
+				}
+				long id = resolveId(value);
+				if (id == LmdbValue.UNKNOWN_ID) {
+					return false;
+				}
+				ids[TripleStore.PRED_IDX] = id;
+				varNames[TripleStore.PRED_IDX] = null;
+				return true;
+			}
+			ids[TripleStore.PRED_IDX] = LmdbValue.UNKNOWN_ID;
+			varNames[TripleStore.PRED_IDX] = var.getName();
+			return true;
+		}
+
+		private boolean populateObject(org.eclipse.rdf4j.query.algebra.Var var, long[] ids, String[] varNames)
+				throws IOException {
+			if (var == null) {
+				ids[TripleStore.OBJ_IDX] = LmdbValue.UNKNOWN_ID;
+				varNames[TripleStore.OBJ_IDX] = null;
+				return true;
+			}
+			if (var.hasValue()) {
+				Value value = var.getValue();
+				long id = resolveId(value);
+				if (id == LmdbValue.UNKNOWN_ID) {
+					return false;
+				}
+				ids[TripleStore.OBJ_IDX] = id;
+				varNames[TripleStore.OBJ_IDX] = null;
+				return true;
+			}
+			ids[TripleStore.OBJ_IDX] = LmdbValue.UNKNOWN_ID;
+			varNames[TripleStore.OBJ_IDX] = var.getName();
+			return true;
+		}
+
+		private boolean populateContext(org.eclipse.rdf4j.query.algebra.Var var, long[] ids, String[] varNames)
+				throws IOException {
+			if (var == null) {
+				ids[TripleStore.CONTEXT_IDX] = LmdbValue.UNKNOWN_ID;
+				varNames[TripleStore.CONTEXT_IDX] = null;
+				return true;
+			}
+			if (var.hasValue()) {
+				Value value = var.getValue();
+				if (!(value instanceof Resource)) {
+					return false;
+				}
+				Resource ctx = (Resource) value;
+				if (ctx.isTriple()) {
+					return false;
+				}
+				long id = resolveId(ctx);
+				if (id == LmdbValue.UNKNOWN_ID) {
+					return false;
+				}
+				ids[TripleStore.CONTEXT_IDX] = id;
+				varNames[TripleStore.CONTEXT_IDX] = null;
+				return true;
+			}
+			ids[TripleStore.CONTEXT_IDX] = LmdbValue.UNKNOWN_ID;
+			varNames[TripleStore.CONTEXT_IDX] = var.getName();
+			return true;
+		}
+
+		private long selectQueryId(long patternId, long[] binding, int index) {
+			if (patternId != LmdbValue.UNKNOWN_ID) {
+				return patternId;
+			}
+			if (index >= 0 && index < binding.length) {
+				long bound = binding[index];
+				if (bound != LmdbValue.UNKNOWN_ID) {
+					return bound;
+				}
+			}
+			return LmdbValue.UNKNOWN_ID;
+		}
+
+		private long[] mergeBinding(long[] binding, long subjId, long predId, long objId, long ctxId, int subjIndex,
+				int predIndex, int objIndex, int ctxIndex) {
+			long[] out = Arrays.copyOf(binding, binding.length);
+			if (!applyValue(out, subjIndex, subjId)) {
+				return null;
+			}
+			if (!applyValue(out, predIndex, predId)) {
+				return null;
+			}
+			if (!applyValue(out, objIndex, objId)) {
+				return null;
+			}
+			if (!applyValue(out, ctxIndex, ctxId)) {
+				return null;
+			}
+			return out;
+		}
+
+		private boolean applyValue(long[] target, int index, long value) {
+			if (index < 0) {
+				return true;
+			}
+			long existing = target[index];
+			if (existing != LmdbValue.UNKNOWN_ID && existing != value) {
+				return false;
+			}
+			target[index] = value;
+			return true;
+		}
+
+		private long resolveIdWithBindings(long patternId, String varName, BindingSet bindings, boolean requireResource,
+				boolean requireIri) throws IOException {
+			if (patternId == INVALID_ID) {
+				return INVALID_ID;
+			}
+			if (varName == null) {
+				return patternId;
+			}
+			if (bindings == null) {
+				return LmdbValue.UNKNOWN_ID;
+			}
+			Value bound = bindings.getValue(varName);
+			if (bound == null) {
+				return LmdbValue.UNKNOWN_ID;
+			}
+			if (requireResource && !(bound instanceof Resource)) {
+				return INVALID_ID;
+			}
+			if (requireIri && !(bound instanceof IRI)) {
+				return INVALID_ID;
+			}
+			if (bound instanceof Resource && ((Resource) bound).isTriple()) {
+				return INVALID_ID;
+			}
+			long id = resolveId(bound);
+			if (id == LmdbValue.UNKNOWN_ID) {
+				return INVALID_ID;
+			}
+			return id;
+		}
+
+		private long resolveContextWithBindings(long patternId, String varName, BindingSet bindings)
+				throws IOException {
+			if (patternId == INVALID_ID) {
+				return INVALID_ID;
+			}
+			if (varName == null) {
+				return patternId;
+			}
+			if (bindings == null) {
+				return LmdbValue.UNKNOWN_ID;
+			}
+			Value bound = bindings.getValue(varName);
+			if (bound == null) {
+				return LmdbValue.UNKNOWN_ID;
+			}
+			if (!(bound instanceof Resource)) {
+				return INVALID_ID;
+			}
+			Resource ctx = (Resource) bound;
+			if (ctx.isTriple()) {
+				return INVALID_ID;
+			}
+			long id = resolveId(ctx);
+			if (id == LmdbValue.UNKNOWN_ID) {
+				return INVALID_ID;
+			}
+			return id;
+		}
+
+		private final class PatternArrays {
+			private final long[] ids;
+			private final String[] varNames;
+			private final boolean valid;
+
+			private PatternArrays(long[] ids, String[] varNames, boolean valid) {
+				this.ids = ids;
+				this.varNames = varNames;
+				this.valid = valid;
+			}
+		}
+
 		private long resolveId(Value value) throws IOException {
 			if (value == null) {
 				return LmdbValue.UNKNOWN_ID;
@@ -1521,6 +1817,19 @@ class LmdbSailStore implements SailStore {
 			}
 			long id = valueStore.getId(value);
 			return id;
+		}
+
+		private RecordIterator orderedRecordIterator(StatementOrder order, long subjID, long predID, long objID,
+				long contextID) throws IOException {
+			if (order == null) {
+				return null;
+			}
+			TripleStore.TripleIndex chosen = chooseIndexForOrder(order, subjID, predID, objID, contextID);
+			if (chosen == null) {
+				return null;
+			}
+			boolean rangeSearch = chosen.getPatternScore(subjID, predID, objID, contextID) > 0;
+			return new LmdbRecordIterator(chosen, rangeSearch, subjID, predID, objID, contextID, explicit, txn);
 		}
 
 		private TripleStore.TripleIndex chooseIndexForOrder(StatementOrder order, long s, long p, long o, long c)
