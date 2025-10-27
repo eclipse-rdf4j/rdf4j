@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 
-final class LmdbEvaluationStrategyFactory extends StrictEvaluationStrategyFactory {
+class LmdbEvaluationStrategyFactory extends StrictEvaluationStrategyFactory {
 
 	LmdbEvaluationStrategyFactory(FederatedServiceResolver resolver) {
 		super(resolver);
