@@ -375,7 +375,27 @@ class SailSourceBranch implements SailSource {
 
 	void merge(Changeset change) {
 		try {
-			semaphore.lock();
+			try {
+				boolean locked = semaphore.tryLock(10, TimeUnit.SECONDS);
+				if (!locked) {
+					logger.warn(
+							"Waiting 10 seconds on semaphore for merging changesets without acquiring the semaphore. This may be a deadlock situation. Attempting to acquire semaphore interruptibly.");
+					if (Thread.interrupted()) {
+						throw new InterruptedException();
+					}
+					semaphore.lockInterruptibly();
+				}
+			} catch (InterruptedException e) {
+				logger.warn("Interrupted while trying to merge changes. Retrying once.", e);
+				try {
+					semaphore.lockInterruptibly();
+				} catch (InterruptedException ex) {
+					logger.error("Interrupted while trying to merge changes. Giving up!", e);
+					Thread.currentThread().interrupt();
+					throw new SailException(ex);
+				}
+			}
+
 			pending.remove(change);
 			if (isChanged(change)) {
 				Changeset merged;

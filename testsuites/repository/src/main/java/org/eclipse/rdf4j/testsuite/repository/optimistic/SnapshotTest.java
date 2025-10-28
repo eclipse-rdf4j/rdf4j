@@ -128,7 +128,7 @@ public class SnapshotTest {
 		}
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_independentPattern() {
 		a.begin(level);
 		b.begin(level);
@@ -142,7 +142,7 @@ public class SnapshotTest {
 		assertEquals(2, size(b, null, RDF.TYPE, PAINTER, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_safePattern() {
 		a.begin(level);
 		b.begin(level);
@@ -153,7 +153,7 @@ public class SnapshotTest {
 		b.commit();
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_afterPattern() {
 		a.begin(level);
 		b.begin(level);
@@ -165,7 +165,7 @@ public class SnapshotTest {
 		assertEquals(2, size(b, null, RDF.TYPE, PAINTER, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_afterInsertDataPattern() {
 		a.begin(level);
 		b.begin(level);
@@ -177,7 +177,7 @@ public class SnapshotTest {
 		assertEquals(2, size(b, null, RDF.TYPE, PAINTER, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_conflictPattern() {
 		a.begin(level);
 		b.begin(level);
@@ -195,7 +195,7 @@ public class SnapshotTest {
 		}
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_safeQuery() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -216,7 +216,7 @@ public class SnapshotTest {
 		assertEquals(9, size(b, null, null, null, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_safeInsert() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -235,7 +235,7 @@ public class SnapshotTest {
 		assertEquals(9, size(b, null, null, null, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_mergeQuery() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
@@ -257,7 +257,7 @@ public class SnapshotTest {
 		assertEquals(3, size(a, null, RDF.TYPE, PAINTING, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_mergeInsert() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
@@ -277,7 +277,7 @@ public class SnapshotTest {
 		assertEquals(3, size(a, null, RDF.TYPE, PAINTING, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_conflictQuery() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
@@ -306,7 +306,7 @@ public class SnapshotTest {
 		}
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_conflictInsert() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
@@ -333,7 +333,7 @@ public class SnapshotTest {
 		}
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_safeOptionalQuery() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -357,7 +357,7 @@ public class SnapshotTest {
 		assertEquals(9, size(b, null, null, null, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_safeOptionalInsert() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -376,7 +376,7 @@ public class SnapshotTest {
 		assertEquals(9, size(b, null, null, null, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_mergeOptionalQuery() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
@@ -401,7 +401,7 @@ public class SnapshotTest {
 		assertEquals(10, size(a, null, null, null, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_mergeOptionalInsert() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
@@ -421,7 +421,7 @@ public class SnapshotTest {
 		assertEquals(10, size(a, null, null, null, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_conflictOptionalQuery() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
@@ -453,7 +453,7 @@ public class SnapshotTest {
 		}
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_conflictOptionalInsert() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
@@ -480,7 +480,7 @@ public class SnapshotTest {
 		}
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_safeFilterQuery() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -502,7 +502,7 @@ public class SnapshotTest {
 		assertEquals(10, size(a, null, null, null, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_safeFilterInsert() {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -522,7 +522,7 @@ public class SnapshotTest {
 		assertEquals(10, size(a, null, null, null, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_mergeOptionalFilterQuery() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		a.add(PICASSO, PAINTS, GUERNICA);
@@ -548,7 +548,7 @@ public class SnapshotTest {
 		assertEquals(12, size(a, null, null, null, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_mergeOptionalFilterInsert() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		a.add(PICASSO, PAINTS, GUERNICA);
@@ -571,7 +571,7 @@ public class SnapshotTest {
 		assertEquals(12, size(a, null, null, null, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_conflictOptionalFilterQuery() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		a.add(PICASSO, PAINTS, GUERNICA);
@@ -605,7 +605,7 @@ public class SnapshotTest {
 		}
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_conflictOptionalFilterInsert() {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		a.add(PICASSO, PAINTS, GUERNICA);
@@ -635,7 +635,7 @@ public class SnapshotTest {
 		}
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_safeRangeQuery() {
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -663,7 +663,7 @@ public class SnapshotTest {
 		assertEquals(17, size(a, null, null, null, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_safeRangeInsert() {
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -690,7 +690,7 @@ public class SnapshotTest {
 		assertEquals(17, size(a, null, null, null, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_mergeRangeQuery() {
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -719,7 +719,7 @@ public class SnapshotTest {
 		assertEquals(16, size(a, null, null, null, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_mergeRangeInsert() {
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -747,7 +747,7 @@ public class SnapshotTest {
 		assertEquals(16, size(a, null, null, null, false));
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_conflictRangeQuery() {
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -783,7 +783,7 @@ public class SnapshotTest {
 		}
 	}
 
-	@Test
+	@Test(timeout = 5000)
 	public void test_conflictRangeInsert() {
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -828,6 +828,9 @@ public class SnapshotTest {
 		try {
 			List<Value> list = new ArrayList<>();
 			while (result.hasNext()) {
+				if (list.size() > 1000000) {
+					throw new RuntimeException("Too many results: " + list.size());
+				}
 				list.add(result.next().getValue(var));
 			}
 			return list;
