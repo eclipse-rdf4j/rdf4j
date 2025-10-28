@@ -209,6 +209,33 @@ public class LmdbSailStoreTest {
 		}
 	}
 
+	@Test
+	public void testTxnFlagClearedOnRollback() throws Exception {
+		// Acquire backing store for direct dataset access
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+
+		// Begin a transaction and perform a write to flip the storeTxnStarted flag to true
+		try (RepositoryConnection conn = repo.getConnection()) {
+			// Disable isolation so writes go directly to LMDB and flip storeTxnStarted
+			conn.begin(IsolationLevels.NONE);
+			conn.add(F.createStatement(F.createIRI("urn:txflag"), RDFS.LABEL, F.createLiteral("tmp")));
+
+			// While the transaction is open, the dataset should report pending transaction changes
+			try (SailDataset ds = backingStore.getExplicitSailSource().dataset(IsolationLevels.READ_COMMITTED)) {
+				assertTrue(((LmdbEvaluationDataset) ds).hasTransactionChanges());
+			}
+
+			// Roll back via the backing store API to ensure the store's rollback path is exercised
+			backingStore.rollback();
+		}
+
+		// After rollback, the dataset must no longer report transaction changes
+		try (SailDataset ds = backingStore.getExplicitSailSource().dataset(IsolationLevels.READ_COMMITTED)) {
+			assertFalse(((LmdbEvaluationDataset) ds).hasTransactionChanges());
+		}
+	}
+
 	@AfterEach
 	public void after() {
 		repo.shutDown();
