@@ -378,8 +378,10 @@ class SailSourceBranch implements SailSource {
 			try {
 				boolean locked = semaphore.tryLock(10, TimeUnit.SECONDS);
 				if (!locked) {
+
 					logger.warn(
-							"Waiting 10 seconds on semaphore for merging changesets without acquiring the semaphore. This may be a deadlock situation. Attempting to acquire semaphore interruptibly.");
+							"Waiting 10 seconds on semaphore for merging changesets without acquiring the semaphore {}. This may be a deadlock situation. Attempting to acquire semaphore interruptibly.",
+							semaphore);
 					if (Thread.interrupted()) {
 						throw new InterruptedException();
 					}
