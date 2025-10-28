@@ -1843,7 +1843,6 @@ class LmdbSailStore implements SailStore {
 		public void close() {
 			try {
 				// close the associated txn
-				System.out.println("DEBUG dataset close txn=" + txn.get());
 				txn.close();
 			} finally {
 				LmdbEvaluationStrategy.clearCurrentDataset();

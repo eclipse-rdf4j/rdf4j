@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb.join;
 
+import static org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
+
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashSet;
@@ -35,8 +37,6 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
-
-import static org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
 
 /**
  * Query evaluation step that wires up the LMDB ID join iterator.
