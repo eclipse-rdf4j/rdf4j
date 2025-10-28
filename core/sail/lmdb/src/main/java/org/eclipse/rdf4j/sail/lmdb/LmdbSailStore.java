@@ -1116,7 +1116,7 @@ class LmdbSailStore implements SailStore {
 			// Refresh reader transactions can remain open across write commits and must not
 			// participate in the active txn reset/renew cycle.
 			boolean trackActive = !isEstimatorRefresh;
-			return new LmdbSailDataset(explicit, trackActive);
+			return new LmdbSailDataset(explicit, level, trackActive);
 		}
 
 	}
@@ -1822,10 +1822,13 @@ class LmdbSailStore implements SailStore {
 	private final class LmdbSailDataset implements SailDataset, LmdbEvaluationDataset {
 
 		private final boolean explicit;
+		private final IsolationLevel isolationLevel;
 		private final Txn txn;
 
-		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
+		public LmdbSailDataset(boolean explicit, IsolationLevel isolationLevel, boolean trackActiveTxn)
+				throws SailException {
 			this.explicit = explicit;
+			this.isolationLevel = isolationLevel;
 			try {
 				TxnManager txnManager = tripleStore.getTxnManager();
 				this.txn = trackActiveTxn ? txnManager.createReadTxn()
@@ -1840,6 +1843,7 @@ class LmdbSailStore implements SailStore {
 		public void close() {
 			try {
 				// close the associated txn
+				System.out.println("DEBUG dataset close txn=" + txn.get());
 				txn.close();
 			} finally {
 				LmdbEvaluationStrategy.clearCurrentDataset();
@@ -2141,9 +2145,6 @@ class LmdbSailStore implements SailStore {
 				long predQuery = selectQueryId(patternIds[TripleStore.PRED_IDX], binding, predIndex);
 				long objQuery = selectQueryId(patternIds[TripleStore.OBJ_IDX], binding, objIndex);
 				long ctxQuery = selectQueryId(patternIds[TripleStore.CONTEXT_IDX], binding, ctxIndex);
-				System.out
-						.println("DEBUG getRecordIterator(long[]) s=" + subjQuery + " p=" + predQuery + " o=" + objQuery
-								+ " c=" + ctxQuery);
 
 				RecordIterator base = tripleStore.getTriples(txn, subjQuery, predQuery, objQuery, ctxQuery, explicit);
 
@@ -2295,6 +2296,11 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public IsolationLevel getIsolationLevel() {
+			return isolationLevel;
+		}
+
+		@Override
 		public boolean hasTransactionChanges() {
 			// storeTxnStarted is flipped to true when a writer begins and only cleared
 			// after commit/rollback, so a true value indicates pending uncommitted changes.
@@ -2425,7 +2431,6 @@ class LmdbSailStore implements SailStore {
 					return false;
 				}
 				long id = resolveId(ctx);
-				System.out.println("DEBUG populateContext value=" + ctx + " id=" + id);
 				if (id == LmdbValue.UNKNOWN_ID) {
 					return false;
 				}
@@ -2535,7 +2540,6 @@ class LmdbSailStore implements SailStore {
 				return INVALID_ID;
 			}
 			long id = resolveId(ctx);
-			System.out.println("DEBUG resolveContextWithBindings var=" + varName + " id=" + id + " value=" + ctx);
 			if (id == LmdbValue.UNKNOWN_ID) {
 				return INVALID_ID;
 			}
