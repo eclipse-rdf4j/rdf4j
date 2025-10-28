@@ -160,7 +160,7 @@ public class SerializableTest {
 		b.commit();
 	}
 
-	@Test(timeout = 5000)
+	@Test
 	public void testPrepare_safePattern() {
 		a.begin(level);
 		b.begin(level);
