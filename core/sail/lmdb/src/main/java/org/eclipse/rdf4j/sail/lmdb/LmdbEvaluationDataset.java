@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -91,6 +92,13 @@ public interface LmdbEvaluationDataset {
 	 * @return the {@link ValueStore} backing this dataset.
 	 */
 	ValueStore getValueStore();
+
+	/**
+	 * @return the isolation level associated with this dataset.
+	 */
+	default IsolationLevel getIsolationLevel() {
+		return null;
+	}
 
 	/**
 	 * Indicates whether the current evaluation should consider the active transaction as containing uncommitted changes

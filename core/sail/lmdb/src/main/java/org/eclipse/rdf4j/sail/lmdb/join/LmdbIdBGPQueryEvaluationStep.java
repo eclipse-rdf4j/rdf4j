@@ -124,14 +124,10 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				return fallbackStep.evaluate(bindings);
 			}
 			if (hasInvalidPattern) {
-				if (fallbackStep != null) {
-					System.out.println("DEBUG BGP fallback: invalid pattern");
-				}
 				return fallbackStep != null ? fallbackStep.evaluate(bindings) : new EmptyIteration<>();
 			}
 			if (!dataset.hasTransactionChanges() && createdDynamicIds && fallbackStep != null
 					&& !allowCreateConstantIds) {
-				System.out.println("DEBUG BGP fallback: dynamic id without transaction changes");
 				return fallbackStep.evaluate(bindings);
 			}
 
@@ -333,6 +329,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 					} else {
 						ids[TripleStore.SUBJ_IDX] = result.id;
 						createdAny |= result.created;
+//						subjVar = subj.getName();
 					}
 				} else {
 					subjVar = subj.getName();
@@ -349,6 +346,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 					} else {
 						ids[TripleStore.PRED_IDX] = result.id;
 						createdAny |= result.created;
+//						predVar = pred.getName();
 					}
 				} else {
 					predVar = pred.getName();
@@ -365,6 +363,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 					} else {
 						ids[TripleStore.OBJ_IDX] = result.id;
 						createdAny |= result.created;
+//						objVar = obj.getName();
 					}
 				} else {
 					objVar = obj.getName();
@@ -381,6 +380,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 					} else {
 						ids[TripleStore.CONTEXT_IDX] = result.id;
 						createdAny |= result.created;
+//						ctxVar = ctx.getName();
 					}
 				} else {
 					ctxVar = ctx.getName();
@@ -423,7 +423,6 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				}
 				long id = valueStore.getId(value);
 				if (id == LmdbValue.UNKNOWN_ID && !allowCreate) {
-					valueStore.refreshReadTxn();
 					id = valueStore.getId(value);
 				}
 				if (id == LmdbValue.UNKNOWN_ID) {
