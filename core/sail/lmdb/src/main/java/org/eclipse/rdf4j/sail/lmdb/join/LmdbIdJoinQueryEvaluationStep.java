@@ -17,12 +17,15 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -31,6 +34,9 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+
+import static org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
 
 /**
  * Query evaluation step that wires up the LMDB ID join iterator.
@@ -93,25 +99,25 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	private static boolean constantsResolvable(StatementPattern pattern, ValueStore valueStore, boolean allowCreate) {
 		try {
-			org.eclipse.rdf4j.query.algebra.Var subj = pattern.getSubjectVar();
+			Var subj = pattern.getSubjectVar();
 			if (subj != null && subj.hasValue()) {
 				if (!resolveConstantId(valueStore, subj.getValue(), true, false, allowCreate)) {
 					return false;
 				}
 			}
-			org.eclipse.rdf4j.query.algebra.Var pred = pattern.getPredicateVar();
+			Var pred = pattern.getPredicateVar();
 			if (pred != null && pred.hasValue()) {
 				if (!resolveConstantId(valueStore, pred.getValue(), false, true, allowCreate)) {
 					return false;
 				}
 			}
-			org.eclipse.rdf4j.query.algebra.Var obj = pattern.getObjectVar();
+			Var obj = pattern.getObjectVar();
 			if (obj != null && obj.hasValue()) {
 				if (!resolveConstantId(valueStore, obj.getValue(), false, false, allowCreate)) {
 					return false;
 				}
 			}
-			org.eclipse.rdf4j.query.algebra.Var ctx = pattern.getContextVar();
+			Var ctx = pattern.getContextVar();
 			if (ctx != null && ctx.hasValue()) {
 				if (!resolveConstantId(valueStore, ctx.getValue(), true, false, allowCreate)) {
 					return false;
@@ -125,34 +131,33 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	private static boolean resolveConstantId(ValueStore valueStore, Value value, boolean requireResource,
 			boolean requireIri, boolean allowCreate) throws IOException {
-		if (requireResource && !(value instanceof org.eclipse.rdf4j.model.Resource)) {
+		if (requireResource && !(value instanceof Resource)) {
 			return false;
 		}
-		if (requireIri && !(value instanceof org.eclipse.rdf4j.model.IRI)) {
+		if (requireIri && !(value instanceof IRI)) {
 			return false;
 		}
-		if (value instanceof org.eclipse.rdf4j.model.Resource
-				&& ((org.eclipse.rdf4j.model.Resource) value).isTriple()) {
+		if (value instanceof Resource
+				&& ((Resource) value).isTriple()) {
 			return false;
 		}
-		if (value instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) {
-			org.eclipse.rdf4j.sail.lmdb.model.LmdbValue lmdbValue = (org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) value;
+		if (value instanceof LmdbValue) {
+			LmdbValue lmdbValue = (LmdbValue) value;
 			if (lmdbValue.getValueStoreRevision().getValueStore() == valueStore) {
 				long id = lmdbValue.getInternalID();
-				if (id != org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID) {
+				if (id != UNKNOWN_ID) {
 					return true;
 				}
 			}
 		}
 		long id = valueStore.getId(value);
-		if (id == org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID && !allowCreate) {
-			valueStore.refreshReadTxn();
+		if (id == UNKNOWN_ID && !allowCreate) {
 			id = valueStore.getId(value);
 		}
-		if (id == org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID && allowCreate) {
+		if (id == UNKNOWN_ID && allowCreate) {
 			id = valueStore.getId(value, true);
 		}
-		return id != org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
+		return id != UNKNOWN_ID;
 	}
 
 	@Override
