@@ -18,6 +18,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -88,16 +90,16 @@ class LmdbSailStore implements SailStore {
 	// Precomputed lookup: for each bound-mask (bits for S=1,P=2,O=4,C=8), the union of
 	// supported StatementOrder across all configured indexes that are compatible with that mask.
 	@SuppressWarnings("unchecked")
-	private volatile EnumSet<StatementOrder>[] supportedOrdersLookup = (EnumSet<StatementOrder>[]) new EnumSet[16];
+	private final EnumSet<StatementOrder>[] supportedOrdersLookup = (EnumSet<StatementOrder>[]) new EnumSet[16];
 
 	@SuppressWarnings("unchecked")
-	private volatile java.util.List<TripleStore.TripleIndex>[] compatibleIndexesByMask = (java.util.List<TripleStore.TripleIndex>[]) new java.util.List[16];
+	private final List<TripleStore.TripleIndex>[] compatibleIndexesByMask = (List<TripleStore.TripleIndex>[]) new List[16];
 
 	// firstFreeOrderByIndexAndMask[indexPos][mask] -> first free StatementOrder in that index for that mask, or null
-	private volatile StatementOrder[][] firstFreeOrderByIndexAndMask;
+	private StatementOrder[][] firstFreeOrderByIndexAndMask;
 
 	// Map index instance -> its stable position used in the lookup arrays
-	private volatile Map<TripleStore.TripleIndex, Integer> indexPositionMap;
+	private Map<TripleStore.TripleIndex, Integer> indexPositionMap;
 
 	private final ExecutorService tripleStoreExecutor = Executors.newCachedThreadPool();
 	private final CircularBuffer<Operation> opQueue = new CircularBuffer<>(1024);
@@ -118,7 +120,7 @@ class LmdbSailStore implements SailStore {
 	 *
 	 * @param <T> Type of elements within this buffer
 	 */
-	final class CircularBuffer<T> {
+	static final class CircularBuffer<T> {
 
 		private final T[] elements;
 		private volatile int head = 0;
@@ -308,7 +310,7 @@ class LmdbSailStore implements SailStore {
 			seqs[i] = indexes.get(i).getFieldSeq();
 		}
 		// Build index position map
-		Map<TripleStore.TripleIndex, Integer> posMap = new java.util.IdentityHashMap<>();
+		Map<TripleStore.TripleIndex, Integer> posMap = new IdentityHashMap<>();
 		for (int i = 0; i < indexes.size(); i++) {
 			posMap.put(indexes.get(i), i);
 		}
@@ -548,19 +550,19 @@ class LmdbSailStore implements SailStore {
 			Resource cachedS = null;
 			IRI cachedP = null;
 			Value cachedO = null;
-			if (sBound && subj instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+			if (sBound && subj instanceof LmdbValue
 					&& valueStore.getRevision()
-							.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) subj).getValueStoreRevision())) {
+							.equals(((LmdbValue) subj).getValueStoreRevision())) {
 				cachedS = subj;
 			}
-			if (pBound && pred instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+			if (pBound && pred instanceof LmdbValue
 					&& valueStore.getRevision()
-							.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) pred).getValueStoreRevision())) {
+							.equals(((LmdbValue) pred).getValueStoreRevision())) {
 				cachedP = pred;
 			}
-			if (oBound && obj instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+			if (oBound && obj instanceof LmdbValue
 					&& valueStore.getRevision()
-							.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) obj).getValueStoreRevision())) {
+							.equals(((LmdbValue) obj).getValueStoreRevision())) {
 				cachedO = obj;
 			}
 			LmdbStatementIterator.StatementCreator creator = new LmdbStatementIterator.StatementCreator(valueStore,
@@ -592,27 +594,27 @@ class LmdbSailStore implements SailStore {
 			IRI cachedP = null;
 			Value cachedO = null;
 			Resource cachedC = null;
-			if (sBound && subj instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+			if (sBound && subj instanceof LmdbValue
 					&& valueStore.getRevision()
-							.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) subj).getValueStoreRevision())) {
+							.equals(((LmdbValue) subj).getValueStoreRevision())) {
 				cachedS = subj;
 			}
-			if (pBound && pred instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+			if (pBound && pred instanceof LmdbValue
 					&& valueStore.getRevision()
-							.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) pred).getValueStoreRevision())) {
+							.equals(((LmdbValue) pred).getValueStoreRevision())) {
 				cachedP = pred;
 			}
-			if (oBound && obj instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+			if (oBound && obj instanceof LmdbValue
 					&& valueStore.getRevision()
-							.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) obj).getValueStoreRevision())) {
+							.equals(((LmdbValue) obj).getValueStoreRevision())) {
 				cachedO = obj;
 			}
 			// If exactly one context was provided and is revision-compatible LmdbValue, pass it
 			if (contexts.length == 1) {
 				Resource ctx = contexts[0];
-				if (ctx != null && !ctx.isTriple() && ctx instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+				if (ctx != null && !ctx.isTriple() && ctx instanceof LmdbValue
 						&& valueStore.getRevision()
-								.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) ctx).getValueStoreRevision())) {
+								.equals(((LmdbValue) ctx).getValueStoreRevision())) {
 					cachedC = ctx;
 				}
 			}
@@ -1247,39 +1249,36 @@ class LmdbSailStore implements SailStore {
 				boolean pBound = pred != null;
 				boolean oBound = obj != null;
 				boolean cBound;
-				if (contexts == null || contexts.length == 0) {
-					cBound = false;
-				} else {
-					cBound = true; // exactly one context allowed at this point
-				}
+				// exactly one context allowed at this point
+				cBound = contexts != null && contexts.length != 0;
 
 				Resource cachedS = null;
 				IRI cachedP = null;
 				Value cachedO = null;
 				Resource cachedC = null;
 
-				if (sBound && subj instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+				if (sBound && subj instanceof LmdbValue
 						&& valueStore.getRevision()
-								.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) subj).getValueStoreRevision())) {
+								.equals(((LmdbValue) subj).getValueStoreRevision())) {
 					cachedS = subj;
 				}
-				if (pBound && pred instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+				if (pBound && pred instanceof LmdbValue
 						&& valueStore.getRevision()
-								.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) pred).getValueStoreRevision())) {
+								.equals(((LmdbValue) pred).getValueStoreRevision())) {
 					cachedP = pred;
 				}
-				if (oBound && obj instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+				if (oBound && obj instanceof LmdbValue
 						&& valueStore.getRevision()
-								.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) obj).getValueStoreRevision())) {
+								.equals(((LmdbValue) obj).getValueStoreRevision())) {
 					cachedO = obj;
 				}
 
-				if (cBound && contexts != null && contexts.length == 1) {
+				if (cBound) {
 					Resource ctx = contexts[0];
 					if (ctx != null && !ctx.isTriple()
-							&& ctx instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue
+							&& ctx instanceof LmdbValue
 							&& valueStore.getRevision()
-									.equals(((org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) ctx)
+									.equals(((LmdbValue) ctx)
 											.getValueStoreRevision())) {
 						cachedC = ctx;
 					}
@@ -1319,50 +1318,6 @@ class LmdbSailStore implements SailStore {
 			int mask = (sBound ? 1 : 0) | (pBound ? (1 << 1) : 0) | (oBound ? (1 << 2) : 0) | (cBound ? (1 << 3) : 0);
 			EnumSet<StatementOrder> res = getSupportedOrdersLookup()[mask];
 			return res.isEmpty() ? Set.of() : EnumSet.copyOf(res);
-		}
-
-		private boolean isIndexCompatible(char[] seq, boolean sBound, boolean pBound, boolean oBound, boolean cBound) {
-			boolean seenUnbound = false;
-			for (char f : seq) {
-				boolean bound = isBound(f, sBound, pBound, oBound, cBound);
-				if (!bound) {
-					seenUnbound = true;
-				} else if (seenUnbound) {
-					// bound after an unbound earlier field -> cannot use index prefix, not compatible
-					return false;
-				}
-			}
-			return true;
-		}
-
-		private boolean isBound(char f, boolean sBound, boolean pBound, boolean oBound, boolean cBound) {
-			switch (f) {
-			case 's':
-				return sBound;
-			case 'p':
-				return pBound;
-			case 'o':
-				return oBound;
-			case 'c':
-				return cBound;
-			default:
-				return false;
-			}
-		}
-
-		private StatementOrder toStatementOrder(char f) {
-			switch (f) {
-			case 's':
-				return StatementOrder.S;
-			case 'p':
-				return StatementOrder.P;
-			case 'o':
-				return StatementOrder.O;
-			case 'c':
-				return StatementOrder.C;
-			default:
-				throw new IllegalArgumentException("Unknown field: " + f);
-			}
 		}
 
 		@Override
@@ -1418,8 +1373,77 @@ class LmdbSailStore implements SailStore {
 
 				RecordIterator base = tripleStore.getTriples(txn, subjQuery, predQuery, objQuery, ctxQuery, explicit);
 
-				return new RecordIterator() {
+				if (Boolean.getBoolean("rdf4j.lmdb.experimentalScratchReuse")) {
+					return new RecordIterator() {
+						private final long[] scratch = Arrays.copyOf(binding, binding.length);
 
+						@Override
+						public long[] next() throws QueryEvaluationException {
+							try {
+								long[] quad;
+								while ((quad = base.next()) != null) {
+									boolean conflict = false;
+									// subject
+									if (subjIndex >= 0) {
+										long baseVal = binding[subjIndex];
+										long v = quad[TripleStore.SUBJ_IDX];
+										if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
+											conflict = true;
+										} else {
+											scratch[subjIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
+										}
+									}
+									// predicate
+									if (!conflict && predIndex >= 0) {
+										long baseVal = binding[predIndex];
+										long v = quad[TripleStore.PRED_IDX];
+										if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
+											conflict = true;
+										} else {
+											scratch[predIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
+										}
+									}
+									// object
+									if (!conflict && objIndex >= 0) {
+										long baseVal = binding[objIndex];
+										long v = quad[TripleStore.OBJ_IDX];
+										if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
+											conflict = true;
+										} else {
+											scratch[objIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
+										}
+									}
+									// context (0 means default graph); treat like any other ID for conflict
+									if (!conflict && ctxIndex >= 0) {
+										long baseVal = binding[ctxIndex];
+										long v = quad[TripleStore.CONTEXT_IDX];
+										if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
+											conflict = true;
+										} else {
+											scratch[ctxIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
+										}
+									}
+
+									if (!conflict) {
+										return scratch;
+									}
+								}
+								return null;
+							} catch (QueryEvaluationException e) {
+								throw e;
+							} catch (Exception e) {
+								throw new QueryEvaluationException(e);
+							}
+						}
+
+						@Override
+						public void close() {
+							base.close();
+						}
+					};
+				}
+
+				return new RecordIterator() {
 					@Override
 					public long[] next() throws QueryEvaluationException {
 						try {
@@ -1492,8 +1516,11 @@ class LmdbSailStore implements SailStore {
 			long objQuery = selectQueryId(patternIds[TripleStore.OBJ_IDX], binding, objIndex);
 			long ctxQuery = selectQueryId(patternIds[TripleStore.CONTEXT_IDX], binding, ctxIndex);
 			try {
-				if (orderedRecordIterator(order, subjQuery, predQuery, objQuery, ctxQuery) != null) {
-					return true;
+				try (RecordIterator recordIterator = orderedRecordIterator(order, subjQuery, predQuery, objQuery,
+						ctxQuery)) {
+					if (recordIterator != null) {
+						return true;
+					}
 				}
 				return order == StatementOrder.S && indexForOrder(order, subjIndex, predIndex, objIndex, ctxIndex) >= 0;
 			} catch (IOException e) {
@@ -1550,9 +1577,10 @@ class LmdbSailStore implements SailStore {
 					return emptyRecordIterator();
 				}
 
-				RecordIterator orderedIter = orderedRecordIterator(order, subjID, predID, objID, contextID);
-				if (orderedIter != null) {
-					return orderedIter;
+				try (RecordIterator orderedIter = orderedRecordIterator(order, subjID, predID, objID, contextID)) {
+					if (orderedIter != null) {
+						return orderedIter;
+					}
 				}
 				return null;
 			} catch (IOException e) {
@@ -1601,9 +1629,7 @@ class LmdbSailStore implements SailStore {
 			}
 			if (bindings != null) {
 				Value bound = bindings.getValue(var.getName());
-				if (bound != null) {
-					return bound;
-				}
+				return bound;
 			}
 			return null;
 		}
@@ -1623,7 +1649,7 @@ class LmdbSailStore implements SailStore {
 			return new PatternArrays(ids, varNames, valid);
 		}
 
-		private boolean populateSubject(org.eclipse.rdf4j.query.algebra.Var var, long[] ids, String[] varNames)
+		private boolean populateSubject(Var var, long[] ids, String[] varNames)
 				throws IOException {
 			if (var == null) {
 				ids[TripleStore.SUBJ_IDX] = LmdbValue.UNKNOWN_ID;
@@ -1648,7 +1674,7 @@ class LmdbSailStore implements SailStore {
 			return true;
 		}
 
-		private boolean populatePredicate(org.eclipse.rdf4j.query.algebra.Var var, long[] ids, String[] varNames)
+		private boolean populatePredicate(Var var, long[] ids, String[] varNames)
 				throws IOException {
 			if (var == null) {
 				ids[TripleStore.PRED_IDX] = LmdbValue.UNKNOWN_ID;
@@ -1673,7 +1699,7 @@ class LmdbSailStore implements SailStore {
 			return true;
 		}
 
-		private boolean populateObject(org.eclipse.rdf4j.query.algebra.Var var, long[] ids, String[] varNames)
+		private boolean populateObject(Var var, long[] ids, String[] varNames)
 				throws IOException {
 			if (var == null) {
 				ids[TripleStore.OBJ_IDX] = LmdbValue.UNKNOWN_ID;
@@ -1695,7 +1721,7 @@ class LmdbSailStore implements SailStore {
 			return true;
 		}
 
-		private boolean populateContext(org.eclipse.rdf4j.query.algebra.Var var, long[] ids, String[] varNames)
+		private boolean populateContext(Var var, long[] ids, String[] varNames)
 				throws IOException {
 			if (var == null) {
 				ids[TripleStore.CONTEXT_IDX] = LmdbValue.UNKNOWN_ID;
@@ -1730,9 +1756,7 @@ class LmdbSailStore implements SailStore {
 			}
 			if (index >= 0 && index < binding.length) {
 				long bound = binding[index];
-				if (bound != LmdbValue.UNKNOWN_ID) {
-					return bound;
-				}
+				return bound;
 			}
 			return LmdbValue.UNKNOWN_ID;
 		}
@@ -1782,13 +1806,13 @@ class LmdbSailStore implements SailStore {
 			if (bound == null) {
 				return LmdbValue.UNKNOWN_ID;
 			}
-			if (requireResource && !(bound instanceof Resource)) {
+			if (requireResource && !(bound.isResource())) {
 				return INVALID_ID;
 			}
-			if (requireIri && !(bound instanceof IRI)) {
+			if (requireIri && !(bound.isIRI())) {
 				return INVALID_ID;
 			}
-			if (bound instanceof Resource && ((Resource) bound).isTriple()) {
+			if (bound.isTriple()) {
 				return INVALID_ID;
 			}
 			long id = resolveId(bound);
@@ -1843,8 +1867,8 @@ class LmdbSailStore implements SailStore {
 			if (value == null) {
 				return LmdbValue.UNKNOWN_ID;
 			}
-			if (value instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) {
-				org.eclipse.rdf4j.sail.lmdb.model.LmdbValue lmdbValue = (org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) value;
+			if (value instanceof LmdbValue) {
+				LmdbValue lmdbValue = (LmdbValue) value;
 				if (valueStore.getRevision().equals(lmdbValue.getValueStoreRevision())) {
 					return lmdbValue.getInternalID();
 				}
@@ -1883,18 +1907,17 @@ class LmdbSailStore implements SailStore {
 
 		private RecordIterator sortedRecordIterator(RecordIterator base, int sortIndex)
 				throws QueryEvaluationException {
-			java.util.List<long[]> rows = new java.util.ArrayList<>();
-			try {
+			List<long[]> rows = new ArrayList<>();
+			try (base) {
 				long[] next;
 				while ((next = base.next()) != null) {
-					rows.add(next);
+					// Ensure buffered rows are immutable snapshots regardless of iterator reuse
+					rows.add(next.clone());
 				}
-			} finally {
-				base.close();
 			}
-			rows.sort(java.util.Comparator.comparingLong(a -> a[sortIndex]));
+			rows.sort(Comparator.comparingLong(a -> a[sortIndex]));
 
-			java.util.Iterator<long[]> iterator = rows.iterator();
+			Iterator<long[]> iterator = rows.iterator();
 			return new RecordIterator() {
 				@Override
 				public long[] next() {
@@ -1921,7 +1944,7 @@ class LmdbSailStore implements SailStore {
 			boolean cBound = c >= 0; // 0 is a concrete (null) context; unknown is -1
 
 			int mask = (sBound ? 1 : 0) | (pBound ? (1 << 1) : 0) | (oBound ? (1 << 2) : 0) | (cBound ? (1 << 3) : 0);
-			java.util.List<TripleStore.TripleIndex> compat = compatibleIndexesByMask[mask];
+			List<TripleStore.TripleIndex> compat = compatibleIndexesByMask[mask];
 			if (compat == null || compat.isEmpty()) {
 				return null;
 			}

@@ -1,14 +1,13 @@
-/***/
 /*******************************************************************************
-* Copyright (c) 2025 Eclipse RDF4J contributors.
-*
-* All rights reserved. This program and the accompanying materials
-* are made available under the terms of the Eclipse Distribution License v1.0
-* which accompanies this distribution, and is available at
-* http://www.eclipse.org/org/documents/edl-v10.php.
-*
-* SPDX-License-Identifier: BSD-3-Clause
-*******************************************************************************/
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
@@ -25,11 +24,11 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdJoinIterator;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
- * An {@link LmdbEvaluationDataset} implementation that reads via the delegated Sail layer (through the
- * {@link TripleSource}) to ensure transaction overlays and isolation levels are honored, while exposing LMDB record
- * iterators for the ID join.
+ * Delegates reads via the Sail {@link TripleSource} to honor transaction overlays and isolation while exposing
+ * LMDB-style {@link RecordIterator}s for ID-based joins.
  */
 final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 
@@ -62,13 +61,13 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 		if (ctxVal != null && !(ctxVal instanceof Resource)) {
 			return LmdbIdJoinIterator.emptyRecordIterator();
 		}
-		if (ctxVal instanceof Resource && ((Resource) ctxVal).isTriple()) {
+		if (ctxVal != null && ctxVal.isTriple()) {
 			return LmdbIdJoinIterator.emptyRecordIterator();
 		}
 
 		Resource[] contexts;
 		if (ctxVal == null) {
-			contexts = new Resource[0]; // no restriction: all contexts
+			contexts = new Resource[0];
 		} else {
 			contexts = new Resource[] { (Resource) ctxVal };
 		}
@@ -96,7 +95,6 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 					long c = st.getContext() == null ? 0L : resolveId(st.getContext());
 					return new long[] { s, p, o, c };
 				} catch (Exception e) {
-					// ensure iterator is closed on error
 					try {
 						stmts.close();
 					} catch (Exception ignore) {
@@ -143,7 +141,6 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 					return LmdbIdJoinIterator.emptyRecordIterator();
 				}
 				contexts = new Resource[] { ctxRes };
-				requireDefaultContext = false;
 			} else {
 				contexts = new Resource[0];
 			}
@@ -155,8 +152,6 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 			final boolean defaultOnly = requireDefaultContext;
 
 			return new RecordIterator() {
-				private final long[] scratch = java.util.Arrays.copyOf(binding, binding.length);
-
 				@Override
 				public long[] next() throws QueryEvaluationException {
 					while (true) {
@@ -219,22 +214,19 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 	}
 
 	private long selectQueryId(long patternId, long[] binding, int index) {
-		if (patternId != org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID) {
+		if (patternId != LmdbValue.UNKNOWN_ID) {
 			return patternId;
 		}
 		if (index >= 0 && index < binding.length) {
-			long bound = binding[index];
-			if (bound != org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID) {
-				return bound;
-			}
+			return binding[index];
 		}
-		return org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
+		return LmdbValue.UNKNOWN_ID;
 	}
 
 	private Value valueForQuery(long patternId, long[] binding, int index, boolean requireResource, boolean requireIri)
 			throws QueryEvaluationException {
 		long id = selectQueryId(patternId, binding, index);
-		if (id == org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID) {
+		if (id == LmdbValue.UNKNOWN_ID) {
 			return null;
 		}
 		try {
@@ -245,7 +237,7 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 			if (requireIri && !(value instanceof IRI)) {
 				throw new QueryEvaluationException("Expected IRI-bound value");
 			}
-			if (value instanceof Resource && ((Resource) value).isTriple()) {
+			if (value instanceof Resource && value.isTriple()) {
 				throw new QueryEvaluationException("Triple-valued resources are not supported in LMDB joins");
 			}
 			return value;
@@ -278,16 +270,11 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 			return true;
 		}
 		long existing = target[index];
-		if (existing != org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID && existing != value) {
+		if (existing != LmdbValue.UNKNOWN_ID && existing != value) {
 			return false;
 		}
 		target[index] = value;
 		return true;
-	}
-
-	@Override
-	public boolean hasTransactionChanges() {
-		return false;
 	}
 
 	private Value resolveValue(Var var, BindingSet bindings) {
@@ -298,93 +285,21 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 			return var.getValue();
 		}
 		if (bindings != null) {
-			Value bound = bindings.getValue(var.getName());
-			if (bound != null) {
-				return bound;
-			}
+			return bindings.getValue(var.getName());
 		}
 		return null;
 	}
 
 	private long resolveId(Value value) throws Exception {
 		if (value == null) {
-			return org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
+			return LmdbValue.UNKNOWN_ID;
 		}
-		if (value instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) {
-			org.eclipse.rdf4j.sail.lmdb.model.LmdbValue lmdbValue = (org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) value;
-			if (valueStore.getRevision().equals(lmdbValue.getValueStoreRevision())) {
-				return lmdbValue.getInternalID();
+		if (value instanceof LmdbValue) {
+			LmdbValue lmdb = (LmdbValue) value;
+			if (valueStore.getRevision().equals(lmdb.getValueStoreRevision())) {
+				return lmdb.getInternalID();
 			}
 		}
 		return valueStore.getId(value);
-	}
-
-	private StatementPattern toStatementPattern(long[] patternIds, String[] varNames) throws QueryEvaluationException {
-		if (patternIds == null || varNames == null || patternIds.length != 4 || varNames.length != 4) {
-			throw new IllegalArgumentException("Pattern arrays must have length 4");
-		}
-		org.eclipse.rdf4j.query.algebra.Var subj = buildVar(patternIds[0], varNames[0], "s", true, false);
-		org.eclipse.rdf4j.query.algebra.Var pred = buildVar(patternIds[1], varNames[1], "p", false, true);
-		org.eclipse.rdf4j.query.algebra.Var obj = buildVar(patternIds[2], varNames[2], "o", false, false);
-		org.eclipse.rdf4j.query.algebra.Var ctx = buildContextVar(patternIds[3], varNames[3]);
-		return new StatementPattern(subj, pred, obj, ctx);
-	}
-
-	private org.eclipse.rdf4j.query.algebra.Var buildVar(long id, String name, String placeholder,
-			boolean requireResource,
-			boolean requireIri) throws QueryEvaluationException {
-		if (name != null) {
-			return new org.eclipse.rdf4j.query.algebra.Var(name);
-		}
-		if (id == org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID) {
-			// Should not occur for subject/predicate/object when derived from StatementPattern
-			return new org.eclipse.rdf4j.query.algebra.Var(placeholder);
-		}
-		try {
-			org.eclipse.rdf4j.model.Value value = valueStore.getLazyValue(id);
-			if (value == null) {
-				throw new QueryEvaluationException("Unable to resolve value for ID " + id);
-			}
-			if (requireResource && !(value instanceof org.eclipse.rdf4j.model.Resource)) {
-				throw new QueryEvaluationException("Expected resource value for subject ID " + id);
-			}
-			if (requireIri && !(value instanceof org.eclipse.rdf4j.model.IRI)) {
-				throw new QueryEvaluationException("Expected IRI value for predicate ID " + id);
-			}
-			return new org.eclipse.rdf4j.query.algebra.Var(placeholder, value);
-		} catch (Exception e) {
-			if (e instanceof QueryEvaluationException) {
-				throw (QueryEvaluationException) e;
-			}
-			throw new QueryEvaluationException(e);
-		}
-	}
-
-	private org.eclipse.rdf4j.query.algebra.Var buildContextVar(long id, String name) throws QueryEvaluationException {
-		if (name != null) {
-			return new org.eclipse.rdf4j.query.algebra.Var(name);
-		}
-		if (id == org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID) {
-			return null;
-		}
-		try {
-			org.eclipse.rdf4j.model.Value value = valueStore.getLazyValue(id);
-			if (value == null) {
-				throw new QueryEvaluationException("Unable to resolve context value for ID " + id);
-			}
-			if (!(value instanceof org.eclipse.rdf4j.model.Resource)) {
-				throw new QueryEvaluationException("Context ID " + id + " does not map to a resource");
-			}
-			org.eclipse.rdf4j.model.Resource ctx = (org.eclipse.rdf4j.model.Resource) value;
-			if (ctx.isTriple()) {
-				throw new QueryEvaluationException("Triple-valued contexts are not supported");
-			}
-			return new org.eclipse.rdf4j.query.algebra.Var("ctx", ctx);
-		} catch (Exception e) {
-			if (e instanceof QueryEvaluationException) {
-				throw (QueryEvaluationException) e;
-			}
-			throw new QueryEvaluationException(e);
-		}
 	}
 }
