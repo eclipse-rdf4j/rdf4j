@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.IdAccessor;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
@@ -76,7 +77,7 @@ public class LmdbIdJoinIterator extends LookAheadIteration<BindingSet> {
 			return new PatternInfo(map, hasContext);
 		}
 
-		private static boolean registerVar(Map<String, int[]> map, org.eclipse.rdf4j.query.algebra.Var var, int index) {
+		private static boolean registerVar(Map<String, int[]> map, Var var, int index) {
 			if (var == null || var.hasValue()) {
 				return false;
 			}
@@ -136,22 +137,66 @@ public class LmdbIdJoinIterator extends LookAheadIteration<BindingSet> {
 				String name = entry.getKey();
 				int[] indices = entry.getValue();
 				Value existing = target.getValue(name);
+
+				// Fast path: if an existing binding is an LmdbValue from the same store,
+				// compare IDs directly and avoid resolving candidate Values.
+				if (existing instanceof LmdbValue) {
+					LmdbValue lmdbExisting = (LmdbValue) existing;
+					if (lmdbExisting.getValueStoreRevision().getValueStore() == valueStore) {
+						long existingId = lmdbExisting.getInternalID();
+						if (existingId != LmdbValue.UNKNOWN_ID) {
+							for (int index : indices) {
+								long id = record[index];
+								// Context id of 0 is effectively null; conflicts with an existing non-null
+								if (index == TripleStore.CONTEXT_IDX && id == 0L) {
+									return false;
+								}
+								if (id != LmdbValue.UNKNOWN_ID && id != existingId) {
+									return false;
+								}
+							}
+							continue; // this variable satisfied
+						}
+					}
+				}
+
+				// General path: collect a consistent candidate id across positions (if any),
+				// minimize value resolutions to at most one per variable.
+				long chosenId = LmdbValue.UNKNOWN_ID;
+				boolean haveId = false;
 				for (int index : indices) {
 					long id = record[index];
-					Value candidate = resolveValue(id, index, valueStore);
-					if (candidate == null) {
+					// Treat default context (0) as null candidate; it conflicts with an existing non-null value.
+					if (index == TripleStore.CONTEXT_IDX && id == 0L) {
 						if (existing != null) {
 							return false;
 						}
 						continue;
 					}
+					if (id == LmdbValue.UNKNOWN_ID) {
+						continue;
+					}
 					if (existing != null) {
-						if (!existing.equals(candidate)) {
+						// Fallback: existing is non-LMDB or unknown id; resolve candidate once and compare
+						Value candidate = resolveValue(id, index, valueStore);
+						if (candidate == null || !existing.equals(candidate)) {
 							return false;
 						}
 					} else {
+						if (!haveId) {
+							chosenId = id;
+							haveId = true;
+						} else if (chosenId != id) {
+							// Variable appears in multiple positions with conflicting ids
+							return false;
+						}
+					}
+				}
+
+				if (existing == null && haveId) {
+					Value candidate = resolveValue(chosenId, TripleStore.SUBJ_IDX /* ignored */, valueStore);
+					if (candidate != null) {
 						target.setBinding(name, candidate);
-						existing = candidate;
 					}
 				}
 			}
@@ -250,11 +295,10 @@ public class LmdbIdJoinIterator extends LookAheadIteration<BindingSet> {
 	}
 
 	private long[] nextRecord(RecordIterator iterator) throws QueryEvaluationException {
-		long[] record = iterator.next();
-		if (record == null) {
-			return null;
-		}
-		return Arrays.copyOf(record, record.length);
+		// Avoid per-record array copy: LmdbRecordIterator returns a stable array instance
+		// that is only mutated on subsequent next() calls. We consume the array fully
+		// before advancing the iterator again, so returning it directly is safe here.
+		return iterator.next();
 	}
 
 	@Override

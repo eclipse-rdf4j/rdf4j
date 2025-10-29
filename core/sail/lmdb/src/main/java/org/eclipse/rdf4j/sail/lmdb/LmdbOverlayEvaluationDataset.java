@@ -155,6 +155,8 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 			final boolean defaultOnly = requireDefaultContext;
 
 			return new RecordIterator() {
+				private final long[] scratch = java.util.Arrays.copyOf(binding, binding.length);
+
 				@Override
 				public long[] next() throws QueryEvaluationException {
 					while (true) {
