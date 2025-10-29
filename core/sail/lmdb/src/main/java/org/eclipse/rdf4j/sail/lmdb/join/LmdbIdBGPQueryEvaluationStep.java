@@ -102,9 +102,9 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		IdBindingInfo info = null;
 		for (RawPattern raw : rawPatterns) {
 			if (info == null) {
-				info = IdBindingInfo.fromFirstPattern(raw.patternInfo);
+				info = IdBindingInfo.fromFirstPattern(raw.patternInfo, context);
 			} else {
-				info = IdBindingInfo.combine(info, raw.patternInfo);
+				info = IdBindingInfo.combine(info, raw.patternInfo, context);
 			}
 		}
 		this.finalInfo = info;

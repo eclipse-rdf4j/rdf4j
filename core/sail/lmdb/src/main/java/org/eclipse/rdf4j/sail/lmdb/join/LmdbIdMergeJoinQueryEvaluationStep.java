@@ -99,8 +99,8 @@ public class LmdbIdMergeJoinQueryEvaluationStep implements QueryEvaluationStep {
 		RawPattern rightRaw = RawPattern.create(rightPattern, valueStore);
 		this.hasInvalidPattern = leftRaw.invalid || rightRaw.invalid;
 
-		IdBindingInfo info = IdBindingInfo.fromFirstPattern(leftInfo);
-		info = IdBindingInfo.combine(info, rightInfo);
+		IdBindingInfo info = IdBindingInfo.fromFirstPattern(leftInfo, context);
+		info = IdBindingInfo.combine(info, rightInfo, context);
 		this.bindingInfo = info;
 
 		StatementOrder leftOrder = determineOrder(leftPattern, leftInfo);

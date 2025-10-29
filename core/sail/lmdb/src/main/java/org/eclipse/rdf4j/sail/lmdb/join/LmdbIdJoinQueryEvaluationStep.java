@@ -13,8 +13,10 @@ package org.eclipse.rdf4j.sail.lmdb.join;
 import static org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -178,6 +180,17 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 			if (fallbackStep != null && dataset.hasTransactionChanges()) {
 				return fallbackStep.evaluate(bindings);
 			}
+
+			if (Boolean.getBoolean("rdf4j.lmdb.experimentalTwoPatternArrayJoin")) {
+				// Experimental: use the array-API two-pattern BGP pipeline
+				List<StatementPattern> patterns = Arrays
+						.asList(leftPattern, rightPattern);
+				LmdbIdBGPQueryEvaluationStep bgpStep = new LmdbIdBGPQueryEvaluationStep(
+						new Join(leftPattern, rightPattern), patterns, context, fallbackStep);
+				return bgpStep.evaluate(bindings);
+			}
+
+			// Default: materialize right side via BindingSet and use LmdbIdJoinIterator
 			ValueStore valueStore = dataset.getValueStore();
 			RecordIterator leftIterator = dataset.getRecordIterator(leftPattern, bindings);
 
