@@ -1419,15 +1419,15 @@ class LmdbSailStore implements SailStore {
 				RecordIterator base = tripleStore.getTriples(txn, subjQuery, predQuery, objQuery, ctxQuery, explicit);
 
 				return new RecordIterator() {
+
 					@Override
 					public long[] next() throws QueryEvaluationException {
 						try {
 							long[] quad;
 							while ((quad = base.next()) != null) {
 								long[] merged = mergeBinding(binding, quad[TripleStore.SUBJ_IDX],
-										quad[TripleStore.PRED_IDX],
-										quad[TripleStore.OBJ_IDX], quad[TripleStore.CONTEXT_IDX], subjIndex, predIndex,
-										objIndex, ctxIndex);
+										quad[TripleStore.PRED_IDX], quad[TripleStore.OBJ_IDX],
+										quad[TripleStore.CONTEXT_IDX], subjIndex, predIndex, objIndex, ctxIndex);
 								if (merged != null) {
 									return merged;
 								}
