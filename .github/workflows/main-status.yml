@@ -27,7 +27,7 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
     - name: Build
-      run: mvn -B -U -T 2 clean install -DskiptTests
+      run: mvn -B -U -T 2C clean install -DskipTests
     - name: Run all tests
       run: mvn -B verify -P-skipSlowTests,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
     - name: Publish Test Report
