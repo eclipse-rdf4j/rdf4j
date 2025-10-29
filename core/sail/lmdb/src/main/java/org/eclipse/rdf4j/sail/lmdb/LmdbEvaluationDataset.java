@@ -101,6 +101,14 @@ public interface LmdbEvaluationDataset {
 	}
 
 	/**
+	 * Refresh the underlying snapshot, if applicable, to ensure subsequent reads observe the latest committed data.
+	 * Implementations that do not maintain a snapshot may ignore this call.
+	 */
+	default void refreshSnapshot() throws QueryEvaluationException {
+		// no-op by default
+	}
+
+	/**
 	 * Indicates whether the current evaluation should consider the active transaction as containing uncommitted changes
 	 * that require reading through an overlay rather than directly from the LMDB indexes.
 	 *

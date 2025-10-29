@@ -10,7 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb.join;
 
+import java.io.IOException;
+
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -29,14 +32,16 @@ final class LmdbIdFinalBindingSetIteration extends LookAheadIteration<BindingSet
 	private final QueryEvaluationContext context;
 	private final BindingSet initial;
 	private final ValueStore valueStore;
+	private final java.util.Map<String, Long> constantBindings;
 
 	LmdbIdFinalBindingSetIteration(RecordIterator input, IdBindingInfo info, QueryEvaluationContext context,
-			BindingSet initial, ValueStore valueStore) {
+			BindingSet initial, ValueStore valueStore, java.util.Map<String, Long> constantBindings) {
 		this.input = input;
 		this.info = info;
 		this.context = context;
 		this.initial = initial;
 		this.valueStore = valueStore;
+		this.constantBindings = constantBindings;
 	}
 
 	@Override
@@ -44,6 +49,20 @@ final class LmdbIdFinalBindingSetIteration extends LookAheadIteration<BindingSet
 		long[] rec;
 		while ((rec = input.next()) != null) {
 			MutableBindingSet bs = context.createBindingSet(initial);
+			if (!constantBindings.isEmpty()) {
+				for (java.util.Map.Entry<String, Long> entry : constantBindings.entrySet()) {
+					String name = entry.getKey();
+					if (bs.hasBinding(name)) {
+						continue;
+					}
+					try {
+						Value constantValue = valueStore.getLazyValue(entry.getValue());
+						bs.setBinding(name, constantValue);
+					} catch (IOException e) {
+						throw new QueryEvaluationException(e);
+					}
+				}
+			}
 			if (info.applyRecord(rec, bs, valueStore)) {
 				return bs;
 			}
