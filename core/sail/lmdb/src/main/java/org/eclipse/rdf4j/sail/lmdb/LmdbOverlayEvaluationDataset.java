@@ -285,7 +285,7 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 
 	@Override
 	public boolean hasTransactionChanges() {
-		return true;
+		return false;
 	}
 
 	private Value resolveValue(Var var, BindingSet bindings) {

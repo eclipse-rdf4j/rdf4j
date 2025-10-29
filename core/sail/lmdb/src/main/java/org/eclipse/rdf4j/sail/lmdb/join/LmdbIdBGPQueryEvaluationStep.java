@@ -14,9 +14,12 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -53,6 +56,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 	private final boolean hasInvalidPattern;
 	private final boolean createdDynamicIds;
 	private final boolean allowCreateConstantIds;
+	private final java.util.Map<String, Long> constantBindings;
 
 	public LmdbIdBGPQueryEvaluationStep(Join root, List<StatementPattern> patterns, QueryEvaluationContext context,
 			QueryEvaluationStep fallbackStep) {
@@ -67,22 +71,29 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		ValueStore valueStore = this.datasetContext.getValueStore()
 				.orElseThrow(() -> new IllegalStateException("LMDB ID BGP join requires ValueStore access"));
 
-		boolean allowCreate = this.datasetContext.getLmdbDataset()
-				.map(LmdbEvaluationDataset::hasTransactionChanges)
+		Optional<LmdbEvaluationDataset> datasetOpt = this.datasetContext.getLmdbDataset();
+		boolean overlayDataset = datasetOpt
+				.map(ds -> LmdbEvaluationStrategy.getCurrentDataset().map(current -> current != ds).orElse(true))
+				.orElse(false);
+		boolean allowCreate = datasetOpt
+				.map(ds -> ds.hasTransactionChanges() || overlayDataset)
 				.orElseGet(LmdbEvaluationStrategy::hasActiveConnectionChanges);
 		this.allowCreateConstantIds = allowCreate;
 
 		List<RawPattern> rawPatterns = new ArrayList<>(patterns.size());
 		boolean invalid = false;
 		boolean created = false;
+		java.util.Map<String, Long> constants = new java.util.HashMap<>();
 		for (StatementPattern pattern : patterns) {
 			RawPattern raw = RawPattern.create(pattern, valueStore, allowCreate);
 			rawPatterns.add(raw);
 			invalid |= raw.invalid;
 			created |= raw.createdIds;
+			constants.putAll(raw.getConstantIds());
 		}
 		this.hasInvalidPattern = invalid;
 		this.createdDynamicIds = created;
+		this.constantBindings = java.util.Collections.unmodifiableMap(constants);
 
 		if (rawPatterns.isEmpty()) {
 			throw new IllegalArgumentException("Basic graph pattern must contain at least one statement pattern");
@@ -120,6 +131,9 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		}
 		try {
 			LmdbEvaluationDataset dataset = resolveDataset();
+			if (!dataset.hasTransactionChanges()) {
+				dataset.refreshSnapshot();
+			}
 			if (fallbackStep != null && dataset.hasTransactionChanges()) {
 				return fallbackStep.evaluate(bindings);
 			}
@@ -145,7 +159,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				iter = new BindingJoinRecordIterator(iter, dataset, plans.get(i));
 			}
 
-			return new LmdbIdFinalBindingSetIteration(iter, finalInfo, context, bindings, valueStore);
+			return new LmdbIdFinalBindingSetIteration(iter, finalInfo, context, bindings, valueStore, constantBindings);
 		} catch (QueryEvaluationException e) {
 			throw e;
 		}
@@ -258,7 +272,6 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				if (leftBinding == null) {
 					return null;
 				}
-
 				currentRight = dataset.getRecordIterator(leftBinding, plan.subjIndex, plan.predIndex, plan.objIndex,
 						plan.ctxIndex, plan.patternIds);
 			}
@@ -299,9 +312,11 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		private final LmdbIdJoinIterator.PatternInfo patternInfo;
 		private final boolean invalid;
 		private final boolean createdIds;
+		private final java.util.Map<String, Long> constantIds;
 
 		private RawPattern(long[] patternIds, String subjVar, String predVar, String objVar, String ctxVar,
-				LmdbIdJoinIterator.PatternInfo patternInfo, boolean invalid, boolean createdIds) {
+				LmdbIdJoinIterator.PatternInfo patternInfo, boolean invalid, boolean createdIds,
+				java.util.Map<String, Long> constantIds) {
 			this.patternIds = patternIds;
 			this.subjVar = subjVar;
 			this.predVar = predVar;
@@ -310,6 +325,11 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			this.patternInfo = patternInfo;
 			this.invalid = invalid;
 			this.createdIds = createdIds;
+			this.constantIds = constantIds;
+		}
+
+		java.util.Map<String, Long> getConstantIds() {
+			return constantIds;
 		}
 
 		static RawPattern create(StatementPattern pattern, ValueStore valueStore, boolean allowCreate) {
@@ -318,6 +338,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 
 			boolean invalid = false;
 			boolean createdAny = false;
+			java.util.Map<String, Long> constantIds = new java.util.HashMap<>();
 
 			Var subj = pattern.getSubjectVar();
 			String subjVar = null;
@@ -329,7 +350,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 					} else {
 						ids[TripleStore.SUBJ_IDX] = result.id;
 						createdAny |= result.created;
-//						subjVar = subj.getName();
+						constantIds.put(subj.getName(), result.id);
 					}
 				} else {
 					subjVar = subj.getName();
@@ -346,7 +367,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 					} else {
 						ids[TripleStore.PRED_IDX] = result.id;
 						createdAny |= result.created;
-//						predVar = pred.getName();
+						constantIds.put(pred.getName(), result.id);
 					}
 				} else {
 					predVar = pred.getName();
@@ -363,7 +384,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 					} else {
 						ids[TripleStore.OBJ_IDX] = result.id;
 						createdAny |= result.created;
-//						objVar = obj.getName();
+						constantIds.put(obj.getName(), result.id);
 					}
 				} else {
 					objVar = obj.getName();
@@ -380,7 +401,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 					} else {
 						ids[TripleStore.CONTEXT_IDX] = result.id;
 						createdAny |= result.created;
-//						ctxVar = ctx.getName();
+						constantIds.put(ctx.getName(), result.id);
 					}
 				} else {
 					ctxVar = ctx.getName();
@@ -388,7 +409,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			}
 
 			LmdbIdJoinIterator.PatternInfo info = LmdbIdJoinIterator.PatternInfo.create(pattern);
-			return new RawPattern(ids, subjVar, predVar, objVar, ctxVar, info, invalid, createdAny);
+			return new RawPattern(ids, subjVar, predVar, objVar, ctxVar, info, invalid, createdAny, constantIds);
 		}
 
 		PatternPlan toPlan(IdBindingInfo finalInfo) {

@@ -19,6 +19,8 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -170,6 +172,9 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 		}
 		try {
 			LmdbEvaluationDataset dataset = resolveDataset();
+			if (!dataset.hasTransactionChanges()) {
+				dataset.refreshSnapshot();
+			}
 			if (fallbackStep != null && dataset.hasTransactionChanges()) {
 				return fallbackStep.evaluate(bindings);
 			}

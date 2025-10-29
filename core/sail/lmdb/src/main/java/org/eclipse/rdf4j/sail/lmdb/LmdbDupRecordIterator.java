@@ -45,8 +45,9 @@ class LmdbDupRecordIterator implements RecordIterator {
 		RecordIterator get() throws IOException;
 	}
 
-	/** Toggle copying of duplicate blocks for extra safety (defaults to zero-copy views). */
-	private static final boolean COPY_DUP_BLOCKS = Boolean.getBoolean("rdf4j.lmdb.copyDupBlocks");
+	/** Toggle copying of duplicate blocks for extra safety (defaults to copying). */
+	private static final boolean COPY_DUP_BLOCKS = Boolean.parseBoolean(
+			System.getProperty("rdf4j.lmdb.copyDupBlocks", "true"));
 
 	/** Size in bytes of one (v3,v4) tuple. */
 	private static final int DUP_PAIR_BYTES = Long.BYTES * 2;

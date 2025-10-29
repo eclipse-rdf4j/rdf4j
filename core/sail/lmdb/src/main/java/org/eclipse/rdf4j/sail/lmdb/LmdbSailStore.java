@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -1567,6 +1568,17 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public IsolationLevel getIsolationLevel() {
 			return isolationLevel;
+		}
+
+		@Override
+		public void refreshSnapshot() throws QueryEvaluationException {
+			if (isolationLevel == IsolationLevels.SNAPSHOT || isolationLevel == IsolationLevels.SERIALIZABLE) {
+				try {
+					txn.reset();
+				} catch (IOException e) {
+					throw new QueryEvaluationException("Unable to refresh LMDB read transaction", e);
+				}
+			}
 		}
 
 		@Override

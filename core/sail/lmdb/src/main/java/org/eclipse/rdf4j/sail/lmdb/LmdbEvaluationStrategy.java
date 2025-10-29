@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -72,8 +74,12 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 	@Override
 	protected QueryEvaluationStep prepare(Join node, QueryEvaluationContext context) {
 		QueryEvaluationStep defaultStep = super.prepare(node, context);
+		if (Boolean.getBoolean("rdf4j.lmdb.disableIdJoins")) {
+			return defaultStep;
+		}
 		if (context instanceof LmdbDatasetContext && ((LmdbDatasetContext) context).getLmdbDataset().isPresent()) {
 			LmdbEvaluationDataset ds = ((LmdbDatasetContext) context).getLmdbDataset().get();
+			Optional<ValueStore> valueStoreOpt = ((LmdbDatasetContext) context).getValueStore();
 			// If the active transaction has uncommitted changes, avoid ID-only join shortcuts.
 			if (ds.hasTransactionChanges() || connectionHasChanges()) {
 				return defaultStep;
@@ -90,19 +96,27 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 				LmdbIdBGPQueryEvaluationStep step = new LmdbIdBGPQueryEvaluationStep(node, patterns, context,
 						defaultStep);
 				if (step.shouldUseFallbackImmediately()) {
-					Optional<ValueStore> valueStoreOpt = ((LmdbDatasetContext) context).getValueStore();
 					if (valueStoreOpt.isPresent()) {
 						LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(tripleSource,
 								valueStoreOpt.get());
 						QueryEvaluationContext overlayContext = new LmdbDelegatingQueryEvaluationContext(context,
 								overlay,
 								valueStoreOpt.get());
-						LmdbIdBGPQueryEvaluationStep overlayStep = new LmdbIdBGPQueryEvaluationStep(node, patterns,
+						return new LmdbIdBGPQueryEvaluationStep(node, patterns,
 								overlayContext, defaultStep);
-						overlayStep.applyAlgorithmTag();
-						return overlayStep;
 					}
 					return defaultStep;
+				}
+				boolean hasPreBound = hasPreBoundVariables(patterns);
+				if ((requiresSnapshotOverlay(ds) || hasPreBound) && valueStoreOpt.isPresent()) {
+					LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(tripleSource,
+							valueStoreOpt.get());
+					QueryEvaluationContext overlayContext = new LmdbDelegatingQueryEvaluationContext(context, overlay,
+							valueStoreOpt.get());
+					LmdbIdBGPQueryEvaluationStep overlayStep = new LmdbIdBGPQueryEvaluationStep(node, patterns,
+							overlayContext, defaultStep);
+					overlayStep.applyAlgorithmTag();
+					return overlayStep;
 				}
 				step.applyAlgorithmTag();
 				return step;
@@ -112,25 +126,52 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 				LmdbIdJoinQueryEvaluationStep step = new LmdbIdJoinQueryEvaluationStep(this, node, context,
 						defaultStep);
 				if (step.shouldUseFallbackImmediately()) {
-					Optional<ValueStore> valueStoreOpt = ((LmdbDatasetContext) context).getValueStore();
 					if (valueStoreOpt.isPresent()) {
 						LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(tripleSource,
 								valueStoreOpt.get());
 						QueryEvaluationContext overlayContext = new LmdbDelegatingQueryEvaluationContext(context,
 								overlay,
 								valueStoreOpt.get());
-						LmdbIdJoinQueryEvaluationStep overlayStep = new LmdbIdJoinQueryEvaluationStep(this, node,
+						return new LmdbIdJoinQueryEvaluationStep(this, node,
 								overlayContext, defaultStep);
-						overlayStep.applyAlgorithmTag(node);
-						return overlayStep;
 					}
 					return defaultStep;
+				}
+				if (requiresSnapshotOverlay(ds) && valueStoreOpt.isPresent()) {
+					LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(tripleSource,
+							valueStoreOpt.get());
+					QueryEvaluationContext overlayContext = new LmdbDelegatingQueryEvaluationContext(context, overlay,
+							valueStoreOpt.get());
+					LmdbIdJoinQueryEvaluationStep overlayStep = new LmdbIdJoinQueryEvaluationStep(this, node,
+							overlayContext, defaultStep);
+					overlayStep.applyAlgorithmTag(node);
+					return overlayStep;
 				}
 				step.applyAlgorithmTag(node);
 				return step;
 			}
 		}
 		return defaultStep;
+	}
+
+	private boolean hasPreBoundVariables(List<StatementPattern> patterns) {
+		for (StatementPattern pattern : patterns) {
+			if (isPreBound(pattern.getSubjectVar()) || isPreBound(pattern.getPredicateVar())
+					|| isPreBound(pattern.getObjectVar()) || isPreBound(pattern.getContextVar())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean isPreBound(org.eclipse.rdf4j.query.algebra.Var var) {
+		return var != null && var.hasValue() && !var.isConstant();
+	}
+
+	private boolean requiresSnapshotOverlay(LmdbEvaluationDataset dataset) {
+		IsolationLevel isolation = dataset.getIsolationLevel();
+		return isolation == IsolationLevels.SNAPSHOT || isolation == IsolationLevels.SERIALIZABLE
+				|| isolation == IsolationLevels.SNAPSHOT_READ;
 	}
 
 	static void setCurrentDataset(LmdbEvaluationDataset dataset) {
