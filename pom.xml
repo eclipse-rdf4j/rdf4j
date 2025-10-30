@@ -807,6 +807,22 @@
 								<artifactId>solr-core</artifactId>
 								<version>${solr.version}</version>
 							</additionalDependency>
+							<!-- add these in case we run with JDK 17+ -->
+							<additionalDependency>
+								<groupId>javax.validation</groupId>
+								<artifactId>validation-api</artifactId>
+								<version>2.0.1.Final</version>
+							</additionalDependency>
+							<additionalDependency>
+								<groupId>javax.annotation</groupId>
+								<artifactId>javax.annotation-api</artifactId>
+								<version>1.3.2</version>
+							</additionalDependency>
+							<additionalDependency>
+								<groupId>ch.qos.logback</groupId>
+								<artifactId>logback-core</artifactId>
+								<version>${logback.version}</version>
+							</additionalDependency>
 						</additionalDependencies>
 					</configuration>
 				</plugin>
@@ -1040,6 +1056,8 @@
 											<include>javax.servlet:jstl:*:*:provided</include>
 											<!-- Allow test server dependencies -->
 											<include>javax.servlet:javax.servlet-api:*:*:test</include>
+											<!-- Allow to provide old javax dependencies for compiling with JDK 17+ -->
+											<include>javax.*:*:*:*:provided</include>
 										</includes>
 									</bannedDependencies>
 								</rules>
@@ -1062,6 +1080,8 @@
 											<!-- mockserver-junit-jupiter-no-dependencies contains these classes -->
 											<ignoreClass>org.opentest4j.*</ignoreClass>
 										</ignoreClasses>
+										<!-- Allow to provide old javax dependencies for compiling with JDK 17+ -->
+										<ignoredScopes>provided</ignoredScopes>
 										<ignoreWhenIdentical>true</ignoreWhenIdentical>
 									</banDuplicateClasses>
 								</rules>
@@ -1073,7 +1093,7 @@
 						<dependency>
 							<groupId>org.codehaus.mojo</groupId>
 							<artifactId>extra-enforcer-rules</artifactId>
-							<version>1.6.1</version>
+							<version>1.11.0</version>
 						</dependency>
 					</dependencies>
 				</plugin>
