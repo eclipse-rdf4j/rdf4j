@@ -15,11 +15,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.util.List;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.util.RDFCollections;
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
@@ -388,6 +394,37 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 
 		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
 		assertTrue(Models.isomorphic(expected, actual));
+	}
+
+	@Test
+	public void testRdfCollectionsListNotFullyInlined() throws Exception {
+		String namespace = "http://example.com/ns#";
+		IRI cities = Values.iri(namespace, "Cities");
+		IRI listPredicate = Values.iri(namespace, "list");
+		BNode listHead = vf.createBNode("n1");
+
+		Model model = new TreeModel();
+		model.setNamespace("ex", namespace);
+		model.setNamespace("rdf", RDF.NAMESPACE);
+
+		RDFCollections.asRDF(List.of(
+				Values.iri(namespace, "NewYork"),
+				Values.iri(namespace, "Rio"),
+				Values.iri(namespace, "Tokyo")), listHead, model);
+		model.add(cities, listPredicate, listHead);
+
+		WriterConfig config = new WriterConfig();
+		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		config.set(BasicWriterSettings.PRETTY_PRINT, true);
+
+		StringWriter stringWriter = new StringWriter();
+		Rio.write(model, stringWriter, RDFFormat.TURTLE, config);
+
+		String expected = String.join("\n", "@prefix ex: <http://example.com/ns#> .",
+				"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .",
+				"", "ex:Cities ex:list (ex:NewYork ex:Rio ex:Tokyo) .", "");
+
+		assertThat(stringWriter.toString()).isEqualTo(expected);
 	}
 
 	@Test
