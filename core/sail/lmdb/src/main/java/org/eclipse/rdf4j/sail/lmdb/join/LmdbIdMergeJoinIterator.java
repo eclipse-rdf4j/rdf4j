@@ -118,12 +118,9 @@ public class LmdbIdMergeJoinIterator extends LookAheadIteration<BindingSet> {
 
 		while (leftIterator.hasNext()) {
 			long[] candidate = leftIterator.next();
-			MutableBindingSet binding = context.createBindingSet(initialBindings);
-			if (!leftInfo.applyRecord(candidate, binding, valueStore)) {
-				continue;
-			}
+			// Defer left materialization; keep only the ID record.
 			currentLeftRecord = candidate;
-			currentLeftBinding = binding;
+			currentLeftBinding = null;
 			currentLeftKey = key(leftInfo, candidate);
 			hasCurrentLeftKey = true;
 			return true;
@@ -190,11 +187,14 @@ public class LmdbIdMergeJoinIterator extends LookAheadIteration<BindingSet> {
 	}
 
 	private BindingSet joinWithCurrentLeft(long[] rightRecord) throws QueryEvaluationException {
-		MutableBindingSet result = context.createBindingSet(currentLeftBinding);
-		if (rightInfo.applyRecord(rightRecord, result, valueStore)) {
-			return result;
+		MutableBindingSet result = context.createBindingSet(initialBindings);
+		if (!leftInfo.applyRecord(currentLeftRecord, result, valueStore)) {
+			return null;
 		}
-		return null;
+		if (!rightInfo.applyRecord(rightRecord, result, valueStore)) {
+			return null;
+		}
+		return result;
 	}
 
 	private int compare(long left, long right) {
