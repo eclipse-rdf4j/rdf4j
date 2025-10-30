@@ -150,15 +150,8 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			CloseableIteration<? extends BindingSet> base = super.evaluateInternal(tupleExpr, dataset, bindings,
 					includeInferred);
 			success = true;
-			// ensure that all elements of the binding set are initialized (lazy values are resolved)
+			// Do not force materialization of lazy values; simply ensure we pop the thread-local flag.
 			return new IterationWrapper<BindingSet>(base) {
-				@Override
-				public BindingSet next() throws QueryEvaluationException {
-					BindingSet bs = super.next();
-					bs.forEach(b -> initValue(b.getValue()));
-					return bs;
-				}
-
 				@Override
 				protected void handleClose() throws QueryEvaluationException {
 					try {

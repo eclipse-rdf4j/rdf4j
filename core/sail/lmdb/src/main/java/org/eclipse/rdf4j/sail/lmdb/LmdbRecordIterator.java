@@ -57,6 +57,13 @@ class LmdbRecordIterator implements RecordIterator {
 	private final boolean matchValues;
 	private GroupMatcher groupMatcher;
 
+	/**
+	 * True when late-bound variables exist beyond the contiguous prefix of the chosen index order, requiring
+	 * value-level filtering. When false, range bounds already guarantee that every visited key matches and the
+	 * GroupMatcher is redundant.
+	 */
+	private final boolean needMatcher;
+
 	private final Txn txnRef;
 
 	private long txnRefVersion;
@@ -124,6 +131,9 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 
 		this.matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
+		int prefixLen = index.getPatternScore(subj, pred, obj, context);
+		int boundCount = (subj > 0 ? 1 : 0) + (pred > 0 ? 1 : 0) + (obj > 0 ? 1 : 0) + (context >= 0 ? 1 : 0);
+		this.needMatcher = boundCount > prefixLen;
 
 		this.dbi = index.getDB(explicit);
 		this.txnRef = txnRef;
@@ -252,6 +262,10 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	private boolean matches() {
+		// When there are no late-bound variables beyond the contiguous prefix, range bounds fully determine matches.
+		if (!needMatcher) {
+			return false;
+		}
 
 		if (groupMatcher != null) {
 			return !this.groupMatcher.matches(keyData.mv_data());

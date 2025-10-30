@@ -124,15 +124,21 @@ public class QueryBenchmark {
 
 	private File file;
 
-	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder()
-				.include("QueryBenchmark.complexQuery") // adapt to run other benchmark tests
-				.warmupIterations(0)
-				.measurementIterations(10)
-				.forks(0)
-				.build();
+	public static void main(String[] args) throws RunnerException, IOException {
+		QueryBenchmark queryBenchmark = new QueryBenchmark();
+		queryBenchmark.beforeClass();
+		queryBenchmark.complexQuery();
+		queryBenchmark.afterClass();
 
-		new Runner(opt).run();
+//
+//		Options opt = new OptionsBuilder()
+//				.include("QueryBenchmark.complexQuery") // adapt to run other benchmark tests
+//				.warmupIterations(0)
+//				.measurementIterations(10)
+//				.forks(0)
+//				.build();
+//
+//		new Runner(opt).run();
 	}
 
 	@Setup(Level.Trial)

@@ -56,7 +56,10 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 		ValueStore valueStore = datasetRef != null ? datasetRef.getValueStore() : null;
 		LmdbEvaluationDataset effectiveDataset = datasetRef;
 		if (connectionHasChanges() && valueStore != null) {
-			effectiveDataset = new LmdbOverlayEvaluationDataset(tripleSource, valueStore);
+			TripleSource idCapableTs = (tripleSource instanceof LmdbIdTripleSource)
+					? tripleSource
+					: new LmdbIdTripleSourceAdapter(tripleSource, valueStore);
+			effectiveDataset = new LmdbOverlayEvaluationDataset(idCapableTs, valueStore);
 		}
 		LmdbQueryEvaluationContext baseContext = new LmdbQueryEvaluationContext(dataset, tripleSource.getValueFactory(),
 				tripleSource.getComparator(), effectiveDataset, valueStore);
@@ -97,7 +100,10 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 						defaultStep);
 				if (step.shouldUseFallbackImmediately()) {
 					if (valueStoreOpt.isPresent()) {
-						LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(tripleSource,
+						TripleSource idCapableTs = (tripleSource instanceof LmdbIdTripleSource)
+								? tripleSource
+								: new LmdbIdTripleSourceAdapter(tripleSource, valueStoreOpt.get());
+						LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(idCapableTs,
 								valueStoreOpt.get());
 						QueryEvaluationContext overlayContext = new LmdbDelegatingQueryEvaluationContext(context,
 								overlay,
@@ -109,7 +115,10 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 				}
 				boolean hasPreBound = hasPreBoundVariables(patterns);
 				if ((requiresSnapshotOverlay(ds) || hasPreBound) && valueStoreOpt.isPresent()) {
-					LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(tripleSource,
+					TripleSource idCapableTs = (tripleSource instanceof LmdbIdTripleSource)
+							? tripleSource
+							: new LmdbIdTripleSourceAdapter(tripleSource, valueStoreOpt.get());
+					LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(idCapableTs,
 							valueStoreOpt.get());
 					QueryEvaluationContext overlayContext = new LmdbDelegatingQueryEvaluationContext(context, overlay,
 							valueStoreOpt.get());
@@ -127,7 +136,10 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 						defaultStep);
 				if (step.shouldUseFallbackImmediately()) {
 					if (valueStoreOpt.isPresent()) {
-						LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(tripleSource,
+						TripleSource idCapableTs = (tripleSource instanceof LmdbIdTripleSource)
+								? tripleSource
+								: new LmdbIdTripleSourceAdapter(tripleSource, valueStoreOpt.get());
+						LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(idCapableTs,
 								valueStoreOpt.get());
 						QueryEvaluationContext overlayContext = new LmdbDelegatingQueryEvaluationContext(context,
 								overlay,
@@ -138,7 +150,10 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 					return defaultStep;
 				}
 				if (requiresSnapshotOverlay(ds) && valueStoreOpt.isPresent()) {
-					LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(tripleSource,
+					TripleSource idCapableTs = (tripleSource instanceof LmdbIdTripleSource)
+							? tripleSource
+							: new LmdbIdTripleSourceAdapter(tripleSource, valueStoreOpt.get());
+					LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(idCapableTs,
 							valueStoreOpt.get());
 					QueryEvaluationContext overlayContext = new LmdbDelegatingQueryEvaluationContext(context, overlay,
 							valueStoreOpt.get());
