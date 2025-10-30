@@ -1,0 +1,14 @@
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+org.eclipse.rdf4j.spring.RDF4JConfig,\
+org.eclipse.rdf4j.spring.operationlog.OperationLogConfig,\
+org.eclipse.rdf4j.spring.operationlog.log.jmx.OperationLogJmxConfig,\
+org.eclipse.rdf4j.spring.operationcache.OperationCacheConfig,\
+org.eclipse.rdf4j.spring.pool.PoolConfig,\
+org.eclipse.rdf4j.spring.repository.remote.RemoteRepositoryConfig,\
+org.eclipse.rdf4j.spring.repository.inmemory.InMemoryRepositoryConfig,\
+org.eclipse.rdf4j.spring.resultcache.ResultCacheConfig,\
+org.eclipse.rdf4j.spring.tx.TxConfig,\
+org.eclipse.rdf4j.spring.uuidsource.noveltychecking.NoveltyCheckingUUIDSourceConfig,\
+org.eclipse.rdf4j.spring.uuidsource.sequence.UUIDSequenceConfig,\
+org.eclipse.rdf4j.spring.uuidsource.simple.SimpleRepositoryUUIDSourceConfig,\
+org.eclipse.rdf4j.spring.uuidsource.predictable.PredictableUUIDSourceConfig

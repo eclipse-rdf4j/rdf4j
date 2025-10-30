@@ -1,0 +1,39 @@
+{
+  "head" : {
+    "vars" : [
+      "uri",
+      "id",
+      "title",
+      "readable",
+      "writable"
+    ]
+  },
+  "results" : {
+    "bindings" : [
+      {
+        "readable" : {
+          "datatype" : "http://www.w3.org/2001/XMLSchema#boolean",
+          "type" : "literal",
+          "value" : "true"
+        },
+        "id" : {
+          "type" : "literal",
+          "value" : "test-repo"
+        },
+        "title" : {
+          "type" : "literal",
+          "value" : ""
+        },
+        "uri" : {
+          "type" : "uri",
+          "value" : "http://localhost:7200/repositories/test-repo"
+        },
+        "writable" : {
+          "datatype" : "http://www.w3.org/2001/XMLSchema#boolean",
+          "type" : "literal",
+          "value" : "true"
+        }
+      }
+    ]
+  }
+}

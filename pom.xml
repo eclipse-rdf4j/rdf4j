@@ -42,6 +42,7 @@
 		<module>core</module>
 		<module>tools</module>
 		<module>spring-components</module>
+		<module>spring6-components</module>
 		<module>testsuites</module>
 		<module>compliance</module>
 		<module>examples</module>
