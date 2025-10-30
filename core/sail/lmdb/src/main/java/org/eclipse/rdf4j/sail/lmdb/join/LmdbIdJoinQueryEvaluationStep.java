@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.sail.lmdb.IdBindingInfo;
 import org.eclipse.rdf4j.sail.lmdb.LmdbDatasetContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStrategy;
@@ -181,13 +182,39 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 				return fallbackStep.evaluate(bindings);
 			}
 
-			if (Boolean.getBoolean("rdf4j.lmdb.experimentalTwoPatternArrayJoin")) {
-				// Experimental: use the array-API two-pattern BGP pipeline
-				List<StatementPattern> patterns = Arrays
-						.asList(leftPattern, rightPattern);
-				LmdbIdBGPQueryEvaluationStep bgpStep = new LmdbIdBGPQueryEvaluationStep(
-						new Join(leftPattern, rightPattern), patterns, context, fallbackStep);
-				return bgpStep.evaluate(bindings);
+			if (!"false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.experimentalTwoPatternArrayJoin", "true"))) {
+				ValueStore valueStore = dataset.getValueStore();
+				IdBindingInfo bindingInfo = IdBindingInfo.combine(
+						IdBindingInfo.fromFirstPattern(leftInfo, context), rightInfo, context);
+
+				int subjIdx = indexFor(rightPattern.getSubjectVar(), bindingInfo);
+				int predIdx = indexFor(rightPattern.getPredicateVar(), bindingInfo);
+				int objIdx = indexFor(rightPattern.getObjectVar(), bindingInfo);
+				int ctxIdx = indexFor(rightPattern.getContextVar(), bindingInfo);
+				long[] patternIds = resolvePatternIds(rightPattern, valueStore);
+
+				long[] initialBinding = createInitialBinding(bindingInfo, bindings, valueStore);
+				if (initialBinding == null) {
+					return new org.eclipse.rdf4j.common.iteration.EmptyIteration<>();
+				}
+
+				RecordIterator leftIterator = dataset.getRecordIterator(leftPattern, bindings);
+				LmdbIdJoinIterator.RecordIteratorFactory rightFactory = leftRecord -> {
+					long[] snapshot = Arrays.copyOf(initialBinding, initialBinding.length);
+					for (String name : leftInfo.getVariableNames()) {
+						int pos = bindingInfo.getIndex(name);
+						if (pos >= 0) {
+							long id = leftInfo.getId(leftRecord, name);
+							if (id != org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID) {
+								snapshot[pos] = id;
+							}
+						}
+					}
+					return dataset.getRecordIterator(snapshot, subjIdx, predIdx, objIdx, ctxIdx, patternIds);
+				};
+
+				return new LmdbIdJoinIterator(leftIterator, rightFactory, leftInfo, rightInfo, sharedVariables, context,
+						bindings, valueStore);
 			}
 
 			// Default: materialize right side via BindingSet and use LmdbIdJoinIterator
@@ -220,5 +247,97 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 		// Fall back to the thread-local only if the context did not carry a dataset reference.
 		return LmdbEvaluationStrategy.getCurrentDataset()
 				.orElseThrow(() -> new IllegalStateException("No active LMDB dataset available for join evaluation"));
+	}
+
+	private static int indexFor(Var var, IdBindingInfo info) {
+		if (var == null || var.hasValue()) {
+			return -1;
+		}
+		return info.getIndex(var.getName());
+	}
+
+	private static long[] resolvePatternIds(StatementPattern pattern, ValueStore valueStore)
+			throws QueryEvaluationException {
+		long[] ids = new long[4];
+		ids[org.eclipse.rdf4j.sail.lmdb.TripleStore.SUBJ_IDX] = resolveIdIfConstant(pattern.getSubjectVar(), valueStore,
+				true, false);
+		ids[org.eclipse.rdf4j.sail.lmdb.TripleStore.PRED_IDX] = resolveIdIfConstant(pattern.getPredicateVar(),
+				valueStore,
+				false, true);
+		ids[org.eclipse.rdf4j.sail.lmdb.TripleStore.OBJ_IDX] = resolveIdIfConstant(pattern.getObjectVar(), valueStore,
+				false, false);
+		ids[org.eclipse.rdf4j.sail.lmdb.TripleStore.CONTEXT_IDX] = resolveIdIfConstant(pattern.getContextVar(),
+				valueStore, true, false);
+		return ids;
+	}
+
+	private static long resolveIdIfConstant(Var var, ValueStore valueStore, boolean requireResource, boolean requireIri)
+			throws QueryEvaluationException {
+		if (var == null || !var.hasValue()) {
+			return org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
+		}
+		Value v = var.getValue();
+		if (requireResource && !(v instanceof org.eclipse.rdf4j.model.Resource)) {
+			return Long.MIN_VALUE;
+		}
+		if (requireIri && !(v instanceof org.eclipse.rdf4j.model.IRI)) {
+			return Long.MIN_VALUE;
+		}
+		if (v instanceof org.eclipse.rdf4j.model.Resource && ((org.eclipse.rdf4j.model.Resource) v).isTriple()) {
+			return Long.MIN_VALUE;
+		}
+		try {
+			long id = valueStore.getId(v);
+			if (id == org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID) {
+				id = valueStore.getId(v, true);
+			}
+			return id == org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID ? Long.MIN_VALUE : id;
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+	}
+
+	private static long[] createInitialBinding(IdBindingInfo info, BindingSet bindings, ValueStore valueStore)
+			throws QueryEvaluationException {
+		long[] binding = new long[info.size()];
+		Arrays.fill(binding, org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID);
+		if (bindings == null || bindings.isEmpty()) {
+			return binding;
+		}
+		for (String name : info.getVariableNames()) {
+			Value value = bindings.getValue(name);
+			if (value == null) {
+				continue;
+			}
+			long id = resolveId(valueStore, value);
+			if (id == org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID) {
+				return null;
+			}
+			int index = info.getIndex(name);
+			if (index >= 0) {
+				binding[index] = id;
+			}
+		}
+		return binding;
+	}
+
+	private static long resolveId(ValueStore valueStore, Value value) throws QueryEvaluationException {
+		if (value == null) {
+			return org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
+		}
+		if (value instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) {
+			org.eclipse.rdf4j.sail.lmdb.model.LmdbValue lmdbValue = (org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) value;
+			if (lmdbValue.getValueStoreRevision().getValueStore() == valueStore) {
+				long id = lmdbValue.getInternalID();
+				if (id != org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID) {
+					return id;
+				}
+			}
+		}
+		try {
+			return valueStore.getId(value);
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
 	}
 }
