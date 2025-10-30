@@ -44,6 +44,18 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 	public RecordIterator getRecordIterator(StatementPattern pattern, BindingSet bindings)
 			throws QueryEvaluationException {
 
+		// Fast path: no active connection changes → delegate directly to LMDB dataset to avoid materialization
+		try {
+			if (!LmdbEvaluationStrategy.hasActiveConnectionChanges()) {
+				var dsOpt = LmdbEvaluationStrategy.getCurrentDataset();
+				if (dsOpt.isPresent()) {
+					return dsOpt.get().getRecordIterator(pattern, bindings);
+				}
+			}
+		} catch (Exception ignore) {
+			// fall through to overlay path
+		}
+
 		Value subj = resolveValue(pattern.getSubjectVar(), bindings);
 		if (subj != null && !(subj instanceof Resource)) {
 			return LmdbIdJoinIterator.emptyRecordIterator();
@@ -119,6 +131,30 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds) throws QueryEvaluationException {
+		// Fast path: no active connection changes → use the current LMDB dataset's ID-level iterator
+		try {
+			if (!LmdbEvaluationStrategy.hasActiveConnectionChanges()) {
+				var dsOpt = LmdbEvaluationStrategy.getCurrentDataset();
+				if (dsOpt.isPresent()) {
+					return dsOpt.get().getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+				}
+			}
+		} catch (Exception ignore) {
+			// fall back to overlay tripleSource path
+		}
+		// Prefer an ID-level path if the TripleSource supports it and we can trust overlay correctness.
+		if (tripleSource instanceof LmdbIdTripleSource) {
+			// The overlay dataset is represented by this LmdbOverlayEvaluationDataset; the tripleSource reflects the
+			// current branch dataset state (including transaction overlays). Therefore, using ID-level access here is
+			// correct when available.
+			RecordIterator viaIds = ((LmdbIdTripleSource) tripleSource)
+					.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+			if (viaIds != null) {
+				return viaIds;
+			}
+		}
+
+		// Fallback: Value-based overlay path with per-statement ID resolution (minimal unavoidable materialization).
 		try {
 			Value subjValue = valueForQuery(patternIds[TripleStore.SUBJ_IDX], binding, subjIndex, true, false);
 			Resource subjRes = subjValue == null ? null : (Resource) subjValue;
