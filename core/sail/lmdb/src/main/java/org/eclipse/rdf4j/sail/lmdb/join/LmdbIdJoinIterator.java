@@ -253,7 +253,10 @@ public class LmdbIdJoinIterator extends LookAheadIteration<BindingSet> {
 					if (!matchesJoin(currentLeftRecord, rightRecord)) {
 						continue;
 					}
-					MutableBindingSet result = context.createBindingSet(currentLeftBinding);
+					MutableBindingSet result = context.createBindingSet(initialBindings);
+					if (!leftInfo.applyRecord(currentLeftRecord, result, valueStore)) {
+						continue;
+					}
 					if (!rightInfo.applyRecord(rightRecord, result, valueStore)) {
 						continue;
 					}
@@ -268,13 +271,8 @@ public class LmdbIdJoinIterator extends LookAheadIteration<BindingSet> {
 				return null;
 			}
 
-			MutableBindingSet leftBinding = context.createBindingSet(initialBindings);
-			if (!leftInfo.applyRecord(leftRecord, leftBinding, valueStore)) {
-				continue;
-			}
-
 			currentLeftRecord = leftRecord;
-			currentLeftBinding = leftBinding;
+			currentLeftBinding = null;
 
 			currentRightIterator = rightFactory.apply(leftRecord);
 			if (currentRightIterator == null) {

@@ -1373,7 +1373,7 @@ class LmdbSailStore implements SailStore {
 
 				RecordIterator base = tripleStore.getTriples(txn, subjQuery, predQuery, objQuery, ctxQuery, explicit);
 
-				if (Boolean.getBoolean("rdf4j.lmdb.experimentalScratchReuse")) {
+				if (!"false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.experimentalScratchReuse", "true"))) {
 					return new RecordIterator() {
 						private final long[] scratch = Arrays.copyOf(binding, binding.length);
 
