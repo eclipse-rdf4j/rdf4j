@@ -13,13 +13,15 @@
 		<module>rdf4j-spring6-demo</module>
 	</modules>
 	<properties>
+		<!-- spring-boot 3 / spring 6 requires java 17, compile these modules accordingly -->
+		<java.version>17</java.version>
 		<spring.boot.version>3.5.7</spring.boot.version>
 		<!-- override properties to match versions for spring-boot -->
+		<spring.version>6.2.12</spring.version>
 		<slf4j.version>2.0.17</slf4j.version>
 		<logback.version>1.5.20</logback.version>
 		<log4j.version>2.24.3</log4j.version>
 		<jetty.version>12.0.29</jetty.version>
-		<spring.version>6.2.12</spring.version>
 	</properties>
 	<artifactId>rdf4j-spring6-components</artifactId>
 	<name>RDF4J: Spring6 components</name>
