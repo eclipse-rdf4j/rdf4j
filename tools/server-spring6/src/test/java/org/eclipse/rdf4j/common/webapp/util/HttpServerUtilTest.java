@@ -22,25 +22,14 @@ import java.util.Enumeration;
 import java.util.Locale;
 import java.util.Map;
 
-import javax.servlet.AsyncContext;
-import javax.servlet.DispatcherType;
-import javax.servlet.RequestDispatcher;
-import javax.servlet.ServletContext;
-import javax.servlet.ServletException;
-import javax.servlet.ServletInputStream;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.Cookie;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
-import javax.servlet.http.HttpUpgradeHandler;
-import javax.servlet.http.Part;
-
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import jakarta.servlet.*;
+import jakarta.servlet.http.*;
 
 /**
  * @author jeen
@@ -63,7 +52,7 @@ public class HttpServerUtilTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.common.webapp.util.HttpServerUtil#selectPreferredMIMEType(java.util.Iterator, javax.servlet.http.HttpServletRequest)}
+	 * {@link org.eclipse.rdf4j.common.webapp.util.HttpServerUtil#selectPreferredMIMEType(java.util.Iterator, jakarta.servlet.http.HttpServletRequest)}
 	 * .
 	 */
 	@Test
@@ -79,7 +68,7 @@ public class HttpServerUtilTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.common.webapp.util.HttpServerUtil#selectPreferredMIMEType(java.util.Iterator, javax.servlet.http.HttpServletRequest)}
+	 * {@link org.eclipse.rdf4j.common.webapp.util.HttpServerUtil#selectPreferredMIMEType(java.util.Iterator, jakarta.servlet.http.HttpServletRequest)}
 	 * .
 	 */
 	@Test
@@ -94,7 +83,7 @@ public class HttpServerUtilTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.common.webapp.util.HttpServerUtil#selectPreferredMIMEType(java.util.Iterator, javax.servlet.http.HttpServletRequest)}
+	 * {@link org.eclipse.rdf4j.common.webapp.util.HttpServerUtil#selectPreferredMIMEType(java.util.Iterator, jakarta.servlet.http.HttpServletRequest)}
 	 * .
 	 */
 	@Test
@@ -109,7 +98,7 @@ public class HttpServerUtilTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.common.webapp.util.HttpServerUtil#selectPreferredMIMEType(java.util.Iterator, javax.servlet.http.HttpServletRequest)}
+	 * {@link org.eclipse.rdf4j.common.webapp.util.HttpServerUtil#selectPreferredMIMEType(java.util.Iterator, jakarta.servlet.http.HttpServletRequest)}
 	 * .
 	 */
 	@Test
@@ -125,7 +114,7 @@ public class HttpServerUtilTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.common.webapp.util.HttpServerUtil#selectPreferredMIMEType(java.util.Iterator, javax.servlet.http.HttpServletRequest)}
+	 * {@link org.eclipse.rdf4j.common.webapp.util.HttpServerUtil#selectPreferredMIMEType(java.util.Iterator, jakarta.servlet.http.HttpServletRequest)}
 	 * .
 	 */
 	@Test
@@ -138,7 +127,7 @@ public class HttpServerUtilTest {
 		assertEquals("application/sparql-results+json", preferredType);
 	}
 
-	class ServletRequestStub implements javax.servlet.http.HttpServletRequest {
+	class ServletRequestStub implements jakarta.servlet.http.HttpServletRequest {
 
 		private final Enumeration<String> testHeaders;
 
@@ -286,12 +275,6 @@ public class HttpServerUtilTest {
 
 		@Override
 		public RequestDispatcher getRequestDispatcher(String path) {
-			// TODO Auto-generated method stub
-			return null;
-		}
-
-		@Override
-		public String getRealPath(String path) {
 			// TODO Auto-generated method stub
 			return null;
 		}
@@ -463,16 +446,10 @@ public class HttpServerUtilTest {
 			return false;
 		}
 
-		@Override
-		public boolean isRequestedSessionIdFromUrl() {
-			// TODO Auto-generated method stub
-			return false;
-		}
-
 		/*
 		 * (non-Javadoc)
 		 *
-		 * @see javax.servlet.ServletRequest#getServletContext()
+		 * @see jakarta.servlet.ServletRequest#getServletContext()
 		 */
 		@Override
 		public ServletContext getServletContext() {
@@ -483,7 +460,7 @@ public class HttpServerUtilTest {
 		/*
 		 * (non-Javadoc)
 		 *
-		 * @see javax.servlet.ServletRequest#startAsync()
+		 * @see jakarta.servlet.ServletRequest#startAsync()
 		 */
 		@Override
 		public AsyncContext startAsync() throws IllegalStateException {
@@ -494,7 +471,8 @@ public class HttpServerUtilTest {
 		/*
 		 * (non-Javadoc)
 		 *
-		 * @see javax.servlet.ServletRequest#startAsync(javax.servlet.ServletRequest, javax.servlet.ServletResponse)
+		 * @see jakarta.servlet.ServletRequest#startAsync(jakarta.servlet.ServletRequest,
+		 * jakarta.servlet.ServletResponse)
 		 */
 		@Override
 		public AsyncContext startAsync(ServletRequest servletRequest, ServletResponse servletResponse)
@@ -506,7 +484,7 @@ public class HttpServerUtilTest {
 		/*
 		 * (non-Javadoc)
 		 *
-		 * @see javax.servlet.ServletRequest#isAsyncStarted()
+		 * @see jakarta.servlet.ServletRequest#isAsyncStarted()
 		 */
 		@Override
 		public boolean isAsyncStarted() {
@@ -517,7 +495,7 @@ public class HttpServerUtilTest {
 		/*
 		 * (non-Javadoc)
 		 *
-		 * @see javax.servlet.ServletRequest#isAsyncSupported()
+		 * @see jakarta.servlet.ServletRequest#isAsyncSupported()
 		 */
 		@Override
 		public boolean isAsyncSupported() {
@@ -528,7 +506,7 @@ public class HttpServerUtilTest {
 		/*
 		 * (non-Javadoc)
 		 *
-		 * @see javax.servlet.ServletRequest#getAsyncContext()
+		 * @see jakarta.servlet.ServletRequest#getAsyncContext()
 		 */
 		@Override
 		public AsyncContext getAsyncContext() {
@@ -539,7 +517,7 @@ public class HttpServerUtilTest {
 		/*
 		 * (non-Javadoc)
 		 *
-		 * @see javax.servlet.ServletRequest#getDispatcherType()
+		 * @see jakarta.servlet.ServletRequest#getDispatcherType()
 		 */
 		@Override
 		public DispatcherType getDispatcherType() {
@@ -550,7 +528,7 @@ public class HttpServerUtilTest {
 		/*
 		 * (non-Javadoc)
 		 *
-		 * @see javax.servlet.http.HttpServletRequest#authenticate(javax.servlet.http.HttpServletResponse)
+		 * @see jakarta.servlet.http.HttpServletRequest#authenticate(jakarta.servlet.http.HttpServletResponse)
 		 */
 		@Override
 		public boolean authenticate(HttpServletResponse response) throws ServletException {
@@ -561,7 +539,7 @@ public class HttpServerUtilTest {
 		/*
 		 * (non-Javadoc)
 		 *
-		 * @see javax.servlet.http.HttpServletRequest#login(java.lang.String, java.lang.String)
+		 * @see jakarta.servlet.http.HttpServletRequest#login(java.lang.String, java.lang.String)
 		 */
 		@Override
 		public void login(String username, String password) throws ServletException {
@@ -572,7 +550,7 @@ public class HttpServerUtilTest {
 		/*
 		 * (non-Javadoc)
 		 *
-		 * @see javax.servlet.http.HttpServletRequest#logout()
+		 * @see jakarta.servlet.http.HttpServletRequest#logout()
 		 */
 		@Override
 		public void logout() throws ServletException {
@@ -583,7 +561,7 @@ public class HttpServerUtilTest {
 		/*
 		 * (non-Javadoc)
 		 *
-		 * @see javax.servlet.http.HttpServletRequest#getParts()
+		 * @see jakarta.servlet.http.HttpServletRequest#getParts()
 		 */
 		@Override
 		public Collection<Part> getParts() throws ServletException {
@@ -594,7 +572,7 @@ public class HttpServerUtilTest {
 		/*
 		 * (non-Javadoc)
 		 *
-		 * @see javax.servlet.http.HttpServletRequest#getPart(java.lang.String)
+		 * @see jakarta.servlet.http.HttpServletRequest#getPart(java.lang.String)
 		 */
 		@Override
 		public Part getPart(String name) throws ServletException {
@@ -615,6 +593,41 @@ public class HttpServerUtilTest {
 		@Override
 		public long getContentLengthLong() {
 			return 0;
+		}
+
+		@Override
+		public String getRequestId() {
+			return "";
+		}
+
+		@Override
+		public String getProtocolRequestId() {
+			return "";
+		}
+
+		@Override
+		public ServletConnection getServletConnection() {
+			return null;
+		}
+
+		@Override
+		public HttpServletMapping getHttpServletMapping() {
+			return HttpServletRequest.super.getHttpServletMapping();
+		}
+
+		@Override
+		public PushBuilder newPushBuilder() {
+			return HttpServletRequest.super.newPushBuilder();
+		}
+
+		@Override
+		public Map<String, String> getTrailerFields() {
+			return HttpServletRequest.super.getTrailerFields();
+		}
+
+		@Override
+		public boolean isTrailerFieldsReady() {
+			return HttpServletRequest.super.isTrailerFieldsReady();
 		}
 	}
 }

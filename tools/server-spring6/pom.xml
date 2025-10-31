@@ -9,6 +9,15 @@
 	<artifactId>rdf4j-http-server-spring6</artifactId>
 	<name>RDF4J: HTTP server - core (Spring 6)</name>
 	<description>HTTP server implementing a REST-style protocol</description>
+	<properties>
+		<!-- spring 6 requires java 17, compile these modules accordingly -->
+		<java.version>17</java.version>
+		<!-- override properties to match versions for spring 6 -->
+		<spring.version>6.2.12</spring.version>
+		<slf4j.version>2.0.17</slf4j.version>
+		<logback.version>1.5.20</logback.version>
+		<log4j.version>2.24.3</log4j.version>
+	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
@@ -33,8 +42,9 @@
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
-			<groupId>javax.servlet</groupId>
-			<artifactId>javax.servlet-api</artifactId>
+			<groupId>jakarta.servlet</groupId>
+			<artifactId>jakarta.servlet-api</artifactId>
+			<version>6.0.0</version>
 			<scope>provided</scope>
 		</dependency>
 		<dependency>

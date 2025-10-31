@@ -13,12 +13,12 @@ package org.eclipse.rdf4j.common.webapp.views;
 import java.io.InputStream;
 import java.util.Map;
 
-import javax.servlet.ServletOutputStream;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.springframework.web.servlet.View;
+
+import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * @author Herko ter Horst
