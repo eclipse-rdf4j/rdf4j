@@ -12,7 +12,7 @@
 	<dependencies>
 		<dependency>
 			<groupId>org.eclipse.rdf4j</groupId>
-			<artifactId>rdf4j-spring</artifactId>
+			<artifactId>rdf4j-spring6</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
