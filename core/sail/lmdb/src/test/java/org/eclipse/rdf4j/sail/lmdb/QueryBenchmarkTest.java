@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import java.io.File;
 import java.io.IOException;
@@ -165,6 +166,7 @@ public class QueryBenchmarkTest {
 				count = stream.count();
 			}
 			System.out.println("count: " + count);
+			assertEquals(1485, count);
 		}
 	}
 
