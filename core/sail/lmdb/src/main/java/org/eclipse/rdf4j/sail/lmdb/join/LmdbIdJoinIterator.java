@@ -211,7 +211,7 @@ public class LmdbIdJoinIterator extends LookAheadIteration<BindingSet> {
 				return null;
 			}
 			try {
-				return valueStore.getLazyValue(id);
+				return LmdbIdJoinSettings.resolveValue(valueStore, id);
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
 			}
