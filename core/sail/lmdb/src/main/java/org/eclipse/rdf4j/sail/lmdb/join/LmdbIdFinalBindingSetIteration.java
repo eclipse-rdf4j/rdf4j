@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb.join;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
@@ -41,7 +40,6 @@ final class LmdbIdFinalBindingSetIteration extends LookAheadIteration<BindingSet
 	private final ValueStore valueStore;
 	private final Map<String, Long> constantBindings;
 	private List<ConstEntry> constantEntries;
-	private Map<String, BiConsumer<Value, MutableBindingSet>> constantSetters;
 
 	LmdbIdFinalBindingSetIteration(RecordIterator input, IdBindingInfo info, QueryEvaluationContext context,
 			BindingSet initial, ValueStore valueStore, Map<String, Long> constantBindings) {
@@ -79,7 +77,7 @@ final class LmdbIdFinalBindingSetIteration extends LookAheadIteration<BindingSet
 					}
 					if (!ce.valueResolved) {
 						try {
-							ce.value = valueStore.getLazyValue(ce.id);
+							ce.value = LmdbIdJoinSettings.resolveValue(valueStore, ce.id);
 						} catch (IOException e) {
 							throw new QueryEvaluationException(e);
 						}

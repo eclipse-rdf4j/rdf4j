@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdJoinIterator;
+import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdJoinSettings;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
@@ -126,7 +127,7 @@ public final class IdBindingInfo implements IdAccessor {
 					// Fallback: resolve and compare
 					Value candidate;
 					try {
-						candidate = valueStore.getLazyValue(id);
+						candidate = LmdbIdJoinSettings.resolveValue(valueStore, id);
 					} catch (IOException ex) {
 						throw new QueryEvaluationException(ex);
 					}
@@ -136,7 +137,7 @@ public final class IdBindingInfo implements IdAccessor {
 				} else {
 					Value candidate;
 					try {
-						candidate = valueStore.getLazyValue(id);
+						candidate = LmdbIdJoinSettings.resolveValue(valueStore, id);
 					} catch (IOException ex) {
 						throw new QueryEvaluationException(ex);
 					}
@@ -174,7 +175,7 @@ public final class IdBindingInfo implements IdAccessor {
 					// Fallback: resolve candidate and compare
 					Value candidate;
 					try {
-						candidate = valueStore.getLazyValue(id);
+						candidate = LmdbIdJoinSettings.resolveValue(valueStore, id);
 					} catch (IOException ex) {
 						throw new QueryEvaluationException(ex);
 					}
@@ -185,7 +186,7 @@ public final class IdBindingInfo implements IdAccessor {
 					// No existing value: resolve once and set via direct setter
 					Value candidate;
 					try {
-						candidate = valueStore.getLazyValue(id);
+						candidate = LmdbIdJoinSettings.resolveValue(valueStore, id);
 					} catch (IOException ex) {
 						throw new QueryEvaluationException(ex);
 					}
@@ -221,7 +222,7 @@ public final class IdBindingInfo implements IdAccessor {
 			}
 			Value candidate;
 			try {
-				candidate = valueStore.getLazyValue(id);
+				candidate = LmdbIdJoinSettings.resolveValue(valueStore, id);
 			} catch (IOException ex) {
 				throw new QueryEvaluationException(ex);
 			}
