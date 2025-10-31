@@ -66,46 +66,6 @@ It is illegal to `-q` when running tests!
 
 When writing complex features or significant refactors, use an ExecPlan (as described in PLANS.md) from design to implementation.
 
-## PIOSEE Decision Model (Adopted)
-
-Use this as a compact, repeatable loop for anything from a one‑line bug fix to a multi‑quarter program.
-
-### P — **Problem**
-
-**Goal:** State the core problem and what “good” looks like.
-**Ask:** Who’s affected? What outcome is required? What happens if we do nothing?
-**Tip:** Include measurable target(s): error rate ↓, latency p95 ↓, revenue ↑, risk ↓.
-
-### I — **Information**
-
-**Goal:** Gather only the facts needed to move.
-**Ask:** What do logs/metrics/user feedback say? What constraints (security, compliance, budget, SLA/SLO)? What assumptions must we test?
-
-### O — **Options**
-
-**Goal:** Generate viable ways forward, including “do nothing.”
-**Ask:** What are 2–4 distinct approaches (patch, redesign, buy vs. build, defer)? What risks, costs, and second‑order effects?
-**Tip:** Check guardrails: reliability, security/privacy, accessibility, performance, operability, unit economics.
-
-### S — **Select**
-
-**Goal:** Decide deliberately and document why.
-**Ask:** Which option best meets the success criteria under constraints? Who is the decision owner? What’s the fallback/abort condition?
-**Tip:** Use lightweight scoring (e.g., Impact×Confidence÷Effort) to avoid bike‑shedding.
-
-### E — **Execute**
-
-**Goal:** Ship safely and visibly.
-**Ask:** What is the smallest safe slice? How do we de‑risk (feature flag, canary, dark launch, rollback)? Who owns what?
-**Checklist:** Traces/logs/alerts; security & privacy checks; docs & changelog; incident plan if relevant.
-
-### E — **Evaluate**
-
-**Goal:** Verify outcomes and learn.
-**Ask:** Did metrics hit targets? Any regressions or side effects? What will we keep/change next loop?
-**Output:** Post‑release review (or retro), decision log entry, follow‑ups (tickets), debt captured.
-**Tip:** If outcomes miss, either **iterate** (new Options) or **reframe** (back to Problem).
-
 ---
 
 ## Proportionality Model (Think before you test)
@@ -399,7 +359,6 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 
 ## Working Loop
 
-* **PIOSEE first:** restate Problem, gather Information, list Options; then Select, Execute, Evaluate.
 * **Plan:** small, verifiable steps; keep one `in_progress`, or follow PLANS.md (ExecPlans)
 * **Change:** minimal, surgical edits; keep style/structure consistent.
 * **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
@@ -564,7 +523,6 @@ Do **not** modify existing headers’ years.
 * **Files touched:** list file paths.
 * **Commands run:** key build/test commands.
 * **Verification:** which tests passed, where you checked reports.
-* **PIOSEE trace (concise):** P/I/O summary, selected option/routine, key evaluate outcomes.
 * **Evidence:**
   *Routine A:* failing output (pre‑fix) and passing output (post‑fix).
   *Routine B:* pre‑ and post‑green snippets from the **same selection** + **Hit Proof**.
