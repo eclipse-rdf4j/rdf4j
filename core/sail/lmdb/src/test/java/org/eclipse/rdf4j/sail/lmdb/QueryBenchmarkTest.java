@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.rules.TemporaryFolder;
 
 /**
@@ -148,6 +149,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void groupByQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
@@ -159,6 +161,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void complexQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
@@ -171,6 +174,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void distinctPredicatesQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
@@ -182,6 +186,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void optionalLhsFilterQueryProducesExpectedCount() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
@@ -193,6 +198,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void optionalRhsFilterQueryProducesExpectedCount() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
@@ -204,6 +210,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void orderedUnionLimitQueryProducesExpectedCount() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
@@ -215,6 +222,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void subSelectQueryProducesExpectedCount() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
@@ -226,6 +234,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void multipleSubSelectQueryProducesExpectedCount() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
@@ -237,6 +246,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void removeByQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -251,6 +261,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void removeByQueryReadCommitted() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
@@ -265,6 +276,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void simpleUpdateQueryIsolationReadCommitted() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
@@ -282,6 +294,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void simpleUpdateQueryIsolationNone() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -299,6 +312,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void ordered_union_limit() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count = count(connection
