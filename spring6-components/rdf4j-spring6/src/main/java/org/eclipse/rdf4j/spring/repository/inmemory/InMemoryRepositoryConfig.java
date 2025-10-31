@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -26,7 +27,7 @@ import org.springframework.context.annotation.Configuration;
  * @author Florian Kleedorfer
  * @since 4.0.0
  */
-@Configuration
+@AutoConfiguration
 @EnableConfigurationProperties(InMemoryRepositoryProperties.class)
 @ConditionalOnProperty("rdf4j.spring.repository.inmemory.enabled")
 public class InMemoryRepositoryConfig {

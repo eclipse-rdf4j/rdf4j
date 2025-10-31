@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.spring.uuidsource.sequence;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -23,7 +24,7 @@ import jakarta.validation.Valid;
  * @author Florian Kleedorfer
  * @since 4.0.0
  */
-@Configuration
+@AutoConfiguration
 @EnableConfigurationProperties(UUIDSequenceProperties.class)
 @ConditionalOnProperty(prefix = "rdf4j.spring.uuidsource.sequence", name = "enabled")
 public class UUIDSequenceConfig {
