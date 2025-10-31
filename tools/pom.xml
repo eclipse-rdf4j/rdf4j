@@ -16,6 +16,7 @@
 		<module>federation</module>
 		<module>server</module>
 		<module>server-spring</module>
+        <module>server-spring6</module>
 		<module>workbench</module>
 		<module>runtime</module>
 		<module>runtime-osgi</module>
