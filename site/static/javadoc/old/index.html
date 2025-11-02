@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Legacy RDF4J Javadoc Archives</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+    body {
+      margin: 2rem auto;
+      max-width: 48rem;
+      padding: 0 1.5rem;
+    }
+    a {
+      color: inherit;
+      text-decoration: none;
+      border-bottom: 1px solid currentColor;
+    }
+    a:hover,
+    a:focus {
+      border-bottom-width: 2px;
+    }
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+    p.description {
+      margin-top: 0;
+      margin-bottom: 1.5rem;
+      color: #555;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    li + li {
+      margin-top: 0.75rem;
+    }
+    .meta {
+      display: block;
+      font-size: 0.875rem;
+      color: #666;
+      margin-top: 0.15rem;
+    }
+    .empty {
+      color: #666;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Legacy RDF4J Javadoc Archives</h1>
+    <p class="description">
+      Downloadable Javadoc archives for older RDF4J releases are listed below.
+    </p>
+    <ul id="old-javadoc-list">
+      <li class="empty">Loading archived files…</li>
+    </ul>
+    <p class="description">
+      Return to the <a href="../">current Javadoc directories</a>.
+    </p>
+  </main>
+  <script>
+    (function () {
+      const list = document.getElementById('old-javadoc-list');
+
+      function formatSize(bytes) {
+        if (typeof bytes !== 'number' || !Number.isFinite(bytes)) {
+          return '';
+        }
+        const thresh = 1024;
+        if (bytes < thresh) {
+          return `${bytes} B`;
+        }
+        const units = ['KB', 'MB', 'GB', 'TB'];
+        let index = -1;
+        let size = bytes;
+        do {
+          size /= thresh;
+          index += 1;
+        } while (size >= thresh && index < units.length - 1);
+        return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[index]}`;
+      }
+
+      function renderEntries(entries) {
+        list.innerHTML = '';
+        if (!entries || entries.length === 0) {
+          list.innerHTML = '<li class="empty">No archived files are currently available.</li>';
+          return;
+        }
+
+        const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+        entries
+          .slice()
+          .sort((a, b) => collator.compare(a.name, b.name))
+          .forEach((entry) => {
+            const item = document.createElement('li');
+            const link = document.createElement('a');
+            link.href = entry.href;
+            link.textContent = entry.name;
+            link.setAttribute('rel', 'noopener');
+            item.appendChild(link);
+
+            const meta = document.createElement('span');
+            meta.className = 'meta';
+            const parts = [];
+            if (entry.size) {
+              parts.push(formatSize(entry.size));
+            }
+            if (entry.lastModified) {
+              const date = new Date(entry.lastModified);
+              parts.push(`Updated ${Number.isNaN(date.valueOf()) ? entry.lastModified : date.toLocaleString()}`);
+            }
+            meta.textContent = parts.join(' • ') || 'Archive file';
+            item.appendChild(meta);
+
+            list.appendChild(item);
+          });
+      }
+
+      function handleError(error) {
+        console.error('Failed to load files.json', error);
+        list.innerHTML = '<li class="empty">Unable to load archived files.</li>';
+      }
+
+      fetch('files.json', { cache: 'no-store' })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`Unexpected response: ${response.status} ${response.statusText}`);
+          }
+          return response.json();
+        })
+        .then(renderEntries)
+        .catch(handleError);
+    })();
+  </script>
+</body>
+</html>

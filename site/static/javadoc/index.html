@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>RDF4J Javadoc Archives</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+    body {
+      margin: 2rem auto;
+      max-width: 48rem;
+      padding: 0 1.5rem;
+    }
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+    p.description {
+      margin-top: 0;
+      margin-bottom: 1.5rem;
+      color: #555;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    li + li {
+      margin-top: 0.75rem;
+    }
+    a {
+      color: inherit;
+      text-decoration: none;
+      border-bottom: 1px solid currentColor;
+    }
+    a:hover,
+    a:focus {
+      border-bottom-width: 2px;
+    }
+    .meta {
+      display: block;
+      font-size: 0.875rem;
+      color: #666;
+      margin-top: 0.15rem;
+    }
+    .empty {
+      color: #666;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>RDF4J Javadoc Archives</h1>
+    <p class="description">
+      Available Javadoc directories are detected automatically. Choose a version below to open the extracted documentation.
+    </p>
+    <ul id="javadoc-list">
+      <li class="empty">Loading available directories…</li>
+    </ul>
+    <p class="description">
+      Looking for older archive files? See the <a href="old/">legacy downloads</a>.
+    </p>
+  </main>
+  <script>
+    (function () {
+      const list = document.getElementById('javadoc-list');
+
+      function renderEntries(entries) {
+        list.innerHTML = '';
+        if (!entries || entries.length === 0) {
+          list.innerHTML = '<li class="empty">No directories are currently available.</li>';
+          return;
+        }
+
+        const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+        entries
+          .slice()
+          .sort((a, b) => collator.compare(a.name, b.name))
+          .forEach((entry) => {
+            const item = document.createElement('li');
+            const link = document.createElement('a');
+            link.href = entry.href;
+            link.textContent = entry.name;
+            link.setAttribute('rel', 'noopener');
+            link.setAttribute('target', '_blank');
+            item.appendChild(link);
+
+            if (entry.lastModified) {
+              const meta = document.createElement('span');
+              meta.className = 'meta';
+              const date = new Date(entry.lastModified);
+              if (!Number.isNaN(date.valueOf())) {
+                meta.textContent = `Last modified ${date.toLocaleString()}`;
+              } else {
+                meta.textContent = `Last modified ${entry.lastModified}`;
+              }
+              item.appendChild(meta);
+            }
+
+            list.appendChild(item);
+          });
+      }
+
+      function handleError(error) {
+        console.error('Failed to load manifest.json', error);
+        list.innerHTML = '<li class="empty">Unable to load directory listing.</li>';
+      }
+
+      fetch('manifest.json', { cache: 'no-store' })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`Unexpected response: ${response.status} ${response.statusText}`);
+          }
+          return response.json();
+        })
+        .then(renderEntries)
+        .catch(handleError);
+    })();
+  </script>
+</body>
+</html>
