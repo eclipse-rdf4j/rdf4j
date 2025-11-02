@@ -72,3 +72,13 @@ for path in ./*.tar.xz ./*.tar.zst ./*.tar.gz ./*.tgz; do
 
 	touch "${dirname}"
 done
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/../../.." && pwd)"
+update_script="${repo_root}/scripts/update-javadoc-indexes.sh"
+
+if [ -x "${update_script}" ]; then
+	"${update_script}"
+else
+	echo "Skipping manifest update; helper script not found at ${update_script}." >&2
+fi
