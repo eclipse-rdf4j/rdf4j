@@ -66,7 +66,7 @@ public class DeleteInsertTest {
 		}
 	}
 
-	@Test
+	@Test(timeout = 10000)
 	public void test() throws Exception {
 		String load = IOUtil.readString(cl.getResource("test/insert-data.ru"));
 		con.prepareUpdate(QueryLanguage.SPARQL, load, NS).execute();
