@@ -13,7 +13,10 @@ package org.eclipse.rdf4j.sail.lmdb.join;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -54,7 +57,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 	private final boolean hasInvalidPattern;
 	private final boolean createdDynamicIds;
 	private final boolean allowCreateConstantIds;
-	private final java.util.Map<String, Long> constantBindings;
+	private final Map<String, Long> constantBindings;
 
 	public LmdbIdBGPQueryEvaluationStep(Join root, List<StatementPattern> patterns, QueryEvaluationContext context,
 			QueryEvaluationStep fallbackStep) {
@@ -81,7 +84,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		List<RawPattern> rawPatterns = new ArrayList<>(patterns.size());
 		boolean invalid = false;
 		boolean created = false;
-		java.util.Map<String, Long> constants = new java.util.HashMap<>();
+		Map<String, Long> constants = new HashMap<>();
 		for (StatementPattern pattern : patterns) {
 			RawPattern raw = RawPattern.create(pattern, valueStore, allowCreate);
 			rawPatterns.add(raw);
@@ -91,7 +94,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		}
 		this.hasInvalidPattern = invalid;
 		this.createdDynamicIds = created;
-		this.constantBindings = java.util.Collections.unmodifiableMap(constants);
+		this.constantBindings = Collections.unmodifiableMap(constants);
 
 		if (rawPatterns.isEmpty()) {
 			throw new IllegalArgumentException("Basic graph pattern must contain at least one statement pattern");
@@ -164,7 +167,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private LmdbEvaluationDataset resolveDataset() {
-		java.util.Optional<LmdbEvaluationDataset> fromContext = datasetContext.getLmdbDataset();
+		Optional<LmdbEvaluationDataset> fromContext = datasetContext.getLmdbDataset();
 		if (fromContext.isPresent()) {
 			return fromContext.get();
 		}
@@ -200,8 +203,8 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		if (value == null) {
 			return LmdbValue.UNKNOWN_ID;
 		}
-		if (value instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) {
-			org.eclipse.rdf4j.sail.lmdb.model.LmdbValue lmdbValue = (org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) value;
+		if (value instanceof LmdbValue) {
+			LmdbValue lmdbValue = (LmdbValue) value;
 			if (lmdbValue.getValueStoreRevision().getValueStore() == valueStore) {
 				long id = lmdbValue.getInternalID();
 				if (id != LmdbValue.UNKNOWN_ID) {
@@ -310,11 +313,11 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		private final LmdbIdJoinIterator.PatternInfo patternInfo;
 		private final boolean invalid;
 		private final boolean createdIds;
-		private final java.util.Map<String, Long> constantIds;
+		private final Map<String, Long> constantIds;
 
 		private RawPattern(long[] patternIds, String subjVar, String predVar, String objVar, String ctxVar,
 				LmdbIdJoinIterator.PatternInfo patternInfo, boolean invalid, boolean createdIds,
-				java.util.Map<String, Long> constantIds) {
+				Map<String, Long> constantIds) {
 			this.patternIds = patternIds;
 			this.subjVar = subjVar;
 			this.predVar = predVar;
@@ -326,7 +329,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			this.constantIds = constantIds;
 		}
 
-		java.util.Map<String, Long> getConstantIds() {
+		Map<String, Long> getConstantIds() {
 			return constantIds;
 		}
 
@@ -336,7 +339,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 
 			boolean invalid = false;
 			boolean createdAny = false;
-			java.util.Map<String, Long> constantIds = new java.util.HashMap<>();
+			Map<String, Long> constantIds = new HashMap<>();
 
 			Var subj = pattern.getSubjectVar();
 			String subjVar = null;
@@ -431,8 +434,8 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				return ConstantIdResult.invalid();
 			}
 			try {
-				if (value instanceof org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) {
-					org.eclipse.rdf4j.sail.lmdb.model.LmdbValue lmdbValue = (org.eclipse.rdf4j.sail.lmdb.model.LmdbValue) value;
+				if (value instanceof LmdbValue) {
+					LmdbValue lmdbValue = (LmdbValue) value;
 					if (lmdbValue.getValueStoreRevision().getValueStore() == valueStore) {
 						long id = lmdbValue.getInternalID();
 						if (id != LmdbValue.UNKNOWN_ID) {
