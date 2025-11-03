@@ -156,7 +156,7 @@ public class QueryBenchmarkTest {
 			try (var stream = connection.prepareTupleQuery(query1).evaluate().stream()) {
 				count = stream.count();
 			}
-			System.out.println(count);
+			assertEquals(5, count);
 		}
 	}
 
@@ -181,7 +181,7 @@ public class QueryBenchmarkTest {
 			try (var stream = connection.prepareTupleQuery(query_distinct_predicates).evaluate().stream()) {
 				count = stream.count();
 			}
-			System.out.println(count);
+			assertEquals(55, count);
 		}
 	}
 
@@ -229,7 +229,21 @@ public class QueryBenchmarkTest {
 			try (var stream = connection.prepareTupleQuery(long_chain).evaluate().stream()) {
 				count = stream.count();
 			}
-//			assertEquals(???, count);
+			assertEquals(0, count);
+		}
+	}
+
+	@Test
+	@Timeout(30)
+	public void long_chain_debugPreview() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			TupleQuery tupleQuery = connection.prepareTupleQuery(long_chain);
+			try (TupleQueryResult result = tupleQuery.evaluate()) {
+				for (int i = 0; result.hasNext() && i < 5; i++) {
+					BindingSet bs = result.next();
+					System.out.println("DEBUG long_chain #" + i + ": " + bs);
+				}
+			}
 		}
 	}
 
