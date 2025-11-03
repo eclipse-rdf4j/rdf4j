@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Read-only accessor for variable ID lookups against a record long[] produced by a RecordIterator.
@@ -28,4 +30,7 @@ public interface IdAccessor {
 	 * should return {@code -1} when the variable is not part of the record.
 	 */
 	int getRecordIndex(String varName);
+
+	boolean applyRecord(long[] record, MutableBindingSet target, ValueStore valueStore)
+			throws QueryEvaluationException;
 }

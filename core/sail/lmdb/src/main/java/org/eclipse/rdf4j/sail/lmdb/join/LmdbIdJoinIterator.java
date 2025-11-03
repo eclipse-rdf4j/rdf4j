@@ -131,7 +131,8 @@ public class LmdbIdJoinIterator extends LookAheadIteration<BindingSet> {
 			return record[indices[0]];
 		}
 
-		boolean applyRecord(long[] record, MutableBindingSet target, ValueStore valueStore)
+		@Override
+		public boolean applyRecord(long[] record, MutableBindingSet target, ValueStore valueStore)
 				throws QueryEvaluationException {
 			for (Map.Entry<String, int[]> entry : indexByVar.entrySet()) {
 				String name = entry.getKey();
@@ -220,8 +221,8 @@ public class LmdbIdJoinIterator extends LookAheadIteration<BindingSet> {
 
 	private final RecordIterator leftIterator;
 	private final RecordIteratorFactory rightFactory;
-	private final PatternInfo leftInfo;
-	private final PatternInfo rightInfo;
+	private final IdAccessor leftInfo;
+	private final IdAccessor rightInfo;
 	private final Set<String> sharedVariables;
 	private final QueryEvaluationContext context;
 	private final BindingSet initialBindings;
@@ -231,8 +232,8 @@ public class LmdbIdJoinIterator extends LookAheadIteration<BindingSet> {
 	private long[] currentLeftRecord;
 	private BindingSet currentLeftBinding;
 
-	LmdbIdJoinIterator(RecordIterator leftIterator, RecordIteratorFactory rightFactory, PatternInfo leftInfo,
-			PatternInfo rightInfo, Set<String> sharedVariables, QueryEvaluationContext context,
+	LmdbIdJoinIterator(RecordIterator leftIterator, RecordIteratorFactory rightFactory, IdAccessor leftInfo,
+			IdAccessor rightInfo, Set<String> sharedVariables, QueryEvaluationContext context,
 			BindingSet initialBindings, ValueStore valueStore) {
 		this.leftIterator = leftIterator;
 		this.rightFactory = rightFactory;
