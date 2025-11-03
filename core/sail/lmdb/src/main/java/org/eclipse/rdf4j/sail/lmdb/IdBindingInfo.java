@@ -101,6 +101,7 @@ public final class IdBindingInfo implements IdAccessor {
 		return record[i];
 	}
 
+	@Override
 	public boolean applyRecord(long[] record, MutableBindingSet target, ValueStore valueStore)
 			throws QueryEvaluationException {
 		// Fast path: pre-resolved getters/setters from the evaluation context

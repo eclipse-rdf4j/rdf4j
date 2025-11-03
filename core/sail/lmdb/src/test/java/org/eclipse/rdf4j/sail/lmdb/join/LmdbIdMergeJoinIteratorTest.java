@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.lmdb.join;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Arrays;
 
@@ -89,6 +90,23 @@ class LmdbIdMergeJoinIteratorTest {
 		} finally {
 			iterator.close();
 		}
+	}
+
+	@Test
+	void orderVerifierDetectsDisorder() {
+		RecordIterator unordered = new ArrayRecordIterator(
+				new long[] { 1L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, 0L },
+				new long[] { 0L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, 0L });
+
+		RecordIterator verifying = LmdbIdOrderVerifier.wrap("left", 0, unordered);
+
+		assertThatThrownBy(() -> {
+			while (verifying.next() != null) {
+				// consume iterator
+			}
+		})
+				.isInstanceOf(AssertionError.class)
+				.hasMessageContaining("left");
 	}
 
 	private static final class ArrayRecordIterator implements RecordIterator {

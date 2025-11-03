@@ -210,8 +210,8 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 					return dataset.getRecordIterator(snapshot, subjIdx, predIdx, objIdx, ctxIdx, patternIds);
 				};
 
-				return new LmdbIdJoinIterator(leftIterator, rightFactory, leftInfo, rightInfo, sharedVariables, context,
-						bindings, valueStore);
+				return new LmdbIdJoinIterator(leftIterator, rightFactory, leftInfo, bindingInfo, sharedVariables,
+						context, bindings, valueStore);
 			}
 
 			// Default: materialize right side via BindingSet and use LmdbIdJoinIterator
