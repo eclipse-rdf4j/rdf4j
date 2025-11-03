@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -24,7 +25,7 @@ import org.eclipse.rdf4j.sail.SailException;
  * A statement iterator that wraps a RecordIterator containing statement records and translates these records to
  * {@link Statement} objects.
  */
-class LmdbStatementIterator extends AbstractCloseableIteration<Statement> {
+class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implements IndexReportingIterator {
 
 	/*-----------*
 	 * Variables *
@@ -34,6 +35,8 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> {
 
 	private final ValueStore valueStore;
 	private Statement nextElement;
+
+	private final String indexName;
 
 	/*--------------*
 	 * Constructors *
@@ -45,6 +48,7 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> {
 	public LmdbStatementIterator(RecordIterator recordIt, ValueStore valueStore) {
 		this.recordIt = recordIt;
 		this.valueStore = valueStore;
+		this.indexName = recordIt.getIndexName();
 	}
 
 	/*---------*
@@ -134,5 +138,10 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> {
 	@Override
 	public void remove() {
 		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public String getIndexName() {
+		return indexName;
 	}
 }

@@ -45,6 +45,8 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final TripleIndex index;
 
+	private final String indexName;
+
 	private final long subj;
 	private final long pred;
 	private final long obj;
@@ -98,6 +100,7 @@ class LmdbRecordIterator implements RecordIterator {
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();
 		this.index = index;
+		this.indexName = computeIndexName(index, subj, pred, obj, context);
 		if (rangeSearch) {
 			minKeyBuf = pool.getKeyBuffer();
 			index.getMinKey(minKeyBuf, subj, pred, obj, context);
@@ -139,6 +142,69 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 	}
 
+	private static String computeIndexName(TripleIndex index, long subj, long pred, long obj, long context) {
+		String actual = new String(index.getFieldSeq());
+		int boundCount = countBound(subj, pred, obj, context);
+		if (boundCount <= 0) {
+			return actual;
+		}
+
+		int score = index.getPatternScore(subj, pred, obj, context);
+		if (score >= boundCount) {
+			return actual;
+		}
+
+		String recommendation = buildRecommendedIndex(subj, pred, obj, context);
+		if (recommendation == null || recommendation.equals(actual)) {
+			return actual;
+		}
+
+		return actual + " (scan; consider " + recommendation + ")";
+	}
+
+	private static int countBound(long subj, long pred, long obj, long context) {
+		int count = 0;
+		if (subj >= 0) {
+			count++;
+		}
+		if (pred >= 0) {
+			count++;
+		}
+		if (obj >= 0) {
+			count++;
+		}
+		if (context >= 0) {
+			count++;
+		}
+		return count;
+	}
+
+	private static String buildRecommendedIndex(long subj, long pred, long obj, long context) {
+		StringBuilder recommendation = new StringBuilder(4);
+		appendIfBound(recommendation, 's', subj >= 0);
+		appendIfBound(recommendation, 'p', pred >= 0);
+		appendIfBound(recommendation, 'o', obj >= 0);
+		appendIfBound(recommendation, 'c', context >= 0);
+
+		if (recommendation.length() == 0) {
+			return null;
+		}
+
+		for (char component : new char[] { 's', 'p', 'o', 'c' }) {
+			if (recommendation.indexOf(String.valueOf(component)) < 0) {
+				recommendation.append(component);
+			}
+		}
+
+		return recommendation.toString();
+	}
+
+	private static void appendIfBound(StringBuilder builder, char component, boolean bound) {
+		if (bound) {
+			builder.append(component);
+		}
+	}
+
 	@Override
 	public long[] next() {
 		long readStamp;
@@ -147,6 +213,7 @@ class LmdbRecordIterator implements RecordIterator {
 		} catch (InterruptedException e) {
 			throw new SailException(e);
 		}
+
 		try {
 			if (closed) {
 				log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
@@ -214,6 +281,11 @@ class LmdbRecordIterator implements RecordIterator {
 		} finally {
 			txnLockManager.unlockRead(readStamp);
 		}
+	}
+
+	@Override
+	public String getIndexName() {
+		return indexName;
 	}
 
 	private boolean matches() {
