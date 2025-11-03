@@ -1011,6 +1011,7 @@ abstract public class AbstractShaclTest {
 					validationReportActual = ((ShaclSailValidationException) sailException.getCause())
 							.validationReportAsModel();
 					printResults(sailException);
+					shaclSailConnection.rollback();
 				}
 			}
 
@@ -1064,6 +1065,7 @@ abstract public class AbstractShaclTest {
 					if (e.getCause() instanceof ShaclSailValidationException) {
 						report = ((ShaclSailValidationException) e.getCause()).getValidationReport();
 					}
+					shaclSailConnection.rollback();
 				}
 			}
 

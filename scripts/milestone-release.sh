@@ -214,11 +214,12 @@ set -e
 
 mvn package -Passembly -DskipTests -Djapicmp.skip
 
+JAVADOC_SKIP_INSTALL=true scripts/build-javadoc-archive.sh
+
 git checkout main
 RELEASE_NOTES_BRANCH="${MVN_VERSION_RELEASE}-release-notes"
 git checkout -b "${RELEASE_NOTES_BRANCH}"
 
-tar --no-xattrs --exclude ".*" -cvzf "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" -C target/site/apidocs .
 git add --all
 git commit -s -a -m "javadocs for ${MVN_VERSION_RELEASE}"
 git push --set-upstream origin "${RELEASE_NOTES_BRANCH}"

@@ -1623,7 +1623,8 @@ class ValueStore extends AbstractValueFactory {
 		if (value == null) {
 			return new LmdbIRI(revision, namespace, localName, id);
 		} else {
-			value.setIRIString(namespace + localName);
+			value.setNamespaceAndIri(namespace, localName);
+//			value.setIRIString(namespace + localName);
 			return value;
 		}
 	}

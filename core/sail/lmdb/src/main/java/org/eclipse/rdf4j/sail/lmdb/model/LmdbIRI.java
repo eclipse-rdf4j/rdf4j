@@ -11,13 +11,15 @@
 package org.eclipse.rdf4j.sail.lmdb.model;
 
 import java.io.ObjectStreamException;
+import java.util.Objects;
 
-import org.eclipse.rdf4j.model.impl.SimpleIRI;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class LmdbIRI extends SimpleIRI implements LmdbResource {
+public class LmdbIRI implements LmdbResource, IRI {
 
 	private static final long serialVersionUID = -5888138591826143179L;
 	private static final Logger log = LoggerFactory.getLogger(LmdbIRI.class);
@@ -31,13 +33,21 @@ public class LmdbIRI extends SimpleIRI implements LmdbResource {
 	private volatile long internalID;
 
 	private volatile boolean initialized = false;
+	/**
+	 * The IRI string.
+	 */
+	private String iriString;
+
+	/**
+	 * An index indicating the first character of the local name in the IRI string, -1 if not yet set.
+	 */
+	private int localNameIdx;
 
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
 	public LmdbIRI(ValueStoreRevision revision, long internalID) {
-		super();
 		setInternalID(internalID, revision);
 	}
 
@@ -46,17 +56,19 @@ public class LmdbIRI extends SimpleIRI implements LmdbResource {
 	}
 
 	public LmdbIRI(ValueStoreRevision revision, String uri, long internalID) {
-		super(uri);
+		setIRIString(uri);
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
 
-	public LmdbIRI(ValueStoreRevision revision, String namespace, String localname) {
-		this(revision, namespace + localname);
+	public LmdbIRI(ValueStoreRevision revision, String namespace, String localName) {
+		this(revision, namespace, localName, UNKNOWN_ID);
 	}
 
-	public LmdbIRI(ValueStoreRevision revision, String namespace, String localname, long internalID) {
-		this(revision, namespace + localname, internalID);
+	public LmdbIRI(ValueStoreRevision revision, String namespace, String localName, long internalID) {
+		this.revision = revision;
+		setNamespaceAndIri(namespace, localName);
+		setInternalID(internalID, revision);
 	}
 
 	/*---------*
@@ -79,31 +91,50 @@ public class LmdbIRI extends SimpleIRI implements LmdbResource {
 		return internalID;
 	}
 
-	@Override
-	public void setIRIString(String iriString) {
-		super.setIRIString(iriString);
+	private void setIRIString(String iriString) {
+		Objects.requireNonNull(iriString, "iriString must not be null");
+
+		if (iriString.indexOf(':') < 0) {
+			throw new IllegalArgumentException("Not a valid (absolute) IRI: " + iriString);
+		}
+
+		this.iriString = iriString;
+		this.localNameIdx = -1;
 	}
 
 	@Override
 	public String getNamespace() {
+
 		init();
-		return super.getNamespace();
+		if (localNameIdx < 0) {
+			localNameIdx = URIUtil.getLocalNameIndex(iriString);
+		}
+
+		return iriString.substring(0, localNameIdx);
 	}
 
 	@Override
 	public String getLocalName() {
+
 		init();
-		return super.getLocalName();
+		if (localNameIdx < 0) {
+			localNameIdx = URIUtil.getLocalNameIndex(iriString);
+		}
+
+		return iriString.substring(localNameIdx);
 	}
 
 	@Override
 	public String stringValue() {
+		if (iriString != null) {
+			return iriString;
+		}
 		init();
-		return super.stringValue();
+		return iriString;
 	}
 
 	public void init() {
-		if (!initialized) {
+		if (iriString == null && !initialized) {
 			synchronized (this) {
 				if (!initialized) {
 					boolean resolved = revision.resolveValue(internalID, this);
@@ -122,20 +153,75 @@ public class LmdbIRI extends SimpleIRI implements LmdbResource {
 			return true;
 		}
 
-		if (o instanceof LmdbIRI && internalID != UNKNOWN_ID) {
+		if (o == null) {
+			return false;
+		}
+
+		if (o.getClass() == LmdbIRI.class) {
+			if (internalID == UNKNOWN_ID) {
+				boolean equals = stringValue().equals(((IRI) o).stringValue());
+				if (equals && revision.equals(((LmdbIRI) o).revision)) {
+					internalID = ((LmdbIRI) o).internalID;
+				}
+				return equals;
+			}
+
 			LmdbIRI otherLmdbURI = (LmdbIRI) o;
 
-			if (otherLmdbURI.internalID != UNKNOWN_ID && revision.equals(otherLmdbURI.revision)) {
+			if (revision.equals(otherLmdbURI.revision)) {
+				if (otherLmdbURI.internalID == UNKNOWN_ID) {
+					boolean equals = stringValue().equals(((IRI) o).stringValue());
+					if (equals) {
+						otherLmdbURI.internalID = this.internalID;
+					}
+					return equals;
+				}
+
 				// LmdbURI's from the same revision of the same lmdb store, with
 				// both ID's set
-				return internalID == otherLmdbURI.internalID;
+				boolean equal = internalID == otherLmdbURI.internalID;
+				if (equal) {
+					if (iriString == null) {
+						iriString = otherLmdbURI.iriString;
+						localNameIdx = otherLmdbURI.localNameIdx;
+					} else if (otherLmdbURI.iriString == null) {
+						otherLmdbURI.iriString = iriString;
+						otherLmdbURI.localNameIdx = localNameIdx;
+					}
+				}
+				return equal;
 			}
 		}
-		return super.equals(o);
+
+		if (!(o instanceof IRI)) {
+			return false;
+		}
+
+		return stringValue().equals(((IRI) o).stringValue());
+	}
+
+	@Override
+	public int hashCode() {
+		if (this.iriString != null) {
+			return this.iriString.hashCode();
+		}
+
+		init();
+		return iriString.hashCode();
 	}
 
 	protected Object writeReplace() throws ObjectStreamException {
 		init();
 		return this;
+	}
+
+	@Override
+	public String toString() {
+		return stringValue();
+	}
+
+	public void setNamespaceAndIri(String namespace, String localName) {
+		localNameIdx = namespace.length();
+		this.iriString = namespace + localName;
 	}
 }
