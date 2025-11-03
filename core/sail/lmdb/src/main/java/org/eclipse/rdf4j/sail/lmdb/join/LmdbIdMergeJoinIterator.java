@@ -33,7 +33,6 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 	private final String mergeVariable;
 	private final IdBindingInfo bindingInfo;
 	private final Set<String> sharedVariables;
-	private final int mergeIndex;
 	private final int bindingSize;
 	private static final int COLUMN_COUNT = TripleStore.CONTEXT_IDX + 1;
 
@@ -48,6 +47,8 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 	private boolean closed;
 	private final int[] leftColumnBindingIndex;
 	private final int[] rightColumnBindingIndex;
+	private final int leftMergeColumn;
+	private final int rightMergeColumn;
 	private static final boolean DEBUG = Boolean.getBoolean("rdf4j.lmdb.mergeJoinDebug");
 	private final AtomicInteger debugCounter = DEBUG ? new AtomicInteger() : null;
 
@@ -65,6 +66,8 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 					+ " must be present in both join operands for LMDB merge join");
 		}
 
+		this.leftMergeColumn = leftInfo.getRecordIndex(mergeVariable);
+		this.rightMergeColumn = rightInfo.getRecordIndex(mergeVariable);
 		this.leftIterator = new PeekMarkRecordIterator(leftIterator);
 		this.rightIterator = new PeekMarkRecordIterator(rightIterator);
 		this.mergeVariable = mergeVariable;
@@ -75,7 +78,6 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 			throw new IllegalArgumentException(
 					"Merge variable " + mergeVariable + " is not tracked in the binding info for LMDB merge join");
 		}
-		this.mergeIndex = idx;
 		this.bindingSize = bindingInfo.size();
 
 		Set<String> shared = new HashSet<>(leftInfo.getVariableNames());
@@ -131,7 +133,7 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 				return null;
 			}
 
-			int compare = compare(currentLeftKey, key(rightPeek));
+			int compare = compare(currentLeftKey, key(rightPeek, rightMergeColumn));
 			if (compare == 0) {
 				long[] result = equal();
 				if (result != null) {
@@ -173,7 +175,7 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 						+ Arrays.toString(candidate));
 			}
 			currentLeftRecord = candidate;
-			currentLeftKey = key(candidate);
+			currentLeftKey = key(candidate, leftMergeColumn);
 			hasCurrentLeftKey = true;
 			return true;
 		}
@@ -223,7 +225,7 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 		if (leftPeekRecord == null) {
 			leftPeekRecord = leftIterator.peek();
 			if (leftPeekRecord != null) {
-				leftPeekKey = key(leftPeekRecord);
+				leftPeekKey = key(leftPeekRecord, leftMergeColumn);
 				hasLeftPeekKey = true;
 			} else {
 				hasLeftPeekKey = false;
@@ -257,7 +259,8 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 		return combined;
 	}
 
-	private static int[] computeColumnBindingMap(LmdbIdJoinIterator.PatternInfo patternInfo, IdBindingInfo bindingInfo) {
+	private static int[] computeColumnBindingMap(LmdbIdJoinIterator.PatternInfo patternInfo,
+			IdBindingInfo bindingInfo) {
 		int[] map = new int[COLUMN_COUNT];
 		Arrays.fill(map, -1);
 		for (String var : patternInfo.getVariableNames()) {
@@ -304,8 +307,8 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 		return Long.compare(left, right);
 	}
 
-	private long key(long[] record) {
-		long id = valueAt(record, mergeIndex);
+	private long key(long[] record, int columnIndex) {
+		long id = record[columnIndex];
 		if (id == LmdbValue.UNKNOWN_ID) {
 			throw new QueryEvaluationException(
 					"Merge variable " + mergeVariable + " is unbound in the current record; cannot perform merge join");
@@ -331,10 +334,4 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 		}
 	}
 
-	private static long valueAt(long[] record, int index) {
-		if (index < 0 || index >= record.length) {
-			return LmdbValue.UNKNOWN_ID;
-		}
-		return record[index];
-	}
 }

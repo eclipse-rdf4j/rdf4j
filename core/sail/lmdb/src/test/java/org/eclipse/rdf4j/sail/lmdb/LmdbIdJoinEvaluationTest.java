@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -42,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -240,6 +243,100 @@ public class LmdbIdJoinEvaluationTest {
 
 			assertThat(recordingDataset.wasLegacyOrderedApiUsed()).isFalse();
 			assertThat(recordingDataset.wasArrayOrderedApiUsed()).isTrue();
+		} finally {
+			dataset.close();
+			branch.close();
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void mergeJoinRespectsQueryBindings(@TempDir Path tempDir) throws Exception {
+		LmdbStore store = new LmdbStore(tempDir.toFile());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI painter = vf.createIRI(NS, "Painter");
+		IRI painting = vf.createIRI(NS, "Painting");
+		IRI paints = vf.createIRI(NS, "paints");
+		IRI picasso = vf.createIRI(NS, "picasso");
+		IRI guernica = vf.createIRI(NS, "guernica");
+
+		try (RepositoryConnection conn = repository.getConnection()) {
+			conn.add(painter, RDF.TYPE, RDFS.CLASS);
+			conn.add(painting, RDF.TYPE, RDFS.CLASS);
+			conn.add(picasso, RDF.TYPE, painter);
+			conn.add(guernica, RDF.TYPE, painting);
+			conn.add(picasso, paints, guernica);
+		}
+
+		String query = "SELECT ?X WHERE {\n" +
+				"  ?X a ?Y .\n" +
+				"  ?Y a <http://www.w3.org/2000/01/rdf-schema#Class> .\n" +
+				"}";
+
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		TupleExpr tupleExpr = parsed.getTupleExpr();
+		TupleExpr joinExpr = unwrap(tupleExpr);
+		assertThat(joinExpr).isInstanceOf(Join.class);
+		Join join = (Join) joinExpr;
+
+		StatementPattern left = (StatementPattern) join.getLeftArg();
+		StatementPattern right = (StatementPattern) join.getRightArg();
+		Var joinVar = left.getObjectVar();
+		join.setOrder(joinVar);
+		left.setOrder(joinVar);
+		right.setOrder(right.getSubjectVar());
+		join.setMergeJoin(true);
+
+		SailSource branch = store.getBackingStore().getExplicitSailSource();
+		SailDataset dataset = branch.dataset(IsolationLevels.SNAPSHOT_READ);
+
+		try {
+			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
+			EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
+			EvaluationStrategy strategy = factory.createEvaluationStrategy(null, tripleSource,
+					store.getBackingStore().getEvaluationStatistics());
+			LmdbEvaluationDataset lmdbDataset = (LmdbEvaluationDataset) dataset;
+			RecordingDataset recordingDataset = new RecordingDataset(lmdbDataset);
+			QueryEvaluationContext context = new LmdbQueryEvaluationContext(null,
+					tripleSource.getValueFactory(), tripleSource.getComparator(), recordingDataset,
+					lmdbDataset.getValueStore());
+
+			QueryEvaluationStep step = strategy.precompile(join, context);
+
+			MapBindingSet bindings = new MapBindingSet(2);
+
+			try (CloseableIteration<BindingSet> iter = step.evaluate(bindings)) {
+				List<? extends BindingSet> results = Iterations.asList(iter);
+				assertThat(results).hasSize(2);
+				assertThat(results).extracting(bs -> bs.getValue("X")).containsExactlyInAnyOrder(picasso, guernica);
+			}
+
+			bindings.addBinding("Y", painter);
+			try (CloseableIteration<BindingSet> iter = step.evaluate(bindings)) {
+				List<? extends BindingSet> results = Iterations.asList(iter);
+				assertThat(results).hasSize(1);
+				assertThat(results.get(0).getValue("X")).isEqualTo(picasso);
+			}
+
+			bindings.addBinding("Z", painting);
+			try (CloseableIteration<BindingSet> iter = step.evaluate(bindings)) {
+				List<? extends BindingSet> results = Iterations.asList(iter);
+				assertThat(results).hasSize(1);
+				assertThat(results.get(0).getValue("X")).isEqualTo(picasso);
+			}
+
+			bindings.removeBinding("Y");
+			try (CloseableIteration<BindingSet> iter = step.evaluate(bindings)) {
+				List<? extends BindingSet> results = Iterations.asList(iter);
+				assertThat(results).hasSize(2);
+				assertThat(results).extracting(bs -> bs.getValue("X")).containsExactlyInAnyOrder(picasso, guernica);
+			}
+
+			assertThat(recordingDataset.wasArrayOrderedApiUsed()).isTrue();
+			assertThat(join.getAlgorithmName()).isEqualTo("LmdbIdMergeJoinIterator");
 		} finally {
 			dataset.close();
 			branch.close();
