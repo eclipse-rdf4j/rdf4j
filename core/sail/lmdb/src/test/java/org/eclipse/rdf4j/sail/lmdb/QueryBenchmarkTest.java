@@ -223,6 +223,18 @@ public class QueryBenchmarkTest {
 
 	@Test
 	@Timeout(30)
+	public void long_chain() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			long count;
+			try (var stream = connection.prepareTupleQuery(long_chain).evaluate().stream()) {
+				count = stream.count();
+			}
+//			assertEquals(???, count);
+		}
+	}
+
+	@Test
+	@Timeout(30)
 	public void subSelectQueryProducesExpectedCount() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
