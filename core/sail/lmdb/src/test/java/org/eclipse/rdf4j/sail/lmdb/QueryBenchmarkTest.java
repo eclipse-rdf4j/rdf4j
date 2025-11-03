@@ -235,20 +235,6 @@ public class QueryBenchmarkTest {
 
 	@Test
 	@Timeout(30)
-	public void long_chain_debugPreview() {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			TupleQuery tupleQuery = connection.prepareTupleQuery(long_chain);
-			try (TupleQueryResult result = tupleQuery.evaluate()) {
-				for (int i = 0; result.hasNext() && i < 5; i++) {
-					BindingSet bs = result.next();
-					System.out.println("DEBUG long_chain #" + i + ": " + bs);
-				}
-			}
-		}
-	}
-
-	@Test
-	@Timeout(30)
 	public void subSelectQueryProducesExpectedCount() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
