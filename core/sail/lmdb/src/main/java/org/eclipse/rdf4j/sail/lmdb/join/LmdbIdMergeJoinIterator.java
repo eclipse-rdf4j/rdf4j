@@ -10,28 +10,34 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb.join;
 
-import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.MutableBindingSet;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.sail.lmdb.IdBindingInfo;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
-import org.eclipse.rdf4j.sail.lmdb.ValueStore;
+import org.eclipse.rdf4j.sail.lmdb.TripleStore;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
-public class LmdbIdMergeJoinIterator extends LookAheadIteration<BindingSet> {
+/**
+ * Merge join iterator that operates entirely on LMDB ID records. Materialization to
+ * {@link org.eclipse.rdf4j.query.BindingSet} happens in a separate {@link LmdbIdFinalBindingSetIteration}.
+ */
+public class LmdbIdMergeJoinIterator implements RecordIterator {
 
 	private final PeekMarkRecordIterator leftIterator;
 	private final PeekMarkRecordIterator rightIterator;
-	private final LmdbIdJoinIterator.PatternInfo leftInfo;
-	private final LmdbIdJoinIterator.PatternInfo rightInfo;
 	private final String mergeVariable;
-	private final QueryEvaluationContext context;
-	private final BindingSet initialBindings;
-	private final ValueStore valueStore;
+	private final IdBindingInfo bindingInfo;
+	private final Set<String> sharedVariables;
+	private final int mergeIndex;
+	private final int bindingSize;
+	private static final int COLUMN_COUNT = TripleStore.CONTEXT_IDX + 1;
 
 	private long[] currentLeftRecord;
-	private MutableBindingSet currentLeftBinding;
 	private long currentLeftKey;
 	private boolean hasCurrentLeftKey;
 
@@ -39,30 +45,71 @@ public class LmdbIdMergeJoinIterator extends LookAheadIteration<BindingSet> {
 	private long leftPeekKey;
 	private boolean hasLeftPeekKey;
 	private int currentLeftValueAndPeekEquals = -1;
+	private boolean closed;
+	private final int[] leftColumnBindingIndex;
+	private final int[] rightColumnBindingIndex;
+	private static final boolean DEBUG = Boolean.getBoolean("rdf4j.lmdb.mergeJoinDebug");
+	private final AtomicInteger debugCounter = DEBUG ? new AtomicInteger() : null;
 
 	public LmdbIdMergeJoinIterator(RecordIterator leftIterator, RecordIterator rightIterator,
 			LmdbIdJoinIterator.PatternInfo leftInfo, LmdbIdJoinIterator.PatternInfo rightInfo, String mergeVariable,
-			QueryEvaluationContext context, BindingSet initialBindings, ValueStore valueStore) {
-		this.leftIterator = new PeekMarkRecordIterator(leftIterator);
-		this.rightIterator = new PeekMarkRecordIterator(rightIterator);
-		this.leftInfo = leftInfo;
-		this.rightInfo = rightInfo;
-		this.mergeVariable = mergeVariable;
-		this.context = context;
-		this.initialBindings = initialBindings;
-		this.valueStore = valueStore;
-
+			IdBindingInfo bindingInfo) {
 		if (mergeVariable == null || mergeVariable.isEmpty()) {
 			throw new IllegalArgumentException("Merge variable must be provided for LMDB merge join");
+		}
+		if (bindingInfo == null) {
+			throw new IllegalArgumentException("Binding info must be provided for LMDB merge join");
 		}
 		if (leftInfo.getRecordIndex(mergeVariable) < 0 || rightInfo.getRecordIndex(mergeVariable) < 0) {
 			throw new IllegalArgumentException("Merge variable " + mergeVariable
 					+ " must be present in both join operands for LMDB merge join");
 		}
+
+		this.leftIterator = new PeekMarkRecordIterator(leftIterator);
+		this.rightIterator = new PeekMarkRecordIterator(rightIterator);
+		this.mergeVariable = mergeVariable;
+		this.bindingInfo = bindingInfo;
+
+		int idx = bindingInfo.getIndex(mergeVariable);
+		if (idx < 0) {
+			throw new IllegalArgumentException(
+					"Merge variable " + mergeVariable + " is not tracked in the binding info for LMDB merge join");
+		}
+		this.mergeIndex = idx;
+		this.bindingSize = bindingInfo.size();
+
+		Set<String> shared = new HashSet<>(leftInfo.getVariableNames());
+		shared.retainAll(rightInfo.getVariableNames());
+		this.sharedVariables = Collections.unmodifiableSet(shared);
+		this.leftColumnBindingIndex = computeColumnBindingMap(leftInfo, bindingInfo);
+		this.rightColumnBindingIndex = computeColumnBindingMap(rightInfo, bindingInfo);
+		if (DEBUG) {
+			System.out.println("DEBUG bindingSize=" + bindingSize + " mergeVar=" + mergeVariable + " shared="
+					+ shared + " bindingVars=" + bindingInfo.getVariableNames());
+		}
 	}
 
 	@Override
-	protected BindingSet getNextElement() throws QueryEvaluationException {
+	public long[] next() {
+		if (closed) {
+			return null;
+		}
+		try {
+			long[] nextRecord = computeNextElement();
+			if (nextRecord == null) {
+				close();
+			}
+			return nextRecord;
+		} catch (RuntimeException e) {
+			close();
+			throw e;
+		}
+	}
+
+	private long[] computeNextElement() throws QueryEvaluationException {
+		if (closed) {
+			return null;
+		}
 		if (!ensureCurrentLeft()) {
 			return null;
 		}
@@ -84,9 +131,9 @@ public class LmdbIdMergeJoinIterator extends LookAheadIteration<BindingSet> {
 				return null;
 			}
 
-			int compare = compare(currentLeftKey, key(rightInfo, rightPeek));
+			int compare = compare(currentLeftKey, key(rightPeek));
 			if (compare == 0) {
-				BindingSet result = equal();
+				long[] result = equal();
 				if (result != null) {
 					return result;
 				}
@@ -104,35 +151,39 @@ public class LmdbIdMergeJoinIterator extends LookAheadIteration<BindingSet> {
 		}
 	}
 
-	private boolean ensureCurrentLeft() throws QueryEvaluationException {
+	private boolean ensureCurrentLeft() {
 		if (currentLeftRecord != null) {
 			return true;
 		}
 		return advanceLeft();
 	}
 
-	private boolean advanceLeft() throws QueryEvaluationException {
+	private boolean advanceLeft() {
 		leftPeekRecord = null;
 		hasLeftPeekKey = false;
 		currentLeftValueAndPeekEquals = -1;
 
 		while (leftIterator.hasNext()) {
 			long[] candidate = leftIterator.next();
-			// Defer left materialization; keep only the ID record.
+			if (candidate == null) {
+				continue;
+			}
+			if (DEBUG && debugCounter.getAndIncrement() < 5) {
+				System.out.println("DEBUG advanceLeft len=" + candidate.length + " record="
+						+ Arrays.toString(candidate));
+			}
 			currentLeftRecord = candidate;
-			currentLeftBinding = null;
-			currentLeftKey = key(leftInfo, candidate);
+			currentLeftKey = key(candidate);
 			hasCurrentLeftKey = true;
 			return true;
 		}
 
 		currentLeftRecord = null;
-		currentLeftBinding = null;
 		hasCurrentLeftKey = false;
 		return false;
 	}
 
-	private boolean lessThan() throws QueryEvaluationException {
+	private boolean lessThan() {
 		long previous = hasCurrentLeftKey ? currentLeftKey : Long.MIN_VALUE;
 		if (!advanceLeft()) {
 			return false;
@@ -147,10 +198,10 @@ public class LmdbIdMergeJoinIterator extends LookAheadIteration<BindingSet> {
 		return true;
 	}
 
-	private BindingSet equal() throws QueryEvaluationException {
+	private long[] equal() {
 		while (rightIterator.hasNext()) {
 			if (rightIterator.isResettable()) {
-				BindingSet result = joinWithCurrentLeft(rightIterator.next());
+				long[] result = joinWithCurrentLeft(rightIterator.next());
 				if (result != null) {
 					return result;
 				}
@@ -159,7 +210,7 @@ public class LmdbIdMergeJoinIterator extends LookAheadIteration<BindingSet> {
 				if (currentLeftValueAndPeekEquals == 0 && !rightIterator.isMarked()) {
 					rightIterator.mark();
 				}
-				BindingSet result = joinWithCurrentLeft(rightIterator.next());
+				long[] result = joinWithCurrentLeft(rightIterator.next());
 				if (result != null) {
 					return result;
 				}
@@ -168,11 +219,11 @@ public class LmdbIdMergeJoinIterator extends LookAheadIteration<BindingSet> {
 		return null;
 	}
 
-	private void doLeftPeek() throws QueryEvaluationException {
+	private void doLeftPeek() {
 		if (leftPeekRecord == null) {
 			leftPeekRecord = leftIterator.peek();
 			if (leftPeekRecord != null) {
-				leftPeekKey = key(leftInfo, leftPeekRecord);
+				leftPeekKey = key(leftPeekRecord);
 				hasLeftPeekKey = true;
 			} else {
 				hasLeftPeekKey = false;
@@ -186,23 +237,75 @@ public class LmdbIdMergeJoinIterator extends LookAheadIteration<BindingSet> {
 		}
 	}
 
-	private BindingSet joinWithCurrentLeft(long[] rightRecord) throws QueryEvaluationException {
-		MutableBindingSet result = context.createBindingSet(initialBindings);
-		if (!leftInfo.applyRecord(currentLeftRecord, result, valueStore)) {
+	private long[] joinWithCurrentLeft(long[] rightRecord) {
+		if (rightRecord == null) {
 			return null;
 		}
-		if (!rightInfo.applyRecord(rightRecord, result, valueStore)) {
+
+		long[] combined = new long[bindingSize];
+		Arrays.fill(combined, LmdbValue.UNKNOWN_ID);
+
+		if (!mergeRecordInto(combined, currentLeftRecord, leftColumnBindingIndex)) {
 			return null;
 		}
-		return result;
+		if (!mergeRecordInto(combined, rightRecord, rightColumnBindingIndex)) {
+			return null;
+		}
+		if (DEBUG && debugCounter.get() < 50) {
+			System.out.println("DEBUG combined=" + Arrays.toString(combined));
+		}
+		return combined;
+	}
+
+	private static int[] computeColumnBindingMap(LmdbIdJoinIterator.PatternInfo patternInfo, IdBindingInfo bindingInfo) {
+		int[] map = new int[COLUMN_COUNT];
+		Arrays.fill(map, -1);
+		for (String var : patternInfo.getVariableNames()) {
+			int bindingIdx = bindingInfo.getIndex(var);
+			if (bindingIdx < 0) {
+				continue;
+			}
+			int mask = patternInfo.getPositionsMask(var);
+			for (int pos = 0; pos < COLUMN_COUNT; pos++) {
+				if (((mask >> pos) & 1) != 0) {
+					map[pos] = bindingIdx;
+				}
+			}
+		}
+		return map;
+	}
+
+	private boolean mergeRecordInto(long[] target, long[] source, int[] colMap) {
+		if (source == null) {
+			return true;
+		}
+		for (int col = 0; col < colMap.length; col++) {
+			int bindingIdx = colMap[col];
+			if (bindingIdx < 0 || bindingIdx >= target.length) {
+				continue;
+			}
+			long value = col < source.length ? source[col] : LmdbValue.UNKNOWN_ID;
+			if (col == TripleStore.CONTEXT_IDX && value == 0L) {
+				value = LmdbValue.UNKNOWN_ID;
+			}
+			long existing = target[bindingIdx];
+			if (existing == LmdbValue.UNKNOWN_ID) {
+				if (value != LmdbValue.UNKNOWN_ID) {
+					target[bindingIdx] = value;
+				}
+			} else if (value != LmdbValue.UNKNOWN_ID && existing != value) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private int compare(long left, long right) {
 		return Long.compare(left, right);
 	}
 
-	private long key(LmdbIdJoinIterator.PatternInfo info, long[] record) throws QueryEvaluationException {
-		long id = info.getId(record, mergeVariable);
+	private long key(long[] record) {
+		long id = valueAt(record, mergeIndex);
 		if (id == LmdbValue.UNKNOWN_ID) {
 			throw new QueryEvaluationException(
 					"Merge variable " + mergeVariable + " is unbound in the current record; cannot perform merge join");
@@ -211,11 +314,27 @@ public class LmdbIdMergeJoinIterator extends LookAheadIteration<BindingSet> {
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	public void close() {
+		if (closed) {
+			return;
+		}
+		closed = true;
+		currentLeftRecord = null;
+		hasCurrentLeftKey = false;
+		leftPeekRecord = null;
+		hasLeftPeekKey = false;
+		currentLeftValueAndPeekEquals = -1;
 		try {
 			leftIterator.close();
 		} finally {
 			rightIterator.close();
 		}
+	}
+
+	private static long valueAt(long[] record, int index) {
+		if (index < 0 || index >= record.length) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		return record[index];
 	}
 }

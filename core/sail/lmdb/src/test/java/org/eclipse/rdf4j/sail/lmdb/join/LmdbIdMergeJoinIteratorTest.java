@@ -52,7 +52,40 @@ class LmdbIdMergeJoinIteratorTest {
 		try {
 			Object record = iterator.next();
 			assertThat(record).isInstanceOf(long[].class);
-			assertThat((long[]) record).containsExactly(7L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, 0L);
+			long[] ids = (long[]) record;
+			assertThat(ids.length).isEqualTo(bindingInfo.size());
+			int idx = bindingInfo.getIndex("x");
+			assertThat(ids[idx]).isEqualTo(7L);
+		} finally {
+			iterator.close();
+		}
+	}
+
+	@Test
+	void nextReturnsNullWhenNoMatches() throws Exception {
+		StatementPattern leftPattern = new StatementPattern(
+				new Var("x"),
+				new Var("pl", SimpleValueFactory.getInstance().createIRI("urn:p:left")),
+				new Var("ol", SimpleValueFactory.getInstance().createIRI("urn:o:left")));
+		StatementPattern rightPattern = new StatementPattern(
+				new Var("x"),
+				new Var("pr", SimpleValueFactory.getInstance().createIRI("urn:p:right")),
+				new Var("or", SimpleValueFactory.getInstance().createIRI("urn:o:right")));
+
+		LmdbIdJoinIterator.PatternInfo leftInfo = LmdbIdJoinIterator.PatternInfo.create(leftPattern);
+		LmdbIdJoinIterator.PatternInfo rightInfo = LmdbIdJoinIterator.PatternInfo.create(rightPattern);
+		IdBindingInfo bindingInfo = IdBindingInfo.combine(IdBindingInfo.fromFirstPattern(leftInfo), rightInfo, null);
+
+		long[] leftRecord = new long[] { 7L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, 0L };
+		long[] rightRecord = new long[] { 8L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, 0L };
+
+		RecordIterator leftIterator = new ArrayRecordIterator(leftRecord);
+		RecordIterator rightIterator = new ArrayRecordIterator(rightRecord);
+
+		LmdbIdMergeJoinIterator iterator = new LmdbIdMergeJoinIterator(leftIterator, rightIterator, leftInfo, rightInfo,
+				"x", bindingInfo);
+		try {
+			assertThat(iterator.next()).isNull();
 		} finally {
 			iterator.close();
 		}
