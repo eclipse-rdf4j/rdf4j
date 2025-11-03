@@ -147,7 +147,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			}
 
 			ValueStore valueStore = dataset.getValueStore();
-			long[] initialBinding = createInitialBinding(finalInfo, bindings, valueStore);
+			long[] initialBinding = finalInfo.createInitialBinding(bindings, valueStore);
 			if (initialBinding == null) {
 				return new EmptyIteration<>();
 			}
@@ -173,51 +173,6 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		}
 		return LmdbEvaluationStrategy.getCurrentDataset()
 				.orElseThrow(() -> new IllegalStateException("No active LMDB dataset available for join evaluation"));
-	}
-
-	private static long[] createInitialBinding(IdBindingInfo info, BindingSet bindings, ValueStore valueStore)
-			throws QueryEvaluationException {
-		long[] binding = new long[info.size()];
-		Arrays.fill(binding, LmdbValue.UNKNOWN_ID);
-		if (bindings == null || bindings.isEmpty()) {
-			return binding;
-		}
-		for (String name : info.getVariableNames()) {
-			Value value = bindings.getValue(name);
-			if (value == null) {
-				continue;
-			}
-			long id = resolveId(valueStore, value);
-			if (id == LmdbValue.UNKNOWN_ID) {
-				return null;
-			}
-			int index = info.getIndex(name);
-			if (index >= 0) {
-				binding[index] = id;
-			}
-		}
-		return binding;
-	}
-
-	private static long resolveId(ValueStore valueStore, Value value) throws QueryEvaluationException {
-		if (value == null) {
-			return LmdbValue.UNKNOWN_ID;
-		}
-		if (value instanceof LmdbValue) {
-			LmdbValue lmdbValue = (LmdbValue) value;
-			if (lmdbValue.getValueStoreRevision().getValueStore() == valueStore) {
-				long id = lmdbValue.getInternalID();
-				if (id != LmdbValue.UNKNOWN_ID) {
-					return id;
-				}
-			}
-		}
-		try {
-			long id = valueStore.getId(value);
-			return id;
-		} catch (IOException e) {
-			throw new QueryEvaluationException(e);
-		}
 	}
 
 	public static boolean flattenBGP(TupleExpr expr, List<StatementPattern> out) {

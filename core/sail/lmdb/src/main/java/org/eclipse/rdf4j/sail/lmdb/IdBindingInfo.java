@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -99,6 +100,82 @@ public final class IdBindingInfo implements IdAccessor {
 			return LmdbValue.UNKNOWN_ID;
 		}
 		return record[i];
+	}
+
+	public long[] createInitialBinding(BindingSet bindings, ValueStore valueStore) throws QueryEvaluationException {
+		long[] binding = new long[size()];
+		Arrays.fill(binding, LmdbValue.UNKNOWN_ID);
+		if (bindings == null || bindings.isEmpty()) {
+			return binding;
+		}
+
+		if (prepared != null) {
+			for (Entry entry : prepared) {
+				Value value = entry.getter.apply(bindings);
+				if (value == null) {
+					continue;
+				}
+				long id = resolveId(valueStore, value);
+				if (id == LmdbValue.UNKNOWN_ID) {
+					return null;
+				}
+				binding[entry.recordIndex] = id;
+			}
+			return binding;
+		}
+
+		if (bindings instanceof ArrayBindingSet) {
+			ArrayBindingSet abs = (ArrayBindingSet) bindings;
+			for (Map.Entry<String, Integer> entry : indexByVar.entrySet()) {
+				Function<ArrayBindingSet, Value> getter = abs.getDirectGetValue(entry.getKey());
+				if (getter == null) {
+					continue;
+				}
+				Value value = getter.apply(abs);
+				if (value == null) {
+					continue;
+				}
+				long id = resolveId(valueStore, value);
+				if (id == LmdbValue.UNKNOWN_ID) {
+					return null;
+				}
+				binding[entry.getValue()] = id;
+			}
+			return binding;
+		}
+
+		for (Map.Entry<String, Integer> entry : indexByVar.entrySet()) {
+			Value value = bindings.getValue(entry.getKey());
+			if (value == null) {
+				continue;
+			}
+			long id = resolveId(valueStore, value);
+			if (id == LmdbValue.UNKNOWN_ID) {
+				return null;
+			}
+			binding[entry.getValue()] = id;
+		}
+		return binding;
+	}
+
+	private static long resolveId(ValueStore valueStore, Value value) throws QueryEvaluationException {
+		if (value == null) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		if (value instanceof LmdbValue) {
+			LmdbValue lmdbValue = (LmdbValue) value;
+			if (lmdbValue.getValueStoreRevision().getValueStore() == valueStore) {
+				long id = lmdbValue.getInternalID();
+				if (id != LmdbValue.UNKNOWN_ID) {
+					return id;
+				}
+			}
+		}
+		try {
+			return valueStore.getId(value);
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
 	}
 
 	@Override
