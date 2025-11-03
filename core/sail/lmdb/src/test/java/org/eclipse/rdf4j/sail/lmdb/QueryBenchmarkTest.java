@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import java.io.File;
 import java.io.IOException;
@@ -28,6 +27,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -226,7 +226,9 @@ public class QueryBenchmarkTest {
 	public void subSelectQueryProducesExpectedCount() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
-			try (var stream = connection.prepareTupleQuery(sub_select).evaluate().stream()) {
+			TupleQuery tupleQuery = connection.prepareTupleQuery(sub_select);
+			tupleQuery.setMaxExecutionTime(30);
+			try (var stream = tupleQuery.evaluate().stream()) {
 				count = stream.count();
 			}
 			assertEquals(16035L, count);
