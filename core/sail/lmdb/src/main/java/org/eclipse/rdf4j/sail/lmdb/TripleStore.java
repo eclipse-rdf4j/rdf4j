@@ -2029,6 +2029,12 @@ public class TripleStore implements Closeable {
 		int getPatternScore(long subj, long pred, long obj, long context);
 	}
 
+	interface KeyBuilder {
+		void writeMin(ByteBuffer buffer);
+
+		void writeMax(ByteBuffer buffer);
+	}
+
 	class SubjectPredicateIndex implements DupIndex {
 
 		private final char[] fieldSeq = new char[] { 's', 'p', 'o', 'c' };

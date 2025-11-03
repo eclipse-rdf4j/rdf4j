@@ -193,6 +193,21 @@ class TripleIndex implements TripleStore.DupIndex {
 		return patternScoreFunction.score(subj, pred, obj, context);
 	}
 
+	TripleStore.KeyBuilder keyBuilder(long subj, long pred, long obj, long context) {
+		return new TripleStore.KeyBuilder() {
+
+			@Override
+			public void writeMin(ByteBuffer buffer) {
+				getMinKey(buffer, subj, pred, obj, context);
+			}
+
+			@Override
+			public void writeMax(ByteBuffer buffer) {
+				getMaxKey(buffer, subj, pred, obj, context);
+			}
+		};
+	}
+
 	void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
 		subj = subj <= 0 ? 0 : subj;
 		pred = pred <= 0 ? 0 : pred;
