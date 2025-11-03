@@ -21,12 +21,15 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 class MultipleSubselectRegressionTest {
@@ -45,6 +48,7 @@ class MultipleSubselectRegressionTest {
 	}
 
 	@Test
+	@Timeout(10 * 1000)
 	void lmdbMatchesMemoryForMultipleSubSelect(@TempDir Path tempDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
 		SailRepository lmdbRepository = new SailRepository(new LmdbStore(tempDir.toFile(), config));
@@ -73,11 +77,16 @@ class MultipleSubselectRegressionTest {
 	}
 
 	private static long evaluateMultipleSubselectCount(SailRepositoryConnection connection) {
-		return connection
-				.prepareTupleQuery(MULTIPLE_SUB_SELECT_QUERY)
-				.evaluate()
-				.stream()
-				.count();
+		TupleQuery tupleQuery = connection.prepareTupleQuery(MULTIPLE_SUB_SELECT_QUERY);
+
+		tupleQuery.setMaxExecutionTime(10);
+
+		try (TupleQueryResult evaluate = tupleQuery.evaluate()) {
+			return evaluate
+					.stream()
+					.count();
+		}
+
 	}
 
 	private static List<String> evaluateDatasetLanguages(SailRepositoryConnection connection) {
