@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.lmdb.join;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -151,8 +152,10 @@ public class LmdbIdMergeJoinQueryEvaluationStep implements QueryEvaluationStep {
 			}
 
 			join.setAlgorithm(LmdbIdMergeJoinIterator.class.getSimpleName());
-			return new LmdbIdMergeJoinIterator(leftIterator, rightIterator, leftInfo, rightInfo, mergeVariable, context,
-					bindings, valueStore);
+			RecordIterator mergeIterator = new LmdbIdMergeJoinIterator(leftIterator, rightIterator, leftInfo, rightInfo,
+					mergeVariable, bindingInfo);
+			return new LmdbIdFinalBindingSetIteration(mergeIterator, bindingInfo, context, bindings, valueStore,
+					Collections.emptyMap());
 		} catch (QueryEvaluationException e) {
 			throw e;
 		}
