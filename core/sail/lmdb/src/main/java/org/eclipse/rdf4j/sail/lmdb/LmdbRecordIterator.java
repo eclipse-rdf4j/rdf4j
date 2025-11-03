@@ -27,6 +27,7 @@ import java.nio.ByteBuffer;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.lmdb.TripleStore.KeyBuilder;
 import org.eclipse.rdf4j.sail.lmdb.TripleStore.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
@@ -95,6 +96,11 @@ class LmdbRecordIterator implements RecordIterator {
 
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
+		this(index, null, rangeSearch, subj, pred, obj, context, explicit, txnRef);
+	}
+
+	LmdbRecordIterator(TripleIndex index, KeyBuilder keyBuilder, boolean rangeSearch, long subj,
+			long pred, long obj, long context, boolean explicit, Txn txnRef) throws IOException {
 		this.subj = subj;
 		this.pred = pred;
 		this.obj = obj;
@@ -107,14 +113,25 @@ class LmdbRecordIterator implements RecordIterator {
 		this.index = index;
 		if (rangeSearch) {
 			minKeyBuf = pool.getKeyBuffer();
-			index.getMinKey(minKeyBuf, subj, pred, obj, context);
+			if (keyBuilder != null) {
+				minKeyBuf.clear();
+				keyBuilder.writeMin(minKeyBuf);
+			} else {
+				index.getMinKey(minKeyBuf, subj, pred, obj, context);
+			}
 			minKeyBuf.flip();
 
 			this.maxKey = pool.getVal();
 			this.maxKeyBuf = pool.getKeyBuffer();
-			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+			if (keyBuilder != null) {
+				maxKeyBuf.clear();
+				keyBuilder.writeMax(maxKeyBuf);
+			} else {
+				index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+			}
 			maxKeyBuf.flip();
 			this.maxKey.mv_data(maxKeyBuf);
+
 		} else {
 			// Even when we can't bound with a prefix (no rangeSearch), we can still
 			// position the cursor closer to the first potentially matching key when
@@ -128,6 +145,7 @@ class LmdbRecordIterator implements RecordIterator {
 				minKeyBuf = null;
 			}
 			this.maxKey = null;
+			this.maxKeyBuf = null;
 		}
 
 		this.matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;

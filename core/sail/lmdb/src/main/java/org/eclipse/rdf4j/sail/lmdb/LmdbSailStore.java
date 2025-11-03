@@ -1242,8 +1242,13 @@ class LmdbSailStore implements SailStore {
 				}
 
 				boolean rangeSearch = chosen.getPatternScore(subjID, predID, objID, contextID) > 0;
-				RecordIterator records = new LmdbRecordIterator(chosen, rangeSearch, subjID, predID, objID, contextID,
-						explicit, txn);
+				TripleStore.KeyBuilder keyBuilder = rangeSearch
+						? chosen.keyBuilder(subjID, predID, objID, contextID)
+						: null;
+				RecordIterator records = keyBuilder != null
+						? new LmdbRecordIterator(chosen, keyBuilder, rangeSearch, subjID, predID, objID, contextID,
+								explicit, txn)
+						: new LmdbRecordIterator(chosen, rangeSearch, subjID, predID, objID, contextID, explicit, txn);
 
 				boolean sBound = subj != null;
 				boolean pBound = pred != null;

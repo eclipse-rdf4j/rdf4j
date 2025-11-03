@@ -1571,6 +1571,12 @@ public class TripleStore implements Closeable {
 		int getPatternScore(long subj, long pred, long obj, long context);
 	}
 
+	interface KeyBuilder {
+		void writeMin(ByteBuffer buffer);
+
+		void writeMax(ByteBuffer buffer);
+	}
+
 	@FunctionalInterface
 	private interface PatternScoreFunction {
 		int score(long subj, long pred, long obj, long context);
@@ -1739,6 +1745,21 @@ public class TripleStore implements Closeable {
 		 */
 		public int getPatternScore(long subj, long pred, long obj, long context) {
 			return patternScoreFunction.score(subj, pred, obj, context);
+		}
+
+		KeyBuilder keyBuilder(long subj, long pred, long obj, long context) {
+			return new KeyBuilder() {
+
+				@Override
+				public void writeMin(ByteBuffer buffer) {
+					getMinKey(buffer, subj, pred, obj, context);
+				}
+
+				@Override
+				public void writeMax(ByteBuffer buffer) {
+					getMaxKey(buffer, subj, pred, obj, context);
+				}
+			};
 		}
 
 		void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
