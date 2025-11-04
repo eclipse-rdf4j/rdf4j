@@ -24,6 +24,13 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.LongAdder;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
@@ -41,6 +48,8 @@ import org.slf4j.LoggerFactory;
  */
 class LmdbRecordIterator implements RecordIterator {
 	private static final Logger log = LoggerFactory.getLogger(LmdbRecordIterator.class);
+	private static final List<Character> COMPONENT_ORDER = List.of('s', 'p', 'o', 'c');
+	private static final ConcurrentMap<String, LongAdder> RECOMMENDED_INDEX_TRACKER = new ConcurrentHashMap<>();
 	private final Pool pool;
 
 	private final TripleIndex index;
@@ -142,6 +151,14 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 	}
 
+	static ConcurrentMap<String, LongAdder> getRecommendedIndexTracker() {
+		return RECOMMENDED_INDEX_TRACKER;
+	}
+
+	static void resetIndexRecommendationTracker() {
+		RECOMMENDED_INDEX_TRACKER.clear();
+	}
+
 	private static String computeIndexName(TripleIndex index, long subj, long pred, long obj, long context) {
 		String actual = new String(index.getFieldSeq());
 		int boundCount = countBound(subj, pred, obj, context);
@@ -154,12 +171,12 @@ class LmdbRecordIterator implements RecordIterator {
 			return actual;
 		}
 
-		String recommendation = buildRecommendedIndex(subj, pred, obj, context);
-		if (recommendation == null || recommendation.equals(actual)) {
+		CandidateIndex recommendation = selectRecommendedIndex(actual, subj, pred, obj, context);
+		if (recommendation == null) {
 			return actual;
 		}
 
-		return actual + " (scan; consider " + recommendation + ")";
+		return actual + " (scan; consider " + recommendation.name + ")";
 	}
 
 	private static int countBound(long subj, long pred, long obj, long context) {
@@ -179,29 +196,264 @@ class LmdbRecordIterator implements RecordIterator {
 		return count;
 	}
 
-	private static String buildRecommendedIndex(long subj, long pred, long obj, long context) {
-		StringBuilder recommendation = new StringBuilder(4);
-		appendIfBound(recommendation, 's', subj >= 0);
-		appendIfBound(recommendation, 'p', pred >= 0);
-		appendIfBound(recommendation, 'o', obj >= 0);
-		appendIfBound(recommendation, 'c', context >= 0);
-
-		if (recommendation.length() == 0) {
+	private static CandidateIndex selectRecommendedIndex(String actual, long subj, long pred, long obj,
+			long context) {
+		List<CandidateIndex> candidates = buildCandidateIndexes(subj, pred, obj, context);
+		if (candidates.isEmpty()) {
 			return null;
 		}
 
-		for (char component : new char[] { 's', 'p', 'o', 'c' }) {
-			if (recommendation.indexOf(String.valueOf(component)) < 0) {
-				recommendation.append(component);
+		CandidateIndex best = null;
+		for (CandidateIndex candidate : candidates) {
+			if (candidate.name.equals(actual)) {
+				continue;
+			}
+
+			if (best == null || candidate.count > best.count
+					|| (candidate.count == best.count && candidate.patternScore > best.patternScore)
+					|| (candidate.count == best.count && candidate.patternScore == best.patternScore
+							&& candidate.orderDeviation < best.orderDeviation)
+					|| (candidate.count == best.count && candidate.patternScore == best.patternScore
+							&& candidate.orderDeviation == best.orderDeviation
+							&& candidate.name.compareTo(best.name) < 0)) {
+				best = candidate;
 			}
 		}
 
-		return recommendation.toString();
+		if (best == null) {
+			best = candidates.get(0);
+		}
+
+		for (CandidateIndex candidate : candidates) {
+			candidate.counter.increment();
+		}
+
+		return best;
 	}
 
-	private static void appendIfBound(StringBuilder builder, char component, boolean bound) {
-		if (bound) {
-			builder.append(component);
+	private static List<CandidateIndex> buildCandidateIndexes(long subj, long pred, long obj, long context) {
+		List<Character> boundComponents = gatherBoundComponents(subj, pred, obj, context);
+		if (boundComponents.isEmpty()) {
+			return Collections.emptyList();
+		}
+
+		List<Character> preferredOrder = determinePreferredOrder(subj, pred, obj, context, boundComponents);
+
+		List<String> boundPermutations = permuteBoundComponents(boundComponents);
+		List<String> unboundPermutations = permuteUnboundComponents(boundComponents);
+
+		if (unboundPermutations.isEmpty()) {
+			unboundPermutations = Collections.singletonList("");
+		}
+
+		List<CandidateIndex> result = new ArrayList<>(boundPermutations.size() * unboundPermutations.size());
+
+		for (String bound : boundPermutations) {
+			for (String suffix : unboundPermutations) {
+				String candidate = bound + suffix;
+				addCandidate(result, candidate, preferredOrder, subj, pred, obj, context);
+			}
+		}
+
+		return result;
+	}
+
+	private static void addCandidate(Collection<CandidateIndex> candidates, String candidate,
+			List<Character> preferredOrder, long subj, long pred, long obj, long context) {
+		LongAdder counter = RECOMMENDED_INDEX_TRACKER.computeIfAbsent(candidate, key -> new LongAdder());
+		long count = counter.sum();
+		int score = computePatternScore(candidate, subj, pred, obj, context);
+		int deviation = computeDeviation(candidate, preferredOrder);
+		candidates.add(new CandidateIndex(candidate, count, score, deviation, counter));
+	}
+
+	private static List<Character> gatherBoundComponents(long subj, long pred, long obj, long context) {
+		List<Character> bound = new ArrayList<>(4);
+		if (subj >= 0) {
+			bound.add('s');
+		}
+		if (pred >= 0) {
+			bound.add('p');
+		}
+		if (obj >= 0) {
+			bound.add('o');
+		}
+		if (context >= 0) {
+			bound.add('c');
+		}
+		return bound;
+	}
+
+	private static List<Character> determinePreferredOrder(long subj, long pred, long obj, long context,
+			List<Character> boundComponents) {
+		List<Character> order = new ArrayList<>(COMPONENT_ORDER.size());
+
+		if (subj >= 0) {
+			order.add('s');
+		}
+
+		boolean subjectBound = subj >= 0;
+		boolean contextBound = context >= 0;
+		boolean predicateBound = pred >= 0;
+		boolean objectBound = obj >= 0;
+
+		if (contextBound && !subjectBound) {
+			if (objectBound) {
+				order.add('o');
+			}
+			if (predicateBound) {
+				order.add('p');
+			}
+			if (contextBound) {
+				order.add('c');
+			}
+		} else {
+			if (predicateBound) {
+				order.add('p');
+			}
+			if (objectBound) {
+				order.add('o');
+			}
+			if (contextBound) {
+				order.add('c');
+			}
+		}
+
+		for (Character component : boundComponents) {
+			if (!order.contains(component)) {
+				order.add(component);
+			}
+		}
+
+		for (Character component : COMPONENT_ORDER) {
+			if (!order.contains(component)) {
+				order.add(component);
+			}
+		}
+
+		return order;
+	}
+
+	private static List<String> permuteBoundComponents(List<Character> boundComponents) {
+		char[] items = toCharArray(boundComponents);
+		boolean[] used = new boolean[items.length];
+		StringBuilder current = new StringBuilder(items.length);
+		List<String> result = new ArrayList<>();
+		permuteCharacters(items, used, current, result);
+		return result;
+	}
+
+	private static List<String> permuteUnboundComponents(List<Character> boundComponents) {
+		List<Character> unbound = new ArrayList<>(COMPONENT_ORDER);
+		for (Character component : boundComponents) {
+			unbound.remove(component);
+		}
+
+		if (unbound.isEmpty()) {
+			return Collections.emptyList();
+		}
+
+		char[] items = toCharArray(unbound);
+		boolean[] used = new boolean[items.length];
+		StringBuilder current = new StringBuilder(items.length);
+		List<String> permutations = new ArrayList<>();
+		permuteCharacters(items, used, current, permutations);
+		return permutations;
+	}
+
+	private static void permuteCharacters(char[] items, boolean[] used, StringBuilder current,
+			List<String> result) {
+		if (current.length() == items.length) {
+			result.add(current.toString());
+			return;
+		}
+
+		for (int i = 0; i < items.length; i++) {
+			if (!used[i]) {
+				used[i] = true;
+				current.append(items[i]);
+				permuteCharacters(items, used, current, result);
+				current.deleteCharAt(current.length() - 1);
+				used[i] = false;
+			}
+		}
+	}
+
+	private static int computeDeviation(String sequence, List<Character> preferredOrder) {
+		int deviation = 0;
+		for (int i = 0; i < sequence.length(); i++) {
+			char component = sequence.charAt(i);
+			int preferred = preferredOrder.indexOf(component);
+			if (preferred < 0) {
+				preferred = preferredOrder.size();
+			}
+			deviation += Math.abs(preferred - i);
+		}
+		return deviation;
+	}
+
+	private static int computePatternScore(String indexName, long subj, long pred, long obj, long context) {
+		int score = 0;
+		for (int i = 0; i < indexName.length(); i++) {
+			char component = indexName.charAt(i);
+			switch (component) {
+			case 's':
+				if (subj >= 0) {
+					score++;
+				} else {
+					return score;
+				}
+				break;
+			case 'p':
+				if (pred >= 0) {
+					score++;
+				} else {
+					return score;
+				}
+				break;
+			case 'o':
+				if (obj >= 0) {
+					score++;
+				} else {
+					return score;
+				}
+				break;
+			case 'c':
+				if (context >= 0) {
+					score++;
+				} else {
+					return score;
+				}
+				break;
+			default:
+				throw new IllegalArgumentException("invalid component '" + component + "' in index: "
+						+ indexName);
+			}
+		}
+		return score;
+	}
+
+	private static char[] toCharArray(List<Character> components) {
+		char[] items = new char[components.size()];
+		for (int i = 0; i < components.size(); i++) {
+			items[i] = components.get(i);
+		}
+		return items;
+	}
+
+	private static final class CandidateIndex {
+		final String name;
+		final long count;
+		final int patternScore;
+		final int orderDeviation;
+		final LongAdder counter;
+
+		CandidateIndex(String name, long count, int patternScore, int orderDeviation, LongAdder counter) {
+			this.name = name;
+			this.count = count;
+			this.patternScore = patternScore;
+			this.orderDeviation = orderDeviation;
+			this.counter = counter;
 		}
 	}
 
