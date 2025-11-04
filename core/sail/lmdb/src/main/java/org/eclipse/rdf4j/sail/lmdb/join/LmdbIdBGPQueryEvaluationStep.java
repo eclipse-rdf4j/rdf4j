@@ -15,12 +15,15 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -49,6 +52,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 	private static final String ID_JOIN_ALGORITHM = LmdbIdJoinIterator.class.getSimpleName();
 
 	private final List<PatternPlan> plans;
+	private final List<RawPattern> rawPatterns;
 	private final IdBindingInfo finalInfo;
 	private final QueryEvaluationContext context;
 	private final LmdbDatasetContext datasetContext;
@@ -58,6 +62,8 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 	private final boolean createdDynamicIds;
 	private final boolean allowCreateConstantIds;
 	private final Map<String, Long> constantBindings;
+	private final List<MergeSpec> mergeSpecs;
+	private final Set<Join> mergeJoinNodes;
 
 	public LmdbIdBGPQueryEvaluationStep(Join root, List<StatementPattern> patterns, QueryEvaluationContext context,
 			QueryEvaluationStep fallbackStep) {
@@ -81,11 +87,16 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				.orElseGet(LmdbEvaluationStrategy::hasActiveConnectionChanges);
 		this.allowCreateConstantIds = allowCreate;
 
-		List<RawPattern> rawPatterns = new ArrayList<>(patterns.size());
+		List<MergeSpec> mergeSpecs = new ArrayList<>();
+		List<StatementPattern> flattened = new ArrayList<>(patterns.size());
+		boolean flattenedOk = flattenBGP(root, flattened, mergeSpecs) && !flattened.isEmpty();
+		List<StatementPattern> effectivePatterns = flattenedOk ? flattened : patterns;
+
+		List<RawPattern> rawPatterns = new ArrayList<>(effectivePatterns.size());
 		boolean invalid = false;
 		boolean created = false;
 		Map<String, Long> constants = new HashMap<>();
-		for (StatementPattern pattern : patterns) {
+		for (StatementPattern pattern : effectivePatterns) {
 			RawPattern raw = RawPattern.create(pattern, valueStore, allowCreate);
 			rawPatterns.add(raw);
 			invalid |= raw.invalid;
@@ -111,10 +122,18 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		this.finalInfo = info;
 
 		List<PatternPlan> planList = new ArrayList<>(rawPatterns.size());
-		for (RawPattern raw : rawPatterns) {
-			planList.add(raw.toPlan(finalInfo));
+		for (int i = 0; i < rawPatterns.size(); i++) {
+			planList.add(rawPatterns.get(i).toPlan(finalInfo));
 		}
 		this.plans = planList;
+		this.rawPatterns = rawPatterns;
+		this.mergeSpecs = mergeSpecs;
+		this.mergeJoinNodes = new HashSet<>();
+		for (MergeSpec spec : mergeSpecs) {
+			if (spec.join != null) {
+				mergeJoinNodes.add(spec.join);
+			}
+		}
 	}
 
 	public boolean shouldUseFallbackImmediately() {
@@ -122,7 +141,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	public void applyAlgorithmTag() {
-		markJoinTreeWithIdAlgorithm(root);
+		markJoinTreeWithIdAlgorithm(root, mergeJoinNodes);
 	}
 
 	@Override
@@ -152,12 +171,14 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				return new EmptyIteration<>();
 			}
 
-			PatternPlan firstPlan = plans.get(0);
-			RecordIterator iter = dataset.getRecordIterator(initialBinding, firstPlan.subjIndex, firstPlan.predIndex,
-					firstPlan.objIndex, firstPlan.ctxIndex, firstPlan.patternIds);
+			List<Stage> stages = buildStages();
+			if (stages.isEmpty()) {
+				return new EmptyIteration<>();
+			}
 
-			for (int i = 1; i < plans.size(); i++) {
-				iter = new BindingJoinRecordIterator(iter, dataset, plans.get(i));
+			RecordIterator iter = stages.get(0).createInitialIterator(dataset, initialBinding, valueStore);
+			for (int i = 1; i < stages.size(); i++) {
+				iter = stages.get(i).joinWith(iter, dataset, valueStore);
 			}
 
 			return new LmdbIdFinalBindingSetIteration(iter, finalInfo, context, bindings, valueStore, constantBindings);
@@ -176,27 +197,223 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	public static boolean flattenBGP(TupleExpr expr, List<StatementPattern> out) {
+		return flattenBGP(expr, out, null);
+	}
+
+	public static boolean flattenBGP(TupleExpr expr, List<StatementPattern> out, List<MergeSpec> merges) {
 		if (expr instanceof StatementPattern) {
 			out.add((StatementPattern) expr);
 			return true;
 		}
 		if (expr instanceof Join) {
 			Join j = (Join) expr;
-			// merge joins only; we avoid mergeJoin or other special joins
-			if (j.isMergeJoin()) {
+			int leftStart = out.size();
+			boolean left = flattenBGP(j.getLeftArg(), out, merges);
+			int leftEnd = out.size();
+			boolean right = flattenBGP(j.getRightArg(), out, merges);
+			int rightEnd = out.size();
+			if (!left || !right) {
 				return false;
 			}
-			return flattenBGP(j.getLeftArg(), out) && flattenBGP(j.getRightArg(), out);
+			if (j.isMergeJoin() && merges != null) {
+				if (rightEnd - leftStart != 2 || leftEnd - leftStart != 1) {
+					return false;
+				}
+				Var orderVar = j.getOrder();
+				if (orderVar == null) {
+					return false;
+				}
+				merges.add(new MergeSpec(leftStart, leftEnd, rightEnd, orderVar.getName(), j));
+			}
+			return true;
 		}
 		return false;
 	}
 
-	private static void markJoinTreeWithIdAlgorithm(TupleExpr expr) {
+	private static void markJoinTreeWithIdAlgorithm(TupleExpr expr, Set<Join> mergeJoins) {
 		if (expr instanceof Join) {
 			Join join = (Join) expr;
-			join.setAlgorithm(ID_JOIN_ALGORITHM);
-			markJoinTreeWithIdAlgorithm(join.getLeftArg());
-			markJoinTreeWithIdAlgorithm(join.getRightArg());
+			if (mergeJoins != null && mergeJoins.contains(join)) {
+				join.setAlgorithm(LmdbIdMergeJoinIterator.class.getSimpleName());
+			} else {
+				join.setAlgorithm(ID_JOIN_ALGORITHM);
+			}
+			markJoinTreeWithIdAlgorithm(join.getLeftArg(), mergeJoins);
+			markJoinTreeWithIdAlgorithm(join.getRightArg(), mergeJoins);
+		}
+	}
+
+	private List<Stage> buildStages() {
+		List<Stage> stages = new ArrayList<>();
+		boolean[] consumed = new boolean[plans.size()];
+		for (MergeSpec spec : mergeSpecs) {
+			int leftIndex = spec.leftIndex;
+			int rightIndex = spec.rightIndex();
+			if (leftIndex < 0 || rightIndex >= plans.size()) {
+				continue;
+			}
+			RawPattern leftRaw = rawPatterns.get(leftIndex);
+			RawPattern rightRaw = rawPatterns.get(rightIndex);
+			StatementOrder leftOrder = determineOrder(leftRaw, spec.mergeVariable);
+			StatementOrder rightOrder = determineOrder(rightRaw, spec.mergeVariable);
+			PatternPlan leftPlan = leftRaw.toPlan(finalInfo, leftOrder);
+			PatternPlan rightPlan = rightRaw.toPlan(finalInfo, rightOrder);
+			stages.add(new MergeStage(leftPlan, rightPlan, leftRaw.patternInfo, rightRaw.patternInfo,
+					spec.mergeVariable));
+			consumed[leftIndex] = true;
+			consumed[rightIndex] = true;
+		}
+		for (int i = 0; i < plans.size(); i++) {
+			if (!consumed[i]) {
+				stages.add(new PatternStage(plans.get(i)));
+			}
+		}
+		return stages;
+	}
+
+	private StatementOrder determineOrder(RawPattern pattern, String mergeVariable) {
+		if (pattern.pattern.getStatementOrder() != null) {
+			return pattern.pattern.getStatementOrder();
+		}
+		if (mergeVariable == null) {
+			return null;
+		}
+		int mask = pattern.patternInfo.getPositionsMask(mergeVariable);
+		if ((mask & (1 << TripleStore.SUBJ_IDX)) != 0) {
+			return StatementOrder.S;
+		}
+		if ((mask & (1 << TripleStore.PRED_IDX)) != 0) {
+			return StatementOrder.P;
+		}
+		if ((mask & (1 << TripleStore.OBJ_IDX)) != 0) {
+			return StatementOrder.O;
+		}
+		if ((mask & (1 << TripleStore.CONTEXT_IDX)) != 0) {
+			return StatementOrder.C;
+		}
+		return null;
+	}
+
+	private interface Stage {
+		RecordIterator createInitialIterator(LmdbEvaluationDataset dataset, long[] initialBinding,
+				ValueStore valueStore) throws QueryEvaluationException;
+
+		RecordIterator joinWith(RecordIterator left, LmdbEvaluationDataset dataset, ValueStore valueStore)
+				throws QueryEvaluationException;
+	}
+
+	private static final class PatternStage implements Stage {
+		private final PatternPlan plan;
+
+		private PatternStage(PatternPlan plan) {
+			this.plan = plan;
+		}
+
+		@Override
+		public RecordIterator createInitialIterator(LmdbEvaluationDataset dataset, long[] initialBinding,
+				ValueStore valueStore) throws QueryEvaluationException {
+			RecordIterator iter = dataset.getRecordIterator(initialBinding, plan.subjIndex, plan.predIndex,
+					plan.objIndex, plan.ctxIndex, plan.patternIds);
+			return iter == null ? LmdbIdJoinIterator.emptyRecordIterator() : iter;
+		}
+
+		@Override
+		public RecordIterator joinWith(RecordIterator left, LmdbEvaluationDataset dataset, ValueStore valueStore)
+				throws QueryEvaluationException {
+			return new BindingJoinRecordIterator(left, dataset, plan);
+		}
+	}
+
+	private final class MergeStage implements Stage {
+		private final PatternPlan leftPlan;
+		private final PatternPlan rightPlan;
+		private final LmdbIdJoinIterator.PatternInfo leftInfo;
+		private final LmdbIdJoinIterator.PatternInfo rightInfo;
+		private final String mergeVariable;
+
+		private MergeStage(PatternPlan leftPlan, PatternPlan rightPlan, LmdbIdJoinIterator.PatternInfo leftInfo,
+				LmdbIdJoinIterator.PatternInfo rightInfo, String mergeVariable) {
+			this.leftPlan = leftPlan;
+			this.rightPlan = rightPlan;
+			this.leftInfo = leftInfo;
+			this.rightInfo = rightInfo;
+			this.mergeVariable = mergeVariable;
+		}
+
+		@Override
+		public RecordIterator createInitialIterator(LmdbEvaluationDataset dataset, long[] initialBinding,
+				ValueStore valueStore) throws QueryEvaluationException {
+			RecordIterator merge = createMergeIterator(dataset, initialBinding, valueStore);
+			return merge == null ? LmdbIdJoinIterator.emptyRecordIterator() : merge;
+		}
+
+		@Override
+		public RecordIterator joinWith(RecordIterator left, LmdbEvaluationDataset dataset, ValueStore valueStore)
+				throws QueryEvaluationException {
+			return new RecordIterator() {
+				private final RecordIterator leftIter = left;
+				private RecordIterator currentMerge;
+
+				@Override
+				public long[] next() throws QueryEvaluationException {
+					while (true) {
+						if (currentMerge != null) {
+							long[] merged = currentMerge.next();
+							if (merged != null) {
+								return merged;
+							}
+							currentMerge.close();
+							currentMerge = null;
+						}
+						long[] leftBinding = leftIter.next();
+						if (leftBinding == null) {
+							return null;
+						}
+						currentMerge = createMergeIterator(dataset, leftBinding.clone(), valueStore);
+					}
+				}
+
+				@Override
+				public void close() {
+					if (currentMerge != null) {
+						currentMerge.close();
+					}
+					leftIter.close();
+				}
+			};
+		}
+
+		private RecordIterator createMergeIterator(LmdbEvaluationDataset dataset, long[] binding, ValueStore valueStore)
+				throws QueryEvaluationException {
+			if (leftPlan.order == null || rightPlan.order == null) {
+				return createSequentialIterator(dataset, binding, valueStore);
+			}
+			RecordIterator leftIterator = dataset.getOrderedRecordIterator(binding, leftPlan.subjIndex,
+					leftPlan.predIndex, leftPlan.objIndex, leftPlan.ctxIndex, leftPlan.patternIds, leftPlan.order);
+			if (leftIterator == null) {
+				return createSequentialIterator(dataset, binding, valueStore);
+			}
+
+			RecordIterator rightIterator = dataset.getOrderedRecordIterator(binding, rightPlan.subjIndex,
+					rightPlan.predIndex, rightPlan.objIndex, rightPlan.ctxIndex, rightPlan.patternIds, rightPlan.order);
+			if (rightIterator == null) {
+				leftIterator.close();
+				return createSequentialIterator(dataset, binding, valueStore);
+			}
+
+			return new LmdbIdMergeJoinIterator(leftIterator, rightIterator, leftInfo, rightInfo, mergeVariable,
+					finalInfo);
+		}
+
+		private RecordIterator createSequentialIterator(LmdbEvaluationDataset dataset, long[] binding,
+				ValueStore valueStore) throws QueryEvaluationException {
+			long[] base = binding.clone();
+			RecordIterator leftIterator = dataset.getRecordIterator(base, leftPlan.subjIndex, leftPlan.predIndex,
+					leftPlan.objIndex, leftPlan.ctxIndex, leftPlan.patternIds);
+			if (leftIterator == null) {
+				return LmdbIdJoinIterator.emptyRecordIterator();
+			}
+			return new BindingJoinRecordIterator(leftIterator, dataset, rightPlan);
 		}
 	}
 
@@ -249,17 +466,21 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		private final int predIndex;
 		private final int objIndex;
 		private final int ctxIndex;
+		private final StatementOrder order;
 
-		private PatternPlan(long[] patternIds, int subjIndex, int predIndex, int objIndex, int ctxIndex) {
+		private PatternPlan(long[] patternIds, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+				StatementOrder order) {
 			this.patternIds = patternIds;
 			this.subjIndex = subjIndex;
 			this.predIndex = predIndex;
 			this.objIndex = objIndex;
 			this.ctxIndex = ctxIndex;
+			this.order = order;
 		}
 	}
 
 	private static final class RawPattern {
+		private final StatementPattern pattern;
 		private final long[] patternIds;
 		private final String subjVar;
 		private final String predVar;
@@ -270,9 +491,11 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		private final boolean createdIds;
 		private final Map<String, Long> constantIds;
 
-		private RawPattern(long[] patternIds, String subjVar, String predVar, String objVar, String ctxVar,
+		private RawPattern(StatementPattern pattern, long[] patternIds, String subjVar, String predVar, String objVar,
+				String ctxVar,
 				LmdbIdJoinIterator.PatternInfo patternInfo, boolean invalid, boolean createdIds,
 				Map<String, Long> constantIds) {
+			this.pattern = pattern;
 			this.patternIds = patternIds;
 			this.subjVar = subjVar;
 			this.predVar = predVar;
@@ -365,12 +588,17 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			}
 
 			LmdbIdJoinIterator.PatternInfo info = LmdbIdJoinIterator.PatternInfo.create(pattern);
-			return new RawPattern(ids, subjVar, predVar, objVar, ctxVar, info, invalid, createdAny, constantIds);
+			return new RawPattern(pattern, ids, subjVar, predVar, objVar, ctxVar, info, invalid, createdAny,
+					constantIds);
 		}
 
 		PatternPlan toPlan(IdBindingInfo finalInfo) {
+			return toPlan(finalInfo, null);
+		}
+
+		PatternPlan toPlan(IdBindingInfo finalInfo, StatementOrder order) {
 			return new PatternPlan(patternIds.clone(), indexFor(subjVar, finalInfo),
-					indexFor(predVar, finalInfo), indexFor(objVar, finalInfo), indexFor(ctxVar, finalInfo));
+					indexFor(predVar, finalInfo), indexFor(objVar, finalInfo), indexFor(ctxVar, finalInfo), order);
 		}
 
 		private static int indexFor(String varName, IdBindingInfo info) {
@@ -444,6 +672,26 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			boolean isInvalid() {
 				return !valid;
 			}
+		}
+	}
+
+	private static final class MergeSpec {
+		private final int leftIndex;
+		private final int leftEnd;
+		private final int rightEnd;
+		private final String mergeVariable;
+		private final Join join;
+
+		private MergeSpec(int leftIndex, int leftEnd, int rightEnd, String mergeVariable, Join join) {
+			this.leftIndex = leftIndex;
+			this.leftEnd = leftEnd;
+			this.rightEnd = rightEnd;
+			this.mergeVariable = mergeVariable;
+			this.join = join;
+		}
+
+		int rightIndex() {
+			return rightEnd - 1;
 		}
 	}
 }
