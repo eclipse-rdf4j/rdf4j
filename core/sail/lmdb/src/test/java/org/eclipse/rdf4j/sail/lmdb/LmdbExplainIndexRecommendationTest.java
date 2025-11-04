@@ -99,6 +99,22 @@ class LmdbExplainIndexRecommendationTest {
 		assertThat(plan).contains("(scan; consider opcs)");
 	}
 
+	@Test
+	void trackerRemainsEmptyUntilIndexNameRequested() {
+		runSelectQuery("psoc", PERSON_QUERY, connection -> connection.add(
+				connection.getValueFactory().createIRI("http://example.com/alice"), RDF.TYPE, FOAF.PERSON));
+
+		ConcurrentMap<String, LongAdder> tracked = LmdbRecordIterator.getRecommendedIndexTracker();
+		assertThat(tracked).isEmpty();
+
+		String plan = runExplainQuery("psoc", PERSON_QUERY, connection -> {
+			connection.add(connection.getValueFactory().createIRI("http://example.com/bob"), RDF.TYPE, FOAF.PERSON);
+		});
+
+		assertThat(plan).contains("(scan; consider posc)");
+		assertThat(tracked).isNotEmpty();
+	}
+
 	private static Stream<Arguments> allTripleIndexPermutations() {
 		List<String> permutations = new ArrayList<>();
 		permute("spoc".toCharArray(), new boolean[4], new StringBuilder(), permutations);
@@ -134,6 +150,23 @@ class LmdbExplainIndexRecommendationTest {
 			consumer.accept(connection);
 			Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
 			return explanation.toString();
+		} catch (RepositoryException e) {
+			throw new RuntimeException(e);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private void runSelectQuery(String index, String query, RepositoryConnectionConsumer consumer) {
+		File storeDir = new File(dataDir, index + "-select-" + query.hashCode() + "-" + System.nanoTime());
+		storeDir.mkdirs();
+
+		SailRepository repository = new SailRepository(new LmdbStore(storeDir, new LmdbStoreConfig(index)));
+		repository.init();
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			consumer.accept(connection);
+			connection.prepareTupleQuery(query).evaluate().close();
 		} catch (RepositoryException e) {
 			throw new RuntimeException(e);
 		} finally {

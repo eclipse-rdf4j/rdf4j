@@ -276,8 +276,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 
 			if (iteration instanceof IndexReportingIterator) {
-				String indexName = ((IndexReportingIterator) iteration).getIndexName();
-				statementPattern.setIndexName(indexName);
+				statementPattern.setIndexNameSupplier(
+						((IndexReportingIterator) iteration)::getIndexName);
 			} else {
 				statementPattern.setIndexName(null);
 			}
@@ -332,8 +332,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
 			}
 			if (iteration instanceof IndexReportingIterator) {
-				String indexName = ((IndexReportingIterator) iteration).getIndexName();
-				statementPattern.setIndexName(indexName);
+				statementPattern.setIndexNameSupplier(
+						((IndexReportingIterator) iteration)::getIndexName);
 			} else {
 				statementPattern.setIndexName(null);
 			}

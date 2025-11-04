@@ -54,7 +54,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final TripleIndex index;
 
-	private final String indexName;
+	private volatile String indexName;
 
 	private final long subj;
 	private final long pred;
@@ -109,7 +109,6 @@ class LmdbRecordIterator implements RecordIterator {
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();
 		this.index = index;
-		this.indexName = computeIndexName(index, subj, pred, obj, context);
 		if (rangeSearch) {
 			minKeyBuf = pool.getKeyBuffer();
 			index.getMinKey(minKeyBuf, subj, pred, obj, context);
@@ -537,7 +536,17 @@ class LmdbRecordIterator implements RecordIterator {
 
 	@Override
 	public String getIndexName() {
-		return indexName;
+		String current = indexName;
+		if (current == null) {
+			synchronized (this) {
+				current = indexName;
+				if (current == null) {
+					current = computeIndexName(index, subj, pred, obj, context);
+					indexName = current;
+				}
+			}
+		}
+		return current;
 	}
 
 	private boolean matches() {

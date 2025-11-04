@@ -36,8 +36,6 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	private final ValueStore valueStore;
 	private Statement nextElement;
 
-	private final String indexName;
-
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -48,7 +46,6 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	public LmdbStatementIterator(RecordIterator recordIt, ValueStore valueStore) {
 		this.recordIt = recordIt;
 		this.valueStore = valueStore;
-		this.indexName = recordIt.getIndexName();
 	}
 
 	/*---------*
@@ -142,6 +139,6 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 
 	@Override
 	public String getIndexName() {
-		return indexName;
+		return recordIt.getIndexName();
 	}
 }

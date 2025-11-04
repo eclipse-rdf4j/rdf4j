@@ -18,6 +18,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -65,6 +66,7 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	private StatementOrder statementOrder;
 
 	private String indexName;
+	private transient Supplier<String> indexNameSupplier;
 
 	private Set<String> assuredBindingNames;
 	private List<Var> varList;
@@ -537,11 +539,22 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 
 	@Experimental
 	public String getIndexName() {
+		if (indexNameSupplier != null) {
+			indexName = indexNameSupplier.get();
+			indexNameSupplier = null;
+		}
 		return indexName;
 	}
 
 	@Experimental
 	public void setIndexName(String indexName) {
 		this.indexName = indexName;
+		this.indexNameSupplier = null;
+	}
+
+	@Experimental
+	public void setIndexNameSupplier(Supplier<String> indexNameSupplier) {
+		this.indexNameSupplier = indexNameSupplier;
+		this.indexName = null;
 	}
 }
