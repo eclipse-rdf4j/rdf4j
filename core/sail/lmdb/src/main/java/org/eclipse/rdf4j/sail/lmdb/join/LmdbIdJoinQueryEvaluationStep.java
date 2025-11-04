@@ -198,6 +198,7 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 				RecordIterator leftIterator = dataset.getRecordIterator(leftPattern, bindings);
 				long[] bindingSnapshot = new long[initialBinding.length];
 				long[] rightScratch = new long[initialBinding.length];
+				long[] rightQuadScratch = new long[4];
 				LmdbIdJoinIterator.RecordIteratorFactory rightFactory = leftRecord -> {
 					System.arraycopy(initialBinding, 0, bindingSnapshot, 0, initialBinding.length);
 					for (String name : leftInfo.getVariableNames()) {
@@ -210,7 +211,7 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 						}
 					}
 					return dataset.getRecordIterator(bindingSnapshot, subjIdx, predIdx, objIdx, ctxIdx, patternIds,
-							rightScratch);
+							rightScratch, rightQuadScratch);
 				};
 
 				return new LmdbIdJoinIterator(leftIterator, rightFactory, leftInfo, bindingInfo, sharedVariables,

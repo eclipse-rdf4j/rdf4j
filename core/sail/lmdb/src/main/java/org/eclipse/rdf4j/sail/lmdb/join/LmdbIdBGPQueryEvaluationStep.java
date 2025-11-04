@@ -304,6 +304,8 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 
 	private static final class PatternStage implements Stage {
 		private final PatternPlan plan;
+		private long[] bindingScratch;
+		private long[] quadScratch;
 
 		private PatternStage(PatternPlan plan) {
 			this.plan = plan;
@@ -312,8 +314,14 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		@Override
 		public RecordIterator createInitialIterator(LmdbEvaluationDataset dataset, long[] initialBinding,
 				ValueStore valueStore) throws QueryEvaluationException {
+			if (bindingScratch == null || bindingScratch.length < initialBinding.length) {
+				bindingScratch = new long[initialBinding.length];
+			}
+			if (quadScratch == null) {
+				quadScratch = new long[4];
+			}
 			RecordIterator iter = dataset.getRecordIterator(initialBinding, plan.subjIndex, plan.predIndex,
-					plan.objIndex, plan.ctxIndex, plan.patternIds);
+					plan.objIndex, plan.ctxIndex, plan.patternIds, bindingScratch, quadScratch);
 			return iter == null ? LmdbIdJoinIterator.emptyRecordIterator() : iter;
 		}
 
@@ -333,6 +341,9 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		private long[] sequentialLeftScratch;
 		private long[] orderedLeftScratch;
 		private long[] orderedRightScratch;
+		private long[] sequentialLeftQuadScratch;
+		private long[] orderedLeftQuadScratch;
+		private long[] orderedRightQuadScratch;
 
 		private MergeStage(PatternPlan leftPlan, PatternPlan rightPlan, LmdbIdJoinIterator.PatternInfo leftInfo,
 				LmdbIdJoinIterator.PatternInfo rightInfo, String mergeVariable) {
@@ -399,9 +410,12 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			if (orderedLeftScratch == null || orderedLeftScratch.length < binding.length) {
 				orderedLeftScratch = new long[binding.length];
 			}
+			if (orderedLeftQuadScratch == null) {
+				orderedLeftQuadScratch = new long[4];
+			}
 			RecordIterator leftIterator = dataset.getOrderedRecordIterator(binding, leftPlan.subjIndex,
 					leftPlan.predIndex, leftPlan.objIndex, leftPlan.ctxIndex, leftPlan.patternIds, leftPlan.order,
-					orderedLeftScratch);
+					orderedLeftScratch, orderedLeftQuadScratch);
 			if (leftIterator == null) {
 				return createSequentialIterator(dataset, binding, valueStore);
 			}
@@ -409,9 +423,12 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			if (orderedRightScratch == null || orderedRightScratch.length < binding.length) {
 				orderedRightScratch = new long[binding.length];
 			}
+			if (orderedRightQuadScratch == null) {
+				orderedRightQuadScratch = new long[4];
+			}
 			RecordIterator rightIterator = dataset.getOrderedRecordIterator(binding, rightPlan.subjIndex,
 					rightPlan.predIndex, rightPlan.objIndex, rightPlan.ctxIndex, rightPlan.patternIds, rightPlan.order,
-					orderedRightScratch);
+					orderedRightScratch, orderedRightQuadScratch);
 			if (rightIterator == null) {
 				leftIterator.close();
 				return createSequentialIterator(dataset, binding, valueStore);
@@ -426,8 +443,12 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			if (sequentialLeftScratch == null || sequentialLeftScratch.length < binding.length) {
 				sequentialLeftScratch = new long[binding.length];
 			}
+			if (sequentialLeftQuadScratch == null) {
+				sequentialLeftQuadScratch = new long[4];
+			}
 			RecordIterator leftIterator = dataset.getRecordIterator(binding, leftPlan.subjIndex, leftPlan.predIndex,
-					leftPlan.objIndex, leftPlan.ctxIndex, leftPlan.patternIds, sequentialLeftScratch);
+					leftPlan.objIndex, leftPlan.ctxIndex, leftPlan.patternIds, sequentialLeftScratch,
+					sequentialLeftQuadScratch);
 			if (leftIterator == null) {
 				return LmdbIdJoinIterator.emptyRecordIterator();
 			}
@@ -441,6 +462,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		private final PatternPlan plan;
 		private RecordIterator currentRight;
 		private long[] rightScratch;
+		private long[] quadScratch;
 
 		private BindingJoinRecordIterator(RecordIterator left, LmdbEvaluationDataset dataset, PatternPlan plan) {
 			this.left = left;
@@ -467,8 +489,11 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				if (rightScratch == null || rightScratch.length < leftBinding.length) {
 					rightScratch = new long[leftBinding.length];
 				}
+				if (quadScratch == null) {
+					quadScratch = new long[4];
+				}
 				currentRight = dataset.getRecordIterator(leftBinding, plan.subjIndex, plan.predIndex, plan.objIndex,
-						plan.ctxIndex, plan.patternIds, rightScratch);
+						plan.ctxIndex, plan.patternIds, rightScratch, quadScratch);
 			}
 		}
 

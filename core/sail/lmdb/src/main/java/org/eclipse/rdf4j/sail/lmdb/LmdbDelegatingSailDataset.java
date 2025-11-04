@@ -95,36 +95,51 @@ final class LmdbDelegatingSailDataset implements SailDataset, LmdbEvaluationData
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds) throws QueryEvaluationException {
-		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null);
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, null);
 	}
 
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds, long[] reuse) throws QueryEvaluationException {
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse, null);
+	}
+
+	@Override
+	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, long[] reuse, long[] quadReuse) throws QueryEvaluationException {
 		if (delegate instanceof LmdbEvaluationDataset) {
 			return ((LmdbEvaluationDataset) delegate).getRecordIterator(binding, subjIndex, predIndex, objIndex,
-					ctxIndex, patternIds, reuse);
+					ctxIndex, patternIds, reuse, quadReuse);
 		}
 		// Fallback via TripleSource with Value conversion
 		return new LmdbSailDatasetTripleSource(valueStore, delegate)
-				.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse);
+				.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse, quadReuse);
 	}
 
 	@Override
 	public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, StatementOrder order) throws QueryEvaluationException {
-		return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order, null);
+		return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order, null,
+				null);
 	}
 
 	@Override
 	public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, StatementOrder order, long[] reuse) throws QueryEvaluationException {
+		return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order, reuse,
+				null);
+	}
+
+	@Override
+	public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+			int ctxIndex, long[] patternIds, StatementOrder order, long[] reuse, long[] quadReuse)
+			throws QueryEvaluationException {
 		if (delegate instanceof LmdbEvaluationDataset) {
 			return ((LmdbEvaluationDataset) delegate).getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex,
-					ctxIndex, patternIds, order, reuse);
+					ctxIndex, patternIds, order, reuse, quadReuse);
 		}
 		return LmdbEvaluationDataset.super.getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex,
-				patternIds, order, reuse);
+				patternIds, order, reuse, quadReuse);
 	}
 
 	@Override
