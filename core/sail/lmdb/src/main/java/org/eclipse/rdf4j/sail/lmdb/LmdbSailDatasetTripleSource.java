@@ -43,11 +43,17 @@ public class LmdbSailDatasetTripleSource extends SailDatasetTripleSource impleme
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds) throws QueryEvaluationException {
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null);
+	}
+
+	@Override
+	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, long[] reuse) throws QueryEvaluationException {
 
 		// Fast path: backing dataset supports ID-level access
 		if (dataset instanceof LmdbEvaluationDataset) {
 			return ((LmdbEvaluationDataset) dataset).getRecordIterator(binding, subjIndex, predIndex, objIndex,
-					ctxIndex, patternIds);
+					ctxIndex, patternIds, reuse);
 		}
 
 		// Fallback path: value-level iteration converted to IDs using ValueStore
@@ -146,12 +152,18 @@ public class LmdbSailDatasetTripleSource extends SailDatasetTripleSource impleme
 	@Override
 	public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, StatementOrder order) throws QueryEvaluationException {
+		return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order, null);
+	}
+
+	@Override
+	public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+			int ctxIndex, long[] patternIds, StatementOrder order, long[] reuse) throws QueryEvaluationException {
 		if (dataset instanceof LmdbEvaluationDataset) {
 			return ((LmdbEvaluationDataset) dataset).getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex,
-					ctxIndex, patternIds, order);
+					ctxIndex, patternIds, order, reuse);
 		}
 		return LmdbIdTripleSource.super.getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex,
-				patternIds, order);
+				patternIds, order, reuse);
 	}
 
 	private long selectQueryId(long patternId, long[] binding, int index) {

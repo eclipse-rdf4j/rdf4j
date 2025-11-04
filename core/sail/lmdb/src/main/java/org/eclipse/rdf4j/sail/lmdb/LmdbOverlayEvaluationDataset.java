@@ -131,12 +131,20 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds) throws QueryEvaluationException {
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null);
+	}
+
+	@Override
+	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, long[] reuse) throws QueryEvaluationException {
 		// Fast path: no active connection changes → use the current LMDB dataset's ID-level iterator
 		try {
 			if (!LmdbEvaluationStrategy.hasActiveConnectionChanges()) {
 				var dsOpt = LmdbEvaluationStrategy.getCurrentDataset();
 				if (dsOpt.isPresent()) {
-					return dsOpt.get().getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+					return dsOpt.get()
+							.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds,
+									reuse);
 				}
 			}
 		} catch (Exception ignore) {
@@ -148,7 +156,7 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 			// current branch dataset state (including transaction overlays). Therefore, using ID-level access here is
 			// correct when available.
 			RecordIterator viaIds = ((LmdbIdTripleSource) tripleSource)
-					.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+					.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse);
 			if (viaIds != null) {
 				return viaIds;
 			}
@@ -242,6 +250,13 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 			int ctxIndex, long[] patternIds, StatementOrder order) throws QueryEvaluationException {
 		return LmdbEvaluationDataset.super.getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex,
 				patternIds, order);
+	}
+
+	@Override
+	public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+			int ctxIndex, long[] patternIds, StatementOrder order, long[] reuse) throws QueryEvaluationException {
+		return LmdbEvaluationDataset.super.getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex,
+				patternIds, order, reuse);
 	}
 
 	@Override

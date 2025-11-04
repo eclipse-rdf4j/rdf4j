@@ -35,6 +35,7 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 	private final Set<String> sharedVariables;
 	private final int bindingSize;
 	private static final int COLUMN_COUNT = TripleStore.CONTEXT_IDX + 1;
+	private final long[] combinedScratch;
 
 	private long[] currentLeftRecord;
 	private long currentLeftKey;
@@ -85,6 +86,7 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 		this.sharedVariables = Collections.unmodifiableSet(shared);
 		this.leftColumnBindingIndex = computeColumnBindingMap(leftInfo, bindingInfo);
 		this.rightColumnBindingIndex = computeColumnBindingMap(rightInfo, bindingInfo);
+		this.combinedScratch = new long[bindingSize];
 		if (DEBUG) {
 			System.out.println("DEBUG bindingSize=" + bindingSize + " mergeVar=" + mergeVariable + " shared="
 					+ shared + " bindingVars=" + bindingInfo.getVariableNames());
@@ -244,7 +246,7 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 			return null;
 		}
 
-		long[] combined = new long[bindingSize];
+		long[] combined = combinedScratch;
 		Arrays.fill(combined, LmdbValue.UNKNOWN_ID);
 
 		if (!mergeRecordInto(combined, currentLeftRecord, leftColumnBindingIndex)) {
