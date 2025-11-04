@@ -196,18 +196,21 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 				}
 
 				RecordIterator leftIterator = dataset.getRecordIterator(leftPattern, bindings);
+				long[] bindingSnapshot = new long[initialBinding.length];
+				long[] rightScratch = new long[initialBinding.length];
 				LmdbIdJoinIterator.RecordIteratorFactory rightFactory = leftRecord -> {
-					long[] snapshot = Arrays.copyOf(initialBinding, initialBinding.length);
+					System.arraycopy(initialBinding, 0, bindingSnapshot, 0, initialBinding.length);
 					for (String name : leftInfo.getVariableNames()) {
 						int pos = bindingInfo.getIndex(name);
 						if (pos >= 0) {
 							long id = leftInfo.getId(leftRecord, name);
 							if (id != org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID) {
-								snapshot[pos] = id;
+								bindingSnapshot[pos] = id;
 							}
 						}
 					}
-					return dataset.getRecordIterator(snapshot, subjIdx, predIdx, objIdx, ctxIdx, patternIds);
+					return dataset.getRecordIterator(bindingSnapshot, subjIdx, predIdx, objIdx, ctxIdx, patternIds,
+							rightScratch);
 				};
 
 				return new LmdbIdJoinIterator(leftIterator, rightFactory, leftInfo, bindingInfo, sharedVariables,

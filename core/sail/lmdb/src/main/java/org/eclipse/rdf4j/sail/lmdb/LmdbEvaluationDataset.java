@@ -42,7 +42,10 @@ public interface LmdbEvaluationDataset {
 	 * read-only. The {@code patternIds} array contains four entries (subject, predicate, object, context) where a value
 	 * of {@link org.eclipse.rdf4j.sail.lmdb.model.LmdbValue#UNKNOWN_ID} indicates that the corresponding position is
 	 * unbound in the pattern. The index arguments point to the slots in {@code binding} where the resolved IDs should
-	 * be written (or {@code -1} if that pattern position does not correspond to a variable).
+	 * be written (or {@code -1} if that pattern position does not correspond to a variable). Implementations may reuse
+	 * internal buffers by copying {@code binding} into a scratch array before mutating; callers can supply such an
+	 * array via {@link #getRecordIterator(long[], int, int, int, int, long[], long[])} to avoid per-iterator
+	 * allocation.
 	 * </p>
 	 *
 	 * @param binding    the current binding snapshot; implementations must copy before mutating
@@ -59,6 +62,20 @@ public interface LmdbEvaluationDataset {
 			long[] patternIds) throws QueryEvaluationException;
 
 	/**
+	 * Variant of {@link #getRecordIterator(long[], int, int, int, int, long[])} that allows callers to supply a
+	 * reusable scratch buffer. Implementations should treat {@code binding} as read-only and (when {@code reuse} is
+	 * non-null and large enough) seed the scratch buffer with the binding state before producing rows from this
+	 * iterator.
+	 *
+	 * @param reuse optional scratch buffer that may be mutated and returned from {@link RecordIterator#next()}
+	 */
+	@InternalUseOnly
+	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, long[] reuse) throws QueryEvaluationException {
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+	}
+
+	/**
 	 * Create an ordered {@link RecordIterator} for the supplied pattern expressed via internal IDs and binding indexes.
 	 * Implementations may fall back to the unordered iterator when the requested order is unsupported.
 	 */
@@ -67,6 +84,19 @@ public interface LmdbEvaluationDataset {
 			int ctxIndex, long[] patternIds, StatementOrder order) throws QueryEvaluationException {
 		if (order == null) {
 			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+		}
+		return null;
+	}
+
+	/**
+	 * Variant of {@link #getOrderedRecordIterator(long[], int, int, int, int, long[], StatementOrder)} that accepts a
+	 * reusable scratch buffer.
+	 */
+	@InternalUseOnly
+	default RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+			int ctxIndex, long[] patternIds, StatementOrder order, long[] reuse) throws QueryEvaluationException {
+		if (order == null) {
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse);
 		}
 		return null;
 	}
