@@ -82,16 +82,22 @@ final class LmdbIdTripleSourceAdapter implements TripleSource, LmdbIdTripleSourc
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds) throws QueryEvaluationException {
-		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null);
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, null);
 	}
 
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds, long[] reuse) throws QueryEvaluationException {
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse, null);
+	}
+
+	@Override
+	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, long[] reuse, long[] quadReuse) throws QueryEvaluationException {
 		// Prefer direct ID-level access if the delegate already supports it
 		if (delegate instanceof LmdbIdTripleSource) {
 			return ((LmdbIdTripleSource) delegate).getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex,
-					patternIds, reuse);
+					patternIds, reuse, quadReuse);
 		}
 
 		// If no active connection changes, delegate to the current LMDB dataset to avoid materialization
@@ -99,8 +105,8 @@ final class LmdbIdTripleSourceAdapter implements TripleSource, LmdbIdTripleSourc
 			var dsOpt = LmdbEvaluationStrategy.getCurrentDataset();
 			if (dsOpt.isPresent()) {
 				return dsOpt.get()
-						.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds,
-								reuse);
+						.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse,
+								quadReuse);
 			}
 		}
 

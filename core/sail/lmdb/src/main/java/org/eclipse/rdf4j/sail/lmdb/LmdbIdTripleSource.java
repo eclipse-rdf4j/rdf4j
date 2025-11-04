@@ -34,10 +34,15 @@ public interface LmdbIdTripleSource {
 			long[] patternIds) throws QueryEvaluationException;
 
 	/**
-	 * Variant that accepts a reusable scratch buffer.
+	 * Variant that accepts reusable scratch buffers for bindings and quads.
 	 */
 	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-			long[] patternIds, long[] reuse) throws QueryEvaluationException {
+			long[] patternIds, long[] bindingReuse) throws QueryEvaluationException {
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, bindingReuse, null);
+	}
+
+	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, long[] bindingReuse, long[] quadReuse) throws QueryEvaluationException {
 		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
 	}
 
@@ -53,12 +58,22 @@ public interface LmdbIdTripleSource {
 	}
 
 	/**
-	 * Variant that accepts a reusable scratch buffer.
+	 * Variant that accepts reusable scratch buffers.
 	 */
 	default RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, StatementOrder order, long[] reuse) throws QueryEvaluationException {
 		if (order == null) {
-			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse);
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse, null);
+		}
+		return null;
+	}
+
+	default RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+			int ctxIndex, long[] patternIds, StatementOrder order, long[] bindingReuse, long[] quadReuse)
+			throws QueryEvaluationException {
+		if (order == null) {
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, bindingReuse,
+					quadReuse);
 		}
 		return null;
 	}

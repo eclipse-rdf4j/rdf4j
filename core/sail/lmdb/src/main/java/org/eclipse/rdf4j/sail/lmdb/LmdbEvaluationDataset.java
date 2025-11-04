@@ -62,16 +62,24 @@ public interface LmdbEvaluationDataset {
 			long[] patternIds) throws QueryEvaluationException;
 
 	/**
-	 * Variant of {@link #getRecordIterator(long[], int, int, int, int, long[])} that allows callers to supply a
-	 * reusable scratch buffer. Implementations should treat {@code binding} as read-only and (when {@code reuse} is
+	 * Variant of {@link #getRecordIterator(long[], int, int, int, int, long[])} that allows callers to supply reusable
+	 * scratch buffers. Implementations should treat {@code binding} as read-only and (when {@code bindingReuse} is
 	 * non-null and large enough) seed the scratch buffer with the binding state before producing rows from this
-	 * iterator.
+	 * iterator. The {@code quadReuse} buffer (length 4) can be forwarded to iterators that materialize raw quadruples
+	 * from the underlying store.
 	 *
-	 * @param reuse optional scratch buffer that may be mutated and returned from {@link RecordIterator#next()}
+	 * @param bindingReuse optional binding scratch buffer returned from {@link RecordIterator#next()}
+	 * @param quadReuse    optional quad scratch buffer (length 4)
 	 */
 	@InternalUseOnly
 	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-			long[] patternIds, long[] reuse) throws QueryEvaluationException {
+			long[] patternIds, long[] bindingReuse) throws QueryEvaluationException {
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, bindingReuse, null);
+	}
+
+	@InternalUseOnly
+	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, long[] bindingReuse, long[] quadReuse) throws QueryEvaluationException {
 		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
 	}
 
@@ -96,7 +104,18 @@ public interface LmdbEvaluationDataset {
 	default RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, StatementOrder order, long[] reuse) throws QueryEvaluationException {
 		if (order == null) {
-			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse);
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse, null);
+		}
+		return null;
+	}
+
+	@InternalUseOnly
+	default RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+			int ctxIndex, long[] patternIds, StatementOrder order, long[] bindingReuse, long[] quadReuse)
+			throws QueryEvaluationException {
+		if (order == null) {
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, bindingReuse,
+					quadReuse);
 		}
 		return null;
 	}

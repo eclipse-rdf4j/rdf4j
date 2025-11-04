@@ -86,7 +86,6 @@ class LmdbRecordIterator implements RecordIterator {
 	private int lastResult;
 
 	private final long[] quad;
-	private final long[] originalQuad;
 
 	private boolean fetchNext = false;
 
@@ -96,17 +95,34 @@ class LmdbRecordIterator implements RecordIterator {
 
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
-		this(index, null, rangeSearch, subj, pred, obj, context, explicit, txnRef);
+		this(index, null, rangeSearch, subj, pred, obj, context, explicit, txnRef, null);
+	}
+
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, long[] quadReuse) throws IOException {
+		this(index, null, rangeSearch, subj, pred, obj, context, explicit, txnRef, quadReuse);
 	}
 
 	LmdbRecordIterator(TripleIndex index, KeyBuilder keyBuilder, boolean rangeSearch, long subj,
 			long pred, long obj, long context, boolean explicit, Txn txnRef) throws IOException {
+		this(index, keyBuilder, rangeSearch, subj, pred, obj, context, explicit, txnRef, null);
+	}
+
+	LmdbRecordIterator(TripleIndex index, KeyBuilder keyBuilder, boolean rangeSearch, long subj,
+			long pred, long obj, long context, boolean explicit, Txn txnRef, long[] quadReuse) throws IOException {
 		this.subj = subj;
 		this.pred = pred;
 		this.obj = obj;
 		this.context = context;
-		this.originalQuad = new long[] { subj, pred, obj, context };
-		this.quad = new long[] { subj, pred, obj, context };
+		if (quadReuse != null && quadReuse.length >= 4) {
+			this.quad = quadReuse;
+			this.quad[0] = subj;
+			this.quad[1] = pred;
+			this.quad[2] = obj;
+			this.quad[3] = context;
+		} else {
+			this.quad = new long[] { subj, pred, obj, context };
+		}
 		this.pool = Pool.get();
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();
@@ -266,7 +282,7 @@ class LmdbRecordIterator implements RecordIterator {
 					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 				} else {
 					// Matching value found
-					index.keyToQuad(keyData.mv_data(), originalQuad, quad);
+					index.keyToQuad(keyData.mv_data(), subj, pred, obj, context, quad);
 					// fetch next value
 					fetchNext = true;
 					return quad;

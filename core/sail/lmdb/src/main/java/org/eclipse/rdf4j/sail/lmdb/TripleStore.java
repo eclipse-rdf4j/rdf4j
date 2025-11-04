@@ -86,6 +86,7 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 import org.lwjgl.PointerBuffer;
@@ -583,9 +584,9 @@ public class TripleStore implements Closeable {
 		for (TripleIndex index : indexes) {
 			if (index.getFieldSeq()[0] == 'c') {
 				// found a context-first index
-				LmdbDupRecordIterator.FallbackSupplier fallback = () -> new LmdbRecordIterator(index, false, -1, -1, -1,
-						-1, true, txn);
-				return getTriplesUsingIndex(txn, -1, -1, -1, -1, true, index, false, fallback);
+				LmdbDupRecordIterator.FallbackSupplier fallback = quad -> new LmdbRecordIterator(index, false, -1, -1,
+						-1, -1, true, txn, quad);
+				return getTriplesUsingIndex(txn, -1, -1, -1, -1, true, index, false, fallback, null);
 			}
 		}
 		return null;
@@ -593,11 +594,16 @@ public class TripleStore implements Closeable {
 
 	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
+		return getTriples(txn, subj, pred, obj, context, explicit, null);
+	}
+
+	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+			long[] quadReuse) throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 		// System.out.println("get triples: " + Arrays.asList(subj, pred, obj,context));
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
-		LmdbDupRecordIterator.FallbackSupplier fallbackSupplier = () -> new LmdbRecordIterator(index, doRangeSearch,
-				subj, pred, obj, context, explicit, txn);
+		LmdbDupRecordIterator.FallbackSupplier fallbackSupplier = quad -> new LmdbRecordIterator(index, doRangeSearch,
+				subj, pred, obj, context, explicit, txn, quad);
 		if (dupsortRead && subjectPredicateIndex != null && subj >= 0 && pred >= 0 && obj == -1 && context == -1) {
 			assert context == -1 && obj == -1 : "subject-predicate index can only be used for (s,p,?,?) patterns";
 			// Use SP dup iterator, but union with the standard iterator to guard against any edge cases
@@ -605,7 +611,8 @@ public class TripleStore implements Closeable {
 			return new LmdbDupRecordIterator(subjectPredicateIndex, subj, pred, explicit, txn,
 					fallbackSupplier);
 		}
-		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch, fallbackSupplier);
+		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch, fallbackSupplier,
+				quadReuse);
 	}
 
 	boolean hasTriples(boolean explicit) throws IOException {
@@ -619,8 +626,8 @@ public class TripleStore implements Closeable {
 
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, boolean rangeSearch,
-			LmdbDupRecordIterator.FallbackSupplier fallbackSupplier) throws IOException {
-		return fallbackSupplier.get();
+			LmdbDupRecordIterator.FallbackSupplier fallbackSupplier, long[] quadReuse) throws IOException {
+		return fallbackSupplier.get(quadReuse);
 	}
 
 	private int leadingBoundCount(char[] fieldSeq, long subj, long pred, long obj, long context) {
@@ -1882,27 +1889,33 @@ public class TripleStore implements Closeable {
 			readQuadUnsigned(key, indexMap, quad);
 		}
 
-		void keyToQuad(ByteBuffer key, long[] originalQuad, long[] quad) {
-			// directly use index map to read values in to correct positions
-			if (originalQuad[indexMap[0]] != -1) {
-				Varint.skipUnsigned(key);
-			} else {
-				quad[indexMap[0]] = Varint.readUnsigned(key);
-			}
-			if (originalQuad[indexMap[1]] != -1) {
-				Varint.skipUnsigned(key);
-			} else {
-				quad[indexMap[1]] = Varint.readUnsigned(key);
-			}
-			if (originalQuad[indexMap[2]] != -1) {
-				Varint.skipUnsigned(key);
-			} else {
-				quad[indexMap[2]] = Varint.readUnsigned(key);
-			}
-			if (originalQuad[indexMap[3]] != -1) {
-				Varint.skipUnsigned(key);
-			} else {
-				quad[indexMap[3]] = Varint.readUnsigned(key);
+		void keyToQuad(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
+			for (int i = 0; i < indexMap.length; i++) {
+				int component = indexMap[i];
+				long bound;
+				switch (component) {
+				case SUBJ_IDX:
+					bound = subj;
+					break;
+				case PRED_IDX:
+					bound = pred;
+					break;
+				case OBJ_IDX:
+					bound = obj;
+					break;
+				case CONTEXT_IDX:
+					bound = context;
+					break;
+				default:
+					bound = LmdbValue.UNKNOWN_ID;
+					break;
+				}
+				if (bound != LmdbValue.UNKNOWN_ID) {
+					Varint.skipUnsigned(key);
+					quad[component] = bound;
+				} else {
+					quad[component] = Varint.readUnsigned(key);
+				}
 			}
 		}
 

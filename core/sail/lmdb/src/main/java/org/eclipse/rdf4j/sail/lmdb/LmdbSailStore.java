@@ -1370,20 +1370,28 @@ class LmdbSailStore implements SailStore {
 		public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 				int ctxIndex,
 				long[] patternIds) throws QueryEvaluationException {
-			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null);
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, null);
 		}
 
 		@Override
 		public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 				int ctxIndex,
 				long[] patternIds, long[] reuse) throws QueryEvaluationException {
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse, null);
+		}
+
+		@Override
+		public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+				int ctxIndex,
+				long[] patternIds, long[] reuse, long[] quadReuse) throws QueryEvaluationException {
 			try {
 				long subjQuery = selectQueryId(patternIds[TripleStore.SUBJ_IDX], binding, subjIndex);
 				long predQuery = selectQueryId(patternIds[TripleStore.PRED_IDX], binding, predIndex);
 				long objQuery = selectQueryId(patternIds[TripleStore.OBJ_IDX], binding, objIndex);
 				long ctxQuery = selectQueryId(patternIds[TripleStore.CONTEXT_IDX], binding, ctxIndex);
 
-				RecordIterator base = tripleStore.getTriples(txn, subjQuery, predQuery, objQuery, ctxQuery, explicit);
+				RecordIterator base = tripleStore.getTriples(txn, subjQuery, predQuery, objQuery, ctxQuery, explicit,
+						quadReuse);
 
 				if (!"false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.experimentalScratchReuse", "true"))) {
 					final long[] scratch;
@@ -1495,14 +1503,24 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 				int ctxIndex, long[] patternIds, StatementOrder order) throws QueryEvaluationException {
-			return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order, null);
+			return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order, null,
+					null);
 		}
 
 		@Override
 		public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 				int ctxIndex, long[] patternIds, StatementOrder order, long[] reuse) throws QueryEvaluationException {
+			return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order, reuse,
+					null);
+		}
+
+		@Override
+		public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+				int ctxIndex, long[] patternIds, StatementOrder order, long[] reuse, long[] quadReuse)
+				throws QueryEvaluationException {
 			if (order == null) {
-				return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse);
+				return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse,
+						quadReuse);
 			}
 			try {
 				long subjQuery = selectQueryId(patternIds[TripleStore.SUBJ_IDX], binding, subjIndex);
@@ -1510,7 +1528,8 @@ class LmdbSailStore implements SailStore {
 				long objQuery = selectQueryId(patternIds[TripleStore.OBJ_IDX], binding, objIndex);
 				long ctxQuery = selectQueryId(patternIds[TripleStore.CONTEXT_IDX], binding, ctxIndex);
 
-				RecordIterator orderedIter = orderedRecordIterator(order, subjQuery, predQuery, objQuery, ctxQuery);
+				RecordIterator orderedIter = orderedRecordIterator(order, subjQuery, predQuery, objQuery, ctxQuery,
+						quadReuse);
 				if (orderedIter != null) {
 					return orderedIter;
 				}
@@ -1519,7 +1538,7 @@ class LmdbSailStore implements SailStore {
 					int sortIndex = indexForOrder(order, subjIndex, predIndex, objIndex, ctxIndex);
 					if (sortIndex >= 0) {
 						RecordIterator fallback = getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex,
-								patternIds, reuse);
+								patternIds, reuse, quadReuse);
 						return sortedRecordIterator(fallback, sortIndex);
 					}
 				}
@@ -1903,6 +1922,11 @@ class LmdbSailStore implements SailStore {
 
 		private RecordIterator orderedRecordIterator(StatementOrder order, long subjID, long predID, long objID,
 				long contextID) throws IOException {
+			return orderedRecordIterator(order, subjID, predID, objID, contextID, null);
+		}
+
+		private RecordIterator orderedRecordIterator(StatementOrder order, long subjID, long predID, long objID,
+				long contextID, long[] quadReuse) throws IOException {
 			if (order == null) {
 				return null;
 			}
@@ -1911,7 +1935,8 @@ class LmdbSailStore implements SailStore {
 				return null;
 			}
 			boolean rangeSearch = chosen.getPatternScore(subjID, predID, objID, contextID) > 0;
-			return new LmdbRecordIterator(chosen, rangeSearch, subjID, predID, objID, contextID, explicit, txn);
+			return new LmdbRecordIterator(chosen, rangeSearch, subjID, predID, objID, contextID, explicit, txn,
+					quadReuse);
 		}
 
 		private int indexForOrder(StatementOrder order, int subjIndex, int predIndex, int objIndex, int ctxIndex) {
