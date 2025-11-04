@@ -34,12 +34,31 @@ public interface LmdbIdTripleSource {
 			long[] patternIds) throws QueryEvaluationException;
 
 	/**
+	 * Variant that accepts a reusable scratch buffer.
+	 */
+	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, long[] reuse) throws QueryEvaluationException {
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+	}
+
+	/**
 	 * Create an ordered iterator over ID-level bindings; may fall back to the unordered iterator if unsupported.
 	 */
 	default RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, StatementOrder order) throws QueryEvaluationException {
 		if (order == null) {
 			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+		}
+		return null;
+	}
+
+	/**
+	 * Variant that accepts a reusable scratch buffer.
+	 */
+	default RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+			int ctxIndex, long[] patternIds, StatementOrder order, long[] reuse) throws QueryEvaluationException {
+		if (order == null) {
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse);
 		}
 		return null;
 	}

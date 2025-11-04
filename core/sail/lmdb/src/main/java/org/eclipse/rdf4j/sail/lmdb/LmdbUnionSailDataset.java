@@ -131,36 +131,49 @@ final class LmdbUnionSailDataset implements SailDataset, LmdbEvaluationDataset {
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds) throws org.eclipse.rdf4j.query.QueryEvaluationException {
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null);
+	}
+
+	@Override
+	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, long[] reuse) throws org.eclipse.rdf4j.query.QueryEvaluationException {
 		boolean d1 = dataset1 instanceof LmdbEvaluationDataset;
 		boolean d2 = dataset2 instanceof LmdbEvaluationDataset;
 		if (d1 && d2) {
 			RecordIterator r1 = ((LmdbEvaluationDataset) dataset1).getRecordIterator(binding, subjIndex, predIndex,
-					objIndex, ctxIndex, patternIds);
+					objIndex, ctxIndex, patternIds, reuse);
 			RecordIterator r2 = ((LmdbEvaluationDataset) dataset2).getRecordIterator(binding, subjIndex, predIndex,
-					objIndex, ctxIndex, patternIds);
+					objIndex, ctxIndex, patternIds, reuse);
 			return chain(r1, r2);
 		}
 		LmdbDelegatingSailDataset a = new LmdbDelegatingSailDataset(dataset1, valueStore);
 		LmdbDelegatingSailDataset b = new LmdbDelegatingSailDataset(dataset2, valueStore);
-		return chain(a.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds),
-				b.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds));
+		return chain(a.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse),
+				b.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse));
 	}
 
 	@Override
 	public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, StatementOrder order)
 			throws org.eclipse.rdf4j.query.QueryEvaluationException {
+		return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order, null);
+	}
+
+	@Override
+	public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+			int ctxIndex, long[] patternIds, StatementOrder order, long[] reuse)
+			throws org.eclipse.rdf4j.query.QueryEvaluationException {
 		boolean d1 = dataset1 instanceof LmdbEvaluationDataset;
 		boolean d2 = dataset2 instanceof LmdbEvaluationDataset;
 		if (d1 && d2) {
 			RecordIterator r1 = ((LmdbEvaluationDataset) dataset1).getOrderedRecordIterator(binding, subjIndex,
-					predIndex, objIndex, ctxIndex, patternIds, order);
+					predIndex, objIndex, ctxIndex, patternIds, order, reuse);
 			RecordIterator r2 = ((LmdbEvaluationDataset) dataset2).getOrderedRecordIterator(binding, subjIndex,
-					predIndex, objIndex, ctxIndex, patternIds, order);
+					predIndex, objIndex, ctxIndex, patternIds, order, reuse);
 			return chain(r1, r2);
 		}
 		return LmdbEvaluationDataset.super.getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex,
-				patternIds, order);
+				patternIds, order, reuse);
 	}
 
 	@Override
