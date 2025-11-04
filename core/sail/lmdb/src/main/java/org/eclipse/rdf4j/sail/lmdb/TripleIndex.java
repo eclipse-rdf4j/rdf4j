@@ -30,6 +30,7 @@ import java.util.Set;
 import java.util.StringTokenizer;
 
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 
@@ -312,27 +313,22 @@ class TripleIndex implements TripleStore.DupIndex {
 		Varint.readQuadUnsigned(key, indexMap, quad);
 	}
 
-	void keyToQuad(ByteBuffer key, long[] originalQuad, long[] quad) {
-		// directly use index map to read values in to correct positions
-		if (originalQuad[indexMap[0]] != -1) {
-			Varint.skipUnsigned(key);
-		} else {
-			quad[indexMap[0]] = Varint.readUnsigned(key);
-		}
-		if (originalQuad[indexMap[1]] != -1) {
-			Varint.skipUnsigned(key);
-		} else {
-			quad[indexMap[1]] = Varint.readUnsigned(key);
-		}
-		if (originalQuad[indexMap[2]] != -1) {
-			Varint.skipUnsigned(key);
-		} else {
-			quad[indexMap[2]] = Varint.readUnsigned(key);
-		}
-		if (originalQuad[indexMap[3]] != -1) {
-			Varint.skipUnsigned(key);
-		} else {
-			quad[indexMap[3]] = Varint.readUnsigned(key);
+	void keyToQuad(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
+		for (int i = 0; i < indexMap.length; i++) {
+			int component = indexMap[i];
+			long bound = switch (component) {
+			case SUBJ_IDX -> subj;
+			case PRED_IDX -> pred;
+			case OBJ_IDX -> obj;
+			case CONTEXT_IDX -> context;
+			default -> LmdbValue.UNKNOWN_ID;
+			};
+			if (bound != LmdbValue.UNKNOWN_ID) {
+				Varint.skipUnsigned(key);
+				quad[component] = bound;
+			} else {
+				quad[component] = Varint.readUnsigned(key);
+			}
 		}
 	}
 
