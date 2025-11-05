@@ -16,6 +16,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -82,22 +83,29 @@ final class LmdbIdTripleSourceAdapter implements TripleSource, LmdbIdTripleSourc
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds) throws QueryEvaluationException {
-		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, null);
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, null, null);
 	}
 
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds, long[] reuse) throws QueryEvaluationException {
-		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse, null);
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, reuse, null);
 	}
 
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds, long[] reuse, long[] quadReuse) throws QueryEvaluationException {
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, reuse, quadReuse);
+	}
+
+	@Override
+	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, LmdbEvaluationDataset.KeyRangeBuffers keyBuffers, long[] reuse, long[] quadReuse)
+			throws QueryEvaluationException {
 		// Prefer direct ID-level access if the delegate already supports it
 		if (delegate instanceof LmdbIdTripleSource) {
 			return ((LmdbIdTripleSource) delegate).getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex,
-					patternIds, reuse, quadReuse);
+					patternIds, keyBuffers, reuse, quadReuse);
 		}
 
 		// If no active connection changes, delegate to the current LMDB dataset to avoid materialization
@@ -105,8 +113,8 @@ final class LmdbIdTripleSourceAdapter implements TripleSource, LmdbIdTripleSourc
 			var dsOpt = LmdbEvaluationStrategy.getCurrentDataset();
 			if (dsOpt.isPresent()) {
 				return dsOpt.get()
-						.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse,
-								quadReuse);
+						.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
+								reuse, quadReuse);
 			}
 		}
 
@@ -180,6 +188,21 @@ final class LmdbIdTripleSourceAdapter implements TripleSource, LmdbIdTripleSourc
 				}
 			}
 		};
+	}
+
+	@Override
+	public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+			int ctxIndex, long[] patternIds, StatementOrder order, LmdbEvaluationDataset.KeyRangeBuffers keyBuffers,
+			long[] bindingReuse, long[] quadReuse) throws QueryEvaluationException {
+		if (order == null) {
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
+					bindingReuse, quadReuse);
+		}
+		if (delegate instanceof LmdbIdTripleSource) {
+			return ((LmdbIdTripleSource) delegate).getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex,
+					ctxIndex, patternIds, order, keyBuffers, bindingReuse, quadReuse);
+		}
+		return null;
 	}
 
 	private long selectQueryId(long patternId, long[] binding, int index) {

@@ -12,12 +12,15 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Stream;
 
 import org.apache.commons.io.IOUtils;
@@ -29,6 +32,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -225,11 +230,44 @@ public class QueryBenchmarkTest {
 	@Timeout(30)
 	public void long_chain() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+			Explanation explain = connection.prepareTupleQuery(long_chain).explain(Explanation.Level.Executed);
+			System.out.println(explain);
+
 			long count;
 			try (var stream = connection.prepareTupleQuery(long_chain).evaluate().stream()) {
 				count = stream.count();
 			}
 			assertEquals(0, count);
+		}
+	}
+
+	@Test
+	@Timeout(30)
+	public void long_chain_prefersIdJoinAlgorithms() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			TupleQuery tupleQuery = connection.prepareTupleQuery(long_chain);
+			Explanation explanation = tupleQuery.explain(Explanation.Level.Optimized);
+			GenericPlanNode root = explanation.toGenericPlanNode();
+
+			List<String> algorithms = new ArrayList<>();
+			collectAlgorithms(root, algorithms);
+			System.out.println("Optimized join algorithms: " + algorithms);
+
+			boolean hasJoinIterator = algorithms.stream()
+					.filter(Objects::nonNull)
+					.anyMatch("JoinIterator"::equals);
+
+			boolean hasLmdbIdAlgorithm = algorithms.stream()
+					.filter(Objects::nonNull)
+					.anyMatch(name -> name.startsWith("LmdbId"));
+			boolean hasMergeJoin = algorithms.stream()
+					.filter(Objects::nonNull)
+					.anyMatch("LmdbIdMergeJoinIterator"::equals);
+
+			assertTrue(hasLmdbIdAlgorithm, "Expected LMDB ID-based join algorithms to appear in optimized plan");
+			assertTrue(hasMergeJoin, "Expected optimized plan to include LmdbIdMergeJoinIterator");
+			assertTrue(!hasJoinIterator,
+					() -> "Expected optimized plan to avoid generic JoinIterator but found: " + algorithms);
 		}
 	}
 
@@ -333,6 +371,22 @@ public class QueryBenchmarkTest {
 					.prepareTupleQuery(ordered_union_limit)
 					.evaluate());
 			assertEquals(250L, count);
+		}
+	}
+
+	private static void collectAlgorithms(GenericPlanNode node, List<String> algorithms) {
+		if (node == null) {
+			return;
+		}
+		String algorithm = node.getAlgorithm();
+		if (algorithm != null) {
+			algorithms.add(algorithm);
+		}
+		List<GenericPlanNode> children = node.getPlans();
+		if (children != null) {
+			for (GenericPlanNode child : children) {
+				collectAlgorithms(child, algorithms);
+			}
 		}
 	}
 

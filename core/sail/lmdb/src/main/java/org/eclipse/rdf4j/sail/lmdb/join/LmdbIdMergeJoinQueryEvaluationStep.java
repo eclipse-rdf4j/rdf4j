@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb.join;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -31,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.IdBindingInfo;
 import org.eclipse.rdf4j.sail.lmdb.LmdbDatasetContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset;
+import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset.KeyRangeBuffers;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleStore;
@@ -54,6 +57,7 @@ public class LmdbIdMergeJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep fallbackStep;
 	private final boolean hasInvalidPattern;
 	private final String fallbackAlgorithmName;
+	private final Map<StatementPattern, KeyRangeBuffers> patternBuffers = new HashMap<>();
 
 	public LmdbIdMergeJoinQueryEvaluationStep(Join join, QueryEvaluationContext context,
 			QueryEvaluationStep fallbackStep) {
@@ -135,14 +139,19 @@ public class LmdbIdMergeJoinQueryEvaluationStep implements QueryEvaluationStep {
 				return new EmptyIteration<>();
 			}
 
+			KeyRangeBuffers leftBuffers = keyBuffersFor(leftPlan.pattern);
+			KeyRangeBuffers rightBuffers = keyBuffersFor(rightPlan.pattern);
+
 			RecordIterator leftIterator = dataset.getOrderedRecordIterator(initialBinding, leftPlan.subjIndex,
-					leftPlan.predIndex, leftPlan.objIndex, leftPlan.ctxIndex, leftPlan.patternIds, leftPlan.order);
+					leftPlan.predIndex, leftPlan.objIndex, leftPlan.ctxIndex, leftPlan.patternIds, leftPlan.order,
+					leftBuffers, null, null);
 			if (leftIterator == null) {
 				return evaluateFallback(bindings);
 			}
 
 			RecordIterator rightIterator = dataset.getOrderedRecordIterator(initialBinding, rightPlan.subjIndex,
-					rightPlan.predIndex, rightPlan.objIndex, rightPlan.ctxIndex, rightPlan.patternIds, rightPlan.order);
+					rightPlan.predIndex, rightPlan.objIndex, rightPlan.ctxIndex, rightPlan.patternIds, rightPlan.order,
+					rightBuffers, null, null);
 			if (rightIterator == null) {
 				try {
 					leftIterator.close();
@@ -205,6 +214,10 @@ public class LmdbIdMergeJoinQueryEvaluationStep implements QueryEvaluationStep {
 		return binding;
 	}
 
+	private KeyRangeBuffers keyBuffersFor(StatementPattern pattern) {
+		return patternBuffers.computeIfAbsent(pattern, p -> KeyRangeBuffers.acquire());
+	}
+
 	private static long resolveId(ValueStore valueStore, Value value) throws QueryEvaluationException {
 		if (value == null) {
 			return LmdbValue.UNKNOWN_ID;
@@ -259,15 +272,17 @@ public class LmdbIdMergeJoinQueryEvaluationStep implements QueryEvaluationStep {
 		private final int objIndex;
 		private final int ctxIndex;
 		private final StatementOrder order;
+		private final StatementPattern pattern;
 
 		private PatternPlan(long[] patternIds, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-				StatementOrder order) {
+				StatementOrder order, StatementPattern pattern) {
 			this.patternIds = patternIds;
 			this.subjIndex = subjIndex;
 			this.predIndex = predIndex;
 			this.objIndex = objIndex;
 			this.ctxIndex = ctxIndex;
 			this.order = order;
+			this.pattern = pattern;
 		}
 	}
 
@@ -278,15 +293,17 @@ public class LmdbIdMergeJoinQueryEvaluationStep implements QueryEvaluationStep {
 		private final String objVar;
 		private final String ctxVar;
 		private final boolean invalid;
+		private final StatementPattern pattern;
 
 		private RawPattern(long[] patternIds, String subjVar, String predVar, String objVar, String ctxVar,
-				boolean invalid) {
+				boolean invalid, StatementPattern pattern) {
 			this.patternIds = patternIds;
 			this.subjVar = subjVar;
 			this.predVar = predVar;
 			this.objVar = objVar;
 			this.ctxVar = ctxVar;
 			this.invalid = invalid;
+			this.pattern = pattern;
 		}
 
 		static RawPattern create(StatementPattern pattern, ValueStore valueStore) {
@@ -354,12 +371,12 @@ public class LmdbIdMergeJoinQueryEvaluationStep implements QueryEvaluationStep {
 				}
 			}
 
-			return new RawPattern(ids, subjVar, predVar, objVar, ctxVar, invalid);
+			return new RawPattern(ids, subjVar, predVar, objVar, ctxVar, invalid, pattern);
 		}
 
 		PatternPlan toPlan(IdBindingInfo bindingInfo, StatementOrder order) {
 			return new PatternPlan(patternIds.clone(), indexFor(subjVar, bindingInfo), indexFor(predVar, bindingInfo),
-					indexFor(objVar, bindingInfo), indexFor(ctxVar, bindingInfo), order);
+					indexFor(objVar, bindingInfo), indexFor(ctxVar, bindingInfo), order, pattern);
 		}
 
 		private static int indexFor(String varName, IdBindingInfo info) {

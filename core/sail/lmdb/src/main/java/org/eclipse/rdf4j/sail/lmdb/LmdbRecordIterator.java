@@ -42,20 +42,20 @@ import org.slf4j.LoggerFactory;
  */
 class LmdbRecordIterator implements RecordIterator {
 	private static final Logger log = LoggerFactory.getLogger(LmdbRecordIterator.class);
-	private final Pool pool;
+	private final Pool pool = Pool.get();
 
-	private final TripleIndex index;
+	private TripleIndex index;
 
-	private final long subj;
-	private final long pred;
-	private final long obj;
-	private final long context;
+	private long subj;
+	private long pred;
+	private long obj;
+	private long context;
 
-	private final long cursor;
+	private long cursor;
 
-	private final MDBVal maxKey;
+	private MDBVal maxKey;
 
-	private final boolean matchValues;
+	private boolean matchValues;
 	private GroupMatcher groupMatcher;
 
 	/**
@@ -63,111 +63,165 @@ class LmdbRecordIterator implements RecordIterator {
 	 * value-level filtering. When false, range bounds already guarantee that every visited key matches and the
 	 * GroupMatcher is redundant.
 	 */
-	private final boolean needMatcher;
+	private boolean needMatcher;
 
-	private final Txn txnRef;
+	private Txn txnRef;
 
 	private long txnRefVersion;
 
-	private final long txn;
+	private long txn;
 
-	private final int dbi;
+	private int dbi;
 
 	private volatile boolean closed = false;
 
-	private final MDBVal keyData;
+	private MDBVal keyData;
 
-	private final MDBVal valueData;
+	private MDBVal valueData;
 
 	private ByteBuffer minKeyBuf;
 
 	private ByteBuffer maxKeyBuf;
+	private boolean externalMinKeyBuf;
+	private boolean externalMaxKeyBuf;
 
 	private int lastResult;
 
-	private final long[] quad;
+	private long[] quad;
 
 	private boolean fetchNext = false;
 
-	private final StampedLongAdderLockManager txnLockManager;
+	private StampedLongAdderLockManager txnLockManager;
 
 	private final Thread ownerThread = Thread.currentThread();
 
+	private boolean initialized = false;
+
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
-		this(index, null, rangeSearch, subj, pred, obj, context, explicit, txnRef, null);
+		this(index, null, rangeSearch, subj, pred, obj, context, explicit, txnRef, null, null, null);
 	}
 
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef, long[] quadReuse) throws IOException {
-		this(index, null, rangeSearch, subj, pred, obj, context, explicit, txnRef, quadReuse);
+		this(index, null, rangeSearch, subj, pred, obj, context, explicit, txnRef, quadReuse, null, null);
+	}
+
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, long[] quadReuse, ByteBuffer minKeyBufParam,
+			ByteBuffer maxKeyBufParam) throws IOException {
+		this(index, null, rangeSearch, subj, pred, obj, context, explicit, txnRef, quadReuse, minKeyBufParam,
+				maxKeyBufParam);
 	}
 
 	LmdbRecordIterator(TripleIndex index, KeyBuilder keyBuilder, boolean rangeSearch, long subj,
 			long pred, long obj, long context, boolean explicit, Txn txnRef) throws IOException {
-		this(index, keyBuilder, rangeSearch, subj, pred, obj, context, explicit, txnRef, null);
+		this(index, keyBuilder, rangeSearch, subj, pred, obj, context, explicit, txnRef, null, null, null);
 	}
 
 	LmdbRecordIterator(TripleIndex index, KeyBuilder keyBuilder, boolean rangeSearch, long subj,
-			long pred, long obj, long context, boolean explicit, Txn txnRef, long[] quadReuse) throws IOException {
+			long pred, long obj, long context, boolean explicit, Txn txnRef, long[] quadReuse,
+			ByteBuffer minKeyBufParam, ByteBuffer maxKeyBufParam) throws IOException {
+		initializeInternal(index, keyBuilder, rangeSearch, subj, pred, obj, context, explicit, txnRef, quadReuse,
+				minKeyBufParam, maxKeyBufParam);
+		initialized = true;
+	}
+
+	void initialize(TripleIndex index, KeyBuilder keyBuilder, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, long[] quadReuse, ByteBuffer minKeyBufParam,
+			ByteBuffer maxKeyBufParam) throws IOException {
+		if (initialized && !closed) {
+			throw new IllegalStateException("Cannot initialize LMDB record iterator while it is open");
+		}
+		initializeInternal(index, keyBuilder, rangeSearch, subj, pred, obj, context, explicit, txnRef, quadReuse,
+				minKeyBufParam, maxKeyBufParam);
+		initialized = true;
+	}
+
+	private void initializeInternal(TripleIndex index, KeyBuilder keyBuilder, boolean rangeSearch, long subj,
+			long pred, long obj, long context, boolean explicit, Txn txnRef, long[] quadReuse,
+			ByteBuffer minKeyBufParam, ByteBuffer maxKeyBufParam) throws IOException {
+		this.index = index;
 		this.subj = subj;
 		this.pred = pred;
 		this.obj = obj;
 		this.context = context;
+
 		if (quadReuse != null && quadReuse.length >= 4) {
 			this.quad = quadReuse;
-			this.quad[0] = subj;
-			this.quad[1] = pred;
-			this.quad[2] = obj;
-			this.quad[3] = context;
-		} else {
+		} else if (this.quad == null || this.quad.length < 4) {
 			this.quad = new long[] { subj, pred, obj, context };
 		}
-		this.pool = Pool.get();
-		this.keyData = pool.getVal();
-		this.valueData = pool.getVal();
-		this.index = index;
+		this.quad[0] = subj;
+		this.quad[1] = pred;
+		this.quad[2] = obj;
+		this.quad[3] = context;
+
+		if (this.keyData == null) {
+			this.keyData = pool.getVal();
+		}
+		if (this.valueData == null) {
+			this.valueData = pool.getVal();
+		}
+
 		if (rangeSearch) {
-			minKeyBuf = pool.getKeyBuffer();
+			this.externalMinKeyBuf = minKeyBufParam != null;
+			this.minKeyBuf = externalMinKeyBuf ? minKeyBufParam : pool.getKeyBuffer();
+			minKeyBuf.clear();
 			if (keyBuilder != null) {
-				minKeyBuf.clear();
 				keyBuilder.writeMin(minKeyBuf);
 			} else {
 				index.getMinKey(minKeyBuf, subj, pred, obj, context);
 			}
 			minKeyBuf.flip();
 
-			this.maxKey = pool.getVal();
-			this.maxKeyBuf = pool.getKeyBuffer();
+			if (this.maxKey == null) {
+				this.maxKey = pool.getVal();
+			}
+			this.externalMaxKeyBuf = maxKeyBufParam != null;
+			this.maxKeyBuf = externalMaxKeyBuf ? maxKeyBufParam : pool.getKeyBuffer();
+			maxKeyBuf.clear();
 			if (keyBuilder != null) {
-				maxKeyBuf.clear();
 				keyBuilder.writeMax(maxKeyBuf);
 			} else {
 				index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
 			}
 			maxKeyBuf.flip();
 			this.maxKey.mv_data(maxKeyBuf);
-
 		} else {
-			// Even when we can't bound with a prefix (no rangeSearch), we can still
-			// position the cursor closer to the first potentially matching key when
-			// there are any constraints (matchValues). This avoids scanning from the
-			// absolute beginning for patterns like ?p ?o constC etc.
+			if (this.maxKey != null) {
+				pool.free(maxKey);
+				this.maxKey = null;
+			}
+			if (this.maxKeyBuf != null && !externalMaxKeyBuf) {
+				pool.free(maxKeyBuf);
+			}
+			this.externalMaxKeyBuf = maxKeyBufParam != null;
+			this.maxKeyBuf = externalMaxKeyBuf ? maxKeyBufParam : null;
+
 			if (subj > 0 || pred > 0 || obj > 0 || context >= 0) {
-				minKeyBuf = pool.getKeyBuffer();
+				this.externalMinKeyBuf = minKeyBufParam != null;
+				this.minKeyBuf = externalMinKeyBuf ? minKeyBufParam : pool.getKeyBuffer();
+				minKeyBuf.clear();
 				index.getMinKey(minKeyBuf, subj, pred, obj, context);
 				minKeyBuf.flip();
 			} else {
-				minKeyBuf = null;
+				if (this.minKeyBuf != null && !externalMinKeyBuf) {
+					pool.free(minKeyBuf);
+				}
+				this.externalMinKeyBuf = minKeyBufParam != null;
+				this.minKeyBuf = externalMinKeyBuf ? minKeyBufParam : null;
 			}
-			this.maxKey = null;
-			this.maxKeyBuf = null;
 		}
 
 		this.matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
 		int prefixLen = index.getPatternScore(subj, pred, obj, context);
 		int boundCount = (subj > 0 ? 1 : 0) + (pred > 0 ? 1 : 0) + (obj > 0 ? 1 : 0) + (context >= 0 ? 1 : 0);
 		this.needMatcher = boundCount > prefixLen;
+		this.groupMatcher = null;
+		this.fetchNext = false;
+		this.lastResult = MDB_SUCCESS;
+		this.closed = false;
 
 		this.dbi = index.getDB(explicit);
 		this.txnRef = txnRef;
@@ -221,18 +275,21 @@ class LmdbRecordIterator implements RecordIterator {
 
 	@Override
 	public long[] next() {
+		if (closed) {
+			log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
+			return null;
+		}
+		StampedLongAdderLockManager manager = txnLockManager;
+		if (manager == null) {
+			throw new SailException("Iterator not initialized");
+		}
 		long readStamp;
 		try {
-			readStamp = txnLockManager.readLock();
+			readStamp = manager.readLock();
 		} catch (InterruptedException e) {
 			throw new SailException(e);
 		}
 		try {
-			if (closed) {
-				log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
-				return null;
-			}
-
 			if (txnRefVersion != txnRef.version()) {
 				// TODO: None of the tests in the LMDB Store cover this case!
 				// cursor must be renewed
@@ -291,7 +348,7 @@ class LmdbRecordIterator implements RecordIterator {
 			closeInternal(false);
 			return null;
 		} finally {
-			txnLockManager.unlockRead(readStamp);
+			manager.unlockRead(readStamp);
 		}
 	}
 
@@ -312,40 +369,66 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	private void closeInternal(boolean maybeCalledAsync) {
-		if (!closed) {
-			long writeStamp = 0L;
-			boolean writeLocked = false;
-			if (maybeCalledAsync && ownerThread != Thread.currentThread()) {
-				try {
-					writeStamp = txnLockManager.writeLock();
-					writeLocked = true;
-				} catch (InterruptedException e) {
-					throw new SailException(e);
-				}
-			}
+		StampedLongAdderLockManager manager = this.txnLockManager;
+		if (closed) {
+			return;
+		}
+		long writeStamp = 0L;
+		boolean writeLocked = false;
+		if (maybeCalledAsync && ownerThread != Thread.currentThread() && manager != null) {
 			try {
-				if (!closed) {
-					if (txnRef.isReadOnly()) {
-						pool.freeCursor(dbi, index, cursor);
-					} else {
-						mdb_cursor_close(cursor);
-					}
-					pool.free(keyData);
-					pool.free(valueData);
-					if (minKeyBuf != null) {
-						pool.free(minKeyBuf);
-					}
-					if (maxKey != null) {
-						pool.free(maxKeyBuf);
-						pool.free(maxKey);
-					}
-				}
-			} finally {
-				closed = true;
-				if (writeLocked) {
-					txnLockManager.unlockWrite(writeStamp);
-				}
+				writeStamp = manager.writeLock();
+				writeLocked = true;
+			} catch (InterruptedException e) {
+				throw new SailException(e);
 			}
+		}
+		try {
+			if (cursor != 0L && txnRef != null) {
+				if (txnRef.isReadOnly()) {
+					pool.freeCursor(dbi, index, cursor);
+				} else {
+					mdb_cursor_close(cursor);
+				}
+				cursor = 0L;
+			}
+			if (keyData != null) {
+				pool.free(keyData);
+				keyData = null;
+			}
+			if (valueData != null) {
+				pool.free(valueData);
+				valueData = null;
+			}
+			if (minKeyBuf != null && !externalMinKeyBuf) {
+				pool.free(minKeyBuf);
+			}
+			if (maxKeyBuf != null && !externalMaxKeyBuf) {
+				pool.free(maxKeyBuf);
+			}
+			if (maxKey != null) {
+				pool.free(maxKey);
+				maxKey = null;
+			}
+			minKeyBuf = null;
+			maxKeyBuf = null;
+			externalMinKeyBuf = false;
+			externalMaxKeyBuf = false;
+			groupMatcher = null;
+			fetchNext = false;
+			lastResult = 0;
+			matchValues = false;
+			needMatcher = false;
+			txnRef = null;
+			txn = 0L;
+			dbi = 0;
+			index = null;
+		} finally {
+			closed = true;
+			if (writeLocked) {
+				manager.unlockWrite(writeStamp);
+			}
+			txnLockManager = null;
 		}
 	}
 

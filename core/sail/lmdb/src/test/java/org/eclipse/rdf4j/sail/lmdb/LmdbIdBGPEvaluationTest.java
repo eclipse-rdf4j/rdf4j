@@ -12,8 +12,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
@@ -29,7 +31,9 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.StatementPattern.Index;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -41,6 +45,7 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleSource;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdBGPQueryEvaluationStep;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -52,7 +57,7 @@ public class LmdbIdBGPEvaluationTest {
 	private static final String NS = "http://example.com/";
 
 	@Test
-	public void bgpPrefersContextOverlayDataset(@TempDir java.nio.file.Path tempDir) throws Exception {
+	public void bgpPrefersContextOverlayDataset(@TempDir java.nio.file.Path tempDir) throws IOException {
 		LmdbStore store = new LmdbStore(tempDir.toFile());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -164,7 +169,7 @@ public class LmdbIdBGPEvaluationTest {
 	}
 
 	@Test
-	public void bgpUsesIdArrayIterator(@TempDir java.nio.file.Path tempDir) throws Exception {
+	public void bgpUsesIdArrayIterator(@TempDir java.nio.file.Path tempDir) throws IOException {
 		LmdbStore store = new LmdbStore(tempDir.toFile());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -232,6 +237,100 @@ public class LmdbIdBGPEvaluationTest {
 			branch.close();
 			repository.shutDown();
 		}
+	}
+
+	@Test
+	public void recordsChosenIndexesForPatterns(@TempDir java.nio.file.Path tempDir) throws IOException {
+		LmdbStore store = new LmdbStore(tempDir.toFile());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI alice = vf.createIRI(NS, "alice");
+		IRI bob = vf.createIRI(NS, "bob");
+		IRI knows = vf.createIRI(NS, "knows");
+		IRI likes = vf.createIRI(NS, "likes");
+		IRI pizza = vf.createIRI(NS, "pizza");
+
+		try (RepositoryConnection conn = repository.getConnection()) {
+			conn.add(alice, knows, bob);
+			conn.add(alice, likes, pizza);
+		}
+
+		String query = "SELECT ?person ?item\n" +
+				"WHERE {\n" +
+				"  ?person <http://example.com/knows> <http://example.com/bob> .\n" +
+				"  ?person <http://example.com/likes> ?item .\n" +
+				"}";
+
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		TupleExpr tupleExpr = parsed.getTupleExpr();
+		TupleExpr current = tupleExpr;
+		if (current instanceof org.eclipse.rdf4j.query.algebra.QueryRoot) {
+			current = ((org.eclipse.rdf4j.query.algebra.QueryRoot) current).getArg();
+		}
+		if (current instanceof org.eclipse.rdf4j.query.algebra.Projection) {
+			current = ((org.eclipse.rdf4j.query.algebra.Projection) current).getArg();
+		}
+		if (!(current instanceof Join)) {
+			throw new AssertionError("expected Join at root of algebra");
+		}
+		Join join = (Join) current;
+
+		List<org.eclipse.rdf4j.query.algebra.StatementPattern> patterns = new ArrayList<>();
+		boolean flattened = LmdbIdBGPQueryEvaluationStep.flattenBGP(join, patterns);
+		assertThat(flattened).isTrue();
+		assertThat(patterns).hasSize(2);
+
+		SailSource branch = store.getBackingStore().getExplicitSailSource();
+		SailDataset dataset = branch.dataset(IsolationLevels.SNAPSHOT_READ);
+
+		try {
+			LmdbEvaluationDataset lmdbDataset = (LmdbEvaluationDataset) dataset;
+			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
+
+			QueryEvaluationContext ctx = new LmdbQueryEvaluationContext(null, tripleSource.getValueFactory(),
+					tripleSource.getComparator(), lmdbDataset, lmdbDataset.getValueStore());
+
+			LmdbIdBGPQueryEvaluationStep step = new LmdbIdBGPQueryEvaluationStep(join, patterns, ctx, null);
+
+			try (CloseableIteration<BindingSet> iter = step.evaluate(EmptyBindingSet.getInstance())) {
+				while (iter.hasNext()) {
+					iter.next();
+				}
+			}
+
+			assertIndexMatchesDataset(lmdbDataset, patterns.get(0));
+			assertIndexMatchesDataset(lmdbDataset, patterns.get(1));
+		} finally {
+			dataset.close();
+			branch.close();
+			repository.shutDown();
+		}
+	}
+
+	private void assertIndexMatchesDataset(LmdbEvaluationDataset dataset,
+			org.eclipse.rdf4j.query.algebra.StatementPattern pattern)
+			throws IOException {
+		long subjId = resolveId(dataset, pattern.getSubjectVar());
+		long predId = resolveId(dataset, pattern.getPredicateVar());
+		long objId = resolveId(dataset, pattern.getObjectVar());
+		long ctxId = resolveId(dataset, pattern.getContextVar());
+
+		String fieldSeq = dataset.selectBestIndex(subjId, predId, objId, ctxId);
+		if (fieldSeq == null) {
+			assertThat(pattern.getIndex()).isNull();
+			return;
+		}
+		String enumKey = fieldSeq.toUpperCase(Locale.ROOT);
+		assertThat(pattern.getIndex()).isEqualTo(Index.valueOf(enumKey));
+	}
+
+	private long resolveId(LmdbEvaluationDataset dataset, Var var) throws IOException {
+		if (var == null || !var.hasValue()) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		return dataset.getValueStore().getId(var.getValue());
 	}
 
 	private static final class RecordingDataset implements LmdbEvaluationDataset {

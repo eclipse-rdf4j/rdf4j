@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -38,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.IdBindingInfo;
 import org.eclipse.rdf4j.sail.lmdb.LmdbDatasetContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset;
+import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset.KeyRangeBuffers;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleStore;
@@ -64,6 +66,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 	private final Map<String, Long> constantBindings;
 	private final List<MergeSpec> mergeSpecs;
 	private final Set<Join> mergeJoinNodes;
+	private final Map<StatementPattern, KeyRangeBuffers> patternBuffers = new HashMap<>();
 
 	public LmdbIdBGPQueryEvaluationStep(Join root, List<StatementPattern> patterns, QueryEvaluationContext context,
 			QueryEvaluationStep fallbackStep) {
@@ -171,6 +174,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				return new EmptyIteration<>();
 			}
 
+			applyIndexHints(dataset, initialBinding);
 			List<Stage> stages = buildStages();
 			if (stages.isEmpty()) {
 				return new EmptyIteration<>();
@@ -258,14 +262,17 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			StatementOrder rightOrder = determineOrder(rightRaw, spec.mergeVariable);
 			PatternPlan leftPlan = leftRaw.toPlan(finalInfo, leftOrder);
 			PatternPlan rightPlan = rightRaw.toPlan(finalInfo, rightOrder);
-			stages.add(new MergeStage(leftPlan, rightPlan, leftRaw.patternInfo, rightRaw.patternInfo,
-					spec.mergeVariable));
+			KeyRangeBuffers leftBuffers = keyBuffersFor(leftPlan.pattern);
+			KeyRangeBuffers rightBuffers = keyBuffersFor(rightPlan.pattern);
+			stages.add(new MergeStage(leftPlan, rightPlan, leftBuffers, rightBuffers, leftRaw.patternInfo,
+					rightRaw.patternInfo, spec.mergeVariable));
 			consumed[leftIndex] = true;
 			consumed[rightIndex] = true;
 		}
 		for (int i = 0; i < plans.size(); i++) {
 			if (!consumed[i]) {
-				stages.add(new PatternStage(plans.get(i)));
+				PatternPlan plan = plans.get(i);
+				stages.add(new PatternStage(plan, keyBuffersFor(plan.pattern)));
 			}
 		}
 		return stages;
@@ -294,6 +301,54 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		return null;
 	}
 
+	private void applyIndexHints(LmdbEvaluationDataset dataset) {
+		applyIndexHints(dataset, null);
+	}
+
+	private void applyIndexHints(LmdbEvaluationDataset dataset, long[] binding) {
+		for (int i = 0; i < rawPatterns.size(); i++) {
+			RawPattern raw = rawPatterns.get(i);
+			StatementPattern pattern = raw.pattern;
+			pattern.setIndex(null);
+			pattern.setIndexName(null);
+			if (dataset == null) {
+				continue;
+			}
+			long subj = resolveComponent(raw.patternIds[TripleStore.SUBJ_IDX], plans.get(i).subjIndex, binding);
+			long pred = resolveComponent(raw.patternIds[TripleStore.PRED_IDX], plans.get(i).predIndex, binding);
+			long obj = resolveComponent(raw.patternIds[TripleStore.OBJ_IDX], plans.get(i).objIndex, binding);
+			long ctx = resolveComponent(raw.patternIds[TripleStore.CONTEXT_IDX], plans.get(i).ctxIndex, binding);
+			String fieldSeq = dataset.selectBestIndex(subj, pred, obj, ctx);
+			if (fieldSeq == null) {
+				continue;
+			}
+			pattern.setIndexName(fieldSeq);
+			String enumKey = fieldSeq.toUpperCase(Locale.ROOT);
+			try {
+				pattern.setIndex(StatementPattern.Index.valueOf(enumKey));
+			} catch (IllegalArgumentException ignore) {
+				pattern.setIndex(null);
+			}
+		}
+	}
+
+	private KeyRangeBuffers keyBuffersFor(StatementPattern pattern) {
+		return patternBuffers.computeIfAbsent(pattern, p -> KeyRangeBuffers.acquire());
+	}
+
+	private static long resolveComponent(long constantId, int bindingIndex, long[] binding) {
+		if (constantId != LmdbValue.UNKNOWN_ID) {
+			return constantId;
+		}
+		if (binding != null && bindingIndex >= 0 && bindingIndex < binding.length) {
+			long fromBinding = binding[bindingIndex];
+			if (fromBinding != LmdbValue.UNKNOWN_ID) {
+				return fromBinding;
+			}
+		}
+		return LmdbValue.UNKNOWN_ID;
+	}
+
 	private interface Stage {
 		RecordIterator createInitialIterator(LmdbEvaluationDataset dataset, long[] initialBinding,
 				ValueStore valueStore) throws QueryEvaluationException;
@@ -304,11 +359,14 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 
 	private static final class PatternStage implements Stage {
 		private final PatternPlan plan;
+		private final KeyRangeBuffers keyBuffers;
 		private long[] bindingScratch;
 		private long[] quadScratch;
+		private RecordIterator reusableIterator;
 
-		private PatternStage(PatternPlan plan) {
+		private PatternStage(PatternPlan plan, KeyRangeBuffers keyBuffers) {
 			this.plan = plan;
+			this.keyBuffers = keyBuffers;
 		}
 
 		@Override
@@ -321,20 +379,28 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				quadScratch = new long[4];
 			}
 			RecordIterator iter = dataset.getRecordIterator(initialBinding, plan.subjIndex, plan.predIndex,
-					plan.objIndex, plan.ctxIndex, plan.patternIds, bindingScratch, quadScratch);
+					plan.objIndex, plan.ctxIndex, plan.patternIds, keyBuffers, bindingScratch, quadScratch,
+					reusableIterator);
+			if (iter != null && iter != LmdbIdJoinIterator.emptyRecordIterator()) {
+				reusableIterator = iter;
+			} else {
+				reusableIterator = null;
+			}
 			return iter == null ? LmdbIdJoinIterator.emptyRecordIterator() : iter;
 		}
 
 		@Override
 		public RecordIterator joinWith(RecordIterator left, LmdbEvaluationDataset dataset, ValueStore valueStore)
 				throws QueryEvaluationException {
-			return new BindingJoinRecordIterator(left, dataset, plan);
+			return new BindingJoinRecordIterator(left, dataset, plan, keyBuffers);
 		}
 	}
 
 	private final class MergeStage implements Stage {
 		private final PatternPlan leftPlan;
 		private final PatternPlan rightPlan;
+		private final KeyRangeBuffers leftKeyBuffers;
+		private final KeyRangeBuffers rightKeyBuffers;
 		private final LmdbIdJoinIterator.PatternInfo leftInfo;
 		private final LmdbIdJoinIterator.PatternInfo rightInfo;
 		private final String mergeVariable;
@@ -344,11 +410,17 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		private long[] sequentialLeftQuadScratch;
 		private long[] orderedLeftQuadScratch;
 		private long[] orderedRightQuadScratch;
+		private RecordIterator sequentialLeftReusable;
+		private RecordIterator orderedLeftReusable;
+		private RecordIterator orderedRightReusable;
 
-		private MergeStage(PatternPlan leftPlan, PatternPlan rightPlan, LmdbIdJoinIterator.PatternInfo leftInfo,
+		private MergeStage(PatternPlan leftPlan, PatternPlan rightPlan, KeyRangeBuffers leftKeyBuffers,
+				KeyRangeBuffers rightKeyBuffers, LmdbIdJoinIterator.PatternInfo leftInfo,
 				LmdbIdJoinIterator.PatternInfo rightInfo, String mergeVariable) {
 			this.leftPlan = leftPlan;
 			this.rightPlan = rightPlan;
+			this.leftKeyBuffers = leftKeyBuffers;
+			this.rightKeyBuffers = rightKeyBuffers;
 			this.leftInfo = leftInfo;
 			this.rightInfo = rightInfo;
 			this.mergeVariable = mergeVariable;
@@ -415,9 +487,15 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			}
 			RecordIterator leftIterator = dataset.getOrderedRecordIterator(binding, leftPlan.subjIndex,
 					leftPlan.predIndex, leftPlan.objIndex, leftPlan.ctxIndex, leftPlan.patternIds, leftPlan.order,
-					orderedLeftScratch, orderedLeftQuadScratch);
+					leftKeyBuffers, orderedLeftScratch, orderedLeftQuadScratch, orderedLeftReusable);
 			if (leftIterator == null) {
+				orderedLeftReusable = null;
 				return createSequentialIterator(dataset, binding, valueStore);
+			}
+			if (leftIterator != LmdbIdJoinIterator.emptyRecordIterator()) {
+				orderedLeftReusable = leftIterator;
+			} else {
+				orderedLeftReusable = null;
 			}
 
 			if (orderedRightScratch == null || orderedRightScratch.length < binding.length) {
@@ -428,10 +506,16 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			}
 			RecordIterator rightIterator = dataset.getOrderedRecordIterator(binding, rightPlan.subjIndex,
 					rightPlan.predIndex, rightPlan.objIndex, rightPlan.ctxIndex, rightPlan.patternIds, rightPlan.order,
-					orderedRightScratch, orderedRightQuadScratch);
+					rightKeyBuffers, orderedRightScratch, orderedRightQuadScratch, orderedRightReusable);
 			if (rightIterator == null) {
 				leftIterator.close();
+				orderedRightReusable = null;
 				return createSequentialIterator(dataset, binding, valueStore);
+			}
+			if (rightIterator != LmdbIdJoinIterator.emptyRecordIterator()) {
+				orderedRightReusable = rightIterator;
+			} else {
+				orderedRightReusable = null;
 			}
 
 			return new LmdbIdMergeJoinIterator(leftIterator, rightIterator, leftInfo, rightInfo, mergeVariable,
@@ -447,12 +531,17 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				sequentialLeftQuadScratch = new long[4];
 			}
 			RecordIterator leftIterator = dataset.getRecordIterator(binding, leftPlan.subjIndex, leftPlan.predIndex,
-					leftPlan.objIndex, leftPlan.ctxIndex, leftPlan.patternIds, sequentialLeftScratch,
-					sequentialLeftQuadScratch);
+					leftPlan.objIndex, leftPlan.ctxIndex, leftPlan.patternIds, leftKeyBuffers, sequentialLeftScratch,
+					sequentialLeftQuadScratch, sequentialLeftReusable);
+			if (leftIterator != null && leftIterator != LmdbIdJoinIterator.emptyRecordIterator()) {
+				sequentialLeftReusable = leftIterator;
+			} else {
+				sequentialLeftReusable = null;
+			}
 			if (leftIterator == null) {
 				return LmdbIdJoinIterator.emptyRecordIterator();
 			}
-			return new BindingJoinRecordIterator(leftIterator, dataset, rightPlan);
+			return new BindingJoinRecordIterator(leftIterator, dataset, rightPlan, rightKeyBuffers);
 		}
 	}
 
@@ -460,14 +549,18 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		private final RecordIterator left;
 		private final LmdbEvaluationDataset dataset;
 		private final PatternPlan plan;
+		private final KeyRangeBuffers keyBuffers;
 		private RecordIterator currentRight;
 		private long[] rightScratch;
 		private long[] quadScratch;
+		private RecordIterator reusableRight;
 
-		private BindingJoinRecordIterator(RecordIterator left, LmdbEvaluationDataset dataset, PatternPlan plan) {
+		private BindingJoinRecordIterator(RecordIterator left, LmdbEvaluationDataset dataset, PatternPlan plan,
+				KeyRangeBuffers keyBuffers) {
 			this.left = left;
 			this.dataset = dataset;
 			this.plan = plan;
+			this.keyBuffers = keyBuffers;
 		}
 
 		@Override
@@ -493,7 +586,12 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 					quadScratch = new long[4];
 				}
 				currentRight = dataset.getRecordIterator(leftBinding, plan.subjIndex, plan.predIndex, plan.objIndex,
-						plan.ctxIndex, plan.patternIds, rightScratch, quadScratch);
+						plan.ctxIndex, plan.patternIds, keyBuffers, rightScratch, quadScratch, reusableRight);
+				if (currentRight != null && currentRight != LmdbIdJoinIterator.emptyRecordIterator()) {
+					reusableRight = currentRight;
+				} else {
+					reusableRight = null;
+				}
 			}
 		}
 
@@ -504,6 +602,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				currentRight = null;
 			}
 			left.close();
+			reusableRight = null;
 		}
 	}
 
@@ -514,15 +613,17 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		private final int objIndex;
 		private final int ctxIndex;
 		private final StatementOrder order;
+		private final StatementPattern pattern;
 
 		private PatternPlan(long[] patternIds, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-				StatementOrder order) {
+				StatementOrder order, StatementPattern pattern) {
 			this.patternIds = patternIds;
 			this.subjIndex = subjIndex;
 			this.predIndex = predIndex;
 			this.objIndex = objIndex;
 			this.ctxIndex = ctxIndex;
 			this.order = order;
+			this.pattern = pattern;
 		}
 	}
 
@@ -645,7 +746,8 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 
 		PatternPlan toPlan(IdBindingInfo finalInfo, StatementOrder order) {
 			return new PatternPlan(patternIds.clone(), indexFor(subjVar, finalInfo),
-					indexFor(predVar, finalInfo), indexFor(objVar, finalInfo), indexFor(ctxVar, finalInfo), order);
+					indexFor(predVar, finalInfo), indexFor(objVar, finalInfo), indexFor(ctxVar, finalInfo), order,
+					pattern);
 		}
 
 		private static int indexFor(String varName, IdBindingInfo info) {

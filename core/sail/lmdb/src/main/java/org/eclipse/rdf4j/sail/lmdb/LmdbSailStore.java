@@ -81,6 +81,9 @@ class LmdbSailStore implements SailStore {
 		}
 	};
 
+	private static final boolean SCRATCH_REUSE_ENABLED = !"false"
+			.equalsIgnoreCase(System.getProperty("rdf4j.lmdb.experimentalScratchReuse", "true"));
+
 	final Logger logger = LoggerFactory.getLogger(LmdbSailStore.class);
 
 	private final TripleStore tripleStore;
@@ -1112,7 +1115,6 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private final class LmdbSailDataset implements SailDataset, LmdbEvaluationDataset {
-
 		private final boolean explicit;
 		private final IsolationLevel isolationLevel;
 		private final Txn txn;
@@ -1328,6 +1330,19 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public RecordIterator getRecordIterator(StatementPattern pattern, BindingSet bindings)
 				throws QueryEvaluationException {
+			return getRecordIterator(pattern, bindings, null);
+		}
+
+		@Override
+		public RecordIterator getRecordIterator(StatementPattern pattern, BindingSet bindings,
+				KeyRangeBuffers keyBuffers) throws QueryEvaluationException {
+			return getRecordIterator(pattern, bindings, keyBuffers, null);
+		}
+
+		@Override
+		public RecordIterator getRecordIterator(StatementPattern pattern, BindingSet bindings,
+				KeyRangeBuffers keyBuffers,
+				RecordIterator iteratorReuse) throws QueryEvaluationException {
 			try {
 				PatternArrays arrays = describePattern(pattern);
 				if (!arrays.valid) {
@@ -1360,7 +1375,13 @@ class LmdbSailStore implements SailStore {
 					return emptyRecordIterator();
 				}
 
-				return tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
+				ByteBuffer minKeyBuf = keyBuffers != null ? keyBuffers.minKey() : null;
+				ByteBuffer maxKeyBuf = keyBuffers != null ? keyBuffers.maxKey() : null;
+				LmdbRecordIterator reuse = (iteratorReuse instanceof LmdbRecordIterator)
+						? (LmdbRecordIterator) iteratorReuse
+						: null;
+				return tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit, minKeyBuf, maxKeyBuf,
+						null, reuse);
 			} catch (IOException e) {
 				throw new QueryEvaluationException("Unable to create LMDB record iterator", e);
 			}
@@ -1370,88 +1391,72 @@ class LmdbSailStore implements SailStore {
 		public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 				int ctxIndex,
 				long[] patternIds) throws QueryEvaluationException {
-			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, null);
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, null, null,
+					null);
 		}
 
 		@Override
 		public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 				int ctxIndex,
 				long[] patternIds, long[] reuse) throws QueryEvaluationException {
-			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse, null);
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, reuse, null,
+					null);
 		}
 
 		@Override
 		public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 				int ctxIndex,
 				long[] patternIds, long[] reuse, long[] quadReuse) throws QueryEvaluationException {
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, reuse,
+					quadReuse, null);
+		}
+
+		@Override
+		public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+				int ctxIndex,
+				long[] patternIds, KeyRangeBuffers keyBuffers, long[] reuse, long[] quadReuse)
+				throws QueryEvaluationException {
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers, reuse,
+					quadReuse, null);
+		}
+
+		@Override
+		public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+				int ctxIndex,
+				long[] patternIds, KeyRangeBuffers keyBuffers, long[] reuse, long[] quadReuse,
+				RecordIterator iteratorReuse)
+				throws QueryEvaluationException {
 			try {
 				long subjQuery = selectQueryId(patternIds[TripleStore.SUBJ_IDX], binding, subjIndex);
 				long predQuery = selectQueryId(patternIds[TripleStore.PRED_IDX], binding, predIndex);
 				long objQuery = selectQueryId(patternIds[TripleStore.OBJ_IDX], binding, objIndex);
 				long ctxQuery = selectQueryId(patternIds[TripleStore.CONTEXT_IDX], binding, ctxIndex);
 
-				RecordIterator base = tripleStore.getTriples(txn, subjQuery, predQuery, objQuery, ctxQuery, explicit,
-						quadReuse);
+				ByteBuffer minKeyBuf = keyBuffers != null ? keyBuffers.minKey() : null;
+				ByteBuffer maxKeyBuf = keyBuffers != null ? keyBuffers.maxKey() : null;
 
-				if (!"false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.experimentalScratchReuse", "true"))) {
-					final long[] scratch;
-					if (reuse != null && reuse.length >= binding.length) {
-						System.arraycopy(binding, 0, reuse, 0, binding.length);
-						scratch = reuse;
-					} else {
-						scratch = Arrays.copyOf(binding, binding.length);
-					}
+				BindingProjectingIterator projectingReuse = iteratorReuse instanceof BindingProjectingIterator
+						? (BindingProjectingIterator) iteratorReuse
+						: null;
+				LmdbRecordIterator baseReuse = projectingReuse != null ? projectingReuse.getBase()
+						: (iteratorReuse instanceof LmdbRecordIterator ? (LmdbRecordIterator) iteratorReuse : null);
 
+				RecordIterator raw = tripleStore.getTriples(txn, subjQuery, predQuery, objQuery, ctxQuery, explicit,
+						minKeyBuf, maxKeyBuf, quadReuse, baseReuse);
+
+				if (!SCRATCH_REUSE_ENABLED) {
+					RecordIterator baseIterator = raw;
 					return new RecordIterator() {
 						@Override
 						public long[] next() throws QueryEvaluationException {
 							try {
 								long[] quad;
-								while ((quad = base.next()) != null) {
-									boolean conflict = false;
-									// subject
-									if (subjIndex >= 0) {
-										long baseVal = binding[subjIndex];
-										long v = quad[TripleStore.SUBJ_IDX];
-										if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
-											conflict = true;
-										} else {
-											scratch[subjIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
-										}
-									}
-									// predicate
-									if (!conflict && predIndex >= 0) {
-										long baseVal = binding[predIndex];
-										long v = quad[TripleStore.PRED_IDX];
-										if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
-											conflict = true;
-										} else {
-											scratch[predIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
-										}
-									}
-									// object
-									if (!conflict && objIndex >= 0) {
-										long baseVal = binding[objIndex];
-										long v = quad[TripleStore.OBJ_IDX];
-										if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
-											conflict = true;
-										} else {
-											scratch[objIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
-										}
-									}
-									// context (0 means default graph); treat like any other ID for conflict
-									if (!conflict && ctxIndex >= 0) {
-										long baseVal = binding[ctxIndex];
-										long v = quad[TripleStore.CONTEXT_IDX];
-										if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
-											conflict = true;
-										} else {
-											scratch[ctxIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
-										}
-									}
-
-									if (!conflict) {
-										return scratch;
+								while ((quad = baseIterator.next()) != null) {
+									long[] merged = mergeBinding(binding, quad[TripleStore.SUBJ_IDX],
+											quad[TripleStore.PRED_IDX], quad[TripleStore.OBJ_IDX],
+											quad[TripleStore.CONTEXT_IDX], subjIndex, predIndex, objIndex, ctxIndex);
+									if (merged != null) {
+										return merged;
 									}
 								}
 								return null;
@@ -1464,39 +1469,121 @@ class LmdbSailStore implements SailStore {
 
 						@Override
 						public void close() {
-							base.close();
+							baseIterator.close();
 						}
 					};
 				}
 
-				return new RecordIterator() {
-					@Override
-					public long[] next() throws QueryEvaluationException {
-						try {
-							long[] quad;
-							while ((quad = base.next()) != null) {
-								long[] merged = mergeBinding(binding, quad[TripleStore.SUBJ_IDX],
-										quad[TripleStore.PRED_IDX], quad[TripleStore.OBJ_IDX],
-										quad[TripleStore.CONTEXT_IDX], subjIndex, predIndex, objIndex, ctxIndex);
-								if (merged != null) {
-									return merged;
-								}
-							}
-							return null;
-						} catch (QueryEvaluationException e) {
-							throw e;
-						} catch (Exception e) {
-							throw new QueryEvaluationException(e);
-						}
-					}
-
-					@Override
-					public void close() {
-						base.close();
-					}
-				};
+				BindingProjectingIterator result = projectingReuse != null ? projectingReuse
+						: new BindingProjectingIterator();
+				result.configure(raw, raw instanceof LmdbRecordIterator ? (LmdbRecordIterator) raw : null, binding,
+						subjIndex, predIndex, objIndex, ctxIndex, reuse);
+				return result;
 			} catch (IOException e) {
 				throw new QueryEvaluationException("Unable to create LMDB record iterator", e);
+			}
+		}
+
+		private final class BindingProjectingIterator implements RecordIterator {
+			private RecordIterator base;
+			private LmdbRecordIterator lmdbBase;
+			private long[] binding;
+			private int subjIndex;
+			private int predIndex;
+			private int objIndex;
+			private int ctxIndex;
+			private long[] scratch;
+
+			void configure(RecordIterator base, LmdbRecordIterator lmdbBase, long[] binding, int subjIndex,
+					int predIndex, int objIndex,
+					int ctxIndex, long[] bindingReuse) {
+				this.base = base;
+				this.lmdbBase = lmdbBase;
+				this.binding = binding;
+				this.subjIndex = subjIndex;
+				this.predIndex = predIndex;
+				this.objIndex = objIndex;
+				this.ctxIndex = ctxIndex;
+				int bindingLength = binding.length;
+				if (bindingReuse != null && bindingReuse.length >= bindingLength) {
+					System.arraycopy(binding, 0, bindingReuse, 0, bindingLength);
+					this.scratch = bindingReuse;
+				} else if (this.scratch == null || this.scratch.length != bindingLength) {
+					this.scratch = Arrays.copyOf(binding, bindingLength);
+				} else {
+					System.arraycopy(binding, 0, this.scratch, 0, bindingLength);
+				}
+			}
+
+			LmdbRecordIterator getBase() {
+				return lmdbBase;
+			}
+
+			@Override
+			public long[] next() throws QueryEvaluationException {
+				if (base == null) {
+					return null;
+				}
+				try {
+					long[] quad;
+					while ((quad = base.next()) != null) {
+						System.arraycopy(binding, 0, scratch, 0, binding.length);
+						boolean conflict = false;
+						if (subjIndex >= 0) {
+							long baseVal = binding[subjIndex];
+							long v = quad[TripleStore.SUBJ_IDX];
+							if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
+								conflict = true;
+							} else {
+								scratch[subjIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
+							}
+						}
+						if (!conflict && predIndex >= 0) {
+							long baseVal = binding[predIndex];
+							long v = quad[TripleStore.PRED_IDX];
+							if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
+								conflict = true;
+							} else {
+								scratch[predIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
+							}
+						}
+						if (!conflict && objIndex >= 0) {
+							long baseVal = binding[objIndex];
+							long v = quad[TripleStore.OBJ_IDX];
+							if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
+								conflict = true;
+							} else {
+								scratch[objIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
+							}
+						}
+						if (!conflict && ctxIndex >= 0) {
+							long baseVal = binding[ctxIndex];
+							long v = quad[TripleStore.CONTEXT_IDX];
+							if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
+								conflict = true;
+							} else {
+								scratch[ctxIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
+							}
+						}
+						if (!conflict) {
+							return scratch;
+						}
+					}
+					return null;
+				} catch (QueryEvaluationException e) {
+					throw e;
+				} catch (Exception e) {
+					throw new QueryEvaluationException(e);
+				}
+			}
+
+			@Override
+			public void close() {
+				if (base != null) {
+					base.close();
+					base = null;
+					lmdbBase = null;
+				}
 			}
 		}
 
@@ -1504,23 +1591,31 @@ class LmdbSailStore implements SailStore {
 		public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 				int ctxIndex, long[] patternIds, StatementOrder order) throws QueryEvaluationException {
 			return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order, null,
-					null);
+					null, null);
 		}
 
 		@Override
 		public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 				int ctxIndex, long[] patternIds, StatementOrder order, long[] reuse) throws QueryEvaluationException {
-			return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order, reuse,
-					null);
+			return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order, null,
+					reuse, null);
 		}
 
 		@Override
 		public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 				int ctxIndex, long[] patternIds, StatementOrder order, long[] reuse, long[] quadReuse)
 				throws QueryEvaluationException {
+			return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order, null,
+					reuse, quadReuse);
+		}
+
+		@Override
+		public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+				int ctxIndex, long[] patternIds, StatementOrder order, KeyRangeBuffers keyBuffers, long[] bindingReuse,
+				long[] quadReuse) throws QueryEvaluationException {
 			if (order == null) {
-				return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse,
-						quadReuse);
+				return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
+						bindingReuse, quadReuse);
 			}
 			try {
 				long subjQuery = selectQueryId(patternIds[TripleStore.SUBJ_IDX], binding, subjIndex);
@@ -1538,7 +1633,7 @@ class LmdbSailStore implements SailStore {
 					int sortIndex = indexForOrder(order, subjIndex, predIndex, objIndex, ctxIndex);
 					if (sortIndex >= 0) {
 						RecordIterator fallback = getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex,
-								patternIds, reuse, quadReuse);
+								patternIds, keyBuffers, bindingReuse, quadReuse);
 						return sortedRecordIterator(fallback, sortIndex);
 					}
 				}
@@ -1574,8 +1669,14 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public RecordIterator getOrderedRecordIterator(StatementPattern pattern, BindingSet bindings,
 				StatementOrder order) throws QueryEvaluationException {
+			return getOrderedRecordIterator(pattern, bindings, order, null);
+		}
+
+		@Override
+		public RecordIterator getOrderedRecordIterator(StatementPattern pattern, BindingSet bindings,
+				StatementOrder order, KeyRangeBuffers keyBuffers) throws QueryEvaluationException {
 			if (order == null) {
-				return getRecordIterator(pattern, bindings);
+				return getRecordIterator(pattern, bindings, keyBuffers);
 			}
 			try {
 				Value subj = resolveValue(pattern.getSubjectVar(), bindings);
@@ -1620,12 +1721,11 @@ class LmdbSailStore implements SailStore {
 					return emptyRecordIterator();
 				}
 
-				try (RecordIterator orderedIter = orderedRecordIterator(order, subjID, predID, objID, contextID)) {
-					if (orderedIter != null) {
-						return orderedIter;
-					}
+				RecordIterator orderedIter = orderedRecordIterator(order, subjID, predID, objID, contextID);
+				if (orderedIter != null) {
+					return orderedIter;
 				}
-				return null;
+				return getRecordIterator(pattern, bindings, keyBuffers);
 			} catch (IOException e) {
 				throw new QueryEvaluationException("Unable to create ordered LMDB record iterator", e);
 			}
@@ -1634,6 +1734,12 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public ValueStore getValueStore() {
 			return valueStore;
+		}
+
+		@Override
+		public String selectBestIndex(long subj, long pred, long obj, long context) {
+			TripleStore.TripleIndex index = tripleStore.getBestIndex(subj, pred, obj, context);
+			return index == null ? null : new String(index.getFieldSeq());
 		}
 
 		@Override

@@ -15,7 +15,9 @@ import static org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -35,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.IdBindingInfo;
 import org.eclipse.rdf4j.sail.lmdb.LmdbDatasetContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset;
+import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset.KeyRangeBuffers;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
@@ -54,6 +57,7 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private final LmdbDatasetContext datasetContext;
 	private final QueryEvaluationStep fallbackStep;
 	private final boolean fallbackImmediately;
+	private final Map<StatementPattern, KeyRangeBuffers> patternBuffers = new HashMap<>();
 
 	public LmdbIdJoinQueryEvaluationStep(EvaluationStrategy strategy, Join join, QueryEvaluationContext context,
 			QueryEvaluationStep fallbackStep) {
@@ -89,6 +93,10 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 		Set<String> shared = new HashSet<>(left.getVariableNames());
 		shared.retainAll(right.getVariableNames());
 		return Collections.unmodifiableSet(shared);
+	}
+
+	private KeyRangeBuffers keyBuffersFor(StatementPattern pattern) {
+		return patternBuffers.computeIfAbsent(pattern, p -> KeyRangeBuffers.acquire());
 	}
 
 	public boolean shouldUseFallbackImmediately() {
@@ -179,6 +187,9 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 				return fallbackStep.evaluate(bindings);
 			}
 
+			final RecordIterator[] leftReuseHolder = new RecordIterator[1];
+			final RecordIterator[] rightReuseHolder = new RecordIterator[1];
+
 			if (!"false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.experimentalTwoPatternArrayJoin", "true"))) {
 				ValueStore valueStore = dataset.getValueStore();
 				IdBindingInfo bindingInfo = IdBindingInfo.combine(
@@ -195,7 +206,13 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 					return new org.eclipse.rdf4j.common.iteration.EmptyIteration<>();
 				}
 
-				RecordIterator leftIterator = dataset.getRecordIterator(leftPattern, bindings);
+				RecordIterator leftIterator = dataset.getRecordIterator(leftPattern, bindings,
+						keyBuffersFor(leftPattern), leftReuseHolder[0]);
+				if (leftIterator != null && leftIterator != LmdbIdJoinIterator.emptyRecordIterator()) {
+					leftReuseHolder[0] = leftIterator;
+				} else {
+					leftReuseHolder[0] = null;
+				}
 				long[] bindingSnapshot = new long[initialBinding.length];
 				long[] rightScratch = new long[initialBinding.length];
 				long[] rightQuadScratch = new long[4];
@@ -210,8 +227,15 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 							}
 						}
 					}
-					return dataset.getRecordIterator(bindingSnapshot, subjIdx, predIdx, objIdx, ctxIdx, patternIds,
-							rightScratch, rightQuadScratch);
+					RecordIterator iter = dataset.getRecordIterator(bindingSnapshot, subjIdx, predIdx, objIdx, ctxIdx,
+							patternIds, keyBuffersFor(rightPattern), rightScratch, rightQuadScratch,
+							rightReuseHolder[0]);
+					if (iter != null && iter != LmdbIdJoinIterator.emptyRecordIterator()) {
+						rightReuseHolder[0] = iter;
+					} else {
+						rightReuseHolder[0] = null;
+					}
+					return iter;
 				};
 
 				return new LmdbIdJoinIterator(leftIterator, rightFactory, leftInfo, bindingInfo, sharedVariables,
@@ -220,7 +244,13 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 			// Default: materialize right side via BindingSet and use LmdbIdJoinIterator
 			ValueStore valueStore = dataset.getValueStore();
-			RecordIterator leftIterator = dataset.getRecordIterator(leftPattern, bindings);
+			RecordIterator leftIterator = dataset.getRecordIterator(leftPattern, bindings,
+					keyBuffersFor(leftPattern), leftReuseHolder[0]);
+			if (leftIterator != null && leftIterator != LmdbIdJoinIterator.emptyRecordIterator()) {
+				leftReuseHolder[0] = leftIterator;
+			} else {
+				leftReuseHolder[0] = null;
+			}
 
 			LmdbIdJoinIterator.RecordIteratorFactory rightFactory = leftRecord -> {
 				MutableBindingSet bs = context.createBindingSet();
@@ -228,7 +258,14 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 				if (!leftInfo.applyRecord(leftRecord, bs, valueStore)) {
 					return LmdbIdJoinIterator.emptyRecordIterator();
 				}
-				return dataset.getRecordIterator(rightPattern, bs);
+				RecordIterator rightIter = dataset.getRecordIterator(rightPattern, bs, keyBuffersFor(rightPattern),
+						rightReuseHolder[0]);
+				if (rightIter != null && rightIter != LmdbIdJoinIterator.emptyRecordIterator()) {
+					rightReuseHolder[0] = rightIter;
+				} else {
+					rightReuseHolder[0] = null;
+				}
+				return rightIter;
 			};
 
 			return new LmdbIdJoinIterator(leftIterator, rightFactory, leftInfo, rightInfo, sharedVariables, context,

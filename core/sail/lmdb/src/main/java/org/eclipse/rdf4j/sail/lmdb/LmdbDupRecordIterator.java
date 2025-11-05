@@ -42,7 +42,9 @@ class LmdbDupRecordIterator implements RecordIterator {
 
 	@FunctionalInterface
 	interface FallbackSupplier {
-		RecordIterator get(long[] quadReuse) throws IOException;
+		RecordIterator get(long[] quadReuse, ByteBuffer minKeyBuf, ByteBuffer maxKeyBuf,
+				LmdbRecordIterator iteratorReuse)
+				throws IOException;
 	}
 
 	/** Toggle copying of duplicate blocks for extra safety (defaults to copying). */
@@ -390,6 +392,6 @@ class LmdbDupRecordIterator implements RecordIterator {
 		if (fallbackSupplier == null) {
 			return null;
 		}
-		return fallbackSupplier.get(quad);
+		return fallbackSupplier.get(quad, null, null, null);
 	}
 }
