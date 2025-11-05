@@ -2106,9 +2106,8 @@ class LmdbSailStore implements SailStore {
 
 				ByteBuffer minKeyBuf = keyBuffers != null ? keyBuffers.minKey() : null;
 				ByteBuffer maxKeyBuf = keyBuffers != null ? keyBuffers.maxKey() : null;
-				LmdbRecordIterator reuse = (iteratorReuse instanceof LmdbRecordIterator)
-						? (LmdbRecordIterator) iteratorReuse
-						: null;
+				RecordIterator reuse = (iteratorReuse instanceof LmdbRecordIterator
+						|| iteratorReuse instanceof LmdbDupRecordIterator) ? iteratorReuse : null;
 				return tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit, minKeyBuf, maxKeyBuf,
 						null, reuse);
 			} catch (IOException e) {
@@ -2167,8 +2166,10 @@ class LmdbSailStore implements SailStore {
 				BindingProjectingIterator projectingReuse = iteratorReuse instanceof BindingProjectingIterator
 						? (BindingProjectingIterator) iteratorReuse
 						: null;
-				LmdbRecordIterator baseReuse = projectingReuse != null ? projectingReuse.getBase()
-						: (iteratorReuse instanceof LmdbRecordIterator ? (LmdbRecordIterator) iteratorReuse : null);
+				RecordIterator baseReuse = projectingReuse != null ? projectingReuse.getReusableBase()
+						: (iteratorReuse instanceof LmdbRecordIterator || iteratorReuse instanceof LmdbDupRecordIterator
+								? iteratorReuse
+								: null);
 
 				RecordIterator raw = tripleStore.getTriples(txn, subjQuery, predQuery, objQuery, ctxQuery, explicit,
 						minKeyBuf, maxKeyBuf, quadReuse, baseReuse);
@@ -2205,8 +2206,11 @@ class LmdbSailStore implements SailStore {
 
 				BindingProjectingIterator result = projectingReuse != null ? projectingReuse
 						: new BindingProjectingIterator();
-				result.configure(raw, raw instanceof LmdbRecordIterator ? (LmdbRecordIterator) raw : null, binding,
-						subjIndex, predIndex, objIndex, ctxIndex, reuse);
+				RecordIterator reusableBase = (raw instanceof LmdbRecordIterator
+						|| raw instanceof LmdbDupRecordIterator)
+								? raw
+								: null;
+				result.configure(raw, reusableBase, binding, subjIndex, predIndex, objIndex, ctxIndex, reuse);
 				return result;
 			} catch (IOException e) {
 				throw new QueryEvaluationException("Unable to create LMDB record iterator", e);
@@ -2215,7 +2219,7 @@ class LmdbSailStore implements SailStore {
 
 		private final class BindingProjectingIterator implements RecordIterator {
 			private RecordIterator base;
-			private LmdbRecordIterator lmdbBase;
+			private RecordIterator reusableBase;
 			private long[] binding;
 			private int subjIndex;
 			private int predIndex;
@@ -2223,11 +2227,11 @@ class LmdbSailStore implements SailStore {
 			private int ctxIndex;
 			private long[] scratch;
 
-			void configure(RecordIterator base, LmdbRecordIterator lmdbBase, long[] binding, int subjIndex,
+			void configure(RecordIterator base, RecordIterator reusableBase, long[] binding, int subjIndex,
 					int predIndex, int objIndex,
 					int ctxIndex, long[] bindingReuse) {
 				this.base = base;
-				this.lmdbBase = lmdbBase;
+				this.reusableBase = reusableBase;
 				this.binding = binding;
 				this.subjIndex = subjIndex;
 				this.predIndex = predIndex;
@@ -2244,8 +2248,8 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 
-			LmdbRecordIterator getBase() {
-				return lmdbBase;
+			RecordIterator getReusableBase() {
+				return reusableBase;
 			}
 
 			@Override
@@ -2311,6 +2315,7 @@ class LmdbSailStore implements SailStore {
 				if (base != null) {
 					base.close();
 					base = null;
+					reusableBase = null;
 				}
 			}
 		}
