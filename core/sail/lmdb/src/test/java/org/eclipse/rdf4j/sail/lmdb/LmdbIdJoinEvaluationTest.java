@@ -54,6 +54,8 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleSource;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset;
+import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset.KeyRangeBuffers;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdJoinQueryEvaluationStep;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -533,9 +535,23 @@ public class LmdbIdJoinEvaluationTest {
 		}
 
 		@Override
+		public RecordIterator getRecordIterator(StatementPattern pattern, BindingSet bindings,
+				KeyRangeBuffers keyBuffers) throws QueryEvaluationException {
+			return delegate.getRecordIterator(pattern, bindings, keyBuffers);
+		}
+
+		@Override
 		public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 				int ctxIndex, long[] patternIds) throws QueryEvaluationException {
 			return delegate.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+		}
+
+		@Override
+		public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+				int ctxIndex, long[] patternIds, KeyRangeBuffers keyBuffers, long[] reuse, long[] quadReuse)
+				throws QueryEvaluationException {
+			return delegate.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds,
+					keyBuffers, reuse, quadReuse);
 		}
 
 		@Override
@@ -546,11 +562,27 @@ public class LmdbIdJoinEvaluationTest {
 		}
 
 		@Override
+		public RecordIterator getOrderedRecordIterator(StatementPattern pattern, BindingSet bindings,
+				StatementOrder order, KeyRangeBuffers keyBuffers) throws QueryEvaluationException {
+			legacyOrderedApiUsed = true;
+			return delegate.getOrderedRecordIterator(pattern, bindings, order, keyBuffers);
+		}
+
+		@Override
 		public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 				int ctxIndex, long[] patternIds, StatementOrder order) throws QueryEvaluationException {
 			arrayOrderedApiUsed = true;
 			return delegate.getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds,
 					order);
+		}
+
+		@Override
+		public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+				int ctxIndex, long[] patternIds, StatementOrder order, KeyRangeBuffers keyBuffers, long[] bindingReuse,
+				long[] quadReuse) throws QueryEvaluationException {
+			arrayOrderedApiUsed = true;
+			return delegate.getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds,
+					order, keyBuffers, bindingReuse, quadReuse);
 		}
 
 		boolean wasLegacyOrderedApiUsed() {

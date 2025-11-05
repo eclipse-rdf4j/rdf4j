@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import java.nio.ByteBuffer;
+
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -22,6 +24,30 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
  */
 public interface LmdbEvaluationDataset {
 
+	@InternalUseOnly
+	final class KeyRangeBuffers {
+		private final ByteBuffer minKey;
+		private final ByteBuffer maxKey;
+
+		public KeyRangeBuffers(ByteBuffer minKey, ByteBuffer maxKey) {
+			this.minKey = minKey;
+			this.maxKey = maxKey;
+		}
+
+		public static KeyRangeBuffers acquire() {
+			Pool pool = Pool.get();
+			return new KeyRangeBuffers(pool.getKeyBuffer(), pool.getKeyBuffer());
+		}
+
+		public ByteBuffer minKey() {
+			return minKey;
+		}
+
+		public ByteBuffer maxKey() {
+			return maxKey;
+		}
+	}
+
 	/**
 	 * Create a {@link RecordIterator} for the supplied {@link StatementPattern}, taking into account any existing
 	 * bindings.
@@ -32,6 +58,21 @@ public interface LmdbEvaluationDataset {
 	 * @throws QueryEvaluationException if the iterator could not be created
 	 */
 	RecordIterator getRecordIterator(StatementPattern pattern, BindingSet bindings) throws QueryEvaluationException;
+
+	@InternalUseOnly
+	default RecordIterator getRecordIterator(StatementPattern pattern, BindingSet bindings, KeyRangeBuffers keyBuffers)
+			throws QueryEvaluationException {
+		return getRecordIterator(pattern, bindings);
+	}
+
+	@InternalUseOnly
+	default RecordIterator getRecordIterator(StatementPattern pattern, BindingSet bindings, KeyRangeBuffers keyBuffers,
+			RecordIterator iteratorReuse) throws QueryEvaluationException {
+		if (iteratorReuse != null) {
+			iteratorReuse.close();
+		}
+		return getRecordIterator(pattern, bindings, keyBuffers);
+	}
 
 	/**
 	 * Create a {@link RecordIterator} for the supplied pattern, expressed as internal IDs, using the current binding
@@ -61,6 +102,12 @@ public interface LmdbEvaluationDataset {
 	RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds) throws QueryEvaluationException;
 
+	@InternalUseOnly
+	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, KeyRangeBuffers keyBuffers) throws QueryEvaluationException {
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+	}
+
 	/**
 	 * Variant of {@link #getRecordIterator(long[], int, int, int, int, long[])} that allows callers to supply reusable
 	 * scratch buffers. Implementations should treat {@code binding} as read-only and (when {@code bindingReuse} is
@@ -74,13 +121,34 @@ public interface LmdbEvaluationDataset {
 	@InternalUseOnly
 	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds, long[] bindingReuse) throws QueryEvaluationException {
-		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, bindingReuse, null);
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, bindingReuse,
+				null);
 	}
 
 	@InternalUseOnly
 	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds, long[] bindingReuse, long[] quadReuse) throws QueryEvaluationException {
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, bindingReuse,
+				quadReuse);
+	}
+
+	@InternalUseOnly
+	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, KeyRangeBuffers keyBuffers, long[] bindingReuse, long[] quadReuse)
+			throws QueryEvaluationException {
 		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+	}
+
+	@InternalUseOnly
+	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, KeyRangeBuffers keyBuffers, long[] bindingReuse, long[] quadReuse,
+			RecordIterator iteratorReuse)
+			throws QueryEvaluationException {
+		if (iteratorReuse != null) {
+			iteratorReuse.close();
+		}
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
+				bindingReuse, quadReuse);
 	}
 
 	/**
@@ -90,10 +158,8 @@ public interface LmdbEvaluationDataset {
 	@InternalUseOnly
 	default RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, StatementOrder order) throws QueryEvaluationException {
-		if (order == null) {
-			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
-		}
-		return null;
+		return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order, null,
+				null, null);
 	}
 
 	/**
@@ -103,21 +169,39 @@ public interface LmdbEvaluationDataset {
 	@InternalUseOnly
 	default RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, StatementOrder order, long[] reuse) throws QueryEvaluationException {
-		if (order == null) {
-			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse, null);
-		}
-		return null;
+		return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order, null,
+				reuse, null);
 	}
 
 	@InternalUseOnly
 	default RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, StatementOrder order, long[] bindingReuse, long[] quadReuse)
 			throws QueryEvaluationException {
+		return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order, null,
+				bindingReuse, quadReuse);
+	}
+
+	@InternalUseOnly
+	default RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+			int ctxIndex, long[] patternIds, StatementOrder order, KeyRangeBuffers keyBuffers, long[] bindingReuse,
+			long[] quadReuse) throws QueryEvaluationException {
 		if (order == null) {
-			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, bindingReuse,
-					quadReuse);
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
+					bindingReuse, quadReuse);
 		}
 		return null;
+	}
+
+	@InternalUseOnly
+	default RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+			int ctxIndex, long[] patternIds, StatementOrder order, KeyRangeBuffers keyBuffers, long[] bindingReuse,
+			long[] quadReuse, RecordIterator iteratorReuse) throws QueryEvaluationException {
+		if (iteratorReuse != null) {
+			iteratorReuse.close();
+		}
+		return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order,
+				keyBuffers,
+				bindingReuse, quadReuse);
 	}
 
 	/**
@@ -126,8 +210,13 @@ public interface LmdbEvaluationDataset {
 	 */
 	default RecordIterator getOrderedRecordIterator(StatementPattern pattern, BindingSet bindings, StatementOrder order)
 			throws QueryEvaluationException {
+		return getOrderedRecordIterator(pattern, bindings, order, null);
+	}
+
+	default RecordIterator getOrderedRecordIterator(StatementPattern pattern, BindingSet bindings, StatementOrder order,
+			KeyRangeBuffers keyBuffers) throws QueryEvaluationException {
 		if (order == null) {
-			return getRecordIterator(pattern, bindings);
+			return getRecordIterator(pattern, bindings, keyBuffers);
 		}
 		return null;
 	}
@@ -135,6 +224,16 @@ public interface LmdbEvaluationDataset {
 	default boolean supportsOrder(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds, StatementOrder order) {
 		return order == null;
+	}
+
+	/**
+	 * Determine the most suitable LMDB index for the supplied binding pattern.
+	 *
+	 * @return the field sequence of the selected index (e.g. {@code \"spoc\"}), or {@code null} when no advice is
+	 *         available
+	 */
+	default String selectBestIndex(long subj, long pred, long obj, long context) {
+		return null;
 	}
 
 	/**

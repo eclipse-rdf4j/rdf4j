@@ -576,9 +576,14 @@ public class TripleStore implements Closeable {
 		for (TripleIndex index : indexes) {
 			if (index.getFieldSeq()[0] == 'c') {
 				// found a context-first index
-				LmdbDupRecordIterator.FallbackSupplier fallback = () -> new LmdbRecordIterator(index, false, -1, -1, -1,
-						-1, true, txn);
-				return getTriplesUsingIndex(txn, -1, -1, -1, -1, true, index, false, fallback);
+				LmdbDupRecordIterator.FallbackSupplier fallback = (quad, minBuf, maxBuf, reuse) -> {
+					if (reuse != null) {
+						reuse.initialize(index, null, false, -1, -1, -1, -1, true, txn, quad, minBuf, maxBuf);
+						return reuse;
+					}
+					return new LmdbRecordIterator(index, null, false, -1, -1, -1, -1, true, txn, quad, minBuf, maxBuf);
+				};
+				return getTriplesUsingIndex(txn, -1, -1, -1, -1, true, index, false, fallback, null, null, null, null);
 			}
 		}
 		return null;
@@ -586,10 +591,33 @@ public class TripleStore implements Closeable {
 
 	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
+		return getTriples(txn, subj, pred, obj, context, explicit, null, null, null);
+	}
+
+	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+			long[] quadReuse) throws IOException {
+		return getTriples(txn, subj, pred, obj, context, explicit, null, null, quadReuse, null);
+	}
+
+	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+			ByteBuffer minKeyBuf, ByteBuffer maxKeyBuf, long[] quadReuse) throws IOException {
+		return getTriples(txn, subj, pred, obj, context, explicit, minKeyBuf, maxKeyBuf, quadReuse, null);
+	}
+
+	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+			ByteBuffer minKeyBuf, ByteBuffer maxKeyBuf, long[] quadReuse, LmdbRecordIterator iteratorReuse)
+			throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
-		LmdbDupRecordIterator.FallbackSupplier fallbackSupplier = () -> new LmdbRecordIterator(index, doRangeSearch,
-				subj, pred, obj, context, explicit, txn);
+		LmdbDupRecordIterator.FallbackSupplier fallbackSupplier = (quad, minBuf, maxBuf, reuse) -> {
+			if (reuse != null) {
+				reuse.initialize(index, null, doRangeSearch, subj, pred, obj, context, explicit, txn, quad, minBuf,
+						maxBuf);
+				return reuse;
+			}
+			return new LmdbRecordIterator(index, null, doRangeSearch, subj, pred, obj, context, explicit, txn, quad,
+					minBuf, maxBuf);
+		};
 		if (dupsortRead && subjectPredicateIndex != null && subj >= 0 && pred >= 0 && obj == -1 && context == -1) {
 			assert context == -1 && obj == -1 : "subject-predicate index can only be used for (s,p,?,?) patterns";
 			// Use SP dup iterator, but union with the standard iterator to guard against any edge cases
@@ -597,7 +625,8 @@ public class TripleStore implements Closeable {
 			return new LmdbDupRecordIterator(subjectPredicateIndex, subj, pred, explicit, txn,
 					fallbackSupplier);
 		}
-		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch, fallbackSupplier);
+		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch, fallbackSupplier,
+				minKeyBuf, maxKeyBuf, quadReuse, iteratorReuse);
 	}
 
 	boolean hasTriples(boolean explicit) throws IOException {
@@ -611,8 +640,9 @@ public class TripleStore implements Closeable {
 
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, boolean rangeSearch,
-			LmdbDupRecordIterator.FallbackSupplier fallbackSupplier) throws IOException {
-		return fallbackSupplier.get();
+			LmdbDupRecordIterator.FallbackSupplier fallbackSupplier, ByteBuffer minKeyBuf, ByteBuffer maxKeyBuf,
+			long[] quadReuse, LmdbRecordIterator iteratorReuse) throws IOException {
+		return fallbackSupplier.get(quadReuse, minKeyBuf, maxKeyBuf, iteratorReuse);
 	}
 
 	private int leadingBoundCount(char[] fieldSeq, long subj, long pred, long obj, long context) {
