@@ -54,26 +54,26 @@ class LmdbDupRecordIterator implements RecordIterator {
 	/** Size in bytes of one (v3,v4) tuple. */
 	private static final int DUP_PAIR_BYTES = Long.BYTES * 2;
 
-	private final Pool pool;
-	private final DupIndex index;
-	private final int dupDbi;
-	private final long cursor;
+	private final Pool pool = Pool.get();
+	private DupIndex index;
+	private int dupDbi;
+	private long cursor;
 
-	private final Txn txnRef;
+	private Txn txnRef;
 	private long txn; // refreshed on txn version changes
 	private long txnRefVersion;
-	private final StampedLongAdderLockManager txnLockManager;
+	private StampedLongAdderLockManager txnLockManager;
 	private final Thread ownerThread = Thread.currentThread();
 
-	private final MDBVal keyData;
-	private final MDBVal valueData;
+	private MDBVal keyData;
+	private MDBVal valueData;
 
 	/** Reused output buffer required by the RecordIterator API. */
-	private final long[] quad;
+	private long[] quad;
 
 	/** Scalars defining the prefix to scan (subject, predicate). */
-	private final long prefixSubj;
-	private final long prefixPred;
+	private long prefixSubj;
+	private long prefixPred;
 
 	private ByteBuffer prefixKeyBuf;
 
@@ -83,33 +83,67 @@ class LmdbDupRecordIterator implements RecordIterator {
 	private int dupLimit;
 
 	private int lastResult;
-	private boolean closed = false;
+	private boolean closed = true;
 
-	private final RecordIterator fallback;
-	private final FallbackSupplier fallbackSupplier;
+	private RecordIterator fallback;
+	private FallbackSupplier fallbackSupplier;
 
 	LmdbDupRecordIterator(DupIndex index, long subj, long pred,
 			boolean explicit, Txn txnRef, FallbackSupplier fallbackSupplier) throws IOException {
-		this.index = index;
+		initialize(index, subj, pred, explicit, txnRef, null, fallbackSupplier);
+	}
 
-		// Output buffer (s,p are constant for the life of this iterator)
-		this.quad = new long[4];
+	LmdbDupRecordIterator(DupIndex index, long subj, long pred,
+			boolean explicit, Txn txnRef, long[] quadReuse, FallbackSupplier fallbackSupplier) throws IOException {
+		initialize(index, subj, pred, explicit, txnRef, quadReuse, fallbackSupplier);
+	}
+
+	void initialize(DupIndex index, long subj, long pred, boolean explicit, Txn txnRef, long[] quadReuse,
+			FallbackSupplier fallbackSupplier) throws IOException {
+		if (!closed || fallback != null) {
+			throw new IllegalStateException("Cannot initialize LMDB dup iterator while it is open");
+		}
+
+		this.index = index;
+		this.dupDbi = index.getDupDB(explicit);
+		this.txnRef = txnRef;
+		this.txnLockManager = txnRef.lockManager();
+		this.fallbackSupplier = fallbackSupplier;
+		this.fallback = null;
+
+		this.prefixSubj = subj;
+		this.prefixPred = pred;
+
+		if (quadReuse != null && quadReuse.length >= 4) {
+			this.quad = quadReuse;
+		} else if (this.quad == null || this.quad.length < 4) {
+			this.quad = new long[4];
+		}
 		this.quad[0] = subj;
 		this.quad[1] = pred;
 		this.quad[2] = -1L;
 		this.quad[3] = -1L;
 
-		this.prefixSubj = subj;
-		this.prefixPred = pred;
+		if (this.keyData == null) {
+			this.keyData = pool.getVal();
+		}
+		if (this.valueData == null) {
+			this.valueData = pool.getVal();
+		}
 
-		this.fallbackSupplier = fallbackSupplier;
+		if (this.prefixKeyBuf == null) {
+			this.prefixKeyBuf = pool.getKeyBuffer();
+		}
+		prefixKeyBuf.clear();
+		Varint.writeUnsigned(prefixKeyBuf, prefixSubj);
+		Varint.writeUnsigned(prefixKeyBuf, prefixPred);
+		prefixKeyBuf.flip();
 
-		this.pool = Pool.get();
-		this.keyData = pool.getVal();
-		this.valueData = pool.getVal();
-		this.dupDbi = index.getDupDB(explicit);
-		this.txnRef = txnRef;
-		this.txnLockManager = txnRef.lockManager();
+		this.dupBuf = null;
+		this.dupPos = 0;
+		this.dupLimit = 0;
+		this.lastResult = MDB_SUCCESS;
+		this.closed = false;
 
 		RecordIterator fallbackIterator = null;
 
@@ -124,13 +158,6 @@ class LmdbDupRecordIterator implements RecordIterator {
 			this.txn = txnRef.get();
 
 			cursor = openCursor(txn, dupDbi, txnRef.isReadOnly());
-
-			prefixKeyBuf = pool.getKeyBuffer();
-			prefixKeyBuf.clear();
-			Varint.writeUnsigned(prefixKeyBuf, prefixSubj);
-			Varint.writeUnsigned(prefixKeyBuf, prefixPred);
-			// index.toDupKeyPrefix(prefixKeyBuf, subj, pred, 0, 0);
-			prefixKeyBuf.flip();
 
 			boolean positioned = positionOnPrefix();
 			if (positioned) {
@@ -340,15 +367,25 @@ class LmdbDupRecordIterator implements RecordIterator {
 			}
 			try {
 				if (!closed) {
-					if (txnRef.isReadOnly()) {
-						pool.freeCursor(dupDbi, index, cursor);
-					} else {
-						mdb_cursor_close(cursor);
+					if (cursor != 0L && txnRef != null) {
+						if (txnRef.isReadOnly()) {
+							pool.freeCursor(dupDbi, index, cursor);
+						} else {
+							mdb_cursor_close(cursor);
+						}
 					}
-					pool.free(keyData);
-					pool.free(valueData);
+					cursor = 0L;
+					if (keyData != null) {
+						pool.free(keyData);
+						keyData = null;
+					}
+					if (valueData != null) {
+						pool.free(valueData);
+						valueData = null;
+					}
 					if (prefixKeyBuf != null) {
 						pool.free(prefixKeyBuf);
+						prefixKeyBuf = null;
 					}
 				}
 			} finally {
@@ -356,6 +393,9 @@ class LmdbDupRecordIterator implements RecordIterator {
 				if (writeLocked) {
 					txnLockManager.unlockWrite(writeStamp);
 				}
+				txnRef = null;
+				dupBuf = null;
+				dupPos = dupLimit = 0;
 			}
 		}
 	}
@@ -364,9 +404,14 @@ class LmdbDupRecordIterator implements RecordIterator {
 	public void close() {
 		if (fallback != null) {
 			fallback.close();
+			fallback = null;
+			fallbackSupplier = null;
 		} else {
 			closeInternal(true);
+			fallbackSupplier = null;
 		}
+		txnLockManager = null;
+		txnRef = null;
 	}
 
 	private long openCursor(long txn, int dbi, boolean tryReuse) throws IOException {
