@@ -43,18 +43,18 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 	@Override
 	public RecordIterator getRecordIterator(StatementPattern pattern, BindingSet bindings)
 			throws QueryEvaluationException {
+		return getRecordIteratorInternal(pattern, bindings, null);
+	}
 
-		// Fast path: no active connection changes → delegate directly to LMDB dataset to avoid materialization
-		try {
-			if (!LmdbEvaluationStrategy.hasActiveConnectionChanges()) {
-				var dsOpt = LmdbEvaluationStrategy.getCurrentDataset();
-				if (dsOpt.isPresent()) {
-					return dsOpt.get().getRecordIterator(pattern, bindings);
-				}
-			}
-		} catch (Exception ignore) {
-			// fall through to overlay path
-		}
+	@Override
+	public RecordIterator getRecordIterator(StatementPattern pattern, BindingSet bindings, KeyRangeBuffers keyBuffers)
+			throws QueryEvaluationException {
+		return getRecordIteratorInternal(pattern, bindings, keyBuffers);
+	}
+
+	private RecordIterator getRecordIteratorInternal(StatementPattern pattern, BindingSet bindings,
+			KeyRangeBuffers keyBuffers)
+			throws QueryEvaluationException {
 
 		Value subj = resolveValue(pattern.getSubjectVar(), bindings);
 		if (subj != null && !(subj instanceof Resource)) {
@@ -131,38 +131,50 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds) throws QueryEvaluationException {
-		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, null);
+		return getRecordIteratorInternal(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, null,
+				null);
+	}
+
+	@Override
+	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, KeyRangeBuffers keyBuffers) throws QueryEvaluationException {
+		return getRecordIteratorInternal(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
+				null, null);
 	}
 
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds, long[] reuse) throws QueryEvaluationException {
-		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse, null);
+		return getRecordIteratorInternal(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, reuse,
+				null);
 	}
 
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds, long[] reuse, long[] quadReuse) throws QueryEvaluationException {
-		// Fast path: no active connection changes → use the current LMDB dataset's ID-level iterator
-		try {
-			if (!LmdbEvaluationStrategy.hasActiveConnectionChanges()) {
-				var dsOpt = LmdbEvaluationStrategy.getCurrentDataset();
-				if (dsOpt.isPresent()) {
-					return dsOpt.get()
-							.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds,
-									reuse, quadReuse);
-				}
-			}
-		} catch (Exception ignore) {
-			// fall back to overlay tripleSource path
-		}
+		return getRecordIteratorInternal(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, reuse,
+				quadReuse);
+	}
+
+	@Override
+	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, KeyRangeBuffers keyBuffers, long[] reuse, long[] quadReuse)
+			throws QueryEvaluationException {
+		return getRecordIteratorInternal(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
+				reuse, quadReuse);
+	}
+
+	private RecordIterator getRecordIteratorInternal(long[] binding, int subjIndex, int predIndex, int objIndex,
+			int ctxIndex, long[] patternIds, KeyRangeBuffers keyBuffers, long[] reuse, long[] quadReuse)
+			throws QueryEvaluationException {
 		// Prefer an ID-level path if the TripleSource supports it and we can trust overlay correctness.
 		if (tripleSource instanceof LmdbIdTripleSource) {
 			// The overlay dataset is represented by this LmdbOverlayEvaluationDataset; the tripleSource reflects the
 			// current branch dataset state (including transaction overlays). Therefore, using ID-level access here is
 			// correct when available.
 			RecordIterator viaIds = ((LmdbIdTripleSource) tripleSource)
-					.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse, quadReuse);
+					.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers, reuse,
+							quadReuse);
 			if (viaIds != null) {
 				return viaIds;
 			}
@@ -171,12 +183,11 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 		// Fallback: Value-based overlay path with per-statement ID resolution (minimal unavoidable materialization).
 		try {
 			Value subjValue = valueForQuery(patternIds[TripleStore.SUBJ_IDX], binding, subjIndex, true, false);
-			Resource subjRes = subjValue == null ? null : (Resource) subjValue;
-
 			Value predValue = valueForQuery(patternIds[TripleStore.PRED_IDX], binding, predIndex, false, true);
-			IRI predIri = predValue == null ? null : (IRI) predValue;
-
 			Value objValue = valueForQuery(patternIds[TripleStore.OBJ_IDX], binding, objIndex, false, false);
+
+			Resource subjRes = subjValue == null ? null : (Resource) subjValue;
+			IRI predIri = predValue == null ? null : (IRI) predValue;
 
 			long ctxQueryId = selectQueryId(patternIds[TripleStore.CONTEXT_IDX], binding, ctxIndex);
 			boolean requireDefaultContext = ctxQueryId == 0;
@@ -274,8 +285,41 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 	}
 
 	@Override
+	public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+			int ctxIndex, long[] patternIds, StatementOrder order, KeyRangeBuffers keyBuffers, long[] bindingReuse,
+			long[] quadReuse) throws QueryEvaluationException {
+		if (order == null) {
+			return getRecordIteratorInternal(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
+					bindingReuse, quadReuse);
+		}
+		return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order,
+				bindingReuse, quadReuse);
+	}
+
+	@Override
+	public RecordIterator getOrderedRecordIterator(StatementPattern pattern, BindingSet bindings, StatementOrder order,
+			KeyRangeBuffers keyBuffers) throws QueryEvaluationException {
+		if (order == null) {
+			return getRecordIteratorInternal(pattern, bindings, keyBuffers);
+		}
+		return LmdbEvaluationDataset.super.getOrderedRecordIterator(pattern, bindings, order, keyBuffers);
+	}
+
+	@Override
 	public ValueStore getValueStore() {
 		return valueStore;
+	}
+
+	@Override
+	public String selectBestIndex(long subj, long pred, long obj, long context) {
+		var currentDataset = LmdbEvaluationStrategy.getCurrentDataset();
+		if (currentDataset.isPresent()) {
+			LmdbEvaluationDataset delegate = currentDataset.get();
+			if (delegate != this) {
+				return delegate.selectBestIndex(subj, pred, obj, context);
+			}
+		}
+		return null;
 	}
 
 	private long selectQueryId(long patternId, long[] binding, int index) {
@@ -365,6 +409,6 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 				return lmdb.getInternalID();
 			}
 		}
-		return valueStore.getId(value);
+		return valueStore.getId(value, true);
 	}
 }

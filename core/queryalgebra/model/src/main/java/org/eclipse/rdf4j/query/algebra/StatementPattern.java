@@ -48,6 +48,77 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 		NAMED_CONTEXTS
 	}
 
+	/**
+	 * Index selection hint for statement pattern evaluation.
+	 */
+	@Experimental
+	public enum Index {
+		S,
+		P,
+		O,
+		C,
+		SP,
+		SO,
+		SC,
+		PS,
+		PO,
+		PC,
+		OS,
+		OP,
+		OC,
+		CS,
+		CP,
+		CO,
+		SPO,
+		SPC,
+		SOP,
+		SOC,
+		SCP,
+		SCO,
+		PSO,
+		PSC,
+		POS,
+		POC,
+		PCS,
+		PCO,
+		OSP,
+		OSC,
+		OPS,
+		OPC,
+		OCS,
+		OCP,
+		CSP,
+		CSO,
+		CPS,
+		CPO,
+		COS,
+		COP,
+		SPOC,
+		SPCO,
+		SOPC,
+		SOCP,
+		SCPO,
+		SCOP,
+		PSOC,
+		PSCO,
+		POSC,
+		POCS,
+		PCSO,
+		PCOS,
+		OSPC,
+		OSCP,
+		OPSC,
+		OPCS,
+		OCSP,
+		OCPS,
+		CSPO,
+		CSOP,
+		CPSO,
+		CPOS,
+		COSP,
+		COPS
+	}
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -65,6 +136,8 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	private StatementOrder statementOrder;
 
 	private String indexName;
+
+	private Index index;
 
 	private Set<String> assuredBindingNames;
 	private List<Var> varList;
@@ -427,6 +500,7 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 		clone.assuredBindingNames = assuredBindingNames;
 		clone.varList = null;
 		clone.statementOrder = statementOrder;
+		clone.index = index;
 
 		return clone;
 	}
@@ -541,7 +615,17 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	}
 
 	@Experimental
+	public Index getIndex() {
+		return index;
+	}
+
+	@Experimental
 	public void setIndexName(String indexName) {
 		this.indexName = indexName;
+	}
+
+	@Experimental
+	public void setIndex(Index index) {
+		this.index = index;
 	}
 }

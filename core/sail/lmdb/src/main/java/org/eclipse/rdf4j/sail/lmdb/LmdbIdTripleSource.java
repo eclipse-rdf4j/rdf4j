@@ -33,6 +33,11 @@ public interface LmdbIdTripleSource {
 	RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds) throws QueryEvaluationException;
 
+	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, LmdbEvaluationDataset.KeyRangeBuffers keyBuffers) throws QueryEvaluationException {
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+	}
+
 	/**
 	 * Variant that accepts reusable scratch buffers for bindings and quads.
 	 */
@@ -44,6 +49,13 @@ public interface LmdbIdTripleSource {
 	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds, long[] bindingReuse, long[] quadReuse) throws QueryEvaluationException {
 		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+	}
+
+	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, LmdbEvaluationDataset.KeyRangeBuffers keyBuffers, long[] bindingReuse, long[] quadReuse)
+			throws QueryEvaluationException {
+		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, bindingReuse,
+				quadReuse);
 	}
 
 	/**
@@ -74,6 +86,16 @@ public interface LmdbIdTripleSource {
 		if (order == null) {
 			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, bindingReuse,
 					quadReuse);
+		}
+		return null;
+	}
+
+	default RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+			int ctxIndex, long[] patternIds, StatementOrder order, LmdbEvaluationDataset.KeyRangeBuffers keyBuffers,
+			long[] bindingReuse, long[] quadReuse) throws QueryEvaluationException {
+		if (order == null) {
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
+					bindingReuse, quadReuse);
 		}
 		return null;
 	}
