@@ -38,7 +38,7 @@ public class LmdbIdJoinIterator extends LookAheadIteration<BindingSet> {
 
 	@FunctionalInterface
 	interface RecordIteratorFactory {
-		RecordIterator apply(long[] leftRecord) throws QueryEvaluationException;
+		RecordIterator apply(long[] leftRecord, RecordIterator reuse) throws QueryEvaluationException;
 	}
 
 	private static final RecordIterator EMPTY_RECORD_ITERATOR = new RecordIterator() {
@@ -228,6 +228,7 @@ public class LmdbIdJoinIterator extends LookAheadIteration<BindingSet> {
 	private final BindingSet initialBindings;
 	private final ValueStore valueStore;
 
+	private RecordIterator reusableRightIterator;
 	private RecordIterator currentRightIterator;
 	private long[] currentLeftRecord;
 	private BindingSet currentLeftBinding;
@@ -263,21 +264,38 @@ public class LmdbIdJoinIterator extends LookAheadIteration<BindingSet> {
 					}
 					return result;
 				}
-				currentRightIterator.close();
+				RecordIterator completed = currentRightIterator;
 				currentRightIterator = null;
+				if (completed != EMPTY_RECORD_ITERATOR) {
+					reusableRightIterator = completed;
+				} else {
+					reusableRightIterator = null;
+				}
+				completed.close();
 			}
 
 			long[] leftRecord = nextRecord(leftIterator);
 			if (leftRecord == null) {
+				reusableRightIterator = null;
 				return null;
 			}
 
 			currentLeftRecord = leftRecord;
 			currentLeftBinding = null;
 
-			currentRightIterator = rightFactory.apply(leftRecord);
+			RecordIterator reuseCandidate = reusableRightIterator;
+			if (reuseCandidate == EMPTY_RECORD_ITERATOR) {
+				reuseCandidate = null;
+			}
+
+			currentRightIterator = rightFactory.apply(leftRecord, reuseCandidate);
 			if (currentRightIterator == null) {
 				currentRightIterator = emptyRecordIterator();
+				reusableRightIterator = null;
+			} else if (currentRightIterator == EMPTY_RECORD_ITERATOR) {
+				reusableRightIterator = null;
+			} else {
+				reusableRightIterator = currentRightIterator;
 			}
 		}
 	}

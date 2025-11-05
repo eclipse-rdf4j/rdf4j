@@ -188,7 +188,6 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 			}
 
 			final RecordIterator[] leftReuseHolder = new RecordIterator[1];
-			final RecordIterator[] rightReuseHolder = new RecordIterator[1];
 
 			if (!"false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.experimentalTwoPatternArrayJoin", "true"))) {
 				ValueStore valueStore = dataset.getValueStore();
@@ -216,7 +215,7 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 				long[] bindingSnapshot = new long[initialBinding.length];
 				long[] rightScratch = new long[initialBinding.length];
 				long[] rightQuadScratch = new long[4];
-				LmdbIdJoinIterator.RecordIteratorFactory rightFactory = leftRecord -> {
+				LmdbIdJoinIterator.RecordIteratorFactory rightFactory = (leftRecord, reuse) -> {
 					System.arraycopy(initialBinding, 0, bindingSnapshot, 0, initialBinding.length);
 					for (String name : leftInfo.getVariableNames()) {
 						int pos = bindingInfo.getIndex(name);
@@ -228,13 +227,7 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 						}
 					}
 					RecordIterator iter = dataset.getRecordIterator(bindingSnapshot, subjIdx, predIdx, objIdx, ctxIdx,
-							patternIds, keyBuffersFor(rightPattern), rightScratch, rightQuadScratch,
-							rightReuseHolder[0]);
-					if (iter != null && iter != LmdbIdJoinIterator.emptyRecordIterator()) {
-						rightReuseHolder[0] = iter;
-					} else {
-						rightReuseHolder[0] = null;
-					}
+							patternIds, keyBuffersFor(rightPattern), rightScratch, rightQuadScratch, reuse);
 					return iter;
 				};
 
@@ -252,19 +245,14 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 				leftReuseHolder[0] = null;
 			}
 
-			LmdbIdJoinIterator.RecordIteratorFactory rightFactory = leftRecord -> {
+			LmdbIdJoinIterator.RecordIteratorFactory rightFactory = (leftRecord, reuse) -> {
 				MutableBindingSet bs = context.createBindingSet();
 				bindings.forEach(binding -> bs.addBinding(binding.getName(), binding.getValue()));
 				if (!leftInfo.applyRecord(leftRecord, bs, valueStore)) {
 					return LmdbIdJoinIterator.emptyRecordIterator();
 				}
 				RecordIterator rightIter = dataset.getRecordIterator(rightPattern, bs, keyBuffersFor(rightPattern),
-						rightReuseHolder[0]);
-				if (rightIter != null && rightIter != LmdbIdJoinIterator.emptyRecordIterator()) {
-					rightReuseHolder[0] = rightIter;
-				} else {
-					rightReuseHolder[0] = null;
-				}
+						reuse);
 				return rightIter;
 			};
 
