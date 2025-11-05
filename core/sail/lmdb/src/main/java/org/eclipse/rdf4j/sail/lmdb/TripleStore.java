@@ -613,7 +613,7 @@ public class TripleStore implements Closeable {
 	}
 
 	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
-			ByteBuffer minKeyBuf, ByteBuffer maxKeyBuf, long[] quadReuse, LmdbRecordIterator iteratorReuse)
+			ByteBuffer minKeyBuf, ByteBuffer maxKeyBuf, long[] quadReuse, RecordIterator iteratorReuse)
 			throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 		// System.out.println("get triples: " + Arrays.asList(subj, pred, obj,context));
@@ -627,15 +627,25 @@ public class TripleStore implements Closeable {
 			return new LmdbRecordIterator(index, null, doRangeSearch, subj, pred, obj, context, explicit, txn, quad,
 					minBuf, maxBuf);
 		};
+		LmdbRecordIterator recordReuse = iteratorReuse instanceof LmdbRecordIterator
+				? (LmdbRecordIterator) iteratorReuse
+				: null;
+		LmdbDupRecordIterator dupReuse = iteratorReuse instanceof LmdbDupRecordIterator
+				? (LmdbDupRecordIterator) iteratorReuse
+				: null;
 		if (dupsortRead && subjectPredicateIndex != null && subj >= 0 && pred >= 0 && obj == -1 && context == -1) {
 			assert context == -1 && obj == -1 : "subject-predicate index can only be used for (s,p,?,?) patterns";
 			// Use SP dup iterator, but union with the standard iterator to guard against any edge cases
 			// in SP storage/retrieval; de-duplicate at the record level.
-			return new LmdbDupRecordIterator(subjectPredicateIndex, subj, pred, explicit, txn,
+			if (dupReuse != null) {
+				dupReuse.initialize(subjectPredicateIndex, subj, pred, explicit, txn, quadReuse, fallbackSupplier);
+				return dupReuse;
+			}
+			return new LmdbDupRecordIterator(subjectPredicateIndex, subj, pred, explicit, txn, quadReuse,
 					fallbackSupplier);
 		}
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch, fallbackSupplier,
-				minKeyBuf, maxKeyBuf, quadReuse, iteratorReuse);
+				minKeyBuf, maxKeyBuf, quadReuse, recordReuse);
 	}
 
 	boolean hasTriples(boolean explicit) throws IOException {
