@@ -2273,7 +2273,6 @@ class LmdbSailStore implements SailStore {
 				if (base != null) {
 					base.close();
 					base = null;
-					lmdbBase = null;
 				}
 			}
 		}

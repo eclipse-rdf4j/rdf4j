@@ -292,8 +292,8 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 			return getRecordIteratorInternal(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
 					bindingReuse, quadReuse);
 		}
-		return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order,
-				bindingReuse, quadReuse);
+		return LmdbEvaluationDataset.super.getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex,
+				patternIds, order, keyBuffers, bindingReuse, quadReuse);
 	}
 
 	@Override
