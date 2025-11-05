@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.LongAdder;
@@ -50,11 +51,13 @@ class LmdbRecordIterator implements RecordIterator {
 	private static final Logger log = LoggerFactory.getLogger(LmdbRecordIterator.class);
 	private static final List<Character> COMPONENT_ORDER = List.of('s', 'p', 'o', 'c');
 	private static final ConcurrentMap<String, LongAdder> RECOMMENDED_INDEX_TRACKER = new ConcurrentHashMap<>();
+	private static final ConcurrentMap<LmdbRecordIterator, String> INDEX_NAME_CACHE = new ConcurrentHashMap<>();
+	private static final Set<LmdbRecordIterator> PENDING_RECOMMENDATIONS = ConcurrentHashMap.newKeySet();
+	private static final Set<LmdbRecordIterator> RECORDED_RECOMMENDATIONS = ConcurrentHashMap.newKeySet();
+
 	private final Pool pool;
 
 	private final TripleIndex index;
-
-	private volatile String indexName;
 
 	private final long subj;
 	private final long pred;
@@ -156,9 +159,13 @@ class LmdbRecordIterator implements RecordIterator {
 
 	static void resetIndexRecommendationTracker() {
 		RECOMMENDED_INDEX_TRACKER.clear();
+		INDEX_NAME_CACHE.clear();
+		PENDING_RECOMMENDATIONS.clear();
+		RECORDED_RECOMMENDATIONS.clear();
 	}
 
-	private static String computeIndexName(TripleIndex index, long subj, long pred, long obj, long context) {
+	private static String computeIndexName(TripleIndex index, long subj, long pred, long obj, long context,
+			boolean recordUsage) {
 		String actual = new String(index.getFieldSeq());
 		int boundCount = countBound(subj, pred, obj, context);
 		if (boundCount <= 0) {
@@ -170,7 +177,7 @@ class LmdbRecordIterator implements RecordIterator {
 			return actual;
 		}
 
-		CandidateIndex recommendation = selectRecommendedIndex(actual, subj, pred, obj, context);
+		CandidateIndex recommendation = selectRecommendedIndex(actual, subj, pred, obj, context, recordUsage);
 		if (recommendation == null) {
 			return actual;
 		}
@@ -196,8 +203,8 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	private static CandidateIndex selectRecommendedIndex(String actual, long subj, long pred, long obj,
-			long context) {
-		List<CandidateIndex> candidates = buildCandidateIndexes(subj, pred, obj, context);
+			long context, boolean recordUsage) {
+		List<CandidateIndex> candidates = buildCandidateIndexes(subj, pred, obj, context, recordUsage);
 		if (candidates.isEmpty()) {
 			return null;
 		}
@@ -223,14 +230,19 @@ class LmdbRecordIterator implements RecordIterator {
 			best = candidates.get(0);
 		}
 
-		for (CandidateIndex candidate : candidates) {
-			candidate.counter.increment();
+		if (recordUsage) {
+			for (CandidateIndex candidate : candidates) {
+				if (candidate.counter != null) {
+					candidate.counter.increment();
+				}
+			}
 		}
 
 		return best;
 	}
 
-	private static List<CandidateIndex> buildCandidateIndexes(long subj, long pred, long obj, long context) {
+	private static List<CandidateIndex> buildCandidateIndexes(long subj, long pred, long obj, long context,
+			boolean recordUsage) {
 		List<Character> boundComponents = gatherBoundComponents(subj, pred, obj, context);
 		if (boundComponents.isEmpty()) {
 			return Collections.emptyList();
@@ -250,7 +262,7 @@ class LmdbRecordIterator implements RecordIterator {
 		for (String bound : boundPermutations) {
 			for (String suffix : unboundPermutations) {
 				String candidate = bound + suffix;
-				addCandidate(result, candidate, preferredOrder, subj, pred, obj, context);
+				addCandidate(result, candidate, preferredOrder, subj, pred, obj, context, recordUsage);
 			}
 		}
 
@@ -258,12 +270,34 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	private static void addCandidate(Collection<CandidateIndex> candidates, String candidate,
-			List<Character> preferredOrder, long subj, long pred, long obj, long context) {
-		LongAdder counter = RECOMMENDED_INDEX_TRACKER.computeIfAbsent(candidate, key -> new LongAdder());
-		long count = counter.sum();
+			List<Character> preferredOrder, long subj, long pred, long obj, long context, boolean recordUsage) {
+		LongAdder counter = RECOMMENDED_INDEX_TRACKER.get(candidate);
+		if (counter == null && recordUsage) {
+			counter = RECOMMENDED_INDEX_TRACKER.computeIfAbsent(candidate, key -> new LongAdder());
+		}
+		long count = counter != null ? counter.sum() : 0L;
 		int score = computePatternScore(candidate, subj, pred, obj, context);
 		int deviation = computeDeviation(candidate, preferredOrder);
 		candidates.add(new CandidateIndex(candidate, count, score, deviation, counter));
+	}
+
+	private static boolean shouldRecordUsage() {
+		StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+		for (StackTraceElement element : stackTrace) {
+			String className = element.getClassName();
+			String methodName = element.getMethodName();
+			if (("org.eclipse.rdf4j.query.algebra.StatementPattern".equals(className)
+					&& "getIndexName".equals(methodName))
+					|| ("org.eclipse.rdf4j.repository.sail.SailQuery".equals(className) && "explain".equals(methodName))
+					|| ("org.eclipse.rdf4j.sail.base.SailSourceConnection".equals(className)
+							&& "explain".equals(methodName))
+					|| "org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode".equals(className)
+					|| ("org.eclipse.rdf4j.query.explanation.Explanation".equals(className)
+							&& "toString".equals(methodName))) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static List<Character> gatherBoundComponents(long subj, long pred, long obj, long context) {
@@ -536,17 +570,34 @@ class LmdbRecordIterator implements RecordIterator {
 
 	@Override
 	public String getIndexName() {
-		String current = indexName;
-		if (current == null) {
-			synchronized (this) {
-				current = indexName;
-				if (current == null) {
-					current = computeIndexName(index, subj, pred, obj, context);
-					indexName = current;
+		while (true) {
+			boolean explanationContext = shouldRecordUsage();
+			String cached = INDEX_NAME_CACHE.get(this);
+			if (cached != null) {
+				if (explanationContext && RECORDED_RECOMMENDATIONS.add(this)) {
+					String computed = computeIndexName(index, subj, pred, obj, context, true);
+					INDEX_NAME_CACHE.put(this, computed);
+					return computed;
+				}
+				return cached;
+			}
+
+			if (PENDING_RECOMMENDATIONS.add(this)) {
+				try {
+					boolean recordUsage = explanationContext;
+					String computed = computeIndexName(index, subj, pred, obj, context, recordUsage);
+					INDEX_NAME_CACHE.put(this, computed);
+					if (recordUsage) {
+						RECORDED_RECOMMENDATIONS.add(this);
+					}
+					return computed;
+				} finally {
+					PENDING_RECOMMENDATIONS.remove(this);
 				}
 			}
+
+			Thread.onSpinWait();
 		}
-		return current;
 	}
 
 	private boolean matches() {
@@ -563,6 +614,9 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private void closeInternal(boolean maybeCalledAsync) {
 		if (!closed) {
+			INDEX_NAME_CACHE.remove(this);
+			PENDING_RECOMMENDATIONS.remove(this);
+			RECORDED_RECOMMENDATIONS.remove(this);
 			long writeStamp = 0L;
 			boolean writeLocked = false;
 			if (maybeCalledAsync && ownerThread != Thread.currentThread()) {

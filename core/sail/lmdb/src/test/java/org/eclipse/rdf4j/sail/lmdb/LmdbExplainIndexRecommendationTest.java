@@ -15,9 +15,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -115,6 +117,36 @@ class LmdbExplainIndexRecommendationTest {
 		assertThat(tracked).isNotEmpty();
 	}
 
+	@Test
+	void explanationStringOnlyCountsCandidatesOnce() {
+		File storeDir = new File(dataDir, "psoc-repeat-" + System.nanoTime());
+		storeDir.mkdirs();
+
+		SailRepository repository = new SailRepository(new LmdbStore(storeDir, new LmdbStoreConfig("psoc")));
+		repository.init();
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(connection.getValueFactory().createIRI("http://example.com/alice"), RDF.TYPE, FOAF.PERSON);
+			Explanation explanation = connection.prepareTupleQuery(PERSON_QUERY).explain(Explanation.Level.Optimized);
+
+			explanation.toString();
+
+			ConcurrentMap<String, LongAdder> tracked = LmdbRecordIterator.getRecommendedIndexTracker();
+			assertThat(tracked).isNotEmpty();
+			Map<String, Long> before = tracked.entrySet()
+					.stream()
+					.collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().sum()));
+
+			explanation.toString();
+
+			tracked.forEach((name, counter) -> assertThat(counter.sum()).isEqualTo(before.get(name)));
+		} catch (RepositoryException e) {
+			throw new RuntimeException(e);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	private static Stream<Arguments> allTripleIndexPermutations() {
 		List<String> permutations = new ArrayList<>();
 		permute("spoc".toCharArray(), new boolean[4], new StringBuilder(), permutations);
@@ -178,4 +210,5 @@ class LmdbExplainIndexRecommendationTest {
 	private interface RepositoryConnectionConsumer {
 		void accept(SailRepositoryConnection connection) throws RepositoryException;
 	}
+
 }
