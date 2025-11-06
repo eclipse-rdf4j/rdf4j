@@ -97,6 +97,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
+import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyReaders;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -1041,7 +1042,7 @@ public class TripleStore implements Closeable {
 			byte[] minKey = toArray(minKeyBuffer);
 
 			ByteBuffer maxKeyBuffer = ByteBuffer.allocate(MAX_KEY_LENGTH);
-			index.getMaxKey(maxKeyBuffer, subj, pred, obj, context);
+			index.getMaxKey(maxKeyBuffer, subj, pred, obj, context, -1, -1, -1, -1);
 			maxKeyBuffer.flip();
 			byte[] maxKey = toArray(maxKeyBuffer);
 
@@ -2376,6 +2377,7 @@ public class TripleStore implements Closeable {
 
 		private final char[] fieldSeq;
 		private final IndexKeyWriters.KeyWriter keyWriter;
+		private final IndexKeyReaders.KeyToQuadReader keyReader;
 		private final IndexKeyWriters.MatcherFactory matcherFactory;
 		private final StatementFieldValueAccessor[] fieldValueAccessors;
 		private final StatementFieldValueAccessor leadingFieldValueAccessor;
@@ -2390,6 +2392,7 @@ public class TripleStore implements Closeable {
 			this.fieldSeq = fieldSeq.toCharArray();
 			this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
 			this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
+			this.keyReader = IndexKeyReaders.forFieldSeq(fieldSeq);
 			this.fieldValueAccessors = createFieldValueAccessors(this.fieldSeq);
 			this.leadingFieldValueAccessor = this.fieldValueAccessors[0];
 			this.indexMap = getIndexes(this.fieldSeq);
@@ -2662,33 +2665,7 @@ public class TripleStore implements Closeable {
 		}
 
 		void keyToQuad(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-			for (int i = 0; i < indexMap.length; i++) {
-				int component = indexMap[i];
-				long bound;
-				switch (component) {
-				case SUBJ_IDX:
-					bound = subj;
-					break;
-				case PRED_IDX:
-					bound = pred;
-					break;
-				case OBJ_IDX:
-					bound = obj;
-					break;
-				case CONTEXT_IDX:
-					bound = context;
-					break;
-				default:
-					bound = LmdbValue.UNKNOWN_ID;
-					break;
-				}
-				if (bound != LmdbValue.UNKNOWN_ID) {
-					Varint.skipUnsigned(key);
-					quad[component] = bound;
-				} else {
-					quad[component] = Varint.readUnsigned(key);
-				}
-			}
+			keyReader.read(key, subj, pred, obj, context, quad);
 		}
 
 		@Override
