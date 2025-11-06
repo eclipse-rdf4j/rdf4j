@@ -85,180 +85,651 @@ public final class IndexKeyReaders {
 		}
 	}
 
-	private static void readAndStore(ByteBuffer key, long[] quad, int componentIndex, long bound) {
-		if (bound != LmdbValue.UNKNOWN_ID) {
+	private static void spoc(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
+		if (subj != LmdbValue.UNKNOWN_ID) {
 			Varint.skipUnsigned(key);
-			quad[componentIndex] = bound;
+			quad[SUBJ_IDX] = subj;
 		} else {
-			quad[componentIndex] = Varint.readUnsigned(key);
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
 		}
 	}
 
-	private static void spoc(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, CONTEXT_IDX, context);
-	}
-
 	private static void spco(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, OBJ_IDX, obj);
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void sopc(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, CONTEXT_IDX, context);
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void socp(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, PRED_IDX, pred);
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void scpo(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, OBJ_IDX, obj);
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void scop(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, PRED_IDX, pred);
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void psoc(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, CONTEXT_IDX, context);
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void psco(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, OBJ_IDX, obj);
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void posc(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, CONTEXT_IDX, context);
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void pocs(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, SUBJ_IDX, subj);
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void pcso(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, OBJ_IDX, obj);
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void pcos(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, SUBJ_IDX, subj);
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void ospc(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, CONTEXT_IDX, context);
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void oscp(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, PRED_IDX, pred);
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void opsc(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, CONTEXT_IDX, context);
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void opcs(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, SUBJ_IDX, subj);
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void ocsp(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, PRED_IDX, pred);
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void ocps(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, SUBJ_IDX, subj);
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void cspo(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, OBJ_IDX, obj);
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void csop(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, PRED_IDX, pred);
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void cpso(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, OBJ_IDX, obj);
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void cpos(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, SUBJ_IDX, subj);
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void cosp(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, SUBJ_IDX, subj);
-		readAndStore(key, quad, PRED_IDX, pred);
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
 	}
 
 	private static void cops(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		readAndStore(key, quad, CONTEXT_IDX, context);
-		readAndStore(key, quad, OBJ_IDX, obj);
-		readAndStore(key, quad, PRED_IDX, pred);
-		readAndStore(key, quad, SUBJ_IDX, subj);
+		if (context != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[CONTEXT_IDX] = context;
+		} else {
+			quad[CONTEXT_IDX] = Varint.readUnsigned(key);
+		}
+		if (obj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[OBJ_IDX] = obj;
+		} else {
+			quad[OBJ_IDX] = Varint.readUnsigned(key);
+		}
+		if (pred != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[PRED_IDX] = pred;
+		} else {
+			quad[PRED_IDX] = Varint.readUnsigned(key);
+		}
+		if (subj != LmdbValue.UNKNOWN_ID) {
+			Varint.skipUnsigned(key);
+			quad[SUBJ_IDX] = subj;
+		} else {
+			quad[SUBJ_IDX] = Varint.readUnsigned(key);
+		}
 	}
 }
