@@ -79,33 +79,15 @@ final class LmdbIdTripleSourceAdapter implements TripleSource, LmdbIdTripleSourc
 		return delegate.getValueFactory();
 	}
 
-	// ID-level implementation
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-			long[] patternIds) throws QueryEvaluationException {
-		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, null, null);
-	}
-
-	@Override
-	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-			long[] patternIds, long[] reuse) throws QueryEvaluationException {
-		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, reuse, null);
-	}
-
-	@Override
-	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-			long[] patternIds, long[] reuse, long[] quadReuse) throws QueryEvaluationException {
-		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, reuse, quadReuse);
-	}
-
-	@Override
-	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-			long[] patternIds, LmdbEvaluationDataset.KeyRangeBuffers keyBuffers, long[] reuse, long[] quadReuse)
+			long[] patternIds, LmdbEvaluationDataset.KeyRangeBuffers keyBuffers, long[] reuse, long[] quadReuse,
+			RecordIterator iteratorReuse)
 			throws QueryEvaluationException {
 		// Prefer direct ID-level access if the delegate already supports it
 		if (delegate instanceof LmdbIdTripleSource) {
 			return ((LmdbIdTripleSource) delegate).getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex,
-					patternIds, keyBuffers, reuse, quadReuse);
+					patternIds, keyBuffers, reuse, quadReuse, iteratorReuse);
 		}
 
 		// If no active connection changes, delegate to the current LMDB dataset to avoid materialization
@@ -114,7 +96,7 @@ final class LmdbIdTripleSourceAdapter implements TripleSource, LmdbIdTripleSourc
 			if (dsOpt.isPresent()) {
 				return dsOpt.get()
 						.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
-								reuse, quadReuse);
+								reuse, quadReuse, iteratorReuse);
 			}
 		}
 
@@ -196,7 +178,7 @@ final class LmdbIdTripleSourceAdapter implements TripleSource, LmdbIdTripleSourc
 			long[] bindingReuse, long[] quadReuse) throws QueryEvaluationException {
 		if (order == null) {
 			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
-					bindingReuse, quadReuse);
+					bindingReuse, quadReuse, null);
 		}
 		if (delegate instanceof LmdbIdTripleSource) {
 			return ((LmdbIdTripleSource) delegate).getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex,

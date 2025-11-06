@@ -68,9 +68,6 @@ public interface LmdbEvaluationDataset {
 	@InternalUseOnly
 	default RecordIterator getRecordIterator(StatementPattern pattern, BindingSet bindings, KeyRangeBuffers keyBuffers,
 			RecordIterator iteratorReuse) throws QueryEvaluationException {
-		if (iteratorReuse != null) {
-			iteratorReuse.close();
-		}
 		return getRecordIterator(pattern, bindings, keyBuffers);
 	}
 
@@ -105,6 +102,8 @@ public interface LmdbEvaluationDataset {
 	@InternalUseOnly
 	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds, KeyRangeBuffers keyBuffers) throws QueryEvaluationException {
+		assert keyBuffers == null : "We are not passing keyBuffers into the next method";
+
 		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
 	}
 
@@ -144,9 +143,6 @@ public interface LmdbEvaluationDataset {
 			long[] patternIds, KeyRangeBuffers keyBuffers, long[] bindingReuse, long[] quadReuse,
 			RecordIterator iteratorReuse)
 			throws QueryEvaluationException {
-		if (iteratorReuse != null) {
-			iteratorReuse.close();
-		}
 		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
 				bindingReuse, quadReuse);
 	}
@@ -196,9 +192,6 @@ public interface LmdbEvaluationDataset {
 	default RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, StatementOrder order, KeyRangeBuffers keyBuffers, long[] bindingReuse,
 			long[] quadReuse, RecordIterator iteratorReuse) throws QueryEvaluationException {
-		if (iteratorReuse != null) {
-			iteratorReuse.close();
-		}
 		return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order,
 				keyBuffers,
 				bindingReuse, quadReuse);

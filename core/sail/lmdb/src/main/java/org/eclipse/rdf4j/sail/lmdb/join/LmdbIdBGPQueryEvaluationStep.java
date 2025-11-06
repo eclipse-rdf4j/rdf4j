@@ -572,6 +572,9 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 						return next;
 					}
 					currentRight.close();
+					if (currentRight != LmdbIdJoinIterator.EMPTY_RECORD_ITERATOR) {
+						reusableRight = currentRight;
+					}
 					currentRight = null;
 				}
 
@@ -587,7 +590,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				}
 				currentRight = dataset.getRecordIterator(leftBinding, plan.subjIndex, plan.predIndex, plan.objIndex,
 						plan.ctxIndex, plan.patternIds, keyBuffers, rightScratch, quadScratch, reusableRight);
-				if (currentRight != null && currentRight != LmdbIdJoinIterator.emptyRecordIterator()) {
+				if (currentRight != null && currentRight != LmdbIdJoinIterator.EMPTY_RECORD_ITERATOR) {
 					reusableRight = currentRight;
 				} else {
 					reusableRight = null;

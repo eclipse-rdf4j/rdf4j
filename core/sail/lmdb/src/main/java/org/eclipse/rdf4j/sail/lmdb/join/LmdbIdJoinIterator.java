@@ -41,7 +41,7 @@ public class LmdbIdJoinIterator extends LookAheadIteration<BindingSet> {
 		RecordIterator apply(long[] leftRecord, RecordIterator reuse) throws QueryEvaluationException;
 	}
 
-	private static final RecordIterator EMPTY_RECORD_ITERATOR = new RecordIterator() {
+	public static final RecordIterator EMPTY_RECORD_ITERATOR = new RecordIterator() {
 		@Override
 		public long[] next() {
 			return null;

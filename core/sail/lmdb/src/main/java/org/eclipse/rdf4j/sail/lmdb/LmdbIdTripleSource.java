@@ -31,32 +31,8 @@ public interface LmdbIdTripleSource {
 	 * @param patternIds constants for S/P/O/C positions (UNKNOWN_ID for wildcard)
 	 */
 	RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-			long[] patternIds) throws QueryEvaluationException;
-
-	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-			long[] patternIds, LmdbEvaluationDataset.KeyRangeBuffers keyBuffers) throws QueryEvaluationException {
-		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
-	}
-
-	/**
-	 * Variant that accepts reusable scratch buffers for bindings and quads.
-	 */
-	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-			long[] patternIds, long[] bindingReuse) throws QueryEvaluationException {
-		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, bindingReuse, null);
-	}
-
-	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-			long[] patternIds, long[] bindingReuse, long[] quadReuse) throws QueryEvaluationException {
-		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
-	}
-
-	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-			long[] patternIds, LmdbEvaluationDataset.KeyRangeBuffers keyBuffers, long[] bindingReuse, long[] quadReuse)
-			throws QueryEvaluationException {
-		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, bindingReuse,
-				quadReuse);
-	}
+			long[] patternIds, LmdbEvaluationDataset.KeyRangeBuffers keyBuffers, long[] bindingReuse, long[] quadReuse,
+			RecordIterator reuse) throws QueryEvaluationException;
 
 	/**
 	 * Create an ordered iterator over ID-level bindings; may fall back to the unordered iterator if unsupported.
@@ -64,7 +40,8 @@ public interface LmdbIdTripleSource {
 	default RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, StatementOrder order) throws QueryEvaluationException {
 		if (order == null) {
-			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, null, null,
+					null);
 		}
 		return null;
 	}
@@ -75,7 +52,8 @@ public interface LmdbIdTripleSource {
 	default RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, StatementOrder order, long[] reuse) throws QueryEvaluationException {
 		if (order == null) {
-			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse, null);
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, reuse, null,
+					null);
 		}
 		return null;
 	}
@@ -84,8 +62,8 @@ public interface LmdbIdTripleSource {
 			int ctxIndex, long[] patternIds, StatementOrder order, long[] bindingReuse, long[] quadReuse)
 			throws QueryEvaluationException {
 		if (order == null) {
-			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, bindingReuse,
-					quadReuse);
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, bindingReuse,
+					quadReuse, null);
 		}
 		return null;
 	}
@@ -95,7 +73,7 @@ public interface LmdbIdTripleSource {
 			long[] bindingReuse, long[] quadReuse) throws QueryEvaluationException {
 		if (order == null) {
 			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
-					bindingReuse, quadReuse);
+					bindingReuse, quadReuse, null);
 		}
 		return null;
 	}
