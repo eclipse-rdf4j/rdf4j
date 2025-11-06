@@ -618,15 +618,7 @@ public class TripleStore implements Closeable {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 		// System.out.println("get triples: " + Arrays.asList(subj, pred, obj,context));
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
-		LmdbDupRecordIterator.FallbackSupplier fallbackSupplier = (quad, minBuf, maxBuf, reuse) -> {
-			if (reuse != null) {
-				reuse.initialize(index, null, doRangeSearch, subj, pred, obj, context, explicit, txn, quad, minBuf,
-						maxBuf);
-				return reuse;
-			}
-			return new LmdbRecordIterator(index, null, doRangeSearch, subj, pred, obj, context, explicit, txn, quad,
-					minBuf, maxBuf);
-		};
+
 		LmdbRecordIterator recordReuse = iteratorReuse instanceof LmdbRecordIterator
 				? (LmdbRecordIterator) iteratorReuse
 				: null;
@@ -635,17 +627,35 @@ public class TripleStore implements Closeable {
 				: null;
 		if (dupsortRead && subjectPredicateIndex != null && subj >= 0 && pred >= 0 && obj == -1 && context == -1) {
 			assert context == -1 && obj == -1 : "subject-predicate index can only be used for (s,p,?,?) patterns";
+
+//			LmdbDupRecordIterator.FallbackSupplier fallbackSupplier = (quad, minBuf, maxBuf, reuse) -> {
+//				if (reuse != null) {
+//					reuse.initialize(index, null, doRangeSearch, subj, pred, obj, context, explicit, txn, quad, minBuf,
+//							maxBuf);
+//					return reuse;
+//				}
+//				return new LmdbRecordIterator(index, null, doRangeSearch, subj, pred, obj, context, explicit, txn, quad,
+//						minBuf, maxBuf);
+//			};
+
 			// Use SP dup iterator, but union with the standard iterator to guard against any edge cases
 			// in SP storage/retrieval; de-duplicate at the record level.
 			if (dupReuse != null) {
-				dupReuse.initialize(subjectPredicateIndex, subj, pred, explicit, txn, quadReuse, fallbackSupplier);
+				dupReuse.initialize(subjectPredicateIndex, subj, pred, explicit, txn, quadReuse);
 				return dupReuse;
 			}
-			return new LmdbDupRecordIterator(subjectPredicateIndex, subj, pred, explicit, txn, quadReuse,
-					fallbackSupplier);
+			return new LmdbDupRecordIterator(subjectPredicateIndex, subj, pred, explicit, txn, quadReuse);
 		}
-		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch, fallbackSupplier,
-				minKeyBuf, maxKeyBuf, quadReuse, recordReuse);
+
+		if (recordReuse != null) {
+			recordReuse.initialize(index, null, doRangeSearch, subj, pred, obj, context, explicit, txn, quadReuse,
+					minKeyBuf,
+					maxKeyBuf);
+			return recordReuse;
+		}
+		return new LmdbRecordIterator(index, null, doRangeSearch, subj, pred, obj, context, explicit, txn, quadReuse,
+				minKeyBuf, maxKeyBuf);
+
 	}
 
 	boolean hasTriples(boolean explicit) throws IOException {

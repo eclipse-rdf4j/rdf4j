@@ -85,22 +85,19 @@ class LmdbDupRecordIterator implements RecordIterator {
 	private int lastResult;
 	private boolean closed = true;
 
-	private RecordIterator fallback;
-	private FallbackSupplier fallbackSupplier;
-
 	LmdbDupRecordIterator(DupIndex index, long subj, long pred,
-			boolean explicit, Txn txnRef, FallbackSupplier fallbackSupplier) throws IOException {
-		initialize(index, subj, pred, explicit, txnRef, null, fallbackSupplier);
+			boolean explicit, Txn txnRef) throws IOException {
+		initialize(index, subj, pred, explicit, txnRef, null);
 	}
 
 	LmdbDupRecordIterator(DupIndex index, long subj, long pred,
-			boolean explicit, Txn txnRef, long[] quadReuse, FallbackSupplier fallbackSupplier) throws IOException {
-		initialize(index, subj, pred, explicit, txnRef, quadReuse, fallbackSupplier);
+			boolean explicit, Txn txnRef, long[] quadReuse) throws IOException {
+		initialize(index, subj, pred, explicit, txnRef, quadReuse);
 	}
 
-	void initialize(DupIndex index, long subj, long pred, boolean explicit, Txn txnRef, long[] quadReuse,
-			FallbackSupplier fallbackSupplier) throws IOException {
-		if (!closed || fallback != null) {
+	void initialize(DupIndex index, long subj, long pred, boolean explicit, Txn txnRef, long[] quadReuse)
+			throws IOException {
+		if (!closed) {
 			throw new IllegalStateException("Cannot initialize LMDB dup iterator while it is open");
 		}
 
@@ -108,8 +105,6 @@ class LmdbDupRecordIterator implements RecordIterator {
 		this.dupDbi = index.getDupDB(explicit);
 		this.txnRef = txnRef;
 		this.txnLockManager = txnRef.lockManager();
-		this.fallbackSupplier = fallbackSupplier;
-		this.fallback = null;
 
 		this.prefixSubj = subj;
 		this.prefixPred = pred;
@@ -165,21 +160,16 @@ class LmdbDupRecordIterator implements RecordIterator {
 			}
 			if (!positioned) {
 				closeInternal(false);
-				fallbackIterator = createFallback();
+				// TODO: We must be empty????
 			}
 		} finally {
 			txnLockManager.unlockRead(readStamp);
 		}
 
-		this.fallback = fallbackIterator;
 	}
 
 	@Override
 	public long[] next() {
-		if (fallback != null) {
-			return fallback.next();
-		}
-
 		long readStamp;
 		try {
 			readStamp = txnLockManager.readLock();
@@ -402,14 +392,7 @@ class LmdbDupRecordIterator implements RecordIterator {
 
 	@Override
 	public void close() {
-		if (fallback != null) {
-			fallback.close();
-			fallback = null;
-			fallbackSupplier = null;
-		} else {
-			closeInternal(true);
-			fallbackSupplier = null;
-		}
+		closeInternal(true);
 		txnLockManager = null;
 		txnRef = null;
 	}
@@ -433,10 +416,4 @@ class LmdbDupRecordIterator implements RecordIterator {
 		}
 	}
 
-	private RecordIterator createFallback() throws IOException {
-		if (fallbackSupplier == null) {
-			return null;
-		}
-		return fallbackSupplier.get(quad, null, null, null);
-	}
 }
