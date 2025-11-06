@@ -127,6 +127,7 @@ public class TripleStore implements Closeable {
 	public static final int CONTEXT_IDX = 3;
 
 	static final int MAX_KEY_LENGTH = 4 * 9;
+	static final long NO_PREVIOUS_ID = Long.MIN_VALUE;
 
 	/**
 	 * The default triple indexes.
@@ -964,7 +965,8 @@ public class TripleStore implements Closeable {
 								maxKey.mv_data(maxKeyBuf);
 
 								keyBuf.clear();
-								index.getMinKey(keyBuf, subj, pred, obj, context, 0, 0, 0, 0);
+								index.getMinKey(keyBuf, subj, pred, obj, context, NO_PREVIOUS_ID, NO_PREVIOUS_ID,
+										NO_PREVIOUS_ID, NO_PREVIOUS_ID);
 								keyBuf.flip();
 
 								// set cursor to min key
@@ -1129,7 +1131,8 @@ public class TripleStore implements Closeable {
 				statistics.reset();
 
 				keyBuf.clear();
-				index.getMinKey(keyBuf, subj, pred, obj, context, 0, 0, 0, 0);
+				index.getMinKey(keyBuf, subj, pred, obj, context, NO_PREVIOUS_ID, NO_PREVIOUS_ID, NO_PREVIOUS_ID,
+						NO_PREVIOUS_ID);
 				keyBuf.flip();
 
 				int dbi = index.getDB(explicit);
@@ -2556,7 +2559,8 @@ public class TripleStore implements Closeable {
 
 				@Override
 				public void writeMin(ByteBuffer buffer) {
-					getMinKey(buffer, subj, pred, obj, context, 0, 0, 0, 0);
+					getMinKey(buffer, subj, pred, obj, context, NO_PREVIOUS_ID, NO_PREVIOUS_ID, NO_PREVIOUS_ID,
+							NO_PREVIOUS_ID);
 				}
 
 				@Override
@@ -2572,7 +2576,12 @@ public class TripleStore implements Closeable {
 			pred = pred <= 0 ? 0 : pred;
 			obj = obj <= 0 ? 0 : obj;
 			context = context <= 0 ? 0 : context;
-			toKey(bb, subj, pred, obj, context);
+			long prevSubjNorm = prevSubj == NO_PREVIOUS_ID ? NO_PREVIOUS_ID : (prevSubj <= 0 ? 0 : prevSubj);
+			long prevPredNorm = prevPred == NO_PREVIOUS_ID ? NO_PREVIOUS_ID : (prevPred <= 0 ? 0 : prevPred);
+			long prevObjNorm = prevObj == NO_PREVIOUS_ID ? NO_PREVIOUS_ID : (prevObj <= 0 ? 0 : prevObj);
+			long prevContextNorm = prevContext == NO_PREVIOUS_ID ? NO_PREVIOUS_ID
+					: (prevContext <= 0 ? 0 : prevContext);
+			toKey(bb, subj, pred, obj, context, prevSubjNorm, prevPredNorm, prevObjNorm, prevContextNorm);
 		}
 
 		void getMaxKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
@@ -2614,6 +2623,11 @@ public class TripleStore implements Closeable {
 		}
 
 		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+			toKey(bb, subj, pred, obj, context, NO_PREVIOUS_ID, NO_PREVIOUS_ID, NO_PREVIOUS_ID, NO_PREVIOUS_ID);
+		}
+
+		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context, long prevSubj, long prevPred,
+				long prevObj, long prevContext) {
 
 			boolean shouldCache = threeOfFourAreZeroOrMax(subj, pred, obj, context);
 			if (shouldCache) {
@@ -2630,7 +2644,9 @@ public class TripleStore implements Closeable {
 			}
 
 			// Pass through to the keyWriter with caching hint
-			keyWriter.write(bb, subj, pred, obj, context, shouldCache);
+			boolean hasPrev = prevSubj != NO_PREVIOUS_ID;
+			keyWriter.write(bb, subj, pred, obj, context, shouldCache, hasPrev, prevSubj, prevPred, prevObj,
+					prevContext);
 		}
 
 		void keyToQuad(ByteBuffer key, long[] quad) {
