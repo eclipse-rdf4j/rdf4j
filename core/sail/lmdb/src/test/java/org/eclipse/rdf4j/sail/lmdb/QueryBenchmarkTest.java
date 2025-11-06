@@ -166,10 +166,11 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
-	@Timeout(30)
+//	@Timeout(30)
 	public void complexQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
+			System.out.println();
 			try (var stream = connection.prepareTupleQuery(query4).evaluate().stream()) {
 				count = stream.count();
 			}

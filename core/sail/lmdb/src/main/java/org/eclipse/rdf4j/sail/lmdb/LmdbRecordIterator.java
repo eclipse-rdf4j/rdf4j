@@ -150,10 +150,10 @@ class LmdbRecordIterator implements RecordIterator {
 //		}
 
 		this.index = index;
-		long prevSubj = this.subj;
-		long prevPred = this.pred;
-		long prevObj = this.obj;
-		long prevContext = this.context;
+		long prevSubj = minKeyBuf != null ? this.subj : TripleStore.NO_PREVIOUS_ID;
+		long prevPred = minKeyBuf != null ? this.pred : TripleStore.NO_PREVIOUS_ID;
+		long prevObj = minKeyBuf != null ? this.obj : TripleStore.NO_PREVIOUS_ID;
+		long prevContext = minKeyBuf != null ? this.context : TripleStore.NO_PREVIOUS_ID;
 
 		this.subj = subj;
 		this.pred = pred;

@@ -247,6 +247,18 @@ public final class Varint {
 	}
 
 	/**
+	 * Advances the {@link ByteBuffer#position()} by the number of bytes required to encode the supplied value using the
+	 * unsigned variable-length format, without writing any data. This assumes the buffer already contains the encoded
+	 * representation at the current position.
+	 *
+	 * @param bb    buffer whose position should be advanced
+	 * @param value value whose encoded length should be skipped
+	 */
+	public static void advanceUnsigned(ByteBuffer bb, long value) {
+		bb.position(bb.position() + calcLengthUnsigned(value));
+	}
+
+	/**
 	 * The number of bytes required to represent the given number minus one. The descriptor can be encoded in 3 bits.
 	 *
 	 * <p>
