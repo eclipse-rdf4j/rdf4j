@@ -30,7 +30,7 @@ import java.util.Set;
 import java.util.StringTokenizer;
 
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyReaders;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 
@@ -50,6 +50,7 @@ class TripleIndex implements TripleStore.DupIndex {
 
 	private final char[] fieldSeq;
 	private final IndexKeyWriters.KeyWriter keyWriter;
+	private final IndexKeyReaders.KeyToQuadReader keyReader;
 	private final IndexKeyWriters.MatcherFactory matcherFactory;
 	final StatementFieldValueAccessor[] fieldValueAccessors;
 	final StatementFieldValueAccessor leadingFieldValueAccessor;
@@ -71,6 +72,7 @@ class TripleIndex implements TripleStore.DupIndex {
 		this.name = name;
 		this.fieldSeq = fieldSeq.toCharArray();
 		this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
+		this.keyReader = IndexKeyReaders.forFieldSeq(fieldSeq);
 		this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
 		this.fieldValueAccessors = createFieldValueAccessors(this.fieldSeq);
 		this.leadingFieldValueAccessor = this.fieldValueAccessors[0];
@@ -349,22 +351,7 @@ class TripleIndex implements TripleStore.DupIndex {
 	}
 
 	void keyToQuad(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
-		for (int i = 0; i < indexMap.length; i++) {
-			int component = indexMap[i];
-			long bound = switch (component) {
-			case SUBJ_IDX -> subj;
-			case PRED_IDX -> pred;
-			case OBJ_IDX -> obj;
-			case CONTEXT_IDX -> context;
-			default -> LmdbValue.UNKNOWN_ID;
-			};
-			if (bound != LmdbValue.UNKNOWN_ID) {
-				Varint.skipUnsigned(key);
-				quad[component] = bound;
-			} else {
-				quad[component] = Varint.readUnsigned(key);
-			}
-		}
+		keyReader.read(key, subj, pred, obj, context, quad);
 	}
 
 	@Override
