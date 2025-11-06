@@ -803,7 +803,7 @@ public class TripleStore implements Closeable {
 								GroupMatcher matcher = index.createMatcher(subj, pred, obj, context);
 
 								maxKeyBuf.clear();
-								index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+								index.getMaxKey(maxKeyBuf, subj, pred, obj, context, -1, -1, -1, -1);
 								maxKeyBuf.flip();
 								maxKey.mv_data(maxKeyBuf);
 
@@ -960,7 +960,7 @@ public class TripleStore implements Closeable {
 				throws IOException {
 			MDBVal maxKey = MDBVal.malloc(stack);
 			ByteBuffer maxKeyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
-			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+			index.getMaxKey(maxKeyBuf, subj, pred, obj, context, -1, -1, -1, -1);
 			maxKeyBuf.flip();
 			maxKey.mv_data(maxKeyBuf);
 

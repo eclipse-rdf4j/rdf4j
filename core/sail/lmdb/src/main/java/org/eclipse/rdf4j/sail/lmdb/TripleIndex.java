@@ -205,7 +205,7 @@ class TripleIndex implements TripleStore.DupIndex {
 
 			@Override
 			public void writeMax(ByteBuffer buffer) {
-				getMaxKey(buffer, subj, pred, obj, context);
+				getMaxKey(buffer, subj, pred, obj, context, -1, -1, -1, -1);
 			}
 		};
 	}
@@ -233,11 +233,24 @@ class TripleIndex implements TripleStore.DupIndex {
 	}
 
 	void getMaxKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+		getMaxKey(bb, subj, pred, obj, context, -1, -1, -1, -1);
+	}
+
+	void getMaxKey(ByteBuffer bb, long subj, long pred, long obj, long context, long prevSubj, long prevPred,
+			long prevObj, long prevContext) {
 		subj = subj <= 0 ? Long.MAX_VALUE : subj;
 		pred = pred <= 0 ? Long.MAX_VALUE : pred;
 		obj = obj <= 0 ? Long.MAX_VALUE : obj;
 		context = context < 0 ? Long.MAX_VALUE : context;
-		toKey(bb, subj, pred, obj, context);
+		long prevSubjNorm = prevSubj == TripleStore.NO_PREVIOUS_ID ? TripleStore.NO_PREVIOUS_ID
+				: (prevSubj <= 0 ? Long.MAX_VALUE : prevSubj);
+		long prevPredNorm = prevPred == TripleStore.NO_PREVIOUS_ID ? TripleStore.NO_PREVIOUS_ID
+				: (prevPred <= 0 ? Long.MAX_VALUE : prevPred);
+		long prevObjNorm = prevObj == TripleStore.NO_PREVIOUS_ID ? TripleStore.NO_PREVIOUS_ID
+				: (prevObj <= 0 ? Long.MAX_VALUE : prevObj);
+		long prevContextNorm = prevContext == TripleStore.NO_PREVIOUS_ID ? TripleStore.NO_PREVIOUS_ID
+				: (prevContext <= 0 ? Long.MAX_VALUE : prevContext);
+		toKey(bb, subj, pred, obj, context, prevSubjNorm, prevPredNorm, prevObjNorm, prevContextNorm);
 	}
 
 	GroupMatcher createMatcher(long subj, long pred, long obj, long context) {
