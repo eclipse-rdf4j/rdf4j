@@ -57,7 +57,6 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private boolean matchValues;
 	private GroupMatcher groupMatcher;
-	private GroupMatcher matcherForEvaluation;
 
 	/**
 	 * True when late-bound variables exist beyond the contiguous prefix of the chosen index order, requiring
@@ -132,7 +131,7 @@ class LmdbRecordIterator implements RecordIterator {
 			long context, boolean explicit, Txn txnRef, long[] quadReuse, ByteBuffer minKeyBufParam,
 			ByteBuffer maxKeyBufParam) throws IOException {
 		if (initialized && !closed) {
-			// prepareForReuse();
+			throw new IllegalStateException("Cannot initialize LMDB record iterator while it is open");
 		}
 		initializeInternal(index, keyBuilder, rangeSearch, subj, pred, obj, context, explicit, txnRef, quadReuse,
 				minKeyBufParam, maxKeyBufParam);
@@ -142,26 +141,11 @@ class LmdbRecordIterator implements RecordIterator {
 	private void initializeInternal(TripleIndex index, KeyBuilder keyBuilder, boolean rangeSearch, long subj,
 			long pred, long obj, long context, boolean explicit, Txn txnRef, long[] quadReuse,
 			ByteBuffer minKeyBufParam, ByteBuffer maxKeyBufParam) throws IOException {
-
-//		if (!initialized) {
-//			System.out.println();
-//		} else {
-//			System.out.println();
-//		}
-
 		this.index = index;
-		long prevSubj = this.subj;
-		long prevPred = this.pred;
-		long prevObj = this.obj;
-		long prevContext = this.context;
-
 		this.subj = subj;
 		this.pred = pred;
 		this.obj = obj;
 		this.context = context;
-
-		boolean prevExternalMinKeyBuf = this.externalMinKeyBuf;
-		boolean prevExternalMaxKeyBuf = this.externalMaxKeyBuf;
 
 		if (quadReuse != null && quadReuse.length >= 4) {
 			this.quad = quadReuse;
@@ -182,20 +166,12 @@ class LmdbRecordIterator implements RecordIterator {
 
 		if (rangeSearch) {
 			this.externalMinKeyBuf = minKeyBufParam != null;
-			if (externalMinKeyBuf) {
-				this.minKeyBuf = minKeyBufParam;
-			} else {
-				if (this.minKeyBuf == null || prevExternalMinKeyBuf) {
-					this.minKeyBuf = pool.getKeyBuffer();
-				} else {
-					this.minKeyBuf.clear();
-				}
-			}
+			this.minKeyBuf = externalMinKeyBuf ? minKeyBufParam : pool.getKeyBuffer();
 			minKeyBuf.clear();
 			if (keyBuilder != null) {
 				keyBuilder.writeMin(minKeyBuf);
 			} else {
-				index.getMinKey(minKeyBuf, subj, pred, obj, context, prevSubj, prevPred, prevObj, prevContext);
+				index.getMinKey(minKeyBuf, subj, pred, obj, context);
 			}
 			minKeyBuf.flip();
 
@@ -203,15 +179,7 @@ class LmdbRecordIterator implements RecordIterator {
 				this.maxKey = pool.getVal();
 			}
 			this.externalMaxKeyBuf = maxKeyBufParam != null;
-			if (externalMaxKeyBuf) {
-				this.maxKeyBuf = maxKeyBufParam;
-			} else {
-				if (this.maxKeyBuf == null || prevExternalMaxKeyBuf) {
-					this.maxKeyBuf = pool.getKeyBuffer();
-				} else {
-					this.maxKeyBuf.clear();
-				}
-			}
+			this.maxKeyBuf = externalMaxKeyBuf ? maxKeyBufParam : pool.getKeyBuffer();
 			maxKeyBuf.clear();
 			if (keyBuilder != null) {
 				keyBuilder.writeMax(maxKeyBuf);
@@ -225,38 +193,24 @@ class LmdbRecordIterator implements RecordIterator {
 				pool.free(maxKey);
 				this.maxKey = null;
 			}
-			if (this.maxKeyBuf != null && !prevExternalMaxKeyBuf) {
+			if (this.maxKeyBuf != null && !externalMaxKeyBuf) {
 				pool.free(maxKeyBuf);
-				this.maxKeyBuf = null;
 			}
 			this.externalMaxKeyBuf = maxKeyBufParam != null;
 			this.maxKeyBuf = externalMaxKeyBuf ? maxKeyBufParam : null;
 
 			if (subj > 0 || pred > 0 || obj > 0 || context >= 0) {
 				this.externalMinKeyBuf = minKeyBufParam != null;
-				if (externalMinKeyBuf) {
-					this.minKeyBuf = minKeyBufParam;
-				} else {
-					if (this.minKeyBuf == null || prevExternalMinKeyBuf) {
-						this.minKeyBuf = pool.getKeyBuffer();
-					} else {
-						this.minKeyBuf.clear();
-					}
-				}
+				this.minKeyBuf = externalMinKeyBuf ? minKeyBufParam : pool.getKeyBuffer();
 				minKeyBuf.clear();
-				index.getMinKey(minKeyBuf, subj, pred, obj, context, prevSubj, prevPred, prevObj, prevContext);
+				index.getMinKey(minKeyBuf, subj, pred, obj, context);
 				minKeyBuf.flip();
 			} else {
-				if (this.minKeyBuf != null && !prevExternalMinKeyBuf) {
+				if (this.minKeyBuf != null && !externalMinKeyBuf) {
 					pool.free(minKeyBuf);
-					this.minKeyBuf = null;
 				}
 				this.externalMinKeyBuf = minKeyBufParam != null;
-				if (externalMinKeyBuf) {
-					this.minKeyBuf = minKeyBufParam;
-				} else {
-					this.minKeyBuf = null;
-				}
+				this.minKeyBuf = externalMinKeyBuf ? minKeyBufParam : null;
 			}
 		}
 
@@ -265,16 +219,13 @@ class LmdbRecordIterator implements RecordIterator {
 		int boundCount = (subj > 0 ? 1 : 0) + (pred > 0 ? 1 : 0) + (obj > 0 ? 1 : 0) + (context >= 0 ? 1 : 0);
 		this.needMatcher = boundCount > prefixLen;
 		this.groupMatcher = null;
-		this.matcherForEvaluation = null;
 		this.fetchNext = false;
 		this.lastResult = MDB_SUCCESS;
 		this.closed = false;
 
-		if (!initialized) {
-			this.dbi = index.getDB(explicit);
-			this.txnRef = txnRef;
-			this.txnLockManager = txnRef.lockManager();
-		}
+		this.dbi = index.getDB(explicit);
+		this.txnRef = txnRef;
+		this.txnLockManager = txnRef.lockManager();
 
 		long readStamp;
 		try {
@@ -288,12 +239,9 @@ class LmdbRecordIterator implements RecordIterator {
 
 			// Try to reuse a pooled cursor only for read-only transactions; otherwise open a new one
 			if (txnRef.isReadOnly()) {
-				if (cursor == 0L) {
-					cursor = pool.getCursor(dbi, index);
-				}
-
-				if (cursor != 0L) {
-					long c = cursor;
+				long pooled = pool.getCursor(dbi, index);
+				if (pooled != 0L) {
+					long c = pooled;
 					try {
 						E(mdb_cursor_renew(txn, c));
 					} catch (IOException renewEx) {
@@ -314,11 +262,6 @@ class LmdbRecordIterator implements RecordIterator {
 					}
 				}
 			} else {
-				if (cursor != 0L) {
-					pool.freeCursor(dbi, index, cursor);
-					cursor = 0L;
-				}
-
 				try (MemoryStack stack = MemoryStack.stackPush()) {
 					PointerBuffer pp = stack.mallocPointer(1);
 					E(mdb_cursor_open(txn, dbi, pp));
@@ -333,6 +276,7 @@ class LmdbRecordIterator implements RecordIterator {
 	@Override
 	public long[] next() {
 		if (closed) {
+			log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
 			return null;
 		}
 		StampedLongAdderLockManager manager = txnLockManager;
@@ -401,7 +345,7 @@ class LmdbRecordIterator implements RecordIterator {
 					return quad;
 				}
 			}
-//			closeInternal(false);
+			closeInternal(false);
 			return null;
 		} finally {
 			manager.unlockRead(readStamp);
@@ -414,37 +358,14 @@ class LmdbRecordIterator implements RecordIterator {
 			return false;
 		}
 
-		if (matcherForEvaluation != null) {
-			return !matcherForEvaluation.matches(keyData.mv_data());
+		if (groupMatcher != null) {
+			return !this.groupMatcher.matches(keyData.mv_data());
 		} else if (matchValues) {
-			matcherForEvaluation = index.createMatcher(subj, pred, obj, context);
-			groupMatcher = matcherForEvaluation;
-			return !matcherForEvaluation.matches(keyData.mv_data());
+			this.groupMatcher = index.createMatcher(subj, pred, obj, context);
+			return !this.groupMatcher.matches(keyData.mv_data());
 		} else {
 			return false;
 		}
-	}
-
-	private void prepareForReuse() {
-		if (cursor != 0L && txnRef != null) {
-			if (txnRef.isReadOnly()) {
-				pool.freeCursor(dbi, index, cursor);
-			} else {
-				mdb_cursor_close(cursor);
-			}
-		}
-		cursor = 0L;
-		groupMatcher = null;
-		matcherForEvaluation = null;
-		fetchNext = false;
-		lastResult = MDB_SUCCESS;
-		matchValues = false;
-		needMatcher = false;
-		txnRef = null;
-		txn = 0L;
-		txnRefVersion = 0L;
-		txnLockManager = null;
-		closed = true;
 	}
 
 	private void closeInternal(boolean maybeCalledAsync) {
@@ -493,10 +414,7 @@ class LmdbRecordIterator implements RecordIterator {
 			maxKeyBuf = null;
 			externalMinKeyBuf = false;
 			externalMaxKeyBuf = false;
-			if (maybeCalledAsync) {
-				groupMatcher = null;
-			}
-			matcherForEvaluation = null;
+			groupMatcher = null;
 			fetchNext = false;
 			lastResult = 0;
 			matchValues = false;

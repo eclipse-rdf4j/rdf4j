@@ -812,7 +812,7 @@ public class TripleStore implements Closeable {
 								maxKey.mv_data(maxKeyBuf);
 
 								keyBuf.clear();
-								index.getMinKey(keyBuf, subj, pred, obj, context);
+								index.getMinKey(keyBuf, subj, pred, obj, context, 0, 0, 0, 0);
 								keyBuf.flip();
 
 								// set cursor to min key
@@ -849,13 +849,38 @@ public class TripleStore implements Closeable {
 
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
+		CardinalityEstimator estimator = new CardinalityEstimator(this, index, subj, pred, obj, context);
 
 		int relevantParts = index.getPatternScore(subj, pred, obj, context);
 		if (relevantParts == 0) {
-			// it's worthless to use the index, just retrieve all entries in the db
-			return txnManager.doWith((stack, txn) -> {
+			return estimator.countAllEntries();
+		}
+		return estimator.estimateWithSampling();
+	}
+
+	private static final class CardinalityEstimator {
+
+		private final TripleStore store;
+		private final TripleIndex index;
+		private final long subj;
+		private final long pred;
+		private final long obj;
+		private final long context;
+
+		CardinalityEstimator(TripleStore store, TripleIndex index, long subj, long pred, long obj, long context) {
+			this.store = store;
+			this.index = index;
+			this.subj = subj;
+			this.pred = pred;
+			this.obj = obj;
+			this.context = context;
+		}
+
+		double countAllEntries() throws IOException {
+			return store.txnManager.doWith((stack, txn) -> {
 				double cardinality = 0;
-				for (boolean explicit : new boolean[] { true, false }) {
+				for (int i = 0; i < 2; i++) {
+					boolean explicit = i == 0;
 					int dbi = index.getDB(explicit);
 					MDBStat stat = MDBStat.mallocStack(stack);
 					mdb_stat(txn, dbi, stat);
@@ -865,152 +890,212 @@ public class TripleStore implements Closeable {
 			});
 		}
 
-		return txnManager.doWith((stack, txn) -> {
+		double estimateWithSampling() throws IOException {
 			Pool pool = Pool.get();
-			final Statistics s = pool.getStatistics();
+			Statistics statistics = pool.getStatistics();
 			try {
-				MDBVal maxKey = MDBVal.malloc(stack);
-				ByteBuffer maxKeyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
-				index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
-				maxKeyBuf.flip();
-				maxKey.mv_data(maxKeyBuf);
+				return store.txnManager.doWith((stack, txn) -> estimateWithTransaction(pool, statistics, stack, txn));
+			} finally {
+				pool.free(statistics);
+			}
+		}
 
-				PointerBuffer pp = stack.mallocPointer(1);
+		private double estimateWithTransaction(Pool pool, Statistics statistics, MemoryStack stack, long txn)
+				throws IOException {
+			MDBVal maxKey = MDBVal.malloc(stack);
+			ByteBuffer maxKeyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
+			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+			maxKeyBuf.flip();
+			maxKey.mv_data(maxKeyBuf);
 
-				MDBVal keyData = MDBVal.mallocStack(stack);
-				ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
-				MDBVal valueData = MDBVal.mallocStack(stack);
+			MDBVal keyData = MDBVal.mallocStack(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
+			MDBVal valueData = MDBVal.mallocStack(stack);
 
-				double cardinality = 0;
-				for (boolean explicit : new boolean[] { true, false }) {
-					Arrays.fill(s.avgRowsPerValue, 1.0);
-					Arrays.fill(s.avgRowsPerValueCounts, 0);
+			double cardinality = 0;
+			for (int i = 0; i < 2; i++) {
+				boolean explicit = i == 0;
+				statistics.reset();
 
+				keyBuf.clear();
+				index.getMinKey(keyBuf, subj, pred, obj, context, 0, 0, 0, 0);
+				keyBuf.flip();
+
+				int dbi = index.getDB(explicit);
+
+				try (CursorHandle cursor = CursorHandle.open(pool, this, stack, txn, dbi)) {
+					if (!positionRangeStart(txn, dbi, cursor.cursor(), keyData, keyBuf, valueData, maxKey,
+							statistics)) {
+						break;
+					}
+					if (!positionRangeEnd(txn, dbi, cursor.cursor(), keyData, valueData, maxKeyBuf, statistics)) {
+						break;
+					}
+
+					BucketSummary summary = sampleBuckets(txn, dbi, cursor.cursor(), keyData, valueData, keyBuf, maxKey,
+							statistics);
+					cardinality += summary.totalSamples;
+					cardinality += interpolateBuckets(summary.bucketCount, statistics);
+				}
+			}
+
+			return cardinality;
+		}
+
+		private boolean positionRangeStart(long txn, int dbi, long cursor, MDBVal keyData, ByteBuffer keyBuf,
+				MDBVal valueData, MDBVal maxKey, Statistics statistics) {
+			keyData.mv_data(keyBuf);
+			int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+			if (rc != MDB_SUCCESS || mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
+				return false;
+			}
+			Varint.readQuadUnsigned(keyData.mv_data(), statistics.minValues);
+			return true;
+		}
+
+		private boolean positionRangeEnd(long txn, int dbi, long cursor, MDBVal keyData, MDBVal valueData,
+				ByteBuffer maxKeyBuf, Statistics statistics) {
+			keyData.mv_data(maxKeyBuf);
+			int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+			if (rc != MDB_SUCCESS) {
+				rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
+			} else {
+				rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
+			}
+			if (rc != MDB_SUCCESS) {
+				return false;
+			}
+			Varint.readQuadUnsigned(keyData.mv_data(), statistics.maxValues);
+			statistics.startValues[Statistics.MAX_BUCKETS] = statistics.maxValues;
+			return true;
+		}
+
+		private BucketSummary sampleBuckets(long txn, int dbi, long cursor, MDBVal keyData, MDBVal valueData,
+				ByteBuffer keyBuf, MDBVal maxKey, Statistics statistics) {
+			long allSamplesCount = 0;
+			int bucket = 0;
+			boolean endOfRange = false;
+			for (; bucket < Statistics.MAX_BUCKETS && !endOfRange; bucket++) {
+				if (bucket != 0) {
+					store.bucketStart((double) bucket / Statistics.MAX_BUCKETS, statistics.minValues,
+							statistics.maxValues, statistics.values);
 					keyBuf.clear();
-					index.getMinKey(keyBuf, subj, pred, obj, context);
+					Varint.writeQuadUnsigned(keyBuf, statistics.values);
 					keyBuf.flip();
+				}
 
-					int dbi = index.getDB(explicit);
+				keyData.mv_data(keyBuf);
 
-					int pos = 0;
-					long cursor = 0;
+				int currentSamplesCount = 0;
+				int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+				while (rc == MDB_SUCCESS && currentSamplesCount < Statistics.MAX_SAMPLES_PER_BUCKET) {
+					if (mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
+						endOfRange = true;
+						break;
+					}
+					allSamplesCount++;
+					currentSamplesCount++;
 
-					try {
-						E(mdb_cursor_open(txn, dbi, pp));
-						cursor = pp.get(0);
+					System.arraycopy(statistics.values, 0, statistics.lastValues[bucket], 0,
+							statistics.values.length);
+					Varint.readQuadUnsigned(keyData.mv_data(), statistics.values);
 
-						// set cursor to min key
-						keyData.mv_data(keyBuf);
-						int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-						if (rc != MDB_SUCCESS || mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
-							break;
-						} else {
-							Varint.readQuadUnsigned(keyData.mv_data(), s.minValues);
-						}
-
-						// set cursor to max key
-						keyData.mv_data(maxKeyBuf);
-						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-						if (rc != MDB_SUCCESS) {
-							// directly go to last value
-							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
-						} else {
-							// go to previous value of selected key
-							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
-						}
-						if (rc == MDB_SUCCESS) {
-							Varint.readQuadUnsigned(keyData.mv_data(), s.maxValues);
-							// this is required to correctly estimate the range size at a later point
-							s.startValues[s.MAX_BUCKETS] = s.maxValues;
-						} else {
-							break;
-						}
-
-						long allSamplesCount = 0;
-						int bucket = 0;
-						boolean endOfRange = false;
-						for (; bucket < s.MAX_BUCKETS && !endOfRange; bucket++) {
-							if (bucket != 0) {
-								bucketStart((double) bucket / s.MAX_BUCKETS, s.minValues, s.maxValues, s.values);
-								keyBuf.clear();
-								Varint.writeQuadUnsigned(keyBuf, s.values);
-								keyBuf.flip();
+					if (currentSamplesCount == 1) {
+						Arrays.fill(statistics.counts, 1);
+						System.arraycopy(statistics.values, 0, statistics.startValues[bucket], 0,
+								statistics.values.length);
+					} else {
+						for (int i = 0; i < statistics.values.length; i++) {
+							if (statistics.values[i] == statistics.lastValues[bucket][i]) {
+								statistics.counts[i]++;
+							} else {
+								long diff = statistics.values[i] - statistics.lastValues[bucket][i];
+								statistics.avgRowsPerValueCounts[i]++;
+								statistics.avgRowsPerValue[i] = (statistics.avgRowsPerValue[i]
+										* (statistics.avgRowsPerValueCounts[i] - 1) +
+										(double) statistics.counts[i] / diff) / statistics.avgRowsPerValueCounts[i];
+								statistics.counts[i] = 0;
 							}
-							// this is the min key for the first iteration
-							keyData.mv_data(keyBuf);
-
-							int currentSamplesCount = 0;
-							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-							while (rc == MDB_SUCCESS && currentSamplesCount < s.MAX_SAMPLES_PER_BUCKET) {
-								if (mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
-									endOfRange = true;
-									break;
-								} else {
-									allSamplesCount++;
-									currentSamplesCount++;
-
-									System.arraycopy(s.values, 0, s.lastValues[bucket], 0, s.values.length);
-									Varint.readQuadUnsigned(keyData.mv_data(), s.values);
-
-									if (currentSamplesCount == 1) {
-										Arrays.fill(s.counts, 1);
-										System.arraycopy(s.values, 0, s.startValues[bucket], 0, s.values.length);
-									} else {
-										for (int i = 0; i < s.values.length; i++) {
-											if (s.values[i] == s.lastValues[bucket][i]) {
-												s.counts[i]++;
-											} else {
-												long diff = s.values[i] - s.lastValues[bucket][i];
-												s.avgRowsPerValueCounts[i]++;
-												s.avgRowsPerValue[i] = (s.avgRowsPerValue[i]
-														* (s.avgRowsPerValueCounts[i] - 1) +
-														(double) s.counts[i] / diff) / s.avgRowsPerValueCounts[i];
-												s.counts[i] = 0;
-											}
-										}
-									}
-									rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-									if (rc != MDB_SUCCESS) {
-										// no more elements are available
-										endOfRange = true;
-									}
-								}
-							}
-						}
-
-						// at least the seen samples must be counted
-						cardinality += allSamplesCount;
-
-						// the actual number of buckets (bucket - 1 "real" buckets and one for the last element within
-						// the range)
-						int buckets = bucket;
-						for (bucket = 1; bucket < buckets; bucket++) {
-							// find first element that has been changed
-							pos = 0;
-							while (pos < s.lastValues[bucket].length
-									&& s.startValues[bucket][pos] == s.lastValues[bucket - 1][pos]) {
-								pos++;
-							}
-							if (pos < s.lastValues[bucket].length) {
-								// this may be < 0 if two groups are overlapping
-								long diffBetweenGroups = Math
-										.max(s.startValues[bucket][pos] - s.lastValues[bucket - 1][pos], 0);
-								// estimate number of elements between last element of previous bucket and first element
-								// of current bucket
-								cardinality += s.avgRowsPerValue[pos] * diffBetweenGroups;
-							}
-						}
-					} finally {
-						if (cursor != 0) {
-							mdb_cursor_close(cursor);
 						}
 					}
+					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					if (rc != MDB_SUCCESS) {
+						endOfRange = true;
+					}
 				}
-				return cardinality;
-			} finally {
-				pool.free(s);
 			}
-		});
+			return new BucketSummary(allSamplesCount, bucket);
+		}
+
+		private double interpolateBuckets(int bucketCount, Statistics statistics) {
+			double cardinality = 0;
+			for (int bucket = 1; bucket < bucketCount; bucket++) {
+				int pos = 0;
+				while (pos < statistics.lastValues[bucket].length
+						&& statistics.startValues[bucket][pos] == statistics.lastValues[bucket - 1][pos]) {
+					pos++;
+				}
+				if (pos < statistics.lastValues[bucket].length) {
+					long diffBetweenGroups = Math.max(
+							statistics.startValues[bucket][pos] - statistics.lastValues[bucket - 1][pos], 0);
+					cardinality += statistics.avgRowsPerValue[pos] * diffBetweenGroups;
+				}
+			}
+			return cardinality;
+		}
+
+		private static final class BucketSummary {
+			private final long totalSamples;
+			private final int bucketCount;
+
+			BucketSummary(long totalSamples, int bucketCount) {
+				this.totalSamples = totalSamples;
+				this.bucketCount = bucketCount;
+			}
+		}
+
+		private static final class CursorHandle implements AutoCloseable {
+			private final Pool pool;
+			private final Object owner;
+			private final int dbi;
+			private final boolean pooled;
+			private long cursor;
+
+			private CursorHandle(Pool pool, Object owner, int dbi, long cursor, boolean pooled) {
+				this.pool = pool;
+				this.owner = owner;
+				this.dbi = dbi;
+				this.cursor = cursor;
+				this.pooled = pooled;
+			}
+
+			static CursorHandle open(Pool pool, Object owner, MemoryStack stack, long txn, int dbi) throws IOException {
+				long pooledCursor = pool.getCursor(dbi, owner);
+				if (pooledCursor != 0) {
+					return new CursorHandle(pool, owner, dbi, pooledCursor, true);
+				}
+				PointerBuffer pointer = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, dbi, pointer));
+				return new CursorHandle(pool, owner, dbi, pointer.get(0), false);
+			}
+
+			long cursor() {
+				return cursor;
+			}
+
+			@Override
+			public void close() {
+				if (cursor == 0) {
+					return;
+				}
+				if (pooled) {
+					pool.freeCursor(dbi, owner, cursor);
+				} else {
+					mdb_cursor_close(cursor);
+				}
+				cursor = 0;
+			}
+		}
 	}
 
 	protected TripleIndex getBestIndex(long subj, long pred, long obj, long context) {
@@ -1803,7 +1888,7 @@ public class TripleStore implements Closeable {
 
 				@Override
 				public void writeMin(ByteBuffer buffer) {
-					getMinKey(buffer, subj, pred, obj, context);
+					getMinKey(buffer, subj, pred, obj, context, 0, 0, 0, 0);
 				}
 
 				@Override
@@ -1813,7 +1898,8 @@ public class TripleStore implements Closeable {
 			};
 		}
 
-		void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+		void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context, long prevSubj, long prevPred,
+				long prevObj, long prevContext) {
 			subj = subj <= 0 ? 0 : subj;
 			pred = pred <= 0 ? 0 : pred;
 			obj = obj <= 0 ? 0 : obj;

@@ -1488,107 +1488,6 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		private final class BindingProjectingIterator implements RecordIterator {
-			private RecordIterator base;
-			private RecordIterator reusableBase;
-			private long[] binding;
-			private int subjIndex;
-			private int predIndex;
-			private int objIndex;
-			private int ctxIndex;
-			private long[] scratch;
-
-			void configure(RecordIterator base, RecordIterator reusableBase, long[] binding, int subjIndex,
-					int predIndex, int objIndex,
-					int ctxIndex, long[] bindingReuse) {
-				this.base = base;
-				this.reusableBase = reusableBase;
-				this.binding = binding;
-				this.subjIndex = subjIndex;
-				this.predIndex = predIndex;
-				this.objIndex = objIndex;
-				this.ctxIndex = ctxIndex;
-				int bindingLength = binding.length;
-				if (bindingReuse != null && bindingReuse.length >= bindingLength) {
-					System.arraycopy(binding, 0, bindingReuse, 0, bindingLength);
-					this.scratch = bindingReuse;
-				} else if (this.scratch == null || this.scratch.length != bindingLength) {
-					this.scratch = Arrays.copyOf(binding, bindingLength);
-				} else {
-					System.arraycopy(binding, 0, this.scratch, 0, bindingLength);
-				}
-			}
-
-			RecordIterator getReusableBase() {
-				return reusableBase;
-			}
-
-			@Override
-			public long[] next() throws QueryEvaluationException {
-				if (base == null) {
-					return null;
-				}
-				try {
-					long[] quad;
-					while ((quad = base.next()) != null) {
-						System.arraycopy(binding, 0, scratch, 0, binding.length);
-						boolean conflict = false;
-						if (subjIndex >= 0) {
-							long baseVal = binding[subjIndex];
-							long v = quad[TripleStore.SUBJ_IDX];
-							if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
-								conflict = true;
-							} else {
-								scratch[subjIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
-							}
-						}
-						if (!conflict && predIndex >= 0) {
-							long baseVal = binding[predIndex];
-							long v = quad[TripleStore.PRED_IDX];
-							if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
-								conflict = true;
-							} else {
-								scratch[predIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
-							}
-						}
-						if (!conflict && objIndex >= 0) {
-							long baseVal = binding[objIndex];
-							long v = quad[TripleStore.OBJ_IDX];
-							if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
-								conflict = true;
-							} else {
-								scratch[objIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
-							}
-						}
-						if (!conflict && ctxIndex >= 0) {
-							long baseVal = binding[ctxIndex];
-							long v = quad[TripleStore.CONTEXT_IDX];
-							if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
-								conflict = true;
-							} else {
-								scratch[ctxIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
-							}
-						}
-						if (!conflict) {
-							return scratch;
-						}
-					}
-					return null;
-				} catch (QueryEvaluationException e) {
-					throw e;
-				} catch (Exception e) {
-					throw new QueryEvaluationException(e);
-				}
-			}
-
-			@Override
-			public void close() {
-				if (base != null) {
-					base.close();
-				}
-			}
-		}
-
 		@Override
 		public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 				int ctxIndex, long[] patternIds, StatementOrder order) throws QueryEvaluationException {
@@ -2138,6 +2037,107 @@ class LmdbSailStore implements SailStore {
 				// Fallback to standard SPARQL value comparator when IDs are not available
 				return new ValueComparator().compare(v1, v2);
 			};
+		}
+	}
+}
+
+final class BindingProjectingIterator implements RecordIterator {
+	private RecordIterator base;
+	private RecordIterator reusableBase;
+	private long[] binding;
+	private int subjIndex;
+	private int predIndex;
+	private int objIndex;
+	private int ctxIndex;
+	private long[] scratch;
+
+	void configure(RecordIterator base, RecordIterator reusableBase, long[] binding, int subjIndex,
+			int predIndex, int objIndex,
+			int ctxIndex, long[] bindingReuse) {
+		this.base = base;
+		this.reusableBase = reusableBase;
+		this.binding = binding;
+		this.subjIndex = subjIndex;
+		this.predIndex = predIndex;
+		this.objIndex = objIndex;
+		this.ctxIndex = ctxIndex;
+		int bindingLength = binding.length;
+		if (bindingReuse != null && bindingReuse.length >= bindingLength) {
+			System.arraycopy(binding, 0, bindingReuse, 0, bindingLength);
+			this.scratch = bindingReuse;
+		} else if (this.scratch == null || this.scratch.length != bindingLength) {
+			this.scratch = Arrays.copyOf(binding, bindingLength);
+		} else {
+			System.arraycopy(binding, 0, this.scratch, 0, bindingLength);
+		}
+	}
+
+	RecordIterator getReusableBase() {
+		return reusableBase;
+	}
+
+	@Override
+	public long[] next() throws QueryEvaluationException {
+		if (base == null) {
+			return null;
+		}
+		try {
+			long[] quad;
+			while ((quad = base.next()) != null) {
+				System.arraycopy(binding, 0, scratch, 0, binding.length);
+				boolean conflict = false;
+				if (subjIndex >= 0) {
+					long baseVal = binding[subjIndex];
+					long v = quad[TripleStore.SUBJ_IDX];
+					if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
+						conflict = true;
+					} else {
+						scratch[subjIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
+					}
+				}
+				if (!conflict && predIndex >= 0) {
+					long baseVal = binding[predIndex];
+					long v = quad[TripleStore.PRED_IDX];
+					if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
+						conflict = true;
+					} else {
+						scratch[predIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
+					}
+				}
+				if (!conflict && objIndex >= 0) {
+					long baseVal = binding[objIndex];
+					long v = quad[TripleStore.OBJ_IDX];
+					if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
+						conflict = true;
+					} else {
+						scratch[objIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
+					}
+				}
+				if (!conflict && ctxIndex >= 0) {
+					long baseVal = binding[ctxIndex];
+					long v = quad[TripleStore.CONTEXT_IDX];
+					if (baseVal != LmdbValue.UNKNOWN_ID && baseVal != v) {
+						conflict = true;
+					} else {
+						scratch[ctxIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
+					}
+				}
+				if (!conflict) {
+					return scratch;
+				}
+			}
+			return null;
+		} catch (QueryEvaluationException e) {
+			throw e;
+		} catch (Exception e) {
+			throw new QueryEvaluationException(e);
+		}
+	}
+
+	@Override
+	public void close() {
+		if (base != null) {
+			base.close();
 		}
 	}
 }
