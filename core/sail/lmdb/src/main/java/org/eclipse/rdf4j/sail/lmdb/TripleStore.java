@@ -119,6 +119,7 @@ public class TripleStore implements Closeable {
 	public static final int CONTEXT_IDX = TripleIndex.CONTEXT_IDX;
 
 	static final int MAX_KEY_LENGTH = TripleIndex.MAX_KEY_LENGTH;
+	static final long NO_PREVIOUS_ID = Long.MIN_VALUE;
 
 	/**
 	 * The default triple indexes.
@@ -807,7 +808,8 @@ public class TripleStore implements Closeable {
 								maxKey.mv_data(maxKeyBuf);
 
 								keyBuf.clear();
-								index.getMinKey(keyBuf, subj, pred, obj, context, 0, 0, 0, 0);
+								index.getMinKey(keyBuf, subj, pred, obj, context, NO_PREVIOUS_ID, NO_PREVIOUS_ID,
+										NO_PREVIOUS_ID, NO_PREVIOUS_ID);
 								keyBuf.flip();
 
 								// set cursor to min key
@@ -972,7 +974,8 @@ public class TripleStore implements Closeable {
 				statistics.reset();
 
 				keyBuf.clear();
-				index.getMinKey(keyBuf, subj, pred, obj, context, 0, 0, 0, 0);
+				index.getMinKey(keyBuf, subj, pred, obj, context, NO_PREVIOUS_ID, NO_PREVIOUS_ID, NO_PREVIOUS_ID,
+						NO_PREVIOUS_ID);
 				keyBuf.flip();
 
 				int dbi = index.getDB(explicit);

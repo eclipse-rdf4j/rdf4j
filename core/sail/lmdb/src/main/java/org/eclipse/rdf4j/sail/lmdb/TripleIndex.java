@@ -199,7 +199,8 @@ class TripleIndex implements TripleStore.DupIndex {
 
 			@Override
 			public void writeMin(ByteBuffer buffer) {
-				getMinKey(buffer, subj, pred, obj, context);
+				getMinKey(buffer, subj, pred, obj, context, TripleStore.NO_PREVIOUS_ID, TripleStore.NO_PREVIOUS_ID,
+						TripleStore.NO_PREVIOUS_ID, TripleStore.NO_PREVIOUS_ID);
 			}
 
 			@Override
@@ -210,11 +211,25 @@ class TripleIndex implements TripleStore.DupIndex {
 	}
 
 	void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+		getMinKey(bb, subj, pred, obj, context, TripleStore.NO_PREVIOUS_ID, TripleStore.NO_PREVIOUS_ID,
+				TripleStore.NO_PREVIOUS_ID, TripleStore.NO_PREVIOUS_ID);
+	}
+
+	void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context, long prevSubj, long prevPred,
+			long prevObj, long prevContext) {
 		subj = subj <= 0 ? 0 : subj;
 		pred = pred <= 0 ? 0 : pred;
 		obj = obj <= 0 ? 0 : obj;
 		context = context <= 0 ? 0 : context;
-		toKey(bb, subj, pred, obj, context);
+		long prevSubjNorm = prevSubj == TripleStore.NO_PREVIOUS_ID ? TripleStore.NO_PREVIOUS_ID
+				: (prevSubj <= 0 ? 0 : prevSubj);
+		long prevPredNorm = prevPred == TripleStore.NO_PREVIOUS_ID ? TripleStore.NO_PREVIOUS_ID
+				: (prevPred <= 0 ? 0 : prevPred);
+		long prevObjNorm = prevObj == TripleStore.NO_PREVIOUS_ID ? TripleStore.NO_PREVIOUS_ID
+				: (prevObj <= 0 ? 0 : prevObj);
+		long prevContextNorm = prevContext == TripleStore.NO_PREVIOUS_ID ? TripleStore.NO_PREVIOUS_ID
+				: (prevContext <= 0 ? 0 : prevContext);
+		toKey(bb, subj, pred, obj, context, prevSubjNorm, prevPredNorm, prevObjNorm, prevContextNorm);
 	}
 
 	void getMaxKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
@@ -292,6 +307,12 @@ class TripleIndex implements TripleStore.DupIndex {
 	}
 
 	void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+		toKey(bb, subj, pred, obj, context, TripleStore.NO_PREVIOUS_ID, TripleStore.NO_PREVIOUS_ID,
+				TripleStore.NO_PREVIOUS_ID, TripleStore.NO_PREVIOUS_ID);
+	}
+
+	void toKey(ByteBuffer bb, long subj, long pred, long obj, long context, long prevSubj, long prevPred, long prevObj,
+			long prevContext) {
 		boolean shouldCache = threeOfFourAreZeroOrMax(subj, pred, obj, context);
 		if (shouldCache) {
 			long sum = subj + pred + obj + context;
@@ -306,7 +327,8 @@ class TripleIndex implements TripleStore.DupIndex {
 		}
 
 		// Pass through to the keyWriter with caching hint
-		keyWriter.write(bb, subj, pred, obj, context, shouldCache);
+		boolean hasPrev = prevSubj != TripleStore.NO_PREVIOUS_ID;
+		keyWriter.write(bb, subj, pred, obj, context, shouldCache, hasPrev, prevSubj, prevPred, prevObj, prevContext);
 	}
 
 	void keyToQuad(ByteBuffer key, long[] quad) {
