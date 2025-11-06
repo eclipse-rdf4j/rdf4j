@@ -42,24 +42,13 @@ public class LmdbSailDatasetTripleSource extends SailDatasetTripleSource impleme
 
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-			long[] patternIds) throws QueryEvaluationException {
-		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, null);
-	}
-
-	@Override
-	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-			long[] patternIds, long[] reuse) throws QueryEvaluationException {
-		return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse, null);
-	}
-
-	@Override
-	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-			long[] patternIds, long[] reuse, long[] quadReuse) throws QueryEvaluationException {
+			long[] patternIds, LmdbEvaluationDataset.KeyRangeBuffers keyBuffers, long[] bindingReuse, long[] quadReuse,
+			RecordIterator iteratorReuse) throws QueryEvaluationException {
 
 		// Fast path: backing dataset supports ID-level access
 		if (dataset instanceof LmdbEvaluationDataset) {
 			return ((LmdbEvaluationDataset) dataset).getRecordIterator(binding, subjIndex, predIndex, objIndex,
-					ctxIndex, patternIds, reuse, quadReuse);
+					ctxIndex, patternIds, keyBuffers, bindingReuse, quadReuse, iteratorReuse);
 		}
 
 		// Fallback path: value-level iteration converted to IDs using ValueStore

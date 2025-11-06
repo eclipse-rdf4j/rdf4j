@@ -2276,8 +2276,6 @@ class LmdbSailStore implements SailStore {
 			public void close() {
 				if (base != null) {
 					base.close();
-					base = null;
-					reusableBase = null;
 				}
 			}
 		}

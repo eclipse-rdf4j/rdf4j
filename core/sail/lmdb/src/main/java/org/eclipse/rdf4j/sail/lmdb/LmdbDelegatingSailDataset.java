@@ -113,7 +113,8 @@ final class LmdbDelegatingSailDataset implements SailDataset, LmdbEvaluationData
 		}
 		// Fallback via TripleSource with Value conversion
 		return new LmdbSailDatasetTripleSource(valueStore, delegate)
-				.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, reuse, quadReuse);
+				.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, reuse,
+						quadReuse, null);
 	}
 
 	@Override
