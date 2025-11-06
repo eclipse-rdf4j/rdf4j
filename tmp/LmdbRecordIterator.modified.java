@@ -57,7 +57,6 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private boolean matchValues;
 	private GroupMatcher groupMatcher;
-	private GroupMatcher matcherForEvaluation;
 
 	/**
 	 * True when late-bound variables exist beyond the contiguous prefix of the chosen index order, requiring
@@ -96,10 +95,6 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final Thread ownerThread = Thread.currentThread();
 
-	private long sourceRowsScannedActual;
-	private long sourceRowsMatchedActual;
-	private long sourceRowsFilteredActual;
-
 	private boolean initialized = false;
 
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
@@ -136,7 +131,7 @@ class LmdbRecordIterator implements RecordIterator {
 			long context, boolean explicit, Txn txnRef, long[] quadReuse, ByteBuffer minKeyBufParam,
 			ByteBuffer maxKeyBufParam) throws IOException {
 		if (initialized && !closed) {
-			// prepareForReuse();
+			prepareForReuse();
 		}
 		initializeInternal(index, keyBuilder, rangeSearch, subj, pred, obj, context, explicit, txnRef, quadReuse,
 				minKeyBufParam, maxKeyBufParam);
@@ -146,19 +141,7 @@ class LmdbRecordIterator implements RecordIterator {
 	private void initializeInternal(TripleIndex index, KeyBuilder keyBuilder, boolean rangeSearch, long subj,
 			long pred, long obj, long context, boolean explicit, Txn txnRef, long[] quadReuse,
 			ByteBuffer minKeyBufParam, ByteBuffer maxKeyBufParam) throws IOException {
-
-//		if (!initialized) {
-//			System.out.println();
-//		} else {
-//			System.out.println();
-//		}
-
 		this.index = index;
-		long prevSubj = this.subj;
-		long prevPred = this.pred;
-		long prevObj = this.obj;
-		long prevContext = this.context;
-
 		this.subj = subj;
 		this.pred = pred;
 		this.obj = obj;
@@ -195,11 +178,10 @@ class LmdbRecordIterator implements RecordIterator {
 					this.minKeyBuf.clear();
 				}
 			}
-			minKeyBuf.clear();
 			if (keyBuilder != null) {
 				keyBuilder.writeMin(minKeyBuf);
 			} else {
-				index.getMinKey(minKeyBuf, subj, pred, obj, context, prevSubj, prevPred, prevObj, prevContext);
+				index.getMinKey(minKeyBuf, subj, pred, obj, context);
 			}
 			minKeyBuf.flip();
 
@@ -216,7 +198,6 @@ class LmdbRecordIterator implements RecordIterator {
 					this.maxKeyBuf.clear();
 				}
 			}
-			maxKeyBuf.clear();
 			if (keyBuilder != null) {
 				keyBuilder.writeMax(maxKeyBuf);
 			} else {
@@ -247,8 +228,7 @@ class LmdbRecordIterator implements RecordIterator {
 						this.minKeyBuf.clear();
 					}
 				}
-				minKeyBuf.clear();
-				index.getMinKey(minKeyBuf, subj, pred, obj, context, prevSubj, prevPred, prevObj, prevContext);
+				index.getMinKey(minKeyBuf, subj, pred, obj, context);
 				minKeyBuf.flip();
 			} else {
 				if (this.minKeyBuf != null && !prevExternalMinKeyBuf) {
@@ -269,19 +249,13 @@ class LmdbRecordIterator implements RecordIterator {
 		int boundCount = (subj > 0 ? 1 : 0) + (pred > 0 ? 1 : 0) + (obj > 0 ? 1 : 0) + (context >= 0 ? 1 : 0);
 		this.needMatcher = boundCount > prefixLen;
 		this.groupMatcher = null;
-		this.matcherForEvaluation = null;
 		this.fetchNext = false;
 		this.lastResult = MDB_SUCCESS;
-		this.sourceRowsScannedActual = 0;
-		this.sourceRowsMatchedActual = 0;
-		this.sourceRowsFilteredActual = 0;
 		this.closed = false;
 
-		if (!initialized) {
-			this.dbi = index.getDB(explicit);
-			this.txnRef = txnRef;
-			this.txnLockManager = txnRef.lockManager();
-		}
+		this.dbi = index.getDB(explicit);
+		this.txnRef = txnRef;
+		this.txnLockManager = txnRef.lockManager();
 
 		long readStamp;
 		try {
@@ -295,12 +269,9 @@ class LmdbRecordIterator implements RecordIterator {
 
 			// Try to reuse a pooled cursor only for read-only transactions; otherwise open a new one
 			if (txnRef.isReadOnly()) {
-				if (cursor == 0L) {
-					cursor = pool.getCursor(dbi, index);
-				}
-
-				if (cursor != 0L) {
-					long c = cursor;
+				long pooled = pool.getCursor(dbi, index);
+				if (pooled != 0L) {
+					long c = pooled;
 					try {
 						E(mdb_cursor_renew(txn, c));
 					} catch (IOException renewEx) {
@@ -321,11 +292,6 @@ class LmdbRecordIterator implements RecordIterator {
 					}
 				}
 			} else {
-				if (cursor != 0L) {
-					pool.freeCursor(dbi, index, cursor);
-					cursor = 0L;
-				}
-
 				try (MemoryStack stack = MemoryStack.stackPush()) {
 					PointerBuffer pp = stack.mallocPointer(1);
 					E(mdb_cursor_open(txn, dbi, pp));
@@ -340,6 +306,7 @@ class LmdbRecordIterator implements RecordIterator {
 	@Override
 	public long[] next() {
 		if (closed) {
+			log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
 			return null;
 		}
 		StampedLongAdderLockManager manager = txnLockManager;
@@ -395,25 +362,20 @@ class LmdbRecordIterator implements RecordIterator {
 			}
 
 			while (lastResult == MDB_SUCCESS) {
-				sourceRowsScannedActual++;
 				// if (maxKey != null && TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) > 0) {
 				if (maxKey != null && mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
-					sourceRowsFilteredActual++;
 					lastResult = MDB_NOTFOUND;
 				} else if (matches()) {
-					sourceRowsFilteredActual++;
-					// value doesn't match search key/mask, fetch next value
 					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 				} else {
 					// Matching value found
 					index.keyToQuad(keyData.mv_data(), subj, pred, obj, context, quad);
-					sourceRowsMatchedActual++;
 					// fetch next value
 					fetchNext = true;
 					return quad;
 				}
 			}
-//			closeInternal(false);
+			closeInternal(false);
 			return null;
 		} finally {
 			manager.unlockRead(readStamp);
@@ -426,12 +388,11 @@ class LmdbRecordIterator implements RecordIterator {
 			return false;
 		}
 
-		if (matcherForEvaluation != null) {
-			return !matcherForEvaluation.matches(keyData.mv_data());
+		if (groupMatcher != null) {
+			return !this.groupMatcher.matches(keyData.mv_data());
 		} else if (matchValues) {
-			matcherForEvaluation = index.createMatcher(subj, pred, obj, context);
-			groupMatcher = matcherForEvaluation;
-			return !matcherForEvaluation.matches(keyData.mv_data());
+			this.groupMatcher = index.createMatcher(subj, pred, obj, context);
+			return !this.groupMatcher.matches(keyData.mv_data());
 		} else {
 			return false;
 		}
@@ -447,7 +408,6 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 		cursor = 0L;
 		groupMatcher = null;
-		matcherForEvaluation = null;
 		fetchNext = false;
 		lastResult = MDB_SUCCESS;
 		matchValues = false;
@@ -505,10 +465,7 @@ class LmdbRecordIterator implements RecordIterator {
 			maxKeyBuf = null;
 			externalMinKeyBuf = false;
 			externalMaxKeyBuf = false;
-			if (maybeCalledAsync) {
-				groupMatcher = null;
-			}
-			matcherForEvaluation = null;
+			groupMatcher = null;
 			fetchNext = false;
 			lastResult = 0;
 			matchValues = false;
@@ -529,25 +486,5 @@ class LmdbRecordIterator implements RecordIterator {
 	@Override
 	public void close() {
 		closeInternal(true);
-	}
-
-	@Override
-	public String getIndexName() {
-		return index.toString();
-	}
-
-	@Override
-	public long getSourceRowsScannedActual() {
-		return sourceRowsScannedActual;
-	}
-
-	@Override
-	public long getSourceRowsMatchedActual() {
-		return sourceRowsMatchedActual;
-	}
-
-	@Override
-	public long getSourceRowsFilteredActual() {
-		return sourceRowsFilteredActual;
 	}
 }
