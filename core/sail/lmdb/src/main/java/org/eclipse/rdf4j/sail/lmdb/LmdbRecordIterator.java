@@ -216,7 +216,7 @@ class LmdbRecordIterator implements RecordIterator {
 			if (keyBuilder != null) {
 				keyBuilder.writeMax(maxKeyBuf);
 			} else {
-				index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+				index.getMaxKey(maxKeyBuf, subj, pred, obj, context, prevSubj, prevPred, prevObj, prevContext);
 			}
 			maxKeyBuf.flip();
 			this.maxKey.mv_data(maxKeyBuf);

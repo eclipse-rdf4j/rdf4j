@@ -808,7 +808,7 @@ public class TripleStore implements Closeable {
 								GroupMatcher matcher = index.createMatcher(subj, pred, obj, context);
 
 								maxKeyBuf.clear();
-								index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+								index.getMaxKey(maxKeyBuf, subj, pred, obj, context, -1, -1, -1, -1);
 								maxKeyBuf.flip();
 								maxKey.mv_data(maxKeyBuf);
 
@@ -906,7 +906,7 @@ public class TripleStore implements Closeable {
 				throws IOException {
 			MDBVal maxKey = MDBVal.malloc(stack);
 			ByteBuffer maxKeyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
-			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+			index.getMaxKey(maxKeyBuf, subj, pred, obj, context, -1, -1, -1, -1);
 			maxKeyBuf.flip();
 			maxKey.mv_data(maxKeyBuf);
 
@@ -1897,7 +1897,7 @@ public class TripleStore implements Closeable {
 
 				@Override
 				public void writeMax(ByteBuffer buffer) {
-					getMaxKey(buffer, subj, pred, obj, context);
+					getMaxKey(buffer, subj, pred, obj, context, -1, -1, -1, -1);
 				}
 			};
 		}
@@ -1916,12 +1916,20 @@ public class TripleStore implements Closeable {
 			toKey(bb, subj, pred, obj, context, prevSubjNorm, prevPredNorm, prevObjNorm, prevContextNorm);
 		}
 
-		void getMaxKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+		void getMaxKey(ByteBuffer bb, long subj, long pred, long obj, long context, long prevSubj, long prevPred,
+				long prevObj, long prevContext) {
 			subj = subj <= 0 ? Long.MAX_VALUE : subj;
 			pred = pred <= 0 ? Long.MAX_VALUE : pred;
 			obj = obj <= 0 ? Long.MAX_VALUE : obj;
 			context = context < 0 ? Long.MAX_VALUE : context;
-			toKey(bb, subj, pred, obj, context);
+			long prevSubjNorm = prevSubj == NO_PREVIOUS_ID ? NO_PREVIOUS_ID
+					: (prevSubj <= 0 ? Long.MAX_VALUE : prevSubj);
+			long prevPredNorm = prevPred == NO_PREVIOUS_ID ? NO_PREVIOUS_ID
+					: (prevPred <= 0 ? Long.MAX_VALUE : prevPred);
+			long prevObjNorm = prevObj == NO_PREVIOUS_ID ? NO_PREVIOUS_ID : (prevObj <= 0 ? Long.MAX_VALUE : prevObj);
+			long prevContextNorm = prevContext == NO_PREVIOUS_ID ? NO_PREVIOUS_ID
+					: (prevContext <= 0 ? Long.MAX_VALUE : prevContext);
+			toKey(bb, subj, pred, obj, context, prevSubjNorm, prevPredNorm, prevObjNorm, prevContextNorm);
 		}
 
 		GroupMatcher createMatcher(long subj, long pred, long obj, long context) {
