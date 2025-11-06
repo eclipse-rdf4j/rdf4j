@@ -571,8 +571,11 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 					if (next != null) {
 						return next;
 					}
-					currentRight.close();
-					if (currentRight != LmdbIdJoinIterator.EMPTY_RECORD_ITERATOR) {
+					if (reusableRight == null && currentRight != LmdbIdJoinIterator.EMPTY_RECORD_ITERATOR) {
+						reusableRight = currentRight;
+					} else if (reusableRight != currentRight
+							&& currentRight != LmdbIdJoinIterator.EMPTY_RECORD_ITERATOR) {
+						reusableRight.close();
 						reusableRight = currentRight;
 					}
 					currentRight = null;
@@ -600,12 +603,51 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 
 		@Override
 		public void close() {
-			if (currentRight != null) {
-				currentRight.close();
-				currentRight = null;
-			}
-			left.close();
+			// capture references and null out fields early to avoid double-closing if re-entered
+			RecordIterator toCloseCurrent = currentRight;
+			RecordIterator toCloseLeft = left;
+			RecordIterator toCloseReusable = reusableRight;
+
+			currentRight = null;
 			reusableRight = null;
+
+			RuntimeException first = null;
+
+			// Close currentRight
+			try {
+				if (toCloseCurrent != null) {
+					toCloseCurrent.close();
+				}
+			} catch (RuntimeException e) {
+				first = e;
+			} finally {
+				// Always attempt to close left
+				try {
+					if (toCloseLeft != null) {
+						toCloseLeft.close();
+					}
+				} catch (RuntimeException e) {
+					if (first == null) {
+						first = e;
+					}
+				} finally {
+					// Always attempt to close reusableRight
+					try {
+						if (toCloseReusable != null) {
+							toCloseReusable.close();
+						}
+					} catch (RuntimeException e) {
+						if (first == null) {
+							first = e;
+						}
+					}
+				}
+			}
+
+			// Rethrow the first failure after attempting all closes
+			if (first != null) {
+				throw first;
+			}
 		}
 	}
 
