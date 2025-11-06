@@ -40,6 +40,10 @@ import org.lwjgl.util.lmdb.MDBVal;
  */
 class LmdbDupRecordIterator implements RecordIterator {
 
+	private boolean explicit;
+	private boolean exhausted;
+	private boolean wasEmpty;
+
 	@FunctionalInterface
 	interface FallbackSupplier {
 		RecordIterator get(long[] quadReuse, ByteBuffer minKeyBuf, ByteBuffer maxKeyBuf,
@@ -97,79 +101,160 @@ class LmdbDupRecordIterator implements RecordIterator {
 
 	void initialize(DupIndex index, long subj, long pred, boolean explicit, Txn txnRef, long[] quadReuse)
 			throws IOException {
-		if (!closed) {
-			throw new IllegalStateException("Cannot initialize LMDB dup iterator while it is open");
-		}
 
-		this.index = index;
-		this.dupDbi = index.getDupDB(explicit);
-		this.txnRef = txnRef;
-		this.txnLockManager = txnRef.lockManager();
+		this.exhausted = false;
 
-		this.prefixSubj = subj;
-		this.prefixPred = pred;
-
-		if (quadReuse != null && quadReuse.length >= 4) {
-			this.quad = quadReuse;
-		} else if (this.quad == null || this.quad.length < 4) {
-			this.quad = new long[4];
-		}
-		this.quad[0] = subj;
-		this.quad[1] = pred;
-		this.quad[2] = -1L;
-		this.quad[3] = -1L;
-
-		if (this.keyData == null) {
-			this.keyData = pool.getVal();
-		}
-		if (this.valueData == null) {
-			this.valueData = pool.getVal();
-		}
-
-		if (this.prefixKeyBuf == null) {
-			this.prefixKeyBuf = pool.getKeyBuffer();
-		}
-		prefixKeyBuf.clear();
-		Varint.writeUnsigned(prefixKeyBuf, prefixSubj);
-		Varint.writeUnsigned(prefixKeyBuf, prefixPred);
-		prefixKeyBuf.flip();
-
-		this.dupBuf = null;
-		this.dupPos = 0;
-		this.dupLimit = 0;
-		this.lastResult = MDB_SUCCESS;
-		this.closed = false;
-
-		RecordIterator fallbackIterator = null;
-
-		long readStamp;
 		try {
-			readStamp = txnLockManager.readLock();
-		} catch (InterruptedException e) {
-			throw new SailException(e);
-		}
-		try {
-			this.txnRefVersion = txnRef.version();
-			this.txn = txnRef.get();
 
-			cursor = openCursor(txn, dupDbi, txnRef.isReadOnly());
+			// TODO: Find out why this is slower than if we called close()
+//				close();
+			if (closed) {
+				this.index = index;
+				this.explicit = explicit;
+				this.dupDbi = index.getDupDB(explicit);
+				this.txnRef = txnRef;
+				assert this.txnRef != null;
+				this.txnLockManager = txnRef.lockManager();
+				this.prefixSubj = subj;
+				this.prefixPred = pred;
+				assert this.keyData == null;
+				assert this.valueData == null;
+				assert this.prefixKeyBuf == null;
+				this.keyData = pool.getVal();
+				this.valueData = pool.getVal();
+				this.prefixKeyBuf = pool.getKeyBuffer();
 
-			boolean positioned = positionOnPrefix();
-			if (positioned) {
-				positioned = primeDuplicateBlock();
+				prefixKeyBuf.clear();
+				Varint.writeUnsigned(prefixKeyBuf, prefixSubj);
+				Varint.writeUnsigned(prefixKeyBuf, prefixPred);
+				prefixKeyBuf.flip();
+
+				if (quadReuse != null && quadReuse.length >= 4) {
+					this.quad = quadReuse;
+				} else if (this.quad == null || this.quad.length < 4) {
+					this.quad = new long[4];
+				}
+
+				this.quad[0] = subj;
+				this.quad[1] = pred;
+				this.quad[2] = -1L;
+				this.quad[3] = -1L;
+
+			} else {
+				// TODO
+				assert this.index == index;
+				assert this.explicit == explicit;
+				assert this.txnRef == txnRef;
+				assert this.txnRef != null;
+				assert this.txnLockManager != null;
+				assert this.keyData != null;
+				assert this.valueData != null;
+				assert this.prefixKeyBuf != null;
+
+				if (this.prefixSubj == subj && this.prefixPred == pred) {
+					assert this.quad[0] == this.prefixSubj;
+					assert this.quad[1] == this.prefixPred;
+
+					if (wasEmpty) {
+						exhausted = true;
+						return;
+					}
+
+					// We can do a lot more reuse here!
+					this.quad[2] = -1L;
+					this.quad[3] = -1L;
+				} else {
+					this.prefixSubj = subj;
+					this.prefixPred = pred;
+					this.quad[0] = subj;
+					this.quad[1] = pred;
+					this.quad[2] = -1L;
+					this.quad[3] = -1L;
+
+					prefixKeyBuf.clear();
+					Varint.writeUnsigned(prefixKeyBuf, prefixSubj);
+					Varint.writeUnsigned(prefixKeyBuf, prefixPred);
+					prefixKeyBuf.flip();
+				}
+
 			}
-			if (!positioned) {
-				closeInternal(false);
-				// TODO: We must be empty????
+
+			this.dupBuf = null;
+			this.dupPos = 0;
+			this.dupLimit = 0;
+			this.lastResult = MDB_SUCCESS;
+			this.wasEmpty = false;
+
+			if (closed) {
+				long readStamp;
+				try {
+					readStamp = txnLockManager.readLock();
+				} catch (InterruptedException e) {
+					throw new SailException(e);
+				}
+				try {
+					this.txnRefVersion = txnRef.version();
+					this.txn = txnRef.get();
+
+					cursor = openCursor(txn, dupDbi, txnRef.isReadOnly());
+
+					boolean positioned = positionOnPrefix();
+					if (positioned) {
+						positioned = primeDuplicateBlock();
+					}
+					if (!positioned) {
+						this.exhausted = true;
+						this.wasEmpty = true;
+						// closeInternal(false);
+						// TODO: We must be empty????
+					}
+				} finally {
+					txnLockManager.unlockRead(readStamp);
+				}
+			} else {
+				long readStamp;
+				try {
+					readStamp = txnLockManager.readLock();
+				} catch (InterruptedException e) {
+					throw new SailException(e);
+				}
+				try {
+
+					if (txnRefVersion != txnRef.version()) {
+						this.txn = txnRef.get();
+						E(mdb_cursor_renew(txn, cursor));
+						txnRefVersion = txnRef.version();
+					} else {
+						E(mdb_cursor_renew(txn, cursor));
+					}
+
+					boolean positioned = positionOnPrefix();
+					if (positioned) {
+						positioned = primeDuplicateBlock();
+					}
+					if (!positioned) {
+						this.exhausted = true;
+						this.wasEmpty = true;
+						// closeInternal(false);
+						// TODO: We must be empty????
+					}
+				} finally {
+					txnLockManager.unlockRead(readStamp);
+				}
 			}
+
 		} finally {
-			txnLockManager.unlockRead(readStamp);
+			assert this.txnRef != null;
+			this.closed = false;
+
 		}
 
 	}
 
 	@Override
 	public long[] next() {
+		if (exhausted)
+			return null;
 		long readStamp;
 		try {
 			readStamp = txnLockManager.readLock();
@@ -187,7 +272,8 @@ class LmdbDupRecordIterator implements RecordIterator {
 				E(mdb_cursor_renew(txn, cursor));
 				txnRefVersion = txnRef.version();
 				if (!positionOnPrefix() || !primeDuplicateBlock()) {
-					closeInternal(false);
+//					closeInternal(false);
+					exhausted = true;
 					return null;
 				}
 			}
@@ -219,12 +305,14 @@ class LmdbDupRecordIterator implements RecordIterator {
 				do {
 					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 					if (lastResult != MDB_SUCCESS) {
-						closeInternal(false);
+//						closeInternal(false);
+						exhausted = true;
 						return null;
 					}
 					// Ensure we're still within the requested (subj,pred) prefix
 					if (!currentKeyHasPrefix() && !adjustCursorToPrefix()) {
-						closeInternal(false);
+//						closeInternal(false);
+						exhausted = true;
 						return null;
 					}
 				} while (!primeDuplicateBlock()); // skip any keys without a duplicate block (defensive)
