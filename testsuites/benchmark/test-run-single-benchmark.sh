@@ -16,7 +16,7 @@ if [[ ${STATUS} -ne 0 ]]; then
         exit ${STATUS}
 fi
 
-if [[ "${OUTPUT}" != *"mvn -pl testsuites/benchmark -P benchmarks -DskipTests package"* ]]; then
+if [[ "${OUTPUT}" != *"mvn -pl testsuites/benchmark -am -P benchmarks -DskipTests package"* ]]; then
         echo "Expected Maven command not found in output" >&2
         exit 1
 fi

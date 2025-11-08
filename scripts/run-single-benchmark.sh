@@ -98,7 +98,7 @@ if [[ ! -d "${module_dir}" ]]; then
         exit 1
 fi
 
-mvn_cmd=(mvn "-pl" "${module}" "-P" "benchmarks" "-DskipTests" package)
+mvn_cmd=(mvn "-pl" "${module}" "-am" "-P" "benchmarks" "-DskipTests" package)
 
 benchmark_pattern="${benchmark_class}.${benchmark_method}"
 jmh_args=(-wi "${warmup_iterations}" -i "${measurement_iterations}" -f "${forks}")
