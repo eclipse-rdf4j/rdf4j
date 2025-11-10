@@ -73,6 +73,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private boolean autoGrow = true;
 
+	private boolean dupsortIndices = true;
+	private boolean dupsortRead = true;
+
 	private long valueEvictionInterval = Duration.ofSeconds(60).toMillis();
 
 	/*--------------*
@@ -190,6 +193,24 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public boolean isDupsortIndices() {
+		return dupsortIndices;
+	}
+
+	public LmdbStoreConfig setDupsortIndices(boolean dupsortIndices) {
+		this.dupsortIndices = dupsortIndices;
+		return this;
+	}
+
+	public boolean isDupsortRead() {
+		return dupsortRead;
+	}
+
+	public LmdbStoreConfig setDupsortRead(boolean dupsortRead) {
+		this.dupsortRead = dupsortRead;
+		return this;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -225,6 +246,13 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		}
 		if (valueEvictionInterval != Duration.ofSeconds(60).toMillis()) {
 			m.add(implNode, LmdbStoreSchema.VALUE_EVICTION_INTERVAL, vf.createLiteral(valueEvictionInterval));
+		}
+		// Persist only when deviating from defaults (defaults: true)
+		if (!dupsortIndices) {
+			m.add(implNode, LmdbStoreSchema.DUPSORT_INDICES, vf.createLiteral(false));
+		}
+		if (!dupsortRead) {
+			m.add(implNode, LmdbStoreSchema.DUPSORT_READ, vf.createLiteral(false));
 		}
 		return implNode;
 	}
@@ -330,6 +358,25 @@ public class LmdbStoreConfig extends BaseSailConfig {
 											+ " property, found " + lit);
 						}
 					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.DUPSORT_INDICES, null)).ifPresent(lit -> {
+				try {
+					setDupsortIndices(lit.booleanValue());
+				} catch (IllegalArgumentException e) {
+					throw new SailConfigException(
+							"Boolean value required for " + LmdbStoreSchema.DUPSORT_INDICES + " property, found "
+									+ lit);
+				}
+			});
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.DUPSORT_READ, null)).ifPresent(lit -> {
+				try {
+					setDupsortRead(lit.booleanValue());
+				} catch (IllegalArgumentException e) {
+					throw new SailConfigException(
+							"Boolean value required for " + LmdbStoreSchema.DUPSORT_READ + " property, found "
+									+ lit);
+				}
+			});
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}

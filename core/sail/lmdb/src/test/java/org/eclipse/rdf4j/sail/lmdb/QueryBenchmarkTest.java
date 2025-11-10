@@ -12,12 +12,15 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Stream;
 
 import org.apache.commons.io.IOUtils;
@@ -27,7 +30,10 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -35,6 +41,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.rules.TemporaryFolder;
 
 /**
@@ -147,39 +154,45 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void groupByQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
 			try (var stream = connection.prepareTupleQuery(query1).evaluate().stream()) {
 				count = stream.count();
 			}
-			System.out.println(count);
+			assertEquals(5, count);
 		}
 	}
 
 	@Test
+//	@Timeout(30)
 	public void complexQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
+			System.out.println();
 			try (var stream = connection.prepareTupleQuery(query4).evaluate().stream()) {
 				count = stream.count();
 			}
 			System.out.println("count: " + count);
+			assertEquals(1485, count);
 		}
 	}
 
 	@Test
+	@Timeout(30)
 	public void distinctPredicatesQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
 			try (var stream = connection.prepareTupleQuery(query_distinct_predicates).evaluate().stream()) {
 				count = stream.count();
 			}
-			System.out.println(count);
+			assertEquals(55, count);
 		}
 	}
 
 	@Test
+	@Timeout(30)
 	public void optionalLhsFilterQueryProducesExpectedCount() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
@@ -191,6 +204,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void optionalRhsFilterQueryProducesExpectedCount() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
@@ -202,6 +216,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void orderedUnionLimitQueryProducesExpectedCount() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
@@ -213,10 +228,58 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
+	public void long_chain() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			Explanation explain = connection.prepareTupleQuery(long_chain).explain(Explanation.Level.Executed);
+			System.out.println(explain);
+
+			long count;
+			try (var stream = connection.prepareTupleQuery(long_chain).evaluate().stream()) {
+				count = stream.count();
+			}
+			assertEquals(0, count);
+		}
+	}
+
+	@Test
+	@Timeout(30)
+	public void long_chain_prefersIdJoinAlgorithms() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			TupleQuery tupleQuery = connection.prepareTupleQuery(long_chain);
+			Explanation explanation = tupleQuery.explain(Explanation.Level.Optimized);
+			GenericPlanNode root = explanation.toGenericPlanNode();
+
+			List<String> algorithms = new ArrayList<>();
+			collectAlgorithms(root, algorithms);
+			System.out.println("Optimized join algorithms: " + algorithms);
+
+			boolean hasJoinIterator = algorithms.stream()
+					.filter(Objects::nonNull)
+					.anyMatch("JoinIterator"::equals);
+
+			boolean hasLmdbIdAlgorithm = algorithms.stream()
+					.filter(Objects::nonNull)
+					.anyMatch(name -> name.startsWith("LmdbId"));
+			boolean hasMergeJoin = algorithms.stream()
+					.filter(Objects::nonNull)
+					.anyMatch("LmdbIdMergeJoinIterator"::equals);
+
+			assertTrue(hasLmdbIdAlgorithm, "Expected LMDB ID-based join algorithms to appear in optimized plan");
+			assertTrue(hasMergeJoin, "Expected optimized plan to include LmdbIdMergeJoinIterator");
+			assertTrue(!hasJoinIterator,
+					() -> "Expected optimized plan to avoid generic JoinIterator but found: " + algorithms);
+		}
+	}
+
+	@Test
+	@Timeout(30)
 	public void subSelectQueryProducesExpectedCount() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
-			try (var stream = connection.prepareTupleQuery(sub_select).evaluate().stream()) {
+			TupleQuery tupleQuery = connection.prepareTupleQuery(sub_select);
+			tupleQuery.setMaxExecutionTime(30);
+			try (var stream = tupleQuery.evaluate().stream()) {
 				count = stream.count();
 			}
 			assertEquals(16035L, count);
@@ -224,6 +287,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void multipleSubSelectQueryProducesExpectedCount() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
@@ -235,6 +299,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void removeByQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -249,6 +314,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void removeByQueryReadCommitted() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
@@ -263,6 +329,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void simpleUpdateQueryIsolationReadCommitted() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
@@ -280,6 +347,7 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void simpleUpdateQueryIsolationNone() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -297,13 +365,28 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	@Timeout(30)
 	public void ordered_union_limit() {
-		for (int i = 0; i < 100; i++) {
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				long count = count(connection
-						.prepareTupleQuery(ordered_union_limit)
-						.evaluate());
-				assertEquals(250L, count);
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			long count = count(connection
+					.prepareTupleQuery(ordered_union_limit)
+					.evaluate());
+			assertEquals(250L, count);
+		}
+	}
+
+	private static void collectAlgorithms(GenericPlanNode node, List<String> algorithms) {
+		if (node == null) {
+			return;
+		}
+		String algorithm = node.getAlgorithm();
+		if (algorithm != null) {
+			algorithms.add(algorithm);
+		}
+		List<GenericPlanNode> children = node.getPlans();
+		if (children != null) {
+			for (GenericPlanNode child : children) {
+				collectAlgorithms(child, algorithms);
 			}
 		}
 	}

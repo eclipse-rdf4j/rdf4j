@@ -12,10 +12,13 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.Closeable;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+
 /**
  * An iterator that iterates over records, for example those in a key-value database.
  */
-interface RecordIterator extends Closeable {
+@InternalUseOnly
+public interface RecordIterator extends Closeable {
 
 	/**
 	 * Returns the next record.

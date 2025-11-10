@@ -4,8 +4,6 @@ Welcome, AI Agent! Your persistence, curiosity, and craftsmanship make a differe
 
 You need to read the entire AGENTS.md file and follow all instructions exactly. Keep this fresh in your context as you work.
 
-> **Timebox:** Aim to complete each autonomous run in **15–30 minutes**.
-
 ---
 
 ## Read‑Me‑Now: Proportional Test‑First Rule (Default)
@@ -27,31 +25,36 @@ It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
 
 > **Clarification:** For **strictly behavior‑neutral refactors** that are already **fully exercised by existing tests**, or for **bugfixes with an existing failing test**, you may use **Routine B — Change without new tests**. In that case you must capture **pre‑change passing evidence** at the smallest scope that hits the code you’re about to edit, prove **Hit Proof**, then show **post‑change passing evidence** from the **same selection**.
-> **No exceptions for any behavior‑changing change** — for those, you must follow **Routine A — Full TDD**.
+> **No exceptions for any behavior‑changing change** — for those, you must follow **Routine A — Full TDD** or **Routine D — ExecPlans**.
 
 ---
 
-## Three Routines: Choose Your Path
+## Four Routines: Choose Your Path
 
 **Routine A — Full TDD (Default)**
 **Routine B — Change without new tests (Proportional, gated)**
 **Routine C — Spike/Investigate (No production changes)**
+**Routine D — ExecPlans: Complex features or significant refactors**
 
 ### Decision quickstart
 
-1. **Is new externally observable behavior required?**
+1. **Is ExecPlans required (complex feature, significant refactor or requested by the user)?**
+   → **Yes:** **Routine D (ExecPlans)**. Use an ExecPlan (as described in .agent/PLANS.md) from design to implementation.
+   → **No:** continue.
+
+2**Is new externally observable behavior required?**
    → **Yes:** **Routine A (Full TDD)**. Add the smallest failing test first.
    → **No:** continue.
 
-2. **Does a failing test already exist in this repo that pinpoints the issue?**
+3**Does a failing test already exist in this repo that pinpoints the issue?**
    → **Yes:** **Routine B (Bugfix using existing failing test).**
    → **No:** continue.
 
-3. **Is the edit strictly behavior‑neutral, local in scope, and clearly hit by existing tests?**
+4**Is the edit strictly behavior‑neutral, local in scope, and clearly hit by existing tests?**
    → **Yes:** **Routine B (Refactor/micro‑perf/documentation/build).**
    → **No or unsure:** continue.
 
-4. **Is this purely an investigation/design spike with no production code changes?**
+5**Is this purely an investigation/design spike with no production code changes?**
    → **Yes:** **Routine C (Spike/Investigate).**
    → **No or unsure:** **Routine A.**
 
@@ -59,23 +62,11 @@ It is illegal to `-q` when running tests!
 
 ---
 
-## PIOSEE Decision Model (Adopted)
+## ExecPlans
 
-Use PIOSEE on every task to structure thinking and execution. It complements the routines below and ties directly into the Traceability trio (Description, Evidence, Plan).
+When writing complex features or significant refactors, use an ExecPlan (as described in PLANS.md) from design to implementation.
 
-- Problem: restate the task in one sentence, note constraints/timebox, and identify likely routine (A/B/C).
-- Information: inspect modules and AGENTS.md, gather environment constraints, locate existing tests/reports, and search code to localize the work.
-- Options: list 2–3 viable approaches (routine choice, test scope, fix location) and weigh them with the Proportionality Model.
-- Select: choose one option and routine; update the Living Plan with exactly one `in_progress` step.
-- Execute: follow the Working Loop and house rules; for Routine A add the smallest failing test first; capture an Evidence block after each grouped action.
-- Evaluate: check against the Definition of Done; if gaps remain, adjust the plan or change routine; record final Evidence and a brief retrospective.
-
-PIOSEE → Traceability trio mapping
-- P/I/O → Description
-- S → Plan (one `in_progress`)
-- E/E → Evidence and Verification
-
-For documentation‑only edits and other Routine B cases, still run PIOSEE briefly to confirm neutrality and reversibility.
+---
 
 ### Benchmarking workflow (repository-wide)
 
@@ -83,7 +74,7 @@ The `scripts/run-single-benchmark.sh` helper is the supported path for spot-chec
 
 ## Proportionality Model (Think before you test)
 
-Score the change on these lenses. If any are **High**, prefer **Routine A**.
+Score the change on these lenses. If any are **High**, prefer **Routine A or D**.
 
 - **Behavioral surface:** affects outputs, serialization, parsing, APIs, error text, timing/order?
 - **Blast radius:** number of modules/classes touched; public vs internal.
@@ -105,7 +96,7 @@ Score the change on these lenses. If any are **High**, prefer **Routine A**.
     * Relevant module tests pass; failures triaged or crisply explained.
     * Only necessary files changed; headers correct for new files.
     * Clear final summary: what changed, why, where, how verified, next steps.
-    * **Evidence present:** failing test output (pre‑fix) and passing output (post‑fix) are shown for Routine A; for Routine B show **pre/post green** from the **same selection** plus **Hit Proof**.
+    * **Evidence present:** failing test output (pre‑fix) and passing output (post‑fix) are shown for Routine A; for Routine B show **pre/post green** from the **same selection** plus **Hit Proof**; for Routine D NO EVIDENCE.
 
 ### No Monkey‑Patching or Band‑Aid Fixes (Non‑Negotiable)
 
@@ -340,6 +331,14 @@ It is illegal to `-q` when running tests!
 
 ---
 
+## Routine D — ExecPlans
+
+> Use for **complex features or significant refactors**.
+
+When writing complex features or significant refactors, use an ExecPlan (as described in .agent/PLANS.md) from design to implementation.
+
+---
+
 ## Where to Draw the Line — A Short Debate
 
 > **Purist:** “All changes must start with a failing test.”
@@ -353,7 +352,7 @@ It is illegal to `-q` when running tests!
 * Logging/message tweaks **not** asserted by tests.
 * Build/CI config that doesn’t alter runtime behavior.
 
-**Out‑of‑scope (use Routine A)**
+**Out‑of‑scope (use Routine A/D)**
 * Changing query results, serialization, or parsing behavior.
 * Altering error messages that tests assert.
 * Anything touching concurrency, timeouts, IO, or ordering.
@@ -364,8 +363,7 @@ It is illegal to `-q` when running tests!
 
 ## Working Loop
 
-* **PIOSEE first:** restate Problem, gather Information, list Options; then Select, Execute, Evaluate.
-* **Plan:** small, verifiable steps; keep one `in_progress`.
+* **Plan:** small, verifiable steps; keep one `in_progress`, or follow PLANS.md (ExecPlans)
 * **Change:** minimal, surgical edits; keep style/structure consistent.
 * **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 * **Compile (fast):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick install | tail -500`
@@ -529,11 +527,11 @@ Do **not** modify existing headers’ years.
 * **Files touched:** list file paths.
 * **Commands run:** key build/test commands.
 * **Verification:** which tests passed, where you checked reports.
-* **PIOSEE trace (concise):** P/I/O summary, selected option/routine, key evaluate outcomes.
 * **Evidence:**
   *Routine A:* failing output (pre‑fix) and passing output (post‑fix).
   *Routine B:* pre‑ and post‑green snippets from the **same selection** + **Hit Proof**.
   *Routine C:* artifacts from investigation (logs/notes/measurements) and proposed next steps.
+  *Routine D:* NO EVIDENCE REQUIRED.
 * **Assumptions:** key assumptions and autonomous decisions.
 * **Limitations:** anything left or risky edge cases.
 * **Next steps:** optional follow‑ups.

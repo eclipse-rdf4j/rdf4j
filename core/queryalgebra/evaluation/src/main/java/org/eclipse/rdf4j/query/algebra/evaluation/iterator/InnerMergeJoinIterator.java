@@ -185,7 +185,7 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 		leftPeekValue = null;
 		currentLeftValueAndPeekEquals = -1;
 
-		if (oldLeftValue.equals(currentLeftValue)) {
+		if (oldLeftValue.getType() == currentLeftValue.getType() && oldLeftValue.equals(currentLeftValue)) {
 			// we have duplicate keys on the leftIterator and need to reset the rightIterator (if it
 			// is resettable)
 			if (rightIterator.isResettable()) {
@@ -219,7 +219,8 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 		}
 
 		if (currentLeftValueAndPeekEquals == -1) {
-			boolean equals = currentLeftValue.equals(leftPeekValue);
+			boolean equals = leftPeekValue != null && currentLeftValue.getType() == leftPeekValue.getType()
+					&& currentLeftValue.equals(leftPeekValue);
 			if (equals) {
 				currentLeftValue = leftPeekValue;
 				currentLeftValueAndPeekEquals = 0;

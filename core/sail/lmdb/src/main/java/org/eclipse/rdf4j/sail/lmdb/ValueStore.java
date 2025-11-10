@@ -67,6 +67,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.locks.StampedLock;
 import java.util.zip.CRC32;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.model.BNode;
@@ -96,7 +97,8 @@ import org.slf4j.LoggerFactory;
 /**
  * LMDB-based indexed storage and retrieval of RDF values. ValueStore maps RDF values to integer IDs and vice-versa.
  */
-class ValueStore extends AbstractValueFactory {
+@InternalUseOnly
+public class ValueStore extends AbstractValueFactory {
 
 	private final static Logger logger = LoggerFactory.getLogger(ValueStore.class);
 

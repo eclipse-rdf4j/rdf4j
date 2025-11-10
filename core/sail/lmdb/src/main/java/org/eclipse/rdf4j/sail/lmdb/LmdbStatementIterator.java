@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.IOException;
 import java.util.NoSuchElementException;
 
-import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.sail.SailException;
  * A statement iterator that wraps a RecordIterator containing statement records and translates these records to
  * {@link Statement} objects.
  */
-class LmdbStatementIterator extends AbstractCloseableIteration<Statement> {
+class LmdbStatementIterator implements CloseableIteration<Statement> {
 
 	/*-----------*
 	 * Variables *
@@ -33,18 +33,35 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> {
 	private final RecordIterator recordIt;
 
 	private final ValueStore valueStore;
+	private final StatementCreator statementCreator;
 	private Statement nextElement;
+	/**
+	 * Flag indicating whether this iteration has been closed.
+	 */
+	private boolean closed = false;
 
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
 	/**
-	 * Creates a new LmdbStatementIterator.
+	 * Creates a new LmdbStatementIterator with the default statement creation logic.
 	 */
 	public LmdbStatementIterator(RecordIterator recordIt, ValueStore valueStore) {
 		this.recordIt = recordIt;
 		this.valueStore = valueStore;
+		this.statementCreator = new StatementCreator(valueStore, false, false, false, false);
+	}
+
+	/**
+	 * Creates a new LmdbStatementIterator using a custom statement creator. The provided {@link StatementCreator} is
+	 * responsible for creating the Values and Statement for each record and can cache bound values so the iterator
+	 * always returns LmdbValue-backed instances.
+	 */
+	public LmdbStatementIterator(RecordIterator recordIt, StatementCreator statementCreator) {
+		this.recordIt = recordIt;
+		this.valueStore = null;
+		this.statementCreator = statementCreator;
 	}
 
 	/*---------*
@@ -53,33 +70,23 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> {
 
 	public Statement getNextElement() throws SailException {
 		try {
+
+			if (Thread.currentThread().isInterrupted()) {
+				close();
+				throw new SailException("The iteration has been interrupted");
+			}
+
 			long[] quad = recordIt.next();
 			if (quad == null) {
 				return null;
 			}
 
-			long subjID = quad[TripleStore.SUBJ_IDX];
-			Resource subj = (Resource) valueStore.getLazyValue(subjID);
-
-			long predID = quad[TripleStore.PRED_IDX];
-			IRI pred = (IRI) valueStore.getLazyValue(predID);
-
-			long objID = quad[TripleStore.OBJ_IDX];
-			Value obj = valueStore.getLazyValue(objID);
-
-			Resource context = null;
-			long contextID = quad[TripleStore.CONTEXT_IDX];
-			if (contextID != 0) {
-				context = (Resource) valueStore.getLazyValue(contextID);
-			}
-
-			return valueStore.createStatement(subj, pred, obj, context);
+			return statementCreator.create(quad);
 		} catch (IOException e) {
 			throw causeIOException(e);
 		}
 	}
 
-	@Override
 	protected void handleClose() throws SailException {
 		recordIt.close();
 	}
@@ -134,5 +141,112 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> {
 	@Override
 	public void remove() {
 		throw new UnsupportedOperationException();
+	}
+
+	/**
+	 * Checks whether this CloseableIteration has been closed.
+	 *
+	 * @return <var>true</var> if the CloseableIteration has been closed, <var>false</var> otherwise.
+	 */
+	public final boolean isClosed() {
+		return closed;
+	}
+
+	/**
+	 * Calls {@link #handleClose()} upon first call and makes sure the resource closures are only executed once.
+	 */
+	@Override
+	public final void close() {
+		if (!closed) {
+			closed = true;
+			handleClose();
+		}
+	}
+
+	/**
+	 * Statement creator that can cache bound values (S, P, O, and/or C) the first time they are seen via
+	 * {@link ValueStore#getLazyValue(long)} and reuse them for subsequent records. This ensures bound values are always
+	 * returned as LmdbValue-backed instances.
+	 */
+	static final class StatementCreator {
+		private final ValueStore valueStore;
+		private final boolean sBound;
+		private final boolean pBound;
+		private final boolean oBound;
+		private final boolean cBound;
+
+		private Resource cachedS;
+		private IRI cachedP;
+		private Value cachedO;
+		private Resource cachedC;
+
+		StatementCreator(ValueStore valueStore, boolean sBound, boolean pBound, boolean oBound, boolean cBound) {
+			this.valueStore = valueStore;
+			this.sBound = sBound;
+			this.pBound = pBound;
+			this.oBound = oBound;
+			this.cBound = cBound;
+		}
+
+		StatementCreator(ValueStore valueStore, Resource cachedS, IRI cachedP, Value cachedO, Resource cachedC,
+				boolean sBound, boolean pBound, boolean oBound, boolean cBound) {
+			this.valueStore = valueStore;
+			this.cachedS = cachedS;
+			this.cachedP = cachedP;
+			this.cachedO = cachedO;
+			this.cachedC = cachedC;
+			this.sBound = sBound;
+			this.pBound = pBound;
+			this.oBound = oBound;
+			this.cBound = cBound;
+		}
+
+		Statement create(long[] quad) throws IOException {
+			final ValueStore vs = this.valueStore;
+
+			// subject
+			Resource s = this.cachedS;
+			if (sBound) {
+				if (s == null) {
+					s = this.cachedS = (Resource) vs.getLazyValue(quad[TripleStore.SUBJ_IDX]);
+				}
+			} else {
+				s = (Resource) vs.getLazyValue(quad[TripleStore.SUBJ_IDX]);
+			}
+
+			// predicate
+			IRI p = this.cachedP;
+			if (pBound) {
+				if (p == null) {
+					p = this.cachedP = (IRI) vs.getLazyValue(quad[TripleStore.PRED_IDX]);
+				}
+			} else {
+				p = (IRI) vs.getLazyValue(quad[TripleStore.PRED_IDX]);
+			}
+
+			// object
+			Value o = this.cachedO;
+			if (oBound) {
+				if (o == null) {
+					o = this.cachedO = vs.getLazyValue(quad[TripleStore.OBJ_IDX]);
+				}
+			} else {
+				o = vs.getLazyValue(quad[TripleStore.OBJ_IDX]);
+			}
+
+			// context
+			final long contextID = quad[TripleStore.CONTEXT_IDX];
+			Resource c = this.cachedC;
+			if (cBound) {
+				if (c == null) {
+					c = this.cachedC = (contextID != 0) ? (Resource) vs.getLazyValue(contextID) : null;
+				}
+				// if cBound and cachedC already set, ignore contextID (preserves original semantics)
+			} else {
+				c = (contextID != 0) ? (Resource) vs.getLazyValue(contextID) : null;
+			}
+
+			return vs.createStatement(s, p, o, c);
+		}
 	}
 }
