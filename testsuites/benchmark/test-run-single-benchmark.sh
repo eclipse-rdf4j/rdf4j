@@ -37,6 +37,17 @@ if [[ ${JFR_STATUS} -ne 0 ]]; then
         exit ${JFR_STATUS}
 fi
 
+if [[ "${JFR_OUTPUT}" != *"JFR profiling enabled:"* ]]; then
+        echo "Expected JFR guidance banner when profiling is enabled" >&2
+        exit 1
+fi
+
+EXPECTED_JFR_PATH="testsuites/benchmark/target/ReasoningBenchmark.forwardChainingSchemaCachingRDFSInferencer.jfr"
+if [[ "${JFR_OUTPUT}" != *"${EXPECTED_JFR_PATH}"* ]]; then
+        echo "Expected JFR banner to include the recording destination" >&2
+        exit 1
+fi
+
 if [[ "${JFR_OUTPUT}" != *"-wi 0"* ]]; then
         echo "Expected JFR run to disable warmup iterations" >&2
         exit 1
