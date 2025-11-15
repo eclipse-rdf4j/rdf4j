@@ -15,9 +15,21 @@ import static org.eclipse.rdf4j.sail.nativerdf.NativeStore.SOFT_FAIL_ON_CORRUPT_
 import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.stream.Collectors;
+import java.util.zip.CRC32C;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
@@ -47,6 +59,13 @@ import org.eclipse.rdf4j.sail.nativerdf.model.NativeIRI;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeLiteral;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeResource;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalReader;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalRecord;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalRecovery;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalSearch;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalValueKind;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,9 +77,12 @@ import org.slf4j.LoggerFactory;
  *          one release to the next.
  */
 @InternalUseOnly
-public class ValueStore extends SimpleValueFactory {
+public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 
 	private static final Logger logger = LoggerFactory.getLogger(ValueStore.class);
+
+	private static final String WAL_RECOVERY_LOG_PROP = "org.eclipse.rdf4j.sail.nativerdf.valuestorewal.recoveryLog";
+	private static final String WAL_RECOVERY_LOG = System.getProperty(WAL_RECOVERY_LOG_PROP, "debug").toLowerCase();
 
 	/**
 	 * The default value cache size.
@@ -97,7 +119,12 @@ public class ValueStore extends SimpleValueFactory {
 	/**
 	 * Used to do the actual storage of values, once they're translated to byte arrays.
 	 */
+	private final File dataDir;
 	private final DataStore dataStore;
+	private final ValueStoreWAL wal;
+	private final ThreadLocal<Long> walPendingLsn;
+	private volatile CompletableFuture<Void> walBootstrapFuture;
+	private volatile ValueStoreWalSearch walSearch;
 
 	/**
 	 * Lock manager used to prevent the removal of values over multiple method calls. Note that values can still be
@@ -146,7 +173,13 @@ public class ValueStore extends SimpleValueFactory {
 
 	public ValueStore(File dataDir, boolean forceSync, int valueCacheSize, int valueIDCacheSize, int namespaceCacheSize,
 			int namespaceIDCacheSize) throws IOException {
+		this(dataDir, forceSync, valueCacheSize, valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize, null);
+	}
+
+	public ValueStore(File dataDir, boolean forceSync, int valueCacheSize, int valueIDCacheSize, int namespaceCacheSize,
+			int namespaceIDCacheSize, ValueStoreWAL wal) throws IOException {
 		super();
+		this.dataDir = dataDir;
 		dataStore = new DataStore(dataDir, FILENAME_PREFIX, forceSync, this);
 
 		valueCache = new ConcurrentCache<>(valueCacheSize);
@@ -154,7 +187,13 @@ public class ValueStore extends SimpleValueFactory {
 		namespaceCache = new ConcurrentCache<>(namespaceCacheSize);
 		namespaceIDCache = new ConcurrentCache<>(namespaceIDCacheSize);
 
+		this.wal = wal;
+		this.walPendingLsn = wal != null ? ThreadLocal.withInitial(() -> ValueStoreWAL.NO_LSN) : null;
+
+		autoRecoverValueStoreIfConfigured();
+
 		setNewRevision();
+		maybeScheduleWalBootstrap();
 
 	}
 
@@ -196,32 +235,66 @@ public class ValueStore extends SimpleValueFactory {
 		NativeValue resultValue = valueCache.get(cacheID);
 
 		if (resultValue == null) {
+			boolean recoveredDirectlyFromWal = false;
 			try {
 				// Value not in cache, fetch it from file
 				byte[] data = dataStore.getData(id);
+
 				if (data != null) {
 					resultValue = data2value(id, data);
-					if (!(resultValue instanceof CorruptValue)) {
-						// Store value in cache
-						valueCache.put(cacheID, resultValue);
+					if (resultValue instanceof CorruptValue) {
+						NativeValue recovered = ((CorruptValue) resultValue).getRecovered();
+						if (recovered != null) {
+							resultValue = recovered;
+						}
+					} else if (shouldValidateAgainstWal()) {
+						NativeValue walValue = recoverValueFromWal(id, false);
+						if (walValue != null && !valuesMatch(resultValue, walValue)) {
+							resultValue = walValue;
+							recoveredDirectlyFromWal = true;
+						}
 					}
+				} else {
+					resultValue = recoverValueFromWal(id, false);
+					recoveredDirectlyFromWal = resultValue != null;
 				}
+
 			} catch (RecoveredDataException rde) {
 				byte[] recovered = rde.getData();
+				CorruptValue corruptValue;
 				if (recovered != null && recovered.length > 0) {
 					byte t = recovered[0];
 					if (t == URI_VALUE) {
-						resultValue = new CorruptIRI(revision, id, null, recovered);
+						corruptValue = new CorruptIRI(revision, id, null, recovered);
 					} else if (t == BNODE_VALUE) {
-						resultValue = new CorruptIRIOrBNode(revision, id, recovered);
+						corruptValue = new CorruptIRIOrBNode(revision, id, recovered);
 					} else if (t == LITERAL_VALUE) {
-						resultValue = new CorruptLiteral(revision, id, recovered);
+						corruptValue = new CorruptLiteral(revision, id, recovered);
 					} else {
-						resultValue = new CorruptUnknownValue(revision, id, recovered);
+						corruptValue = new CorruptUnknownValue(revision, id, recovered);
 					}
 				} else {
-					resultValue = new CorruptUnknownValue(revision, id, recovered);
+					corruptValue = new CorruptUnknownValue(revision, id, recovered);
 				}
+
+				tryRecoverFromWal(id, corruptValue);
+				NativeValue recoveredValue = corruptValue.getRecovered();
+				if (recoveredValue != null) {
+					resultValue = recoveredValue;
+					recoveredDirectlyFromWal = true;
+				} else {
+					resultValue = corruptValue;
+				}
+			}
+
+			if (recoveredDirectlyFromWal && resultValue != null) {
+				logRecovered(id, resultValue);
+				logWalRepairHint(id);
+			}
+
+			if (resultValue != null && !(resultValue instanceof CorruptValue)) {
+				// Store value in cache
+				valueCache.put(cacheID, resultValue);
 			}
 		}
 
@@ -380,22 +453,6 @@ public class ValueStore extends SimpleValueFactory {
 		return Thread.currentThread().getName();
 	}
 
-	private static String describeValue(Value value) {
-		if (value == null) {
-			return "null";
-		}
-		String lexical;
-		try {
-			lexical = value.stringValue();
-		} catch (Exception e) {
-			lexical = String.valueOf(value);
-		}
-		if (lexical.length() > 120) {
-			lexical = lexical.substring(0, 117) + "...";
-		}
-		return value.getClass().getSimpleName() + '[' + lexical + ']';
-	}
-
 	/**
 	 * Stores the supplied value and returns the ID that has been assigned to it. In case the value was already present,
 	 * the value will not be stored again and the ID of the existing value is returned.
@@ -451,6 +508,7 @@ public class ValueStore extends SimpleValueFactory {
 		// store which will handle duplicates
 		byte[] valueData = value2data(value, true);
 
+		int previousMaxID = walEnabled() ? dataStore.getMaxID() : 0;
 		if (valueData == null) {
 			if (logger.isDebugEnabled()) {
 				logger.debug("storeValue computed no data for value={} thread={}", describeValue(value), threadName());
@@ -467,6 +525,10 @@ public class ValueStore extends SimpleValueFactory {
 
 		// Update cache
 		valueIDCache.put(nv, id);
+
+		if (walEnabled() && id > previousMaxID) {
+			logMintedValue(id, nv);
+		}
 
 		if (logger.isDebugEnabled()) {
 			logger.debug("storeValue stored value={} assigned id={} thread={} dataSummary={}", describeValue(nv), id,
@@ -485,6 +547,18 @@ public class ValueStore extends SimpleValueFactory {
 		try {
 			Lock writeLock = lockManager.getWriteLock();
 			try {
+
+				// Purge any existing WAL segments so a subsequent WAL recovery cannot
+				// resurrect values that were present before the clear().
+				if (walEnabled()) {
+					try {
+						wal.purgeAllSegments();
+					} catch (IOException e) {
+						logger.warn("Failed to purge ValueStore WAL during clear for {}", dataDir, e);
+						throw e;
+					}
+				}
+
 				dataStore.clear();
 
 				valueCache.clear();
@@ -515,7 +589,19 @@ public class ValueStore extends SimpleValueFactory {
 	 *
 	 * @throws IOException If an I/O error occurred.
 	 */
+	@Override
 	public void close() throws IOException {
+		CompletableFuture<Void> bootstrap = walBootstrapFuture;
+		if (bootstrap != null) {
+			try {
+				bootstrap.join();
+			} catch (CompletionException e) {
+				Throwable cause = e.getCause() == null ? e : e.getCause();
+				logger.warn("ValueStore WAL bootstrap failed during close", cause);
+			} catch (CancellationException e) {
+				logger.warn("ValueStore WAL bootstrap was cancelled during close");
+			}
+		}
 		dataStore.close();
 	}
 
@@ -537,7 +623,7 @@ public class ValueStore extends SimpleValueFactory {
 					String namespace = data2namespace(data);
 					try {
 						if (id == getNamespaceID(namespace, false)
-								&& java.net.URI.create(namespace + "part").isAbsolute()) {
+								&& URI.create(namespace + "part").isAbsolute()) {
 							continue;
 						}
 					} catch (IllegalArgumentException e) {
@@ -729,7 +815,9 @@ public class ValueStore extends SimpleValueFactory {
 		if (data.length == 0) {
 			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
 				logger.error("Soft fail on corrupt data: Empty data array for value with id {}", id);
-				return new CorruptUnknownValue(revision, id, data);
+				CorruptUnknownValue v = new CorruptUnknownValue(revision, id, data);
+				tryRecoverFromWal(id, v);
+				return v;
 			}
 			throw new SailException("Empty data array for value with id " + id
 					+ " consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes to true");
@@ -744,7 +832,9 @@ public class ValueStore extends SimpleValueFactory {
 		default:
 			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES) {
 				logger.error("Soft fail on corrupt data: Invalid type {} for value with id {}", data[0], id);
-				return new CorruptUnknownValue(revision, id, data);
+				CorruptUnknownValue v = new CorruptUnknownValue(revision, id, data);
+				tryRecoverFromWal(id, v);
+				return v;
 			}
 			throw new SailException("Invalid type " + data[0] + " for value with id " + id
 					+ "  consider setting the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes to true");
@@ -764,13 +854,14 @@ public class ValueStore extends SimpleValueFactory {
 		} catch (Throwable e) {
 			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES
 					&& (e instanceof Exception || e instanceof AssertionError)) {
-				return (T) new CorruptIRI(revision, id, namespace, data);
+				CorruptIRI v = new CorruptIRI(revision, id, namespace, data);
+				tryRecoverFromWal(id, v);
+				return (T) v;
 			}
 			logger.warn(
 					"NativeStore is possibly corrupt. To attempt to repair or retrieve the data, read the documentation on http://rdf4j.org about the system property org.eclipse.rdf4j.sail.nativerdf.softFailOnCorruptDataAndRepairIndexes");
 			throw e;
 		}
-
 	}
 
 	private NativeBNode data2bnode(int id, byte[] data) {
@@ -807,11 +898,146 @@ public class ValueStore extends SimpleValueFactory {
 		} catch (Throwable e) {
 			if (SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES
 					&& (e instanceof Exception || e instanceof AssertionError)) {
-				return (T) new CorruptLiteral(revision, id, data);
+				CorruptLiteral v = new CorruptLiteral(revision, id, data);
+				tryRecoverFromWal(id, v);
+				return (T) v;
 			}
 			throw e;
 		}
 
+	}
+
+	private void tryRecoverFromWal(int id, CorruptValue holder) {
+		NativeValue recovered = recoverValueFromWal(id);
+		if (recovered != null) {
+			holder.setRecovered(recovered);
+		}
+	}
+
+	private NativeValue recoverValueFromWal(int id) {
+		return recoverValueFromWal(id, true);
+	}
+
+	private NativeValue recoverValueFromWal(int id, boolean log) {
+		ValueStoreWalSearch search = getOrCreateWalSearch();
+		if (search == null) {
+			return null;
+		}
+		try {
+			Value v = search.findValueById(id);
+			if (v == null) {
+				return null;
+			}
+			NativeValue nv = getNativeValue(v);
+			if (nv != null) {
+				nv.setInternalID(id, revision);
+				if (log) {
+					logRecovered(id, nv);
+					logWalRepairHint(id);
+				}
+				return nv;
+			}
+		} catch (IOException ioe) {
+			// ignore recovery failures
+		}
+		return null;
+	}
+
+	private ValueStoreWalSearch getOrCreateWalSearch() {
+		if (wal == null) {
+			return null;
+		}
+		ValueStoreWalSearch search = walSearch;
+		if (search != null) {
+			return search;
+		}
+		synchronized (this) {
+			search = walSearch;
+			if (search == null) {
+				search = ValueStoreWalSearch.open(wal.config());
+				walSearch = search;
+			}
+			return search;
+		}
+	}
+
+	private boolean shouldValidateAgainstWal() {
+		return walEnabled() && SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES;
+	}
+
+	private boolean valuesMatch(NativeValue storeValue, NativeValue walValue) {
+		if (storeValue == walValue) {
+			return true;
+		}
+		if (storeValue == null || walValue == null) {
+			return false;
+		}
+		if (storeValue instanceof Literal && walValue instanceof Literal) {
+			Literal a = (Literal) storeValue;
+			Literal b = (Literal) walValue;
+			return Objects.equals(a.getLabel(), b.getLabel())
+					&& Objects.equals(a.getLanguage().orElse(null), b.getLanguage().orElse(null))
+					&& Objects.equals(datatypeIri(a), datatypeIri(b));
+		}
+		if (storeValue instanceof IRI && walValue instanceof IRI) {
+			return Objects.equals(storeValue.stringValue(), walValue.stringValue());
+		}
+		if (storeValue instanceof BNode && walValue instanceof BNode) {
+			return Objects.equals(storeValue.stringValue(), walValue.stringValue());
+		}
+		return Objects.equals(storeValue.stringValue(), walValue.stringValue());
+	}
+
+	private String datatypeIri(Literal literal) {
+		return literal.getDatatype() == null ? "" : literal.getDatatype().stringValue();
+	}
+
+	private void logRecovered(int id, NativeValue nv) {
+		switch (WAL_RECOVERY_LOG) {
+		case "trace":
+			if (logger.isTraceEnabled()) {
+				logger.trace("Recovered value for id {} from WAL as {}", id, nv.stringValue());
+			}
+			break;
+		case "debug":
+			if (logger.isDebugEnabled()) {
+				logger.debug("Recovered value for id {} from WAL as {}", id, nv.stringValue());
+			}
+			break;
+		default:
+			// off or unknown: no-op
+		}
+	}
+
+	private void logWalRepairHint(int id) {
+		logger.error(
+				"ValueStore {} recovered value id {} from WAL because the values.* files are corrupt. Enable NativeStore#setWalAutoRecoverOnOpen(true) (config:native.walAutoRecoverOnOpen) and restart, or run ValueStoreWalRecovery to replay the WAL and rebuild values.dat/values.id/values.hash so the on-disk data matches the WAL again.",
+				dataDir, id);
+	}
+
+	private NativeValue fromWalRecord(ValueStoreWalRecord rec) {
+		switch (rec.valueKind()) {
+		case IRI:
+			return createIRI(rec.lexical());
+		case BNODE:
+			return createBNode(rec.lexical());
+		case LITERAL: {
+			String lang = rec.language();
+			String dt = rec.datatype();
+			if (lang != null && !lang.isEmpty()) {
+				return createLiteral(rec.lexical(), lang);
+			} else if (dt != null && !dt.isEmpty()) {
+				return createLiteral(rec.lexical(), createIRI(dt));
+			} else {
+				return createLiteral(rec.lexical());
+			}
+		}
+		case NAMESPACE:
+			// not a value; nothing to recover
+			return null;
+		default:
+			return null;
+		}
 	}
 
 	private String data2namespace(byte[] data) {
@@ -835,7 +1061,11 @@ public class ValueStore extends SimpleValueFactory {
 
 		int id;
 		if (create) {
+			int previousMaxID = walEnabled() ? dataStore.getMaxID() : 0;
 			id = dataStore.storeData(namespaceData);
+			if (walEnabled() && id > previousMaxID) {
+				logNamespaceMint(id, namespace);
+			}
 		} else {
 			id = dataStore.getID(namespaceData);
 		}
@@ -850,6 +1080,218 @@ public class ValueStore extends SimpleValueFactory {
 		}
 
 		return id;
+	}
+
+	public OptionalLong drainPendingWalHighWaterMark() {
+		if (walPendingLsn == null) {
+			return OptionalLong.empty();
+		}
+		long lsn = walPendingLsn.get();
+		if (lsn <= ValueStoreWAL.NO_LSN) {
+			return OptionalLong.empty();
+		}
+		walPendingLsn.set(ValueStoreWAL.NO_LSN);
+		return OptionalLong.of(lsn);
+	}
+
+	public void awaitWalDurable(long lsn) throws IOException {
+		if (!walEnabled() || lsn <= ValueStoreWAL.NO_LSN) {
+			return;
+		}
+		try {
+			wal.awaitDurable(lsn);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while awaiting WAL durability", e);
+		}
+	}
+
+	private void logMintedValue(int id, Value value) throws IOException {
+		ValueStoreWalDescription description = describeValue(value);
+		int hash = computeWalHash(description.kind, description.lexical, description.datatype, description.language);
+		long lsn = wal.logMint(id, description.kind, description.lexical, description.datatype, description.language,
+				hash);
+		recordWalLsn(lsn);
+	}
+
+	private void logNamespaceMint(int id, String namespace) throws IOException {
+		int hash = computeWalHash(ValueStoreWalValueKind.NAMESPACE, namespace, "", "");
+		long lsn = wal.logMint(id, ValueStoreWalValueKind.NAMESPACE, namespace, "", "", hash);
+		recordWalLsn(lsn);
+	}
+
+	private void maybeScheduleWalBootstrap() {
+		if (!walEnabled()) {
+			return;
+		}
+		int maxId = dataStore.getMaxID();
+		if (maxId <= 0) {
+			return;
+		}
+		boolean needsBootstrap = !wal.hasInitialSegments() || walNeedsBootstrap(maxId);
+		if (!needsBootstrap) {
+			return;
+		}
+		boolean syncBootstrap = false;
+		try {
+			syncBootstrap = wal.config().syncBootstrapOnOpen();
+		} catch (Throwable ignore) {
+			// defensive: if config not accessible, default to async
+		}
+		if (syncBootstrap) {
+			// Perform bootstrap synchronously before allowing any further operations
+			rebuildWalFromExistingValues(maxId);
+		} else {
+			if (walBootstrapFuture != null) {
+				return;
+			}
+			CompletableFuture<Void> future = CompletableFuture.runAsync(() -> rebuildWalFromExistingValues(maxId));
+			walBootstrapFuture = future;
+			future.whenComplete((unused, throwable) -> {
+				if (throwable != null) {
+					logger.warn("ValueStore WAL bootstrap failed", throwable);
+				}
+			});
+		}
+	}
+
+	private void rebuildWalFromExistingValues(int maxId) {
+		try {
+			for (int id = 1; id <= maxId; id++) {
+				if (Thread.currentThread().isInterrupted()) {
+					Thread.currentThread().interrupt();
+					return;
+				}
+				if (wal.isClosed()) {
+					return;
+				}
+				byte[] data;
+				try {
+					data = dataStore.getData(id);
+				} catch (IOException e) {
+					logger.warn("Failed to read value {} while rebuilding WAL", id, e);
+					continue;
+				}
+				if (data == null) {
+					continue;
+				}
+				try {
+					if (isNamespaceData(data)) {
+						String namespace = data2namespace(data);
+						logNamespaceMint(id, namespace);
+					} else {
+						NativeValue value = data2value(id, data);
+						if (value != null) {
+							logMintedValue(id, value);
+						}
+					}
+				} catch (IOException e) {
+					if (wal.isClosed()) {
+						return;
+					}
+					logger.warn("Failed to rebuild WAL entry for id {}", id, e);
+				} catch (RuntimeException e) {
+					logger.warn("Unexpected failure while rebuilding WAL entry for id {}", id, e);
+				}
+			}
+			if (!wal.isClosed()) {
+				OptionalLong pending = drainPendingWalHighWaterMark();
+				if (pending.isPresent()) {
+					awaitWalDurable(pending.getAsLong());
+				}
+			}
+		} catch (Throwable t) {
+			logger.warn("Error while rebuilding ValueStore WAL", t);
+		}
+	}
+
+	private boolean walNeedsBootstrap(int maxId) {
+		try (ValueStoreWalReader reader = ValueStoreWalReader.open(wal.config())) {
+			ValueStoreWalRecovery recovery = new ValueStoreWalRecovery();
+			ValueStoreWalRecovery.ReplayReport report = recovery.replayWithReport(reader);
+			Map<Integer, ValueStoreWalRecord> dict = report.dictionary();
+			if (dict.isEmpty()) {
+				return true;
+			}
+			if (!report.complete()) {
+				return true;
+			}
+			for (int id = 1; id <= maxId; id++) {
+				if (!dict.containsKey(id)) {
+					return true;
+				}
+			}
+			return false;
+		} catch (IOException e) {
+			// if we cannot inspect WAL, avoid scheduling to not interfere with normal operations
+			return false;
+		}
+	}
+
+	private void recordWalLsn(long lsn) {
+		if (walPendingLsn == null || lsn <= ValueStoreWAL.NO_LSN) {
+			return;
+		}
+		long current = walPendingLsn.get();
+		if (lsn > current) {
+			walPendingLsn.set(lsn);
+		}
+	}
+
+	private ValueStoreWalDescription describeValue(Value value) {
+		if (value instanceof IRI) {
+			return new ValueStoreWalDescription(ValueStoreWalValueKind.IRI, value.stringValue(), "", "");
+		} else if (value instanceof BNode) {
+			return new ValueStoreWalDescription(ValueStoreWalValueKind.BNODE, value.stringValue(), "", "");
+		} else if (value instanceof Literal) {
+			Literal literal = (Literal) value;
+			String lang = literal.getLanguage().orElse("");
+			String datatype = literal.getDatatype() != null ? literal.getDatatype().stringValue() : "";
+			return new ValueStoreWalDescription(ValueStoreWalValueKind.LITERAL, literal.getLabel(), datatype, lang);
+		} else {
+			throw new IllegalArgumentException("value parameter should be a URI, BNode or Literal");
+		}
+	}
+
+	private int computeWalHash(ValueStoreWalValueKind kind, String lexical, String datatype, String language) {
+		CRC32C crc32c = CRC32C_HOLDER.get();
+		// Reset the checksum to ensure each computed hash reflects only the current value
+		crc32c.reset();
+		crc32c.update((byte) kind.code());
+		updateCrc(crc32c, lexical);
+		crc32c.update((byte) 0);
+		updateCrc(crc32c, datatype);
+		crc32c.update((byte) 0);
+		updateCrc(crc32c, language);
+		return (int) crc32c.getValue();
+	}
+
+	private void updateCrc(CRC32C crc32c, String value) {
+		if (value == null || value.isEmpty()) {
+			return;
+		}
+		byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+		crc32c.update(bytes, 0, bytes.length);
+	}
+
+	private boolean walEnabled() {
+		return wal != null;
+	}
+
+	private static final ThreadLocal<CRC32C> CRC32C_HOLDER = ThreadLocal.withInitial(CRC32C::new);
+
+	private static final class ValueStoreWalDescription {
+		final ValueStoreWalValueKind kind;
+		final String lexical;
+		final String datatype;
+		final String language;
+
+		ValueStoreWalDescription(ValueStoreWalValueKind kind, String lexical, String datatype, String language) {
+			this.kind = kind;
+			this.lexical = lexical == null ? "" : lexical;
+			this.datatype = datatype == null ? "" : datatype;
+			this.language = language == null ? "" : language;
+		}
 	}
 
 	private String getNamespace(int id) throws IOException {
@@ -1001,4 +1443,200 @@ public class ValueStore extends SimpleValueFactory {
 			}
 		}
 	}
+
+	private void autoRecoverValueStoreIfConfigured() {
+		if (wal == null) {
+			return;
+		}
+		ValueStoreWalConfig config;
+		try {
+			config = wal.config();
+		} catch (Throwable t) {
+			logger.warn("ValueStore WAL configuration unavailable for {}", dataDir, t);
+			return;
+		}
+		if (!config.recoverValueStoreOnOpen()) {
+			return;
+		}
+		try {
+			ValueStoreWalRecovery recovery = new ValueStoreWalRecovery();
+			ValueStoreWalRecovery.ReplayReport report;
+			try (ValueStoreWalReader reader = ValueStoreWalReader.open(config)) {
+				report = recovery.replayWithReport(reader);
+			}
+			Map<Integer, ValueStoreWalRecord> dictionary = report.dictionary();
+			if (dictionary.isEmpty()) {
+				return;
+			}
+			if (!report.complete()) {
+				logger.warn("Skipping ValueStore WAL recovery for {}: WAL segments incomplete", dataDir);
+				return;
+			}
+			if (hasDictionaryGaps(dictionary)) {
+				logger.warn("Skipping ValueStore WAL recovery for {}: WAL dictionary has gaps", dataDir);
+				return;
+			}
+			if (!shouldRecoverFromWalDictionary(dictionary)) {
+				return;
+			}
+			recoverValueStoreFromWal(dictionary);
+			logAutoRecovery(dictionary.size());
+		} catch (IOException e) {
+			logger.warn("ValueStore WAL recovery failed for {}", dataDir, e);
+		}
+	}
+
+	private boolean hasDictionaryGaps(Map<Integer, ValueStoreWalRecord> dictionary) {
+		int maxId = dictionary.keySet().stream().mapToInt(Integer::intValue).max().orElse(0);
+		if (maxId <= 0) {
+			return false;
+		}
+		if (dictionary.size() == maxId) {
+			return false;
+		}
+		for (int expected = 1; expected <= maxId; expected++) {
+			if (!dictionary.containsKey(expected)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean shouldRecoverFromWalDictionary(Map<Integer, ValueStoreWalRecord> dictionary) {
+		int maxWalId = dictionary.keySet().stream().mapToInt(Integer::intValue).max().orElse(0);
+		if (maxWalId <= 0) {
+			return false;
+		}
+		int currentMaxId = dataStore.getMaxID();
+		if (currentMaxId == 0 && maxWalId > 0) {
+			return true;
+		}
+		if (currentMaxId < maxWalId) {
+			return true;
+		}
+		List<Integer> ids = new ArrayList<>(dictionary.keySet());
+		if (ids.isEmpty()) {
+			return false;
+		}
+		ids.sort(Integer::compareTo);
+		for (Integer id : ids) {
+			if (isMissingValueData(id)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean isMissingValueData(int id) {
+		if (id <= 0) {
+			return false;
+		}
+		try {
+			byte[] data = dataStore.getData(id);
+			return data == null || data.length == 0;
+		} catch (IOException e) {
+			return true;
+		}
+	}
+
+	private void recoverValueStoreFromWal(Map<Integer, ValueStoreWalRecord> dictionary) throws IOException {
+		dataStore.clear();
+		valueCache.clear();
+		valueIDCache.clear();
+		namespaceCache.clear();
+		namespaceIDCache.clear();
+
+		List<Map.Entry<Integer, ValueStoreWalRecord>> entries = dictionary.entrySet()
+				.stream()
+				.sorted(Map.Entry.comparingByKey(Comparator.naturalOrder()))
+				.collect(Collectors.toList());
+
+		for (Map.Entry<Integer, ValueStoreWalRecord> entry : entries) {
+			ValueStoreWalRecord record = entry.getValue();
+			byte[] data;
+			switch (record.valueKind()) {
+			case NAMESPACE:
+				data = record.lexical().getBytes(StandardCharsets.UTF_8);
+				break;
+			case IRI:
+				data = encodeIri(record.lexical(), dataStore);
+				break;
+			case BNODE: {
+				byte[] idBytes = record.lexical().getBytes(StandardCharsets.UTF_8);
+				data = new byte[1 + idBytes.length];
+				data[0] = BNODE_VALUE;
+				ByteArrayUtil.put(idBytes, data, 1);
+				break;
+			}
+			case LITERAL:
+				data = encodeLiteral(record.lexical(), record.datatype(), record.language(), dataStore);
+				break;
+			default:
+				continue;
+			}
+			if (data == null) {
+				continue;
+			}
+			int assigned = dataStore.storeData(data);
+			if (assigned != record.id()) {
+				throw new IOException("ValueStore WAL recovery produced mismatched id " + assigned
+						+ " (expected " + record.id() + ")");
+			}
+		}
+		dataStore.sync();
+	}
+
+	private void logAutoRecovery(int recoveredCount) {
+		switch (WAL_RECOVERY_LOG) {
+		case "trace":
+			if (logger.isTraceEnabled()) {
+				logger.trace("Recovered {} ValueStore entries from WAL for {}", recoveredCount, dataDir);
+			}
+			break;
+		case "debug":
+			if (logger.isDebugEnabled()) {
+				logger.debug("Recovered {} ValueStore entries from WAL for {}", recoveredCount, dataDir);
+			}
+			break;
+		default:
+			// off
+		}
+	}
+
+	private byte[] encodeIri(String lexical, DataStore ds) throws IOException {
+		IRI iri = createIRI(lexical);
+		String ns = iri.getNamespace();
+		String local = iri.getLocalName();
+		int nsId = ds.getID(ns.getBytes(StandardCharsets.UTF_8));
+		if (nsId == -1) {
+			nsId = ds.storeData(ns.getBytes(StandardCharsets.UTF_8));
+		}
+		byte[] localBytes = local.getBytes(StandardCharsets.UTF_8);
+		byte[] data = new byte[1 + 4 + localBytes.length];
+		data[0] = URI_VALUE;
+		ByteArrayUtil.putInt(nsId, data, 1);
+		ByteArrayUtil.put(localBytes, data, 5);
+		return data;
+	}
+
+	private byte[] encodeLiteral(String label, String datatype, String language, DataStore ds) throws IOException {
+		int dtId = NativeValue.UNKNOWN_ID;
+		if (datatype != null && !datatype.isEmpty()) {
+			byte[] dtBytes = encodeIri(datatype, ds);
+			int id = ds.getID(dtBytes);
+			dtId = id == -1 ? ds.storeData(dtBytes) : id;
+		}
+		byte[] langBytes = language == null ? new byte[0] : language.getBytes(StandardCharsets.UTF_8);
+		byte[] labelBytes = label.getBytes(StandardCharsets.UTF_8);
+		byte[] data = new byte[1 + 4 + 1 + langBytes.length + labelBytes.length];
+		data[0] = LITERAL_VALUE;
+		ByteArrayUtil.putInt(dtId, data, 1);
+		data[5] = (byte) (langBytes.length & 0xFF);
+		if (langBytes.length > 0) {
+			ByteArrayUtil.put(langBytes, data, 6);
+		}
+		ByteArrayUtil.put(labelBytes, data, 6 + langBytes.length);
+		return data;
+	}
+
 }

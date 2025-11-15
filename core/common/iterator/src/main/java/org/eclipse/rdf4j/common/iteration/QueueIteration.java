@@ -155,9 +155,18 @@ public abstract class QueueIteration<E, T extends RuntimeException> extends Look
 	@Override
 	public void handleClose() {
 		done.set(true);
-		do {
-			queue.clear(); // ensure extra room is available
-		} while (!queue.offer(afterLast));
+		// Drain using dequeue semantics to ensure any producers blocked in put/offer
+		// are signalled via notFull; avoid relying on clear() which may not signal.
+		E drained;
+		while ((drained = queue.poll()) != null) {
+			// no-op: draining
+		}
+		while (!queue.offer(afterLast)) {
+			// If the offer failed (e.g., a race enqueued between drains), drain and retry
+			while (queue.poll() != null) {
+				// continue draining until empty
+			}
+		}
 		checkException();
 	}
 

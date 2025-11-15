@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.model.util;
 
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -64,7 +65,7 @@ public class Configurations {
 
 	/**
 	 * Retrieve a property value for the supplied subject as a {@link Resource} if present, falling back to a supplied
-	 * legacy property .
+	 * legacy property.
 	 * <p>
 	 * This method allows querying repository config models with a mix of old and new namespaces.
 	 *
@@ -72,7 +73,7 @@ public class Configurations {
 	 * @param subject        the subject of the property.
 	 * @param property       the property to retrieve the value of.
 	 * @param legacyProperty legacy property to use if the supplied property has no value in the model.
-	 * @return the resource value for supplied subject and property (or the legacy property ), if present.
+	 * @return the resource value for supplied subject and property (or the legacy property), if present.
 	 */
 	@InternalUseOnly
 	public static Optional<Resource> getResourceValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
@@ -92,7 +93,7 @@ public class Configurations {
 
 	/**
 	 * Retrieve a property value for the supplied subject as a {@link Literal} if present, falling back to a supplied
-	 * legacy property .
+	 * legacy property.
 	 * <p>
 	 * This method allows querying repository config models with a mix of old and new namespaces.
 	 *
@@ -100,10 +101,14 @@ public class Configurations {
 	 * @param subject        the subject of the property.
 	 * @param property       the property to retrieve the value of.
 	 * @param legacyProperty legacy property to use if the supplied property has no value in the model.
-	 * @return the literal value for supplied subject and property (or the legacy property ), if present.
+	 * @return the literal value for the supplied subject and property (or the legacy property), if present.
 	 */
 	@InternalUseOnly
 	public static Optional<Literal> getLiteralValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
+		Objects.requireNonNull(model, "model must not be null");
+		Objects.requireNonNull(subject, "subject must not be null");
+		Objects.requireNonNull(property, "property must not be null");
+		Objects.requireNonNull(legacyProperty, "legacyProperty must not be null");
 		var preferredProperty = useLegacyConfig() ? legacyProperty : property;
 		var fallbackProperty = useLegacyConfig() ? property : legacyProperty;
 
@@ -118,8 +123,26 @@ public class Configurations {
 	}
 
 	/**
+	 * Retrieve a property value for the supplied subject as a {@link Literal} if present.
+	 * <p>
+	 *
+	 * @param model    the model to retrieve property values from.
+	 * @param subject  the subject of the property.
+	 * @param property the property to retrieve the value of.
+	 * @return the literal value for the supplied subject and property, if present.
+	 */
+	@InternalUseOnly
+	public static Optional<Literal> getLiteralValue(Model model, Resource subject, IRI property) {
+		Objects.requireNonNull(model, "model must not be null");
+		Objects.requireNonNull(subject, "subject must not be null");
+		Objects.requireNonNull(property, "property must not be null");
+
+		return Models.objectLiteral(model.getStatements(subject, property, null));
+	}
+
+	/**
 	 * Retrieve a property value for the supplied subject as a {@link Value} if present, falling back to a supplied
-	 * legacy property .
+	 * legacy property.
 	 * <p>
 	 * This method allows querying repository config models with a mix of old and new namespaces.
 	 *
@@ -127,7 +150,7 @@ public class Configurations {
 	 * @param subject        the subject of the property.
 	 * @param property       the property to retrieve the value of.
 	 * @param legacyProperty legacy property to use if the supplied property has no value in the model.
-	 * @return the literal value for supplied subject and property (or the legacy property ), if present.
+	 * @return the literal value for supplied subject and property (or the legacy property), if present.
 	 */
 	@InternalUseOnly
 	public static Optional<Value> getValue(Model model, Resource subject, IRI property, IRI legacyProperty) {
@@ -197,7 +220,7 @@ public class Configurations {
 	 * @param subject        the subject of the property.
 	 * @param property       the property to retrieve the value of.
 	 * @param legacyProperty legacy property to use if the supplied property has no value in the model.
-	 * @return the IRI value for supplied subject and property (or the legacy property ), if present.
+	 * @return the IRI value for supplied subject and property (or the legacy property), if present.
 	 */
 	@InternalUseOnly
 	public static Optional<IRI> getIRIValue(Model model, Resource subject, IRI property, IRI legacyProperty) {

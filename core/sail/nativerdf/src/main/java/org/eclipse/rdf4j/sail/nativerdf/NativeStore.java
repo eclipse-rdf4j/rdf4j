@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -182,6 +183,18 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 */
 	private final LockManager disabledIsolationLockManager = new LockManager(debugEnabled());
 
+	// Optional WAL configuration propagated into NativeSailStore
+	private long walMaxSegmentBytes = -1L;
+	private int walQueueCapacity = -1;
+	private int walBatchBufferBytes = -1;
+	private ValueStoreWalConfig.SyncPolicy walSyncPolicy = null;
+	private long walSyncIntervalMillis = -1L;
+	private long walIdlePollIntervalMillis = -1L;
+	private String walDirectoryName = null;
+	private boolean walSyncBootstrapOnOpen = false;
+	private boolean walAutoRecoverOnOpen = false;
+	private boolean walEnabled = true;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -260,6 +273,89 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	public void setNamespaceIDCacheSize(int namespaceIDCacheSize) {
 		this.namespaceIDCacheSize = namespaceIDCacheSize;
+	}
+
+	public void setWalMaxSegmentBytes(long walMaxSegmentBytes) {
+		this.walMaxSegmentBytes = walMaxSegmentBytes;
+	}
+
+	public long getWalMaxSegmentBytes() {
+		return walMaxSegmentBytes;
+	}
+
+	public void setWalQueueCapacity(int walQueueCapacity) {
+		this.walQueueCapacity = walQueueCapacity;
+	}
+
+	public int getWalQueueCapacity() {
+		return walQueueCapacity;
+	}
+
+	public void setWalBatchBufferBytes(int walBatchBufferBytes) {
+		this.walBatchBufferBytes = walBatchBufferBytes;
+	}
+
+	public int getWalBatchBufferBytes() {
+		return walBatchBufferBytes;
+	}
+
+	public void setWalSyncPolicy(ValueStoreWalConfig.SyncPolicy walSyncPolicy) {
+		this.walSyncPolicy = walSyncPolicy;
+	}
+
+	public ValueStoreWalConfig.SyncPolicy getWalSyncPolicy() {
+		return walSyncPolicy;
+	}
+
+	public void setWalSyncIntervalMillis(long walSyncIntervalMillis) {
+		this.walSyncIntervalMillis = walSyncIntervalMillis;
+	}
+
+	public long getWalSyncIntervalMillis() {
+		return walSyncIntervalMillis;
+	}
+
+	public void setWalIdlePollIntervalMillis(long walIdlePollIntervalMillis) {
+		this.walIdlePollIntervalMillis = walIdlePollIntervalMillis;
+	}
+
+	public long getWalIdlePollIntervalMillis() {
+		return walIdlePollIntervalMillis;
+	}
+
+	public void setWalDirectoryName(String walDirectoryName) {
+		this.walDirectoryName = walDirectoryName;
+	}
+
+	public String getWalDirectoryName() {
+		return walDirectoryName;
+	}
+
+	/** Ensure WAL bootstrap is synchronous during open (before new values are added). */
+	public void setWalSyncBootstrapOnOpen(boolean walSyncBootstrapOnOpen) {
+		this.walSyncBootstrapOnOpen = walSyncBootstrapOnOpen;
+	}
+
+	public boolean isWalSyncBootstrapOnOpen() {
+		return walSyncBootstrapOnOpen;
+	}
+
+	/** Enable automatic ValueStore recovery from WAL during open. */
+	public void setWalAutoRecoverOnOpen(boolean walAutoRecoverOnOpen) {
+		this.walAutoRecoverOnOpen = walAutoRecoverOnOpen;
+	}
+
+	public boolean isWalAutoRecoverOnOpen() {
+		return walAutoRecoverOnOpen;
+	}
+
+	/** Enable or disable the ValueStore WAL entirely. */
+	public void setWalEnabled(boolean walEnabled) {
+		this.walEnabled = walEnabled;
+	}
+
+	public boolean isWalEnabled() {
+		return walEnabled;
 	}
 
 	/**
@@ -353,8 +449,24 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 				Files.writeString(versionPath, VERSION, StandardCharsets.UTF_8,
 						StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
 			}
-			final NativeSailStore mainStore = new NativeSailStore(dataDir, tripleIndexes, forceSync, valueCacheSize,
-					valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize);
+			final NativeSailStore mainStore = new NativeSailStore(
+					dataDir,
+					tripleIndexes,
+					forceSync,
+					valueCacheSize,
+					valueIDCacheSize,
+					namespaceCacheSize,
+					namespaceIDCacheSize,
+					walMaxSegmentBytes,
+					walQueueCapacity,
+					walBatchBufferBytes,
+					walSyncPolicy,
+					walSyncIntervalMillis,
+					walIdlePollIntervalMillis,
+					walDirectoryName,
+					walSyncBootstrapOnOpen,
+					walAutoRecoverOnOpen,
+					walEnabled);
 			this.store = new SnapshotSailStore(mainStore, () -> new MemoryOverflowIntoNativeStore()) {
 
 				@Override

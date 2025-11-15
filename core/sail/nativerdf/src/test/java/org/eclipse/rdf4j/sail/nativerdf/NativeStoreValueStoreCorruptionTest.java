@@ -72,7 +72,9 @@ public class NativeStoreValueStoreCorruptionTest {
 
 	@Test
 	public void longLanguageTagShouldNotCorruptValueStoreIncremental() throws Exception {
-		SailRepository repo = new SailRepository(new NativeStore(dataDir));
+		NativeStore sail = new NativeStore(dataDir);
+		sail.setWalEnabled(false);
+		SailRepository repo = new SailRepository(sail);
 		repo.init();
 
 		for (int i = 0; i < 256; i++) {
@@ -88,7 +90,9 @@ public class NativeStoreValueStoreCorruptionTest {
 
 			repo.shutDown();
 
-			SailRepository reopened = new SailRepository(new NativeStore(dataDir));
+			NativeStore sail1 = new NativeStore(dataDir);
+			sail1.setWalEnabled(false);
+			SailRepository reopened = new SailRepository(sail1);
 			reopened.init();
 
 			try (RepositoryConnection connection = reopened.getConnection()) {

@@ -48,8 +48,8 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @State(Scope.Benchmark)
 @Warmup(iterations = 2)
 @BenchmarkMode({ Mode.Throughput })
-@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-XX:+UseG1GC" })
-//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-XX:+UseG1GC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+@Fork(value = 1, jvmArgs = { "-Xms4G", "-Xmx4G", "-XX:+UseG1GC" })
+//@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-XX:StartFlightRecording=jdk.CPUTimeSample#enabled=true,filename=profile.jfr,method-profiling=max","-XX:FlightRecorderOptions=stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class TransactionsPerSecondBenchmark {
@@ -84,6 +84,7 @@ public class TransactionsPerSecondBenchmark {
 
 		NativeStore sail = new NativeStore(file, "spoc,ospc,psoc");
 		sail.setForceSync(forceSync);
+		sail.setWalIdlePollIntervalMillis(100);
 		repository = new SailRepository(sail);
 		connection = repository.getConnection();
 		random = new Random(1337);
@@ -130,6 +131,15 @@ public class TransactionsPerSecondBenchmark {
 	public void transactionsLevelNone() {
 		connection.begin(IsolationLevels.NONE);
 		connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+		connection.commit();
+	}
+
+	@Benchmark
+	public void mediumTransactionsLevelSnapshotRead() {
+		connection.begin(IsolationLevels.SNAPSHOT_READ);
+		for (int k = 0; k < 10; k++) {
+			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+		}
 		connection.commit();
 	}
 
