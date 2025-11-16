@@ -150,6 +150,24 @@ jobs:
         working-directory: ./e2e
         run: ./run.sh
 
+  e2e-local:
+    needs: formatting-and-quick-compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: 11
+          distribution: 'temurin'
+          cache: maven
+      - name: Install Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - name: Run end-to-end tests via the Maven-hosted dev server
+        run: ./e2e/run-local.sh
+
   copyright-check:
     runs-on: ubuntu-latest
     steps:
