@@ -1,8 +1,11 @@
 // @ts-check
 const {test, expect} = require('@playwright/test');
 
+const baseUrl = process.env.RDF4J_BASE_URL || 'http://localhost:8080/';
+const workbenchUrl = new URL('rdf4j-workbench/', baseUrl).toString();
+
 test.beforeEach(async ({page}, testInfo) => {
-    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    await page.goto(workbenchUrl);
     await page.getByText("Delete repository").click();
     await page.waitForSelector('#id');
     const optionExists = await page.locator('#id option[value="testrepo1"]').count() > 0;
@@ -15,7 +18,7 @@ test.beforeEach(async ({page}, testInfo) => {
 });
 
 test('RDF4J Workbench has correct title', async ({page}) => {
-    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    await page.goto(workbenchUrl);
 
     // Expect a title "to contain" a substring.
     await expect(page).toHaveTitle("RDF4J Workbench - List of Repositories");
@@ -34,7 +37,7 @@ async function createRepo(page) {
 }
 
 test('Create repo', async ({page}) => {
-    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    await page.goto(workbenchUrl);
     page.on('dialog', dialog => {
         console.log(dialog.message());
         dialog.dismiss();
@@ -53,7 +56,7 @@ test('Create repo', async ({page}) => {
 
 
 test('SPARQL update', async ({page}) => {
-    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    await page.goto(workbenchUrl);
     page.on('dialog', dialog => {
         console.log(dialog.message());
         dialog.dismiss();

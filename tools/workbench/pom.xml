@@ -10,6 +10,13 @@
 	<packaging>war</packaging>
 	<name>RDF4J: Workbench</name>
 	<description>Workbench to interact with RDF4J servers.</description>
+	<properties>
+		<rdf4j.dev.http.port>8080</rdf4j.dev.http.port>
+		<rdf4j.dev.stop.port>8079</rdf4j.dev.stop.port>
+		<rdf4j.dev.stop.key>rdf4j-dev-stop</rdf4j.dev.stop.key>
+		<rdf4j.dev.jetty.daemon>false</rdf4j.dev.jetty.daemon>
+		<rdf4j.dev.appdata>${project.build.directory}/rdf4j-dev-appdata</rdf4j.dev.appdata>
+	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
@@ -79,6 +86,26 @@
 							<contextPath>/rdf4j-server</contextPath>
 						</contextHandler>
 					</contextHandlers>
+					<stopPort>${rdf4j.dev.stop.port}</stopPort>
+					<stopKey>${rdf4j.dev.stop.key}</stopKey>
+					<httpConnector>
+						<port>${rdf4j.dev.http.port}</port>
+					</httpConnector>
+					<systemProperties>
+						<systemProperty>
+							<name>org.eclipse.rdf4j.appdata.basedir</name>
+							<value>${rdf4j.dev.appdata}</value>
+						</systemProperty>
+						<systemProperty>
+							<name>jetty.http.port</name>
+							<value>${rdf4j.dev.http.port}</value>
+						</systemProperty>
+						<systemProperty>
+							<name>jetty.port</name>
+							<value>${rdf4j.dev.http.port}</value>
+						</systemProperty>
+					</systemProperties>
+					<daemon>${rdf4j.dev.jetty.daemon}</daemon>
 				</configuration>
 			</plugin>
 			<plugin>
@@ -90,4 +117,15 @@
 			</plugin>
 		</plugins>
 	</build>
+	<profiles>
+		<profile>
+			<id>rdf4j-dev-server</id>
+			<activation>
+				<activeByDefault>false</activeByDefault>
+			</activation>
+			<properties>
+				<rdf4j.dev.jetty.daemon>true</rdf4j.dev.jetty.daemon>
+			</properties>
+		</profile>
+	</profiles>
 </project>

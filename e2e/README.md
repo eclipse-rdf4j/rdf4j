@@ -7,13 +7,38 @@ The tests are written using Microsoft Playwright and interact with the server an
 ## Running the tests
 
 Requirements:
- - docker
+ - docker (only needed when using the legacy docker-based workflow)
  - java
  - maven
  - npm
  - npx
 
-The tests can be run using the `run.sh` script. This script will build the project, start the server and workbench and run the tests.
+The tests can be run using the `run.sh` script. This script will build the project, start the server and workbench using docker and run the tests.
+
+### Running without docker
+
+When developing locally it can be convenient to run the RDF4J server and workbench directly from Maven without relying on docker.
+
+```
+# build and install the server/workbench artifacts once
+mvn -pl tools/workbench -am -DskipTests install
+
+# start the server/workbench on http://localhost:8080
+mvn -pl tools/workbench jetty:run -Prdf4j-dev-server
+
+# stop the embedded Jetty instance
+mvn -pl tools/workbench jetty:stop -Prdf4j-dev-server
+```
+
+Set `RDF4J_HTTP_PORT` if you need a different port and Jetty will be configured accordingly.
+
+The `run-local.sh` script automates those steps, wires the correct base URL into the Playwright tests, and runs them against the embedded Jetty server:
+
+```
+./run-local.sh
+# or for a custom port
+RDF4J_HTTP_PORT=8091 ./run-local.sh
+```
 
 To run the tests interactively use `npx playwright test --ui`
 
