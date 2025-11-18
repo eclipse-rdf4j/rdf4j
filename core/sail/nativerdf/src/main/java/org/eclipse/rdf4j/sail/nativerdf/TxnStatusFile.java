@@ -12,11 +12,14 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
 
-import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
-
-import org.eclipse.rdf4j.common.io.NioFile;
+import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
+import java.util.EnumSet;
 
 /**
  * Writes transaction statuses to a file.
@@ -83,37 +86,74 @@ class TxnStatusFile {
 	 */
 	public static final String FILE_NAME = "txn-status";
 
-	private final NioFile nioFile;
+	/**
+	 * We currently store a single status byte, but this constant makes it trivial to extend the layout later if needed.
+	 */
+	private static final int MAPPED_SIZE = 1;
+
+	private static final String DISABLE_DSYNC_PROPERTY = "org.eclipse.rdf4j.sail.nativerdf.disableTxnStatusDsync";
+
+	static boolean DISABLE_DSYNC = Boolean.getBoolean(DISABLE_DSYNC_PROPERTY);
+
+	private final File statusFile;
+	private final FileChannel channel;
+	private final MappedByteBuffer mapped;
 
 	/**
 	 * Creates a new transaction status file. New files are initialized with {@link TxnStatus#NONE}.
 	 *
 	 * @param dataDir The directory for the transaction status file.
-	 * @throws IOException If the file did not yet exist and could not be written to.
+	 * @throws IOException If the file could not be opened or created.
 	 */
 	public TxnStatusFile(File dataDir) throws IOException {
-		File statusFile = new File(dataDir, FILE_NAME);
-		nioFile = new NioFile(statusFile, "rwd");
+		this.statusFile = new File(dataDir, FILE_NAME);
+
+		DISABLE_DSYNC = !Boolean.getBoolean(DISABLE_DSYNC_PROPERTY);
+
+		EnumSet<StandardOpenOption> openOptions = EnumSet.of(StandardOpenOption.READ, StandardOpenOption.WRITE,
+				StandardOpenOption.CREATE);
+		if (!DISABLE_DSYNC) {
+			openOptions.add(StandardOpenOption.DSYNC);
+		}
+
+		this.channel = FileChannel.open(statusFile.toPath(), openOptions.toArray(new StandardOpenOption[0]));
+
+		long size = channel.size();
+
+		// Ensure the file is at least MAPPED_SIZE bytes so we can map it safely.
+		// If it was previously empty, we treat that as NONE (which is also byte 0).
+		if (size < MAPPED_SIZE) {
+			channel.position(MAPPED_SIZE - 1);
+			int write = channel.write(ByteBuffer.wrap(TxnStatus.NONE.getOnDisk()));
+			if (write != 1) {
+				throw new IOException("Failed to initialize transaction status file");
+			}
+			channel.force(true);
+		}
+
+		this.mapped = channel.map(FileChannel.MapMode.READ_WRITE, 0, MAPPED_SIZE);
 	}
 
 	public void close() throws IOException {
-		nioFile.close();
+		// We rely on the GC to eventually unmap the MappedByteBuffer; explicitly
+		// closing the channel is enough for our purposes here.
+		channel.close();
 	}
 
 	/**
 	 * Writes the specified transaction status to file.
 	 *
 	 * @param txnStatus The transaction status to write.
-	 * @throws IOException If the transaction status could not be written to file.
+	 * @param forceSync
 	 */
-	public void setTxnStatus(TxnStatus txnStatus) throws IOException {
+	public void setTxnStatus(TxnStatus txnStatus, boolean forceSync) {
 		if (disabled) {
 			return;
 		}
-		if (txnStatus == TxnStatus.NONE) {
-			nioFile.truncate(0);
-		} else {
-			nioFile.writeBytes(txnStatus.onDisk, 0);
+
+		mapped.put(0, txnStatus.getOnDisk()[0]);
+		if (forceSync) {
+			mapped.force();
 		}
 	}
 
@@ -128,41 +168,23 @@ class TxnStatusFile {
 		if (disabled) {
 			return TxnStatus.NONE;
 		}
-		byte[] bytes;
+
+		byte b = mapped.get(0);
 		try {
-			bytes = nioFile.readBytes(0, 1);
-		} catch (EOFException e) {
-			// empty file = NONE status
-			return TxnStatus.NONE;
+			return statusMapping[b];
+		} catch (IndexOutOfBoundsException e) {
+			return getTxnStatusDeprecated();
 		}
+	}
 
-		TxnStatus status;
-
-		switch (bytes[0]) {
-		case TxnStatus.NONE_BYTE:
-			status = TxnStatus.NONE;
-			break;
-		case TxnStatus.OLD_NONE_BYTE:
-			status = TxnStatus.NONE;
-			break;
-		case TxnStatus.ACTIVE_BYTE:
-			status = TxnStatus.ACTIVE;
-			break;
-		case TxnStatus.COMMITTING_BYTE:
-			status = TxnStatus.COMMITTING;
-			break;
-		case TxnStatus.ROLLING_BACK_BYTE:
-			status = TxnStatus.ROLLING_BACK;
-			break;
-		case TxnStatus.UNKNOWN_BYTE:
-			status = TxnStatus.UNKNOWN;
-			break;
-		default:
-			status = getTxnStatusDeprecated();
-		}
-
-		return status;
-
+	private final static TxnStatus[] statusMapping = new TxnStatus[17];
+	static {
+		statusMapping[TxnStatus.NONE_BYTE] = TxnStatus.NONE;
+		statusMapping[TxnStatus.OLD_NONE_BYTE] = TxnStatus.NONE;
+		statusMapping[TxnStatus.ACTIVE_BYTE] = TxnStatus.ACTIVE;
+		statusMapping[TxnStatus.COMMITTING_BYTE] = TxnStatus.COMMITTING;
+		statusMapping[TxnStatus.ROLLING_BACK_BYTE] = TxnStatus.ROLLING_BACK;
+		statusMapping[TxnStatus.UNKNOWN_BYTE] = TxnStatus.UNKNOWN;
 	}
 
 	private TxnStatus getTxnStatusDeprecated() throws IOException {
@@ -170,7 +192,13 @@ class TxnStatusFile {
 			return TxnStatus.NONE;
 		}
 
-		byte[] bytes = nioFile.readBytes(0, (int) nioFile.size());
+		// Read the full file contents as a string, for compatibility with very old
+		// versions that stored the enum name instead of a bitfield.
+		byte[] bytes = Files.readAllBytes(statusFile.toPath());
+
+		if (bytes.length == 0) {
+			return TxnStatus.NONE;
+		}
 
 		String s = new String(bytes, US_ASCII);
 		try {
