@@ -264,7 +264,9 @@ public class HashFile implements Closeable {
 
 	public void clear() throws IOException {
 		structureLock.writeLock().lock();
-		poorMansBloomFilter.clear();
+		if (poorMansBloomFilter != null) {
+			poorMansBloomFilter.clear();
+		}
 		try {
 			// Truncate the file to remove any overflow buffers
 			nioFile.truncate(HEADER_LENGTH + (long) bucketCount * recordSize);

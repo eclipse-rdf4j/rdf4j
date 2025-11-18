@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.nativerdf;
 import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryFactory;
+import org.eclipse.rdf4j.sail.config.SailImplConfig;
+import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreConfig;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreFactory;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
 import org.junit.AfterClass;
@@ -25,7 +27,9 @@ public class NativeOptimisticIsolationTest extends OptimisticIsolationTest {
 		setRepositoryFactory(new SailRepositoryFactory() {
 			@Override
 			public RepositoryImplConfig getConfig() {
-				return new SailRepositoryConfig(new NativeStoreFactory().getConfig());
+				NativeStoreConfig config = (NativeStoreConfig) new NativeStoreFactory().getConfig();
+				config.setWalEnabled(false);
+				return new SailRepositoryConfig(config);
 			}
 		});
 	}

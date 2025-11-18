@@ -271,6 +271,79 @@ The native store automatically creates/drops indexes upon (re)initialization, so
    ].
 ```
 
+##### ValueStore write-ahead log
+
+The NativeStore maintains a write-ahead log (WAL) for its value dictionary so that newly minted IRIs, blank nodes, literals and namespaces can be recovered independently from the main on-disk `values*` files. The WAL lives in a `value-store-wal/` directory under the repository data dir and is protected by a lock file to prevent concurrent writers.
+
+###### When the WAL is active
+- Enabled automatically for writable data directories. Read-only deployments continue without a WAL.
+- Existing repositories that upgrade to a WAL will have the log bootstrapped from their current value files. By default this bootstrap happens asynchronously in the background so startup is not blocked; set `config:native.walSyncBootstrapOnOpen true` if you prefer to wait for a complete log before accepting new writes.
+- Clearing a store via the API purges all WAL segments so that deleted values cannot be resurrected during later recovery.
+
+###### What the WAL records (and what it does not)
+- Records every newly minted value together with its internal ID, lexical form, language/datatype metadata, and a CRC32C hash. Segments are append-only and rotated once they reach `config:native.walMaxSegmentBytes` (128 MiB by default); completed segments are gzip-compressed with an integrity summary frame.
+- The WAL does **not** track statement inserts/removals or other file sets (triple indexes, context store, namespace store). These still rely on the existing NativeStore commit process.
+- The log is a durability and recovery aid: the regular `values*.dat` files remain the primary source of truth. If you remove the WAL you lose the ability to rebuild the value dictionary from the log, but the store continues to operate.
+
+###### Durability policies and performance
+- The background WAL writer batches records in a direct ByteBuffer (`config:native.walBatchBufferBytes`, default 128 KiB) and drains a bounded queue (`config:native.walQueueCapacity`, default 16,384 records). Producers spin briefly and then block when the queue is full, so sustained high write rates should tune these parameters instead of disabling the WAL.
+- `config:native.walSyncPolicy` controls when segments are forced to disk:
+  - `COMMIT` waits for the store's commit path to call `awaitWalDurable`, so the WAL is forced in sync with transaction commits.
+  - `INTERVAL` (default) forces at most every `config:native.walSyncIntervalMillis` (default 1000 ms) even if no commit is pending (useful for long-running bulk loads that rarely commit). It trades durability for throughput and is **not ACID-safe**: values committed between fsyncs may be lost if the process or host crashes.
+  - `ALWAYS` fsyncs after every frame for the lowest data-loss window at the cost of throughput.
+- A small idle poll (`config:native.walIdlePollIntervalMillis`, default 100 ms) keeps latency low without busy-waiting when the queue is empty.
+
+###### Recovery options
+- Keep `config:native.walSyncBootstrapOnOpen` at its default (`false`) for large stores that favour fast restarts. Switch it on to guarantee the WAL contains the complete dictionary before accepting traffic (helpful when you move a data directory between hosts).
+- Enable `config:native.walAutoRecoverOnOpen true` to have the ValueStore rebuild missing or empty `values*` files from the WAL during startup. Recovery only runs when the WAL dictionary is complete and contiguous; the store logs a warning and skips recovery if segments are missing or truncated.
+- Diagnostic logging for WAL recovery can be tuned with the JVM system property `-Dorg.eclipse.rdf4j.sail.nativerdf.valuestorewal.recoveryLog=trace|debug|off`.
+- Advanced administrators can inspect the log with the utility classes in `org.eclipse.rdf4j.sail.nativerdf.wal` (for example `ValueStoreWalReader` and `ValueStoreWalSearch`) to verify entries or extract lost value metadata.
+
+###### Configuration summary
+- `config:native.walMaxSegmentBytes` &rarr; rotate segments sooner than the 128 MiB default if you prefer smaller compressed files.
+- `config:native.walQueueCapacity` / `config:native.walBatchBufferBytes` &rarr; increase when bulk loading outpaces the background writer.
+- `config:native.walDirectoryName` &rarr; place the WAL on a dedicated volume (the path is resolved inside the data dir).
+- `config:native.walSyncPolicy`, `config:native.walSyncIntervalMillis`, `config:native.walIdlePollIntervalMillis` &rarr; tune durability/latency trade-offs.
+- `config:native.walSyncBootstrapOnOpen`, `config:native.walAutoRecoverOnOpen` &rarr; control bootstrap timing and automatic rebuild behaviour.
+- `config:native.walEnabled false` &rarr; turn the WAL off entirely if you need legacy behaviour or are operating on ephemeral data; the store will log that value repairs can no longer be replayed from the log.
+
+###### Example configuration (Turtle)
+
+```turtle
+@prefix config: <tag:rdf4j.org,2023:config/>.
+
+[] a config:Repository ;
+   config:rep.id "native-with-wal" ;
+   config:rep.impl [
+      config:rep.type "openrdf:SailRepository" ;
+      config:sail.impl [
+         config:sail.type "openrdf:NativeStore" ;
+         config:native.walSyncPolicy "INTERVAL" ;
+         config:native.walSyncIntervalMillis 5 ;
+         config:native.walMaxSegmentBytes 268435456 ; # 256 MiB
+         config:native.walQueueCapacity 524288 ;
+         config:native.walSyncBootstrapOnOpen true ;
+         config:native.walAutoRecoverOnOpen true ;
+         config:native.walEnabled true
+      ]
+   ].
+```
+
+###### Programmatic setup (Java)
+
+```java
+NativeStore store = new NativeStore(dataDir);
+store.setWalSyncPolicy(ValueStoreWalConfig.SyncPolicy.INTERVAL);
+store.setWalSyncIntervalMillis(5);
+store.setWalMaxSegmentBytes(256L * 1024 * 1024);
+store.setWalQueueCapacity(524_288);
+store.setWalSyncBootstrapOnOpen(true);
+store.setWalAutoRecoverOnOpen(true);
+store.setWalEnabled(true); // or false to disable the WAL entirely
+```
+
+When copying or backing up a repository, include the entire `value-store-wal/` directory (lock file, `store.uuid`, and `wal-*.v1[.gz]` segments) alongside the main NativeStore data files to preserve the WAL history.
+
 #### Elasticsearch Store
 
 The Elasticsearch Store is an RDF4J database that persists all data directly in Elasticsearch (not to be confused with the Elasticsearch Fulltext Search Sail, which is an adapter Sail implementation to provided full-text search indexing on top of other RDF databases). Its `config:sail.type` value is `"rdf4j:ElasticsearchStore"`.
@@ -482,4 +555,3 @@ The fully rewritten configuration looks like this:
 ```
 
 Note that we have not (yet) renamed the type identifier literals `openrdf:SailRepository` and `openrdf:NativeStore`. For more details we refer you to the {{< javadoc "CONFIG javadoc" "model/vocabulary/CONFIG.html" >}}.
-

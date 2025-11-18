@@ -32,17 +32,14 @@ public class DataStoreRecoveryTest {
 	@TempDir
 	File tempDir;
 
-	private boolean previousSoftFlag;
-
 	@BeforeEach
 	public void setup() {
-		previousSoftFlag = NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES;
 		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = true;
 	}
 
 	@AfterEach
 	public void teardown() {
-		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = previousSoftFlag;
+		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = false;
 	}
 
 	@Test
