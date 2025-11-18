@@ -54,3 +54,4 @@ e2e/test-results
 /tools/server/.lwjgl/
 .m2_repo/
 .serena/
+.vscode

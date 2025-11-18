@@ -21,8 +21,10 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -91,12 +93,20 @@ class ServerBootSignalIT {
 	private void assertGracefulShutdown(String signalName) throws Exception {
 		Path projectRoot = Path.of("").toAbsolutePath();
 		String javaBin = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-		String classpath = System.getProperty("java.class.path");
 		int serverPort = findFreePort();
 		int managementPort = findFreePort();
 
-		ProcessBuilder processBuilder = new ProcessBuilder(javaBin, "-cp", classpath,
-				Rdf4jServerWorkbenchApplication.class.getName(),
+		// Find the executable JAR
+		Path targetDir = projectRoot.resolve("target");
+		Path jarPath = Files.list(targetDir)
+				.sorted(Comparator.comparing(Path::toString))
+				.filter(p -> p.toString().endsWith(".jar"))
+				.filter(p -> !p.toString().endsWith("-sources.jar"))
+				.filter(p -> !p.toString().endsWith("-javadoc.jar"))
+				.findFirst()
+				.orElseThrow(() -> new IllegalStateException("Could not find executable JAR in " + targetDir));
+
+		ProcessBuilder processBuilder = new ProcessBuilder(javaBin, "-jar", jarPath.toString(),
 				"--server.port=" + serverPort,
 				"--management.server.port=" + managementPort);
 		processBuilder.directory(projectRoot.toFile());

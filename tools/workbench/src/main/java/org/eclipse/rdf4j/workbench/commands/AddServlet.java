@@ -78,13 +78,19 @@ public class AddServlet extends TransformationServlet {
 			logger.warn(exc.toString(), exc);
 			TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 			builder.transform(xslPath, "add.xsl");
-			builder.start("error-message", "baseURI", CONTEXT, "Content-Type", ISOLATION_LEVEL_PARAM);
+			builder.start("error-message", "baseURI", CONTEXT, "Content-Type", ISOLATION_LEVEL_PARAM,
+					ISOLATION_LEVEL_OPTION, ISOLATION_LEVEL_OPTION_LABEL);
 			builder.link(List.of(INFO));
 			String baseURI = req.getParameter("baseURI");
 			String context = req.getParameter(CONTEXT);
 			String contentType = req.getParameter("Content-Type");
 			String isolationLevel = req.getParameter(ISOLATION_LEVEL_PARAM);
-			builder.result(exc.getMessage(), baseURI, context, contentType, isolationLevel);
+			builder.result(exc.getMessage(), baseURI, context, contentType, isolationLevel, null, null);
+			for (String option : determineIsolationLevels()) {
+				String optionLabel = isolationLevelLabel(option);
+				String selectedIsolation = option.equals(isolationLevel) ? isolationLevel : null;
+				builder.result(null, null, null, null, selectedIsolation, option, optionLabel);
+			}
 			builder.end();
 		}
 	}

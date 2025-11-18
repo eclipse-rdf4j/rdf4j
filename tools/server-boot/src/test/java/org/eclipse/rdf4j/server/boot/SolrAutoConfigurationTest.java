@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.apache.solr.client.solrj.SolrClient;
 import org.eclipse.rdf4j.tools.serverboot.Rdf4jServerWorkbenchApplication;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
@@ -29,6 +30,6 @@ class SolrAutoConfigurationTest {
 	@Test
 	void solrClientBeanNotPresentByDefault() {
 		assertThatThrownBy(() -> applicationContext.getBean(SolrClient.class))
-				.isInstanceOf(org.springframework.beans.factory.NoSuchBeanDefinitionException.class);
+				.isInstanceOf(NoSuchBeanDefinitionException.class);
 	}
 }

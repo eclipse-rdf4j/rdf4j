@@ -179,6 +179,36 @@ class AddServletTest {
 	}
 
 	@Test
+	void doPostErrorIncludesIsolationLevelOptions() throws Exception {
+		AddServlet servlet = new RecordingAddServlet();
+
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("baseURI")).thenReturn("http://example/base");
+		when(request.getParameter("Content-Type")).thenReturn(null);
+		when(request.isParameterPresent("context")).thenReturn(false);
+		when(request.isParameterPresent("url")).thenReturn(false);
+		when(request.getContentParameter()).thenReturn(new ByteArrayInputStream(new byte[0]));
+		when(request.getContentFileName()).thenReturn("data.ttl");
+		when(request.getParameter("transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel"))
+				.thenReturn("SNAPSHOT");
+
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		RecordingServletOutputStream outputStream = new RecordingServletOutputStream();
+		when(response.getOutputStream()).thenReturn(outputStream);
+
+		assertThatCode(() -> servlet.doPost(request, response, "transformations")).doesNotThrowAnyException();
+
+		String output = outputStream.asString();
+		assertThat(output)
+				.contains("<binding name='isolation-level-option'>")
+				.contains("<binding name='isolation-level-option-label'>")
+				.contains(">READ_COMMITTED<")
+				.contains(">SNAPSHOT<")
+				.contains(">Read Committed<")
+				.contains(">Snapshot<");
+	}
+
+	@Test
 	void serviceEmitsSelectedIsolationLevelBinding() throws Exception {
 		AddServlet servlet = new RecordingAddServlet();
 
