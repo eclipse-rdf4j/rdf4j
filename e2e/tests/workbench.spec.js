@@ -83,3 +83,33 @@ test('SPARQL update', async ({page}) => {
 
 });
 
+
+test('Add Turtle data to repository', async ({page}) => {
+    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    page.on('dialog', dialog => {
+        console.log(dialog.message());
+        dialog.dismiss();
+    });
+
+    await createRepo(page);
+
+    await page.getByText('Add').click();
+    await page.waitForSelector('#text');
+
+    await page.locator('#source-text').check();
+    await page.locator('#baseURI').fill('http://example.org/ns#');
+    await page.locator('#Content-Type').selectOption('text/turtle');
+
+    const turtleData = '@prefix ex: <http://example.org/ns#> .\n\n' +
+        'ex:alice a ex:Person ;\n' +
+        '        ex:name "Alice" .';
+
+    await page.locator('#text').fill(turtleData);
+
+    await page.getByRole('button', { name: 'Upload' }).click();
+
+    await page.getByText('Types').click();
+
+    let type = await page.getByText('ex:Person');
+    await expect(type).toHaveText('ex:Person');
+});

@@ -21,9 +21,8 @@ if [ -z ${SKIP_BUILD+x} ]; then
 
   #Clean, format and package
   echo "Building with Maven"
-  mvn clean
   mvn -T 2C formatter:format impsort:sort && mvn xml-format:xml-format
-  mvn install -DskipTests
+  mvn install -Pquick
   mvn -Passembly package -DskipTests -Dmaven.javadoc.skip=true -Dformatter.skip=true -Dimpsort.skip=true -Dxml-format.skip=true  -Djapicmp.skip -Denforcer.skip=true -Dbuildnumber.plugin.phase=none -Danimal.sniffer.skip=true
 
   # find .zip file
