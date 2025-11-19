@@ -1,0 +1,32 @@
+@prefix ex: <http://example.org/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+ex:Picasso a ex:Artist ;
+           foaf:firstName "Pablo" ;
+           foaf:surname "Picasso";
+           ex:creatorOf ex:guernica ;
+           ex:homeAddress _:node1 .
+
+_:node1  ex:street "31 Art Gallery" ;
+         ex:city "Madrid" ;
+         ex:country "Spain" .
+
+ex:guernica a ex:Painting ;
+            rdfs:label "Guernica";
+            ex:technique "oil on canvas".
+
+ex:VanGogh a ex:Artist ;
+           foaf:firstName "Vincent" ;
+           foaf:surname "van Gogh";
+           ex:creatorOf ex:starryNight, ex:sunflowers, ex:potatoEaters .
+
+ex:starryNight a ex:Painting ;
+               ex:technique "oil on canvas";
+               rdfs:label "Starry Night" .
+
+ex:sunflowers a ex:Painting ;
+              ex:technique "oil on canvas";
+              rdfs:label "Sunflowers" .
+
+ex:potatoEaters a ex:Painting ;
+                ex:technique "oil on canvas";
+                rdfs:label "The Potato Eaters" .
