@@ -140,12 +140,12 @@ public class SketchBasedJoinEstimatorTest {
 		sailStore.addAll(List.of(stmt(s1, p1, lit42), stmt(s2, p1, lit13)));
 		fullRebuild();
 
-		Var sLeft = new Var("s");
-		Var pLeft = new Var("p", p1);
-		Var oLeft = new Var("o", lit42);
+		Var sLeft = Var.of("s");
+		Var pLeft = Var.of("p", p1);
+		Var oLeft = Var.of("o", lit42);
 
 		StatementPattern left = new StatementPattern(sLeft, pLeft, oLeft);
-		StatementPattern right = new StatementPattern(new Var("s"), new Var("p", p1), new Var("o", lit42));
+		StatementPattern right = new StatementPattern(Var.of("s"), Var.of("p", p1), Var.of("o", lit42));
 		Join join = new Join(left, right);
 
 		double estimated = est.cardinality(join);
