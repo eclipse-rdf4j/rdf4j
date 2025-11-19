@@ -46,7 +46,7 @@ import org.slf4j.LoggerFactory;
  * Features:
  * <ul>
  * <li>Θ‑Sketches over S, P, O, C singles and all six pairs.</li>
- * <li>Lock‑free reads; double‑buffered rebuilds.</li>
+ * <li>Synchronized reads sharing buffer locks; double‑buffered rebuilds.</li>
  * <li>Incremental {@code addStatement} / {@code deleteStatement} with tombstone sketches and A‑NOT‑B subtraction.</li>
  * <li>Configurable via {@link Config} and system properties (see below).</li>
  * </ul>
@@ -591,19 +591,25 @@ public class SketchBasedJoinEstimator {
 	/* ────────────────────────────────────────────────────────────── */
 
 	public double cardinalitySingle(Component c, String v) {
-		int idx = hash(v);
-		AtomicReferenceArray<UpdateSketch> arrAdd = current.singleTriples.get(c);
-		AtomicReferenceArray<UpdateSketch> arrDel = current.delSingleTriples.get(c);
-		UpdateSketch add = arrAdd.get(idx);
-		UpdateSketch del = arrDel.get(idx);
-		return estimateMinus(add, del);
+		State snap = current;
+		synchronized (snap) {
+			int idx = hash(v);
+			AtomicReferenceArray<UpdateSketch> arrAdd = snap.singleTriples.get(c);
+			AtomicReferenceArray<UpdateSketch> arrDel = snap.delSingleTriples.get(c);
+			UpdateSketch add = arrAdd.get(idx);
+			UpdateSketch del = arrDel.get(idx);
+			return estimateMinus(add, del);
+		}
 	}
 
 	public double cardinalityPair(Pair p, String x, String y) {
-		long key = pairKey(hash(x), hash(y));
-		UpdateSketch add = current.pairs.get(p).getTriple(key);
-		UpdateSketch del = current.delPairs.get(p).getTriple(key);
-		return estimateMinus(add, del);
+		State snap = current;
+		synchronized (snap) {
+			long key = pairKey(hash(x), hash(y));
+			UpdateSketch add = snap.pairs.get(p).getTriple(key);
+			UpdateSketch del = snap.delPairs.get(p).getTriple(key);
+			return estimateMinus(add, del);
+		}
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
@@ -612,12 +618,18 @@ public class SketchBasedJoinEstimator {
 
 	public double estimateJoinOn(Component join, Pair a, String ax, String ay,
 			Pair b, String bx, String by) {
-		return joinPairs(current, join, a, ax, ay, b, bx, by);
+		State snap = current;
+		synchronized (snap) {
+			return joinPairs(snap, join, a, ax, ay, b, bx, by);
+		}
 	}
 
 	public double estimateJoinOn(Component j, Component a, String av,
 			Component b, String bv) {
-		return joinSingles(current, j, a, av, b, bv);
+		State snap = current;
+		synchronized (snap) {
+			return joinSingles(snap, j, a, av, b, bv);
+		}
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
@@ -626,9 +638,11 @@ public class SketchBasedJoinEstimator {
 
 	public JoinEstimate estimate(Component joinVar, String s, String p, String o, String c) {
 		State snap = current;
-		PatternStats st = statsOf(snap, joinVar, s, p, o, c);
-		Sketch bindings = st.sketch == null ? EMPTY : st.sketch;
-		return new JoinEstimate(snap, joinVar, bindings, bindings.getEstimate(), st.card);
+		synchronized (snap) {
+			PatternStats st = statsOf(snap, joinVar, s, p, o, c);
+			Sketch bindings = st.sketch == null ? EMPTY : st.sketch;
+			return new JoinEstimate(snap, joinVar, bindings, bindings.getEstimate(), st.card);
+		}
 	}
 
 	public double estimateCount(Component joinVar, String s, String p, String o, String c) {
@@ -652,41 +666,43 @@ public class SketchBasedJoinEstimator {
 		}
 
 		public JoinEstimate join(Component newJoinVar, String s, String p, String o, String c) {
-			/* stats of the right‑hand relation */
-			PatternStats rhs = statsOf(snap, newJoinVar, s, p, o, c);
+			synchronized (snap) {
+				/* stats of the right‑hand relation */
+				PatternStats rhs = statsOf(snap, newJoinVar, s, p, o, c);
 
-			/* intersection of bindings */
-			Intersection ix = SetOperation.builder().buildIntersection();
-			ix.intersect(this.bindings);
-			if (rhs.sketch != null) {
-				ix.intersect(rhs.sketch);
-			}
-			Sketch inter = ix.getResult();
-			double interDistinct = inter.getEstimate();
+				/* intersection of bindings */
+				Intersection ix = SetOperation.builder().buildIntersection();
+				ix.intersect(this.bindings);
+				if (rhs.sketch != null) {
+					ix.intersect(rhs.sketch);
+				}
+				Sketch inter = ix.getResult();
+				double interDistinct = inter.getEstimate();
 
-			if (interDistinct == 0.0) { // early out
+				if (interDistinct == 0.0) { // early out
+					this.bindings = inter;
+					this.distinct = 0.0;
+					this.resultSize = 0.0;
+					this.joinVar = newJoinVar;
+					return this;
+				}
+
+				/* average fan‑outs */
+				double leftAvg = Math.max(0.001, distinct == 0 ? 0 : resultSize / distinct);
+				double rightAvg = Math.max(0.001, rhs.distinct == 0 ? 0 : rhs.card / rhs.distinct);
+
+				/* join‑size estimate */
+				double newSize = interDistinct * leftAvg * rightAvg;
+
+				/* round to nearest whole solution count if enabled */
+				this.resultSize = roundJoinEstimates ? Math.round(newSize) : newSize;
+
+				/* carry forward */
 				this.bindings = inter;
-				this.distinct = 0.0;
-				this.resultSize = 0.0;
+				this.distinct = interDistinct;
 				this.joinVar = newJoinVar;
 				return this;
 			}
-
-			/* average fan‑outs */
-			double leftAvg = Math.max(0.001, distinct == 0 ? 0 : resultSize / distinct);
-			double rightAvg = Math.max(0.001, rhs.distinct == 0 ? 0 : rhs.card / rhs.distinct);
-
-			/* join‑size estimate */
-			double newSize = interDistinct * leftAvg * rightAvg;
-
-			/* round to nearest whole solution count if enabled */
-			this.resultSize = roundJoinEstimates ? Math.round(newSize) : newSize;
-
-			/* carry forward */
-			this.bindings = inter;
-			this.distinct = interDistinct;
-			this.joinVar = newJoinVar;
-			return this;
 		}
 
 		/** Estimated number of solutions produced so far. */
@@ -1249,22 +1265,22 @@ public class SketchBasedJoinEstimator {
 
 			return this
 					.estimate(lc,
-							getIriOrNull(l.getSubjectVar()),
-							getIriOrNull(l.getPredicateVar()),
-							getIriOrNull(l.getObjectVar()),
-							getIriOrNull(l.getContextVar()))
+							getValueOrNull(l.getSubjectVar()),
+							getValueOrNull(l.getPredicateVar()),
+							getValueOrNull(l.getObjectVar()),
+							getValueOrNull(l.getContextVar()))
 					.join(rc,
-							getIriOrNull(r.getSubjectVar()),
-							getIriOrNull(r.getPredicateVar()),
-							getIriOrNull(r.getObjectVar()),
-							getIriOrNull(r.getContextVar()))
+							getValueOrNull(r.getSubjectVar()),
+							getValueOrNull(r.getPredicateVar()),
+							getValueOrNull(r.getObjectVar()),
+							getValueOrNull(r.getContextVar()))
 					.estimate();
 		}
 		return -1;
 	}
 
-	private String getIriOrNull(Var v) {
-		return (v == null || v.getValue() == null || !(v.getValue() instanceof IRI))
+	private String getValueOrNull(Var v) {
+		return (v == null || v.getValue() == null)
 				? null
 				: v.getValue().stringValue();
 	}
