@@ -220,6 +220,8 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 		if (!closed) {
 			closed = true;
 			nextElement = null;
+			var iteration1 = this.iteration1;
+			var iteration2 = this.iteration2;
 			try {
 				if (iteration1 != null) {
 					iteration1.close();

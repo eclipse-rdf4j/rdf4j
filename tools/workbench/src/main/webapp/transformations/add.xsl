@@ -10,6 +10,8 @@
 	</xsl:variable>
 
 	<xsl:include href="template.xsl" />
+	<xsl:variable name="selectedIsolation"
+		select="//sparql:binding[@name='transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel']/sparql:literal" />
 
 	<xsl:template match="sparql:sparql">
 		<xsl:if
@@ -69,6 +71,44 @@
 									</option>
 								</xsl:for-each>
 							</select>
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>
+							<xsl:value-of select="$isolation-level.label" />
+						</th>
+						<td>
+							<select id="transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel" name="transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel">
+								<option value="">
+									<xsl:if test="not($selectedIsolation)">
+										<xsl:attribute name="selected">selected</xsl:attribute>
+									</xsl:if>
+									<xsl:value-of select="$isolation-level.default" />
+								</option>
+								<xsl:for-each select="//sparql:result[sparql:binding[@name='isolation-level-option']]">
+									<xsl:variable name="optionValue"
+										select="sparql:binding[@name='isolation-level-option']/sparql:literal/text()" />
+									<xsl:variable name="optionLabel"
+										select="sparql:binding[@name='isolation-level-option-label']/sparql:literal/text()" />
+									<option value="{$optionValue}">
+										<xsl:if test="$selectedIsolation=$optionValue">
+											<xsl:attribute name="selected">selected</xsl:attribute>
+										</xsl:if>
+										<xsl:choose>
+											<xsl:when test="string-length(normalize-space($optionLabel)) &gt; 0">
+												<xsl:value-of select="$optionLabel" />
+											</xsl:when>
+											<xsl:otherwise>
+												<xsl:value-of select="$optionValue" />
+											</xsl:otherwise>
+										</xsl:choose>
+									</option>
+								</xsl:for-each>
+							</select>
+							<div class="hint">
+								<xsl:value-of select="$isolation-level.desc" />
+							</div>
 						</td>
 						<td></td>
 					</tr>

@@ -1,0 +1,2 @@
+org.springframework.boot.env.EnvironmentPostProcessor=\
+org.eclipse.rdf4j.tools.serverboot.config.SolrAutoConfigurationDisabler
