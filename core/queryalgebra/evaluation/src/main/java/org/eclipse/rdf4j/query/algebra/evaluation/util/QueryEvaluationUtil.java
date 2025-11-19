@@ -171,6 +171,9 @@ public class QueryEvaluationUtil {
 	public static boolean compareLT(Value l, Value r, boolean strict)
 			throws ValueExprEvaluationException {
 		if (l == r) {
+			if (l == null || !l.isLiteral()) {
+				throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
+			}
 			return false;
 		}
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
@@ -187,6 +190,9 @@ public class QueryEvaluationUtil {
 	public static boolean compareLE(Value l, Value r, boolean strict)
 			throws ValueExprEvaluationException {
 		if (l == r) {
+			if (l == null || !l.isLiteral()) {
+				throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
+			}
 			return true;
 		}
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
@@ -203,6 +209,9 @@ public class QueryEvaluationUtil {
 	public static boolean compareGT(Value l, Value r, boolean strict)
 			throws ValueExprEvaluationException {
 		if (l == r) {
+			if (l == null || !l.isLiteral()) {
+				throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
+			}
 			return false;
 		}
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
@@ -219,6 +228,9 @@ public class QueryEvaluationUtil {
 	public static boolean compareGE(Value l, Value r, boolean strict)
 			throws ValueExprEvaluationException {
 		if (l == r) {
+			if (l == null || !l.isLiteral()) {
+				throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
+			}
 			return true;
 		}
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
