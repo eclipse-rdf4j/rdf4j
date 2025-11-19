@@ -17,9 +17,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -33,6 +35,9 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
@@ -125,6 +130,27 @@ public class SketchBasedJoinEstimatorTest {
 				.estimate();
 
 		assertApprox(1.0, size); // only { ?s = s1 } satisfies both
+	}
+
+	@Test
+	void joinCardinalityRespectsLiteralConstants() {
+		Value lit42 = VF.createLiteral(42);
+		Value lit13 = VF.createLiteral(13);
+
+		sailStore.addAll(List.of(stmt(s1, p1, lit42), stmt(s2, p1, lit13)));
+		fullRebuild();
+
+		Var sLeft = new Var("s");
+		Var pLeft = new Var("p", p1);
+		Var oLeft = new Var("o", lit42);
+
+		StatementPattern left = new StatementPattern(sLeft, pLeft, oLeft);
+		StatementPattern right = new StatementPattern(new Var("s"), new Var("p", p1), new Var("o", lit42));
+		Join join = new Join(left, right);
+
+		double estimated = est.cardinality(join);
+
+		assertApprox(1.0, estimated);
 	}
 
 	@Test
@@ -286,6 +312,48 @@ public class SketchBasedJoinEstimatorTest {
 		fullRebuild();
 		double card = est.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue());
 		assertTrue(card >= 0 && card < 15000);
+	}
+
+	@Test
+	void readsShareStateLockWithWriters() throws Exception {
+		sailStore.add(stmt(s1, p1, o1));
+		fullRebuild();
+
+		Field currentField = SketchBasedJoinEstimator.class.getDeclaredField("current");
+		currentField.setAccessible(true);
+		Object snap = currentField.get(est);
+
+		CountDownLatch lockHeld = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+
+		Thread writerHoldingLock = new Thread(() -> {
+			synchronized (snap) {
+				lockHeld.countDown();
+				try {
+					release.await(200, TimeUnit.MILLISECONDS);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+			}
+		});
+		writerHoldingLock.start();
+
+		assertTrue(lockHeld.await(1, TimeUnit.SECONDS), "failed to acquire state lock for test");
+
+		ExecutorService exec = Executors.newSingleThreadExecutor();
+		Future<Double> future = exec.submit(
+				() -> est.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue()));
+
+		// Without synchronization, this would complete immediately.
+		Thread.sleep(25);
+		assertFalse(future.isDone(), "read should block while state lock is held");
+
+		release.countDown();
+		double v = future.get(1, TimeUnit.SECONDS);
+		assertTrue(v >= 0.0);
+
+		exec.shutdownNow();
+		writerHoldingLock.join();
 	}
 
 	@Test
