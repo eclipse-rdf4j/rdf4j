@@ -86,7 +86,7 @@ public class QueryEvaluationUtil {
 					return !("0.0E0".equals(n) || "NaN".equals(n));
 				}
 			} catch (IllegalArgumentException ignore) {
-				/* fall through */
+				return false;
 			}
 		}
 		throw new ValueExprEvaluationException();

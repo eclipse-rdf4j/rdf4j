@@ -242,7 +242,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 		if (this == o) {
 			return true;
 		}
-		if (o == null || getClass() != o.getClass()) {
+		if (!(o instanceof Var)) {
 			return false;
 		}
 		Var var = (Var) o;
