@@ -128,10 +128,9 @@ public class NativeStoreRepositoryCorruptionReproducerTestIT {
 					long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
 					while (System.nanoTime() < until) {
 						try (RepositoryResult<Statement> statements = conn.getStatements(null, null, null, false)) {
-							statements.forEachRemaining(st -> {
-								st.toString();
-								// no-op; force materialization
-							});
+							// no-op; force materialization
+							// noinspection ResultOfMethodCallIgnored
+							statements.forEachRemaining(Object::toString);
 						}
 						Thread.onSpinWait();
 					}
@@ -171,9 +170,8 @@ public class NativeStoreRepositoryCorruptionReproducerTestIT {
 			// If corruption occurred, iterating statements should throw RepositoryException
 
 			try (RepositoryResult<Statement> statements = conn.getStatements(null, null, null, false)) {
-				statements.forEachRemaining(st -> {
-					st.toString();
-				});
+				// noinspection ResultOfMethodCallIgnored
+				statements.forEachRemaining(Object::toString);
 			}
 		}
 
