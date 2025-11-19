@@ -128,6 +128,14 @@ public class QueryEvaluationUtilTest {
 	}
 
 	@Test
+	void orderedComparisonNonLiteralThrowsTypeError() {
+		var iri = f.createIRI("http://example.com/res");
+
+		assertThrows(ValueExprEvaluationException.class,
+				() -> QueryEvaluationUtil.compareLT(iri, iri, true));
+	}
+
+	@Test
 	public void testCompatibleArguments() {
 
 		assertTrue(QueryEvaluationUtil.compatibleArguments(arg1simple, arg2simple));
