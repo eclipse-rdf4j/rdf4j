@@ -272,7 +272,7 @@ class LmdbSailStore implements SailStore {
 										}
 									} catch (InterruptedException e) {
 										Thread.currentThread().interrupt();
-									throw new InterruptedSailException(e);
+										throw new InterruptedSailException(e);
 									}
 								} finally {
 									tripleStore.close();
