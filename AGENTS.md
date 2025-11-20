@@ -358,17 +358,6 @@ Why this is mandatory
 - In tight loops you may also install a specific module and its deps (`-pl <module> -am -Pquick clean install`) to iterate quickly, but before executing tests anywhere that depend on your changes, run a root‑level `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install` so the latest jars are available to the reactor from `.m2_repo`.
 ---
 
-## Skills (Preferred Runners)
-
-Prefer these skills over manual Maven test commands. Manual commands remain available as a fallback when needed.
-
-- `mvnf`: Consistent test runner that does module clean, root `-Pquick` install, then module verify or a single test class/method. Use this as the default way to run tests. Logs are deleted on success unless `--retain-logs`.
-- `debug-surefire`: Runs Surefire tests in JDWP wait-for-debugger mode so you can attach a debugger (jdb/IDE) and step through tests.
-
-If you need manual control or a skill does not fit, use the Maven commands below.
-
----
-
 ## Quick Start (First 10 Minutes)
 
 1. **Discover**
@@ -492,9 +481,9 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 * **PIOSEE first:** restate Problem, gather Information, list Options; then Select, Execute, Evaluate.
 * **Plan:** small, verifiable steps; keep one `in_progress`, or follow PLANS.md (ExecPlans)
 * **Change:** minimal, surgical edits; keep style/structure consistent.
-* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C  process-resources`
+* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 * **Compile (fast):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install | tail -500`
-* **Test (prefer `mvnf`):** start smallest (class/method → module); use `--it` for integration tests. Use manual Maven only when you need profiles/flags not supported by `mvnf`.
+* **Test:** start smallest (class/method → module). For integration, run module `verify`.
 * **Triage:** read reports; fix root cause; expand scope only when needed.
 * **Iterate:** keep momentum; escalate only when blocked or irreversible.
 
@@ -605,9 +594,9 @@ Immediately after creating any new Java source file, add the signature comment (
 
 ## Pre‑Commit Checklist
 
-* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C  process-resources`
+* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 * **Compile (fast path):** `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`
-* **Tests (targeted, prefer `mvnf`):** `python3 .codex/skills/mvnf/scripts/mvnf.py <module>` (broaden as needed; use Maven fallback if you need profiles/flags)
+* **Tests (targeted):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tail -500` (broaden as needed)
 * **Reports:** zero new failures in Surefire/Failsafe, or explain precisely.
 * **Evidence:** Routine A — failing pre‑fix + passing post‑fix.
   Routine B — **pre/post green** from same selection + **Hit Proof**.
@@ -738,9 +727,9 @@ Immediately after creating any new Java source file, add the signature comment (
 
 * **Build without tests (fast path):**
   `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install`
-* **Verify with tests (prefer `mvnf`):**
-  Targeted module(s): `python3 .codex/skills/mvnf/scripts/mvnf.py <module>`
-  Entire repo (fallback): `mvn -o -Dmaven.repo.local=.m2_repo verify` (use judiciously)
+* **Verify with tests:**
+  Targeted module(s): `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify`
+  Entire repo: `mvn -o -Dmaven.repo.local=.m2_repo verify` (use judiciously)
 * **When offline fails due to missing deps:**
   Re‑run the **exact** command **without** `-o` once to fetch, then return to `-o`.
 
