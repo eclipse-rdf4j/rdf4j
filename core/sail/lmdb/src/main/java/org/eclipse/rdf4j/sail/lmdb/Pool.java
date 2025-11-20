@@ -25,15 +25,24 @@ class Pool {
 	private final MDBVal[] valPool = new MDBVal[2048];
 	private final ByteBuffer[] keyPool = new ByteBuffer[2048];
 	private final Statistics[] statisticsPool = new Statistics[512];
+	private final LmdbRecordIterator.State[] statePool = new LmdbRecordIterator.State[128];
 	private int valPoolIndex = -1;
 	private int keyPoolIndex = -1;
 	private int statisticsPoolIndex = -1;
+	private int statePoolIndex = -1;
 
 	final MDBVal getVal() {
 		if (valPoolIndex >= 0) {
 			return valPool[valPoolIndex--];
 		}
 		return MDBVal.malloc();
+	}
+
+	final LmdbRecordIterator.State getState() {
+		if (statePoolIndex >= 0) {
+			return statePool[statePoolIndex--];
+		}
+		return new LmdbRecordIterator.State();
 	}
 
 	final ByteBuffer getKeyBuffer() {
@@ -74,7 +83,18 @@ class Pool {
 		}
 	}
 
+	final void free(LmdbRecordIterator.State state) {
+		if (statePoolIndex < statePool.length - 1) {
+			statePool[++statePoolIndex] = state;
+		} else {
+			state.close();
+		}
+	}
+
 	final void close() {
+		while (statePoolIndex >= 0) {
+			statePool[statePoolIndex--].close();
+		}
 		while (valPoolIndex >= 0) {
 			valPool[valPoolIndex--].close();
 		}

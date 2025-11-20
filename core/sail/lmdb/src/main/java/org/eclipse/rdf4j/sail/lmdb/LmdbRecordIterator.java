@@ -11,9 +11,9 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_GET_BOTH_RANGE;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT_NODUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.util.EntryMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.lmdb.MDBVal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,109 +47,112 @@ import org.slf4j.LoggerFactory;
 class LmdbRecordIterator implements RecordIterator {
 
 	private static final Logger log = LoggerFactory.getLogger(LmdbRecordIterator.class);
-	private final Pool pool;
 
-	private final TripleIndex index;
+	static class State {
 
-	private final long cursor;
+		private TripleIndex index;
 
-	private final MDBVal maxKey;
-	private final MDBVal maxValue;
+		private long cursor;
 
-	private final boolean matchValues;
-	private EntryMatcher matcher;
+		private final MDBVal maxKey = MDBVal.malloc();
+		private final MDBVal maxValue = MDBVal.malloc();
 
-	private final Txn txnRef;
+		private boolean matchValues;
+		private EntryMatcher matcher;
 
-	private long txnRefVersion;
+		private Txn txnRef;
 
-	private final long txn;
+		private long txnRefVersion;
 
-	private final int dbi;
+		private long txn;
 
-	private volatile boolean closed = false;
+		private int dbi;
 
-	private final MDBVal keyData;
+		private final MDBVal keyData = MDBVal.malloc();
 
-	private final MDBVal valueData;
+		private final MDBVal valueData = MDBVal.malloc();
 
-	private ByteBuffer minKeyBuf;
+		private final ByteBuffer minKeyBuf = MemoryUtil.memAlloc((Long.BYTES + 1) * 2);
 
-	private ByteBuffer minValueBuf;
+		private final ByteBuffer minValueBuf = MemoryUtil.memAlloc((Long.BYTES + 1) * 2);
 
-	private final ByteBuffer maxKeyBuf;
+		private final ByteBuffer maxKeyBuf = MemoryUtil.memAlloc((Long.BYTES + 1) * 2);
 
-	private final ByteBuffer maxValueBuf;
+		private final ByteBuffer maxValueBuf = MemoryUtil.memAlloc((Long.BYTES + 1) * 2);
 
-	private final long[] quad;
-	private final long[] patternQuad;
+		private long[] quad;
+		private long[] patternQuad;
 
-	private boolean fetchNext = false;
+		private StampedLongAdderLockManager txnLockManager;
 
-	private final StampedLongAdderLockManager txnLockManager;
+		private int indexScore;
+
+		void close() {
+			if (cursor != 0) {
+				mdb_cursor_close(cursor);
+				cursor = 0;
+			}
+			keyData.close();
+			valueData.close();
+			MemoryUtil.memFree(minKeyBuf);
+			MemoryUtil.memFree(minValueBuf);
+			MemoryUtil.memFree(maxKeyBuf);
+			maxKey.close();
+			MemoryUtil.memFree(maxValueBuf);
+			maxValue.close();
+		}
+	}
 
 	private final Thread ownerThread = Thread.currentThread();
-
-	private final int indexScore;
+	private final State state;
+	private volatile boolean closed = false;
+	private boolean fetchNext = false;
 
 	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
-		this.patternQuad = new long[] { subj, pred, obj, context };
-		this.quad = new long[] { subj, pred, obj, context };
-		this.pool = Pool.get();
-		this.keyData = pool.getVal();
-		this.valueData = pool.getVal();
-		this.index = index;
-		this.indexScore = indexScore;
+		this.state = Pool.get().getState();
+		this.state.patternQuad = new long[] { subj, pred, obj, context };
+		this.state.quad = new long[] { subj, pred, obj, context };
+		this.state.index = index;
+		this.state.indexScore = indexScore;
 		// prepare min and max keys if index can be used
 		// otherwise, leave as null to indicate full scan
 		if (indexScore > 0) {
-			minKeyBuf = pool.getKeyBuffer();
-			minValueBuf = pool.getKeyBuffer();
-			index.getMinEntry(minKeyBuf, minValueBuf, subj, pred, obj, context);
-			minKeyBuf.flip();
-			minValueBuf.flip();
+			state.minKeyBuf.clear();
+			state.minValueBuf.clear();
+			index.getMinEntry(state.minKeyBuf, state.minValueBuf, subj, pred, obj, context);
+			state.minKeyBuf.flip();
+			state.minValueBuf.flip();
 
-			this.maxKey = pool.getVal();
-			this.maxValue = pool.getVal();
-			this.maxKeyBuf = pool.getKeyBuffer();
-			this.maxValueBuf = pool.getKeyBuffer();
-			index.getMaxEntry(maxKeyBuf, maxValueBuf, subj, pred, obj, context);
-			maxKeyBuf.flip();
-			maxValueBuf.flip();
-			this.maxKey.mv_data(maxKeyBuf);
-			this.maxValue.mv_data(maxValueBuf);
-		} else {
-			minKeyBuf = null;
-			this.maxKey = null;
-			this.maxValue = null;
-			this.maxKeyBuf = null;
-			this.maxValueBuf = null;
+			state.maxKeyBuf.clear();
+			state.maxValueBuf.clear();
+			index.getMaxEntry(state.maxKeyBuf, state.maxValueBuf, subj, pred, obj, context);
+			state.maxKeyBuf.flip();
+			state.maxValueBuf.flip();
+			state.maxKey.mv_data(state.maxKeyBuf);
+			state.maxValue.mv_data(state.maxValueBuf);
 		}
 
-		this.matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
+		state.matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
+		state.matcher = null;
 
-		this.dbi = index.getDB(explicit);
-		this.txnRef = txnRef;
-		this.txnLockManager = txnRef.lockManager();
+		var dbi = index.getDB(explicit);
 
 		long readStamp;
 		try {
-			readStamp = txnLockManager.readLock();
+			readStamp = txnRef.lockManager().readLock();
 		} catch (InterruptedException e) {
 			throw new SailException(e);
 		}
 		try {
-			this.txnRefVersion = txnRef.version();
-			this.txn = txnRef.get();
-
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				PointerBuffer pp = stack.mallocPointer(1);
-				E(mdb_cursor_open(txn, dbi, pp));
-				cursor = pp.get(0);
-			}
+			state.dbi = dbi;
+			state.txnRef = txnRef;
+			state.txnLockManager = txnRef.lockManager();
+			state.txnRefVersion = txnRef.version();
+			state.txn = txnRef.get();
+			state.cursor = txnRef.getCursor(dbi);
 		} finally {
-			txnLockManager.unlockRead(readStamp);
+			txnRef.lockManager().unlockRead(readStamp);
 		}
 	}
 
@@ -156,7 +160,7 @@ class LmdbRecordIterator implements RecordIterator {
 	public long[] next() {
 		long readStamp;
 		try {
-			readStamp = txnLockManager.readLock();
+			readStamp = state.txnLockManager.readLock();
 		} catch (InterruptedException e) {
 			throw new SailException(e);
 		}
@@ -167,28 +171,26 @@ class LmdbRecordIterator implements RecordIterator {
 				return null;
 			}
 
-			if (txnRefVersion != txnRef.version()) {
+			if (state.txnRefVersion != state.txnRef.version()) {
 				// TODO: None of the tests in the LMDB Store cover this case!
 				// cursor must be renewed
-				mdb_cursor_renew(txn, cursor);
+				mdb_cursor_renew(state.txn, state.cursor);
 				if (fetchNext) {
 					// cursor must be positioned on last item, reuse minKeyBuf if available
-					if (minKeyBuf == null) {
-						minKeyBuf = pool.getKeyBuffer();
-						minValueBuf = pool.getKeyBuffer();
-					}
-					minKeyBuf.clear();
-					index.toEntry(minKeyBuf, minValueBuf, quad[0], quad[1], quad[2], quad[3]);
-					minKeyBuf.flip();
-					minValueBuf.flip();
-					keyData.mv_data(minKeyBuf);
+					state.minKeyBuf.clear();
+					state.minValueBuf.clear();
+					state.index.toEntry(state.minKeyBuf, state.minValueBuf, state.quad[0], state.quad[1], state.quad[2],
+							state.quad[3]);
+					state.minKeyBuf.flip();
+					state.minValueBuf.flip();
+					state.keyData.mv_data(state.minKeyBuf);
 					// use set range if entry was deleted
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+					lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_SET_RANGE);
 					if (lastResult == MDB_SUCCESS) {
-						valueData.mv_data(minValueBuf);
-						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_GET_BOTH_RANGE);
+						state.valueData.mv_data(state.minValueBuf);
+						lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_GET_BOTH_RANGE);
 						if (lastResult != MDB_SUCCESS) {
-							lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST_DUP);
+							lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_FIRST_DUP);
 						}
 					}
 					if (lastResult != MDB_SUCCESS) {
@@ -197,82 +199,84 @@ class LmdbRecordIterator implements RecordIterator {
 					}
 				}
 				// update version of txn ref
-				this.txnRefVersion = txnRef.version();
+				state.txnRefVersion = state.txnRef.version();
 			}
 
 			boolean isDupValue = false;
 			if (fetchNext) {
-				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT_DUP);
+				lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_NEXT_DUP);
 				if (lastResult != MDB_SUCCESS) {
 					// no more duplicates, move to next key
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT_NODUP);
+					lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_NEXT_NODUP);
 				} else {
 					isDupValue = true;
 				}
 				fetchNext = false;
 			} else {
-				if (minKeyBuf != null) {
+				if (state.indexScore > 0) {
 					// set cursor to min key
-					keyData.mv_data(minKeyBuf);
+					state.keyData.mv_data(state.minKeyBuf);
 					// set range on key is only required if less than the first two key elements are fixed
-					lastResult = indexScore >= 2 ? MDB_SUCCESS
-							: mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+					lastResult = state.indexScore >= 2 ? MDB_SUCCESS
+							: mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_SET_RANGE);
 					if (lastResult == MDB_SUCCESS) {
-						valueData.mv_data(minValueBuf);
-						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_GET_BOTH_RANGE);
+						state.valueData.mv_data(state.minValueBuf);
+						lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_GET_BOTH_RANGE);
 						if (lastResult != MDB_SUCCESS) {
-							lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST_DUP);
+							lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_FIRST_DUP);
 						} else {
-							isDupValue = indexScore >= 2;
+							isDupValue = state.indexScore >= 2;
 						}
 					}
 				} else {
 					// set cursor to first item
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_FIRST);
 				}
 			}
 
 			while (lastResult == MDB_SUCCESS) {
 				// if (maxKey != null && TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) > 0) {
 				int keyDiff;
-				if (maxKey != null &&
-						(keyDiff = isDupValue ? 0 : mdb_cmp(txn, dbi, keyData, maxKey)) >= 0
-						&& (keyDiff > 0 || mdb_dcmp(txn, dbi, valueData, maxValue) > 0)) {
+				if (state.indexScore > 0 &&
+						(keyDiff = isDupValue ? 0 : mdb_cmp(state.txn, state.dbi, state.keyData, state.maxKey)) >= 0
+						&& (keyDiff > 0 || mdb_dcmp(state.txn, state.dbi, state.valueData, state.maxValue) > 0)) {
 					lastResult = MDB_NOTFOUND;
 				} else if (notMatches(isDupValue)) {
 					// value doesn't match search key/mask, fetch next value
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT_DUP);
+					lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_NEXT_DUP);
 					if (lastResult != MDB_SUCCESS) {
 						// no more duplicates, move to next key
-						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT_NODUP);
+						lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_NEXT_NODUP);
+						isDupValue = false;
 					}
-					isDupValue = false;
 				} else {
 					// Matching value found
-					index.entryToQuad(keyData.mv_data(), valueData.mv_data(), patternQuad, quad);
+					state.index.entryToQuad(state.keyData.mv_data(), state.valueData.mv_data(), state.patternQuad,
+							state.quad);
 					// fetch next value
 					fetchNext = true;
-					return quad;
+					return state.quad;
 				}
 			}
 			closeInternal(false);
 			return null;
 		} finally {
-			txnLockManager.unlockRead(readStamp);
+			state.txnLockManager.unlockRead(readStamp);
 		}
 	}
 
 	private boolean notMatches(boolean testValueOnly) {
-		if (matcher != null) {
+		if (state.matcher != null) {
 			if (testValueOnly) {
 				// already positioned on correct key, no need to match key again
-				return !this.matcher.matchesValue(valueData.mv_data());
+				return !state.matcher.matchesValue(state.valueData.mv_data());
 			}
-			return !this.matcher.matches(keyData.mv_data(), valueData.mv_data());
-		} else if (matchValues) {
+			return !state.matcher.matches(state.keyData.mv_data(), state.valueData.mv_data());
+		} else if (state.matchValues) {
 			// lazy init of group matcher
-			this.matcher = index.createMatcher(patternQuad[0], patternQuad[1], patternQuad[2], patternQuad[3]);
-			return !this.matcher.matches(keyData.mv_data(), valueData.mv_data());
+			state.matcher = state.index.createMatcher(state.patternQuad[0], state.patternQuad[1], state.patternQuad[2],
+					state.patternQuad[3]);
+			return !state.matcher.matches(state.keyData.mv_data(), state.valueData.mv_data());
 		} else {
 			return false;
 		}
@@ -284,7 +288,7 @@ class LmdbRecordIterator implements RecordIterator {
 			boolean writeLocked = false;
 			if (maybeCalledAsync && ownerThread != Thread.currentThread()) {
 				try {
-					writeStamp = txnLockManager.writeLock();
+					writeStamp = state.txnLockManager.writeLock();
 					writeLocked = true;
 				} catch (InterruptedException e) {
 					throw new SailException(e);
@@ -292,24 +296,14 @@ class LmdbRecordIterator implements RecordIterator {
 			}
 			try {
 				if (!closed) {
-					mdb_cursor_close(cursor);
-					pool.free(keyData);
-					pool.free(valueData);
-					if (minKeyBuf != null) {
-						pool.free(minKeyBuf);
-						pool.free(minValueBuf);
-					}
-					if (maxKey != null) {
-						pool.free(maxKeyBuf);
-						pool.free(maxKey);
-						pool.free(maxValueBuf);
-						pool.free(maxValue);
-					}
+					state.txnRef.returnCursor(state.dbi, state.cursor);
+					state.cursor = 0;
+					Pool.get().free(state);
 				}
 			} finally {
 				closed = true;
 				if (writeLocked) {
-					txnLockManager.unlockWrite(writeStamp);
+					state.txnLockManager.unlockWrite(writeStamp);
 				}
 			}
 		}

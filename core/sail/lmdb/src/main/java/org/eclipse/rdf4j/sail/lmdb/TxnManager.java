@@ -14,6 +14,9 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_renew;
@@ -161,9 +164,12 @@ class TxnManager {
 	}
 
 	class Txn implements Closeable, AutoCloseable {
+		private static final int MAX_DBI = 16;
 
-		private long txn;
+		private final long txn;
 		private long version;
+		private final long[][] cursorPool = new long[MAX_DBI][64];
+		private final int[] cursorPoolIndex = new int[MAX_DBI];
 
 		Txn(long txn) {
 			this.txn = txn;
@@ -197,8 +203,42 @@ class TxnManager {
 			}
 		}
 
+		long getCursor(int dbi) throws IOException {
+			synchronized (cursorPool[dbi]) {
+				if (cursorPoolIndex[dbi] > 0) {
+					return cursorPool[dbi][--cursorPoolIndex[dbi]];
+				}
+			}
+			try (MemoryStack stack = MemoryStack.stackPush()) {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, dbi, pp));
+				return pp.get(0);
+			}
+		}
+
+		void returnCursor(int dbi, long cursor) {
+			synchronized (cursorPool[dbi]) {
+				if (cursorPoolIndex[dbi] < cursorPool[dbi].length) {
+					cursorPool[dbi][cursorPoolIndex[dbi]++] = cursor;
+				} else {
+					mdb_cursor_close(cursor);
+				}
+			}
+		}
+
+		void closeCursors() {
+			for (int i = 0; i < cursorPool.length; i++) {
+				synchronized (cursorPool[i]) {
+					while (cursorPoolIndex[i] > 0) {
+						mdb_cursor_close(cursorPool[i][--cursorPoolIndex[i]]);
+					}
+				}
+			}
+		}
+
 		@Override
 		public void close() {
+			closeCursors();
 			synchronized (active) {
 				active.remove(this);
 			}
@@ -212,6 +252,7 @@ class TxnManager {
 			mdb_txn_reset(txn);
 			E(mdb_txn_renew(txn));
 			version++;
+			closeCursors();
 		}
 
 		/**
