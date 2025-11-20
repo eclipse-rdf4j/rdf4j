@@ -16,6 +16,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.atomic.LongAdder;
@@ -327,7 +328,7 @@ public class SketchBasedJoinEstimator {
 					}
 					continue;
 				}
-				Staleness staleness = staleness();
+//				Staleness staleness = staleness();
 //				System.out.println(staleness.toString());
 
 				try {
@@ -374,6 +375,11 @@ public class SketchBasedJoinEstimator {
 	 * @return number of statements scanned.
 	 */
 	public synchronized long rebuildOnceSlow() {
+//		try {
+//			Thread.sleep(r.nextInt(10));
+//		} catch (InterruptedException e) {
+//			throw new RuntimeException(e);
+//		}
 
 //		long currentMemoryUsage = currentMemoryUsage();
 
@@ -405,10 +411,10 @@ public class SketchBasedJoinEstimator {
 					}
 				}
 
-//				if (seen % 100000 == 0) {
-//					System.out.println("RdfJoinEstimator: Rebuilding " + (rebuildIntoA ? "bufA" : "bufB") + ", seen "
-//							+ seen + " triples so far. Elapsed: " + (System.currentTimeMillis() - l) / 1000 + " s.");
-//				}
+				if (seen % 100000 == 0) {
+					System.out.println("RdfJoinEstimator: Rebuilding " + (rebuildIntoA ? "bufA" : "bufB") + ", seen "
+							+ seen + " triples so far. Elapsed: " + (System.currentTimeMillis() - l) / 1000 + " s.");
+				}
 			}
 		}
 

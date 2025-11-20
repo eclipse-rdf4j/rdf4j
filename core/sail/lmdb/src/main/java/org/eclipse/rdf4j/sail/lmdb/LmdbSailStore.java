@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -203,9 +204,8 @@ class LmdbSailStore implements SailStore {
 			tripleStore = new TripleStore(new File(dataDir, "triples"), config, valueStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
 			initialized = true;
-			// TODO: org.eclipse.rdf4j.sail.lmdb.QueryBenchmarkTest breaks when enabling background refresh
-//			sketchBasedJoinEstimator.rebuildOnceSlow();
-//			sketchBasedJoinEstimator.startBackgroundRefresh(3);
+			sketchBasedJoinEstimator.rebuildOnceSlow();
+			sketchBasedJoinEstimator.startBackgroundRefresh(3);
 		} finally {
 			if (!initialized) {
 				close();
@@ -444,7 +444,11 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public LmdbSailDataset dataset(IsolationLevel level) throws SailException {
-			return new LmdbSailDataset(explicit);
+			// Background refresh uses SERIALIZABLE and should not be reset by write commits to
+			// avoid invalidating long-running read cursors. Keep other datasets tracked so they
+			// continue to sync with commits.
+			boolean trackActive = level != IsolationLevels.SERIALIZABLE;
+			return new LmdbSailDataset(explicit, trackActive);
 		}
 
 	}
@@ -911,9 +915,13 @@ class LmdbSailStore implements SailStore {
 		private final Txn txn;
 
 		public LmdbSailDataset(boolean explicit) throws SailException {
+			this(explicit, true);
+		}
+
+		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
 			this.explicit = explicit;
 			try {
-				this.txn = tripleStore.getTxnManager().createReadTxn();
+				this.txn = tripleStore.getTxnManager().createReadTxn(trackActiveTxn);
 			} catch (IOException e) {
 				throw new SailException(e);
 			}

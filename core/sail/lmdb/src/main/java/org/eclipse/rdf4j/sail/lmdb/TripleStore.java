@@ -1037,47 +1037,65 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	protected void updateFromCache() throws IOException {
+	protected long updateFromCache(StampedLongAdderLockManager lockManager, long readStamp)
+			throws IOException, InterruptedException {
 		recordCache.commit();
-		for (boolean explicit : new boolean[] { true, false }) {
-			RecordCacheIterator it = recordCache.getRecords(explicit);
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				PointerBuffer pp = stack.mallocPointer(1);
-				MDBVal keyVal = MDBVal.mallocStack(stack);
-				// use calloc to get an empty data value
-				MDBVal dataVal = MDBVal.callocStack(stack);
-				ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
+		long writeStamp = 0;
 
-				Record r;
-				while ((r = it.next()) != null) {
-					if (requiresResize()) {
-						// resize map if required
-						E(mdb_txn_commit(writeTxn));
-						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-						E(mdb_env_set_mapsize(env, mapSize));
-						logger.debug("resized map to {}", mapSize);
-						E(mdb_txn_begin(env, NULL, 0, pp));
-						writeTxn = pp.get(0);
-					}
+		try {
 
-					for (int i = 0; i < indexes.size(); i++) {
-						TripleIndex index = indexes.get(i);
-						keyBuf.clear();
-						index.toKey(keyBuf, r.quad[0], r.quad[1], r.quad[2], r.quad[3]);
-						keyBuf.flip();
-						// update buffer positions in MDBVal
-						keyVal.mv_data(keyBuf);
+			for (boolean explicit : new boolean[] { true, false }) {
+				RecordCacheIterator it = recordCache.getRecords(explicit);
+				try (MemoryStack stack = MemoryStack.stackPush()) {
+					PointerBuffer pp = stack.mallocPointer(1);
+					MDBVal keyVal = MDBVal.mallocStack(stack);
+					// use calloc to get an empty data value
+					MDBVal dataVal = MDBVal.callocStack(stack);
+					ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
 
-						if (r.add) {
-							E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
-						} else {
-							E(mdb_del(writeTxn, index.getDB(explicit), keyVal, null));
+					Record r;
+					while ((r = it.next()) != null) {
+						if (writeStamp == 0) {
+							lockManager.unlockRead(readStamp);
+							writeStamp = lockManager.writeLock();
+						}
+						if (requiresResize()) {
+
+							// resize map if required
+							E(mdb_txn_commit(writeTxn));
+							mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+							E(mdb_env_set_mapsize(env, mapSize));
+							logger.debug("resized map to {}", mapSize);
+							E(mdb_txn_begin(env, NULL, 0, pp));
+							writeTxn = pp.get(0);
+
+						}
+
+						for (int i = 0; i < indexes.size(); i++) {
+							TripleIndex index = indexes.get(i);
+							keyBuf.clear();
+							index.toKey(keyBuf, r.quad[0], r.quad[1], r.quad[2], r.quad[3]);
+							keyBuf.flip();
+							// update buffer positions in MDBVal
+							keyVal.mv_data(keyBuf);
+							if (r.add) {
+								E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
+							} else {
+								E(mdb_del(writeTxn, index.getDB(explicit), keyVal, null));
+							}
 						}
 					}
 				}
 			}
+
+			recordCache.close();
+		} finally {
+			if (writeStamp != 0) {
+				lockManager.unlockWrite(writeStamp);
+				readStamp = lockManager.readLock();
+			}
 		}
-		recordCache.close();
+		return readStamp;
 	}
 
 	public void startTransaction() throws IOException {
@@ -1100,10 +1118,13 @@ class TripleStore implements Closeable {
 						E(mdb_txn_commit(writeTxn));
 						if (recordCache != null) {
 							StampedLongAdderLockManager lockManager = txnManager.lockManager();
+							long writeStamp;
 							long readStamp;
 							try {
+//								writeStamp = lockManager.writeLock();
 								readStamp = lockManager.readLock();
 							} catch (InterruptedException e) {
+								Thread.currentThread().interrupt();
 								throw new SailException(e);
 							}
 							try {
@@ -1112,20 +1133,29 @@ class TripleStore implements Closeable {
 								E(mdb_env_set_mapsize(env, mapSize));
 								logger.debug("resized map to {}", mapSize);
 								// restart write transaction
+
 								try (MemoryStack stack = stackPush()) {
 									PointerBuffer pp = stack.mallocPointer(1);
 									mdb_txn_begin(env, NULL, 0, pp);
 									writeTxn = pp.get(0);
 								}
-								updateFromCache();
+
+								readStamp = updateFromCache(lockManager, readStamp);
+
 								// finally, commit write transaction
 								E(mdb_txn_commit(writeTxn));
+
+							} catch (InterruptedException e) {
+								Thread.currentThread().interrupt();
+								throw new SailException(e);
 							} finally {
 								recordCache = null;
 								try {
 									txnManager.activate();
 								} finally {
+
 									lockManager.unlockRead(readStamp);
+//									lockManager.unlockWrite(writeStamp);
 								}
 							}
 						} else {
