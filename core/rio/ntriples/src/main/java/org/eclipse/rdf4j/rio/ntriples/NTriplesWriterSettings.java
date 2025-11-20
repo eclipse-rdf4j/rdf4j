@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.ntriples;
 
-import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BooleanRioSetting;
 
 /**

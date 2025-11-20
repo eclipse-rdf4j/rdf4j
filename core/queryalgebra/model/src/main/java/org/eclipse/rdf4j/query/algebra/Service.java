@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -203,7 +203,7 @@ public class Service extends UnaryTupleOperator {
 	 * @return the set of variable names in the given service expression
 	 */
 	private Set<String> computeServiceVars(TupleExpr serviceExpression) {
-		final Set<String> res = new HashSet<>();
+		final Set<String> res = new LinkedHashSet<>();
 		serviceExpression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 
 			@Override

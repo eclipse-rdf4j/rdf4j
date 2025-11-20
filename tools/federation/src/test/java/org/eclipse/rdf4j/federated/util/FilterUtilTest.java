@@ -37,7 +37,7 @@ public class FilterUtilTest {
 	}
 
 	private FilterExpr createFilterExpr(String leftVarName, int rightConstant, CompareOp operator) {
-		Compare compare = new Compare(new Var(leftVarName), valueConstant(rightConstant), operator);
+		Compare compare = new Compare(Var.of(leftVarName), valueConstant(rightConstant), operator);
 		return new FilterExpr(compare, new HashSet<>());
 
 	}

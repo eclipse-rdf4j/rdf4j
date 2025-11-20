@@ -373,7 +373,7 @@ public class TupleExprBuilderTest {
 	public void testServiceGraphPatternChopping() {
 
 		// just for construction
-		Service service = new Service(new Var(null, null, false, false), new SingletonSet(), "", null, null, false);
+		Service service = new Service(Var.of(null, null, false, false), new SingletonSet(), "", null, null, false);
 
 		service.setExpressionString("SERVICE <a> { ?s ?p ?o }");
 		assertEquals("?s ?p ?o", service.getServiceExpressionString());

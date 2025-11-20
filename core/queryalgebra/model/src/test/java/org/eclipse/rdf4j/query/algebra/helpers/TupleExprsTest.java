@@ -38,8 +38,8 @@ public class TupleExprsTest {
 	@Test
 	public void isFilterExistsFunctionOnNormalFilter() {
 		Filter expr = new Filter();
-		expr.setArg(new StatementPattern(new Var("s"), new Var("p"), new Var("o")));
-		expr.setCondition(new Compare(new Var("x", f.createBNode()), new Var("y", f.createBNode())));
+		expr.setArg(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+		expr.setCondition(new Compare(Var.of("x", f.createBNode()), Var.of("y", f.createBNode())));
 
 		assertThat(isFilterExistsFunction(expr)).isFalse();
 	}
@@ -47,8 +47,8 @@ public class TupleExprsTest {
 	@Test
 	public void isFilterExistsFunctionOnNormalNot() {
 		Filter expr = new Filter();
-		expr.setArg(new StatementPattern(new Var("s"), new Var("p"), new Var("o")));
-		expr.setCondition(new Not(new Compare(new Var("x", f.createBNode()), new Var("y", f.createBNode()))));
+		expr.setArg(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+		expr.setCondition(new Not(new Compare(Var.of("x", f.createBNode()), Var.of("y", f.createBNode()))));
 
 		assertThat(isFilterExistsFunction(expr)).isFalse();
 	}
@@ -56,8 +56,8 @@ public class TupleExprsTest {
 	@Test
 	public void isFilterExistsFunctionOnExists() {
 		Filter expr = new Filter();
-		expr.setArg(new StatementPattern(new Var("s"), new Var("p"), new Var("o")));
-		expr.setCondition(new Exists(new StatementPattern(new Var("s"), new Var("p"), new Var("o"))));
+		expr.setArg(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+		expr.setCondition(new Exists(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"))));
 
 		assertThat(isFilterExistsFunction(expr)).isTrue();
 
@@ -66,8 +66,8 @@ public class TupleExprsTest {
 	@Test
 	public void isFilterExistsFunctionOnNotExist() {
 		Filter expr = new Filter();
-		expr.setArg(new StatementPattern(new Var("s"), new Var("p"), new Var("o")));
-		expr.setCondition(new Not(new Exists(new StatementPattern(new Var("s"), new Var("p"), new Var("o")))));
+		expr.setArg(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+		expr.setCondition(new Not(new Exists(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")))));
 
 		assertThat(isFilterExistsFunction(expr)).isTrue();
 	}

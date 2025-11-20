@@ -257,12 +257,12 @@ Plan
 `-am` is helpful for **compiles**, hazardous for **tests**.
 
 * ✅ Use `-am` **only** for compile/verify with tests skipped (e.g. `-Pquick`):
-    * `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick install`
+    * `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install`
 * ❌ Do **not** use `-am` with `verify` when tests are enabled.
 
 **Two-step pattern (fast + safe)**
 1. **Compile deps fast (skip tests):**
-   `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick install`
+   `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install`
 2. **Run tests:**
    `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tail -500`
 
@@ -276,9 +276,10 @@ It is illegal to `-q` when running tests!
 The Maven reactor resolves inter-module dependencies from the configured local Maven repository (here: `.m2_repo`).
 Running `install` publishes your changed modules there so downstream modules and tests pick up the correct versions.
 
-* Always run `mvn -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200` before you start working. This command typically takes up to 30 seconds. Never use a shorter timeout than 30,000 ms.
-* Always run `mvn -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200` before any `verify` or test runs.
-* If offline resolution fails due to a missing dependency or plugin, rerun the exact `install` command once without `-o`, then return offline.
+* Always run `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200` before you start working. This command typically takes up to 30 seconds. Never use a shorter timeout than 60,000 ms.
+* Always run `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200` before any `verify` or test runs.
+* If offline resolution fails due to a missing dependency or plugin, run the command without `-o`: `mvn -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`, then return offline.
+* If it fails for any other reason, run the command without `-T 1C`: `mvn -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`.
 * Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
 * Always use a workspace-local Maven repository: append `-Dmaven.repo.local=.m2_repo` to all Maven commands (install, verify, formatter, etc.).
 * Always try to run these commands first to see if they run without needing any approvals from the user w.r.t. the sandboxing.
@@ -287,8 +288,8 @@ Why this is mandatory
 
 - Tests must not use `-am`. Without `-am`, Maven will not build upstream modules when you run tests; it will resolve cross‑module dependencies from the configured local repository (here: `.m2_repo`).
 - Therefore, tests only see whatever versions were last published to the configured local repo (`.m2_repo`). If you change code in one module and then run tests in another, those tests will not see your changes unless the updated module has been installed to `.m2_repo` first.
-- The reliable way to ensure all tests always use the latest code across the entire multi‑module build is to install all modules to the configured local repo (`.m2_repo`) before running any tests: run `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install` at the repository root.
-- In tight loops you may also install a specific module and its deps (`-pl <module> -am -Pquick install`) to iterate quickly, but before executing tests anywhere that depend on your changes, run a root‑level `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install` so the latest jars are available to the reactor from `.m2_repo`.
+- The reliable way to ensure all tests always use the latest code across the entire multi‑module build is to install all modules to the configured local repo (`.m2_repo`) before running any tests: run `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install` at the repository root.
+- In tight loops you may also install a specific module and its deps (`-pl <module> -am -Pquick clean install`) to iterate quickly, but before executing tests anywhere that depend on your changes, run a root‑level `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install` so the latest jars are available to the reactor from `.m2_repo`.
 ---
 
 ## Quick Start (First 10 Minutes)
@@ -297,7 +298,7 @@ Why this is mandatory
     * Inspect root `pom.xml` and module tree (see “Maven Module Overview”).
     * Search fast with ripgrep: `rg -n "<symbol or string>"`
 2. **Build sanity (fast, skip tests)**
-    * `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install | tail -200`
+    * `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`
 3. **Format (Java, imports, XML)**
     * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 4. **Targeted tests (tight loops)**
@@ -407,7 +408,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 * **Plan:** small, verifiable steps; keep one `in_progress`, or follow PLANS.md (ExecPlans)
 * **Change:** minimal, surgical edits; keep style/structure consistent.
 * **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
-* **Compile (fast):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick install | tail -500`
+* **Compile (fast):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install | tail -500`
 * **Test:** start smallest (class/method → module). For integration, run module `verify`.
 * **Triage:** read reports; fix root cause; expand scope only when needed.
 * **Iterate:** keep momentum; escalate only when blocked or irreversible.
@@ -514,7 +515,7 @@ Do **not** modify existing headers’ years.
 ## Pre‑Commit Checklist
 
 * **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
-* **Compile (fast path):** `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install | tail -200`
+* **Compile (fast path):** `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`
 * **Tests (targeted):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tail -500` (broaden as needed)
 * **Reports:** zero new failures in Surefire/Failsafe, or explain precisely.
 * **Evidence:** Routine A — failing pre‑fix + passing post‑fix.
@@ -629,7 +630,7 @@ Do **not** modify existing headers’ years.
 ## Build
 
 * **Build without tests (fast path):**
-  `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install`
+  `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install`
 * **Verify with tests:**
   Targeted module(s): `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify`
   Entire repo: `mvn -o -Dmaven.repo.local=.m2_repo verify` (use judiciously)

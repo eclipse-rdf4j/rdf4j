@@ -947,7 +947,7 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 					.stream()
 					.filter(elem -> (elem.getExpr() instanceof ValueExpr))
 					.forEach(elem -> valueMap.put(elem.getName(),
-							(ValueExpr) elem.getExpr()));
+							elem.getExpr()));
 		}
 
 		for (ProjectionElemList proj : node.getProjections()) {

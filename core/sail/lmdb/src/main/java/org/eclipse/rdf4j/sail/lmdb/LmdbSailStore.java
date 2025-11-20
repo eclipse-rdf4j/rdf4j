@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -47,6 +48,7 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -77,6 +79,9 @@ class LmdbSailStore implements SailStore {
 
 	private PersistentSetFactory<Long> setFactory;
 	private PersistentSet<Long> unusedIds, nextUnusedIds;
+
+	private final SketchBasedJoinEstimator sketchBasedJoinEstimator = new SketchBasedJoinEstimator(this,
+			SketchBasedJoinEstimator.suggestNominalEntries(), Integer.MAX_VALUE, 2);
 
 	/**
 	 * A fast non-blocking circular buffer backed by an array.
@@ -199,6 +204,8 @@ class LmdbSailStore implements SailStore {
 			tripleStore = new TripleStore(new File(dataDir, "triples"), config, valueStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
 			initialized = true;
+			sketchBasedJoinEstimator.rebuildOnceSlow();
+			sketchBasedJoinEstimator.startBackgroundRefresh(3);
 		} finally {
 			if (!initialized) {
 				close();
@@ -242,36 +249,40 @@ class LmdbSailStore implements SailStore {
 	public void close() throws SailException {
 		try {
 			try {
-				if (namespaceStore != null) {
-					namespaceStore.close();
-				}
+				sketchBasedJoinEstimator.stop();
 			} finally {
 				try {
-					if (valueStore != null) {
-						valueStore.close();
+					if (namespaceStore != null) {
+						namespaceStore.close();
 					}
 				} finally {
 					try {
-						if (tripleStore != null) {
-							try {
-								running.set(false);
-								tripleStoreExecutor.shutdown();
-								try {
-									while (!tripleStoreExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
-										logger.warn("Waiting for triple store executor to terminate");
-									}
-								} catch (InterruptedException e) {
-									Thread.currentThread().interrupt();
-									throw new InterruptedSailException(e);
-								}
-							} finally {
-								tripleStore.close();
-							}
+						if (valueStore != null) {
+							valueStore.close();
 						}
 					} finally {
-						if (setFactory != null) {
-							setFactory.close();
-							setFactory = null;
+						try {
+							if (tripleStore != null) {
+								try {
+									running.set(false);
+									tripleStoreExecutor.shutdown();
+									try {
+										while (!tripleStoreExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+											logger.warn("Waiting for triple store executor to terminate");
+										}
+									} catch (InterruptedException e) {
+										Thread.currentThread().interrupt();
+										throw new InterruptedSailException(e);
+									}
+								} finally {
+									tripleStore.close();
+								}
+							}
+						} finally {
+							if (setFactory != null) {
+								setFactory.close();
+								setFactory = null;
+							}
 						}
 					}
 				}
@@ -289,7 +300,7 @@ class LmdbSailStore implements SailStore {
 
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
-		return new LmdbEvaluationStatistics(valueStore, tripleStore);
+		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator);
 	}
 
 	@Override
@@ -433,7 +444,11 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public LmdbSailDataset dataset(IsolationLevel level) throws SailException {
-			return new LmdbSailDataset(explicit);
+			// Background refresh uses SERIALIZABLE and should not be reset by write commits to
+			// avoid invalidating long-running read cursors. Keep other datasets tracked so they
+			// continue to sync with commits.
+			boolean trackActive = level != IsolationLevels.SERIALIZABLE;
+			return new LmdbSailDataset(explicit, trackActive);
 		}
 
 	}
@@ -900,9 +915,13 @@ class LmdbSailStore implements SailStore {
 		private final Txn txn;
 
 		public LmdbSailDataset(boolean explicit) throws SailException {
+			this(explicit, true);
+		}
+
+		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
 			this.explicit = explicit;
 			try {
-				this.txn = tripleStore.getTxnManager().createReadTxn();
+				this.txn = tripleStore.getTxnManager().createReadTxn(trackActiveTxn);
 			} catch (IOException e) {
 				throw new SailException(e);
 			}

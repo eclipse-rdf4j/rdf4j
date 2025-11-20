@@ -47,12 +47,8 @@ import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
 import jakarta.json.spi.JsonProvider;
-import no.hasmac.jsonld.JsonLdError;
 import no.hasmac.jsonld.document.Document;
 import no.hasmac.jsonld.document.JsonDocument;
-import no.hasmac.jsonld.loader.DocumentLoader;
-import no.hasmac.jsonld.loader.DocumentLoaderOptions;
-import no.hasmac.jsonld.loader.SchemeRouter;
 
 /**
  * Custom (non-manifest) tests for JSON-LD parser.
