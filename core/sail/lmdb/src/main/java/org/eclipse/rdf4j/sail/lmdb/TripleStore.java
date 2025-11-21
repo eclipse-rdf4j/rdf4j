@@ -19,6 +19,7 @@ import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_DUPSORT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
+import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_GET_BOTH_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
@@ -761,6 +762,9 @@ class TripleStore implements Closeable {
 						if (rc == MDB_SUCCESS) {
 							valueData.mv_data(valueBuf);
 							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_GET_BOTH_RANGE);
+							if (rc != MDB_SUCCESS) {
+								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST_DUP);
+							}
 						}
 						int keyDiff;
 						if (rc != MDB_SUCCESS ||
@@ -784,7 +788,7 @@ class TripleStore implements Closeable {
 						if (rc == MDB_SUCCESS) {
 							readVarints(keyData.mv_data(), valueData.mv_data(), s.maxValues);
 							// this is required to correctly estimate the range size at a later point
-							s.startValues[s.MAX_BUCKETS] = s.maxValues;
+							s.startValues[Statistics.MAX_BUCKETS] = s.maxValues;
 						} else {
 							break;
 						}
@@ -792,9 +796,10 @@ class TripleStore implements Closeable {
 						long allSamplesCount = 0;
 						int bucket = 0;
 						boolean endOfRange = false;
-						for (; bucket < s.MAX_BUCKETS && !endOfRange; bucket++) {
+						for (; bucket < Statistics.MAX_BUCKETS && !endOfRange; bucket++) {
 							if (bucket != 0) {
-								bucketStart((double) bucket / s.MAX_BUCKETS, s.minValues, s.maxValues, s.values);
+								bucketStart((double) bucket / Statistics.MAX_BUCKETS, s.minValues, s.maxValues,
+										s.values);
 								keyBuf.clear();
 								Varint.writeUnsigned(keyBuf, s.values[0]);
 								Varint.writeUnsigned(keyBuf, s.values[1]);
@@ -813,7 +818,7 @@ class TripleStore implements Closeable {
 								valueData.mv_data(valueBuf);
 								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_GET_BOTH_RANGE);
 							}
-							while (rc == MDB_SUCCESS && currentSamplesCount < s.MAX_SAMPLES_PER_BUCKET) {
+							while (rc == MDB_SUCCESS && currentSamplesCount < Statistics.MAX_SAMPLES_PER_BUCKET) {
 								keyDiff = mdb_cmp(txn, dbi, keyData, maxKey);
 								if (keyDiff > 0 || keyDiff == 0 && mdb_dcmp(txn, dbi, valueData, maxValue) >= 0) {
 									endOfRange = true;
