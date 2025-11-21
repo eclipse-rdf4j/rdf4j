@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
+import org.eclipse.rdf4j.sail.lmdb.util.EntryMatcher;
 import org.eclipse.rdf4j.sail.lmdb.util.SignificantBytesBE;
 
 /**
@@ -42,6 +43,7 @@ public final class Varint {
 	};
 
 	static final byte[] ALL_ZERO_QUAD = new byte[] { 0, 0, 0, 0 };
+	static final byte[] ALL_ZERO_PAIR = new byte[] { 0, 0 };
 
 	private Varint() {
 	}
@@ -552,7 +554,7 @@ public final class Varint {
 	}
 
 	/**
-	 * Use of this class is deprecated, use {@link org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher} instead.
+	 * Use of this class is deprecated, use {@link EntryMatcher} instead.
 	 */
 	@Deprecated(forRemoval = true)
 	public static class GroupMatcher {

@@ -19,10 +19,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
+import org.eclipse.rdf4j.sail.lmdb.util.EntryMatcher;
 import org.junit.jupiter.api.Test;
 
-class GroupMatcherTest {
+class EntryMatcherTest {
 
 	private static final int FIELD_COUNT = 4;
 	private static final int MAX_LENGTH = 9;
@@ -39,16 +39,18 @@ class GroupMatcherTest {
 			for (byte[] valueLengths : ALL_LENGTH_COMBINATIONS) {
 				final byte[] lengthsRef = valueLengths;
 				long[] referenceValues = valuesForLengths(valueLengths);
-				GroupMatcher matcher = new GroupMatcher(encodeBE(referenceValues).duplicate().array(), shouldMatch);
+				EntryMatcher matcher = new EntryMatcher(encodeKey(referenceValues).duplicate().array(),
+						encodeValue(referenceValues).duplicate().array(), shouldMatch);
 
 				for (CandidateStrategy strategy : CANDIDATE_STRATEGIES) {
 					final CandidateStrategy strategyRef = strategy;
-					long[] candidateValues = buildCandidateValues(referenceValues, valueLengths, shouldMatch, strategy);
-					final long[] candidateCopy = candidateValues;
-					ByteBuffer matchBuffer = encode(candidateCopy);
+					final long[] candidateValues = buildCandidateValues(referenceValues, valueLengths, shouldMatch,
+							strategy);
+					ByteBuffer matchKey = encodeKey(candidateValues);
+					ByteBuffer matchValue = encodeValue(candidateValues);
 
-					assertTrue(matcher.matches(nativeOrder(matchBuffer.duplicate())),
-							() -> failureMessage("expected match", maskBits, lengthsRef, strategyRef, candidateCopy,
+					assertTrue(matcher.matches(nativeOrder(matchKey.duplicate()), nativeOrder(matchValue.duplicate())),
+							() -> failureMessage("expected match", maskBits, lengthsRef, strategyRef, candidateValues,
 									null));
 
 					if (hasMatch(shouldMatch)) {
@@ -57,13 +59,17 @@ class GroupMatcherTest {
 								continue;
 							}
 							for (MismatchType mismatchType : MismatchType.values()) {
-								long[] mismatchValues = createMismatch(candidateCopy, lengthsRef, index, mismatchType);
+								long[] mismatchValues = createMismatch(candidateValues, lengthsRef, index,
+										mismatchType);
 								if (mismatchValues == null) {
 									continue;
 								}
 								final long[] mismatchCopy = mismatchValues;
-								ByteBuffer mismatchBuffer = encode(mismatchCopy);
-								assertFalse(matcher.matches(nativeOrder(mismatchBuffer.duplicate())),
+								ByteBuffer mismatchKey = encodeKey(mismatchCopy);
+								ByteBuffer mismatchValue = encodeValue(mismatchCopy);
+								assertFalse(
+										matcher.matches(nativeOrder(mismatchKey.duplicate()),
+												nativeOrder(mismatchValue.duplicate())),
 										() -> failureMessage("expected mismatch",
 												maskBits, lengthsRef, strategyRef, mismatchCopy, mismatchType));
 							}
@@ -116,23 +122,23 @@ class GroupMatcherTest {
 		}
 	}
 
-	private static ByteBuffer encode(long[] values) {
-		ByteBuffer buffer = ByteBuffer
-				.allocate(Varint.calcListLengthUnsigned(values[0], values[1], values[2], values[3]));
+	private static ByteBuffer encodeKey(long[] values) {
+		ByteBuffer buffer = ByteBuffer.allocate(Varint.calcLengthUnsigned(values[0]) +
+				Varint.calcLengthUnsigned(values[1]));
 		buffer.order(ByteOrder.nativeOrder());
-		for (long value : values) {
-			Varint.writeUnsigned(buffer, value);
+		for (int i = 0; i < 2; i++) {
+			Varint.writeUnsigned(buffer, values[i]);
 		}
 		buffer.flip();
 		return buffer;
 	}
 
-	private static ByteBuffer encodeBE(long[] values) {
+	private static ByteBuffer encodeValue(long[] values) {
 		ByteBuffer buffer = ByteBuffer
-				.allocate(Varint.calcListLengthUnsigned(values[0], values[1], values[2], values[3]));
+				.allocate(Varint.calcLengthUnsigned(values[2]) + Varint.calcLengthUnsigned(values[3]));
 		buffer.order(ByteOrder.nativeOrder());
-		for (long value : values) {
-			Varint.writeUnsigned(buffer, value);
+		for (int i = 2; i < 4; i++) {
+			Varint.writeUnsigned(buffer, values[i]);
 		}
 		buffer.flip();
 		return buffer;
