@@ -16,9 +16,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.ForkJoinTask;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.*;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -69,7 +67,9 @@ public class RepositoryFederatedService implements FederatedService {
 		private final QueueCursor<CloseableIteration<BindingSet>> requestQueue = new QueueCursor<>(
 				new LinkedBlockingQueue<>());
 
-		private ForkJoinTask<?> queueConsumerTask = null;
+		private final ExecutorService threadExecutor = Executors.newSingleThreadExecutor();
+
+		private Future<?> queueConsumerTask = null;
 
 		/**
 		 * @param inputBindings
@@ -98,11 +98,11 @@ public class RepositoryFederatedService implements FederatedService {
 				});
 			};
 			if (queueConsumerTask != null) {
-				// This should never happen, but just to be sure...
+				// This should never happen, unless the iteration is started more than once.
 				throw new QueryEvaluationException("Queue consumer task already running");
 			}
 			// This may throw, we simply let it propagate
-			queueConsumerTask = ForkJoinPool.commonPool().submit(queueConsumer);
+			queueConsumerTask = threadExecutor.submit(queueConsumer);
 
 			// Produce batches of input bindings and send them to the consumer via the request queue
 			while (!isClosed() && leftIter.hasNext()) {
@@ -118,13 +118,24 @@ public class RepositoryFederatedService implements FederatedService {
 				// The request queue is of unbounded size, so this will not block. On the other hand,
 				// if the consumer is slow, we may accumulate a large number of pending requests here.
 				// I don't have a better solution at the moment, though.
+				// TODO: consider either a fully async approach instead, or spilling the intermediate
+				// results to disk if they accumulate too much.
 				requestQueue.put(materializedIter);
 			}
 			requestQueue.close();
 
 			// Wait for completion of the consumer and propagate exceptions
-			queueConsumerTask.get();
-			queueConsumerTask = null;
+			try {
+				queueConsumerTask.get();
+			} catch (ExecutionException e) {
+				if (e.getCause() != null && e.getCause() instanceof Exception) {
+					throw (Exception) e.getCause();
+				} else {
+					throw new QueryEvaluationException("Error in batch SERVICE evaluation", e);
+				}
+			} finally {
+				queueConsumerTask = null;
+			}
 		}
 
 		@Override
