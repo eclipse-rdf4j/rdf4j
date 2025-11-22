@@ -27,6 +27,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
@@ -149,6 +152,12 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	private volatile int fuzzyPrefixLength;
 
+	private boolean transactionsEnabled = LuceneSail.DEFAULT_TRANSACTIONAL;
+
+	private long fsyncIntervalMillis = LuceneSail.DEFAULT_FSYNC_INTERVAL;
+
+	private ScheduledThreadPoolExecutor fsyncScheduler;
+
 	/**
 	 * The IndexWriter that can be used to alter the index' contents. Created lazily.
 	 */
@@ -212,6 +221,16 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			this.fuzzyPrefixLength = NumberUtils.toInt(parameters.getProperty(FUZZY_PREFIX_LENGTH_KEY), 0);
 		}
 
+		if (parameters.containsKey(LuceneSail.TRANSACTIONAL_KEY)) {
+			this.transactionsEnabled = Boolean.parseBoolean(
+					parameters.getProperty(LuceneSail.TRANSACTIONAL_KEY));
+		}
+		if (parameters.containsKey(LuceneSail.FSYNC_INTERVAL_KEY)) {
+			this.fsyncIntervalMillis = NumberUtils.toLong(
+					parameters.getProperty(LuceneSail.FSYNC_INTERVAL_KEY),
+					LuceneSail.DEFAULT_FSYNC_INTERVAL);
+		}
+
 		postInit();
 	}
 
@@ -269,6 +288,43 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			IndexWriter writer = new IndexWriter(directory, indexWriterConfig);
 			writer.close();
 		}
+
+		setUpFsyncScheduler();
+	}
+
+	private void setUpFsyncScheduler() {
+		// If transactions are disabled, launch a background thread to fsync periodically.
+		if (this.transactionsEnabled || this.fsyncIntervalMillis <= 0) {
+			return;
+		}
+
+		// Use a daemon thread so the scheduler does not prevent JVM shutdown.
+		this.fsyncScheduler = new ScheduledThreadPoolExecutor(1, r -> {
+			Thread t = Executors.defaultThreadFactory().newThread(r);
+			t.setDaemon(true);
+			t.setName("rdf4j-lucene-fsync-" + t.getId());
+			return t;
+		});
+		// Help GC by removing cancelled tasks from the queue.
+		this.fsyncScheduler.setRemoveOnCancelPolicy(true);
+		this.fsyncScheduler.scheduleAtFixedRate(
+				() -> {
+					try {
+						if (this.getIndexWriter().hasUncommittedChanges()) {
+							this.getIndexWriter().commit();
+							invalidateReaders();
+						}
+					} catch (Throwable e) {
+						// We just log errors here, there's not much else we can do.
+						// Rethrowing exceptions on the next commit would be confusing, especially if
+						// the error is transient.
+						logger.error("Exception during Lucene index fsync", e);
+					}
+				},
+				this.fsyncIntervalMillis,
+				this.fsyncIntervalMillis,
+				TimeUnit.MILLISECONDS
+		);
 	}
 
 	protected Function<String, ? extends SpatialStrategy> createSpatialStrategyMapper(Map<String, String> parameters) {
@@ -383,15 +439,47 @@ public class LuceneIndex extends AbstractLuceneIndex {
 						oldmonitors.clear();
 					}
 				} finally {
+					// shutdown fsync scheduler
 					try {
-						IndexWriter toCloseIndexWriter = indexWriter;
-						indexWriter = null;
-						if (toCloseIndexWriter != null) {
-							toCloseIndexWriter.close();
+						if (fsyncScheduler != null) {
+							fsyncScheduler.shutdown();
+							if (!fsyncScheduler.awaitTermination(10, TimeUnit.SECONDS)) {
+								logger.error("Failed to shut down Lucene fsync scheduler within 10s");
+								// Try interrupting the thread
+								fsyncScheduler.shutdownNow();
+								if (!fsyncScheduler.awaitTermination(10, TimeUnit.SECONDS)) {
+									logger.error("Failed to forcibly shut down Lucene fsync scheduler within 10s");
+								}
+							}
 						}
+					} catch (InterruptedException e) {
+						logger.error("Interrupted while trying to shut down Lucene fsync scheduler", e);
+						Thread.currentThread().interrupt();
+					} catch (Throwable e) {
+						exceptions.add(e);
 					} finally {
-						if (!exceptions.isEmpty()) {
-							throw new UndeclaredThrowableException(exceptions.get(0));
+						// Do a final sync of any uncommitted changes
+						IndexWriter toCloseIndexWriter = indexWriter;
+						try {
+							if (!this.transactionsEnabled && toCloseIndexWriter != null && toCloseIndexWriter.isOpen()
+									&& toCloseIndexWriter.hasUncommittedChanges()) {
+								toCloseIndexWriter.commit();
+							}
+						} catch (Throwable e) {
+							logger.error("Failed to commit Lucene IndexWriter while closing", e);
+							exceptions.add(e);
+						} finally {
+							// shutdown the index writer
+							try {
+								indexWriter = null;
+								if (toCloseIndexWriter != null) {
+									toCloseIndexWriter.close();
+								}
+							} finally {
+								if (!exceptions.isEmpty()) {
+									throw new UndeclaredThrowableException(exceptions.get(0));
+								}
+							}
 						}
 					}
 				}
@@ -707,14 +795,21 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 */
 	@Override
 	public synchronized void commit() throws IOException {
-		getIndexWriter().commit();
-		// the old IndexReaders/Searchers are not outdated
-		invalidateReaders();
+		if (this.transactionsEnabled) {
+			getIndexWriter().commit();
+			// the old IndexReaders/Searchers are not outdated
+			invalidateReaders();
+		} else {
+			getIndexWriter().flush();
+		}
 	}
 
 	@Override
 	public synchronized void rollback() throws IOException {
-		getIndexWriter().rollback();
+		if (this.transactionsEnabled) {
+			getIndexWriter().rollback();
+		}
+		// If transactions are disabled, we cannot rollback changes, so we just ignore the rollback request
 	}
 
 	// //////////////////////////////// Methods for querying the index

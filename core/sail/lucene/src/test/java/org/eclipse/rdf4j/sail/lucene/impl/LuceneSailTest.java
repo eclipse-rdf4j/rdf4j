@@ -10,11 +10,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene.impl;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
 import java.io.IOException;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.store.RAMDirectory;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+import org.junit.jupiter.api.Test;
 
 public class LuceneSailTest extends AbstractGenericLuceneTest {
 
@@ -24,5 +28,20 @@ public class LuceneSailTest extends AbstractGenericLuceneTest {
 	protected void configure(LuceneSail sail) throws IOException {
 		index = new LuceneIndex(new RAMDirectory(), new StandardAnalyzer());
 		sail.setLuceneIndex(index);
+	}
+
+	@Test
+	public void testIndexSettings() {
+		assertNotNull(index);
+		// Give the thread some time to start
+		try {
+			Thread.sleep(100);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
+		// Make sure the thread for periodic fsync is NOT running
+		var allThreads = Thread.getAllStackTraces().keySet();
+		assertThat(allThreads.stream().filter(t -> t.getName().startsWith("rdf4j-lucene-fsync-")).count())
+				.isEqualTo(0);
 	}
 }
