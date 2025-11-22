@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -13,29 +13,55 @@ package org.eclipse.rdf4j.sail.lucene.impl;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.Properties;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
-import org.apache.lucene.store.RAMDirectory;
+import org.apache.lucene.store.NIOFSDirectory;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
-public class LuceneSailTest extends AbstractGenericLuceneTest {
+/**
+ * Test to verify that when transactional support is disabled, the Lucene index is configured with a periodic fsync. It
+ * also checks if the index still works correctly in this mode.
+ *
+ * @author Piotr Sowiński
+ */
+public class LuceneNonTransactionalTest extends AbstractGenericLuceneTest {
+
+	@TempDir
+	public File dataDir;
 
 	private LuceneIndex index;
 
 	@Override
 	protected void configure(LuceneSail sail) throws IOException {
-		index = new LuceneIndex(new RAMDirectory(), new StandardAnalyzer());
+		index = new LuceneIndex(new NIOFSDirectory(dataDir.toPath()), new StandardAnalyzer());
+		var params = new Properties();
+		params.setProperty(LuceneSail.TRANSACTIONAL_KEY, "false");
+		params.setProperty(LuceneSail.FSYNC_INTERVAL_KEY, "100");
+		params.setProperty(LuceneSail.LUCENE_DIR_KEY, dataDir.getAbsolutePath());
+		try {
+			index.initialize(params);
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+		}
 		sail.setLuceneIndex(index);
+	}
+
+	@Override
+	protected long waitAfterCommitMillis() {
+		return 200;
 	}
 
 	@Test
 	public void testIndexSettings() {
 		assertNotNull(index);
-		// Make sure the thread for periodic fsync is NOT running
+		// Make sure the thread for periodic fsync is running
 		var allThreads = Thread.getAllStackTraces().keySet();
 		assertThat(allThreads.stream().filter(t -> t.getName().startsWith("rdf4j-lucene-fsync-")).count())
-				.isEqualTo(0);
+				.isGreaterThan(0);
 	}
 }
