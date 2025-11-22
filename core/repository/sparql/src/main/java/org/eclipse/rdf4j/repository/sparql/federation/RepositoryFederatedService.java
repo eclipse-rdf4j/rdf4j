@@ -16,6 +16,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.*;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.QueueCursor;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -62,6 +64,13 @@ public class RepositoryFederatedService implements FederatedService {
 
 		private final Service service;
 
+		private final QueueCursor<CloseableIteration<BindingSet>> requestQueue = new QueueCursor<>(
+				new LinkedBlockingQueue<>());
+
+		private final ExecutorService threadExecutor = Executors.newSingleThreadExecutor();
+
+		private Future<?> queueConsumerTask = null;
+
 		/**
 		 * @param inputBindings
 		 * @throws QueryEvaluationException
@@ -76,8 +85,27 @@ public class RepositoryFederatedService implements FederatedService {
 
 		@Override
 		protected void handleBindings() throws Exception {
-			while (!isClosed() && leftIter.hasNext()) {
+			// Set up a consumer task to send HTTP requests in parallel. This must be done in a
+			// separate thread, because submitting HTTP requests may block if the HTTP pool is full.
+			// In that case, we would enter a deadlock, with the main thread waiting for both the
+			// pool to yield, and the consumer of the bindings to read from the queue.
+			// See: https://github.com/eclipse-rdf4j/rdf4j/discussions/5120
+			// Test case: https://github.com/tkuhn/rdf4j-timeout-test
+			final Runnable queueConsumer = () -> {
+				requestQueue.forEachRemaining(batchIter -> {
+					// evaluateInternal is BLOCKING if the HTTP pool is exhausted
+					addResult(evaluateInternal(service, batchIter, service.getBaseURI()));
+				});
+			};
+			if (queueConsumerTask != null) {
+				// This should never happen, unless the iteration is started more than once.
+				throw new QueryEvaluationException("Queue consumer task already running");
+			}
+			// This may throw, we simply let it propagate
+			queueConsumerTask = threadExecutor.submit(queueConsumer);
 
+			// Produce batches of input bindings and send them to the consumer via the request queue
+			while (!isClosed() && leftIter.hasNext()) {
 				ArrayList<BindingSet> blockBindings = new ArrayList<>(blockSize);
 				for (int i = 0; i < blockSize; i++) {
 					if (!leftIter.hasNext()) {
@@ -87,7 +115,35 @@ public class RepositoryFederatedService implements FederatedService {
 				}
 				CloseableIteration<BindingSet> materializedIter = new CollectionIteration<>(
 						blockBindings);
-				addResult(evaluateInternal(service, materializedIter, service.getBaseURI()));
+				// The request queue is of unbounded size, so this will not block. On the other hand,
+				// if the consumer is slow, we may accumulate a large number of pending requests here.
+				// I don't have a better solution at the moment, though.
+				// TODO: consider either a fully async approach instead, or spilling the intermediate
+				// results to disk if they accumulate too much.
+				requestQueue.put(materializedIter);
+			}
+			requestQueue.close();
+
+			// Wait for completion of the consumer and propagate exceptions
+			try {
+				queueConsumerTask.get();
+			} catch (ExecutionException e) {
+				if (e.getCause() != null && e.getCause() instanceof Exception) {
+					throw (Exception) e.getCause();
+				} else {
+					throw new QueryEvaluationException("Error in batch SERVICE evaluation", e);
+				}
+			} finally {
+				queueConsumerTask = null;
+			}
+		}
+
+		@Override
+		public void handleClose() throws QueryEvaluationException {
+			super.handleClose();
+			if (queueConsumerTask != null) {
+				queueConsumerTask.cancel(true);
+				queueConsumerTask = null;
 			}
 		}
 	}
