@@ -39,7 +39,7 @@ class EntryMatcherTest {
 			for (byte[] valueLengths : ALL_LENGTH_COMBINATIONS) {
 				final byte[] lengthsRef = valueLengths;
 				long[] referenceValues = valuesForLengths(valueLengths);
-				EntryMatcher matcher = new EntryMatcher(encodeKey(referenceValues).duplicate().array(),
+				EntryMatcher matcher = new EntryMatcher(2, encodeKey(referenceValues).duplicate().array(),
 						encodeValue(referenceValues).duplicate().array(), shouldMatch);
 
 				for (CandidateStrategy strategy : CANDIDATE_STRATEGIES) {

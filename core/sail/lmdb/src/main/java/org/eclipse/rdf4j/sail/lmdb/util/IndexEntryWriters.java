@@ -21,7 +21,7 @@ public final class IndexEntryWriters {
 
 	@FunctionalInterface
 	public interface EntryWriter {
-		void write(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context);
+		void write(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context);
 	}
 
 	@FunctionalInterface
@@ -165,107 +165,190 @@ public final class IndexEntryWriters {
 		}
 	}
 
-	static void write(ByteBuffer key, ByteBuffer value, long first, long second, long third, long fourth) {
-		Varint.writeUnsigned(key, first);
-		Varint.writeUnsigned(key, second);
-		Varint.writeUnsigned(value, third);
-		Varint.writeUnsigned(value, fourth);
+	static final byte[] ZERO_BYTES = new byte[4 * (Long.BYTES + 1)];
+
+	static void fill(ByteBuffer buffer, int length) {
+		buffer.put(ZERO_BYTES, 0, length);
 	}
 
-	static void spoc(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, subj, pred, obj, context);
+	public static void read(ByteBuffer key, ByteBuffer value, int indexSplitPosition, long[] values) {
+		switch (indexSplitPosition) {
+		case 0:
+			values[0] = Varint.readUnsigned(value);
+			values[1] = Varint.readUnsigned(value);
+			values[2] = Varint.readUnsigned(value);
+			values[3] = Varint.readUnsigned(value);
+			break;
+		case 1:
+			values[0] = Varint.readUnsigned(key);
+			values[1] = Varint.readUnsigned(value);
+			values[2] = Varint.readUnsigned(value);
+			values[3] = Varint.readUnsigned(value);
+			break;
+		case 2:
+			values[0] = Varint.readUnsigned(key);
+			values[1] = Varint.readUnsigned(key);
+			values[2] = Varint.readUnsigned(value);
+			values[3] = Varint.readUnsigned(value);
+			break;
+		case 3:
+			values[0] = Varint.readUnsigned(key);
+			values[1] = Varint.readUnsigned(key);
+			values[2] = Varint.readUnsigned(key);
+			values[3] = Varint.readUnsigned(value);
+			break;
+		case 4:
+			values[0] = Varint.readUnsigned(key);
+			values[1] = Varint.readUnsigned(key);
+			values[2] = Varint.readUnsigned(key);
+			values[3] = Varint.readUnsigned(key);
+			break;
+		}
 	}
 
-	static void spco(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, subj, pred, context, obj);
+	public static void write(ByteBuffer key, ByteBuffer value, int splitIndex, long first, long second, long third,
+			long fourth) {
+		// int valuePos = value.position();
+		switch (splitIndex) {
+		case 0:
+			key.put((byte) 1); // to ensure key is non-empty
+			Varint.writeUnsigned(value, first);
+			Varint.writeUnsigned(value, second);
+			Varint.writeUnsigned(value, third);
+			Varint.writeUnsigned(value, fourth);
+			// used to pad the value to a fixed length if needed
+			// fill(value, 4 * (Long.BYTES + 1) - (value.position() - valuePos));
+			break;
+		case 1:
+			Varint.writeUnsigned(key, first);
+			Varint.writeUnsigned(value, second);
+			Varint.writeUnsigned(value, third);
+			Varint.writeUnsigned(value, fourth);
+			// used to pad the value to a fixed length if needed
+			// fill(value, 3 * (Long.BYTES + 1) - (value.position() - valuePos));
+			break;
+		case 2:
+			Varint.writeUnsigned(key, first);
+			Varint.writeUnsigned(key, second);
+			Varint.writeUnsigned(value, third);
+			Varint.writeUnsigned(value, fourth);
+			// used to pad the value to a fixed length if needed
+			// fill(value, 2 * (Long.BYTES + 1) - (value.position() - valuePos));
+			break;
+		case 3:
+			Varint.writeUnsigned(key, first);
+			Varint.writeUnsigned(key, second);
+			Varint.writeUnsigned(key, third);
+			Varint.writeUnsigned(value, fourth);
+			// used to pad the value to a fixed length if needed
+			// fill(value, (Long.BYTES + 1) - (value.position() - valuePos));
+			break;
+		case 4:
+			Varint.writeUnsigned(key, first);
+			Varint.writeUnsigned(key, second);
+			Varint.writeUnsigned(key, third);
+			Varint.writeUnsigned(key, fourth);
+			break;
+		default:
+			throw new IllegalArgumentException("Split index must be between 0 and 4 inclusive");
+		}
+
 	}
 
-	static void sopc(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, subj, obj, pred, context);
+	static void spoc(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, subj, pred, obj, context);
 	}
 
-	static void socp(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, subj, obj, context, pred);
+	static void spco(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, subj, pred, context, obj);
 	}
 
-	static void scpo(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, subj, context, pred, obj);
+	static void sopc(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, subj, obj, pred, context);
 	}
 
-	static void scop(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, subj, context, obj, pred);
+	static void socp(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, subj, obj, context, pred);
 	}
 
-	static void psoc(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, pred, subj, obj, context);
+	static void scpo(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, subj, context, pred, obj);
 	}
 
-	static void psco(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, pred, subj, context, obj);
+	static void scop(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, subj, context, obj, pred);
 	}
 
-	static void posc(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, pred, obj, subj, context);
+	static void psoc(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, pred, subj, obj, context);
 	}
 
-	static void pocs(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, pred, obj, context, subj);
+	static void psco(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, pred, subj, context, obj);
 	}
 
-	static void pcso(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, pred, context, subj, obj);
+	static void posc(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, pred, obj, subj, context);
 	}
 
-	static void pcos(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, pred, context, obj, subj);
+	static void pocs(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, pred, obj, context, subj);
 	}
 
-	static void ospc(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, obj, subj, pred, context);
+	static void pcso(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, pred, context, subj, obj);
 	}
 
-	static void oscp(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, obj, subj, context, pred);
+	static void pcos(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, pred, context, obj, subj);
 	}
 
-	static void opsc(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, obj, pred, subj, context);
+	static void ospc(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, obj, subj, pred, context);
 	}
 
-	static void opcs(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, obj, pred, context, subj);
+	static void oscp(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, obj, subj, context, pred);
 	}
 
-	static void ocsp(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, obj, context, subj, pred);
+	static void opsc(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, obj, pred, subj, context);
 	}
 
-	static void ocps(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, obj, context, pred, subj);
+	static void opcs(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, obj, pred, context, subj);
 	}
 
-	static void cspo(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, context, subj, pred, obj);
+	static void ocsp(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, obj, context, subj, pred);
 	}
 
-	static void csop(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, context, subj, obj, pred);
+	static void ocps(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, obj, context, pred, subj);
 	}
 
-	static void cpso(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, context, pred, subj, obj);
+	static void cspo(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, context, subj, pred, obj);
 	}
 
-	static void cpos(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, context, pred, obj, subj);
+	static void csop(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, context, subj, obj, pred);
 	}
 
-	static void cosp(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, context, obj, subj, pred);
+	static void cpso(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, context, pred, subj, obj);
 	}
 
-	static void cops(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		write(key, value, context, obj, pred, subj);
+	static void cpos(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, context, pred, obj, subj);
+	}
+
+	static void cosp(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, context, obj, subj, pred);
+	}
+
+	static void cops(ByteBuffer key, ByteBuffer value, int splitIndex, long subj, long pred, long obj, long context) {
+		write(key, value, splitIndex, context, obj, pred, subj);
 	}
 
 	static boolean[] spocShouldMatch(long subj, long pred, long obj, long context) {

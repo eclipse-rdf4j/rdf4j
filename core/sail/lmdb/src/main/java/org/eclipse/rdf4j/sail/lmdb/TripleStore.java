@@ -23,6 +23,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_GET_BOTH_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
+import static org.lwjgl.util.lmdb.LMDB.MDB_LAST_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NODUPDATA;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
@@ -163,6 +164,7 @@ class TripleStore implements Closeable {
 	 * The list of triple indexes that are used to store and retrieve triples.
 	 */
 	private final List<TripleIndex> indexes = new ArrayList<>();
+	private final int splitPosition = 1;
 	private final ValueStore valueStore;
 
 	private long env;
@@ -347,7 +349,7 @@ class TripleStore implements Closeable {
 	private void initIndexes(Set<String> indexSpecs, long tripleDbSize) throws IOException {
 		for (String fieldSeq : indexSpecs) {
 			logger.trace("Initializing index '{}'...", fieldSeq);
-			indexes.add(new TripleIndex(fieldSeq));
+			indexes.add(new TripleIndex(fieldSeq, splitPosition));
 		}
 
 		// initialize page size and set map size for env
@@ -400,7 +402,7 @@ class TripleStore implements Closeable {
 					for (String fieldSeq : addedIndexSpecs) {
 						logger.debug("Initializing new index '{}'...", fieldSeq);
 
-						TripleIndex addedIndex = new TripleIndex(fieldSeq);
+						TripleIndex addedIndex = new TripleIndex(fieldSeq, splitPosition);
 						RecordIterator[] sourceIter = { null };
 						try {
 							sourceIter[0] = new LmdbRecordIterator(sourceIndex, 0, -1, -1, -1, -1,
@@ -690,13 +692,6 @@ class TripleStore implements Closeable {
 		});
 	}
 
-	protected void readVarints(ByteBuffer key, ByteBuffer value, long[] values) {
-		values[0] = Varint.readUnsigned(key);
-		values[1] = Varint.readUnsigned(key);
-		values[2] = Varint.readUnsigned(value);
-		values[3] = Varint.readUnsigned(value);
-	}
-
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 
@@ -749,9 +744,8 @@ class TripleStore implements Closeable {
 
 					int dbi = index.getDB(explicit);
 
-					int pos = 0;
+					int pos;
 					long cursor = 0;
-
 					try {
 						E(mdb_cursor_open(txn, dbi, pp));
 						cursor = pp.get(0);
@@ -763,7 +757,7 @@ class TripleStore implements Closeable {
 							valueData.mv_data(valueBuf);
 							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_GET_BOTH_RANGE);
 							if (rc != MDB_SUCCESS) {
-								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST_DUP);
+								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST_DUP);
 							}
 						}
 						int keyDiff;
@@ -772,7 +766,8 @@ class TripleStore implements Closeable {
 										(keyDiff > 0 || mdb_dcmp(txn, dbi, valueData, maxValue) >= 0)) {
 							break;
 						} else {
-							readVarints(keyData.mv_data(), valueData.mv_data(), s.minValues);
+							IndexEntryWriters.read(keyData.mv_data(), valueData.mv_data(), index.indexSplitPosition,
+									s.minValues);
 						}
 
 						// set cursor to max key
@@ -782,11 +777,20 @@ class TripleStore implements Closeable {
 							// directly go to last value
 							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
 						} else {
-							// go to previous value of selected key
-							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
+							valueData.mv_data(maxValueBuf);
+							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_GET_BOTH_RANGE);
+							if (rc != MDB_SUCCESS) {
+								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST_DUP);
+							} else {
+								// TODO check if this is correct
+								// if (rc == MDB_SUCCESS) {
+								// go to previous value of selected key
+								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
+							}
 						}
 						if (rc == MDB_SUCCESS) {
-							readVarints(keyData.mv_data(), valueData.mv_data(), s.maxValues);
+							IndexEntryWriters.read(keyData.mv_data(), valueData.mv_data(), index.indexSplitPosition,
+									s.maxValues);
 							// this is required to correctly estimate the range size at a later point
 							s.startValues[Statistics.MAX_BUCKETS] = s.maxValues;
 						} else {
@@ -801,12 +805,10 @@ class TripleStore implements Closeable {
 								bucketStart((double) bucket / Statistics.MAX_BUCKETS, s.minValues, s.maxValues,
 										s.values);
 								keyBuf.clear();
-								Varint.writeUnsigned(keyBuf, s.values[0]);
-								Varint.writeUnsigned(keyBuf, s.values[1]);
-								keyBuf.flip();
 								valueBuf.clear();
-								Varint.writeUnsigned(valueBuf, s.values[2]);
-								Varint.writeUnsigned(valueBuf, s.values[3]);
+								IndexEntryWriters.write(keyBuf, valueBuf, index.indexSplitPosition,
+										s.values[0], s.values[1], s.values[2], s.values[3]);
+								keyBuf.flip();
 								valueBuf.flip();
 							}
 							// this is the min key for the first iteration
@@ -817,6 +819,9 @@ class TripleStore implements Closeable {
 							if (rc == MDB_SUCCESS) {
 								valueData.mv_data(valueBuf);
 								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_GET_BOTH_RANGE);
+								if (rc != MDB_SUCCESS) {
+									rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST_DUP);
+								}
 							}
 							while (rc == MDB_SUCCESS && currentSamplesCount < Statistics.MAX_SAMPLES_PER_BUCKET) {
 								keyDiff = mdb_cmp(txn, dbi, keyData, maxKey);
@@ -828,7 +833,8 @@ class TripleStore implements Closeable {
 									currentSamplesCount++;
 
 									System.arraycopy(s.values, 0, s.lastValues[bucket], 0, s.values.length);
-									readVarints(keyData.mv_data(), valueData.mv_data(), s.values);
+									IndexEntryWriters.read(keyData.mv_data(), valueData.mv_data(),
+											index.indexSplitPosition, s.values);
 
 									if (currentSamplesCount == 1) {
 										Arrays.fill(s.counts, 1);
@@ -959,7 +965,6 @@ class TripleStore implements Closeable {
 
 			if (stAdded) {
 				for (int i = 1; i < indexes.size(); i++) {
-
 					TripleIndex index = indexes.get(i);
 					keyBuf.clear();
 					valueBuf.clear();
@@ -972,7 +977,7 @@ class TripleStore implements Closeable {
 					dataVal.mv_data(valueBuf);
 
 					if (foundImplicit) {
-						E(mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal));
+						E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
 					}
 					E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
 				}
@@ -1251,14 +1256,18 @@ class TripleStore implements Closeable {
 
 	class TripleIndex {
 
+		private final int indexSplitPosition;
 		private final char[] fieldSeq;
 		private final IndexEntryWriters.EntryWriter entryWriter;
 		private final IndexEntryWriters.MatcherFactory matcherFactory;
 		private final int dbiExplicit, dbiInferred;
 		private final int[] indexMap;
 
-		public TripleIndex(String fieldSeq) throws IOException {
+		public TripleIndex(String fieldSeq, int indexSplitPosition) throws IOException {
 			this.fieldSeq = fieldSeq.toCharArray();
+			// adjust split position for indexes starting with context
+			this.indexSplitPosition = fieldSeq.startsWith("c") ? Math.min(indexSplitPosition + 1, 4)
+					: indexSplitPosition;
 			this.entryWriter = IndexEntryWriters.forFieldSeq(fieldSeq);
 			this.matcherFactory = IndexEntryWriters.matcherFactory(fieldSeq);
 			this.indexMap = getIndexes(this.fieldSeq);
@@ -1366,11 +1375,16 @@ class TripleStore implements Closeable {
 		}
 
 		EntryMatcher createMatcher(long subj, long pred, long obj, long context) {
-			ByteBuffer key = ByteBuffer.allocate(2 * (Long.BYTES + 1));
-			ByteBuffer value = ByteBuffer.allocate(2 * (Long.BYTES + 1));
+			ByteBuffer key = ByteBuffer.allocate(Math.max(1, indexSplitPosition) * (Long.BYTES + 1));
+			ByteBuffer value = ByteBuffer.allocate((4 - indexSplitPosition) * (Long.BYTES + 1));
 			toEntry(key, value, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj,
 					context == -1 ? 0 : context);
-			return new EntryMatcher(key.array(), value.array(), matcherFactory.create(subj, pred, obj, context));
+			return new EntryMatcher(indexSplitPosition, key.array(), value.array(),
+					matcherFactory.create(subj, pred, obj, context));
+		}
+
+		public int getIndexSplitPosition() {
+			return indexSplitPosition;
 		}
 
 		class KeyStats {
@@ -1424,37 +1438,160 @@ class TripleStore implements Closeable {
 		}
 
 		void toEntry(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-			entryWriter.write(key, value, subj, pred, obj, context);
+			entryWriter.write(key, value, indexSplitPosition, subj, pred, obj, context);
 		}
 
 		void entryToQuad(ByteBuffer key, ByteBuffer value, long[] quad) {
-			quad[indexMap[0]] = Varint.readUnsigned(key);
-			quad[indexMap[1]] = Varint.readUnsigned(key);
-			quad[indexMap[2]] = Varint.readUnsigned(value);
-			quad[indexMap[3]] = Varint.readUnsigned(value);
+			switch (indexSplitPosition) {
+			case 0:
+				quad[indexMap[0]] = Varint.readUnsigned(value);
+				quad[indexMap[1]] = Varint.readUnsigned(value);
+				quad[indexMap[2]] = Varint.readUnsigned(value);
+				quad[indexMap[3]] = Varint.readUnsigned(value);
+				break;
+			case 1:
+				quad[indexMap[0]] = Varint.readUnsigned(key);
+				quad[indexMap[1]] = Varint.readUnsigned(value);
+				quad[indexMap[2]] = Varint.readUnsigned(value);
+				quad[indexMap[3]] = Varint.readUnsigned(value);
+				break;
+			case 2:
+				quad[indexMap[0]] = Varint.readUnsigned(key);
+				quad[indexMap[1]] = Varint.readUnsigned(key);
+				quad[indexMap[2]] = Varint.readUnsigned(value);
+				quad[indexMap[3]] = Varint.readUnsigned(value);
+				break;
+			case 3:
+				quad[indexMap[0]] = Varint.readUnsigned(key);
+				quad[indexMap[1]] = Varint.readUnsigned(key);
+				quad[indexMap[2]] = Varint.readUnsigned(key);
+				quad[indexMap[3]] = Varint.readUnsigned(value);
+				break;
+			case 4:
+				quad[indexMap[0]] = Varint.readUnsigned(key);
+				quad[indexMap[1]] = Varint.readUnsigned(key);
+				quad[indexMap[2]] = Varint.readUnsigned(key);
+				quad[indexMap[3]] = Varint.readUnsigned(key);
+				break;
+			}
 		}
 
 		void entryToQuad(ByteBuffer key, ByteBuffer value, long[] originalQuad, long[] quad) {
-			// directly use index map to read values in to correct positions
-			if (originalQuad[indexMap[0]] != -1) {
-				Varint.skipUnsigned(key);
-			} else {
-				quad[indexMap[0]] = Varint.readUnsigned(key);
-			}
-			if (originalQuad[indexMap[1]] != -1) {
-				Varint.skipUnsigned(key);
-			} else {
-				quad[indexMap[1]] = Varint.readUnsigned(key);
-			}
-			if (originalQuad[indexMap[2]] != -1) {
-				Varint.skipUnsigned(value);
-			} else {
-				quad[indexMap[2]] = Varint.readUnsigned(value);
-			}
-			if (originalQuad[indexMap[3]] != -1) {
-				Varint.skipUnsigned(value);
-			} else {
-				quad[indexMap[3]] = Varint.readUnsigned(value);
+			switch (indexSplitPosition) {
+			case 0:
+				// directly use index map to read values in to correct positions
+				if (originalQuad[indexMap[0]] != -1) {
+					Varint.skipUnsigned(value);
+				} else {
+					quad[indexMap[0]] = Varint.readUnsigned(value);
+				}
+				if (originalQuad[indexMap[1]] != -1) {
+					Varint.skipUnsigned(value);
+				} else {
+					quad[indexMap[1]] = Varint.readUnsigned(value);
+				}
+				if (originalQuad[indexMap[2]] != -1) {
+					Varint.skipUnsigned(value);
+				} else {
+					quad[indexMap[2]] = Varint.readUnsigned(value);
+				}
+				if (originalQuad[indexMap[3]] != -1) {
+					Varint.skipUnsigned(value);
+				} else {
+					quad[indexMap[3]] = Varint.readUnsigned(value);
+				}
+				break;
+			case 1:
+				// directly use index map to read values in to correct positions
+				if (originalQuad[indexMap[0]] != -1) {
+					Varint.skipUnsigned(key);
+				} else {
+					quad[indexMap[0]] = Varint.readUnsigned(key);
+				}
+				if (originalQuad[indexMap[1]] != -1) {
+					Varint.skipUnsigned(value);
+				} else {
+					quad[indexMap[1]] = Varint.readUnsigned(value);
+				}
+				if (originalQuad[indexMap[2]] != -1) {
+					Varint.skipUnsigned(value);
+				} else {
+					quad[indexMap[2]] = Varint.readUnsigned(value);
+				}
+				if (originalQuad[indexMap[3]] != -1) {
+					Varint.skipUnsigned(value);
+				} else {
+					quad[indexMap[3]] = Varint.readUnsigned(value);
+				}
+				break;
+			case 2:
+				// directly use index map to read values in to correct positions
+				if (originalQuad[indexMap[0]] != -1) {
+					Varint.skipUnsigned(key);
+				} else {
+					quad[indexMap[0]] = Varint.readUnsigned(key);
+				}
+				if (originalQuad[indexMap[1]] != -1) {
+					Varint.skipUnsigned(key);
+				} else {
+					quad[indexMap[1]] = Varint.readUnsigned(key);
+				}
+				if (originalQuad[indexMap[2]] != -1) {
+					Varint.skipUnsigned(value);
+				} else {
+					quad[indexMap[2]] = Varint.readUnsigned(value);
+				}
+				if (originalQuad[indexMap[3]] != -1) {
+					Varint.skipUnsigned(value);
+				} else {
+					quad[indexMap[3]] = Varint.readUnsigned(value);
+				}
+				break;
+			case 3:
+				// directly use index map to read values in to correct positions
+				if (originalQuad[indexMap[0]] != -1) {
+					Varint.skipUnsigned(key);
+				} else {
+					quad[indexMap[0]] = Varint.readUnsigned(key);
+				}
+				if (originalQuad[indexMap[1]] != -1) {
+					Varint.skipUnsigned(key);
+				} else {
+					quad[indexMap[1]] = Varint.readUnsigned(key);
+				}
+				if (originalQuad[indexMap[2]] != -1) {
+					Varint.skipUnsigned(key);
+				} else {
+					quad[indexMap[2]] = Varint.readUnsigned(key);
+				}
+				if (originalQuad[indexMap[3]] != -1) {
+					Varint.skipUnsigned(value);
+				} else {
+					quad[indexMap[3]] = Varint.readUnsigned(value);
+				}
+				break;
+			case 4:
+				// directly use index map to read values in to correct positions
+				if (originalQuad[indexMap[0]] != -1) {
+					Varint.skipUnsigned(key);
+				} else {
+					quad[indexMap[0]] = Varint.readUnsigned(key);
+				}
+				if (originalQuad[indexMap[1]] != -1) {
+					Varint.skipUnsigned(key);
+				} else {
+					quad[indexMap[1]] = Varint.readUnsigned(key);
+				}
+				if (originalQuad[indexMap[2]] != -1) {
+					Varint.skipUnsigned(key);
+				} else {
+					quad[indexMap[2]] = Varint.readUnsigned(key);
+				}
+				if (originalQuad[indexMap[3]] != -1) {
+					Varint.skipUnsigned(key);
+				} else {
+					quad[indexMap[3]] = Varint.readUnsigned(key);
+				}
 			}
 		}
 

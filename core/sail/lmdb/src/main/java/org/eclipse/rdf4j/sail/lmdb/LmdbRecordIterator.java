@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_GET_BOTH_RANGE;
@@ -22,7 +21,6 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
-import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dcmp;
 
@@ -34,8 +32,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TripleStore.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.util.EntryMatcher;
-import org.lwjgl.PointerBuffer;
-import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.lmdb.MDBVal;
 import org.slf4j.Logger;
@@ -72,13 +68,13 @@ class LmdbRecordIterator implements RecordIterator {
 
 		private final MDBVal valueData = MDBVal.malloc();
 
-		private final ByteBuffer minKeyBuf = MemoryUtil.memAlloc((Long.BYTES + 1) * 2);
+		private final ByteBuffer minKeyBuf = MemoryUtil.memAlloc((Long.BYTES + 1) * 4);
 
-		private final ByteBuffer minValueBuf = MemoryUtil.memAlloc((Long.BYTES + 1) * 2);
+		private final ByteBuffer minValueBuf = MemoryUtil.memAlloc((Long.BYTES + 1) * 4);
 
-		private final ByteBuffer maxKeyBuf = MemoryUtil.memAlloc((Long.BYTES + 1) * 2);
+		private final ByteBuffer maxKeyBuf = MemoryUtil.memAlloc((Long.BYTES + 1) * 4);
 
-		private final ByteBuffer maxValueBuf = MemoryUtil.memAlloc((Long.BYTES + 1) * 2);
+		private final ByteBuffer maxValueBuf = MemoryUtil.memAlloc((Long.BYTES + 1) * 4);
 
 		private long[] quad;
 		private long[] patternQuad;
@@ -105,6 +101,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final Thread ownerThread = Thread.currentThread();
 	private final State state;
+	private final boolean keyELementsFixed;
 	private volatile boolean closed = false;
 	private boolean fetchNext = false;
 
@@ -115,6 +112,8 @@ class LmdbRecordIterator implements RecordIterator {
 		this.state.quad = new long[] { subj, pred, obj, context };
 		this.state.index = index;
 		this.state.indexScore = indexScore;
+		this.keyELementsFixed = indexScore >= index.getIndexSplitPosition();
+
 		// prepare min and max keys if index can be used
 		// otherwise, leave as null to indicate full scan
 		if (indexScore > 0) {
@@ -217,7 +216,7 @@ class LmdbRecordIterator implements RecordIterator {
 					// set cursor to min key
 					state.keyData.mv_data(state.minKeyBuf);
 					// set range on key is only required if less than the first two key elements are fixed
-					lastResult = state.indexScore >= 2 ? MDB_SUCCESS
+					lastResult = keyELementsFixed ? MDB_SUCCESS
 							: mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_SET_RANGE);
 					if (lastResult == MDB_SUCCESS) {
 						state.valueData.mv_data(state.minValueBuf);
@@ -225,7 +224,7 @@ class LmdbRecordIterator implements RecordIterator {
 						if (lastResult != MDB_SUCCESS) {
 							lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_FIRST_DUP);
 						} else {
-							isDupValue = state.indexScore >= 2;
+							isDupValue = keyELementsFixed;
 						}
 					}
 				} else {

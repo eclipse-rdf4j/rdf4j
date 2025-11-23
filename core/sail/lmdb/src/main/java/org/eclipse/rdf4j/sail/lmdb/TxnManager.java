@@ -67,7 +67,7 @@ class TxnManager {
 	 * @return the txn reference object
 	 */
 	Txn createTxn(long txn) {
-		return new Txn(txn) {
+		return new Txn(txn, false) {
 			@Override
 			public void close() {
 				// do nothing
@@ -82,7 +82,7 @@ class TxnManager {
 	 * @throws IOException if the transaction cannot be started for some reason
 	 */
 	Txn createReadTxn() throws IOException {
-		Txn txnRef = new Txn(createReadTxnInternal());
+		Txn txnRef = new Txn(createReadTxnInternal(), true);
 		synchronized (active) {
 			active.put(txnRef, Boolean.TRUE);
 		}
@@ -168,11 +168,20 @@ class TxnManager {
 
 		private final long txn;
 		private long version;
-		private final long[][] cursorPool = new long[MAX_DBI][64];
-		private final int[] cursorPoolIndex = new int[MAX_DBI];
+		private final boolean poolCursors;
+		private final long[][] cursorPool;
+		private final int[] cursorPoolIndex;
 
-		Txn(long txn) {
+		Txn(long txn, boolean poolCursors) {
 			this.txn = txn;
+			this.poolCursors = poolCursors;
+			if (poolCursors) {
+				cursorPool = new long[MAX_DBI][64];
+				cursorPoolIndex = new int[MAX_DBI];
+			} else {
+				cursorPool = new long[0][];
+				cursorPoolIndex = new int[0];
+			}
 		}
 
 		long get() {
@@ -204,9 +213,11 @@ class TxnManager {
 		}
 
 		long getCursor(int dbi) throws IOException {
-			synchronized (cursorPool[dbi]) {
-				if (cursorPoolIndex[dbi] > 0) {
-					return cursorPool[dbi][--cursorPoolIndex[dbi]];
+			if (poolCursors) {
+				synchronized (cursorPool[dbi]) {
+					if (cursorPoolIndex[dbi] > 0) {
+						return cursorPool[dbi][--cursorPoolIndex[dbi]];
+					}
 				}
 			}
 			try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -217,12 +228,16 @@ class TxnManager {
 		}
 
 		void returnCursor(int dbi, long cursor) {
-			synchronized (cursorPool[dbi]) {
-				if (cursorPoolIndex[dbi] < cursorPool[dbi].length) {
-					cursorPool[dbi][cursorPoolIndex[dbi]++] = cursor;
-				} else {
-					mdb_cursor_close(cursor);
+			if (poolCursors) {
+				synchronized (cursorPool[dbi]) {
+					if (cursorPoolIndex[dbi] < cursorPool[dbi].length) {
+						cursorPool[dbi][cursorPoolIndex[dbi]++] = cursor;
+					} else {
+						mdb_cursor_close(cursor);
+					}
 				}
+			} else {
+				mdb_cursor_close(cursor);
 			}
 		}
 

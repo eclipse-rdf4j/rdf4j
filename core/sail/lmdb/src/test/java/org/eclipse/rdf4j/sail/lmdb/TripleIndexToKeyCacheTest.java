@@ -50,7 +50,7 @@ class TripleIndexToKeyCacheTest {
 		long obj = Long.MAX_VALUE;
 		long context = Long.MAX_VALUE;
 
-		TripleStore.TripleIndex index = tripleStore.new TripleIndex("spoc");
+		TripleStore.TripleIndex index = tripleStore.new TripleIndex("spoc", 2);
 
 		ByteBuffer actualKey = ByteBuffer.allocate(Varint.calcLengthUnsigned(subj) + Varint.calcLengthUnsigned(pred));
 		ByteBuffer actualValue = ByteBuffer.allocate(2 * (Long.BYTES + 1));
@@ -79,7 +79,7 @@ class TripleIndexToKeyCacheTest {
 		long obj = Long.MAX_VALUE;
 		long context = Long.MAX_VALUE;
 
-		TripleStore.TripleIndex index = tripleStore.new TripleIndex("posc");
+		TripleStore.TripleIndex index = tripleStore.new TripleIndex("posc", 2);
 
 		ByteBuffer actualKey = ByteBuffer.allocate(Varint.calcLengthUnsigned(subj) + Varint.calcLengthUnsigned(pred));
 		ByteBuffer actualValue = ByteBuffer.allocate(2 * (Long.BYTES + 1));

@@ -20,10 +20,34 @@ public class EntryMatcher {
 	private final VarintMatcher keyMatcher;
 	private final VarintMatcher valueMatcher;
 
-	public EntryMatcher(byte[] keyArray, byte[] valueArray, boolean[] shouldMatch) {
+	public EntryMatcher(int split, byte[] keyArray, byte[] valueArray, boolean[] shouldMatch) {
 		assert shouldMatch.length == 4;
-		boolean[] keyShouldMatch = new boolean[] { shouldMatch[0], shouldMatch[1] };
-		boolean[] valueShouldMatch = new boolean[] { shouldMatch[2], shouldMatch[3] };
+		boolean[] keyShouldMatch;
+		boolean[] valueShouldMatch;
+		switch (split) {
+		case 0:
+			keyShouldMatch = new boolean[] {};
+			valueShouldMatch = new boolean[] { shouldMatch[0], shouldMatch[1], shouldMatch[2], shouldMatch[3] };
+			break;
+		case 1:
+			keyShouldMatch = new boolean[] { shouldMatch[0] };
+			valueShouldMatch = new boolean[] { shouldMatch[1], shouldMatch[2], shouldMatch[3] };
+			break;
+		case 2:
+			keyShouldMatch = new boolean[] { shouldMatch[0], shouldMatch[1] };
+			valueShouldMatch = new boolean[] { shouldMatch[2], shouldMatch[3] };
+			break;
+		case 3:
+			keyShouldMatch = new boolean[] { shouldMatch[0], shouldMatch[1], shouldMatch[2] };
+			valueShouldMatch = new boolean[] { shouldMatch[3] };
+			break;
+		case 4:
+			keyShouldMatch = new boolean[] { shouldMatch[0], shouldMatch[1], shouldMatch[2], shouldMatch[3] };
+			valueShouldMatch = new boolean[] {};
+			break;
+		default:
+			throw new IllegalArgumentException("Split must be between 0 and 4 inclusive");
+		}
 		this.keyMatcher = new VarintMatcher(keyArray, keyShouldMatch);
 		this.valueMatcher = new VarintMatcher(valueArray, valueShouldMatch);
 	}
