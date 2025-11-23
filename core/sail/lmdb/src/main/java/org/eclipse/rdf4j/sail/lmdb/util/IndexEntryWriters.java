@@ -165,191 +165,107 @@ public final class IndexEntryWriters {
 		}
 	}
 
-	/**
-	 * Writes two unsigned varint-encoded long values consecutively.
-	 *
-	 * @param bb     buffer for writing bytes
-	 * @param first  first value
-	 * @param second second value
-	 */
-	public static void writePair(final ByteBuffer bb, final long first, final long second) {
-		Varint.writeUnsigned(bb, first);
-		Varint.writeUnsigned(bb, second);
+	static void write(ByteBuffer key, ByteBuffer value, long first, long second, long third, long fourth) {
+		Varint.writeUnsigned(key, first);
+		Varint.writeUnsigned(key, second);
+		Varint.writeUnsigned(value, third);
+		Varint.writeUnsigned(value, fourth);
 	}
 
 	static void spoc(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, subj, pred);
-		int pos = value.position();
-		writePair(value, obj, context);
-		fill(value, pos);
+		write(key, value, subj, pred, obj, context);
 	}
 
 	static void spco(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, subj, pred);
-		int pos = value.position();
-		writePair(value, context, obj);
-		fill(value, pos);
+		write(key, value, subj, pred, context, obj);
 	}
 
 	static void sopc(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, subj, obj);
-		int pos = value.position();
-		writePair(value, pred, context);
-		fill(value, pos);
+		write(key, value, subj, obj, pred, context);
 	}
 
 	static void socp(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, subj, obj);
-		int pos = value.position();
-		writePair(value, context, pred);
-		fill(value, pos);
+		write(key, value, subj, obj, context, pred);
 	}
 
 	static void scpo(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, subj, context);
-		int pos = value.position();
-		writePair(value, pred, obj);
-		fill(value, pos);
+		write(key, value, subj, context, pred, obj);
 	}
 
 	static void scop(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, subj, context);
-		int pos = value.position();
-		writePair(value, obj, pred);
-		fill(value, pos);
+		write(key, value, subj, context, obj, pred);
 	}
 
 	static void psoc(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, pred, subj);
-		int pos = value.position();
-		writePair(value, obj, context);
-		fill(value, pos);
+		write(key, value, pred, subj, obj, context);
 	}
 
 	static void psco(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, pred, subj);
-		int pos = value.position();
-		writePair(value, context, obj);
-		fill(value, pos);
+		write(key, value, pred, subj, context, obj);
 	}
 
 	static void posc(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, pred, obj);
-		int pos = value.position();
-		writePair(value, subj, context);
-		fill(value, pos);
+		write(key, value, pred, obj, subj, context);
 	}
 
 	static void pocs(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, pred, obj);
-		int pos = value.position();
-		writePair(value, context, subj);
-		fill(value, pos);
+		write(key, value, pred, obj, context, subj);
 	}
 
 	static void pcso(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, pred, context);
-		int pos = value.position();
-		writePair(value, subj, obj);
-		fill(value, pos);
+		write(key, value, pred, context, subj, obj);
 	}
 
 	static void pcos(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, pred, context);
-		int pos = value.position();
-		writePair(value, obj, subj);
-		fill(value, pos);
+		write(key, value, pred, context, obj, subj);
 	}
 
 	static void ospc(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, obj, subj);
-		int pos = value.position();
-		writePair(value, pred, context);
-		fill(value, pos);
+		write(key, value, obj, subj, pred, context);
 	}
 
 	static void oscp(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, obj, subj);
-		int pos = value.position();
-		writePair(value, context, pred);
-		fill(value, pos);
+		write(key, value, obj, subj, context, pred);
 	}
 
 	static void opsc(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, obj, pred);
-		int pos = value.position();
-		writePair(value, subj, context);
-		fill(value, pos);
+		write(key, value, obj, pred, subj, context);
 	}
 
 	static void opcs(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, obj, pred);
-		int pos = value.position();
-		writePair(value, context, subj);
-		fill(value, pos);
+		write(key, value, obj, pred, context, subj);
 	}
 
 	static void ocsp(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, obj, context);
-		int pos = value.position();
-		writePair(value, subj, pred);
-		fill(value, pos);
+		write(key, value, obj, context, subj, pred);
 	}
 
 	static void ocps(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, obj, context);
-		int pos = value.position();
-		writePair(value, pred, subj);
-		fill(value, pos);
+		write(key, value, obj, context, pred, subj);
 	}
 
 	static void cspo(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, context, subj);
-		int pos = value.position();
-		writePair(value, pred, obj);
-		fill(value, pos);
+		write(key, value, context, subj, pred, obj);
 	}
 
 	static void csop(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, context, subj);
-		int pos = value.position();
-		writePair(value, obj, pred);
-		fill(value, pos);
+		write(key, value, context, subj, obj, pred);
 	}
 
 	static void cpso(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, context, pred);
-		int pos = value.position();
-		writePair(value, subj, obj);
-		fill(value, pos);
+		write(key, value, context, pred, subj, obj);
 	}
 
 	static void cpos(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, context, pred);
-		int pos = value.position();
-		writePair(value, obj, subj);
-		fill(value, pos);
+		write(key, value, context, pred, obj, subj);
 	}
 
 	static void cosp(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, context, obj);
-		int pos = value.position();
-		writePair(value, subj, pred);
-		fill(value, pos);
+		write(key, value, context, obj, subj, pred);
 	}
 
 	static void cops(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
-		writePair(key, context, obj);
-		int pos = value.position();
-		writePair(value, pred, subj);
-		fill(value, pos);
-	}
-
-	static void fill(ByteBuffer buffer, int fromPos) {
-		/*
-		 * int count = 2 * (Long.BYTES + 1) - (buffer.position() - fromPos); while (count-- > 0) { buffer.put((byte) 0);
-		 * }
-		 */
+		write(key, value, context, obj, pred, subj);
 	}
 
 	static boolean[] spocShouldMatch(long subj, long pred, long obj, long context) {
