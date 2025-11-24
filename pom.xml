@@ -859,7 +859,7 @@
 					<version>3.5.4</version>
 					<configuration>
 						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
-						<argLine>@{argLine} -Xmx2G</argLine>
+						<argLine>@{argLine} -Xmx4G</argLine>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -870,7 +870,7 @@
 						<forkCount>1</forkCount>
 						<reuseForks>false</reuseForks>
 						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
-						<argLine>@{argLine} -Xmx2G</argLine>
+						<argLine>@{argLine} -Xmx4G</argLine>
 						<includes>
 							<include>**/*IT.java</include>
 						</includes>

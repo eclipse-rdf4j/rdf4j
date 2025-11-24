@@ -145,9 +145,9 @@ public class DataStore implements Closeable {
 						try {
 							if (valueStore != null && Thread.currentThread().getStackTrace().length < 512) {
 								NativeValue nativeValue = valueStore.data2value(prev, prevData);
-								logger.warn("Data in previous ID ({}) is: {}", prev, nativeValue);
+								logger.debug("Data in previous ID ({}) is: {}", prev, nativeValue);
 							} else {
-								logger.warn("Data in previous ID ({}) is: {}", prev,
+								logger.debug("Data in previous ID ({}) is: {}", prev,
 										new String(prevData, StandardCharsets.UTF_8));
 							}
 						} catch (Exception ignored) {
@@ -184,9 +184,9 @@ public class DataStore implements Closeable {
 						try {
 							if (valueStore != null && Thread.currentThread().getStackTrace().length < 512) {
 								NativeValue nativeValue = valueStore.data2value(next, nextData);
-								logger.warn("Data in next ID ({}) is: {}", next, nativeValue);
+								logger.debug("Data in next ID ({}) is: {}", next, nativeValue);
 							} else {
-								logger.warn("Data in next ID ({}) is: {}", next,
+								logger.debug("Data in next ID ({}) is: {}", next,
 										new String(nextData, StandardCharsets.UTF_8));
 							}
 						} catch (Exception ignored) {

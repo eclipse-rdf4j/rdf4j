@@ -29,13 +29,13 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,7 +58,7 @@ public class NativeSailStoreCorruptionTestIT {
 	@TempDir
 	File tempFolder;
 
-	protected Repository repo;
+	protected SailRepository repo;
 
 	protected final ValueFactory F = SimpleValueFactory.getInstance();
 
@@ -68,7 +68,11 @@ public class NativeSailStoreCorruptionTestIT {
 	public void before() throws IOException {
 		this.dataDir = new File(tempFolder, "dbmodel");
 		dataDir.mkdir();
-		repo = new SailRepository(new NativeStore(dataDir, "spoc,posc"));
+		NativeStore sail = new NativeStore(dataDir, "spoc,posc");
+		sail.setWalSyncPolicy(ValueStoreWalConfig.SyncPolicy.COMMIT);
+		sail.setWalEnabled(true);
+		repo = new SailRepository(sail);
+
 		repo.init();
 
 		IRI CTX_1 = F.createIRI("urn:one");
@@ -103,6 +107,11 @@ public class NativeSailStoreCorruptionTestIT {
 
 		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = true;
 
+	}
+
+	@AfterEach
+	public void tearDown() throws IOException {
+		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = false;
 	}
 
 	public static void overwriteByteInFile(File valuesFile, long pos, int newVal) throws IOException {
@@ -151,7 +160,9 @@ public class NativeSailStoreCorruptionTestIT {
 	}
 
 	@Test
+//	@Timeout(30)
 	public void testCorruptValuesDatFileNamespace() throws IOException {
+		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
 
 		overwriteByteInFile(new File(dataDir, "values.dat"), 12, 0x0);
@@ -160,10 +171,14 @@ public class NativeSailStoreCorruptionTestIT {
 
 		List<Statement> list = getStatements();
 		assertEquals(6, list.size());
+		String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+		assertEquals(expected, actual);
 	}
 
 	@Test
+//	@Timeout(30)
 	public void testCorruptValuesDatFileNamespaceDatatype() throws IOException {
+		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
 
 		overwriteByteInFile(new File(dataDir, "values.dat"), 96, 0x0);
@@ -172,10 +187,14 @@ public class NativeSailStoreCorruptionTestIT {
 
 		List<Statement> list = getStatements();
 		assertEquals(6, list.size());
+		String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+		assertEquals(expected, actual);
 	}
 
 	@Test
+//	@Timeout(30)
 	public void testCorruptValuesDatFileEmptyDataArrayError() throws IOException {
+		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
 
 		overwriteByteInFile(new File(dataDir, "values.dat"), 173, 0x0);
@@ -184,10 +203,14 @@ public class NativeSailStoreCorruptionTestIT {
 
 		List<Statement> list = getStatements();
 		assertEquals(6, list.size());
+		String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+		assertEquals(expected, actual);
 	}
 
 	@Test
+//	@Timeout(30)
 	public void testCorruptValuesDatFileInvalidTypeError() throws IOException {
+		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
 
 		overwriteByteInFile(new File(dataDir, "values.dat"), 174, 0x0);
@@ -196,10 +219,14 @@ public class NativeSailStoreCorruptionTestIT {
 
 		List<Statement> list = getStatements();
 		assertEquals(6, list.size());
+		String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+		assertEquals(expected, actual);
 	}
 
 	@Test
+//	@Timeout(30)
 	public void testCorruptValuesDatFileEntireValuesDatFile() throws IOException {
+		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		for (int i = 4; i < 437; i++) {
 			logger.debug("Corrupting byte at position " + i);
 			repo.shutDown();
@@ -210,12 +237,16 @@ public class NativeSailStoreCorruptionTestIT {
 			repo.init();
 
 			List<Statement> list = getStatements();
-			assertEquals(6, list.size());
+			assertEquals(6, list.size(), "Failed at byte position " + i);
+			String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+			assertEquals(expected, actual, "Failed at byte position " + i);
 		}
 	}
 
 	@Test
+//	@Timeout(30)
 	public void testCorruptLastByteOfValuesDatFile() throws IOException {
+		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
 		File valuesFile = new File(dataDir, "values.dat");
 		long fileSize = valuesFile.length();
@@ -226,13 +257,17 @@ public class NativeSailStoreCorruptionTestIT {
 
 		List<Statement> list = getStatements();
 		assertEquals(6, list.size());
+		String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+		assertEquals(expected, actual);
 	}
 
 	@Test
+//	@Timeout(30)
 	public void testCorruptValuesIdFile() throws IOException {
 		repo.shutDown();
 		File valuesIdFile = new File(dataDir, "values.id");
 		long fileSize = valuesIdFile.length();
+		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 
 		for (long i = 4; i < fileSize; i++) {
 			restoreFile(dataDir, "values.id");
@@ -240,29 +275,45 @@ public class NativeSailStoreCorruptionTestIT {
 			repo.init();
 			List<Statement> list = getStatements();
 			assertEquals(6, list.size(), "Failed at byte position " + i);
+			String actual = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+			assertEquals(expected, actual, "Failed at byte position " + i);
 			repo.shutDown();
 		}
 	}
 
 	@Test
+//	@Timeout(30)
 	public void testCorruptValuesHashFile() throws IOException {
 		repo.shutDown();
+
+		NativeStore sail = (NativeStore) repo.getSail();
+		sail.setWalEnabled(false);
+
 		String file = "values.hash";
 		File nativeStoreFile = new File(dataDir, file);
 		long fileSize = nativeStoreFile.length();
+		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 
 		for (long i = 4; i < fileSize; i++) {
+			if (i % 1024 == 0) {
+				System.out.println("Testing byte " + i);
+			}
 			restoreFile(dataDir, file);
 			overwriteByteInFile(nativeStoreFile, i, 0x0);
 			repo.init();
 			List<Statement> list = getStatements();
 			assertEquals(6, list.size(), "Failed at byte position " + i);
+			String actual = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+			assertEquals(expected, actual, "Failed at hash position " + i);
+
 			repo.shutDown();
 		}
 	}
 
 	@Test
+//	@Timeout(30)
 	public void testCorruptValuesNamespacesFile() throws IOException {
+		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
 		String file = "namespaces.dat";
 		File nativeStoreFile = new File(dataDir, file);
@@ -274,12 +325,16 @@ public class NativeSailStoreCorruptionTestIT {
 			repo.init();
 			List<Statement> list = getStatements();
 			assertEquals(6, list.size(), "Failed at byte position " + i);
+			String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+			assertEquals(expected, actual, "Failed at byte position " + i);
 			repo.shutDown();
 		}
 	}
 
 	@Test
+//	@Timeout(30)
 	public void testCorruptValuesContextsFile() throws IOException {
+		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
 		String file = "contexts.dat";
 		File nativeStoreFile = new File(dataDir, file);
@@ -291,13 +346,19 @@ public class NativeSailStoreCorruptionTestIT {
 			repo.init();
 			List<Statement> list = getStatements();
 			assertEquals(6, list.size(), "Failed at byte position " + i);
+			String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+			assertEquals(expected, actual, "Failed at byte position " + i);
 			repo.shutDown();
 		}
 	}
 
 	@Test
+//	@Timeout(30)
 	public void testCorruptValuesPoscAllocFile() throws IOException {
+		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
+		((NativeStore) repo.getSail()).setWalEnabled(false);
+
 		String file = "triples-posc.alloc";
 		File nativeStoreFile = new File(dataDir, file);
 		long fileSize = nativeStoreFile.length();
@@ -306,67 +367,105 @@ public class NativeSailStoreCorruptionTestIT {
 			restoreFile(dataDir, file);
 			overwriteByteInFile(nativeStoreFile, i, 0x0);
 			repo.init();
+
 			List<Statement> list = getStatements();
 			assertEquals(6, list.size(), "Failed at byte position " + i);
+			String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+			assertEquals(expected, actual, "Failed at byte position " + i);
 			repo.shutDown();
 		}
 	}
 
 	@Test
+//	@Timeout(30)
 	public void testCorruptValuesPoscDataFile() throws IOException {
+		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
+
+		((NativeStore) repo.getSail()).setWalEnabled(false);
+
 		String file = "triples-posc.dat";
 		File nativeStoreFile = new File(dataDir, file);
 		long fileSize = nativeStoreFile.length();
 
 		for (long i = 4; i < fileSize; i++) {
+			if (i % 1024 == 0) {
+				System.out.println("Testing byte " + i);
+			}
 			NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = true;
 			restoreFile(dataDir, file);
 			overwriteByteInFile(nativeStoreFile, i, 0x0);
+
 			repo.init();
+
 			List<Statement> list = getStatements();
 			assertEquals(6, list.size(), "Failed at byte position " + i);
+			String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+			assertEquals(expected, actual, "Failed at byte position " + i);
 			repo.shutDown();
 		}
 	}
 
 	@Test
+//	@Timeout(30)
 	public void testCorruptValuesSpocAllocFile() throws IOException {
+		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
+		((NativeStore) repo.getSail()).setWalEnabled(false);
+
 		String file = "triples-spoc.alloc";
 		File nativeStoreFile = new File(dataDir, file);
 		long fileSize = nativeStoreFile.length();
 
 		for (long i = 4; i < fileSize; i++) {
+			if (i % 1024 == 0) {
+				System.out.println("Testing byte " + i);
+			}
 			restoreFile(dataDir, file);
 			overwriteByteInFile(nativeStoreFile, i, 0x0);
 			repo.init();
 			List<Statement> list = getStatements();
 			assertEquals(6, list.size(), "Failed at byte position " + i);
+			String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+			assertEquals(expected, actual, "Failed at byte position " + i);
 			repo.shutDown();
 		}
 	}
 
 	@Test
+//	@Timeout(30)
 	public void testCorruptValuesSpocDataFile() throws IOException {
+		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 		repo.shutDown();
+		((NativeStore) repo.getSail()).setWalEnabled(false);
+
+		NativeStore sail = (NativeStore) repo.getSail();
+		sail.setWalEnabled(false);
+
 		String file = "triples-spoc.dat";
 		File nativeStoreFile = new File(dataDir, file);
 		long fileSize = nativeStoreFile.length();
 
 		for (long i = 4; i < fileSize; i++) {
+			if (i % 1024 == 0) {
+				System.out.println("Testing byte " + i);
+			}
 			restoreFile(dataDir, file);
 			overwriteByteInFile(nativeStoreFile, i, 0x0);
 			repo.init();
 			try {
 				List<Statement> list = getStatements();
 				assertEquals(6, list.size(), "Failed at byte position " + i);
+				String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+				assertEquals(expected, actual, "Failed at byte position " + i);
 			} catch (Throwable ignored) {
 				repo.shutDown();
 				nativeStoreFile.delete();
 				repo.init();
 				List<Statement> list = getStatements();
 				assertEquals(6, list.size(), "Failed at byte position " + i);
+				String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+				assertEquals(expected, actual, "Failed at byte position " + i);
 			}
 
 			repo.shutDown();
