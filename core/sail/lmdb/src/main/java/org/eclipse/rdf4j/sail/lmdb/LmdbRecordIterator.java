@@ -68,6 +68,8 @@ class LmdbRecordIterator implements RecordIterator {
 
 		private final MDBVal valueData = MDBVal.malloc();
 
+		private ByteBuffer valueBuf;
+
 		private final ByteBuffer minKeyBuf = MemoryUtil.memAlloc((Long.BYTES + 1) * 4);
 
 		private final ByteBuffer minValueBuf = MemoryUtil.memAlloc((Long.BYTES + 1) * 4);
@@ -203,12 +205,19 @@ class LmdbRecordIterator implements RecordIterator {
 
 			boolean isDupValue = false;
 			if (fetchNext) {
-				lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_NEXT_DUP);
-				if (lastResult != MDB_SUCCESS) {
-					// no more duplicates, move to next key
-					lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_NEXT_NODUP);
+				if (!state.valueBuf.hasRemaining()) {
+					lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_NEXT_DUP);
+					if (lastResult != MDB_SUCCESS) {
+						// no more duplicates, move to next key
+						lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_NEXT_NODUP);
+					} else {
+						isDupValue = true;
+					}
+					if (lastResult == MDB_SUCCESS) {
+						state.valueBuf = state.valueData.mv_data();
+					}
 				} else {
-					isDupValue = true;
+					lastResult = MDB_SUCCESS;
 				}
 				fetchNext = false;
 			} else {
@@ -231,31 +240,56 @@ class LmdbRecordIterator implements RecordIterator {
 					// set cursor to first item
 					lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_FIRST);
 				}
+				if (lastResult == MDB_SUCCESS) {
+					state.valueBuf = state.valueData.mv_data();
+				}
 			}
 
 			while (lastResult == MDB_SUCCESS) {
-				// if (maxKey != null && TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) > 0) {
-				int keyDiff;
-				if (state.indexScore > 0 &&
-						(keyDiff = isDupValue ? 0 : mdb_cmp(state.txn, state.dbi, state.keyData, state.maxKey)) >= 0
-						&& (keyDiff > 0 || mdb_dcmp(state.txn, state.dbi, state.valueData, state.maxValue) > 0)) {
-					lastResult = MDB_NOTFOUND;
-				} else if (notMatches(isDupValue)) {
-					// value doesn't match search key/mask, fetch next value
+				if (state.indexScore > 0) {
+					int keyDiff = isDupValue ? 0 : mdb_cmp(state.txn, state.dbi, state.keyData, state.maxKey);
+					if (keyDiff > 0) {
+						break;
+					}
+					int valueDiff = TripleStore.compareRegion(state.valueBuf, state.valueBuf.position(),
+							state.maxValueBuf, 0,
+							Math.min(state.valueBuf.remaining(), state.maxValueBuf.remaining()));
+					if (valueDiff > 0) {
+						break;
+					}
+				}
+
+				// value doesn't match search key/mask, fetch next value
+				if (!state.valueBuf.hasRemaining()) {
 					lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_NEXT_DUP);
 					if (lastResult != MDB_SUCCESS) {
 						// no more duplicates, move to next key
 						lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_NEXT_NODUP);
 						isDupValue = false;
 					}
-				} else {
-					// Matching value found
-					state.index.entryToQuad(state.keyData.mv_data(), state.valueData.mv_data(), state.patternQuad,
-							state.quad);
-					// fetch next value
-					fetchNext = true;
-					return state.quad;
+					if (lastResult == MDB_SUCCESS) {
+						state.valueBuf = state.valueData.mv_data();
+					} else {
+						break;
+					}
 				}
+
+				int valueBufPos = state.valueBuf.position();
+				if (notMatches(isDupValue, isDupValue ? null : state.keyData.mv_data(), state.valueBuf)) {
+					state.valueBuf.position(valueBufPos);
+					int skip = 4 - state.index.getIndexSplitPosition();
+					for (int i = 0; i < skip; i++) {
+						TripleStore.skipVarint(state.valueBuf);
+					}
+					continue;
+				}
+				state.valueBuf.position(valueBufPos);
+
+				// Matching value found
+				state.index.entryToQuad(state.keyData.mv_data(), state.valueBuf, state.patternQuad, state.quad);
+				// fetch next value
+				fetchNext = true;
+				return state.quad;
 			}
 			closeInternal(false);
 			return null;
@@ -264,18 +298,14 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 	}
 
-	private boolean notMatches(boolean testValueOnly) {
+	private boolean notMatches(boolean testValueOnly, ByteBuffer keyBuf, ByteBuffer valueBuf) {
 		if (state.matcher != null) {
-			if (testValueOnly) {
-				// already positioned on correct key, no need to match key again
-				return !state.matcher.matchesValue(state.valueData.mv_data());
-			}
-			return !state.matcher.matches(state.keyData.mv_data(), state.valueData.mv_data());
+			return testValueOnly ? !state.matcher.matchesValue(valueBuf) : !state.matcher.matches(keyBuf, valueBuf);
 		} else if (state.matchValues) {
 			// lazy init of group matcher
 			state.matcher = state.index.createMatcher(state.patternQuad[0], state.patternQuad[1], state.patternQuad[2],
 					state.patternQuad[3]);
-			return !state.matcher.matches(state.keyData.mv_data(), state.valueData.mv_data());
+			return testValueOnly ? !state.matcher.matchesValue(valueBuf) : !state.matcher.matches(keyBuf, valueBuf);
 		} else {
 			return false;
 		}

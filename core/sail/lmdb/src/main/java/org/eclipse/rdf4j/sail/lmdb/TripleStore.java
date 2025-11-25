@@ -930,7 +930,7 @@ class TripleStore implements Closeable {
 				if (insertPos > 0) {
 					// copy existing elements and insert new elements in between
 					target.clear();
-					target.put(existing.slice().flip());
+					target.put(existing.duplicate().flip());
 					target.put(newValueBuf);
 					if (existing.hasRemaining()) {
 						target.put(existing);
@@ -994,7 +994,7 @@ class TripleStore implements Closeable {
 		return MDB_SUCCESS;
 	}
 
-	private static int compareRegion(ByteBuffer bb1, int startIdx1, ByteBuffer bb2, int startIdx2, int length) {
+	static int compareRegion(ByteBuffer bb1, int startIdx1, ByteBuffer bb2, int startIdx2, int length) {
 		int result = 0;
 		for (int i = 0; result == 0 && i < length; i++) {
 			result = (bb1.get(startIdx1 + i) & 0xff) - (bb2.get(startIdx2 + i) & 0xff);
@@ -1002,7 +1002,7 @@ class TripleStore implements Closeable {
 		return result;
 	}
 
-	private void skipVarint(ByteBuffer other) {
+	static void skipVarint(ByteBuffer other) {
 		int i = firstToLength(other.get()) - 1;
 		assert i >= 0;
 		if (i > 0) {
