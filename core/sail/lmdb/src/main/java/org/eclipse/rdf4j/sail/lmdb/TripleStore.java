@@ -14,9 +14,11 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
+import static org.eclipse.rdf4j.sail.lmdb.Varint.firstToLength;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
+import static org.lwjgl.util.lmdb.LMDB.MDB_CURRENT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_DUPSORT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST_DUP;
@@ -31,12 +33,15 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dcmp;
@@ -177,27 +182,6 @@ class TripleStore implements Closeable {
 	private final TxnManager txnManager;
 
 	private TxnRecordCache recordCache = null;
-
-	static final Comparator<ByteBuffer> COMPARATOR = new Comparator<ByteBuffer>() {
-		@Override
-		public int compare(ByteBuffer b1, ByteBuffer b2) {
-			int b1Len = b1.remaining();
-			int b2Len = b2.remaining();
-			int diff = compareRegion(b1, b1.position(), b2, b2.position(), Math.min(b1Len, b2Len));
-			if (diff != 0) {
-				return diff;
-			}
-			return b1Len > b2Len ? 1 : -1;
-		}
-
-		public int compareRegion(ByteBuffer array1, int startIdx1, ByteBuffer array2, int startIdx2, int length) {
-			int result = 0;
-			for (int i = 0; result == 0 && i < length; i++) {
-				result = (array1.get(startIdx1 + i) & 0xff) - (array2.get(startIdx2 + i) & 0xff);
-			}
-			return result;
-		}
-	};
 
 	TripleStore(File dir, LmdbStoreConfig config, ValueStore valueStore) throws IOException, SailException {
 		this.dir = dir;
@@ -920,6 +904,112 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	private int merge(long cursor, int elements, MDBVal keyVal, MDBVal dataVal, ByteBuffer newValueBuf,
+			ByteBuffer target) throws IOException {
+		int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET);
+		int newValuesSize = 0;
+		if (rc == MDB_SUCCESS) {
+			rc = E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_GET_BOTH_RANGE));
+			if (rc == MDB_SUCCESS) {
+				ByteBuffer existing = dataVal.mv_data();
+
+				newValuesSize = newValueBuf.remaining();
+				int existingValuesSize = existing.remaining();
+				int diff = -1;
+				while (existing.hasRemaining() &&
+						(diff = compareRegion(newValueBuf, 0, existing, existing.position(),
+								Math.min(newValuesSize, existing.remaining()))) > 0) {
+					for (int i = 0; i < elements; i++) {
+						skipVarint(existing);
+					}
+				}
+				if (diff == 0) {
+					return MDB_KEYEXIST;
+				}
+				int insertPos = existing.position();
+				if (insertPos > 0) {
+					// copy existing elements and insert new elements in between
+					target.clear();
+					target.put(existing.slice().flip());
+					target.put(newValueBuf);
+					if (existing.hasRemaining()) {
+						target.put(existing);
+					}
+					// delete existing entry
+					E(mdb_cursor_del(cursor, 0));
+					// store one or more new entries
+					int totalSize = target.position();
+					target.flip();
+					if (insertPos + newValuesSize > 500) {
+						target.limit(insertPos);
+						dataVal.mv_data(target);
+						E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+						target.position(insertPos);
+						target.limit(totalSize);
+					}
+					if (target.remaining() > 500) {
+						target.limit(insertPos + newValuesSize);
+						dataVal.mv_data(target);
+						E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+						target.position(insertPos + newValuesSize);
+						target.limit(totalSize);
+					}
+					if (target.hasRemaining()) {
+						dataVal.mv_data(target);
+						E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+					}
+				} else {
+					if (existingValuesSize + newValuesSize <= 500) {
+						target.clear();
+						target.put(newValueBuf);
+						target.put(existing);
+						target.flip();
+						dataVal.mv_data(target);
+						E(mdb_cursor_del(cursor, 0));
+						E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+					} else {
+						dataVal.mv_data(newValueBuf);
+						E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+					}
+				}
+				return MDB_SUCCESS;
+			} else {
+				E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_LAST_DUP));
+				if (dataVal.mv_data().remaining() + newValuesSize <= 500) {
+					// append to last existing value
+					ByteBuffer existing = dataVal.mv_data();
+					target.clear();
+					target.put(existing);
+					target.put(newValueBuf);
+					target.flip();
+					E(mdb_cursor_del(cursor, 0));
+					dataVal.mv_data(target);
+					E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+					return MDB_SUCCESS;
+				}
+			}
+		}
+		dataVal.mv_data(newValueBuf);
+		E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+		return MDB_SUCCESS;
+	}
+
+	private static int compareRegion(ByteBuffer bb1, int startIdx1, ByteBuffer bb2, int startIdx2, int length) {
+		int result = 0;
+		for (int i = 0; result == 0 && i < length; i++) {
+			result = (bb1.get(startIdx1 + i) & 0xff) - (bb2.get(startIdx2 + i) & 0xff);
+		}
+		return result;
+	}
+
+	private void skipVarint(ByteBuffer other) {
+		int i = firstToLength(other.get()) - 1;
+		assert i >= 0;
+		if (i > 0) {
+			other.position(i + other.position());
+		}
+	}
+
 	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.get(0);
 		boolean stAdded;
@@ -929,11 +1019,13 @@ class TripleStore implements Closeable {
 			MDBVal dataVal = MDBVal.calloc(stack);
 			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
 			ByteBuffer valueBuf = stack.malloc(MAX_KEY_LENGTH);
+			ByteBuffer mergedBuf = stack.malloc(500 + MAX_KEY_LENGTH);
 			mainIndex.toEntry(keyBuf, valueBuf, subj, pred, obj, context);
 			keyBuf.flip();
 			keyVal.mv_data(keyBuf);
 			valueBuf.flip();
 			dataVal.mv_data(valueBuf);
+			PointerBuffer pCursor = stack.mallocPointer(1);
 
 			if (recordCache == null) {
 				if (requiresResize()) {
@@ -953,14 +1045,21 @@ class TripleStore implements Closeable {
 				return recordCache.storeRecord(quad, explicit);
 			}
 
-			int rc = mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NODUPDATA);
-			if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
-				throw new IOException(mdb_strerror(rc));
+			mdb_cursor_open(writeTxn, mainIndex.getDB(explicit), pCursor);
+			long cursor = pCursor.get(0);
+			try {
+				int rc = merge(cursor, 4 - mainIndex.indexSplitPosition, keyVal, dataVal, valueBuf, mergedBuf);
+				if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
+					throw new IOException(mdb_strerror(rc));
+				}
+				stAdded = rc == MDB_SUCCESS;
+			} finally {
+				mdb_cursor_close(cursor);
 			}
-			stAdded = rc == MDB_SUCCESS;
+
 			boolean foundImplicit = false;
 			if (explicit && stAdded) {
-				foundImplicit = mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS;
+				// foundImplicit = mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS;
 			}
 
 			if (stAdded) {
@@ -977,9 +1076,16 @@ class TripleStore implements Closeable {
 					dataVal.mv_data(valueBuf);
 
 					if (foundImplicit) {
-						E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
+						// E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
 					}
-					E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
+
+					mdb_cursor_open(writeTxn, index.getDB(explicit), pCursor);
+					cursor = pCursor.get(0);
+					try {
+						merge(cursor, 4 - index.indexSplitPosition, keyVal, dataVal, valueBuf, mergedBuf);
+					} finally {
+						mdb_cursor_close(cursor);
+					}
 				}
 
 				incrementContext(stack, context);
