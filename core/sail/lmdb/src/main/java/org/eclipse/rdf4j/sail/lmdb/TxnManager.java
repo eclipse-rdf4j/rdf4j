@@ -14,6 +14,9 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_renew;
@@ -64,7 +67,7 @@ class TxnManager {
 	 * @return the txn reference object
 	 */
 	Txn createTxn(long txn) {
-		return new Txn(txn) {
+		return new Txn(txn, false) {
 			@Override
 			public void close() {
 				// do nothing
@@ -79,7 +82,7 @@ class TxnManager {
 	 * @throws IOException if the transaction cannot be started for some reason
 	 */
 	Txn createReadTxn() throws IOException {
-		Txn txnRef = new Txn(createReadTxnInternal());
+		Txn txnRef = new Txn(createReadTxnInternal(), true);
 		synchronized (active) {
 			active.put(txnRef, Boolean.TRUE);
 		}
@@ -161,12 +164,24 @@ class TxnManager {
 	}
 
 	class Txn implements Closeable, AutoCloseable {
+		private static final int MAX_DBI = 16;
 
-		private long txn;
+		private final long txn;
 		private long version;
+		private final boolean poolCursors;
+		private final long[][] cursorPool;
+		private final int[] cursorPoolIndex;
 
-		Txn(long txn) {
+		Txn(long txn, boolean poolCursors) {
 			this.txn = txn;
+			this.poolCursors = poolCursors;
+			if (poolCursors) {
+				cursorPool = new long[MAX_DBI][64];
+				cursorPoolIndex = new int[MAX_DBI];
+			} else {
+				cursorPool = new long[0][];
+				cursorPoolIndex = new int[0];
+			}
 		}
 
 		long get() {
@@ -197,8 +212,48 @@ class TxnManager {
 			}
 		}
 
+		long getCursor(int dbi) throws IOException {
+			if (poolCursors) {
+				synchronized (cursorPool[dbi]) {
+					if (cursorPoolIndex[dbi] > 0) {
+						return cursorPool[dbi][--cursorPoolIndex[dbi]];
+					}
+				}
+			}
+			try (MemoryStack stack = MemoryStack.stackPush()) {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, dbi, pp));
+				return pp.get(0);
+			}
+		}
+
+		void returnCursor(int dbi, long cursor) {
+			if (poolCursors) {
+				synchronized (cursorPool[dbi]) {
+					if (cursorPoolIndex[dbi] < cursorPool[dbi].length) {
+						cursorPool[dbi][cursorPoolIndex[dbi]++] = cursor;
+					} else {
+						mdb_cursor_close(cursor);
+					}
+				}
+			} else {
+				mdb_cursor_close(cursor);
+			}
+		}
+
+		void closeCursors() {
+			for (int i = 0; i < cursorPool.length; i++) {
+				synchronized (cursorPool[i]) {
+					while (cursorPoolIndex[i] > 0) {
+						mdb_cursor_close(cursorPool[i][--cursorPoolIndex[i]]);
+					}
+				}
+			}
+		}
+
 		@Override
 		public void close() {
+			closeCursors();
 			synchronized (active) {
 				active.remove(this);
 			}
@@ -212,6 +267,7 @@ class TxnManager {
 			mdb_txn_reset(txn);
 			E(mdb_txn_renew(txn));
 			version++;
+			closeCursors();
 		}
 
 		/**

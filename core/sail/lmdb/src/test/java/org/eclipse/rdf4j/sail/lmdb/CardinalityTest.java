@@ -64,6 +64,7 @@ public class CardinalityTest {
 				tripleStore.storeTriple(resource, 2 + random.nextInt(1000) + 1,
 						random.nextInt(100000) * (long) Math.pow(10, random.nextInt(4)), 1, true);
 			}
+			tripleStore.storeTriple(resource, 2 + random.nextInt(1000) + 1, 3, 1, true);
 		}
 		tripleStore.commit();
 

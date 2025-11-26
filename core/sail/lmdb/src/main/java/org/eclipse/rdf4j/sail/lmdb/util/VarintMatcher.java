@@ -7,8 +7,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
- ******************************************************************************/
-
+ *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb.util;
 
 import static org.eclipse.rdf4j.sail.lmdb.Varint.firstToLength;
@@ -16,10 +15,9 @@ import static org.eclipse.rdf4j.sail.lmdb.Varint.firstToLength;
 import java.nio.ByteBuffer;
 
 /**
- * A matcher for partial equality tests of varint lists.
+ * Matcher for partial equality tests of varint lists in keys.
  */
-public class GroupMatcher {
-
+public class VarintMatcher {
 	public static final Bytes.RegionComparator NULL_REGION_COMPARATOR = (a, b) -> true;
 	private final int length0;
 	private final int length1;
@@ -35,14 +33,12 @@ public class GroupMatcher {
 	private final byte firstByte3;
 	private final MatchFn matcher;
 
-	public GroupMatcher(byte[] valueArray, boolean[] shouldMatch) {
-		assert shouldMatch.length == 4;
-
+	public VarintMatcher(byte[] valueArray, boolean[] shouldMatch) {
 		int baseOffset = 0;
 
 		// Loop is unrolled for performance. Do not change back to a loop, do not extract into method, unless you
 		// benchmark with QueryBenchmark first!
-		{
+		if (shouldMatch.length > 0) {
 			byte fb = valueArray[0];
 			this.firstByte0 = fb;
 			int len = firstToLength(fb);
@@ -51,13 +47,15 @@ public class GroupMatcher {
 				this.cmp0 = Bytes.capturedComparator(valueArray, 0, len);
 			} else {
 				this.cmp0 = NULL_REGION_COMPARATOR;
-				;
 			}
-
 			baseOffset += len;
+		} else {
+			this.firstByte0 = 0;
+			this.length0 = 0;
+			this.cmp0 = NULL_REGION_COMPARATOR;
 		}
-		{
 
+		if (shouldMatch.length > 1) {
 			byte fb = valueArray[baseOffset];
 			this.firstByte1 = fb;
 			int len = firstToLength(fb);
@@ -70,8 +68,13 @@ public class GroupMatcher {
 			}
 
 			baseOffset += len;
+		} else {
+			this.firstByte1 = 0;
+			this.length1 = 0;
+			this.cmp1 = NULL_REGION_COMPARATOR;
 		}
-		{
+
+		if (shouldMatch.length > 2) {
 			byte fb = valueArray[baseOffset];
 			this.firstByte2 = fb;
 			int len = firstToLength(fb);
@@ -81,10 +84,14 @@ public class GroupMatcher {
 			} else {
 				this.cmp2 = NULL_REGION_COMPARATOR;
 			}
-
 			baseOffset += len;
+		} else {
+			this.firstByte2 = 0;
+			this.length2 = 0;
+			this.cmp2 = NULL_REGION_COMPARATOR;
 		}
-		{
+
+		if (shouldMatch.length > 3) {
 			byte fb = valueArray[baseOffset];
 			this.firstByte3 = fb;
 			int len = firstToLength(fb);
@@ -95,6 +102,10 @@ public class GroupMatcher {
 			} else {
 				this.cmp3 = NULL_REGION_COMPARATOR;
 			}
+		} else {
+			this.firstByte3 = 0;
+			this.length3 = 0;
+			this.cmp3 = NULL_REGION_COMPARATOR;
 		}
 
 		this.matcher = selectMatcher(shouldMatch);
@@ -112,16 +123,16 @@ public class GroupMatcher {
 
 	private MatchFn selectMatcher(boolean[] shouldMatch) {
 		byte mask = 0;
-		if (shouldMatch[0]) {
+		if (shouldMatch.length > 0 && shouldMatch[0]) {
 			mask |= 0b0001;
 		}
-		if (shouldMatch[1]) {
+		if (shouldMatch.length > 1 && shouldMatch[1]) {
 			mask |= 0b0010;
 		}
-		if (shouldMatch[2]) {
+		if (shouldMatch.length > 2 && shouldMatch[2]) {
 			mask |= 0b0100;
 		}
-		if (shouldMatch[3]) {
+		if (shouldMatch.length > 3 && shouldMatch[3]) {
 			mask |= 0b1000;
 		}
 
@@ -176,8 +187,7 @@ public class GroupMatcher {
 	}
 
 	private boolean match0010(ByteBuffer other) {
-
-		skipAhead(other);
+		skipVarint(other);
 
 		byte otherFirst1 = other.get();
 		if (firstByte1 == otherFirst1) {
@@ -201,9 +211,8 @@ public class GroupMatcher {
 	}
 
 	private boolean match0100(ByteBuffer other) {
-
-		skipAhead(other);
-		skipAhead(other);
+		skipVarint(other);
+		skipVarint(other);
 
 		byte otherFirst2 = other.get();
 		if (firstByte2 == otherFirst2) {
@@ -213,11 +222,10 @@ public class GroupMatcher {
 	}
 
 	private boolean match0101(ByteBuffer other) {
-
 		byte otherFirst0 = other.get();
 		if (firstByte0 == otherFirst0) {
 			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
-				skipAhead(other);
+				skipVarint(other);
 
 				byte otherFirst2 = other.get();
 				if (firstByte2 == otherFirst2) {
@@ -229,8 +237,7 @@ public class GroupMatcher {
 	}
 
 	private boolean match0110(ByteBuffer other) {
-
-		skipAhead(other);
+		skipVarint(other);
 
 		byte otherFirst1 = other.get();
 		if (firstByte1 == otherFirst1) {
@@ -244,7 +251,7 @@ public class GroupMatcher {
 		return false;
 	}
 
-	private void skipAhead(ByteBuffer other) {
+	private void skipVarint(ByteBuffer other) {
 		int i = firstToLength(other.get()) - 1;
 		assert i >= 0;
 		if (i > 0) {
@@ -253,7 +260,6 @@ public class GroupMatcher {
 	}
 
 	private boolean match0111(ByteBuffer other) {
-
 		byte otherFirst0 = other.get();
 		if (firstByte0 == otherFirst0) {
 			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
@@ -272,10 +278,9 @@ public class GroupMatcher {
 	}
 
 	private boolean match1000(ByteBuffer other) {
-
-		skipAhead(other);
-		skipAhead(other);
-		skipAhead(other);
+		skipVarint(other);
+		skipVarint(other);
+		skipVarint(other);
 
 		byte otherFirst3 = other.get();
 		if (firstByte3 == otherFirst3) {
@@ -289,8 +294,8 @@ public class GroupMatcher {
 		byte otherFirst0 = other.get();
 		if (firstByte0 == otherFirst0) {
 			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
-				skipAhead(other);
-				skipAhead(other);
+				skipVarint(other);
+				skipVarint(other);
 
 				byte otherFirst3 = other.get();
 				if (firstByte3 == otherFirst3) {
@@ -302,12 +307,11 @@ public class GroupMatcher {
 	}
 
 	private boolean match1010(ByteBuffer other) {
-
-		skipAhead(other);
+		skipVarint(other);
 		byte otherFirst1 = other.get();
 		if (firstByte1 == otherFirst1) {
 			if (length1 == 1 || cmp1.equals(otherFirst1, other)) {
-				skipAhead(other);
+				skipVarint(other);
 
 				byte otherFirst3 = other.get();
 				if (firstByte3 == otherFirst3) {
@@ -319,14 +323,13 @@ public class GroupMatcher {
 	}
 
 	private boolean match1011(ByteBuffer other) {
-
 		byte otherFirst0 = other.get();
 		if (firstByte0 == otherFirst0) {
 			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
 				byte otherFirst1 = other.get();
 				if (firstByte1 == otherFirst1) {
 					if (length1 == 1 || cmp1.equals(otherFirst1, other)) {
-						skipAhead(other);
+						skipVarint(other);
 
 						byte otherFirst3 = other.get();
 						if (firstByte3 == otherFirst3) {
@@ -340,9 +343,8 @@ public class GroupMatcher {
 	}
 
 	private boolean match1100(ByteBuffer other) {
-
-		skipAhead(other);
-		skipAhead(other);
+		skipVarint(other);
+		skipVarint(other);
 
 		byte otherFirst2 = other.get();
 		if (firstByte2 == otherFirst2) {
@@ -357,11 +359,10 @@ public class GroupMatcher {
 	}
 
 	private boolean match1101(ByteBuffer other) {
-
 		byte otherFirst0 = other.get();
 		if (firstByte0 == otherFirst0) {
 			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
-				skipAhead(other);
+				skipVarint(other);
 
 				byte otherFirst2 = other.get();
 				if (firstByte2 == otherFirst2) {
@@ -378,8 +379,7 @@ public class GroupMatcher {
 	}
 
 	private boolean match1110(ByteBuffer other) {
-
-		skipAhead(other);
+		skipVarint(other);
 
 		byte otherFirst1 = other.get();
 		if (firstByte1 == otherFirst1) {
