@@ -17,17 +17,15 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
 import static org.eclipse.rdf4j.sail.lmdb.Varint.firstToLength;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.lwjgl.util.lmdb.LMDB.MDB_APPENDDUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
-import static org.lwjgl.util.lmdb.LMDB.MDB_CURRENT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_DUPSORT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
-import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_GET_BOTH_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NODUPDATA;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
@@ -74,7 +72,6 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -959,6 +956,7 @@ class TripleStore implements Closeable {
 						E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
 					}
 				} else {
+					// prepend to value
 					if (existingValuesSize + newValuesSize <= 500) {
 						target.clear();
 						target.put(newValueBuf);
@@ -984,7 +982,7 @@ class TripleStore implements Closeable {
 					target.flip();
 					E(mdb_cursor_del(cursor, 0));
 					dataVal.mv_data(target);
-					E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+					E(mdb_cursor_put(cursor, keyVal, dataVal, MDB_APPENDDUP));
 					return MDB_SUCCESS;
 				}
 			}
