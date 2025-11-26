@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -24,6 +25,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -144,7 +146,11 @@ class LmdbSailStore implements SailStore {
 	class AddQuadOperation implements Operation {
 		long s, p, o, c;
 		boolean explicit;
+		Resource subj;
+		IRI pred;
+		Value obj;
 		Resource context;
+		Consumer<Statement> estimatorCallback;
 
 		@Override
 		public void execute() throws IOException {
@@ -158,7 +164,11 @@ class LmdbSailStore implements SailStore {
 				unusedIds.remove(o);
 				unusedIds.remove(c);
 			}
-			tripleStore.storeTriple(s, p, o, c, explicit);
+			boolean added = tripleStore.storeTriple(s, p, o, c, explicit);
+			if (added && explicit && estimatorCallback != null) {
+				Statement st = valueStore.createStatement(subj, pred, obj, context);
+				estimatorCallback.accept(st);
+			}
 		}
 	}
 
@@ -456,9 +466,49 @@ class LmdbSailStore implements SailStore {
 	private final class LmdbSailSink implements SailSink {
 
 		private final boolean explicit;
+		private final List<Runnable> pendingEstimatorUpdates = new ArrayList<>();
 
 		public LmdbSailSink(boolean explicit) throws SailException {
 			this.explicit = explicit;
+		}
+
+		private void queueEstimatorAdd(Statement st) {
+			if (!explicit) {
+				return;
+			}
+			synchronized (pendingEstimatorUpdates) {
+				pendingEstimatorUpdates.add(() -> sketchBasedJoinEstimator.addStatement(st));
+			}
+		}
+
+		private void queueEstimatorRemove(Statement st) {
+			if (!explicit) {
+				return;
+			}
+			synchronized (pendingEstimatorUpdates) {
+				pendingEstimatorUpdates.add(() -> sketchBasedJoinEstimator.deleteStatement(st));
+			}
+		}
+
+		private void applyEstimatorUpdates() {
+			if (!explicit) {
+				return;
+			}
+			List<Runnable> updates;
+			synchronized (pendingEstimatorUpdates) {
+				if (pendingEstimatorUpdates.isEmpty()) {
+					return;
+				}
+				updates = new ArrayList<>(pendingEstimatorUpdates);
+				pendingEstimatorUpdates.clear();
+			}
+			updates.forEach(Runnable::run);
+		}
+
+		private void clearEstimatorUpdates() {
+			synchronized (pendingEstimatorUpdates) {
+				pendingEstimatorUpdates.clear();
+			}
 		}
 
 		@Override
@@ -527,17 +577,20 @@ class LmdbSailStore implements SailStore {
 						}
 						handleRemovedIdsInValueStore();
 						valueStore.commit();
+						applyEstimatorUpdates();
 						// do not set flag to false until _after_ commit is successfully completed.
 						storeTxnStarted.set(false);
 					}
 				}
 			} catch (IOException e) {
 				rollback();
+				clearEstimatorUpdates();
 				running.set(false);
 				logger.error("Encountered an unexpected problem while trying to commit", e);
 				throw new SailException(e);
 			} catch (RuntimeException e) {
 				rollback();
+				clearEstimatorUpdates();
 				running.set(false);
 				logger.error("Encountered an unexpected problem while trying to commit", e);
 				throw e;
@@ -617,6 +670,10 @@ class LmdbSailStore implements SailStore {
 					q.c = context == null ? 0 : valueStore.storeValue(context);
 					q.context = context;
 					q.explicit = explicit;
+					q.subj = subj;
+					q.pred = pred;
+					q.obj = obj;
+					q.estimatorCallback = this::queueEstimatorAdd;
 
 					if (multiThreadingActive) {
 						while (!opQueue.add(q)) {
@@ -633,6 +690,7 @@ class LmdbSailStore implements SailStore {
 				}
 			} catch (IOException | RuntimeException e) {
 				rollback();
+				clearEstimatorUpdates();
 				if (multiThreadingActive) {
 					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
 				} else {
@@ -761,6 +819,10 @@ class LmdbSailStore implements SailStore {
 				q.c = context == null ? 0 : valueStore.storeValue(context);
 				q.context = context;
 				q.explicit = explicit;
+				q.subj = subj;
+				q.pred = pred;
+				q.obj = obj;
+				q.estimatorCallback = this::queueEstimatorAdd;
 
 				if (multiThreadingActive) {
 					while (!opQueue.add(q)) {
@@ -775,9 +837,11 @@ class LmdbSailStore implements SailStore {
 				}
 			} catch (IOException e) {
 				rollback();
+				clearEstimatorUpdates();
 				throw new SailException(e);
 			} catch (RuntimeException e) {
 				rollback();
+				clearEstimatorUpdates();
 				logger.error("Encountered an unexpected problem while trying to add a statement", e);
 				throw e;
 			} finally {
@@ -788,15 +852,26 @@ class LmdbSailStore implements SailStore {
 		private long removeStatements(long subj, long pred, long obj, boolean explicit, long[] contexts)
 				throws IOException {
 			long[] removeCount = { 0 };
-			for (long contextId : contexts) {
-				tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit, quad -> {
-					removeCount[0]++;
-					for (long id : quad) {
-						if (id != 0L) {
-							unusedIds.add(id);
+			try {
+				for (long contextId : contexts) {
+					tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit, quad -> {
+						removeCount[0]++;
+						if (explicit) {
+							try {
+								queueEstimatorRemove(quadToStatement(quad));
+							} catch (IOException e) {
+								throw new UncheckedIOException(e);
+							}
 						}
-					}
-				});
+						for (long id : quad) {
+							if (id != 0L) {
+								unusedIds.add(id);
+							}
+						}
+					});
+				}
+			} catch (UncheckedIOException e) {
+				throw e.getCause();
 			}
 			return removeCount[0];
 		}
@@ -888,14 +963,26 @@ class LmdbSailStore implements SailStore {
 				}
 			} catch (IOException e) {
 				rollback();
+				clearEstimatorUpdates();
 				throw new SailException(e);
 			} catch (RuntimeException e) {
 				rollback();
+				clearEstimatorUpdates();
 				logger.error("Encountered an unexpected problem while trying to remove statements", e);
 				throw e;
 			} finally {
 				sinkStoreAccessLock.unlock();
 			}
+		}
+
+		private Statement quadToStatement(long[] quad) throws IOException {
+			Resource subj = (Resource) valueStore.getValue(quad[0]);
+			IRI pred = (IRI) valueStore.getValue(quad[1]);
+			Value obj = valueStore.getValue(quad[2]);
+			long ctxId = quad[3];
+			Resource ctx = (ctxId == 0L || ctxId == LmdbValue.UNKNOWN_ID) ? null
+					: (Resource) valueStore.getValue(ctxId);
+			return valueStore.createStatement(subj, pred, obj, ctx);
 		}
 
 		@Override
@@ -921,7 +1008,9 @@ class LmdbSailStore implements SailStore {
 		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
 			this.explicit = explicit;
 			try {
-				this.txn = tripleStore.getTxnManager().createReadTxn(trackActiveTxn);
+				TxnManager txnManager = tripleStore.getTxnManager();
+				this.txn = trackActiveTxn ? txnManager.createReadTxn()
+						: txnManager.createTxn(txnManager.createReadTxnInternal());
 			} catch (IOException e) {
 				throw new SailException(e);
 			}
