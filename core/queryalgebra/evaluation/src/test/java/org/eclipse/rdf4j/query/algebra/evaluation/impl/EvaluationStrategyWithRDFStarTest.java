@@ -159,7 +159,7 @@ public class EvaluationStrategyWithRDFStarTest {
 
 		baseSource = new CommonBaseSource();
 
-		tripleRefNode = new TripleRef(new Var("s"), new Var("p"), new Var("o"), new Var("extern"));
+		tripleRefNode = new TripleRef(Var.of("s"), Var.of("p"), Var.of("o"), Var.of("extern"));
 	}
 
 	/**

@@ -97,16 +97,54 @@ public class MemValueFactory extends AbstractValueFactory {
 	 *         exists or if <var>value</var> is equal to <var>null</var>.
 	 */
 	public MemValue getMemValue(Value value) {
-		if (value == null) {
+
+		if (value != null) {
+			Class<? extends Value> aClass = value.getClass();
+			if (aClass == MemIRI.class) {
+				if (((MemIRI) value).getCreator() == this) {
+					return (MemIRI) value;
+				}
+			} else if (aClass == MemBNode.class) {
+				if (((MemBNode) value).getCreator() == this) {
+					return (MemBNode) value;
+				}
+			} else if (aClass == MemLiteral.class) {
+				if (((MemLiteral) value).getCreator() == this) {
+					return (MemLiteral) value;
+				}
+			} else if (aClass == MemTriple.class) {
+				if (((MemTriple) value).getCreator() == this) {
+					return (MemTriple) value;
+				}
+			}
+		} else {
 			return null;
-		} else if (value.isIRI()) {
-			return getMemURI((IRI) value);
+		}
+
+		if (value.isIRI()) {
+			if (value instanceof MemIRI && ((MemIRI) value).getCreator() == this) {
+				return (MemIRI) value;
+			} else {
+				return iriRegistry.get((IRI) value);
+			}
 		} else if (value.isBNode()) {
-			return getMemBNode((BNode) value);
+			if (isOwnMemBnode((BNode) value)) {
+				return (MemBNode) value;
+			} else {
+				return bnodeRegistry.get((BNode) value);
+			}
 		} else if (value.isTriple()) {
-			return getMemTriple((Triple) value);
+			if (isOwnMemTriple((Triple) value)) {
+				return (MemTriple) value;
+			} else {
+				return tripleRegistry.get((Triple) value);
+			}
 		} else if (value.isLiteral()) {
-			return getMemLiteral((Literal) value);
+			if (isOwnMemLiteral((Literal) value)) {
+				return (MemLiteral) value;
+			} else {
+				return literalRegistry.get((Literal) value);
+			}
 		} else {
 			throw new IllegalArgumentException("value is not a Resource or Literal: " + value);
 		}
@@ -116,14 +154,39 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * See getMemValue() for description.
 	 */
 	public MemResource getMemResource(Resource resource) {
-		if (resource == null) {
+		if (resource != null) {
+			Class<? extends Value> aClass = resource.getClass();
+			if (aClass == MemIRI.class) {
+				if (((MemIRI) resource).getCreator() == this) {
+					return (MemIRI) resource;
+				}
+			} else if (aClass == MemBNode.class) {
+				if (((MemBNode) resource).getCreator() == this) {
+					return (MemBNode) resource;
+				}
+			}
+		} else {
 			return null;
-		} else if (resource.isIRI()) {
-			return getMemURI((IRI) resource);
+		}
+
+		if (resource.isIRI()) {
+			if (resource instanceof MemIRI && ((MemIRI) resource).getCreator() == this) {
+				return (MemIRI) resource;
+			} else {
+				return iriRegistry.get((IRI) resource);
+			}
 		} else if (resource.isBNode()) {
-			return getMemBNode((BNode) resource);
+			if (isOwnMemBnode((BNode) resource)) {
+				return (MemBNode) resource;
+			} else {
+				return bnodeRegistry.get((BNode) resource);
+			}
 		} else if (resource.isTriple()) {
-			return getMemTriple((Triple) resource);
+			if (isOwnMemTriple((Triple) resource)) {
+				return (MemTriple) resource;
+			} else {
+				return tripleRegistry.get((Triple) resource);
+			}
 		} else {
 			throw new IllegalArgumentException("resource is not a URI or BNode: " + resource);
 		}
@@ -133,9 +196,12 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * See getMemValue() for description.
 	 */
 	public MemIRI getMemURI(IRI uri) {
+
 		if (uri == null) {
 			return null;
-		} else if (isOwnMemIRI(uri)) {
+		} else if (uri.getClass() == MemIRI.class && ((MemIRI) uri).getCreator() == this) {
+			return (MemIRI) uri;
+		} else if (uri instanceof MemIRI && ((MemIRI) uri).getCreator() == this) {
 			return (MemIRI) uri;
 		} else {
 			return iriRegistry.get(uri);
@@ -263,7 +329,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * See {@link #getOrCreateMemValue(Value)} for description.
 	 */
 	public MemIRI getOrCreateMemURI(IRI uri) {
-		if (isOwnMemIRI(uri)) {
+		if (uri instanceof MemIRI && ((MemIRI) uri).getCreator() == this) {
 			return (MemIRI) uri;
 		}
 

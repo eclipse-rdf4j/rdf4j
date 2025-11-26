@@ -27,7 +27,7 @@ public class QueryModelTreePrinter extends AbstractQueryModelVisitor<RuntimeExce
 	 * Constants *
 	 *-----------*/
 
-	private static final String LINE_SEPARATOR = System.getProperty("line.separator");
+	private static final String LINE_SEPARATOR = System.lineSeparator();
 
 	/*-----------*
 	 * Constants *

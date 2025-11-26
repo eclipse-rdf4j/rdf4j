@@ -1,0 +1,80 @@
+/*******************************************************************************
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
+package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
+
+/**
+ * Preserve UNION branch order while optionally normalizing inside each branch.
+ *
+ * Note: Despite the original intent expressed in earlier comments to reorder branches based on projection, the current
+ * implementation keeps original UNION branch order for textual stability and alignment with tests, and only recurses
+ * into branches to apply inner rewrites.
+ */
+public final class CanonicalizeUnionBranchOrderTransform extends BaseTransform {
+	private CanonicalizeUnionBranchOrderTransform() {
+	}
+
+	public static IrBGP apply(IrBGP bgp, IrSelect select) {
+		if (bgp == null) {
+			return null;
+		}
+		List<IrNode> out = new ArrayList<>();
+		for (IrNode n : bgp.getLines()) {
+			IrNode m = n;
+			if (n instanceof IrUnion) {
+				m = reorderUnion((IrUnion) n, select);
+			} else if (n instanceof IrGraph) {
+				IrGraph g = (IrGraph) n;
+				m = new IrGraph(g.getGraph(), apply(g.getWhere(), select), g.isNewScope());
+			} else if (n instanceof IrOptional) {
+				IrOptional o = (IrOptional) n;
+				IrOptional no = new IrOptional(apply(o.getWhere(), select), o.isNewScope());
+				no.setNewScope(o.isNewScope());
+				m = no;
+			} else if (n instanceof IrMinus) {
+				IrMinus mi = (IrMinus) n;
+				m = new IrMinus(apply(mi.getWhere(), select), mi.isNewScope());
+			} else if (n instanceof IrService) {
+				IrService s = (IrService) n;
+				m = new IrService(s.getServiceRefText(), s.isSilent(), apply(s.getWhere(), select), s.isNewScope());
+			} else if (n instanceof IrSubSelect) {
+				// keep as-is
+			}
+			out.add(m);
+		}
+		return BaseTransform.bgpWithLines(bgp, out);
+	}
+
+	private static IrNode reorderUnion(IrUnion u, IrSelect select) {
+		// Recurse first into branches
+		IrUnion u2 = new IrUnion(u.isNewScope());
+		for (IrBGP b : u.getBranches()) {
+			u2.addBranch(apply(b, select));
+		}
+		// Keep original UNION branch order. Even though UNION is semantically commutative,
+		// preserving source order stabilizes round-trip rendering and aligns with tests
+		// that expect original text structure.
+		return u2;
+	}
+
+}
