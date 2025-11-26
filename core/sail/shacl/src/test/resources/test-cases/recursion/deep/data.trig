@@ -1,0 +1,28 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+{
+  ex:root a ex:Root ;
+    ex:next ex:node1 ;
+    ex:friend ex:friend1 ;
+    ex:xoneA "A" ;
+    ex:xoneB "B" ;
+    ex:notFlag "ban" .
+
+  ex:node1 ex:next ex:node2 .
+  ex:node2 ex:next ex:node3 .
+  ex:node3 ex:next ex:node4 .
+  ex:node4 ex:next ex:node5 .
+  ex:node5 ex:next ex:node6 .
+  ex:node6 ex:next ex:node7 .
+  ex:node7 ex:next ex:node8 .
+  ex:node8 ex:next ex:node9 .
+  ex:node9 ex:next ex:node10 .
+  ex:node10 ex:next ex:node11 .
+  ex:node11 ex:next ex:node12 .
+
+  ex:node12 ex:value "twelve" .
+
+  ex:friend1 rdf:type ex:Friend .
+
+}

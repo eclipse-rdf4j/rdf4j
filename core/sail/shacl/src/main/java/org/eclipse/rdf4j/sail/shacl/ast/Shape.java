@@ -20,6 +20,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.apache.http.impl.client.TunnelRefusedException;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -569,9 +570,14 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 
 		public static List<ContextWithShape> getShapes(ShapeSource shapeSource, ParseSettings parseSettings) {
 
-			List<ContextWithShape> parsed = parse(shapeSource, parseSettings);
+			try {
+				List<ContextWithShape> parsed = parse(shapeSource, parseSettings);
+				return getShapes(parsed);
+			}catch (Throwable e) {
+				logger.error("Unexpected error while parsing shapes", e);
+				throw new ShaclShapeParsingException("Unexpected error while parsing shapes", e);
+			}
 
-			return getShapes(parsed);
 
 		}
 
