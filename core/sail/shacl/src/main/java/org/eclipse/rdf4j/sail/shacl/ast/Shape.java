@@ -632,17 +632,21 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		result = 31 * result + (message != null ? message.hashCode() : 0);
 		result = 31 * result + (severity != null ? severity.hashCode() : 0);
 
+		long temp = 0;
+
 		for (ConstraintComponent constraintComponent : constraintComponents) {
 			int componentHash;
 			if (constraintComponent instanceof Shape) {
-				componentHash = ((Shape) constraintComponent).hashCode(cycleDetection);
+				componentHash = constraintComponent.hashCode(cycleDetection);
 			} else if (constraintComponent instanceof AbstractConstraintComponent) {
-				componentHash = ((AbstractConstraintComponent) constraintComponent).hashCode(cycleDetection);
+				componentHash = constraintComponent.hashCode(cycleDetection);
 			} else {
 				componentHash = constraintComponent != null ? constraintComponent.hashCode() : 0;
 			}
-			result = 31 * result + componentHash;
+			temp += componentHash;
 		}
+
+		result = 31 * result + Long.hashCode(temp);
 
 		cycleDetection.remove(this);
 		return result;
