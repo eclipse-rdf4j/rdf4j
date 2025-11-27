@@ -91,11 +91,11 @@ public class VoidConstraintComponent extends AbstractConstraintComponent {
 			return false;
 		}
 
-		return super.equals(o);
+		return false;
 	}
 
 	@Override
 	public int hashCode(IdentityHashMap<Shape, Boolean> identityHashMap) {
-		return super.hashCode();
+		return this.getClass().hashCode();
 	}
 }
