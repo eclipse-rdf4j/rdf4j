@@ -91,7 +91,7 @@ public class VoidConstraintComponent extends AbstractConstraintComponent {
 			return false;
 		}
 
-		return false;
+		return true;
 	}
 
 	@Override

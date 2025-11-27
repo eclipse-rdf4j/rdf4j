@@ -646,6 +646,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 				logger.error(e.getMessage(), e);
 				throw e;
 			} catch (Throwable e) {
+				// e can never be instanceOf ShaclShapeParsingException because ShaclShapeParsingException extends  RDF4JException
 				logger.error("Unexpected error while parsing shapes", e);
 				throw new ShaclShapeParsingException("Unexpected error while parsing shapes", e);
 			}
