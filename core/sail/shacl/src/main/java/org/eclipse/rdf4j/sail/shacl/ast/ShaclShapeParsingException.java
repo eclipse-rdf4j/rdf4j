@@ -33,7 +33,7 @@ public class ShaclShapeParsingException extends RDF4JException {
 	}
 
 	public ShaclShapeParsingException(String msg, Throwable t) {
-		super(msg, t) ;
+		super(msg, t);
 	}
 
 	public ShaclShapeParsingException(Throwable t, Resource id) {

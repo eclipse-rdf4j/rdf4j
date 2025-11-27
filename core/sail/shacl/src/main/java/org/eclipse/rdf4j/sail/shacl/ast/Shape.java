@@ -14,6 +14,7 @@ import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -22,6 +23,7 @@ import java.util.stream.Stream;
 
 import org.apache.http.impl.client.TunnelRefusedException;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -44,6 +46,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AbstractConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AndConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ClassConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ClosedConstraintComponent;
@@ -202,7 +205,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		modelBuilder.subject(getId());
 
 		if (deactivated) {
-			modelBuilder.add(SHACL.DEACTIVATED, deactivated);
+			modelBuilder.add(SHACL.DEACTIVATED, true);
 		}
 
 		for (Literal literal : message) {
@@ -524,7 +527,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 	}
 
 	@Override
-	public boolean equals(Object o) {
+	public final boolean equals(Object o) {
 		if (this == o) {
 			return true;
 		}
@@ -532,7 +535,23 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 			return false;
 		}
 
+		return equals((Shape) o, new IdentityHashMap<>());
+	}
+
+	@Override
+	public boolean equals(ConstraintComponent o, IdentityHashMap<Shape, Shape> comparisonGuard) {
+		Object alreadyComparing = comparisonGuard.get(this);
+		if (alreadyComparing == o) {
+			return true;
+		}
+
+		if (!(o instanceof Shape)) {
+			return false;
+		}
+
 		Shape shape = (Shape) o;
+
+		comparisonGuard.put(this, shape);
 
 		if (produceValidationReports != shape.produceValidationReports) {
 			return false;
@@ -549,20 +568,69 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		if (severity != shape.severity) {
 			return false;
 		}
-		if (!Objects.equals(constraintComponents, shape.constraintComponents)) {
+
+		if (constraintComponents.size() != shape.constraintComponents.size()) {
 			return false;
 		}
+
+		for (int i = 0; i < constraintComponents.size(); i++) {
+			ConstraintComponent left = constraintComponents.get(i);
+			ConstraintComponent right = shape.constraintComponents.get(i);
+
+			if (left != null) {
+				if (!left.equals(right, comparisonGuard)) {
+					if (shape.constraintComponents.size() == 1) {
+						return false;
+					}
+
+					boolean matchFound = false;
+					for (ConstraintComponent constraintComponent : shape.constraintComponents) {
+						if (left.equals(constraintComponent, comparisonGuard)) {
+							matchFound = true;
+							break;
+						}
+					}
+					if (!matchFound) {
+						return false;
+					}
+				}
+			}
+		}
+
 		return true;
 	}
 
 	@Override
-	public int hashCode() {
+	public final int hashCode() {
+		return hashCode(new IdentityHashMap<>());
+	}
+
+	@Override
+	public int hashCode(IdentityHashMap<Shape, Boolean> cycleDetection) {
+		if (cycleDetection.put(this, Boolean.TRUE) != null) {
+			throw new ShaclShapeParsingException("Recursive shape definition detected while computing hashCode",
+					getId());
+		}
+
 		int result = (produceValidationReports ? 1 : 0);
 		result = 31 * result + (target != null ? target.hashCode() : 0);
 		result = 31 * result + (deactivated ? 1 : 0);
 		result = 31 * result + (message != null ? message.hashCode() : 0);
 		result = 31 * result + (severity != null ? severity.hashCode() : 0);
-		result = 31 * result + (constraintComponents != null ? constraintComponents.hashCode() : 0);
+
+		for (ConstraintComponent constraintComponent : constraintComponents) {
+			int componentHash;
+			if (constraintComponent instanceof Shape) {
+				componentHash = ((Shape) constraintComponent).hashCode(cycleDetection);
+			} else if (constraintComponent instanceof AbstractConstraintComponent) {
+				componentHash = ((AbstractConstraintComponent) constraintComponent).hashCode(cycleDetection);
+			} else {
+				componentHash = constraintComponent != null ? constraintComponent.hashCode() : 0;
+			}
+			result = 31 * result + componentHash;
+		}
+
+		cycleDetection.remove(this);
 		return result;
 	}
 
@@ -573,28 +641,36 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 			try {
 				List<ContextWithShape> parsed = parse(shapeSource, parseSettings);
 				return getShapes(parsed);
-			}catch (Throwable e) {
+			} catch (Throwable e) {
+				if (e instanceof RDF4JException) {
+					throw (RDF4JException) e;
+				}
+
 				logger.error("Unexpected error while parsing shapes", e);
 				throw new ShaclShapeParsingException("Unexpected error while parsing shapes", e);
 			}
 
-
 		}
 
 		public static List<ContextWithShape> getShapes(List<ContextWithShape> parsed) {
-			return parsed.stream()
-					.flatMap(contextWithShapes -> {
-						List<Shape> split = split(contextWithShapes.getShape());
-						calculateTargetChain(split);
-						calculateIfProducesValidationResult(split);
-						return split.stream().map(s -> {
-							return new ContextWithShape(contextWithShapes.getDataGraph(),
-									contextWithShapes.getShapeGraph(), s);
-						});
-					})
-					.filter(ContextWithShape::hasShape)
-					.distinct()
-					.collect(Collectors.toList());
+			try {
+				return parsed.stream()
+						.flatMap(contextWithShapes -> {
+							List<Shape> split = split(contextWithShapes.getShape());
+							calculateTargetChain(split);
+							calculateIfProducesValidationResult(split);
+							return split.stream().map(s -> {
+								return new ContextWithShape(contextWithShapes.getDataGraph(),
+										contextWithShapes.getShapeGraph(), s);
+							});
+						})
+						.filter(ContextWithShape::hasShape)
+						.distinct()
+						.collect(Collectors.toList());
+			} catch (Throwable e) {
+				logger.error("Unexpected error while parsing shapes", e);
+				throw new ShaclShapeParsingException("Unexpected error while parsing shapes", e);
+			}
 		}
 
 		private static void calculateIfProducesValidationResult(List<Shape> split) {
