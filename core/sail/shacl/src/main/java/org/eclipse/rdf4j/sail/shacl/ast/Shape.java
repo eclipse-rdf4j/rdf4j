@@ -573,28 +573,42 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 			return false;
 		}
 
+		boolean[] matchedRightSide = new boolean[shape.constraintComponents.size()];
+
 		for (int i = 0; i < constraintComponents.size(); i++) {
 			ConstraintComponent left = constraintComponents.get(i);
-			ConstraintComponent right = shape.constraintComponents.get(i);
 
-			if (left != null) {
-				if (!left.equals(right, comparisonGuard)) {
-					if (shape.constraintComponents.size() == 1) {
-						return false;
-					}
+			if (left == null) {
+				continue;
+			}
 
-					boolean matchFound = false;
-					for (ConstraintComponent constraintComponent : shape.constraintComponents) {
-						if (left.equals(constraintComponent, comparisonGuard)) {
-							matchFound = true;
-							break;
-						}
+			int matchIndex = -1;
+
+			if (!matchedRightSide[i]) {
+				ConstraintComponent right = shape.constraintComponents.get(i);
+				if (left.equals(right, comparisonGuard)) {
+					matchIndex = i;
+				}
+			}
+
+			if (matchIndex == -1) {
+				for (int j = 0; j < shape.constraintComponents.size(); j++) {
+					if (matchedRightSide[j]) {
+						continue;
 					}
-					if (!matchFound) {
-						return false;
+					ConstraintComponent candidate = shape.constraintComponents.get(j);
+					if (left.equals(candidate, comparisonGuard)) {
+						matchIndex = j;
+						break;
 					}
 				}
 			}
+
+			if (matchIndex == -1) {
+				return false;
+			}
+
+			matchedRightSide[matchIndex] = true;
 		}
 
 		return true;
@@ -666,10 +680,10 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 						.filter(ContextWithShape::hasShape)
 						.distinct()
 						.collect(Collectors.toList());
-			}  catch (RDF4JException e) {
+			} catch (RDF4JException e) {
 				logger.error(e.getMessage(), e);
 				throw e;
-			}catch (Throwable e) {
+			} catch (Throwable e) {
 				logger.error("Unexpected error while parsing shapes", e);
 				throw new ShaclShapeParsingException("Unexpected error while parsing shapes", e);
 			}
