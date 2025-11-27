@@ -642,6 +642,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 				List<ContextWithShape> parsed = parse(shapeSource, parseSettings);
 				return getShapes(parsed);
 			} catch (RDF4JException e) {
+				// rethrow RDF4J exceptions as is, this includes ShaclShapeParsingException
 				logger.error(e.getMessage(), e);
 				throw e;
 			} catch (Throwable e) {
