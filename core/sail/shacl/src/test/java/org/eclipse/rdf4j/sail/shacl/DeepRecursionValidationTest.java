@@ -10,22 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.URL;
 import java.util.Objects;
 import java.util.Set;
 
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
-import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -34,8 +26,6 @@ import org.eclipse.rdf4j.sail.shacl.ast.ShaclShapeParsingException;
 import org.junit.jupiter.api.Test;
 
 class DeepRecursionValidationTest {
-
-	private static final IRI CHAIN_SHAPE_12 = Values.iri("http://example.com/ns#ChainShape12");
 
 	@Test
 	void deepRecursionAcrossAllConstraintTypesValidates() throws Exception {
