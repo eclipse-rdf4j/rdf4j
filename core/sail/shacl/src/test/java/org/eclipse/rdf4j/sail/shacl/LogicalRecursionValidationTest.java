@@ -28,13 +28,13 @@ class LogicalRecursionValidationTest {
 	@Test
 	void recursionInNotIsDetected() throws Exception {
 		SailRepository shaclRepository = Utils
-				.getInitializedShaclRepository("test-cases/recursion/logical/not/shacl.trig");
+				.getInitializedShaclRepository("recursion/logical/not/shacl.trig");
 
 		ShaclSail shaclSail = (ShaclSail) shaclRepository.getSail();
 		shaclSail.setShapesGraphs(Set.of(RDF4J.NIL));
 
 		URL data = Objects.requireNonNull(
-				getClass().getClassLoader().getResource("test-cases/recursion/logical/not/data.trig"));
+				getClass().getClassLoader().getResource("recursion/logical/not/data.trig"));
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();
@@ -54,13 +54,39 @@ class LogicalRecursionValidationTest {
 	@Test
 	void recursionInOrIsDetected() throws Exception {
 		SailRepository shaclRepository = Utils
-				.getInitializedShaclRepository("test-cases/recursion/logical/or/shacl.trig");
+				.getInitializedShaclRepository("recursion/logical/or/shacl.trig");
 
 		ShaclSail shaclSail = (ShaclSail) shaclRepository.getSail();
 		shaclSail.setShapesGraphs(Set.of(RDF4J.NIL));
 
 		URL data = Objects.requireNonNull(
-				getClass().getClassLoader().getResource("test-cases/recursion/logical/or/data.trig"));
+				getClass().getClassLoader().getResource("recursion/logical/or/data.trig"));
+
+		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
+			connection.begin();
+			connection.add(data, data.toString(), RDFFormat.TRIG);
+
+			assertThrows(ShaclShapeParsingException.class, () -> {
+				try {
+					connection.commit();
+				} catch (Exception e) {
+					connection.rollback();
+					throw e;
+				}
+			});
+		}
+	}
+
+	@Test
+	void recursionInNodeIsDetected() throws Exception {
+		SailRepository shaclRepository = Utils
+				.getInitializedShaclRepository("recursion/node/selfNode/shacl.trig");
+
+		ShaclSail shaclSail = (ShaclSail) shaclRepository.getSail();
+		shaclSail.setShapesGraphs(Set.of(RDF4J.NIL));
+
+		URL data = Objects.requireNonNull(
+				getClass().getClassLoader().getResource("recursion/node/selfNode/data.trig"));
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();
