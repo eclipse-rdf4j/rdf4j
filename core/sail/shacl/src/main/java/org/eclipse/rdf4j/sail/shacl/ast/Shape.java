@@ -642,11 +642,9 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 				List<ContextWithShape> parsed = parse(shapeSource, parseSettings);
 				return getShapes(parsed);
 			} catch (RDF4JException e) {
-				// rethrow RDF4J exceptions as is, this includes ShaclShapeParsingException
 				logger.error(e.getMessage(), e);
 				throw e;
 			} catch (Throwable e) {
-				// e can never be instanceOf ShaclShapeParsingException because ShaclShapeParsingException extends  RDF4JException
 				logger.error("Unexpected error while parsing shapes", e);
 				throw new ShaclShapeParsingException("Unexpected error while parsing shapes", e);
 			}
@@ -668,7 +666,10 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 						.filter(ContextWithShape::hasShape)
 						.distinct()
 						.collect(Collectors.toList());
-			} catch (Throwable e) {
+			}  catch (RDF4JException e) {
+				logger.error(e.getMessage(), e);
+				throw e;
+			}catch (Throwable e) {
 				logger.error("Unexpected error while parsing shapes", e);
 				throw new ShaclShapeParsingException("Unexpected error while parsing shapes", e);
 			}
