@@ -69,13 +69,12 @@ public class ElasticsearchSailGeoSPARQLTest extends AbstractElasticsearchTest {
 	}
 
 	@Test
-	@Disabled // JTS is required
 	public void testIntersectionQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
-		delegateTest.testIntersectionQuery();
+		// delegateTest.testIntersectionQuery();
+		// disabled, needs JTS
 	}
 
 	@Test
-	@Disabled // JTS is required
 	public void testComplexIntersectionQuery()
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testComplexIntersectionQuery();
