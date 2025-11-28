@@ -31,4 +31,8 @@ interface RecordIterator extends Closeable {
 	 */
 	@Override
 	void close();
+
+	default String getIndexName() {
+		return null;
+	}
 }
