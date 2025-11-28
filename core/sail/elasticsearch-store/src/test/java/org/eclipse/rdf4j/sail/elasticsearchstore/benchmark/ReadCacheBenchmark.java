@@ -78,11 +78,11 @@ public class ReadCacheBenchmark {
 		// PATH
 		TestHelpers.openClient();
 
-		repoWithoutCache = new SailRepository(new ElasticsearchStore("localhost", TestHelpers.PORT,
+		repoWithoutCache = new SailRepository(new ElasticsearchStore(TestHelpers.HOST, TestHelpers.PORT,
 				TestHelpers.CLUSTER, "testindex1", ExtensibleStore.Cache.NONE));
 
 		repoWithCache = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex2"));
+				new ElasticsearchStore(TestHelpers.HOST, TestHelpers.PORT, TestHelpers.CLUSTER, "testindex2"));
 		try (SailRepositoryConnection connection = repoWithCache.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.clear();

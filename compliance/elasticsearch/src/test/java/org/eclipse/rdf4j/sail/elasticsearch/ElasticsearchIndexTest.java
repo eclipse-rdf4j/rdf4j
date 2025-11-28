@@ -10,8 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
+import static org.junit.Assert.*;
+
 import java.io.IOException;
-import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -29,21 +30,15 @@ import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.index.reindex.ReindexPlugin;
-import org.elasticsearch.plugins.Plugin;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
-import org.elasticsearch.test.ESIntegTestCase;
-import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-@ClusterScope(numDataNodes = 1)
-public class ElasticsearchIndexTest extends ESIntegTestCase {
+public class ElasticsearchIndexTest extends AbstractElasticsearchTest {
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
@@ -92,16 +87,10 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 	Statement statementContext232 = vf.createStatement(subject2, predicate2, object5, CONTEXT_2);
 
-	TransportClient client;
-
 	ElasticsearchIndex index;
 
 	@Before
-	@Override
 	public void setUp() throws Exception {
-		super.setUp();
-		client = (TransportClient) internalCluster().transportClient();
-
 		Properties sailProperties = new Properties();
 		sailProperties.put(ElasticsearchIndex.TRANSPORT_KEY, client.transportAddresses().get(0).toString());
 		sailProperties.put(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name",
@@ -113,23 +102,12 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		index.initialize(sailProperties);
 	}
 
-	@Override
-	protected Collection<Class<? extends Plugin>> transportClientPlugins() {
-		return List.of(ReindexPlugin.class);
-	}
-
-	@Override
-	protected Collection<Class<? extends Plugin>> nodePlugins() {
-		return List.of(ReindexPlugin.class);
-	}
-
 	@After
-	@Override
 	public void tearDown() throws Exception {
 		try {
 			index.shutDown();
 		} finally {
-			super.tearDown();
+			index = null;
 		}
 
 		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(false);

@@ -10,34 +10,22 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
-import java.util.Collection;
-import java.util.List;
-
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.testsuite.rdf4j.sail.lucene.AbstractLuceneSailGeoSPARQLTest;
-import org.elasticsearch.client.transport.TransportClient;
-import org.elasticsearch.index.reindex.ReindexPlugin;
-import org.elasticsearch.plugins.Plugin;
-import org.elasticsearch.test.ESIntegTestCase;
-import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
-import org.junit.After;
-import org.junit.Before;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
 
-@ClusterScope(numDataNodes = 1)
-public class ElasticsearchSailGeoSPARQLTest extends ESIntegTestCase {
+public class ElasticsearchSailGeoSPARQLTest extends AbstractElasticsearchTest {
 
-	AbstractLuceneSailGeoSPARQLTest delegateTest;
+	private static AbstractLuceneSailGeoSPARQLTest delegateTest;
 
-	@Before
-	@Override
-	public void setUp() throws Exception {
-		super.setUp();
-		TransportClient client = (TransportClient) internalCluster().transportClient();
+	@BeforeClass
+	public static void setUpClass() throws Exception {
 		delegateTest = new AbstractLuceneSailGeoSPARQLTest() {
 
 			@Override
@@ -54,23 +42,12 @@ public class ElasticsearchSailGeoSPARQLTest extends ESIntegTestCase {
 		delegateTest.setUp();
 	}
 
-	@Override
-	protected Collection<Class<? extends Plugin>> transportClientPlugins() {
-		return List.of(ReindexPlugin.class);
-	}
-
-	@Override
-	protected Collection<Class<? extends Plugin>> nodePlugins() {
-		return List.of(ReindexPlugin.class);
-	}
-
-	@After
-	@Override
-	public void tearDown() throws Exception {
+	@AfterClass
+	public static void tearDownClass() throws Exception {
 		try {
 			delegateTest.tearDown();
 		} finally {
-			super.tearDown();
+			delegateTest = null;
 		}
 	}
 

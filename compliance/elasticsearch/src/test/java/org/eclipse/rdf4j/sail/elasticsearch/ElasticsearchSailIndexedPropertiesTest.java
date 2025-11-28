@@ -10,33 +10,21 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
-import java.util.Collection;
-import java.util.List;
-
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.testsuite.rdf4j.sail.lucene.AbstractLuceneSailIndexedPropertiesTest;
-import org.elasticsearch.client.transport.TransportClient;
-import org.elasticsearch.index.reindex.ReindexPlugin;
-import org.elasticsearch.plugins.Plugin;
-import org.elasticsearch.test.ESIntegTestCase;
-import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-@ClusterScope(numDataNodes = 1)
-public class ElasticsearchSailIndexedPropertiesTest extends ESIntegTestCase {
+public class ElasticsearchSailIndexedPropertiesTest extends AbstractElasticsearchTest {
 
 	AbstractLuceneSailIndexedPropertiesTest delegateTest;
 
 	@Before
-	@Override
 	public void setUp() throws Exception {
-		super.setUp();
-		TransportClient client = (TransportClient) internalCluster().transportClient();
 		delegateTest = new AbstractLuceneSailIndexedPropertiesTest() {
 
 			@Override
@@ -53,23 +41,12 @@ public class ElasticsearchSailIndexedPropertiesTest extends ESIntegTestCase {
 		delegateTest.setUp();
 	}
 
-	@Override
-	protected Collection<Class<? extends Plugin>> transportClientPlugins() {
-		return List.of(ReindexPlugin.class);
-	}
-
-	@Override
-	protected Collection<Class<? extends Plugin>> nodePlugins() {
-		return List.of(ReindexPlugin.class);
-	}
-
 	@After
-	@Override
 	public void tearDown() throws Exception {
 		try {
 			delegateTest.tearDown();
 		} finally {
-			super.tearDown();
+			delegateTest = null;
 		}
 	}
 
