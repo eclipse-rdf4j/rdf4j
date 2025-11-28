@@ -493,9 +493,6 @@ class ValueStore extends AbstractValueFactory {
 		return null;
 	}
 
-	long prevId;
-	long prevPrevId;
-
 	/**
 	 * Cache value by ID.
 	 * <p>

@@ -45,8 +45,6 @@ class LmdbContextIdIterator implements Closeable {
 
 	private final long txn;
 
-	private final int dbi;
-
 	private volatile boolean closed = false;
 
 	private final MDBVal keyData;
@@ -54,8 +52,6 @@ class LmdbContextIdIterator implements Closeable {
 	private final MDBVal valueData;
 
 	private ByteBuffer minKeyBuf;
-
-	private int lastResult;
 
 	private final long[] record = new long[1];
 
@@ -70,7 +66,6 @@ class LmdbContextIdIterator implements Closeable {
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();
 
-		this.dbi = dbi;
 		this.txnRef = txnRef;
 		this.txnLockManager = txnRef.lockManager();
 
@@ -102,6 +97,7 @@ class LmdbContextIdIterator implements Closeable {
 			throw new SailException(e);
 		}
 		try {
+			int lastResult;
 			if (txnRefVersion != txnRef.version()) {
 				// cursor must be renewed
 				E(mdb_cursor_renew(txn, cursor));
