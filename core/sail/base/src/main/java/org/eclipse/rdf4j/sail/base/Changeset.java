@@ -123,6 +123,39 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	private boolean closed;
 
+	public static boolean isOrderIndependent(Changeset changeset1, Changeset changeset2) {
+		Objects.requireNonNull(changeset1, "changeset1");
+		Objects.requireNonNull(changeset2, "changeset2");
+
+		boolean c1StatementChanges = hasStatementChanges(changeset1);
+		boolean c2StatementChanges = hasStatementChanges(changeset2);
+		boolean c1NamespaceChanges = hasNamespaceChanges(changeset1);
+		boolean c2NamespaceChanges = hasNamespaceChanges(changeset2);
+
+		// Both changesets are order independent if they don't add or remove anything that the other changeset modifies.
+		// To simplify the check we will assume that if one changeset only modifies namespaces and the other only
+		// statements then they are order independent.
+		if ((c1NamespaceChanges && !c1StatementChanges && c2StatementChanges && !c2NamespaceChanges)
+				|| (c2NamespaceChanges && !c2StatementChanges && c1StatementChanges && !c1NamespaceChanges)) {
+			return true;
+		}
+
+		return false;
+	}
+
+	private static boolean hasNamespaceChanges(Changeset changeset) {
+		Map<String, String> addedNamespaces = changeset.getAddedNamespaces();
+		Set<String> removedPrefixes = changeset.getRemovedPrefixes();
+		return changeset.namespaceCleared || (addedNamespaces != null && !addedNamespaces.isEmpty())
+				|| (removedPrefixes != null && !removedPrefixes.isEmpty());
+	}
+
+	private static boolean hasStatementChanges(Changeset changeset) {
+		Set<Resource> deprecatedContexts = changeset.getDeprecatedContexts();
+		return changeset.statementCleared || changeset.hasApproved() || changeset.hasDeprecated()
+				|| (deprecatedContexts != null && !deprecatedContexts.isEmpty());
+	}
+
 	@Override
 	public void close() throws SailException {
 		closed = true;
