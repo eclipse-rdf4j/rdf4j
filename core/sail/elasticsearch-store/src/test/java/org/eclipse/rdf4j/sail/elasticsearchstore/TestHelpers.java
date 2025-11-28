@@ -17,13 +17,25 @@ import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestHighLevelClient;
 
 public class TestHelpers {
-	public static final String CLUSTER = "test";
-	public static final int PORT = 9300;
+	public static String CLUSTER = "test";
+	public static int PORT = 9300;
+	public static String HOST = "localhost";
 
 	private static RestHighLevelClient CLIENT;
 
-	public static void openClient() {
-		CLIENT = new RestHighLevelClient(RestClient.builder(new HttpHost("localhost", 9200, "http")));
+	public static synchronized void openClient() {
+		if (CLIENT != null) {
+			return;
+		}
+
+		ElasticsearchStoreTestContainerSupport.start();
+
+		CLUSTER = ElasticsearchStoreTestContainerSupport.getClusterName();
+		PORT = ElasticsearchStoreTestContainerSupport.getTransportPort();
+		HOST = ElasticsearchStoreTestContainerSupport.getHost();
+
+		CLIENT = new RestHighLevelClient(RestClient
+				.builder(new HttpHost(HOST, ElasticsearchStoreTestContainerSupport.getHttpPort(), "http")));
 	}
 
 	public static RestHighLevelClient getClient() {
@@ -31,7 +43,10 @@ public class TestHelpers {
 	}
 
 	public static void closeClient() throws IOException {
-		CLIENT.close();
+		if (CLIENT != null) {
+			CLIENT.close();
+			CLIENT = null;
+		}
 	}
 
 }
