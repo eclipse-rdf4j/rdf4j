@@ -22,16 +22,20 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.TransportAddress;
 import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.transport.client.PreBuiltTransportClient;
-import org.junit.AfterClass;
-import org.junit.Assume;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+@Testcontainers(disabledWithoutDocker = true)
 public abstract class AbstractElasticsearchTest {
 
 	protected static final String CLUSTER_NAME = "test";
 
+	@Container
 	public static final GenericContainer<?> elasticsearch = new GenericContainer<>(dockerImageName())
 			.withEnv("discovery.type", "single-node")
 			.withEnv("cluster.name", CLUSTER_NAME)
@@ -45,22 +49,15 @@ public abstract class AbstractElasticsearchTest {
 
 	protected static TransportClient client;
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpCluster() throws Exception {
 		System.out.println("Setting up elasticsearch cluster");
 		if (client != null) {
 			return;
 		}
 
-		try {
-			elasticsearch.start();
-		} catch (IllegalStateException e) {
-			Assume.assumeTrue("Docker is required to run Elasticsearch compliance tests:\n" + safeLogs(), false);
-		}
-
-		if (!elasticsearch.isRunning()) {
-			Assume.assumeTrue("Elasticsearch test container failed to stay running:\n" + safeLogs(), false);
-		}
+		Assumptions.assumeTrue(elasticsearch.isRunning(),
+				"Elasticsearch test container failed to start:\n" + safeLogs());
 
 		Settings settings = Settings.builder().put("cluster.name", CLUSTER_NAME).build();
 
@@ -75,14 +72,11 @@ public abstract class AbstractElasticsearchTest {
 		client = transportClient;
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void tearDownCluster() {
 		if (client != null) {
 			client.close();
 			client = null;
-		}
-		if (elasticsearch != null && elasticsearch.isRunning()) {
-			elasticsearch.stop();
 		}
 	}
 
