@@ -55,7 +55,7 @@ class PersistentSetFactory<T extends Serializable> {
 	TxnManager txnManager;
 	long writeTxn;
 	PointerBuffer writeTxnPp = PointerBuffer.allocateDirect(1);
-	private int defaultDbi;
+	private final int defaultDbi;
 	private long mapSize = 1048576; // 1 MiB
 	private long pageSize;
 
