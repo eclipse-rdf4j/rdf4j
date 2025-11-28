@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
@@ -403,7 +405,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public boolean equals(Object o) {
+	public boolean equals(ConstraintComponent o, IdentityHashMap<Shape, Shape> kvIdentityHashMap) {
 		if (this == o) {
 			return true;
 		}
@@ -417,7 +419,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public int hashCode() {
+	public int hashCode(IdentityHashMap<Shape, Boolean> identityHashMap) {
 		return clazz.hashCode() + "ClassConstraintComponent".hashCode();
 	}
 }

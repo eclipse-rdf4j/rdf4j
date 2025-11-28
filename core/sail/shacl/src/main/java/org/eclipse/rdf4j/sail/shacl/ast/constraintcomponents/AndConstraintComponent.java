@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -176,21 +177,31 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 	}
 
 	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-		if (o == null || getClass() != o.getClass()) {
+	public boolean equals(ConstraintComponent o, IdentityHashMap<Shape, Shape> guard) {
+		if (!(o instanceof AndConstraintComponent)) {
 			return false;
 		}
 
 		AndConstraintComponent that = (AndConstraintComponent) o;
 
-		return and.equals(that.and);
+		if (and.size() != that.and.size()) {
+			return false;
+		}
+
+		for (int i = 0; i < and.size(); i++) {
+			if (!and.get(i).equals(that.and.get(i), guard)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	@Override
-	public int hashCode() {
-		return and.hashCode() + "AndConstraintComponent".hashCode();
+	public int hashCode(IdentityHashMap<Shape, Boolean> guard) {
+		int result = "AndConstraintComponent".hashCode();
+		for (Shape shape : and) {
+			result = 31 * result + shape.hashCode(guard);
+		}
+		return result;
 	}
 }

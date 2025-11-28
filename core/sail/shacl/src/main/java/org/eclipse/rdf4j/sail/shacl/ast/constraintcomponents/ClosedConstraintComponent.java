@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -556,7 +557,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 	}
 
 	@Override
-	public boolean equals(Object o) {
+	public boolean equals(ConstraintComponent o, IdentityHashMap<Shape, Shape> kvIdentityHashMap) {
 		if (this == o) {
 			return true;
 		}
@@ -573,7 +574,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 	}
 
 	@Override
-	public int hashCode() {
+	public int hashCode(IdentityHashMap<Shape, Boolean> identityHashMap) {
 		int result = paths != null ? paths.hashCode() : 0;
 		result = 31 * result + (ignoredProperties != null ? ignoredProperties.hashCode() : 0);
 		return result;

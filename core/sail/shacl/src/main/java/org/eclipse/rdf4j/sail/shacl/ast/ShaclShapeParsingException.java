@@ -32,6 +32,10 @@ public class ShaclShapeParsingException extends RDF4JException {
 		this.id = id;
 	}
 
+	public ShaclShapeParsingException(String msg, Throwable t) {
+		super(msg, t);
+	}
+
 	public ShaclShapeParsingException(Throwable t, Resource id) {
 		super(t.getMessage() + " - Caused by shape with id: " + resourceToString(id), t);
 		this.id = id;

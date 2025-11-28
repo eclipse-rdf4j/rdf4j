@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import java.util.IdentityHashMap;
 import java.util.Optional;
 import java.util.Set;
 
@@ -268,7 +269,7 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 	}
 
 	@Override
-	public boolean equals(Object o) {
+	public boolean equals(ConstraintComponent o, IdentityHashMap<Shape, Shape> kvIdentityHashMap) {
 		if (this == o) {
 			return true;
 		}
@@ -282,7 +283,7 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 	}
 
 	@Override
-	public int hashCode() {
+	public int hashCode(IdentityHashMap<Shape, Boolean> identityHashMap) {
 		return predicate.hashCode() + "AbstractPairwiseConstraintComponent".hashCode();
 	}
 

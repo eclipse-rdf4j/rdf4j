@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import java.util.IdentityHashMap;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -62,7 +63,7 @@ public class DisjointConstraintComponent extends AbstractPairwiseConstraintCompo
 	}
 
 	@Override
-	public boolean equals(Object o) {
+	public boolean equals(ConstraintComponent o, IdentityHashMap<Shape, Shape> kvIdentityHashMap) {
 		if (this == o) {
 			return true;
 		}
@@ -76,7 +77,7 @@ public class DisjointConstraintComponent extends AbstractPairwiseConstraintCompo
 	}
 
 	@Override
-	public int hashCode() {
+	public int hashCode(IdentityHashMap<Shape, Boolean> identityHashMap) {
 		return predicate.hashCode() + "DisjointConstraintComponent".hashCode();
 	}
 }

@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
@@ -223,7 +225,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public boolean equals(Object o) {
+	public boolean equals(ConstraintComponent o, IdentityHashMap<Shape, Shape> kvIdentityHashMap) {
 		if (this == o) {
 			return true;
 		}
@@ -237,7 +239,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public int hashCode() {
+	public int hashCode(IdentityHashMap<Shape, Boolean> identityHashMap) {
 		return Long.hashCode(minCount) + "MinCountConstraintComponent".hashCode();
 	}
 }

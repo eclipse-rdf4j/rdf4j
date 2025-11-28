@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import java.util.IdentityHashMap;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.Literal;
@@ -19,6 +20,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.Exportable;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
@@ -73,6 +75,10 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 	ConstraintComponent deepClone();
 
 	List<Literal> getDefaultMessage();
+
+	boolean equals(ConstraintComponent o, IdentityHashMap<Shape, Shape> kvIdentityHashMap);
+
+	int hashCode(IdentityHashMap<Shape, Boolean> identityHashMap);
 
 	enum Scope {
 		none,

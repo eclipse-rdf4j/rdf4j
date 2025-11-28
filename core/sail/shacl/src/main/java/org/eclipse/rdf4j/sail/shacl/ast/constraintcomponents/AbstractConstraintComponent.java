@@ -11,6 +11,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import java.util.IdentityHashMap;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -176,6 +178,23 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 		allTargets = Unique.getInstance(new TrimToTarget(allTargets, connectionsGroup), false, connectionsGroup);
 
 		return allTargets;
+	}
+
+	@Override
+	public final int hashCode() {
+		return hashCode(new IdentityHashMap<>());
+	}
+
+	@Override
+	public final boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		return equals(((AbstractConstraintComponent) o), new IdentityHashMap<>());
 	}
 
 }
