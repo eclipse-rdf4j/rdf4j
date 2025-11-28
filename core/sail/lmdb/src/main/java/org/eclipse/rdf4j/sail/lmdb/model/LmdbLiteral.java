@@ -50,11 +50,11 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	 */
 	private CoreDatatype coreDatatype;
 
-	private volatile ValueStoreRevision revision;
+	private ValueStoreRevision revision;
 
-	private volatile long internalID;
+	private long internalID;
 
-	private volatile boolean initialized = false;
+	private boolean initialized = false;
 
 	/*--------------*
 	 * Constructors *
