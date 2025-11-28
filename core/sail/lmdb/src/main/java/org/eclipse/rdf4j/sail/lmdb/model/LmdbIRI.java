@@ -29,11 +29,11 @@ public class LmdbIRI implements LmdbResource, IRI {
 	 * Constants *
 	 *-----------*/
 
-	private volatile ValueStoreRevision revision;
+	private ValueStoreRevision revision;
 
-	private volatile long internalID;
+	private long internalID;
 
-	private volatile boolean initialized = false;
+	private boolean initialized = false;
 	/**
 	 * The IRI string.
 	 */
