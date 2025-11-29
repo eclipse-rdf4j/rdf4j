@@ -11,56 +11,78 @@
 package org.eclipse.rdf4j.sail.elasticsearch;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.eclipse.rdf4j.sail.lucene.BulkUpdater;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
-import org.elasticsearch.action.bulk.BulkRequestBuilder;
-import org.elasticsearch.action.bulk.BulkResponse;
-import org.elasticsearch.client.Client;
+import org.elasticsearch.index.seqno.SequenceNumbers;
+
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch.core.BulkResponse;
+import co.elastic.clients.elasticsearch.core.bulk.BulkOperation;
+import co.elastic.clients.elasticsearch.core.bulk.BulkResponseItem;
 
 public class ElasticsearchBulkUpdater implements BulkUpdater {
 
-	private final Client client;
+	private final ElasticsearchClient client;
 
-	private final BulkRequestBuilder bulkRequest;
+	private final List<BulkOperation> operations = new ArrayList<>();
 
-	public ElasticsearchBulkUpdater(Client client) {
+	public ElasticsearchBulkUpdater(ElasticsearchClient client) {
 		this.client = client;
-		this.bulkRequest = client.prepareBulk();
 	}
 
 	@Override
 	public void add(SearchDocument doc) {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
-		bulkRequest.add(
-				client.prepareIndex(esDoc.getIndex(), esDoc.getType(), esDoc.getId()).setSource(esDoc.getSource()));
+		operations.add(BulkOperation.of(b -> b.index(i -> i
+				.index(esDoc.getIndex())
+				.id(esDoc.getId())
+				.document(esDoc.getSource()))));
 	}
 
 	@Override
 	public void update(SearchDocument doc) {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
-		bulkRequest.add(client.prepareUpdate(esDoc.getIndex(), esDoc.getType(), esDoc.getId())
-				.setIfSeqNo(esDoc.getSeqNo())
-				.setIfPrimaryTerm(esDoc.getPrimaryTerm())
-				.setDoc(esDoc.getSource()));
+		operations.add(BulkOperation.of(b -> b.index(i -> {
+			i.index(esDoc.getIndex()).id(esDoc.getId()).document(esDoc.getSource());
+			if (esDoc.getSeqNo() != SequenceNumbers.UNASSIGNED_SEQ_NO
+					&& esDoc.getPrimaryTerm() != SequenceNumbers.UNASSIGNED_PRIMARY_TERM) {
+				i.ifSeqNo(esDoc.getSeqNo()).ifPrimaryTerm(esDoc.getPrimaryTerm());
+			}
+			return i;
+		})));
 	}
 
 	@Override
 	public void delete(SearchDocument doc) {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
-		bulkRequest.add(
-				client.prepareDelete(esDoc.getIndex(), esDoc.getType(), esDoc.getId())
-						.setIfSeqNo(esDoc.getSeqNo())
-						.setIfPrimaryTerm(esDoc.getPrimaryTerm()));
+		operations.add(BulkOperation.of(b -> b.delete(d -> {
+			d.index(esDoc.getIndex()).id(esDoc.getId());
+			if (esDoc.getSeqNo() != SequenceNumbers.UNASSIGNED_SEQ_NO
+					&& esDoc.getPrimaryTerm() != SequenceNumbers.UNASSIGNED_PRIMARY_TERM) {
+				d.ifSeqNo(esDoc.getSeqNo()).ifPrimaryTerm(esDoc.getPrimaryTerm());
+			}
+			return d;
+		})));
 	}
 
 	@Override
 	public void end() throws IOException {
-		if (bulkRequest.numberOfActions() > 0) {
-			BulkResponse response = bulkRequest.execute().actionGet();
-			if (response.hasFailures()) {
-				throw new IOException(response.buildFailureMessage());
-			}
+		if (operations.isEmpty()) {
+			return;
 		}
+		BulkResponse response = client.bulk(b -> b.operations(operations));
+		if (response.errors()) {
+			StringBuilder sb = new StringBuilder("Bulk operation failures: ");
+			for (BulkResponseItem item : response.items()) {
+				if (item.error() != null) {
+					sb.append(item.error().reason()).append("; ");
+				}
+			}
+			throw new IOException(sb.toString());
+		}
+		operations.clear();
 	}
 }

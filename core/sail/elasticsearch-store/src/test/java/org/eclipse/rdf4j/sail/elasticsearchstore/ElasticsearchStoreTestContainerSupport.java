@@ -15,17 +15,18 @@ import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.http.HttpHost;
-import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
-import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
-import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestClient;
-import org.elasticsearch.client.RestHighLevelClient;
-import org.elasticsearch.core.TimeValue;
 import org.opentest4j.TestAbortedException;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.HealthStatus;
+import co.elastic.clients.elasticsearch.cluster.HealthResponse;
+import co.elastic.clients.json.jackson.JacksonJsonpMapper;
+import co.elastic.clients.transport.rest_client.RestClientTransport;
 
 /**
  * Test-only helper that lazily starts a single Elasticsearch container and exposes its connection details.
@@ -80,13 +81,12 @@ public final class ElasticsearchStoreTestContainerSupport {
 				throw new IllegalStateException(
 						"Elasticsearch test container stopped during health check. Logs:\n" + safeLogs(container));
 			}
-			try (RestHighLevelClient client = new RestHighLevelClient(
-					RestClient.builder(new HttpHost(host, httpPort, "http")))) {
-				ClusterHealthRequest request = new ClusterHealthRequest()
-						.waitForYellowStatus()
-						.timeout(TimeValue.timeValueSeconds(5));
-				ClusterHealthResponse response = client.cluster().health(request, RequestOptions.DEFAULT);
-				if (!response.isTimedOut()) {
+			try (RestClient restClient = RestClient.builder(new HttpHost(host, httpPort, "http")).build()) {
+				ElasticsearchClient client = new ElasticsearchClient(
+						new RestClientTransport(restClient, new JacksonJsonpMapper()));
+				HealthResponse response = client.cluster()
+						.health(h -> h.waitForStatus(HealthStatus.Yellow).timeout(t -> t.time("5s")));
+				if (!response.timedOut()) {
 					return;
 				}
 				lastFailure = new IllegalStateException("Cluster health timed out waiting for YELLOW status");

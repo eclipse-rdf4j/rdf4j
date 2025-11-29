@@ -11,19 +11,9 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import java.io.IOException;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
+import java.lang.reflect.Type;
+import java.util.Map;
 
-import org.elasticsearch.action.admin.indices.get.GetIndexRequest;
-import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.client.RequestOptions;
-import org.elasticsearch.client.Requests;
-import org.elasticsearch.client.transport.TransportClient;
-import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.transport.TransportAddress;
-import org.elasticsearch.search.SearchHit;
-import org.elasticsearch.search.SearchHits;
-import org.elasticsearch.transport.client.PreBuiltTransportClient;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -33,10 +23,17 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+
+import co.elastic.clients.elasticsearch.core.SearchResponse;
+import co.elastic.clients.elasticsearch.core.search.Hit;
+
 @Testcontainers
 public abstract class AbstractElasticsearchStoreIT {
 
 	private static final Logger logger = LoggerFactory.getLogger(AbstractElasticsearchStoreIT.class);
+	private static final Type MAP_TYPE = new TypeReference<Map<String, Object>>() {
+	}.getType();
 
 	@Container
 	private static final GenericContainer<?> elasticsearchContainer = ElasticsearchStoreTestContainerSupport
@@ -54,7 +51,7 @@ public abstract class AbstractElasticsearchStoreIT {
 
 	@AfterEach
 	public void after() throws IOException {
-		TestHelpers.getClient().indices().refresh(Requests.refreshRequest("*"), RequestOptions.DEFAULT);
+		TestHelpers.getClient().indices().refresh(r -> r.index("*"));
 		printAllDocs();
 		deleteAllIndexes();
 	}
@@ -63,11 +60,10 @@ public abstract class AbstractElasticsearchStoreIT {
 		for (String index : getIndexes()) {
 			if (!index.equals(".geoip_databases")) {
 				logger.info("INDEX: " + index);
-				SearchResponse res = TestHelpers.getClient()
-						.search(Requests.searchRequest(index), RequestOptions.DEFAULT);
-				SearchHits hits = res.getHits();
-				for (SearchHit hit : hits) {
-					logger.info(" doc " + hit.getSourceAsString());
+				SearchResponse<Map<String, Object>> res = TestHelpers.getClient()
+						.search(s -> s.index(index).query(q -> q.matchAll(m -> m)), MAP_TYPE);
+				for (Hit<Map<String, Object>> hit : res.hits().hits()) {
+					logger.info(" doc " + hit.source());
 				}
 			}
 		}
@@ -77,23 +73,20 @@ public abstract class AbstractElasticsearchStoreIT {
 		for (String index : getIndexes()) {
 			if (!index.equals(".geoip_databases")) {
 				logger.info("deleting index: " + index);
-				TestHelpers.getClient().indices().delete(Requests.deleteIndexRequest(index), RequestOptions.DEFAULT);
+				TestHelpers.getClient().indices().delete(d -> d.index(index));
 			}
 		}
 	}
 
 	protected String[] getIndexes() {
-		Settings settings = Settings.builder().put("cluster.name", TestHelpers.CLUSTER).build();
-		try (TransportClient client = new PreBuiltTransportClient(settings)) {
-			client.addTransportAddress(
-					new TransportAddress(InetAddress.getByName(elasticsearchHost()), elasticsearchPort()));
-
-			return client.admin()
+		try {
+			return TestHelpers.getClient()
 					.indices()
-					.getIndex(new GetIndexRequest())
-					.actionGet()
-					.getIndices();
-		} catch (UnknownHostException e) {
+					.get(g -> g.index("*"))
+					.result()
+					.keySet()
+					.toArray(new String[0]);
+		} catch (IOException e) {
 			throw new IllegalStateException(e);
 		}
 	}
@@ -103,7 +96,7 @@ public abstract class AbstractElasticsearchStoreIT {
 	}
 
 	protected static int elasticsearchPort() {
-		return ElasticsearchStoreTestContainerSupport.getTransportPort();
+		return ElasticsearchStoreTestContainerSupport.getHttpPort();
 	}
 
 	protected static String elasticsearchCluster() {

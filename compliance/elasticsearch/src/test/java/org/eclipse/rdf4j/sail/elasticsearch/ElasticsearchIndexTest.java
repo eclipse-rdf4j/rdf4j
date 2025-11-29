@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -37,16 +38,23 @@ import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.search.SearchHit;
-import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+
+import co.elastic.clients.elasticsearch._types.query_dsl.Query;
+import co.elastic.clients.elasticsearch.core.GetResponse;
+import co.elastic.clients.elasticsearch.core.SearchResponse;
+import co.elastic.clients.elasticsearch.core.search.Hit;
+
 public class ElasticsearchIndexTest extends AbstractElasticsearchTest {
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
+	private static final java.lang.reflect.Type MAP_TYPE = new TypeReference<Map<String, Object>>() {
+	}.getType();
 
 	public static final IRI CONTEXT_1 = vf.createIRI("urn:context1");
 
@@ -98,9 +106,8 @@ public class ElasticsearchIndexTest extends AbstractElasticsearchTest {
 	@BeforeEach
 	public void setUp() throws Exception {
 		Properties sailProperties = new Properties();
-		sailProperties.put(ElasticsearchIndex.TRANSPORT_KEY, client.transportAddresses().get(0).toString());
-		sailProperties.put(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name",
-				client.settings().get("cluster.name"));
+		sailProperties.put(ElasticsearchIndex.TRANSPORT_KEY, host + ":" + httpPort);
+		sailProperties.put(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name", CLUSTER_NAME);
 		sailProperties.put(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
 		sailProperties.put(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "yellow");
 		sailProperties.put(ElasticsearchIndex.WAIT_FOR_NODES_KEY, ">=1");
@@ -131,27 +138,16 @@ public class ElasticsearchIndexTest extends AbstractElasticsearchTest {
 		index.commit();
 
 		// check that it arrived properly
-		long count = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.get()
-				.getHits()
-				.getTotalHits().value;
+		long count = countAll();
 		assertEquals(1, count);
 
-		SearchHits hits = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.setQuery(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString()))
-				.execute()
-				.actionGet()
-				.getHits();
-		Iterator<SearchHit> docs = hits.iterator();
+		SearchResponse<Map<String, Object>> hits = search(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME,
+				subject.toString()));
+		Iterator<Hit<Map<String, Object>>> docs = hits.hits().hits().iterator();
 		assertTrue(docs.hasNext());
 
-		SearchHit doc = docs.next();
-		Map<String, Object> fields = client.prepareGet(doc.getIndex(), doc.getType(), doc.getId())
-				.execute()
-				.actionGet()
-				.getSource();
+		Hit<Map<String, Object>> doc = docs.next();
+		Map<String, Object> fields = getDoc(doc.index(), doc.id());
 		assertEquals(subject.toString(), fields.get(SearchFields.URI_FIELD_NAME));
 		assertEquals(object1.getLabel(), fields.get(predicate1Field));
 
@@ -165,24 +161,15 @@ public class ElasticsearchIndexTest extends AbstractElasticsearchTest {
 		// See if everything remains consistent. We must create a new
 		// IndexReader
 		// in order to be able to see the updates
-		count = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.get()
-				.getHits()
-				.getTotalHits().value;
+		count = countAll();
 		assertEquals(1, count); // #docs should *not* have increased
 
-		hits = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.setQuery(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString()))
-				.execute()
-				.actionGet()
-				.getHits();
-		docs = hits.iterator();
+		hits = search(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString()));
+		docs = hits.hits().hits().iterator();
 		assertTrue(docs.hasNext());
 
 		doc = docs.next();
-		fields = client.prepareGet(doc.getIndex(), doc.getType(), doc.getId()).execute().actionGet().getSource();
+		fields = getDoc(doc.index(), doc.id());
 		assertEquals(subject.toString(), fields.get(SearchFields.URI_FIELD_NAME));
 		assertEquals(object1.getLabel(), fields.get(predicate1Field));
 		assertEquals(object2.getLabel(), fields.get(predicate2Field));
@@ -190,20 +177,10 @@ public class ElasticsearchIndexTest extends AbstractElasticsearchTest {
 		assertFalse(docs.hasNext());
 
 		// see if we can query for these literals
-		count = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.setSource(new SearchSourceBuilder().size(0).query(QueryBuilders.queryStringQuery(object1.getLabel())))
-				.get()
-				.getHits()
-				.getTotalHits().value;
+		count = countForQuery(QueryBuilders.queryStringQuery(object1.getLabel()));
 		assertEquals(1, count);
 
-		count = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.setSource(new SearchSourceBuilder().size(0).query(QueryBuilders.queryStringQuery(object2.getLabel())))
-				.get()
-				.getHits()
-				.getTotalHits().value;
+		count = countForQuery(QueryBuilders.queryStringQuery(object2.getLabel()));
 		assertEquals(1, count);
 
 		// remove the first statement
@@ -215,24 +192,15 @@ public class ElasticsearchIndexTest extends AbstractElasticsearchTest {
 		// still
 		// exists
 
-		count = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.get()
-				.getHits()
-				.getTotalHits().value;
+		count = countAll();
 		assertEquals(1, count);
 
-		hits = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.setQuery(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString()))
-				.execute()
-				.actionGet()
-				.getHits();
-		docs = hits.iterator();
+		hits = search(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString()));
+		docs = hits.hits().hits().iterator();
 		assertTrue(docs.hasNext());
 
 		doc = docs.next();
-		fields = client.prepareGet(doc.getIndex(), doc.getType(), doc.getId()).execute().actionGet().getSource();
+		fields = getDoc(doc.index(), doc.id());
 		assertEquals(subject.toString(), fields.get(SearchFields.URI_FIELD_NAME));
 		assertNull(fields.get(predicate1.toString()));
 		assertEquals(object2.getLabel(), fields.get(predicate2Field));
@@ -247,11 +215,7 @@ public class ElasticsearchIndexTest extends AbstractElasticsearchTest {
 		// check that there are no documents left (i.e. the last Document was
 		// removed completely, rather than its remaining triple removed)
 
-		count = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.get()
-				.getHits()
-				.getTotalHits().value;
+		count = countAll();
 		assertEquals(0, count);
 	}
 
@@ -270,11 +234,7 @@ public class ElasticsearchIndexTest extends AbstractElasticsearchTest {
 
 		// check that it arrived properly
 
-		long count = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.get()
-				.getHits()
-				.getTotalHits().value;
+		long count = countAll();
 		assertEquals(2, count);
 
 		// check the documents
@@ -433,6 +393,33 @@ public class ElasticsearchIndexTest extends AbstractElasticsearchTest {
 		assertTrue(index.accept(literal2), "Is the second literal accepted?");
 		assertTrue(index.accept(literal3), "Is the third literal accepted?");
 		assertFalse(index.accept(literal4), "Is the fourth literal accepted?");
+	}
+
+	private Query toQuery(org.elasticsearch.index.query.QueryBuilder qb) {
+		return Query.of(q -> q.withJson(new StringReader(qb.toString())));
+	}
+
+	private SearchResponse<Map<String, Object>> search(org.elasticsearch.index.query.QueryBuilder qb)
+			throws IOException {
+		SearchSourceBuilder source = new SearchSourceBuilder().query(qb);
+		return client.search(s -> s.index(index.getIndexName()).withJson(new StringReader(source.toString())),
+				MAP_TYPE);
+	}
+
+	private long countForQuery(org.elasticsearch.index.query.QueryBuilder qb) throws IOException {
+		SearchSourceBuilder source = new SearchSourceBuilder().size(0).query(qb);
+		SearchResponse<Map<String, Object>> resp = client.search(
+				s -> s.index(index.getIndexName()).withJson(new StringReader(source.toString())), MAP_TYPE);
+		return resp.hits().total().value();
+	}
+
+	private long countAll() throws IOException {
+		return countForQuery(QueryBuilders.matchAllQuery());
+	}
+
+	private Map<String, Object> getDoc(String indexName, String id) throws IOException {
+		GetResponse<Map<String, Object>> response = client.get(g -> g.index(indexName).id(id), MAP_TYPE);
+		return response.source();
 	}
 
 	private void assertStatement(Statement statement) throws Exception {

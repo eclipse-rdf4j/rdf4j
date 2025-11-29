@@ -10,22 +10,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
+import java.util.Map;
+
 import org.eclipse.rdf4j.sail.lucene.DocumentResult;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
-import org.elasticsearch.search.SearchHit;
 import org.locationtech.spatial4j.context.SpatialContext;
 
 import com.google.common.base.Function;
 
+import co.elastic.clients.elasticsearch.core.search.Hit;
+
 public class ElasticsearchDocumentResult implements DocumentResult {
 
-	protected final SearchHit hit;
+	protected final Hit<Map<String, Object>> hit;
 
 	private final Function<? super String, ? extends SpatialContext> geoContextMapper;
 
 	private ElasticsearchDocument fullDoc;
 
-	public ElasticsearchDocumentResult(SearchHit hit,
+	public ElasticsearchDocumentResult(Hit<Map<String, Object>> hit,
 			Function<? super String, ? extends SpatialContext> geoContextMapper) {
 		this.hit = hit;
 		this.geoContextMapper = geoContextMapper;

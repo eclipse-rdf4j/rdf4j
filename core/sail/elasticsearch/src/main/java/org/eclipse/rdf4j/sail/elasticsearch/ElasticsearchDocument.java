@@ -22,14 +22,14 @@ import java.util.Set;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.elasticsearch.common.geo.GeoPoint;
-import org.elasticsearch.common.lucene.uid.Versions;
 import org.elasticsearch.index.seqno.SequenceNumbers;
-import org.elasticsearch.search.SearchHit;
 import org.locationtech.spatial4j.context.SpatialContext;
 import org.locationtech.spatial4j.shape.Point;
 import org.locationtech.spatial4j.shape.Shape;
 
 import com.google.common.base.Function;
+
+import co.elastic.clients.elasticsearch.core.search.Hit;
 
 public class ElasticsearchDocument implements SearchDocument {
 
@@ -49,14 +49,12 @@ public class ElasticsearchDocument implements SearchDocument {
 
 	private final Function<? super String, ? extends SpatialContext> geoContextMapper;
 
-	@Deprecated
-	public ElasticsearchDocument(SearchHit hit) {
-		this(hit, null);
-	}
-
-	public ElasticsearchDocument(SearchHit hit, Function<? super String, ? extends SpatialContext> geoContextMapper) {
-		this(hit.getId(), hit.getType(), hit.getIndex(), hit.getSeqNo(), hit.getPrimaryTerm(),
-				hit.getSourceAsMap(), geoContextMapper);
+	public ElasticsearchDocument(Hit<Map<String, Object>> hit,
+			Function<? super String, ? extends SpatialContext> geoContextMapper) {
+		this(hit.id(), ElasticsearchIndex.DEFAULT_DOCUMENT_TYPE, hit.index(),
+				hit.seqNo() == null ? SequenceNumbers.UNASSIGNED_SEQ_NO : hit.seqNo(),
+				hit.primaryTerm() == null ? SequenceNumbers.UNASSIGNED_PRIMARY_TERM : hit.primaryTerm(),
+				hit.source(), geoContextMapper);
 	}
 
 	public ElasticsearchDocument(String id, String type, String index, String resourceId, String context,
@@ -81,7 +79,7 @@ public class ElasticsearchDocument implements SearchDocument {
 			Map<String, Object> fields, Function<? super String, ? extends SpatialContext> geoContextMapper) {
 		this.id = id;
 		this.type = type;
-		this.version = Versions.MATCH_ANY;
+		this.version = -1;
 		this.seqNo = seqNo;
 		this.primaryTerm = primaryTerm;
 		this.index = index;

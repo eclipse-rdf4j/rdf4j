@@ -10,9 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
-import org.elasticsearch.client.Client;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
 
 class UnclosableClientProvider implements ClientProvider {
 
@@ -25,7 +26,7 @@ class UnclosableClientProvider implements ClientProvider {
 	}
 
 	@Override
-	public Client getClient() {
+	public ElasticsearchClient getClient() {
 		return clientPool.getClient();
 	}
 

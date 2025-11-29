@@ -10,17 +10,20 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
+import java.util.Map;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
 import org.elasticsearch.common.geo.GeoDistance;
 import org.elasticsearch.common.geo.GeoPoint;
 import org.elasticsearch.common.unit.DistanceUnit;
-import org.elasticsearch.search.SearchHit;
 import org.locationtech.spatial4j.context.SpatialContext;
 import org.locationtech.spatial4j.distance.DistanceUtils;
 
 import com.google.common.base.Function;
+
+import co.elastic.clients.elasticsearch.core.search.Hit;
 
 public class ElasticsearchDocumentDistance extends ElasticsearchDocumentResult implements DocumentDistance {
 
@@ -32,7 +35,7 @@ public class ElasticsearchDocumentDistance extends ElasticsearchDocumentResult i
 
 	private final DistanceUnit unit;
 
-	public ElasticsearchDocumentDistance(SearchHit hit,
+	public ElasticsearchDocumentDistance(Hit<Map<String, Object>> hit,
 			Function<? super String, ? extends SpatialContext> geoContextMapper, String geoPointField, IRI units,
 			GeoPoint srcPoint, DistanceUnit unit) {
 		super(hit, geoContextMapper);

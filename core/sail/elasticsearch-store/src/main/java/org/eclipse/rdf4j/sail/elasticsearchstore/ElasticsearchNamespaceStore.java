@@ -10,9 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
-import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
-
 import java.io.IOException;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -23,18 +22,19 @@ import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.NamespaceStoreInterface;
-import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
-import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest;
-import org.elasticsearch.action.get.GetResponse;
-import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.common.xcontent.XContentType;
-import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.search.SearchHit;
-import org.elasticsearch.search.SearchHits;
-import org.elasticsearch.search.sort.FieldSortBuilder;
-import org.elasticsearch.search.sort.SortOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import co.elastic.clients.elasticsearch._types.SortOrder;
+import co.elastic.clients.elasticsearch.core.GetResponse;
+import co.elastic.clients.elasticsearch.core.SearchResponse;
+import co.elastic.clients.elasticsearch.core.search.Hit;
+import co.elastic.clients.transport.endpoints.BooleanResponse;
 
 /**
  * @Author Håvard Mikkelsen Ottestad
@@ -48,7 +48,10 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 	private final ClientProvider clientProvider;
 	private final String index;
 
-	private static final String ELASTICSEARCH_TYPE = "namespace";
+	private static final java.lang.reflect.Type MAP_TYPE = new TypeReference<Map<String, Object>>() {
+	}.getType();
+	private final ObjectMapper objectMapper = new ObjectMapper();
+
 	private static final String MAPPING;
 
 	static {
@@ -65,14 +68,39 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 		this.index = index;
 	}
 
+	private String typelessMapping(String mapping) {
+		try {
+			JsonNode root = objectMapper.readTree(mapping);
+			if (root.size() == 1) {
+				JsonNode typeNode = root.elements().next();
+				JsonNode properties = typeNode.get("properties");
+				if (properties != null) {
+					ObjectNode wrapper = objectMapper.createObjectNode();
+					ObjectNode mappingsNode = objectMapper.createObjectNode();
+					mappingsNode.set("properties", properties);
+					wrapper.set("mappings", mappingsNode);
+					return objectMapper.writeValueAsString(wrapper);
+				}
+			}
+			return mapping;
+		} catch (IOException e) {
+			throw new IllegalStateException(e);
+		}
+	}
+
 	@Override
 	public String getNamespace(String prefix) {
-		GetResponse documentFields = clientProvider.getClient().prepareGet(index, ELASTICSEARCH_TYPE, prefix).get();
-		if (documentFields.isExists()) {
-			return documentFields.getSource().get(NAMESPACE).toString();
-		}
+		try {
+			GetResponse<Map<String, Object>> documentFields = clientProvider.getClient()
+					.get(g -> g.index(index).id(prefix), MAP_TYPE);
+			if (documentFields.found()) {
+				return documentFields.source().get(NAMESPACE).toString();
+			}
 
-		return null;
+			return null;
+		} catch (IOException e) {
+			throw new SailException(e);
+		}
 	}
 
 	@Override
@@ -82,35 +110,49 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 		map.put(PREFIX, prefix);
 		map.put(NAMESPACE, namespace);
 
-		clientProvider.getClient().prepareIndex(index, ELASTICSEARCH_TYPE, prefix).setSource(map).get();
-		clientProvider.getClient().admin().indices().prepareRefresh(index).get();
+		try {
+			clientProvider.getClient().index(i -> i.index(index).id(prefix).document(map));
+			clientProvider.getClient().indices().refresh(r -> r.index(index));
+		} catch (IOException e) {
+			throw new SailException(e);
+		}
 	}
 
 	@Override
 	public void removeNamespace(String prefix) {
-		clientProvider.getClient().prepareDelete(index, ELASTICSEARCH_TYPE, prefix).get();
-		clientProvider.getClient().admin().indices().prepareRefresh(index).get();
+		try {
+			clientProvider.getClient().delete(d -> d.index(index).id(prefix));
+			clientProvider.getClient().indices().refresh(r -> r.index(index));
+		} catch (IOException e) {
+			throw new SailException(e);
+		}
 	}
 
 	@Override
 	public void clear() {
-		clientProvider.getClient().admin().indices().prepareDelete(index).get();
-		init();
+		try {
+			clientProvider.getClient().indices().delete(d -> d.index(index));
+			init();
+		} catch (IOException e) {
+			throw new SailException(e);
+		}
 	}
 
 	@Override
 	public void init() {
-		boolean indexExistsAlready = clientProvider.getClient()
-				.admin()
-				.indices()
-				.exists(new IndicesExistsRequest(index))
-				.actionGet()
-				.isExists();
+		try {
+			BooleanResponse existsResponse = clientProvider.getClient().indices().exists(b -> b.index(index));
 
-		if (!indexExistsAlready) {
-			CreateIndexRequest request = new CreateIndexRequest(index);
-			request.mapping(ELASTICSEARCH_TYPE, MAPPING, XContentType.JSON);
-			clientProvider.getClient().admin().indices().create(request).actionGet();
+			if (!existsResponse.value()) {
+				String mappingJson = typelessMapping(MAPPING);
+				clientProvider.getClient()
+						.indices()
+						.create(c -> c
+								.index(index)
+								.withJson(new StringReader(mappingJson)));
+			}
+		} catch (IOException e) {
+			throw new SailException(e);
 		}
 
 	}
@@ -118,23 +160,27 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 	@Override
 	public Iterator<SimpleNamespace> iterator() {
 
-		SearchResponse searchResponse = clientProvider.getClient()
-				.prepareSearch(index)
-				.addSort(FieldSortBuilder.DOC_FIELD_NAME, SortOrder.ASC)
-				.setQuery(QueryBuilders.constantScoreQuery(matchAllQuery()))
-				.setTrackTotalHits(true)
-				.setSize(10000)
-				.get();
+		try {
+			SearchResponse<Map<String, Object>> searchResponse = clientProvider.getClient()
+					.search(s -> s
+							.index(index)
+							.sort(sort -> sort.field(f -> f.field("_doc").order(SortOrder.Asc)))
+							.size(10000)
+							.trackTotalHits(t -> t.enabled(true))
+							.query(q -> q.matchAll(m -> m)), MAP_TYPE);
 
-		SearchHits hits = searchResponse.getHits();
-		if (hits.getTotalHits().value > 10000) {
-			throw new SailException("Namespace store only supports 10 000 items, found " + hits.getTotalHits().value);
+			if (searchResponse.hits().total() != null && searchResponse.hits().total().value() > 10000) {
+				throw new SailException("Namespace store only supports 10 000 items, found "
+						+ searchResponse.hits().total().value());
+			}
+
+			return StreamSupport.stream(searchResponse.hits().hits().spliterator(), false)
+					.map(Hit::source)
+					.map(map -> new SimpleNamespace(map.get(PREFIX).toString(), map.get(NAMESPACE).toString()))
+					.iterator();
+		} catch (IOException e) {
+			throw new SailException(e);
 		}
-
-		return StreamSupport.stream(hits.spliterator(), false)
-				.map(SearchHit::getSourceAsMap)
-				.map(map -> new SimpleNamespace(map.get(PREFIX).toString(), map.get(NAMESPACE).toString()))
-				.iterator();
 
 	}
 }

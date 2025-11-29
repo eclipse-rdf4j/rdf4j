@@ -11,41 +11,45 @@
 package org.eclipse.rdf4j.sail.elasticsearch;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.sail.lucene.DocumentScore;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
-import org.elasticsearch.common.text.Text;
-import org.elasticsearch.search.SearchHit;
-import org.elasticsearch.search.fetch.subphase.highlight.HighlightField;
 import org.locationtech.spatial4j.context.SpatialContext;
 
 import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
 
+import co.elastic.clients.elasticsearch.core.search.Hit;
+
 public class ElasticsearchDocumentScore extends ElasticsearchDocumentResult implements DocumentScore {
 
-	public ElasticsearchDocumentScore(SearchHit hit,
+	public ElasticsearchDocumentScore(Hit<Map<String, Object>> hit,
 			Function<? super String, ? extends SpatialContext> geoContextMapper) {
 		super(hit, geoContextMapper);
 	}
 
 	@Override
 	public float getScore() {
-		return hit.getScore();
+		return hit.score() == null ? 0f : hit.score().floatValue();
 	}
 
 	@Override
 	public boolean isHighlighted() {
-		return (hit.getHighlightFields() != null);
+		return hit.highlight() != null;
 	}
 
 	@Override
 	public Iterable<String> getSnippets(String property) {
-		HighlightField highlightField = hit.getHighlightFields().get(ElasticsearchIndex.toPropertyFieldName(property));
-		if (highlightField == null) {
+		if (hit.highlight() == null) {
 			return null;
 		}
-		return Iterables.transform(Arrays.asList(highlightField.getFragments()),
-				(Text fragment) -> SearchFields.getSnippet(fragment.string()));
+		List<String> fragments = hit.highlight().get(ElasticsearchIndex.toPropertyFieldName(property));
+		if (fragments == null) {
+			return null;
+		}
+		return Iterables.transform(Arrays.asList(fragments.toArray(new String[0])),
+				(String fragment) -> SearchFields.getSnippet(fragment));
 	}
 }

@@ -14,14 +14,20 @@ import java.io.IOException;
 
 import org.apache.http.HttpHost;
 import org.elasticsearch.client.RestClient;
-import org.elasticsearch.client.RestHighLevelClient;
+
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.json.jackson.JacksonJsonpMapper;
+import co.elastic.clients.transport.ElasticsearchTransport;
+import co.elastic.clients.transport.rest_client.RestClientTransport;
 
 public class TestHelpers {
 	public static String CLUSTER = "test";
-	public static int PORT = 9300;
+	public static int PORT = 9200;
 	public static String HOST = "localhost";
 
-	private static RestHighLevelClient CLIENT;
+	private static RestClient LOW_LEVEL_CLIENT;
+	private static ElasticsearchTransport TRANSPORT;
+	private static ElasticsearchClient CLIENT;
 
 	public static synchronized void openClient() {
 		if (CLIENT != null) {
@@ -31,22 +37,27 @@ public class TestHelpers {
 		ElasticsearchStoreTestContainerSupport.start();
 
 		CLUSTER = ElasticsearchStoreTestContainerSupport.getClusterName();
-		PORT = ElasticsearchStoreTestContainerSupport.getTransportPort();
+		PORT = ElasticsearchStoreTestContainerSupport.getHttpPort();
 		HOST = ElasticsearchStoreTestContainerSupport.getHost();
 
-		CLIENT = new RestHighLevelClient(RestClient
-				.builder(new HttpHost(HOST, ElasticsearchStoreTestContainerSupport.getHttpPort(), "http")));
+		LOW_LEVEL_CLIENT = RestClient
+				.builder(new HttpHost(HOST, ElasticsearchStoreTestContainerSupport.getHttpPort(), "http"))
+				.build();
+		TRANSPORT = new RestClientTransport(LOW_LEVEL_CLIENT, new JacksonJsonpMapper());
+		CLIENT = new ElasticsearchClient(TRANSPORT);
 	}
 
-	public static RestHighLevelClient getClient() {
+	public static ElasticsearchClient getClient() {
 		return CLIENT;
 	}
 
 	public static void closeClient() throws IOException {
-		if (CLIENT != null) {
-			CLIENT.close();
-			CLIENT = null;
+		if (LOW_LEVEL_CLIENT != null) {
+			LOW_LEVEL_CLIENT.close();
+			LOW_LEVEL_CLIENT = null;
 		}
+		TRANSPORT = null;
+		CLIENT = null;
 	}
 
 }

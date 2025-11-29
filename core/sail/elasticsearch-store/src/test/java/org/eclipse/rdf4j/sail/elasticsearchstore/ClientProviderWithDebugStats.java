@@ -11,44 +11,57 @@
 
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
-import java.net.InetAddress;
-import java.net.UnknownHostException;
+import java.io.IOException;
+import java.util.concurrent.atomic.AtomicLong;
 
-import org.eclipse.rdf4j.sail.SailException;
-import org.elasticsearch.client.Client;
-import org.elasticsearch.client.transport.TransportClient;
-import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.transport.TransportAddress;
-import org.elasticsearch.transport.client.PreBuiltTransportClient;
+import org.apache.http.HttpRequest;
+import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.impl.nio.client.HttpAsyncClientBuilder;
+import org.apache.http.protocol.HttpContext;
+import org.elasticsearch.client.RestClient;
+
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.json.jackson.JacksonJsonpMapper;
+import co.elastic.clients.transport.ElasticsearchTransport;
+import co.elastic.clients.transport.rest_client.RestClientTransport;
 
 public class ClientProviderWithDebugStats implements ClientProvider {
 
-	transient private ClientWithStats client;
+	private transient RestClient lowLevelClient;
+	private transient ElasticsearchTransport transport;
+	private transient ElasticsearchClient client;
 	private transient boolean closed = false;
-	private long getClientCalls;
+	private final AtomicLong getClientCalls = new AtomicLong();
+	private final AtomicLong bulkCalls = new AtomicLong();
 
 	public ClientProviderWithDebugStats(String hostname, int port, String clusterName) {
-		try {
-			Settings settings = Settings.builder().put("cluster.name", clusterName).build();
-			TransportClient client = new PreBuiltTransportClient(settings);
-			client.addTransportAddress(new TransportAddress(InetAddress.getByName(hostname), port));
-			this.client = new ClientWithStats(client);
-		} catch (UnknownHostException e) {
-			throw new SailException(e);
-		}
+		lowLevelClient = RestClient.builder(new org.apache.http.HttpHost(hostname, port, "http"))
+				.setHttpClientConfigCallback(this::configureHttpClient)
+				.build();
+		transport = new RestClientTransport(lowLevelClient, new JacksonJsonpMapper());
+		client = new ElasticsearchClient(transport);
+	}
+
+	private HttpAsyncClientBuilder configureHttpClient(HttpAsyncClientBuilder httpClientBuilder) {
+		return httpClientBuilder.addInterceptorLast((HttpRequest request, HttpContext context) -> {
+			if (request instanceof HttpUriRequest) {
+				String uri = ((HttpUriRequest) request).getURI().getPath();
+				if (uri != null && uri.contains("_bulk")) {
+					bulkCalls.incrementAndGet();
+				}
+			}
+		});
 	}
 
 	@Override
-	synchronized public Client getClient() {
-		getClientCalls++;
+	public synchronized ElasticsearchClient getClient() {
+		getClientCalls.incrementAndGet();
 		if (client != null) {
 			return client;
 		}
 
-		synchronized (this) {
-			if (closed) {
-				throw new IllegalStateException("Elasticsearch Client Provider is closed!");
-			}
+		if (closed) {
+			throw new IllegalStateException("Elasticsearch Client Provider is closed!");
 		}
 
 		return client;
@@ -60,22 +73,28 @@ public class ClientProviderWithDebugStats implements ClientProvider {
 	}
 
 	@Override
-	synchronized public void close() {
+	public synchronized void close() {
 		if (!closed) {
 			closed = true;
-			if (client != null) {
-				Client temp = client;
+			try {
+				if (lowLevelClient != null) {
+					lowLevelClient.close();
+				}
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			} finally {
+				lowLevelClient = null;
+				transport = null;
 				client = null;
-				temp.close();
 			}
 		}
 	}
 
 	public long getGetClientCalls() {
-		return getClientCalls;
+		return getClientCalls.get();
 	}
 
 	public long getBulkCalls() {
-		return client.bulkCalls;
+		return bulkCalls.get();
 	}
 }

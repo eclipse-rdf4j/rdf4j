@@ -10,22 +10,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
-import java.net.InetAddress;
-import java.net.UnknownHostException;
+import java.io.IOException;
 
+import org.apache.http.HttpHost;
 import org.eclipse.rdf4j.sail.SailException;
-import org.elasticsearch.client.Client;
-import org.elasticsearch.client.transport.TransportClient;
-import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.transport.TransportAddress;
-import org.elasticsearch.transport.client.PreBuiltTransportClient;
+import org.elasticsearch.client.RestClient;
+
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.json.jackson.JacksonJsonpMapper;
+import co.elastic.clients.transport.ElasticsearchTransport;
+import co.elastic.clients.transport.rest_client.RestClientTransport;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
 public class SingletonClientProvider implements ClientProvider {
 
-	transient private Client client;
+	private transient RestClient lowLevelClient;
+	private transient ElasticsearchTransport transport;
+	private transient ElasticsearchClient client;
 	private transient boolean closed = false;
 	private final String hostname;
 	private final int port;
@@ -38,7 +41,7 @@ public class SingletonClientProvider implements ClientProvider {
 	}
 
 	@Override
-	public Client getClient() {
+	public ElasticsearchClient getClient() {
 		if (client != null) {
 			return client;
 		}
@@ -48,14 +51,9 @@ public class SingletonClientProvider implements ClientProvider {
 				throw new IllegalStateException("Elasticsearch Client Provider is closed!");
 			}
 
-			try {
-				Settings settings = Settings.builder().put("cluster.name", clusterName).build();
-				TransportClient client = new PreBuiltTransportClient(settings);
-				client.addTransportAddress(new TransportAddress(InetAddress.getByName(hostname), port));
-				this.client = client;
-			} catch (UnknownHostException e) {
-				throw new SailException(e);
-			}
+			lowLevelClient = RestClient.builder(new HttpHost(hostname, port, "http")).build();
+			transport = new RestClientTransport(lowLevelClient, new JacksonJsonpMapper());
+			client = new ElasticsearchClient(transport);
 
 		}
 
@@ -71,10 +69,16 @@ public class SingletonClientProvider implements ClientProvider {
 	synchronized public void close() {
 		if (!closed) {
 			closed = true;
-			if (client != null) {
-				Client temp = client;
+			try {
+				if (lowLevelClient != null) {
+					lowLevelClient.close();
+				}
+			} catch (IOException e) {
+				throw new SailException(e);
+			} finally {
+				lowLevelClient = null;
+				transport = null;
 				client = null;
-				temp.close();
 			}
 		}
 	}
