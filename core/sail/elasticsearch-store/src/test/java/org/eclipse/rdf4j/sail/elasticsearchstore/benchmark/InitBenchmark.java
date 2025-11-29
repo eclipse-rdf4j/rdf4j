@@ -57,7 +57,7 @@ public class InitBenchmark {
 		// PATH
 		TestHelpers.openClient();
 
-		clientPool = new SingletonClientProvider("localhost", TestHelpers.PORT, TestHelpers.CLUSTER);
+		clientPool = new SingletonClientProvider(TestHelpers.HOST, TestHelpers.PORT, TestHelpers.CLUSTER);
 		System.gc();
 	}
 
@@ -71,7 +71,7 @@ public class InitBenchmark {
 	public void initWithElasticsearchClientCreation() {
 
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex",
+				new ElasticsearchStore(TestHelpers.HOST, TestHelpers.PORT, TestHelpers.CLUSTER, "testindex",
 						ExtensibleStore.Cache.NONE));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {

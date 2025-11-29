@@ -9,45 +9,13 @@
 	<artifactId>rdf4j-sail-elasticsearch-store</artifactId>
 	<name>RDF4J: Elasticsearch Store</name>
 	<description>Store for utilizing Elasticsearch as a triplestore.</description>
+	<properties>
+		<testcontainers.version>1.19.7</testcontainers.version>
+	</properties>
 	<dependencies>
 		<dependency>
-			<groupId>org.elasticsearch.client</groupId>
-			<artifactId>elasticsearch-rest-high-level-client</artifactId>
-			<version>${elasticsearch.version}</version>
-			<optional>true</optional>
-			<exclusions>
-				<exclusion>
-					<groupId>org.apache.httpcomponents</groupId>
-					<artifactId>httpcore</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>commons-logging</groupId>
-					<artifactId>commons-logging</artifactId>
-				</exclusion>
-			</exclusions>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.httpcomponents</groupId>
-			<artifactId>httpcore</artifactId>
-			<version>${httpcore.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.elasticsearch.client</groupId>
-			<artifactId>transport</artifactId>
-			<version>${elasticsearch.version}</version>
-			<optional>true</optional>
-			<exclusions>
-				<exclusion>
-					<groupId>commons-logging</groupId>
-					<artifactId>commons-logging</artifactId>
-				</exclusion>
-			</exclusions>
-		</dependency>
-		<!-- org.elasticsearch.client:transport pulls in JCL -->
-		<dependency>
-			<groupId>org.slf4j</groupId>
-			<artifactId>jcl-over-slf4j</artifactId>
-			<scope>runtime</scope>
+			<groupId>co.elastic.clients</groupId>
+			<artifactId>elasticsearch-java</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
@@ -73,6 +41,18 @@
 		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-classic</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers</artifactId>
+			<version>${testcontainers.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<version>${testcontainers.version}</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
@@ -130,94 +110,27 @@
 				<java.sec.mgr>-Djava.security.manager=allow</java.sec.mgr>
 			</properties>
 		</profile>
-		<profile>
-			<id>skipIfSkipITs</id>
-			<activation>
-				<property>
-					<name>skipITs</name>
-					<value>true</value>
-				</property>
-			</activation>
-			<build>
-				<plugins>
-					<plugin>
-						<groupId>com.github.alexcojocaru</groupId>
-						<artifactId>elasticsearch-maven-plugin</artifactId>
-						<configuration>
-							<skip>true</skip>
-						</configuration>
-					</plugin>
-				</plugins>
-			</build>
-		</profile>
-		<profile>
-			<id>skipIfSkipTests</id>
-			<activation>
-				<property>
-					<name>skipTests</name>
-					<value>true</value>
-				</property>
-			</activation>
-			<build>
-				<plugins>
-					<plugin>
-						<groupId>com.github.alexcojocaru</groupId>
-						<artifactId>elasticsearch-maven-plugin</artifactId>
-						<configuration>
-							<skip>true</skip>
-						</configuration>
-					</plugin>
-				</plugins>
-			</build>
-		</profile>
 	</profiles>
 	<build>
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-failsafe-plugin</artifactId>
+				<artifactId>maven-surefire-plugin</artifactId>
 				<configuration>
-					<forkCount>0</forkCount>
+					<systemPropertyVariables>
+						<elasticsearch.docker.version>${elasticsearch.version}</elasticsearch.docker.version>
+					</systemPropertyVariables>
 				</configuration>
 			</plugin>
 			<plugin>
-				<groupId>com.github.alexcojocaru</groupId>
-				<artifactId>elasticsearch-maven-plugin</artifactId>
-				<version>6.28</version>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
 				<configuration>
-					<skip>${skipITs}</skip>
-					<skip>${skipTests}</skip>
-					<version>${elasticsearch.version}</version>
-					<clusterName>test</clusterName>
-					<transportPort>9300</transportPort>
-					<httpPort>9200</httpPort>
-					<environmentVariables>
-						<ingest.geoip.downloader.enabled>false</ingest.geoip.downloader.enabled>
-						<ES_JAVA_OPTS>${java.sec.mgr} -Xmx1G -Xms1G</ES_JAVA_OPTS>
-					</environmentVariables>
-					<instanceCount>1</instanceCount>
-					<instanceSettings>
-						<properties>
-							<ingest.geoip.downloader.enabled>false</ingest.geoip.downloader.enabled>
-						</properties>
-					</instanceSettings>
+					<forkCount>0</forkCount>
+					<systemPropertyVariables>
+						<elasticsearch.docker.version>${elasticsearch.version}</elasticsearch.docker.version>
+					</systemPropertyVariables>
 				</configuration>
-				<executions>
-					<execution>
-						<id>start-elasticsearch</id>
-						<phase>pre-integration-test</phase>
-						<goals>
-							<goal>runforked</goal>
-						</goals>
-					</execution>
-					<execution>
-						<id>stop-elasticsearch</id>
-						<phase>post-integration-test</phase>
-						<goals>
-							<goal>stop</goal>
-						</goals>
-					</execution>
-				</executions>
 			</plugin>
 		</plugins>
 	</build>

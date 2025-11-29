@@ -57,7 +57,8 @@ public class ElasticsearchStoreTransactionsIT extends AbstractElasticsearchStore
 
 	@BeforeEach
 	public void before() {
-		elasticsearchStore = new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex");
+		elasticsearchStore = new ElasticsearchStore(elasticsearchHost(), elasticsearchPort(), elasticsearchCluster(),
+				"testindex");
 		elasticsearchStore.setElasticsearchScrollTimeout(60000);
 
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
