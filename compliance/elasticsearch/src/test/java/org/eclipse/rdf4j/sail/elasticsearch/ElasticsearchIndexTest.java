@@ -19,12 +19,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.function.Predicate;
 
+import org.apache.http.Header;
+import org.apache.http.HttpHeaders;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
@@ -36,6 +41,7 @@ import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.elasticsearch.client.RestClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -101,14 +107,19 @@ public class ElasticsearchIndexTest extends AbstractElasticsearchTest {
 
 	ElasticsearchIndex index;
 
-	@BeforeEach
-	public void setUp() throws Exception {
+	private Properties defaultProperties() {
 		Properties sailProperties = new Properties();
 		sailProperties.put(ElasticsearchIndex.TRANSPORT_KEY, host + ":" + httpPort);
 		sailProperties.put(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name", CLUSTER_NAME);
 		sailProperties.put(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
 		sailProperties.put(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "yellow");
 		sailProperties.put(ElasticsearchIndex.WAIT_FOR_NODES_KEY, ">=1");
+		return sailProperties;
+	}
+
+	@BeforeEach
+	public void setUp() throws Exception {
+		Properties sailProperties = defaultProperties();
 		index = new ElasticsearchIndex();
 		index.initialize(sailProperties);
 	}
@@ -123,6 +134,29 @@ public class ElasticsearchIndexTest extends AbstractElasticsearchTest {
 
 		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(false);
 
+	}
+
+	@Test
+	public void initializeAppliesHttpCredentials() throws Exception {
+		index.shutDown();
+
+		String username = "user";
+		String password = "pass";
+		Properties sailProperties = defaultProperties();
+		sailProperties.put(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "http.username", username);
+		sailProperties.put(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "http.password", password);
+
+		index = new ElasticsearchIndex();
+		index.initialize(sailProperties);
+
+		RestClient lowLevel = getLowLevelClient(index);
+		List<Header> defaultHeaders = getDefaultHeaders(lowLevel);
+
+		String expectedValue = "Basic "
+				+ Base64.getEncoder().encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8));
+
+		assertTrue(defaultHeaders.stream().anyMatch(matchesHeader(HttpHeaders.AUTHORIZATION, expectedValue)),
+				"Authorization header should be propagated to the HTTP client");
 	}
 
 	@Test
@@ -407,6 +441,23 @@ public class ElasticsearchIndexTest extends AbstractElasticsearchTest {
 						.trackTotalHits(th -> th.enabled(true)),
 				MAP_TYPE);
 		return resp.hits().total().value();
+	}
+
+	private RestClient getLowLevelClient(ElasticsearchIndex elasticsearchIndex) throws Exception {
+		var field = ElasticsearchIndex.class.getDeclaredField("lowLevelClient");
+		field.setAccessible(true);
+		return (RestClient) field.get(elasticsearchIndex);
+	}
+
+	@SuppressWarnings("unchecked")
+	private List<Header> getDefaultHeaders(RestClient restClient) throws Exception {
+		var field = RestClient.class.getDeclaredField("defaultHeaders");
+		field.setAccessible(true);
+		return (List<Header>) field.get(restClient);
+	}
+
+	private Predicate<Header> matchesHeader(String name, String value) {
+		return header -> name.equalsIgnoreCase(header.getName()) && value.equals(header.getValue());
 	}
 
 	private long countAll() throws IOException {

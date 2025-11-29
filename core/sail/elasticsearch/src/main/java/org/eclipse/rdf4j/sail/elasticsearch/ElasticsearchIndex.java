@@ -52,9 +52,9 @@ import com.google.common.base.Functions;
 import com.google.common.collect.Iterables;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.GeoShapeRelation;
 import co.elastic.clients.elasticsearch._types.HealthStatus;
 import co.elastic.clients.elasticsearch._types.WaitForActiveShards;
-import co.elastic.clients.elasticsearch._types.GeoShapeRelation;
 import co.elastic.clients.elasticsearch._types.mapping.TypeMapping;
 import co.elastic.clients.elasticsearch._types.query_dsl.FunctionScore;
 import co.elastic.clients.elasticsearch._types.query_dsl.FunctionScoreMode;
@@ -608,7 +608,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		FunctionScore decayFunction = FunctionScore.of(f -> f.linear(l -> l.field(fieldName)
 				.placement(pBuilder -> pBuilder.origin(JsonData.of(Map.of("lat", lat, "lon", lon)))
 						.scale(JsonData.of(distanceString)))));
-		Query qb = QueryBuilders.functionScore(fs -> fs.query(distanceQuery).functions(decayFunction)
+		Query qb = QueryBuilders.functionScore(fs -> fs.query(distanceQuery)
+				.functions(decayFunction)
 				.scoreMode(FunctionScoreMode.Multiply));
 		if (contextVar != null) {
 			qb = addContextTerm(qb, (Resource) contextVar.getValue());
