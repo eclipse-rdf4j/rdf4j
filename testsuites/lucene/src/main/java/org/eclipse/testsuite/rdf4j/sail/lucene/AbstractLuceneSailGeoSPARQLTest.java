@@ -180,7 +180,7 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 					assertNotNull(location);
 					assertEquals(location, bindings.getValue("to"));
 				}
-				assertTrue(expected.isEmpty());
+				assertTrue("Missing results: " + expected, expected.isEmpty());
 			}
 		}
 	}

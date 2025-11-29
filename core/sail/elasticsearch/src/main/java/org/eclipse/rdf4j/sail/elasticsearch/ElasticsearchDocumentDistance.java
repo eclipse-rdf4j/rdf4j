@@ -17,6 +17,8 @@ import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
 import org.locationtech.spatial4j.context.SpatialContext;
 import org.locationtech.spatial4j.distance.DistanceUtils;
+import org.locationtech.spatial4j.io.GeohashUtils;
+import org.locationtech.spatial4j.shape.Point;
 
 import com.google.common.base.Function;
 
@@ -45,18 +47,28 @@ public class ElasticsearchDocumentDistance extends ElasticsearchDocumentResult i
 	@Override
 	public double getDistance() {
 		Object pointValue = ((ElasticsearchDocument) getDocument()).getSource().get(geoPointField);
-		if (!(pointValue instanceof Map)) {
-			return 0;
+
+		Double dstLat = null;
+		Double dstLon = null;
+
+		if (pointValue instanceof Map) {
+			@SuppressWarnings("unchecked")
+			Map<String, Object> point = (Map<String, Object>) pointValue;
+			dstLat = asDouble(point.get("lat"));
+			dstLon = asDouble(point.get("lon"));
+		} else if (pointValue instanceof String) {
+			Point decodedPoint = GeohashUtils.decode((String) pointValue, SpatialContext.GEO);
+			dstLat = decodedPoint.getY();
+			dstLon = decodedPoint.getX();
 		}
-		@SuppressWarnings("unchecked")
-		Map<String, Object> point = (Map<String, Object>) pointValue;
-		Double dstLat = asDouble(point.get("lat"));
-		Double dstLon = asDouble(point.get("lon"));
+
 		if (dstLat == null || dstLon == null) {
 			return 0;
 		}
 
-		double distRad = DistanceUtils.distHaversineRAD(srcLat, srcLon, dstLat, dstLon);
+		double distRad = DistanceUtils.distHaversineRAD(DistanceUtils.toRadians(srcLat),
+				DistanceUtils.toRadians(srcLon),
+				DistanceUtils.toRadians(dstLat), DistanceUtils.toRadians(dstLon));
 		double distKm = DistanceUtils.radians2Dist(distRad, DistanceUtils.EARTH_MEAN_RADIUS_KM);
 		double distance;
 		if (GEOF.UOM_METRE.equals(units)) {
@@ -76,6 +88,13 @@ public class ElasticsearchDocumentDistance extends ElasticsearchDocumentResult i
 	private Double asDouble(Object value) {
 		if (value instanceof Number) {
 			return ((Number) value).doubleValue();
+		}
+		if (value instanceof String) {
+			try {
+				return Double.parseDouble((String) value);
+			} catch (NumberFormatException ignored) {
+				// handled by caller
+			}
 		}
 		return null;
 	}

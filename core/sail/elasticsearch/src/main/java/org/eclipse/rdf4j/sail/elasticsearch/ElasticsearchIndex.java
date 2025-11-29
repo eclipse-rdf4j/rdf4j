@@ -13,15 +13,24 @@ package org.eclipse.rdf4j.sail.elasticsearch;
 import java.io.IOException;
 import java.io.StringReader;
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 
+import org.apache.http.Header;
+import org.apache.http.HttpHeaders;
 import org.apache.http.HttpHost;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.message.BasicHeader;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
@@ -37,6 +46,7 @@ import org.eclipse.rdf4j.sail.lucene.QuerySpec;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.elasticsearch.client.RestClient;
+import org.elasticsearch.client.RestClientBuilder;
 import org.locationtech.spatial4j.context.SpatialContext;
 import org.locationtech.spatial4j.context.SpatialContextFactory;
 import org.locationtech.spatial4j.distance.DistanceUtils;
@@ -156,6 +166,16 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	public static final String DEFAULT_ANALYZER = "standard";
 
 	public static final String ELASTICSEARCH_KEY_PREFIX = "elasticsearch.";
+	public static final String ES_HTTP_USERNAME_KEY = ELASTICSEARCH_KEY_PREFIX + "http.username";
+	public static final String ES_HTTP_PASSWORD_KEY = ELASTICSEARCH_KEY_PREFIX + "http.password";
+	public static final String ES_HTTP_SCHEME_KEY = ELASTICSEARCH_KEY_PREFIX + "http.scheme";
+	public static final String ES_HTTP_PATH_PREFIX_KEY = ELASTICSEARCH_KEY_PREFIX + "http.pathPrefix";
+	public static final String ES_HTTP_CONNECT_TIMEOUT_KEY = ELASTICSEARCH_KEY_PREFIX + "http.connectTimeout";
+	public static final String ES_HTTP_SOCKET_TIMEOUT_KEY = ELASTICSEARCH_KEY_PREFIX + "http.socketTimeout";
+	public static final String ES_HTTP_CONNECTION_REQUEST_TIMEOUT_KEY = ELASTICSEARCH_KEY_PREFIX
+			+ "http.connectionRequestTimeout";
+	public static final String ES_SSL_ENABLED_KEY = ELASTICSEARCH_KEY_PREFIX + "sslEnabled";
+	public static final String ES_HTTP_SSL_ENABLED_KEY = ELASTICSEARCH_KEY_PREFIX + "http.ssl.enabled";
 
 	public static final String PROPERTY_FIELD_PREFIX = "p_";
 
@@ -222,16 +242,13 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		// even though it is effectively Map<String,String>
 		geoContextMapper = createSpatialContextMapper((Map<String, String>) (Map<?, ?>) parameters);
 
-		String transportHosts = parameters.getProperty(TRANSPORT_KEY, DEFAULT_TRANSPORT);
-		String[] hostSpecs = transportHosts.split(",");
-		HttpHost[] httpHosts = Arrays.stream(hostSpecs).map(spec -> {
-			String[] hostPort = spec.split(":");
-			String host = hostPort[0];
-			int port = hostPort.length > 1 ? Integer.parseInt(hostPort[1]) : 9200;
-			return new HttpHost(host, port, "http");
-		}).toArray(HttpHost[]::new);
+		HttpHost[] httpHosts = createHttpHosts(parameters);
+		RestClientBuilder restClientBuilder = RestClient.builder(httpHosts);
+		configurePathPrefix(parameters, restClientBuilder);
+		configureDefaultHeaders(parameters, restClientBuilder);
+		configureRequestTimeouts(parameters, restClientBuilder);
 
-		lowLevelClient = RestClient.builder(httpHosts).build();
+		lowLevelClient = restClientBuilder.build();
 		transport = new RestClientTransport(lowLevelClient, new JacksonJsonpMapper());
 		client = new ElasticsearchClient(transport);
 
@@ -273,6 +290,97 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 			}
 			return h;
 		});
+	}
+
+	private HttpHost[] createHttpHosts(Properties parameters) {
+		String transportHosts = parameters.getProperty(TRANSPORT_KEY, DEFAULT_TRANSPORT);
+		String[] hostSpecs = transportHosts.split(",");
+		String scheme = resolveScheme(parameters);
+		return Arrays.stream(hostSpecs)
+				.map(String::trim)
+				.filter(spec -> !spec.isEmpty())
+				.map(spec -> buildHttpHost(spec, scheme))
+				.toArray(HttpHost[]::new);
+	}
+
+	private HttpHost buildHttpHost(String spec, String defaultScheme) {
+		String cleanedSpec = spec.trim();
+		if (cleanedSpec.contains("://")) {
+			return HttpHost.create(cleanedSpec);
+		}
+		String[] hostPort = cleanedSpec.split(":");
+		String host = hostPort[0];
+		int port = hostPort.length > 1 ? Integer.parseInt(hostPort[1]) : 9200;
+		return new HttpHost(host, port, defaultScheme);
+	}
+
+	private String resolveScheme(Properties parameters) {
+		String explicitScheme = parameters.getProperty(ES_HTTP_SCHEME_KEY);
+		if (explicitScheme != null && !explicitScheme.isBlank()) {
+			return explicitScheme;
+		}
+
+		if (isTrue(parameters.getProperty(ES_HTTP_SSL_ENABLED_KEY))
+				|| isTrue(parameters.getProperty(ES_SSL_ENABLED_KEY))) {
+			return "https";
+		}
+		return "http";
+	}
+
+	private boolean isTrue(String value) {
+		return value != null && Boolean.parseBoolean(value);
+	}
+
+	private void configurePathPrefix(Properties parameters, RestClientBuilder restClientBuilder) {
+		Optional.ofNullable(parameters.getProperty(ES_HTTP_PATH_PREFIX_KEY))
+				.filter(prefix -> !prefix.isBlank())
+				.ifPresent(restClientBuilder::setPathPrefix);
+	}
+
+	private void configureDefaultHeaders(Properties parameters, RestClientBuilder restClientBuilder) {
+		List<Header> headers = new ArrayList<>();
+		createAuthorizationHeader(parameters).ifPresent(headers::add);
+		if (!headers.isEmpty()) {
+			restClientBuilder.setDefaultHeaders(headers.toArray(Header[]::new));
+		}
+	}
+
+	private Optional<Header> createAuthorizationHeader(Properties parameters) {
+		String username = parameters.getProperty(ES_HTTP_USERNAME_KEY);
+		String password = parameters.getProperty(ES_HTTP_PASSWORD_KEY);
+		if (username == null || password == null) {
+			return Optional.empty();
+		}
+		String credentials = username + ":" + password;
+		String authValue = "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
+		return Optional.of(new BasicHeader(HttpHeaders.AUTHORIZATION, authValue));
+	}
+
+	private void configureRequestTimeouts(Properties parameters, RestClientBuilder restClientBuilder) {
+		if (parameters.containsKey(ES_HTTP_CONNECT_TIMEOUT_KEY) || parameters.containsKey(ES_HTTP_SOCKET_TIMEOUT_KEY)
+				|| parameters.containsKey(ES_HTTP_CONNECTION_REQUEST_TIMEOUT_KEY)) {
+			restClientBuilder.setRequestConfigCallback(config -> {
+				RequestConfig.Builder builder = config;
+				parseTimeout(parameters, ES_HTTP_CONNECT_TIMEOUT_KEY).ifPresent(builder::setConnectTimeout);
+				parseTimeout(parameters, ES_HTTP_SOCKET_TIMEOUT_KEY).ifPresent(builder::setSocketTimeout);
+				parseTimeout(parameters, ES_HTTP_CONNECTION_REQUEST_TIMEOUT_KEY)
+						.ifPresent(builder::setConnectionRequestTimeout);
+				return builder;
+			});
+		}
+	}
+
+	private Optional<Integer> parseTimeout(Properties parameters, String key) {
+		String value = parameters.getProperty(key);
+		if (value == null) {
+			return Optional.empty();
+		}
+		try {
+			return Optional.of(Integer.parseInt(value.trim()));
+		} catch (NumberFormatException e) {
+			logger.warn("Invalid timeout value for {}: {}", key, value);
+			return Optional.empty();
+		}
 	}
 
 	protected Function<? super String, ? extends SpatialContext> createSpatialContextMapper(

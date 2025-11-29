@@ -44,7 +44,10 @@ public class ElasticsearchDocumentDistanceTest {
 				GEOF.UOM_METRE, 0, 0);
 
 		Point point = GeohashUtils.decode(geohash, SpatialContext.GEO);
-		double distRad = DistanceUtils.distHaversineRAD(0, 0, point.getY(), point.getX());
+		double distRad = DistanceUtils.distHaversineRAD(DistanceUtils.toRadians(0),
+				DistanceUtils.toRadians(0),
+				DistanceUtils.toRadians(point.getY()),
+				DistanceUtils.toRadians(point.getX()));
 		double expectedMeters = DistanceUtils.radians2Dist(distRad, DistanceUtils.EARTH_MEAN_RADIUS_KM) * 1000.0;
 
 		double actual = distance.getDistance();
