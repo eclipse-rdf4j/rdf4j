@@ -13,13 +13,10 @@ package org.eclipse.rdf4j.sail.elasticsearch;
 import java.io.IOException;
 import java.io.StringReader;
 import java.lang.reflect.Type;
-import java.net.InetAddress;
 import java.text.ParseException;
 import java.util.Arrays;
-import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -39,61 +36,15 @@ import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.QuerySpec;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
-import org.apache.http.HttpHost;
-import co.elastic.clients.elasticsearch._types.HealthStatus;
-import co.elastic.clients.elasticsearch._types.WaitForActiveShards;
-import co.elastic.clients.elasticsearch._types.mapping.TypeMapping;
-import co.elastic.clients.elasticsearch._types.query_dsl.Query;
-import co.elastic.clients.elasticsearch.core.search.Hit;
-import co.elastic.clients.elasticsearch.indices.CreateIndexResponse;
-import co.elastic.clients.elasticsearch.indices.ExistsRequest;
-import co.elastic.clients.elasticsearch.indices.GetMappingResponse;
-import co.elastic.clients.elasticsearch.indices.PutMappingRequest;
-import co.elastic.clients.elasticsearch.indices.RefreshRequest;
-import co.elastic.clients.elasticsearch.indices.RefreshResponse;
-import co.elastic.clients.json.jackson.JacksonJsonpMapper;
-import co.elastic.clients.transport.ElasticsearchTransport;
-import co.elastic.clients.transport.endpoints.BooleanResponse;
-import co.elastic.clients.transport.rest_client.RestClientTransport;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.geo.GeoPoint;
-import org.elasticsearch.common.geo.ShapeRelation;
 import org.elasticsearch.common.unit.DistanceUnit;
 import org.elasticsearch.geometry.Geometry;
 import org.elasticsearch.geometry.utils.GeometryValidator;
 import org.elasticsearch.geometry.utils.StandardValidator;
 import org.elasticsearch.geometry.utils.WellKnownText;
-import org.elasticsearch.index.query.BoolQueryBuilder;
-import org.elasticsearch.index.query.GeoShapeQueryBuilder;
-import org.elasticsearch.index.query.QueryBuilder;
-import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.index.query.QueryStringQueryBuilder;
-import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
 import org.elasticsearch.index.seqno.SequenceNumbers;
-import org.elasticsearch.search.builder.SearchSourceBuilder;
-import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
-import org.elasticsearch.xcontent.XContentBuilder;
-import org.elasticsearch.xcontent.XContentFactory;
-import org.elasticsearch.xcontent.XContentType;
-import org.elasticsearch.client.RestClient;
-import org.elasticsearch.common.Strings;
-import org.elasticsearch.common.geo.GeoPoint;
-import org.elasticsearch.common.geo.ShapeRelation;
-import org.elasticsearch.common.unit.DistanceUnit;
-import org.elasticsearch.geometry.Geometry;
-import org.elasticsearch.geometry.utils.GeometryValidator;
-import org.elasticsearch.geometry.utils.StandardValidator;
-import org.elasticsearch.geometry.utils.WellKnownText;
-import org.elasticsearch.index.query.BoolQueryBuilder;
-import org.elasticsearch.index.query.GeoShapeQueryBuilder;
-import org.elasticsearch.index.query.QueryBuilder;
-import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.index.query.QueryStringQueryBuilder;
-import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
-import org.elasticsearch.index.seqno.SequenceNumbers;
-import org.elasticsearch.search.builder.SearchSourceBuilder;
-import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
 import org.elasticsearch.xcontent.XContentBuilder;
 import org.elasticsearch.xcontent.XContentFactory;
 import org.elasticsearch.xcontent.XContentType;
@@ -107,9 +58,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.base.Function;
 import com.google.common.base.Functions;
 import com.google.common.collect.Iterables;
@@ -117,21 +65,29 @@ import com.google.common.collect.Iterables;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.HealthStatus;
 import co.elastic.clients.elasticsearch._types.WaitForActiveShards;
+import co.elastic.clients.elasticsearch._types.GeoShapeRelation;
 import co.elastic.clients.elasticsearch._types.mapping.TypeMapping;
+import co.elastic.clients.elasticsearch._types.query_dsl.FunctionScore;
+import co.elastic.clients.elasticsearch._types.query_dsl.FunctionScoreMode;
+import co.elastic.clients.elasticsearch._types.query_dsl.GeoShapeFieldQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
+import co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders;
 import co.elastic.clients.elasticsearch.core.DeleteRequest;
 import co.elastic.clients.elasticsearch.core.GetRequest;
 import co.elastic.clients.elasticsearch.core.GetResponse;
 import co.elastic.clients.elasticsearch.core.IndexRequest;
 import co.elastic.clients.elasticsearch.core.IndexResponse;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
+import co.elastic.clients.elasticsearch.core.search.Highlight;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import co.elastic.clients.elasticsearch.core.search.TrackHits;
 import co.elastic.clients.elasticsearch.indices.CreateIndexResponse;
 import co.elastic.clients.elasticsearch.indices.ExistsRequest;
 import co.elastic.clients.elasticsearch.indices.GetMappingResponse;
 import co.elastic.clients.elasticsearch.indices.PutMappingRequest;
 import co.elastic.clients.elasticsearch.indices.RefreshRequest;
 import co.elastic.clients.elasticsearch.indices.RefreshResponse;
+import co.elastic.clients.json.JsonData;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.endpoints.BooleanResponse;
@@ -224,12 +180,6 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	private static final Type MAP_TYPE = new TypeReference<Map<String, Object>>() {
 	}.getType();
-
-	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
-
-	private static final Set<String> UNSUPPORTED_QUERY_FIELDS = Set.of("adjust_pure_negative", "ignore_unmapped");
-
-	private static final Set<String> LOWERCASE_ENUM_FIELDS = Set.of("validation_method", "multi_value_mode");
 
 	private static final GeometryValidator GEOMETRY_VALIDATOR = StandardValidator.instance(true);
 
@@ -462,8 +412,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	@Override
 	protected Iterable<? extends SearchDocument> getDocuments(String resourceId) throws IOException {
-		Iterable<Hit<Map<String, Object>>> hits = getDocuments(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME,
-				resourceId));
+		Iterable<Hit<Map<String, Object>>> hits = getDocuments(termQuery(SearchFields.URI_FIELD_NAME, resourceId));
 		return Iterables.transform(hits,
 				(Function<Hit<Map<String, Object>>, SearchDocument>) hit -> new ElasticsearchDocument(hit,
 						geoContextMapper));
@@ -531,9 +480,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
 	 * context
 	 */
-	private Iterable<Hit<Map<String, Object>>> getDocuments(QueryBuilder query) throws IOException {
-		SearchSourceBuilder sourceBuilder = new SearchSourceBuilder().query(query).trackTotalHits(true);
-		return search(sourceBuilder).hits().hits();
+	private Iterable<Hit<Map<String, Object>>> getDocuments(Query query) throws IOException {
+		return executeSearch(query, -1).hits().hits();
 	}
 
 	/**
@@ -617,29 +565,24 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		IRI propertyURI = param.getProperty();
 		boolean highlight = param.isHighlight();
 		String query = param.getQuery();
-		QueryBuilder qb = prepareQuery(propertyURI, QueryBuilders.queryStringQuery(query));
-		SearchSourceBuilder sourceBuilder = new SearchSourceBuilder().query(qb)
-				.trackTotalHits(true)
-				.seqNoAndPrimaryTerm(true);
+		Query qb = prepareQuery(propertyURI, query);
+		Highlight highlightConfig = null;
 		if (highlight) {
-			HighlightBuilder hb = new HighlightBuilder();
-			String field;
-			if (propertyURI != null) {
-				field = toPropertyFieldName(SearchFields.getPropertyField(propertyURI));
-			} else {
-				field = ALL_PROPERTY_FIELDS;
-				hb.requireFieldMatch(false);
-			}
-			hb.field(field);
-			hb.preTags(SearchFields.HIGHLIGHTER_PRE_TAG);
-			hb.postTags(SearchFields.HIGHLIGHTER_POST_TAG);
-			// Elastic Search doesn't really have the same support for fragments as
-			// Lucene.
-			// So, we have to get back the whole highlighted value (comma-separated
-			// if it is a list)
-			// and then post-process it into fragments ourselves.
-			hb.numOfFragments(0);
-			sourceBuilder.highlighter(hb);
+			String field = propertyURI != null
+					? toPropertyFieldName(SearchFields.getPropertyField(propertyURI))
+					: ALL_PROPERTY_FIELDS;
+			boolean requireFieldMatch = propertyURI != null;
+			highlightConfig = Highlight.of(h -> {
+				h.fields(field,
+						hf -> hf.preTags(SearchFields.HIGHLIGHTER_PRE_TAG)
+								.postTags(SearchFields.HIGHLIGHTER_POST_TAG)
+								.numberOfFragments(0));
+				h.numberOfFragments(0);
+				if (!requireFieldMatch) {
+					h.requireFieldMatch(false);
+				}
+				return h;
+			});
 		}
 
 		int numDocs;
@@ -654,14 +597,13 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 			numDocs = -1;
 		}
 
-		QueryBuilder combinedQuery = qb;
+		Query combinedQuery = qb;
 		if (subject != null) {
-			QueryBuilder idQuery = QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME,
-					SearchFields.getResourceID(subject));
-			combinedQuery = QueryBuilders.boolQuery().must(idQuery).must(qb);
+			Query idQuery = termQuery(SearchFields.URI_FIELD_NAME, SearchFields.getResourceID(subject));
+			combinedQuery = QueryBuilders.bool(b -> b.must(idQuery).must(qb));
 		}
 
-		SearchResponse<Map<String, Object>> response = executeSearch(combinedQuery, numDocs, sourceBuilder);
+		SearchResponse<Map<String, Object>> response = executeSearch(combinedQuery, numDocs, highlightConfig);
 		return Iterables.transform(response.hits().hits(),
 				(Function<Hit<Map<String, Object>>, DocumentScore>) hit -> new ElasticsearchDocumentScore(hit,
 						geoContextMapper));
@@ -691,10 +633,15 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		double lat = p.getY();
 		double lon = p.getX();
 		final String fieldName = toGeoPointFieldName(SearchFields.getPropertyField(geoProperty));
-		QueryBuilder qb = QueryBuilders.functionScoreQuery(
-				QueryBuilders.geoDistanceQuery(fieldName).point(lat, lon).distance(unitDist, unit),
-				ScoreFunctionBuilders.linearDecayFunction(fieldName, GeohashUtils.encodeLatLon(lat, lon),
-						new DistanceUnit.Distance(unitDist, unit).toString()));
+		String distanceString = new DistanceUnit.Distance(unitDist, unit).toString();
+		Query distanceQuery = QueryBuilders.geoDistance(g -> g.field(fieldName)
+				.location(l -> l.latlon(ll -> ll.lat(lat).lon(lon)))
+				.distance(distanceString));
+		FunctionScore decayFunction = FunctionScore.of(f -> f.linear(l -> l.field(fieldName)
+				.placement(pBuilder -> pBuilder.origin(JsonData.of(GeohashUtils.encodeLatLon(lat, lon)))
+						.scale(JsonData.of(distanceString)))));
+		Query qb = QueryBuilders.functionScore(fs -> fs.query(distanceQuery).functions(decayFunction)
+				.scoreMode(FunctionScoreMode.Multiply));
 		if (contextVar != null) {
 			qb = addContextTerm(qb, (Resource) contextVar.getValue());
 		}
@@ -706,22 +653,12 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 						geoContextMapper, fieldName, units, srcPoint, unit));
 	}
 
-	private QueryBuilder addContextTerm(QueryBuilder qb, Resource ctx) {
-		BoolQueryBuilder combinedQuery = QueryBuilders.boolQuery();
-		QueryBuilder idQuery = QueryBuilders.termQuery(SearchFields.CONTEXT_FIELD_NAME, SearchFields.getContextID(ctx));
+	private Query addContextTerm(Query qb, Resource ctx) {
+		Query idQuery = termQuery(SearchFields.CONTEXT_FIELD_NAME, SearchFields.getContextID(ctx));
 		if (ctx != null) {
-			// the specified named graph
-			combinedQuery.must(idQuery);
-		} else {
-			// not the unnamed graph
-			combinedQuery.mustNot(idQuery);
+			return QueryBuilders.bool(b -> b.must(idQuery).must(qb));
 		}
-		combinedQuery.must(qb);
-		return combinedQuery;
-	}
-
-	private Query toQuery(QueryBuilder qb) {
-		return Query.of(q -> q.withJson(new StringReader(sanitizeQueryJson(qb.toString()))));
+		return QueryBuilders.bool(b -> b.mustNot(idQuery).must(qb));
 	}
 
 	@Override
@@ -734,7 +671,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		} catch (ParseException e) {
 			logger.error("error while parsing wkt geometry", e);
 		}
-		ShapeRelation spatialOp = toSpatialOp(relation);
+		GeoShapeRelation spatialOp = toSpatialOp(relation);
 		if (spatialOp == null) {
 			return null;
 		}
@@ -745,53 +682,60 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		} catch (ParseException e) {
 			throw new MalformedQueryException("error while parsing wkt geometry", e);
 		}
-		GeoShapeQueryBuilder fb = QueryBuilders.geoShapeQuery(fieldName, geometry);
-		fb.relation(spatialOp);
-		QueryBuilder qb = QueryBuilders.matchAllQuery();
-		if (contextVar != null) {
-			qb = addContextTerm(qb, (Resource) contextVar.getValue());
-		}
+		Map<String, Object> geoJson = ElasticsearchSpatialSupport.getSpatialSupport().toGeoJSON(shape);
+		GeoShapeFieldQuery shapeQuery = GeoShapeFieldQuery
+				.of(g -> g.shape(JsonData.of(geoJson)).relation(spatialOp));
+		Query filter = QueryBuilders.geoShape(g -> g.field(fieldName).shape(shapeQuery));
+		Query matchAll = QueryBuilders.matchAll(m -> m);
+		Query qb = contextVar != null ? addContextTerm(matchAll, (Resource) contextVar.getValue()) : matchAll;
 
 		SearchResponse<Map<String, Object>> response = executeSearch(
-				QueryBuilders.boolQuery().must(qb).filter(fb), -1);
+				QueryBuilders.bool(b -> b.must(qb).filter(filter)), -1);
 		return Iterables.transform(response.hits().hits(),
 				(Function<Hit<Map<String, Object>>, DocumentResult>) hit -> new ElasticsearchDocumentResult(hit,
 						geoContextMapper));
 	}
 
-	private ShapeRelation toSpatialOp(String relation) {
+	private GeoShapeRelation toSpatialOp(String relation) {
 		if (GEOF.SF_INTERSECTS.stringValue().equals(relation)) {
-			return ShapeRelation.INTERSECTS;
+			return GeoShapeRelation.Intersects;
 		}
 		if (GEOF.SF_DISJOINT.stringValue().equals(relation)) {
-			return ShapeRelation.DISJOINT;
+			return GeoShapeRelation.Disjoint;
 		}
 		if (GEOF.EH_COVERED_BY.stringValue().equals(relation)) {
-			return ShapeRelation.WITHIN;
+			return GeoShapeRelation.Within;
 		}
 		return null;
 	}
 
-	public SearchResponse<Map<String, Object>> search(QueryBuilder query) throws IOException {
+	public SearchResponse<Map<String, Object>> search(Query query) throws IOException {
 		return executeSearch(query, -1);
 	}
 
-	private SearchResponse<Map<String, Object>> executeSearch(QueryBuilder query, int numDocs) throws IOException {
+	private SearchResponse<Map<String, Object>> executeSearch(Query query, int numDocs) throws IOException {
 		return executeSearch(query, numDocs, null);
 	}
 
-	private SearchResponse<Map<String, Object>> executeSearch(QueryBuilder query, int numDocs,
-			SearchSourceBuilder template) throws IOException {
+	private SearchResponse<Map<String, Object>> executeSearch(Query query, int numDocs, Highlight highlight)
+			throws IOException {
 		int size = resolveSize(query, numDocs);
-		SearchSourceBuilder source = template != null ? template : new SearchSourceBuilder();
-		source.query(query);
-		source.trackTotalHits(true);
-		source.seqNoAndPrimaryTerm(true);
-		source.size(size);
-		return search(source);
+		return client.search(
+				s -> {
+					s.index(indexName)
+							.query(query)
+							.size(size)
+							.seqNoPrimaryTerm(true)
+							.trackTotalHits(TrackHits.of(th -> th.enabled(true)));
+					if (highlight != null) {
+						s.highlight(highlight);
+					}
+					return s;
+				},
+				MAP_TYPE);
 	}
 
-	private int resolveSize(QueryBuilder query, int numDocs) throws IOException {
+	private int resolveSize(Query query, int numDocs) throws IOException {
 		if (numDocs < -1) {
 			throw new IllegalArgumentException("numDocs should be 0 or greater if defined by the user");
 		}
@@ -801,34 +745,26 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		if (defaultNumDocs >= 0) {
 			return Math.min(maxDocs, defaultNumDocs);
 		}
-		SearchSourceBuilder countSource = new SearchSourceBuilder().size(0).query(query).trackTotalHits(true);
-		SearchResponse<Map<String, Object>> countResponse = search(countSource);
+		SearchResponse<Map<String, Object>> countResponse = client.search(
+				s -> s.index(indexName)
+						.size(0)
+						.query(query)
+						.trackTotalHits(TrackHits.of(th -> th.enabled(true))),
+				MAP_TYPE);
 		long docCount = countResponse.hits().total() != null ? countResponse.hits().total().value() : 0;
 		return Math.max((int) Math.min(docCount, maxDocs), 1);
 	}
 
-	private SearchResponse<Map<String, Object>> search(SearchSourceBuilder source) throws IOException {
-		return client.search(
-				s -> s.index(indexName)
-						.seqNoPrimaryTerm(true)
-						.withJson(new StringReader(sanitizeQueryJson(source.toString()))),
-				MAP_TYPE);
-	}
-
-	private QueryStringQueryBuilder prepareQuery(IRI propertyURI, QueryStringQueryBuilder query) {
-		// check out which query parser to use, based on the given property URI
-		if (propertyURI == null)
-		// if we have no property given, we create a default query parser which
-		// has the TEXT_FIELD_NAME as the default field
-		{
-			query.defaultField(SearchFields.TEXT_FIELD_NAME).analyzer(queryAnalyzer);
-		} else
-		// otherwise we create a query parser that has the given property as
-		// the default field
-		{
-			query.defaultField(toPropertyFieldName(SearchFields.getPropertyField(propertyURI))).analyzer(queryAnalyzer);
-		}
-		return query;
+	private Query prepareQuery(IRI propertyURI, String query) {
+		return QueryBuilders.queryString(qb -> {
+			qb.query(query).analyzer(queryAnalyzer);
+			if (propertyURI == null) {
+				qb.defaultField(SearchFields.TEXT_FIELD_NAME);
+			} else {
+				qb.defaultField(toPropertyFieldName(SearchFields.getPropertyField(propertyURI)));
+			}
+			return qb;
+		});
 	}
 
 	/**
@@ -848,7 +784,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 			String contextString = SearchFields.getContextID(context);
 			// now delete all documents from the deleted context
 			client.deleteByQuery(dbq -> dbq.index(indexName)
-					.query(toQuery(QueryBuilders.termQuery(SearchFields.CONTEXT_FIELD_NAME, contextString))));
+					.query(termQuery(SearchFields.CONTEXT_FIELD_NAME, contextString)));
 		}
 	}
 
@@ -885,38 +821,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		return s.replace('^', '.');
 	}
 
-	private static String sanitizeQueryJson(String json) {
-		try {
-			JsonNode node = JSON_MAPPER.readTree(json);
-			sanitizeNode(node);
-			return JSON_MAPPER.writeValueAsString(node);
-		} catch (IOException e) {
-			return json;
-		}
-	}
-
-	private static void sanitizeNode(JsonNode node) {
-		if (node == null) {
-			return;
-		}
-		if (node.isObject()) {
-			ObjectNode obj = (ObjectNode) node;
-			for (String field : UNSUPPORTED_QUERY_FIELDS) {
-				obj.remove(field);
-			}
-			obj.fields().forEachRemaining(entry -> {
-				String fieldName = entry.getKey();
-				JsonNode child = entry.getValue();
-				if (LOWERCASE_ENUM_FIELDS.contains(fieldName) && child.isTextual()) {
-					obj.put(fieldName, child.asText().toLowerCase(Locale.ROOT));
-				} else {
-					sanitizeNode(child);
-				}
-			});
-		} else if (node.isArray()) {
-			for (JsonNode child : node) {
-				sanitizeNode(child);
-			}
-		}
+	private Query termQuery(String field, String value) {
+		return QueryBuilders.term(t -> t.field(field).value(value));
 	}
 }
