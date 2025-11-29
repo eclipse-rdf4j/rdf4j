@@ -815,11 +815,6 @@
 						<additionalDependencies>
 							<additionalDependency>
 								<groupId>org.elasticsearch</groupId>
-								<artifactId>elasticsearch</artifactId>
-								<version>${elasticsearch.version}</version>
-							</additionalDependency>
-							<additionalDependency>
-								<groupId>org.elasticsearch</groupId>
 								<artifactId>elasticsearch-x-content</artifactId>
 								<version>${elasticsearch.version}</version>
 							</additionalDependency>
