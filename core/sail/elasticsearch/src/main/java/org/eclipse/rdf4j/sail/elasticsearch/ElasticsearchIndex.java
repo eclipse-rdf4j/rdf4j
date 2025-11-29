@@ -37,27 +37,16 @@ import org.eclipse.rdf4j.sail.lucene.QuerySpec;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.elasticsearch.client.RestClient;
-import org.elasticsearch.common.Strings;
-import org.elasticsearch.common.geo.GeoPoint;
-import org.elasticsearch.common.unit.DistanceUnit;
-import org.elasticsearch.geometry.Geometry;
-import org.elasticsearch.geometry.utils.GeometryValidator;
-import org.elasticsearch.geometry.utils.StandardValidator;
-import org.elasticsearch.geometry.utils.WellKnownText;
-import org.elasticsearch.index.seqno.SequenceNumbers;
-import org.elasticsearch.xcontent.XContentBuilder;
-import org.elasticsearch.xcontent.XContentFactory;
-import org.elasticsearch.xcontent.XContentType;
 import org.locationtech.spatial4j.context.SpatialContext;
 import org.locationtech.spatial4j.context.SpatialContextFactory;
 import org.locationtech.spatial4j.distance.DistanceUtils;
-import org.locationtech.spatial4j.io.GeohashUtils;
 import org.locationtech.spatial4j.shape.Point;
 import org.locationtech.spatial4j.shape.Shape;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Function;
 import com.google.common.base.Functions;
 import com.google.common.collect.Iterables;
@@ -176,12 +165,16 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	public static final String GEOSHAPE_FIELD_PREFIX = "_geoshape_";
 
+	public static final long UNASSIGNED_SEQ_NO = -2L;
+
+	public static final long UNASSIGNED_PRIMARY_TERM = 0L;
+
 	private final Logger logger = LoggerFactory.getLogger(getClass());
 
 	private static final Type MAP_TYPE = new TypeReference<Map<String, Object>>() {
 	}.getType();
 
-	private static final GeometryValidator GEOMETRY_VALIDATOR = StandardValidator.instance(true);
+	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 
 	private volatile RestClient lowLevelClient;
 
@@ -305,61 +298,42 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	}
 
 	private void createIndex() throws IOException {
-		try (XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()
-				.startObject()
-				.field("index.query.default_field", SearchFields.TEXT_FIELD_NAME)
-				.startObject("analysis")
-				.startObject("analyzer")
-				.startObject("default")
-				.field("type", analyzer)
-				.endObject()
-				.endObject()
-				.endObject()
-				.endObject()) {
+		Map<String, Object> settings = new HashMap<>();
+		settings.put("index.query.default_field", SearchFields.TEXT_FIELD_NAME);
+		settings.put("analysis",
+				Map.of("analyzer", Map.of("default", Map.of("type", analyzer))));
 
-			CreateIndexResponse createResponse = client.indices()
-					.create(c -> c.index(indexName)
-							.settings(s -> s.withJson(new StringReader(Strings.toString(xContentBuilder)))));
-			if (!createResponse.acknowledged()) {
-				throw new IOException("Failed to create index " + indexName);
+		String settingsJson = JSON_MAPPER.writeValueAsString(settings);
+
+		CreateIndexResponse createResponse = client.indices()
+				.create(c -> c.index(indexName)
+						.settings(s -> s.withJson(new StringReader(settingsJson))));
+		if (!createResponse.acknowledged()) {
+			throw new IOException("Failed to create index " + indexName);
+		}
+
+		Map<String, Object> properties = new HashMap<>();
+		properties.put(SearchFields.CONTEXT_FIELD_NAME,
+				Map.of("type", "keyword", "index", true, "copy_to", "_all"));
+		properties.put(SearchFields.URI_FIELD_NAME,
+				Map.of("type", "keyword", "index", true, "copy_to", "_all"));
+		properties.put(SearchFields.TEXT_FIELD_NAME,
+				Map.of("type", "text", "index", true, "copy_to", "_all"));
+		for (String wktField : wktFields) {
+			properties.put(toGeoPointFieldName(wktField), Map.of("type", "geo_point"));
+			if (supportsShapes(wktField)) {
+				properties.put(toGeoShapeFieldName(wktField),
+						Map.of("type", "geo_shape", "copy_to", "_all"));
 			}
 		}
 
-		// use _source instead of explicit stored = true
-		try (XContentBuilder typeMapping = XContentFactory.jsonBuilder()) {
-			typeMapping.startObject().startObject("properties");
-			typeMapping.startObject(SearchFields.CONTEXT_FIELD_NAME)
-					.field("type", "keyword")
-					.field("index", true)
-					.field("copy_to", "_all")
-					.endObject();
-			typeMapping.startObject(SearchFields.URI_FIELD_NAME)
-					.field("type", "keyword")
-					.field("index", true)
-					.field("copy_to", "_all")
-					.endObject();
-			typeMapping.startObject(SearchFields.TEXT_FIELD_NAME)
-					.field("type", "text")
-					.field("index", true)
-					.field("copy_to", "_all")
-					.endObject();
-			for (String wktField : wktFields) {
-				typeMapping.startObject(toGeoPointFieldName(wktField)).field("type", "geo_point").endObject();
-				if (supportsShapes(wktField)) {
-					typeMapping.startObject(toGeoShapeFieldName(wktField))
-							.field("type", "geo_shape")
-							.field("copy_to", "_all")
-							.endObject();
-				}
-			}
-			typeMapping.endObject().endObject();
+		String mappingJson = JSON_MAPPER.writeValueAsString(Map.of("properties", properties));
 
-			client.indices()
-					.putMapping(
-							PutMappingRequest.of(pm -> pm.index(indexName)
-									.withJson(new StringReader(Strings.toString(typeMapping)))));
-			client.indices().refresh(RefreshRequest.of(r -> r.index(indexName)));
-		}
+		client.indices()
+				.putMapping(
+						PutMappingRequest.of(pm -> pm.index(indexName)
+								.withJson(new StringReader(mappingJson))));
+		client.indices().refresh(RefreshRequest.of(r -> r.index(indexName)));
 	}
 
 	private boolean supportsShapes(String field) {
@@ -400,9 +374,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 				GetRequest.of(g -> g.index(indexName).id(id)),
 				MAP_TYPE);
 		if (response.found()) {
-			long seqNo = response.seqNo() == null ? SequenceNumbers.UNASSIGNED_SEQ_NO : response.seqNo();
-			long primaryTerm = response.primaryTerm() == null ? SequenceNumbers.UNASSIGNED_PRIMARY_TERM
-					: response.primaryTerm();
+			long seqNo = response.seqNo() == null ? UNASSIGNED_SEQ_NO : response.seqNo();
+			long primaryTerm = response.primaryTerm() == null ? UNASSIGNED_PRIMARY_TERM : response.primaryTerm();
 			return new ElasticsearchDocument(response.id(), documentType, response.index(), seqNo, primaryTerm,
 					response.source(), geoContextMapper);
 		}
@@ -447,8 +420,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
 		IndexRequest.Builder<Map<String, Object>> request = new IndexRequest.Builder<>();
 		request.index(esDoc.getIndex()).id(esDoc.getId()).document(esDoc.getSource());
-		if (esDoc.getSeqNo() != SequenceNumbers.UNASSIGNED_SEQ_NO
-				&& esDoc.getPrimaryTerm() != SequenceNumbers.UNASSIGNED_PRIMARY_TERM) {
+		if (esDoc.getSeqNo() != UNASSIGNED_SEQ_NO
+				&& esDoc.getPrimaryTerm() != UNASSIGNED_PRIMARY_TERM) {
 			request.ifSeqNo(esDoc.getSeqNo()).ifPrimaryTerm(esDoc.getPrimaryTerm());
 		}
 		IndexResponse response = client.index(request.build());
@@ -462,8 +435,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
 		client.delete(DeleteRequest.of(d -> {
 			d.index(esDoc.getIndex()).id(esDoc.getId());
-			if (esDoc.getSeqNo() != SequenceNumbers.UNASSIGNED_SEQ_NO
-					&& esDoc.getPrimaryTerm() != SequenceNumbers.UNASSIGNED_PRIMARY_TERM) {
+			if (esDoc.getSeqNo() != UNASSIGNED_SEQ_NO
+					&& esDoc.getPrimaryTerm() != UNASSIGNED_PRIMARY_TERM) {
 				d.ifSeqNo(esDoc.getSeqNo()).ifPrimaryTerm(esDoc.getPrimaryTerm());
 			}
 			return d;
@@ -613,18 +586,13 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	protected Iterable<? extends DocumentDistance> geoQuery(final IRI geoProperty, Point p, final IRI units,
 			double distance, String distanceVar, Var contextVar) throws MalformedQueryException, IOException {
 		double unitDist;
-		final DistanceUnit unit;
 		if (GEOF.UOM_METRE.equals(units)) {
-			unit = DistanceUnit.METERS;
-			unitDist = distance;
+			unitDist = distance / 1000.0;
 		} else if (GEOF.UOM_DEGREE.equals(units)) {
-			unit = DistanceUnit.KILOMETERS;
-			unitDist = unit.getDistancePerDegree() * distance;
+			unitDist = (Math.PI / 180.0) * DistanceUtils.EARTH_MEAN_RADIUS_KM * distance;
 		} else if (GEOF.UOM_RADIAN.equals(units)) {
-			unit = DistanceUnit.KILOMETERS;
 			unitDist = DistanceUtils.radians2Dist(distance, DistanceUtils.EARTH_MEAN_RADIUS_KM);
 		} else if (GEOF.UOM_UNITY.equals(units)) {
-			unit = DistanceUnit.KILOMETERS;
 			unitDist = distance * Math.PI * DistanceUtils.EARTH_MEAN_RADIUS_KM;
 		} else {
 			throw new MalformedQueryException("Unsupported units: " + units);
@@ -633,12 +601,12 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		double lat = p.getY();
 		double lon = p.getX();
 		final String fieldName = toGeoPointFieldName(SearchFields.getPropertyField(geoProperty));
-		String distanceString = new DistanceUnit.Distance(unitDist, unit).toString();
+		String distanceString = unitDist + "km";
 		Query distanceQuery = QueryBuilders.geoDistance(g -> g.field(fieldName)
 				.location(l -> l.latlon(ll -> ll.lat(lat).lon(lon)))
 				.distance(distanceString));
 		FunctionScore decayFunction = FunctionScore.of(f -> f.linear(l -> l.field(fieldName)
-				.placement(pBuilder -> pBuilder.origin(JsonData.of(GeohashUtils.encodeLatLon(lat, lon)))
+				.placement(pBuilder -> pBuilder.origin(JsonData.of(Map.of("lat", lat, "lon", lon)))
 						.scale(JsonData.of(distanceString)))));
 		Query qb = QueryBuilders.functionScore(fs -> fs.query(distanceQuery).functions(decayFunction)
 				.scoreMode(FunctionScoreMode.Multiply));
@@ -647,10 +615,9 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		}
 
 		SearchResponse<Map<String, Object>> response = executeSearch(qb, -1);
-		final GeoPoint srcPoint = new GeoPoint(lat, lon);
 		return Iterables.transform(response.hits().hits(),
 				(Function<Hit<Map<String, Object>>, DocumentDistance>) hit -> new ElasticsearchDocumentDistance(hit,
-						geoContextMapper, fieldName, units, srcPoint, unit));
+						geoContextMapper, fieldName, units, lat, lon));
 	}
 
 	private Query addContextTerm(Query qb, Resource ctx) {
@@ -671,17 +638,14 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		} catch (ParseException e) {
 			logger.error("error while parsing wkt geometry", e);
 		}
+		if (shape == null) {
+			return null;
+		}
 		GeoShapeRelation spatialOp = toSpatialOp(relation);
 		if (spatialOp == null) {
 			return null;
 		}
 		final String fieldName = toGeoShapeFieldName(SearchFields.getPropertyField(geoProperty));
-		Geometry geometry;
-		try {
-			geometry = WellKnownText.fromWKT(GEOMETRY_VALIDATOR, true, wkt);
-		} catch (ParseException e) {
-			throw new MalformedQueryException("error while parsing wkt geometry", e);
-		}
 		Map<String, Object> geoJson = ElasticsearchSpatialSupport.getSpatialSupport().toGeoJSON(shape);
 		GeoShapeFieldQuery shapeQuery = GeoShapeFieldQuery
 				.of(g -> g.shape(JsonData.of(geoJson)).relation(spatialOp));

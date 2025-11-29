@@ -16,7 +16,6 @@ import java.util.List;
 
 import org.eclipse.rdf4j.sail.lucene.BulkUpdater;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
-import org.elasticsearch.index.seqno.SequenceNumbers;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.BulkResponse;
@@ -47,8 +46,8 @@ public class ElasticsearchBulkUpdater implements BulkUpdater {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
 		operations.add(BulkOperation.of(b -> b.index(i -> {
 			i.index(esDoc.getIndex()).id(esDoc.getId()).document(esDoc.getSource());
-			if (esDoc.getSeqNo() != SequenceNumbers.UNASSIGNED_SEQ_NO
-					&& esDoc.getPrimaryTerm() != SequenceNumbers.UNASSIGNED_PRIMARY_TERM) {
+			if (esDoc.getSeqNo() != ElasticsearchIndex.UNASSIGNED_SEQ_NO
+					&& esDoc.getPrimaryTerm() != ElasticsearchIndex.UNASSIGNED_PRIMARY_TERM) {
 				i.ifSeqNo(esDoc.getSeqNo()).ifPrimaryTerm(esDoc.getPrimaryTerm());
 			}
 			return i;
@@ -60,8 +59,8 @@ public class ElasticsearchBulkUpdater implements BulkUpdater {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
 		operations.add(BulkOperation.of(b -> b.delete(d -> {
 			d.index(esDoc.getIndex()).id(esDoc.getId());
-			if (esDoc.getSeqNo() != SequenceNumbers.UNASSIGNED_SEQ_NO
-					&& esDoc.getPrimaryTerm() != SequenceNumbers.UNASSIGNED_PRIMARY_TERM) {
+			if (esDoc.getSeqNo() != ElasticsearchIndex.UNASSIGNED_SEQ_NO
+					&& esDoc.getPrimaryTerm() != ElasticsearchIndex.UNASSIGNED_PRIMARY_TERM) {
 				d.ifSeqNo(esDoc.getSeqNo()).ifPrimaryTerm(esDoc.getPrimaryTerm());
 			}
 			return d;

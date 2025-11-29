@@ -15,9 +15,6 @@ import java.util.Map;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
-import org.elasticsearch.common.geo.GeoDistance;
-import org.elasticsearch.common.geo.GeoPoint;
-import org.elasticsearch.common.unit.DistanceUnit;
 import org.locationtech.spatial4j.context.SpatialContext;
 import org.locationtech.spatial4j.distance.DistanceUtils;
 
@@ -31,40 +28,55 @@ public class ElasticsearchDocumentDistance extends ElasticsearchDocumentResult i
 
 	private final IRI units;
 
-	private final GeoPoint srcPoint;
+	private final double srcLat;
 
-	private final DistanceUnit unit;
+	private final double srcLon;
 
 	public ElasticsearchDocumentDistance(Hit<Map<String, Object>> hit,
 			Function<? super String, ? extends SpatialContext> geoContextMapper, String geoPointField, IRI units,
-			GeoPoint srcPoint, DistanceUnit unit) {
+			double srcLat, double srcLon) {
 		super(hit, geoContextMapper);
 		this.geoPointField = geoPointField;
 		this.units = units;
-		this.srcPoint = srcPoint;
-		this.unit = unit;
+		this.srcLat = srcLat;
+		this.srcLon = srcLon;
 	}
 
 	@Override
 	public double getDistance() {
-		String geohash = (String) ((ElasticsearchDocument) getDocument()).getSource().get(geoPointField);
-		GeoPoint dstPoint = GeoPoint.fromGeohash(geohash);
+		Object pointValue = ((ElasticsearchDocument) getDocument()).getSource().get(geoPointField);
+		if (!(pointValue instanceof Map)) {
+			return 0;
+		}
+		@SuppressWarnings("unchecked")
+		Map<String, Object> point = (Map<String, Object>) pointValue;
+		Double dstLat = asDouble(point.get("lat"));
+		Double dstLon = asDouble(point.get("lon"));
+		if (dstLat == null || dstLon == null) {
+			return 0;
+		}
 
-		double unitDist = GeoDistance.ARC.calculate(srcPoint.getLat(), srcPoint.getLon(), dstPoint.getLat(),
-				dstPoint.getLon(), unit);
+		double distRad = DistanceUtils.distHaversineRAD(srcLat, srcLon, dstLat, dstLon);
+		double distKm = DistanceUtils.radians2Dist(distRad, DistanceUtils.EARTH_MEAN_RADIUS_KM);
 		double distance;
 		if (GEOF.UOM_METRE.equals(units)) {
-			distance = unit.toMeters(unitDist);
+			distance = distKm * 1000.0;
 		} else if (GEOF.UOM_DEGREE.equals(units)) {
-			distance = unitDist / unit.getDistancePerDegree();
+			distance = distKm / DistanceUtils.EARTH_MEAN_RADIUS_KM * (180.0 / Math.PI);
 		} else if (GEOF.UOM_RADIAN.equals(units)) {
-			distance = DistanceUtils.dist2Radians(unit.convert(unitDist, DistanceUnit.KILOMETERS),
-					DistanceUtils.EARTH_MEAN_RADIUS_KM);
+			distance = distRad;
 		} else if (GEOF.UOM_UNITY.equals(units)) {
-			distance = unit.convert(unitDist, DistanceUnit.KILOMETERS) / (Math.PI * DistanceUtils.EARTH_MEAN_RADIUS_KM);
+			distance = distKm / (Math.PI * DistanceUtils.EARTH_MEAN_RADIUS_KM);
 		} else {
 			throw new UnsupportedOperationException("Unsupported units: " + units);
 		}
 		return distance;
+	}
+
+	private Double asDouble(Object value) {
+		if (value instanceof Number) {
+			return ((Number) value).doubleValue();
+		}
+		return null;
 	}
 }

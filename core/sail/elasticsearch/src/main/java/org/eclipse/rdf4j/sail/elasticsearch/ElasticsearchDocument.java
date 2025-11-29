@@ -21,8 +21,6 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
-import org.elasticsearch.common.geo.GeoPoint;
-import org.elasticsearch.index.seqno.SequenceNumbers;
 import org.locationtech.spatial4j.context.SpatialContext;
 import org.locationtech.spatial4j.shape.Point;
 import org.locationtech.spatial4j.shape.Shape;
@@ -52,14 +50,14 @@ public class ElasticsearchDocument implements SearchDocument {
 	public ElasticsearchDocument(Hit<Map<String, Object>> hit,
 			Function<? super String, ? extends SpatialContext> geoContextMapper) {
 		this(hit.id(), ElasticsearchIndex.DEFAULT_DOCUMENT_TYPE, hit.index(),
-				hit.seqNo() == null ? SequenceNumbers.UNASSIGNED_SEQ_NO : hit.seqNo(),
-				hit.primaryTerm() == null ? SequenceNumbers.UNASSIGNED_PRIMARY_TERM : hit.primaryTerm(),
+				hit.seqNo() == null ? ElasticsearchIndex.UNASSIGNED_SEQ_NO : hit.seqNo(),
+				hit.primaryTerm() == null ? ElasticsearchIndex.UNASSIGNED_PRIMARY_TERM : hit.primaryTerm(),
 				hit.source(), geoContextMapper);
 	}
 
 	public ElasticsearchDocument(String id, String type, String index, String resourceId, String context,
 			Function<? super String, ? extends SpatialContext> geoContextMapper) {
-		this(id, type, index, SequenceNumbers.UNASSIGNED_SEQ_NO, SequenceNumbers.UNASSIGNED_PRIMARY_TERM,
+		this(id, type, index, ElasticsearchIndex.UNASSIGNED_SEQ_NO, ElasticsearchIndex.UNASSIGNED_PRIMARY_TERM,
 				new HashMap<>(), geoContextMapper);
 		fields.put(SearchFields.URI_FIELD_NAME, resourceId);
 		if (context != null) {
@@ -70,7 +68,7 @@ public class ElasticsearchDocument implements SearchDocument {
 	@Deprecated
 	public ElasticsearchDocument(String id, String type, String index, long version, Map<String, Object> fields,
 			Function<? super String, ? extends SpatialContext> geoContextMapper) {
-		this(id, type, index, SequenceNumbers.UNASSIGNED_SEQ_NO, SequenceNumbers.UNASSIGNED_PRIMARY_TERM,
+		this(id, type, index, ElasticsearchIndex.UNASSIGNED_SEQ_NO, ElasticsearchIndex.UNASSIGNED_PRIMARY_TERM,
 				new HashMap<>(), geoContextMapper);
 		this.version = version;
 	}
@@ -165,7 +163,10 @@ public class ElasticsearchDocument implements SearchDocument {
 			Shape shape = geoContextMapper.apply(name).readShapeFromWkt(text);
 			if (shape instanceof Point) {
 				Point p = (Point) shape;
-				fields.put(ElasticsearchIndex.toGeoPointFieldName(name), new GeoPoint(p.getY(), p.getX()).getGeohash());
+				Map<String, Object> point = new HashMap<>();
+				point.put("lat", p.getY());
+				point.put("lon", p.getX());
+				fields.put(ElasticsearchIndex.toGeoPointFieldName(name), point);
 			} else {
 				fields.put(ElasticsearchIndex.toGeoShapeFieldName(name),
 						ElasticsearchSpatialSupport.getSpatialSupport().toGeoJSON(shape));
