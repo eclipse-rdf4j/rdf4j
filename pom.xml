@@ -814,11 +814,6 @@
 						</additionalOptions>
 						<additionalDependencies>
 							<additionalDependency>
-								<groupId>org.elasticsearch</groupId>
-								<artifactId>elasticsearch-x-content</artifactId>
-								<version>${elasticsearch.version}</version>
-							</additionalDependency>
-							<additionalDependency>
 								<groupId>org.apache.solr</groupId>
 								<artifactId>solr-core</artifactId>
 								<version>${solr.version}</version>
