@@ -527,28 +527,16 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public LmdbValue getLazyValue(long id) throws IOException {
-		// Check value cache
-		LmdbValue resultValue = cachedValue(id);
-
-		if (resultValue == null) {
-			switch ((byte) (id & 0x3)) {
-			case URI_VALUE:
-				resultValue = new LmdbIRI(lazyRevision, id);
-				break;
-			case LITERAL_VALUE:
-				resultValue = new LmdbLiteral(lazyRevision, id);
-				break;
-			case BNODE_VALUE:
-				resultValue = new LmdbBNode(lazyRevision, id);
-				break;
-			default:
-				throw new IOException("Unsupported value with type id " + (id & 0x3));
-			}
-			// Store value in cache
-			cacheValue(id, resultValue);
+		switch ((byte) (id & 0x3)) {
+		case URI_VALUE:
+			return new LmdbIRI(lazyRevision, id);
+		case LITERAL_VALUE:
+			return new LmdbLiteral(lazyRevision, id);
+		case BNODE_VALUE:
+			return new LmdbBNode(lazyRevision, id);
+		default:
+			throw new IOException("Unsupported value with type id " + (id & 0x3));
 		}
-
-		return resultValue;
 	}
 
 	/**
@@ -589,10 +577,17 @@ class ValueStore extends AbstractValueFactory {
 	 * @return <code>true</code> if value could be successfully resolved, else <code>false</code>
 	 */
 	public boolean resolveValue(long id, LmdbValue value) {
+		// Try to get from cache
+		LmdbValue cached = cachedValue(id);
+		if (cached != null && this.getRevision().getRevisionId() == cached.getValueStoreRevision().getRevisionId()) {
+			value.setFromInitializedValue(cached);
+			return true;
+		}
 		try {
 			byte[] data = getData(id);
 			if (data != null) {
 				data2value(id, data, value);
+				cacheValue(id, value);
 				return true;
 			}
 		} catch (IOException e) {

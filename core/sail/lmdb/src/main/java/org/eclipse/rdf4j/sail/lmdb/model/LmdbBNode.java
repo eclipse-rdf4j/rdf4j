@@ -68,6 +68,16 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	}
 
 	@Override
+	public void setFromInitializedValue(LmdbValue initializedValue) {
+		if (initializedValue instanceof LmdbBNode) {
+			LmdbBNode lmdbBNode = (LmdbBNode) initializedValue;
+			super.setID(lmdbBNode.getID());
+		} else {
+			throw new IllegalArgumentException("Initialized value is not of type LmdbBNode");
+		}
+	}
+
+	@Override
 	public long getInternalID() {
 		return internalID;
 	}

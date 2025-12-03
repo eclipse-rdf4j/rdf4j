@@ -10,7 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 
 import java.io.File;
@@ -38,12 +40,19 @@ class ValueStoreCacheTest {
 			IRI iri = vf.createIRI("urn:example:foo");
 			long id = vs.getId(iri, true);
 
-			// Populate cache via lazy retrieval
+			// On lazy retrieval, the cache should not be touched
 			LmdbValue v1 = vs.getLazyValue(id);
+			assertNotNull(v1);
+			LmdbValue cached1 = vs.cachedValue(id);
+			assertNull(cached1);
+
+			// After initializing the value, it should be cached
+			assertEquals(v1.stringValue(), "urn:example:foo");
+			LmdbValue cached2 = vs.cachedValue(id);
+			assertSame(v1, cached2);
+
 			// Direct cache hit
 			LmdbValue v2 = vs.cachedValue(id);
-
-			assertNotNull(v1);
 			assertSame(v1, v2);
 		} finally {
 			store.shutDown();
