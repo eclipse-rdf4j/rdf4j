@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb.model;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 
@@ -41,4 +42,14 @@ public interface LmdbValue extends Value {
 	 * @return The revision of the value store that created this value at the time it last set the value's internal ID.
 	 */
 	ValueStoreRevision getValueStoreRevision();
+
+	/**
+	 * Sets this value's data from an initialized value.
+	 * <p>
+	 * This must be only called within a synchronized block in the init() method of the uninitialized value.
+	 *
+	 * @param initializedValue the initialized value to copy data from
+	 */
+	@InternalUseOnly
+	void setFromInitializedValue(LmdbValue initializedValue);
 }

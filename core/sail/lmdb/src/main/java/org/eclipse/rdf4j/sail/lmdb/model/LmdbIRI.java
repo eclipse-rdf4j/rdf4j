@@ -15,6 +15,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.util.URIUtil;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -84,6 +85,17 @@ public class LmdbIRI implements LmdbResource, IRI {
 	@Override
 	public ValueStoreRevision getValueStoreRevision() {
 		return revision;
+	}
+
+	@Override
+	public void setFromInitializedValue(LmdbValue initializedValue) {
+		if (initializedValue instanceof LmdbIRI) {
+			LmdbIRI initializedIRI = (LmdbIRI) initializedValue;
+			this.iriString = initializedIRI.iriString;
+			this.localNameIdx = initializedIRI.localNameIdx;
+		} else {
+			throw new SailException("Trying to initialize LmdbIRI from non-IRI value");
+		}
 	}
 
 	@Override
