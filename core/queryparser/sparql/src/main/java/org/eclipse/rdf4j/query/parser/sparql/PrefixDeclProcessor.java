@@ -69,10 +69,15 @@ public class PrefixDeclProcessor {
 			String iri = prefixDecl.getIRI().getValue();
 
 			if (prefixMap.containsKey(prefix)) {
-				throw new MalformedQueryException("Multiple prefix declarations for prefix '" + prefix + "'");
+				String existingIri = prefixMap.get(prefix);
+				if (!existingIri.equals(iri)) {
+					throw new MalformedQueryException("Multiple prefix declarations for prefix '" + prefix
+							+ "' with different namespaces: '" + existingIri + "' and '" + iri + "'");
+				}
+				// If the IRI is the same, allow the duplicate (no-op)
+			} else {
+				prefixMap.put(prefix, iri);
 			}
-
-			prefixMap.put(prefix, iri);
 		}
 
 		int preDefaultPrefixes = 0;
