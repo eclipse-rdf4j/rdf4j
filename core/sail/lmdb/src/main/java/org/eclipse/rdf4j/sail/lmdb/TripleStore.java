@@ -163,9 +163,8 @@ class TripleStore implements Closeable {
 	private final ValueStore valueStore;
 
 	private long env;
-	private int contextsDbi;
+	private final int contextsDbi;
 	private int pageSize;
-	private final boolean forceSync;
 	private final boolean autoGrow;
 	private long mapSize;
 	private long writeTxn;
@@ -196,7 +195,7 @@ class TripleStore implements Closeable {
 
 	TripleStore(File dir, LmdbStoreConfig config, ValueStore valueStore) throws IOException, SailException {
 		this.dir = dir;
-		this.forceSync = config.getForceSync();
+		boolean forceSync = config.getForceSync();
 		this.autoGrow = config.getAutoGrow();
 		this.valueStore = valueStore;
 

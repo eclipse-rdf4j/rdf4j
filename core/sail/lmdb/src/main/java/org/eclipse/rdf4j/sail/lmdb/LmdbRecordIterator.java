@@ -75,8 +75,6 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private ByteBuffer maxKeyBuf;
 
-	private int lastResult;
-
 	private final long[] quad;
 	private final long[] originalQuad;
 
@@ -153,6 +151,7 @@ class LmdbRecordIterator implements RecordIterator {
 				return null;
 			}
 
+			int lastResult;
 			if (txnRefVersion != txnRef.version()) {
 				// TODO: None of the tests in the LMDB Store cover this case!
 				// cursor must be renewed

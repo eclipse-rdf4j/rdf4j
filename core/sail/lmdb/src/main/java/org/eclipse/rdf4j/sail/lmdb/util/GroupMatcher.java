@@ -51,7 +51,6 @@ public class GroupMatcher {
 				this.cmp0 = Bytes.capturedComparator(valueArray, 0, len);
 			} else {
 				this.cmp0 = NULL_REGION_COMPARATOR;
-				;
 			}
 
 			baseOffset += len;

@@ -162,7 +162,7 @@ class TxnManager {
 
 	class Txn implements Closeable, AutoCloseable {
 
-		private long txn;
+		private final long txn;
 		private long version;
 
 		Txn(long txn) {

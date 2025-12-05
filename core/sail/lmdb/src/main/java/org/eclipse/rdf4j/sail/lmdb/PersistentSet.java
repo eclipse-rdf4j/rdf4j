@@ -56,7 +56,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 
 	private static final Logger logger = LoggerFactory.getLogger(PersistentSet.class);
 
-	private PersistentSetFactory<T> factory;
+	private final PersistentSetFactory<T> factory;
 	private final int dbi;
 	private int size;
 
@@ -192,7 +192,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 
 		private final StampedLongAdderLockManager txnLockManager;
 		private Txn txnRef;
-		private long txnRefVersion;
+		private final long txnRefVersion;
 
 		private T next;
 		private T current;

@@ -179,11 +179,9 @@ final class TxnRecordCache {
 		private final MDBVal valueData = MDBVal.malloc();
 		private long txn;
 		private final long cursor;
-		private final int dbi;
 		private final long[] quad = new long[4];
 
 		protected RecordCacheIterator(int dbi) throws IOException {
-			this.dbi = dbi;
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				PointerBuffer pp = stack.mallocPointer(1);
 

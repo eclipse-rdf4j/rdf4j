@@ -31,7 +31,6 @@ import org.slf4j.LoggerFactory;
 abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourceModel> {
 
 	final Logger logger = LoggerFactory.getLogger(MemoryOverflowModel.class);
-	private final boolean verifyAdditions;
 
 	private transient File dataDir;
 
@@ -39,7 +38,6 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 
 	public MemoryOverflowModel(boolean verifyAdditions) {
 		super();
-		this.verifyAdditions = verifyAdditions;
 	}
 
 	protected abstract LmdbSailStore createSailStore(File dataDir) throws IOException, SailException;
