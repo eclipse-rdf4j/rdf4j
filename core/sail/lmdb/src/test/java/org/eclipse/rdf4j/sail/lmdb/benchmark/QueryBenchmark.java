@@ -79,6 +79,7 @@ public class QueryBenchmark {
 	private static final String wild_card_chain_with_common_ends;
 	private static final String sub_select;
 	private static final String multiple_sub_select;
+	private static final String count_all;
 
 	static {
 		try {
@@ -116,6 +117,7 @@ public class QueryBenchmark {
 			sub_select = IOUtils.toString(getResourceAsStream("benchmarkFiles/sub-select.qr"), StandardCharsets.UTF_8);
 			multiple_sub_select = IOUtils.toString(
 					getResourceAsStream("benchmarkFiles/multiple-sub-select.qr"), StandardCharsets.UTF_8);
+			count_all = "SELECT (COUNT(*) as ?c) WHERE { ?s ?p ?o }";
 
 		} catch (IOException e) {
 			throw new RuntimeException(e);
@@ -411,6 +413,15 @@ public class QueryBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return count(connection
 					.prepareTupleQuery(multiple_sub_select)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long count_all() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(count_all)
 					.evaluate());
 		}
 	}

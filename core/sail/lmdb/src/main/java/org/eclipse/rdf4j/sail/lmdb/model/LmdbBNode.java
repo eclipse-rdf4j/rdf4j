@@ -27,11 +27,11 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	 * Variables *
 	 *-----------*/
 
-	private volatile ValueStoreRevision revision;
+	private ValueStoreRevision revision;
 
-	private volatile long internalID;
+	private long internalID;
 
-	private volatile boolean initialized = false;
+	private boolean initialized = false;
 
 	/*--------------*
 	 * Constructors *
@@ -65,6 +65,16 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	@Override
 	public ValueStoreRevision getValueStoreRevision() {
 		return revision;
+	}
+
+	@Override
+	public void setFromInitializedValue(LmdbValue initializedValue) {
+		if (initializedValue instanceof LmdbBNode) {
+			LmdbBNode lmdbBNode = (LmdbBNode) initializedValue;
+			super.setID(lmdbBNode.getID());
+		} else {
+			throw new IllegalArgumentException("Initialized value is not of type LmdbBNode");
+		}
 	}
 
 	@Override
