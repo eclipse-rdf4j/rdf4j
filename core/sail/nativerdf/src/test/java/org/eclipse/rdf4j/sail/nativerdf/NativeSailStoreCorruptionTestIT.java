@@ -53,6 +53,8 @@ import org.slf4j.LoggerFactory;
 @Isolated
 public class NativeSailStoreCorruptionTestIT {
 
+	private static final String DISABLE_SHUTDOWN_FSYNC_PROP = "org.eclipse.rdf4j.sail.nativerdf.disableShutdownFsync";
+
 	private static final Logger logger = LoggerFactory.getLogger(NativeSailStoreCorruptionTestIT.class);
 
 	@TempDir
@@ -284,29 +286,35 @@ public class NativeSailStoreCorruptionTestIT {
 	@Test
 //	@Timeout(30)
 	public void testCorruptValuesHashFile() throws IOException {
-		repo.shutDown();
-
-		NativeStore sail = (NativeStore) repo.getSail();
-		sail.setWalEnabled(false);
-
-		String file = "values.hash";
-		File nativeStoreFile = new File(dataDir, file);
-		long fileSize = nativeStoreFile.length();
-		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
-
-		for (long i = 4; i < fileSize; i++) {
-			if (i % 1024 == 0) {
-				System.out.println("Testing byte " + i);
-			}
-			restoreFile(dataDir, file);
-			overwriteByteInFile(nativeStoreFile, i, 0x0);
-			repo.init();
-			List<Statement> list = getStatements();
-			assertEquals(6, list.size(), "Failed at byte position " + i);
-			String actual = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
-			assertEquals(expected, actual, "Failed at hash position " + i);
+		try {
+			System.setProperty(DISABLE_SHUTDOWN_FSYNC_PROP, "true");
 
 			repo.shutDown();
+
+			NativeStore sail = (NativeStore) repo.getSail();
+			sail.setWalEnabled(false);
+
+			String file = "values.hash";
+			File nativeStoreFile = new File(dataDir, file);
+			long fileSize = nativeStoreFile.length();
+			String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+
+			for (long i = 4; i < fileSize; i++) {
+				if (i % 1024 == 0) {
+					System.out.println("Testing byte " + i);
+				}
+				restoreFile(dataDir, file);
+				overwriteByteInFile(nativeStoreFile, i, 0x0);
+				repo.init();
+				List<Statement> list = getStatements();
+				assertEquals(6, list.size(), "Failed at byte position " + i);
+				String actual = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+				assertEquals(expected, actual, "Failed at hash position " + i);
+
+				repo.shutDown();
+			}
+		} finally {
+			System.setProperty(DISABLE_SHUTDOWN_FSYNC_PROP, "false");
 		}
 	}
 
@@ -355,120 +363,144 @@ public class NativeSailStoreCorruptionTestIT {
 	@Test
 //	@Timeout(30)
 	public void testCorruptValuesPoscAllocFile() throws IOException {
-		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
-		repo.shutDown();
-		((NativeStore) repo.getSail()).setWalEnabled(false);
+		try {
+			System.setProperty(DISABLE_SHUTDOWN_FSYNC_PROP, "true");
 
-		String file = "triples-posc.alloc";
-		File nativeStoreFile = new File(dataDir, file);
-		long fileSize = nativeStoreFile.length();
-
-		for (long i = 4; i < fileSize; i++) {
-			restoreFile(dataDir, file);
-			overwriteByteInFile(nativeStoreFile, i, 0x0);
-			repo.init();
-
-			List<Statement> list = getStatements();
-			assertEquals(6, list.size(), "Failed at byte position " + i);
-			String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
-			assertEquals(expected, actual, "Failed at byte position " + i);
+			String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 			repo.shutDown();
+			((NativeStore) repo.getSail()).setWalEnabled(false);
+
+			String file = "triples-posc.alloc";
+			File nativeStoreFile = new File(dataDir, file);
+			long fileSize = nativeStoreFile.length();
+
+			for (long i = 4; i < fileSize; i++) {
+				restoreFile(dataDir, file);
+				overwriteByteInFile(nativeStoreFile, i, 0x0);
+				repo.init();
+
+				List<Statement> list = getStatements();
+				assertEquals(6, list.size(), "Failed at byte position " + i);
+				String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+				assertEquals(expected, actual, "Failed at byte position " + i);
+				repo.shutDown();
+			}
+		} finally {
+			System.setProperty(DISABLE_SHUTDOWN_FSYNC_PROP, "false");
 		}
 	}
 
 	@Test
 //	@Timeout(30)
 	public void testCorruptValuesPoscDataFile() throws IOException {
-		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
-		repo.shutDown();
+		try {
+			System.setProperty(DISABLE_SHUTDOWN_FSYNC_PROP, "true");
 
-		((NativeStore) repo.getSail()).setWalEnabled(false);
-
-		String file = "triples-posc.dat";
-		File nativeStoreFile = new File(dataDir, file);
-		long fileSize = nativeStoreFile.length();
-
-		for (long i = 4; i < fileSize; i++) {
-			if (i % 1024 == 0) {
-				System.out.println("Testing byte " + i);
-			}
-			NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = true;
-			restoreFile(dataDir, file);
-			overwriteByteInFile(nativeStoreFile, i, 0x0);
-
-			repo.init();
-
-			List<Statement> list = getStatements();
-			assertEquals(6, list.size(), "Failed at byte position " + i);
-			String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
-			assertEquals(expected, actual, "Failed at byte position " + i);
+			String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 			repo.shutDown();
+
+			((NativeStore) repo.getSail()).setWalEnabled(false);
+
+			String file = "triples-posc.dat";
+			File nativeStoreFile = new File(dataDir, file);
+			long fileSize = nativeStoreFile.length();
+
+			for (long i = 4; i < fileSize; i++) {
+				if (i % 1024 == 0) {
+					System.out.println("Testing byte " + i);
+				}
+				NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = true;
+				restoreFile(dataDir, file);
+				overwriteByteInFile(nativeStoreFile, i, 0x0);
+
+				repo.init();
+
+				List<Statement> list = getStatements();
+				assertEquals(6, list.size(), "Failed at byte position " + i);
+				String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+				assertEquals(expected, actual, "Failed at byte position " + i);
+				repo.shutDown();
+			}
+		} finally {
+			System.setProperty(DISABLE_SHUTDOWN_FSYNC_PROP, "false");
 		}
 	}
 
 	@Test
 //	@Timeout(30)
 	public void testCorruptValuesSpocAllocFile() throws IOException {
-		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
-		repo.shutDown();
-		((NativeStore) repo.getSail()).setWalEnabled(false);
+		try {
+			System.setProperty(DISABLE_SHUTDOWN_FSYNC_PROP, "true");
 
-		String file = "triples-spoc.alloc";
-		File nativeStoreFile = new File(dataDir, file);
-		long fileSize = nativeStoreFile.length();
-
-		for (long i = 4; i < fileSize; i++) {
-			if (i % 1024 == 0) {
-				System.out.println("Testing byte " + i);
-			}
-			restoreFile(dataDir, file);
-			overwriteByteInFile(nativeStoreFile, i, 0x0);
-			repo.init();
-			List<Statement> list = getStatements();
-			assertEquals(6, list.size(), "Failed at byte position " + i);
-			String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
-			assertEquals(expected, actual, "Failed at byte position " + i);
+			String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 			repo.shutDown();
+			((NativeStore) repo.getSail()).setWalEnabled(false);
+
+			String file = "triples-spoc.alloc";
+			File nativeStoreFile = new File(dataDir, file);
+			long fileSize = nativeStoreFile.length();
+
+			for (long i = 4; i < fileSize; i++) {
+				if (i % 1024 == 0) {
+					System.out.println("Testing byte " + i);
+				}
+				restoreFile(dataDir, file);
+				overwriteByteInFile(nativeStoreFile, i, 0x0);
+				repo.init();
+				List<Statement> list = getStatements();
+				assertEquals(6, list.size(), "Failed at byte position " + i);
+				String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+				assertEquals(expected, actual, "Failed at byte position " + i);
+				repo.shutDown();
+			}
+		} finally {
+			System.setProperty(DISABLE_SHUTDOWN_FSYNC_PROP, "false");
 		}
 	}
 
 	@Test
 //	@Timeout(30)
 	public void testCorruptValuesSpocDataFile() throws IOException {
-		String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
-		repo.shutDown();
-		((NativeStore) repo.getSail()).setWalEnabled(false);
+		try {
+			System.setProperty(DISABLE_SHUTDOWN_FSYNC_PROP, "true");
 
-		NativeStore sail = (NativeStore) repo.getSail();
-		sail.setWalEnabled(false);
-
-		String file = "triples-spoc.dat";
-		File nativeStoreFile = new File(dataDir, file);
-		long fileSize = nativeStoreFile.length();
-
-		for (long i = 4; i < fileSize; i++) {
-			if (i % 1024 == 0) {
-				System.out.println("Testing byte " + i);
-			}
-			restoreFile(dataDir, file);
-			overwriteByteInFile(nativeStoreFile, i, 0x0);
-			repo.init();
-			try {
-				List<Statement> list = getStatements();
-				assertEquals(6, list.size(), "Failed at byte position " + i);
-				String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
-				assertEquals(expected, actual, "Failed at byte position " + i);
-			} catch (Throwable ignored) {
-				repo.shutDown();
-				nativeStoreFile.delete();
-				repo.init();
-				List<Statement> list = getStatements();
-				assertEquals(6, list.size(), "Failed at byte position " + i);
-				String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
-				assertEquals(expected, actual, "Failed at byte position " + i);
-			}
-
+			String expected = getStatements().stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
 			repo.shutDown();
+			((NativeStore) repo.getSail()).setWalEnabled(false);
+
+			NativeStore sail = (NativeStore) repo.getSail();
+			sail.setWalEnabled(false);
+
+			String file = "triples-spoc.dat";
+			File nativeStoreFile = new File(dataDir, file);
+			long fileSize = nativeStoreFile.length();
+
+			for (long i = 4; i < fileSize; i++) {
+				if (i % 1024 == 0) {
+					System.out.println("Testing byte " + i);
+				}
+				restoreFile(dataDir, file);
+				overwriteByteInFile(nativeStoreFile, i, 0x0);
+				repo.init();
+				try {
+					List<Statement> list = getStatements();
+					assertEquals(6, list.size(), "Failed at byte position " + i);
+					String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+					assertEquals(expected, actual, "Failed at byte position " + i);
+				} catch (Throwable ignored) {
+					repo.shutDown();
+					nativeStoreFile.delete();
+					repo.init();
+					List<Statement> list = getStatements();
+					assertEquals(6, list.size(), "Failed at byte position " + i);
+					String actual = list.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).get();
+					assertEquals(expected, actual, "Failed at byte position " + i);
+				}
+
+				repo.shutDown();
+			}
+		} finally {
+			System.setProperty(DISABLE_SHUTDOWN_FSYNC_PROP, "false");
 		}
 	}
 

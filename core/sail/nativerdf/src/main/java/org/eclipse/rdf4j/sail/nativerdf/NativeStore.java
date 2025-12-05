@@ -63,6 +63,7 @@ import org.slf4j.LoggerFactory;
 public class NativeStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
 
 	private static final Logger logger = LoggerFactory.getLogger(NativeStore.class);
+	public static final String DISABLE_SHUTDOWN_FSYNC_PROP = "org.eclipse.rdf4j.sail.nativerdf.disableShutdownFsync";
 
 	private static final String VERSION = MavenUtil.loadVersion("org.eclipse.rdf4j", "rdf4j-sail-nativerdf", "devel");
 

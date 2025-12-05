@@ -20,106 +20,51 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.nio.channels.ReadableByteChannel;
+import java.nio.channels.WritableByteChannel;
 
 import org.eclipse.rdf4j.common.io.NioFile;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/**
- * Verifies that HashFile.sync(boolean) honors the caller's request to force metadata to disk by passing {@code true} to
- * the underlying FileChannel#force(boolean) call. This must also hold when HashFile is constructed with
- * {@code forceSync=true}.
- */
-public class HashFileSyncBehaviorTest {
+class DataFileShutdownFsyncTest {
+
+	private static final String DISABLE_SHUTDOWN_FSYNC_PROP = "org.eclipse.rdf4j.sail.nativerdf.disableShutdownFsync";
 
 	@TempDir
 	File tempDir;
 
-	private static final String DISABLE_SHUTDOWN_FSYNC_PROP = "org.eclipse.rdf4j.sail.nativerdf.disableShutdownFsync";
-
-	private File hashFilePath;
-
-	@BeforeEach
-	public void setup() {
-		hashFilePath = new File(tempDir, "values.hash");
-	}
-
 	@AfterEach
-	public void tearDown() {
+	void tearDown() {
 		System.clearProperty(DISABLE_SHUTDOWN_FSYNC_PROP);
 	}
 
 	@Test
-	public void syncFalseForcesFileContent_whenForceSyncDisabled() throws Exception {
-		try (HashFile hf = new HashFile(hashFilePath, /* forceSync= */ false, /* initialSize= */ 16)) {
-			TrackingFileChannel tracker = injectTrackingChannel(hf);
-
-			// Act
-			hf.sync(false);
-
-			// Assert: even without metadata, content must be flushed
-			assertThat(tracker.forceFalseCount)
-					.as("HashFile.sync(false) should call force(false) on the underlying channel when forceSync=false")
-					.isGreaterThan(0);
-		}
-	}
-
-	@Test
-	public void syncTrueHonorsMetadataFlag_whenForceSyncDisabled() throws Exception {
-		try (HashFile hf = new HashFile(hashFilePath, /* forceSync= */ false, /* initialSize= */ 16)) {
-			TrackingFileChannel tracker = injectTrackingChannel(hf);
-
-			// Act
-			hf.sync(true);
-
-			// Assert: must have at least one force(true) call
-			assertThat(tracker.forceTrueCount)
-					.as("HashFile.sync(true) should call force(true) on the underlying channel when forceSync=false")
-					.isGreaterThan(0);
-		}
-	}
-
-	@Test
-	public void syncTrueHonorsMetadataFlag_whenForceSyncEnabled() throws Exception {
-		try (HashFile hf = new HashFile(hashFilePath, /* forceSync= */ true, /* initialSize= */ 16)) {
-			TrackingFileChannel tracker = injectTrackingChannel(hf);
-
-			// Act
-			hf.sync(true);
-
-			// Assert: must have at least one force(true) call
-			assertThat(tracker.forceTrueCount)
-					.as("HashFile.sync(true) should call force(true) on the underlying channel when forceSync=true")
-					.isGreaterThan(0);
-		}
-	}
-
-	@Test
-	public void closeSkipsForceWhenShutdownFsyncDisabled() throws Exception {
+	void closeSkipsForceWhenShutdownFsyncDisabled() throws Exception {
 		System.setProperty(DISABLE_SHUTDOWN_FSYNC_PROP, "true");
 
-		TrackingFileChannel tracker;
-		try (HashFile hf = new HashFile(hashFilePath, /* forceSync= */ false, /* initialSize= */ 16)) {
-			tracker = injectTrackingChannel(hf);
+		File target = new File(tempDir, "values.dat");
+		TrackingFileChannel tracking;
+		try (DataFile df = new DataFile(target, /* forceSync= */ false)) {
+			tracking = injectTrackingChannel(df);
+			tracking.reset();
+			df.storeData("abc".getBytes());
 		}
 
-		assertThat(tracker.forceTrueCount)
-				.as("HashFile.close should not force metadata when shutdown fsync is disabled")
+		assertThat(tracking.forceTrueCount)
+				.as("DataFile.close should not force metadata when shutdown fsync is disabled")
 				.isZero();
-		assertThat(tracker.forceFalseCount)
-				.as("HashFile.close should not force content when shutdown fsync is disabled")
+		assertThat(tracking.forceFalseCount)
+				.as("DataFile.close should not force content when shutdown fsync is disabled")
 				.isZero();
 	}
 
-	private static TrackingFileChannel injectTrackingChannel(HashFile hf) throws Exception {
-		// Access private final NioFile field on HashFile
-		Field nioFileField = HashFile.class.getDeclaredField("nioFile");
+	private static TrackingFileChannel injectTrackingChannel(DataFile df) throws Exception {
+		Field nioFileField = DataFile.class.getDeclaredField("nioFile");
 		nioFileField.setAccessible(true);
-		NioFile nio = (NioFile) nioFileField.get(hf);
+		NioFile nio = (NioFile) nioFileField.get(df);
 
-		// Access private volatile FileChannel field on NioFile
 		Field fcField = NioFile.class.getDeclaredField("fc");
 		fcField.setAccessible(true);
 		FileChannel delegate = (FileChannel) fcField.get(nio);
@@ -129,16 +74,18 @@ public class HashFileSyncBehaviorTest {
 		return tracking;
 	}
 
-	/**
-	 * Delegating channel that tracks calls to force(boolean).
-	 */
-	static class TrackingFileChannel extends FileChannel {
-		final FileChannel delegate;
-		volatile int forceTrueCount = 0;
-		volatile int forceFalseCount = 0;
+	private static final class TrackingFileChannel extends FileChannel {
+		private final FileChannel delegate;
+		volatile int forceTrueCount;
+		volatile int forceFalseCount;
 
 		TrackingFileChannel(FileChannel delegate) {
 			this.delegate = delegate;
+		}
+
+		void reset() {
+			forceTrueCount = 0;
+			forceFalseCount = 0;
 		}
 
 		@Override
@@ -151,7 +98,6 @@ public class HashFileSyncBehaviorTest {
 			delegate.force(metaData);
 		}
 
-		// Delegations for abstract methods / other operations
 		@Override
 		public int read(ByteBuffer dst) throws IOException {
 			return delegate.read(dst);
@@ -195,7 +141,7 @@ public class HashFileSyncBehaviorTest {
 		}
 
 		@Override
-		public void implCloseChannel() throws IOException {
+		protected void implCloseChannel() throws IOException {
 			delegate.close();
 		}
 
@@ -210,20 +156,13 @@ public class HashFileSyncBehaviorTest {
 		}
 
 		@Override
-		public long transferTo(long position, long count, java.nio.channels.WritableByteChannel target)
-				throws IOException {
+		public long transferTo(long position, long count, WritableByteChannel target) throws IOException {
 			return delegate.transferTo(position, count, target);
 		}
 
 		@Override
-		public long transferFrom(java.nio.channels.ReadableByteChannel src, long position, long count)
-				throws IOException {
+		public long transferFrom(ReadableByteChannel src, long position, long count) throws IOException {
 			return delegate.transferFrom(src, position, count);
-		}
-
-		@Override
-		public MappedByteBuffer map(MapMode mode, long position, long size) throws IOException {
-			return delegate.map(mode, position, size);
 		}
 
 		@Override
@@ -234,6 +173,11 @@ public class HashFileSyncBehaviorTest {
 		@Override
 		public FileLock tryLock(long position, long size, boolean shared) throws IOException {
 			return delegate.tryLock(position, size, shared);
+		}
+
+		@Override
+		public MappedByteBuffer map(MapMode mode, long position, long size) throws IOException {
+			return delegate.map(mode, position, size);
 		}
 	}
 }

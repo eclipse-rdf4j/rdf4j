@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStore;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreConfig;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreFactory;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -36,7 +37,7 @@ class ValueStoreWalSearchTest {
 	@TempDir
 	File dataDir;
 
-	@Test
+	@RepeatedTest(30)
 	void findsValueByIdViaSegmentProbe() throws Exception {
 		// Configure NativeStore with small WAL segment size to ensure multiple segments possible
 		NativeStoreConfig cfg = new NativeStoreConfig("spoc,ospc,psoc");
@@ -68,6 +69,16 @@ class ValueStoreWalSearchTest {
 
 		ValueStoreWalSearch search = ValueStoreWalSearch.open(cfgRead);
 		Value found = search.findValueById(pickId);
+		if (found == null) {
+			System.out.println("Failed to find id " + pickId);
+			for (int i = 0; i < 10; i++) {
+				Value found2 = search.findValueById(pickId);
+				System.out.println(i + " attempt: " + found2);
+				Thread.sleep(100);
+			}
+			throw new AssertionError("Value not found after multiple attempts");
+
+		}
 		assertThat(found).as("ValueStoreWalSearch should find value by id").isNotNull();
 
 		// Cross-check against ValueStore

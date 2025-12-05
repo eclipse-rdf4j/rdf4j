@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
+import static org.eclipse.rdf4j.sail.nativerdf.NativeStore.DISABLE_SHUTDOWN_FSYNC_PROP;
+
 import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryFactory;
@@ -24,6 +26,9 @@ public class NativeOptimisticIsolationTest extends OptimisticIsolationTest {
 
 	@BeforeClass
 	public static void setUpClass() throws Exception {
+
+		System.setProperty(DISABLE_SHUTDOWN_FSYNC_PROP, "true");
+
 		setRepositoryFactory(new SailRepositoryFactory() {
 			@Override
 			public RepositoryImplConfig getConfig() {
@@ -36,6 +41,8 @@ public class NativeOptimisticIsolationTest extends OptimisticIsolationTest {
 
 	@AfterClass
 	public static void tearDown() throws Exception {
+		System.setProperty(DISABLE_SHUTDOWN_FSYNC_PROP, "false");
+
 		setRepositoryFactory(null);
 	}
 }
