@@ -399,11 +399,38 @@ class SailSourceBranch implements SailSource {
 	void compressChanges() {
 		try {
 			semaphore.lock();
+
+			if (changes.size() == 2) {
+				boolean swap = false;
+				Changeset[] array = changes.toArray(new Changeset[0]);
+				if (!(array[0].hasDeprecated() || array[0].hasApproved())
+						&& (array[1].hasDeprecated() || array[1].hasApproved())) {
+
+					if (Changeset.isOrderIndependent(array[0], array[1])) {
+
+						// The last change contains all the approved and deprecated statements, faster to swap before
+						// merging. This is typically the case when parsing a file with namespaces at the beginning.
+
+						Changeset second = changes.removeLast();
+						if (changes.peekLast().isRefback()) {
+							changes.addLast(second);
+							return;
+						}
+						Changeset first = changes.removeLast();
+
+						changes.addFirst(second);
+						changes.addLast(first);
+					}
+
+				}
+
+			}
+
 			while (changes.size() > 1) {
 				Changeset pop = changes.removeLast();
 				if (changes.peekLast().isRefback()) {
 					changes.addLast(pop);
-					break;
+					return;
 				}
 
 				try {

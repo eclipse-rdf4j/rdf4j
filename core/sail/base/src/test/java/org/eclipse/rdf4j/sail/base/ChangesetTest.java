@@ -10,6 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.util.Iterator;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -34,6 +37,90 @@ public class ChangesetTest {
 	Resource[] allGraph = {};
 
 	@Test
+	public void testOrderIndependentNamespacesVsStatements() {
+		Changeset namespacesOnly = getChangeset();
+		namespacesOnly.setNamespace("ex", "http://example.org/");
+
+		Changeset statementsOnly = getChangeset();
+		statementsOnly.approve(vf.createStatement(vf.createIRI("urn:s"), vf.createIRI("urn:p"),
+				vf.createLiteral("o")));
+
+		assertTrue(Changeset.isOrderIndependent(namespacesOnly, statementsOnly));
+		assertTrue(Changeset.isOrderIndependent(statementsOnly, namespacesOnly));
+	}
+
+	@Test
+	public void testOrderDependentOnOverlappingStatements() {
+		Changeset change1 = getChangeset();
+		Changeset change2 = getChangeset();
+
+		Statement statement = vf.createStatement(vf.createIRI("urn:s"), vf.createIRI("urn:p"),
+				vf.createLiteral("o"));
+
+		change1.approve(statement);
+		change2.deprecate(statement);
+
+		assertFalse(Changeset.isOrderIndependent(change1, change2));
+		assertFalse(Changeset.isOrderIndependent(change2, change1));
+	}
+
+	@Test
+	public void testOrderIndependentWhenStatementsCleared() {
+		Changeset statementCleared = getChangeset();
+		statementCleared.clear();
+
+		Changeset namespacesCleared = getChangeset();
+		namespacesCleared.clearNamespaces();
+
+		assertTrue(Changeset.isOrderIndependent(statementCleared, namespacesCleared));
+		assertTrue(Changeset.isOrderIndependent(namespacesCleared, statementCleared));
+	}
+
+	@Test
+	public void testOrderIndependentWhenDeprecatedStatements() {
+		Statement statement = vf.createStatement(vf.createIRI("urn:s"), vf.createIRI("urn:p"),
+				vf.createLiteral("o"));
+
+		Changeset deprecatedOnly = getChangeset();
+		deprecatedOnly.deprecate(statement);
+
+		Changeset namespacesCleared = getChangeset();
+		namespacesCleared.clearNamespaces();
+
+		assertTrue(Changeset.isOrderIndependent(deprecatedOnly, namespacesCleared));
+		assertTrue(Changeset.isOrderIndependent(namespacesCleared, deprecatedOnly));
+	}
+
+	@Test
+	public void testOrderIndependentWhenClearingContexts() {
+		Changeset contextCleared = getChangeset();
+		contextCleared.clear(vf.createIRI("urn:ctx"));
+
+		Changeset namespaceRemoved = getChangeset();
+		namespaceRemoved.removeNamespace("ex");
+
+		assertTrue(Changeset.isOrderIndependent(contextCleared, namespaceRemoved));
+		assertTrue(Changeset.isOrderIndependent(namespaceRemoved, contextCleared));
+	}
+
+	@Test
+	public void testOrderDependentWhenMixingNamespacesAndStatements() {
+		Statement statement = vf.createStatement(vf.createIRI("urn:s"), vf.createIRI("urn:p"),
+				vf.createLiteral("o"));
+
+		Changeset mixedChanges = getChangeset();
+		mixedChanges.approve(statement);
+		mixedChanges.setNamespace("ex", "http://example.org/");
+
+		Changeset statementsOnly = getChangeset();
+		statementsOnly.approve(vf.createStatement(vf.createIRI("urn:s2"), vf.createIRI("urn:p2"),
+				vf.createLiteral("o2")));
+
+		assertFalse(Changeset.isOrderIndependent(mixedChanges, statementsOnly));
+		assertFalse(Changeset.isOrderIndependent(statementsOnly, mixedChanges));
+	}
+
+	@Test
 	public void testConcurrency() {
 
 		Changeset changeset = getChangeset();
@@ -47,68 +134,72 @@ public class ChangesetTest {
 					t.setDaemon(true);
 					return t;
 				});
+		try {
 
-		Runnable addingData = () -> {
-			countDownLatch.countDown();
-			try {
-				countDownLatch.await();
-			} catch (InterruptedException e) {
-				e.printStackTrace();
-			}
-			for (int i = 0; i < 100000; i++) {
-				changeset.approve(vf.createStatement(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE));
-			}
-
-		};
-
-		Runnable readingData = () -> {
-			countDownLatch.countDown();
-			try {
-				countDownLatch.await();
-			} catch (InterruptedException e) {
-				e.printStackTrace();
-			}
-			for (int i = 0; i < 100000; i++) {
-				changeset.hasApproved(null, RDF.TYPE, RDFS.RESOURCE, allGraph);
-			}
-		};
-
-		Runnable readingDataIterator = () -> {
-			countDownLatch.countDown();
-			try {
-				countDownLatch.await();
-			} catch (InterruptedException e) {
-				e.printStackTrace();
-			}
-
-			while (!changeset.hasApproved(null, RDF.TYPE, RDFS.RESOURCE, allGraph)) {
-				Thread.yield();
-			}
-
-			for (int i = 0; i < 100; i++) {
-				Iterator<Statement> approvedStatements = changeset.getApprovedStatements(null, RDF.TYPE, null, allGraph)
-						.iterator();
-
-				for (int j = 0; j < 100 && approvedStatements.hasNext(); j++) {
-					approvedStatements.next();
+			Runnable addingData = () -> {
+				countDownLatch.countDown();
+				try {
+					countDownLatch.await();
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+				for (int i = 0; i < 100000; i++) {
+					changeset.approve(vf.createStatement(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE));
 				}
 
-			}
-		};
+			};
 
-		Stream.of(addingData, readingData, readingDataIterator)
-				.map(executorService::submit)
-				.collect(Collectors.toList())
-				.forEach(future -> {
-					try {
-						future.get();
-					} catch (InterruptedException | ExecutionException e) {
-						throw new RuntimeException(e);
+			Runnable readingData = () -> {
+				countDownLatch.countDown();
+				try {
+					countDownLatch.await();
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+				for (int i = 0; i < 100000; i++) {
+					changeset.hasApproved(null, RDF.TYPE, RDFS.RESOURCE, allGraph);
+				}
+			};
+
+			Runnable readingDataIterator = () -> {
+				countDownLatch.countDown();
+				try {
+					countDownLatch.await();
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+
+				while (!changeset.hasApproved(null, RDF.TYPE, RDFS.RESOURCE, allGraph)) {
+					Thread.yield();
+				}
+
+				for (int i = 0; i < 100; i++) {
+					Iterator<Statement> approvedStatements = changeset
+							.getApprovedStatements(null, RDF.TYPE, null, allGraph)
+							.iterator();
+
+					for (int j = 0; j < 100 && approvedStatements.hasNext(); j++) {
+						approvedStatements.next();
 					}
-				});
 
-		executorService.shutdown();
-		executorService.shutdownNow();
+				}
+			};
+
+			Stream.of(addingData, readingData, readingDataIterator)
+					.map(executorService::submit)
+					.collect(Collectors.toList())
+					.forEach(future -> {
+						try {
+							future.get();
+						} catch (InterruptedException | ExecutionException e) {
+							throw new RuntimeException(e);
+						}
+					});
+		} finally {
+			executorService.shutdown();
+			executorService.shutdownNow();
+		}
+
 	}
 
 	private Changeset getChangeset() {
