@@ -52,7 +52,6 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 		tupleExpr.visit(new AbstractQueryModelVisitor<SailException>() {
 
 			final Map<String, DistanceQuerySpec> specs = new HashMap<>();
-			final Map<String, StatementPattern> pendingPatterns = new HashMap<>();
 
 			@Override
 			public void meet(FunctionCall f) throws SailException {
@@ -66,22 +65,9 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 					String distanceVar = null;
 					QueryModelNode parent = f.getParentNode();
 
-					// distance is directly bound in an extension
 					if (parent instanceof ExtensionElem) {
 						distanceVar = ((ExtensionElem) parent).getName();
 						QueryModelNode extension = parent.getParentNode();
-						Object[] rv = getFilterAndDistance(extension.getParentNode(), distanceVar);
-						if (rv == null) {
-							return;
-						}
-						filter = (Filter) rv[0];
-						dist = (ValueExpr) rv[1];
-					} else if (parent instanceof MathExpr && parent.getParentNode() instanceof ExtensionElem) {
-						// distance is wrapped in a math expression inside an extension, e.g.
-						// bind( geof:distance(...) / 1000 as ?dist )
-						ExtensionElem ext = (ExtensionElem) parent.getParentNode();
-						distanceVar = ext.getName();
-						QueryModelNode extension = ext.getParentNode();
 						Object[] rv = getFilterAndDistance(extension.getParentNode(), distanceVar);
 						if (rv == null) {
 							return;
@@ -99,44 +85,19 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 						}
 					}
 
-					double distanceScaling = 1.0;
-					if (f.getParentNode() instanceof MathExpr) {
-						MathExpr mathExpr = (MathExpr) f.getParentNode();
-						if (mathExpr.getOperator() == MathExpr.MathOp.DIVIDE) {
-							Literal divisor = DistanceQuerySpec.getLiteral(mathExpr.getRightArg());
-							if (divisor != null) {
-								distanceScaling = divisor.doubleValue();
-							}
-						}
-					}
-
 					DistanceQuerySpec spec = new DistanceQuerySpec(f, dist, distanceVar, filter);
-					if (!Double.isNaN(spec.getDistance()) && distanceScaling != 1.0) {
-						spec.setDistance(spec.getDistance() * distanceScaling);
-					}
 					specs.put(spec.getGeoVar(), spec);
-					StatementPattern pending = pendingPatterns.remove(spec.getGeoVar());
-					if (pending != null) {
-						attachPattern(pending, specs, results);
-					}
 				}
 			}
 
 			@Override
 			public void meet(StatementPattern sp) {
-				attachPattern(sp, specs, results);
-			}
-
-			private void attachPattern(StatementPattern sp, Map<String, DistanceQuerySpec> specs,
-					final Collection<SearchQueryEvaluator> results) {
 				IRI propertyName = (IRI) sp.getPredicateVar().getValue();
 				if (propertyName != null && index.isGeoField(SearchFields.getPropertyField(propertyName))
 						&& !sp.getObjectVar().hasValue()) {
 					String objectVarName = sp.getObjectVar().getName();
-					DistanceQuerySpec spec = specs.get(objectVarName);
-					boolean matchesFilter = spec != null && isChildOf(sp, spec.getFilter());
-					if (spec != null && (matchesFilter || sp.getContextVar() != null)) {
-						specs.remove(objectVarName);
+					DistanceQuerySpec spec = specs.remove(objectVarName);
+					if (spec != null && isChildOf(sp, spec.getFilter())) {
 						spec.setGeometryPattern(sp);
 						if (spec.isEvaluable()) {
 							// constant optimizer
@@ -175,8 +136,6 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 
 							spec.removeQueryPatterns();
 						}
-					} else if (spec == null) {
-						pendingPatterns.put(objectVarName, sp);
 					}
 				}
 			}

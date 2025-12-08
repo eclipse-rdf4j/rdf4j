@@ -787,33 +787,16 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		if (contextVar != null && !contextVar.hasValue()) {
 			bindingNames.add(contextVar.getName());
 		}
-		final StatementPattern.Scope scope = query.getScope();
 
 		if (hits != null) {
-			List<DocumentDistance> materializedHits = new ArrayList<>();
-			for (DocumentDistance hit : hits) {
-				materializedHits.add(hit);
-			}
-
-			boolean hasNamedContext = materializedHits.stream()
-					.map(DocumentDistance::getDocument)
-					.filter(Objects::nonNull)
-					.map(SearchDocument::getContext)
-					.anyMatch(ctx -> ctx != null && !SearchFields.CONTEXT_NULL.equals(ctx));
 
 			double maxDistance = query.getDistance();
 			// for each hit ...
-			for (DocumentDistance hit : materializedHits) {
+			for (DocumentDistance hit : hits) {
 				// get the current hit
 				SearchDocument doc = hit.getDocument();
 				if (doc == null) {
 					continue;
-				}
-				String ctxString = doc.getContext();
-				if (scope == StatementPattern.Scope.NAMED_CONTEXTS || hasNamedContext) {
-					if (ctxString == null || SearchFields.CONTEXT_NULL.equals(ctxString)) {
-						continue;
-					}
 				}
 
 				List<String> geometries = doc.getProperty(SearchFields.getPropertyField(query.getGeoProperty()));
@@ -838,7 +821,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 							derivedBindings.addBinding(subjVar, resource);
 						}
 						if (contextVar != null && !contextVar.hasValue()) {
-							Resource ctx = SearchFields.createContext(ctxString);
+							Resource ctx = SearchFields.createContext(doc.getContext());
 							if (ctx != null) {
 								derivedBindings.addBinding(contextVar.getName(), ctx);
 							}
