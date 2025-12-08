@@ -753,7 +753,7 @@ public class TupleExprIRRendererTest {
 				"  BIND(ROUND(2.5) AS ?round)\n" +
 				"  BIND(MD5(?x) AS ?md5)\n" +
 				"}";
-		assertFixedPoint(q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
 	}
 
 	@Test

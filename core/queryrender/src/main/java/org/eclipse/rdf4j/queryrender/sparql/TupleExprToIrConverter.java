@@ -873,8 +873,11 @@ public class TupleExprToIrConverter {
 				continue;
 			}
 
-			// SELECT-level assignments
+			// Keep BIND chains inside WHERE: stop peeling when we hit the first Extension.
 			if (cur instanceof Extension) {
+				if (((Extension) cur).getArg() instanceof Extension) {
+					break;
+				}
 				final Extension ext = (Extension) cur;
 				for (final ExtensionElem ee : ext.getElements()) {
 					n.selectAssignments.put(ee.getName(), ee.getExpr());
@@ -936,6 +939,30 @@ public class TupleExprToIrConverter {
 			}
 		}
 		return true;
+	}
+
+	private static boolean containsExtension(TupleExpr e) {
+		if (e == null) {
+			return false;
+		}
+		class Flag extends AbstractQueryModelVisitor<RuntimeException> {
+			boolean found = false;
+
+			@Override
+			public void meet(Extension node) {
+				found = true;
+			}
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (!found) {
+					super.meetNode(node);
+				}
+			}
+		}
+		Flag f = new Flag();
+		e.visit(f);
+		return f.found;
 	}
 
 	private static void applyAggregateHoisting(final Normalized n) {
@@ -1484,6 +1511,7 @@ public class TupleExprToIrConverter {
 	public IrSelect toIRSelect(final TupleExpr tupleExpr) {
 		final Normalized n = normalize(tupleExpr, false);
 		applyAggregateHoisting(n);
+		final boolean whereHasExtensions = containsExtension(n.where);
 
 		final IrSelect ir = new IrSelect(false);
 		// Canonicalize DISTINCT/REDUCED: if DISTINCT is set, REDUCED is a no-op and removed
@@ -1497,12 +1525,16 @@ public class TupleExprToIrConverter {
 				&& !n.projection.getProjectionElemList().getElements().isEmpty()) {
 			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
 				final String alias = pe.getProjectionAlias().orElse(pe.getName());
-				final ValueExpr expr = n.selectAssignments.get(alias);
-				if (expr != null) {
-					ir.getProjection().add(new IrProjectionItem(renderExpr(expr), alias));
-				} else {
-					ir.getProjection().add(new IrProjectionItem(null, alias));
+				ValueExpr expr = null;
+				if (!whereHasExtensions) {
+					ExtensionElem src = pe.getSourceExpression();
+					if (src != null) {
+						expr = src.getExpr();
+					} else {
+						expr = n.selectAssignments.get(alias);
+					}
 				}
+				ir.getProjection().add(new IrProjectionItem(expr == null ? null : renderExpr(expr), alias));
 			}
 		} else if (!n.selectAssignments.isEmpty()) {
 			if (!n.groupByTerms.isEmpty()) {

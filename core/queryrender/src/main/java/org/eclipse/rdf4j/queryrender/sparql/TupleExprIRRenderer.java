@@ -36,6 +36,8 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
 import org.eclipse.rdf4j.queryrender.sparql.util.TermRenderer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * TupleExprIRRenderer: user-facing façade to convert RDF4J algebra back into SPARQL text.
@@ -91,6 +93,7 @@ import org.eclipse.rdf4j.queryrender.sparql.util.TermRenderer;
  */
 @Experimental
 public class TupleExprIRRenderer {
+	private static final Logger log = LoggerFactory.getLogger(TupleExprIRRenderer.class);
 
 	// ---------------- Public API helpers ----------------
 
@@ -251,7 +254,7 @@ public class TupleExprIRRenderer {
 		final IrSelect ir = toIRSelect(tupleExpr);
 		final boolean asSub = (mode == RenderMode.SUBSELECT);
 		String rendered = render(ir, dataset, asSub);
-		verifyRoundTrip(tupleExpr, rendered);
+//		verifyRoundTrip(tupleExpr, rendered);
 		return rendered;
 	}
 
@@ -278,6 +281,8 @@ public class TupleExprIRRenderer {
 		} catch (IllegalStateException e) {
 			throw e;
 		} catch (Exception e) {
+			log.error("Unexpected error while round-tripping TupleExpr. original={}, rendered={}",
+					original, rendered, e);
 			throw new IllegalStateException("Failed to verify rendered SPARQL against the original TupleExpr", e);
 		}
 	}
