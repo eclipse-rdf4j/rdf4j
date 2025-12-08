@@ -275,7 +275,7 @@ public class TupleExprIRRenderer {
 		final IrSelect ir = toIRSelect(tupleExpr);
 		final boolean asSub = mode == RenderMode.SUBSELECT;
 		String rendered = render(ir, dataset, asSub);
-//		verifyRoundTrip(tupleExpr, rendered);
+		verifyRoundTrip(tupleExpr, rendered);
 		return rendered;
 	}
 
