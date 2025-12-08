@@ -254,7 +254,7 @@ public class TupleExprIRRenderer {
 		final IrSelect ir = toIRSelect(tupleExpr);
 		final boolean asSub = (mode == RenderMode.SUBSELECT);
 		String rendered = render(ir, dataset, asSub);
-//		verifyRoundTrip(tupleExpr, rendered);
+		verifyRoundTrip(tupleExpr, rendered);
 		return rendered;
 	}
 
@@ -273,9 +273,6 @@ public class TupleExprIRRenderer {
 						+ "\n# Original TupleExpr (normalized)\n" + expected
 						+ "\n# Round-tripped TupleExpr (normalized)\n" + actual
 						+ "\n# Diff (original -> round-tripped)\n" + diffText(expected, actual);
-
-				Assertions.assertThat(actual).as("Round-tripped TupleExpr does not match original").isEqualTo(expected);
-
 				throw new IllegalStateException(message);
 			}
 		} catch (IllegalStateException e) {
@@ -297,7 +294,7 @@ public class TupleExprIRRenderer {
 		for (int i = 0; i < max; i++) {
 			String el = i < expLines.size() ? expLines.get(i) : "<missing>";
 			String al = i < actLines.size() ? actLines.get(i) : "<missing>";
-			if (!el.equals(al)) {
+			if (!el.trim().equals(al.trim())) {
 				sb.append("line ").append(i + 1).append(":\n");
 				sb.append("- ").append(el).append('\n');
 				sb.append("+ ").append(al).append('\n');
