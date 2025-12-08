@@ -718,19 +718,42 @@ public class TupleExprToIrConverter {
 		// Re-insert non-aggregate BIND assignments after transforms so they are not optimized away.
 		if (!n.extensionAssignments.isEmpty() && ir.getWhere() != null) {
 			IrBGP whereBgp = ir.getWhere();
-			List<IrNode> prefix = new ArrayList<>();
+
+			// Skip BINDs that correspond exactly to GROUP BY (expr AS ?var) aliases; those aliases are already rendered
+			// in the GROUP BY clause and should not surface as separate BINDs in the WHERE.
+			Map<String, ValueExpr> groupAliasExprByVar = new LinkedHashMap<>();
+			for (GroupByTerm t : n.groupByTerms) {
+				if (t.expr != null) {
+					groupAliasExprByVar.put(t.var, t.expr);
+				}
+			}
+
+			List<IrNode> prefixConst = new ArrayList<>();
+			List<IrNode> suffixDependent = new ArrayList<>();
 			for (Entry<String, ValueExpr> e : n.extensionAssignments.entrySet()) {
-				if (e.getValue() instanceof AggregateOperator) {
+				ValueExpr expr = e.getValue();
+				if (expr instanceof AggregateOperator) {
 					continue;
 				}
-				prefix.add(new IrBind(conv.renderExpr(e.getValue()), e.getKey(), false));
+				if (groupAliasExprByVar.containsKey(e.getKey())
+						&& groupAliasExprByVar.get(e.getKey()).equals(expr)) {
+					continue;
+				}
+				Set<String> deps = freeVars(expr);
+				IrBind bind = new IrBind(conv.renderExpr(expr), e.getKey(), false);
+				if (deps.isEmpty()) {
+					prefixConst.add(bind); // constant bindings first (e.g., SERVICE endpoint)
+				} else {
+					suffixDependent.add(bind); // bindings that depend on other vars go after the patterns
+				}
 			}
-			if (!prefix.isEmpty()) {
+			if (!prefixConst.isEmpty() || !suffixDependent.isEmpty()) {
 				IrBGP combined = new IrBGP(whereBgp.isNewScope());
-				combined.getLines().addAll(prefix);
+				combined.getLines().addAll(prefixConst);
 				if (whereBgp.getLines() != null) {
 					combined.getLines().addAll(whereBgp.getLines());
 				}
+				combined.getLines().addAll(suffixDependent);
 				ir.setWhere(combined);
 			}
 		}
@@ -895,7 +918,8 @@ public class TupleExprToIrConverter {
 				continue;
 			}
 
-			// Keep BIND chains inside WHERE: stop peeling when we hit the first Extension.
+			// Keep BIND chains inside WHERE: stop peeling when we hit the first nested Extension, otherwise peel and
+			// remember bindings for reinsertion later.
 			if (cur instanceof Extension) {
 				if (((Extension) cur).getArg() instanceof Extension) {
 					break;
@@ -1609,8 +1633,9 @@ public class TupleExprToIrConverter {
 		ir.setWhere(builder.build(n.where));
 
 		// Re-insert non-aggregate BIND assignments that were peeled during normalization so they remain visible in
-		// the WHERE clause. Insert at the start, preserving original alias order, and avoid duplicates when the
-		// SELECT projection already renders the same binding (e.g., group-by alias cases).
+		// the WHERE clause. Constant bindings go first; bindings that depend on other variables are appended at the
+		// end.
+		// Skip aliases that are already rendered in SELECT or already expressed via GROUP BY (expr AS ?var).
 		if (!n.extensionAssignments.isEmpty() && ir.getWhere() != null) {
 			Set<String> alreadyRendered = new LinkedHashSet<>();
 			ir.getProjection().forEach(p -> {
@@ -1619,23 +1644,44 @@ public class TupleExprToIrConverter {
 				}
 			});
 
-			List<IrNode> prefix = new ArrayList<>();
+			Map<String, ValueExpr> groupAliasExprByVar = new LinkedHashMap<>();
+			for (GroupByTerm t : n.groupByTerms) {
+				if (t.expr != null) {
+					groupAliasExprByVar.put(t.var, t.expr);
+				}
+			}
+
+			List<IrNode> prefixConst = new ArrayList<>();
+			List<IrNode> suffixDependent = new ArrayList<>();
 			for (Entry<String, ValueExpr> e : n.extensionAssignments.entrySet()) {
-				if (e.getValue() instanceof AggregateOperator) {
+				ValueExpr expr = e.getValue();
+				if (expr instanceof AggregateOperator) {
 					continue;
 				}
 				if (alreadyRendered.contains(e.getKey())) {
 					continue; // already captured via SELECT expression
 				}
-				prefix.add(new IrBind(renderExpr(e.getValue()), e.getKey(), false));
+				if (groupAliasExprByVar.containsKey(e.getKey())
+						&& groupAliasExprByVar.get(e.getKey()).equals(expr)) {
+					continue; // already represented as GROUP BY (expr AS ?var)
+				}
+
+				Set<String> deps = freeVars(expr);
+				IrBind bind = new IrBind(renderExpr(expr), e.getKey(), false);
+				if (deps.isEmpty()) {
+					prefixConst.add(bind);
+				} else {
+					suffixDependent.add(bind);
+				}
 			}
-			if (!prefix.isEmpty()) {
+			if (!prefixConst.isEmpty() || !suffixDependent.isEmpty()) {
 				IrBGP whereBgp = ir.getWhere();
 				IrBGP combined = new IrBGP(whereBgp.isNewScope());
-				combined.getLines().addAll(prefix);
+				combined.getLines().addAll(prefixConst);
 				if (whereBgp.getLines() != null) {
 					combined.getLines().addAll(whereBgp.getLines());
 				}
+				combined.getLines().addAll(suffixDependent);
 				ir.setWhere(combined);
 			}
 		}
