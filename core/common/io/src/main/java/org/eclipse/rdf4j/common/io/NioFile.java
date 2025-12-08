@@ -23,7 +23,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.EnumSet;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
 /**
  * File wrapper that protects against concurrent file closing events due to e.g. {@link Thread#interrupt() thread
