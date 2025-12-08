@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;

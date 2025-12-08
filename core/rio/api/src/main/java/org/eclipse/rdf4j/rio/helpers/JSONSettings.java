@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
-import org.eclipse.rdf4j.rio.RioSetting;
-
 /**
  * Generic JSON settings, mostly related to Jackson Features.
  * <p>

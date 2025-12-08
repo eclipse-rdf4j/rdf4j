@@ -46,7 +46,7 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 		public void meet(Var var) {
 			if (!var.hasValue() && bindings.hasBinding(var.getName())) {
 				Value value = bindings.getValue(var.getName());
-				Var replacement = new Var(var.getName(), value, var.isAnonymous(), var.isConstant());
+				Var replacement = Var.of(var.getName(), value, var.isAnonymous(), var.isConstant());
 				var.replaceWith(replacement);
 			}
 		}

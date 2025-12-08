@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiFunction;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -230,6 +231,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 				}
 
+				if (statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2) {
+					orderedJoinArgs = reorderJoinArgs(orderedJoinArgs);
+				}
+
 				// Build new join hierarchy
 				TupleExpr priorityJoins = null;
 				if (!priorityArgs.isEmpty()) {
@@ -325,6 +330,75 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
+		/**
+		 * This can be used by the upcoming sketch based estimator to reorder joins based on estimated join cost.
+		 *
+		 * @param orderedJoinArgs
+		 * @return
+		 */
+		private Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs) {
+			// Copy input into a mutable list
+			List<TupleExpr> tupleExprs = new ArrayList<>(orderedJoinArgs);
+			Deque<TupleExpr> ret = new ArrayDeque<>();
+
+			// Memo table: for each (a, b), stores statistics.getCardinality(new Join(a,b))
+			Map<TupleExpr, Map<TupleExpr, Double>> cardCache = new HashMap<>();
+
+			// Helper to look up or compute & cache the cardinality of Join(a,b).
+			// Avoid mutating the outer cache inside a computeIfAbsent lambda to prevent
+			// ConcurrentModificationException on some Map implementations/JDKs.
+			BiFunction<TupleExpr, TupleExpr, Double> getCard = (a, b) -> {
+				Map<TupleExpr, Double> inner = cardCache.computeIfAbsent(a, k -> new HashMap<>());
+				Double cached = inner.get(b);
+				if (cached != null) {
+					return cached;
+				}
+				double c = statistics.getCardinality(new Join(a, b));
+				inner.put(b, c);
+				cardCache.computeIfAbsent(b, k -> new HashMap<>()).put(a, c);
+				return c;
+			};
+
+			while (!tupleExprs.isEmpty()) {
+				// If ret is empty or next isn’t a StatementPattern, just drain in original order
+				if (ret.isEmpty() || !(tupleExprs.get(0) instanceof StatementPattern)) {
+					ret.addLast(tupleExprs.remove(0));
+					continue;
+				}
+
+				// Find the tupleExpr in tupleExprs whose join with any in ret has minimal cardinality
+				TupleExpr bestCandidate = null;
+				double bestCost = Double.MAX_VALUE;
+				for (TupleExpr cand : tupleExprs) {
+					if (!statementPatternWithMinimumOneConstant(cand)) {
+						continue;
+					}
+
+					// compute the minimum join‐cost between cand and anything in ret
+					for (TupleExpr prev : ret) {
+						if (!statementPatternWithMinimumOneConstant(prev)) {
+							continue;
+						}
+						double cost = getCard.apply(prev, cand);
+						if (cost < bestCost) {
+							bestCost = cost;
+							bestCandidate = cand;
+						}
+					}
+				}
+
+				// If we found a cheap StatementPattern, pick it; otherwise just take the head
+				if (bestCandidate != null) {
+					tupleExprs.remove(bestCandidate);
+					ret.addLast(bestCandidate);
+				} else {
+					ret.addLast(tupleExprs.remove(0));
+				}
+			}
+
+			return ret;
+		}
+
 		private void optimizeInNewScope(List<TupleExpr> subSelects) {
 			for (TupleExpr subSelect : subSelects) {
 				subSelect.visit(new JoinVisitor());
@@ -334,10 +408,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private boolean joinSizeIsTooDifferent(double cardinality, double second) {
 			if (cardinality > second && cardinality / MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER > second) {
 				return true;
-			} else if (second > cardinality && second / MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER > cardinality) {
-				return true;
+			} else {
+				return second > cardinality && second / MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER > cardinality;
 			}
-			return false;
 		}
 
 		private boolean joinOnMultipleVars(TupleExpr first, TupleExpr second) {
@@ -641,7 +714,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				Set<Var> varsUsedInOtherExpressions = varFreqMap.keySet();
 
 				for (String assuredBindingName : tupleExpr.getAssuredBindingNames()) {
-					if (varsUsedInOtherExpressions.contains(new Var(assuredBindingName))) {
+					if (varsUsedInOtherExpressions.contains(Var.of(assuredBindingName))) {
 						return 0;
 					}
 				}
@@ -828,6 +901,17 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
+	}
+
+	private static boolean statementPatternWithMinimumOneConstant(TupleExpr cand) {
+		return cand instanceof StatementPattern && ((((StatementPattern) cand).getSubjectVar() != null
+				&& ((StatementPattern) cand).getSubjectVar().hasValue())
+				|| (((StatementPattern) cand).getPredicateVar() != null
+						&& ((StatementPattern) cand).getPredicateVar().hasValue())
+				|| (((StatementPattern) cand).getObjectVar() != null
+						&& ((StatementPattern) cand).getObjectVar().hasValue())
+				|| (((StatementPattern) cand).getContextVar() != null
+						&& ((StatementPattern) cand).getContextVar().hasValue()));
 	}
 
 	private static int getUnionSize(Set<String> currentListNames, Set<String> candidateBindingNames) {

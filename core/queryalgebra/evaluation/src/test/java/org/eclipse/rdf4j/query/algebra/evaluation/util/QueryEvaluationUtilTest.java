@@ -14,8 +14,10 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.EQ;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.LT;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.NE;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -115,6 +117,22 @@ public class QueryEvaluationUtilTest {
 
 		arg1unknown = f.createLiteral("foo", f.createIRI("http://example.com/datatype"));
 		arg2unknown = f.createLiteral("bar", f.createIRI("http://example.com/datatype"));
+	}
+
+	@Test
+	void effectiveBooleanValueInvalidNumericReturnsFalse() {
+		Literal invalidInteger = f.createLiteral("abc", XSD.INTEGER);
+
+		boolean ebv = assertDoesNotThrow(() -> QueryEvaluationUtil.getEffectiveBooleanValue(invalidInteger));
+		assertFalse(ebv);
+	}
+
+	@Test
+	void orderedComparisonNonLiteralThrowsTypeError() {
+		var iri = f.createIRI("http://example.com/res");
+
+		assertThrows(ValueExprEvaluationException.class,
+				() -> QueryEvaluationUtil.compareLT(iri, iri, true));
 	}
 
 	@Test

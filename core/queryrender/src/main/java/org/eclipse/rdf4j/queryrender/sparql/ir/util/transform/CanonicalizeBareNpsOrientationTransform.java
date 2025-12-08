@@ -1,0 +1,73 @@
+/*******************************************************************************
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
+package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
+
+/**
+ * Preserve or lightly canonicalize the orientation of bare negated property set triples. This pass is intentionally
+ * conservative: it does not flip NPS orientation arbitrarily and skips UNION branches to preserve original subjects and
+ * objects for readability and textual stability.
+ */
+public final class CanonicalizeBareNpsOrientationTransform extends BaseTransform {
+	private CanonicalizeBareNpsOrientationTransform() {
+	}
+
+	public static IrBGP apply(IrBGP bgp) {
+		if (bgp == null) {
+			return null;
+		}
+		final List<IrNode> out = new ArrayList<>();
+		for (IrNode n : bgp.getLines()) {
+			// Recurse into containers
+			if (n instanceof IrGraph) {
+				IrGraph g = (IrGraph) n;
+				out.add(new IrGraph(g.getGraph(), apply(g.getWhere()), g.isNewScope()));
+				continue;
+			}
+			if (n instanceof IrOptional) {
+				IrOptional o = (IrOptional) n;
+				IrOptional no = new IrOptional(apply(o.getWhere()), o.isNewScope());
+				no.setNewScope(o.isNewScope());
+				out.add(no);
+				continue;
+			}
+			if (n instanceof IrMinus) {
+				IrMinus m = (IrMinus) n;
+				out.add(new IrMinus(apply(m.getWhere()), m.isNewScope()));
+				continue;
+			}
+			if (n instanceof IrUnion) {
+				// Do not alter orientation inside UNION branches; preserve branch subjects/objects.
+				out.add(n);
+				continue;
+			}
+			if (n instanceof IrService) {
+				IrService s = (IrService) n;
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(),
+						apply(s.getWhere()), s.isNewScope()));
+				continue;
+			}
+			out.add(n);
+		}
+		return BaseTransform.bgpWithLines(bgp, out);
+	}
+
+}

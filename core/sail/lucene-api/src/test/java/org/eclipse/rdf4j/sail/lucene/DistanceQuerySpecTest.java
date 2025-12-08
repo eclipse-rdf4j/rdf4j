@@ -92,4 +92,32 @@ public class DistanceQuerySpecTest extends SearchQueryEvaluatorTest {
 		assertEquals(expectedQueryPlan, result);
 	}
 
+	@Test
+	public void testDistanceMathExprScaling() {
+		String query = "PREFIX geo:  <" + GEO.NAMESPACE + ">\n" +
+				"PREFIX geof: <" + GEOF.NAMESPACE + ">\n" +
+				"PREFIX uom: <http://www.opengis.net/def/uom/OGC/1.0/>\n" +
+				"SELECT ?toUri ?to ?dist {\n" +
+				"  ?toUri geo:asWKT ?to .\n" +
+				"  BIND((geof:distance(\"POINT (2.2871 48.8630)\"^^geo:wktLiteral, ?to, uom:metre) / 1000) AS ?dist)\n"
+				+
+				"  FILTER(?dist < 1.5)\n" +
+				"}";
+
+		final ParsedQuery parsedQuery = parseQuery(query);
+		final List<SearchQueryEvaluator> queries = new ArrayList<>();
+
+		new DistanceQuerySpecBuilder(new SearchIndexImpl())
+				.process(parsedQuery.getTupleExpr(), EmptyBindingSet.getInstance(), queries);
+
+		assertEquals(1, queries.size());
+		DistanceQuerySpec spec = (DistanceQuerySpec) queries.get(0);
+
+		assertEquals("to", spec.getGeoVar());
+		assertEquals("dist", spec.getDistanceVar());
+		assertEquals(GEOF.UOM_METRE, spec.getUnits());
+		// scaling by /1000 should result in filter distance expressed back in metres
+		assertEquals(1500.0, spec.getDistance(), 0.0001);
+	}
+
 }

@@ -100,9 +100,9 @@ public class ConstantOptimizer implements QueryOptimizer {
 
 						Var lostVar;
 						if (value == null) {
-							lostVar = new Var(name);
+							lostVar = Var.of(name);
 						} else {
-							lostVar = new Var(name, value);
+							lostVar = Var.of(name, value);
 						}
 
 						ext.addElement(new ExtensionElem(lostVar, name));
