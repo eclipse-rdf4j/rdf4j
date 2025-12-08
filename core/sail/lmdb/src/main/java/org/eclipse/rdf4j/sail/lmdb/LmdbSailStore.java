@@ -83,7 +83,7 @@ class LmdbSailStore implements SailStore {
 	 *
 	 * @param <T> Type of elements within this buffer
 	 */
-	final class CircularBuffer<T> {
+	static final class CircularBuffer<T> {
 
 		private final T[] elements;
 		private volatile int head = 0;
@@ -139,7 +139,6 @@ class LmdbSailStore implements SailStore {
 	class AddQuadOperation implements Operation {
 		long s, p, o, c;
 		boolean explicit;
-		Resource context;
 
 		@Override
 		public void execute() throws IOException {
@@ -600,7 +599,6 @@ class LmdbSailStore implements SailStore {
 					q.p = valueStore.storeValue(pred);
 					q.o = valueStore.storeValue(obj);
 					q.c = context == null ? 0 : valueStore.storeValue(context);
-					q.context = context;
 					q.explicit = explicit;
 
 					if (multiThreadingActive) {
@@ -744,7 +742,6 @@ class LmdbSailStore implements SailStore {
 				q.p = valueStore.storeValue(pred);
 				q.o = valueStore.storeValue(obj);
 				q.c = context == null ? 0 : valueStore.storeValue(context);
-				q.context = context;
 				q.explicit = explicit;
 
 				if (multiThreadingActive) {
