@@ -10,9 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Map;
