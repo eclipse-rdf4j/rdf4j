@@ -81,7 +81,7 @@ public class SparqlTripleSource extends TripleSourceBase {
 			throws RepositoryException {
 
 		if (!useASKQueries) {
-			StatementPattern st = new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj));
+			StatementPattern st = new StatementPattern(Var.of("s", subj), Var.of("p", pred), Var.of("o", obj));
 			Dataset dataset = FedXUtil.toDataset(contexts);
 			try {
 				return hasStatements(st, EmptyBindingSet.getInstance(), queryInfo, dataset);

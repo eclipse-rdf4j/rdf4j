@@ -1,0 +1,43 @@
+/*******************************************************************************
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ ******************************************************************************/
+package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
+
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+
+/** Clone-and-rename utilities for Vars. */
+public final class VarRenamer {
+
+	private VarRenamer() {
+	}
+
+	@SuppressWarnings("unchecked")
+	public static <T extends QueryModelNode> T renameClone(T node, java.util.Map<String, String> mapping) {
+		T clone = (T) node.clone();
+		renameInPlace(clone, mapping);
+		return clone;
+	}
+
+	public static void renameInPlace(QueryModelNode node, java.util.Map<String, String> mapping) {
+		node.visit(new AbstractQueryModelVisitor<>() {
+			@Override
+			public void meet(Var var) {
+				if (!var.hasValue()) {
+					String nn = mapping.get(var.getName());
+					if (nn != null && !nn.equals(var.getName())) {
+						var.replaceWith(Var.of(nn, var.getValue(), var.isAnonymous(), var.isConstant()));
+					}
+				}
+			}
+		});
+	}
+}

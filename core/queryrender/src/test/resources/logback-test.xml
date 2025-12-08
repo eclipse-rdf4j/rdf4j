@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+	<!-- Keep test logging minimal: only ERROR and above to console -->
+	<appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+		<encoder>
+			<pattern>%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n</pattern>
+		</encoder>
+	</appender>
+	<!-- Silence noisy libraries by default during tests -->
+	<logger name="org.eclipse.rdf4j" level="ERROR"/>
+	<logger name="org.apache.http" level="ERROR"/>
+	<logger name="org.eclipse.jetty" level="ERROR"/>
+	<root level="ERROR">
+		<appender-ref ref="STDOUT"/>
+	</root>
+</configuration>

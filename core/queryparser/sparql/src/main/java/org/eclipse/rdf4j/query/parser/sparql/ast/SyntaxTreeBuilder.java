@@ -2311,6 +2311,7 @@ public class SyntaxTreeBuilder
 		if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == UNION) {
 			jj_consume_token(UNION);
 			ASTUnionGraphPattern jjtn001 = new ASTUnionGraphPattern(JJTUNIONGRAPHPATTERN);
+			jjtn001.setScopeChange(true);
 			boolean jjtc001 = true;
 			jjtree.openNodeScope(jjtn001);
 			try {

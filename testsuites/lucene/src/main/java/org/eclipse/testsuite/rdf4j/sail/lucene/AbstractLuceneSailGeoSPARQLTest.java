@@ -257,6 +257,38 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 
 	}
 
+	@Test
+	public void testComplexDistanceQueryMathExprDivideByTwo()
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+		try (RepositoryConnection connection = repository.getConnection()) {
+			String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
+					+ "select ?toUri ?dist ?g where { graph ?g {?toUri geo:asWKT ?to.}"
+					+ " bind((geof:distance(?from, ?to, ?units) / 2) as ?dist)" + " filter(?dist < ?range)" + " }";
+			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
+			query.setBinding("from", TEST_POINT);
+			query.setBinding("units", GEOF.UOM_METRE);
+			query.setBinding("range", sail.getValueFactory().createLiteral(400.0));
+
+			List<BindingSet> result = QueryResults.asList(query.evaluate());
+
+			Map<IRI, Literal> expected = new LinkedHashMap<>();
+			expected.put(SUBJECT_1, sail.getValueFactory().createLiteral(760.0 / 2.0));
+
+			for (BindingSet bindings : result) {
+				IRI subj = (IRI) bindings.getValue("toUri");
+				IRI expectedUri = expected.keySet().iterator().next();
+				assertEquals(expectedUri, subj);
+
+				Literal dist = expected.remove(subj);
+				assertNotNull(dist);
+				assertEquals(dist.doubleValue(), ((Literal) bindings.getValue("dist")).doubleValue(), ERROR);
+
+				assertNotNull(bindings.getValue("g"));
+			}
+			assertTrue(expected.isEmpty());
+		}
+	}
+
 	public void testIntersectionQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"

@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
 import java.text.ParseException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -23,6 +24,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 
@@ -39,6 +41,7 @@ import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialAlgebra;
@@ -782,15 +785,33 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		if (contextVar != null && !contextVar.hasValue()) {
 			bindingNames.add(contextVar.getName());
 		}
+		final StatementPattern.Scope scope = query.getScope();
 
 		if (hits != null) {
+			List<DocumentDistance> materializedHits = new ArrayList<>();
+			for (DocumentDistance hit : hits) {
+				materializedHits.add(hit);
+			}
+
+			boolean hasNamedContext = materializedHits.stream()
+					.map(DocumentDistance::getDocument)
+					.filter(Objects::nonNull)
+					.map(SearchDocument::getContext)
+					.anyMatch(ctx -> ctx != null && !SearchFields.CONTEXT_NULL.equals(ctx));
+
 			double maxDistance = query.getDistance();
 			// for each hit ...
-			for (DocumentDistance hit : hits) {
+			for (DocumentDistance hit : materializedHits) {
 				// get the current hit
 				SearchDocument doc = hit.getDocument();
 				if (doc == null) {
 					continue;
+				}
+				String ctxString = doc.getContext();
+				if (scope == StatementPattern.Scope.NAMED_CONTEXTS || hasNamedContext) {
+					if (ctxString == null || SearchFields.CONTEXT_NULL.equals(ctxString)) {
+						continue;
+					}
 				}
 
 				List<String> geometries = doc.getProperty(SearchFields.getPropertyField(query.getGeoProperty()));
@@ -815,7 +836,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 							derivedBindings.addBinding(subjVar, resource);
 						}
 						if (contextVar != null && !contextVar.hasValue()) {
-							Resource ctx = SearchFields.createContext(doc.getContext());
+							Resource ctx = SearchFields.createContext(ctxString);
 							if (ctx != null) {
 								derivedBindings.addBinding(contextVar.getName(), ctx);
 							}

@@ -46,6 +46,16 @@ public class EvaluationStatistics {
 	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
 	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
 
+	// Pre-built strings for lengths 0 through 9
+	private static final String[] RANDOMIZE_LENGTH = new String[10];
+	static {
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i <= 9; i++) {
+			RANDOMIZE_LENGTH[i] = sb.toString();
+			sb.append(i);
+		}
+	}
+
 	private CardinalityCalculator calculator;
 
 	public double getCardinality(TupleExpr expr) {
@@ -64,6 +74,10 @@ public class EvaluationStatistics {
 
 	protected CardinalityCalculator createCardinalityCalculator() {
 		return new CardinalityCalculator();
+	}
+
+	public boolean supportsJoinEstimation() {
+		return false;
 	}
 
 	/*-----------------------------------*
@@ -117,7 +131,11 @@ public class EvaluationStatistics {
 
 		@Override
 		public void meet(ArbitraryLengthPath node) {
-			final Var pathVar = new Var("_anon_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet(), true);
+			long suffix = uniqueIdSuffix.getAndIncrement();
+			final Var pathVar = Var.of(
+					"_anon_path_" + uniqueIdPrefix + suffix
+							+ RANDOMIZE_LENGTH[(int) (Math.abs(suffix % RANDOMIZE_LENGTH.length))],
+					true);
 			// cardinality of ALP is determined based on the cost of a
 			// single ?s ?p ?o ?c pattern where ?p is unbound, compensating for the fact that
 			// the length of the path is unknown but expected to be _at least_ twice that of a normal

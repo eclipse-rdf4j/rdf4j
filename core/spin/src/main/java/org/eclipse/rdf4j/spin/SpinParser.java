@@ -1024,7 +1024,7 @@ public class SpinParser {
 						aggregates = new ArrayList<>();
 						valueExpr = visitExpression(expr);
 					} else {
-						valueExpr = new Var(varName);
+						valueExpr = Var.of(varName);
 					}
 				} else {
 					// resource
@@ -1828,7 +1828,7 @@ public class SpinParser {
 					}
 				}
 			}
-			return new Var(varName);
+			return Var.of(varName);
 		}
 	}
 
