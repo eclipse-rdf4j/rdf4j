@@ -52,17 +52,35 @@ public final class VarUtils {
 		return false;
 	}
 
-	/** True if the given var is an anonymous path bridge variable. */
+	/**
+	 * True iff the var looks like a parser-generated anonymous path bridge variable: has the reserved prefix *and* is
+	 * marked anonymous or as a variable-scope change. This guards against user-supplied vars that merely reuse the
+	 * prefix.
+	 */
 	public static boolean isAnonPathVar(Var v) {
 		if (v == null || v.hasValue()) {
 			return false;
 		}
 		String n = v.getName();
-		return n != null && n.startsWith(ANON_PATH_PREFIX);
+		if (n == null || !n.startsWith(ANON_PATH_PREFIX)) {
+			return false;
+		}
+
+		assert v.isAnonymous();
+		return v.isAnonymous();
 	}
 
-	/** True when the anonymous path var explicitly encodes inverse orientation. */
+	/** True when the anonymous path var explicitly encodes inverse orientation under the same safety check. */
 	public static boolean isAnonPathInverseVar(Var v) {
-		return v != null && !v.hasValue() && v.getName() != null && v.getName().startsWith(ANON_PATH_INVERSE_PREFIX);
+		if (v == null || v.hasValue()) {
+			return false;
+		}
+		String n = v.getName();
+		if (n == null || !n.startsWith(ANON_PATH_INVERSE_PREFIX)) {
+			return false;
+		}
+
+		assert v.isAnonymous();
+		return v.isAnonymous();
 	}
 }

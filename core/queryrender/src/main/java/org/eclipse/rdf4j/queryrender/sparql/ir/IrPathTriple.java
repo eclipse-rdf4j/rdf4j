@@ -18,6 +18,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.SimplifyPathParensTransform;
+import org.eclipse.rdf4j.queryrender.sparql.util.VarUtils;
 
 /**
  * Textual IR node for a property path triple: subject, path expression, object.
@@ -112,12 +113,7 @@ public class IrPathTriple extends IrTripleLike {
 	}
 
 	private static boolean isAnonBridgeVar(Var v) {
-		if (v == null || v.getName() == null) {
-			return false;
-		}
-		// parser-generated path bridge variables
-		String n = v.getName();
-		return n.startsWith("_anon_path_") || n.startsWith("_anon_path_inverse_");
+		return VarUtils.isAnonPathVar(v) || VarUtils.isAnonPathInverseVar(v);
 	}
 
 	@Override
