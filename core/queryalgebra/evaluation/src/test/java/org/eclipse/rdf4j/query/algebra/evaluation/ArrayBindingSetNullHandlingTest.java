@@ -18,9 +18,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.LinkedHashSet;
-import java.util.Set;
-
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.query.Binding;
 import org.junit.jupiter.api.Test;
