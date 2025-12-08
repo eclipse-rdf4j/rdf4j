@@ -52,6 +52,8 @@ public class DistanceQuerySpec extends AbstractSearchQueryEvaluator {
 
 	private Filter filter;
 
+	private StatementPattern.Scope scope = StatementPattern.Scope.DEFAULT_CONTEXTS;
+
 	public DistanceQuerySpec(FunctionCall distanceFunction, ValueExpr distanceExpr, String distVar, Filter filter) {
 		this.distanceFunction = distanceFunction;
 		this.distanceExpr = distanceExpr;
@@ -138,7 +140,12 @@ public class DistanceQuerySpec extends AbstractSearchQueryEvaluator {
 		this.geoStatement = sp;
 		this.subjectVar = sp.getSubjectVar().getName();
 		this.contextVar = sp.getContextVar();
+		this.scope = sp.getScope();
 		this.geoProperty = (IRI) sp.getPredicateVar().getValue();
+	}
+
+	public StatementPattern.Scope getScope() {
+		return scope;
 	}
 
 	public String getSubjectVar() {
