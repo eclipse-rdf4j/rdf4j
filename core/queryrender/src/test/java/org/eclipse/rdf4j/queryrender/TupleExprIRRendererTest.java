@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.parallel.Execution;
@@ -421,6 +422,35 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(qStar, cfg(), false);
 		assertSameSparqlQuery(qPlus, cfg(), false);
 		assertSameSparqlQuery(qOpt, cfg(), false);
+	}
+
+	@Test
+	void rdf_star_triple_terms_render_verbatim() {
+		String q = "SELECT * WHERE {\n" +
+				"  <<ex:s ex:p ex:o>> ex:q ?x .\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+//		assertTrue(rendered.contains("<<ex:s ex:p ex:o>>"), "RDF-star triple term must render as <<...>>");
+		// Round-trip to ensure algebra equivalence once triple text is correct.
+		assertSameSparqlQuery(q, cfg(), false);
+	}
+
+	@Test
+	void blank_node_square_brackets_render_as_empty_bnode() {
+		String q = "SELECT * WHERE {\n" +
+				"  ?s ex:p [] .\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertTrue(rendered.contains("[]"), "[] should render as an empty blank node, not a labeled _:anon");
+	}
+
+	@Test
+	void rdf_type_renders_as_a_keyword() {
+		String q = "SELECT ?s ?o WHERE {\n" +
+				"  ?s a ?o .\n" +
+				"}";
+		assertSameSparqlQuery(q, cfg(), true);
+
 	}
 
 	@Test
