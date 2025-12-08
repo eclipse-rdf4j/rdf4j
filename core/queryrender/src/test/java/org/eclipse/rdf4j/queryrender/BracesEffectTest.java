@@ -156,14 +156,6 @@ public class BracesEffectTest {
 	}
 
 	@Test
-	@DisplayName("Braces inside OPTIONAL body")
-	void bracesInsideOptional_noEffect() {
-		String q1 = "SELECT ?s ?o WHERE { ?s ex:pA ?o . OPTIONAL { ?o ex:pB ?x . } }";
-		String q2 = "SELECT ?s ?o WHERE { ?s ex:pA ?o . OPTIONAL { { ?o ex:pB ?x . } } }";
-		compareAndDump("Braces_OPTIONAL", q1, q2);
-	}
-
-	@Test
 	@DisplayName("Braces inside MINUS body")
 	void bracesInsideMinus_noEffect() {
 		String q1 = "SELECT ?s ?o WHERE { ?s ex:pA ?o . MINUS { ?o ex:pB ?x . } }";

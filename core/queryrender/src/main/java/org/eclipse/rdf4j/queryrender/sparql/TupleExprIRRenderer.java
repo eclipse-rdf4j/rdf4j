@@ -15,11 +15,16 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 
+import org.assertj.core.api.Assertions;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.parser.ParsedQuery;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.queryrender.VarNameNormalizer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IRTextPrinter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
@@ -235,7 +240,9 @@ public class TupleExprIRRenderer {
 		// WHERE (from IR)
 		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
 		new IRTextPrinter(out, this::convertVarToString, cfg).printWhere(ir.getWhere());
-		return out.toString().trim();
+		String rendered = out.toString().trim();
+		verifyRoundTrip(tupleExpr, rendered);
+		return rendered;
 	}
 
 	private String renderSelectInternal(final TupleExpr tupleExpr,
@@ -243,7 +250,72 @@ public class TupleExprIRRenderer {
 			final DatasetView dataset) {
 		final IrSelect ir = toIRSelect(tupleExpr);
 		final boolean asSub = (mode == RenderMode.SUBSELECT);
-		return render(ir, dataset, asSub);
+		String rendered = render(ir, dataset, asSub);
+		verifyRoundTrip(tupleExpr, rendered);
+		return rendered;
+	}
+
+	private void verifyRoundTrip(final TupleExpr original, final String rendered) {
+		if (!cfg.verifyRoundTrip || original == null || rendered == null || rendered.isEmpty()) {
+			return;
+		}
+
+		try {
+			ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, rendered, null);
+			String expected = VarNameNormalizer.normalizeVars(original.toString());
+			String actual = VarNameNormalizer.normalizeVars(parsed.getTupleExpr().toString());
+			if (!expected.equals(actual)) {
+				String message = "Rendered SPARQL does not round-trip to the original TupleExpr."
+						+ "\n# Rendered query\n" + rendered
+						+ "\n# Original TupleExpr (normalized)\n" + expected
+						+ "\n# Round-tripped TupleExpr (normalized)\n" + actual
+						+ "\n# Diff (original -> round-tripped)\n" + diffText(expected, actual);
+
+				Assertions.assertThat(actual).as("Round-tripped TupleExpr does not match original").isEqualTo(expected);
+
+				throw new IllegalStateException(message);
+			}
+		} catch (IllegalStateException e) {
+			throw e;
+		} catch (Exception e) {
+			throw new IllegalStateException("Failed to verify rendered SPARQL against the original TupleExpr", e);
+		}
+	}
+
+	// diff the two strings to help debugging
+	private String diffText(String expected, String actual) {
+		List<String> expLines = List.of(expected.split("\\R", -1));
+		List<String> actLines = List.of(actual.split("\\R", -1));
+
+		int max = Math.max(expLines.size(), actLines.size());
+		StringBuilder sb = new StringBuilder(256);
+		for (int i = 0; i < max; i++) {
+			String el = i < expLines.size() ? expLines.get(i) : "<missing>";
+			String al = i < actLines.size() ? actLines.get(i) : "<missing>";
+			if (!el.equals(al)) {
+				sb.append("line ").append(i + 1).append(":\n");
+				sb.append("- ").append(el).append('\n');
+				sb.append("+ ").append(al).append('\n');
+				int common = commonPrefixLength(el, al);
+				if (common < Math.min(el.length(), al.length())) {
+					sb.append("  ").append(" ".repeat(common)).append("^\n");
+				}
+			}
+			if (sb.length() > 1024) {
+				sb.append("... diff truncated ...");
+				break;
+			}
+		}
+		return sb.length() == 0 ? "<no visible diff>" : sb.toString();
+	}
+
+	private int commonPrefixLength(String a, String b) {
+		int limit = Math.min(a.length(), b.length());
+		int i = 0;
+		while (i < limit && a.charAt(i) == b.charAt(i)) {
+			i++;
+		}
+		return i;
 	}
 
 	private void printPrologueAndDataset(final StringBuilder out, final DatasetView dataset) {
@@ -267,6 +339,11 @@ public class TupleExprIRRenderer {
 		}
 		if (v.hasValue()) {
 			return convertValueToString(v.getValue());
+		}
+		// Path bridge variables (_anon_path_*) must render as regular variables so they can be
+		// shared across UNION branches without violating blank-node scoping rules during parsing.
+		if (v.isAnonymous() && v.getName() != null && v.getName().startsWith("_anon_path_")) {
+			return "?" + v.getName();
 		}
 		// Anonymous blank-node placeholder variables are rendered as "[]"
 		if (v.isAnonymous() && !v.isConstant()) {
@@ -329,6 +406,7 @@ public class TupleExprIRRenderer {
 		public final boolean printPrefixes = true;
 		public final boolean usePrefixCompaction = true;
 		public final boolean canonicalWhitespace = true;
+		public boolean verifyRoundTrip = true; // parse rendered SPARQL and compare to original TupleExpr
 		public final LinkedHashMap<String, String> prefixes = new LinkedHashMap<>();
 		// Flags
 		// Optional dataset (top-level only) if you never pass a DatasetView at render().

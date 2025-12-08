@@ -258,10 +258,11 @@ public final class VarNameNormalizer {
 			}
 
 			if (isAllDigits(s, tailStart, j)) {
+				// keep as-is
 				out.append(s, writePos, j);
 				writePos = j;
 			} else {
-				String original = s.substring(i, j);
+				String original = s.substring(i, j); // small, acceptable allocation
 				String replacement = mapping.get(original);
 				if (replacement == null) {
 					BitSet bs = reserved.get(family);
@@ -280,9 +281,18 @@ public final class VarNameNormalizer {
 		return out.toString();
 	}
 
-	private static String matchFamilyAtFromBucket(String s, int i, List<String> candidates) {
+	private static Map<Character, List<String>> bucketByFirstChar(List<String> fams) {
+		final Map<Character, List<String>> byFirst = new HashMap<>();
+		for (String f : fams) {
+			char c = f.charAt(0);
+			byFirst.computeIfAbsent(c, k -> new ArrayList<>()).add(f);
+		}
+		return byFirst;
+	}
+
+	private static String matchFamilyAtFromBucket(String s, int i, List<String> fams) {
 		final int n = s.length();
-		for (String f : candidates) {
+		for (String f : fams) {
 			int len = f.length();
 			if (i + len > n) {
 				continue;
@@ -301,89 +311,55 @@ public final class VarNameNormalizer {
 		return null;
 	}
 
-	/* ============================ Utilities ============================ */
+	/* =============================== Utilities =============================== */
 
-	private static Map<Character, List<String>> bucketByFirstChar(List<String> fams) {
-		Map<Character, List<String>> map = new HashMap<>();
-		for (String f : fams) {
-			char c = f.charAt(0);
-			map.computeIfAbsent(c, k -> new ArrayList<>()).add(f);
-		}
-		// keep longest-first inside buckets
-		for (List<String> l : map.values()) {
-			l.sort((a, b) -> Integer.compare(b.length(), a.length()));
-		}
-		return map;
-	}
-
-	/** Largest common prefix across families that ends with '_' (or empty string if none). */
 	private static String sharedPrefixEndingWithUnderscore(List<String> fams) {
 		if (fams.isEmpty()) {
 			return "";
 		}
-		String anchor = fams.get(0);
-		int end = anchor.length();
+		char[] acc = fams.get(0).toCharArray();
+		int end = acc.length;
 		for (int i = 1; i < fams.size(); i++) {
-			end = lcpLen(anchor, fams.get(i), end);
-			if (end == 0) {
-				return "";
+			String f = fams.get(i);
+			end = Math.min(end, f.length());
+			for (int k = 0; k < end; k++) {
+				if (acc[k] != f.charAt(k)) {
+					end = k;
+					break;
+				}
 			}
 		}
-		int u = anchor.lastIndexOf('_', end - 1);
-		return (u >= 0) ? anchor.substring(0, u + 1) : "";
-	}
-
-	private static int lcpLen(String a, String b, int max) {
-		int n = Math.min(Math.min(a.length(), b.length()), max);
-		int i = 0;
-		while (i < n && a.charAt(i) == b.charAt(i)) {
-			i++;
+		while (end > 0 && acc[end - 1] != '_') {
+			end--;
 		}
-		return i;
-	}
-
-	private static boolean isWordChar(char c) {
-		return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+		if (end == 0) {
+			return "";
+		}
+		return new String(acc, 0, end);
 	}
 
 	private static boolean isAllDigits(String s, int start, int end) {
-		if (start >= end) {
-			return false;
-		}
 		for (int i = start; i < end; i++) {
-			char c = s.charAt(i);
-			if (c < '0' || c > '9') {
+			if (!Character.isDigit(s.charAt(i))) {
 				return false;
 			}
 		}
 		return true;
 	}
 
-	private static int parsePositiveIntOrMinusOne(String s, int start, int end) {
-		if (start >= end) {
-			return -1;
-		}
-		long v = 0;
-		for (int i = start; i < end; i++) {
-			char c = s.charAt(i);
-			if (c < '0' || c > '9') {
-				return -1;
-			}
-			v = v * 10 + (c - '0');
-			if (v > Integer.MAX_VALUE) {
-				return -1;
-			}
-		}
-		return (int) v;
+	private static boolean isWordChar(char c) {
+		return Character.isLetterOrDigit(c) || c == '_';
 	}
 
-	// Quick demo
-	public static void main(String[] args) {
-		String s = "GroupElem (_anon_having_0510da5d5008b3a440184f8d038af26b279012345)\n" +
-				"  Count\n" +
-				"    Var (name=t)\n" +
-				"ExtensionElem (_anon_having_0510da5d5008b3a440184f8d038af26b279012345)\n" +
-				"Also (_anon_3) and (_anon_foo) and (_anon_3) again.\n";
-		System.out.println(normalizeVars(s));
+	private static int parsePositiveIntOrMinusOne(String s, int start, int end) {
+		int n = 0;
+		for (int i = start; i < end; i++) {
+			char c = s.charAt(i);
+			if (!Character.isDigit(c)) {
+				return -1;
+			}
+			n = (n * 10) + (c - '0');
+		}
+		return n;
 	}
 }
