@@ -715,6 +715,26 @@ public class TupleExprToIrConverter {
 			}
 		}
 
+		// Re-insert non-aggregate BIND assignments after transforms so they are not optimized away.
+		if (!n.extensionAssignments.isEmpty() && ir.getWhere() != null) {
+			IrBGP whereBgp = ir.getWhere();
+			List<IrNode> prefix = new ArrayList<>();
+			for (Entry<String, ValueExpr> e : n.extensionAssignments.entrySet()) {
+				if (e.getValue() instanceof AggregateOperator) {
+					continue;
+				}
+				prefix.add(new IrBind(conv.renderExpr(e.getValue()), e.getKey(), false));
+			}
+			if (!prefix.isEmpty()) {
+				IrBGP combined = new IrBGP(whereBgp.isNewScope());
+				combined.getLines().addAll(prefix);
+				if (whereBgp.getLines() != null) {
+					combined.getLines().addAll(whereBgp.getLines());
+				}
+				ir.setWhere(combined);
+			}
+		}
+
 		for (GroupByTerm t : n.groupByTerms) {
 			ir.getGroupBy().add(new IrGroupByElem(t.expr == null ? null : conv.renderExpr(t.expr), t.var));
 		}
@@ -824,6 +844,8 @@ public class TupleExprToIrConverter {
 							if (n.groupByVarNames.contains(ee.getName())) {
 								groupAliases.put(ee.getName(), ee.getExpr());
 							}
+							n.extensionAssignments.putIfAbsent(ee.getName(), ee.getExpr());
+							n.extensionOutputNames.add(ee.getName());
 						}
 						afterGroup = ext.getArg();
 					}
@@ -881,6 +903,8 @@ public class TupleExprToIrConverter {
 				final Extension ext = (Extension) cur;
 				for (final ExtensionElem ee : ext.getElements()) {
 					n.selectAssignments.put(ee.getName(), ee.getExpr());
+					n.extensionOutputNames.add(ee.getName());
+					n.extensionAssignments.putIfAbsent(ee.getName(), ee.getExpr());
 				}
 				cur = ext.getArg();
 				changed = true;
@@ -903,6 +927,8 @@ public class TupleExprToIrConverter {
 						if (n.groupByVarNames.contains(ee.getName())) {
 							groupAliases.put(ee.getName(), ee.getExpr());
 						}
+						n.extensionAssignments.putIfAbsent(ee.getName(), ee.getExpr());
+						n.extensionOutputNames.add(ee.getName());
 					}
 					afterGroup = ext.getArg();
 				}
@@ -951,6 +977,39 @@ public class TupleExprToIrConverter {
 			@Override
 			public void meet(Extension node) {
 				found = true;
+			}
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (!found) {
+					super.meetNode(node);
+				}
+			}
+		}
+		Flag f = new Flag();
+		e.visit(f);
+		return f.found;
+	}
+
+	/**
+	 * Detect Extension nodes only in the current WHERE scope, ignoring nested subselects (Projection nodes) to avoid
+	 * suppressing projection expressions due to bindings inside subqueries.
+	 */
+	private static boolean containsExtensionShallow(TupleExpr e) {
+		if (e == null) {
+			return false;
+		}
+		class Flag extends AbstractQueryModelVisitor<RuntimeException> {
+			boolean found = false;
+
+			@Override
+			public void meet(Extension node) {
+				found = true;
+			}
+
+			@Override
+			public void meet(Projection node) {
+				// Do not descend into subselects; they are rendered separately.
 			}
 
 			@Override
@@ -1511,7 +1570,7 @@ public class TupleExprToIrConverter {
 	public IrSelect toIRSelect(final TupleExpr tupleExpr) {
 		final Normalized n = normalize(tupleExpr, false);
 		applyAggregateHoisting(n);
-		final boolean whereHasExtensions = containsExtension(n.where);
+		final boolean whereHasExtensions = containsExtensionShallow(n.where);
 
 		final IrSelect ir = new IrSelect(false);
 		// Canonicalize DISTINCT/REDUCED: if DISTINCT is set, REDUCED is a no-op and removed
@@ -1525,16 +1584,10 @@ public class TupleExprToIrConverter {
 				&& !n.projection.getProjectionElemList().getElements().isEmpty()) {
 			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
 				final String alias = pe.getProjectionAlias().orElse(pe.getName());
-				ValueExpr expr = null;
-				if (!whereHasExtensions) {
-					ExtensionElem src = pe.getSourceExpression();
-					if (src != null) {
-						expr = src.getExpr();
-					} else {
-						expr = n.selectAssignments.get(alias);
-					}
-				}
-				ir.getProjection().add(new IrProjectionItem(expr == null ? null : renderExpr(expr), alias));
+				ExtensionElem src = pe.getSourceExpression();
+				ValueExpr expr = src != null ? src.getExpr() : n.selectAssignments.get(alias);
+				boolean renderExprText = expr != null;
+				ir.getProjection().add(new IrProjectionItem(renderExprText ? renderExpr(expr) : null, alias));
 			}
 		} else if (!n.selectAssignments.isEmpty()) {
 			if (!n.groupByTerms.isEmpty()) {
@@ -1554,6 +1607,38 @@ public class TupleExprToIrConverter {
 		// WHERE as textual-IR (raw)
 		final IRBuilder builder = new IRBuilder();
 		ir.setWhere(builder.build(n.where));
+
+		// Re-insert non-aggregate BIND assignments that were peeled during normalization so they remain visible in
+		// the WHERE clause. Insert at the start, preserving original alias order, and avoid duplicates when the
+		// SELECT projection already renders the same binding (e.g., group-by alias cases).
+		if (!n.extensionAssignments.isEmpty() && ir.getWhere() != null) {
+			Set<String> alreadyRendered = new LinkedHashSet<>();
+			ir.getProjection().forEach(p -> {
+				if (p.getExprText() != null && p.getVarName() != null) {
+					alreadyRendered.add(p.getVarName());
+				}
+			});
+
+			List<IrNode> prefix = new ArrayList<>();
+			for (Entry<String, ValueExpr> e : n.extensionAssignments.entrySet()) {
+				if (e.getValue() instanceof AggregateOperator) {
+					continue;
+				}
+				if (alreadyRendered.contains(e.getKey())) {
+					continue; // already captured via SELECT expression
+				}
+				prefix.add(new IrBind(renderExpr(e.getValue()), e.getKey(), false));
+			}
+			if (!prefix.isEmpty()) {
+				IrBGP whereBgp = ir.getWhere();
+				IrBGP combined = new IrBGP(whereBgp.isNewScope());
+				combined.getLines().addAll(prefix);
+				if (whereBgp.getLines() != null) {
+					combined.getLines().addAll(whereBgp.getLines());
+				}
+				ir.setWhere(combined);
+			}
+		}
 
 		// GROUP BY
 		for (GroupByTerm t : n.groupByTerms) {
@@ -2545,6 +2630,8 @@ public class TupleExprToIrConverter {
 	private static final class Normalized {
 		final List<OrderElem> orderBy = new ArrayList<>();
 		final LinkedHashMap<String, ValueExpr> selectAssignments = new LinkedHashMap<>(); // alias -> expr
+		final LinkedHashMap<String, ValueExpr> extensionAssignments = new LinkedHashMap<>(); // alias -> expr from BIND
+		final Set<String> extensionOutputNames = new LinkedHashSet<>(); // vars bound via Extension/BIND in WHERE
 		final List<GroupByTerm> groupByTerms = new ArrayList<>(); // explicit terms (var or (expr AS ?var))
 		final List<String> syntheticProjectVars = new ArrayList<>(); // synthesized bare SELECT vars
 		final List<ValueExpr> havingConditions = new ArrayList<>();
