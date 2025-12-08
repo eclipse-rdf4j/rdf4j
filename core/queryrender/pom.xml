@@ -9,18 +9,6 @@
 	<artifactId>rdf4j-queryrender</artifactId>
 	<name>RDF4J: Query Rendering</name>
 	<description>Query Render and Builder tools</description>
-	<build>
-		<plugins>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-surefire-plugin</artifactId>
-				<configuration>
-					<!-- Stop executing tests after the first failure in this module -->
-					<skipAfterFailureCount>1</skipAfterFailureCount>
-				</configuration>
-			</plugin>
-		</plugins>
-	</build>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>

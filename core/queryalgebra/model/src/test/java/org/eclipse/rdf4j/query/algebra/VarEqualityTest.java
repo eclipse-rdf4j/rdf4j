@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.jupiter.api.Test;
 
-class VarEqualityTest {
+public class VarEqualityTest {
 
 	private static final Value VALUE = SimpleValueFactory.getInstance().createLiteral("v");
 

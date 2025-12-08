@@ -11,8 +11,6 @@
 
 package org.eclipse.rdf4j.model.impl;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
-
 import java.lang.reflect.Field;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -27,9 +25,9 @@ public class SimpleValueFactoryOverflowTest {
 	@Test
 	void overflowAtMinValue() throws Exception {
 		// Access the private static counter
-		Field f = SimpleValueFactory.class.getDeclaredField("uniqueIdSuffix");
-		f.setAccessible(true);
-		AtomicLong counter = (AtomicLong) f.get(null);
+		Field counterField = SimpleValueFactory.class.getDeclaredField("uniqueIdSuffix");
+		counterField.setAccessible(true);
+		AtomicLong counter = (AtomicLong) counterField.get(null);
 
 		// Preserve original value to avoid leaking state across tests
 		long original = counter.get();
@@ -38,6 +36,29 @@ public class SimpleValueFactoryOverflowTest {
 			try {
 				// Force next increment to wrap from Long.MAX_VALUE to Long.MIN_VALUE
 				counter.set(Long.MAX_VALUE);
+
+				SimpleValueFactory.getInstance().createBNode();
+			} finally {
+				// Restore the original value
+				counter.set(original);
+			}
+		}
+	}
+
+	@Test
+	void overflowAtMaxValue() throws Exception {
+		// Access the private static counter
+		Field counterField = SimpleValueFactory.class.getDeclaredField("uniqueIdSuffix");
+		counterField.setAccessible(true);
+		AtomicLong counter = (AtomicLong) counterField.get(null);
+
+		// Preserve original value to avoid leaking state across tests
+		long original = counter.get();
+
+		synchronized (SimpleValueFactory.class) {
+			try {
+				// Force next increment to wrap from Long.MAX_VALUE to Long.MIN_VALUE
+				counter.set(Long.MIN_VALUE);
 
 				SimpleValueFactory.getInstance().createBNode();
 			} finally {

@@ -346,7 +346,7 @@ public class TupleExprIRRenderer {
 		if (v.isAnonymous() && v.getName() != null && v.getName().startsWith("_anon_path_")) {
 			return "?" + v.getName();
 		}
-		// Anonymous blank-node placeholder variables are rendered as "[]"
+
 		if (v.isAnonymous() && !v.isConstant()) {
 			return "_:" + v.getName();
 		}
