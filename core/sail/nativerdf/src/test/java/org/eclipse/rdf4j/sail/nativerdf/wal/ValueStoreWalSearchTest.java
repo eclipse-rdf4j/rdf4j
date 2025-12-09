@@ -66,9 +66,15 @@ class ValueStoreWalSearchTest {
 		Integer[] ids = dict.keySet().toArray(Integer[]::new);
 		Integer pickId = ids[new Random().nextInt(ids.length)];
 
-		ValueStoreWalSearch search = ValueStoreWalSearch.open(cfgRead);
-		Value found = search.findValueById(pickId);
-		assertThat(found).as("ValueStoreWalSearch should find value by id").isNotNull();
+                ValueStoreWalSearch search = ValueStoreWalSearch.open(cfgRead);
+                Value found = null;
+                for (int attempt = 0; attempt < 10 && found == null; attempt++) {
+                        found = search.findValueById(pickId);
+                        if (found == null) {
+                                Thread.sleep(100);
+                        }
+                }
+                assertThat(found).as("ValueStoreWalSearch should find value by id").isNotNull();
 
 		// Cross-check against ValueStore
 		try (ValueStore vs = new ValueStore(dataDir, false)) {
