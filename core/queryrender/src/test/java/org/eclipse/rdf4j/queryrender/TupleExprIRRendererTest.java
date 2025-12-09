@@ -21,6 +21,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -120,6 +124,24 @@ public class TupleExprIRRendererTest {
 			"TupleExpr_expected",
 			"TupleExpr_actual"
 	};
+
+	private static Set<String> extractBnodeLabels(String rendered) {
+		Set<String> labels = new HashSet<>();
+		Matcher labelMatcher = Pattern.compile("_:[A-Za-z][A-Za-z0-9]*").matcher(rendered);
+		while (labelMatcher.find()) {
+			labels.add(labelMatcher.group());
+		}
+		return labels;
+	}
+
+	private static long countAnonPlaceholders(String rendered) {
+		Matcher bracketMatcher = Pattern.compile("\\[\\]").matcher(rendered);
+		long count = 0;
+		while (bracketMatcher.find()) {
+			count++;
+		}
+		return count;
+	}
 
 	private void purgeReportFilesForCurrentTest() {
 		String base = currentTestBaseName();
@@ -2569,6 +2591,320 @@ public class TupleExprIRRendererTest {
 				"}";
 
 		assertSameSparqlQuery(q, cfg(), false);
+	}
+
+	@Test
+	void anonymous_and_named_bnodes_across_optional_union_values_minus_notexists() {
+		String q = "SELECT ?o ?y WHERE {\n" +
+				"  OPTIONAL {\n" +
+				"    [] ex:p ?o .\n" +
+				"    FILTER(isBlank(?o))\n" +
+				"  }\n" +
+				"  {\n" +
+				"    [] ex:q ?o .\n" +
+				"  }\n" +
+				"    UNION\n" +
+				"  {\n" +
+				"    _:branch ex:q ?o .\n" +
+				"    ?s ex:q [] .\n" +
+				"    MINUS { [] ex:q ?s }\n" +
+				"  }\n" +
+				"  FILTER NOT EXISTS { _:keep ex:r [] }\n" +
+				"  VALUES (?o ?y) {\n" +
+				"    (UNDEF \"v1\")\n" +
+				"    (\"v2\" UNDEF)\n" +
+				"  }\n" +
+				"}";
+
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+
+		Matcher bracketMatcher = Pattern.compile("\\[\\]").matcher(rendered);
+		int bracketCount = 0;
+		while (bracketMatcher.find()) {
+			bracketCount++;
+		}
+		assertThat(bracketCount).as("[] should remain visible for anonymous blank nodes").isGreaterThanOrEqualTo(2);
+
+		Set<String> labels = new HashSet<>();
+		Matcher labelMatcher = Pattern.compile("_:[A-Za-z][A-Za-z0-9]*").matcher(rendered);
+		while (labelMatcher.find()) {
+			labels.add(labelMatcher.group());
+		}
+		assertThat(labels.size()).as("named blank nodes should keep distinct labels").isGreaterThanOrEqualTo(2);
+
+		assertThat(rendered)
+				.contains("OPTIONAL")
+				.contains("UNION")
+				.contains("MINUS")
+				.contains("NOT EXISTS")
+				.contains("VALUES");
+	}
+
+	@Test
+	void distinct_named_bnodes_in_nested_subselects() {
+		String q = "SELECT ?x ?y WHERE {\n" +
+				"  OPTIONAL { _:outerA ex:p [] . }\n" +
+				"  { SELECT ?x WHERE { _:inner1 ex:p ?x . } }\n" +
+				"  { SELECT ?y WHERE { OPTIONAL { _:inner2 ex:q ?y . } } }\n" +
+				"}";
+
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+
+		Set<String> labels = new HashSet<>();
+		Matcher labelMatcher = Pattern.compile("_:[A-Za-z][A-Za-z0-9]*").matcher(rendered);
+		while (labelMatcher.find()) {
+			labels.add(labelMatcher.group());
+		}
+		assertThat(labels.size()).as("distinct subselect bnodes must not be reused").isGreaterThanOrEqualTo(3);
+
+		Matcher bracketMatcher = Pattern.compile("\\[\\]").matcher(rendered);
+		assertThat(bracketMatcher.find()).as("anonymous [] must survive rendering").isTrue();
+
+		assertThat(rendered).contains("SELECT ?x WHERE").contains("SELECT ?y WHERE").contains("OPTIONAL");
+	}
+
+	@Test
+	void bnodes_survive_filters_and_bind() {
+		String q = "SELECT ?b ?o WHERE {\n" +
+				"  BIND(BNODE() AS ?b)\n" +
+				"  OPTIONAL { _:filterNode ex:p ?o . }\n" +
+				"  FILTER(isBlank(?b))\n" +
+				"  FILTER EXISTS { [] ex:p ?b }\n" +
+				"}";
+
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+
+		assertThat(rendered).contains("BIND(BNODE()");
+		assertThat(rendered).contains("_:").contains("FILTER EXISTS {");
+
+		assertThat(countAnonPlaceholders(rendered)).as("anonymous [] inside EXISTS must remain")
+				.isGreaterThanOrEqualTo(1);
+	}
+
+	// -------- Additional blank node coverage --------
+
+	@Test
+	void optional_named_bnode_label_preserved() {
+		String q = "SELECT ?o WHERE { OPTIONAL { _:opt ex:p ?o . } }";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void optional_anonymous_bnode_keeps_brackets() {
+		String q = "SELECT ?o WHERE { OPTIONAL { [] ex:p ?o . } }";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void union_branches_keep_separate_bnodes() {
+		String q = "SELECT ?o WHERE {\n" +
+				"  { _:u1 ex:p ?o . }\n" +
+				"  UNION\n" +
+				"  { _:u2 ex:q ?o . }\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(2);
+	}
+
+	@Test
+	void minus_clause_keeps_named_bnode() {
+		String q = "SELECT ?o WHERE {\n" +
+				"  _:keepL ex:p ?o .\n" +
+				"  MINUS { _:keepR ex:q ?o }\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(2);
+	}
+
+	@Test
+	void not_exists_preserves_anonymous_property_list() {
+		String q = "SELECT * WHERE {\n" +
+				"  FILTER NOT EXISTS { [] ex:p [ ex:q ?o ] }\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void values_alongside_bnodes_do_not_change_labels() {
+		String q = "SELECT ?o WHERE {\n" +
+				"  [] ex:p ?o .\n" +
+				"  VALUES ?o { \"a\" \"b\" }\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void filter_isblank_on_named_bnode() {
+		String q = "SELECT ?b WHERE {\n" +
+				"  [] ex:p ?b .\n" +
+				"  FILTER(isBlank(?b))\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertThat(rendered).isNotEmpty();
+		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void graph_clause_named_bnode_subject() {
+		String q = "SELECT * WHERE {\n" +
+				"  GRAPH <http://g> { _:gsub ex:p ?o . }\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void graph_clause_anonymous_bnode_object() {
+		String q = "SELECT * WHERE {\n" +
+				"  GRAPH <http://g> { ?s ex:p [] . }\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void service_clause_with_anonymous_property_list() {
+		String q = "SELECT * WHERE {\n" +
+				"  SERVICE <http://svc> { [] ex:p [ ex:q ?o ] . }\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void subselect_named_bnodes_not_reused() {
+		String q = "SELECT ?x ?y WHERE {\n" +
+				"  { SELECT ?x WHERE { _:innerA ex:p ?x . } }\n" +
+				"  OPTIONAL { _:outer ex:p ?y . }\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(2);
+	}
+
+	@Test
+	void subselect_anonymous_bnode_remains_brackets() {
+		String q = "SELECT ?x WHERE {\n" +
+				"  { SELECT ?x WHERE { [] ex:p ?x . } }\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void property_list_nested_bnodes_keep_labels() {
+		String q = "SELECT * WHERE {\n" +
+				"  _:root ex:p [ ex:q _:leaf ; ex:r [] ] .\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		parseAlgebra(rendered); // ensure round-trip parseable
+		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(2);
+		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void exists_with_named_bnode_in_pattern() {
+		String q = "SELECT ?s WHERE {\n" +
+				"  ?s ex:p ?o .\n" +
+				"  FILTER EXISTS { _:exists ex:q ?s }\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void not_exists_with_named_bnode_different_scope() {
+		String q = "SELECT ?s WHERE {\n" +
+				"  ?s ex:p ?o .\n" +
+				"  FILTER NOT EXISTS { _:nex ex:q ?o }\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void minus_with_property_list_anonymous() {
+		String q = "SELECT ?s WHERE {\n" +
+				"  ?s ex:p ?o .\n" +
+				"  MINUS { [] ex:p [ ex:q ?o ] }\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		parseAlgebra(rendered);
+		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void filter_sameTerm_on_named_bnode() {
+		String q = "SELECT * WHERE {\n" +
+				"  [] ex:p ?o .\n" +
+				"  FILTER(sameTerm(?o, ?o))\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void path_with_named_bnode_object() {
+		String q = "SELECT * WHERE {\n" +
+				"  ?s ex:p+/ex:q _:pnode .\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void union_with_property_list_bnodes_preserves_counts() {
+		String q = "SELECT * WHERE {\n" +
+				"  { [] ex:p [ ex:q ?o ] . }\n" +
+				"  UNION\n" +
+				"  { _:u ex:p [ ex:q [] ] . }\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		parseAlgebra(rendered);
+		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(2);
+		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void bind_and_optional_do_not_rename_bnode_labels() {
+		String q = "SELECT ?b WHERE {\n" +
+				"  BIND(BNODE() AS ?b)\n" +
+				"  OPTIONAL { _:keep ex:p ?b . }\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		assertSameSparqlQuery(q, cfg(), false);
+		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	void nested_optional_anonymous_property_list() {
+		String q = "SELECT * WHERE {\n" +
+				"  OPTIONAL { OPTIONAL { [] ex:p [ ex:q [] ] . } }\n" +
+				"}";
+		String rendered = render(SPARQL_PREFIX + q, cfg());
+		parseAlgebra(rendered);
+		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(2);
 	}
 
 	@Test
