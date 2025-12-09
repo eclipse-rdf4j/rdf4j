@@ -25,12 +25,12 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStore;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
-import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
-import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
-import org.elasticsearch.client.Client;
-import org.elasticsearch.cluster.health.ClusterHealthStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.HealthStatus;
+import co.elastic.clients.elasticsearch.cluster.HealthResponse;
 
 /**
  * <p>
@@ -101,11 +101,11 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 	}
 
-	public ElasticsearchStore(Client client, String index) {
+	public ElasticsearchStore(ElasticsearchClient client, String index) {
 		this(client, index, Cache.EAGER);
 	}
 
-	public ElasticsearchStore(Client client, String index, Cache cache) {
+	public ElasticsearchStore(ElasticsearchClient client, String index, Cache cache) {
 		this(new UnclosableClientProvider(new UserProvidedClientProvider(client)), index, cache);
 	}
 
@@ -152,20 +152,15 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 			}
 			try {
-				Client client = clientProvider.getClient();
+				ElasticsearchClient client = clientProvider.getClient();
 
-				ClusterHealthResponse clusterHealthResponse = client.admin()
-						.cluster()
-						.health(new ClusterHealthRequest())
-						.actionGet();
-				ClusterHealthStatus status = clusterHealthResponse.getStatus();
-				logger.info("Cluster status: {}", status.name());
+				HealthResponse clusterHealthResponse = client.cluster().health(b -> b);
+				HealthStatus status = clusterHealthResponse.status();
+				logger.info("Cluster status: {}", status.jsonValue());
 
-				if (status.equals(ClusterHealthStatus.GREEN) || status.equals(ClusterHealthStatus.YELLOW)) {
+				if (status == HealthStatus.Green || status == HealthStatus.Yellow) {
 					logger.info("Elasticsearch started!");
-
 					return;
-
 				}
 
 			} catch (Throwable e) {

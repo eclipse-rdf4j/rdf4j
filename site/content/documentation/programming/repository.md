@@ -131,11 +131,13 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 ...
-// ElasticsearchStore(String hostname, int port, String clusterName, String index)
-Repository repo = new SailRepository(new ElasticsearchStore("localhost", 9300, "elasticsearch", "rdf4j_index"));
+// ElasticsearchStore(String hostname, int httpPort, String clusterName, String index)
+Repository repo = new SailRepository(new ElasticsearchStore("localhost", 9200, "elasticsearch", "rdf4j_index"));
+// or reuse your own HTTP client:
+// Repository repo = new SailRepository(new ElasticsearchStore(elasticsearchClient, "rdf4j_index"));
 ```
 
-Remember to call `repo.shutdown()` when you are done with your ElasticsearchStore. This will close the underlying Elasticsearch Client.
+Remember to call `repo.shutdown()` when you are done with your ElasticsearchStore. This will close the underlying HTTP client if the store created it internally.
 
 ### RDF Schema inferencing
 

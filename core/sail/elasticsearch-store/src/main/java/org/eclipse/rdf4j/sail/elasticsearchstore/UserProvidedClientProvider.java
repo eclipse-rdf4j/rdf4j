@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
-import org.elasticsearch.client.Client;
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
 
 /**
  * Used by the user to provide an Elasticsearch Client to the ElasticsearchStore instead of providing host, port,
@@ -20,16 +20,16 @@ import org.elasticsearch.client.Client;
  */
 public class UserProvidedClientProvider implements ClientProvider {
 
-	final private Client client;
+	final private ElasticsearchClient client;
 
 	transient boolean closed;
 
-	public UserProvidedClientProvider(Client client) {
+	public UserProvidedClientProvider(ElasticsearchClient client) {
 		this.client = client;
 	}
 
 	@Override
-	public Client getClient() {
+	public ElasticsearchClient getClient() {
 		return client;
 	}
 

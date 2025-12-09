@@ -351,8 +351,8 @@ The Elasticsearch Store is an RDF4J database that persists all data directly in 
 The ElasticsearchStore takes the following configuration options:
 
 - `config:ess.hostname` (string). Specifies the hostname to use for connecting to Elasticsearch (required).
-- `config:ess.port` (int). Specifies the port number to use for connecting to Elasticsearch (optional).
-- `config:ess.clusterName` (string). Specifies the Elasticsearch cluster name (optional).
+- `config:ess.port` (int). Specifies the HTTP port number to use for connecting to Elasticsearch (optional, defaults to 9200 if omitted).
+- `config:ess.clusterName` (string). Specifies the Elasticsearch cluster name (optional). This is retained for backward compatibility but no longer affects client construction because the store now connects via HTTP using the official `elasticsearch-java` client.
 - `config:ess.index` (string). Specifies the index name to use for storage and  retrieval of data (optional).
 
 ##### Example configuration

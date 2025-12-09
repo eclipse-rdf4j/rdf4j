@@ -89,7 +89,7 @@ public class QueryBenchmark {
 		TestHelpers.openClient();
 
 		repository = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex",
+				new ElasticsearchStore(TestHelpers.HOST, TestHelpers.PORT, TestHelpers.CLUSTER, "testindex",
 						ExtensibleStore.Cache.NONE));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
