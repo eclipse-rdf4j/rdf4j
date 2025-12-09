@@ -85,6 +85,7 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.Sum;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -99,6 +100,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrExists;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGroupByElem;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrInlineTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNot;
@@ -2210,6 +2212,15 @@ public class TupleExprToIrConverter {
 
 	final class IRBuilder extends AbstractQueryModelVisitor<RuntimeException> {
 		private final IrBGP where = new IrBGP(false);
+		private final Map<String, IrInlineTriple> inlineTriples;
+
+		IRBuilder() {
+			this.inlineTriples = new LinkedHashMap<>();
+		}
+
+		IRBuilder(Map<String, IrInlineTriple> shared) {
+			this.inlineTriples = shared;
+		}
 
 		IrBGP build(final TupleExpr t) {
 			if (t == null) {
@@ -2219,6 +2230,10 @@ public class TupleExprToIrConverter {
 			return where;
 		}
 
+		private IRBuilder childBuilder() {
+			return new IRBuilder(inlineTriples);
+		}
+
 		private IrFilter buildFilterFromCondition(final ValueExpr condExpr) {
 			if (condExpr == null) {
 				return new IrFilter((String) null, false);
@@ -2226,7 +2241,7 @@ public class TupleExprToIrConverter {
 			// NOT EXISTS {...}
 			if (condExpr instanceof Not && ((Not) condExpr).getArg() instanceof Exists) {
 				final Exists ex = (Exists) ((Not) condExpr).getArg();
-				IRBuilder inner = new IRBuilder();
+				IRBuilder inner = childBuilder();
 				IrBGP bgp = inner.build(ex.getSubQuery());
 				return new IrFilter(new IrNot(new IrExists(bgp, ex.isVariableScopeChange()), false), false);
 			}
@@ -2234,7 +2249,7 @@ public class TupleExprToIrConverter {
 			if (condExpr instanceof Exists) {
 				final Exists ex = (Exists) condExpr;
 				final TupleExpr sub = ex.getSubQuery();
-				IRBuilder inner = new IRBuilder();
+				IRBuilder inner = childBuilder();
 				IrBGP bgp = inner.build(sub);
 				// If the root of the EXISTS subquery encodes an explicit variable-scope change in the
 				// algebra (e.g., StatementPattern/Join/Filter with "(new scope)"), mark the inner BGP
@@ -2254,6 +2269,18 @@ public class TupleExprToIrConverter {
 			final Var ctx = getContextVarSafe(sp);
 			final IrStatementPattern node = new IrStatementPattern(sp.getSubjectVar(), sp.getPredicateVar(),
 					sp.getObjectVar(), false);
+			if (sp.getSubjectVar() != null) {
+				IrInlineTriple inline = inlineTriples.get(sp.getSubjectVar().getName());
+				if (inline != null) {
+					node.setSubjectOverride(inline);
+				}
+			}
+			if (sp.getObjectVar() != null) {
+				IrInlineTriple inline = inlineTriples.get(sp.getObjectVar().getName());
+				if (inline != null) {
+					node.setObjectOverride(inline);
+				}
+			}
 			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
 				IrBGP inner = new IrBGP(false);
 				inner.add(node);
@@ -2264,12 +2291,22 @@ public class TupleExprToIrConverter {
 		}
 
 		@Override
+		public void meet(final TripleRef tr) {
+			Var exprVar = tr.getExprVar();
+			if (exprVar != null && exprVar.getName() != null) {
+				inlineTriples.put(exprVar.getName(),
+						new IrInlineTriple(tr.getSubjectVar(), tr.getPredicateVar(), tr.getObjectVar()));
+			}
+			// Do not emit a line; TripleRef only defines an inline RDF-star triple term.
+		}
+
+		@Override
 		public void meet(final Join join) {
 			// Build left/right in isolation so we can respect explicit variable-scope changes
 			// on either side by wrapping that side in its own GroupGraphPattern when needed.
-			IRBuilder left = new IRBuilder();
+			IRBuilder left = childBuilder();
 			IrBGP wl = left.build(join.getLeftArg());
-			IRBuilder right = new IRBuilder();
+			IRBuilder right = childBuilder();
 			IrBGP wr = right.build(join.getRightArg());
 
 			boolean wrapLeft = rootHasExplicitScope(join.getLeftArg());
@@ -2334,9 +2371,9 @@ public class TupleExprToIrConverter {
 		@Override
 		public void meet(final LeftJoin lj) {
 			if (lj.isVariableScopeChange()) {
-				IRBuilder left = new IRBuilder();
+				IRBuilder left = childBuilder();
 				IrBGP wl = left.build(lj.getLeftArg());
-				IRBuilder rightBuilder = new IRBuilder();
+				IRBuilder rightBuilder = childBuilder();
 				IrBGP wr = rightBuilder.build(lj.getRightArg());
 				if (lj.getCondition() != null) {
 					wr.add(buildFilterFromCondition(lj.getCondition()));
@@ -2359,7 +2396,7 @@ public class TupleExprToIrConverter {
 				return;
 			}
 			lj.getLeftArg().visit(this);
-			final IRBuilder rightBuilder = new IRBuilder();
+			final IRBuilder rightBuilder = childBuilder();
 			final IrBGP right = rightBuilder.build(lj.getRightArg());
 			if (lj.getCondition() != null) {
 				right.add(buildFilterFromCondition(lj.getCondition()));
@@ -2417,7 +2454,7 @@ public class TupleExprToIrConverter {
 			// the algebra. This ensures shapes like "FILTER EXISTS { { ... } }" are rendered
 			// with the inner braces as expected when a nested filter introduces a new scope.
 			if (f.isVariableScopeChange()) {
-				IRBuilder inner = new IRBuilder();
+				IRBuilder inner = childBuilder();
 				IrBGP innerWhere = inner.build(arg);
 				IrFilter irF = buildFilterFromCondition(f.getCondition());
 				innerWhere.add(irF);
@@ -2443,7 +2480,7 @@ public class TupleExprToIrConverter {
 			if (leftIsU && rightIsU) {
 				final IrUnion irU = new IrUnion(u.isVariableScopeChange());
 				irU.setNewScope(u.isVariableScopeChange());
-				IRBuilder left = new IRBuilder();
+				IRBuilder left = childBuilder();
 				IrBGP wl = left.build(u.getLeftArg());
 				if (rootHasExplicitScope(u.getLeftArg()) && !wl.getLines().isEmpty()) {
 					IrBGP sub = new IrBGP(true);
@@ -2454,7 +2491,7 @@ public class TupleExprToIrConverter {
 				} else {
 					irU.addBranch(wl);
 				}
-				IRBuilder right = new IRBuilder();
+				IRBuilder right = childBuilder();
 				IrBGP wr = right.build(u.getRightArg());
 				if (rootHasExplicitScope(u.getRightArg()) && !wr.getLines().isEmpty()) {
 					IrBGP sub = new IrBGP(false);
@@ -2476,7 +2513,7 @@ public class TupleExprToIrConverter {
 			final IrUnion irU = new IrUnion(u.isVariableScopeChange());
 			irU.setNewScope(u.isVariableScopeChange());
 			for (TupleExpr b : branches) {
-				IRBuilder bld = new IRBuilder();
+				IRBuilder bld = childBuilder();
 				IrBGP wb = bld.build(b);
 				if (rootHasExplicitScope(b) && !wb.getLines().isEmpty()) {
 					IrBGP sub = new IrBGP(true);
@@ -2496,7 +2533,7 @@ public class TupleExprToIrConverter {
 
 		@Override
 		public void meet(final Service svc) {
-			IRBuilder inner = new IRBuilder();
+			IRBuilder inner = childBuilder();
 			IrBGP w = inner.build(svc.getArg());
 			// No conversion-time fusion; rely on pipeline transforms to normalize SERVICE bodies
 			IrService irSvc = new IrService(renderVarOrValue(svc.getServiceRef()), svc.isSilent(), w, false);
@@ -2579,9 +2616,9 @@ public class TupleExprToIrConverter {
 		public void meet(final Difference diff) {
 			// Build left and right in isolation so we can respect variable-scope changes by
 			// grouping them as a unit when required.
-			IRBuilder left = new IRBuilder();
+			IRBuilder left = childBuilder();
 			IrBGP leftWhere = left.build(diff.getLeftArg());
-			IRBuilder right = new IRBuilder();
+			IRBuilder right = childBuilder();
 			IrBGP rightWhere = right.build(diff.getRightArg());
 			if (diff.isVariableScopeChange()) {
 				IrBGP group = new IrBGP(false);

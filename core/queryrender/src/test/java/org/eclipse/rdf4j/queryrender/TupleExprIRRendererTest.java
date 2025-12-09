@@ -437,11 +437,15 @@ public class TupleExprIRRendererTest {
 
 	@Test
 	void blank_node_square_brackets_render_as_empty_bnode() {
-		String q = "SELECT * WHERE {\n" +
-				"  ?s ex:p [] .\n" +
+		String q = "SELECT ?s1 ?s2 WHERE {\n" +
+				"  ?s1 ex:p [] .\n" +
+				"  _:bnode1 ex:p [] .\n" +
+				"  ?s2 ex:p [] .\n" +
+				"  [] ex:p _:bnode1 .\n" +
+				"  [] ex:p _:bnode1 .\n" +
 				"}";
 		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertTrue(rendered.contains("[]"), "[] should render as an empty blank node, not a labeled _:anon");
+		assertSameSparqlQuery(q, cfg(), true);
 	}
 
 	@Test
