@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.endpoint.provider;
 
-import org.apache.http.client.config.CookieSpecs;
-import org.apache.http.client.config.RequestConfig;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
