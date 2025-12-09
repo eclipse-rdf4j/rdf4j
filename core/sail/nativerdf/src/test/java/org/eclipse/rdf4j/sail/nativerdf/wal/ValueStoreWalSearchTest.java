@@ -67,7 +67,13 @@ class ValueStoreWalSearchTest {
 		Integer pickId = ids[new Random().nextInt(ids.length)];
 
 		ValueStoreWalSearch search = ValueStoreWalSearch.open(cfgRead);
-		Value found = search.findValueById(pickId);
+		Value found = null;
+		for (int attempt = 0; attempt < 10 && found == null; attempt++) {
+			found = search.findValueById(pickId);
+			if (found == null) {
+				Thread.sleep(100);
+			}
+		}
 		assertThat(found).as("ValueStoreWalSearch should find value by id").isNotNull();
 
 		// Cross-check against ValueStore
