@@ -250,7 +250,8 @@ public class IrBGP extends IrNode {
 		}
 		if (v != null && v.isAnonymous()) {
 			String name = v.getName();
-			if (name != null && (name.startsWith("_anon_bnode_") || name.startsWith("anon_bnode_"))) {
+			assert name == null || !name.startsWith("anon_");
+			if (name != null && name.startsWith("_anon_bnode_")) {
 				return "[]";
 			}
 		}
@@ -269,19 +270,21 @@ public class IrBGP extends IrNode {
 		if (n == null) {
 			return false;
 		}
-		if (n.startsWith("_anon_path_") || n.startsWith("anon_path_")) {
+		assert !n.startsWith("anon_");
+
+		if (n.startsWith("_anon_path_")) {
 			return false;
 		}
-		return n.startsWith("_anon_bnode_") || n.startsWith("anon_bnode_")
-				|| n.startsWith("_anon_user_bnode_") || n.startsWith("anon_user_bnode_");
+		return n.startsWith("_anon_bnode_") || n.startsWith("_anon_user_bnode_");
 	}
 
 	private boolean isAutoAnonBNodeName(String n) {
 		if (n == null) {
 			return false;
 		}
-		return (n.startsWith("_anon_bnode_") || n.startsWith("anon_bnode_"))
-				&& !n.startsWith("_anon_path_") && !n.startsWith("anon_path_");
+		assert !n.startsWith("anon_");
+
+		return n.startsWith("_anon_bnode_");
 	}
 
 	private static final class InlinePrinter implements IrPrinter {

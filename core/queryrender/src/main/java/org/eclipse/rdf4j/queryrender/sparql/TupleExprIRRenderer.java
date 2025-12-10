@@ -273,7 +273,7 @@ public class TupleExprIRRenderer {
 		reset();
 		BNodeValidator.validate(tupleExpr, cfg);
 		final IrSelect ir = toIRSelect(tupleExpr);
-		final boolean asSub = (mode == RenderMode.SUBSELECT);
+		final boolean asSub = mode == RenderMode.SUBSELECT;
 		String rendered = render(ir, dataset, asSub);
 //		verifyRoundTrip(tupleExpr, rendered);
 		return rendered;
@@ -387,8 +387,10 @@ public class TupleExprIRRenderer {
 			if (name == null) {
 				return;
 			}
-			if (name.startsWith("_anon_bnode_") || name.startsWith("anon_bnode_")
-					|| name.startsWith("_anon_user_bnode_") || name.startsWith("anon_user_bnode_")) {
+
+			assert !name.startsWith("anon_");
+
+			if (name.startsWith("_anon_bnode_") || name.startsWith("_anon_user_bnode_")) {
 				throw new IllegalArgumentException("Anonymous blank node used in expression context: " + name);
 			}
 		}
@@ -424,9 +426,10 @@ public class TupleExprIRRenderer {
 		if (v.hasValue()) {
 			return convertValueToString(v.getValue());
 		}
+
 		// Anonymous blank node placeholder variables originating from [] should render as [].
-		if (v.isAnonymous() && v.getName() != null
-				&& (v.getName().startsWith(ANON_BNODE_PREFIX) || v.getName().startsWith("anon_bnode_"))) {
+		if (v.isAnonymous() && v.getName() != null && v.getName().startsWith(ANON_BNODE_PREFIX)) {
+
 			if (cfg.preserveAnonBNodeIdentity) {
 				return "_:" + anonBnodeLabels.computeIfAbsent(v.getName(),
 						TupleExprIRRenderer::deriveStableLabelFromName);
@@ -434,14 +437,14 @@ public class TupleExprIRRenderer {
 			return "[]";
 		}
 		// User-specified blank nodes (_:bnode1) are encoded with the _anon_user_bnode_ prefix; restore the label.
-		if (v.isAnonymous() && v.getName() != null
-				&& (v.getName().startsWith(USER_BNODE_PREFIX) || v.getName().startsWith("anon_user_bnode_"))) {
+		if (v.isAnonymous() && v.getName() != null && v.getName().startsWith(USER_BNODE_PREFIX)) {
+
 			String existing = userBnodeLabels.get(v.getName());
 			if (existing == null) {
 				if (cfg.preserveUserBNodeLabels || cfg.deterministicBNodeLabels) {
 					existing = deriveStableLabelFromName(v.getName());
 				} else {
-					existing = "bnode" + (bnodeCounter++);
+					existing = "bnode" + bnodeCounter++;
 				}
 				userBnodeLabels.put(v.getName(), existing);
 			}
@@ -468,23 +471,24 @@ public class TupleExprIRRenderer {
 			return "bnode";
 		}
 		String trimmed = name;
+
+		assert !trimmed.startsWith("anon_");
+
 		if (trimmed.startsWith(USER_BNODE_PREFIX)) {
 			trimmed = trimmed.substring(USER_BNODE_PREFIX.length());
 		} else if (trimmed.startsWith(ANON_BNODE_PREFIX)) {
 			trimmed = trimmed.substring(ANON_BNODE_PREFIX.length());
-		} else if (trimmed.startsWith("anon_user_bnode_")) {
-			trimmed = trimmed.substring("anon_user_bnode_".length());
-		} else if (trimmed.startsWith("anon_bnode_")) {
-			trimmed = trimmed.substring("anon_bnode_".length());
 		}
+
 		if (trimmed.isEmpty()) {
 			return "bnode";
 		}
+
 		if (trimmed.matches("[A-Za-z0-9_-]+")) {
 			return trimmed.startsWith("bnode") ? trimmed : "bnode" + trimmed;
 		}
-		String s = "bnode" + Integer.toHexString(trimmed.hashCode());
-		return s;
+
+		return "bnode" + Integer.toHexString(trimmed.hashCode());
 	}
 
 	// ---- Aggregates ----
