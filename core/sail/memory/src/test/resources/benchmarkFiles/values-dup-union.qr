@@ -1,0 +1,26 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX dct:  <http://purl.org/dc/terms/>
+PREFIX eu-lang: <http://publications.europa.eu/resource/authority/language/>
+
+SELECT ?dataset ?dist ?lang ?fmt
+WHERE {
+    VALUES (?lang ?fmt) {
+        (eu-lang:ENG "text/csv")
+        (eu-lang:FRA "application/pdf")
+        (eu-lang:NLD "text/xml")
+    }
+
+    {
+        ?dataset a dcat:Dataset ;
+                 dct:language ?lang ;
+                 dcat:distribution ?dist .
+        ?dist dcat:mediaType ?fmt .
+    }
+    UNION
+    {
+        ?dataset a dcat:Dataset ;
+                 dct:language ?lang ;
+                 dcat:distribution ?dist .
+        ?dist dct:format ?fmt .
+    }
+}

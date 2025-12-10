@@ -107,7 +107,7 @@ class MemorySailStore implements SailStore {
 	 */
 	private final MemStatementList statements = new MemStatementList(256);
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator = new SketchBasedJoinEstimator(this,
-			SketchBasedJoinEstimator.suggestNominalEntries(), 1000, 2);
+			SketchBasedJoinEstimator.suggestNominalEntries(), 10000, 1);
 
 	/**
 	 * This gets set to `true` when we add our first inferred statement. If the value is `false` we guarantee that there

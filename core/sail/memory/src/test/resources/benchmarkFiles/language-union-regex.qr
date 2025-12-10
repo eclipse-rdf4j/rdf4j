@@ -1,0 +1,22 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX dct: <http://purl.org/dc/terms/>
+PREFIX eu-lang: <http://publications.europa.eu/resource/authority/language/>
+
+SELECT ?dataset ?lang ?text
+WHERE {
+    VALUES ?lang { eu-lang:ENG eu-lang:FRA eu-lang:NLD }
+
+    ?dataset a dcat:Dataset ;
+             dct:language ?lang .
+
+    {
+        ?dataset dct:title ?text
+    }
+    UNION
+    {
+        ?dataset dct:description ?text
+    }
+
+    FILTER (CONTAINS(LCASE(STR(?text)), "data") || REGEX(STR(?text), "geo", "i"))
+}
+LIMIT 200

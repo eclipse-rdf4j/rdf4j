@@ -42,11 +42,11 @@ import org.openjdk.jmh.annotations.Warmup;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 5)
+@Warmup(iterations = 1)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms4G", "-Xmx4G" })
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G" })
 //@Fork(value = 1, jvmArgs = {"-Xms1G", "-Xmx1G", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 5)
+@Measurement(iterations = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class QueryBenchmark {
 
@@ -72,6 +72,19 @@ public class QueryBenchmark {
 	private static final String wild_card_chain_with_common_ends;
 	private static final String sub_select;
 	private static final String multiple_sub_select;
+	private static final String contact_point_path_chase;
+	private static final String distribution_media_contrast;
+	private static final String top_titles_by_length;
+	private static final String language_union_regex;
+	private static final String publisher_distribution_aggregation;
+	private static final String join_reorder_stress;
+	private static final String optional_filter_pushdown;
+	private static final String star_path_fanout;
+	private static final String union_publisher_dedup;
+	private static final String language_group_having;
+	private static final String overlapping_optionals_wide;
+	private static final String overlapping_optionals_filtered;
+	private static final String values_dup_union;
 
 	static {
 		try {
@@ -108,6 +121,33 @@ public class QueryBenchmark {
 					getResourceAsStream("benchmarkFiles/sub-select.qr"), StandardCharsets.UTF_8);
 			multiple_sub_select = IOUtils.toString(
 					getResourceAsStream("benchmarkFiles/multiple-sub-select.qr"), StandardCharsets.UTF_8);
+			contact_point_path_chase = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/contact-point-path-chase.qr"), StandardCharsets.UTF_8);
+			distribution_media_contrast = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/distribution-media-contrast.qr"), StandardCharsets.UTF_8);
+			top_titles_by_length = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/top-titles-by-length.qr"), StandardCharsets.UTF_8);
+			language_union_regex = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/language-union-regex.qr"), StandardCharsets.UTF_8);
+			publisher_distribution_aggregation = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/publisher-distribution-aggregation.qr"),
+					StandardCharsets.UTF_8);
+			join_reorder_stress = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/join-reorder-stress.qr"), StandardCharsets.UTF_8);
+			optional_filter_pushdown = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/optional-filter-pushdown.qr"), StandardCharsets.UTF_8);
+			star_path_fanout = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/star-path-fanout.qr"), StandardCharsets.UTF_8);
+			union_publisher_dedup = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/union-publisher-dedup.qr"), StandardCharsets.UTF_8);
+			language_group_having = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/language-group-having.qr"), StandardCharsets.UTF_8);
+			overlapping_optionals_wide = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/overlapping-optionals-wide.qr"), StandardCharsets.UTF_8);
+			overlapping_optionals_filtered = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/overlapping-optionals-filtered.qr"), StandardCharsets.UTF_8);
+			values_dup_union = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/values-dup-union.qr"), StandardCharsets.UTF_8);
 			query10 = IOUtils.toString(
 					getResourceAsStream("benchmarkFiles/query10.qr"), StandardCharsets.UTF_8);
 
@@ -348,6 +388,123 @@ public class QueryBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return count(connection
 					.prepareTupleQuery(multiple_sub_select)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long distributionMediaContrast() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(distribution_media_contrast)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long contactPointPathChase() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(contact_point_path_chase)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long topTitlesByLength() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(top_titles_by_length)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long languageUnionRegex() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(language_union_regex)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long publisherDistributionAggregation() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(publisher_distribution_aggregation)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long joinReorderStress() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(join_reorder_stress)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long optionalFilterPushdown() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(optional_filter_pushdown)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long starPathFanout() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(star_path_fanout)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long unionPublisherDedup() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(union_publisher_dedup)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long languageGroupHaving() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(language_group_having)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long overlappingOptionalsWide() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(overlapping_optionals_wide)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long overlappingOptionalsFiltered() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(overlapping_optionals_filtered)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public long valuesDupUnion() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return count(connection
+					.prepareTupleQuery(values_dup_union)
 					.evaluate());
 		}
 	}

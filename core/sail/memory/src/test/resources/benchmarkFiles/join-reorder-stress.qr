@@ -1,0 +1,25 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX dct: <http://purl.org/dc/terms/>
+PREFIX eu-lang: <http://publications.europa.eu/resource/authority/language/>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+
+SELECT ?dataset ?lang ?title ?format
+WHERE {
+
+    ?x ?y ?z .
+    ?dataset dcat:distribution ?dist .
+    OPTIONAL { ?dist dct:format ?format }
+
+    ?dataset a dcat:Dataset ;
+             dct:language ?lang ;
+             dct:title ?title  .
+
+
+    FILTER (?lang = eu-lang:ENG || ?lang = eu-lang:FRA)
+    FILTER regex(str(?title), "data", "i")
+
+    ?dataset ?anyPred ?anyObj .
+    ?dist ?p ?z .
+
+}
+limit 100000

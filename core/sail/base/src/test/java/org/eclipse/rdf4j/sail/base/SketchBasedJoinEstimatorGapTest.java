@@ -153,9 +153,4 @@ class SketchBasedJoinEstimatorGapTest {
 		assertEquals(0.0, sz, 0.0001);
 	}
 
-	private long timed(Runnable r) {
-		long t0 = System.nanoTime();
-		r.run();
-		return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0);
-	}
 }

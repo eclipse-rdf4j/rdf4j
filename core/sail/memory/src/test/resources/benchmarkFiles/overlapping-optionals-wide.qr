@@ -1,0 +1,26 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX dct:  <http://purl.org/dc/terms/>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX vcard: <http://www.w3.org/2006/vcard/ns#>
+
+SELECT ?dataset ?title ?format ?license ?rights ?page ?email ?phone
+WHERE {
+    ?dataset a dcat:Dataset .
+    OPTIONAL {
+        ?dataset dcat:distribution ?dist .
+        OPTIONAL { ?dist dct:format ?format }
+        OPTIONAL { ?dist dct:license ?license }
+        OPTIONAL { ?dist dct:rights ?rights }
+        OPTIONAL { ?dist foaf:page ?page }
+    }
+    OPTIONAL {
+        ?dataset dcat:distribution ?dist .
+        OPTIONAL { ?dist dct:format ?format }              # overlaps previous OPTIONAL
+        OPTIONAL { ?dist dct:license ?license }            # overlaps previous OPTIONAL
+        OPTIONAL { ?dist dct:rights ?rights }              # overlaps previous OPTIONAL
+        OPTIONAL { ?dist dcat:contactPoint ?cp .
+                   OPTIONAL { ?cp vcard:hasEmail ?email }
+                   OPTIONAL { ?cp vcard:hasTelephone ?phone } }
+    }
+    OPTIONAL { ?dataset dct:title ?title }
+}

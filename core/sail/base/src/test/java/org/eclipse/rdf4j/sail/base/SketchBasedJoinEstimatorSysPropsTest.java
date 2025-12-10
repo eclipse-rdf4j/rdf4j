@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.base;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.lang.reflect.Field;
@@ -82,25 +81,6 @@ class SketchBasedJoinEstimatorSysPropsTest {
 	}
 
 	@Test
-	void stalenessSlaOverriddenBySystemProperty() throws Exception {
-		setProp("stalenessAgeSlaMillis", Long.toString(3_600_000L)); // 1 hour
-
-		SketchBasedJoinEstimator.Config cfg = SketchBasedJoinEstimator.Config.defaults()
-				.withNominalEntries(64)
-				.withThrottleEveryN(1)
-				.withThrottleMillis(0)
-				.withStalenessAgeSlaMillis(1); // would make it stale fast, but sysprop overrides
-
-		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, cfg);
-		store.addAll(List.of(st(s1, p1, o1)));
-		est.rebuildOnceSlow();
-
-		Thread.sleep(5); // small age; with SLA 1h, age score remains ~0
-
-		assertFalse(est.isStale(0.1));
-	}
-
-	@Test
 	void allScalarPropertiesReflected() throws Exception {
 		// Set a full set of overrides
 		setProp("nominalEntries", "33");
@@ -111,13 +91,11 @@ class SketchBasedJoinEstimatorSysPropsTest {
 		setProp("refreshSleepMillis", "123");
 		setProp("defaultContextString", "urn:sys-default");
 		setProp("roundJoinEstimates", "false");
-		setProp("stalenessAgeSlaMillis", "3210");
-		setProp("stalenessWeightAge", "0.11");
-		setProp("stalenessWeightDelta", "0.22");
-		setProp("stalenessWeightTomb", "0.33");
-		setProp("stalenessWeightChurn", "0.44");
-		setProp("stalenessDeltaCap", "4.2");
-		setProp("stalenessChurnMultiplier", "2.5");
+		setProp("churnSampleMin", "17");
+		setProp("churnSamplePercent", "0.25");
+		setProp("churnSampleMax", "123");
+		setProp("churnReaddThreshold", "0.4");
+		setProp("churnRemovalRatioThreshold", "0.6");
 
 		SketchBasedJoinEstimator.Config cfg = SketchBasedJoinEstimator.Config.defaults()
 				.withNominalEntries(128)
@@ -126,10 +104,6 @@ class SketchBasedJoinEstimatorSysPropsTest {
 				.withRefreshSleepMillis(9999)
 				.withDefaultContext("urn:mine")
 				.withRoundJoinEstimates(true)
-				.withStalenessAgeSlaMillis(1)
-				.withStalenessWeights(0.2, 0.2, 0.2, 0.4)
-				.withStalenessDeltaCap(10.0)
-				.withStalenessChurnMultiplier(3.0)
 				.withSketchK(999);
 
 		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, cfg);
@@ -140,13 +114,11 @@ class SketchBasedJoinEstimatorSysPropsTest {
 		assertEquals(9L, getLong(est, "throttleMillis"));
 		assertEquals(123L, getLong(est, "refreshSleepMillis"));
 		assertEquals("urn:sys-default", getString(est, "defaultContextString"));
-		assertEquals(3210L, getLong(est, "stalenessAgeSlaMs"));
-		assertEquals(0.11, getDouble(est, "wAge"), 1e-9);
-		assertEquals(0.22, getDouble(est, "wDelta"), 1e-9);
-		assertEquals(0.33, getDouble(est, "wTomb"), 1e-9);
-		assertEquals(0.44, getDouble(est, "wChurn"), 1e-9);
-		assertEquals(4.2, getDouble(est, "deltaCap"), 1e-9);
-		assertEquals(2.5, getDouble(est, "churnMultiplier"), 1e-9);
+		assertEquals(17, getInt(est, "churnSampleMin"));
+		assertEquals(123, getInt(est, "churnSampleMax"));
+		assertEquals(0.25, getDouble(est, "churnSamplePercent"), 1e-9);
+		assertEquals(0.4, getDouble(est, "churnReaddThreshold"), 1e-9);
+		assertEquals(0.6, getDouble(est, "churnRemovalRatioThreshold"), 1e-9);
 		assertEquals(false, getBoolean(est, "roundJoinEstimates"));
 
 		// Assert derived in State (k and buckets)

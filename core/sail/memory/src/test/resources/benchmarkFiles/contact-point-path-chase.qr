@@ -1,0 +1,10 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX dct: <http://purl.org/dc/terms/>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX vcard: <http://www.w3.org/2006/vcard/ns#>
+
+SELECT ?dataset ?email
+WHERE {
+    ?dataset a dcat:Dataset .
+    ?dataset (dcat:contactPoint/vcard:hasEmail | dct:publisher/foaf:mbox)+ ?email .
+}

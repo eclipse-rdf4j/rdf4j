@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -75,23 +76,25 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
-	void stalenessAgeSlaInfluencesScore() throws Exception {
+	void stalenessDoesNotTriggerFromAgeAlone() throws Exception {
 		SketchBasedJoinEstimator.Config cfg = SketchBasedJoinEstimator.Config.defaults()
 				.withNominalEntries(64)
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
-				.withStalenessAgeSlaMillis(1); // extremely small SLA to quickly ramp age score
+				.withChurnSampleMin(0)
+				.withChurnSamplePercent(0.0)
+				.withChurnSampleMax(0);
 
 		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, cfg);
 
-		// Load one statement and publish snapshot
+		// Load one statement and publish snapshot (no churn events after rebuild)
 		store.addAll(List.of(st(s1, p1, o1)));
 		rebuild(est);
 
-		// Wait a tiny bit so ageMillis > SLA
+		// Wait so age grows; old age-based staleness would fire here
 		Thread.sleep(5);
 
-		// With SLA=1ms and default weights, age contribution alone should push score above 0.1
-		assertTrue(est.isStale(0.1));
+		// No churn observed, so estimator should not be considered stale
+		assertFalse(est.isStale(0.01));
 	}
 }
