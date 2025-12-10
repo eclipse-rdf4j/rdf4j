@@ -287,6 +287,14 @@ public class IrBGP extends IrNode {
 		return n.startsWith("_anon_bnode_");
 	}
 
+	private boolean isAutoAnonBNodeName(String n) {
+		if (n == null) {
+			return false;
+		}
+		return (n.startsWith("_anon_bnode_") || n.startsWith("anon_bnode_"))
+				&& !n.startsWith("_anon_path_") && !n.startsWith("anon_path_");
+	}
+
 	private static final class InlinePrinter implements IrPrinter {
 		private final StringBuilder out;
 		private final java.util.function.Function<Var, String> fmt;
