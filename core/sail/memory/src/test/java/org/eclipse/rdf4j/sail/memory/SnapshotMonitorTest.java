@@ -26,7 +26,7 @@ public class SnapshotMonitorTest {
 	@Test
 	@Timeout(60)
 	public void testAutomaticCleanupDataset() throws InterruptedException {
-		try (MemorySailStore memorySailStore = new MemorySailStore(false)) {
+		try (MemorySailStore memorySailStore = new MemorySailStore(false, -1)) {
 
 			try (SailSource explicitSailSource = memorySailStore.getExplicitSailSource()) {
 				getAndAbandonDataset(explicitSailSource, memorySailStore.snapshotMonitor);
@@ -46,7 +46,7 @@ public class SnapshotMonitorTest {
 	@Test
 	@Timeout(60)
 	public void testAutomaticCleanupSink() throws InterruptedException {
-		try (MemorySailStore memorySailStore = new MemorySailStore(false)) {
+		try (MemorySailStore memorySailStore = new MemorySailStore(false, -1)) {
 
 			try (SailSource explicitSailSource = memorySailStore.getExplicitSailSource()) {
 				getAndAbandonSink(explicitSailSource, memorySailStore.snapshotMonitor);
@@ -65,7 +65,7 @@ public class SnapshotMonitorTest {
 
 	@Test
 	public void testReservationAndReleaseDataset() {
-		try (MemorySailStore memorySailStore = new MemorySailStore(false)) {
+		try (MemorySailStore memorySailStore = new MemorySailStore(false, -1)) {
 
 			try (SailSource explicitSailSource = memorySailStore.getExplicitSailSource()) {
 				try (SailDataset dataset = explicitSailSource.dataset(IsolationLevels.SNAPSHOT)) {
@@ -85,7 +85,7 @@ public class SnapshotMonitorTest {
 
 	@Test
 	public void testReservationAndReleaseDatasetNone() {
-		try (MemorySailStore memorySailStore = new MemorySailStore(false)) {
+		try (MemorySailStore memorySailStore = new MemorySailStore(false, -1)) {
 
 			try (SailSource explicitSailSource = memorySailStore.getExplicitSailSource()) {
 				try (SailDataset dataset = explicitSailSource.dataset(IsolationLevels.NONE)) {
@@ -100,7 +100,7 @@ public class SnapshotMonitorTest {
 
 	@Test
 	public void testReservationAndReleaseSinkSerializable() {
-		try (MemorySailStore memorySailStore = new MemorySailStore(false)) {
+		try (MemorySailStore memorySailStore = new MemorySailStore(false, -1)) {
 
 			try (SailSource explicitSailSource = memorySailStore.getExplicitSailSource()) {
 				try (SailSink sink = explicitSailSource.sink(IsolationLevels.SERIALIZABLE)) {
@@ -119,7 +119,7 @@ public class SnapshotMonitorTest {
 
 	@Test
 	public void testReservationAndReleaseSink() {
-		try (MemorySailStore memorySailStore = new MemorySailStore(false)) {
+		try (MemorySailStore memorySailStore = new MemorySailStore(false, -1)) {
 
 			try (SailSource explicitSailSource = memorySailStore.getExplicitSailSource()) {
 				try (SailSink sink = explicitSailSource.sink(IsolationLevels.SNAPSHOT)) {

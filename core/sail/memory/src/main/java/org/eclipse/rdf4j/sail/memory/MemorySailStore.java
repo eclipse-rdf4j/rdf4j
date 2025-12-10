@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.memory.model.MemBNode;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
@@ -105,6 +106,8 @@ class MemorySailStore implements SailStore {
 	 * List containing all available statements.
 	 */
 	private final MemStatementList statements = new MemStatementList(256);
+	private final SketchBasedJoinEstimator sketchBasedJoinEstimator = new SketchBasedJoinEstimator(this,
+			SketchBasedJoinEstimator.suggestNominalEntries(), 1000, 2);
 
 	/**
 	 * This gets set to `true` when we add our first inferred statement. If the value is `false` we guarantee that there
@@ -151,7 +154,15 @@ class MemorySailStore implements SailStore {
 	private final Object snapshotCleanupThreadLockObject = new Object();
 
 	public MemorySailStore(boolean debug) {
+		this(debug, 3);
+	}
+
+	public MemorySailStore(boolean debug, int stalenessThresholdOfSketchBasedJoinEstimator) {
 		snapshotMonitor = new SnapshotMonitor(debug);
+		if (stalenessThresholdOfSketchBasedJoinEstimator >= 0) {
+			sketchBasedJoinEstimator.rebuildOnceSlow();
+			sketchBasedJoinEstimator.startBackgroundRefresh(stalenessThresholdOfSketchBasedJoinEstimator);
+		}
 	}
 
 	@Override
@@ -161,6 +172,8 @@ class MemorySailStore implements SailStore {
 
 	@Override
 	public void close() {
+		sketchBasedJoinEstimator.stop();
+
 		synchronized (snapshotCleanupThreadLockObject) {
 			if (snapshotCleanupThread != null) {
 				snapshotCleanupThread.interrupt();
@@ -179,7 +192,7 @@ class MemorySailStore implements SailStore {
 
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
-		return new MemEvaluationStatistics(valueFactory, statements);
+		return new MemEvaluationStatistics(valueFactory, statements, sketchBasedJoinEstimator);
 	}
 
 	@Override
@@ -796,6 +809,7 @@ class MemorySailStore implements SailStore {
 				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
 						&& toDeprecate.isExplicit() == explicit) {
 					toDeprecate.setTillSnapshot(nextSnapshot);
+					sketchBasedJoinEstimator.deleteStatement(toDeprecate);
 				}
 			} else if (statement instanceof LinkedHashModel.ModelStatement
 					&& ((LinkedHashModel.ModelStatement) statement).getStatement() instanceof MemStatement) {
@@ -805,6 +819,7 @@ class MemorySailStore implements SailStore {
 				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
 						&& toDeprecate.isExplicit() == explicit) {
 					toDeprecate.setTillSnapshot(nextSnapshot);
+					sketchBasedJoinEstimator.deleteStatement(toDeprecate);
 				}
 			} else {
 				try (CloseableIteration<MemStatement> iter = createStatementIterator(
@@ -812,6 +827,7 @@ class MemorySailStore implements SailStore {
 						statement.getContext())) {
 					while (iter.hasNext()) {
 						MemStatement st = iter.next();
+						sketchBasedJoinEstimator.deleteStatement(st);
 						st.setTillSnapshot(nextSnapshot);
 					}
 				} catch (InterruptedException e) {
@@ -863,6 +879,7 @@ class MemorySailStore implements SailStore {
 			statements.add(st);
 			st.addToComponentLists();
 			invalidateCache();
+			sketchBasedJoinEstimator.addStatement(st);
 			return st;
 		}
 
@@ -926,6 +943,8 @@ class MemorySailStore implements SailStore {
 				while (iter.hasNext()) {
 					deprecated = true;
 					MemStatement st = iter.next();
+					sketchBasedJoinEstimator.deleteStatement(st);
+
 					st.setTillSnapshot(nextSnapshot);
 				}
 			} catch (InterruptedException e) {
