@@ -68,6 +68,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	@Experimental
 	public static boolean USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN = true;
 
+	private static final int FULL_PAIRWISE_START_LIMIT = 6;
+
 	protected final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
 	private final TripleSource tripleSource;
@@ -360,6 +362,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			};
 
 			while (!tupleExprs.isEmpty()) {
+				if (ret.isEmpty()) {
+					TupleExpr bestStart = selectBestStartingExpr(tupleExprs, getCard);
+					if (bestStart != null) {
+						tupleExprs.remove(bestStart);
+						ret.addLast(bestStart);
+						continue;
+					}
+				}
+
 				// If ret is empty or next isn’t a StatementPattern, just drain in original order
 				if (ret.isEmpty() || !(tupleExprs.get(0) instanceof StatementPattern)) {
 					ret.addLast(tupleExprs.remove(0));
@@ -397,6 +408,60 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			return ret;
+		}
+
+		private TupleExpr selectBestStartingExpr(List<TupleExpr> tupleExprs,
+				BiFunction<TupleExpr, TupleExpr, Double> getCard) {
+			List<TupleExpr> candidates = new ArrayList<>();
+			for (TupleExpr tupleExpr : tupleExprs) {
+				if (statementPatternWithMinimumOneConstant(tupleExpr)) {
+					candidates.add(tupleExpr);
+				}
+			}
+
+			if (candidates.size() < 2) {
+				// we don't have multiple candidates, so there is nothing to compare against
+				return null;
+			}
+
+			Map<TupleExpr, Double> singleCard = new HashMap<>(candidates.size());
+			for (TupleExpr candidate : candidates) {
+				singleCard.put(candidate, statistics.getCardinality(candidate));
+			}
+
+			List<TupleExpr> primary = new ArrayList<>(candidates);
+			if (primary.size() > FULL_PAIRWISE_START_LIMIT) {
+				primary.sort(Comparator.comparingDouble(singleCard::get));
+				primary = new ArrayList<>(primary.subList(0, Math.min(3, primary.size())));
+			}
+
+			TupleExpr bestA = null;
+			TupleExpr bestB = null;
+			double bestCost = Double.MAX_VALUE;
+
+			for (TupleExpr a : primary) {
+				for (TupleExpr b : candidates) {
+					if (a == b) {
+						continue;
+					}
+
+					double cost = getCard.apply(a, b);
+					if (cost < bestCost) {
+						bestCost = cost;
+						bestA = a;
+						bestB = b;
+					}
+				}
+			}
+
+			if (bestA == null) {
+				return null;
+			}
+
+			double cardA = singleCard.get(bestA);
+			double cardB = singleCard.get(bestB);
+
+			return cardA <= cardB ? bestA : bestB;
 		}
 
 		private void optimizeInNewScope(List<TupleExpr> subSelects) {
