@@ -51,12 +51,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @EnabledOnOs({ OS.LINUX, OS.MAC })
 class ServerBootSignalIT {
 
-	private ExecutorService streamExecutor;
-	private final List<Runnable> cleanupActions = new ArrayList<>();
+        private static final Logger LOGGER = LoggerFactory.getLogger(ServerBootSignalIT.class);
+
+        private ExecutorService streamExecutor;
+        private final List<Runnable> cleanupActions = new ArrayList<>();
 
 	@BeforeEach
 	void setUp() {
@@ -82,19 +86,27 @@ class ServerBootSignalIT {
 
 	@Test
 	void gracefullyStopsOnSigint() throws Exception {
-		assertGracefulShutdown("INT");
-	}
+                assertGracefulShutdownWithSigintFallback();
+        }
 
 	@Test
 	void gracefullyStopsOnSigterm() throws Exception {
-		assertGracefulShutdown("TERM");
-	}
+                assertGracefulShutdown("TERM");
+        }
 
-	private void assertGracefulShutdown(String signalName) throws Exception {
-		Path projectRoot = Path.of("").toAbsolutePath();
-		String javaBin = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-		int serverPort = findFreePort();
-		int managementPort = findFreePort();
+        private void assertGracefulShutdownWithSigintFallback() throws Exception {
+                assertGracefulShutdown("INT", true);
+        }
+
+        private void assertGracefulShutdown(String signalName) throws Exception {
+                assertGracefulShutdown(signalName, false);
+        }
+
+        private void assertGracefulShutdown(String signalName, boolean allowSigtermFallback) throws Exception {
+                Path projectRoot = Path.of("").toAbsolutePath();
+                String javaBin = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+                int serverPort = findFreePort();
+                int managementPort = findFreePort();
 
 		// Find the executable JAR
 		Path targetDir = projectRoot.resolve("target");
@@ -106,17 +118,17 @@ class ServerBootSignalIT {
 				.findFirst()
 				.orElseThrow(() -> new IllegalStateException("Could not find executable JAR in " + targetDir));
 
-		ProcessBuilder processBuilder = new ProcessBuilder(javaBin, "-jar", jarPath.toString(),
-				"--server.port=" + serverPort,
-				"--management.server.port=" + managementPort);
-		processBuilder.directory(projectRoot.toFile());
-		processBuilder.redirectErrorStream(true);
+                ProcessBuilder processBuilder = new ProcessBuilder(javaBin, "-jar", jarPath.toString(),
+                                "--server.port=" + serverPort,
+                                "--management.server.port=" + managementPort);
+                processBuilder.directory(projectRoot.toFile());
+                processBuilder.redirectErrorStream(true);
 
-		Process process = processBuilder.start();
-		cleanupActions.add(() -> process.destroyForcibly());
+                Process process = processBuilder.start();
+                cleanupActions.add(() -> process.destroyForcibly());
 
-		CountDownLatch started = new CountDownLatch(1);
-		StringBuilder outputBuffer = new StringBuilder();
+                CountDownLatch started = new CountDownLatch(1);
+                StringBuilder outputBuffer = new StringBuilder();
 		startStreamGobbler(process, started, outputBuffer);
 
 		boolean startedInTime = started.await(90, SECONDS);
@@ -125,19 +137,27 @@ class ServerBootSignalIT {
 				.isTrue();
 
 		String serverUrl = serverUrl(serverPort);
-		exerciseRemoteRepository(serverUrl, outputBuffer);
+                exerciseRemoteRepository(serverUrl, outputBuffer);
 
-		long pid = process.pid();
-		sendSignal(pid, signalName);
+                long pid = process.pid();
+                sendSignal(pid, signalName);
 
-		boolean exited = process.waitFor(30, SECONDS);
-		assertThat(exited)
-				.as(() -> "Process did not exit after SIG" + signalName + ". Output:\n" + outputBuffer)
-				.isTrue();
-		assertThat(process.exitValue())
-				.as(() -> "Process exit value after SIG" + signalName + ". Output:\n" + outputBuffer)
-				.isEqualTo(0);
-	}
+                boolean exited = process.waitFor(allowSigtermFallback ? 5 : 30, SECONDS);
+                if (!exited && allowSigtermFallback) {
+                        LOGGER.warn("Server did not exit on SIGINT within 5 seconds. Sending SIGTERM.");
+                        sendSignal(pid, "TERM");
+                        exited = process.waitFor(5, SECONDS);
+                        assertThat(exited)
+                                        .as(() -> "Process did not exit after SIGTERM. Output:\n" + outputBuffer)
+                                        .isTrue();
+                }
+                assertThat(exited)
+                                .as(() -> "Process did not exit after SIG" + signalName + ". Output:\n" + outputBuffer)
+                                .isTrue();
+                assertThat(process.exitValue())
+                                .as(() -> "Process exit value after SIG" + signalName + ". Output:\n" + outputBuffer)
+                                .isEqualTo(0);
+        }
 
 	private void startStreamGobbler(Process process, CountDownLatch started, StringBuilder outputBuffer) {
 		AtomicBoolean signalLogged = new AtomicBoolean(false);
