@@ -125,38 +125,38 @@ public class EvaluationStatisticsTest {
 				.createIRI("http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/instances/dataFromProducer1/", "Product31");
 
 		StatementPattern null_rdfType_bsbmProductType = new StatementPattern(
-				new Var("a", null),
-				new Var("b", RDF.TYPE),
-				new Var("c", bdbmProductType));
+				Var.of("a", null),
+				Var.of("b", RDF.TYPE),
+				Var.of("c", bdbmProductType));
 
 		checkPattern(cardinalityCalculator, null_rdfType_bsbmProductType, 5);
 
 		StatementPattern null_null_null = new StatementPattern(
-				new Var("a", null),
-				new Var("b", null),
-				new Var("c", null));
+				Var.of("a", null),
+				Var.of("b", null),
+				Var.of("c", null));
 
 		checkPattern(cardinalityCalculator, null_null_null, 5);
 
 		StatementPattern null_rdfType_null = new StatementPattern(
-				new Var("a", null),
-				new Var("b", RDF.TYPE),
-				new Var("c", null));
+				Var.of("a", null),
+				Var.of("b", RDF.TYPE),
+				Var.of("c", null));
 
 		checkPattern(cardinalityCalculator, null_rdfType_null, 5);
 
 		StatementPattern nonExistent = new StatementPattern(
-				new Var("a", null),
-				new Var("b", vf.createIRI("http://example.com/fhjerhf2uhfjkdsbf32o")),
-				new Var("c", null));
+				Var.of("a", null),
+				Var.of("b", vf.createIRI("http://example.com/fhjerhf2uhfjkdsbf32o")),
+				Var.of("c", null));
 
 		checkPattern(cardinalityCalculator, nonExistent, 5);
 
 		// this last pattern isn't very accurate, it's actually 46 statements, but the estimate is 100.4
 		StatementPattern bsbmProductType_null_null = new StatementPattern(
-				new Var("a", dataFromProducer1Product31),
-				new Var("b", null),
-				new Var("c", null));
+				Var.of("a", dataFromProducer1Product31),
+				Var.of("b", null),
+				Var.of("c", null));
 
 		checkPattern(cardinalityCalculator, bsbmProductType_null_null, 120);
 

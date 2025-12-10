@@ -275,8 +275,6 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		}
 
 		// try and reverse engineer the original scoping intent of the query
-		final boolean aNeedsNewScope = theFilter.getParentNode() != null
-				&& (theFilter.getParentNode() instanceof Join || theFilter.getParentNode() instanceof LeftJoin);
 
 		String aFilter = renderValueExpr(theFilter.getCondition());
 		if (theFilter.getCondition() instanceof ValueConstant || theFilter.getCondition() instanceof Var) {
@@ -477,10 +475,9 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	String renderPattern(StatementPattern thePattern) throws Exception {
-		StringBuffer sb = new StringBuffer();
-		sb.append(renderValueExpr(thePattern.getSubjectVar())).append(" ");
-		sb.append(renderValueExpr(thePattern.getPredicateVar())).append(" ");
-		sb.append(renderValueExpr(thePattern.getObjectVar())).append(".").append(System.lineSeparator());
-		return sb.toString();
+		String sb = renderValueExpr(thePattern.getSubjectVar()) + " " +
+				renderValueExpr(thePattern.getPredicateVar()) + " " +
+				renderValueExpr(thePattern.getObjectVar()) + "." + System.lineSeparator();
+		return sb;
 	}
 }

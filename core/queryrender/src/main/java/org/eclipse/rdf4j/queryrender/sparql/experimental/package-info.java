@@ -15,5 +15,7 @@
  * @apiNote This feature is in an experimental state: its existence, signature or behavior may change without warning
  *          from one release to the next.
  */
-@org.eclipse.rdf4j.common.annotation.Experimental
+@Experimental
 package org.eclipse.rdf4j.queryrender.sparql.experimental;
+
+import org.eclipse.rdf4j.common.annotation.Experimental;

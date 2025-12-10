@@ -366,7 +366,7 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 
 	@Override
 	public void meet(Coalesce node) throws RuntimeException {
-		node.getArguments().stream().forEach(arg -> ensureNonAnonymousVar(arg));
+		node.getArguments().forEach(arg -> ensureNonAnonymousVar(arg));
 		super.meet(node);
 	}
 
@@ -459,10 +459,7 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 
 	@Override
 	public void meet(Filter node) throws RuntimeException {
-		boolean maybeHaving = false;
-		if (currentQueryProfile.groupBy == null) {
-			maybeHaving = true;
-		}
+		boolean maybeHaving = currentQueryProfile.groupBy == null;
 
 		if (currentQueryProfile.whereClause == null) {
 			currentQueryProfile.whereClause = node;
@@ -478,7 +475,7 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 
 	@Override
 	public void meet(FunctionCall node) throws RuntimeException {
-		node.getArgs().stream().forEach(arg -> ensureNonAnonymousVar(arg));
+		node.getArgs().forEach(arg -> ensureNonAnonymousVar(arg));
 		super.meet(node);
 	}
 
@@ -651,10 +648,8 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 		Projection fakeProjection = new Projection();
 
 		node.getProjections()
-				.stream()
 				.forEach(
 						projList -> projList.getElements()
-								.stream()
 								.forEach(
 										elem -> fakeProjection.getProjectionElemList().addElement(elem)));
 		fakeProjection.setArg(node.getArg().clone());

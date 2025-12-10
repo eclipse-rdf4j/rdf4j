@@ -368,8 +368,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		if (pathExpr.getMinLength() == 0) {
 			identifiedMembers = new HashSet<>(members);
 		} else {
-			StatementPattern checkStmt = new StatementPattern(stmt.getScope(), new Var("subject"),
-					clone(stmt.getPredicateVar()), new Var("object"), clone(stmt.getContextVar()));
+			StatementPattern checkStmt = new StatementPattern(stmt.getScope(), Var.of("subject"),
+					clone(stmt.getPredicateVar()), Var.of("object"), clone(stmt.getContextVar()));
 			@SuppressWarnings("unused") // only used as artificial parent
 			HolderNode holderParent = new HolderNode(checkStmt);
 

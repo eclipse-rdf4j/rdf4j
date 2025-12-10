@@ -244,6 +244,23 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
 	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
 
+	// Pre-built strings for lengths 0 through 9
+	private static final String[] RANDOMIZE_LENGTH = new String[10];
+	public static final String ANON_PATH_ = new StringBuilder("_anon_path_").reverse().toString();
+	public static final String ANON_PATH_INVERSE = new StringBuilder("_anon_path_inverse_").reverse().toString();
+	public static final String ANON_HAVING_ = new StringBuilder("_anon_having_").reverse().toString();
+	public static final String ANON_BNODE_ = new StringBuilder("_anon_bnode_").reverse().toString();
+	public static final String ANON_COLLECTION_ = new StringBuilder("_anon_collection_").reverse().toString();
+	public static final String ANON_ = new StringBuilder("_anon_").reverse().toString();
+
+	static {
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i <= 9; i++) {
+			RANDOMIZE_LENGTH[i] = sb.toString();
+			sb.append(i);
+		}
+	}
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -319,7 +336,80 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// the
 		// varname
 		// remains compatible with the SPARQL grammar. See SES-2310.
-		return new Var("_anon_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet(), true);
+		long l = uniqueIdSuffix.incrementAndGet();
+		StringBuilder sb = new StringBuilder(Long.toString(l));
+		sb.append(ANON_)
+				.reverse()
+				.append(uniqueIdPrefix)
+				.append(RANDOMIZE_LENGTH[(int) (Math.abs(l % RANDOMIZE_LENGTH.length))]);
+		return Var.of(sb.toString(), true);
+	}
+
+	protected Var createAnonCollectionVar() {
+		// dashes ('-') in the generated UUID are replaced with underscores so
+		// the
+		// varname
+		// remains compatible with the SPARQL grammar. See SES-2310.
+		long l = uniqueIdSuffix.incrementAndGet();
+		StringBuilder sb = new StringBuilder(Long.toString(l));
+		sb.append(ANON_COLLECTION_)
+				.reverse()
+				.append(uniqueIdPrefix)
+				.append(RANDOMIZE_LENGTH[(int) (Math.abs(l % RANDOMIZE_LENGTH.length))]);
+		return Var.of(sb.toString(), true);
+	}
+
+	protected Var createAnonBnodeVar() {
+		// dashes ('-') in the generated UUID are replaced with underscores so
+		// the
+		// varname
+		// remains compatible with the SPARQL grammar. See SES-2310.
+		long l = uniqueIdSuffix.incrementAndGet();
+		StringBuilder sb = new StringBuilder(Long.toString(l));
+		sb.append(ANON_BNODE_)
+				.reverse()
+				.append(uniqueIdPrefix)
+				.append(RANDOMIZE_LENGTH[(int) (Math.abs(l % RANDOMIZE_LENGTH.length))]);
+
+		return Var.of(sb.toString(), true);
+	}
+
+	protected Var createAnonHavingVar() {
+		// dashes ('-') in the generated UUID are replaced with underscores so
+		// the
+		// varname
+		// remains compatible with the SPARQL grammar. See SES-2310.
+		long l = uniqueIdSuffix.incrementAndGet();
+		StringBuilder sb = new StringBuilder(Long.toString(l));
+		sb.append(ANON_HAVING_)
+				.reverse()
+				.append(uniqueIdPrefix)
+				.append(RANDOMIZE_LENGTH[(int) (Math.abs(l % RANDOMIZE_LENGTH.length))]);
+		return Var.of(sb.toString(), true);
+	}
+
+	/**
+	 * Creates an anonymous Var specifically for use in SPARQL path expressions. The generated variable name will
+	 * contain <code>_path_</code> to allow easier identification of variables that were introduced while parsing
+	 * property paths.
+	 *
+	 * @return an anonymous Var with a unique, randomly generated, variable name that contains <code>_path_</code>
+	 */
+	protected Var createAnonPathVar(boolean inverse) {
+		// dashes ('-') in the generated UUID are replaced with underscores so
+		// the
+		// varname
+		// remains compatible with the SPARQL grammar. See SES-2310.
+
+		var prefix = inverse ? ANON_PATH_INVERSE : ANON_PATH_;
+
+		long l = uniqueIdSuffix.incrementAndGet();
+		StringBuilder sb = new StringBuilder(Long.toString(l));
+		sb.append(prefix)
+				.reverse()
+				.append(uniqueIdPrefix)
+				.append(RANDOMIZE_LENGTH[(int) (Math.abs(l % RANDOMIZE_LENGTH.length))]);
+		return Var.of(sb.toString(), true);
 	}
 
 	private FunctionCall createFunctionCall(String uri, SimpleNode node, int minArgs, int maxArgs)
@@ -438,7 +528,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			// to the group
 			Extension extension = new Extension();
 			for (AggregateOperator operator : collector.getOperators()) {
-				Var var = createAnonVar();
+				Var var = createAnonHavingVar();
 
 				// replace occurrence of the operator in the filter expression
 				// with the variable.
@@ -640,8 +730,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 									+ "' not allowed in projection when using GROUP BY.");
 						}
 					} else if (!groupNames.contains(elem.getName())) {
-						throw new VisitorException("variable '" + elem.getName()
-								+ "' in projection not present in GROUP BY.");
+						throw new VisitorException(
+								"variable '" + elem.getName() + "' in projection not present in GROUP BY.");
 					}
 				}
 			}
@@ -1067,7 +1157,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			if (resource instanceof Var) {
 				projectionElements.addElement(new ProjectionElem(((Var) resource).getName()));
 			} else {
-				String alias = "_describe_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
+				long l = uniqueIdSuffix.incrementAndGet();
+				String alias = "_describe_" + uniqueIdPrefix + l
+						+ RANDOMIZE_LENGTH[(int) (Math.abs(l % RANDOMIZE_LENGTH.length))];
 				ExtensionElem elem = new ExtensionElem(resource, alias);
 				e.addElement(elem);
 				projectionElements.addElement(new ProjectionElem(alias));
@@ -1138,8 +1230,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		if (node instanceof TripleRef) {
 			TripleRef t = (TripleRef) node;
 			return new ValueExprTripleRef(t.getExprVar().getName(), t.getSubjectVar().clone(),
-					t.getPredicateVar().clone(),
-					t.getObjectVar().clone());
+					t.getPredicateVar().clone(), t.getObjectVar().clone());
 		}
 		throw new IllegalArgumentException("could not cast " + node.getClass().getName() + " to ValueExpr");
 	}
@@ -1460,7 +1551,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			ASTPathElt pathElement = pathElements.get(i);
 
 			pathSequenceContext.startVar = i == 0 ? subjVar : mapValueExprToVar(pathSequenceContext.endVar);
-			pathSequenceContext.endVar = createAnonVar();
+			pathSequenceContext.endVar = createAnonPathVar(false);
 
 			TupleExpr elementExpresion = (TupleExpr) pathElement.jjtAccept(this, pathSequenceContext);
 
@@ -1477,7 +1568,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 						Var objectVar = mapValueExprToVar(objectItem);
 						Var replacement = objectVar;
 						if (objectVar.equals(subjVar)) { // corner case for cyclic expressions, see SES-1685
-							replacement = createAnonVar();
+							replacement = createAnonPathVar(false);
 						}
 						TupleExpr copy = elementExpresion.clone();
 						copy.visit(new VarReplacer(pathSequenceContext.endVar, replacement));
@@ -1491,7 +1582,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					// nested sequence, replace endVar with parent endVar
 					Var replacement = parentEndVar;
 					if (parentEndVar.equals(subjVar)) { // corner case for cyclic expressions, see SES-1685
-						replacement = createAnonVar();
+						replacement = createAnonPathVar(false);
 					}
 					TupleExpr copy = elementExpresion.clone();
 					copy.visit(new VarReplacer(pathSequenceContext.endVar, replacement));
@@ -1561,7 +1652,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	private TupleExpr createTupleExprForNegatedPropertySets(List<PropertySetElem> nps,
 			PathSequenceContext pathSequenceContext) {
 		Var subjVar = pathSequenceContext.startVar;
-		Var predVar = createAnonVar();
+		Var predVar = createAnonPathVar(nps.size() == 1 && nps.get(0).isInverse());
 		Var endVar = pathSequenceContext.endVar;
 
 		ValueExpr filterCondition = null;
@@ -1576,21 +1667,20 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				if (filterConditionInverse == null) {
 					filterConditionInverse = compare;
 				} else {
-					filterConditionInverse = new And(compare, filterConditionInverse);
+					filterConditionInverse = new And(filterConditionInverse, compare);
 				}
 			} else {
 				Compare compare = new Compare(predVar.clone(), predicate, CompareOp.NE);
 				if (filterCondition == null) {
 					filterCondition = compare;
 				} else {
-					filterCondition = new And(compare, filterCondition);
+					filterCondition = new And(filterCondition, compare);
 				}
 			}
 		}
 
 		TupleExpr patternMatch = new StatementPattern(pathSequenceContext.scope, subjVar.clone(), predVar.clone(),
-				endVar.clone(),
-				pathSequenceContext.contextVar != null ? pathSequenceContext.contextVar.clone() : null);
+				endVar.clone(), pathSequenceContext.contextVar != null ? pathSequenceContext.contextVar.clone() : null);
 
 		TupleExpr patternMatchInverse = null;
 
@@ -1611,7 +1701,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			if (completeMatch == null) {
 				completeMatch = new Filter(patternMatchInverse, filterConditionInverse);
 			} else {
-				completeMatch = new Union(new Filter(patternMatchInverse, filterConditionInverse), completeMatch);
+				completeMatch = new Union(completeMatch, new Filter(patternMatchInverse, filterConditionInverse));
 			}
 		}
 
@@ -1625,8 +1715,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		if (upperBound == Long.MAX_VALUE) {
 			// upperbound is abitrary-length
 			return new ArbitraryLengthPath(scope, subjVar.clone(), te, endVar.clone(),
-					contextVar != null ? contextVar.clone() : null,
-					lowerBound);
+					contextVar != null ? contextVar.clone() : null, lowerBound);
 		}
 
 		// ? modifier
@@ -1758,14 +1847,14 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Var visit(ASTBlankNodePropertyList node, Object data) throws VisitorException {
-		Var bnodeVar = createAnonVar();
+		Var bnodeVar = createAnonBnodeVar();
 		super.visit(node, bnodeVar);
 		return bnodeVar;
 	}
 
 	@Override
 	public Var visit(ASTCollection node, Object data) throws VisitorException {
-		Var rootListVar = createAnonVar();
+		Var rootListVar = createAnonCollectionVar();
 
 		Var listVar = rootListVar;
 
@@ -1780,7 +1869,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			if (i == childCount - 1) {
 				nextListVar = TupleExprs.createConstVar(RDF.NIL);
 			} else {
-				nextListVar = createAnonVar();
+				nextListVar = createAnonCollectionVar();
 			}
 
 			graphPattern.addRequiredSP(listVar.clone(), TupleExprs.createConstVar(RDF.REST), nextListVar);
@@ -2380,7 +2469,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Var visit(ASTVar node, Object data) throws VisitorException {
-		return new Var(node.getName(), node.isAnonymous());
+		return Var.of(node.getName(), node.isAnonymous());
 	}
 
 	@Override

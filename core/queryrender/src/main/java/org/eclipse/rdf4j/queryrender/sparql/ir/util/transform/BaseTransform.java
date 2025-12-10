@@ -1,0 +1,1035 @@
+/*******************************************************************************
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ ******************************************************************************/
+
+package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrService;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
+import org.eclipse.rdf4j.queryrender.sparql.util.VarUtils;
+
+/**
+ * Shared helpers and small utilities for IR transform passes.
+ *
+ * Conventions and invariants: - Transforms are functional: they do not mutate input nodes; instead they build new IR
+ * blocks as needed. - Path/chain fusions are conservative and only cross intermediate variables that the parser created
+ * for property paths (variable names prefixed with {@code _anon_path_}). This prevents accidental elimination or
+ * inversion of user-defined variables. - Text helpers respect property path precedence and add parentheses only when
+ * required for correctness. - Container nodes (GRAPH/OPTIONAL/MINUS/UNION/SERVICE) are preserved, and recursion uses
+ * {@code transformChildren} to keep transform code small and predictable.
+ */
+public class BaseTransform {
+	/*
+	 * =============================== ===== Union Merge Policy ====== ===============================
+	 *
+	 * Several transforms can merge a UNION of two branches into a single path expression (an alternation) or a single
+	 * negated property set (NPS). This is valuable for readability and streaming-friendly output, but it must be done
+	 * conservatively to never change query semantics nor collapse user-visible variables.
+	 *
+	 * Parser-provided hints: the RDF4J parser introduces anonymous bridge variables when decoding property paths. These
+	 * variables use a reserved prefix: - _anon_path_* (forward-oriented bridge) - _anon_path_inverse_*
+	 * (inverse-oriented bridge)
+	 *
+	 * We use these names as a safety signal that fusing across the bridge does not remove a user variable.
+	 *
+	 * High-level rules applied by union-fusing transforms: 1) No new scope (i.e., the UNION node is not marked as
+	 * introducing a new scope): - The UNION may be merged only if EACH branch contains at least one anonymous path
+	 * bridge variable (either prefix). See unionBranchesAllHaveAnonPathBridge().
+	 *
+	 * 2) New scope (i.e., the UNION node carries explicit variable-scope change): - By default, do NOT merge such a
+	 * UNION. - Special exception: if both branches share at least one COMMON variable name that starts with the
+	 * _anon_path_ prefix (either orientation), the UNION may still be merged. This indicates the new-scope originated
+	 * from path decoding and is safe to compact. See unionBranchesShareCommonAnonPathVarName().
+	 *
+	 * Additional per-transform constraints remain in place (e.g., fusing only bare NPS, or simple single-step triples,
+	 * identical endpoints, identical GRAPH reference), and transforms preserve explicit grouping braces when the input
+	 * UNION marked a new scope (by wrapping the fused result in a grouped IrBGP as needed).
+	 */
+
+	// Local copy of parser's _anon_path_ naming hint for safe path fusions
+	public static final String ANON_PATH_PREFIX = "_anon_path_";
+	// Additional hint used by the parser for inverse-oriented anonymous path variables.
+	public static final String ANON_PATH_INVERSE_PREFIX = "_anon_path_inverse_";
+
+	// --------------- Path text helpers: add parens only when needed ---------------
+
+	/** Convenience: true iff SP has a constant-IRI predicate. */
+	public static boolean isConstantIriPredicate(IrStatementPattern sp) {
+		if (sp == null) {
+			return false;
+		}
+		Var p = sp.getPredicate();
+		return p != null && p.hasValue() && p.getValue() instanceof IRI;
+	}
+
+	/** Convenience: render a constant-IRI predicate Var to text. Returns null if not a constant IRI. */
+	public static String iri(Var pred, TupleExprIRRenderer r) {
+		if (pred == null || !pred.hasValue() || !(pred.getValue() instanceof IRI)) {
+			return null;
+		}
+		return r.convertIRIToString((IRI) pred.getValue());
+	}
+
+	/**
+	 * Normalize compact negated-property-set forms into the canonical parenthesized variant. Examples: "!ex:p" ->
+	 * "!(ex:p)", "!^ex:p" -> "!(^ex:p)". Leaves already-canonical and non-NPS text unchanged.
+	 */
+	public static String normalizeCompactNps(String path) {
+		if (path == null) {
+			return null;
+		}
+		String t = path.trim();
+		if (t.isEmpty()) {
+			return t;
+		}
+		if (t.startsWith("!(") && t.endsWith(")")) {
+			return t;
+		}
+		if (t.startsWith("!^")) {
+			return "!(" + t.substring(1) + ")"; // !^ex:p -> !(^ex:p)
+		}
+		if (t.startsWith("!") && (t.length() == 1 || t.charAt(1) != '(')) {
+			return "!(" + t.substring(1) + ")"; // !ex:p -> !(ex:p)
+		}
+		return t;
+	}
+
+	/** Merge NPS members of two canonical strings '!(...)', returning '!(a|b)'. Falls back to 'a' when malformed. */
+	public static String mergeNpsMembers(String a, String b) {
+		if (a == null || b == null) {
+			return a;
+		}
+		int a1 = a.indexOf('('), a2 = a.lastIndexOf(')');
+		int b1 = b.indexOf('('), b2 = b.lastIndexOf(')');
+		if (a1 < 0 || a2 < 0 || b1 < 0 || b2 < 0) {
+			return a;
+		}
+		String ia = a.substring(a1 + 1, a2).trim();
+		String ib = b.substring(b1 + 1, b2).trim();
+		if (ia.isEmpty()) {
+			return b;
+		}
+		if (ib.isEmpty()) {
+			return a;
+		}
+		return "!(" + ia + "|" + ib + ")";
+	}
+
+	/**
+	 * Universal safeguard for explicit user UNIONs: true iff the UNION is marked as new scope and all its branches are
+	 * also marked as new scope. Such a UNION should never be fused into a single path expression.
+	 */
+	public static boolean unionIsExplicitAndAllBranchesScoped(final IrUnion u) {
+		if (u == null || !u.isNewScope()) {
+			return false;
+		}
+		if (u.getBranches() == null || u.getBranches().isEmpty()) {
+			return false;
+		}
+
+		for (IrBGP b : u.getBranches()) {
+			if (!b.isNewScope()) {
+				if (b.getLines().size() != 1 || !b.getLines().get(0).isNewScope()) {
+					return false;
+				}
+
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Utility: rewrite container nodes by applying a given function to their inner IrBGP children. Non-container nodes
+	 * are returned unchanged. This abstracts common recursion boilerplate across many transforms and ensures newScope
+	 * and other flags are preserved consistently for containers.
+	 *
+	 * Containers handled: IrGraph, IrOptional, IrMinus, IrService, IrUnion. Nested IrBGP lines that appear directly
+	 * inside a parent IrBGP (explicit grouping) are intentionally left unchanged here — transforms should decide if and
+	 * how to recurse into such explicit groups.
+	 */
+	public static IrNode rewriteContainers(IrNode n, Function<IrBGP, IrBGP> f) {
+		if (n == null) {
+			return null;
+		}
+		if (n instanceof IrGraph) {
+			IrGraph g = (IrGraph) n;
+			return new IrGraph(g.getGraph(), f.apply(g.getWhere()), g.isNewScope());
+		}
+		if (n instanceof IrOptional) {
+			IrOptional o = (IrOptional) n;
+			return new IrOptional(f.apply(o.getWhere()), o.isNewScope());
+		}
+		if (n instanceof IrMinus) {
+			IrMinus m = (IrMinus) n;
+			return new IrMinus(f.apply(m.getWhere()), m.isNewScope());
+		}
+		if (n instanceof IrService) {
+			IrService s = (IrService) n;
+			return new IrService(s.getServiceRefText(), s.isSilent(), f.apply(s.getWhere()), s.isNewScope());
+		}
+		if (n instanceof IrUnion) {
+			IrUnion u = (IrUnion) n;
+			IrUnion u2 = new IrUnion(u.isNewScope());
+			for (IrBGP b : u.getBranches()) {
+				u2.addBranch(f.apply(b));
+			}
+			u2.setNewScope(u.isNewScope());
+			return u2;
+		}
+		// Do not auto-descend into IrBGP explicit groups here; caller decides.
+		return n;
+	}
+
+	// NOTE: Depth-aware path helpers moved to PathTextUtils; call it directly at use sites.
+
+	/** Build a new IrBGP with the same scope flag and the provided lines. */
+	public static IrBGP bgpWithLines(IrBGP original, List<IrNode> lines) {
+		IrBGP res = new IrBGP(original.isNewScope());
+		if (lines != null) {
+			for (IrNode n : lines) {
+				res.add(n);
+			}
+		}
+		res.setNewScope(original.isNewScope());
+		return res;
+	}
+
+	public static void copyAllExcept(IrBGP from, IrBGP to, IrNode except) {
+		if (from == null) {
+			return;
+		}
+		for (IrNode ln : from.getLines()) {
+			if (ln == except) {
+				continue;
+			}
+			to.add(ln);
+		}
+	}
+
+	/** Fuse adjacent IrPathTriple nodes when the first's object equals the second's subject. */
+	public static IrBGP fuseAdjacentPtThenPt(IrBGP bgp) {
+		if (bgp == null) {
+			return null;
+		}
+		List<IrNode> in = bgp.getLines();
+		List<IrNode> out = new ArrayList<>();
+		for (int i = 0; i < in.size(); i++) {
+			IrNode n = in.get(i);
+			if (n instanceof IrPathTriple && i + 1 < in.size() && in.get(i + 1) instanceof IrPathTriple) {
+				IrPathTriple a = (IrPathTriple) n;
+				IrPathTriple b = (IrPathTriple) in.get(i + 1);
+				Var bridge = a.getObject();
+				if (sameVar(bridge, b.getSubject()) && isAnonPathVar(bridge)) {
+					// Merge a and b: s -(a.path/b.path)-> o. Keep explicit grouping to enable later canonicalization.
+					String fusedPath = "(" + a.getPathText() + ")/(" + b.getPathText() + ")";
+					out.add(new IrPathTriple(a.getSubject(), a.getSubjectOverride(), fusedPath, b.getObject(),
+							b.getObjectOverride(), IrPathTriple.mergePathVars(a, b), false));
+					i += 1; // consume b
+				} else if (sameVar(bridge, b.getObject()) && isAnonPathVar(bridge)) {
+					// Merge a and b with inverse join on b. Keep explicit grouping.
+					String fusedPath = "(" + a.getPathText() + ")/^(" + b.getPathText() + ")";
+					out.add(new IrPathTriple(a.getSubject(), a.getSubjectOverride(), fusedPath, b.getSubject(),
+							b.getSubjectOverride(), IrPathTriple.mergePathVars(a, b), false));
+					i += 1; // consume b
+				} else {
+					// Additional cases: the bridge variable occurs as the subject of the first path triple.
+					Var aSubj = a.getSubject();
+					if (isAnonPathVar(aSubj)) {
+						// Avoid inverting NPS members: if 'a' is a bare negated property set, do not
+						// attempt subject-shared composition which requires inverting 'a'. Leave to other
+						// fusers that do not alter the NPS text.
+						String aPath = a.getPathText();
+						boolean aIsNps = aPath != null && aPath.trim().startsWith("!(");
+						if (aIsNps) {
+							out.add(n);
+							continue;
+						}
+						// Case: a.subject == b.subject -> compose by inverting 'a' and chaining forward with 'b'
+						if (sameVar(aSubj, b.getSubject())) {
+							String left = invertNegatedPropertySet(aPath);
+							if (left == null) {
+								left = PathTextUtils.wrapForInverse(aPath);
+							}
+							String fusedPath = left + "/" + PathTextUtils.wrapForSequence(b.getPathText());
+							out.add(new IrPathTriple(a.getObject(), a.getObjectOverride(), fusedPath, b.getObject(),
+									b.getObjectOverride(), IrPathTriple.mergePathVars(a, b), false));
+							i += 1; // consume b
+							continue;
+						}
+
+						// Case: a.subject == b.object -> compose by inverting both 'a' and 'b'
+						if (sameVar(aSubj, b.getObject())) {
+							String left = invertNegatedPropertySet(aPath);
+							if (left == null) {
+								left = PathTextUtils.wrapForInverse(aPath);
+							}
+							String right = PathTextUtils.wrapForInverse(b.getPathText());
+							String fusedPath = left + "/" + right;
+							out.add(new IrPathTriple(a.getObject(), a.getObjectOverride(), fusedPath, b.getSubject(),
+									b.getSubjectOverride(), IrPathTriple.mergePathVars(a, b), false));
+							i += 1; // consume b
+							continue;
+						}
+					}
+					out.add(n);
+				}
+			} else {
+				out.add(n);
+			}
+		}
+
+		IrBGP res = new IrBGP(bgp.isNewScope());
+		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
+		return res;
+	}
+
+	/**
+	 * Fuse a three-line sequence: IrPathTriple (A), IrStatementPattern (B), IrPathTriple (C) into A then ( ^B.p / C ).
+	 *
+	 * Pattern constraints: - A.object equals B.object (inverse join candidate) and A.object is an _anon_path_* var. -
+	 * B.subject equals C.subject and both B.subject and B.object are _anon_path_* vars.
+	 */
+	public static IrBGP fusePtSpPtSequence(IrBGP bgp, TupleExprIRRenderer r) {
+		if (bgp == null) {
+			return null;
+		}
+		List<IrNode> in = bgp.getLines();
+		List<IrNode> out = new ArrayList<>();
+		for (int i = 0; i < in.size(); i++) {
+			IrNode a = in.get(i);
+			if (a instanceof IrPathTriple && i + 2 < in.size() && in.get(i + 1) instanceof IrStatementPattern
+					&& in.get(i + 2) instanceof IrPathTriple) {
+				IrPathTriple ptA = (IrPathTriple) a;
+				IrStatementPattern spB = (IrStatementPattern) in.get(i + 1);
+				IrPathTriple ptC = (IrPathTriple) in.get(i + 2);
+				Var bPred = spB.getPredicate();
+				if (isConstantIriPredicate(spB)) {
+					if (sameVar(ptA.getObject(), spB.getObject()) && isAnonPathVar(ptA.getObject())
+							&& sameVar(spB.getSubject(), ptC.getSubject()) && isAnonPathVar(spB.getSubject())
+							&& isAnonPathVar(spB.getObject())) {
+						String fusedPath = "^" + iri(bPred, r) + "/" + ptC.getPathText();
+						IrPathTriple d = new IrPathTriple(spB.getObject(), spB.getObjectOverride(), fusedPath,
+								ptC.getObject(), ptC.getObjectOverride(), IrPathTriple.mergePathVars(ptC), false);
+						// Keep A; then D replaces B and C
+						out.add(ptA);
+						out.add(d);
+						i += 2; // consume B and C
+						continue;
+					}
+				}
+			}
+			out.add(a);
+		}
+		IrBGP res = new IrBGP(bgp.isNewScope());
+		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
+		return res;
+	}
+
+	/**
+	 * Re-orient a bare negated property set path "!(...)" so that its object matches the subject of the immediately
+	 * following triple when possible, enabling chaining: prefer s !(...) ?x when the next line starts with ?x ...
+	 */
+	public static IrBGP orientBareNpsForNext(IrBGP bgp) {
+		if (bgp == null) {
+			return null;
+		}
+		List<IrNode> in = bgp.getLines();
+		List<IrNode> out = new ArrayList<>();
+		for (int i = 0; i < in.size(); i++) {
+			IrNode n = in.get(i);
+			if (n instanceof IrPathTriple) {
+				IrPathTriple pt = (IrPathTriple) n;
+				// Do not attach head/tail when the path contains an alternation anywhere.
+				// Some branches may require different tails, and lifting a tail outside
+				// would alter grouping expected by renderer tests.
+				String ptxtGlobal = pt.getPathText();
+				if (ptxtGlobal != null && ptxtGlobal.indexOf('|') >= 0) {
+					out.add(pt);
+					continue;
+				}
+				String ptxt = pt.getPathText();
+				if (ptxt != null) {
+					String s = ptxt.trim();
+					if (s.startsWith("!(") && s.endsWith(")")) {
+						// Do not re-orient bare NPS here. Flipping NPS to chain with the following
+						// triple inverts individual members (ex:g <-> ^ex:g), which breaks
+						// idempotence on round-trips. Other fusion passes can still chain without
+						// altering the NPS semantics.
+					}
+				}
+				out.add(pt);
+				continue;
+			}
+			// Recurse
+			if (n instanceof IrGraph) {
+				IrGraph g = (IrGraph) n;
+				out.add(new IrGraph(g.getGraph(), orientBareNpsForNext(g.getWhere()), g.isNewScope()));
+				continue;
+			}
+			if (n instanceof IrOptional) {
+				IrOptional o = (IrOptional) n;
+				IrOptional no = new IrOptional(orientBareNpsForNext(o.getWhere()), o.isNewScope());
+				no.setNewScope(o.isNewScope());
+				out.add(no);
+				continue;
+			}
+			if (n instanceof IrMinus) {
+				IrMinus m = (IrMinus) n;
+				out.add(new IrMinus(orientBareNpsForNext(m.getWhere()), m.isNewScope()));
+				continue;
+			}
+			if (n instanceof IrUnion) {
+				IrUnion u = (IrUnion) n;
+				IrUnion u2 = new IrUnion(u.isNewScope());
+				for (IrBGP b : u.getBranches()) {
+					u2.addBranch(orientBareNpsForNext(b));
+				}
+				out.add(u2);
+				continue;
+			}
+			if (n instanceof IrService) {
+				IrService s = (IrService) n;
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), orientBareNpsForNext(s.getWhere()),
+						s.isNewScope()));
+				continue;
+			}
+			out.add(n);
+		}
+		IrBGP res = new IrBGP(bgp.isNewScope());
+		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
+		return res;
+	}
+
+	public static IrBGP fuseAdjacentSpThenPt(IrBGP bgp, TupleExprIRRenderer r) {
+		if (bgp == null) {
+			return null;
+		}
+		List<IrNode> in = bgp.getLines();
+		List<IrNode> out = new ArrayList<>();
+		for (int i = 0; i < in.size(); i++) {
+			IrNode n = in.get(i);
+			if (i + 1 < in.size() && n instanceof IrStatementPattern && in.get(i + 1) instanceof IrPathTriple) {
+				IrStatementPattern sp = (IrStatementPattern) n;
+				Var p = sp.getPredicate();
+				if (isConstantIriPredicate(sp)) {
+					IrPathTriple pt = (IrPathTriple) in.get(i + 1);
+					if (sameVar(sp.getObject(), pt.getSubject()) && isAnonPathVar(pt.getSubject())) {
+						String fused = iri(p, r) + "/" + pt.getPathText();
+						out.add(new IrPathTriple(sp.getSubject(), sp.getSubjectOverride(), fused, pt.getObject(),
+								pt.getObjectOverride(), IrPathTriple.mergePathVars(pt), false));
+						i += 1;
+						continue;
+					} else if (sameVar(sp.getSubject(), pt.getObject()) && isAnonPathVar(pt.getObject())) {
+						String fused = pt.getPathText() + "/^" + iri(p, r);
+						out.add(new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), fused, sp.getObject(),
+								sp.getObjectOverride(), IrPathTriple.mergePathVars(pt), false));
+						i += 1;
+						continue;
+					}
+				}
+			}
+			out.add(n);
+		}
+		IrBGP res = new IrBGP(bgp.isNewScope());
+		out.forEach(res::add);
+		res.setNewScope(bgp.isNewScope());
+		return res;
+	}
+
+	public static IrBGP joinPathWithLaterSp(IrBGP bgp, TupleExprIRRenderer r) {
+		if (bgp == null) {
+			return null;
+		}
+		List<IrNode> in = new ArrayList<>(bgp.getLines());
+		List<IrNode> out = new ArrayList<>();
+		Set<IrNode> removed = new HashSet<>();
+		for (int i = 0; i < in.size(); i++) {
+			IrNode n = in.get(i);
+			if (removed.contains(n)) {
+				continue;
+			}
+			if (n instanceof IrPathTriple) {
+				IrPathTriple pt = (IrPathTriple) n;
+				Var objVar = pt.getObject();
+				if (isAnonPathVar(objVar)) {
+					IrStatementPattern join = null;
+					boolean inverse = false;
+					for (int j = i + 1; j < in.size(); j++) {
+						IrNode m = in.get(j);
+						if (!(m instanceof IrStatementPattern)) {
+							continue;
+						}
+						IrStatementPattern sp = (IrStatementPattern) m;
+						if (!isConstantIriPredicate(sp)) {
+							continue;
+						}
+						// If this SP is immediately followed by a PathTriple that shares SP.subject as its subject,
+						// prefer the later SP+PT fusion instead of attaching the SP here. This preserves canonical
+						// grouping like ...*/(^ex:d/(...)).
+						if (j + 1 < in.size() && in.get(j + 1) instanceof IrPathTriple) {
+							IrPathTriple nextPt = (IrPathTriple) in.get(j + 1);
+							if (sameVar(sp.getSubject(), nextPt.getSubject())
+									|| sameVar(sp.getObject(), nextPt.getSubject())) {
+								continue; // skip this SP; allow SP+PT rule to handle
+							}
+						}
+						if (sameVar(objVar, sp.getSubject()) && isAnonPathVar(sp.getObject())) {
+							join = sp;
+							inverse = false;
+							break;
+						}
+						if (sameVar(objVar, sp.getObject()) && isAnonPathVar(sp.getSubject())) {
+							join = sp;
+							inverse = true;
+							break;
+						}
+					}
+					if (join != null) {
+						String step = iri(join.getPredicate(), r);
+						String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
+						Var newEnd = inverse ? join.getSubject() : join.getObject();
+						IrNode newEndOverride = inverse ? join.getSubjectOverride() : join.getObjectOverride();
+						pt = new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), newPath, newEnd, newEndOverride,
+								pt.getPathVars(), pt.isNewScope());
+						removed.add(join);
+					}
+				}
+				out.add(pt);
+				continue;
+			}
+			// Recurse within nested BGPs
+			if (n instanceof IrGraph) {
+				IrGraph g = (IrGraph) n;
+				IrBGP inner = g.getWhere();
+				inner = joinPathWithLaterSp(inner, r);
+				inner = fuseAltInverseTailBGP(inner, r);
+				out.add(new IrGraph(g.getGraph(), inner, g.isNewScope()));
+				continue;
+			}
+			if (n instanceof IrOptional) {
+				IrOptional o = (IrOptional) n;
+				IrOptional no = new IrOptional(joinPathWithLaterSp(o.getWhere(), r), o.isNewScope());
+				out.add(no);
+				continue;
+			}
+			if (n instanceof IrMinus) {
+				IrMinus m = (IrMinus) n;
+				out.add(new IrMinus(joinPathWithLaterSp(m.getWhere(), r), m.isNewScope()));
+				continue;
+			}
+			if (n instanceof IrUnion) {
+				IrUnion u = (IrUnion) n;
+				IrUnion u2 = new IrUnion(u.isNewScope());
+				for (IrBGP b : u.getBranches()) {
+					u2.addBranch(joinPathWithLaterSp(b, r));
+				}
+				out.add(u2);
+				continue;
+			}
+			if (n instanceof IrService) {
+				IrService s = (IrService) n;
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), joinPathWithLaterSp(s.getWhere(), r),
+						s.isNewScope()));
+				continue;
+			}
+			if (n instanceof IrSubSelect) {
+				out.add(n); // keep raw subselects
+				continue;
+			}
+			out.add(n);
+		}
+		IrBGP res = new IrBGP(bgp.isNewScope());
+		for (IrNode n2 : out) {
+			if (!removed.contains(n2)) {
+				res.add(n2);
+			}
+		}
+		return res;
+	}
+
+	public static boolean sameVar(Var a, Var b) {
+		return VarUtils.sameVar(a, b);
+	}
+
+	/**
+	 * True when both variables denote the same term: compares names if both are variables without value, or compares
+	 * values if both are constants. Returns false when one has a value and the other does not.
+	 */
+	public static boolean sameVarOrValue(Var a, Var b) {
+		return VarUtils.sameVarOrValue(a, b);
+	}
+
+	public static boolean isAnonPathVar(Var v) {
+		return VarUtils.isAnonPathVar(v);
+	}
+
+	/** True when the anonymous path var explicitly encodes inverse orientation. */
+	public static boolean isAnonPathInverseVar(Var v) {
+		return VarUtils.isAnonPathInverseVar(v);
+	}
+
+	/**
+	 * True if the given branch contains at least one variable with the parser-generated _anon_path_ (or inverse
+	 * variant) prefix anywhere in its simple triple-like structures. Used as a safety valve to allow certain fusions
+	 * across UNION branches that were marked as introducing a new scope in the algebra: if every branch contains an
+	 * anonymous path bridge var, the fusion is considered safe and preserves user-visible bindings.
+	 */
+	public static boolean branchHasAnonPathBridge(IrBGP branch) {
+		if (branch == null) {
+			return false;
+		}
+		for (IrNode ln : branch.getLines()) {
+			if (ln instanceof IrStatementPattern) {
+				IrStatementPattern sp = (IrStatementPattern) ln;
+				Var s = sp.getSubject();
+				Var o = sp.getObject();
+				Var p = sp.getPredicate();
+				if (isAnonPathVar(s) || isAnonPathInverseVar(s) || isAnonPathVar(o) || isAnonPathInverseVar(o)
+						|| isAnonPathVar(p) || isAnonPathInverseVar(p)) {
+					return true;
+				}
+			} else if (ln instanceof IrPathTriple) {
+				IrPathTriple pt = (IrPathTriple) ln;
+				if (isAnonPathVar(pt.getSubject()) || isAnonPathInverseVar(pt.getSubject())
+						|| isAnonPathVar(pt.getObject())
+						|| isAnonPathInverseVar(pt.getObject())) {
+					return true;
+				}
+			} else if (ln instanceof IrGraph) {
+				IrGraph g = (IrGraph) ln;
+				if (branchHasAnonPathBridge(g.getWhere())) {
+					return true;
+				}
+			} else if (ln instanceof IrOptional) {
+				IrOptional o = (IrOptional) ln;
+				if (branchHasAnonPathBridge(o.getWhere())) {
+					return true;
+				}
+			} else if (ln instanceof IrMinus) {
+				IrMinus m = (IrMinus) ln;
+				if (branchHasAnonPathBridge(m.getWhere())) {
+					return true;
+				}
+			} else if (ln instanceof IrBGP) {
+				if (branchHasAnonPathBridge((IrBGP) ln)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/** True if all UNION branches contain at least one _anon_path_* variable (or inverse variant). */
+	/**
+	 * True if all UNION branches contain at least one _anon_path_* variable (or inverse variant).
+	 *
+	 * Rationale: when there is no explicit UNION scope, this safety gate ensures branch bodies are derived from
+	 * path-decoding internals rather than user variables, so fusing to an alternation/NPS preserves semantics.
+	 */
+	public static boolean unionBranchesAllHaveAnonPathBridge(IrUnion u) {
+		if (unionIsExplicitAndAllBranchesScoped(u)) {
+			return false;
+		}
+		if (u == null || u.getBranches().isEmpty()) {
+			return false;
+		}
+		for (IrBGP b : u.getBranches()) {
+			if (!branchHasAnonPathBridge(b)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * True if all UNION branches share at least one common variable name that starts with the _anon_path_ prefix. The
+	 * check descends into simple triple-like structures and container blocks.
+	 */
+	/**
+	 * True if all UNION branches share at least one common variable name that starts with the _anon_path_ prefix. The
+	 * check descends into simple triple-like structures and container blocks.
+	 *
+	 * Rationale: used for the special-case where a UNION is marked as a new variable scope but still eligible for
+	 * merging — only when we can prove the scope originates from a shared parser-generated bridge variable rather than
+	 * a user variable. This keeps merges conservative and avoids collapsing distinct user bindings.
+	 */
+	public static boolean unionBranchesShareCommonAnonPathVarName(IrUnion u) {
+		if (unionIsExplicitAndAllBranchesScoped(u)) {
+			return false;
+		}
+		if (u == null || u.getBranches().isEmpty()) {
+			return false;
+		}
+		Set<String> common = null;
+		for (IrBGP b : u.getBranches()) {
+			Set<String> names = new HashSet<>();
+			collectAnonPathVarNames(b, names);
+			if (names.isEmpty()) {
+				return false; // a branch without anon-path vars cannot share a common one
+			}
+			if (common == null) {
+				common = new HashSet<>(names);
+			} else {
+				common.retainAll(names);
+				if (common.isEmpty()) {
+					return false;
+				}
+			}
+		}
+		return common != null && !common.isEmpty();
+	}
+
+	/**
+	 * New-scope UNION safety: true iff the two UNION branches share at least one _anon_path_* variable name.
+	 *
+	 * Implementation uses the IR getVars() API to collect all Vars from each branch (including nested nodes) and then
+	 * checks for intersection on names that start with the parser bridge prefixes. This captures subject/object,
+	 * predicate vars, as well as IrPathTriple.pathVars contributed during path rewrites.
+	 */
+	public static boolean unionBranchesShareAnonPathVarWithAllowedRoleMapping(IrUnion u) {
+		if (unionIsExplicitAndAllBranchesScoped(u)) {
+			return false;
+		}
+		if (u == null || u.getBranches().size() != 2) {
+			return false;
+		}
+		Set<Var> aVars = u.getBranches().get(0).getVars();
+		Set<Var> bVars = u.getBranches().get(1).getVars();
+		if (aVars == null || bVars == null || aVars.isEmpty() || bVars.isEmpty()) {
+			return false;
+		}
+		Set<String> aNames = new HashSet<>();
+		Set<String> bNames = new HashSet<>();
+		for (Var v : aVars) {
+			if (isAnonPathVar(v) || isAnonPathInverseVar(v)) {
+				aNames.add(v.getName());
+			}
+		}
+		for (Var v : bVars) {
+			if (isAnonPathVar(v) || isAnonPathInverseVar(v)) {
+				bNames.add(v.getName());
+			}
+		}
+		return !aNames.isEmpty() && !bNames.isEmpty() && intersects(aNames, bNames);
+	}
+
+	private static boolean intersects(Set<String> a, Set<String> b) {
+		if (a == null || b == null) {
+			return false;
+		}
+		for (String x : a) {
+			if (b.contains(x)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static void collectAnonPathVarNames(IrBGP b, Set<String> out) {
+		if (b == null) {
+			return;
+		}
+		for (IrNode ln : b.getLines()) {
+			if (ln instanceof IrStatementPattern) {
+				IrStatementPattern sp = (IrStatementPattern) ln;
+				Var s = sp.getSubject();
+				Var o = sp.getObject();
+				Var p = sp.getPredicate();
+				if (isAnonPathVar(s) || isAnonPathInverseVar(s)) {
+					out.add(s.getName());
+				}
+				if (isAnonPathVar(o) || isAnonPathInverseVar(o)) {
+					out.add(o.getName());
+				}
+				if (isAnonPathVar(p) || isAnonPathInverseVar(p)) {
+					out.add(p.getName());
+				}
+			} else if (ln instanceof IrPathTriple) {
+				IrPathTriple pt = (IrPathTriple) ln;
+				Var s = pt.getSubject();
+				Var o = pt.getObject();
+				if (isAnonPathVar(s) || isAnonPathInverseVar(s)) {
+					out.add(s.getName());
+				}
+				if (isAnonPathVar(o) || isAnonPathInverseVar(o)) {
+					out.add(o.getName());
+				}
+			} else if (ln instanceof IrGraph) {
+				collectAnonPathVarNames(((IrGraph) ln).getWhere(), out);
+			} else if (ln instanceof IrOptional) {
+				collectAnonPathVarNames(((IrOptional) ln).getWhere(), out);
+			} else if (ln instanceof IrMinus) {
+				collectAnonPathVarNames(((IrMinus) ln).getWhere(), out);
+			} else if (ln instanceof IrUnion) {
+				for (IrBGP br : ((IrUnion) ln).getBranches()) {
+					collectAnonPathVarNames(br, out);
+				}
+			} else if (ln instanceof IrBGP) {
+				collectAnonPathVarNames((IrBGP) ln, out);
+			}
+		}
+	}
+
+	/**
+	 * If the given path text is a negated property set of the form !(a|b|...), return a version where each member is
+	 * inverted by toggling the leading '^' (i.e., a -> ^a, ^a -> a). Returns null when the input is not a simple NPS.
+	 */
+	public static String invertNegatedPropertySet(String npsText) {
+		if (npsText == null) {
+			return null;
+		}
+		String s = npsText.trim();
+		if (!s.startsWith("!(") || !s.endsWith(")")) {
+			return null;
+		}
+		String inner = s.substring(2, s.length() - 1);
+		if (inner.isEmpty()) {
+			return s;
+		}
+		String[] toks = inner.split("\\|");
+		List<String> out = new ArrayList<>(toks.length);
+		for (String tok : toks) {
+			String t = tok.trim();
+			if (t.isEmpty()) {
+				continue;
+			}
+			if (t.startsWith("^")) {
+				out.add(t.substring(1));
+			} else {
+				out.add("^" + t);
+			}
+		}
+		if (out.isEmpty()) {
+			return s; // fallback: unchanged
+		}
+		return "!(" + String.join("|", out) + ")";
+	}
+
+	/**
+	 * Fuse a path triple whose object is a bridge var with a constant-IRI tail triple that also uses the bridge var,
+	 * producing a new path with an added '/^p' or '/p' segment. This version indexes join candidates and works inside
+	 * GRAPH bodies as well. It is conservative: only constant predicate tails are fused and containers are preserved.
+	 */
+	public static IrBGP fuseAltInverseTailBGP(IrBGP bgp, TupleExprIRRenderer r) {
+		if (bgp == null) {
+			return null;
+		}
+
+		final List<IrNode> in = bgp.getLines();
+		final List<IrNode> out = new ArrayList<>();
+		final Set<IrNode> removed = new HashSet<>();
+
+		// Build index of potential tail-join SPs keyed by the bridge var text ("?name"). We store both
+		// subject-joins and object-joins, and prefer object-join (inverse tail) to match expectations.
+		final Map<String, List<IrStatementPattern>> bySubject = new HashMap<>();
+		final Map<String, List<IrStatementPattern>> byObject = new HashMap<>();
+		for (IrNode n : in) {
+			if (!(n instanceof IrStatementPattern)) {
+				continue;
+			}
+			final IrStatementPattern sp = (IrStatementPattern) n;
+			final Var pv = sp.getPredicate();
+			if (pv == null || !pv.hasValue() || !(pv.getValue() instanceof IRI)) {
+				continue;
+			}
+			// Only index when the non-bridge end is not an anon_path_* var (safety)
+			final String sTxt = varOrValue(sp.getSubject(), r);
+			final String oTxt = varOrValue(sp.getObject(), r);
+			if (sp.getObject() != null && !isAnonPathVar(sp.getSubject()) && oTxt != null && oTxt.startsWith("?")) {
+				byObject.computeIfAbsent(oTxt, k -> new ArrayList<>()).add(sp);
+			}
+			if (sp.getSubject() != null && !isAnonPathVar(sp.getObject()) && sTxt != null && sTxt.startsWith("?")) {
+				bySubject.computeIfAbsent(sTxt, k -> new ArrayList<>()).add(sp);
+			}
+		}
+
+		for (IrNode n : in) {
+			if (removed.contains(n)) {
+				continue;
+			}
+
+			if (n instanceof IrPathTriple) {
+				IrPathTriple pt = (IrPathTriple) n;
+				// HEAD fusion: if a SP shares the subject with pt and uses a constant IRI predicate, prefix ^p/ or p/
+				final String headBridge = varOrValue(pt.getSubject(), r);
+				if (headBridge != null && headBridge.startsWith("?") && isAnonPathVar(pt.getSubject())) {
+					IrStatementPattern head = null;
+					boolean headInverse = true; // (?mid p ?x) => ^p/
+					final List<IrStatementPattern> hs = bySubject.get(headBridge);
+					if (hs != null) {
+						for (IrStatementPattern sp : hs) {
+							if (removed.contains(sp)) {
+								continue;
+							}
+							if (sp.getPredicate() == null || !sp.getPredicate().hasValue()
+									|| !(sp.getPredicate().getValue() instanceof IRI)) {
+								continue;
+							}
+							head = sp;
+							headInverse = true;
+							break;
+						}
+					}
+					if (head == null) {
+						final List<IrStatementPattern> ho = byObject.get(headBridge);
+						if (ho != null) {
+							for (IrStatementPattern sp : ho) {
+								if (removed.contains(sp)) {
+									continue;
+								}
+								if (sp.getPredicate() == null || !sp.getPredicate().hasValue()
+										|| !(sp.getPredicate().getValue() instanceof IRI)) {
+									continue;
+								}
+								head = sp;
+								headInverse = false; // (?x p ?mid) => p/
+								break;
+							}
+						}
+					}
+					if (head != null) {
+						final String ptxt = iri(head.getPredicate(), r);
+						final String prefix = (headInverse ? "^" : "") + ptxt + "/";
+						final Var newStart = headInverse ? head.getObject() : head.getSubject();
+						final IrNode newStartOverride = headInverse ? head.getObjectOverride()
+								: head.getSubjectOverride();
+						pt = new IrPathTriple(newStart, newStartOverride, prefix + pt.getPathText(), pt.getObject(),
+								pt.getObjectOverride(), pt.getPathVars(), pt.isNewScope());
+						removed.add(head);
+					}
+				}
+
+				// TAIL fusion: attach a constant predicate SP that shares the object
+				final String bridge = varOrValue(pt.getObject(), r);
+				if (bridge != null && bridge.startsWith("?")) {
+					// Only join when the bridge var is an _anon_path_* variable, to avoid eliminating user vars
+					if (!isAnonPathVar(pt.getObject())) {
+						out.add(pt);
+						continue;
+					}
+					IrStatementPattern join = null;
+					boolean inverse = true; // prefer inverse tail (?y p ?mid) => '^p'
+					final List<IrStatementPattern> byObj = byObject.get(bridge);
+					if (byObj != null) {
+						for (IrStatementPattern sp : byObj) {
+							if (!removed.contains(sp)) {
+								join = sp;
+								inverse = true;
+								break;
+							}
+						}
+					}
+					if (join == null) {
+						final List<IrStatementPattern> bySub = bySubject.get(bridge);
+						if (bySub != null) {
+							for (IrStatementPattern sp : bySub) {
+								if (!removed.contains(sp)) {
+									join = sp;
+									inverse = false;
+									break;
+								}
+							}
+						}
+					}
+					if (join != null) {
+						final String step = iri(join.getPredicate(), r);
+						final String newPath = pt.getPathText() + "/" + (inverse ? "^" : "") + step;
+						final Var newEnd = inverse ? join.getSubject() : join.getObject();
+						final IrNode newEndOverride = inverse ? join.getSubjectOverride() : join.getObjectOverride();
+						pt = new IrPathTriple(pt.getSubject(), pt.getSubjectOverride(), newPath, newEnd, newEndOverride,
+								pt.getPathVars(), pt.isNewScope());
+						removed.add(join);
+					}
+				}
+				out.add(pt);
+				continue;
+			}
+
+			// Recurse into containers
+			if (n instanceof IrGraph) {
+				final IrGraph g = (IrGraph) n;
+				out.add(new IrGraph(g.getGraph(), fuseAltInverseTailBGP(g.getWhere(), r), g.isNewScope()));
+				continue;
+			}
+			if (n instanceof IrOptional) {
+				final IrOptional o = (IrOptional) n;
+				IrOptional no = new IrOptional(fuseAltInverseTailBGP(o.getWhere(), r), o.isNewScope());
+				no.setNewScope(o.isNewScope());
+				out.add(no);
+				continue;
+			}
+			if (n instanceof IrMinus) {
+				final IrMinus m = (IrMinus) n;
+				out.add(new IrMinus(fuseAltInverseTailBGP(m.getWhere(), r), m.isNewScope()));
+				continue;
+			}
+			if (n instanceof IrUnion) {
+				final IrUnion u = (IrUnion) n;
+				final IrUnion u2 = new IrUnion(u.isNewScope());
+				for (IrBGP b : u.getBranches()) {
+					u2.addBranch(fuseAltInverseTailBGP(b, r));
+				}
+				out.add(u2);
+				continue;
+			}
+			if (n instanceof IrService) {
+				final IrService s = (IrService) n;
+				out.add(new IrService(s.getServiceRefText(), s.isSilent(), fuseAltInverseTailBGP(s.getWhere(), r),
+						s.isNewScope()));
+				continue;
+			}
+			// Subselects: keep as-is
+			out.add(n);
+		}
+
+		final IrBGP res = new IrBGP(bgp.isNewScope());
+		for (IrNode n2 : out) {
+			if (!removed.contains(n2)) {
+				res.add(n2);
+			}
+		}
+		res.setNewScope(bgp.isNewScope());
+		return res;
+	}
+
+	public static String varOrValue(Var v, TupleExprIRRenderer r) {
+		if (v == null) {
+			return "?_";
+		}
+		if (v.hasValue()) {
+			return r.convertValueToString(v.getValue());
+		}
+		return "?" + v.getName();
+	}
+
+}

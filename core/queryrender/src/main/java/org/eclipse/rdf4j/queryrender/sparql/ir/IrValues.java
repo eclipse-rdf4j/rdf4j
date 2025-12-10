@@ -1,0 +1,99 @@
+/*******************************************************************************
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
+package org.eclipse.rdf4j.queryrender.sparql.ir;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Textual IR node for a VALUES block.
+ *
+ * - {@link #varNames} lists projected variable names without '?'. - {@link #rows} holds textual terms per row; the
+ * renderer preserves the original ordering when configured to do so. - UNDEF is represented by the string literal
+ * "UNDEF" in a row position.
+ */
+public class IrValues extends IrNode {
+	private final List<String> varNames = new ArrayList<>();
+	private final List<List<String>> rows = new ArrayList<>();
+
+	public IrValues(boolean newScope) {
+		super(newScope);
+	}
+
+	public List<String> getVarNames() {
+		return varNames;
+	}
+
+	public List<List<String>> getRows() {
+		return rows;
+	}
+
+	@Override
+	public void print(IrPrinter p) {
+		if (varNames.isEmpty()) {
+			p.line("VALUES () {");
+			p.pushIndent();
+			for (int i = 0; i < rows.size(); i++) {
+				p.line("()");
+			}
+			p.popIndent();
+			p.line("}");
+			return;
+		}
+		if (varNames.size() == 1) {
+			// Compact single-column form: VALUES ?v { a b c }
+			String var = varNames.get(0);
+			StringBuilder sb = new StringBuilder();
+			sb.append("VALUES ?").append(var).append(" { ");
+			for (int r = 0; r < rows.size(); r++) {
+				if (r > 0) {
+					sb.append(' ');
+				}
+				List<String> row = rows.get(r);
+				sb.append(row.isEmpty() ? "UNDEF" : row.get(0));
+			}
+			sb.append(" }");
+			p.line(sb.toString());
+			return;
+		}
+
+		// Multi-column form
+		StringBuilder head = new StringBuilder();
+		head.append("VALUES (");
+		for (int i = 0; i < varNames.size(); i++) {
+			if (i > 0) {
+				head.append(' ');
+			}
+			head.append('?').append(varNames.get(i));
+		}
+		head.append(") {");
+		p.line(head.toString());
+		p.pushIndent();
+		for (List<String> row : rows) {
+			StringBuilder sb = new StringBuilder();
+			sb.append('(');
+			if (row.isEmpty()) {
+				sb.append("UNDEF");
+			} else {
+				for (int i = 0; i < row.size(); i++) {
+					if (i > 0) {
+						sb.append(' ');
+					}
+					sb.append(row.get(i));
+				}
+			}
+			sb.append(')');
+			p.line(sb.toString());
+		}
+		p.popIndent();
+		p.line("}");
+	}
+}

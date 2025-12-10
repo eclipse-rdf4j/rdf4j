@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
 
@@ -40,7 +40,7 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	}
 
 	private Set<String> findBindingNames() {
-		Set<String> result = new HashSet<>();
+		Set<String> result = new LinkedHashSet<>();
 		if (bindingSets != null) {
 			for (BindingSet set : bindingSets) {
 				result.addAll(set.getBindingNames());

@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -25,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -58,11 +60,11 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 					if (args.size() != 3) {
 						return;
 					}
-
 					Filter filter = null;
 					ValueExpr dist = null;
 					String distanceVar = null;
 					QueryModelNode parent = f.getParentNode();
+
 					if (parent instanceof ExtensionElem) {
 						distanceVar = ((ExtensionElem) parent).getName();
 						QueryModelNode extension = parent.getParentNode();
@@ -115,7 +117,7 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 							funcCall.addResultVar(sp.getObjectVar());
 							if (spec.getDistanceVar() != null) {
 								funcCall.addArg(new ValueConstant(LuceneSailSchema.DISTANCE));
-								funcCall.addResultVar(new Var(spec.getDistanceVar()));
+								funcCall.addResultVar(Var.of(spec.getDistanceVar()));
 							}
 							if (spec.getContextVar() != null) {
 								Resource context = (Resource) spec.getContextVar().getValue();
