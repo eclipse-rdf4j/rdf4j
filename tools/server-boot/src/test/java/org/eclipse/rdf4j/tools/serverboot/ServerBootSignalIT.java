@@ -57,10 +57,10 @@ import org.slf4j.LoggerFactory;
 @EnabledOnOs({ OS.LINUX, OS.MAC })
 class ServerBootSignalIT {
 
-        private static final Logger LOGGER = LoggerFactory.getLogger(ServerBootSignalIT.class);
+	private static final Logger LOGGER = LoggerFactory.getLogger(ServerBootSignalIT.class);
 
-        private ExecutorService streamExecutor;
-        private final List<Runnable> cleanupActions = new ArrayList<>();
+	private ExecutorService streamExecutor;
+	private final List<Runnable> cleanupActions = new ArrayList<>();
 
 	@BeforeEach
 	void setUp() {
@@ -86,27 +86,27 @@ class ServerBootSignalIT {
 
 	@Test
 	void gracefullyStopsOnSigint() throws Exception {
-                assertGracefulShutdownWithSigintFallback();
-        }
+		assertGracefulShutdownWithSigintFallback();
+	}
 
 	@Test
 	void gracefullyStopsOnSigterm() throws Exception {
-                assertGracefulShutdown("TERM");
-        }
+		assertGracefulShutdown("TERM");
+	}
 
-        private void assertGracefulShutdownWithSigintFallback() throws Exception {
-                assertGracefulShutdown("INT", true);
-        }
+	private void assertGracefulShutdownWithSigintFallback() throws Exception {
+		assertGracefulShutdown("INT", true);
+	}
 
-        private void assertGracefulShutdown(String signalName) throws Exception {
-                assertGracefulShutdown(signalName, false);
-        }
+	private void assertGracefulShutdown(String signalName) throws Exception {
+		assertGracefulShutdown(signalName, false);
+	}
 
-        private void assertGracefulShutdown(String signalName, boolean allowSigtermFallback) throws Exception {
-                Path projectRoot = Path.of("").toAbsolutePath();
-                String javaBin = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-                int serverPort = findFreePort();
-                int managementPort = findFreePort();
+	private void assertGracefulShutdown(String signalName, boolean allowSigtermFallback) throws Exception {
+		Path projectRoot = Path.of("").toAbsolutePath();
+		String javaBin = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		int serverPort = findFreePort();
+		int managementPort = findFreePort();
 
 		// Find the executable JAR
 		Path targetDir = projectRoot.resolve("target");
@@ -118,46 +118,46 @@ class ServerBootSignalIT {
 				.findFirst()
 				.orElseThrow(() -> new IllegalStateException("Could not find executable JAR in " + targetDir));
 
-                ProcessBuilder processBuilder = new ProcessBuilder(javaBin, "-jar", jarPath.toString(),
-                                "--server.port=" + serverPort,
-                                "--management.server.port=" + managementPort);
-                processBuilder.directory(projectRoot.toFile());
-                processBuilder.redirectErrorStream(true);
+		ProcessBuilder processBuilder = new ProcessBuilder(javaBin, "-jar", jarPath.toString(),
+				"--server.port=" + serverPort,
+				"--management.server.port=" + managementPort);
+		processBuilder.directory(projectRoot.toFile());
+		processBuilder.redirectErrorStream(true);
 
-                Process process = processBuilder.start();
-                cleanupActions.add(() -> process.destroyForcibly());
+		Process process = processBuilder.start();
+		cleanupActions.add(() -> process.destroyForcibly());
 
-                CountDownLatch started = new CountDownLatch(1);
-                StringBuilder outputBuffer = new StringBuilder();
+		CountDownLatch started = new CountDownLatch(1);
+		StringBuilder outputBuffer = new StringBuilder();
 		startStreamGobbler(process, started, outputBuffer);
 
 		boolean startedInTime = started.await(90, SECONDS);
 		assertThat(startedInTime)
-				.as(() -> "Server failed to start within timeout. Output:\n" + outputBuffer)
+				.as(() -> "Server failed to start within timeout. Output:\\n" + outputBuffer)
 				.isTrue();
 
 		String serverUrl = serverUrl(serverPort);
-                exerciseRemoteRepository(serverUrl, outputBuffer);
+		exerciseRemoteRepository(serverUrl, outputBuffer);
 
-                long pid = process.pid();
-                sendSignal(pid, signalName);
+		long pid = process.pid();
+		sendSignal(pid, signalName);
 
-                boolean exited = process.waitFor(allowSigtermFallback ? 5 : 30, SECONDS);
-                if (!exited && allowSigtermFallback) {
-                        LOGGER.warn("Server did not exit on SIGINT within 5 seconds. Sending SIGTERM.");
-                        sendSignal(pid, "TERM");
-                        exited = process.waitFor(5, SECONDS);
-                        assertThat(exited)
-                                        .as(() -> "Process did not exit after SIGTERM. Output:\n" + outputBuffer)
-                                        .isTrue();
-                }
-                assertThat(exited)
-                                .as(() -> "Process did not exit after SIG" + signalName + ". Output:\n" + outputBuffer)
-                                .isTrue();
-                assertThat(process.exitValue())
-                                .as(() -> "Process exit value after SIG" + signalName + ". Output:\n" + outputBuffer)
-                                .isEqualTo(0);
-        }
+		boolean exited = process.waitFor(allowSigtermFallback ? 5 : 30, SECONDS);
+		if (!exited && allowSigtermFallback) {
+			LOGGER.warn("Server did not exit on SIGINT within 5 seconds. Sending SIGTERM.");
+			sendSignal(pid, "TERM");
+			exited = process.waitFor(5, SECONDS);
+			assertThat(exited)
+					.as(() -> "Process did not exit after SIGTERM. Output:\\n" + outputBuffer)
+					.isTrue();
+		}
+		assertThat(exited)
+				.as(() -> "Process did not exit after SIG" + signalName + ". Output:\\n" + outputBuffer)
+				.isTrue();
+		assertThat(process.exitValue())
+				.as(() -> "Process exit value after SIG" + signalName + ". Output:\\n" + outputBuffer)
+				.isEqualTo(0);
+	}
 
 	private void startStreamGobbler(Process process, CountDownLatch started, StringBuilder outputBuffer) {
 		AtomicBoolean signalLogged = new AtomicBoolean(false);
@@ -178,8 +178,8 @@ class ServerBootSignalIT {
 			} catch (IOException e) {
 				synchronized (outputBuffer) {
 					outputBuffer.append("Failed to read process output: ")
-							.append(e.getMessage())
-							.append(System.lineSeparator());
+						.append(e.getMessage())
+						.append(System.lineSeparator());
 				}
 			}
 		});
@@ -196,7 +196,7 @@ class ServerBootSignalIT {
 	}
 
 	private void exerciseRemoteRepository(String serverUrl, StringBuilder outputBuffer)
-			throws InterruptedException, RepositoryException, RepositoryConfigException {
+				throws InterruptedException, RepositoryException, RepositoryConfigException {
 		RemoteRepositoryManager manager = awaitRepositoryManager(serverUrl, outputBuffer);
 		String repoId = "signal-" + UUID.randomUUID();
 		try {
@@ -238,7 +238,7 @@ class ServerBootSignalIT {
 	}
 
 	private RemoteRepositoryManager awaitRepositoryManager(String serverUrl, StringBuilder outputBuffer)
-			throws InterruptedException {
+				throws InterruptedException {
 		RepositoryException lastException = null;
 		long deadline = System.nanoTime() + SECONDS.toNanos(90);
 		while (System.nanoTime() < deadline) {
@@ -259,8 +259,8 @@ class ServerBootSignalIT {
 				Thread.sleep(500);
 			}
 		}
-		String errorMessage = "Timed out connecting to " + serverUrl + " Output:\n" + outputBuffer
-				+ (lastException == null ? "" : ("\nLast error: " + lastException));
+		String errorMessage = "Timed out connecting to " + serverUrl + " Output:\\n" + outputBuffer
+					+ (lastException == null ? "" : ("\nLast error: " + lastException));
 		fail(errorMessage);
 		return null;
 	}
