@@ -31,6 +31,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
  * {@link IrPrinter}; indentation and braces are handled there.
  */
 public class IrBGP extends IrNode {
+	private static final boolean DEBUG_PROPERTY_LISTS = Boolean
+			.getBoolean("rdf4j.queryrender.debugPropertyLists");
 	private List<IrNode> lines = new ArrayList<>();
 
 	public IrBGP(boolean newScope) {
@@ -128,13 +130,27 @@ public class IrBGP extends IrNode {
 		}
 
 		Map<String, List<IrStatementPattern>> bySubject = new LinkedHashMap<>();
+		Set<String> childSubjects = new HashSet<>();
 		for (IrNode n : ordered) {
 			if (n instanceof IrStatementPattern) {
 				IrStatementPattern sp = (IrStatementPattern) n;
 				if (isPropertyListCandidate(sp)) {
-					bySubject.computeIfAbsent(name(sp.getSubject()), k -> new ArrayList<>()).add(sp);
+					String subjName = name(sp.getSubject());
+					bySubject.computeIfAbsent(subjName, k -> new ArrayList<>()).add(sp);
+					Var obj = sp.getObject();
+					if (obj != null && obj.isAnonymous()) {
+						String objName = name(obj);
+						if (isAutoAnonBNodeName(objName)) {
+							childSubjects.add(objName);
+						}
+					}
 				}
 			}
+		}
+
+		if (DEBUG_PROPERTY_LISTS && !bySubject.isEmpty()) {
+			System.out.println("[irbgp-debug] property list subjects=" + bySubject.keySet()
+					+ " childSubjects=" + childSubjects);
 		}
 
 		for (IrNode n : ordered) {
@@ -142,6 +158,13 @@ public class IrBGP extends IrNode {
 				IrStatementPattern sp = (IrStatementPattern) n;
 				if (isPropertyListCandidate(sp)) {
 					String subjName = name(sp.getSubject());
+					if (isAutoAnonBNodeName(subjName) && childSubjects.contains(subjName)
+							&& bySubject.containsKey(subjName)) {
+						if (DEBUG_PROPERTY_LISTS) {
+							System.out.println("[irbgp-debug] deferring nested property list for " + subjName);
+						}
+						continue;
+					}
 					if (bySubject.containsKey(subjName)) {
 						printPropertyList(subjName, bySubject, p);
 					}
@@ -251,6 +274,14 @@ public class IrBGP extends IrNode {
 		}
 		return n.startsWith("_anon_bnode_") || n.startsWith("anon_bnode_")
 				|| n.startsWith("_anon_user_bnode_") || n.startsWith("anon_user_bnode_");
+	}
+
+	private boolean isAutoAnonBNodeName(String n) {
+		if (n == null) {
+			return false;
+		}
+		return (n.startsWith("_anon_bnode_") || n.startsWith("anon_bnode_"))
+				&& !n.startsWith("_anon_path_") && !n.startsWith("anon_path_");
 	}
 
 	private static final class InlinePrinter implements IrPrinter {

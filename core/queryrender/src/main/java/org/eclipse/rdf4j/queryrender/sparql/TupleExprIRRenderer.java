@@ -14,13 +14,20 @@ package org.eclipse.rdf4j.queryrender.sparql;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.VarNameNormalizer;
@@ -101,9 +108,11 @@ public class TupleExprIRRenderer {
 
 	private final Config cfg;
 	private final PrefixIndex prefixIndex;
-	private final java.util.Map<String, String> userBnodeLabels = new java.util.LinkedHashMap<>();
-	private final java.util.Map<String, String> anonBnodeLabels = new java.util.LinkedHashMap<>();
+	private final Map<String, String> userBnodeLabels = new LinkedHashMap<>();
+	private final Map<String, String> anonBnodeLabels = new LinkedHashMap<>();
 	private int bnodeCounter = 1;
+	private static final String USER_BNODE_PREFIX = "_anon_user_bnode_";
+	private static final String ANON_BNODE_PREFIX = "_anon_bnode_";
 
 	public TupleExprIRRenderer() {
 		this(new Config());
@@ -112,6 +121,12 @@ public class TupleExprIRRenderer {
 	public TupleExprIRRenderer(final Config cfg) {
 		this.cfg = cfg == null ? new Config() : cfg;
 		this.prefixIndex = new PrefixIndex(this.cfg.prefixes);
+	}
+
+	public void reset() {
+		userBnodeLabels.clear();
+		anonBnodeLabels.clear();
+		bnodeCounter = 1;
 	}
 
 	// ---------------- Experimental textual IR API ----------------
@@ -237,6 +252,8 @@ public class TupleExprIRRenderer {
 	/** ASK query (top-level). */
 	public String renderAsk(final TupleExpr tupleExpr, final DatasetView dataset) {
 		// Build IR (including transforms) and then print only the WHERE block using the IR printer.
+		reset();
+		BNodeValidator.validate(tupleExpr, cfg);
 		final StringBuilder out = new StringBuilder(256);
 		final IrSelect ir = toIRSelect(tupleExpr);
 		// Prologue
@@ -253,6 +270,8 @@ public class TupleExprIRRenderer {
 	private String renderSelectInternal(final TupleExpr tupleExpr,
 			final RenderMode mode,
 			final DatasetView dataset) {
+		reset();
+		BNodeValidator.validate(tupleExpr, cfg);
 		final IrSelect ir = toIRSelect(tupleExpr);
 		final boolean asSub = (mode == RenderMode.SUBSELECT);
 		String rendered = render(ir, dataset, asSub);
@@ -322,6 +341,67 @@ public class TupleExprIRRenderer {
 		return i;
 	}
 
+	// ---- Validation: reject illegal blank node placements before rendering ----
+	private static final class BNodeValidator extends AbstractQueryModelVisitor<RuntimeException> {
+		private final Config cfg;
+
+		private BNodeValidator(Config cfg) {
+			this.cfg = cfg == null ? new Config() : cfg;
+		}
+
+		static void validate(TupleExpr expr, Config cfg) {
+			if (expr == null || cfg == null || !cfg.failOnIllegalBNodes) {
+				return;
+			}
+			expr.visit(new BNodeValidator(cfg));
+		}
+
+		@Override
+		public void meet(BindingSetAssignment node) {
+			if (cfg.allowBNodesInValues) {
+				return;
+			}
+			for (BindingSet bs : node.getBindingSets()) {
+				for (String name : bs.getBindingNames()) {
+					Value v = bs.getValue(name);
+					if (v instanceof BNode) {
+						throw new IllegalArgumentException("Blank nodes in VALUES are not supported: binding '" + name
+								+ "' -> " + v);
+					}
+				}
+			}
+		}
+
+		@Override
+		public void meet(StatementPattern sp) {
+			// StatementPattern positions allow anonymous bnodes (subject/object). Predicate bnodes are illegal but
+			// should not occur after parsing; keep tolerant to avoid overblocking.
+		}
+
+		@Override
+		public void meet(Var var) {
+			if (!var.isAnonymous()) {
+				return;
+			}
+			String name = var.getName();
+			if (name == null) {
+				return;
+			}
+			if (name.startsWith("_anon_bnode_") || name.startsWith("anon_bnode_")
+					|| name.startsWith("_anon_user_bnode_") || name.startsWith("anon_user_bnode_")) {
+				throw new IllegalArgumentException("Anonymous blank node used in expression context: " + name);
+			}
+		}
+
+		@Override
+		public void meet(ValueConstant node) {
+			if (node.getValue() instanceof BNode) {
+				throw new IllegalArgumentException("Blank node literal in expression context is not supported: "
+						+ node.getValue());
+			}
+		}
+	}
+
 	private void printPrologueAndDataset(final StringBuilder out, final DatasetView dataset) {
 		if (cfg.printPrefixes && !cfg.prefixes.isEmpty()) {
 			cfg.prefixes.forEach((pfx, ns) -> out.append("PREFIX ").append(pfx).append(": <").append(ns).append(">\n"));
@@ -346,15 +426,23 @@ public class TupleExprIRRenderer {
 		}
 		// Anonymous blank node placeholder variables originating from [] should render as [].
 		if (v.isAnonymous() && v.getName() != null
-				&& (v.getName().startsWith("_anon_bnode_") || v.getName().startsWith("anon_bnode_"))) {
+				&& (v.getName().startsWith(ANON_BNODE_PREFIX) || v.getName().startsWith("anon_bnode_"))) {
+			if (cfg.preserveAnonBNodeIdentity) {
+				return "_:" + anonBnodeLabels.computeIfAbsent(v.getName(),
+						TupleExprIRRenderer::deriveStableLabelFromName);
+			}
 			return "[]";
 		}
 		// User-specified blank nodes (_:bnode1) are encoded with the _anon_user_bnode_ prefix; restore the label.
 		if (v.isAnonymous() && v.getName() != null
-				&& (v.getName().startsWith("_anon_user_bnode_") || v.getName().startsWith("anon_user_bnode_"))) {
+				&& (v.getName().startsWith(USER_BNODE_PREFIX) || v.getName().startsWith("anon_user_bnode_"))) {
 			String existing = userBnodeLabels.get(v.getName());
 			if (existing == null) {
-				existing = "bnode" + (bnodeCounter++);
+				if (cfg.preserveUserBNodeLabels || cfg.deterministicBNodeLabels) {
+					existing = deriveStableLabelFromName(v.getName());
+				} else {
+					existing = "bnode" + (bnodeCounter++);
+				}
 				userBnodeLabels.put(v.getName(), existing);
 			}
 			return "_:" + existing;
@@ -373,6 +461,30 @@ public class TupleExprIRRenderer {
 
 	public String convertValueToString(final Value val) {
 		return TermRenderer.convertValueToString(val, prefixIndex, cfg.usePrefixCompaction);
+	}
+
+	private static String deriveStableLabelFromName(String name) {
+		if (name == null) {
+			return "bnode";
+		}
+		String trimmed = name;
+		if (trimmed.startsWith(USER_BNODE_PREFIX)) {
+			trimmed = trimmed.substring(USER_BNODE_PREFIX.length());
+		} else if (trimmed.startsWith(ANON_BNODE_PREFIX)) {
+			trimmed = trimmed.substring(ANON_BNODE_PREFIX.length());
+		} else if (trimmed.startsWith("anon_user_bnode_")) {
+			trimmed = trimmed.substring("anon_user_bnode_".length());
+		} else if (trimmed.startsWith("anon_bnode_")) {
+			trimmed = trimmed.substring("anon_bnode_".length());
+		}
+		if (trimmed.isEmpty()) {
+			return "bnode";
+		}
+		if (trimmed.matches("[A-Za-z0-9_-]+")) {
+			return trimmed.startsWith("bnode") ? trimmed : "bnode" + trimmed;
+		}
+		String s = "bnode" + Integer.toHexString(trimmed.hashCode());
+		return s;
 	}
 
 	// ---- Aggregates ----
@@ -434,6 +546,11 @@ public class TupleExprIRRenderer {
 		public final List<IRI> namedGraphs = new ArrayList<>();
 		public boolean debugIR = false; // print IR before and after transforms
 		public boolean valuesPreserveOrder = false; // keep VALUES column order as given by BSA iteration
+		public boolean preserveUserBNodeLabels = false; // derive stable labels from parser placeholder
+		public boolean deterministicBNodeLabels = false; // stable mapping independent of traversal order
+		public boolean preserveAnonBNodeIdentity = false; // render repeated [] as the same _:label
+		public boolean failOnIllegalBNodes = true; // reject bnodes in VALUES or expression contexts
+		public boolean allowBNodesInValues = false; // override to allow (non-standard) bnodes in VALUES
 	}
 
 }

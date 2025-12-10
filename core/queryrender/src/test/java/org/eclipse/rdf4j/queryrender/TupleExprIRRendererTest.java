@@ -220,10 +220,10 @@ public class TupleExprIRRendererTest {
 		sparql = sparql.trim();
 
 		TupleExpr expected = parseAlgebra(SPARQL_PREFIX + sparql);
-		System.out.println("# Original SPARQL query\n" + SparqlFormatter.format(sparql) + "\n");
-		System.out.println("# Original TupleExpr\n" + expected + "\n");
+//		System.out.println("# Original SPARQL query\n" + SparqlFormatter.format(sparql) + "\n");
+//		System.out.println("# Original TupleExpr\n" + expected + "\n");
 		String rendered = render(SPARQL_PREFIX + sparql, cfg);
-		System.out.println("# Actual SPARQL query\n" + SparqlFormatter.format(rendered) + "\n");
+//		System.out.println("# Actual SPARQL query\n" + SparqlFormatter.format(rendered) + "\n");
 		TupleExpr actual = parseAlgebra(rendered);
 
 		try {
@@ -274,6 +274,15 @@ public class TupleExprIRRendererTest {
 			try {
 				if (!rendered.startsWith("<render failed")) {
 					actualTe = parseAlgebra(rendered);
+
+					if (!VarNameNormalizer.normalizeVars(actual.toString())
+							.equals(VarNameNormalizer.normalizeVars(actualTe.toString()))) {
+						System.out.println("# actual TupleExpr \n" + actual + "\n");
+						System.out.println("# actualTe TupleExpr\n" + actualTe);
+						throw new IllegalStateException(
+								"`actualTe` TupleExpr differs from original `actual` TupleExpr");
+					}
+
 					System.out.println("# Actual TupleExpr\n" + actualTe + "\n");
 				}
 			} catch (Throwable parseActualFail) {
