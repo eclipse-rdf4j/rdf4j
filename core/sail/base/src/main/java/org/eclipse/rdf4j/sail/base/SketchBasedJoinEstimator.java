@@ -11,21 +11,18 @@
 
 package org.eclipse.rdf4j.sail.base;
 
-import java.util.Collection;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReferenceArray;
-import java.util.concurrent.atomic.LongAdder;
 
 import org.apache.datasketches.theta.AnotB;
 import org.apache.datasketches.theta.Intersection;
 import org.apache.datasketches.theta.SetOperation;
 import org.apache.datasketches.theta.Sketch;
-import org.apache.datasketches.theta.Union;
 import org.apache.datasketches.theta.UpdateSketch;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -77,13 +74,11 @@ import org.slf4j.LoggerFactory;
  * <li>{@code refreshSleepMillis} (long)</li>
  * <li>{@code defaultContextString} (String)</li>
  * <li>{@code roundJoinEstimates} (boolean)</li>
- * <li>{@code stalenessAgeSlaMillis} (long)</li>
- * <li>{@code stalenessWeightAge} (double)</li>
- * <li>{@code stalenessWeightDelta} (double)</li>
- * <li>{@code stalenessWeightTomb} (double)</li>
- * <li>{@code stalenessWeightChurn} (double)</li>
- * <li>{@code stalenessDeltaCap} (double)</li>
- * <li>{@code stalenessChurnMultiplier} (double)</li>
+ * <li>{@code churnSampleMin} (int)</li>
+ * <li>{@code churnSamplePercent} (double 0..1)</li>
+ * <li>{@code churnSampleMax} (int)</li>
+ * <li>{@code churnReaddThreshold} (double 0..1)</li>
+ * <li>{@code churnRemovalRatioThreshold} (double 0..1)</li>
  * </ul>
  *
  * <p>
@@ -143,11 +138,14 @@ public class SketchBasedJoinEstimator {
 	private final long throttleMillis;
 	private final long refreshSleepMillis;
 	private final String defaultContextString;
-	private final long stalenessAgeSlaMs;
-	private final double wAge, wDelta, wTomb, wChurn;
-	private final double deltaCap;
-	private final double churnMultiplier;
+	private final int churnSampleMin;
+	private final int churnSampleMax;
+	private final double churnSamplePercent;
+	private final double churnReaddThreshold;
+	private final double churnRemovalRatioThreshold;
 	private final boolean roundJoinEstimates;
+	private final ChurnSampler churnSampler;
+	private final java.util.concurrent.atomic.AtomicLong approxStoreSize = new java.util.concurrent.atomic.AtomicLong();
 
 	/** Two interchangeable buffers; one of them is always the current snapshot. */
 	private final State bufA, bufB;
@@ -167,10 +165,7 @@ public class SketchBasedJoinEstimator {
 	// ──────────────────────────────────────────────────────────────
 	// Staleness tracking (global, lock‑free reads)
 	// ──────────────────────────────────────────────────────────────
-	private volatile long lastRebuildStartMs = System.currentTimeMillis();
 	private volatile long lastRebuildPublishMs = 0L;
-	private final LongAdder addsSinceRebuild = new LongAdder();
-	private final LongAdder deletesSinceRebuild = new LongAdder();
 
 	/* ────────────────────────────────────────────────────────────── */
 	/* Construction */
@@ -206,13 +201,11 @@ public class SketchBasedJoinEstimator {
 		long thrMs = cfg.throttleMillis;
 		long refreshMs = cfg.refreshSleepMillis;
 		String defCtx = cfg.defaultContextString;
-		long slaMs = cfg.stalenessAgeSlaMillis;
-		double wA = cfg.stalenessWeightAge;
-		double wD = cfg.stalenessWeightDelta;
-		double wT = cfg.stalenessWeightTomb;
-		double wC = cfg.stalenessWeightChurn;
-		double dCap = cfg.stalenessDeltaCap;
-		double churnMult = cfg.stalenessChurnMultiplier;
+		int sampleMin = cfg.churnSampleMin;
+		int sampleMax = cfg.churnSampleMax;
+		double samplePct = cfg.churnSamplePercent;
+		double churnReaddTh = cfg.churnReaddThreshold;
+		double churnRemovalTh = cfg.churnRemovalRatioThreshold;
 		boolean roundEst = cfg.roundJoinEstimates;
 		int kCfg = cfg.sketchK;
 
@@ -223,18 +216,22 @@ public class SketchBasedJoinEstimator {
 		thrMs = propLong("throttleMillis", thrMs);
 		refreshMs = propLong("refreshSleepMillis", refreshMs);
 		defCtx = propString("defaultContextString", defCtx);
-		slaMs = propLong("stalenessAgeSlaMillis", slaMs);
-		wA = propDouble("stalenessWeightAge", wA);
-		wD = propDouble("stalenessWeightDelta", wD);
-		wT = propDouble("stalenessWeightTomb", wT);
-		wC = propDouble("stalenessWeightChurn", wC);
-		dCap = propDouble("stalenessDeltaCap", dCap);
-		churnMult = propDouble("stalenessChurnMultiplier", churnMult);
+		sampleMin = propInt("churnSampleMin", sampleMin);
+		sampleMax = propInt("churnSampleMax", sampleMax);
+		samplePct = propDouble("churnSamplePercent", samplePct);
+		churnReaddTh = propDouble("churnReaddThreshold", churnReaddTh);
+		churnRemovalTh = propDouble("churnRemovalRatioThreshold", churnRemovalTh);
 		roundEst = propBool("roundJoinEstimates", roundEst);
 		int kProp = propIntOrNegOne("sketchK", kCfg);
 
 		int buckets = dbl ? (nEntries * 2) : nEntries;
 		int k = (kProp > 0) ? kProp : (kCfg > 0 ? kCfg : (buckets * 8));
+
+		samplePct = clamp(samplePct, 0.0, 1.0);
+		sampleMin = Math.max(0, sampleMin);
+		sampleMax = Math.max(0, sampleMax);
+		churnReaddTh = clamp(churnReaddTh, 0.0, 1.0);
+		churnRemovalTh = clamp(churnRemovalTh, 0.0, 1.0);
 
 		this.sailStore = sailStore;
 		this.nominalEntries = buckets;
@@ -242,14 +239,13 @@ public class SketchBasedJoinEstimator {
 		this.throttleMillis = thrMs;
 		this.refreshSleepMillis = refreshMs;
 		this.defaultContextString = defCtx;
-		this.stalenessAgeSlaMs = slaMs;
-		this.wAge = wA;
-		this.wDelta = wD;
-		this.wTomb = wT;
-		this.wChurn = wC;
-		this.deltaCap = dCap;
-		this.churnMultiplier = churnMult;
+		this.churnSampleMin = sampleMin;
+		this.churnSampleMax = sampleMax;
+		this.churnSamplePercent = samplePct;
+		this.churnReaddThreshold = churnReaddTh;
+		this.churnRemovalRatioThreshold = churnRemovalTh;
 		this.roundJoinEstimates = roundEst;
+		this.churnSampler = new ChurnSampler();
 
 		this.bufA = new State(k, this.nominalEntries);
 		this.bufB = new State(k, this.nominalEntries);
@@ -391,9 +387,6 @@ public class SketchBasedJoinEstimator {
 		long seen = 0L;
 		long l = System.currentTimeMillis();
 
-		// staleness: record rebuild start
-		lastRebuildStartMs = l;
-
 		try (SailDataset ds = sailStore.getExplicitSailSource().dataset(IsolationLevels.SERIALIZABLE);
 				CloseableIteration<? extends Statement> it = ds.getStatements(null, null, null)) {
 
@@ -420,6 +413,7 @@ public class SketchBasedJoinEstimator {
 
 		current = tgt; // single volatile write → visible to all readers
 		seenTriples = seen;
+		approxStoreSize.set(seen);
 		usingA = !usingA;
 
 //		long currentMemoryUsageAfter = currentMemoryUsage();
@@ -428,10 +422,9 @@ public class SketchBasedJoinEstimator {
 //				currentMemoryUsageAfter / 1024 / 1024 + " MB, delta = " +
 //				(currentMemoryUsageAfter - currentMemoryUsage) / 1024 / 1024 + " MB.");
 
-		// staleness: publish times & reset deltas
+		// staleness: publish times & reset churn sampler
 		lastRebuildPublishMs = System.currentTimeMillis();
-		addsSinceRebuild.reset();
-		deletesSinceRebuild.reset();
+		churnSampler.reset();
 
 		return seen;
 	}
@@ -470,15 +463,16 @@ public class SketchBasedJoinEstimator {
 	public void addStatement(Statement st) {
 		Objects.requireNonNull(st);
 
+		String signature = sig(str(st.getSubject()), str(st.getPredicate()), str(st.getObject()), str(st.getContext()));
+		churnSampler.recordAdd(signature, samplingInterval());
+		approxStoreSize.incrementAndGet();
+
 		synchronized (bufA) {
 			ingest(bufA, st, /* isDelete= */false);
 		}
 		synchronized (bufB) {
 			ingest(bufB, st, /* isDelete= */false);
 		}
-
-		// staleness: track deltas
-		addsSinceRebuild.increment();
 	}
 
 	public void addStatement(Resource s, IRI p, Value o, Resource c) {
@@ -492,15 +486,16 @@ public class SketchBasedJoinEstimator {
 	public void deleteStatement(Statement st) {
 		Objects.requireNonNull(st);
 
+		String signature = sig(str(st.getSubject()), str(st.getPredicate()), str(st.getObject()), str(st.getContext()));
+		churnSampler.recordDelete(signature, samplingInterval());
+		approxStoreSize.updateAndGet(v -> Math.max(0, v - 1));
+
 		synchronized (bufA) {
 			ingest(bufA, st, /* isDelete= */true);
 		}
 		synchronized (bufB) {
 			ingest(bufB, st, /* isDelete= */true);
 		}
-
-		// staleness: track deltas
-		deletesSinceRebuild.increment();
 	}
 
 	public void deleteStatement(Resource s, IRI p, Value o, Resource c) {
@@ -540,11 +535,6 @@ public class SketchBasedJoinEstimator {
 			updateCell(tgtST.get(Component.P), pi, sig, t.k);
 			updateCell(tgtST.get(Component.O), oi, sig, t.k);
 			updateCell(tgtST.get(Component.C), ci, sig, t.k);
-
-			/* ★ churn: record incremental adds since rebuild (S bucket only) */
-			if (!isDelete) {
-				updateCell(t.incAddSingleTriples.get(Component.S), si, sig, t.k);
-			}
 
 			/* complement sets for singles (array-backed second layer) */
 			tgtS.get(Component.S).upd(Component.P, si, p);
@@ -1004,10 +994,6 @@ public class SketchBasedJoinEstimator {
 		final EnumMap<Component, SingleBuild> delSingles = new EnumMap<>(Component.class);
 		final EnumMap<Pair, PairBuild> delPairs = new EnumMap<>(Pair.class);
 
-		/* ★ incremental‑adds since last rebuild (array‑backed; we only use S in metrics) */
-		final EnumMap<Component, AtomicReferenceArray<UpdateSketch>> incAddSingleTriples = new EnumMap<>(
-				Component.class);
-
 		State(int k, int buckets) {
 			this.k = k;
 			this.buckets = buckets;
@@ -1015,7 +1001,6 @@ public class SketchBasedJoinEstimator {
 			for (Component c : Component.values()) {
 				singleTriples.put(c, new AtomicReferenceArray<>(buckets));
 				delSingleTriples.put(c, new AtomicReferenceArray<>(buckets));
-				incAddSingleTriples.put(c, new AtomicReferenceArray<>(buckets));
 
 				singles.put(c, new SingleBuild(k, c, buckets));
 				delSingles.put(c, new SingleBuild(k, c, buckets));
@@ -1029,7 +1014,6 @@ public class SketchBasedJoinEstimator {
 		void clear() {
 			singleTriples.values().forEach(SketchBasedJoinEstimator::clearArray);
 			delSingleTriples.values().forEach(SketchBasedJoinEstimator::clearArray);
-			incAddSingleTriples.values().forEach(SketchBasedJoinEstimator::clearArray); // ★
 
 			singles.values().forEach(SingleBuild::clear);
 			delSingles.values().forEach(SingleBuild::clear);
@@ -1311,65 +1295,122 @@ public class SketchBasedJoinEstimator {
 	/* Staleness API */
 	/* ────────────────────────────────────────────────────────────── */
 
+	private static final class ChurnSnapshot {
+		final int sampled;
+		final int removed;
+		final int readded;
+
+		ChurnSnapshot(int sampled, int removed, int readded) {
+			this.sampled = sampled;
+			this.removed = removed;
+			this.readded = readded;
+		}
+
+		double removalRatio() {
+			return sampled == 0 ? 0.0 : (double) removed / (double) sampled;
+		}
+
+		double readdRatio() {
+			return sampled == 0 ? 0.0 : (double) readded / (double) sampled;
+		}
+	}
+
+	private static final class ChurnSampler {
+		private enum State {
+			ADDED,
+			DELETED_AFTER_ADD,
+			READDED_AFTER_DELETE
+		}
+
+		private final ConcurrentHashMap<String, State> samples = new ConcurrentHashMap<>();
+		private long eventsSinceLastSample = 0L;
+
+		void reset() {
+			samples.clear();
+			eventsSinceLastSample = 0L;
+		}
+
+		void recordAdd(String signature, long sampleEvery) {
+			record(signature, sampleEvery, true);
+		}
+
+		void recordDelete(String signature, long sampleEvery) {
+			record(signature, sampleEvery, false);
+		}
+
+		private void record(String signature, long sampleEvery, boolean isAdd) {
+			if (sampleEvery <= 0) {
+				return;
+			}
+			eventsSinceLastSample++;
+			if (eventsSinceLastSample < sampleEvery) {
+				return;
+			}
+			eventsSinceLastSample = 0L;
+
+			samples.compute(signature, (sig, state) -> {
+				if (state == null) {
+					return isAdd ? State.ADDED : null;
+				}
+				if (isAdd && state == State.DELETED_AFTER_ADD) {
+					return State.READDED_AFTER_DELETE;
+				}
+				if (!isAdd && state == State.ADDED) {
+					return State.DELETED_AFTER_ADD;
+				}
+				return state;
+			});
+		}
+
+		ChurnSnapshot snapshot() {
+			int sampled = 0;
+			int removed = 0;
+			int readded = 0;
+			for (State state : samples.values()) {
+				sampled++;
+				if (state == State.DELETED_AFTER_ADD || state == State.READDED_AFTER_DELETE) {
+					removed++;
+				}
+				if (state == State.READDED_AFTER_DELETE) {
+					readded++;
+				}
+			}
+			return new ChurnSnapshot(sampled, removed, readded);
+		}
+	}
+
 	/**
 	 * Immutable staleness snapshot. All values are approximate by design.
 	 */
 	public static final class Staleness {
 		public final long ageMillis; // AoI: time since last publish
-		public final long lastRebuildStartMs;
 		public final long lastRebuildPublishMs;
 
-		public final long addsSinceRebuild;
-		public final long deletesSinceRebuild;
-		public final double deltaRatio; // (adds+deletes)/max(1, seenTriples)
-
-		public final double tombstoneLoadSingles; // coarse: sumRetained(delSingles)/sumRetained(addSingles)
-		public final double tombstoneLoadPairs; // coarse: sumRetained(delPairs)/sumRetained(addPairs)
-		public final double tombstoneLoadComplements;// coarse: from complement maps
-
-		public final double distinctTriples; // union over singleTriples[S]
-		public final double distinctDeletes; // union over delSingleTriples[S]
-		public final double distinctNetLive; // union of (A-not-B per S-bucket)
-
-		// ★ churn‑specific
-		public final double distinctIncAdds; // union over incAddSingleTriples[S]
-		public final double readdOverlap; // union of per‑bucket intersections incAdd[S] ∧ del[S]
-		public final double readdOverlapOnIncAdds; // ratio readdOverlap / distinctIncAdds
+		// churn-specific
+		public final int sampledAdds;
+		public final int sampledRemoved;
+		public final int sampledReadded;
+		public final double sampledRemovalRatio;
+		public final double sampledReaddRatio;
 
 		public final double stalenessScore; // combined 0..1+
 
 		private Staleness(
 				long ageMillis,
-				long lastRebuildStartMs,
 				long lastRebuildPublishMs,
-				long addsSinceRebuild,
-				long deletesSinceRebuild,
-				double deltaRatio,
-				double tombstoneLoadSingles,
-				double tombstoneLoadPairs,
-				double tombstoneLoadComplements,
-				double distinctTriples,
-				double distinctDeletes,
-				double distinctNetLive,
-				double distinctIncAdds,
-				double readdOverlap,
-				double readdOverlapOnIncAdds,
+				int sampledAdds,
+				int sampledRemoved,
+				int sampledReadded,
+				double sampledRemovalRatio,
+				double sampledReaddRatio,
 				double stalenessScore) {
 			this.ageMillis = ageMillis;
-			this.lastRebuildStartMs = lastRebuildStartMs;
 			this.lastRebuildPublishMs = lastRebuildPublishMs;
-			this.addsSinceRebuild = addsSinceRebuild;
-			this.deletesSinceRebuild = deletesSinceRebuild;
-			this.deltaRatio = deltaRatio;
-			this.tombstoneLoadSingles = tombstoneLoadSingles;
-			this.tombstoneLoadPairs = tombstoneLoadPairs;
-			this.tombstoneLoadComplements = tombstoneLoadComplements;
-			this.distinctTriples = distinctTriples;
-			this.distinctDeletes = distinctDeletes;
-			this.distinctNetLive = distinctNetLive;
-			this.distinctIncAdds = distinctIncAdds;
-			this.readdOverlap = readdOverlap;
-			this.readdOverlapOnIncAdds = readdOverlapOnIncAdds;
+			this.sampledAdds = sampledAdds;
+			this.sampledRemoved = sampledRemoved;
+			this.sampledReadded = sampledReadded;
+			this.sampledRemovalRatio = sampledRemovalRatio;
+			this.sampledReaddRatio = sampledReaddRatio;
 			this.stalenessScore = stalenessScore;
 		}
 
@@ -1377,20 +1418,12 @@ public class SketchBasedJoinEstimator {
 		public String toString() {
 			return "Staleness{" +
 					"ageMillis=" + ageMillis +
-					", lastRebuildStartMs=" + lastRebuildStartMs +
 					", lastRebuildPublishMs=" + lastRebuildPublishMs +
-					", addsSinceRebuild=" + addsSinceRebuild +
-					", deletesSinceRebuild=" + deletesSinceRebuild +
-					", deltaRatio=" + deltaRatio +
-					", tombstoneLoadSingles=" + tombstoneLoadSingles +
-					", tombstoneLoadPairs=" + tombstoneLoadPairs +
-					", tombstoneLoadComplements=" + tombstoneLoadComplements +
-					", distinctTriples=" + distinctTriples +
-					", distinctDeletes=" + distinctDeletes +
-					", distinctNetLive=" + distinctNetLive +
-					", distinctIncAdds=" + distinctIncAdds +
-					", readdOverlap=" + readdOverlap +
-					", readdOverlapOnIncAdds=" + readdOverlapOnIncAdds +
+					", sampledAdds=" + sampledAdds +
+					", sampledRemoved=" + sampledRemoved +
+					", sampledReadded=" + sampledReadded +
+					", sampledRemovalRatio=" + sampledRemovalRatio +
+					", sampledReaddRatio=" + sampledReaddRatio +
 					", stalenessScore=" + stalenessScore +
 					'}';
 		}
@@ -1403,223 +1436,85 @@ public class SketchBasedJoinEstimator {
 	 * All numbers are approximate by design of Theta sketches.
 	 */
 	public Staleness staleness() {
-		State snap = current;
-
 		final long now = System.currentTimeMillis();
 		final long age = lastRebuildPublishMs == 0L ? Long.MAX_VALUE : (now - lastRebuildPublishMs);
 
-		final long adds = addsSinceRebuild.sum();
-		final long dels = deletesSinceRebuild.sum();
+		final int decisionMin = 1;
 
-		final double base = Math.max(1.0, seenTriples);
-		final double deltaRatio = (adds + dels) / base;
+		ChurnSnapshot churnSnapshot = churnSampler.snapshot();
+		double churnRatio = churnSnapshot.sampled < decisionMin
+				? 0.0
+				: Math.max(churnSnapshot.readdRatio(), churnSnapshot.removalRatio());
 
-		// Coarse tombstone pressure via retained entries (symmetric double-counting)
-		long addSinglesRet = sumRetainedEntriesSingles(snap.singleTriples.values());
-		long delSinglesRet = sumRetainedEntriesSingles(snap.delSingleTriples.values());
-		double tombSingle = safeRatio(delSinglesRet, addSinglesRet);
-
-		long addPairsRet = sumRetainedEntriesPairs(snap.pairs.values());
-		long delPairsRet = sumRetainedEntriesPairs(snap.delPairs.values());
-		double tombPairs = safeRatio(delPairsRet, addPairsRet);
-
-		long addComplRet = sumRetainedEntriesComplements(snap.singles.values());
-		long delComplRet = sumRetainedEntriesComplements(snap.delSingles.values());
-		double tombCompl = safeRatio(delComplRet, addComplRet);
-
-		// Distinct-aware: unions across S-buckets
-		double distinctAdds = unionDistinctTriplesS(snap.singleTriples.get(Component.S));
-		double distinctDels = unionDistinctTriplesS(snap.delSingleTriples.get(Component.S));
-		double distinctNet = unionDistinctNetLiveTriplesS(
-				snap.singleTriples.get(Component.S),
-				snap.delSingleTriples.get(Component.S));
-
-		// ★ Churn: delete→re‑add overlap using incremental‑adds (S bucket only)
-		double distinctIncAdds = unionDistinctTriplesS(snap.incAddSingleTriples.get(Component.S));
-		double readdOverlap = overlapIncAddVsDelS(
-				snap.incAddSingleTriples.get(Component.S),
-				snap.delSingleTriples.get(Component.S));
-		double readdOverlapOnIncAdds = distinctIncAdds <= 0.0 ? 0.0 : (readdOverlap / distinctIncAdds);
-
-		// Combined score (dimensionless). Emphasize churn risk (configurable).
-		double ageScore = normalize(age, stalenessAgeSlaMs);
-		double deltaScore = clamp(deltaRatio, 0.0, deltaCap);
-		double tombScore = (tombSingle + tombPairs + tombCompl) / 3.0;
-		double churnScore = clamp(readdOverlapOnIncAdds * churnMultiplier, 0.0, churnMultiplier);
-
-		double score = ageScore * wAge + deltaScore * wDelta + tombScore * wTomb + churnScore * wChurn;
+		double score = clamp(churnRatio, 0.0, 1.0);
 
 		return new Staleness(
 				age,
-				lastRebuildStartMs,
 				lastRebuildPublishMs,
-				adds,
-				dels,
-				deltaRatio,
-				tombSingle,
-				tombPairs,
-				tombCompl,
-				distinctAdds,
-				distinctDels,
-				distinctNet,
-				distinctIncAdds,
-				readdOverlap,
-				readdOverlapOnIncAdds,
+				churnSnapshot.sampled,
+				churnSnapshot.removed,
+				churnSnapshot.readded,
+				churnSnapshot.removalRatio(),
+				churnSnapshot.readdRatio(),
 				score);
 	}
 
 	/** Convenience: true if combined staleness score exceeds a given threshold. */
 	public boolean isStale(double threshold) {
-		return staleness().stalenessScore > threshold;
+		Staleness staleness = staleness();
+		int decisionMin = 1;
+		boolean removalBreach = staleness.sampledAdds >= decisionMin
+				&& staleness.sampledRemovalRatio >= churnRemovalRatioThreshold;
+		boolean readdBreach = staleness.sampledAdds >= decisionMin
+				&& staleness.sampledReaddRatio >= churnReaddThreshold;
+		return removalBreach || readdBreach || staleness.stalenessScore > threshold;
 	}
 
 	// ──────────────────────────────────────────────────────────────
 	// Staleness helpers (private)
 	// ──────────────────────────────────────────────────────────────
 
-	private static long sumRetainedEntriesSingles(Collection<AtomicReferenceArray<UpdateSketch>> arrays) {
-		long sum = 0L;
-		for (AtomicReferenceArray<UpdateSketch> arr : arrays) {
-			if (arr == null) {
-				continue;
-			}
-			for (int i = 0; i < arr.length(); i++) {
-				UpdateSketch sk = arr.get(i);
-				if (sk != null) {
-					sum += sk.getRetainedEntries();
-				}
-			}
-		}
-		return sum;
-	}
-
-	private static long sumRetainedEntriesPairs(Collection<PairBuild> pbs) {
-		long sum = 0L;
-		for (PairBuild pb : pbs) {
-			if (pb == null) {
-				continue;
-			}
-			for (int x = 0; x < pb.buckets; x++) {
-				PairBuild.Row r = pb.rows.get(x);
-				if (r == null) {
-					continue;
-				}
-				for (int y = 0; y < pb.buckets; y++) {
-					UpdateSketch sk;
-					sk = r.triples.get(y);
-					if (sk != null) {
-						sum += sk.getRetainedEntries();
-					}
-					sk = r.comp1.get(y);
-					if (sk != null) {
-						sum += sk.getRetainedEntries();
-					}
-					sk = r.comp2.get(y);
-					if (sk != null) {
-						sum += sk.getRetainedEntries();
-					}
-				}
-			}
-		}
-		return sum;
-	}
-
-	private static long sumRetainedEntriesComplements(Collection<SingleBuild> sbs) {
-		long sum = 0L;
-		for (SingleBuild sb : sbs) {
-			for (AtomicReferenceArray<UpdateSketch> arr : sb.cmpl.values()) {
-				for (int i = 0; i < arr.length(); i++) {
-					UpdateSketch sk = arr.get(i);
-					if (sk != null) {
-						sum += sk.getRetainedEntries();
-					}
-				}
-			}
-		}
-		return sum;
-	}
-
-	private static double unionDistinctTriplesS(AtomicReferenceArray<UpdateSketch> arr) {
-		if (arr == null || arr.length() == 0) {
-			return 0.0;
-		}
-		Union u = SetOperation.builder().buildUnion();
-		for (int i = 0; i < arr.length(); i++) {
-			UpdateSketch sk = arr.get(i);
-			if (sk != null) {
-				u.union(sk); // DataSketches 5.x: union(Sketch)
-			}
-		}
-		return u.getResult().getEstimate();
-	}
-
-	private static double unionDistinctNetLiveTriplesS(
-			AtomicReferenceArray<UpdateSketch> addS,
-			AtomicReferenceArray<UpdateSketch> delS) {
-		if (addS == null || addS.length() == 0) {
-			return 0.0;
-		}
-		Union u = SetOperation.builder().buildUnion();
-		for (int i = 0; i < addS.length(); i++) {
-			UpdateSketch a = addS.get(i);
-			if (a == null) {
-				continue;
-			}
-			UpdateSketch d = (delS == null || delS.length() <= i) ? null : delS.get(i);
-			if (d == null || d.getRetainedEntries() == 0) {
-				u.union(a);
-			} else {
-				AnotB diff = SetOperation.builder().buildANotB();
-				diff.setA(a);
-				diff.notB(d);
-				u.union(diff.getResult(false)); // union A-not-B Sketch
-			}
-		}
-		return u.getResult().getEstimate();
-	}
-
-	/** ★ The key churn metric: per‑bucket (incAdd[S] ∧ del[S]) summed via a union of intersections. */
-	private static double overlapIncAddVsDelS(
-			AtomicReferenceArray<UpdateSketch> incAddS,
-			AtomicReferenceArray<UpdateSketch> delS) {
-		if (incAddS == null || delS == null) {
-			return 0.0;
-		}
-		Union u = SetOperation.builder().buildUnion();
-		int len = Math.min(incAddS.length(), delS.length());
-		for (int i = 0; i < len; i++) {
-			UpdateSketch ia = incAddS.get(i);
-			UpdateSketch d = delS.get(i);
-			if (ia == null || d == null) {
-				continue;
-			}
-			Intersection ix = SetOperation.builder().buildIntersection();
-			ix.intersect(ia);
-			ix.intersect(d);
-			Sketch inter = ix.getResult();
-			if (inter != null && inter.getRetainedEntries() > 0) {
-				u.union(inter);
-			}
-		}
-		return u.getResult().getEstimate();
-	}
-
-	private static double safeRatio(long num, long den) {
-		if (den <= 0L) {
-			return (num == 0L) ? 0.0 : Double.POSITIVE_INFINITY;
-		}
-		return (double) num / (double) den;
-	}
-
-	private static double normalize(long value, long max) {
-		if (max <= 0L) {
-			return 0.0;
-		}
-		return clamp((double) value / (double) max, 0.0, Double.POSITIVE_INFINITY);
-	}
-
 	private static double clamp(double v, double lo, double hi) {
 		return Math.max(lo, Math.min(hi, v));
+	}
+
+	/**
+	 * Determine how frequently churn events should be sampled, expressed as "every N statements".
+	 * <p>
+	 * Rules:
+	 * <ul>
+	 * <li>When both {@code churnSamplePercent} and {@code churnSampleMin} are zero or negative, sampling is
+	 * disabled.</li>
+	 * <li>Base interval is derived from {@code churnSamplePercent * approxStoreSize} (rounded to ≥ 1) when percent &gt;
+	 * 0.</li>
+	 * <li>The interval is never smaller (more frequent) than {@code churnSampleMin} when
+	 * {@code churnSampleMin &gt; 0}.</li>
+	 * <li>If {@code churnSampleMax &gt; 0} and the calculated interval is below it, the interval is raised to
+	 * {@code churnSampleMax} to avoid oversampling.</li>
+	 * </ul>
+	 */
+	private long samplingInterval() {
+		if (churnSamplePercent <= 0.0 && churnSampleMin <= 0) {
+			return 0L; // sampling disabled
+		}
+
+		long interval = 0L;
+
+		if (churnSamplePercent > 0.0) {
+			double raw = approxStoreSize.get() * churnSamplePercent;
+			long pctInterval = Math.max(1L, Math.round(raw));
+			interval = Math.max(interval, pctInterval);
+		}
+
+		if (churnSampleMin > 0) {
+			interval = Math.max(interval, churnSampleMin);
+		}
+
+		if (churnSampleMax > 0 && interval > 0 && interval < churnSampleMax) {
+			interval = churnSampleMax;
+		}
+
+		return interval;
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
@@ -1736,14 +1631,11 @@ public class SketchBasedJoinEstimator {
 		String defaultContextString = "urn:default-context";
 		boolean roundJoinEstimates = true;
 
-		// staleness
-		long stalenessAgeSlaMillis = TimeUnit.MINUTES.toMillis(10);
-		double stalenessWeightAge = 0.20;
-		double stalenessWeightDelta = 0.20;
-		double stalenessWeightTomb = 0.20;
-		double stalenessWeightChurn = 0.40;
-		double stalenessDeltaCap = 10.0;
-		double stalenessChurnMultiplier = 3.0;
+		int churnSampleMin = 128;
+		int churnSampleMax = 4096;
+		double churnSamplePercent = 0.01;
+		double churnReaddThreshold = 0.20;
+		double churnRemovalRatioThreshold = 0.50;
 
 		/** Return a new config with all defaults. */
 		public static Config defaults() {
@@ -1798,30 +1690,36 @@ public class SketchBasedJoinEstimator {
 			return this;
 		}
 
-		/** Service‑level objective for snapshot age used in the staleness score. */
-		public Config withStalenessAgeSlaMillis(long ms) {
-			this.stalenessAgeSlaMillis = ms;
+		/** Minimum number of statements to sample before switching to probabilistic sampling. */
+		public Config withChurnSampleMin(int min) {
+			this.churnSampleMin = Math.max(0, min);
 			return this;
 		}
 
-		/** Weights for age, delta, tombstone pressure and churn components in the staleness score. */
-		public Config withStalenessWeights(double age, double delta, double tomb, double churn) {
-			this.stalenessWeightAge = age;
-			this.stalenessWeightDelta = delta;
-			this.stalenessWeightTomb = tomb;
-			this.stalenessWeightChurn = churn;
+		/** Fraction (0..1) of statements to sample after the minimum set is populated. */
+		public Config withChurnSamplePercent(double fraction) {
+			this.churnSamplePercent = fraction;
 			return this;
 		}
 
-		/** Upper bound applied to the delta component before weighting. */
-		public Config withStalenessDeltaCap(double cap) {
-			this.stalenessDeltaCap = cap;
+		/**
+		 * Upper bound on sampling frequency expressed as a minimum spacing (in statements) between sampled churn
+		 * events. If the percentage-derived interval is smaller than this value, sampling is throttled to this spacing.
+		 */
+		public Config withChurnSampleMax(int max) {
+			this.churnSampleMax = Math.max(0, max);
 			return this;
 		}
 
-		/** Multiplier applied to churn ratio prior to clamping/weighting. */
-		public Config withStalenessChurnMultiplier(double m) {
-			this.stalenessChurnMultiplier = m;
+		/** Threshold for the share of sampled statements that were added, deleted, and re-added. */
+		public Config withChurnReaddThreshold(double fraction) {
+			this.churnReaddThreshold = fraction;
+			return this;
+		}
+
+		/** Threshold for the ratio of removed to added sampled statements. */
+		public Config withChurnRemovalRatioThreshold(double fraction) {
+			this.churnRemovalRatioThreshold = fraction;
 			return this;
 		}
 	}

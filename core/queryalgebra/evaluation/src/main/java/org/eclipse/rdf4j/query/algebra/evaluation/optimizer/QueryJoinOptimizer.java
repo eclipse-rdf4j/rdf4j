@@ -362,18 +362,19 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			};
 
 			while (!tupleExprs.isEmpty()) {
-				if (ret.isEmpty()) {
-					TupleExpr bestStart = selectBestStartingExpr(tupleExprs, getCard);
-					if (bestStart != null) {
-						tupleExprs.remove(bestStart);
-						ret.addLast(bestStart);
-						continue;
-					}
-				}
+				// Currently this is slower, and the most optimal tuple expr is the first one anyways
+//				if (ret.isEmpty()) {
+//					TupleExpr bestStart = selectBestStartingExpr(tupleExprs, getCard);
+//					if (bestStart != null) {
+//						tupleExprs.remove(bestStart);
+//						ret.addLast(bestStart);
+//						continue;
+//					}
+//				}
 
 				// If ret is empty or next isn’t a StatementPattern, just drain in original order
 				if (ret.isEmpty() || !(tupleExprs.get(0) instanceof StatementPattern)) {
-					ret.addLast(tupleExprs.remove(0));
+					ret.add(tupleExprs.remove(0));
 					continue;
 				}
 

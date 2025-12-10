@@ -1,0 +1,21 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX dct: <http://purl.org/dc/terms/>
+PREFIX eu-filetype: <http://publications.europa.eu/resource/authority/file-type/>
+
+SELECT ?dataset
+WHERE {
+    ?dataset a dcat:Dataset .
+
+    FILTER EXISTS {
+        ?dataset dcat:distribution ?csvDist .
+        ?csvDist (dct:format|dcat:mediaType) ?csvFormat .
+        FILTER (?csvFormat = eu-filetype:CSV || ?csvFormat = "text/csv")
+    }
+
+    FILTER NOT EXISTS {
+        ?dataset dcat:distribution ?nonCsvDist .
+        ?nonCsvDist (dct:format|dcat:mediaType) ?nonCsvFormat .
+        FILTER (?nonCsvFormat != eu-filetype:CSV && ?nonCsvFormat != "text/csv")
+    }
+}
+LIMIT 150
