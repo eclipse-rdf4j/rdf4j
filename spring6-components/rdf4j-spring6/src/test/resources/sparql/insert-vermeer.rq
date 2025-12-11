@@ -1,0 +1,3 @@
+prefix ex: <http://example.org/>
+
+INSERT { ex:Vermeer a ex:Artist } where {}
