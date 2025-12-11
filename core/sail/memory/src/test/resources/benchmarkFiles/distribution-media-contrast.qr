@@ -18,4 +18,4 @@ WHERE {
         FILTER (?nonCsvFormat != eu-filetype:CSV && ?nonCsvFormat != "text/csv")
     }
 }
-LIMIT 150
+LIMIT 30

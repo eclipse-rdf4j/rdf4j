@@ -1,0 +1,2950 @@
+=== complexQuery - EXECUTED ===
+Projection (resultSizeActual=1.4K)
+╠══ ProjectionElemList
+║     ProjectionElem "type1"
+║     ProjectionElem "type2"
+║     ProjectionElem "language"
+║     ProjectionElem "mbox"
+╚══ Join (JoinIterator) (resultSizeActual=1.4K)
+   ├── StatementPattern (costEstimate=26, resultSizeEstimate=47, resultSizeActual=47) [left]
+   │     s: Var (name=_anon_bnode_93ed13b17eb0cd4a9c96340a118fdf1e16012345678, anonymous)
+   │     p: Var (name=_const_23b75369_uri, value=http://xmlns.com/foaf/0.1/mbox, anonymous)
+   │     o: Var (name=mbox)
+   └── Join (JoinIterator) (resultSizeActual=1.4K) [right]
+      ╠══ StatementPattern (costEstimate=22, resultSizeEstimate=11.7K, resultSizeActual=1.4K) [left]
+      ║     s: Var (name=a)
+      ║     p: Var (name=_const_c4c0156c_uri, value=http://purl.org/dc/terms/publisher, anonymous)
+      ║     o: Var (name=_anon_bnode_93ed13b17eb0cd4a9c96340a118fdf1e16012345678, anonymous)
+      ╚══ Join (JoinIterator) (resultSizeActual=1.4K) [right]
+         ├── StatementPattern (costEstimate=107, resultSizeEstimate=11.5K, resultSizeActual=1.4K) [left]
+         │     s: Var (name=a)
+         │     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+         │     o: Var (name=language)
+         └── Join (JoinIterator) (resultSizeActual=1.4K) [right]
+            ╠══ StatementPattern (costEstimate=54, resultSizeEstimate=11.8K, resultSizeActual=1.4K) [left]
+            ║     s: Var (name=b)
+            ║     p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+            ║     o: Var (name=a)
+            ╚══ Join (JoinIterator) (resultSizeActual=1.4K) [right]
+               ├── StatementPattern (costEstimate=273, resultSizeEstimate=74.5K, resultSizeActual=1.4K) [left]
+               │     s: Var (name=b)
+               │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+               │     o: Var (name=type1)
+               └── Join (JoinIterator) (costEstimate=14.8K, resultSizeActual=1.4K) [right]
+                  ╠══ StatementPattern (costEstimate=113, resultSizeEstimate=12.8K, resultSizeActual=1.4K) [left]
+                  ║     s: Var (name=a)
+                  ║     p: Var (name=_const_5ca739_uri, value=http://purl.org/dc/terms/identifier, anonymous)
+                  ║     o: Var (name=identifier)
+                  ╚══ StatementPattern (costEstimate=273, resultSizeEstimate=74.5K, resultSizeActual=1.4K) [right]
+                        s: Var (name=a)
+                        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+                        o: Var (name=type2)
+
+
+
+
+=== complexQuery - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "type1"
+║     ProjectionElem "type2"
+║     ProjectionElem "language"
+║     ProjectionElem "mbox"
+╚══ Join (JoinIterator)
+   ├── StatementPattern (costEstimate=26, resultSizeEstimate=47) [left]
+   │     s: Var (name=_anon_bnode_13ed13b17eb0cd4a9c96340a118fdf1e160, anonymous)
+   │     p: Var (name=_const_23b75369_uri, value=http://xmlns.com/foaf/0.1/mbox, anonymous)
+   │     o: Var (name=mbox)
+   └── Join (JoinIterator) [right]
+      ╠══ StatementPattern (costEstimate=22, resultSizeEstimate=11.7K) [left]
+      ║     s: Var (name=a)
+      ║     p: Var (name=_const_c4c0156c_uri, value=http://purl.org/dc/terms/publisher, anonymous)
+      ║     o: Var (name=_anon_bnode_13ed13b17eb0cd4a9c96340a118fdf1e160, anonymous)
+      ╚══ Join (JoinIterator) [right]
+         ├── StatementPattern (costEstimate=107, resultSizeEstimate=11.5K) [left]
+         │     s: Var (name=a)
+         │     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+         │     o: Var (name=language)
+         └── Join (JoinIterator) [right]
+            ╠══ StatementPattern (costEstimate=54, resultSizeEstimate=11.8K) [left]
+            ║     s: Var (name=b)
+            ║     p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+            ║     o: Var (name=a)
+            ╚══ Join (JoinIterator) [right]
+               ├── StatementPattern (costEstimate=273, resultSizeEstimate=74.5K) [left]
+               │     s: Var (name=b)
+               │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+               │     o: Var (name=type1)
+               └── Join (JoinIterator) (costEstimate=14.8K) [right]
+                  ╠══ StatementPattern (costEstimate=113, resultSizeEstimate=12.8K) [left]
+                  ║     s: Var (name=a)
+                  ║     p: Var (name=_const_5ca739_uri, value=http://purl.org/dc/terms/identifier, anonymous)
+                  ║     o: Var (name=identifier)
+                  ╚══ StatementPattern (costEstimate=273, resultSizeEstimate=74.5K) [right]
+                        s: Var (name=a)
+                        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+                        o: Var (name=type2)
+
+
+
+
+=== contactPointPathChase - EXECUTED ===
+Projection (resultSizeActual=18.0K)
+╠══ ProjectionElemList
+║     ProjectionElem "dataset"
+║     ProjectionElem "email"
+╚══ Join (JoinIterator) (resultSizeActual=18.0K)
+   ├── StatementPattern (costEstimate=3.9K, resultSizeEstimate=11.8K, resultSizeActual=11.7K) [left]
+   │     s: Var (name=dataset)
+   │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+   └── ArbitraryLengthPath (costEstimate=36.9K, resultSizeEstimate=1.2M, resultSizeActual=18.0K) [right]
+         Var (name=dataset)
+         Union
+         ├── Join (costEstimate=11.5K)
+         │  ╠══ StatementPattern (costEstimate=53, resultSizeEstimate=11.1K) [left]
+         │  ║     s: Var (name=dataset)
+         │  ║     p: Var (name=_const_21baecab_uri, value=http://www.w3.org/ns/dcat#contactPoint, anonymous)
+         │  ║     o: Var (name=_anon_path_57ed13b17eb0cd4a9c96340a118fdf1e1601234, anonymous)
+         │  ╚══ StatementPattern (costEstimate=79, resultSizeEstimate=6.3K) [right]
+         │        s: Var (name=_anon_path_57ed13b17eb0cd4a9c96340a118fdf1e1601234, anonymous)
+         │        p: Var (name=_const_970311c0_uri, value=http://www.w3.org/2006/vcard/ns#hasEmail, anonymous)
+         │        o: Var (name=email)
+         └── Join (costEstimate=0)
+            ╠══ StatementPattern (costEstimate=54, resultSizeEstimate=11.7K) [left]
+            ║     s: Var (name=dataset)
+            ║     p: Var (name=_const_c4c0156c_uri, value=http://purl.org/dc/terms/publisher, anonymous)
+            ║     o: Var (name=_anon_path_77ed13b17eb0cd4a9c96340a118fdf1e160123456, anonymous)
+            ╚══ StatementPattern (costEstimate=7.21, resultSizeEstimate=47) [right]
+                  s: Var (name=_anon_path_77ed13b17eb0cd4a9c96340a118fdf1e160123456, anonymous)
+                  p: Var (name=_const_23b75369_uri, value=http://xmlns.com/foaf/0.1/mbox, anonymous)
+                  o: Var (name=email)
+         Var (name=email)
+
+
+
+
+=== contactPointPathChase - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "dataset"
+║     ProjectionElem "email"
+╚══ Join (JoinIterator)
+   ├── StatementPattern (costEstimate=3.9K, resultSizeEstimate=11.8K) [left]
+   │     s: Var (name=dataset)
+   │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+   └── ArbitraryLengthPath (costEstimate=36.9K, resultSizeEstimate=1.2M) [right]
+         Var (name=dataset)
+         Union
+         ├── Join (costEstimate=11.5K)
+         │  ╠══ StatementPattern (costEstimate=53, resultSizeEstimate=11.1K) [left]
+         │  ║     s: Var (name=dataset)
+         │  ║     p: Var (name=_const_21baecab_uri, value=http://www.w3.org/ns/dcat#contactPoint, anonymous)
+         │  ║     o: Var (name=_anon_path_96ed13b17eb0cd4a9c96340a118fdf1e16012345678, anonymous)
+         │  ╚══ StatementPattern (costEstimate=79, resultSizeEstimate=6.3K) [right]
+         │        s: Var (name=_anon_path_96ed13b17eb0cd4a9c96340a118fdf1e16012345678, anonymous)
+         │        p: Var (name=_const_970311c0_uri, value=http://www.w3.org/2006/vcard/ns#hasEmail, anonymous)
+         │        o: Var (name=email)
+         └── Join (costEstimate=0)
+            ╠══ StatementPattern (costEstimate=54, resultSizeEstimate=11.7K) [left]
+            ║     s: Var (name=dataset)
+            ║     p: Var (name=_const_c4c0156c_uri, value=http://purl.org/dc/terms/publisher, anonymous)
+            ║     o: Var (name=_anon_path_17ed13b17eb0cd4a9c96340a118fdf1e160, anonymous)
+            ╚══ StatementPattern (costEstimate=7.21, resultSizeEstimate=47) [right]
+                  s: Var (name=_anon_path_17ed13b17eb0cd4a9c96340a118fdf1e160, anonymous)
+                  p: Var (name=_const_23b75369_uri, value=http://xmlns.com/foaf/0.1/mbox, anonymous)
+                  o: Var (name=email)
+         Var (name=email)
+
+
+
+
+=== different_datasets_with_similar_distributions - EXECUTED ===
+Projection (resultSizeActual=196)
+╠══ ProjectionElemList
+║     ProjectionElem "a"
+║     ProjectionElem "dataset"
+║     ProjectionElem "dist"
+║     ProjectionElem "contact"
+║     ProjectionElem "unit"
+║     ProjectionElem "format"
+║     ProjectionElem "license"
+║     ProjectionElem "rights"
+║     ProjectionElem "dataset2"
+║     ProjectionElem "dist2"
+╚══ Join (JoinIterator) (resultSizeActual=196)
+   ├── Filter (resultSizeActual=1) [left]
+   │  ╠══ Not
+   │  ║     Exists
+   │  ║        StatementPattern (resultSizeEstimate=193, resultSizeActual=0)
+   │  ║           s: Var (name=unit)
+   │  ║           p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           o: Var (name=_const_1aba2f7e_uri, value=http://xmlns.com/foaf/0.1/Organization, anonymous)
+   │  ╚══ StatementPattern (costEstimate=3.50, resultSizeEstimate=2.00, resultSizeActual=2)
+   │        s: Var (name=contact)
+   │        p: Var (name=_const_f76648d0_uri, value=http://www.w3.org/ns/org#unitOf, anonymous)
+   │        o: Var (name=unit)
+   └── Join (JoinIterator) (resultSizeActual=196) [right]
+      ╠══ StatementPattern (costEstimate=35, resultSizeEstimate=11.1K, resultSizeActual=348) [left]
+      ║     s: Var (name=dataset)
+      ║     p: Var (name=_const_21baecab_uri, value=http://www.w3.org/ns/dcat#contactPoint, anonymous)
+      ║     o: Var (name=contact)
+      ╚══ Join (JoinIterator) (resultSizeActual=196) [right]
+         ├── StatementPattern (costEstimate=108, resultSizeEstimate=11.8K, resultSizeActual=348) [left]
+         │     s: Var (name=a)
+         │     p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+         │     o: Var (name=dataset)
+         └── Filter (resultSizeActual=196) [right]
+            ╠══ Compare (!=)
+            ║     Var (name=dataset)
+            ║     Var (name=dataset2)
+            ╚══ Join (JoinIterator) (resultSizeActual=206)
+               ├── StatementPattern (costEstimate=49, resultSizeEstimate=37.9K, resultSizeActual=752) [left]
+               │     s: Var (name=dataset)
+               │     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+               │     o: Var (name=dist)
+               └── Join (JoinIterator) (resultSizeActual=206) [right]
+                  ╠══ StatementPattern (costEstimate=19, resultSizeEstimate=1.5K, resultSizeActual=4) [left]
+                  ║     s: Var (name=dist)
+                  ║     p: Var (name=_const_97184467_uri, value=http://purl.org/dc/terms/rights, anonymous)
+                  ║     o: Var (name=rights)
+                  ╚══ Join (JoinIterator) (resultSizeActual=206) [right]
+                     ├── StatementPattern (costEstimate=93, resultSizeEstimate=35.0K, resultSizeActual=4) [left]
+                     │     s: Var (name=dist)
+                     │     p: Var (name=_const_e5113b1_uri, value=http://purl.org/dc/terms/license, anonymous)
+                     │     o: Var (name=license)
+                     └── Join (JoinIterator) (resultSizeActual=206) [right]
+                        ╠══ StatementPattern (costEstimate=88, resultSizeEstimate=30.7K, resultSizeActual=4) [left]
+                        ║     s: Var (name=dist)
+                        ║     p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+                        ║     o: Var (name=format)
+                        ╚══ Join (JoinIterator) (resultSizeActual=206) [right]
+                           ├── StatementPattern (costEstimate=9.70, resultSizeEstimate=1.5K, resultSizeActual=988) [left]
+                           │     s: Var (name=dist2)
+                           │     p: Var (name=_const_97184467_uri, value=http://purl.org/dc/terms/rights, anonymous)
+                           │     o: Var (name=rights)
+                           └── Join (JoinIterator) (resultSizeActual=206) [right]
+                              ╠══ StatementPattern (costEstimate=0.50, resultSizeEstimate=35.0K, resultSizeActual=876) [left]
+                              ║     s: Var (name=dist2)
+                              ║     p: Var (name=_const_e5113b1_uri, value=http://purl.org/dc/terms/license, anonymous)
+                              ║     o: Var (name=license)
+                              ╚══ Join (JoinIterator) (costEstimate=32.2K, resultSizeActual=206) [right]
+                                 ├── StatementPattern (costEstimate=0.50, resultSizeEstimate=30.7K, resultSizeActual=206) [left]
+                                 │     s: Var (name=dist2)
+                                 │     p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+                                 │     o: Var (name=format)
+                                 └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K, resultSizeActual=206) [right]
+                                       s: Var (name=dataset2)
+                                       p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+                                       o: Var (name=dist2)
+
+
+
+
+=== different_datasets_with_similar_distributions - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "a"
+║     ProjectionElem "dataset"
+║     ProjectionElem "dist"
+║     ProjectionElem "contact"
+║     ProjectionElem "unit"
+║     ProjectionElem "format"
+║     ProjectionElem "license"
+║     ProjectionElem "rights"
+║     ProjectionElem "dataset2"
+║     ProjectionElem "dist2"
+╚══ Join (JoinIterator)
+   ├── Filter [left]
+   │  ╠══ Not
+   │  ║     Exists
+   │  ║        StatementPattern (resultSizeEstimate=193)
+   │  ║           s: Var (name=unit)
+   │  ║           p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           o: Var (name=_const_1aba2f7e_uri, value=http://xmlns.com/foaf/0.1/Organization, anonymous)
+   │  ╚══ StatementPattern (costEstimate=3.50, resultSizeEstimate=2.00)
+   │        s: Var (name=contact)
+   │        p: Var (name=_const_f76648d0_uri, value=http://www.w3.org/ns/org#unitOf, anonymous)
+   │        o: Var (name=unit)
+   └── Join (JoinIterator) [right]
+      ╠══ StatementPattern (costEstimate=35, resultSizeEstimate=11.1K) [left]
+      ║     s: Var (name=dataset)
+      ║     p: Var (name=_const_21baecab_uri, value=http://www.w3.org/ns/dcat#contactPoint, anonymous)
+      ║     o: Var (name=contact)
+      ╚══ Join (JoinIterator) [right]
+         ├── StatementPattern (costEstimate=108, resultSizeEstimate=11.8K) [left]
+         │     s: Var (name=a)
+         │     p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+         │     o: Var (name=dataset)
+         └── Filter [right]
+            ╠══ Compare (!=)
+            ║     Var (name=dataset)
+            ║     Var (name=dataset2)
+            ╚══ Join (JoinIterator)
+               ├── StatementPattern (costEstimate=49, resultSizeEstimate=37.9K) [left]
+               │     s: Var (name=dataset)
+               │     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+               │     o: Var (name=dist)
+               └── Join (JoinIterator) [right]
+                  ╠══ StatementPattern (costEstimate=19, resultSizeEstimate=1.5K) [left]
+                  ║     s: Var (name=dist)
+                  ║     p: Var (name=_const_97184467_uri, value=http://purl.org/dc/terms/rights, anonymous)
+                  ║     o: Var (name=rights)
+                  ╚══ Join (JoinIterator) [right]
+                     ├── StatementPattern (costEstimate=93, resultSizeEstimate=35.0K) [left]
+                     │     s: Var (name=dist)
+                     │     p: Var (name=_const_e5113b1_uri, value=http://purl.org/dc/terms/license, anonymous)
+                     │     o: Var (name=license)
+                     └── Join (JoinIterator) [right]
+                        ╠══ StatementPattern (costEstimate=88, resultSizeEstimate=30.7K) [left]
+                        ║     s: Var (name=dist)
+                        ║     p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+                        ║     o: Var (name=format)
+                        ╚══ Join (JoinIterator) [right]
+                           ├── StatementPattern (costEstimate=9.70, resultSizeEstimate=1.5K) [left]
+                           │     s: Var (name=dist2)
+                           │     p: Var (name=_const_97184467_uri, value=http://purl.org/dc/terms/rights, anonymous)
+                           │     o: Var (name=rights)
+                           └── Join (JoinIterator) [right]
+                              ╠══ StatementPattern (costEstimate=0.50, resultSizeEstimate=35.0K) [left]
+                              ║     s: Var (name=dist2)
+                              ║     p: Var (name=_const_e5113b1_uri, value=http://purl.org/dc/terms/license, anonymous)
+                              ║     o: Var (name=license)
+                              ╚══ Join (JoinIterator) (costEstimate=32.2K) [right]
+                                 ├── StatementPattern (costEstimate=0.50, resultSizeEstimate=30.7K) [left]
+                                 │     s: Var (name=dist2)
+                                 │     p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+                                 │     o: Var (name=format)
+                                 └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K) [right]
+                                       s: Var (name=dataset2)
+                                       p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+                                       o: Var (name=dist2)
+
+
+
+
+=== distributionMediaContrast - EXECUTED ===
+Slice (limit=30) (resultSizeActual=30)
+   Projection (resultSizeActual=30)
+   ├── ProjectionElemList
+   │     ProjectionElem "dataset"
+   └── Filter (resultSizeActual=30)
+      ╠══ And
+      ║  ├── Exists
+      ║  │     Union (resultSizeActual=0)
+      ║  │     ├── Union (resultSizeActual=30)
+      ║  │     │  ╠══ Join (JoinIterator) (costEstimate=2.8K, resultSizeActual=30)
+      ║  │     │  ║  ├── Filter (resultSizeActual=465) [left]
+      ║  │     │  ║  │  ╠══ SameTerm
+      ║  │     │  ║  │  ║     Var (name=csvFormat)
+      ║  │     │  ║  │  ║     ValueConstant (value=http://publications.europa.eu/resource/authority/file-type/CSV)
+      ║  │     │  ║  │  ╚══ StatementPattern (costEstimate=338482.9M, resultSizeEstimate=2.8K, resultSizeActual=465)
+      ║  │     │  ║  │        s: Var (name=csvDist)
+      ║  │     │  ║  │        p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+      ║  │     │  ║  │        o: Var (name=csvFormat, value=http://publications.europa.eu/resource/authority/file-type/CSV)
+      ║  │     │  ║  └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K, resultSizeActual=30) [right]
+      ║  │     │  ║        s: Var (name=dataset)
+      ║  │     │  ║        p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║  │     │  ║        o: Var (name=csvDist)
+      ║  │     │  ╚══ Join (JoinIterator) (costEstimate=0, resultSizeActual=0)
+      ║  │     │     ├── Filter (resultSizeActual=0) [left]
+      ║  │     │     │  ╠══ SameTerm
+      ║  │     │     │  ║     Var (name=csvFormat)
+      ║  │     │     │  ║     ValueConstant (value=http://publications.europa.eu/resource/authority/file-type/CSV)
+      ║  │     │     │  ╚══ StatementPattern (costEstimate=4.706604055E8M, resultSizeEstimate=2.8K, resultSizeActual=0)
+      ║  │     │     │        s: Var (name=csvDist)
+      ║  │     │     │        p: Var (name=_const_80ff7fc3_uri, value=http://www.w3.org/ns/dcat#mediaType, anonymous)
+      ║  │     │     │        o: Var (name=csvFormat, value=http://publications.europa.eu/resource/authority/file-type/CSV)
+      ║  │     │     └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K) [right]
+      ║  │     │           s: Var (name=dataset)
+      ║  │     │           p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║  │     │           o: Var (name=csvDist)
+      ║  │     └── Union (resultSizeActual=0)
+      ║  │        ╠══ Join (JoinIterator) (costEstimate=32.2K, resultSizeActual=0)
+      ║  │        ║  ├── Filter (resultSizeActual=0) [left]
+      ║  │        ║  │  ╠══ Compare (=)
+      ║  │        ║  │  ║     Var (name=csvFormat)
+      ║  │        ║  │  ║     ValueConstant (value="text/csv")
+      ║  │        ║  │  ╚══ StatementPattern (costEstimate=7.2293438282269E12M, resultSizeEstimate=30.7K, resultSizeActual=0)
+      ║  │        ║  │        s: Var (name=csvDist)
+      ║  │        ║  │        p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+      ║  │        ║  │        o: Var (name=csvFormat)
+      ║  │        ║  └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K) [right]
+      ║  │        ║        s: Var (name=dataset)
+      ║  │        ║        p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║  │        ║        o: Var (name=csvDist)
+      ║  │        ╚══ Join (JoinIterator) (costEstimate=32.0K, resultSizeActual=0)
+      ║  │           ├── Filter (resultSizeActual=0) [left]
+      ║  │           │  ╠══ Compare (=)
+      ║  │           │  ║     Var (name=csvFormat)
+      ║  │           │  ║     ValueConstant (value="text/csv")
+      ║  │           │  ╚══ StatementPattern (costEstimate=1.145706409897394E17M, resultSizeEstimate=31.7K, resultSizeActual=0)
+      ║  │           │        s: Var (name=csvDist)
+      ║  │           │        p: Var (name=_const_80ff7fc3_uri, value=http://www.w3.org/ns/dcat#mediaType, anonymous)
+      ║  │           │        o: Var (name=csvFormat)
+      ║  │           └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K) [right]
+      ║  │                 s: Var (name=dataset)
+      ║  │                 p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║  │                 o: Var (name=csvDist)
+      ║  └── Not
+      ║        Exists
+      ║           Union (resultSizeActual=0)
+      ║           ╠══ Join (JoinIterator) (costEstimate=32.2K, resultSizeActual=0)
+      ║           ║  ├── Filter (resultSizeActual=838.2K) [left]
+      ║           ║  │  ╠══ And
+      ║           ║  │  ║  ├── Compare (!=)
+      ║           ║  │  ║  │     Var (name=nonCsvFormat)
+      ║           ║  │  ║  │     ValueConstant (value=http://publications.europa.eu/resource/authority/file-type/CSV)
+      ║           ║  │  ║  └── Compare (!=)
+      ║           ║  │  ║        Var (name=nonCsvFormat)
+      ║           ║  │  ║        ValueConstant (value="text/csv")
+      ║           ║  │  ╚══ StatementPattern (costEstimate=15.4K, resultSizeEstimate=30.7K, resultSizeActual=921.4K)
+      ║           ║  │        s: Var (name=nonCsvDist)
+      ║           ║  │        p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+      ║           ║  │        o: Var (name=nonCsvFormat)
+      ║           ║  └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K, resultSizeActual=0) [right]
+      ║           ║        s: Var (name=dataset)
+      ║           ║        p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║           ║        o: Var (name=nonCsvDist)
+      ║           ╚══ Join (JoinIterator) (costEstimate=32.0K, resultSizeActual=0)
+      ║              ├── Filter (resultSizeActual=867.8K) [left]
+      ║              │  ╠══ And
+      ║              │  ║  ├── Compare (!=)
+      ║              │  ║  │     Var (name=nonCsvFormat)
+      ║              │  ║  │     ValueConstant (value=http://publications.europa.eu/resource/authority/file-type/CSV)
+      ║              │  ║  └── Compare (!=)
+      ║              │  ║        Var (name=nonCsvFormat)
+      ║              │  ║        ValueConstant (value="text/csv")
+      ║              │  ╚══ StatementPattern (costEstimate=243.4M, resultSizeEstimate=31.7K, resultSizeActual=950.7K)
+      ║              │        s: Var (name=nonCsvDist)
+      ║              │        p: Var (name=_const_80ff7fc3_uri, value=http://www.w3.org/ns/dcat#mediaType, anonymous)
+      ║              │        o: Var (name=nonCsvFormat)
+      ║              └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K, resultSizeActual=0) [right]
+      ║                    s: Var (name=dataset)
+      ║                    p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║                    o: Var (name=nonCsvDist)
+      ╚══ StatementPattern (resultSizeEstimate=11.8K, resultSizeActual=30)
+            s: Var (name=dataset)
+            p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+            o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+
+
+
+
+=== distributionMediaContrast - OPTIMIZED ===
+Slice (limit=30)
+   Projection
+   ├── ProjectionElemList
+   │     ProjectionElem "dataset"
+   └── Filter
+      ╠══ And
+      ║  ├── Exists
+      ║  │     Union
+      ║  │     ├── Union
+      ║  │     │  ╠══ Join (JoinIterator) (costEstimate=2.8K)
+      ║  │     │  ║  ├── Filter [left]
+      ║  │     │  ║  │  ╠══ SameTerm
+      ║  │     │  ║  │  ║     Var (name=csvFormat)
+      ║  │     │  ║  │  ║     ValueConstant (value=http://publications.europa.eu/resource/authority/file-type/CSV)
+      ║  │     │  ║  │  ╚══ StatementPattern (costEstimate=338482.9M, resultSizeEstimate=2.8K)
+      ║  │     │  ║  │        s: Var (name=csvDist)
+      ║  │     │  ║  │        p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+      ║  │     │  ║  │        o: Var (name=csvFormat, value=http://publications.europa.eu/resource/authority/file-type/CSV)
+      ║  │     │  ║  └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K) [right]
+      ║  │     │  ║        s: Var (name=dataset)
+      ║  │     │  ║        p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║  │     │  ║        o: Var (name=csvDist)
+      ║  │     │  ╚══ Join (JoinIterator) (costEstimate=0)
+      ║  │     │     ├── Filter [left]
+      ║  │     │     │  ╠══ SameTerm
+      ║  │     │     │  ║     Var (name=csvFormat)
+      ║  │     │     │  ║     ValueConstant (value=http://publications.europa.eu/resource/authority/file-type/CSV)
+      ║  │     │     │  ╚══ StatementPattern (costEstimate=4.706604055E8M, resultSizeEstimate=2.8K)
+      ║  │     │     │        s: Var (name=csvDist)
+      ║  │     │     │        p: Var (name=_const_80ff7fc3_uri, value=http://www.w3.org/ns/dcat#mediaType, anonymous)
+      ║  │     │     │        o: Var (name=csvFormat, value=http://publications.europa.eu/resource/authority/file-type/CSV)
+      ║  │     │     └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K) [right]
+      ║  │     │           s: Var (name=dataset)
+      ║  │     │           p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║  │     │           o: Var (name=csvDist)
+      ║  │     └── Union
+      ║  │        ╠══ Join (JoinIterator) (costEstimate=32.2K)
+      ║  │        ║  ├── Filter [left]
+      ║  │        ║  │  ╠══ Compare (=)
+      ║  │        ║  │  ║     Var (name=csvFormat)
+      ║  │        ║  │  ║     ValueConstant (value="text/csv")
+      ║  │        ║  │  ╚══ StatementPattern (costEstimate=7.2293438282269E12M, resultSizeEstimate=30.7K)
+      ║  │        ║  │        s: Var (name=csvDist)
+      ║  │        ║  │        p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+      ║  │        ║  │        o: Var (name=csvFormat)
+      ║  │        ║  └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K) [right]
+      ║  │        ║        s: Var (name=dataset)
+      ║  │        ║        p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║  │        ║        o: Var (name=csvDist)
+      ║  │        ╚══ Join (JoinIterator) (costEstimate=32.0K)
+      ║  │           ├── Filter [left]
+      ║  │           │  ╠══ Compare (=)
+      ║  │           │  ║     Var (name=csvFormat)
+      ║  │           │  ║     ValueConstant (value="text/csv")
+      ║  │           │  ╚══ StatementPattern (costEstimate=1.145706409897394E17M, resultSizeEstimate=31.7K)
+      ║  │           │        s: Var (name=csvDist)
+      ║  │           │        p: Var (name=_const_80ff7fc3_uri, value=http://www.w3.org/ns/dcat#mediaType, anonymous)
+      ║  │           │        o: Var (name=csvFormat)
+      ║  │           └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K) [right]
+      ║  │                 s: Var (name=dataset)
+      ║  │                 p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║  │                 o: Var (name=csvDist)
+      ║  └── Not
+      ║        Exists
+      ║           Union
+      ║           ╠══ Join (JoinIterator) (costEstimate=32.2K)
+      ║           ║  ├── Filter [left]
+      ║           ║  │  ╠══ And
+      ║           ║  │  ║  ├── Compare (!=)
+      ║           ║  │  ║  │     Var (name=nonCsvFormat)
+      ║           ║  │  ║  │     ValueConstant (value=http://publications.europa.eu/resource/authority/file-type/CSV)
+      ║           ║  │  ║  └── Compare (!=)
+      ║           ║  │  ║        Var (name=nonCsvFormat)
+      ║           ║  │  ║        ValueConstant (value="text/csv")
+      ║           ║  │  ╚══ StatementPattern (costEstimate=15.4K, resultSizeEstimate=30.7K)
+      ║           ║  │        s: Var (name=nonCsvDist)
+      ║           ║  │        p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+      ║           ║  │        o: Var (name=nonCsvFormat)
+      ║           ║  └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K) [right]
+      ║           ║        s: Var (name=dataset)
+      ║           ║        p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║           ║        o: Var (name=nonCsvDist)
+      ║           ╚══ Join (JoinIterator) (costEstimate=32.0K)
+      ║              ├── Filter [left]
+      ║              │  ╠══ And
+      ║              │  ║  ├── Compare (!=)
+      ║              │  ║  │     Var (name=nonCsvFormat)
+      ║              │  ║  │     ValueConstant (value=http://publications.europa.eu/resource/authority/file-type/CSV)
+      ║              │  ║  └── Compare (!=)
+      ║              │  ║        Var (name=nonCsvFormat)
+      ║              │  ║        ValueConstant (value="text/csv")
+      ║              │  ╚══ StatementPattern (costEstimate=243.4M, resultSizeEstimate=31.7K)
+      ║              │        s: Var (name=nonCsvDist)
+      ║              │        p: Var (name=_const_80ff7fc3_uri, value=http://www.w3.org/ns/dcat#mediaType, anonymous)
+      ║              │        o: Var (name=nonCsvFormat)
+      ║              └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K) [right]
+      ║                    s: Var (name=dataset)
+      ║                    p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║                    o: Var (name=nonCsvDist)
+      ╚══ StatementPattern (resultSizeEstimate=11.8K)
+            s: Var (name=dataset)
+            p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+            o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+
+
+
+
+=== groupByQuery - EXECUTED ===
+Projection (resultSizeActual=5)
+╠══ ProjectionElemList
+║     ProjectionElem "language"
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=5)
+   ├── Group (language) (resultSizeActual=5)
+   │  ╠══ StatementPattern (resultSizeEstimate=11.5K, resultSizeActual=11.4K)
+   │  ║     s: Var (name=a)
+   │  ║     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+   │  ║     o: Var (name=language)
+   │  ╚══ GroupElem (count)
+   │        Count
+   │           Var (name=a)
+   └── ExtensionElem (count)
+         Count
+            Var (name=a)
+
+
+
+
+=== groupByQuery - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "language"
+║     ProjectionElem "count"
+╚══ Extension
+   ├── Group (language)
+   │  ╠══ StatementPattern (resultSizeEstimate=11.5K)
+   │  ║     s: Var (name=a)
+   │  ║     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+   │  ║     o: Var (name=language)
+   │  ╚══ GroupElem (count)
+   │        Count
+   │           Var (name=a)
+   └── ExtensionElem (count)
+         Count
+            Var (name=a)
+
+
+
+
+=== joinReorderStress - EXECUTED ===
+Slice (limit=100000) (resultSizeActual=100.0K)
+   Projection (resultSizeActual=100.0K)
+   ├── ProjectionElemList
+   │     ProjectionElem "dataset"
+   │     ProjectionElem "lang"
+   │     ProjectionElem "title"
+   │     ProjectionElem "format"
+   └── Union (resultSizeActual=100.0K)
+      ╠══ Join (JoinIterator) (resultSizeActual=100.0K)
+      ║  ├── Filter (resultSizeActual=5) [left]
+      ║  │  ╠══ SameTerm
+      ║  │  ║     Var (name=lang)
+      ║  │  ║     ValueConstant (value=http://publications.europa.eu/resource/authority/language/ENG)
+      ║  │  ╚══ StatementPattern (costEstimate=450, resultSizeEstimate=2.2K, resultSizeActual=5)
+      ║  │        s: Var (name=dataset)
+      ║  │        p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+      ║  │        o: Var (name=lang, value=http://publications.europa.eu/resource/authority/language/ENG)
+      ║  └── Join (JoinIterator) (resultSizeActual=100.0K) [right]
+      ║     ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=11.8K, resultSizeActual=4) [left]
+      ║     ║     s: Var (name=dataset)
+      ║     ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+      ║     ║     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+      ║     ╚══ Join (JoinIterator) (resultSizeActual=100.0K) [right]
+      ║        ├── Filter (resultSizeActual=1) [left]
+      ║        │  ╠══ Regex
+      ║        │  ║     Str
+      ║        │  ║        Var (name=title)
+      ║        │  ║     ValueConstant (value="data")
+      ║        │  ║     ValueConstant (value="i")
+      ║        │  ╚══ StatementPattern (costEstimate=219, resultSizeEstimate=48.2K, resultSizeActual=4)
+      ║        │        s: Var (name=dataset)
+      ║        │        p: Var (name=_const_dbb1cdc8_uri, value=http://purl.org/dc/terms/title, anonymous)
+      ║        │        o: Var (name=title)
+      ║        └── Join (JoinIterator) (resultSizeActual=100.0K) [right]
+      ║           ╠══ StatementPattern (costEstimate=7.2K, resultSizeEstimate=613.2K, resultSizeActual=3) [left]
+      ║           ║     s: Var (name=dataset)
+      ║           ║     p: Var (name=anyPred)
+      ║           ║     o: Var (name=anyObj)
+      ║           ╚══ Join (JoinIterator) (resultSizeActual=100.0K) [right]
+      ║              ├── StatementPattern (costEstimate=1106.4M, resultSizeEstimate=613.2K, resultSizeActual=1.2M) [left]
+      ║              │     s: Var (name=dist)
+      ║              │     p: Var (name=p)
+      ║              │     o: Var (name=z)
+      ║              └── LeftJoin (LeftJoinIterator) (costEstimate=∞, resultSizeEstimate=∞, resultSizeActual=100.0K) [right]
+      ║                 ╠══ Join (JoinIterator) (costEstimate=9.223372036854776E17M, resultSizeActual=100.0K) [left]
+      ║                 ║  ├── StatementPattern (costEstimate=0.50, resultSizeEstimate=37.9K, resultSizeActual=11) [left]
+      ║                 ║  │     s: Var (name=dataset)
+      ║                 ║  │     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║                 ║  │     o: Var (name=dist)
+      ║                 ║  └── StatementPattern (costEstimate=7.2K, resultSizeEstimate=613.2K, resultSizeActual=100.0K) [right]
+      ║                 ║        s: Var (name=x)
+      ║                 ║        p: Var (name=y)
+      ║                 ║        o: Var (name=z)
+      ║                 ╚══ StatementPattern (resultSizeEstimate=30.7K, resultSizeActual=100.0K) [right]
+      ║                       s: Var (name=dist)
+      ║                       p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+      ║                       o: Var (name=format)
+      ╚══ Join (JoinIterator) (resultSizeActual=0)
+         ├── LeftJoin (LeftJoinIterator) (costEstimate=∞, resultSizeEstimate=∞, resultSizeActual=0) [left]
+         │  ╠══ Join (JoinIterator) (costEstimate=9.223372036854776E17M, resultSizeActual=0) [left]
+         │  ║  ├── StatementPattern (costEstimate=∞, resultSizeEstimate=613.2K, resultSizeActual=0) [left]
+         │  ║  │     s: Var (name=x)
+         │  ║  │     p: Var (name=y)
+         │  ║  │     o: Var (name=z)
+         │  ║  └── StatementPattern (costEstimate=∞, resultSizeEstimate=37.9K) [right]
+         │  ║        s: Var (name=dataset)
+         │  ║        p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+         │  ║        o: Var (name=dist)
+         │  ╚══ StatementPattern (resultSizeEstimate=30.7K) [right]
+         │        s: Var (name=dist)
+         │        p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+         │        o: Var (name=format)
+         └── Join (JoinIterator) [right]
+            ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=11.8K) [left]
+            ║     s: Var (name=dataset)
+            ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+            ║     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+            ╚══ Join (JoinIterator) [right]
+               ├── Filter [left]
+               │  ╠══ SameTerm
+               │  ║     Var (name=lang)
+               │  ║     ValueConstant (value=http://publications.europa.eu/resource/authority/language/FRA)
+               │  ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=3.9K)
+               │        s: Var (name=dataset)
+               │        p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+               │        o: Var (name=lang, value=http://publications.europa.eu/resource/authority/language/FRA)
+               └── Join (JoinIterator) [right]
+                  ╠══ Filter [left]
+                  ║  ├── Regex
+                  ║  │     Str
+                  ║  │        Var (name=title)
+                  ║  │     ValueConstant (value="data")
+                  ║  │     ValueConstant (value="i")
+                  ║  └── StatementPattern (costEstimate=219, resultSizeEstimate=48.2K)
+                  ║        s: Var (name=dataset)
+                  ║        p: Var (name=_const_dbb1cdc8_uri, value=http://purl.org/dc/terms/title, anonymous)
+                  ║        o: Var (name=title)
+                  ╚══ Join (JoinIterator) (costEstimate=9.223372036854776E17M) [right]
+                     ├── StatementPattern (costEstimate=85, resultSizeEstimate=613.2K) [left]
+                     │     s: Var (name=dist)
+                     │     p: Var (name=p)
+                     │     o: Var (name=z)
+                     └── StatementPattern (costEstimate=7.2K, resultSizeEstimate=613.2K) [right]
+                           s: Var (name=dataset)
+                           p: Var (name=anyPred)
+                           o: Var (name=anyObj)
+
+
+
+
+=== joinReorderStress - OPTIMIZED ===
+Slice (limit=100000)
+   Projection
+   ├── ProjectionElemList
+   │     ProjectionElem "dataset"
+   │     ProjectionElem "lang"
+   │     ProjectionElem "title"
+   │     ProjectionElem "format"
+   └── Union
+      ╠══ Join (JoinIterator)
+      ║  ├── Filter [left]
+      ║  │  ╠══ SameTerm
+      ║  │  ║     Var (name=lang)
+      ║  │  ║     ValueConstant (value=http://publications.europa.eu/resource/authority/language/ENG)
+      ║  │  ╚══ StatementPattern (costEstimate=450, resultSizeEstimate=2.2K)
+      ║  │        s: Var (name=dataset)
+      ║  │        p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+      ║  │        o: Var (name=lang, value=http://publications.europa.eu/resource/authority/language/ENG)
+      ║  └── Join (JoinIterator) [right]
+      ║     ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=11.8K) [left]
+      ║     ║     s: Var (name=dataset)
+      ║     ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+      ║     ║     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+      ║     ╚══ Join (JoinIterator) [right]
+      ║        ├── Filter [left]
+      ║        │  ╠══ Regex
+      ║        │  ║     Str
+      ║        │  ║        Var (name=title)
+      ║        │  ║     ValueConstant (value="data")
+      ║        │  ║     ValueConstant (value="i")
+      ║        │  ╚══ StatementPattern (costEstimate=219, resultSizeEstimate=48.2K)
+      ║        │        s: Var (name=dataset)
+      ║        │        p: Var (name=_const_dbb1cdc8_uri, value=http://purl.org/dc/terms/title, anonymous)
+      ║        │        o: Var (name=title)
+      ║        └── Join (JoinIterator) [right]
+      ║           ╠══ StatementPattern (costEstimate=7.2K, resultSizeEstimate=613.2K) [left]
+      ║           ║     s: Var (name=dataset)
+      ║           ║     p: Var (name=anyPred)
+      ║           ║     o: Var (name=anyObj)
+      ║           ╚══ Join (JoinIterator) [right]
+      ║              ├── StatementPattern (costEstimate=1106.4M, resultSizeEstimate=613.2K) [left]
+      ║              │     s: Var (name=dist)
+      ║              │     p: Var (name=p)
+      ║              │     o: Var (name=z)
+      ║              └── LeftJoin (costEstimate=∞, resultSizeEstimate=∞) [right]
+      ║                 ╠══ Join (JoinIterator) (costEstimate=9.223372036854776E17M) [left]
+      ║                 ║  ├── StatementPattern (costEstimate=0.50, resultSizeEstimate=37.9K) [left]
+      ║                 ║  │     s: Var (name=dataset)
+      ║                 ║  │     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║                 ║  │     o: Var (name=dist)
+      ║                 ║  └── StatementPattern (costEstimate=7.2K, resultSizeEstimate=613.2K) [right]
+      ║                 ║        s: Var (name=x)
+      ║                 ║        p: Var (name=y)
+      ║                 ║        o: Var (name=z)
+      ║                 ╚══ StatementPattern (resultSizeEstimate=30.7K) [right]
+      ║                       s: Var (name=dist)
+      ║                       p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+      ║                       o: Var (name=format)
+      ╚══ Join (JoinIterator)
+         ├── LeftJoin (LeftJoinIterator) (costEstimate=∞, resultSizeEstimate=∞) [left]
+         │  ╠══ Join (JoinIterator) (costEstimate=9.223372036854776E17M) [left]
+         │  ║  ├── StatementPattern (costEstimate=∞, resultSizeEstimate=613.2K) [left]
+         │  ║  │     s: Var (name=x)
+         │  ║  │     p: Var (name=y)
+         │  ║  │     o: Var (name=z)
+         │  ║  └── StatementPattern (costEstimate=∞, resultSizeEstimate=37.9K) [right]
+         │  ║        s: Var (name=dataset)
+         │  ║        p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+         │  ║        o: Var (name=dist)
+         │  ╚══ StatementPattern (resultSizeEstimate=30.7K) [right]
+         │        s: Var (name=dist)
+         │        p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+         │        o: Var (name=format)
+         └── Join (JoinIterator) [right]
+            ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=11.8K) [left]
+            ║     s: Var (name=dataset)
+            ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+            ║     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+            ╚══ Join (JoinIterator) [right]
+               ├── Filter [left]
+               │  ╠══ SameTerm
+               │  ║     Var (name=lang)
+               │  ║     ValueConstant (value=http://publications.europa.eu/resource/authority/language/FRA)
+               │  ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=3.9K)
+               │        s: Var (name=dataset)
+               │        p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+               │        o: Var (name=lang, value=http://publications.europa.eu/resource/authority/language/FRA)
+               └── Join (JoinIterator) [right]
+                  ╠══ Filter [left]
+                  ║  ├── Regex
+                  ║  │     Str
+                  ║  │        Var (name=title)
+                  ║  │     ValueConstant (value="data")
+                  ║  │     ValueConstant (value="i")
+                  ║  └── StatementPattern (costEstimate=219, resultSizeEstimate=48.2K)
+                  ║        s: Var (name=dataset)
+                  ║        p: Var (name=_const_dbb1cdc8_uri, value=http://purl.org/dc/terms/title, anonymous)
+                  ║        o: Var (name=title)
+                  ╚══ Join (JoinIterator) (costEstimate=9.223372036854776E17M) [right]
+                     ├── StatementPattern (costEstimate=85, resultSizeEstimate=613.2K) [left]
+                     │     s: Var (name=dist)
+                     │     p: Var (name=p)
+                     │     o: Var (name=z)
+                     └── StatementPattern (costEstimate=7.2K, resultSizeEstimate=613.2K) [right]
+                           s: Var (name=dataset)
+                           p: Var (name=anyPred)
+                           o: Var (name=anyObj)
+
+
+
+
+=== languageGroupHaving - EXECUTED ===
+Projection (resultSizeActual=5)
+╠══ ProjectionElemList
+║     ProjectionElem "lang"
+║     ProjectionElem "c"
+╚══ Extension (resultSizeActual=5)
+   ├── Extension (resultSizeActual=5)
+   │     Filter (resultSizeActual=5)
+   │     ├── Compare (>)
+   │     │     Var (name=c)
+   │     │     ValueConstant (value="10"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │     └── Group (lang) (resultSizeActual=5)
+   │        ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=27.6K)
+   │        ║  ├── Join (JoinIterator) (costEstimate=6.1K, resultSizeActual=5.9K) [left]
+   │        ║  │  ╠══ Filter (resultSizeActual=11.4K) [left]
+   │        ║  │  ║  ├── Not
+   │        ║  │  ║  │     IsBNode
+   │        ║  │  ║  │        Var (name=lang)
+   │        ║  │  ║  └── StatementPattern (costEstimate=5.7K, resultSizeEstimate=11.5K, resultSizeActual=11.4K)
+   │        ║  │  ║        s: Var (name=dataset)
+   │        ║  │  ║        p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+   │        ║  │  ║        o: Var (name=lang)
+   │        ║  │  ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=11.8K, resultSizeActual=5.9K) [right]
+   │        ║  │        s: Var (name=dataset)
+   │        ║  │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │        ║  │        o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+   │        ║  └── Join (JoinIterator) (costEstimate=70.9K, resultSizeActual=27.4K) [right]
+   │        ║     ╠══ StatementPattern (costEstimate=97, resultSizeEstimate=37.9K, resultSizeActual=20.0K) [left]
+   │        ║     ║     s: Var (name=dataset)
+   │        ║     ║     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+   │        ║     ║     o: Var (name=dist)
+   │        ║     ╚══ StatementPattern (costEstimate=262, resultSizeEstimate=68.8K, resultSizeActual=27.4K) [right]
+   │        ║           s: Var (name=dist)
+   │        ║           p: Var (name=_const_835987f0_uri, value=http://www.w3.org/ns/dcat#accessURL, anonymous)
+   │        ║           o: Var (name=url)
+   │        ╚══ GroupElem (c)
+   │              Count
+   └── ExtensionElem (c)
+         Count
+
+
+
+
+=== languageGroupHaving - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "lang"
+║     ProjectionElem "c"
+╚══ Extension
+   ├── Extension
+   │     Filter
+   │     ├── Compare (>)
+   │     │     Var (name=c)
+   │     │     ValueConstant (value="10"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │     └── Group (lang)
+   │        ╠══ LeftJoin
+   │        ║  ├── Join (JoinIterator) (costEstimate=6.1K) [left]
+   │        ║  │  ╠══ Filter [left]
+   │        ║  │  ║  ├── Not
+   │        ║  │  ║  │     IsBNode
+   │        ║  │  ║  │        Var (name=lang)
+   │        ║  │  ║  └── StatementPattern (costEstimate=5.7K, resultSizeEstimate=11.5K)
+   │        ║  │  ║        s: Var (name=dataset)
+   │        ║  │  ║        p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+   │        ║  │  ║        o: Var (name=lang)
+   │        ║  │  ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=11.8K) [right]
+   │        ║  │        s: Var (name=dataset)
+   │        ║  │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │        ║  │        o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+   │        ║  └── Join (JoinIterator) (costEstimate=70.9K) [right]
+   │        ║     ╠══ StatementPattern (costEstimate=97, resultSizeEstimate=37.9K) [left]
+   │        ║     ║     s: Var (name=dataset)
+   │        ║     ║     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+   │        ║     ║     o: Var (name=dist)
+   │        ║     ╚══ StatementPattern (costEstimate=262, resultSizeEstimate=68.8K) [right]
+   │        ║           s: Var (name=dist)
+   │        ║           p: Var (name=_const_835987f0_uri, value=http://www.w3.org/ns/dcat#accessURL, anonymous)
+   │        ║           o: Var (name=url)
+   │        ╚══ GroupElem (c)
+   │              Count
+   └── ExtensionElem (c)
+         Count
+
+
+
+
+=== languageUnionRegex - EXECUTED ===
+Slice (limit=200) (resultSizeActual=200)
+   Projection (resultSizeActual=200)
+   ├── ProjectionElemList
+   │     ProjectionElem "dataset"
+   │     ProjectionElem "lang"
+   │     ProjectionElem "text"
+   └── Join (JoinIterator) (resultSizeActual=200)
+      ╠══ BindingSetAssignment ([[lang=http://publications.europa.eu/resource/authority/language/ENG], [lang=http://publications.europa.eu/resource/authority/language/FRA], [lang=http://publications.europa.eu/resource/authority/language/NLD]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=1) [left]
+      ╚══ Join (JoinIterator) (resultSizeActual=200) [right]
+         ├── StatementPattern (costEstimate=36, resultSizeEstimate=11.5K, resultSizeActual=717) [left]
+         │     s: Var (name=dataset)
+         │     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+         │     o: Var (name=lang)
+         └── Join (JoinIterator) (resultSizeActual=200) [right]
+            ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=11.8K, resultSizeActual=418) [left]
+            ║     s: Var (name=dataset)
+            ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+            ║     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+            ╚══ Union (resultSizeActual=200) [right]
+               ├── Filter (resultSizeActual=23)
+               │  ╠══ Or
+               │  ║  ├── FunctionCall (http://www.w3.org/2005/xpath-functions#contains)
+               │  ║  │  ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)
+               │  ║  │  ║     Str
+               │  ║  │  ║        Var (name=text)
+               │  ║  │  ╚══ ValueConstant (value="data")
+               │  ║  └── Regex
+               │  ║        Str
+               │  ║           Var (name=text)
+               │  ║        ValueConstant (value="geo")
+               │  ║        ValueConstant (value="i")
+               │  ╚══ StatementPattern (new scope) (costEstimate=219, resultSizeEstimate=48.2K, resultSizeActual=692)
+               │        s: Var (name=dataset)
+               │        p: Var (name=_const_dbb1cdc8_uri, value=http://purl.org/dc/terms/title, anonymous)
+               │        o: Var (name=text)
+               └── Filter (resultSizeActual=177)
+                  ╠══ Or
+                  ║  ├── FunctionCall (http://www.w3.org/2005/xpath-functions#contains)
+                  ║  │  ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)
+                  ║  │  ║     Str
+                  ║  │  ║        Var (name=text)
+                  ║  │  ╚══ ValueConstant (value="data")
+                  ║  └── Regex
+                  ║        Str
+                  ║           Var (name=text)
+                  ║        ValueConstant (value="geo")
+                  ║        ValueConstant (value="i")
+                  ╚══ StatementPattern (new scope) (costEstimate=202, resultSizeEstimate=40.8K, resultSizeActual=690)
+                        s: Var (name=dataset)
+                        p: Var (name=_const_52e0db6c_uri, value=http://purl.org/dc/terms/description, anonymous)
+                        o: Var (name=text)
+
+
+
+
+=== languageUnionRegex - OPTIMIZED ===
+Slice (limit=200)
+   Projection
+   ├── ProjectionElemList
+   │     ProjectionElem "dataset"
+   │     ProjectionElem "lang"
+   │     ProjectionElem "text"
+   └── Join (JoinIterator)
+      ╠══ BindingSetAssignment ([[lang=http://publications.europa.eu/resource/authority/language/ENG], [lang=http://publications.europa.eu/resource/authority/language/FRA], [lang=http://publications.europa.eu/resource/authority/language/NLD]]) (costEstimate=0, resultSizeEstimate=1.00) [left]
+      ╚══ Join (JoinIterator) [right]
+         ├── StatementPattern (costEstimate=36, resultSizeEstimate=11.5K) [left]
+         │     s: Var (name=dataset)
+         │     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+         │     o: Var (name=lang)
+         └── Join (JoinIterator) [right]
+            ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=11.8K) [left]
+            ║     s: Var (name=dataset)
+            ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+            ║     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+            ╚══ Union [right]
+               ├── Filter
+               │  ╠══ Or
+               │  ║  ├── FunctionCall (http://www.w3.org/2005/xpath-functions#contains)
+               │  ║  │  ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)
+               │  ║  │  ║     Str
+               │  ║  │  ║        Var (name=text)
+               │  ║  │  ╚══ ValueConstant (value="data")
+               │  ║  └── Regex
+               │  ║        Str
+               │  ║           Var (name=text)
+               │  ║        ValueConstant (value="geo")
+               │  ║        ValueConstant (value="i")
+               │  ╚══ StatementPattern (new scope) (costEstimate=219, resultSizeEstimate=48.2K)
+               │        s: Var (name=dataset)
+               │        p: Var (name=_const_dbb1cdc8_uri, value=http://purl.org/dc/terms/title, anonymous)
+               │        o: Var (name=text)
+               └── Filter
+                  ╠══ Or
+                  ║  ├── FunctionCall (http://www.w3.org/2005/xpath-functions#contains)
+                  ║  │  ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)
+                  ║  │  ║     Str
+                  ║  │  ║        Var (name=text)
+                  ║  │  ╚══ ValueConstant (value="data")
+                  ║  └── Regex
+                  ║        Str
+                  ║           Var (name=text)
+                  ║        ValueConstant (value="geo")
+                  ║        ValueConstant (value="i")
+                  ╚══ StatementPattern (new scope) (costEstimate=202, resultSizeEstimate=40.8K)
+                        s: Var (name=dataset)
+                        p: Var (name=_const_52e0db6c_uri, value=http://purl.org/dc/terms/description, anonymous)
+                        o: Var (name=text)
+
+
+
+
+=== long_chain - EXECUTED ===
+Join (JoinIterator) (resultSizeActual=0)
+╠══ StatementPattern (costEstimate=204.4K, resultSizeEstimate=613.2K, resultSizeActual=613.1K) [left]
+║     s: Var (name=c)
+║     p: Var (name=d)
+║     o: Var (name=e)
+╚══ Join (JoinIterator) (resultSizeActual=0) [right]
+   ├── StatementPattern (costEstimate=3.6K, resultSizeEstimate=613.2K, resultSizeActual=790.6K) [left]
+   │     s: Var (name=e)
+   │     p: Var (name=f)
+   │     o: Var (name=g)
+   └── Join (JoinIterator) (resultSizeActual=0) [right]
+      ╠══ StatementPattern (costEstimate=3.6K, resultSizeEstimate=613.2K, resultSizeActual=518.5K) [left]
+      ║     s: Var (name=g)
+      ║     p: Var (name=h)
+      ║     o: Var (name=i)
+      ╚══ Join (JoinIterator) (costEstimate=9.223372036854776E17M, resultSizeActual=0) [right]
+         ├── StatementPattern (costEstimate=7.2K, resultSizeEstimate=613.2K, resultSizeActual=75.6K) [left]
+         │     s: Var (name=a)
+         │     p: Var (name=b)
+         │     o: Var (name=c)
+         └── StatementPattern (costEstimate=7.2K, resultSizeEstimate=613.2K, resultSizeActual=0) [right]
+               s: Var (name=i)
+               p: Var (name=j)
+               o: Var (name=k)
+
+
+
+
+=== long_chain - OPTIMIZED ===
+Join (JoinIterator)
+╠══ StatementPattern (costEstimate=204.4K, resultSizeEstimate=613.2K) [left]
+║     s: Var (name=c)
+║     p: Var (name=d)
+║     o: Var (name=e)
+╚══ Join (JoinIterator) [right]
+   ├── StatementPattern (costEstimate=3.6K, resultSizeEstimate=613.2K) [left]
+   │     s: Var (name=e)
+   │     p: Var (name=f)
+   │     o: Var (name=g)
+   └── Join (JoinIterator) [right]
+      ╠══ StatementPattern (costEstimate=3.6K, resultSizeEstimate=613.2K) [left]
+      ║     s: Var (name=g)
+      ║     p: Var (name=h)
+      ║     o: Var (name=i)
+      ╚══ Join (JoinIterator) (costEstimate=9.223372036854776E17M) [right]
+         ├── StatementPattern (costEstimate=7.2K, resultSizeEstimate=613.2K) [left]
+         │     s: Var (name=a)
+         │     p: Var (name=b)
+         │     o: Var (name=c)
+         └── StatementPattern (costEstimate=7.2K, resultSizeEstimate=613.2K) [right]
+               s: Var (name=i)
+               p: Var (name=j)
+               o: Var (name=k)
+
+
+
+
+=== lots_of_optional - EXECUTED ===
+Projection (resultSizeActual=67.3K)
+╠══ ProjectionElemList
+║     ProjectionElem "a"
+║     ProjectionElem "dist"
+║     ProjectionElem "format"
+║     ProjectionElem "license"
+║     ProjectionElem "rights"
+║     ProjectionElem "mediaType"
+║     ProjectionElem "accessURL"
+║     ProjectionElem "downloadURL"
+║     ProjectionElem "page"
+╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=67.3K)
+   ├── LeftJoin (LeftJoinIterator) (resultSizeActual=67.3K) [left]
+   │  ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=67.3K) [left]
+   │  ║  ├── LeftJoin (LeftJoinIterator) (resultSizeActual=36.0K) [left]
+   │  ║  │  ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=35.1K) [left]
+   │  ║  │  ║  ├── LeftJoin (LeftJoinIterator) (resultSizeActual=35.1K) [left]
+   │  ║  │  ║  │  ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=35.1K) [left]
+   │  ║  │  ║  │  ║  ├── Join (JoinIterator) (costEstimate=38.7K, resultSizeActual=35.1K) [left]
+   │  ║  │  ║  │  ║  │  ╠══ StatementPattern (costEstimate=5.9K, resultSizeEstimate=11.8K, resultSizeActual=11.7K) [left]
+   │  ║  │  ║  │  ║  │  ║     s: Var (name=a)
+   │  ║  │  ║  │  ║  │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │  ║  │  ║  │  ║     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+   │  ║  │  ║  │  ║  │  ╚══ Filter (resultSizeActual=35.1K) [right]
+   │  ║  │  ║  │  ║  │     ├── Not
+   │  ║  │  ║  │  ║  │     │     Exists
+   │  ║  │  ║  │  ║  │     │        StatementPattern (resultSizeEstimate=2.8K, resultSizeActual=0)
+   │  ║  │  ║  │  ║  │     │           s: Var (name=dist)
+   │  ║  │  ║  │  ║  │     │           p: Var (name=_const_80ff7fc3_uri, value=http://www.w3.org/ns/dcat#mediaType, anonymous)
+   │  ║  │  ║  │  ║  │     │           o: Var (name=_const_c41cc624_lit_e2eec718, value="text/csv", anonymous)
+   │  ║  │  ║  │  ║  │     └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K, resultSizeActual=37.9K)
+   │  ║  │  ║  │  ║  │           s: Var (name=a)
+   │  ║  │  ║  │  ║  │           p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+   │  ║  │  ║  │  ║  │           o: Var (name=dist)
+   │  ║  │  ║  │  ║  └── StatementPattern (resultSizeEstimate=30.7K, resultSizeActual=27.9K) [right]
+   │  ║  │  ║  │  ║        s: Var (name=dist)
+   │  ║  │  ║  │  ║        p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+   │  ║  │  ║  │  ║        o: Var (name=format)
+   │  ║  │  ║  │  ╚══ StatementPattern (resultSizeEstimate=35.0K, resultSizeActual=33.0K) [right]
+   │  ║  │  ║  │        s: Var (name=dist)
+   │  ║  │  ║  │        p: Var (name=_const_e5113b1_uri, value=http://purl.org/dc/terms/license, anonymous)
+   │  ║  │  ║  │        o: Var (name=license)
+   │  ║  │  ║  └── StatementPattern (resultSizeEstimate=1.5K, resultSizeActual=1.1K) [right]
+   │  ║  │  ║        s: Var (name=dist)
+   │  ║  │  ║        p: Var (name=_const_97184467_uri, value=http://purl.org/dc/terms/rights, anonymous)
+   │  ║  │  ║        o: Var (name=rights)
+   │  ║  │  ╚══ StatementPattern (resultSizeEstimate=31.7K, resultSizeActual=28.9K) [right]
+   │  ║  │        s: Var (name=dist)
+   │  ║  │        p: Var (name=_const_80ff7fc3_uri, value=http://www.w3.org/ns/dcat#mediaType, anonymous)
+   │  ║  │        o: Var (name=mediaType)
+   │  ║  └── StatementPattern (resultSizeEstimate=68.8K, resultSizeActual=67.3K) [right]
+   │  ║        s: Var (name=dist)
+   │  ║        p: Var (name=_const_835987f0_uri, value=http://www.w3.org/ns/dcat#accessURL, anonymous)
+   │  ║        o: Var (name=accessURL)
+   │  ╚══ StatementPattern (resultSizeEstimate=11.8K, resultSizeActual=12.6K) [right]
+   │        s: Var (name=dist)
+   │        p: Var (name=_const_90c650c_uri, value=http://www.w3.org/ns/dcat#downloadURL, anonymous)
+   │        o: Var (name=downloadURL)
+   └── StatementPattern (resultSizeEstimate=261, resultSizeActual=261) [right]
+         s: Var (name=dist)
+         p: Var (name=_const_23b8abba_uri, value=http://xmlns.com/foaf/0.1/page, anonymous)
+         o: Var (name=page)
+
+
+
+
+=== lots_of_optional - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "a"
+║     ProjectionElem "dist"
+║     ProjectionElem "format"
+║     ProjectionElem "license"
+║     ProjectionElem "rights"
+║     ProjectionElem "mediaType"
+║     ProjectionElem "accessURL"
+║     ProjectionElem "downloadURL"
+║     ProjectionElem "page"
+╚══ LeftJoin (LeftJoinIterator)
+   ├── LeftJoin (LeftJoinIterator) [left]
+   │  ╠══ LeftJoin (LeftJoinIterator) [left]
+   │  ║  ├── LeftJoin (LeftJoinIterator) [left]
+   │  ║  │  ╠══ LeftJoin (LeftJoinIterator) [left]
+   │  ║  │  ║  ├── LeftJoin (LeftJoinIterator) [left]
+   │  ║  │  ║  │  ╠══ LeftJoin (LeftJoinIterator) [left]
+   │  ║  │  ║  │  ║  ├── Join (JoinIterator) (costEstimate=38.7K) [left]
+   │  ║  │  ║  │  ║  │  ╠══ StatementPattern (costEstimate=5.9K, resultSizeEstimate=11.8K) [left]
+   │  ║  │  ║  │  ║  │  ║     s: Var (name=a)
+   │  ║  │  ║  │  ║  │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │  ║  │  ║  │  ║     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+   │  ║  │  ║  │  ║  │  ╚══ Filter [right]
+   │  ║  │  ║  │  ║  │     ├── Not
+   │  ║  │  ║  │  ║  │     │     Exists
+   │  ║  │  ║  │  ║  │     │        StatementPattern (resultSizeEstimate=2.8K)
+   │  ║  │  ║  │  ║  │     │           s: Var (name=dist)
+   │  ║  │  ║  │  ║  │     │           p: Var (name=_const_80ff7fc3_uri, value=http://www.w3.org/ns/dcat#mediaType, anonymous)
+   │  ║  │  ║  │  ║  │     │           o: Var (name=_const_c41cc624_lit_e2eec718, value="text/csv", anonymous)
+   │  ║  │  ║  │  ║  │     └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K)
+   │  ║  │  ║  │  ║  │           s: Var (name=a)
+   │  ║  │  ║  │  ║  │           p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+   │  ║  │  ║  │  ║  │           o: Var (name=dist)
+   │  ║  │  ║  │  ║  └── StatementPattern (resultSizeEstimate=30.7K) [right]
+   │  ║  │  ║  │  ║        s: Var (name=dist)
+   │  ║  │  ║  │  ║        p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+   │  ║  │  ║  │  ║        o: Var (name=format)
+   │  ║  │  ║  │  ╚══ StatementPattern (resultSizeEstimate=35.0K) [right]
+   │  ║  │  ║  │        s: Var (name=dist)
+   │  ║  │  ║  │        p: Var (name=_const_e5113b1_uri, value=http://purl.org/dc/terms/license, anonymous)
+   │  ║  │  ║  │        o: Var (name=license)
+   │  ║  │  ║  └── StatementPattern (resultSizeEstimate=1.5K) [right]
+   │  ║  │  ║        s: Var (name=dist)
+   │  ║  │  ║        p: Var (name=_const_97184467_uri, value=http://purl.org/dc/terms/rights, anonymous)
+   │  ║  │  ║        o: Var (name=rights)
+   │  ║  │  ╚══ StatementPattern (resultSizeEstimate=31.7K) [right]
+   │  ║  │        s: Var (name=dist)
+   │  ║  │        p: Var (name=_const_80ff7fc3_uri, value=http://www.w3.org/ns/dcat#mediaType, anonymous)
+   │  ║  │        o: Var (name=mediaType)
+   │  ║  └── StatementPattern (resultSizeEstimate=68.8K) [right]
+   │  ║        s: Var (name=dist)
+   │  ║        p: Var (name=_const_835987f0_uri, value=http://www.w3.org/ns/dcat#accessURL, anonymous)
+   │  ║        o: Var (name=accessURL)
+   │  ╚══ StatementPattern (resultSizeEstimate=11.8K) [right]
+   │        s: Var (name=dist)
+   │        p: Var (name=_const_90c650c_uri, value=http://www.w3.org/ns/dcat#downloadURL, anonymous)
+   │        o: Var (name=downloadURL)
+   └── StatementPattern (resultSizeEstimate=261) [right]
+         s: Var (name=dist)
+         p: Var (name=_const_23b8abba_uri, value=http://xmlns.com/foaf/0.1/page, anonymous)
+         o: Var (name=page)
+
+
+
+
+=== minus - EXECUTED ===
+Projection (resultSizeActual=10.5K)
+╠══ ProjectionElemList
+║     ProjectionElem "a"
+║     ProjectionElem "dataset"
+║     ProjectionElem "dist"
+║     ProjectionElem "contact"
+║     ProjectionElem "unit"
+╚══ Difference (resultSizeActual=10.5K)
+   ├── StatementPattern (resultSizeEstimate=11.8K, resultSizeActual=11.7K)
+   │     s: Var (name=a)
+   │     p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+   │     o: Var (name=dataset)
+   └── Join (JoinIterator) (resultSizeActual=4.0K)
+      ╠══ StatementPattern (costEstimate=3.50, resultSizeEstimate=2.00, resultSizeActual=2) [left]
+      ║     s: Var (name=contact)
+      ║     p: Var (name=_const_f76648d0_uri, value=http://www.w3.org/ns/org#unitOf, anonymous)
+      ║     o: Var (name=unit)
+      ╚══ Join (JoinIterator) (costEstimate=36.9K, resultSizeActual=4.0K) [right]
+         ├── StatementPattern (costEstimate=53, resultSizeEstimate=11.1K, resultSizeActual=1.2K) [left]
+         │     s: Var (name=dataset)
+         │     p: Var (name=_const_21baecab_uri, value=http://www.w3.org/ns/dcat#contactPoint, anonymous)
+         │     o: Var (name=contact)
+         └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K, resultSizeActual=4.0K) [right]
+               s: Var (name=dataset)
+               p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+               o: Var (name=dist)
+
+
+
+
+=== minus - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "a"
+║     ProjectionElem "dataset"
+║     ProjectionElem "dist"
+║     ProjectionElem "contact"
+║     ProjectionElem "unit"
+╚══ Difference
+   ├── StatementPattern (resultSizeEstimate=11.8K)
+   │     s: Var (name=a)
+   │     p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+   │     o: Var (name=dataset)
+   └── Join (JoinIterator)
+      ╠══ StatementPattern (costEstimate=3.50, resultSizeEstimate=2.00) [left]
+      ║     s: Var (name=contact)
+      ║     p: Var (name=_const_f76648d0_uri, value=http://www.w3.org/ns/org#unitOf, anonymous)
+      ║     o: Var (name=unit)
+      ╚══ Join (JoinIterator) (costEstimate=36.9K) [right]
+         ├── StatementPattern (costEstimate=53, resultSizeEstimate=11.1K) [left]
+         │     s: Var (name=dataset)
+         │     p: Var (name=_const_21baecab_uri, value=http://www.w3.org/ns/dcat#contactPoint, anonymous)
+         │     o: Var (name=contact)
+         └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K) [right]
+               s: Var (name=dataset)
+               p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+               o: Var (name=dist)
+
+
+
+
+=== multipleSubSelect - EXECUTED ===
+Projection (resultSizeActual=27.8K)
+╠══ ProjectionElemList
+║     ProjectionElem "type1"
+║     ProjectionElem "type2"
+║     ProjectionElem "language2"
+║     ProjectionElem "mbox"
+║     ProjectionElem "count"
+║     ProjectionElem "identifier2"
+╚══ Join (HashJoinIteration) (resultSizeActual=27.8K)
+   ├── Projection (new scope) (resultSizeActual=20.0K) [left]
+   │  ╠══ ProjectionElemList
+   │  ║     ProjectionElem "a"
+   │  ║     ProjectionElem "type2"
+   │  ║     ProjectionElem "b"
+   │  ║     ProjectionElem "type1"
+   │  ║     ProjectionElem "mbox"
+   │  ║     ProjectionElem "language"
+   │  ║     ProjectionElem "identifier"
+   │  ╚══ Join (JoinIterator) (resultSizeActual=20.0K)
+   │     ├── StatementPattern (costEstimate=2.0K, resultSizeEstimate=11.8K, resultSizeActual=11.7K) [left]
+   │     │     s: Var (name=b)
+   │     │     p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+   │     │     o: Var (name=a)
+   │     └── Filter (resultSizeActual=20.0K) [right]
+   │        ╠══ Compare (!=)
+   │        ║     Var (name=type1)
+   │        ║     Var (name=type2)
+   │        ╚══ Join (JoinIterator) (resultSizeActual=20.0K)
+   │           ├── StatementPattern (costEstimate=273, resultSizeEstimate=74.5K, resultSizeActual=11.7K) [left]
+   │           │     s: Var (name=b)
+   │           │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │           │     o: Var (name=type1)
+   │           └── Join (JoinIterator) (resultSizeActual=20.0K) [right]
+   │              ╠══ StatementPattern (costEstimate=107, resultSizeEstimate=11.5K, resultSizeActual=5.9K) [left]
+   │              ║     s: Var (name=a)
+   │              ║     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+   │              ║     o: Var (name=language)
+   │              ╚══ Join (JoinIterator) (resultSizeActual=20.0K) [right]
+   │                 ├── StatementPattern (costEstimate=113, resultSizeEstimate=12.8K, resultSizeActual=5.9K) [left]
+   │                 │     s: Var (name=a)
+   │                 │     p: Var (name=_const_5ca739_uri, value=http://purl.org/dc/terms/identifier, anonymous)
+   │                 │     o: Var (name=identifier)
+   │                 └── Join (JoinIterator) (costEstimate=42.6K, resultSizeActual=20.0K) [right]
+   │                    ╠══ StatementPattern (costEstimate=273, resultSizeEstimate=74.5K, resultSizeActual=5.9K) [left]
+   │                    ║     s: Var (name=a)
+   │                    ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │                    ║     o: Var (name=type2)
+   │                    ╚══ StatementPattern (costEstimate=195, resultSizeEstimate=37.9K, resultSizeActual=20.0K) [right]
+   │                          s: Var (name=a)
+   │                          p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+   │                          o: Var (name=mbox)
+   └── Distinct (new scope) (resultSizeActual=3.1K) [right]
+         Projection (resultSizeActual=3.1K)
+         ├── ProjectionElemList
+         │     ProjectionElem "a"
+         │     ProjectionElem "count"
+         │     ProjectionElem "language2"
+         └── Extension (resultSizeActual=3.1K)
+            ╠══ Extension (resultSizeActual=3.1K)
+            ║     Filter (resultSizeActual=3.1K)
+            ║     ╠══ Compare (>)
+            ║     ║     Var (name=count)
+            ║     ║     ValueConstant (value="2"^^<http://www.w3.org/2001/XMLSchema#integer>)
+            ║     ╚══ Group (a, language2) (resultSizeActual=5.7K)
+            ║        ├── Join (JoinIterator) (resultSizeActual=20.0K)
+            ║        │  ╠══ StatementPattern (costEstimate=3.8K, resultSizeEstimate=11.5K, resultSizeActual=11.4K) [left]
+            ║        │  ║     s: Var (name=a)
+            ║        │  ║     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+            ║        │  ║     o: Var (name=language2)
+            ║        │  ╚══ Join (JoinIterator) (costEstimate=42.6K, resultSizeActual=20.0K) [right]
+            ║        │     ├── StatementPattern (costEstimate=273, resultSizeEstimate=74.5K, resultSizeActual=11.4K) [left]
+            ║        │     │     s: Var (name=a)
+            ║        │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+            ║        │     │     o: Var (name=type2)
+            ║        │     └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K, resultSizeActual=20.0K) [right]
+            ║        │           s: Var (name=a)
+            ║        │           p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+            ║        │           o: Var (name=dist)
+            ║        └── GroupElem (count)
+            ║              Count
+            ║                 Var (name=dist)
+            ╚══ ExtensionElem (count)
+                  Count
+                     Var (name=dist)
+
+
+
+
+=== multipleSubSelect - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "type1"
+║     ProjectionElem "type2"
+║     ProjectionElem "language2"
+║     ProjectionElem "mbox"
+║     ProjectionElem "count"
+║     ProjectionElem "identifier2"
+╚══ Join (HashJoinIteration)
+   ├── Projection (new scope) [left]
+   │  ╠══ ProjectionElemList
+   │  ║     ProjectionElem "a"
+   │  ║     ProjectionElem "type2"
+   │  ║     ProjectionElem "b"
+   │  ║     ProjectionElem "type1"
+   │  ║     ProjectionElem "mbox"
+   │  ║     ProjectionElem "language"
+   │  ║     ProjectionElem "identifier"
+   │  ╚══ Join (JoinIterator)
+   │     ├── StatementPattern (costEstimate=2.0K, resultSizeEstimate=11.8K) [left]
+   │     │     s: Var (name=b)
+   │     │     p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+   │     │     o: Var (name=a)
+   │     └── Filter [right]
+   │        ╠══ Compare (!=)
+   │        ║     Var (name=type1)
+   │        ║     Var (name=type2)
+   │        ╚══ Join (JoinIterator)
+   │           ├── StatementPattern (costEstimate=273, resultSizeEstimate=74.5K) [left]
+   │           │     s: Var (name=b)
+   │           │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │           │     o: Var (name=type1)
+   │           └── Join (JoinIterator) [right]
+   │              ╠══ StatementPattern (costEstimate=107, resultSizeEstimate=11.5K) [left]
+   │              ║     s: Var (name=a)
+   │              ║     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+   │              ║     o: Var (name=language)
+   │              ╚══ Join (JoinIterator) [right]
+   │                 ├── StatementPattern (costEstimate=113, resultSizeEstimate=12.8K) [left]
+   │                 │     s: Var (name=a)
+   │                 │     p: Var (name=_const_5ca739_uri, value=http://purl.org/dc/terms/identifier, anonymous)
+   │                 │     o: Var (name=identifier)
+   │                 └── Join (JoinIterator) (costEstimate=42.6K) [right]
+   │                    ╠══ StatementPattern (costEstimate=273, resultSizeEstimate=74.5K) [left]
+   │                    ║     s: Var (name=a)
+   │                    ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │                    ║     o: Var (name=type2)
+   │                    ╚══ StatementPattern (costEstimate=195, resultSizeEstimate=37.9K) [right]
+   │                          s: Var (name=a)
+   │                          p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+   │                          o: Var (name=mbox)
+   └── Distinct (new scope) [right]
+         Projection
+         ├── ProjectionElemList
+         │     ProjectionElem "a"
+         │     ProjectionElem "count"
+         │     ProjectionElem "language2"
+         └── Extension
+            ╠══ Extension
+            ║     Filter
+            ║     ╠══ Compare (>)
+            ║     ║     Var (name=count)
+            ║     ║     ValueConstant (value="2"^^<http://www.w3.org/2001/XMLSchema#integer>)
+            ║     ╚══ Group (a, language2)
+            ║        ├── Join (JoinIterator)
+            ║        │  ╠══ StatementPattern (costEstimate=3.8K, resultSizeEstimate=11.5K) [left]
+            ║        │  ║     s: Var (name=a)
+            ║        │  ║     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+            ║        │  ║     o: Var (name=language2)
+            ║        │  ╚══ Join (JoinIterator) (costEstimate=42.6K) [right]
+            ║        │     ├── StatementPattern (costEstimate=273, resultSizeEstimate=74.5K) [left]
+            ║        │     │     s: Var (name=a)
+            ║        │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+            ║        │     │     o: Var (name=type2)
+            ║        │     └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K) [right]
+            ║        │           s: Var (name=a)
+            ║        │           p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+            ║        │           o: Var (name=dist)
+            ║        └── GroupElem (count)
+            ║              Count
+            ║                 Var (name=dist)
+            ╚══ ExtensionElem (count)
+                  Count
+                     Var (name=dist)
+
+
+
+
+=== nested_optionals - EXECUTED ===
+Distinct (resultSizeActual=8)
+   Projection (resultSizeActual=35.6K)
+   ├── ProjectionElemList
+   │     ProjectionElem "h"
+   └── Filter (resultSizeActual=35.6K)
+      ╠══ Bound
+      ║     Var (name=h)
+      ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=288.8K)
+         ├── StatementPattern (resultSizeEstimate=11.8K, resultSizeActual=11.7K) [left]
+         │     s: Var (name=a)
+         │     p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+         │     o: Var (name=c)
+         └── LeftJoin (LeftJoinIterator) (resultSizeActual=288.7K) [right]
+            ╠══ StatementPattern (resultSizeEstimate=37.9K, resultSizeActual=37.9K) [left]
+            ║     s: Var (name=c)
+            ║     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+            ║     o: Var (name=e)
+            ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=288.7K) [right]
+               ├── StatementPattern (resultSizeEstimate=613.2K, resultSizeActual=287.7K) [left]
+               │     s: Var (name=e)
+               │     p: Var (name=f)
+               │     o: Var (name=g)
+               └── StatementPattern (resultSizeEstimate=74.5K, resultSizeActual=35.6K) [right]
+                     s: Var (name=g)
+                     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+                     o: Var (name=h)
+
+
+
+
+=== nested_optionals - OPTIMIZED ===
+Distinct
+   Projection
+   ├── ProjectionElemList
+   │     ProjectionElem "h"
+   └── Filter
+      ╠══ Bound
+      ║     Var (name=h)
+      ╚══ LeftJoin (LeftJoinIterator)
+         ├── StatementPattern (resultSizeEstimate=11.8K) [left]
+         │     s: Var (name=a)
+         │     p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+         │     o: Var (name=c)
+         └── LeftJoin [right]
+            ╠══ StatementPattern (resultSizeEstimate=37.9K) [left]
+            ║     s: Var (name=c)
+            ║     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+            ║     o: Var (name=e)
+            ╚══ LeftJoin [right]
+               ├── StatementPattern (resultSizeEstimate=613.2K) [left]
+               │     s: Var (name=e)
+               │     p: Var (name=f)
+               │     o: Var (name=g)
+               └── StatementPattern (resultSizeEstimate=74.5K) [right]
+                     s: Var (name=g)
+                     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+                     o: Var (name=h)
+
+
+
+
+=== optionalFilterPushdown - EXECUTED ===
+Projection (resultSizeActual=844)
+╠══ ProjectionElemList
+║     ProjectionElem "dataset"
+║     ProjectionElem "issued"
+║     ProjectionElem "page"
+╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=844)
+   ├── Filter (resultSizeActual=844) [left]
+   │  ╠══ Compare (>=)
+   │  ║     Var (name=issued)
+   │  ║     ValueConstant (value="2016-01-01T00:00:00"^^<http://www.w3.org/2001/XMLSchema#dateTime>)
+   │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=40.8K)
+   │     ├── Filter (resultSizeActual=40.8K) [left]
+   │     │  ╠══ SameTerm
+   │     │  ║     Var (name=p)
+   │     │  ║     ValueConstant (value=http://purl.org/dc/terms/description)
+   │     │  ╚══ StatementPattern (resultSizeEstimate=40.8K, resultSizeActual=40.8K)
+   │     │        s: Var (name=dataset)
+   │     │        p: Var (name=p, value=http://purl.org/dc/terms/description)
+   │     │        o: Var (name=o)
+   │     └── StatementPattern (resultSizeEstimate=641, resultSizeActual=1.0K) [right]
+   │           s: Var (name=dataset)
+   │           p: Var (name=_const_884f353b_uri, value=http://purl.org/dc/terms/issued, anonymous)
+   │           o: Var (name=issued)
+   └── StatementPattern (resultSizeEstimate=261, resultSizeActual=0) [right]
+         s: Var (name=dataset)
+         p: Var (name=_const_23b8abba_uri, value=http://xmlns.com/foaf/0.1/page, anonymous)
+         o: Var (name=page)
+
+
+
+
+=== optionalFilterPushdown - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "dataset"
+║     ProjectionElem "issued"
+║     ProjectionElem "page"
+╚══ LeftJoin (LeftJoinIterator)
+   ├── Filter [left]
+   │  ╠══ Compare (>=)
+   │  ║     Var (name=issued)
+   │  ║     ValueConstant (value="2016-01-01T00:00:00"^^<http://www.w3.org/2001/XMLSchema#dateTime>)
+   │  ╚══ LeftJoin (LeftJoinIterator)
+   │     ├── Filter [left]
+   │     │  ╠══ SameTerm
+   │     │  ║     Var (name=p)
+   │     │  ║     ValueConstant (value=http://purl.org/dc/terms/description)
+   │     │  ╚══ StatementPattern (resultSizeEstimate=40.8K)
+   │     │        s: Var (name=dataset)
+   │     │        p: Var (name=p, value=http://purl.org/dc/terms/description)
+   │     │        o: Var (name=o)
+   │     └── StatementPattern (resultSizeEstimate=641) [right]
+   │           s: Var (name=dataset)
+   │           p: Var (name=_const_884f353b_uri, value=http://purl.org/dc/terms/issued, anonymous)
+   │           o: Var (name=issued)
+   └── StatementPattern (resultSizeEstimate=261) [right]
+         s: Var (name=dataset)
+         p: Var (name=_const_23b8abba_uri, value=http://xmlns.com/foaf/0.1/page, anonymous)
+         o: Var (name=page)
+
+
+
+
+=== optional_lhs_filter - EXECUTED ===
+Projection (resultSizeActual=34.9K)
+╠══ ProjectionElemList
+║     ProjectionElem "dist"
+║     ProjectionElem "license"
+║     ProjectionElem "a"
+╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=34.9K)
+      SameTerm
+         Var (name=license)
+         ValueConstant (value=http://wiki.data.gouv.fr/wiki/Licence_Ouverte_/_Open_Licence)
+      Join (JoinIterator) (costEstimate=36.2K, resultSizeActual=34.9K)
+      ╠══ StatementPattern (costEstimate=17.5K, resultSizeEstimate=35.0K, resultSizeActual=34.9K) [left]
+      ║     s: Var (name=dist)
+      ║     p: Var (name=_const_e5113b1_uri, value=http://purl.org/dc/terms/license, anonymous)
+      ║     o: Var (name=license)
+      ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=37.9K, resultSizeActual=34.9K) [right]
+            s: Var (name=dist)
+            p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+            o: Var (name=_const_81f8b9ff_uri, value=http://www.w3.org/ns/dcat#Distribution, anonymous)
+      StatementPattern (resultSizeEstimate=37.9K, resultSizeActual=1.3K)
+         s: Var (name=a)
+         p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+         o: Var (name=dist)
+
+
+
+
+=== optional_lhs_filter - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "dist"
+║     ProjectionElem "license"
+║     ProjectionElem "a"
+╚══ LeftJoin (LeftJoinIterator)
+      SameTerm
+         Var (name=license)
+         ValueConstant (value=http://wiki.data.gouv.fr/wiki/Licence_Ouverte_/_Open_Licence)
+      Join (JoinIterator) (costEstimate=36.2K)
+      ╠══ StatementPattern (costEstimate=17.5K, resultSizeEstimate=35.0K) [left]
+      ║     s: Var (name=dist)
+      ║     p: Var (name=_const_e5113b1_uri, value=http://purl.org/dc/terms/license, anonymous)
+      ║     o: Var (name=license)
+      ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=37.9K) [right]
+            s: Var (name=dist)
+            p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+            o: Var (name=_const_81f8b9ff_uri, value=http://www.w3.org/ns/dcat#Distribution, anonymous)
+      StatementPattern (resultSizeEstimate=37.9K)
+         s: Var (name=a)
+         p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+         o: Var (name=dist)
+
+
+
+
+=== optional_rhs_filter - EXECUTED ===
+Projection (resultSizeActual=37.9K)
+╠══ ProjectionElemList
+║     ProjectionElem "dist"
+║     ProjectionElem "a"
+║     ProjectionElem "lang"
+╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=37.9K)
+   ├── StatementPattern (resultSizeEstimate=37.9K, resultSizeActual=37.9K) [left]
+   │     s: Var (name=dist)
+   │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │     o: Var (name=_const_81f8b9ff_uri, value=http://www.w3.org/ns/dcat#Distribution, anonymous)
+   └── Join (JoinIterator) (costEstimate=3.2K, resultSizeActual=2.8K) [right]
+      ╠══ StatementPattern (costEstimate=97, resultSizeEstimate=37.9K, resultSizeActual=37.9K) [left]
+      ║     s: Var (name=a)
+      ║     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║     o: Var (name=dist)
+      ╚══ Filter (resultSizeActual=2.8K) [right]
+         ├── SameTerm
+         │     Var (name=lang)
+         │     ValueConstant (value=http://publications.europa.eu/resource/authority/language/ENG)
+         └── StatementPattern (costEstimate=1.00, resultSizeEstimate=2.2K, resultSizeActual=2.8K)
+               s: Var (name=a)
+               p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+               o: Var (name=lang, value=http://publications.europa.eu/resource/authority/language/ENG)
+
+
+
+
+=== optional_rhs_filter - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "dist"
+║     ProjectionElem "a"
+║     ProjectionElem "lang"
+╚══ LeftJoin (LeftJoinIterator)
+   ├── StatementPattern (resultSizeEstimate=37.9K) [left]
+   │     s: Var (name=dist)
+   │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │     o: Var (name=_const_81f8b9ff_uri, value=http://www.w3.org/ns/dcat#Distribution, anonymous)
+   └── Join (JoinIterator) (costEstimate=3.2K) [right]
+      ╠══ StatementPattern (costEstimate=97, resultSizeEstimate=37.9K) [left]
+      ║     s: Var (name=a)
+      ║     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║     o: Var (name=dist)
+      ╚══ Filter [right]
+         ├── SameTerm
+         │     Var (name=lang)
+         │     ValueConstant (value=http://publications.europa.eu/resource/authority/language/ENG)
+         └── StatementPattern (costEstimate=1.00, resultSizeEstimate=2.2K)
+               s: Var (name=a)
+               p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+               o: Var (name=lang, value=http://publications.europa.eu/resource/authority/language/ENG)
+
+
+
+
+=== overlappingOptionalsFiltered - EXECUTED ===
+Projection (resultSizeActual=31.5K)
+╠══ ProjectionElemList
+║     ProjectionElem "dataset"
+║     ProjectionElem "dist"
+║     ProjectionElem "format"
+║     ProjectionElem "url"
+╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=31.5K)
+   ├── LeftJoin (LeftJoinIterator) (resultSizeActual=13.0K) [left]
+   │  ╠══ StatementPattern (resultSizeEstimate=11.8K, resultSizeActual=11.7K) [left]
+   │  ║     s: Var (name=dataset)
+   │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+   │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=3.5K) [right]
+   │     ├── Filter (resultSizeActual=2.7K) [left]
+   │     │  ╠══ SameTerm
+   │     │  ║     Var (name=format)
+   │     │  ║     ValueConstant (value=http://publications.europa.eu/resource/authority/file-type/CSV)
+   │     │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=37.9K)
+   │     │     ├── StatementPattern (resultSizeEstimate=37.9K, resultSizeActual=37.9K) [left]
+   │     │     │     s: Var (name=dataset)
+   │     │     │     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+   │     │     │     o: Var (name=dist)
+   │     │     └── StatementPattern (resultSizeEstimate=30.7K, resultSizeActual=30.7K) [right]
+   │     │           s: Var (name=dist)
+   │     │           p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+   │     │           o: Var (name=format)
+   │     └── StatementPattern (resultSizeEstimate=68.8K, resultSizeActual=3.5K) [right]
+   │           s: Var (name=dist)
+   │           p: Var (name=_const_835987f0_uri, value=http://www.w3.org/ns/dcat#accessURL, anonymous)
+   │           o: Var (name=url)
+   └── Filter (resultSizeActual=27.8K) [right]
+      ╠══ Or
+      ║  ├── Not
+      ║  │     Bound
+      ║  │        Var (name=url)
+      ║  └── Compare (!=)
+      ║        Var (name=format)
+      ║        ValueConstant (value=http://publications.europa.eu/resource/authority/file-type/CSV)
+      ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=28.2K)
+         ├── LeftJoin (LeftJoinIterator) (resultSizeActual=31.6K) [left]
+         │  ╠══ StatementPattern (resultSizeEstimate=37.9K, resultSizeActual=31.6K) [left]
+         │  ║     s: Var (name=dataset)
+         │  ║     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+         │  ║     o: Var (name=dist)
+         │  ╚══ StatementPattern (resultSizeEstimate=30.7K, resultSizeActual=24.5K) [right]
+         │        s: Var (name=dist)
+         │        p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+         │        o: Var (name=format)
+         └── StatementPattern (resultSizeEstimate=11.8K, resultSizeActual=8.0K) [right]
+               s: Var (name=dist)
+               p: Var (name=_const_90c650c_uri, value=http://www.w3.org/ns/dcat#downloadURL, anonymous)
+               o: Var (name=url)
+
+
+
+
+=== overlappingOptionalsFiltered - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "dataset"
+║     ProjectionElem "dist"
+║     ProjectionElem "format"
+║     ProjectionElem "url"
+╚══ LeftJoin (LeftJoinIterator)
+   ├── LeftJoin (LeftJoinIterator) [left]
+   │  ╠══ StatementPattern (resultSizeEstimate=11.8K) [left]
+   │  ║     s: Var (name=dataset)
+   │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+   │  ╚══ LeftJoin [right]
+   │     ├── Filter [left]
+   │     │  ╠══ SameTerm
+   │     │  ║     Var (name=format)
+   │     │  ║     ValueConstant (value=http://publications.europa.eu/resource/authority/file-type/CSV)
+   │     │  ╚══ LeftJoin
+   │     │     ├── StatementPattern (resultSizeEstimate=37.9K) [left]
+   │     │     │     s: Var (name=dataset)
+   │     │     │     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+   │     │     │     o: Var (name=dist)
+   │     │     └── StatementPattern (resultSizeEstimate=30.7K) [right]
+   │     │           s: Var (name=dist)
+   │     │           p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+   │     │           o: Var (name=format)
+   │     └── StatementPattern (resultSizeEstimate=68.8K) [right]
+   │           s: Var (name=dist)
+   │           p: Var (name=_const_835987f0_uri, value=http://www.w3.org/ns/dcat#accessURL, anonymous)
+   │           o: Var (name=url)
+   └── Filter [right]
+      ╠══ Or
+      ║  ├── Not
+      ║  │     Bound
+      ║  │        Var (name=url)
+      ║  └── Compare (!=)
+      ║        Var (name=format)
+      ║        ValueConstant (value=http://publications.europa.eu/resource/authority/file-type/CSV)
+      ╚══ LeftJoin
+         ├── LeftJoin [left]
+         │  ╠══ StatementPattern (resultSizeEstimate=37.9K) [left]
+         │  ║     s: Var (name=dataset)
+         │  ║     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+         │  ║     o: Var (name=dist)
+         │  ╚══ StatementPattern (resultSizeEstimate=30.7K) [right]
+         │        s: Var (name=dist)
+         │        p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+         │        o: Var (name=format)
+         └── StatementPattern (resultSizeEstimate=11.8K) [right]
+               s: Var (name=dist)
+               p: Var (name=_const_90c650c_uri, value=http://www.w3.org/ns/dcat#downloadURL, anonymous)
+               o: Var (name=url)
+
+
+
+
+=== overlappingOptionalsWide - EXECUTED ===
+Projection (resultSizeActual=43.1K)
+╠══ ProjectionElemList
+║     ProjectionElem "dataset"
+║     ProjectionElem "title"
+║     ProjectionElem "format"
+║     ProjectionElem "license"
+║     ProjectionElem "rights"
+║     ProjectionElem "page"
+║     ProjectionElem "email"
+║     ProjectionElem "phone"
+╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=43.1K)
+   ├── LeftJoin (LeftJoinIterator) (resultSizeActual=38.0K) [left]
+   │  ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=38.0K) [left]
+   │  ║  ├── StatementPattern (resultSizeEstimate=11.8K, resultSizeActual=11.7K) [left]
+   │  ║  │     s: Var (name=dataset)
+   │  ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+   │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=37.9K) [right]
+   │  ║     ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=37.9K) [left]
+   │  ║     ║  ├── LeftJoin (LeftJoinIterator) (resultSizeActual=37.9K) [left]
+   │  ║     ║  │  ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=37.9K) [left]
+   │  ║     ║  │  ║  ├── StatementPattern (resultSizeEstimate=37.9K, resultSizeActual=37.9K) [left]
+   │  ║     ║  │  ║  │     s: Var (name=dataset)
+   │  ║     ║  │  ║  │     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+   │  ║     ║  │  ║  │     o: Var (name=dist)
+   │  ║     ║  │  ║  └── StatementPattern (resultSizeEstimate=30.7K, resultSizeActual=30.7K) [right]
+   │  ║     ║  │  ║        s: Var (name=dist)
+   │  ║     ║  │  ║        p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+   │  ║     ║  │  ║        o: Var (name=format)
+   │  ║     ║  │  ╚══ StatementPattern (resultSizeEstimate=35.0K, resultSizeActual=34.9K) [right]
+   │  ║     ║  │        s: Var (name=dist)
+   │  ║     ║  │        p: Var (name=_const_e5113b1_uri, value=http://purl.org/dc/terms/license, anonymous)
+   │  ║     ║  │        o: Var (name=license)
+   │  ║     ║  └── StatementPattern (resultSizeEstimate=1.5K, resultSizeActual=1.4K) [right]
+   │  ║     ║        s: Var (name=dist)
+   │  ║     ║        p: Var (name=_const_97184467_uri, value=http://purl.org/dc/terms/rights, anonymous)
+   │  ║     ║        o: Var (name=rights)
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=261, resultSizeActual=261) [right]
+   │  ║           s: Var (name=dist)
+   │  ║           p: Var (name=_const_23b8abba_uri, value=http://xmlns.com/foaf/0.1/page, anonymous)
+   │  ║           o: Var (name=page)
+   │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=37.9K) [right]
+   │     ├── LeftJoin (LeftJoinIterator) (resultSizeActual=37.9K) [left]
+   │     │  ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=37.9K) [left]
+   │     │  ║  ├── LeftJoin (BadlyDesignedLeftJoinIterator) (resultSizeActual=37.9K) [left]
+   │     │  ║  │  ╠══ StatementPattern (resultSizeEstimate=37.9K, resultSizeActual=37.9K) [left]
+   │     │  ║  │  ║     s: Var (name=dataset)
+   │     │  ║  │  ║     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+   │     │  ║  │  ║     o: Var (name=dist)
+   │     │  ║  │  ╚══ StatementPattern (resultSizeEstimate=30.7K, resultSizeActual=30.7K) [right]
+   │     │  ║  │        s: Var (name=dist)
+   │     │  ║  │        p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+   │     │  ║  │        o: Var (name=format)
+   │     │  ║  └── StatementPattern (resultSizeEstimate=35.0K, resultSizeActual=34.9K) [right]
+   │     │  ║        s: Var (name=dist)
+   │     │  ║        p: Var (name=_const_e5113b1_uri, value=http://purl.org/dc/terms/license, anonymous)
+   │     │  ║        o: Var (name=license)
+   │     │  ╚══ StatementPattern (resultSizeEstimate=1.5K, resultSizeActual=1.4K) [right]
+   │     │        s: Var (name=dist)
+   │     │        p: Var (name=_const_97184467_uri, value=http://purl.org/dc/terms/rights, anonymous)
+   │     │        o: Var (name=rights)
+   │     └── LeftJoin (LeftJoinIterator) (resultSizeActual=0) [right]
+   │        ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=0) [left]
+   │        ║  ├── StatementPattern (resultSizeEstimate=11.1K, resultSizeActual=0) [left]
+   │        ║  │     s: Var (name=dist)
+   │        ║  │     p: Var (name=_const_21baecab_uri, value=http://www.w3.org/ns/dcat#contactPoint, anonymous)
+   │        ║  │     o: Var (name=cp)
+   │        ║  └── StatementPattern (resultSizeEstimate=6.3K) [right]
+   │        ║        s: Var (name=cp)
+   │        ║        p: Var (name=_const_970311c0_uri, value=http://www.w3.org/2006/vcard/ns#hasEmail, anonymous)
+   │        ║        o: Var (name=email)
+   │        ╚══ StatementPattern (resultSizeEstimate=0) [right]
+   │              s: Var (name=cp)
+   │              p: Var (name=_const_817c828_uri, value=http://www.w3.org/2006/vcard/ns#hasTelephone, anonymous)
+   │              o: Var (name=phone)
+   └── StatementPattern (resultSizeEstimate=48.2K, resultSizeActual=43.1K) [right]
+         s: Var (name=dataset)
+         p: Var (name=_const_dbb1cdc8_uri, value=http://purl.org/dc/terms/title, anonymous)
+         o: Var (name=title)
+
+
+
+
+=== overlappingOptionalsWide - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "dataset"
+║     ProjectionElem "title"
+║     ProjectionElem "format"
+║     ProjectionElem "license"
+║     ProjectionElem "rights"
+║     ProjectionElem "page"
+║     ProjectionElem "email"
+║     ProjectionElem "phone"
+╚══ LeftJoin (LeftJoinIterator)
+   ├── LeftJoin (LeftJoinIterator) [left]
+   │  ╠══ LeftJoin (LeftJoinIterator) [left]
+   │  ║  ├── StatementPattern (resultSizeEstimate=11.8K) [left]
+   │  ║  │     s: Var (name=dataset)
+   │  ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+   │  ║  └── LeftJoin [right]
+   │  ║     ╠══ LeftJoin [left]
+   │  ║     ║  ├── LeftJoin [left]
+   │  ║     ║  │  ╠══ LeftJoin [left]
+   │  ║     ║  │  ║  ├── StatementPattern (resultSizeEstimate=37.9K) [left]
+   │  ║     ║  │  ║  │     s: Var (name=dataset)
+   │  ║     ║  │  ║  │     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+   │  ║     ║  │  ║  │     o: Var (name=dist)
+   │  ║     ║  │  ║  └── StatementPattern (resultSizeEstimate=30.7K) [right]
+   │  ║     ║  │  ║        s: Var (name=dist)
+   │  ║     ║  │  ║        p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+   │  ║     ║  │  ║        o: Var (name=format)
+   │  ║     ║  │  ╚══ StatementPattern (resultSizeEstimate=35.0K) [right]
+   │  ║     ║  │        s: Var (name=dist)
+   │  ║     ║  │        p: Var (name=_const_e5113b1_uri, value=http://purl.org/dc/terms/license, anonymous)
+   │  ║     ║  │        o: Var (name=license)
+   │  ║     ║  └── StatementPattern (resultSizeEstimate=1.5K) [right]
+   │  ║     ║        s: Var (name=dist)
+   │  ║     ║        p: Var (name=_const_97184467_uri, value=http://purl.org/dc/terms/rights, anonymous)
+   │  ║     ║        o: Var (name=rights)
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=261) [right]
+   │  ║           s: Var (name=dist)
+   │  ║           p: Var (name=_const_23b8abba_uri, value=http://xmlns.com/foaf/0.1/page, anonymous)
+   │  ║           o: Var (name=page)
+   │  ╚══ LeftJoin [right]
+   │     ├── LeftJoin [left]
+   │     │  ╠══ LeftJoin [left]
+   │     │  ║  ├── LeftJoin [left]
+   │     │  ║  │  ╠══ StatementPattern (resultSizeEstimate=37.9K) [left]
+   │     │  ║  │  ║     s: Var (name=dataset)
+   │     │  ║  │  ║     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+   │     │  ║  │  ║     o: Var (name=dist)
+   │     │  ║  │  ╚══ StatementPattern (resultSizeEstimate=30.7K) [right]
+   │     │  ║  │        s: Var (name=dist)
+   │     │  ║  │        p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+   │     │  ║  │        o: Var (name=format)
+   │     │  ║  └── StatementPattern (resultSizeEstimate=35.0K) [right]
+   │     │  ║        s: Var (name=dist)
+   │     │  ║        p: Var (name=_const_e5113b1_uri, value=http://purl.org/dc/terms/license, anonymous)
+   │     │  ║        o: Var (name=license)
+   │     │  ╚══ StatementPattern (resultSizeEstimate=1.5K) [right]
+   │     │        s: Var (name=dist)
+   │     │        p: Var (name=_const_97184467_uri, value=http://purl.org/dc/terms/rights, anonymous)
+   │     │        o: Var (name=rights)
+   │     └── LeftJoin [right]
+   │        ╠══ LeftJoin [left]
+   │        ║  ├── StatementPattern (resultSizeEstimate=11.1K) [left]
+   │        ║  │     s: Var (name=dist)
+   │        ║  │     p: Var (name=_const_21baecab_uri, value=http://www.w3.org/ns/dcat#contactPoint, anonymous)
+   │        ║  │     o: Var (name=cp)
+   │        ║  └── StatementPattern (resultSizeEstimate=6.3K) [right]
+   │        ║        s: Var (name=cp)
+   │        ║        p: Var (name=_const_970311c0_uri, value=http://www.w3.org/2006/vcard/ns#hasEmail, anonymous)
+   │        ║        o: Var (name=email)
+   │        ╚══ StatementPattern (resultSizeEstimate=0) [right]
+   │              s: Var (name=cp)
+   │              p: Var (name=_const_817c828_uri, value=http://www.w3.org/2006/vcard/ns#hasTelephone, anonymous)
+   │              o: Var (name=phone)
+   └── StatementPattern (resultSizeEstimate=48.2K) [right]
+         s: Var (name=dataset)
+         p: Var (name=_const_dbb1cdc8_uri, value=http://purl.org/dc/terms/title, anonymous)
+         o: Var (name=title)
+
+
+
+
+=== pathExpressionQuery1 - EXECUTED ===
+Projection (resultSizeActual=24.8K)
+╠══ ProjectionElemList
+║     ProjectionElem "catalog"
+║     ProjectionElem "idOrTitle"
+╚══ Join (JoinIterator) (resultSizeActual=24.8K)
+   ├── StatementPattern (costEstimate=5.9K, resultSizeEstimate=11.8K, resultSizeActual=11.7K) [left]
+   │     s: Var (name=catalog)
+   │     p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+   │     o: Var (name=_anon_path_146ed13b17eb0cd4a9c96340a118fdf1e160, anonymous)
+   └── Union (resultSizeActual=24.8K) [right]
+      ╠══ StatementPattern (costEstimate=113, resultSizeEstimate=12.8K, resultSizeActual=11.7K)
+      ║     s: Var (name=_anon_path_146ed13b17eb0cd4a9c96340a118fdf1e160, anonymous)
+      ║     p: Var (name=_const_5ca739_uri, value=http://purl.org/dc/terms/identifier, anonymous)
+      ║     o: Var (name=idOrTitle)
+      ╚══ StatementPattern (costEstimate=219, resultSizeEstimate=48.2K, resultSizeActual=13.0K)
+            s: Var (name=_anon_path_146ed13b17eb0cd4a9c96340a118fdf1e160, anonymous)
+            p: Var (name=_const_dbb1cdc8_uri, value=http://purl.org/dc/terms/title, anonymous)
+            o: Var (name=idOrTitle)
+
+
+
+
+=== pathExpressionQuery1 - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "catalog"
+║     ProjectionElem "idOrTitle"
+╚══ Join (JoinIterator)
+   ├── StatementPattern (costEstimate=5.9K, resultSizeEstimate=11.8K) [left]
+   │     s: Var (name=catalog)
+   │     p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+   │     o: Var (name=_anon_path_736ed13b17eb0cd4a9c96340a118fdf1e160123456, anonymous)
+   └── Union [right]
+      ╠══ StatementPattern (costEstimate=113, resultSizeEstimate=12.8K)
+      ║     s: Var (name=_anon_path_736ed13b17eb0cd4a9c96340a118fdf1e160123456, anonymous)
+      ║     p: Var (name=_const_5ca739_uri, value=http://purl.org/dc/terms/identifier, anonymous)
+      ║     o: Var (name=idOrTitle)
+      ╚══ StatementPattern (costEstimate=219, resultSizeEstimate=48.2K)
+            s: Var (name=_anon_path_736ed13b17eb0cd4a9c96340a118fdf1e160123456, anonymous)
+            p: Var (name=_const_dbb1cdc8_uri, value=http://purl.org/dc/terms/title, anonymous)
+            o: Var (name=idOrTitle)
+
+
+
+
+=== pathExpressionQuery2 - EXECUTED ===
+Projection (resultSizeActual=11.7K)
+╠══ ProjectionElemList
+║     ProjectionElem "dataset"
+╚══ Join (JoinIterator) (costEstimate=11.7K, resultSizeActual=11.7K)
+   ├── StatementPattern (costEstimate=3.00, resultSizeEstimate=1.00, resultSizeActual=1) [left]
+   │     s: Var (name=_anon_path_756ed13b17eb0cd4a9c96340a118fdf1e160123456, anonymous)
+   │     p: Var (name=_const_5e7c083f_uri, value=http://www.w3.org/ns/dcat#themeTaxonomy, anonymous)
+   │     o: Var (name=_const_4e5fbeaf_uri, value=http://publications.europa.eu/resource/authority/data-theme, anonymous)
+   └── StatementPattern (costEstimate=108, resultSizeEstimate=11.8K, resultSizeActual=11.7K) [right]
+         s: Var (name=_anon_path_756ed13b17eb0cd4a9c96340a118fdf1e160123456, anonymous)
+         p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+         o: Var (name=dataset)
+
+
+
+
+=== pathExpressionQuery2 - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "dataset"
+╚══ Join (JoinIterator) (costEstimate=11.7K)
+   ├── StatementPattern (costEstimate=3.00, resultSizeEstimate=1.00) [left]
+   │     s: Var (name=_anon_path_556ed13b17eb0cd4a9c96340a118fdf1e1601234, anonymous)
+   │     p: Var (name=_const_5e7c083f_uri, value=http://www.w3.org/ns/dcat#themeTaxonomy, anonymous)
+   │     o: Var (name=_const_4e5fbeaf_uri, value=http://publications.europa.eu/resource/authority/data-theme, anonymous)
+   └── StatementPattern (costEstimate=108, resultSizeEstimate=11.8K) [right]
+         s: Var (name=_anon_path_556ed13b17eb0cd4a9c96340a118fdf1e1601234, anonymous)
+         p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+         o: Var (name=dataset)
+
+
+
+
+=== publisherDistributionAggregation - EXECUTED ===
+Slice (limit=50) (resultSizeActual=50)
+   Projection (resultSizeActual=50)
+   ├── ProjectionElemList
+   │     ProjectionElem "publisher"
+   │     ProjectionElem "datasets"
+   │     ProjectionElem "distributionCount"
+   │     ProjectionElem "sampleEmail"
+   └── Extension (resultSizeActual=50)
+         Extension (resultSizeActual=50)
+            Filter (resultSizeActual=50)
+            ╠══ Compare (>)
+            ║     Var (name=datasets)
+            ║     ValueConstant (value="3"^^<http://www.w3.org/2001/XMLSchema#integer>)
+            ╚══ Group (publisher) (resultSizeActual=84)
+                  LeftJoin (LeftJoinIterator) (resultSizeActual=37.8K)
+                  ╠══ Join (JoinIterator) (resultSizeActual=37.8K) [left]
+                  ║  ├── StatementPattern (costEstimate=3.9K, resultSizeEstimate=11.7K, resultSizeActual=11.7K) [left]
+                  ║  │     s: Var (name=dataset)
+                  ║  │     p: Var (name=_const_c4c0156c_uri, value=http://purl.org/dc/terms/publisher, anonymous)
+                  ║  │     o: Var (name=publisher)
+                  ║  └── Join (JoinIterator) (costEstimate=38.7K, resultSizeActual=37.8K) [right]
+                  ║     ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=11.8K, resultSizeActual=11.7K) [left]
+                  ║     ║     s: Var (name=dataset)
+                  ║     ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+                  ║     ║     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+                  ║     ╚══ StatementPattern (costEstimate=195, resultSizeEstimate=37.9K, resultSizeActual=37.8K) [right]
+                  ║           s: Var (name=dataset)
+                  ║           p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+                  ║           o: Var (name=dist)
+                  ╚══ StatementPattern (resultSizeEstimate=47, resultSizeActual=6.6K) [right]
+                        s: Var (name=publisher)
+                        p: Var (name=_const_23b75369_uri, value=http://xmlns.com/foaf/0.1/mbox, anonymous)
+                        o: Var (name=email)
+                  GroupElem (datasets)
+                     Count (Distinct)
+                        Var (name=dataset)
+                  GroupElem (distributionCount)
+                     Count
+                        Var (name=dist)
+                  GroupElem (sampleEmail)
+                     Sample
+                        Var (name=email)
+         ExtensionElem (datasets)
+            Count (Distinct)
+               Var (name=dataset)
+         ExtensionElem (distributionCount)
+            Count
+               Var (name=dist)
+         ExtensionElem (sampleEmail)
+            Sample
+               Var (name=email)
+
+
+
+
+=== publisherDistributionAggregation - OPTIMIZED ===
+Slice (limit=50)
+   Projection
+   ├── ProjectionElemList
+   │     ProjectionElem "publisher"
+   │     ProjectionElem "datasets"
+   │     ProjectionElem "distributionCount"
+   │     ProjectionElem "sampleEmail"
+   └── Extension
+         Extension
+            Filter
+            ╠══ Compare (>)
+            ║     Var (name=datasets)
+            ║     ValueConstant (value="3"^^<http://www.w3.org/2001/XMLSchema#integer>)
+            ╚══ Group (publisher)
+                  LeftJoin
+                  ╠══ Join (JoinIterator) [left]
+                  ║  ├── StatementPattern (costEstimate=3.9K, resultSizeEstimate=11.7K) [left]
+                  ║  │     s: Var (name=dataset)
+                  ║  │     p: Var (name=_const_c4c0156c_uri, value=http://purl.org/dc/terms/publisher, anonymous)
+                  ║  │     o: Var (name=publisher)
+                  ║  └── Join (JoinIterator) (costEstimate=38.7K) [right]
+                  ║     ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=11.8K) [left]
+                  ║     ║     s: Var (name=dataset)
+                  ║     ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+                  ║     ║     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+                  ║     ╚══ StatementPattern (costEstimate=195, resultSizeEstimate=37.9K) [right]
+                  ║           s: Var (name=dataset)
+                  ║           p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+                  ║           o: Var (name=dist)
+                  ╚══ StatementPattern (resultSizeEstimate=47) [right]
+                        s: Var (name=publisher)
+                        p: Var (name=_const_23b75369_uri, value=http://xmlns.com/foaf/0.1/mbox, anonymous)
+                        o: Var (name=email)
+                  GroupElem (datasets)
+                     Count (Distinct)
+                        Var (name=dataset)
+                  GroupElem (distributionCount)
+                     Count
+                        Var (name=dist)
+                  GroupElem (sampleEmail)
+                     Sample
+                        Var (name=email)
+         ExtensionElem (datasets)
+            Count (Distinct)
+               Var (name=dataset)
+         ExtensionElem (distributionCount)
+            Count
+               Var (name=dist)
+         ExtensionElem (sampleEmail)
+            Sample
+               Var (name=email)
+
+
+
+
+=== query10 - EXECUTED ===
+Projection (resultSizeActual=109.0K)
+╠══ ProjectionElemList
+║     ProjectionElem "distribution"
+║     ProjectionElem "accessURL"
+║     ProjectionElem "dataset"
+║     ProjectionElem "type2"
+║     ProjectionElem "title"
+║     ProjectionElem "issued"
+║     ProjectionElem "modified"
+║     ProjectionElem "publisher"
+║     ProjectionElem "identifier"
+║     ProjectionElem "language"
+║     ProjectionElem "type3"
+║     ProjectionElem "temp"
+║     ProjectionElem "mbox"
+║     ProjectionElem "catalogue"
+║     ProjectionElem "type1"
+╚══ Join (JoinIterator) (resultSizeActual=109.0K)
+   ├── StatementPattern (costEstimate=26, resultSizeEstimate=47, resultSizeActual=47) [left]
+   │     s: Var (name=temp)
+   │     p: Var (name=_const_23b75369_uri, value=http://xmlns.com/foaf/0.1/mbox, anonymous)
+   │     o: Var (name=mbox)
+   └── Join (JoinIterator) (resultSizeActual=109.0K) [right]
+      ╠══ StatementPattern (costEstimate=136, resultSizeEstimate=74.5K, resultSizeActual=88) [left]
+      ║     s: Var (name=temp)
+      ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+      ║     o: Var (name=type3)
+      ╚══ Join (JoinIterator) (resultSizeActual=109.0K) [right]
+         ├── StatementPattern (costEstimate=136, resultSizeEstimate=74.5K, resultSizeActual=444.3K) [left]
+         │     s: Var (name=publisher)
+         │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+         │     o: Var (name=type3)
+         └── Join (JoinIterator) (resultSizeActual=109.0K) [right]
+            ╠══ StatementPattern (costEstimate=12, resultSizeEstimate=11.7K, resultSizeActual=214.3K) [left]
+            ║     s: Var (name=dataset)
+            ║     p: Var (name=_const_c4c0156c_uri, value=http://purl.org/dc/terms/publisher, anonymous)
+            ║     o: Var (name=publisher)
+            ╚══ Join (JoinIterator) (resultSizeActual=109.0K) [right]
+               ├── StatementPattern (costEstimate=25, resultSizeEstimate=641, resultSizeActual=11.4K) [left]
+               │     s: Var (name=dataset)
+               │     p: Var (name=_const_884f353b_uri, value=http://purl.org/dc/terms/issued, anonymous)
+               │     o: Var (name=issued)
+               └── Join (JoinIterator) (resultSizeActual=109.0K) [right]
+                  ╠══ StatementPattern (costEstimate=54, resultSizeEstimate=11.8K, resultSizeActual=11.4K) [left]
+                  ║     s: Var (name=catalogue)
+                  ║     p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+                  ║     o: Var (name=dataset)
+                  ╚══ Join (JoinIterator) (resultSizeActual=109.0K) [right]
+                     ├── StatementPattern (costEstimate=273, resultSizeEstimate=74.5K, resultSizeActual=11.4K) [left]
+                     │     s: Var (name=catalogue)
+                     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+                     │     o: Var (name=type1)
+                     └── Join (JoinIterator) (resultSizeActual=109.0K) [right]
+                        ╠══ StatementPattern (costEstimate=113, resultSizeEstimate=12.8K, resultSizeActual=11.4K) [left]
+                        ║     s: Var (name=dataset)
+                        ║     p: Var (name=_const_5ca739_uri, value=http://purl.org/dc/terms/identifier, anonymous)
+                        ║     o: Var (name=identifier)
+                        ╚══ Join (JoinIterator) (resultSizeActual=109.0K) [right]
+                           ├── StatementPattern (costEstimate=219, resultSizeEstimate=48.2K, resultSizeActual=18.8K) [left]
+                           │     s: Var (name=dataset)
+                           │     p: Var (name=_const_dbb1cdc8_uri, value=http://purl.org/dc/terms/title, anonymous)
+                           │     o: Var (name=title)
+                           └── Join (JoinIterator) (resultSizeActual=109.0K) [right]
+                              ╠══ StatementPattern (costEstimate=107, resultSizeEstimate=11.5K, resultSizeActual=41.1K) [left]
+                              ║     s: Var (name=dataset)
+                              ║     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+                              ║     o: Var (name=language)
+                              ╚══ Join (JoinIterator) (resultSizeActual=109.0K) [right]
+                                 ├── StatementPattern (costEstimate=273, resultSizeEstimate=74.5K, resultSizeActual=41.1K) [left]
+                                 │     s: Var (name=dataset)
+                                 │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+                                 │     o: Var (name=type2)
+                                 └── Join (JoinIterator) (resultSizeActual=109.0K) [right]
+                                    ╠══ StatementPattern (costEstimate=28, resultSizeEstimate=775, resultSizeActual=40.9K) [left]
+                                    ║     s: Var (name=dataset)
+                                    ║     p: Var (name=_const_63016159_uri, value=http://purl.org/dc/terms/modified, anonymous)
+                                    ║     o: Var (name=modified)
+                                    ╚══ Join (JoinIterator) (costEstimate=70.9K, resultSizeActual=109.0K) [right]
+                                       ├── StatementPattern (costEstimate=97, resultSizeEstimate=37.9K, resultSizeActual=109.0K) [left]
+                                       │     s: Var (name=dataset)
+                                       │     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+                                       │     o: Var (name=distribution)
+                                       └── StatementPattern (costEstimate=262, resultSizeEstimate=68.8K, resultSizeActual=109.0K) [right]
+                                             s: Var (name=distribution)
+                                             p: Var (name=_const_835987f0_uri, value=http://www.w3.org/ns/dcat#accessURL, anonymous)
+                                             o: Var (name=accessURL)
+
+
+
+
+=== query10 - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "distribution"
+║     ProjectionElem "accessURL"
+║     ProjectionElem "dataset"
+║     ProjectionElem "type2"
+║     ProjectionElem "title"
+║     ProjectionElem "issued"
+║     ProjectionElem "modified"
+║     ProjectionElem "publisher"
+║     ProjectionElem "identifier"
+║     ProjectionElem "language"
+║     ProjectionElem "type3"
+║     ProjectionElem "temp"
+║     ProjectionElem "mbox"
+║     ProjectionElem "catalogue"
+║     ProjectionElem "type1"
+╚══ Join (JoinIterator)
+   ├── StatementPattern (costEstimate=26, resultSizeEstimate=47) [left]
+   │     s: Var (name=temp)
+   │     p: Var (name=_const_23b75369_uri, value=http://xmlns.com/foaf/0.1/mbox, anonymous)
+   │     o: Var (name=mbox)
+   └── Join (JoinIterator) [right]
+      ╠══ StatementPattern (costEstimate=136, resultSizeEstimate=74.5K) [left]
+      ║     s: Var (name=temp)
+      ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+      ║     o: Var (name=type3)
+      ╚══ Join (JoinIterator) [right]
+         ├── StatementPattern (costEstimate=136, resultSizeEstimate=74.5K) [left]
+         │     s: Var (name=publisher)
+         │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+         │     o: Var (name=type3)
+         └── Join (JoinIterator) [right]
+            ╠══ StatementPattern (costEstimate=12, resultSizeEstimate=11.7K) [left]
+            ║     s: Var (name=dataset)
+            ║     p: Var (name=_const_c4c0156c_uri, value=http://purl.org/dc/terms/publisher, anonymous)
+            ║     o: Var (name=publisher)
+            ╚══ Join (JoinIterator) [right]
+               ├── StatementPattern (costEstimate=25, resultSizeEstimate=641) [left]
+               │     s: Var (name=dataset)
+               │     p: Var (name=_const_884f353b_uri, value=http://purl.org/dc/terms/issued, anonymous)
+               │     o: Var (name=issued)
+               └── Join (JoinIterator) [right]
+                  ╠══ StatementPattern (costEstimate=54, resultSizeEstimate=11.8K) [left]
+                  ║     s: Var (name=catalogue)
+                  ║     p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+                  ║     o: Var (name=dataset)
+                  ╚══ Join (JoinIterator) [right]
+                     ├── StatementPattern (costEstimate=273, resultSizeEstimate=74.5K) [left]
+                     │     s: Var (name=catalogue)
+                     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+                     │     o: Var (name=type1)
+                     └── Join (JoinIterator) [right]
+                        ╠══ StatementPattern (costEstimate=113, resultSizeEstimate=12.8K) [left]
+                        ║     s: Var (name=dataset)
+                        ║     p: Var (name=_const_5ca739_uri, value=http://purl.org/dc/terms/identifier, anonymous)
+                        ║     o: Var (name=identifier)
+                        ╚══ Join (JoinIterator) [right]
+                           ├── StatementPattern (costEstimate=219, resultSizeEstimate=48.2K) [left]
+                           │     s: Var (name=dataset)
+                           │     p: Var (name=_const_dbb1cdc8_uri, value=http://purl.org/dc/terms/title, anonymous)
+                           │     o: Var (name=title)
+                           └── Join (JoinIterator) [right]
+                              ╠══ StatementPattern (costEstimate=107, resultSizeEstimate=11.5K) [left]
+                              ║     s: Var (name=dataset)
+                              ║     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+                              ║     o: Var (name=language)
+                              ╚══ Join (JoinIterator) [right]
+                                 ├── StatementPattern (costEstimate=273, resultSizeEstimate=74.5K) [left]
+                                 │     s: Var (name=dataset)
+                                 │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+                                 │     o: Var (name=type2)
+                                 └── Join (JoinIterator) [right]
+                                    ╠══ StatementPattern (costEstimate=28, resultSizeEstimate=775) [left]
+                                    ║     s: Var (name=dataset)
+                                    ║     p: Var (name=_const_63016159_uri, value=http://purl.org/dc/terms/modified, anonymous)
+                                    ║     o: Var (name=modified)
+                                    ╚══ Join (JoinIterator) (costEstimate=70.9K) [right]
+                                       ├── StatementPattern (costEstimate=97, resultSizeEstimate=37.9K) [left]
+                                       │     s: Var (name=dataset)
+                                       │     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+                                       │     o: Var (name=distribution)
+                                       └── StatementPattern (costEstimate=262, resultSizeEstimate=68.8K) [right]
+                                             s: Var (name=distribution)
+                                             p: Var (name=_const_835987f0_uri, value=http://www.w3.org/ns/dcat#accessURL, anonymous)
+                                             o: Var (name=accessURL)
+
+
+
+
+=== query_distinct_predicates - EXECUTED ===
+Distinct (resultSizeActual=55)
+   Projection (resultSizeActual=613.1K)
+   ├── ProjectionElemList
+   │     ProjectionElem "p"
+   └── StatementPattern (resultSizeEstimate=613.2K, resultSizeActual=613.1K)
+         s: Var (name=s)
+         p: Var (name=p)
+         o: Var (name=o)
+
+
+
+
+=== query_distinct_predicates - OPTIMIZED ===
+Distinct
+   Projection
+   ├── ProjectionElemList
+   │     ProjectionElem "p"
+   └── StatementPattern (resultSizeEstimate=613.2K)
+         s: Var (name=s)
+         p: Var (name=p)
+         o: Var (name=o)
+
+
+
+
+=== simple_filter_not - EXECUTED ===
+Projection (resultSizeActual=1.3K)
+╠══ ProjectionElemList
+║     ProjectionElem "a"
+╚══ Filter (resultSizeActual=1.3K)
+   ├── Not
+   │     Exists
+   │        StatementPattern (resultSizeEstimate=19.1K, resultSizeActual=0)
+   │           s: Var (name=a)
+   │           p: Var (name=_const_8a341ece_uri, value=http://www.w3.org/ns/dcat#theme, anonymous)
+   │           o: Var (name=b)
+   └── StatementPattern (resultSizeEstimate=11.8K, resultSizeActual=11.7K)
+         s: Var (name=a)
+         p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+         o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+
+
+
+
+=== simple_filter_not - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "a"
+╚══ Filter
+   ├── Not
+   │     Exists
+   │        StatementPattern (resultSizeEstimate=19.1K)
+   │           s: Var (name=a)
+   │           p: Var (name=_const_8a341ece_uri, value=http://www.w3.org/ns/dcat#theme, anonymous)
+   │           o: Var (name=b)
+   └── StatementPattern (resultSizeEstimate=11.8K)
+         s: Var (name=a)
+         p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+         o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+
+
+
+
+=== starPathFanout - EXECUTED ===
+Projection (resultSizeActual=331.6K)
+╠══ ProjectionElemList
+║     ProjectionElem "dataset"
+║     ProjectionElem "node"
+║     ProjectionElem "value"
+╚══ Join (JoinIterator) (resultSizeActual=331.6K)
+   ├── StatementPattern (costEstimate=2.9K, resultSizeEstimate=11.8K, resultSizeActual=11.7K) [left]
+   │     s: Var (name=dataset)
+   │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+   └── Join (JoinIterator) (resultSizeActual=331.6K) [right]
+      ╠══ ArbitraryLengthPath (costEstimate=554, resultSizeEstimate=1.2M, resultSizeActual=49.6K) [left]
+      ║     Var (name=dataset)
+      ║     Union
+      ║     ╠══ StatementPattern (resultSizeEstimate=37.9K)
+      ║     ║     s: Var (name=dataset)
+      ║     ║     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║     ║     o: Var (name=node)
+      ║     ╚══ Union
+      ║        ├── StatementPattern (resultSizeEstimate=11.7K)
+      ║        │     s: Var (name=dataset)
+      ║        │     p: Var (name=_const_c4c0156c_uri, value=http://purl.org/dc/terms/publisher, anonymous)
+      ║        │     o: Var (name=node)
+      ║        └── StatementPattern (resultSizeEstimate=11.8K)
+      ║              s: Var (name=dataset)
+      ║              p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+      ║              o: Var (name=node)
+      ║     Var (name=node)
+      ╚══ Filter (resultSizeActual=331.6K) [right]
+         ├── Or
+         │  ╠══ Not
+         │  ║     IsLiteral
+         │  ║        Var (name=node)
+         │  ╚══ Compare (>)
+         │     ├── FunctionCall (http://www.w3.org/2005/xpath-functions#string-length)
+         │     │     Str
+         │     │        Var (name=value)
+         │     └── ValueConstant (value="3"^^<http://www.w3.org/2001/XMLSchema#integer>)
+         └── StatementPattern (costEstimate=7.2K, resultSizeEstimate=613.2K, resultSizeActual=331.6K)
+               s: Var (name=node)
+               p: Var (name=p)
+               o: Var (name=value)
+
+
+
+
+=== starPathFanout - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "dataset"
+║     ProjectionElem "node"
+║     ProjectionElem "value"
+╚══ Join (JoinIterator)
+   ├── StatementPattern (costEstimate=2.9K, resultSizeEstimate=11.8K) [left]
+   │     s: Var (name=dataset)
+   │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+   └── Join (JoinIterator) [right]
+      ╠══ ArbitraryLengthPath (costEstimate=554, resultSizeEstimate=1.2M) [left]
+      ║     Var (name=dataset)
+      ║     Union
+      ║     ╠══ StatementPattern (resultSizeEstimate=37.9K)
+      ║     ║     s: Var (name=dataset)
+      ║     ║     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║     ║     o: Var (name=node)
+      ║     ╚══ Union
+      ║        ├── StatementPattern (resultSizeEstimate=11.7K)
+      ║        │     s: Var (name=dataset)
+      ║        │     p: Var (name=_const_c4c0156c_uri, value=http://purl.org/dc/terms/publisher, anonymous)
+      ║        │     o: Var (name=node)
+      ║        └── StatementPattern (resultSizeEstimate=11.8K)
+      ║              s: Var (name=dataset)
+      ║              p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+      ║              o: Var (name=node)
+      ║     Var (name=node)
+      ╚══ Filter [right]
+         ├── Or
+         │  ╠══ Not
+         │  ║     IsLiteral
+         │  ║        Var (name=node)
+         │  ╚══ Compare (>)
+         │     ├── FunctionCall (http://www.w3.org/2005/xpath-functions#string-length)
+         │     │     Str
+         │     │        Var (name=value)
+         │     └── ValueConstant (value="3"^^<http://www.w3.org/2001/XMLSchema#integer>)
+         └── StatementPattern (costEstimate=7.2K, resultSizeEstimate=613.2K)
+               s: Var (name=node)
+               p: Var (name=p)
+               o: Var (name=value)
+
+
+
+
+=== subSelect - EXECUTED ===
+Order (resultSizeActual=16.0K)
+   OrderElem (ASC)
+      Var (name=type1)
+   OrderElem (ASC)
+      Var (name=type2)
+   OrderElem (ASC)
+      Var (name=language2)
+   OrderElem (ASC)
+      Var (name=mbox)
+   OrderElem (ASC)
+      Var (name=count)
+   OrderElem (ASC)
+      Var (name=identifier2)
+   Projection (resultSizeActual=16.0K)
+   ├── ProjectionElemList
+   │     ProjectionElem "type1"
+   │     ProjectionElem "type2"
+   │     ProjectionElem "language2"
+   │     ProjectionElem "mbox"
+   │     ProjectionElem "count"
+   │     ProjectionElem "identifier2"
+   └── Group (type1, type2, language2, mbox, count, identifier2) (resultSizeActual=16.0K)
+         Join (HashJoinIteration) (resultSizeActual=27.8K)
+         ├── Extension (resultSizeActual=20.0K) [left]
+         │  ╠══ Join (JoinIterator) (resultSizeActual=20.0K)
+         │  ║  ├── StatementPattern (costEstimate=2.0K, resultSizeEstimate=11.8K, resultSizeActual=11.7K) [left]
+         │  ║  │     s: Var (name=b)
+         │  ║  │     p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+         │  ║  │     o: Var (name=a)
+         │  ║  └── Filter (resultSizeActual=20.0K) [right]
+         │  ║     ╠══ Compare (!=)
+         │  ║     ║     Var (name=type1)
+         │  ║     ║     Var (name=type2)
+         │  ║     ╚══ Join (JoinIterator) (resultSizeActual=20.0K)
+         │  ║        ├── StatementPattern (costEstimate=273, resultSizeEstimate=74.5K, resultSizeActual=11.7K) [left]
+         │  ║        │     s: Var (name=b)
+         │  ║        │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+         │  ║        │     o: Var (name=type1)
+         │  ║        └── Join (JoinIterator) (resultSizeActual=20.0K) [right]
+         │  ║           ╠══ StatementPattern (costEstimate=107, resultSizeEstimate=11.5K, resultSizeActual=5.9K) [left]
+         │  ║           ║     s: Var (name=a)
+         │  ║           ║     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+         │  ║           ║     o: Var (name=language)
+         │  ║           ╚══ Join (JoinIterator) (resultSizeActual=20.0K) [right]
+         │  ║              ├── StatementPattern (costEstimate=113, resultSizeEstimate=12.8K, resultSizeActual=5.9K) [left]
+         │  ║              │     s: Var (name=a)
+         │  ║              │     p: Var (name=_const_5ca739_uri, value=http://purl.org/dc/terms/identifier, anonymous)
+         │  ║              │     o: Var (name=identifier)
+         │  ║              └── Join (JoinIterator) (costEstimate=41.1K, resultSizeActual=20.0K) [right]
+         │  ║                 ╠══ StatementPattern (costEstimate=273, resultSizeEstimate=74.5K, resultSizeActual=5.9K) [left]
+         │  ║                 ║     s: Var (name=a)
+         │  ║                 ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+         │  ║                 ║     o: Var (name=type2)
+         │  ║                 ╚══ StatementPattern (costEstimate=195, resultSizeEstimate=37.9K, resultSizeActual=20.0K) [right]
+         │  ║                       s: Var (name=a)
+         │  ║                       p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+         │  ║                       o: Var (name=mbox)
+         │  ╚══ ExtensionElem (c)
+         │        Var (name=a)
+         └── Distinct (new scope) (resultSizeActual=3.1K) [right]
+               Projection (resultSizeActual=3.1K)
+               ├── ProjectionElemList
+               │     ProjectionElem "c"
+               │     ProjectionElem "count"
+               │     ProjectionElem "language2"
+               └── Extension (resultSizeActual=3.1K)
+                  ╠══ Extension (resultSizeActual=3.1K)
+                  ║     Filter (resultSizeActual=3.1K)
+                  ║     ╠══ Compare (>)
+                  ║     ║     Var (name=count)
+                  ║     ║     ValueConstant (value="2"^^<http://www.w3.org/2001/XMLSchema#integer>)
+                  ║     ╚══ Group (c, language2) (resultSizeActual=5.7K)
+                  ║        ├── Join (JoinIterator) (resultSizeActual=20.0K)
+                  ║        │  ╠══ StatementPattern (costEstimate=3.8K, resultSizeEstimate=11.5K, resultSizeActual=11.4K) [left]
+                  ║        │  ║     s: Var (name=c)
+                  ║        │  ║     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+                  ║        │  ║     o: Var (name=language2)
+                  ║        │  ╚══ Join (JoinIterator) (costEstimate=41.1K, resultSizeActual=20.0K) [right]
+                  ║        │     ├── StatementPattern (costEstimate=273, resultSizeEstimate=74.5K, resultSizeActual=11.4K) [left]
+                  ║        │     │     s: Var (name=c)
+                  ║        │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+                  ║        │     │     o: Var (name=type2)
+                  ║        │     └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K, resultSizeActual=20.0K) [right]
+                  ║        │           s: Var (name=c)
+                  ║        │           p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+                  ║        │           o: Var (name=dist)
+                  ║        └── GroupElem (count)
+                  ║              Count
+                  ║                 Var (name=dist)
+                  ╚══ ExtensionElem (count)
+                        Count
+                           Var (name=dist)
+
+
+
+
+=== subSelect - OPTIMIZED ===
+Order
+   OrderElem (ASC)
+      Var (name=type1)
+   OrderElem (ASC)
+      Var (name=type2)
+   OrderElem (ASC)
+      Var (name=language2)
+   OrderElem (ASC)
+      Var (name=mbox)
+   OrderElem (ASC)
+      Var (name=count)
+   OrderElem (ASC)
+      Var (name=identifier2)
+   Projection
+   ├── ProjectionElemList
+   │     ProjectionElem "type1"
+   │     ProjectionElem "type2"
+   │     ProjectionElem "language2"
+   │     ProjectionElem "mbox"
+   │     ProjectionElem "count"
+   │     ProjectionElem "identifier2"
+   └── Group (type1, type2, language2, mbox, count, identifier2)
+         Join (HashJoinIteration)
+         ├── Extension [left]
+         │  ╠══ Join (JoinIterator)
+         │  ║  ├── StatementPattern (costEstimate=2.0K, resultSizeEstimate=11.8K) [left]
+         │  ║  │     s: Var (name=b)
+         │  ║  │     p: Var (name=_const_7420303d_uri, value=http://www.w3.org/ns/dcat#dataset, anonymous)
+         │  ║  │     o: Var (name=a)
+         │  ║  └── Filter [right]
+         │  ║     ╠══ Compare (!=)
+         │  ║     ║     Var (name=type1)
+         │  ║     ║     Var (name=type2)
+         │  ║     ╚══ Join (JoinIterator)
+         │  ║        ├── StatementPattern (costEstimate=273, resultSizeEstimate=74.5K) [left]
+         │  ║        │     s: Var (name=b)
+         │  ║        │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+         │  ║        │     o: Var (name=type1)
+         │  ║        └── Join (JoinIterator) [right]
+         │  ║           ╠══ StatementPattern (costEstimate=107, resultSizeEstimate=11.5K) [left]
+         │  ║           ║     s: Var (name=a)
+         │  ║           ║     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+         │  ║           ║     o: Var (name=language)
+         │  ║           ╚══ Join (JoinIterator) [right]
+         │  ║              ├── StatementPattern (costEstimate=113, resultSizeEstimate=12.8K) [left]
+         │  ║              │     s: Var (name=a)
+         │  ║              │     p: Var (name=_const_5ca739_uri, value=http://purl.org/dc/terms/identifier, anonymous)
+         │  ║              │     o: Var (name=identifier)
+         │  ║              └── Join (JoinIterator) (costEstimate=41.1K) [right]
+         │  ║                 ╠══ StatementPattern (costEstimate=273, resultSizeEstimate=74.5K) [left]
+         │  ║                 ║     s: Var (name=a)
+         │  ║                 ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+         │  ║                 ║     o: Var (name=type2)
+         │  ║                 ╚══ StatementPattern (costEstimate=195, resultSizeEstimate=37.9K) [right]
+         │  ║                       s: Var (name=a)
+         │  ║                       p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+         │  ║                       o: Var (name=mbox)
+         │  ╚══ ExtensionElem (c)
+         │        Var (name=a)
+         └── Distinct (new scope) [right]
+               Projection
+               ├── ProjectionElemList
+               │     ProjectionElem "c"
+               │     ProjectionElem "count"
+               │     ProjectionElem "language2"
+               └── Extension
+                  ╠══ Extension
+                  ║     Filter
+                  ║     ╠══ Compare (>)
+                  ║     ║     Var (name=count)
+                  ║     ║     ValueConstant (value="2"^^<http://www.w3.org/2001/XMLSchema#integer>)
+                  ║     ╚══ Group (c, language2)
+                  ║        ├── Join
+                  ║        │  ╠══ StatementPattern (costEstimate=3.8K, resultSizeEstimate=11.5K) [left]
+                  ║        │  ║     s: Var (name=c)
+                  ║        │  ║     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+                  ║        │  ║     o: Var (name=language2)
+                  ║        │  ╚══ Join (costEstimate=41.1K) [right]
+                  ║        │     ├── StatementPattern (costEstimate=273, resultSizeEstimate=74.5K) [left]
+                  ║        │     │     s: Var (name=c)
+                  ║        │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+                  ║        │     │     o: Var (name=type2)
+                  ║        │     └── StatementPattern (costEstimate=195, resultSizeEstimate=37.9K) [right]
+                  ║        │           s: Var (name=c)
+                  ║        │           p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+                  ║        │           o: Var (name=dist)
+                  ║        └── GroupElem (count)
+                  ║              Count
+                  ║                 Var (name=dist)
+                  ╚══ ExtensionElem (count)
+                        Count
+                           Var (name=dist)
+
+
+
+
+=== topTitlesByLength - EXECUTED ===
+Projection (resultSizeActual=50)
+╠══ ProjectionElemList
+║     ProjectionElem "dataset"
+║     ProjectionElem "title"
+║     ProjectionElem "len"
+║     ProjectionElem "issued"
+╚══ Slice (limit=50) (new scope) (resultSizeActual=50)
+      Projection (resultSizeActual=50)
+      ╠══ ProjectionElemList
+      ║     ProjectionElem "dataset"
+      ║     ProjectionElem "title"
+      ║     ProjectionElem "issued"
+      ║     ProjectionElem "len"
+      ╚══ Extension (resultSizeActual=50)
+         ├── Join (JoinIterator) (resultSizeActual=50)
+         │  ╠══ StatementPattern (costEstimate=215, resultSizeEstimate=641, resultSizeActual=19) [left]
+         │  ║     s: Var (name=dataset)
+         │  ║     p: Var (name=_const_884f353b_uri, value=http://purl.org/dc/terms/issued, anonymous)
+         │  ║     o: Var (name=issued)
+         │  ╚══ Join (JoinIterator) (costEstimate=12.2K, resultSizeActual=50) [right]
+         │     ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=11.8K, resultSizeActual=18) [left]
+         │     │     s: Var (name=dataset)
+         │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+         │     │     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+         │     └── StatementPattern (costEstimate=219, resultSizeEstimate=48.2K, resultSizeActual=50) [right]
+         │           s: Var (name=dataset)
+         │           p: Var (name=_const_dbb1cdc8_uri, value=http://purl.org/dc/terms/title, anonymous)
+         │           o: Var (name=title)
+         └── ExtensionElem (len)
+               FunctionCall (http://www.w3.org/2005/xpath-functions#string-length)
+                  Str
+                     Var (name=title)
+
+
+
+
+=== topTitlesByLength - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "dataset"
+║     ProjectionElem "title"
+║     ProjectionElem "len"
+║     ProjectionElem "issued"
+╚══ Slice (limit=50) (new scope)
+      Projection
+      ╠══ ProjectionElemList
+      ║     ProjectionElem "dataset"
+      ║     ProjectionElem "title"
+      ║     ProjectionElem "issued"
+      ║     ProjectionElem "len"
+      ╚══ Extension
+         ├── Join (JoinIterator)
+         │  ╠══ StatementPattern (costEstimate=215, resultSizeEstimate=641) [left]
+         │  ║     s: Var (name=dataset)
+         │  ║     p: Var (name=_const_884f353b_uri, value=http://purl.org/dc/terms/issued, anonymous)
+         │  ║     o: Var (name=issued)
+         │  ╚══ Join (JoinIterator) (costEstimate=12.2K) [right]
+         │     ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=11.8K) [left]
+         │     │     s: Var (name=dataset)
+         │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+         │     │     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+         │     └── StatementPattern (costEstimate=219, resultSizeEstimate=48.2K) [right]
+         │           s: Var (name=dataset)
+         │           p: Var (name=_const_dbb1cdc8_uri, value=http://purl.org/dc/terms/title, anonymous)
+         │           o: Var (name=title)
+         └── ExtensionElem (len)
+               FunctionCall (http://www.w3.org/2005/xpath-functions#string-length)
+                  Str
+                     Var (name=title)
+
+
+
+
+=== unionPublisherDedup - EXECUTED ===
+Distinct (resultSizeActual=122)
+   Projection (resultSizeActual=73.2K)
+   ├── ProjectionElemList
+   │     ProjectionElem "publisher"
+   │     ProjectionElem "mbox"
+   │     ProjectionElem "any"
+   └── Union (resultSizeActual=73.2K)
+      ╠══ Filter (resultSizeActual=61.4K)
+      ║  ├── Or
+      ║  │  ╠══ Bound
+      ║  │  ║     Var (name=anyValue)
+      ║  │  ╚══ Not
+      ║  │        Bound
+      ║  │           Var (name=mbox)
+      ║  └── Join (JoinIterator) (resultSizeActual=61.4K)
+      ║     ╠══ StatementPattern (costEstimate=26, resultSizeEstimate=47, resultSizeActual=47) [left]
+      ║     ║     s: Var (name=publisher)
+      ║     ║     p: Var (name=_const_23b75369_uri, value=http://xmlns.com/foaf/0.1/mbox, anonymous)
+      ║     ║     o: Var (name=mbox)
+      ║     ╚══ Join (JoinIterator) (costEstimate=53, resultSizeActual=61.4K) [right]
+      ║        ├── StatementPattern (costEstimate=54, resultSizeEstimate=11.7K, resultSizeActual=1.4K) [left]
+      ║        │     s: Var (name=dataset)
+      ║        │     p: Var (name=_const_c4c0156c_uri, value=http://purl.org/dc/terms/publisher, anonymous)
+      ║        │     o: Var (name=publisher)
+      ║        └── StatementPattern (costEstimate=7.2K, resultSizeEstimate=613.2K, resultSizeActual=61.4K) [right]
+      ║              s: Var (name=dataset)
+      ║              p: Var (name=any)
+      ║              o: Var (name=anyValue)
+      ╚══ Filter (resultSizeActual=11.8K)
+         ├── Or
+         │  ╠══ Bound
+         │  ║     Var (name=anyValue)
+         │  ╚══ Not
+         │        Bound
+         │           Var (name=mbox)
+         └── Join (JoinIterator) (resultSizeActual=11.8K)
+            ╠══ Join (JoinIterator) (resultSizeActual=2) [left]
+            ║  ├── StatementPattern (costEstimate=469.1K, resultSizeEstimate=47, resultSizeActual=47) [left]
+            ║  │     s: Var (name=publisher)
+            ║  │     p: Var (name=_const_23b75369_uri, value=http://xmlns.com/foaf/0.1/mbox, anonymous)
+            ║  │     o: Var (name=mbox)
+            ║  └── Join (HashJoinIteration) (costEstimate=1.7K, resultSizeActual=2) [right]
+            ║     ╠══ StatementPattern (costEstimate=54, resultSizeEstimate=11.7K, resultSizeActual=1.4K) [left]
+            ║     ║     s: Var (name=dataset)
+            ║     ║     p: Var (name=_const_c4c0156c_uri, value=http://purl.org/dc/terms/publisher, anonymous)
+            ║     ║     o: Var (name=publisher)
+            ║     ╚══ Filter (new scope) (costEstimate=18.0K, resultSizeEstimate=0, resultSizeActual=105.4K) [right]
+            ║        ├── SameTerm
+            ║        │     Var (name=lang)
+            ║        │     ValueConstant (value=http://publications.europa.eu/resource/authority/language/ENG)
+            ║        └── StatementPattern (costEstimate=1.00, resultSizeEstimate=2.2K, resultSizeActual=105.4K)
+            ║              s: Var (name=dataset)
+            ║              p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+            ║              o: Var (name=lang, value=http://publications.europa.eu/resource/authority/language/ENG)
+            ╚══ StatementPattern (costEstimate=7.2K, resultSizeEstimate=613.2K, resultSizeActual=11.8K) [right]
+                  s: Var (name=dataset)
+                  p: Var (name=any)
+                  o: Var (name=anyValue)
+
+
+
+
+=== unionPublisherDedup - OPTIMIZED ===
+Distinct
+   Projection
+   ├── ProjectionElemList
+   │     ProjectionElem "publisher"
+   │     ProjectionElem "mbox"
+   │     ProjectionElem "any"
+   └── Union
+      ╠══ Filter
+      ║  ├── Or
+      ║  │  ╠══ Bound
+      ║  │  ║     Var (name=anyValue)
+      ║  │  ╚══ Not
+      ║  │        Bound
+      ║  │           Var (name=mbox)
+      ║  └── Join (JoinIterator)
+      ║     ╠══ StatementPattern (costEstimate=26, resultSizeEstimate=47) [left]
+      ║     ║     s: Var (name=publisher)
+      ║     ║     p: Var (name=_const_23b75369_uri, value=http://xmlns.com/foaf/0.1/mbox, anonymous)
+      ║     ║     o: Var (name=mbox)
+      ║     ╚══ Join (JoinIterator) (costEstimate=53) [right]
+      ║        ├── StatementPattern (costEstimate=54, resultSizeEstimate=11.7K) [left]
+      ║        │     s: Var (name=dataset)
+      ║        │     p: Var (name=_const_c4c0156c_uri, value=http://purl.org/dc/terms/publisher, anonymous)
+      ║        │     o: Var (name=publisher)
+      ║        └── StatementPattern (costEstimate=7.2K, resultSizeEstimate=613.2K) [right]
+      ║              s: Var (name=dataset)
+      ║              p: Var (name=any)
+      ║              o: Var (name=anyValue)
+      ╚══ Filter
+         ├── Or
+         │  ╠══ Bound
+         │  ║     Var (name=anyValue)
+         │  ╚══ Not
+         │        Bound
+         │           Var (name=mbox)
+         └── Join (JoinIterator)
+            ╠══ Join (JoinIterator) [left]
+            ║  ├── StatementPattern (costEstimate=469.1K, resultSizeEstimate=47) [left]
+            ║  │     s: Var (name=publisher)
+            ║  │     p: Var (name=_const_23b75369_uri, value=http://xmlns.com/foaf/0.1/mbox, anonymous)
+            ║  │     o: Var (name=mbox)
+            ║  └── Join (HashJoinIteration) (costEstimate=1.7K) [right]
+            ║     ╠══ StatementPattern (costEstimate=54, resultSizeEstimate=11.7K) [left]
+            ║     ║     s: Var (name=dataset)
+            ║     ║     p: Var (name=_const_c4c0156c_uri, value=http://purl.org/dc/terms/publisher, anonymous)
+            ║     ║     o: Var (name=publisher)
+            ║     ╚══ Filter (new scope) (costEstimate=18.0K, resultSizeEstimate=0) [right]
+            ║        ├── SameTerm
+            ║        │     Var (name=lang)
+            ║        │     ValueConstant (value=http://publications.europa.eu/resource/authority/language/ENG)
+            ║        └── StatementPattern (costEstimate=1.00, resultSizeEstimate=2.2K)
+            ║              s: Var (name=dataset)
+            ║              p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+            ║              o: Var (name=lang, value=http://publications.europa.eu/resource/authority/language/ENG)
+            ╚══ StatementPattern (costEstimate=7.2K, resultSizeEstimate=613.2K) [right]
+                  s: Var (name=dataset)
+                  p: Var (name=any)
+                  o: Var (name=anyValue)
+
+
+
+
+=== valuesDupUnion - EXECUTED ===
+Projection (resultSizeActual=1.2K)
+╠══ ProjectionElemList
+║     ProjectionElem "dataset"
+║     ProjectionElem "dist"
+║     ProjectionElem "lang"
+║     ProjectionElem "fmt"
+╚══ Join (JoinIterator) (resultSizeActual=1.2K)
+   ├── BindingSetAssignment ([[lang=http://publications.europa.eu/resource/authority/language/ENG;fmt="text/csv"], [lang=http://publications.europa.eu/resource/authority/language/FRA;fmt="application/pdf"], [lang=http://publications.europa.eu/resource/authority/language/NLD;fmt="text/xml"]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=3) [left]
+   └── Join (JoinIterator) (resultSizeActual=1.2K) [right]
+      ╠══ StatementPattern (costEstimate=36, resultSizeEstimate=11.5K, resultSizeActual=11.3K) [left]
+      ║     s: Var (name=dataset)
+      ║     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+      ║     o: Var (name=lang)
+      ╚══ Join (JoinIterator) (resultSizeActual=1.2K) [right]
+         ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=11.8K, resultSizeActual=5.8K) [left]
+         │     s: Var (name=dataset)
+         │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+         │     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+         └── Join (JoinIterator) (resultSizeActual=1.2K) [right]
+            ╠══ StatementPattern (costEstimate=0.50, resultSizeEstimate=37.9K, resultSizeActual=19.8K) [left]
+            ║     s: Var (name=dataset)
+            ║     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+            ║     o: Var (name=dist)
+            ╚══ Union (resultSizeActual=1.2K) [right]
+               ├── StatementPattern (costEstimate=89, resultSizeEstimate=31.7K, resultSizeActual=1.2K)
+               │     s: Var (name=dist)
+               │     p: Var (name=_const_80ff7fc3_uri, value=http://www.w3.org/ns/dcat#mediaType, anonymous)
+               │     o: Var (name=fmt)
+               └── StatementPattern (costEstimate=88, resultSizeEstimate=30.7K, resultSizeActual=0)
+                     s: Var (name=dist)
+                     p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+                     o: Var (name=fmt)
+
+
+
+
+=== valuesDupUnion - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "dataset"
+║     ProjectionElem "dist"
+║     ProjectionElem "lang"
+║     ProjectionElem "fmt"
+╚══ Join (JoinIterator)
+   ├── BindingSetAssignment ([[lang=http://publications.europa.eu/resource/authority/language/ENG;fmt="text/csv"], [lang=http://publications.europa.eu/resource/authority/language/FRA;fmt="application/pdf"], [lang=http://publications.europa.eu/resource/authority/language/NLD;fmt="text/xml"]]) (costEstimate=0, resultSizeEstimate=1.00) [left]
+   └── Join (JoinIterator) [right]
+      ╠══ StatementPattern (costEstimate=36, resultSizeEstimate=11.5K) [left]
+      ║     s: Var (name=dataset)
+      ║     p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+      ║     o: Var (name=lang)
+      ╚══ Join (JoinIterator) [right]
+         ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=11.8K) [left]
+         │     s: Var (name=dataset)
+         │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+         │     o: Var (name=_const_d758c81d_uri, value=http://www.w3.org/ns/dcat#Dataset, anonymous)
+         └── Join (JoinIterator) [right]
+            ╠══ StatementPattern (costEstimate=0.50, resultSizeEstimate=37.9K) [left]
+            ║     s: Var (name=dataset)
+            ║     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+            ║     o: Var (name=dist)
+            ╚══ Union [right]
+               ├── StatementPattern (costEstimate=89, resultSizeEstimate=31.7K)
+               │     s: Var (name=dist)
+               │     p: Var (name=_const_80ff7fc3_uri, value=http://www.w3.org/ns/dcat#mediaType, anonymous)
+               │     o: Var (name=fmt)
+               └── StatementPattern (costEstimate=88, resultSizeEstimate=30.7K)
+                     s: Var (name=dist)
+                     p: Var (name=_const_82f7ba87_uri, value=http://purl.org/dc/terms/format, anonymous)
+                     o: Var (name=fmt)
