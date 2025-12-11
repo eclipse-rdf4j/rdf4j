@@ -10,8 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -23,6 +29,9 @@ import org.eclipse.rdf4j.sail.memory.model.MemResource;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
 import org.eclipse.rdf4j.sail.memory.model.MemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
+
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 
 /**
  * Uses the MemoryStore's statement sizes to give cost estimates based on the size of the expected results. This process
@@ -55,16 +64,167 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 //		return false;
 	}
 
+	static Cache<IsomorphicJoin, Double> cache = CacheBuilder.newBuilder()
+			.maximumSize(10000)
+			.expireAfterAccess(100, TimeUnit.MILLISECONDS)
+			.build();
+
+	/**
+	 * Cache key for join estimation that ignores variable names and blank node identifiers, but preserves the
+	 * structural form of the two statement patterns. Assumes left/right args are {@link StatementPattern}s.
+	 */
+	static final class IsomorphicJoin extends Join {
+		private final Object[] signature;
+		private final int hash;
+
+		IsomorphicJoin(Join original) {
+			StatementPattern left = (StatementPattern) original.getLeftArg();
+			StatementPattern right = (StatementPattern) original.getRightArg();
+			this.signature = computeSignature(left, right);
+			this.hash = java.util.Arrays.hashCode(signature);
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof IsomorphicJoin)) {
+				return false;
+			}
+			IsomorphicJoin o = (IsomorphicJoin) other;
+			return java.util.Arrays.equals(this.signature, o.signature);
+		}
+
+		@Override
+		public int hashCode() {
+			return hash;
+		}
+
+		@Override
+		public String toString() {
+			return "IsomorphicJoin(signature=" + java.util.Arrays.toString(signature) + ")";
+		}
+
+		private static Object[] computeSignature(StatementPattern left, StatementPattern right) {
+			java.util.Map<Object, Token> tokens = new java.util.HashMap<>();
+			java.util.List<Object> sig = new java.util.ArrayList<>(10);
+			Counters counters = new Counters();
+
+			addPatternSignature(sig, left, tokens, counters);
+			addPatternSignature(sig, right, tokens, counters);
+
+			return sig.toArray();
+		}
+
+		private static void addPatternSignature(java.util.List<Object> sig, StatementPattern sp,
+				java.util.Map<Object, Token> tokens, Counters counters) {
+			sig.add(sp.getScope());
+			addVarSignature(sig, sp.getSubjectVar(), tokens, counters);
+			addVarSignature(sig, sp.getPredicateVar(), tokens, counters);
+			addVarSignature(sig, sp.getObjectVar(), tokens, counters);
+			addVarSignature(sig, sp.getContextVar(), tokens, counters);
+		}
+
+		private static void addVarSignature(java.util.List<Object> sig, Var var, java.util.Map<Object, Token> tokens,
+				Counters counters) {
+			if (var == null) {
+				sig.add(NullToken.INSTANCE);
+				return;
+			}
+
+			if (var.hasValue()) {
+				Value v = var.getValue();
+				if (v instanceof BNode) {
+					Token t = tokens.computeIfAbsent(v, k -> new Token('b', counters.nextBNodeId++));
+					sig.add(t);
+				} else {
+					sig.add(constantKey(v));
+				}
+			} else {
+				Token t = tokens.computeIfAbsent(var, k -> new Token('v', counters.nextVarId++));
+				sig.add(t);
+			}
+		}
+
+		private static String constantKey(Value v) {
+			if (v instanceof IRI) {
+				return "I:" + v.stringValue();
+			}
+			if (v instanceof Literal) {
+				Literal lit = (Literal) v;
+				StringBuilder sb = new StringBuilder("L:");
+				sb.append(lit.getLabel());
+				lit.getLanguage()
+						.ifPresentOrElse(lang -> sb.append('@').append(lang),
+								() -> sb.append("^^").append(lit.getDatatype().stringValue()));
+				return sb.toString();
+			}
+			if (v instanceof Triple) {
+				return "T:" + v.stringValue();
+			}
+			return "V:" + v.stringValue();
+		}
+
+		private static final class Counters {
+			int nextVarId = 0;
+			int nextBNodeId = 0;
+		}
+
+		private static final class Token {
+			final char kind;
+			final int id;
+
+			Token(char kind, int id) {
+				this.kind = kind;
+				this.id = id;
+			}
+
+			@Override
+			public boolean equals(Object other) {
+				if (this == other) {
+					return true;
+				}
+				if (!(other instanceof Token)) {
+					return false;
+				}
+				Token o = (Token) other;
+				return kind == o.kind && id == o.id;
+			}
+
+			@Override
+			public int hashCode() {
+				return (kind * 31) + id;
+			}
+		}
+
+		private enum NullToken {
+			INSTANCE
+		}
+	}
+
 	protected class MemCardinalityCalculator extends CardinalityCalculator {
 
 		@Override
 		public void meet(Join node) {
 			if (supportsJoinEstimation()) {
-				double estimatedCardinality = sketchBasedJoinEstimator.cardinality(node);
-				if (estimatedCardinality >= 0) {
-					this.cardinality = estimatedCardinality;
-					node.setCostEstimate(estimatedCardinality);
-					return;
+
+				if (node.getLeftArg() instanceof StatementPattern && node.getRightArg() instanceof StatementPattern) {
+					// this is currently the only case we can estimate
+
+					double estimatedCardinality = 0;
+					try {
+						estimatedCardinality = cache.get(new IsomorphicJoin(node),
+								() -> sketchBasedJoinEstimator.cardinality(node));
+					} catch (ExecutionException e) {
+						throw new RuntimeException(e);
+					}
+
+					if (estimatedCardinality >= 0) {
+						this.cardinality = estimatedCardinality;
+						node.setCostEstimate(estimatedCardinality);
+						return;
+					}
 				}
 			}
 
