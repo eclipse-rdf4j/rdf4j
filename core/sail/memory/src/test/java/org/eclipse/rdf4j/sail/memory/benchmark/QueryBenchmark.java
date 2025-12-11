@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.memory.benchmark;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
@@ -21,6 +22,7 @@ import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -37,18 +39,25 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
+import org.openjdk.jmh.runner.Runner;
+import org.openjdk.jmh.runner.RunnerException;
+import org.openjdk.jmh.runner.options.Options;
+import org.openjdk.jmh.runner.options.OptionsBuilder;
+import org.openjdk.jmh.runner.options.TimeValue;
 
 /**
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 1)
+@Warmup(iterations = 100, time = 1, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G" })
 //@Fork(value = 1, jvmArgs = {"-Xms1G", "-Xmx1G", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 1)
+@Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class QueryBenchmark {
+
+	private static final ConcurrentHashMap<String, String> explanations = new ConcurrentHashMap<>();
 
 	private SailRepository repository;
 
@@ -156,24 +165,42 @@ public class QueryBenchmark {
 		}
 	}
 
-	public static void main(String[] args) throws IOException, InterruptedException {
-//		Options opt = new OptionsBuilder()
-//				.include("QueryBenchmark") // adapt to run other benchmark tests
-//				// .addProfiler("stack", "lines=20;period=1;top=20")
-//				.forks(1)
-//				.build();
+	public static void main(String[] args) throws IOException, InterruptedException, RunnerException {
+
+		// REMEMBER TO RUN WITH HIGH ENOUGH MEMORY SETTINGS, E.G., -Xms8G -Xmx8G
+
+		Options opt = new OptionsBuilder()
+				.include(QueryBenchmark.class.getName() + "\\.") // adapt to run other benchmark tests
+				// .addProfiler("stack", "lines=20;period=1;top=20")
+				.forks(0)
+				.warmupIterations(1)
+				.warmupBatchSize(1)
+				.warmupTime(TimeValue.milliseconds(1))
+				.measurementIterations(1)
+				.measurementBatchSize(1)
+				.measurementTime(TimeValue.milliseconds(1))
+				.build();
+
+		new Runner(opt).run();
+
+		System.out.println();
+
+		explanations.keySet().stream().sorted().forEach(k -> {
+			String explanation = explanations.get(k);
+			System.out.println("=== " + k + " ===");
+			System.out.println(explanation);
+			System.out.println("\n\n");
+		});
+
+//		long k = 0;
 //
-//		new Runner(opt).run();
-
-		long k = 0;
-
-		QueryBenchmark queryBenchmark = new QueryBenchmark();
-		queryBenchmark.beforeClass();
-
-		long l = queryBenchmark.complexQuery();
-		System.out.println("complexQuery: " + l);
-		queryBenchmark.afterClass();
-		System.out.println(k);
+//		QueryBenchmark queryBenchmark = new QueryBenchmark();
+//		queryBenchmark.beforeClass();
+//
+//		long l = queryBenchmark.complexQuery();
+//		System.out.println("complexQuery: " + l);
+//		queryBenchmark.afterClass();
+//		System.out.println(k);
 
 	}
 
@@ -189,17 +216,27 @@ public class QueryBenchmark {
 			connection.commit();
 		}
 
-		Thread.sleep(10000);
+		Thread.sleep(5000);
 	}
 
 	@TearDown(Level.Trial)
 	public void afterClass() {
 		repository.shutDown();
+//		System.out.println();
+//
+//		explanations.keySet().stream().sorted().forEach(k ->{
+//			String explanation = explanations.get(k);
+//			System.out.println("=== " + k + " ===");
+//			System.out.println(explanation);
+//			System.out.println("\n\n");
+//		});
 	}
 
 	@Benchmark
 	public long groupByQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, query1);
+
 			return count(connection
 					.prepareTupleQuery(query1)
 					.evaluate());
@@ -219,11 +256,23 @@ public class QueryBenchmark {
 //					.prepareTupleQuery(query4);
 //			System.out.println(tupleQuery.explain(Explanation.Level.Executed));
 
+//			saveQueryExplanation(connection, query4);
+
 			return count(connection
 					.prepareTupleQuery(query4)
 					.evaluate()
 			);
 		}
+	}
+
+	private static void saveQueryExplanation(SailRepositoryConnection connection, String query) {
+		Explanation explainOptimized = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+		Explanation explainExecuted = connection.prepareTupleQuery(query).explain(Explanation.Level.Executed);
+
+		StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+		String methodName = stackTrace[2].getMethodName();
+		explanations.put(methodName + " - OPTIMIZED", explainOptimized.toString());
+		explanations.put(methodName + " - EXECUTED", explainExecuted.toString());
 	}
 
 	@Benchmark
@@ -232,6 +281,8 @@ public class QueryBenchmark {
 //			TupleQuery tupleQuery = connection
 //					.prepareTupleQuery(query4);
 //			System.out.println(tupleQuery.explain(Explanation.Level.Executed));
+
+//			saveQueryExplanation(connection, query10);
 
 			return count(connection
 					.prepareTupleQuery(query10)
@@ -244,6 +295,9 @@ public class QueryBenchmark {
 	public long pathExpressionQuery1() {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+//			saveQueryExplanation(connection, query7_pathexpression1);
+
 			return count(connection
 					.prepareTupleQuery(query7_pathexpression1)
 					.evaluate());
@@ -254,6 +308,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long pathExpressionQuery2() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, query8_pathexpression2);
+
 			return count(connection
 					.prepareTupleQuery(query8_pathexpression2)
 					.evaluate());
@@ -274,6 +330,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long different_datasets_with_similar_distributions() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, different_datasets_with_similar_distributions);
+
 			return count(connection
 					.prepareTupleQuery(different_datasets_with_similar_distributions)
 					.evaluate());
@@ -283,6 +341,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long long_chain() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, long_chain);
+
 			return count(connection
 					.prepareTupleQuery(long_chain)
 					.evaluate());
@@ -292,6 +352,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long optional_lhs_filter() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, optional_lhs_filter);
+
 			return count(connection
 					.prepareTupleQuery(optional_lhs_filter)
 					.evaluate());
@@ -301,6 +363,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long optional_rhs_filter() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, optional_rhs_filter);
+
 			return count(connection
 					.prepareTupleQuery(optional_rhs_filter)
 					.evaluate());
@@ -310,6 +374,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long lots_of_optional() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, lots_of_optional);
+
 			return count(connection
 					.prepareTupleQuery(lots_of_optional)
 					.evaluate());
@@ -319,6 +385,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long minus() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, minus);
+
 			return count(connection
 					.prepareTupleQuery(minus)
 					.evaluate());
@@ -328,6 +396,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long nested_optionals() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, nested_optionals);
+
 			return count(connection
 					.prepareTupleQuery(nested_optionals)
 					.evaluate());
@@ -348,6 +418,7 @@ public class QueryBenchmark {
 	@Benchmark
 	public long query_distinct_predicates() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, query_distinct_predicates);
 			return count(connection
 					.prepareTupleQuery(query_distinct_predicates)
 					.evaluate());
@@ -357,6 +428,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long simple_filter_not() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, simple_filter_not);
+
 			return count(connection
 					.prepareTupleQuery(simple_filter_not)
 					.evaluate());
@@ -377,6 +450,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long subSelect() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, sub_select);
+
 			return count(connection
 					.prepareTupleQuery(sub_select)
 					.evaluate());
@@ -386,6 +461,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long multipleSubSelect() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, multiple_sub_select);
+
 			return count(connection
 					.prepareTupleQuery(multiple_sub_select)
 					.evaluate());
@@ -395,6 +472,7 @@ public class QueryBenchmark {
 	@Benchmark
 	public long distributionMediaContrast() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, distribution_media_contrast);
 			return count(connection
 					.prepareTupleQuery(distribution_media_contrast)
 					.evaluate());
@@ -404,6 +482,7 @@ public class QueryBenchmark {
 	@Benchmark
 	public long contactPointPathChase() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, contact_point_path_chase);
 			return count(connection
 					.prepareTupleQuery(contact_point_path_chase)
 					.evaluate());
@@ -413,6 +492,7 @@ public class QueryBenchmark {
 	@Benchmark
 	public long topTitlesByLength() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, top_titles_by_length);
 			return count(connection
 					.prepareTupleQuery(top_titles_by_length)
 					.evaluate());
@@ -422,6 +502,7 @@ public class QueryBenchmark {
 	@Benchmark
 	public long languageUnionRegex() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, language_union_regex);
 			return count(connection
 					.prepareTupleQuery(language_union_regex)
 					.evaluate());
@@ -431,6 +512,7 @@ public class QueryBenchmark {
 	@Benchmark
 	public long publisherDistributionAggregation() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, publisher_distribution_aggregation);
 			return count(connection
 					.prepareTupleQuery(publisher_distribution_aggregation)
 					.evaluate());
@@ -440,6 +522,7 @@ public class QueryBenchmark {
 	@Benchmark
 	public long joinReorderStress() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, join_reorder_stress);
 			return count(connection
 					.prepareTupleQuery(join_reorder_stress)
 					.evaluate());
@@ -449,6 +532,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long optionalFilterPushdown() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, optional_filter_pushdown);
+
 			return count(connection
 					.prepareTupleQuery(optional_filter_pushdown)
 					.evaluate());
@@ -458,6 +543,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long starPathFanout() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, star_path_fanout);
+
 			return count(connection
 					.prepareTupleQuery(star_path_fanout)
 					.evaluate());
@@ -467,6 +554,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long unionPublisherDedup() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, union_publisher_dedup);
+
 			return count(connection
 					.prepareTupleQuery(union_publisher_dedup)
 					.evaluate());
@@ -476,6 +565,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long languageGroupHaving() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, language_group_having);
+
 			return count(connection
 					.prepareTupleQuery(language_group_having)
 					.evaluate());
@@ -485,6 +576,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long overlappingOptionalsWide() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, overlapping_optionals_wide);
+
 			return count(connection
 					.prepareTupleQuery(overlapping_optionals_wide)
 					.evaluate());
@@ -494,6 +587,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long overlappingOptionalsFiltered() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, overlapping_optionals_filtered);
+
 			return count(connection
 					.prepareTupleQuery(overlapping_optionals_filtered)
 					.evaluate());
@@ -503,6 +598,8 @@ public class QueryBenchmark {
 	@Benchmark
 	public long valuesDupUnion() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			saveQueryExplanation(connection, values_dup_union);
+
 			return count(connection
 					.prepareTupleQuery(values_dup_union)
 					.evaluate());
