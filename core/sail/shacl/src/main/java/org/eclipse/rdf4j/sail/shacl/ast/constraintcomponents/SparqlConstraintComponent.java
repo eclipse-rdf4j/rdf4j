@@ -54,6 +54,7 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent imple
 	private Boolean deactivated;
 	private final Set<Namespace> namespaces;
 	private final Model prefixes;
+	private final boolean hasMessageTemplateVariables;
 
 	public SparqlConstraintComponent(Resource id, ShapeSource shapeSource, Shape shape) {
 		super(id);
@@ -96,6 +97,8 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent imple
 			});
 		}
 
+		hasMessageTemplateVariables = containsMessageTemplateVariables(message);
+
 		var shaclNamespaces = ShaclPrefixParser.extractNamespaces(id, shapeSource);
 		prefixes = shaclNamespaces.getModel();
 		namespaces = shaclNamespaces.getNamespaces();
@@ -115,6 +118,21 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent imple
 		this.deactivated = deactivated;
 		this.prefixes = prefixes;
 		this.namespaces = namespaces;
+		this.hasMessageTemplateVariables = containsMessageTemplateVariables(message);
+	}
+
+	public boolean hasMessageTemplateVariables() {
+		return hasMessageTemplateVariables;
+	}
+
+	private static boolean containsMessageTemplateVariables(List<Literal> messages) {
+		for (Literal literal : messages) {
+			String label = literal.getLabel();
+			if (label.contains("{?") || label.contains("{$")) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@Override
@@ -155,6 +173,10 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent imple
 			Path path = getTargetChain().getPath().get();
 			String s = path.toSparqlPathString();
 			select = select.replace(" $PATH ", " " + s + " ");
+			if (select.contains("$PATH")) {
+				throw new IllegalStateException(
+						"Illegal use of $PATH in SPARQL constraint for property shape " + getId());
+			}
 		}
 
 		PlanNode allTargets;

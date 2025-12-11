@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.shacl.results;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.StringReader;
@@ -20,6 +21,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -28,6 +30,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationReportHelper;
 import org.eclipse.rdf4j.sail.shacl.ShaclValidator;
@@ -426,6 +429,575 @@ public class ShaclValidatorSparqlMessagesTest {
 			Set<String> resultMessages = toMessageSet(
 					model.filter(result.getId(), SHACL.RESULT_MESSAGE, null).objects());
 			assertTrue(resultMessages.isEmpty());
+		}
+	}
+
+	@Test
+	public void multipleTemplateMessagesAreAllSubstitutedAndReported() throws Exception {
+
+		String shapesTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
+				"\n" +
+				"ex:PersonShape a sh:NodeShape ;\n" +
+				"  sh:targetClass ex:Person ;\n" +
+				"  sh:sparql [\n" +
+				"    a sh:SPARQLConstraint ;\n" +
+				"    sh:message \"Bad age {?value}\"@en , \"Leeftijd ongeldig {?value}\"@nl ;\n" +
+				"    sh:select \"\"\"\n" +
+				"      PREFIX ex: <http://example.com/ns#>\n" +
+				"      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n" +
+				"      SELECT $this ?value WHERE {\n" +
+				"        $this ex:age ?value .\n" +
+				"        FILTER ( datatype(?value) != xsd:integer )\n" +
+				"      }\n" +
+				"    \"\"\" ;\n" +
+				"  ] .\n";
+
+		String dataTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
+				"\n" +
+				"ex:bob a ex:Person ;\n" +
+				"  ex:age \"old\"^^xsd:string ;\n" +
+				"  ex:age \"ancient\"^^xsd:string .\n";
+
+		SailRepository shapes = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = shapes.getConnection()) {
+			connection.add(new StringReader(shapesTtl), RDFFormat.TURTLE);
+		}
+
+		SailRepository data = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = data.getConnection()) {
+			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
+		}
+
+		ValidationReport report = ShaclValidator.validate(data.getSail(), shapes.getSail());
+		assertFalse(report.conforms());
+		assertEquals(2, report.getValidationResult().size());
+
+		Model model = report.asModel();
+		for (ValidationResult result : report.getValidationResult()) {
+			String valueLabel = model.filter(result.getId(), SHACL.VALUE, null)
+					.objects()
+					.stream()
+					.findFirst()
+					.map(Value::stringValue)
+					.orElseThrow();
+
+			Set<String> expected = Set.of(
+					"Bad age " + valueLabel + "@en",
+					"Leeftijd ongeldig " + valueLabel + "@nl");
+
+			Set<String> actual = toMessageSet(model.filter(result.getId(), SHACL.RESULT_MESSAGE, null).objects());
+			assertEquals(expected, actual);
+		}
+	}
+
+	@Test
+	public void unboundTemplateVariablesRemainUnchanged() throws Exception {
+
+		String shapesTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+				"\n" +
+				"ex:PersonShape a sh:NodeShape ;\n" +
+				"  sh:targetClass ex:Person ;\n" +
+				"  sh:sparql [\n" +
+				"    a sh:SPARQLConstraint ;\n" +
+				"    sh:message \"Missing value {?missing} for {$this}\" ;\n" +
+				"    sh:select \"\"\"\n" +
+				"      PREFIX ex: <http://example.com/ns#>\n" +
+				"      SELECT $this WHERE {\n" +
+				"        FILTER NOT EXISTS { $this ex:name ?n }\n" +
+				"      }\n" +
+				"    \"\"\" ;\n" +
+				"  ] .\n";
+
+		String dataTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"\n" +
+				"ex:alice a ex:Person .\n";
+
+		SailRepository shapes = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = shapes.getConnection()) {
+			connection.add(new StringReader(shapesTtl), RDFFormat.TURTLE);
+		}
+
+		SailRepository data = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = data.getConnection()) {
+			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
+		}
+
+		ValidationReport report = ShaclValidator.validate(data.getSail(), shapes.getSail());
+		assertFalse(report.conforms());
+		assertEquals(1, report.getValidationResult().size());
+
+		assertAllResultsHaveMessages(report, Set.of("Missing value {?missing} for http://example.com/ns#alice"));
+	}
+
+	@Test
+	public void repeatedTemplatePlaceholdersAreAllReplaced() throws Exception {
+
+		String shapesTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
+				"\n" +
+				"ex:PersonShape a sh:NodeShape ;\n" +
+				"  sh:targetClass ex:Person ;\n" +
+				"  sh:sparql [\n" +
+				"    a sh:SPARQLConstraint ;\n" +
+				"    sh:message \"Value {?value} repeats {?value}\" ;\n" +
+				"    sh:select \"\"\"\n" +
+				"      PREFIX ex: <http://example.com/ns#>\n" +
+				"      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n" +
+				"      SELECT $this ?value WHERE {\n" +
+				"        $this ex:age ?value .\n" +
+				"        FILTER ( datatype(?value) != xsd:integer )\n" +
+				"      }\n" +
+				"    \"\"\" ;\n" +
+				"  ] .\n";
+
+		String dataTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
+				"\n" +
+				"ex:bob a ex:Person ;\n" +
+				"  ex:age \"old\"^^xsd:string .\n";
+
+		SailRepository shapes = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = shapes.getConnection()) {
+			connection.add(new StringReader(shapesTtl), RDFFormat.TURTLE);
+		}
+
+		SailRepository data = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = data.getConnection()) {
+			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
+		}
+
+		ValidationReport report = ShaclValidator.validate(data.getSail(), shapes.getSail());
+		assertFalse(report.conforms());
+		assertEquals(1, report.getValidationResult().size());
+
+		assertAllResultsHaveMessages(report, Set.of("Value old repeats old"));
+	}
+
+	@Test
+	public void messageBindingNonLiteralConvertedToStringLiteral() throws Exception {
+
+		String shapesTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+				"\n" +
+				"ex:PersonShape a sh:NodeShape ;\n" +
+				"  sh:targetClass ex:Person ;\n" +
+				"  sh:sparql [\n" +
+				"    a sh:SPARQLConstraint ;\n" +
+				"    sh:message \"Fallback\" ;\n" +
+				"    sh:select \"\"\"\n" +
+				"      PREFIX ex: <http://example.com/ns#>\n" +
+				"      SELECT $this ?message WHERE {\n" +
+				"        FILTER NOT EXISTS { $this ex:name ?n }\n" +
+				"        BIND(ex:msg1 AS ?message)\n" +
+				"      }\n" +
+				"    \"\"\" ;\n" +
+				"  ] .\n";
+
+		String dataTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"\n" +
+				"ex:alice a ex:Person .\n";
+
+		SailRepository shapes = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = shapes.getConnection()) {
+			connection.add(new StringReader(shapesTtl), RDFFormat.TURTLE);
+		}
+
+		SailRepository data = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = data.getConnection()) {
+			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
+		}
+
+		ValidationReport report = ShaclValidator.validate(data.getSail(), shapes.getSail());
+		assertFalse(report.conforms());
+		assertEquals(1, report.getValidationResult().size());
+
+		assertAllResultsHaveMessages(report, Set.of("http://example.com/ns#msg1"));
+	}
+
+	@Test
+	public void preboundShapesGraphAvailableInSparqlConstraints() throws Exception {
+
+		String shapesTrig = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+				"@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .\n" +
+				"\n" +
+				"rdf4j:nil sh:shapesGraph ex:shapesGraph .\n" +
+				"\n" +
+				"ex:shapesGraph {\n" +
+				"  ex:PersonShape a sh:NodeShape ;\n" +
+				"    sh:targetClass ex:Person ;\n" +
+				"    sh:sparql [\n" +
+				"      a sh:SPARQLConstraint ;\n" +
+				"      sh:select \"\"\"\n" +
+				"        PREFIX ex: <http://example.com/ns#>\n" +
+				"        SELECT $this ?message WHERE {\n" +
+				"          FILTER NOT EXISTS { $this ex:name ?n }\n" +
+				"          BIND(CONCAT(\"sg=\", STR($shapesGraph)) AS ?message)\n" +
+				"        }\n" +
+				"      \"\"\" ;\n" +
+				"    ] .\n" +
+				"}\n";
+
+		String dataTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"\n" +
+				"ex:alice a ex:Person .\n";
+
+		SailRepository shapes = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = shapes.getConnection()) {
+			connection.add(new StringReader(shapesTrig), RDFFormat.TRIG);
+		}
+
+		SailRepository data = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = data.getConnection()) {
+			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
+		}
+
+		ValidationReport report = ShaclValidator.validate(data.getSail(), shapes.getSail());
+		assertFalse(report.conforms());
+		assertEquals(1, report.getValidationResult().size());
+
+		assertAllResultsHaveMessages(report, Set.of("sg=http://example.com/ns#shapesGraph"));
+	}
+
+	@Test
+	public void preboundCurrentShapeAvailableInSparqlConstraints() throws Exception {
+
+		String shapesTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+				"\n" +
+				"ex:PersonShape a sh:NodeShape ;\n" +
+				"  sh:targetClass ex:Person ;\n" +
+				"  sh:sparql [\n" +
+				"    a sh:SPARQLConstraint ;\n" +
+				"    sh:select \"\"\"\n" +
+				"      PREFIX ex: <http://example.com/ns#>\n" +
+				"      SELECT $this ?message WHERE {\n" +
+				"        FILTER NOT EXISTS { $this ex:name ?n }\n" +
+				"        BIND(CONCAT(\"cs=\", STR($currentShape)) AS ?message)\n" +
+				"      }\n" +
+				"    \"\"\" ;\n" +
+				"  ] .\n";
+
+		String dataTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"\n" +
+				"ex:alice a ex:Person .\n";
+
+		SailRepository shapes = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = shapes.getConnection()) {
+			connection.add(new StringReader(shapesTtl), RDFFormat.TURTLE);
+		}
+
+		SailRepository data = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = data.getConnection()) {
+			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
+		}
+
+		ValidationReport report = ShaclValidator.validate(data.getSail(), shapes.getSail());
+		assertFalse(report.conforms());
+		assertEquals(1, report.getValidationResult().size());
+
+		assertAllResultsHaveMessages(report, Set.of("cs=http://example.com/ns#PersonShape"));
+	}
+
+	@Test
+	public void messageTemplatesSubstitutePreboundVariablesForNodeShapes() throws Exception {
+
+		String shapesTrig = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+				"@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .\n" +
+				"\n" +
+				"rdf4j:nil sh:shapesGraph ex:shapesGraph .\n" +
+				"\n" +
+				"ex:shapesGraph {\n" +
+				"  ex:PersonShape a sh:NodeShape ;\n" +
+				"    sh:targetClass ex:Person ;\n" +
+				"    sh:sparql [\n" +
+				"      a sh:SPARQLConstraint ;\n" +
+				"      sh:message \"Graph {?shapesGraph} shape {?currentShape} focus {$this}\" ;\n" +
+				"      sh:select \"\"\"\n" +
+				"        PREFIX ex: <http://example.com/ns#>\n" +
+				"        SELECT $this WHERE {\n" +
+				"          FILTER NOT EXISTS { $this ex:name ?n }\n" +
+				"        }\n" +
+				"      \"\"\" ;\n" +
+				"    ] .\n" +
+				"}\n";
+
+		String dataTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"\n" +
+				"ex:alice a ex:Person .\n";
+
+		SailRepository shapes = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = shapes.getConnection()) {
+			connection.add(new StringReader(shapesTrig), RDFFormat.TRIG);
+		}
+
+		SailRepository data = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = data.getConnection()) {
+			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
+		}
+
+		ValidationReport report = ShaclValidator.validate(data.getSail(), shapes.getSail());
+		assertFalse(report.conforms());
+		assertEquals(1, report.getValidationResult().size());
+
+		assertAllResultsHaveMessages(report,
+				Set.of("Graph http://example.com/ns#shapesGraph shape http://example.com/ns#PersonShape focus http://example.com/ns#alice"));
+	}
+
+	@Test
+	public void messageTemplatesSubstitutePreboundVariablesForPropertyShapes() throws Exception {
+
+		String shapesTrig = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
+				"@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .\n" +
+				"\n" +
+				"rdf4j:nil sh:shapesGraph ex:shapesGraph .\n" +
+				"\n" +
+				"ex:shapesGraph {\n" +
+				"  ex:PersonShape a sh:NodeShape ;\n" +
+				"    sh:targetClass ex:Person ;\n" +
+				"    sh:property [\n" +
+				"      sh:path ex:age ;\n" +
+				"      sh:sparql [\n" +
+				"        a sh:SPARQLConstraint ;\n" +
+				"        sh:message \"Graph {?shapesGraph} shape {?currentShape} focus {$this} value {?value}\" ;\n" +
+				"        sh:select \"\"\"\n" +
+				"          PREFIX ex: <http://example.com/ns#>\n" +
+				"          PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n" +
+				"          SELECT $this ?value WHERE {\n" +
+				"            $this $PATH ?value .\n" +
+				"            FILTER ( ?value <= 0 )\n" +
+				"          }\n" +
+				"        \"\"\" ;\n" +
+				"      ]\n" +
+				"    ] .\n" +
+				"}\n";
+
+		String dataTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
+				"\n" +
+				"ex:alice a ex:Person ;\n" +
+				"  ex:age \"-1\"^^xsd:integer .\n";
+
+		SailRepository shapes = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = shapes.getConnection()) {
+			connection.add(new StringReader(shapesTrig), RDFFormat.TRIG);
+		}
+
+		SailRepository data = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = data.getConnection()) {
+			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
+		}
+
+		ValidationReport report = ShaclValidator.validate(data.getSail(), shapes.getSail());
+		assertFalse(report.conforms());
+		assertEquals(1, report.getValidationResult().size());
+
+		Model model = report.asModel();
+		ValidationResult result = report.getValidationResult().iterator().next();
+		Set<String> messages = toMessageSet(model.filter(result.getId(), SHACL.RESULT_MESSAGE, null).objects());
+		assertEquals(1, messages.size());
+		String message = messages.iterator().next();
+		assertTrue(message.startsWith("Graph http://example.com/ns#shapesGraph shape "));
+		assertTrue(message.contains(" focus http://example.com/ns#alice value -1"));
+		assertFalse(message.contains("{?currentShape}"));
+	}
+
+	@Test
+	public void messageTemplatesSubstitutePathPlaceholderForPropertyShapes() throws Exception {
+
+		String shapesTrig = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
+				"\n" +
+				"ex:PersonShape a sh:NodeShape ;\n" +
+				"  sh:targetClass ex:Person ;\n" +
+				"  sh:property [\n" +
+				"    sh:path ex:age ;\n" +
+				"    sh:sparql [\n" +
+				"      a sh:SPARQLConstraint ;\n" +
+				"      sh:message \"Bad path {$PATH} and {?PATH}\" ;\n" +
+				"      sh:select \"\"\"\n" +
+				"        PREFIX ex: <http://example.com/ns#>\n" +
+				"        PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n" +
+				"        SELECT $this ?value WHERE {\n" +
+				"          $this $PATH ?value .\n" +
+				"          FILTER ( ?value <= 0 )\n" +
+				"        }\n" +
+				"      \"\"\" ;\n" +
+				"    ]\n" +
+				"  ] .\n";
+
+		String dataTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
+				"\n" +
+				"ex:alice a ex:Person ;\n" +
+				"  ex:age \"-1\"^^xsd:integer .\n";
+
+		SailRepository shapes = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = shapes.getConnection()) {
+			connection.add(new StringReader(shapesTrig), RDFFormat.TURTLE);
+		}
+
+		SailRepository data = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = data.getConnection()) {
+			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
+		}
+
+		ValidationReport report = ShaclValidator.validate(data.getSail(), shapes.getSail());
+		assertFalse(report.conforms());
+		assertEquals(1, report.getValidationResult().size());
+
+		assertAllResultsHaveMessages(report,
+				Set.of("Bad path <http://example.com/ns#age> and <http://example.com/ns#age>"));
+	}
+
+	@Test
+	public void pathPlaceholderWorksForInversePaths() throws Exception {
+
+		String shapesTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+				"\n" +
+				"ex:PersonShape a sh:NodeShape ;\n" +
+				"  sh:targetClass ex:Person ;\n" +
+				"  sh:property [\n" +
+				"    sh:path [ sh:inversePath ex:knows ] ;\n" +
+				"    sh:sparql [\n" +
+				"      a sh:SPARQLConstraint ;\n" +
+				"      sh:message \"Inverse knows values must be Person.\" ;\n" +
+				"      sh:select \"\"\"\n" +
+				"        PREFIX ex: <http://example.com/ns#>\n" +
+				"        SELECT $this ?value WHERE {\n" +
+				"          $this $PATH ?value .\n" +
+				"          FILTER NOT EXISTS { ?value a ex:Person }\n" +
+				"        }\n" +
+				"      \"\"\" ;\n" +
+				"    ]\n" +
+				"  ] .\n";
+
+		String dataTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"\n" +
+				"ex:alice a ex:Person .\n" +
+				"ex:bob ex:knows ex:alice .\n";
+
+		SailRepository shapes = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = shapes.getConnection()) {
+			connection.add(new StringReader(shapesTtl), RDFFormat.TURTLE);
+		}
+
+		SailRepository data = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = data.getConnection()) {
+			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
+		}
+
+		ValidationReport report = ShaclValidator.validate(data.getSail(), shapes.getSail());
+		assertFalse(report.conforms());
+		assertEquals(1, report.getValidationResult().size());
+
+		assertAllResultsHaveMessages(report, Set.of("Inverse knows values must be Person."));
+	}
+
+	@Test
+	public void illegalPathPlaceholderUseCausesFailure() throws Exception {
+
+		String shapesTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+				"\n" +
+				"ex:PersonShape a sh:NodeShape ;\n" +
+				"  sh:targetClass ex:Person ;\n" +
+				"  sh:property [\n" +
+				"    sh:path ex:knows ;\n" +
+				"    sh:sparql [\n" +
+				"      a sh:SPARQLConstraint ;\n" +
+				"      sh:select \"\"\"\n" +
+				"        PREFIX ex: <http://example.com/ns#>\n" +
+				"        SELECT $this WHERE {\n" +
+				"          BIND($PATH AS ?p)\n" +
+				"          FILTER NOT EXISTS { $this ex:name ?n }\n" +
+				"        }\n" +
+				"      \"\"\" ;\n" +
+				"    ]\n" +
+				"  ] .\n";
+
+		String dataTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"\n" +
+				"ex:alice a ex:Person .\n";
+
+		SailRepository shapes = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = shapes.getConnection()) {
+			connection.add(new StringReader(shapesTtl), RDFFormat.TURTLE);
+		}
+
+		SailRepository data = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = data.getConnection()) {
+			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
+		}
+
+		SailException ex = assertThrows(SailException.class,
+				() -> ShaclValidator.validate(data.getSail(), shapes.getSail()));
+		Throwable root = ex;
+		while (root.getCause() != null) {
+			root = root.getCause();
+		}
+		assertTrue(root instanceof IllegalStateException);
+	}
+
+	@Test
+	public void nonIriPathBindingIgnoredForPropertyShapes() throws Exception {
+
+		String shapesTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+				"\n" +
+				"ex:PersonShape a sh:NodeShape ;\n" +
+				"  sh:targetClass ex:Person ;\n" +
+				"  sh:property [\n" +
+				"    sh:path ex:knows ;\n" +
+				"    sh:sparql [\n" +
+				"      a sh:SPARQLConstraint ;\n" +
+				"      sh:message \"knows values must be IRIs\" ;\n" +
+				"      sh:select \"\"\"\n" +
+				"        PREFIX ex: <http://example.com/ns#>\n" +
+				"        SELECT $this (\"notAnIRI\" AS ?path) ?value WHERE {\n" +
+				"          $this ex:knows ?value .\n" +
+				"          FILTER ( !isIRI(?value) )\n" +
+				"        }\n" +
+				"      \"\"\" ;\n" +
+				"    ]\n" +
+				"  ] .\n";
+
+		String dataTtl = "@prefix ex: <http://example.com/ns#> .\n" +
+				"\n" +
+				"ex:alice a ex:Person ;\n" +
+				"  ex:knows \"Bob\" .\n";
+
+		SailRepository shapes = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = shapes.getConnection()) {
+			connection.add(new StringReader(shapesTtl), RDFFormat.TURTLE);
+		}
+
+		SailRepository data = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = data.getConnection()) {
+			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
+		}
+
+		ValidationReport report = ShaclValidator.validate(data.getSail(), shapes.getSail());
+		assertFalse(report.conforms());
+		assertEquals(1, report.getValidationResult().size());
+
+		Model model = report.asModel();
+		for (ValidationResult result : report.getValidationResult()) {
+			Set<Value> paths = model.filter(result.getId(), SHACL.RESULT_PATH, null).objects();
+			assertEquals(1, paths.size());
+			Value path = paths.iterator().next();
+			assertTrue(path instanceof IRI, "Expected sh:resultPath to be IRI, got " + path);
+			assertEquals("http://example.com/ns#knows", path.stringValue());
 		}
 	}
 

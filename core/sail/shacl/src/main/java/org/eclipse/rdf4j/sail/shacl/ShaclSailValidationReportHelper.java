@@ -55,7 +55,6 @@ public class ShaclSailValidationReportHelper {
 		return Optional.of(reportAsString);
 	}
 
-
 	public static Optional<String> getValidationReportAsString(ValidationReport t) {
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		printValidationReport(t, baos);
@@ -82,10 +81,9 @@ public class ShaclSailValidationReportHelper {
 
 	public static void printValidationReport(ValidationReport t, OutputStream out) {
 		Model model = t.asModel();
-			Rio.write(model, out, RDFFormat.TURTLE, WRITER_CONFIG);
+		Rio.write(model, out, RDFFormat.TURTLE, WRITER_CONFIG);
 
 	}
-
 
 	/**
 	 * Looks for a {@link ValidationException} starting with the specified throwable and working back through the cause
