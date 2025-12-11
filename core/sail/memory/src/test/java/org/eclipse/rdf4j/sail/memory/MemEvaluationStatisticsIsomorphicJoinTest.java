@@ -22,10 +22,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.SailException;
@@ -222,6 +224,159 @@ class MemEvaluationStatisticsIsomorphicJoinTest {
 				joinWithoutSharing);
 
 		assertNotEquals(keySharing, keyNoSharing, "Sharing vs. non-sharing should not be isomorphic");
+	}
+
+	@Test
+	void nullContextVarsArePartOfIsomorphism() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		Join joinWithoutContext1 = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p", vf.createIRI("urn:p")), Var.of("o")),
+				new StatementPattern(Var.of("o"), Var.of("q", vf.createIRI("urn:q")), Var.of("x")));
+
+		Join joinWithoutContext2 = new Join(
+				new StatementPattern(Var.of("subj"), Var.of("pred", vf.createIRI("urn:p")), Var.of("joinVar")),
+				new StatementPattern(Var.of("joinVar"), Var.of("pred2", vf.createIRI("urn:q")), Var.of("obj2")));
+
+		assertEquals(new MemEvaluationStatistics.IsomorphicJoin(joinWithoutContext1),
+				new MemEvaluationStatistics.IsomorphicJoin(joinWithoutContext2));
+
+		Join joinWithContext = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p", vf.createIRI("urn:p")), Var.of("o"), Var.of("c")),
+				new StatementPattern(Var.of("o"), Var.of("q", vf.createIRI("urn:q")), Var.of("x"), Var.of("c2")));
+
+		assertNotEquals(new MemEvaluationStatistics.IsomorphicJoin(joinWithoutContext1),
+				new MemEvaluationStatistics.IsomorphicJoin(joinWithContext),
+				"Null context vars should not be isomorphic to non-null context vars");
+	}
+
+	@Test
+	void differentConstantValuesMakeJoinsNonIsomorphic() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		Join join1 = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p", vf.createIRI("urn:p1")), Var.of("o")),
+				new StatementPattern(Var.of("o"), Var.of("q", vf.createIRI("urn:q")), Var.of("x")));
+
+		Join join2 = new Join(
+				new StatementPattern(Var.of("s2"), Var.of("p2", vf.createIRI("urn:p2")), Var.of("o2")),
+				new StatementPattern(Var.of("o2"), Var.of("q2", vf.createIRI("urn:q")), Var.of("x2")));
+
+		assertNotEquals(new MemEvaluationStatistics.IsomorphicJoin(join1),
+				new MemEvaluationStatistics.IsomorphicJoin(join2));
+	}
+
+	@Test
+	void differentLiteralLanguageTagsMakeJoinsNonIsomorphic() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		Join join1 = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p", vf.createIRI("urn:p")),
+						Var.of("o", vf.createLiteral("x", "en"))),
+				new StatementPattern(Var.of("o"), Var.of("q", vf.createIRI("urn:q")), Var.of("x1")));
+
+		Join join2 = new Join(
+				new StatementPattern(Var.of("s2"), Var.of("p2", vf.createIRI("urn:p")),
+						Var.of("o2", vf.createLiteral("x", "fr"))),
+				new StatementPattern(Var.of("o2"), Var.of("q2", vf.createIRI("urn:q")), Var.of("x2")));
+
+		assertNotEquals(new MemEvaluationStatistics.IsomorphicJoin(join1),
+				new MemEvaluationStatistics.IsomorphicJoin(join2));
+	}
+
+	@Test
+	void scopeDifferencesMakeJoinsNonIsomorphic() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		Join defaultScopeJoin = new Join(
+				new StatementPattern(Scope.DEFAULT_CONTEXTS, Var.of("s"), Var.of("p", vf.createIRI("urn:p")),
+						Var.of("o")),
+				new StatementPattern(Scope.DEFAULT_CONTEXTS, Var.of("o"), Var.of("q", vf.createIRI("urn:q")),
+						Var.of("x")));
+
+		Join namedScopeLeftJoin = new Join(
+				new StatementPattern(Scope.NAMED_CONTEXTS, Var.of("s2"), Var.of("p2", vf.createIRI("urn:p")),
+						Var.of("o2")),
+				new StatementPattern(Scope.DEFAULT_CONTEXTS, Var.of("o2"), Var.of("q2", vf.createIRI("urn:q")),
+						Var.of("x2")));
+
+		assertNotEquals(new MemEvaluationStatistics.IsomorphicJoin(defaultScopeJoin),
+				new MemEvaluationStatistics.IsomorphicJoin(namedScopeLeftJoin));
+	}
+
+	@Test
+	void swappingLeftAndRightBreaksIsomorphism() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		StatementPattern left = new StatementPattern(Var.of("s"), Var.of("p", vf.createIRI("urn:p")), Var.of("o"));
+		StatementPattern right = new StatementPattern(Var.of("o"), Var.of("q", vf.createIRI("urn:q")),
+				Var.of("x", vf.createLiteral("1")));
+
+		Join join = new Join(left, right);
+
+		StatementPattern leftSwapped = new StatementPattern(Var.of("s2"), Var.of("p2", vf.createIRI("urn:p")),
+				Var.of("o2"));
+		StatementPattern rightSwapped = new StatementPattern(Var.of("o2"), Var.of("q2", vf.createIRI("urn:q")),
+				Var.of("x2", vf.createLiteral("1")));
+
+		Join swapped = new Join(rightSwapped, leftSwapped);
+
+		assertNotEquals(new MemEvaluationStatistics.IsomorphicJoin(join),
+				new MemEvaluationStatistics.IsomorphicJoin(swapped));
+	}
+
+	@Test
+	void anonymousnessMismatchBreaksVariableSharing() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		Join sharedNonAnonymous = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p", vf.createIRI("urn:p")), Var.of("x")),
+				new StatementPattern(Var.of("x"), Var.of("q", vf.createIRI("urn:q")), Var.of("o")));
+
+		Join notSharedDueToAnonymousness = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p", vf.createIRI("urn:p")), Var.of("x", true)),
+				new StatementPattern(Var.of("x"), Var.of("q", vf.createIRI("urn:q")), Var.of("o")));
+
+		assertNotEquals(new MemEvaluationStatistics.IsomorphicJoin(sharedNonAnonymous),
+				new MemEvaluationStatistics.IsomorphicJoin(notSharedDueToAnonymousness),
+				"Same name but different anonymousness should not be treated as shared");
+	}
+
+	@Test
+	void tripleConstantsAreComparedByValue() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		Triple t1 = vf.createTriple(vf.createIRI("urn:s"), vf.createIRI("urn:p"), vf.createLiteral("o"));
+
+		Join join1 = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p", vf.createIRI("urn:p")), Var.of("o", t1)),
+				new StatementPattern(Var.of("o"), Var.of("q", vf.createIRI("urn:q")), Var.of("x")));
+
+		Join join2 = new Join(
+				new StatementPattern(Var.of("s2"), Var.of("p2", vf.createIRI("urn:p")), Var.of("o2", t1)),
+				new StatementPattern(Var.of("o2"), Var.of("q2", vf.createIRI("urn:q")), Var.of("x2")));
+
+		assertEquals(new MemEvaluationStatistics.IsomorphicJoin(join1),
+				new MemEvaluationStatistics.IsomorphicJoin(join2));
+	}
+
+	@Test
+	void differentTripleConstantsMakeJoinsNonIsomorphic() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		Triple t1 = vf.createTriple(vf.createIRI("urn:s"), vf.createIRI("urn:p"), vf.createLiteral("o"));
+		Triple t2 = vf.createTriple(vf.createIRI("urn:s2"), vf.createIRI("urn:p"), vf.createLiteral("o"));
+
+		Join join1 = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p", vf.createIRI("urn:p")), Var.of("o", t1)),
+				new StatementPattern(Var.of("o"), Var.of("q", vf.createIRI("urn:q")), Var.of("x")));
+
+		Join join2 = new Join(
+				new StatementPattern(Var.of("s2"), Var.of("p2", vf.createIRI("urn:p")), Var.of("o2", t2)),
+				new StatementPattern(Var.of("o2"), Var.of("q2", vf.createIRI("urn:q")), Var.of("x2")));
+
+		assertNotEquals(new MemEvaluationStatistics.IsomorphicJoin(join1),
+				new MemEvaluationStatistics.IsomorphicJoin(join2));
 	}
 
 	@Test
