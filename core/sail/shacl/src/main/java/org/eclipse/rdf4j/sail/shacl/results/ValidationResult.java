@@ -175,7 +175,19 @@ public class ValidationResult {
 		model.add(getId(), SHACL.SOURCE_CONSTRAINT_COMPONENT, getSourceConstraintComponent().getIri());
 		model.add(getId(), SHACL.RESULT_SEVERITY, severity.getIri());
 
-		for (Literal message : shape.getMessage()) {
+		List<Literal> messagesToAdd;
+		if (sourceConstraint instanceof SparqlConstraintComponent) {
+			messagesToAdd = sourceConstraint.getDefaultMessage();
+		} else {
+			List<Literal> explicitMessages = shape.getExplicitMessages();
+			if (!explicitMessages.isEmpty()) {
+				messagesToAdd = explicitMessages;
+			} else {
+				messagesToAdd = sourceConstraint.getDefaultMessage();
+			}
+		}
+
+		for (Literal message : messagesToAdd) {
 			model.add(getId(), SHACL.RESULT_MESSAGE, message);
 		}
 

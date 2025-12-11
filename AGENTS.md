@@ -360,7 +360,7 @@ Why this is mandatory
 2. **Build sanity (fast, skip tests)**
     * `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`
 3. **Format (Java, imports, XML)**
-    * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C spotless:apply`
+    * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 4. **Targeted tests (tight loops)**
     * Module: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify  | tail -500`
     * Class: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName verify  | tail -500`
@@ -467,7 +467,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 * **PIOSEE first:** restate Problem, gather Information, list Options; then Select, Execute, Evaluate.
 * **Plan:** small, verifiable steps; keep one `in_progress`, or follow PLANS.md (ExecPlans)
 * **Change:** minimal, surgical edits; keep style/structure consistent.
-* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C spotless:apply`
+* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 * **Compile (fast):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install | tail -500`
 * **Test:** start smallest (class/method → module). For integration, run module `verify`.
 * **Triage:** read reports; fix root cause; expand scope only when needed.
@@ -539,7 +539,7 @@ Assertions are executable claims about what must be true. Use **temporary tripwi
 
 * Always run before finalizing:
 
-    * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C spotless:apply`
+    * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 * Style: no wildcard imports; 120‑char width; curly braces always; LF endings.
 
 ### Import hygiene (always)
@@ -574,7 +574,7 @@ Do **not** modify existing headers’ years.
 
 ## Pre‑Commit Checklist
 
-* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C spotless:apply`
+* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 * **Compile (fast path):** `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`
 * **Tests (targeted):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tail -500` (broaden as needed)
 * **Reports:** zero new failures in Surefire/Failsafe, or explain precisely.
@@ -862,6 +862,7 @@ rdf4j: root project
 
 * Don’t commit or push unless explicitly asked.
 * Don’t add new dependencies without explicit approval.
+* Never revert unrelated working tree changes
 
 ### Version Control Conventions
 

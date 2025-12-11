@@ -513,6 +513,13 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		return message;
 	}
 
+	/**
+	 * @return any explicit sh:message values defined on this shape, without falling back to constraint defaults.
+	 */
+	public final List<Literal> getExplicitMessages() {
+		return message;
+	}
+
 	@Override
 	public List<Literal> getDefaultMessage() {
 		return constraintComponents

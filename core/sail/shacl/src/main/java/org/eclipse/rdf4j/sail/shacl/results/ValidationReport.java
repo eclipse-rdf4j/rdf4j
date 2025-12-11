@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
 /**
@@ -74,7 +75,11 @@ public class ValidationReport {
 	}
 
 	public Model asModel() {
-		return asModel(DYNAMIC_MODEL_FACTORY.createEmptyModel());
+		Model model = asModel(DYNAMIC_MODEL_FACTORY.createEmptyModel());
+		model.setNamespace(SHACL.PREFIX, SHACL.NAMESPACE);
+		model.setNamespace(RDF.PREFIX, RDF.NAMESPACE);
+		model.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
+		return model;
 	}
 
 	public final Resource getId() {

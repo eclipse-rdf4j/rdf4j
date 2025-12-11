@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 
 /**
  * @author Florian Kleedorfer
@@ -54,6 +55,17 @@ public class ShaclSailValidationReportHelper {
 		return Optional.of(reportAsString);
 	}
 
+
+	public static Optional<String> getValidationReportAsString(ValidationReport t) {
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		printValidationReport(t, baos);
+		String reportAsString = baos.toString();
+		if (reportAsString == null || reportAsString.isBlank()) {
+			return Optional.empty();
+		}
+		return Optional.of(reportAsString);
+	}
+
 	/**
 	 * Finds a validation report using {@link #getValidationReport(Throwable)} and pretty-prints it to the specified
 	 * output stream.
@@ -67,6 +79,13 @@ public class ShaclSailValidationReportHelper {
 			Rio.write(reportOpt.get(), out, RDFFormat.TURTLE, WRITER_CONFIG);
 		}
 	}
+
+	public static void printValidationReport(ValidationReport t, OutputStream out) {
+		Model model = t.asModel();
+			Rio.write(model, out, RDFFormat.TURTLE, WRITER_CONFIG);
+
+	}
+
 
 	/**
 	 * Looks for a {@link ValidationException} starting with the specified throwable and working back through the cause
