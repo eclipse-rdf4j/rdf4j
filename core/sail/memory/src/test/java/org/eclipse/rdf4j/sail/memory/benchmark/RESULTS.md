@@ -36,35 +36,35 @@ QueryBenchmark.valuesDupUnion                                 avgt    5  262.925
 ## With sketch-based join optimization
 ```
 Benchmark                                                     Mode  Cnt    Score    Error  Units
-QueryBenchmark.complexQuery                                   avgt    5    1.606 ±  0.190  ms/op
-QueryBenchmark.contactPointPathChase                          avgt    5   27.515 ±  0.849  ms/op
-QueryBenchmark.different_datasets_with_similar_distributions  avgt    5    1.651 ±  0.158  ms/op
-QueryBenchmark.distributionMediaContrast                      avgt    5  205.553 ± 21.885  ms/op
-QueryBenchmark.groupByQuery                                   avgt    5    0.451 ±  0.010  ms/op
-QueryBenchmark.joinReorderStress                              avgt    5  304.501 ± 16.683  ms/op
-QueryBenchmark.languageGroupHaving                            avgt    5    6.166 ±  0.935  ms/op
-QueryBenchmark.languageUnionRegex                             avgt    5    2.443 ±  0.349  ms/op
-QueryBenchmark.long_chain                                     avgt    5  163.361 ± 16.123  ms/op
-QueryBenchmark.lots_of_optional                               avgt    5   34.352 ±  3.437  ms/op
-QueryBenchmark.minus                                          avgt    5    4.613 ±  1.646  ms/op
-QueryBenchmark.multipleSubSelect                              avgt    5   24.853 ±  2.058  ms/op
-QueryBenchmark.nested_optionals                               avgt    5   50.780 ±  2.611  ms/op
-QueryBenchmark.optionalFilterPushdown                         avgt    5   12.971 ±  1.910  ms/op
-QueryBenchmark.optional_lhs_filter                            avgt    5   10.436 ±  1.075  ms/op
-QueryBenchmark.optional_rhs_filter                            avgt    5   19.960 ±  1.684  ms/op
-QueryBenchmark.overlappingOptionalsFiltered                   avgt    5   28.078 ±  2.121  ms/op
-QueryBenchmark.overlappingOptionalsWide                       avgt    5   76.320 ±  7.896  ms/op
-QueryBenchmark.pathExpressionQuery1                           avgt    5    4.918 ±  0.812  ms/op
-QueryBenchmark.pathExpressionQuery2                           avgt    5    0.413 ±  0.038  ms/op
-QueryBenchmark.publisherDistributionAggregation               avgt    5   12.180 ±  1.095  ms/op
-QueryBenchmark.query10                                        avgt    5  117.414 ± 12.996  ms/op
-QueryBenchmark.query_distinct_predicates                      avgt    5   44.352 ±  3.565  ms/op
-QueryBenchmark.simple_filter_not                              avgt    5    1.983 ±  0.516  ms/op
-QueryBenchmark.starPathFanout                                 avgt    5  100.152 ±  2.997  ms/op
-QueryBenchmark.subSelect                                      avgt    5   43.182 ±  7.021  ms/op
-QueryBenchmark.topTitlesByLength                              avgt    5    0.102 ±  0.002  ms/op
-QueryBenchmark.unionPublisherDedup                            avgt    5   22.348 ±  2.501  ms/op
-QueryBenchmark.valuesDupUnion                                 avgt    5    7.838 ±  1.619  ms/op
+QueryBenchmark.complexQuery                                   avgt    5    0.838 ±  0.058  ms/op
+QueryBenchmark.contactPointPathChase                          avgt    5   27.064 ±  0.767  ms/op
+QueryBenchmark.different_datasets_with_similar_distributions  avgt    5    0.341 ±  0.003  ms/op
+QueryBenchmark.distributionMediaContrast                      avgt    5  237.293 ± 22.346  ms/op
+QueryBenchmark.groupByQuery                                   avgt    5    0.547 ±  0.135  ms/op
+QueryBenchmark.joinReorderStress                              avgt    5  316.609 ± 14.024  ms/op
+QueryBenchmark.languageGroupHaving                            avgt    5    5.652 ±  0.313  ms/op
+QueryBenchmark.languageUnionRegex                             avgt    5    1.554 ±  0.045  ms/op
+QueryBenchmark.long_chain                                     avgt    5  133.697 ±  2.341  ms/op
+QueryBenchmark.lots_of_optional                               avgt    5   29.869 ±  1.568  ms/op
+QueryBenchmark.minus                                          avgt    5    3.849 ±  0.351  ms/op
+QueryBenchmark.multipleSubSelect                              avgt    5   20.308 ±  1.059  ms/op
+QueryBenchmark.nested_optionals                               avgt    5   46.416 ±  1.155  ms/op
+QueryBenchmark.optionalFilterPushdown                         avgt    5   11.506 ±  0.565  ms/op
+QueryBenchmark.optional_lhs_filter                            avgt    5    9.958 ±  0.629  ms/op
+QueryBenchmark.optional_rhs_filter                            avgt    5   12.389 ±  0.851  ms/op
+QueryBenchmark.overlappingOptionalsFiltered                   avgt    5   25.515 ±  0.895  ms/op
+QueryBenchmark.overlappingOptionalsWide                       avgt    5   70.990 ±  2.499  ms/op
+QueryBenchmark.pathExpressionQuery1                           avgt    5    4.386 ±  0.218  ms/op
+QueryBenchmark.pathExpressionQuery2                           avgt    5    0.394 ±  0.005  ms/op
+QueryBenchmark.publisherDistributionAggregation               avgt    5   10.730 ±  0.536  ms/op
+QueryBenchmark.query10                                        avgt    5  119.851 ±  5.581  ms/op
+QueryBenchmark.query_distinct_predicates                      avgt    5   49.313 ±  3.660  ms/op
+QueryBenchmark.simple_filter_not                              avgt    5    1.892 ±  0.023  ms/op
+QueryBenchmark.starPathFanout                                 avgt    5   92.395 ±  5.806  ms/op
+QueryBenchmark.subSelect                                      avgt    5   36.521 ±  1.389  ms/op
+QueryBenchmark.topTitlesByLength                              avgt    5    0.038 ±  0.001  ms/op
+QueryBenchmark.unionPublisherDedup                            avgt    5   21.263 ±  0.248  ms/op
+QueryBenchmark.valuesDupUnion                                 avgt    5    5.181 ±  0.348  ms/op
 ```
 
 
