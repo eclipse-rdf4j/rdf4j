@@ -1,12 +1,70 @@
-# AGENTS.md
+# You are a very strong reasoner and planner. Use these critical instructions to structure your plans, thoughts, and responses.
 
-Welcome, AI Agent! Your persistence, curiosity, and craftsmanship make a difference. Take your time, work methodically, validate thoroughly, and iterate. This repository is large and tests can take time — that’s expected and supported.
+Before taking any action (either tool calls *or* responses to the user), you must proactively, methodically, and independently plan and reason about:
 
-You need to read the entire AGENTS.md file and follow all instructions exactly. Keep this fresh in your context as you work.
+1) Logical dependencies and constraints: Analyze the intended action against the following factors. Resolve conflicts in order of importance:
+
+   1.1) Policy-based rules, mandatory prerequisites, and constraints.
+
+   1.2) Order of operations: Ensure taking an action does not prevent a subsequent necessary action.
+
+        1.2.1) The user may request actions in a random order, but you may need to reorder operations to maximize successful completion of the task.
+
+   1.3) Other prerequisites (information and/or actions needed).
+
+   1.4) Explicit user constraints or preferences.
+
+2) Risk assessment: What are the consequences of taking the action? Will the new state cause any future issues?
+
+   2.1) For exploratory tasks (like searches), missing *optional* parameters is a LOW risk.  
+   **Prefer calling the tool with the available information over asking the user, unless** your `Rule 1` (Logical Dependencies) reasoning determines that optional information is required for a later step in your plan.
+
+3) Abductive reasoning and hypothesis exploration: At each step, identify the most logical and likely reason for any problem encountered.
+
+   3.1) Look beyond immediate or obvious causes. The most likely reason may not be the simplest and may require deeper inference.
+
+   3.2) Hypotheses may require additional research. Each hypothesis may take multiple steps to test.
+
+   3.3) Prioritize hypotheses based on likelihood, but do not discard less likely ones prematurely. A low-probability event may still be the root cause.
+
+4) Outcome evaluation and adaptability: Does the previous observation require any changes to your plan?
+
+   4.1) If your initial hypotheses are disproven, actively generate new ones based on the gathered information.
+
+5) Information availability: Incorporate all applicable and alternative sources of information, including:
+
+   5.1) Using available tools and their capabilities  
+   5.2) All policies, rules, checklists, and constraints  
+   5.3) Previous observations and conversation history  
+   5.4) Information only available by asking the user
+
+6) Precision and Grounding: Ensure your reasoning is extremely precise and relevant to each exact ongoing situation.
+
+   6.1) Verify your claims by quoting the exact applicable information (including policies) when referring to them.
+
+7) Completeness: Ensure that all requirements, constraints, options, and preferences are exhaustively incorporated into your plan.
+
+   7.1) Resolve conflicts using the order of importance in #1.
+
+   7.2) Avoid premature conclusions: There may be multiple relevant options for a given situation.
+
+        7.2.1) To check for whether an option is relevant, reason about all information sources from #5.  
+
+        7.2.2) You may need to consult the user to even know whether something is applicable. Do not assume it is not applicable without checking.
+
+   7.3) Review applicable sources of information from #5 to confirm which are relevant to the current state.
+
+8) Persistence and patience: Do not give up unless all the reasoning above is exhausted.
+
+   8.1) Don't be dissuaded by time taken or user frustration.
+
+   8.2) This persistence must be intelligent: On *transient* errors (e.g. please try again), you *must* retry **unless an explicit retry limit (e.g., max x tries) has been reached**. If such a limit is hit, you *must* stop. On *other* errors, you must change your strategy or arguments, not repeat the same failed call.
+
+9) Inhibit your response: only take an action after all the above reasoning is completed. Once you've taken an action, you cannot take it back.
 
 ---
 
-## Read‑Me‑Now: Proportional Test‑First Rule (Default)
+## Read‑Me‑Now: Proportional Test‑First Rule
 
 **Default:** Use **test‑first (TDD)** for any change that alters externally observable behavior.
 
@@ -31,20 +89,16 @@ It is illegal to `-q` when running tests!
 
 ## Four Routines: Choose Your Path
 
-**Routine A — Full TDD (Default)**
+**Routine A — Full TDD**
 **Routine B — Change without new tests (Proportional, gated)**
 **Routine C — Spike/Investigate (No production changes)**
 **Routine D — ExecPlans: Complex features or significant refactors**
 
 ### Decision quickstart
 
-1. **Is ExecPlans required (complex feature, significant refactor or requested by the user)?**
+1. **Is ExecPlans required (complex feature, significant refactor, etc. or explicitly requested by the user)?**
    → **Yes:** **Routine D (ExecPlans)**. Use an ExecPlan (as described in .agent/PLANS.md) from design to implementation.
    → **No:** continue.
-
-2**Is new externally observable behavior required?**
-→ **Yes:** **Routine A (Full TDD)**. Add the smallest failing test first.
-→ **No:** continue.
 
 3**Does a failing test already exist in this repo that pinpoints the issue?**
 → **Yes:** **Routine B (Bugfix using existing failing test).**
@@ -54,13 +108,19 @@ It is illegal to `-q` when running tests!
 → **Yes:** **Routine B (Refactor/micro‑perf/documentation/build).**
 → **No or unsure:** continue.
 
-5**Is this purely an investigation/design spike with no production code changes?**
-→ **Yes:** **Routine C (Spike/Investigate).**
-→ **No or unsure:** **Routine A.**
+4. **Is new externally observable behavior required?**
+   → **Yes:** **Routine A (Full TDD)**. Add the smallest failing test first.
+   → **No:** continue.
 
-**When in doubt, choose Routine A (Full TDD).** Ambiguity is risk; tests are insurance.
+5. **Is this purely an investigation/design spike with no production code changes?**
+   → **Yes:** **Routine C (Spike/Investigate).**
+   → **No or unsure:** **Routine A.**
 
 ---
+
+## ExecPlans
+
+When writing complex features or significant refactors, use an ExecPlan (as described in PLANS.md) from design to implementation.
 
 ## ExecPlans
 
@@ -257,12 +317,12 @@ Plan
 `-am` is helpful for **compiles**, hazardous for **tests**.
 
 * ✅ Use `-am` **only** for compile/verify with tests skipped (e.g. `-Pquick`):
-    * `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick install`
+    * `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install`
 * ❌ Do **not** use `-am` with `verify` when tests are enabled.
 
 **Two-step pattern (fast + safe)**
 1. **Compile deps fast (skip tests):**
-   `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick install`
+   `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install`
 2. **Run tests:**
    `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tail -500`
 
@@ -276,9 +336,10 @@ It is illegal to `-q` when running tests!
 The Maven reactor resolves inter-module dependencies from the configured local Maven repository (here: `.m2_repo`).
 Running `install` publishes your changed modules there so downstream modules and tests pick up the correct versions.
 
-* Always run `mvn -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200` before you start working. This command typically takes up to 30 seconds. Never use a shorter timeout than 30,000 ms.
-* Always run `mvn -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200` before any `verify` or test runs.
-* If offline resolution fails due to a missing dependency or plugin, rerun the exact `install` command once without `-o`, then return offline.
+* Always run `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200` before you start working. This command typically takes up to 30 seconds. Never use a shorter timeout than 60,000 ms.
+* Always run `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200` before any `verify` or test runs.
+* If offline resolution fails due to a missing dependency or plugin, run the command without `-o`: `mvn -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`, then return offline.
+* If it fails for any other reason, run the command without `-T 1C`: `mvn -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`.
 * Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
 * Always use a workspace-local Maven repository: append `-Dmaven.repo.local=.m2_repo` to all Maven commands (install, verify, formatter, etc.).
 * Always try to run these commands first to see if they run without needing any approvals from the user w.r.t. the sandboxing.
@@ -287,8 +348,8 @@ Why this is mandatory
 
 - Tests must not use `-am`. Without `-am`, Maven will not build upstream modules when you run tests; it will resolve cross‑module dependencies from the configured local repository (here: `.m2_repo`).
 - Therefore, tests only see whatever versions were last published to the configured local repo (`.m2_repo`). If you change code in one module and then run tests in another, those tests will not see your changes unless the updated module has been installed to `.m2_repo` first.
-- The reliable way to ensure all tests always use the latest code across the entire multi‑module build is to install all modules to the configured local repo (`.m2_repo`) before running any tests: run `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install` at the repository root.
-- In tight loops you may also install a specific module and its deps (`-pl <module> -am -Pquick install`) to iterate quickly, but before executing tests anywhere that depend on your changes, run a root‑level `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install` so the latest jars are available to the reactor from `.m2_repo`.
+- The reliable way to ensure all tests always use the latest code across the entire multi‑module build is to install all modules to the configured local repo (`.m2_repo`) before running any tests: run `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install` at the repository root.
+- In tight loops you may also install a specific module and its deps (`-pl <module> -am -Pquick clean install`) to iterate quickly, but before executing tests anywhere that depend on your changes, run a root‑level `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install` so the latest jars are available to the reactor from `.m2_repo`.
 ---
 
 ## Quick Start (First 10 Minutes)
@@ -297,7 +358,7 @@ Why this is mandatory
     * Inspect root `pom.xml` and module tree (see “Maven Module Overview”).
     * Search fast with ripgrep: `rg -n "<symbol or string>"`
 2. **Build sanity (fast, skip tests)**
-    * `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install | tail -200`
+    * `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`
 3. **Format (Java, imports, XML)**
     * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
 4. **Targeted tests (tight loops)**
@@ -313,7 +374,7 @@ It is illegal to `-q` when running tests!
 
 ---
 
-## Routine A — Full TDD (Default)
+## Routine A — Full TDD
 
 > Use for **all behavior‑changing work** and whenever Routine B gates do not all pass.
 
@@ -407,7 +468,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 * **Plan:** small, verifiable steps; keep one `in_progress`, or follow PLANS.md (ExecPlans)
 * **Change:** minimal, surgical edits; keep style/structure consistent.
 * **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
-* **Compile (fast):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick install | tail -500`
+* **Compile (fast):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install | tail -500`
 * **Test:** start smallest (class/method → module). For integration, run module `verify`.
 * **Triage:** read reports; fix root cause; expand scope only when needed.
 * **Iterate:** keep momentum; escalate only when blocked or irreversible.
@@ -514,7 +575,7 @@ Do **not** modify existing headers’ years.
 ## Pre‑Commit Checklist
 
 * **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
-* **Compile (fast path):** `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install | tail -200`
+* **Compile (fast path):** `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`
 * **Tests (targeted):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tail -500` (broaden as needed)
 * **Reports:** zero new failures in Surefire/Failsafe, or explain precisely.
 * **Evidence:** Routine A — failing pre‑fix + passing post‑fix.
@@ -629,7 +690,7 @@ Do **not** modify existing headers’ years.
 ## Build
 
 * **Build without tests (fast path):**
-  `mvn -o -Dmaven.repo.local=.m2_repo -Pquick install`
+  `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install`
 * **Verify with tests:**
   Targeted module(s): `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify`
   Entire repo: `mvn -o -Dmaven.repo.local=.m2_repo verify` (use judiciously)
@@ -751,7 +812,6 @@ rdf4j: root project
     │   ├── lmdb: Sail implementation that stores data to disk using LMDB.
     │   ├── lucene-api: StackableSail API offering full-text search on literals, based on Apache Lucene.
     │   ├── lucene: StackableSail implementation offering full-text search on literals, based on Apache Lucene.
-    │   ├── solr: StackableSail implementation offering full-text search on literals, based on Solr.
     │   ├── elasticsearch: StackableSail implementation offering full-text search on literals, based on Elastic Search.
     │   ├── elasticsearch-store: Store for utilizing Elasticsearch as a triplestore.
     │   └── extensible-store: Store that can be extended with a simple user-made backend.
@@ -791,7 +851,6 @@ rdf4j: root project
     ├── model: RDF4J: Model compliance tests
     ├── sparql: Tests for the SPARQL query language implementation
     ├── lucene: Compliance Tests for LuceneSail.
-    ├── solr: Tests for Solr Sail.
     ├── elasticsearch: Tests for Elasticsearch.
     └── geosparql: Tests for the GeoSPARQL query language implementation
 ├── examples: Examples and HowTos for use of RDF4J in Java
@@ -803,6 +862,7 @@ rdf4j: root project
 
 * Don’t commit or push unless explicitly asked.
 * Don’t add new dependencies without explicit approval.
+* Never revert unrelated working tree changes
 
 ### Version Control Conventions
 
