@@ -63,6 +63,7 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 				double estimatedCardinality = sketchBasedJoinEstimator.cardinality(node);
 				if (estimatedCardinality >= 0) {
 					this.cardinality = estimatedCardinality;
+					node.setCostEstimate(estimatedCardinality);
 					return;
 				}
 			}
