@@ -178,8 +178,8 @@ class ServerBootSignalIT {
 			} catch (IOException e) {
 				synchronized (outputBuffer) {
 					outputBuffer.append("Failed to read process output: ")
-						.append(e.getMessage())
-						.append(System.lineSeparator());
+							.append(e.getMessage())
+							.append(System.lineSeparator());
 				}
 			}
 		});
@@ -196,7 +196,7 @@ class ServerBootSignalIT {
 	}
 
 	private void exerciseRemoteRepository(String serverUrl, StringBuilder outputBuffer)
-				throws InterruptedException, RepositoryException, RepositoryConfigException {
+			throws InterruptedException, RepositoryException, RepositoryConfigException {
 		RemoteRepositoryManager manager = awaitRepositoryManager(serverUrl, outputBuffer);
 		String repoId = "signal-" + UUID.randomUUID();
 		try {
@@ -238,7 +238,7 @@ class ServerBootSignalIT {
 	}
 
 	private RemoteRepositoryManager awaitRepositoryManager(String serverUrl, StringBuilder outputBuffer)
-				throws InterruptedException {
+			throws InterruptedException {
 		RepositoryException lastException = null;
 		long deadline = System.nanoTime() + SECONDS.toNanos(90);
 		while (System.nanoTime() < deadline) {
@@ -260,7 +260,7 @@ class ServerBootSignalIT {
 			}
 		}
 		String errorMessage = "Timed out connecting to " + serverUrl + " Output:\\n" + outputBuffer
-					+ (lastException == null ? "" : ("\nLast error: " + lastException));
+				+ (lastException == null ? "" : ("\nLast error: " + lastException));
 		fail(errorMessage);
 		return null;
 	}
