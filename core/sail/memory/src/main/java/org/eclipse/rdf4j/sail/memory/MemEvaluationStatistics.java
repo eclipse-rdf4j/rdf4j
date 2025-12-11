@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
+import java.util.Arrays;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -81,7 +82,7 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 			StatementPattern left = (StatementPattern) original.getLeftArg();
 			StatementPattern right = (StatementPattern) original.getRightArg();
 			this.signature = computeSignature(left, right);
-			this.hash = java.util.Arrays.hashCode(signature);
+			this.hash = Arrays.hashCode(signature);
 		}
 
 		@Override
@@ -93,7 +94,7 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 				return false;
 			}
 			IsomorphicJoin o = (IsomorphicJoin) other;
-			return java.util.Arrays.equals(this.signature, o.signature);
+			return Arrays.equals(this.signature, o.signature);
 		}
 
 		@Override
@@ -103,48 +104,69 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 
 		@Override
 		public String toString() {
-			return "IsomorphicJoin(signature=" + java.util.Arrays.toString(signature) + ")";
+			return "IsomorphicJoin(signature=" + Arrays.toString(signature) + ")";
 		}
 
 		private static Object[] computeSignature(StatementPattern left, StatementPattern right) {
-			java.util.Map<Object, Token> tokens = new java.util.HashMap<>();
-			java.util.List<Object> sig = new java.util.ArrayList<>(10);
-			Counters counters = new Counters();
+			Object[] sig = new Object[10];
+			Var[] seenVars = new Var[8];
+			BNode[] seenBNodes = new BNode[8];
+			int[] counts = new int[2]; // [0]=vars, [1]=bnodes
 
-			addPatternSignature(sig, left, tokens, counters);
-			addPatternSignature(sig, right, tokens, counters);
+			int idx = 0;
+			idx = addPatternSignature(sig, idx, left, seenVars, seenBNodes, counts);
+			addPatternSignature(sig, idx, right, seenVars, seenBNodes, counts);
 
-			return sig.toArray();
+			return sig;
 		}
 
-		private static void addPatternSignature(java.util.List<Object> sig, StatementPattern sp,
-				java.util.Map<Object, Token> tokens, Counters counters) {
-			sig.add(sp.getScope());
-			addVarSignature(sig, sp.getSubjectVar(), tokens, counters);
-			addVarSignature(sig, sp.getPredicateVar(), tokens, counters);
-			addVarSignature(sig, sp.getObjectVar(), tokens, counters);
-			addVarSignature(sig, sp.getContextVar(), tokens, counters);
+		private static int addPatternSignature(Object[] sig, int idx, StatementPattern sp,
+				Var[] seenVars, BNode[] seenBNodes, int[] counts) {
+			sig[idx++] = sp.getScope();
+			idx = addVarSignature(sig, idx, sp.getSubjectVar(), seenVars, seenBNodes, counts);
+			idx = addVarSignature(sig, idx, sp.getPredicateVar(), seenVars, seenBNodes, counts);
+			idx = addVarSignature(sig, idx, sp.getObjectVar(), seenVars, seenBNodes, counts);
+			idx = addVarSignature(sig, idx, sp.getContextVar(), seenVars, seenBNodes, counts);
+			return idx;
 		}
 
-		private static void addVarSignature(java.util.List<Object> sig, Var var, java.util.Map<Object, Token> tokens,
-				Counters counters) {
+		private static int addVarSignature(Object[] sig, int idx, Var var,
+				Var[] seenVars, BNode[] seenBNodes, int[] counts) {
 			if (var == null) {
-				sig.add(NullToken.INSTANCE);
-				return;
+				sig[idx++] = NullToken.INSTANCE;
+				return idx;
 			}
 
 			if (var.hasValue()) {
 				Value v = var.getValue();
 				if (v instanceof BNode) {
-					Token t = tokens.computeIfAbsent(v, k -> new Token('b', counters.nextBNodeId++));
-					sig.add(t);
+					int id = indexOf(seenBNodes, counts[1], (BNode) v);
+					if (id < 0) {
+						id = counts[1]++;
+						seenBNodes[id] = (BNode) v;
+					}
+					sig[idx++] = new Token('b', id);
 				} else {
-					sig.add(constantKey(v));
+					sig[idx++] = constantKey(v);
 				}
 			} else {
-				Token t = tokens.computeIfAbsent(var, k -> new Token('v', counters.nextVarId++));
-				sig.add(t);
+				int id = indexOf(seenVars, counts[0], var);
+				if (id < 0) {
+					id = counts[0]++;
+					seenVars[id] = var;
+				}
+				sig[idx++] = new Token('v', id);
 			}
+			return idx;
+		}
+
+		private static <T> int indexOf(T[] array, int count, T value) {
+			for (int i = 0; i < count; i++) {
+				if (array[i].equals(value)) {
+					return i;
+				}
+			}
+			return -1;
 		}
 
 		private static String constantKey(Value v) {
@@ -164,11 +186,6 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 				return "T:" + v.stringValue();
 			}
 			return "V:" + v.stringValue();
-		}
-
-		private static final class Counters {
-			int nextVarId = 0;
-			int nextBNodeId = 0;
 		}
 
 		private static final class Token {
