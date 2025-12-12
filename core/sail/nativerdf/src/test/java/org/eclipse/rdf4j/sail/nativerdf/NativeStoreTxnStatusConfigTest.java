@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.nativerdf;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.lang.reflect.Field;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -42,20 +43,33 @@ class NativeStoreTxnStatusConfigTest {
 		cfg.setMemoryMappedTxnStatusFileEnabled(true);
 
 		NativeStoreFactory factory = new NativeStoreFactory();
-		NativeStore sail = (NativeStore) factory.getSail(cfg);
-		sail.setDataDir(dataDir);
+                NativeStore sail = (NativeStore) factory.getSail(cfg);
+                sail.setDataDir(dataDir);
 
-		Repository repo = new SailRepository(sail);
-		repo.init();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			ValueFactory vf = SimpleValueFactory.getInstance();
-			IRI p = vf.createIRI("http://example.com/p");
-			conn.add(vf.createIRI("http://example.com/s"), p, vf.createLiteral("o"));
-		}
+                Repository repo = new SailRepository(sail);
+                repo.init();
+                assertThat(extractTxnStatusFile(sail)).isInstanceOf(MemoryMappedTxnStatusFile.class);
+                try (RepositoryConnection conn = repo.getConnection()) {
+                        ValueFactory vf = SimpleValueFactory.getInstance();
+                        IRI p = vf.createIRI("http://example.com/p");
+                        conn.add(vf.createIRI("http://example.com/s"), p, vf.createLiteral("o"));
+                }
 		repo.shutDown();
 
-		File txnStatusFile = new File(dataDir, TxnStatusFile.FILE_NAME);
-		assertThat(txnStatusFile).exists();
-		assertThat(txnStatusFile.length()).isEqualTo(1L);
-	}
+                File txnStatusFile = new File(dataDir, TxnStatusFile.FILE_NAME);
+                assertThat(txnStatusFile).exists();
+                assertThat(txnStatusFile.length()).isEqualTo(1L);
+        }
+
+        private TxnStatusFile extractTxnStatusFile(NativeStore sail) throws Exception {
+                NativeSailStore store = (NativeSailStore) sail.getSailStore();
+
+                Field tripleStoreField = NativeSailStore.class.getDeclaredField("tripleStore");
+                tripleStoreField.setAccessible(true);
+                TripleStore tripleStore = (TripleStore) tripleStoreField.get(store);
+
+                Field txnStatusFileField = TripleStore.class.getDeclaredField("txnStatusFile");
+                txnStatusFileField.setAccessible(true);
+                return (TxnStatusFile) txnStatusFileField.get(tripleStore);
+        }
 }
