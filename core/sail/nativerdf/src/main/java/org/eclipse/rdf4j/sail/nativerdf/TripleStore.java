@@ -168,13 +168,18 @@ class TripleStore implements Closeable {
 	 *--------------*/
 
 	public TripleStore(File dir, String indexSpecStr) throws IOException, SailException {
-		this(dir, indexSpecStr, false);
+		this(dir, indexSpecStr, false, null);
 	}
 
 	public TripleStore(File dir, String indexSpecStr, boolean forceSync) throws IOException, SailException {
+		this(dir, indexSpecStr, forceSync, null);
+	}
+
+	public TripleStore(File dir, String indexSpecStr, boolean forceSync, Boolean memoryMappedTxnStatusFileEnabled)
+			throws IOException, SailException {
 		this.dir = dir;
 		this.forceSync = forceSync;
-		this.txnStatusFile = createTxnStatusFile(dir);
+		this.txnStatusFile = createTxnStatusFile(dir, memoryMappedTxnStatusFileEnabled);
 
 		File propFile = new File(dir, PROPERTIES_FILE);
 
@@ -229,8 +234,12 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private static TxnStatusFile createTxnStatusFile(File dir) throws IOException {
-		if (Boolean.getBoolean(MEMORY_MAPPED_TXN_STATUS_FILE_ENABLED_PROP)) {
+	private static TxnStatusFile createTxnStatusFile(File dir, Boolean memoryMappedTxnStatusFileEnabled)
+			throws IOException {
+		boolean enabled = memoryMappedTxnStatusFileEnabled != null
+				? memoryMappedTxnStatusFileEnabled
+				: Boolean.getBoolean(MEMORY_MAPPED_TXN_STATUS_FILE_ENABLED_PROP);
+		if (enabled) {
 			return new MemoryMappedTxnStatusFile(dir);
 		}
 		return new TxnStatusFile(dir);
