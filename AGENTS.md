@@ -862,6 +862,7 @@ rdf4j: root project
 
 * Don’t commit or push unless explicitly asked.
 * Don’t add new dependencies without explicit approval.
+* Never revert unrelated working tree changes
 
 ### Version Control Conventions
 
