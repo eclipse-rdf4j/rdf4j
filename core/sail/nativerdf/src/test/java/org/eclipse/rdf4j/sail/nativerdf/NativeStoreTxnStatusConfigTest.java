@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreConfig;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreFactory;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -32,13 +31,8 @@ class NativeStoreTxnStatusConfigTest {
 	@TempDir
 	File dataDir;
 
-	@AfterEach
-	void clearSystemProperty() {
-		System.clearProperty("org.eclipse.rdf4j.sail.nativerdf.MemoryMappedTxnStatusFile.enabled");
-	}
-
-	@Test
-	void configEnablesMemoryMappedTxnStatusFile() throws Exception {
+        @Test
+        void configEnablesMemoryMappedTxnStatusFile() throws Exception {
 		NativeStoreConfig cfg = new NativeStoreConfig("spoc");
 		cfg.setMemoryMappedTxnStatusFileEnabled(true);
 

@@ -20,23 +20,24 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Verifies that the implementation used for the transaction status file can be controlled via a system property.
+ * Verifies that the implementation used for the transaction status file is controlled through configuration rather than a
+ * JVM system property.
  */
 public class MemoryMappedTxnStatusFileConfigTest {
 
-	private static final String MEMORY_MAPPED_ENABLED_PROP = "org.eclipse.rdf4j.sail.nativerdf.MemoryMappedTxnStatusFile.enabled";
+    private static final String MEMORY_MAPPED_ENABLED_PROP = "org.eclipse.rdf4j.sail.nativerdf.MemoryMappedTxnStatusFile.enabled";
 
-	@TempDir
-	File dataDir;
+    @TempDir
+    File dataDir;
 
-	@AfterEach
-	public void clearProperty() {
-		System.clearProperty(MEMORY_MAPPED_ENABLED_PROP);
-	}
+    @AfterEach
+    public void clearProperty() {
+            System.clearProperty(MEMORY_MAPPED_ENABLED_PROP);
+    }
 
-	@Test
-	public void defaultUsesNioTxnStatusFile() throws Exception {
-		TripleStore tripleStore = new TripleStore(dataDir, "spoc");
+    @Test
+    public void defaultUsesNioTxnStatusFile() throws Exception {
+            TripleStore tripleStore = new TripleStore(dataDir, "spoc");
 		try {
 			tripleStore.startTransaction();
 			tripleStore.storeTriple(1, 2, 3, 4);
@@ -52,21 +53,21 @@ public class MemoryMappedTxnStatusFileConfigTest {
 	}
 
 	@Test
-	public void memoryMappedEnabledUsesFixedSizeFile() throws Exception {
-		System.setProperty(MEMORY_MAPPED_ENABLED_PROP, "true");
+    public void systemPropertyIsIgnored() throws Exception {
+            System.setProperty(MEMORY_MAPPED_ENABLED_PROP, "true");
 
-		TripleStore tripleStore = new TripleStore(dataDir, "spoc");
-		try {
-			tripleStore.startTransaction();
-			tripleStore.storeTriple(1, 2, 3, 4);
+            TripleStore tripleStore = new TripleStore(dataDir, "spoc");
+            try {
+                    tripleStore.startTransaction();
+                    tripleStore.storeTriple(1, 2, 3, 4);
 			tripleStore.commit();
 		} finally {
 			tripleStore.close();
-		}
+            }
 
-		File txnStatusFile = new File(dataDir, TxnStatusFile.FILE_NAME);
-		assertTrue(txnStatusFile.exists(), "Transaction status file should exist");
-		assertEquals(1L, txnStatusFile.length(),
-				"Memory-mapped TxnStatusFile keeps a single status byte on disk for NONE status");
-	}
+            File txnStatusFile = new File(dataDir, TxnStatusFile.FILE_NAME);
+            assertTrue(txnStatusFile.exists(), "Transaction status file should exist");
+            assertEquals(0L, txnStatusFile.length(),
+                            "System property does not switch to memory-mapped TxnStatusFile");
+    }
 }
