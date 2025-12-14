@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Page not found | RDF4J</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+    body {
+      margin: 2rem auto;
+      max-width: 48rem;
+      padding: 0 1.5rem;
+    }
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+    p {
+      margin-top: 0;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Page not found</h1>
+    <p>We could not find the page you were looking for.</p>
+    <p>If you followed a link to a specific Javadoc version, we will try to forward you to the closest available version automatically.</p>
+  </main>
+  <script type="module">
+    import { attemptJavadocRedirect } from '/js/javadoc-redirect.js';
+
+    attemptJavadocRedirect();
+  </script>
+</body>
+</html>
