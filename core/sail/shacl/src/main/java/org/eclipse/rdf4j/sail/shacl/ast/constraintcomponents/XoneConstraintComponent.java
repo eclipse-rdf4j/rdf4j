@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -99,21 +100,30 @@ public class XoneConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-		if (o == null || getClass() != o.getClass()) {
+	public boolean equals(ConstraintComponent o, IdentityHashMap<Shape, Shape> guard) {
+		if (!(o instanceof XoneConstraintComponent)) {
 			return false;
 		}
 
 		XoneConstraintComponent that = (XoneConstraintComponent) o;
 
-		return xone.equals(that.xone);
+		if (xone.size() != that.xone.size()) {
+			return false;
+		}
+		for (int i = 0; i < xone.size(); i++) {
+			if (!xone.get(i).equals(that.xone.get(i), guard)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	@Override
-	public int hashCode() {
-		return xone.hashCode() + "XoneConstraintComponent".hashCode();
+	public int hashCode(IdentityHashMap<Shape, Boolean> guard) {
+		int result = "XoneConstraintComponent".hashCode();
+		for (Shape shape : xone) {
+			result = 31 * result + shape.hashCode(guard);
+		}
+		return result;
 	}
 }

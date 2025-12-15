@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -212,21 +213,15 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
+	public boolean equals(ConstraintComponent that, IdentityHashMap<Shape, Shape> guard) {
+		if (that instanceof NotConstraintComponent) {
+			return not.equals(((NotConstraintComponent) that).not, guard);
 		}
-		if (o == null || getClass() != o.getClass()) {
-			return false;
-		}
-
-		NotConstraintComponent that = (NotConstraintComponent) o;
-
-		return not.equals(that.not);
+		return false;
 	}
 
 	@Override
-	public int hashCode() {
-		return not.hashCode() + "NotConstraintComponent".hashCode();
+	public int hashCode(IdentityHashMap<Shape, Boolean> guard) {
+		return not.hashCode(guard) + "NotConstraintComponent".hashCode();
 	}
 }
