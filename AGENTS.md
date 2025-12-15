@@ -98,7 +98,7 @@ It is illegal to `-q` when running tests!
 
 1. **Is ExecPlans required (complex feature, significant refactor, etc. or explicitly requested by the user)?**
    → **Yes:** **Routine D (ExecPlans)**. Use an ExecPlan (as described in .agent/PLANS.md) from design to implementation.
-→ **No:** continue.
+   → **No:** continue.
 
 3**Does a failing test already exist in this repo that pinpoints the issue?**
 → **Yes:** **Routine B (Bugfix using existing failing test).**
@@ -109,12 +109,12 @@ It is illegal to `-q` when running tests!
 → **No or unsure:** continue.
 
 4. **Is new externally observable behavior required?**
-→ **Yes:** **Routine A (Full TDD)**. Add the smallest failing test first.
-→ **No:** continue.
+   → **Yes:** **Routine A (Full TDD)**. Add the smallest failing test first.
+   → **No:** continue.
 
 5. **Is this purely an investigation/design spike with no production code changes?**
-→ **Yes:** **Routine C (Spike/Investigate).**
-→ **No or unsure:** **Routine A.**
+   → **Yes:** **Routine C (Spike/Investigate).**
+   → **No or unsure:** **Routine A.**
 
 ---
 
@@ -812,7 +812,6 @@ rdf4j: root project
     │   ├── lmdb: Sail implementation that stores data to disk using LMDB.
     │   ├── lucene-api: StackableSail API offering full-text search on literals, based on Apache Lucene.
     │   ├── lucene: StackableSail implementation offering full-text search on literals, based on Apache Lucene.
-    │   ├── solr: StackableSail implementation offering full-text search on literals, based on Solr.
     │   ├── elasticsearch: StackableSail implementation offering full-text search on literals, based on Elastic Search.
     │   ├── elasticsearch-store: Store for utilizing Elasticsearch as a triplestore.
     │   └── extensible-store: Store that can be extended with a simple user-made backend.
@@ -852,7 +851,6 @@ rdf4j: root project
     ├── model: RDF4J: Model compliance tests
     ├── sparql: Tests for the SPARQL query language implementation
     ├── lucene: Compliance Tests for LuceneSail.
-    ├── solr: Tests for Solr Sail.
     ├── elasticsearch: Tests for Elasticsearch.
     └── geosparql: Tests for the GeoSPARQL query language implementation
 ├── examples: Examples and HowTos for use of RDF4J in Java
@@ -864,6 +862,7 @@ rdf4j: root project
 
 * Don’t commit or push unless explicitly asked.
 * Don’t add new dependencies without explicit approval.
+* Never revert unrelated working tree changes
 
 ### Version Control Conventions
 
