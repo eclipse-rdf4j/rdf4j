@@ -58,8 +58,11 @@ import com.google.common.base.Functions;
 import com.google.common.collect.Iterables;
 
 /**
+ * @deprecated since 5.3.0 and scheduled for removal. Use alternative search integrations instead, such as the Lucene or
+ *             Elasticsearch Sail implementations.
  * @see LuceneSail
  */
+@Deprecated(forRemoval = true, since = "5.3.0")
 public class SolrIndex extends AbstractSearchIndex {
 
 	public static final String SERVER_KEY = "server";

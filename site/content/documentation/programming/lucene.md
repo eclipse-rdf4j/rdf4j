@@ -184,6 +184,8 @@ The LuceneSail can currently be used with three SearchIndex implementations:
 | ElasticSearch     | `org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchIndex` | `rdf4j-sail-elasticsearch`            | no                      |
 | Apache Solr       | `org.eclipse.rdf4j.sail.solr.SolrIndex`                   | `rdf4j-sail-solr`                     | no                      |
 
+The Solr-based integration is **deprecated for removal** as of RDF4J 5.3.0. Prefer one of the other search backends for new projects and plan migrations away from `rdf4j-sail-solr`.
+
 Each SearchIndex implementation can easily be extended if you need to add extra features or store/access data with a different schema.
 
 The following example uses a local Solr instance running on the default port 8983. Make sure that both the Apache httpcore and commons-logging jars are in the classpath, and that the Solr core uses an appropriate schema (an example can be found in RDF4J’s embedded solr source code on GitHub).

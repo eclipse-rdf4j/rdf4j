@@ -72,7 +72,7 @@ RDF4J supports the following RCC8 functions: `geof:rcc8eq`, `geof:rcc8dc`, `geof
 
 ### Improved performance through Lucene
 
-Although RDF4J supports GeoSPARQL querying on any type of store, the Lucene SAIL and its derivates (the SolrSail and the ElasticSearchSail) have built-in optimizations that make geospatial querying on large datasets more efficient. By default, the Lucene SAIL only spatially indexes `http://www.opengis.net/ont/geosparql#asWKT fields`. This can be changed using the `LuceneSail.WKT_FIELDS` parameter.
+Although RDF4J supports GeoSPARQL querying on any type of store, the Lucene SAIL and its derivates (the SolrSail and the ElasticSearchSail) have built-in optimizations that make geospatial querying on large datasets more efficient. The SolrSail is **deprecated for removal** as of RDF4J 5.3.0, so prefer the remaining backends for new deployments. By default, the Lucene SAIL only spatially indexes `http://www.opengis.net/ont/geosparql#asWKT fields`. This can be changed using the `LuceneSail.WKT_FIELDS` parameter.
 
 ## Reading and writing WKT Literals
 
