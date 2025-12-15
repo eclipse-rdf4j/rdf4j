@@ -12,16 +12,23 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
@@ -41,6 +48,7 @@ import org.slf4j.LoggerFactory;
 public class SparqlConstraintSelect implements PlanNode {
 
 	private static final Logger logger = LoggerFactory.getLogger(SparqlConstraintSelect.class);
+	private static final Pattern MESSAGE_TEMPLATE_PATTERN = Pattern.compile("\\{[?$]([A-Za-z_][A-Za-z0-9_]*)\\}");
 
 	private final SailConnection connection;
 
@@ -55,6 +63,9 @@ public class SparqlConstraintSelect implements PlanNode {
 	private final Dataset dataset;
 	private final ParsedQuery parsedQuery;
 	private final boolean printed = false;
+	private final Value shapesGraphBinding;
+	private final Value currentShapeBinding;
+	private final Value pathForMessageBinding;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public SparqlConstraintSelect(SailConnection connection, PlanNode targets, String query,
@@ -72,6 +83,9 @@ public class SparqlConstraintSelect implements PlanNode {
 		this.variables = new String[] { "$this" };
 		this.scope = scope;
 		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
+		this.currentShapeBinding = shape != null ? shape.getId() : null;
+		this.shapesGraphBinding = determineShapesGraphBinding(shape);
+		this.pathForMessageBinding = determinePathForMessageBinding(constraintComponent, scope);
 
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance()
 				.get(QueryLanguage.SPARQL)
@@ -84,6 +98,33 @@ public class SparqlConstraintSelect implements PlanNode {
 			throw e;
 		}
 
+	}
+
+	private static Value determineShapesGraphBinding(Shape shape) {
+		if (shape == null) {
+			return null;
+		}
+		Resource[] contexts = shape.getContexts();
+		if (contexts == null) {
+			return null;
+		}
+		for (Resource context : contexts) {
+			if (context != null && context.isIRI()) {
+				return context;
+			}
+		}
+		return null;
+	}
+
+	private static Value determinePathForMessageBinding(SparqlConstraintComponent constraintComponent,
+			ConstraintComponent.Scope scope) {
+		if (constraintComponent == null || scope != ConstraintComponent.Scope.propertyShape) {
+			return null;
+		}
+		return constraintComponent.getTargetChain()
+				.getPath()
+				.map(p -> Values.literal(p.toSparqlPathString()))
+				.orElse(null);
 	}
 
 	@Override
@@ -108,7 +149,14 @@ public class SparqlConstraintSelect implements PlanNode {
 
 					if (results == null && targetIterator.hasNext()) {
 						nextTarget = targetIterator.next();
-						SingletonBindingSet bindings = new SingletonBindingSet("this", nextTarget.getActiveTarget());
+						MapBindingSet bindings = new MapBindingSet(3);
+						bindings.setBinding("this", nextTarget.getActiveTarget());
+						if (currentShapeBinding != null) {
+							bindings.setBinding("currentShape", currentShapeBinding);
+						}
+						if (shapesGraphBinding != null) {
+							bindings.setBinding("shapesGraph", shapesGraphBinding);
+						}
 						results = connection.evaluate(parsedQuery.getTupleExpr(), dataset, bindings, true);
 					}
 
@@ -128,6 +176,32 @@ public class SparqlConstraintSelect implements PlanNode {
 						Value currentValue = value1;
 
 						Value path = bindingSet.getValue("path");
+						List<Literal> resultMessages = null;
+
+						Value messageValue = bindingSet.getValue("message");
+						if (messageValue != null) {
+							if (messageValue.isLiteral()) {
+								resultMessages = List.of((Literal) messageValue);
+							} else {
+								resultMessages = List.of(Values.literal(messageValue.stringValue()));
+							}
+						} else if (produceValidationReports) {
+							List<Literal> templates = constraintComponent.getDefaultMessage();
+							if (!templates.isEmpty()) {
+								if (constraintComponent.hasMessageTemplateVariables()) {
+									Value focusNode = nextTarget.getActiveTarget();
+									resultMessages = templates.stream()
+											.map(t -> substituteMessageTemplate(t, bindingSet, focusNode,
+													shapesGraphBinding, currentShapeBinding,
+													pathForMessageBinding))
+											.collect(Collectors.toList());
+								} else {
+									resultMessages = List.copyOf(templates);
+								}
+							}
+						}
+
+						final List<Literal> finalResultMessages = resultMessages;
 
 						if (scope == ConstraintComponent.Scope.nodeShape) {
 							next = nextTarget.addValidationResult(t -> {
@@ -137,7 +211,10 @@ public class SparqlConstraintSelect implements PlanNode {
 										constraintComponent, shape.getSeverity(),
 										ConstraintComponent.Scope.nodeShape, t.getContexts(),
 										shape.getContexts());
-								if (path != null) {
+								if (finalResultMessages != null) {
+									validationResult.setMessagesOverride(finalResultMessages);
+								}
+								if (path != null && path.isIRI()) {
 									validationResult.setPathIri(path);
 								}
 								return validationResult;
@@ -154,7 +231,10 @@ public class SparqlConstraintSelect implements PlanNode {
 										constraintComponent, shape.getSeverity(),
 										ConstraintComponent.Scope.propertyShape, t.getContexts(),
 										shape.getContexts());
-								if (path != null) {
+								if (finalResultMessages != null) {
+									validationResult.setMessagesOverride(finalResultMessages);
+								}
+								if (path != null && path.isIRI()) {
 									validationResult.setPathIri(path);
 								}
 								return validationResult;
@@ -223,6 +303,41 @@ public class SparqlConstraintSelect implements PlanNode {
 //			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId()).append("\n");
 //		}
 
+	}
+
+	private static Literal substituteMessageTemplate(Literal template, BindingSet bindingSet, Value focusNode,
+			Value shapesGraphBinding, Value currentShapeBinding, Value pathForMessageBinding) {
+		String label = template.getLabel();
+		Matcher matcher = MESSAGE_TEMPLATE_PATTERN.matcher(label);
+		if (!matcher.find()) {
+			return template;
+		}
+
+		matcher.reset();
+		StringBuffer sb = new StringBuffer();
+		while (matcher.find()) {
+			String varName = matcher.group(1);
+			Value value = bindingSet.getValue(varName);
+			if (value == null) {
+				if ("this".equals(varName)) {
+					value = focusNode;
+				} else if ("shapesGraph".equals(varName)) {
+					value = shapesGraphBinding;
+				} else if ("currentShape".equals(varName)) {
+					value = currentShapeBinding;
+				} else if ("PATH".equals(varName)) {
+					value = pathForMessageBinding;
+				}
+			}
+			String replacement = value != null ? value.stringValue() : matcher.group(0);
+			matcher.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+		}
+		matcher.appendTail(sb);
+
+		if (template.getLanguage().isPresent()) {
+			return Values.literal(sb.toString(), template.getLanguage().get());
+		}
+		return Values.literal(sb.toString(), template.getDatatype());
 	}
 
 	@Override
