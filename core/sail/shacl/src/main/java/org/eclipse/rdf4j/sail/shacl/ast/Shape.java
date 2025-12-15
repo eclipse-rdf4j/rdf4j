@@ -21,7 +21,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.apache.http.impl.client.TunnelRefusedException;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
@@ -683,6 +682,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 						})
 						.filter(ContextWithShape::hasShape)
 						.distinct()
+						.peek(a -> a.getShape().verifyNotRecursive())
 						.collect(Collectors.toList());
 			} catch (RDF4JException e) {
 				logger.error(e.getMessage(), e);
@@ -850,6 +850,11 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 			}
 		}
 
+	}
+
+	private void verifyNotRecursive() {
+		// calling hashCode will throw an exception if recursion is detected
+		int i = hashCode(new IdentityHashMap<>());
 	}
 
 	@Override
