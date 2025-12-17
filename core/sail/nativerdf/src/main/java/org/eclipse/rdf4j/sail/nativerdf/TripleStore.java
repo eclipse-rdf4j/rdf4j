@@ -80,9 +80,9 @@ class TripleStore implements Closeable {
 	 */
 	private static final String INDEXES_KEY = "triple-indexes";
 
-        /**
-         * The version number for the current triple store.
-         * <ul>
+	/**
+	 * The version number for the current triple store.
+	 * <ul>
 	 * <li>version 0: The first version which used a single spo-index. This version did not have a properties file yet.
 	 * <li>version 1: Introduces configurable triple indexes and the properties file.
 	 * <li>version 10: Introduces a context field, essentially making this a quad store.
@@ -228,12 +228,12 @@ class TripleStore implements Closeable {
 		}
 	}
 
-        private static TxnStatusFile createTxnStatusFile(File dir, Boolean memoryMappedTxnStatusFileEnabled)
-                        throws IOException {
-                boolean enabled = Boolean.TRUE.equals(memoryMappedTxnStatusFileEnabled);
-                if (enabled) {
-                        return new MemoryMappedTxnStatusFile(dir);
-                }
+	private static TxnStatusFile createTxnStatusFile(File dir, Boolean memoryMappedTxnStatusFileEnabled)
+			throws IOException {
+		boolean enabled = Boolean.TRUE.equals(memoryMappedTxnStatusFileEnabled);
+		if (enabled) {
+			return new MemoryMappedTxnStatusFile(dir);
+		}
 		return new TxnStatusFile(dir);
 	}
 
