@@ -11,6 +11,9 @@
 
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
 /**
@@ -20,17 +23,17 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * @author Tomas Kovachev t.kovachev1996@gmail.com
  */
 @Experimental
-public class AggregateFunctionCall extends AbstractAggregateOperator {
+public class AggregateFunctionCall extends AbstractNAryAggregateOperator {
 
 	protected String iri;
 
 	public AggregateFunctionCall(String iri, boolean distinct) {
-		super(null, distinct);
+		super(new ArrayList<>(), distinct);
 		this.iri = iri;
 	}
 
-	public AggregateFunctionCall(ValueExpr arg, String iri, boolean distinct) {
-		super(arg, distinct);
+	public AggregateFunctionCall(List<ValueExpr> args, String iri, boolean distinct) {
+		super(args, distinct);
 		this.iri = iri;
 	}
 

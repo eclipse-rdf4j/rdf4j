@@ -20,10 +20,12 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -63,7 +65,10 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunctionFactory;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateNAryFunction;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateNAryFunctionFactory;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRegistry;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateNAryFunctionRegistry;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -241,7 +246,7 @@ public class GroupIteratorTest {
 	public void testCustomAggregateFunction_Nonempty() throws QueryEvaluationException {
 		Group group = new Group(NONEMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("customSum",
-				new AggregateFunctionCall(Var.of("a"), AGGREGATE_FUNCTION_FACTORY.getIri(), false)));
+				new AggregateFunctionCall(List.of(Var.of("a")), AGGREGATE_FUNCTION_FACTORY.getIri(), false)));
 		try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
 			assertThat(gi.next().getBinding("customSum").getValue()).isEqualTo(VF.createLiteral("45", XSD.INTEGER));
 		}
@@ -251,7 +256,7 @@ public class GroupIteratorTest {
 	public void testCustomAggregateFunction_Empty() throws QueryEvaluationException {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("customSum",
-				new AggregateFunctionCall(Var.of("a"), AGGREGATE_FUNCTION_FACTORY.getIri(), false)));
+				new AggregateFunctionCall(List.of(Var.of("a")), AGGREGATE_FUNCTION_FACTORY.getIri(), false)));
 		try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
 			assertThat(gi.next().getBinding("customSum").getValue()).isEqualTo(VF.createLiteral("0", XSD.INTEGER));
 		}
@@ -260,10 +265,64 @@ public class GroupIteratorTest {
 	@Test
 	public void testCustomAggregateFunction_WrongIri() throws QueryEvaluationException {
 		Group group = new Group(EMPTY_ASSIGNMENT);
-		group.addGroupElement(new GroupElem("customSum", new AggregateFunctionCall(Var.of("a"), "urn:i", false)));
+		group.addGroupElement(
+				new GroupElem("customSum", new AggregateFunctionCall(List.of(Var.of("a")), "urn:i", false)));
 		try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
 			assertThatExceptionOfType(QueryEvaluationException.class)
 					.isThrownBy(() -> gi.next().getBinding("customSum").getValue());
+		}
+	}
+
+	@Test
+	public void testCustomNAryAggregateFunction_Nonempty() throws QueryEvaluationException {
+		AggregateNAryFunctionFactory nAryFactory = new FakeAggregateNAryFunctionFactory();
+		CustomAggregateNAryFunctionRegistry.getInstance().add(nAryFactory);
+		try {
+			BindingSetAssignment assignment = new BindingSetAssignment();
+			var list = new ArrayList<BindingSet>();
+			for (int i = 1; i < 10; i++) {
+				var bindings = new QueryBindingSet();
+				bindings.addBinding("a", VF.createLiteral(i));
+				bindings.addBinding("b", VF.createLiteral(i * 2));
+				list.add(bindings);
+			}
+			assignment.setBindingSets(Collections.unmodifiableList(list));
+
+			Group group = new Group(assignment);
+			group.addGroupElement(new GroupElem("narySum",
+					new AggregateFunctionCall(List.of(Var.of("a"), Var.of("b")), nAryFactory.getIri(), false)));
+			try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+				assertThat(gi.next().getBinding("narySum").getValue()).isEqualTo(VF.createLiteral("135", XSD.INTEGER));
+			}
+		} finally {
+			CustomAggregateNAryFunctionRegistry.getInstance().remove(nAryFactory);
+		}
+	}
+
+	@Test
+	public void testCustomNAryAggregateFunction_Empty() throws QueryEvaluationException {
+		AggregateNAryFunctionFactory nAryFactory = new FakeAggregateNAryFunctionFactory();
+		CustomAggregateNAryFunctionRegistry.getInstance().add(nAryFactory);
+		try {
+			Group group = new Group(EMPTY_ASSIGNMENT);
+			group.addGroupElement(new GroupElem("narySum",
+					new AggregateFunctionCall(List.of(Var.of("a"), Var.of("b")), nAryFactory.getIri(), false)));
+			try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+				assertThat(gi.next().getBinding("narySum").getValue()).isEqualTo(VF.createLiteral("0", XSD.INTEGER));
+			}
+		} finally {
+			CustomAggregateNAryFunctionRegistry.getInstance().remove(nAryFactory);
+		}
+	}
+
+	@Test
+	public void testCustomNAryAggregateFunction_WrongIri() throws QueryEvaluationException {
+		Group group = new Group(EMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("narySum",
+				new AggregateFunctionCall(List.of(Var.of("a"), Var.of("b")), "urn:unknown:nary", false)));
+		try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+			assertThatExceptionOfType(QueryEvaluationException.class)
+					.isThrownBy(() -> gi.next().getBinding("narySum").getValue());
 		}
 	}
 
@@ -344,6 +403,66 @@ public class GroupIteratorTest {
 							}
 						} else {
 							typeError = new ValueExprEvaluationException("not a number: " + v);
+						}
+					}
+				}
+			};
+		}
+
+		@Override
+		public SumCollector getCollector() {
+			return new SumCollector();
+		}
+	}
+
+	private static final class FakeAggregateNAryFunctionFactory implements AggregateNAryFunctionFactory {
+		@Override
+		public String getIri() {
+			return "https://www.rdf4j.org/aggregate#nary";
+		}
+
+		@Override
+		public AggregateNAryFunction<SumCollector, Value> buildFunction(
+				BiFunction<Integer, BindingSet, Value> evaluationStepByIndex) {
+			return new AggregateNAryFunction<>(evaluationStepByIndex) {
+				private ValueExprEvaluationException typeError = null;
+
+				@Override
+				public void processAggregate(BindingSet bindingSet, Predicate<List<Value>> distinctValue,
+						SumCollector sum)
+						throws QueryEvaluationException {
+					if (typeError != null) {
+						// halt further processing if a type error has been raised
+						return;
+					}
+					Value v = evaluate(0, bindingSet); // take first argument as binding set
+					Value v2 = evaluate(1, bindingSet); // take second argument as binding set
+
+					if (v instanceof Literal) {
+						if (distinctValue.test(List.of(v))) {
+							Literal nextLiteral = (Literal) v;
+							if (nextLiteral.getDatatype() != null
+									&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
+								sum.value = MathUtil.compute(sum.value, nextLiteral, MathExpr.MathOp.PLUS);
+							} else {
+								typeError = new ValueExprEvaluationException("not a number: " + v);
+							}
+						} else {
+							typeError = new ValueExprEvaluationException("not a number: " + v);
+						}
+					}
+
+					if (v2 instanceof Literal) {
+						if (distinctValue.test(List.of(v2))) {
+							Literal nextLiteral = (Literal) v2;
+							if (nextLiteral.getDatatype() != null
+									&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
+								sum.value = MathUtil.compute(sum.value, nextLiteral, MathExpr.MathOp.PLUS);
+							} else {
+								typeError = new ValueExprEvaluationException("not a number: " + v2);
+							}
+						} else {
+							typeError = new ValueExprEvaluationException("not a number: " + v2);
 						}
 					}
 				}
