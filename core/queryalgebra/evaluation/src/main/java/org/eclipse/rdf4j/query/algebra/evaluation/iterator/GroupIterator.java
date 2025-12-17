@@ -18,11 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-import java.util.function.BiConsumer;
-import java.util.function.Function;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
-import java.util.function.ToIntFunction;
+import java.util.function.*;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetEntry;
@@ -40,20 +36,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
-import org.eclipse.rdf4j.query.algebra.AggregateOperator;
-import org.eclipse.rdf4j.query.algebra.Avg;
-import org.eclipse.rdf4j.query.algebra.Count;
-import org.eclipse.rdf4j.query.algebra.Group;
-import org.eclipse.rdf4j.query.algebra.GroupConcat;
-import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.*;
 import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
-import org.eclipse.rdf4j.query.algebra.Max;
-import org.eclipse.rdf4j.query.algebra.Min;
-import org.eclipse.rdf4j.query.algebra.Sample;
-import org.eclipse.rdf4j.query.algebra.Sum;
-import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
-import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -62,9 +46,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
-import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
-import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
-import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRegistry;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.*;
 
 /**
  * @author David Huynh
@@ -382,11 +364,11 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 	 */
 	private static class AggregatePredicateCollectorSupplier<T extends AggregateCollector, D> {
 		public final String name;
-		private final AggregateFunction<T, D> agg;
+		private final AggregateProcessor<T, D> agg;
 		private final Supplier<Predicate<D>> makePotentialDistinctTest;
 		private final Supplier<T> makeAggregateCollector;
 
-		public AggregatePredicateCollectorSupplier(AggregateFunction<T, D> agg,
+		public AggregatePredicateCollectorSupplier(AggregateProcessor<T, D> agg,
 				Supplier<Predicate<D>> makePotentialDistinctTest, Supplier<T> makeAggregateCollector, String name) {
 			super();
 			this.agg = agg;
@@ -417,32 +399,32 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 				return new AggregatePredicateCollectorSupplier<>(wildCardCountAggregate, potentialDistinctTest,
 						() -> new CountCollector(vf), ge.getName());
 			} else {
-				QueryStepEvaluator f = precompileArg(operator);
+				QueryStepEvaluator f = precompileUnaryArg(operator);
 				CountAggregate agg = new CountAggregate(f);
 				Supplier<Predicate<Value>> predicate = createDistinctValueTest(operator);
 				return new AggregatePredicateCollectorSupplier<>(agg, predicate, () -> new CountCollector(vf),
 						ge.getName());
 			}
 		} else if (operator instanceof Min) {
-			MinAggregate agg = new MinAggregate(precompileArg(operator), shouldValueComparisonBeStrict());
+			MinAggregate agg = new MinAggregate(precompileUnaryArg(operator), shouldValueComparisonBeStrict());
 			Supplier<Predicate<Value>> predicate = createDistinctValueTest(operator);
 			return new AggregatePredicateCollectorSupplier<>(agg, predicate, ValueCollector::new, ge.getName());
 		} else if (operator instanceof Max) {
-			MaxAggregate agg = new MaxAggregate(precompileArg(operator), shouldValueComparisonBeStrict());
+			MaxAggregate agg = new MaxAggregate(precompileUnaryArg(operator), shouldValueComparisonBeStrict());
 			Supplier<Predicate<Value>> predicate = createDistinctValueTest(operator);
 			return new AggregatePredicateCollectorSupplier<>(agg, predicate, ValueCollector::new, ge.getName());
 		} else if (operator instanceof Sum) {
 
-			SumAggregate agg = new SumAggregate(precompileArg(operator));
+			SumAggregate agg = new SumAggregate(precompileUnaryArg(operator));
 			Supplier<Predicate<Value>> predicate = createDistinctValueTest(operator);
 			return new AggregatePredicateCollectorSupplier<>(agg, predicate, () -> new IntegerCollector(vf),
 					ge.getName());
 		} else if (operator instanceof Avg) {
-			AvgAggregate agg = new AvgAggregate(precompileArg(operator));
+			AvgAggregate agg = new AvgAggregate(precompileUnaryArg(operator));
 			Supplier<Predicate<Value>> predicate = createDistinctValueTest(operator);
 			return new AggregatePredicateCollectorSupplier<>(agg, predicate, () -> new AvgCollector(vf), ge.getName());
 		} else if (operator instanceof Sample) {
-			SampleAggregate agg = new SampleAggregate(precompileArg(operator));
+			SampleAggregate agg = new SampleAggregate(precompileUnaryArg(operator));
 			Supplier<Predicate<Value>> predicate = createDistinctValueTest(operator);
 			return new AggregatePredicateCollectorSupplier<>(agg, predicate, SampleCollector::new, ge.getName());
 		} else if (operator instanceof GroupConcat) {
@@ -450,9 +432,9 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			ConcatAggregate agg;
 			if (separatorExpr != null) {
 				Value separatorValue = strategy.evaluate(separatorExpr, parentBindings);
-				agg = new ConcatAggregate(precompileArg(operator), separatorValue.stringValue());
+				agg = new ConcatAggregate(precompileUnaryArg(operator), separatorValue.stringValue());
 			} else {
-				agg = new ConcatAggregate(precompileArg(operator));
+				agg = new ConcatAggregate(precompileUnaryArg(operator));
 			}
 			Supplier<Predicate<Value>> predicate = createDistinctValueTest(operator);
 			return new AggregatePredicateCollectorSupplier<>(agg, predicate, () -> new StringBuilderCollector(vf),
@@ -460,14 +442,27 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		} else if (operator instanceof AggregateFunctionCall) {
 			var aggOperator = (AggregateFunctionCall) operator;
 			Supplier<Predicate<Value>> predicate = createDistinctValueTest(operator);
-			var factory = CustomAggregateFunctionRegistry.getInstance().get(aggOperator.getIRI());
 
-			var function = factory.orElseThrow(
-					() -> new QueryEvaluationException("Unknown aggregate function '" + aggOperator.getIRI() + "'"))
-					.buildFunction(precompileArg(aggOperator));
-			return new AggregatePredicateCollectorSupplier<>(function, predicate, () -> factory.get().getCollector(),
-					ge.getName());
+			if (aggOperator.getArguments().size() > 1) {
+				var factory = CustomAggregateNAryFunctionRegistry.getInstance().get(aggOperator.getIRI());
 
+				var function = factory.orElseThrow(
+						() -> new QueryEvaluationException(
+								"Unknown n-ary aggregate function '" + aggOperator.getIRI() + "'"))
+						.buildFunction(precompileNAryArg(aggOperator));
+				return new AggregatePredicateCollectorSupplier<>(function, predicate,
+						() -> factory.get().getCollector(),
+						ge.getName());
+			} else {
+				var factory = CustomAggregateFunctionRegistry.getInstance().get(aggOperator.getIRI());
+
+				var function = factory.orElseThrow(
+						() -> new QueryEvaluationException("Unknown aggregate function '" + aggOperator.getIRI() + "'"))
+						.buildFunction(precompileNAryArg(aggOperator).asUnaryEvaluator(0));
+				return new AggregatePredicateCollectorSupplier<>(function, predicate,
+						() -> factory.get().getCollector(),
+						ge.getName());
+			}
 		}
 
 		return null;
@@ -485,9 +480,17 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		return operator.isDistinct() ? DistinctValues::new : ALWAYS_TRUE_VALUE_SUPPLIER;
 	}
 
-	private QueryStepEvaluator precompileArg(AggregateOperator operator) {
+	private QueryStepEvaluator precompileUnaryArg(AggregateOperator operator) {
 		ValueExpr ve = ((UnaryValueOperator) operator).getArg();
 		return new QueryStepEvaluator(strategy.precompile(ve, context));
+	}
+
+	private NAryQueryStepEvaluator precompileNAryArg(AggregateOperator operator) {
+		List<ValueExpr> args = ((NAryValueOperator) operator).getArguments();
+		return new NAryQueryStepEvaluator((index) -> {
+			ValueExpr ve = args.get(index);
+			return strategy.precompile(ve, context);
+		});
 	}
 
 	private boolean shouldValueComparisonBeStrict() {
@@ -855,6 +858,27 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			} catch (ValueExprEvaluationException e) {
 				return null; // treat missing or invalid expressions as null
 			}
+		}
+	}
+
+	private static class NAryQueryStepEvaluator implements BiFunction<Integer, BindingSet, Value> {
+		private final Function<Integer, QueryValueEvaluationStep> evaluationStepFunction;
+
+		public NAryQueryStepEvaluator(Function<Integer, QueryValueEvaluationStep> evaluationStepFunction) {
+			this.evaluationStepFunction = evaluationStepFunction;
+		}
+
+		@Override
+		public Value apply(Integer index, BindingSet bindings) {
+			try {
+				return evaluationStepFunction.apply(index).evaluate(bindings);
+			} catch (ValueExprEvaluationException e) {
+				return null; // treat missing or invalid expressions as null
+			}
+		}
+
+		public QueryStepEvaluator asUnaryEvaluator(Integer index) {
+			return new QueryStepEvaluator(evaluationStepFunction.apply(index));
 		}
 	}
 }
