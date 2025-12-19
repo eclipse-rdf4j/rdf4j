@@ -20,7 +20,11 @@ import org.eclipse.rdf4j.sail.solr.SolrIndex;
 
 /**
  * A {@link SailFactory} that creates {@link LuceneSail}s based on RDF configuration data.
+ *
+ * @deprecated since 5.3.0. Solr integration is deprecated for removal; use alternative Lucene-backed search
+ *             implementations instead.
  */
+@Deprecated(since = "5.3.0", forRemoval = true)
 public class SolrSailFactory implements SailFactory {
 
 	/**

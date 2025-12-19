@@ -14,6 +14,11 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
 import org.eclipse.rdf4j.sail.lucene.util.GeoUnits;
 
+/**
+ * @deprecated since 5.3.0. Solr integration is deprecated for removal; use alternative Lucene-backed search
+ *             implementations instead.
+ */
+@Deprecated(since = "5.3.0", forRemoval = true)
 public class SolrDocumentDistance extends SolrDocumentResult implements DocumentDistance {
 
 	private final IRI units;

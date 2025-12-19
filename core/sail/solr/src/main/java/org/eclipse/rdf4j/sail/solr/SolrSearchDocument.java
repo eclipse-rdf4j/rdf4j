@@ -20,6 +20,11 @@ import org.apache.solr.common.SolrDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 
+/**
+ * @deprecated since 5.3.0. Solr integration is deprecated for removal; use alternative Lucene-backed search
+ *             implementations instead.
+ */
+@Deprecated(since = "5.3.0", forRemoval = true)
 public class SolrSearchDocument implements SearchDocument {
 
 	private final SolrDocument doc;

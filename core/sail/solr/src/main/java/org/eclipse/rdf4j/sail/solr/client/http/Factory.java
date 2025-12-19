@@ -14,6 +14,11 @@ import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.eclipse.rdf4j.sail.solr.SolrClientFactory;
 
+/**
+ * @deprecated since 5.3.0. Solr integration is deprecated for removal; use alternative Lucene-backed search
+ *             implementations instead.
+ */
+@Deprecated(since = "5.3.0", forRemoval = true)
 public class Factory implements SolrClientFactory {
 
 	@Override

@@ -29,8 +29,11 @@ import com.google.common.collect.Iterables;
 
 /**
  * To be removed, no longer used.
+ *
+ * @deprecated since 5.3.0. Solr integration is deprecated for removal; use alternative Lucene-backed search
+ *             implementations instead.
  */
-@Deprecated
+@Deprecated(since = "5.3.0", forRemoval = true)
 public class SolrSearchQuery implements SearchQuery {
 
 	private final SolrQuery query;
