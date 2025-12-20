@@ -59,7 +59,10 @@ import com.google.common.collect.Iterables;
 
 /**
  * @see LuceneSail
+ * @deprecated since 5.3.0. Solr integration is deprecated for removal; use alternative Lucene-backed search
+ *             implementations instead.
  */
+@Deprecated(since = "5.3.0", forRemoval = true)
 public class SolrIndex extends AbstractSearchIndex {
 
 	public static final String SERVER_KEY = "server";

@@ -8,7 +8,7 @@
 	</parent>
 	<artifactId>rdf4j-sail-solr</artifactId>
 	<name>RDF4J: Solr Sail Index</name>
-	<description>StackableSail implementation offering full-text search on literals, based on Solr.</description>
+	<description>StackableSail implementation offering full-text search on literals, based on Solr. Deprecated for removal.</description>
 	<properties>
 		<!-- FIXME: Support for embedded Solr server require non-provided Java EE dependencies -->
 		<enforce-javaee-provided.fail>false</enforce-javaee-provided.fail>
