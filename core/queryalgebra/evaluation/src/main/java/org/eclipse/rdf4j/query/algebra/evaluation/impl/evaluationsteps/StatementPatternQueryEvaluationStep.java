@@ -335,7 +335,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 
 			if (iteration instanceof IndexReportingIterator) {
-				statementPattern.setIndexName(((IndexReportingIterator) iteration).getIndexName());
+				statementPattern.setIndexNameSupplier(
+						((IndexReportingIterator) iteration)::getIndexName);
+			} else {
+				statementPattern.setIndexName(null);
 			}
 
 			if (iteration instanceof EmptyIteration) {
@@ -388,7 +391,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
 			}
 			if (iteration instanceof IndexReportingIterator) {
-				statementPattern.setIndexName(((IndexReportingIterator) iteration).getIndexName());
+				statementPattern.setIndexNameSupplier(
+						((IndexReportingIterator) iteration)::getIndexName);
+			} else {
+				statementPattern.setIndexName(null);
 			}
 
 			if (iteration instanceof EmptyIteration) {
