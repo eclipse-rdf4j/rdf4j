@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -19,10 +18,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrStatementPattern;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.transform.ApplyPathsTransform;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
