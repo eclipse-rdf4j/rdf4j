@@ -9,9 +9,6 @@
 	<artifactId>rdf4j-sail-elasticsearch-store</artifactId>
 	<name>RDF4J: Elasticsearch Store</name>
 	<description>Store for utilizing Elasticsearch as a triplestore.</description>
-	<properties>
-		<testcontainers.version>1.19.7</testcontainers.version>
-	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>org.elasticsearch.client</groupId>

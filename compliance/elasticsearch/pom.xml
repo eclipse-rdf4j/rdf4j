@@ -9,9 +9,6 @@
 	<artifactId>rdf4j-elasticsearch-compliance</artifactId>
 	<name>RDF4J: Elasticsearch Sail Tests</name>
 	<description>Tests for Elasticsearch.</description>
-	<properties>
-		<testcontainers.version>1.19.7</testcontainers.version>
-	</properties>
 	<!-- disable the Java security manager for elasticsearch tests -->
 	<build>
 		<plugins>
