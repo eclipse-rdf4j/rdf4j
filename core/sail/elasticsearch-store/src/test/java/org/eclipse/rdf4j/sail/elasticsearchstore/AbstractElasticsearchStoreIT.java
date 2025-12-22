@@ -29,10 +29,18 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
+@Testcontainers
 public abstract class AbstractElasticsearchStoreIT {
 
 	private static final Logger logger = LoggerFactory.getLogger(AbstractElasticsearchStoreIT.class);
+
+	@Container
+	private static final GenericContainer<?> elasticsearchContainer = ElasticsearchStoreTestContainerSupport
+			.getContainer();
 
 	@BeforeAll
 	public static void beforeClass() {
@@ -78,7 +86,7 @@ public abstract class AbstractElasticsearchStoreIT {
 		Settings settings = Settings.builder().put("cluster.name", TestHelpers.CLUSTER).build();
 		try (TransportClient client = new PreBuiltTransportClient(settings)) {
 			client.addTransportAddress(
-					new TransportAddress(InetAddress.getByName("localhost"), TestHelpers.PORT));
+					new TransportAddress(InetAddress.getByName(elasticsearchHost()), elasticsearchPort()));
 
 			return client.admin()
 					.indices()
@@ -88,5 +96,17 @@ public abstract class AbstractElasticsearchStoreIT {
 		} catch (UnknownHostException e) {
 			throw new IllegalStateException(e);
 		}
+	}
+
+	protected static String elasticsearchHost() {
+		return ElasticsearchStoreTestContainerSupport.getHost();
+	}
+
+	protected static int elasticsearchPort() {
+		return ElasticsearchStoreTestContainerSupport.getTransportPort();
+	}
+
+	protected static String elasticsearchCluster() {
+		return ElasticsearchStoreTestContainerSupport.getClusterName();
 	}
 }

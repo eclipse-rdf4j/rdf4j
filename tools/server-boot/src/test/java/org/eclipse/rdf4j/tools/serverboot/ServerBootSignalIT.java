@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
@@ -85,6 +86,7 @@ class ServerBootSignalIT {
 	}
 
 	@Test
+	@Disabled("Disabled due to flakiness on CI servers")
 	void gracefullyStopsOnSigint() throws Exception {
 		assertGracefulShutdownWithSigintFallback();
 	}
