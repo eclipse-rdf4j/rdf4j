@@ -49,6 +49,38 @@
 		<!-- for maven Central deployment it is important that bom is the last module -->
 		<module>bom</module>
 	</modules>
+	<properties>
+		<java.version>11</java.version>
+		<maven.compiler.release>${java.version}</maven.compiler.release>
+		<maven.compiler.source>${java.version}</maven.compiler.source>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+		<enforce-javaee-provided.fail>true</enforce-javaee-provided.fail>
+		<slf4j.version>1.7.36</slf4j.version>
+		<logback.version>1.2.13</logback.version>
+		<log4j.version>2.17.2</log4j.version>
+		<httpclient.version>4.5.14</httpclient.version>
+		<jackson.version>2.13.5</jackson.version>
+		<httpcore.version>4.4.16</httpcore.version>
+		<jsonldjava.version>0.13.4</jsonldjava.version>
+		<last.japicmp.compare.version>5.0.0</last.japicmp.compare.version>
+		<jaxb.version>2.3.8</jaxb.version>
+		<lwjgl.version>3.3.6</lwjgl.version>
+		<lucene.version>8.9.0</lucene.version>
+		<solr.version>8.9.0</solr.version>
+		<elasticsearch.version>7.15.2</elasticsearch.version>
+		<spring.version>5.3.39</spring.version>
+		<guava.version>32.1.3-jre</guava.version>
+		<jmhVersion>1.37</jmhVersion>
+		<servlet.version>4.0.0</servlet.version>
+		<junit.version>5.9.3</junit.version>
+		<jetty.version>9.4.54.v20240208</jetty.version>
+		<netty.version>4.1.111.Final</netty.version>
+		<test.timeout.seconds>14400</test.timeout.seconds>
+		<test.timeout.agent.jar>${maven.multiModuleProjectDirectory}/test-timeout-agent/target/rdf4j-test-timeout-agent-${project.version}.jar</test.timeout.agent.jar>
+        <testcontainers.version>1.20.6</testcontainers.version>
+        <argLine/>
+	</properties>
 	<profiles>
 		<profile>
 			<id>ossrh</id>
@@ -378,38 +410,6 @@
 			</build>
 		</profile>
 	</profiles>
-	<properties>
-		<java.version>11</java.version>
-		<maven.compiler.release>${java.version}</maven.compiler.release>
-		<maven.compiler.source>${java.version}</maven.compiler.source>
-		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-		<enforce-javaee-provided.fail>true</enforce-javaee-provided.fail>
-		<slf4j.version>1.7.36</slf4j.version>
-		<logback.version>1.2.13</logback.version>
-		<log4j.version>2.17.2</log4j.version>
-		<httpclient.version>4.5.14</httpclient.version>
-		<jackson.version>2.13.5</jackson.version>
-		<httpcore.version>4.4.16</httpcore.version>
-		<jsonldjava.version>0.13.4</jsonldjava.version>
-		<last.japicmp.compare.version>5.0.0</last.japicmp.compare.version>
-		<jaxb.version>2.3.8</jaxb.version>
-		<lwjgl.version>3.3.6</lwjgl.version>
-		<lucene.version>8.9.0</lucene.version>
-		<solr.version>8.9.0</solr.version>
-		<elasticsearch.version>7.15.2</elasticsearch.version>
-		<spring.version>5.3.39</spring.version>
-		<guava.version>32.1.3-jre</guava.version>
-		<jmhVersion>1.37</jmhVersion>
-		<servlet.version>4.0.0</servlet.version>
-		<junit.version>5.9.3</junit.version>
-		<jetty.version>9.4.54.v20240208</jetty.version>
-		<netty.version>4.1.111.Final</netty.version>
-		<test.timeout.seconds>14400</test.timeout.seconds>
-		<test.timeout.agent.jar>${maven.multiModuleProjectDirectory}/test-timeout-agent/target/rdf4j-test-timeout-agent-${project.version}.jar</test.timeout.agent.jar>
-		<testcontainers.version>1.20.6</testcontainers.version>
-		<argLine/>
-	</properties>
 	<dependencyManagement>
 		<dependencies>
 			<!-- Jackson Bill-of-Materials -->
