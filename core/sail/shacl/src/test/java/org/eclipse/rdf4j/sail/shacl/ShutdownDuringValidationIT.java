@@ -115,6 +115,7 @@ public class ShutdownDuringValidationIT {
 	@ParameterizedTest
 	@MethodSource("sleepTimes")
 	public void shutdownDuringValidation(int sleepMillis) {
+		System.out.println(Thread.currentThread() + " shutdownDuringValidation with sleepMillis=" + sleepMillis);
 		try {
 // clear interrupted flag
 			Thread.interrupted();
@@ -174,6 +175,8 @@ public class ShutdownDuringValidationIT {
 	@ParameterizedTest
 	@MethodSource("sleepTimes")
 	public void shutdownDuringValidationTransactional(int sleepMillis) {
+		System.out.println(
+				Thread.currentThread() + " shutdownDuringValidationTransactional with sleepMillis=" + sleepMillis);
 		try {
 // clear interrupted flag
 			Thread.interrupted();
@@ -239,6 +242,7 @@ public class ShutdownDuringValidationIT {
 	@ParameterizedTest
 	@MethodSource("sleepTimes")
 	public void shutdownDuringValidationFailure(int sleepMillis) {
+		System.out.println(Thread.currentThread() + " shutdownDuringValidationFailure with sleepMillis=" + sleepMillis);
 		try {
 
 // clear interrupted flag
@@ -298,6 +302,8 @@ public class ShutdownDuringValidationIT {
 	@ParameterizedTest
 	@MethodSource("sleepTimes")
 	public void shutdownDuringValidationFailureNonParallel(int sleepMillis) {
+		System.out.println(
+				Thread.currentThread() + " shutdownDuringValidationFailureNonParallel with sleepMillis=" + sleepMillis);
 		try {
 // clear interrupted flag
 			Thread.interrupted();
@@ -358,6 +364,8 @@ public class ShutdownDuringValidationIT {
 	@ParameterizedTest
 	@MethodSource("sleepTimes")
 	public void shutdownDuringValidationTransactionalNonParallel(int sleepMillis) {
+		System.out.println(Thread.currentThread()
+				+ " shutdownDuringValidationTransactionalNonParallel with sleepMillis=" + sleepMillis);
 		try {
 			// clear interrupted flag
 			boolean interrupted = Thread.interrupted();
@@ -430,6 +438,7 @@ public class ShutdownDuringValidationIT {
 
 	@Test
 	void nestedInterruptedExceptionShouldBeDetected() {
+		System.out.println(Thread.currentThread() + " nestedInterruptedExceptionShouldBeDetected");
 		InterruptedException interruptedException = new InterruptedException("nested");
 		SailException sailException = new SailException("wrapper", new SailException("inner", interruptedException));
 		RepositoryException repositoryException = new RepositoryException("top", sailException);
