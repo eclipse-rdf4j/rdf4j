@@ -90,7 +90,7 @@
 					<createDependencyReducedPom>false</createDependencyReducedPom>
 					<shadedArtifactAttached>false</shadedArtifactAttached>
 					<transformers>
-						<transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+						<transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
 						<transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
 							<resource>edl-v1.0.txt</resource>
 							<file>../edl-v1.0.txt</file>

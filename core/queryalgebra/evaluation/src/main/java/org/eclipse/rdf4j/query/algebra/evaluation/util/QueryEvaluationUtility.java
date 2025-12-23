@@ -374,7 +374,7 @@ public class QueryEvaluationUtility {
 
 //	public static boolean isPlainLiteral(Literal l) {
 //		return l.getCoreDatatype().filter(d -> d == CoreDatatype.XSD.STRING).isPresent();
-////		return l.getCoreDatatype().orElse(null) == CoreDatatype.XSD.STRING;
+	////		return l.getCoreDatatype().orElse(null) == CoreDatatype.XSD.STRING;
 //	}
 
 	/**

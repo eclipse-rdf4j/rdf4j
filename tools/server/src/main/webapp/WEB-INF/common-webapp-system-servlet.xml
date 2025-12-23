@@ -25,8 +25,8 @@
 	<!-- MAPPINGS -->
 	<!-- Mappings for the "system configuration" part of a webapp. -->
 	<bean id="commonWebappSystemUrlMapping" class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping">
-		<property name="order" value="0"/>
-		<property name="alwaysUseFullPath" value="true"/>
+		<property name="order" value="0" />
+		<property name="alwaysUseFullPath" value="true" />
 		<property name="mappings">
 			<props>
 				<prop key="/system/overview.view">commonWebappSystemOverviewController</prop>
@@ -37,22 +37,22 @@
 		</property>
 		<property name="interceptors">
 			<list>
-				<ref bean="commonWebappCommonValuesInserter"/>
-				<ref bean="commonWebappMessageInserter"/>
-				<ref bean="commonWebappNavigationInserter"/>
+				<ref bean="commonWebappCommonValuesInserter" />
+				<ref bean="commonWebappMessageInserter" />
+				<ref bean="commonWebappNavigationInserter" />
 			</list>
 		</property>
 	</bean>
 	<!-- CONTROLLERS -->
 	<bean id="commonWebappSystemOverviewController" class="org.eclipse.rdf4j.common.webapp.system.SystemOverviewController">
-		<property name="view" value="system/overview"/>
-		<property name="config" ref="commonAppConfig"/>
+		<property name="view" value="system/overview" />
+		<property name="config" ref="commonAppConfig" />
 	</bean>
 	<bean id="commonWebappLoggingOverviewController" class="org.eclipse.rdf4j.common.webapp.system.logging.LoggingOverviewController">
-		<property name="config" ref="commonAppConfig"/>
+		<property name="config" ref="commonAppConfig" />
 	</bean>
 	<bean id="commonWebappSystemInfoController" class="org.eclipse.rdf4j.common.webapp.system.SystemInfoController">
-		<property name="view" value="system/info/overview"/>
-		<property name="config" ref="commonAppConfig"/>
+		<property name="view" value="system/info/overview" />
+		<property name="config" ref="commonAppConfig" />
 	</bean>
 </beans>
