@@ -7,12 +7,12 @@
     Note: requires net.logstash.logback dependency, which is not added by default.
   -->
 	<appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
-		<encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+		<encoder class="net.logstash.logback.encoder.LogstashEncoder" />
 	</appender>
-	<logger name="org.eclipse.rdf4j" level="ERROR"/>
-	<logger name="org.apache.http" level="ERROR"/>
-	<logger name="org.eclipse.jetty" level="ERROR"/>
+	<logger name="org.eclipse.rdf4j" level="ERROR" />
+	<logger name="org.apache.http" level="ERROR" />
+	<logger name="org.eclipse.jetty" level="ERROR" />
 	<root level="ERROR">
-		<appender-ref ref="JSON"/>
+		<appender-ref ref="JSON" />
 	</root>
 </configuration>

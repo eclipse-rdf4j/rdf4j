@@ -2,6 +2,6 @@
 <navigation id="rdf4j-server">
 	<!-- Group definitions -->
 	<group id="home">
-		<view id="overview"/>
+		<view id="overview" />
 	</group>
 </navigation>

@@ -25,7 +25,7 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Check formatting
-        run: mvn -B --quiet -T 2C formatter:validate impsort:check xml-format:xml-check
+        run: mvn -B -Pformatting spotless:check
       - name: Quick compile
         run: mvn -B --quiet -T 2C compile -DskipTests -Pquick
       - name: Download all other dependencies

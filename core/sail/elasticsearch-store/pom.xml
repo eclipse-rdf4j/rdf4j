@@ -138,7 +138,7 @@
 				<jdk>11</jdk>
 			</activation>
 			<properties>
-				<java.sec.mgr/>
+				<java.sec.mgr />
 			</properties>
 		</profile>
 		<profile>
