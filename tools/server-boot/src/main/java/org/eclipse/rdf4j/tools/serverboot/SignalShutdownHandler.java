@@ -73,20 +73,27 @@ final class SignalShutdownHandler implements AutoCloseable {
 
 		logger.info("SIG{} received; initiating graceful shutdown.", signalName);
 		ConfigurableApplicationContext context = contextRef.get();
+		int exitCode = 0;
 		if (context != null) {
 			try {
-				int exitCode = SpringApplication.exit(context, () -> 0);
+				exitCode = SpringApplication.exit(context, () -> 0);
 				if (context.isActive()) {
 					context.close();
 				}
 				logger.info("Application context closed after SIG{}, exit status {}", signalName, exitCode);
-				System.exit(exitCode);
 			} catch (Throwable e) {
 				logger.warn("Error while shutting down after SIG{}", signalName, e);
+				exitCode = 1;
 			}
 		} else {
 			logger.warn("SIG{} received before application context became available; shutting down immediately.",
 					signalName);
+		}
+
+		try {
+			System.exit(exitCode);
+		} catch (SecurityException e) {
+			logger.error("System.exit({}) blocked by security manager after SIG{}", exitCode, signalName, e);
 		}
 
 	}
