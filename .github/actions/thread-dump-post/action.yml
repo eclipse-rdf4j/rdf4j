@@ -1,0 +1,7 @@
+name: Thread dump on cancellation
+description: Capture JVM thread dumps after a job is cancelled.
+runs:
+  using: node20
+  main: main.js
+  post: post.js
+  post-if: cancelled()
