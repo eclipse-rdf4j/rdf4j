@@ -18,6 +18,11 @@ import org.elasticsearch.action.bulk.BulkRequestBuilder;
 import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.client.Client;
 
+/**
+ * @deprecated Deprecated in preparation for an Elasticsearch client upgrade; this API will change or be removed in a
+ *             future release.
+ */
+@Deprecated(since = "5.3.0", forRemoval = true)
 public class ElasticsearchBulkUpdater implements BulkUpdater {
 
 	private final Client client;

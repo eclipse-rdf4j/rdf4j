@@ -210,22 +210,32 @@ class MemorySailStore implements SailStore {
 			return EMPTY_ITERATION;
 		}
 
-		MemResource memSubj = valueFactory.getMemResource(subj);
-		if (subj != null && memSubj == null) {
-			// non-existent subject
-			return EMPTY_ITERATION;
+		MemIRI memPred = null;
+		MemResource memSubj = null;
+		MemValue memObj = null;
+
+		if (subj != null) {
+			memSubj = valueFactory.getMemResource(subj);
+			if (memSubj == null) {
+				// non-existent subject
+				return EMPTY_ITERATION;
+			}
 		}
 
-		MemIRI memPred = valueFactory.getMemURI(pred);
-		if (pred != null && memPred == null) {
-			// non-existent predicate
-			return EMPTY_ITERATION;
+		if (pred != null) {
+			memPred = valueFactory.getMemURI(pred);
+			if (memPred == null) {
+				// non-existent predicate
+				return EMPTY_ITERATION;
+			}
 		}
 
-		MemValue memObj = valueFactory.getMemValue(obj);
-		if (obj != null && memObj == null) {
-			// non-existent object
-			return EMPTY_ITERATION;
+		if (obj != null) {
+			memObj = valueFactory.getMemValue(obj);
+			if (memObj == null) {
+				// non-existent object
+				return EMPTY_ITERATION;
+			}
 		}
 
 		MemResource[] memContexts;
@@ -703,14 +713,14 @@ class MemorySailStore implements SailStore {
 				observations = new HashSet<>();
 			}
 			if (contexts == null) {
-				observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj),
-						new Var("g", null)));
+				observations.add(new StatementPattern(Var.of("s", subj), Var.of("p", pred), Var.of("o", obj),
+						Var.of("g", null)));
 			} else if (contexts.length == 0) {
-				observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj)));
+				observations.add(new StatementPattern(Var.of("s", subj), Var.of("p", pred), Var.of("o", obj)));
 			} else {
 				for (Resource ctx : contexts) {
-					observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj),
-							new Var("g", ctx)));
+					observations.add(new StatementPattern(Var.of("s", subj), Var.of("p", pred), Var.of("o", obj),
+							Var.of("g", ctx)));
 				}
 			}
 		}

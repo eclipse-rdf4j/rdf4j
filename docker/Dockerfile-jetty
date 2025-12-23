@@ -11,7 +11,7 @@ WORKDIR /tmp
 RUN unzip -q /tmp/rdf4j.zip
 
 # Final workbench
-FROM jetty:9-jre17-eclipse-temurin
+FROM jetty:9-jdk21-eclipse-temurin
 LABEL org.opencontainers.image.authors="Bart Hanssens (bart.hanssens@bosa.fgov.be)"
 
 USER root

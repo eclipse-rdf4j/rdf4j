@@ -17,12 +17,16 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -75,6 +79,12 @@ class TripleStore implements Closeable {
 	 * The key used to store the triple indexes specification that specifies which triple indexes exist.
 	 */
 	private static final String INDEXES_KEY = "triple-indexes";
+
+	/**
+	 * System property that enables the experimental {@link MemoryMappedTxnStatusFile} implementation instead of the
+	 * default {@link TxnStatusFile}.
+	 */
+	private static final String MEMORY_MAPPED_TXN_STATUS_FILE_ENABLED_PROP = "org.eclipse.rdf4j.sail.nativerdf.MemoryMappedTxnStatusFile.enabled";
 
 	/**
 	 * The version number for the current triple store.
@@ -164,7 +174,7 @@ class TripleStore implements Closeable {
 	public TripleStore(File dir, String indexSpecStr, boolean forceSync) throws IOException, SailException {
 		this.dir = dir;
 		this.forceSync = forceSync;
-		this.txnStatusFile = new TxnStatusFile(dir);
+		this.txnStatusFile = createTxnStatusFile(dir);
 
 		File propFile = new File(dir, PROPERTIES_FILE);
 
@@ -217,6 +227,13 @@ class TripleStore implements Closeable {
 			properties.setProperty(INDEXES_KEY, indexSpecStr);
 			storeProperties(propFile);
 		}
+	}
+
+	private static TxnStatusFile createTxnStatusFile(File dir) throws IOException {
+		if (Boolean.getBoolean(MEMORY_MAPPED_TXN_STATUS_FILE_ENABLED_PROP)) {
+			return new MemoryMappedTxnStatusFile(dir);
+		}
+		return new TxnStatusFile(dir);
 	}
 
 	/*---------*
@@ -936,7 +953,7 @@ class TripleStore implements Closeable {
 	}
 
 	public void startTransaction() throws IOException {
-		txnStatusFile.setTxnStatus(TxnStatus.ACTIVE);
+		txnStatusFile.setTxnStatus(TxnStatus.ACTIVE, forceSync);
 
 		// Create a record cache for storing updated triples with a maximum of
 		// some 10% of the number of triples
@@ -951,7 +968,7 @@ class TripleStore implements Closeable {
 	}
 
 	public void commit() throws IOException {
-		txnStatusFile.setTxnStatus(TxnStatus.COMMITTING);
+		txnStatusFile.setTxnStatus(TxnStatus.COMMITTING, forceSync);
 
 		// updatedTriplesCache will be null when recovering from a crashed commit
 		boolean validCache = updatedTriplesCache != null && updatedTriplesCache.isValid();
@@ -1006,7 +1023,7 @@ class TripleStore implements Closeable {
 
 		sync();
 
-		txnStatusFile.setTxnStatus(TxnStatus.NONE);
+		txnStatusFile.setTxnStatus(TxnStatus.NONE, forceSync);
 		// checkAllCommitted();
 	}
 
@@ -1029,7 +1046,7 @@ class TripleStore implements Closeable {
 	}
 
 	public void rollback() throws IOException {
-		txnStatusFile.setTxnStatus(TxnStatus.ROLLING_BACK);
+		txnStatusFile.setTxnStatus(TxnStatus.ROLLING_BACK, forceSync);
 
 		// updatedTriplesCache will be null when recovering from a crash
 		boolean validCache = updatedTriplesCache != null && updatedTriplesCache.isValid();
@@ -1083,7 +1100,7 @@ class TripleStore implements Closeable {
 
 		sync();
 
-		txnStatusFile.setTxnStatus(TxnStatus.NONE);
+		txnStatusFile.setTxnStatus(TxnStatus.NONE, forceSync);
 	}
 
 	protected void sync() throws IOException {
@@ -1196,7 +1213,8 @@ class TripleStore implements Closeable {
 				}
 			}
 			tripleComparator = new TripleComparator(fieldSeq);
-			btree = new BTree(dir, getFilenamePrefix(fieldSeq), 2048, RECORD_LENGTH, tripleComparator, forceSync);
+			btree = new BTree(dir, getFilenamePrefix(fieldSeq), 2048, RECORD_LENGTH, tripleComparator.compareStrategy,
+					forceSync);
 		}
 
 		private String getFilenamePrefix(String fieldSeq) {
@@ -1275,9 +1293,92 @@ class TripleStore implements Closeable {
 	private static class TripleComparator implements RecordComparator {
 
 		private final char[] fieldSeq;
+		private final RecordComparator compareStrategy;
 
 		public TripleComparator(String fieldSeq) {
-			this.fieldSeq = fieldSeq.toCharArray();
+			String normalized = normalizeFieldSequence(fieldSeq);
+			this.fieldSeq = normalized.toCharArray();
+			this.compareStrategy = getComparator(normalized);
+		}
+
+		private static final RecordComparator compareSPOC = TripleComparator::compareSPOC;
+		private static final RecordComparator compareSPCO = TripleComparator::compareSPCO;
+		private static final RecordComparator compareSOPC = TripleComparator::compareSOPC;
+		private static final RecordComparator compareSOCP = TripleComparator::compareSOCP;
+		private static final RecordComparator compareSCPO = TripleComparator::compareSCPO;
+		private static final RecordComparator compareSCOP = TripleComparator::compareSCOP;
+		private static final RecordComparator comparePSOC = TripleComparator::comparePSOC;
+		private static final RecordComparator comparePSCO = TripleComparator::comparePSCO;
+		private static final RecordComparator comparePOSC = TripleComparator::comparePOSC;
+		private static final RecordComparator comparePOCS = TripleComparator::comparePOCS;
+		private static final RecordComparator comparePCSO = TripleComparator::comparePCSO;
+		private static final RecordComparator comparePCOS = TripleComparator::comparePCOS;
+		private static final RecordComparator compareOSPC = TripleComparator::compareOSPC;
+		private static final RecordComparator compareOSCP = TripleComparator::compareOSCP;
+		private static final RecordComparator compareOPSC = TripleComparator::compareOPSC;
+		private static final RecordComparator compareOPCS = TripleComparator::compareOPCS;
+		private static final RecordComparator compareOCSP = TripleComparator::compareOCSP;
+		private static final RecordComparator compareOCPS = TripleComparator::compareOCPS;
+		private static final RecordComparator compareCSPO = TripleComparator::compareCSPO;
+		private static final RecordComparator compareCSOP = TripleComparator::compareCSOP;
+		private static final RecordComparator compareCPSO = TripleComparator::compareCPSO;
+		private static final RecordComparator compareCPOS = TripleComparator::compareCPOS;
+		private static final RecordComparator compareCOSP = TripleComparator::compareCOSP;
+		private static final RecordComparator compareCOPS = TripleComparator::compareCOPS;
+
+		private static RecordComparator getComparator(String order) {
+			switch (order) {
+			case "spoc":
+				return compareSPOC;
+			case "spco":
+				return compareSPCO;
+			case "sopc":
+				return compareSOPC;
+			case "socp":
+				return compareSOCP;
+			case "scpo":
+				return compareSCPO;
+			case "scop":
+				return compareSCOP;
+			case "psoc":
+				return comparePSOC;
+			case "psco":
+				return comparePSCO;
+			case "posc":
+				return comparePOSC;
+			case "pocs":
+				return comparePOCS;
+			case "pcso":
+				return comparePCSO;
+			case "pcos":
+				return comparePCOS;
+			case "ospc":
+				return compareOSPC;
+			case "oscp":
+				return compareOSCP;
+			case "opsc":
+				return compareOPSC;
+			case "opcs":
+				return compareOPCS;
+			case "ocsp":
+				return compareOCSP;
+			case "ocps":
+				return compareOCPS;
+			case "cspo":
+				return compareCSPO;
+			case "csop":
+				return compareCSOP;
+			case "cpso":
+				return compareCPSO;
+			case "cpos":
+				return compareCPOS;
+			case "cosp":
+				return compareCOSP;
+			case "cops":
+				return compareCOPS;
+			default:
+				throw new IllegalArgumentException("Unknown field order: " + order);
+			}
 		}
 
 		public char[] getFieldSeq() {
@@ -1286,35 +1387,185 @@ class TripleStore implements Closeable {
 
 		@Override
 		public final int compareBTreeValues(byte[] key, byte[] data, int offset, int length) {
-			for (char field : fieldSeq) {
-				int fieldIdx;
+			return compareStrategy.compareBTreeValues(key, data, offset, length);
+		}
 
-				switch (field) {
-				case 's':
-					fieldIdx = SUBJ_IDX;
-					break;
-				case 'p':
-					fieldIdx = PRED_IDX;
-					break;
-				case 'o':
-					fieldIdx = OBJ_IDX;
-					break;
-				case 'c':
-					fieldIdx = CONTEXT_IDX;
-					break;
-				default:
-					throw new IllegalArgumentException(
-							"invalid character '" + field + "' in field sequence: " + new String(fieldSeq));
-				}
-
-				int diff = ByteArrayUtil.compareRegion(key, fieldIdx, data, offset + fieldIdx, 4);
-
-				if (diff != 0) {
-					return diff;
-				}
+		private static String normalizeFieldSequence(String fieldSeq) {
+			if (fieldSeq == null) {
+				throw new IllegalArgumentException("Field sequence must not be null");
 			}
+			String normalized = fieldSeq.trim().toLowerCase(Locale.ROOT);
+			if (normalized.length() != 4) {
+				throw new IllegalArgumentException(
+						"Field sequence '" + fieldSeq + "' must be four characters long (permutation of 'spoc').");
+			}
+			return normalized;
+		}
+
+		private static int compareSPOC(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, SUBJ_IDX, PRED_IDX, OBJ_IDX, CONTEXT_IDX);
+		}
+
+		private static int compareSPCO(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, SUBJ_IDX, PRED_IDX, CONTEXT_IDX, OBJ_IDX);
+		}
+
+		private static int compareSOPC(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, SUBJ_IDX, OBJ_IDX, PRED_IDX, CONTEXT_IDX);
+		}
+
+		private static int compareSOCP(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, SUBJ_IDX, OBJ_IDX, CONTEXT_IDX, PRED_IDX);
+		}
+
+		private static int compareSCPO(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, SUBJ_IDX, CONTEXT_IDX, PRED_IDX, OBJ_IDX);
+		}
+
+		private static int compareSCOP(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, SUBJ_IDX, CONTEXT_IDX, OBJ_IDX, PRED_IDX);
+		}
+
+		private static int comparePSOC(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, PRED_IDX, SUBJ_IDX, OBJ_IDX, CONTEXT_IDX);
+		}
+
+		private static int comparePSCO(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, PRED_IDX, SUBJ_IDX, CONTEXT_IDX, OBJ_IDX);
+		}
+
+		private static int comparePOSC(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, PRED_IDX, OBJ_IDX, SUBJ_IDX, CONTEXT_IDX);
+		}
+
+		private static int comparePOCS(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, PRED_IDX, OBJ_IDX, CONTEXT_IDX, SUBJ_IDX);
+		}
+
+		private static int comparePCSO(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, PRED_IDX, CONTEXT_IDX, SUBJ_IDX, OBJ_IDX);
+		}
+
+		private static int comparePCOS(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, PRED_IDX, CONTEXT_IDX, OBJ_IDX, SUBJ_IDX);
+		}
+
+		private static int compareOSPC(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, OBJ_IDX, SUBJ_IDX, PRED_IDX, CONTEXT_IDX);
+		}
+
+		private static int compareOSCP(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, OBJ_IDX, SUBJ_IDX, CONTEXT_IDX, PRED_IDX);
+		}
+
+		private static int compareOPSC(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, OBJ_IDX, PRED_IDX, SUBJ_IDX, CONTEXT_IDX);
+		}
+
+		private static int compareOPCS(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, OBJ_IDX, PRED_IDX, CONTEXT_IDX, SUBJ_IDX);
+		}
+
+		private static int compareOCSP(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, OBJ_IDX, CONTEXT_IDX, SUBJ_IDX, PRED_IDX);
+		}
+
+		private static int compareOCPS(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, OBJ_IDX, CONTEXT_IDX, PRED_IDX, SUBJ_IDX);
+		}
+
+		private static int compareCSPO(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, CONTEXT_IDX, SUBJ_IDX, PRED_IDX, OBJ_IDX);
+		}
+
+		private static int compareCSOP(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, CONTEXT_IDX, SUBJ_IDX, OBJ_IDX, PRED_IDX);
+		}
+
+		private static int compareCPSO(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, CONTEXT_IDX, PRED_IDX, SUBJ_IDX, OBJ_IDX);
+		}
+
+		private static int compareCPOS(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, CONTEXT_IDX, PRED_IDX, OBJ_IDX, SUBJ_IDX);
+		}
+
+		private static int compareCOSP(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, CONTEXT_IDX, OBJ_IDX, SUBJ_IDX, PRED_IDX);
+		}
+
+		private static int compareCOPS(byte[] key, byte[] data, int offset, int length) {
+			return compareFields(key, data, offset, CONTEXT_IDX, OBJ_IDX, PRED_IDX, SUBJ_IDX);
+		}
+
+		/**
+		 * Lexicographically compares four 4-byte fields drawn from 'key' and 'data' at indices (first, second, third,
+		 * fourth), where the data side is offset by 'offset'. Bytes are treated as unsigned, and the return value is
+		 * the (unsigned) difference of the first mismatching bytes, or 0 if all four fields are equal.
+		 */
+		static int compareFields(byte[] key, byte[] data, int offset,
+				int first, int second, int third, int fourth) {
+
+			// Field 1
+			int a = (int) INT_BE.get(key, first);
+			int b = (int) INT_BE.get(data, offset + first);
+			int x = a ^ b;
+			if (x != 0)
+				return diffFromXorInt(a, b, x);
+
+			// Field 2
+			a = (int) INT_BE.get(key, second);
+			b = (int) INT_BE.get(data, offset + second);
+			x = a ^ b;
+			if (x != 0)
+				return diffFromXorInt(a, b, x);
+
+			// Field 3
+			a = (int) INT_BE.get(key, third);
+			b = (int) INT_BE.get(data, offset + third);
+			x = a ^ b;
+			if (x != 0)
+				return diffFromXorInt(a, b, x);
+
+			// Field 4
+			a = (int) INT_BE.get(key, fourth);
+			b = (int) INT_BE.get(data, offset + fourth);
+			x = a ^ b;
+			if (x != 0)
+				return diffFromXorInt(a, b, x);
 
 			return 0;
+		}
+
+		/**
+		 * Given two big-endian-packed ints and their XOR (non-zero), return the (unsigned) difference of the first
+		 * mismatching bytes.
+		 *
+		 * Trick: the first differing byte’s position is the number of leading zeros of x, rounded down to a multiple of
+		 * 8. Left-shift both ints by that many bits so the mismatching byte moves into the top byte, then extract it.
+		 */
+		private static int diffFromXorInt(int a, int b, int x) {
+			int n = Integer.numberOfLeadingZeros(x) & ~7; // 0,8,16,24
+			return ((a << n) >>> 24) - ((b << n) >>> 24);
+		}
+
+		private static final VarHandle INT_BE = MethodHandles.byteArrayViewVarHandle(int[].class, ByteOrder.BIG_ENDIAN);
+
+		public static int compareFieldLength4(byte[] key, byte[] data, int offset, int fieldIdx) {
+			final int a = (int) INT_BE.get(key, fieldIdx);
+			final int b = (int) INT_BE.get(data, offset + fieldIdx);
+
+			final int x = a ^ b; // mask of differing bits
+			if (x == 0)
+				return 0; // all 4 bytes equal
+
+			// Find the first differing *byte* from the left (k .. k+3).
+			// With a big‑endian view, the first byte lives in bits 31..24, etc.
+			final int byteIndex = Integer.numberOfLeadingZeros(x) >>> 3; // 0..3 equal-leading-byte count
+			final int shift = 24 - (byteIndex << 3);
+
+			// Extract that byte from each int (as unsigned) and return their difference.
+			return ((a >>> shift) & 0xFF) - ((b >>> shift) & 0xFF);
 		}
 	}
 

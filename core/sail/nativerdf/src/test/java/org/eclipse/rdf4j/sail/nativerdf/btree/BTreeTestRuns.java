@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.nativerdf.btree;
 
 import java.io.File;
+import java.util.Random;
 
 public class BTreeTestRuns {
 	/*--------------*
@@ -34,7 +35,7 @@ public class BTreeTestRuns {
 		RecordComparator comparator = new DefaultRecordComparator();
 		try (BTree btree = new BTree(dataDir, filenamePrefix, 501, 13, comparator)) {
 
-			java.util.Random random = new java.util.Random(0L);
+			Random random = new Random(0L);
 			byte[] value = new byte[13];
 
 			long startTime = System.currentTimeMillis();

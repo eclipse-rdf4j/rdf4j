@@ -120,6 +120,11 @@
 	<variable name="clear-context.label">Clear Context(s)</variable>
 	<variable name="context.label">Context</variable>
 	<variable name="data-format.label">Data format</variable>
+	<variable name="isolation-level.label">Isolation level</variable>
+	<variable name="isolation-level.default">Repository default</variable>
+	<variable name="isolation-level.desc">
+		Choose the transaction isolation level used when uploading data. Leave this at the default to let the repository decide.
+	</variable>
 	<variable name="include-inferred.label">
 		Include inferred statements
 	</variable>

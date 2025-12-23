@@ -173,7 +173,7 @@ public class TupleExprs {
 	 */
 	public static Var createConstVar(Value value) {
 		String varName = getConstVarName(value);
-		return new Var(varName, value, true, true);
+		return Var.of(varName, value, true, true);
 	}
 
 	public static String getConstVarName(Value value) {

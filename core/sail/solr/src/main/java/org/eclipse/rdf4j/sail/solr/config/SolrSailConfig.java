@@ -13,6 +13,11 @@ package org.eclipse.rdf4j.sail.solr.config;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
 import org.eclipse.rdf4j.sail.lucene.config.AbstractLuceneSailConfig;
 
+/**
+ * @deprecated since 5.3.0. Solr integration is deprecated for removal; use alternative Lucene-backed search
+ *             implementations instead.
+ */
+@Deprecated(since = "5.3.0", forRemoval = true)
 public class SolrSailConfig extends AbstractLuceneSailConfig {
 
 	/*--------------*

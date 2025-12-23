@@ -15,6 +15,11 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.sail.lucene.DocumentScore;
 
+/**
+ * @deprecated since 5.3.0. Solr integration is deprecated for removal; use alternative Lucene-backed search
+ *             implementations instead.
+ */
+@Deprecated(since = "5.3.0", forRemoval = true)
 public class SolrDocumentScore extends SolrDocumentResult implements DocumentScore {
 
 	private final Map<String, List<String>> highlighting;

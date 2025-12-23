@@ -53,7 +53,7 @@ public class EvaluationStatisticsTest {
 
 	@Test
 	public void testCacheCardinalityStatementPattern() {
-		StatementPattern tupleExpr = new StatementPattern(new Var("a"), new Var("b"), new Var("c"));
+		StatementPattern tupleExpr = new StatementPattern(Var.of("a"), Var.of("b"), Var.of("c"));
 		Assertions.assertFalse(tupleExpr.isCardinalitySet());
 
 		double cardinality = new EvaluationStatistics().getCardinality(tupleExpr);
@@ -63,7 +63,7 @@ public class EvaluationStatisticsTest {
 
 	@Test
 	public void testCacheCardinalityTripleRef() {
-		TripleRef tupleExpr = new TripleRef(new Var("a"), new Var("b"), new Var("c"), new Var("expr"));
+		TripleRef tupleExpr = new TripleRef(Var.of("a"), Var.of("b"), Var.of("c"), Var.of("expr"));
 		Assertions.assertFalse(tupleExpr.isCardinalitySet());
 
 		double cardinality = new EvaluationStatistics().getCardinality(tupleExpr);

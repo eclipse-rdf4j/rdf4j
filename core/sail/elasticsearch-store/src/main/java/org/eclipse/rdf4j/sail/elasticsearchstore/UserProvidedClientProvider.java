@@ -17,7 +17,10 @@ import org.elasticsearch.client.Client;
  * cluster information. The client provided by the user is not closed by the ElasticsearchStore.
  *
  * @author Håvard Mikkelsen Ottestad
+ * @deprecated Deprecated in preparation for an Elasticsearch client upgrade; this API will change or be removed in a
+ *             future release.
  */
+@Deprecated(since = "5.3.0", forRemoval = true)
 public class UserProvidedClientProvider implements ClientProvider {
 
 	final private Client client;

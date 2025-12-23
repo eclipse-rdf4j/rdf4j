@@ -784,6 +784,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		}
 
 		if (hits != null) {
+
 			double maxDistance = query.getDistance();
 			// for each hit ...
 			for (DocumentDistance hit : hits) {

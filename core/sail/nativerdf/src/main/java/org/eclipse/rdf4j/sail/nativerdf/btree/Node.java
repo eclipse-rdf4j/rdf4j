@@ -12,9 +12,10 @@ package org.eclipse.rdf4j.sail.nativerdf.btree;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
-import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
@@ -52,7 +53,9 @@ class Node {
 	/**
 	 * Registered listeners that want to be notified of changes to the node.
 	 */
-	private final ConcurrentLinkedDeque<NodeListener> listeners = new ConcurrentLinkedDeque<>();
+	private final Object listenerMutex = new Object();
+
+	private NodeListenerHandle listenerHead;
 
 	/**
 	 * Creates a new Node object with the specified ID.
@@ -102,6 +105,18 @@ class Node {
 
 	public int getUsageCount() {
 		return usageCount.get();
+	}
+
+	int getRegisteredListenerCount() {
+		synchronized (listenerMutex) {
+			int count = 0;
+			for (NodeListenerHandle cursor = listenerHead; cursor != null; cursor = cursor.next) {
+				if (!cursor.isRemoved()) {
+					count++;
+				}
+			}
+			return count;
+		}
 	}
 
 	public boolean dataChanged() {
@@ -392,14 +407,45 @@ class Node {
 		notifyRotatedRight(valueIdx, leftChildNode, rightChildNode);
 	}
 
-	public void register(NodeListener listener) {
-		// assert !listeners.contains(listener);
-		listeners.add(listener);
+	public NodeListenerHandle register(NodeListener listener) {
+		NodeListenerHandle handle = new NodeListenerHandle(this, listener);
+		synchronized (listenerMutex) {
+			handle.next = listenerHead;
+			if (listenerHead != null) {
+				listenerHead.prev = handle;
+			}
+			listenerHead = handle;
+		}
+		return handle;
 	}
 
 	public void deregister(NodeListener listener) {
-		// assert listeners.contains(listener);
-		listeners.removeFirstOccurrence(listener);
+		NodeListenerHandle handle = null;
+		synchronized (listenerMutex) {
+			for (NodeListenerHandle cursor = listenerHead; cursor != null; cursor = cursor.next) {
+				if (cursor.listener == listener) {
+					handle = cursor;
+					break;
+				}
+			}
+		}
+		if (handle != null) {
+			handle.remove();
+		}
+	}
+
+	void removeListenerHandle(NodeListenerHandle handle) {
+		synchronized (listenerMutex) {
+			if (handle.prev != null) {
+				handle.prev.next = handle.next;
+			} else if (listenerHead == handle) {
+				listenerHead = handle.next;
+			}
+
+			if (handle.next != null) {
+				handle.next.prev = handle.prev;
+			}
+		}
 	}
 
 	private void notifyValueAdded(int index) {
@@ -436,26 +482,39 @@ class Node {
 	}
 
 	private void notifyListeners(NodeListenerNotifier notifier) throws IOException {
-		Iterator<NodeListener> iter = listeners.iterator();
-
-		while (iter.hasNext()) {
-			boolean deregister = notifier.apply(iter.next());
-
+		for (NodeListenerHandle handle : snapshotListeners()) {
+			if (handle.isRemoved()) {
+				continue;
+			}
+			boolean deregister = notifier.apply(handle.listener);
 			if (deregister) {
-				iter.remove();
+				handle.remove();
 			}
 		}
 	}
 
 	private void notifySafeListeners(Function<NodeListener, Boolean> notifier) {
-		Iterator<NodeListener> iter = listeners.iterator();
-
-		while (iter.hasNext()) {
-			boolean deregister = notifier.apply(iter.next());
-
-			if (deregister) {
-				iter.remove();
+		for (NodeListenerHandle handle : snapshotListeners()) {
+			if (handle.isRemoved()) {
+				continue;
 			}
+			boolean deregister = notifier.apply(handle.listener);
+			if (deregister) {
+				handle.remove();
+			}
+		}
+	}
+
+	private List<NodeListenerHandle> snapshotListeners() {
+		synchronized (listenerMutex) {
+			if (listenerHead == null) {
+				return Collections.emptyList();
+			}
+			List<NodeListenerHandle> snapshot = new ArrayList<>();
+			for (NodeListenerHandle cursor = listenerHead; cursor != null; cursor = cursor.next) {
+				snapshot.add(cursor);
+			}
+			return snapshot;
 		}
 	}
 

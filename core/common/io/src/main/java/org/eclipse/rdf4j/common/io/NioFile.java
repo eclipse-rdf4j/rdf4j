@@ -56,6 +56,29 @@ public final class NioFile implements Closeable {
 	private volatile boolean explictlyClosed;
 
 	/**
+	 * Optional factory used to create FileChannel instances, primarily for testing where a delegating channel can
+	 * simulate failures. If not set, {@link FileChannel#open(Path, java.nio.file.OpenOption...)} is used directly.
+	 */
+	private static volatile ChannelFactory channelFactory;
+
+	/**
+	 * Functional interface for creating FileChannel instances. Intended for test injection.
+	 */
+	@FunctionalInterface
+	public interface ChannelFactory {
+		FileChannel open(Path path, Set<StandardOpenOption> options) throws IOException;
+	}
+
+	/**
+	 * Install a factory that will be used to create FileChannel instances. Intended for tests only.
+	 *
+	 * Passing {@code null} restores the default behavior.
+	 */
+	public static void setChannelFactoryForTesting(ChannelFactory factory) {
+		channelFactory = factory;
+	}
+
+	/**
 	 * Constructor Opens a file in read/write mode, creating a new one if the file doesn't exist.
 	 *
 	 * @param file
@@ -109,7 +132,12 @@ public final class NioFile implements Closeable {
 	 * @throws IOException
 	 */
 	private void open() throws IOException {
-		fc = FileChannel.open(file.toPath(), openOptions);
+		ChannelFactory factory = channelFactory;
+		if (factory != null) {
+			fc = factory.open(file.toPath(), openOptions);
+		} else {
+			fc = FileChannel.open(file.toPath(), openOptions);
+		}
 	}
 
 	/**
@@ -422,4 +450,5 @@ public final class NioFile implements Closeable {
 		}
 		return buf.getInt(0);
 	}
+
 }

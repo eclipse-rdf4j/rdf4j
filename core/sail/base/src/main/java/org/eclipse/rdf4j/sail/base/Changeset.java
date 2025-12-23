@@ -604,11 +604,11 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 			return observed.stream()
 					.map(simpleStatementPattern -> new StatementPattern(
-							new Var("s", simpleStatementPattern.getSubject()),
-							new Var("p", simpleStatementPattern.getPredicate()),
-							new Var("o", simpleStatementPattern.getObject()),
+							Var.of("s", simpleStatementPattern.getSubject()),
+							Var.of("p", simpleStatementPattern.getPredicate()),
+							Var.of("o", simpleStatementPattern.getObject()),
 							simpleStatementPattern.isAllContexts() ? null
-									: new Var("c", simpleStatementPattern.getContext())
+									: Var.of("c", simpleStatementPattern.getContext())
 					)
 					)
 					.collect(Collectors.toCollection(HashSet::new));

@@ -64,9 +64,9 @@ public class FederatedDescribeIteration extends DescribeIteration {
 			return new EmptyIteration<>();
 		}
 
-		Var subjVar = new Var(VARNAME_SUBJECT, subject);
-		Var predVar = new Var(VARNAME_PREDICATE);
-		Var objVar = new Var(VARNAME_OBJECT, object);
+		Var subjVar = Var.of(VARNAME_SUBJECT, subject);
+		Var predVar = Var.of(VARNAME_PREDICATE);
+		Var objVar = Var.of(VARNAME_OBJECT, object);
 
 		// associate all federation members as sources for this pattern
 		// Note: for DESCRIBE we currently do not perform any extra source selection,

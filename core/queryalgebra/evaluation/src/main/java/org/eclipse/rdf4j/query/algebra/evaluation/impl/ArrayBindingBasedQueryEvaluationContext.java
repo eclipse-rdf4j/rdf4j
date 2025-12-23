@@ -353,7 +353,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				// We can skip constants that are only used in StatementPatterns since these are never added to the
 				// BindingSet anyway
 				if (!(node.isConstant() && node.getParentNode() instanceof StatementPattern)) {
-					Var replacement = new Var(varNames.computeIfAbsent(node.getName(), k -> k), node.getValue(),
+					Var replacement = Var.of(varNames.computeIfAbsent(node.getName(), k -> k), node.getValue(),
 							node.isAnonymous(), node.isConstant());
 					node.replaceWith(replacement);
 				}

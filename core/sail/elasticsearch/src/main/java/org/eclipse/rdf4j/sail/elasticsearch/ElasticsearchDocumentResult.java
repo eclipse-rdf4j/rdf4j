@@ -17,6 +17,11 @@ import org.locationtech.spatial4j.context.SpatialContext;
 
 import com.google.common.base.Function;
 
+/**
+ * @deprecated Deprecated in preparation for an Elasticsearch client upgrade; this API will change or be removed in a
+ *             future release.
+ */
+@Deprecated(since = "5.3.0", forRemoval = true)
 public class ElasticsearchDocumentResult implements DocumentResult {
 
 	protected final SearchHit hit;

@@ -14,8 +14,12 @@ import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrInputDocument;
 
 /**
- * Utility for Solr handling
+ * Utility for Solr handling.
+ *
+ * @deprecated since 5.3.0. Solr integration is deprecated for removal; use alternative Lucene-backed search
+ *             implementations instead.
  */
+@Deprecated(since = "5.3.0", forRemoval = true)
 public class SolrUtil {
 
 	/**

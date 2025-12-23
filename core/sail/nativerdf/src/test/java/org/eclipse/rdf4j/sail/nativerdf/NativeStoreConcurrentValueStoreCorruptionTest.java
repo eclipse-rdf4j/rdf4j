@@ -37,8 +37,8 @@ public class NativeStoreConcurrentValueStoreCorruptionTest {
 	File dataDir;
 
 	@AfterEach
-	public void resetSoftFailFlag() {
-		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = true;
+	public void tearDown() {
+		NativeStore.SOFT_FAIL_ON_CORRUPT_DATA_AND_REPAIR_INDEXES = false;
 	}
 
 	@Test

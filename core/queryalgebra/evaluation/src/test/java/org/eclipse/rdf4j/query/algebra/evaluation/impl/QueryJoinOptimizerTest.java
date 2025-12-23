@@ -16,10 +16,16 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
@@ -31,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -192,6 +199,63 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 	}
 
+	@Test
+	public void reorderJoinArgsUsesEstimatorForFirstPattern() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		StatementPattern expensive = new StatementPattern(new Var("s1"),
+				new Var("p1", vf.createIRI("ex:pExpensive")), new Var("o1"));
+		StatementPattern medium = new StatementPattern(new Var("s2"),
+				new Var("p2", vf.createIRI("ex:pMedium")), new Var("o2"));
+		StatementPattern cheap = new StatementPattern(new Var("s3"),
+				new Var("p3", vf.createIRI("ex:pCheap")), new Var("o3"));
+
+		Deque<TupleExpr> ordered = new ArrayDeque<>();
+		ordered.add(expensive);
+		ordered.add(medium);
+		ordered.add(cheap);
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new JoinEstimatingStatistics(), new EmptyTripleSource());
+		Object joinVisitor = buildJoinVisitor(optimizer);
+		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class);
+		reorderJoinArgs.setAccessible(true);
+
+		@SuppressWarnings("unchecked")
+		Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered);
+
+		assertThat(reordered.removeFirst()).isSameAs(cheap);
+		assertThat(reordered.removeFirst()).isSameAs(medium);
+		assertThat(reordered.removeFirst()).isSameAs(expensive);
+	}
+
+	@Test
+	public void reorderJoinArgsChoosesCheapestInitialJoinCombination() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		StatementPattern a = new StatementPattern(new Var("sa"), new Var("pa", vf.createIRI("ex:pA")),
+				new Var("oa"));
+		StatementPattern b = new StatementPattern(new Var("sb"), new Var("pb", vf.createIRI("ex:pB")),
+				new Var("ob"));
+		StatementPattern c = new StatementPattern(new Var("sc"), new Var("pc", vf.createIRI("ex:pC")),
+				new Var("oc"));
+
+		Deque<TupleExpr> ordered = new ArrayDeque<>();
+		ordered.add(a);
+		ordered.add(b);
+		ordered.add(c);
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatistics(), new EmptyTripleSource());
+		Object joinVisitor = buildJoinVisitor(optimizer);
+		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class);
+		reorderJoinArgs.setAccessible(true);
+
+		@SuppressWarnings("unchecked")
+		Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered);
+
+		assertThat(reordered.removeFirst()).isSameAs(b);
+		assertThat(reordered.removeFirst()).isSameAs(c);
+	}
+
 	@Override
 	public QueryJoinOptimizer getOptimizer() {
 		return new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
@@ -248,6 +312,118 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		public List<StatementPattern> getStatements() {
 			return statements;
+		}
+	}
+
+	private Object buildJoinVisitor(QueryJoinOptimizer optimizer) throws Exception {
+		Class<?> joinVisitorClass = Class
+				.forName("org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer$JoinVisitor");
+		Constructor<?> constructor = joinVisitorClass.getDeclaredConstructor(QueryJoinOptimizer.class);
+		constructor.setAccessible(true);
+		return constructor.newInstance(optimizer);
+	}
+
+	private static final class PairwiseJoinStatistics extends EvaluationStatistics {
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				return getStatementCardinality((StatementPattern) expr);
+			}
+
+			if (expr instanceof Join) {
+				return getJoinCardinality((Join) expr);
+			}
+
+			return super.getCardinality(expr);
+		}
+
+		private double getStatementCardinality(StatementPattern pattern) {
+			String predicate = predicate(pattern);
+			if ("ex:pA".equals(predicate)) {
+				return 2;
+			}
+			if ("ex:pB".equals(predicate)) {
+				return 3;
+			}
+			if ("ex:pC".equals(predicate)) {
+				return 4;
+			}
+			return 10;
+		}
+
+		private double getJoinCardinality(Join join) {
+			String left = predicate(join.getLeftArg());
+			String right = predicate(join.getRightArg());
+
+			if (left == null || right == null) {
+				return super.getCardinality(join);
+			}
+
+			if ((left.equals("ex:pA") && right.equals("ex:pB")) || (left.equals("ex:pB") && right.equals("ex:pA"))) {
+				return 100;
+			}
+			if ((left.equals("ex:pA") && right.equals("ex:pC")) || (left.equals("ex:pC") && right.equals("ex:pA"))) {
+				return 80;
+			}
+			if ((left.equals("ex:pB") && right.equals("ex:pC")) || (left.equals("ex:pC") && right.equals("ex:pB"))) {
+				return 5;
+			}
+
+			return super.getCardinality(join);
+		}
+
+		private String predicate(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				Var predicateVar = ((StatementPattern) expr).getPredicateVar();
+				if (predicateVar != null && predicateVar.hasValue()) {
+					return predicateVar.getValue().stringValue();
+				}
+			}
+			return null;
+		}
+	}
+
+	private static final class JoinEstimatingStatistics extends EvaluationStatistics {
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				return getStatementCardinality((StatementPattern) expr);
+			}
+
+			if (expr instanceof Join) {
+				Join join = (Join) expr;
+				return getCardinality(join.getLeftArg()) * getCardinality(join.getRightArg());
+			}
+
+			return super.getCardinality(expr);
+		}
+
+		private double getStatementCardinality(StatementPattern pattern) {
+			if (pattern.getPredicateVar() != null && pattern.getPredicateVar().hasValue()) {
+				String predicate = pattern.getPredicateVar().getValue().stringValue();
+				if (predicate.equals("ex:pCheap")) {
+					return 1;
+				}
+				if (predicate.equals("ex:pMedium")) {
+					return 10;
+				}
+				if (predicate.equals("ex:pExpensive")) {
+					return 1000;
+				}
+			}
+
+			return 100;
 		}
 	}
 

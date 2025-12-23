@@ -52,10 +52,10 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 
 	@Test
 	public void dontMerge() {
-		Var s = new Var("s");
-		Var p = new Var("p");
-		Var o = new Var("o");
-		Var o2 = new Var("o2");
+		Var s = Var.of("s");
+		Var p = Var.of("p");
+		Var o = Var.of("o");
+		Var o2 = Var.of("o2");
 		ValueConstant two = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(2));
 		ValueConstant four = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(4));
 		Compare oSmallerThanTwo = new Compare(o.clone(), two, CompareOp.GT);
@@ -72,10 +72,10 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 
 	@Test
 	public void deMerge() {
-		Var s = new Var("s");
-		Var p = new Var("p");
-		Var o = new Var("o");
-		Var o2 = new Var("o2");
+		Var s = Var.of("s");
+		Var p = Var.of("p");
+		Var o = Var.of("o");
+		Var o2 = Var.of("o2");
 		ValueConstant one = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(1));
 		ValueConstant two = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(2));
 		ValueConstant four = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(4));

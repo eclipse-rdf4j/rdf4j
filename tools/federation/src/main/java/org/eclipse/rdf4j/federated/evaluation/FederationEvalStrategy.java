@@ -60,7 +60,6 @@ import org.eclipse.rdf4j.federated.evaluation.iterator.FederatedDescribeIteratio
 import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindJoin;
-import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.SynchronousBoundJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.SynchronousJoin;
@@ -121,7 +120,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQ
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -370,8 +368,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		if (pathExpr.getMinLength() == 0) {
 			identifiedMembers = new HashSet<>(members);
 		} else {
-			StatementPattern checkStmt = new StatementPattern(stmt.getScope(), new Var("subject"),
-					clone(stmt.getPredicateVar()), new Var("object"), clone(stmt.getContextVar()));
+			StatementPattern checkStmt = new StatementPattern(stmt.getScope(), Var.of("subject"),
+					clone(stmt.getPredicateVar()), Var.of("object"), clone(stmt.getContextVar()));
 			@SuppressWarnings("unused") // only used as artificial parent
 			HolderNode holderParent = new HolderNode(checkStmt);
 
