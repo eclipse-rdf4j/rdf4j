@@ -16,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -34,6 +36,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -53,6 +57,8 @@ jobs:
         jdk: [ 11, 25 ]
     steps:
       - uses: actions/checkout@v4
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -75,6 +81,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -96,6 +104,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -117,6 +127,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -134,6 +146,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -154,5 +168,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
       - name: check copyright header present
         run: scripts/checkCopyrightPresent.sh
