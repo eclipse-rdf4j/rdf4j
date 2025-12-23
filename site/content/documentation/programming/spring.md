@@ -17,11 +17,11 @@ To use RDF as the data backend of a spring application built with maven, use the
 ```xml
     <dependency>
         <groupId>org.eclipse.rdf4j</groupId>
-        <artifactId>rdf4j-spring</artifactId>
+        <artifactId>rdf4j-spring6</artifactId>
         <version>${rdf4j.version}</version>
     </dependency>
 ```  
-... setting the property `rdf4j.version` is set to the RDF4J version you want (minimum `4.0.0`).
+... setting the property `rdf4j.version` is set to the RDF4J version you want (minimum `5.3.0`).
 
 In order for the application to run, a repository has to be configured:
 

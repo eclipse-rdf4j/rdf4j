@@ -1,0 +1,28 @@
+/*******************************************************************************
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
+
+package org.eclipse.rdf4j.http.server.repository.handler;
+
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.servlet.ModelAndView;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+/**
+ * Interface used by the {@link org.eclipse.rdf4j.http.server.repository.AbstractRepositoryController} to process a
+ * query.
+ */
+public interface QueryRequestHandler {
+
+	ModelAndView handleQueryRequest(HttpServletRequest request, RequestMethod requestMethod,
+			HttpServletResponse response) throws Exception;
+}
