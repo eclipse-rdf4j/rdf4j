@@ -48,6 +48,36 @@
 		<!-- for maven Central deployment it is important that bom is the last module -->
 		<module>bom</module>
 	</modules>
+	<properties>
+		<java.version>11</java.version>
+		<maven.compiler.release>${java.version}</maven.compiler.release>
+		<maven.compiler.source>${java.version}</maven.compiler.source>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+		<enforce-javaee-provided.fail>true</enforce-javaee-provided.fail>
+		<slf4j.version>1.7.36</slf4j.version>
+		<logback.version>1.2.13</logback.version>
+		<log4j.version>2.25.3</log4j.version>
+		<httpclient.version>4.5.14</httpclient.version>
+		<jackson.version>2.13.5</jackson.version>
+		<httpcore.version>4.4.16</httpcore.version>
+		<jsonldjava.version>0.13.4</jsonldjava.version>
+		<last.japicmp.compare.version>5.0.0</last.japicmp.compare.version>
+		<jaxb.version>2.3.8</jaxb.version>
+		<lwjgl.version>3.3.6</lwjgl.version>
+		<lucene.version>8.9.0</lucene.version>
+		<solr.version>8.9.0</solr.version>
+		<elasticsearch.version>7.15.2</elasticsearch.version>
+		<spring.version>5.3.39</spring.version>
+		<guava.version>32.1.3-jre</guava.version>
+		<jmhVersion>1.37</jmhVersion>
+		<servlet.version>4.0.0</servlet.version>
+		<junit.version>5.9.3</junit.version>
+		<jetty.version>9.4.54.v20240208</jetty.version>
+		<netty.version>4.1.111.Final</netty.version>
+		<testcontainers.version>1.20.6</testcontainers.version>
+		<argLine />
+	</properties>
 	<profiles>
 		<profile>
 			<id>ossrh</id>
@@ -299,35 +329,63 @@
 			<build>
 				<plugins>
 					<plugin>
-						<groupId>net.revelc.code.formatter</groupId>
-						<artifactId>formatter-maven-plugin</artifactId>
+						<groupId>com.diffplug.spotless</groupId>
+						<artifactId>spotless-maven-plugin</artifactId>
+						<version>2.46.1</version>
+						<configuration>
+							<java>
+								<includes>
+									<include>src/main/java/**/*.java</include>
+									<include>src/test/java/**/*.java</include>
+								</includes>
+								<eclipse>
+									<file>${maven.multiModuleProjectDirectory}/eclipse-settings/eclipse-rdf4j-conventions.xml</file>
+								</eclipse>
+								<importOrder>
+									<order>java,javax,org,com</order>
+								</importOrder>
+								<removeUnusedImports />
+								<trimTrailingWhitespace />
+								<endWithNewline />
+							</java>
+							<formats>
+								<format>
+									<!-- All XML files, except those excluded below -->
+									<includes>
+										<include>**/*.xml</include>
+									</includes>
+									<!-- Mirror old xml-format-maven-plugin excludes and avoid double-formatting POMs -->
+									<excludes>
+										<exclude>eclipse-settings/**</exclude>
+										<exclude>**/target/**</exclude>
+										<exclude>**/site/themes/**</exclude>
+										<exclude>**/.*/**
+										</exclude>
+										<exclude>**/dependency-reduced-pom.xml</exclude>
+									</excludes>
+									<eclipseWtp>
+										<type>XML</type>
+										<files>
+											<file>${maven.multiModuleProjectDirectory}/eclipse-settings/xml.prefs</file>
+										</files>
+									</eclipseWtp>
+								</format>
+							</formats>
+							<skip>${formatter.skip}</skip>
+						</configuration>
 						<executions>
 							<execution>
-								<goals>
-									<goal>format</goal>
-								</goals>
-							</execution>
-						</executions>
-					</plugin>
-					<plugin>
-						<groupId>net.revelc.code</groupId>
-						<artifactId>impsort-maven-plugin</artifactId>
-						<executions>
-							<execution>
-								<goals>
-									<goal>sort</goal>
-								</goals>
-							</execution>
-						</executions>
-					</plugin>
-					<plugin>
-						<groupId>au.com.acegi</groupId>
-						<artifactId>xml-format-maven-plugin</artifactId>
-						<executions>
-							<execution>
+								<id>spotless-apply</id>
 								<phase>process-resources</phase>
 								<goals>
-									<goal>xml-format</goal>
+									<goal>apply</goal>
+								</goals>
+							</execution>
+							<execution>
+								<id>spotless-check</id>
+								<phase>verify</phase>
+								<goals>
+									<goal>check</goal>
 								</goals>
 							</execution>
 						</executions>
@@ -377,36 +435,6 @@
 			</build>
 		</profile>
 	</profiles>
-	<properties>
-		<java.version>11</java.version>
-		<maven.compiler.release>${java.version}</maven.compiler.release>
-		<maven.compiler.source>${java.version}</maven.compiler.source>
-		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-		<enforce-javaee-provided.fail>true</enforce-javaee-provided.fail>
-		<slf4j.version>1.7.36</slf4j.version>
-		<logback.version>1.2.13</logback.version>
-		<log4j.version>2.17.2</log4j.version>
-		<httpclient.version>4.5.14</httpclient.version>
-		<jackson.version>2.13.5</jackson.version>
-		<httpcore.version>4.4.16</httpcore.version>
-		<jsonldjava.version>0.13.4</jsonldjava.version>
-		<last.japicmp.compare.version>5.0.0</last.japicmp.compare.version>
-		<jaxb.version>2.3.8</jaxb.version>
-		<lwjgl.version>3.3.6</lwjgl.version>
-		<lucene.version>8.9.0</lucene.version>
-		<solr.version>8.9.0</solr.version>
-		<elasticsearch.version>7.15.2</elasticsearch.version>
-		<spring.version>5.3.39</spring.version>
-		<guava.version>32.1.3-jre</guava.version>
-		<jmhVersion>1.37</jmhVersion>
-		<servlet.version>4.0.0</servlet.version>
-		<junit.version>5.9.3</junit.version>
-		<jetty.version>9.4.54.v20240208</jetty.version>
-		<netty.version>4.1.111.Final</netty.version>
-		<testcontainers.version>1.20.6</testcontainers.version>
-		<argLine/>
-	</properties>
 	<dependencyManagement>
 		<dependencies>
 			<!-- Jackson Bill-of-Materials -->

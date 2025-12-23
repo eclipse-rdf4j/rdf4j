@@ -65,7 +65,7 @@
 								</filter>
 							</filters>
 							<transformers>
-								<transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+								<transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
 							</transformers>
 							<outputFile>${serviceresources.raw.jar}</outputFile>
 						</configuration>
@@ -83,7 +83,7 @@
 						</goals>
 						<configuration>
 							<target>
-								<ant antfile="build.xml" target="enrich-artifact-with-provider-configuration-files" dir="${basedir}"/>
+								<ant antfile="build.xml" target="enrich-artifact-with-provider-configuration-files" dir="${basedir}" />
 							</target>
 						</configuration>
 					</execution>

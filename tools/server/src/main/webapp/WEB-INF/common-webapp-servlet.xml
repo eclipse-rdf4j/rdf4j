@@ -10,14 +10,14 @@
 	</bean>
 	<!-- Version information for the application. Intended to be overriden by webapps based on this one. -->
 	<bean id="commonAppVersion" class="org.eclipse.rdf4j.common.app.AppVersion">
-		<property name="major" value="3"/>
-		<property name="minor" value="2"/>
-		<property name="modifier" value="SNAPSHOT"/>
+		<property name="major" value="3" />
+		<property name="minor" value="2" />
+		<property name="modifier" value="SNAPSHOT" />
 	</bean>
 	<!-- Configuration information for the application. Intended to be overridden by webapps based on this one. -->
 	<bean id="commonAppConfig" class="org.eclipse.rdf4j.common.app.AppConfiguration" init-method="init" destroy-method="destroy">
-		<property name="applicationId" value="webapp-base"/>
-		<property name="version" ref="commonAppVersion"/>
+		<property name="applicationId" value="webapp-base" />
+		<property name="version" ref="commonAppVersion" />
 	</bean>
 	<!--
 		Navigation model for the application. Intended to be extended by webapps based on this one.
@@ -33,18 +33,18 @@
 	</bean>
 	<!-- INTERCEPTORS -->
 	<!-- Inserts common values into the request for convenience. -->
-	<bean id="commonWebappCommonValuesInserter" class="org.eclipse.rdf4j.common.webapp.CommonValuesHandlerInterceptor"/>
-	<bean id="commonWebappMessageInserter" class="org.eclipse.rdf4j.common.webapp.MessageHandlerInterceptor"/>
+	<bean id="commonWebappCommonValuesInserter" class="org.eclipse.rdf4j.common.webapp.CommonValuesHandlerInterceptor" />
+	<bean id="commonWebappMessageInserter" class="org.eclipse.rdf4j.common.webapp.MessageHandlerInterceptor" />
 	<!-- Inserts the navigation model into the request. -->
 	<bean id="commonWebappNavigationInserter" class="org.eclipse.rdf4j.common.webapp.navigation.NavigationHandlerInterceptor">
-		<property name="navigationModel" ref="commonWebappNavigation"/>
+		<property name="navigationModel" ref="commonWebappNavigation" />
 	</bean>
 	<!-- CONTROLLERS -->
-	<bean id="filenameViewController" class="org.springframework.web.servlet.mvc.UrlFilenameViewController"/>
+	<bean id="filenameViewController" class="org.springframework.web.servlet.mvc.UrlFilenameViewController" />
 	<!-- RESOLVERS -->
 	<bean id="viewResolver" class="org.springframework.web.servlet.view.InternalResourceViewResolver">
-		<property name="viewClass" value="org.springframework.web.servlet.view.JstlView"/>
-		<property name="prefix" value="/WEB-INF/views/"/>
-		<property name="suffix" value=".jsp"/>
+		<property name="viewClass" value="org.springframework.web.servlet.view.JstlView" />
+		<property name="prefix" value="/WEB-INF/views/" />
+		<property name="suffix" value=".jsp" />
 	</bean>
 </beans>

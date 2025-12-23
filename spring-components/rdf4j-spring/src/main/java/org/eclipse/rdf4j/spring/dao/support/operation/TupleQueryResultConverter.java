@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.spring.dao.support.operation;
 
 import static java.util.stream.Collectors.mapping;
-
 import static org.eclipse.rdf4j.spring.dao.exception.mapper.ExceptionMapper.mapException;
 import static org.eclipse.rdf4j.spring.dao.support.operation.OperationUtils.require;
 

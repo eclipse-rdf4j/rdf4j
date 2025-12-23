@@ -49,7 +49,7 @@ public class LoadIsolationTest extends AbstractCommandTest {
 	}
 
 	@Test
-        public void promptBeforeUsingDefaultIsolation() throws Exception {
+	public void promptBeforeUsingDefaultIsolation() throws Exception {
 		when(mockConsoleIO.askProceed(contains("isolation level NONE"), eq(false))).thenReturn(false);
 
 		cmd.execute("load", "data.ttl");

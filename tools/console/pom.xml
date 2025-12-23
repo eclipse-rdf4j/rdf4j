@@ -89,8 +89,8 @@
 							<mainClass>org.eclipse.rdf4j.console.Console</mainClass>
 							<packageName>org.eclipse.rdf4j.console</packageName>
 							<addClasspath>true</addClasspath>
-							<addExtensions/>
-							<classpathPrefix/>
+							<addExtensions />
+							<classpathPrefix />
 						</manifest>
 					</archive>
 				</configuration>

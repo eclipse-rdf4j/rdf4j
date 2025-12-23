@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration scan="true" scanPeriod="30 seconds">
-	<property name="RDF4J_BASE" value="${org.eclipse.rdf4j.server.base:-${user.dir}}"/>
-	<property name="LOG_DIR" value="${org.eclipse.rdf4j.server.logdir:-${RDF4J_BASE}/logs}"/>
+	<property name="RDF4J_BASE" value="${org.eclipse.rdf4j.server.base:-${user.dir}}" />
+	<property name="LOG_DIR" value="${org.eclipse.rdf4j.server.logdir:-${RDF4J_BASE}/logs}" />
 	<appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
 		<encoder>
 			<pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} [%thread] %-5level %logger{64} - %msg%n</pattern>
@@ -19,13 +19,13 @@
 		</rollingPolicy>
 	</appender>
 	<logger name="org.eclipse.rdf4j.http.server" level="INFO" additivity="false">
-		<appender-ref ref="CONSOLE"/>
-		<appender-ref ref="FILE"/>
+		<appender-ref ref="CONSOLE" />
+		<appender-ref ref="FILE" />
 	</logger>
-	<logger name="org.eclipse.rdf4j.workbench" level="INFO"/>
-	<logger name="org.springframework.boot.web.embedded.tomcat.TomcatWebServer" level="INFO"/>
+	<logger name="org.eclipse.rdf4j.workbench" level="INFO" />
+	<logger name="org.springframework.boot.web.embedded.tomcat.TomcatWebServer" level="INFO" />
 	<root level="WARN">
-		<appender-ref ref="CONSOLE"/>
-		<appender-ref ref="FILE"/>
+		<appender-ref ref="CONSOLE" />
+		<appender-ref ref="FILE" />
 	</root>
 </configuration>
