@@ -76,7 +76,7 @@
 		<jetty.version>9.4.54.v20240208</jetty.version>
 		<netty.version>4.1.111.Final</netty.version>
 		<testcontainers.version>1.20.6</testcontainers.version>
-		<argLine/>
+		<argLine />
 	</properties>
 	<profiles>
 		<profile>
@@ -329,35 +329,63 @@
 			<build>
 				<plugins>
 					<plugin>
-						<groupId>net.revelc.code.formatter</groupId>
-						<artifactId>formatter-maven-plugin</artifactId>
+						<groupId>com.diffplug.spotless</groupId>
+						<artifactId>spotless-maven-plugin</artifactId>
+						<version>3.1.0</version>
+						<configuration>
+							<java>
+								<includes>
+									<include>src/main/java/**/*.java</include>
+									<include>src/test/java/**/*.java</include>
+								</includes>
+								<eclipse>
+									<file>${maven.multiModuleProjectDirectory}/eclipse-settings/eclipse-rdf4j-conventions.xml</file>
+								</eclipse>
+								<importOrder>
+									<order>java,javax,org,com</order>
+								</importOrder>
+								<removeUnusedImports />
+								<trimTrailingWhitespace />
+								<endWithNewline />
+							</java>
+							<formats>
+								<format>
+									<!-- All XML files, except those excluded below -->
+									<includes>
+										<include>**/*.xml</include>
+									</includes>
+									<!-- Mirror old xml-format-maven-plugin excludes and avoid double-formatting POMs -->
+									<excludes>
+										<exclude>eclipse-settings/**</exclude>
+										<exclude>**/target/**</exclude>
+										<exclude>**/site/themes/**</exclude>
+										<exclude>**/.*/**
+										</exclude>
+										<exclude>**/dependency-reduced-pom.xml</exclude>
+									</excludes>
+									<eclipseWtp>
+										<type>XML</type>
+										<files>
+											<file>${maven.multiModuleProjectDirectory}/eclipse-settings/xml.prefs</file>
+										</files>
+									</eclipseWtp>
+								</format>
+							</formats>
+							<skip>${formatter.skip}</skip>
+						</configuration>
 						<executions>
 							<execution>
-								<goals>
-									<goal>format</goal>
-								</goals>
-							</execution>
-						</executions>
-					</plugin>
-					<plugin>
-						<groupId>net.revelc.code</groupId>
-						<artifactId>impsort-maven-plugin</artifactId>
-						<executions>
-							<execution>
-								<goals>
-									<goal>sort</goal>
-								</goals>
-							</execution>
-						</executions>
-					</plugin>
-					<plugin>
-						<groupId>au.com.acegi</groupId>
-						<artifactId>xml-format-maven-plugin</artifactId>
-						<executions>
-							<execution>
+								<id>spotless-apply</id>
 								<phase>process-resources</phase>
 								<goals>
-									<goal>xml-format</goal>
+									<goal>apply</goal>
+								</goals>
+							</execution>
+							<execution>
+								<id>spotless-check</id>
+								<phase>verify</phase>
+								<goals>
+									<goal>check</goal>
 								</goals>
 							</execution>
 						</executions>
