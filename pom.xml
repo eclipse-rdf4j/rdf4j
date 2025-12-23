@@ -78,8 +78,8 @@
 		<netty.version>4.1.111.Final</netty.version>
 		<test.timeout.seconds>14400</test.timeout.seconds>
 		<test.timeout.agent.jar>${maven.multiModuleProjectDirectory}/test-timeout-agent/target/rdf4j-test-timeout-agent-${project.version}.jar</test.timeout.agent.jar>
-        <testcontainers.version>1.20.6</testcontainers.version>
-        <argLine/>
+		<testcontainers.version>1.20.6</testcontainers.version>
+		<argLine/>
 	</properties>
 	<profiles>
 		<profile>
