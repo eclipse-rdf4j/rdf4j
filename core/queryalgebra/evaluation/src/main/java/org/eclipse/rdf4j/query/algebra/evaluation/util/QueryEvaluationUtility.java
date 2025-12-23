@@ -372,11 +372,6 @@ public class QueryEvaluationUtility {
 		return false;
 	}
 
-//	public static boolean isPlainLiteral(Literal l) {
-//		return l.getCoreDatatype().filter(d -> d == CoreDatatype.XSD.STRING).isPresent();
-	////		return l.getCoreDatatype().orElse(null) == CoreDatatype.XSD.STRING;
-//	}
-
 	/**
 	 * Checks whether the supplied literal is a "simple literal". A "simple literal" is a literal with no language tag
 	 * and the datatype {@link CoreDatatype.XSD#STRING}.
