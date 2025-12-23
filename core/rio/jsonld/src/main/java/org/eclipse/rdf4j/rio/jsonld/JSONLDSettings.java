@@ -63,6 +63,11 @@ public class JSONLDSettings {
 	public static final RioSetting<Document> FRAME = new ClassRioSetting<>(
 			"org.eclipse.rdf4j.rio.jsonld.frame_document",
 			"A no.hasmac.jsonld.document.Document that contains the frame used for framing as specified in https://www.w3.org/TR/json-ld11-framing/",
+			null);
+
+	public static final RioSetting<Document> CONTEXT = new ClassRioSetting<>(
+			"org.eclipse.rdf4j.rio.jsonld.context_document",
+			"A no.hasmac.jsonld.document.Document that contains the JSON-LD context as specified in https://www.w3.org/TR/json-ld11/#the-context. If not defined, the context is created using the namespaces defined in the model",
 			null);;
 
 	/**

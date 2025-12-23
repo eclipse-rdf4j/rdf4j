@@ -22,9 +22,15 @@ import java.io.StringWriter;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.util.ModelBuilder;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -39,9 +45,12 @@ import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
+import jakarta.json.Json;
+import jakarta.json.JsonObjectBuilder;
 import no.hasmac.jsonld.JsonLdError;
 import no.hasmac.jsonld.document.Document;
 import no.hasmac.jsonld.document.JsonDocument;
@@ -236,6 +245,69 @@ public class JSONLDWriterTest extends RDFWriterTest {
 						"}",
 				stringWriter.toString());
 
+	}
+
+	@Test
+	public void testContextRefine() throws Exception {
+
+		Model model = new ModelBuilder()
+				.subject(Values.iri("https://example.com/bob"))
+				.add(RDF.TYPE, FOAF.PERSON)
+				.add(RDFS.LABEL, Values.literal("Bob", "en"))
+				.add(FOAF.NAME, Values.literal("Bob"))
+				.build();
+
+		model.setNamespace("rdfs", RDFS.NAMESPACE);
+		model.setNamespace("foaf", FOAF.NAMESPACE);
+		model.setNamespace("", "https://example.com/");
+
+		JsonDocument context = JsonDocument.of(new StringReader(""
+				+ "{\n"
+				+ "    \"rdfs\": \"http://www.w3.org/2000/01/rdf-schema#\",\n"
+				+ "    \"foaf\": \"http://xmlns.com/foaf/0.1/\",\n"
+				+ "    \"@vocab\": \"https://example.com/\",\n"
+				+ "    \"label\": {\n"
+				+ "        \"@id\": \"rdfs:label\",\n"
+				+ "        \"@container\": \"@language\"\n"
+				+ "    },\n"
+				+ "    \"name\": \"foaf:name\",\n"
+				+ "    \"Person\": \"foaf:Person\"\n"
+				+ "}"));
+
+		StringWriter sw = new StringWriter();
+
+		JSONLDWriter mpJsonLd = new JSONLDWriter(sw);
+		mpJsonLd.set(JSONLDSettings.JSONLD_MODE, JSONLDMode.COMPACT);
+		mpJsonLd.set(BasicWriterSettings.PRETTY_PRINT, true);
+		mpJsonLd.set(JSONLDSettings.CONTEXT, context);
+
+		Rio.write(model, mpJsonLd);
+
+		Assertions.assertEquals(
+				"{\n"
+						+ "    \"@id\": \"https://example.com/bob\",\n"
+						+ "    \"@type\": \"Person\",\n"
+						+ "    \"label\": {\n"
+						+ "        \"en\": \"Bob\"\n"
+						+ "    },\n"
+						+ "    \"name\": \"Bob\",\n"
+						+ "    \"@context\": {\n"
+						+ "        \"rdfs\": \"http://www.w3.org/2000/01/rdf-schema#\",\n"
+						+ "        \"foaf\": \"http://xmlns.com/foaf/0.1/\",\n"
+						+ "        \"@vocab\": \"https://example.com/\",\n"
+						+ "        \"label\": {\n"
+						+ "            \"@id\": \"rdfs:label\",\n"
+						+ "            \"@container\": \"@language\"\n"
+						+ "        },\n"
+						+ "        \"name\": \"foaf:name\",\n"
+						+ "        \"Person\": \"foaf:Person\"\n"
+						+ "    }\n"
+						+ "}",
+				sw.toString());
+
+		// test round-trip
+		Model parsed = Rio.parse(new StringReader(sw.toString()), RDFFormat.JSONLD);
+		Assertions.assertEquals(model, parsed);
 	}
 
 	@Override

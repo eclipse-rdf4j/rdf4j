@@ -267,15 +267,24 @@ public class JSONLDWriter extends AbstractRDFWriter implements CharSink {
 				jsonld = JsonLd.flatten(JsonDocument.of(jsonld)).options(opts).get();
 				break;
 			case COMPACT:
-				JsonObjectBuilder context = Json.createObjectBuilder();
-				for (Namespace namespace : model.getNamespaces()) {
-					if (namespace.getPrefix().isEmpty()) {
-						context.add("@vocab", namespace.getName());
-					} else {
-						context.add(namespace.getPrefix(), namespace.getName());
+				Document context = writerConfig.get(JSONLDSettings.CONTEXT);
+				if (context == null) {
+
+					// define a default context using namespaces provided in the
+					// model if none is provided to the writer settings
+					JsonObjectBuilder contextBuilder = Json.createObjectBuilder();
+					for (Namespace namespace : model.getNamespaces()) {
+						if (namespace.getPrefix().isEmpty()) {
+							contextBuilder.add("@vocab", namespace.getName());
+						} else {
+							contextBuilder.add(namespace.getPrefix(), namespace.getName());
+						}
 					}
+
+					context = JsonDocument.of(contextBuilder.build());
 				}
-				jsonld = JsonLd.compact(JsonDocument.of(jsonld), JsonDocument.of(context.build())).options(opts).get();
+
+				jsonld = JsonLd.compact(JsonDocument.of(jsonld), context).options(opts).get();
 				break;
 			}
 
