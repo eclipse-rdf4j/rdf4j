@@ -115,6 +115,7 @@ public class ShutdownDuringValidationIT {
 	@ParameterizedTest
 	@MethodSource("sleepTimes")
 	public void shutdownDuringValidation(int sleepMillis) {
+		System.err.println(Thread.currentThread() + " shutdownDuringValidation with sleepMillis=" + sleepMillis);
 		try {
 // clear interrupted flag
 			Thread.interrupted();
@@ -156,15 +157,15 @@ public class ShutdownDuringValidationIT {
 			}
 		} catch (Exception e) {
 			if (e instanceof RepositoryException && causedByInterruptedException(e)) {
-				System.out.println(e);
+				System.err.println(e);
 				return;
 			}
 			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedSailException) {
-				System.out.println(e);
+				System.err.println(e);
 				return;
 			}
 			if (e.toString().contains("closed")) {
-				System.out.println(e);
+				System.err.println(e);
 				return;
 			}
 			throw e;
@@ -174,6 +175,8 @@ public class ShutdownDuringValidationIT {
 	@ParameterizedTest
 	@MethodSource("sleepTimes")
 	public void shutdownDuringValidationTransactional(int sleepMillis) {
+		System.err.println(
+				Thread.currentThread() + " shutdownDuringValidationTransactional with sleepMillis=" + sleepMillis);
 		try {
 // clear interrupted flag
 			Thread.interrupted();
@@ -221,15 +224,15 @@ public class ShutdownDuringValidationIT {
 			}
 		} catch (Exception e) {
 			if (e instanceof RepositoryException && causedByInterruptedException(e)) {
-				System.out.println(e);
+				System.err.println(e);
 				return;
 			}
 			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedSailException) {
-				System.out.println(e);
+				System.err.println(e);
 				return;
 			}
 			if (e.toString().contains("closed")) {
-				System.out.println(e);
+				System.err.println(e);
 				return;
 			}
 			throw e;
@@ -239,6 +242,7 @@ public class ShutdownDuringValidationIT {
 	@ParameterizedTest
 	@MethodSource("sleepTimes")
 	public void shutdownDuringValidationFailure(int sleepMillis) {
+		System.err.println(Thread.currentThread() + " shutdownDuringValidationFailure with sleepMillis=" + sleepMillis);
 		try {
 
 // clear interrupted flag
@@ -280,15 +284,15 @@ public class ShutdownDuringValidationIT {
 			}
 		} catch (Exception e) {
 			if (e instanceof RepositoryException && causedByInterruptedException(e)) {
-				System.out.println(e);
+				System.err.println(e);
 				return;
 			}
 			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedSailException) {
-				System.out.println(e);
+				System.err.println(e);
 				return;
 			}
 			if (e.toString().contains("closed")) {
-				System.out.println(e);
+				System.err.println(e);
 				return;
 			}
 			throw e;
@@ -298,6 +302,8 @@ public class ShutdownDuringValidationIT {
 	@ParameterizedTest
 	@MethodSource("sleepTimes")
 	public void shutdownDuringValidationFailureNonParallel(int sleepMillis) {
+		System.err.println(
+				Thread.currentThread() + " shutdownDuringValidationFailureNonParallel with sleepMillis=" + sleepMillis);
 		try {
 // clear interrupted flag
 			Thread.interrupted();
@@ -339,15 +345,15 @@ public class ShutdownDuringValidationIT {
 			}
 		} catch (Exception e) {
 			if (e instanceof RepositoryException && causedByInterruptedException(e)) {
-				System.out.println(e);
+				System.err.println(e);
 				return;
 			}
 			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedSailException) {
-				System.out.println(e);
+				System.err.println(e);
 				return;
 			}
 			if (e.toString().contains("closed")) {
-				System.out.println(e);
+				System.err.println(e);
 				return;
 			}
 
@@ -358,6 +364,8 @@ public class ShutdownDuringValidationIT {
 	@ParameterizedTest
 	@MethodSource("sleepTimes")
 	public void shutdownDuringValidationTransactionalNonParallel(int sleepMillis) {
+		System.err.println(Thread.currentThread()
+				+ " shutdownDuringValidationTransactionalNonParallel with sleepMillis=" + sleepMillis);
 		try {
 			// clear interrupted flag
 			boolean interrupted = Thread.interrupted();
@@ -378,7 +386,7 @@ public class ShutdownDuringValidationIT {
 
 				commitAndExpect(connection, EXPECTED_REPOSITORY_SIZE + 1, 1);
 			} catch (RepositoryException | SailException e) {
-				System.out.println(e);
+				System.err.println(e);
 				if (e instanceof InterruptedSailException) {
 					// ignore this exception
 					return;
@@ -413,15 +421,15 @@ public class ShutdownDuringValidationIT {
 			}
 		} catch (Exception e) {
 			if (e instanceof RepositoryException && causedByInterruptedException(e)) {
-				System.out.println(e);
+				System.err.println(e);
 				return;
 			}
 			if (e instanceof RepositoryException && e.getCause() instanceof InterruptedSailException) {
-				System.out.println(e);
+				System.err.println(e);
 				return;
 			}
 			if (e.toString().contains("closed")) {
-				System.out.println(e);
+				System.err.println(e);
 				return;
 			}
 			throw e;
@@ -430,6 +438,7 @@ public class ShutdownDuringValidationIT {
 
 	@Test
 	void nestedInterruptedExceptionShouldBeDetected() {
+		System.err.println(Thread.currentThread() + " nestedInterruptedExceptionShouldBeDetected");
 		InterruptedException interruptedException = new InterruptedException("nested");
 		SailException sailException = new SailException("wrapper", new SailException("inner", interruptedException));
 		RepositoryException repositoryException = new RepositoryException("top", sailException);
@@ -473,7 +482,7 @@ public class ShutdownDuringValidationIT {
 				throw e;
 			}
 		} catch (RepositoryException ignored) {
-			System.out.println(ignored.getMessage());
+			System.err.println(ignored.getMessage());
 			try {
 				connection.rollback();
 			} catch (Exception e) {

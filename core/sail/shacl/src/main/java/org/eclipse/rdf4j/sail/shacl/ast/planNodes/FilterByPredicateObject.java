@@ -73,7 +73,10 @@ public class FilterByPredicateObject implements PlanNode {
 		if (connection instanceof MemoryStoreConnection) {
 			cache = null;
 		} else {
-			cache = CacheBuilder.newBuilder().maximumSize(10000).build();
+			cache = CacheBuilder.newBuilder()
+					.concurrencyLevel(Runtime.getRuntime().availableProcessors() * 2)
+					.maximumSize(10000)
+					.build();
 		}
 
 		this.connectionsGroup = connectionsGroup;
