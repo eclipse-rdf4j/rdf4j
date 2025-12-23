@@ -39,7 +39,6 @@
 	</licenses>
 	<modules>
 		<module>assembly-descriptors</module>
-		<module>test-timeout-agent</module>
 		<module>core</module>
 		<module>tools</module>
 		<module>spring-components</module>
@@ -76,8 +75,6 @@
 		<junit.version>5.9.3</junit.version>
 		<jetty.version>9.4.54.v20240208</jetty.version>
 		<netty.version>4.1.111.Final</netty.version>
-		<test.timeout.seconds>14401</test.timeout.seconds>
-		<test.timeout.agent.jar>${maven.multiModuleProjectDirectory}/test-timeout-agent/target/rdf4j-test-timeout-agent-${project.version}.jar</test.timeout.agent.jar>
 		<testcontainers.version>1.20.6</testcontainers.version>
 		<argLine/>
 	</properties>
@@ -845,10 +842,8 @@
 					<artifactId>maven-surefire-plugin</artifactId>
 					<version>3.5.4</version>
 					<configuration>
-						<forkCount>1</forkCount>
 						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
-						<argLine>@{argLine} -Xmx4G -javaagent:"${test.timeout.agent.jar}"=${test.timeout.seconds}</argLine>
-						<forkedProcessTimeoutInSeconds>${test.timeout.seconds}</forkedProcessTimeoutInSeconds>
+						<argLine>@{argLine} -Xmx4G</argLine>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -859,8 +854,7 @@
 						<forkCount>1</forkCount>
 						<reuseForks>false</reuseForks>
 						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
-						<argLine>@{argLine} -Xmx4G -javaagent:"${test.timeout.agent.jar}"=${test.timeout.seconds}</argLine>
-						<forkedProcessTimeoutInSeconds>${test.timeout.seconds}</forkedProcessTimeoutInSeconds>
+						<argLine>@{argLine} -Xmx4G</argLine>
 						<includes>
 							<include>**/*IT.java</include>
 						</includes>

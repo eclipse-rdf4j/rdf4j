@@ -25,11 +25,11 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Check formatting
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --quiet -T 2C formatter:validate impsort:check xml-format:xml-check
+        run: mvn -B --quiet -T 2C formatter:validate impsort:check xml-format:xml-check
       - name: Quick compile
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --quiet -T 2C compile -DskipTests -Pquick
+        run: mvn -B --quiet -T 2C compile -DskipTests -Pquick
       - name: Download all other dependencies
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --quiet -T 2C dependency:go-offline
+        run: mvn -B --quiet -T 2C dependency:go-offline
 
   compile:
     needs: formatting-and-quick-compile
