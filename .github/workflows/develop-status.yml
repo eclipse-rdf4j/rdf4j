@@ -29,7 +29,7 @@ jobs:
     - name: Build
       run: mvn -B -U clean install -Pquick,\!formatting
     - name: Verify
-      run: mvn -B install -P-skipSlowTests -Dmaven.javadoc.skip=true
+      run: ./scripts/ci/run-with-thread-dump.sh mvn -B install -P-skipSlowTests -Dmaven.javadoc.skip=true
     - name: Publish Test Report
       if: failure()
       uses: scacap/action-surefire-report@v1

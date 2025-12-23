@@ -62,7 +62,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Test
-        run: mvn -B test -DskipITs -P-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: ./scripts/ci/run-with-thread-dump.sh mvn -B test -DskipITs -P-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: scacap/action-surefire-report@v1.9.0
@@ -84,7 +84,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Verify
-        run: mvn -B verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: ./scripts/ci/run-with-thread-dump.sh mvn -B verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: scacap/action-surefire-report@v1.9.0
@@ -105,7 +105,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Verify
-        run: mvn -B verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: ./scripts/ci/run-with-thread-dump.sh mvn -B verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: scacap/action-surefire-report@v1.9.0
@@ -148,7 +148,7 @@ jobs:
           node-version: 18
       - name: Run end-to-end tests of RDF4J Server and Workbench
         working-directory: ./e2e
-        run: ./run.sh
+        run: ../scripts/ci/run-with-thread-dump.sh ./run.sh
 
   copyright-check:
     runs-on: ubuntu-latest
@@ -156,4 +156,3 @@ jobs:
       - uses: actions/checkout@v4
       - name: check copyright header present
         run: scripts/checkCopyrightPresent.sh
-
