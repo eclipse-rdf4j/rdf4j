@@ -23,11 +23,11 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Check formatting
-        run: ./scripts/ci/run-with-thread-dump.sh mvn -B --quiet -T 2C formatter:validate impsort:check xml-format:xml-check
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --quiet -T 2C formatter:validate impsort:check xml-format:xml-check
       - name: Quick compile
-        run: ./scripts/ci/run-with-thread-dump.sh mvn -B --quiet -T 2C compile -DskipTests -Pquick
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --quiet -T 2C compile -DskipTests -Pquick
       - name: Download all other dependencies
-        run: ./scripts/ci/run-with-thread-dump.sh mvn -B --quiet -T 2C dependency:go-offline
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --quiet -T 2C dependency:go-offline
 
   compile:
     needs: formatting-and-quick-compile
@@ -62,7 +62,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Test
-        run: ./scripts/ci/run-with-thread-dump.sh mvn -B test -DskipITs -P-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B test -DskipITs -P-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: scacap/action-surefire-report@v1.9.0
@@ -84,7 +84,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Verify
-        run: ./scripts/ci/run-with-thread-dump.sh mvn -B verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: scacap/action-surefire-report@v1.9.0
@@ -105,7 +105,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Verify
-        run: ./scripts/ci/run-with-thread-dump.sh mvn -B verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: scacap/action-surefire-report@v1.9.0
@@ -148,7 +148,7 @@ jobs:
           node-version: 18
       - name: Run end-to-end tests of RDF4J Server and Workbench
         working-directory: ./e2e
-        run: ../scripts/ci/run-with-thread-dump.sh ./run.sh
+        run: exec ../scripts/ci/run-with-thread-dump.sh ./run.sh
 
   copyright-check:
     runs-on: ubuntu-latest
