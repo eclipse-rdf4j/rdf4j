@@ -226,6 +226,23 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			throw new IOException("No luceneIndex set, and no '" + LuceneSail.LUCENE_DIR_KEY + "' or '"
 					+ LuceneSail.LUCENE_RAMDIR_KEY + "' parameter given. ");
 		}
+		long fsyncInterval = 0;
+		int maxPendingSyncs = 5000;
+		try {
+			var param = parameters.getProperty(LuceneSail.FSYNC_INTERVAL_KEY, "0");
+			fsyncInterval = Long.parseLong(param);
+		} catch (NumberFormatException e) {
+			logger.warn("Ignoring invalid {} parameter: {}", LuceneSail.FSYNC_INTERVAL_KEY, e.getMessage());
+		}
+		try {
+			var param = parameters.getProperty(LuceneSail.FSYNC_MAX_PENDING_FILES_KEY, "5000");
+			maxPendingSyncs = Integer.parseInt(param);
+		} catch (NumberFormatException e) {
+			logger.warn("Ignoring invalid {} parameter: {}", LuceneSail.FSYNC_MAX_PENDING_FILES_KEY, e.getMessage());
+		}
+		if (fsyncInterval > 0) {
+			dir = new DelayedSyncDirectoryWrapper(dir, fsyncInterval, maxPendingSyncs);
+		}
 		return dir;
 	}
 
@@ -384,10 +401,18 @@ public class LuceneIndex extends AbstractLuceneIndex {
 					}
 				} finally {
 					try {
-						IndexWriter toCloseIndexWriter = indexWriter;
-						indexWriter = null;
-						if (toCloseIndexWriter != null) {
-							toCloseIndexWriter.close();
+						try {
+							IndexWriter toCloseIndexWriter = indexWriter;
+							indexWriter = null;
+							if (toCloseIndexWriter != null) {
+								toCloseIndexWriter.close();
+							}
+						} finally {
+							if (directory != null) {
+								// Close the directory -- if asynchronous fsync is used, this will clean
+								// up the scheduler thread too.
+								directory.close();
+							}
 						}
 					} finally {
 						if (!exceptions.isEmpty()) {
