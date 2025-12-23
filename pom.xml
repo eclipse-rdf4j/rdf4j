@@ -76,7 +76,7 @@
 		<junit.version>5.9.3</junit.version>
 		<jetty.version>9.4.54.v20240208</jetty.version>
 		<netty.version>4.1.111.Final</netty.version>
-		<test.timeout.seconds>14400</test.timeout.seconds>
+		<test.timeout.seconds>14401</test.timeout.seconds>
 		<test.timeout.agent.jar>${maven.multiModuleProjectDirectory}/test-timeout-agent/target/rdf4j-test-timeout-agent-${project.version}.jar</test.timeout.agent.jar>
 		<testcontainers.version>1.20.6</testcontainers.version>
 		<argLine/>
