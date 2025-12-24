@@ -81,6 +81,7 @@ Before taking any action (either tool calls *or* responses to the user), you mus
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
+Always keep untracked artifacts!
 
 > **Clarification:** For **strictly behavior‑neutral refactors** that are already **fully exercised by existing tests**, or for **bugfixes with an existing failing test**, you may use **Routine B — Change without new tests**. In that case you must capture **pre‑change passing evidence** at the smallest scope that hits the code you’re about to edit, prove **Hit Proof**, then show **post‑change passing evidence** from the **same selection**.
 > **No exceptions for any behavior‑changing change** — for those, you must follow **Routine A — Full TDD** or **Routine D — ExecPlans**.
@@ -125,6 +126,48 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 ## ExecPlans
 
 When writing complex features or significant refactors, use an ExecPlan (as described in PLANS.md) from design to implementation.
+
+## PIOSEE Decision Model (Adopted)
+
+Use this as a compact, repeatable loop for anything from a one‑line bug fix to a multi‑quarter program.
+
+### P — **Problem**
+
+**Goal:** State the core problem and what “good” looks like.
+**Ask:** Who’s affected? What outcome is required? What happens if we do nothing?
+**Tip:** Include measurable target(s): error rate ↓, latency p95 ↓, revenue ↑, risk ↓.
+
+### I — **Information**
+
+**Goal:** Gather only the facts needed to move.
+**Ask:** What do logs/metrics/user feedback say? What constraints (security, compliance, budget, SLA/SLO)? What assumptions must we test?
+
+### O — **Options**
+
+**Goal:** Generate viable ways forward, including “do nothing.”
+**Ask:** What are 2–4 distinct approaches (patch, redesign, buy vs. build, defer)? What risks, costs, and second‑order effects?
+**Tip:** Check guardrails: reliability, security/privacy, accessibility, performance, operability, unit economics.
+
+### S — **Select**
+
+**Goal:** Decide deliberately and document why.
+**Ask:** Which option best meets the success criteria under constraints? Who is the decision owner? What’s the fallback/abort condition?
+**Tip:** Use lightweight scoring (e.g., Impact×Confidence÷Effort) to avoid bike‑shedding.
+
+### E — **Execute**
+
+**Goal:** Ship safely and visibly.
+**Ask:** What is the smallest safe slice? How do we de‑risk (feature flag, canary, dark launch, rollback)? Who owns what?
+**Checklist:** Traces/logs/alerts; security & privacy checks; docs & changelog; incident plan if relevant.
+
+### E — **Evaluate**
+
+**Goal:** Verify outcomes and learn.
+**Ask:** Did metrics hit targets? Any regressions or side effects? What will we keep/change next loop?
+**Output:** Post‑release review (or retro), decision log entry, follow‑ups (tickets), debt captured.
+**Tip:** If outcomes miss, either **iterate** (new Options) or **reframe** (back to Problem).
+
+---
 
 ### Benchmarking workflow (repository-wide)
 
@@ -200,7 +243,7 @@ After each grouped action, post an **Evidence block**, then continue working:
 **Evidence template**
 ```
 Evidence:
-Command: mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=Class#method verify
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py Class#method (preferred) OR mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=Class#method verify
 Report: <module>/target/surefire-reports/<file>.txt
 Snippet:
 \<copy 10–30 lines capturing the failure or success summary>
@@ -222,8 +265,11 @@ To avoid losing the first test evidence when later runs overwrite `target/*-repo
 
 • On a fully green verify run:
 
-- Capture and store the last 200 lines of the Maven verify output.
-- Example (module‑scoped):
+- Capture and store the last 200 lines of the verify output.
+- Example (mvnf):
+    - `python3 .codex/skills/mvnf/scripts/mvnf.py <module> --retain-logs --stream`
+    - `tail -200 "$(ls -t logs/mvnf/*-verify.log | head -1)" > initial-evidence.txt`
+- Example (manual Maven):
     - `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tee .initial-verify.log`
     - `tail -200 .initial-verify.log > initial-evidence.txt`
 
@@ -286,6 +332,7 @@ Plan
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
+Always keep untracked artifacts!
 
 ---
 
@@ -301,6 +348,7 @@ Running `install` publishes your changed modules there so downstream modules and
 * Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
 * Always use a workspace-local Maven repository: append `-Dmaven.repo.local=.m2_repo` to all Maven commands (install, verify, formatter, etc.).
 * Always try to run these commands first to see if they run without needing any approvals from the user w.r.t. the sandboxing.
+* If you run tests via `mvnf`, it already performs module clean + root `-Pquick` install before verify.
 
 Why this is mandatory
 
@@ -308,6 +356,17 @@ Why this is mandatory
 - Therefore, tests only see whatever versions were last published to the configured local repo (`.m2_repo`). If you change code in one module and then run tests in another, those tests will not see your changes unless the updated module has been installed to `.m2_repo` first.
 - The reliable way to ensure all tests always use the latest code across the entire multi‑module build is to install all modules to the configured local repo (`.m2_repo`) before running any tests: run `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install` at the repository root.
 - In tight loops you may also install a specific module and its deps (`-pl <module> -am -Pquick clean install`) to iterate quickly, but before executing tests anywhere that depend on your changes, run a root‑level `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install` so the latest jars are available to the reactor from `.m2_repo`.
+---
+
+## Skills (Preferred Runners)
+
+Prefer these skills over manual Maven test commands. Manual commands remain available as a fallback when needed.
+
+- `mvnf`: Consistent test runner that does module clean, root `-Pquick` install, then module verify or a single test class/method. Use this as the default way to run tests. Logs are deleted on success unless `--retain-logs`.
+- `debug-surefire`: Runs Surefire tests in JDWP wait-for-debugger mode so you can attach a debugger (jdb/IDE) and step through tests.
+
+If you need manual control or a skill does not fit, use the Maven commands below.
+
 ---
 
 ## Quick Start (First 10 Minutes)
@@ -318,19 +377,24 @@ Why this is mandatory
 2. **Build sanity (fast, skip tests)**
     * `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`
 3. **Format (Java, imports, XML)**
-    * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+    * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C process-resources`
     * Ensure every touched Java file has the correct agent signature comment (`// Some portions generated by Codex` for Codex, `// Some portions generated by Co-Pilot` for GitHub Co-Pilot) inserted immediately below the header before formatting.
     * Before invoking the formatter, `cd scripts && ./checkCopyrightPresent.sh` (or use `pushd/popd`) to ensure every new or edited source file still carries the required header; fix any findings before formatting.
-4. **Targeted tests (tight loops)**
-    * Module: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify  | tail -500`
-    * Class: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName verify  | tail -500`
-    * Method: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName#method verify | tail -500`
+4. **Targeted tests (tight loops, prefer `mvnf`)**
+    * Module: `python3 .codex/skills/mvnf/scripts/mvnf.py <module>`
+    * Class: `python3 .codex/skills/mvnf/scripts/mvnf.py ClassName`
+    * Method: `python3 .codex/skills/mvnf/scripts/mvnf.py ClassName#method`
+    * Optional Maven fallback:
+      * Module: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify  | tail -500`
+      * Class: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName verify  | tail -500`
+      * Method: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName#method verify | tail -500`
 5. **Inspect failures**
     * **Unit (Surefire):** `<module>/target/surefire-reports/`
     * **IT (Failsafe):** `<module>/target/failsafe-reports/`
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
+Always keep untracked artifacts!
 
 ---
 
@@ -424,35 +488,38 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 
 ## Working Loop
 
+* **PIOSEE first:** restate Problem, gather Information, list Options; then Select, Execute, Evaluate.
 * **Plan:** small, verifiable steps; keep one `in_progress`, or follow PLANS.md (ExecPlans)
 * **Change:** minimal, surgical edits; keep style/structure consistent.
-* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C  process-resources`
 * **Compile (fast):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install | tail -500`
-* **Test:** start smallest (class/method → module). For integration, run module `verify`.
+* **Test (prefer `mvnf`):** start smallest (class/method → module); use `--it` for integration tests. Use manual Maven only when you need profiles/flags not supported by `mvnf`.
 * **Triage:** read reports; fix root cause; expand scope only when needed.
 * **Iterate:** keep momentum; escalate only when blocked or irreversible.
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
+Always keep untracked artifacts!
 
 ---
 
 ## Testing Strategy
 
-* **Prefer module tests you touched:** `-pl <module>`
+* **Prefer `mvnf`:** start with `python3 .codex/skills/mvnf/scripts/mvnf.py Class#method`, then `Class`, then `<module>`.
+* **Integration tests:** use `--it` (e.g., `python3 .codex/skills/mvnf/scripts/mvnf.py --it ITClass#method`).
 * **Narrow further** to a class/method; then broaden to the module.
 * **Expand scope** when changes cross boundaries or neighbor modules fail.
 * **Read reports**
     * Surefire (unit): `target/surefire-reports/`
     * Failsafe (IT): `target/failsafe-reports/`
-* **Helpful flags**
+* **Manual Maven fallback flags (when `mvnf` doesn't fit)**
     * `-Dtest=Class#method` (unit selection)
     * `-Dit.test=ITClass#method` (integration selection)
     * `-DtrimStackTrace=false` (full traces)
     * `-DskipITs` (focus on unit tests)
     * `-DfailIfNoTests=false` (when selecting a class that has no tests on some platforms)
 
-### Optional: Redirect test stdout/stderr to files
+### Optional: Redirect test stdout/stderr to files (manual Maven)
 ```bash
 mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=ClassName[#method] -Dmaven.test.redirectTestOutputToFile=true verify | tail -500
 ````
@@ -498,7 +565,7 @@ Assertions are executable claims about what must be true. Use **temporary tripwi
 
 * Always run before finalizing:
 
-    * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+    * `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C  process-resources`
 * Style: no wildcard imports; 120‑char width; curly braces always; LF endings.
 
 ### Import hygiene (always)
@@ -537,9 +604,9 @@ Immediately after creating any new Java source file, add the signature comment (
 
 ## Pre‑Commit Checklist
 
-* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C formatter:format impsort:sort xml-format:xml-format`
+* **Format:** `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C  process-resources`
 * **Compile (fast path):** `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install | tail -200`
-* **Tests (targeted):** `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tail -500` (broaden as needed)
+* **Tests (targeted, prefer `mvnf`):** `python3 .codex/skills/mvnf/scripts/mvnf.py <module>` (broaden as needed; use Maven fallback if you need profiles/flags)
 * **Reports:** zero new failures in Surefire/Failsafe, or explain precisely.
 * **Evidence:** Routine A — failing pre‑fix + passing post‑fix.
   Routine B — **pre/post green** from same selection + **Hit Proof**.
@@ -601,7 +668,7 @@ Immediately after creating any new Java source file, add the signature comment (
 
 **Defaults**
 
-* **Tests:** start with `-pl <module>`, then `-Dtest=Class#method` / `-Dit.test=ITClass#method`.
+* **Tests:** start with `python3 .codex/skills/mvnf/scripts/mvnf.py Class#method` (or `--it ITClass#method`), then broaden to class/module. Use Maven flags only when `mvnf` cannot express the required profile/flags.
 * **Build:** use `-o`; drop `-o` once only to fetch; return offline.
 * **Formatting:** run formatter/import/XML before verify.
 * **Reports:** read surefire/failsafe locally; expand scope only when necessary.
@@ -614,6 +681,7 @@ Immediately after creating any new Java source file, add the signature comment (
 * **Files touched:** list file paths.
 * **Commands run:** key build/test commands.
 * **Verification:** which tests passed, where you checked reports.
+* **PIOSEE trace (concise):** P/I/O summary, selected option/routine, key evaluate outcomes.
 * **Evidence:**
   *Routine A:* failing output (pre‑fix) and passing output (post‑fix).
   *Routine B:* pre‑ and post‑green snippets from the **same selection** + **Hit Proof**.
@@ -626,6 +694,16 @@ Immediately after creating any new Java source file, add the signature comment (
 ---
 
 ## Running Tests
+
+**Preferred (`mvnf`)**
+
+* Module: `python3 .codex/skills/mvnf/scripts/mvnf.py core/sail/shacl`
+* Class: `python3 .codex/skills/mvnf/scripts/mvnf.py ShaclSailTest`
+* Method: `python3 .codex/skills/mvnf/scripts/mvnf.py ShaclSailTest#testSomething`
+* Integration test: `python3 .codex/skills/mvnf/scripts/mvnf.py --it ShaclSailIT#testSomething`
+* Keep logs on success: add `--retain-logs`
+
+**Manual Maven fallback (profiles/extra flags/full repo)**
 
 * By module: `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/shacl verify | tail -500`
 * Entire repo: `mvn -o -Dmaven.repo.local=.m2_repo verify` (long; only when appropriate)
@@ -653,9 +731,9 @@ Immediately after creating any new Java source file, add the signature comment (
 
 * **Build without tests (fast path):**
   `mvn -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install`
-* **Verify with tests:**
-  Targeted module(s): `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify`
-  Entire repo: `mvn -o -Dmaven.repo.local=.m2_repo verify` (use judiciously)
+* **Verify with tests (prefer `mvnf`):**
+  Targeted module(s): `python3 .codex/skills/mvnf/scripts/mvnf.py <module>`
+  Entire repo (fallback): `mvn -o -Dmaven.repo.local=.m2_repo verify` (use judiciously)
 * **When offline fails due to missing deps:**
   Re‑run the **exact** command **without** `-o` once to fetch, then return to `-o`.
 
@@ -664,6 +742,8 @@ Immediately after creating any new Java source file, add the signature comment (
 ## Using JaCoCo (Coverage)
 
 JaCoCo is configured via the `jacoco` Maven profile in the root POM. Surefire/Failsafe honor the prepared agent `argLine`, so no extra flags are required beyond `-Pjacoco`.
+
+- Use manual Maven here (profiles are not supported by `mvnf`).
 
 - Run with coverage
     - Module: `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Pjacoco verify | tail -500`
@@ -834,4 +914,6 @@ rdf4j: root project
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
+Always keep untracked artifacts!
+
 You must follow these rules and instructions exactly as stated.

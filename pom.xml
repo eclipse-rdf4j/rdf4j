@@ -235,7 +235,6 @@
 				<skipITs>true</skipITs>
 				<formatter.skip>true</formatter.skip>
 				<impsort.skip>true</impsort.skip>
-				<xml-format.skip>true</xml-format.skip>
 				<japicmp.skip>true</japicmp.skip>
 				<enforcer.skip>true</enforcer.skip>
 			</properties>
@@ -359,8 +358,7 @@
 										<exclude>eclipse-settings/**</exclude>
 										<exclude>**/target/**</exclude>
 										<exclude>**/site/themes/**</exclude>
-										<exclude>**/.*/**
-										</exclude>
+										<exclude>**/.*/**</exclude>
 										<exclude>**/dependency-reduced-pom.xml</exclude>
 									</excludes>
 									<eclipseWtp>
@@ -411,14 +409,6 @@
 								<lifecycleMappingMetadata>
 									<pluginExecutions>
 										<pluginExecution>
-											<pluginExecutionFilter>
-												<groupId>au.com.acegi</groupId>
-												<artifactId>xml-format-maven-plugin</artifactId>
-												<versionRange>[0,)</versionRange>
-												<goals>
-													<goal>xml-format</goal>
-												</goals>
-											</pluginExecutionFilter>
 											<action>
 												<execute>
 													<runOnConfiguration>false</runOnConfiguration>
@@ -745,15 +735,6 @@
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-gpg-plugin</artifactId>
 					<version>1.6</version>
-				</plugin>
-				<plugin>
-					<groupId>au.com.acegi</groupId>
-					<artifactId>xml-format-maven-plugin</artifactId>
-					<version>3.3.1</version>
-					<configuration>
-						<tabIndent>true</tabIndent>
-						<excludes>eclipse-settings/**,**/target/**,**/site/themes/**,**/.*/**</excludes>
-					</configuration>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
