@@ -21,7 +21,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 21
           distribution: 'temurin'
           cache: maven
       - name: Check formatting
@@ -41,7 +41,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 21
           distribution: 'temurin'
           cache: maven
       - name: Compile (mvn clean install)
@@ -54,7 +54,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        jdk: [ 11, 25 ]
+        jdk: [ 21, 25 ]
     steps:
       - uses: actions/checkout@v4
       - name: Register JVM thread dump on cancel
@@ -86,7 +86,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 21
           distribution: 'temurin'
           cache: maven
       - name: Build
@@ -109,7 +109,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 21
           distribution: 'temurin'
           cache: maven
       - name: Build
@@ -132,7 +132,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 21
           distribution: 'temurin'
           cache: maven
       - name: Run install
@@ -151,7 +151,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 21
           distribution: 'temurin'
           cache: maven
       - name: Install dependencies
