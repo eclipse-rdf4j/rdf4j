@@ -22,7 +22,6 @@ import java.io.StringWriter;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
@@ -49,8 +48,6 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
-import jakarta.json.Json;
-import jakarta.json.JsonObjectBuilder;
 import no.hasmac.jsonld.JsonLdError;
 import no.hasmac.jsonld.document.Document;
 import no.hasmac.jsonld.document.JsonDocument;

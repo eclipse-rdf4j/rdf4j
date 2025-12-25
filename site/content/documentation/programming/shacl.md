@@ -94,6 +94,59 @@ data will not violate the shapes, or otherwise need to skip validation then you 
 
 Do not use SPARQL to update your shapes!
 
+## Standalone validation with ShaclValidator
+
+For non-transactional or one-off validation you can use the standalone `ShaclValidator` API. It lets you load shapes
+and data from common inputs without creating a `ShaclSail`, while still giving access to the same validation options
+(parallel validation, logging, RDFS reasoning, extensions, and limits).
+
+Provide shapes up front and validate multiple datasets:
+
+```java
+import java.nio.file.Paths;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.shacl.ShaclValidator;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
+
+ShaclValidator.ValidatorWithShapes validator = ShaclValidator.builder()
+        .setRdfsSubClassReasoning(false)
+        .withShapes(Paths.get("shapes.ttl"), "http://example.com/ns", RDFFormat.TURTLE)
+        .build();
+
+ValidationReport report = validator.validate(Paths.get("data.ttl"), "http://example.com/ns", RDFFormat.TURTLE);
+boolean conforms = report.conforms();
+```
+
+Auto-detect formats when the file name or base URI has a known extension:
+
+```java
+import java.io.File;
+
+ValidationReport report = ShaclValidator.builder()
+        .withShapes(new File("shapes.ttl"))
+        .build()
+        .validate(new File("data.ttl"));
+```
+
+You can also provide shapes per validation run:
+
+```java
+import java.io.File;
+import org.eclipse.rdf4j.sail.Sail;
+
+Sail dataSail = ...; // preloaded data sail
+ShaclValidator.Validator validator = ShaclValidator.builder().build();
+ValidationReport report = validator.validate(dataSail, new File("shapes.ttl"));
+```
+
+Supported inputs for shapes and data are:
+
+- `File`, `Path`, `URL` (auto-detect or explicit `RDFFormat`)
+- `InputStream` (explicit `RDFFormat`, or auto-detect using `baseURI`)
+- `String` content (explicit `RDFFormat`, or auto-detect using `baseURI`)
+
+Note: Input streams are not closed by the validator; callers are responsible for closing them.
+
 ## Supported SHACL features
 
 The SHACL W3C Recommendation defines the SHACL features that should be supported and RDF4J is working hard to
@@ -666,4 +719,3 @@ Here are some useful links to learn more about SHACL:
 
 - [W3C SHACL specification](http://www.w3.org/TR/shacl/)
 - [Validating RDF Data](http://book.validatingrdf.com/) (various authors)
-
