@@ -48,11 +48,13 @@ public final class ThemeDataSetCache {
 		try {
 			Files.createDirectories(cacheDir);
 			Path cacheFile = cacheDir.resolve(fileName(theme));
+			cacheFile.toFile().deleteOnExit();
 			if (Files.exists(cacheFile) && Files.size(cacheFile) > 0) {
 				return cacheFile;
 			}
 
 			Path tempFile = Files.createTempFile(cacheDir, fileStem(theme), ".tmp");
+			tempFile.toFile().deleteOnExit();
 			try (OutputStream output = Files.newOutputStream(tempFile)) {
 				ThemeDataSetGenerator.generate(theme, Rio.createWriter(RDFFormat.NQUADS, output));
 			}
