@@ -246,7 +246,7 @@ Evidence:
 Command: python3 .codex/skills/mvnf/scripts/mvnf.py Class#method (preferred) OR mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=Class#method verify
 Report: <module>/target/surefire-reports/<file>.txt
 Snippet:
-\<copy 10–30 lines capturing the failure or success summary>
+\<copy 1–30 lines capturing the failure or success summary>
 ```
 
 **Routine B additions**
