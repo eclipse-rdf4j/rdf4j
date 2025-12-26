@@ -90,6 +90,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.context.ApplicationContextException;
+import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.View;
 import org.springframework.web.servlet.mvc.AbstractController;
@@ -214,7 +215,6 @@ public class TransactionController extends AbstractController implements Disposa
 			if (pathInfo.length == 3) {
 				try {
 					txnID = UUID.fromString(pathInfo[2]);
-					logger.debug("txnID is '{}'", txnID);
 				} catch (IllegalArgumentException e) {
 					throw new ClientHTTPException(SC_BAD_REQUEST, "not a valid transaction id: " + pathInfo[2]);
 				}
@@ -222,6 +222,20 @@ public class TransactionController extends AbstractController implements Disposa
 				logger.warn("could not determine transaction id from path info {} ", pathInfoStr);
 			}
 		}
+
+		if (txnID == null) {
+			final Object pathVariables = request.getAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE);
+
+			// noinspection unchecked
+			final String xidStr = ((Map<String, String>) pathVariables).get("xid");
+			try {
+				txnID = UUID.fromString(xidStr);
+			} catch (IllegalArgumentException e) {
+				throw new ClientHTTPException(SC_BAD_REQUEST, "not a valid transaction id: " + xidStr);
+			}
+		}
+
+		logger.debug("txnID is '{}'", txnID);
 
 		return txnID;
 	}

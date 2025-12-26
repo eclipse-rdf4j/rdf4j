@@ -20,6 +20,7 @@
 		<module>workbench</module>
 		<module>runtime</module>
 		<module>runtime-osgi</module>
+		<module>server-jar</module>
 	</modules>
 	<profiles>
 		<profile>
