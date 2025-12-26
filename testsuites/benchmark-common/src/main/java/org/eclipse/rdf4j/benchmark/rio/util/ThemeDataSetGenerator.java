@@ -532,60 +532,75 @@ public final class ThemeDataSetGenerator {
 
 		Random random = new Random(config.seed);
 
-		IRI stationType = iri(TRAIN_NS, "Station");
-		IRI routeType = iri(TRAIN_NS, "Route");
-		IRI trainType = iri(TRAIN_NS, "Train");
-		IRI tripType = iri(TRAIN_NS, "Trip");
-		IRI stopType = iri(TRAIN_NS, "Stop");
+		IRI operationalPointType = iri(TRAIN_NS, "OperationalPoint");
+		IRI lineType = iri(TRAIN_NS, "Line");
+		IRI sectionType = iri(TRAIN_NS, "SectionOfLine");
+		IRI trackSectionType = iri(TRAIN_NS, "TrackSection");
+		IRI serviceType = iri(TRAIN_NS, "TrainService");
 
-		IRI hasStop = iri(TRAIN_NS, "hasStop");
-		IRI atStation = iri(TRAIN_NS, "atStation");
-		IRI onRoute = iri(TRAIN_NS, "onRoute");
-		IRI hasTrip = iri(TRAIN_NS, "hasTrip");
-		IRI departureTime = iri(TRAIN_NS, "departureTime");
+		IRI partOfLine = iri(TRAIN_NS, "partOfLine");
+		IRI connectsOperationalPoint = iri(TRAIN_NS, "connectsOperationalPoint");
+		IRI hasTrackSection = iri(TRAIN_NS, "hasTrackSection");
+		IRI trackSectionOf = iri(TRAIN_NS, "trackSectionOf");
+		IRI runsOnSection = iri(TRAIN_NS, "runsOnSection");
+		IRI passesThrough = iri(TRAIN_NS, "passesThrough");
+		IRI scheduledTime = iri(TRAIN_NS, "scheduledTime");
 		IRI hasName = iri(TRAIN_NS, "name");
 
 		handler.startRDF();
 		handler.handleNamespace("train", TRAIN_NS);
 
-		List<IRI> stations = new ArrayList<>(config.stationCount);
+		List<IRI> operationalPoints = new ArrayList<>(config.stationCount);
 		for (int s = 0; s < config.stationCount; s++) {
-			IRI station = entity(TRAIN_NS, "station", s);
-			stations.add(station);
-			add(handler, station, RDF.TYPE, stationType);
-			add(handler, station, hasName, literal("Station " + s));
+			IRI operationalPoint = entity(TRAIN_NS, "operational-point", s);
+			operationalPoints.add(operationalPoint);
+			add(handler, operationalPoint, RDF.TYPE, operationalPointType);
+			add(handler, operationalPoint, hasName, literal("OP " + s));
 		}
 
-		List<IRI> routes = new ArrayList<>(config.routeCount);
-		int stopIndex = 0;
-		for (int r = 0; r < config.routeCount; r++) {
-			IRI route = entity(TRAIN_NS, "route", r);
-			routes.add(route);
-			add(handler, route, RDF.TYPE, routeType);
-			add(handler, route, hasName, literal("Route " + r));
+		List<IRI> lines = new ArrayList<>(config.routeCount);
+		for (int l = 0; l < config.routeCount; l++) {
+			IRI line = entity(TRAIN_NS, "line", l);
+			lines.add(line);
+			add(handler, line, RDF.TYPE, lineType);
+			add(handler, line, hasName, literal("Line " + l));
+		}
 
+		List<IRI> sections = new ArrayList<>(config.routeCount * config.stopsPerRoute);
+		int sectionIndex = 0;
+		int trackIndex = 0;
+		for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
+			IRI line = lines.get(lineIndex);
 			for (int s = 0; s < config.stopsPerRoute; s++) {
-				IRI station = stations.get((r * config.stopsPerRoute + s) % stations.size());
-				IRI stop = entity(TRAIN_NS, "stop", stopIndex++);
-				add(handler, stop, RDF.TYPE, stopType);
-				add(handler, stop, atStation, station);
-				add(handler, route, hasStop, stop);
+				IRI section = entity(TRAIN_NS, "section", sectionIndex++);
+				sections.add(section);
+				add(handler, section, RDF.TYPE, sectionType);
+				add(handler, section, partOfLine, line);
+
+				IRI start = operationalPoints.get((lineIndex * config.stopsPerRoute + s) % operationalPoints.size());
+				IRI end = operationalPoints.get((lineIndex * config.stopsPerRoute + s + 1) % operationalPoints.size());
+				add(handler, section, connectsOperationalPoint, start);
+				add(handler, section, connectsOperationalPoint, end);
+
+				IRI trackSection = entity(TRAIN_NS, "track-section", trackIndex++);
+				add(handler, trackSection, RDF.TYPE, trackSectionType);
+				add(handler, section, hasTrackSection, trackSection);
+				add(handler, trackSection, trackSectionOf, section);
 			}
 		}
 
-		int tripIndex = 0;
+		int serviceIndex = 0;
 		for (int t = 0; t < config.trainCount; t++) {
-			IRI train = entity(TRAIN_NS, "train", t);
-			add(handler, train, RDF.TYPE, trainType);
-			add(handler, train, hasName, literal("Train " + t));
+			IRI service = entity(TRAIN_NS, "service", serviceIndex++);
+			add(handler, service, RDF.TYPE, serviceType);
+			add(handler, service, hasName, literal("Service " + t));
 
 			for (int tr = 0; tr < config.tripsPerTrain; tr++) {
-				IRI trip = entity(TRAIN_NS, "trip", tripIndex++);
-				IRI route = routes.get(random.nextInt(routes.size()));
-				add(handler, trip, RDF.TYPE, tripType);
-				add(handler, trip, onRoute, route);
-				add(handler, train, hasTrip, trip);
-				add(handler, trip, departureTime,
+				IRI section = sections.get(random.nextInt(sections.size()));
+				IRI operationalPoint = operationalPoints.get(random.nextInt(operationalPoints.size()));
+				add(handler, service, runsOnSection, section);
+				add(handler, service, passesThrough, operationalPoint);
+				add(handler, service, scheduledTime,
 						VF.createLiteral(LocalTime.of(5, 0).plusMinutes(random.nextInt(600))));
 			}
 		}
@@ -773,13 +788,13 @@ public final class ThemeDataSetGenerator {
 	}
 
 	public static final class SocialMediaConfig {
-		private int userCount = 200;
-		private int postsPerUser = 2;
-		private int commentsPerPost = 2;
-		private int likesPerPost = 3;
-		private int followsPerUser = 3;
-		private int tagsPerPost = 2;
-		private int tagCount = 30;
+		private int userCount = 20000;
+		private int postsPerUser = 15;
+		private int commentsPerPost = 5;
+		private int likesPerPost = 5;
+		private int followsPerUser = 9;
+		private int tagsPerPost = 4;
+		private int tagCount = 50;
 		private int[] cliqueSizes = new int[] { 3, 4, 5, 6 };
 		private long seed = 42L;
 
