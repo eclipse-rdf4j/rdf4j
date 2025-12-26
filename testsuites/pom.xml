@@ -20,6 +20,7 @@
 		<module>lucene</module>
 		<module>geosparql</module>
 		<module>benchmark</module>
+		<module>benchmark-sketch</module>
 	</modules>
 	<dependencies>
 		<dependency>
