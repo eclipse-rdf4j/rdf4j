@@ -148,10 +148,10 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 		BulkByScrollResponse response = new DeleteByQueryRequestBuilder(clientProvider.getClient(),
 				DeleteByQueryAction.INSTANCE)
-						.filter(getQueryBuilder(null, null, null, inferred, contexts))
-						.abortOnVersionConflict(false)
-						.source(index)
-						.get();
+				.filter(getQueryBuilder(null, null, null, inferred, contexts))
+				.abortOnVersionConflict(false)
+				.source(index)
+				.get();
 
 		long deleted = response.getDeleted();
 	}
@@ -596,10 +596,10 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 		BulkByScrollResponse response = new DeleteByQueryRequestBuilder(clientProvider.getClient(),
 				DeleteByQueryAction.INSTANCE)
-						.filter(getQueryBuilder(subj, pred, obj, inferred, contexts))
-						.source(index)
-						.abortOnVersionConflict(false)
-						.get();
+				.filter(getQueryBuilder(subj, pred, obj, inferred, contexts))
+				.source(index)
+				.abortOnVersionConflict(false)
+				.get();
 
 		long deleted = response.getDeleted();
 		return deleted > 0;

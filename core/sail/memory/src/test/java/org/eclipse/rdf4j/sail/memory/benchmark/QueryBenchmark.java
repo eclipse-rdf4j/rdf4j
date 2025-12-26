@@ -83,9 +83,9 @@ public class QueryBenchmark {
 					getResourceAsStream("benchmarkFiles/different-datasets-with-similar-distributions.qr"),
 					StandardCharsets.UTF_8);
 			long_chain = IOUtils.toString(getResourceAsStream("benchmarkFiles/long-chain.qr"), StandardCharsets.UTF_8);
-			optional_lhs_filter = IOUtils.toString(getResourceAsStream("benchmarkFiles/optional-lhs-filter.qr"),
+			optional_lhs_filter = IOUtils.toString(getResourceAsStream("benchmarkFiles/optional-lhs-filter-memory.qr"),
 					StandardCharsets.UTF_8);
-			optional_rhs_filter = IOUtils.toString(getResourceAsStream("benchmarkFiles/optional-rhs-filter.qr"),
+			optional_rhs_filter = IOUtils.toString(getResourceAsStream("benchmarkFiles/optional-rhs-filter-memory.qr"),
 					StandardCharsets.UTF_8);
 			lots_of_optional = IOUtils.toString(getResourceAsStream("benchmarkFiles/lots-of-optional.qr"),
 					StandardCharsets.UTF_8);

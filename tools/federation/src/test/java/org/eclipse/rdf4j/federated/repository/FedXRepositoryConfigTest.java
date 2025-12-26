@@ -164,73 +164,73 @@ public class FedXRepositoryConfigTest {
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_JOIN_WORKER_THREADS, null)))
-									.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(101));
+					.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(101));
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_UNION_WORKER_THREADS, null)))
-									.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(102));
+					.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(102));
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_LEFT_JOIN_WORKER_THREADS,
 									null)))
-											.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(103));
+					.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(103));
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_BOUND_JOIN_BLOCK_SIZE, null)))
-									.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(104));
+					.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(104));
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_ENFORCE_MAX_QUERY_TIME, null)))
-									.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(105));
+					.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(105));
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_ENABLE_SERVICE_AS_BOUND_JOIN,
 									null)))
-											.hasValueSatisfying(v -> assertThat(v.booleanValue()).isFalse());
+					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isFalse());
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_ENABLE_OPTIONAL_AS_BIND_JOIN,
 									null)))
-											.hasValueSatisfying(v -> assertThat(v.booleanValue()).isFalse());
+					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isFalse());
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_ENABLE_MONITORING, null)))
-									.hasValueSatisfying(v -> assertThat(v.booleanValue()).isTrue());
+					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isTrue());
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_LOG_QUERY_PLAN, null)))
-									.hasValueSatisfying(v -> assertThat(v.booleanValue()).isTrue());
+					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isTrue());
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_LOG_QUERIES, null)))
-									.hasValueSatisfying(v -> assertThat(v.booleanValue()).isTrue());
+					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isTrue());
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_DEBUG_QUERY_PLAN, null)))
-									.hasValueSatisfying(v -> assertThat(v.booleanValue()).isTrue());
+					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isTrue());
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_INCLUDE_INFERRED_DEFAULT,
 									null)))
-											.hasValueSatisfying(v -> assertThat(v.booleanValue()).isFalse());
+					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isFalse());
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_SOURCE_SELECTION_CACHE_SPEC,
 									null)))
-											.hasValueSatisfying(
-													v -> assertThat(v.stringValue()).isEqualTo("spec-goes-here"));
+					.hasValueSatisfying(
+							v -> assertThat(v.stringValue()).isEqualTo("spec-goes-here"));
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_PREFIX_DECLARATIONS,
 									null)))
-											.hasValueSatisfying(
-													v -> assertThat(v.stringValue()).isEqualTo("prefixes-go-here"));
+					.hasValueSatisfying(
+							v -> assertThat(v.stringValue()).isEqualTo("prefixes-go-here"));
 
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_CONSUMING_ITERATION_MAX,
 									null)))
-											.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(106));
+					.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(106));
 		}
 
 		@Test
@@ -254,60 +254,60 @@ public class FedXRepositoryConfigTest {
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_JOIN_WORKER_THREADS, null)))
-									.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(20));
+					.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(20));
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_UNION_WORKER_THREADS, null)))
-									.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(20));
+					.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(20));
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_LEFT_JOIN_WORKER_THREADS,
 									null)))
-											.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(10));
+					.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(10));
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_BOUND_JOIN_BLOCK_SIZE, null)))
-									.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(25));
+					.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(25));
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_ENFORCE_MAX_QUERY_TIME, null)))
-									.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(30));
+					.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(30));
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_ENABLE_SERVICE_AS_BOUND_JOIN,
 									null)))
-											.hasValueSatisfying(v -> assertThat(v.booleanValue()).isTrue());
+					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isTrue());
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_ENABLE_OPTIONAL_AS_BIND_JOIN,
 									null)))
-											.hasValueSatisfying(v -> assertThat(v.booleanValue()).isTrue());
+					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isTrue());
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_ENABLE_MONITORING, null)))
-									.hasValueSatisfying(v -> assertThat(v.booleanValue()).isFalse());
+					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isFalse());
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_LOG_QUERY_PLAN, null)))
-									.hasValueSatisfying(v -> assertThat(v.booleanValue()).isFalse());
+					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isFalse());
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_LOG_QUERIES, null)))
-									.hasValueSatisfying(v -> assertThat(v.booleanValue()).isFalse());
+					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isFalse());
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_DEBUG_QUERY_PLAN, null)))
-									.hasValueSatisfying(v -> assertThat(v.booleanValue()).isFalse());
+					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isFalse());
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_INCLUDE_INFERRED_DEFAULT,
 									null)))
-											.hasValueSatisfying(v -> assertThat(v.booleanValue()).isTrue());
+					.hasValueSatisfying(v -> assertThat(v.booleanValue()).isTrue());
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_CONSUMING_ITERATION_MAX,
 									null)))
-											.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(1000));
+					.hasValueSatisfying(v -> assertThat(v.intValue()).isEqualTo(1000));
 		}
 	}
 }

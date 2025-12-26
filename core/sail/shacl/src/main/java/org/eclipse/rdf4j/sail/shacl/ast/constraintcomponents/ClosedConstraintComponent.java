@@ -234,7 +234,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 						return validationTuple;
 
 					}, connectionsGroup)
-							.getTrueNode(UnBufferedPlanNode.class);
+					.getTrueNode(UnBufferedPlanNode.class);
 
 			return falseNode1;
 

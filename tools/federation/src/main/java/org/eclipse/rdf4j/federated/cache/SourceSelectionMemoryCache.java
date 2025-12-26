@@ -76,7 +76,7 @@ public class SourceSelectionMemoryCache implements SourceSelectionCache {
 		if (subQuery.object() != null) {
 			if (getAssurance(new SubQuery(subQuery.subject(), subQuery.predicate(), null, subQuery.contexts()),
 					endpoint)
-							.equals(StatementSourceAssurance.NONE)) {
+					.equals(StatementSourceAssurance.NONE)) {
 				return StatementSourceAssurance.NONE;
 			}
 		}

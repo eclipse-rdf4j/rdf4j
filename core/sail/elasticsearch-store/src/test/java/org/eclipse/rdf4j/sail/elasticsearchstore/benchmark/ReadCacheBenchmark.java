@@ -66,8 +66,10 @@ public class ReadCacheBenchmark {
 	static {
 		try {
 			query1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query1.qr"), StandardCharsets.UTF_8);
-			query5 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query5.qr"), StandardCharsets.UTF_8);
-			query6 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query6.qr"), StandardCharsets.UTF_8);
+			query5 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query5-elasticsearch.qr"),
+					StandardCharsets.UTF_8);
+			query6 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query6-elasticsearch.qr"),
+					StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
