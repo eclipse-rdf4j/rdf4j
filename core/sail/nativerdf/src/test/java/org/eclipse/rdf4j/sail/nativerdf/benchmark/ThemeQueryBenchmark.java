@@ -44,12 +44,15 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
+@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 3)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms32G", "-Xmx32G" })
-@Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
+@Measurement(iterations = 5, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 1000)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
+
+	@Param({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" })
+	public int z_queryIndex;
 
 	@Param({
 			"MEDICAL_RECORDS",
@@ -61,9 +64,6 @@ public class ThemeQueryBenchmark {
 			"ELECTRICAL_GRID"
 	})
 	public String themeName;
-
-	@Param({ "0", "1", "2", "3", "4", "5", "6", "7" })
-	public int queryIndex;
 
 	private File dataDir;
 	private SailRepository repository;
@@ -81,7 +81,7 @@ public class ThemeQueryBenchmark {
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
 		theme = Theme.valueOf(themeName);
-		query = ThemeQueryCatalog.queryFor(theme, queryIndex);
+		query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
 		dataDir = Files.newTemporaryFolder();
 		NativeStore sail = new NativeStore(dataDir, "spoc,ospc,psoc");
 		repository = new SailRepository(sail);
