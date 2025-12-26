@@ -245,6 +245,21 @@ public final class ThemeDataSetGenerator {
 			add(handler, user, hasName, literal("user" + u));
 		}
 
+		int cliqueStart = 0;
+		for (int cliqueSize : config.cliqueSizes) {
+			List<IRI> clique = users.subList(cliqueStart, cliqueStart + cliqueSize);
+			for (int i = 0; i < clique.size(); i++) {
+				IRI source = clique.get(i);
+				for (int j = 0; j < clique.size(); j++) {
+					if (i == j) {
+						continue;
+					}
+					add(handler, source, follows, clique.get(j));
+				}
+			}
+			cliqueStart += cliqueSize;
+		}
+
 		List<IRI> tags = new ArrayList<>(config.tagCount);
 		for (int t = 0; t < config.tagCount; t++) {
 			IRI tag = entity(SOCIAL_NS, "tag", t);
@@ -704,12 +719,12 @@ public final class ThemeDataSetGenerator {
 	}
 
 	public static final class MedicalConfig {
-		private int patientCount = 100000;
+		private int patientCount = 10000;
 		private int encountersPerPatient = 3;
 		private int conditionsPerEncounter = 2;
 		private int medicationsPerPatient = 2;
 		private int observationsPerEncounter = 2;
-		private int practitionerCount = 100000;
+		private int practitionerCount = 10000;
 		private long seed = 42L;
 
 		public MedicalConfig withPatientCount(int patientCount) {
@@ -765,6 +780,7 @@ public final class ThemeDataSetGenerator {
 		private int followsPerUser = 3;
 		private int tagsPerPost = 2;
 		private int tagCount = 30;
+		private int[] cliqueSizes = new int[] { 3, 4, 5, 6 };
 		private long seed = 42L;
 
 		public SocialMediaConfig withUserCount(int userCount) {
@@ -802,6 +818,12 @@ public final class ThemeDataSetGenerator {
 			return this;
 		}
 
+		public SocialMediaConfig withCliqueSizes(int... cliqueSizes) {
+			Objects.requireNonNull(cliqueSizes, "cliqueSizes");
+			this.cliqueSizes = cliqueSizes.clone();
+			return this;
+		}
+
 		public SocialMediaConfig withSeed(long seed) {
 			this.seed = seed;
 			return this;
@@ -815,6 +837,17 @@ public final class ThemeDataSetGenerator {
 			requirePositive(followsPerUser, "followsPerUser");
 			requirePositive(tagsPerPost, "tagsPerPost");
 			requirePositive(tagCount, "tagCount");
+			Objects.requireNonNull(cliqueSizes, "cliqueSizes");
+			int cliqueTotal = 0;
+			for (int size : cliqueSizes) {
+				if (size < 2) {
+					throw new IllegalArgumentException("cliqueSizes entries must be >= 2");
+				}
+				cliqueTotal += size;
+			}
+			if (cliqueTotal > userCount) {
+				throw new IllegalArgumentException("cliqueSizes total exceeds userCount");
+			}
 		}
 	}
 

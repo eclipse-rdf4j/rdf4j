@@ -43,6 +43,16 @@ class ThemeDataSetGeneratorTest {
 	}
 
 	@Test
+	void socialMediaGeneratorProducesCliques() throws Exception {
+		Model model = generateModel("socialMediaConfig", "generateSocialMedia");
+		IRI follows = Values.iri(BASE, "social/follows");
+		assertClique(model, follows, 0, 3);
+		assertClique(model, follows, 3, 4);
+		assertClique(model, follows, 7, 5);
+		assertClique(model, follows, 12, 6);
+	}
+
+	@Test
 	void libraryGeneratorProducesBooks() throws Exception {
 		Model model = generateModel("libraryConfig", "generateLibrary");
 		IRI bookType = Values.iri(BASE, "library/Book");
@@ -67,11 +77,13 @@ class ThemeDataSetGeneratorTest {
 	}
 
 	@Test
-	void trainGeneratorProducesStations() throws Exception {
+	void trainGeneratorProducesOperationalPoints() throws Exception {
 		Model model = generateModel("trainConfig", "generateTrain");
-		IRI stationType = Values.iri(BASE, "train/Station");
+		IRI operationalPointType = Values.iri(BASE, "train/OperationalPoint");
+		IRI sectionType = Values.iri(BASE, "train/SectionOfLine");
 		assertFalse(model.isEmpty());
-		assertTrue(model.contains(null, RDF.TYPE, stationType));
+		assertTrue(model.contains(null, RDF.TYPE, operationalPointType));
+		assertTrue(model.contains(null, RDF.TYPE, sectionType));
 	}
 
 	@Test
@@ -87,5 +99,23 @@ class ThemeDataSetGeneratorTest {
 		Object config = generator.getMethod(configMethodName).invoke(null);
 		Method generate = generator.getMethod(generateMethodName, config.getClass());
 		return (Model) generate.invoke(null, config);
+	}
+
+	private static void assertClique(Model model, IRI follows, int startId, int size) {
+		for (int i = 0; i < size; i++) {
+			IRI source = socialUser(startId + i);
+			for (int j = 0; j < size; j++) {
+				if (i == j) {
+					continue;
+				}
+				IRI target = socialUser(startId + j);
+				assertTrue(model.contains(source, follows, target),
+						() -> "Missing follows edge " + source + " -> " + target);
+			}
+		}
+	}
+
+	private static IRI socialUser(int id) {
+		return Values.iri(BASE, "social/user/" + id);
 	}
 }
