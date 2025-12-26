@@ -92,6 +92,40 @@ public final class ThemeDataSetGenerator {
 		return new ElectricalGridConfig();
 	}
 
+	public static Model generate(Theme theme) {
+		return generateModel(handler -> generate(theme, handler));
+	}
+
+	public static void generate(Theme theme, RDFHandler handler) {
+		Objects.requireNonNull(theme, "theme");
+		Objects.requireNonNull(handler, "handler");
+		switch (theme) {
+		case MEDICAL_RECORDS:
+			generateMedicalRecords(medicalConfig(), handler);
+			break;
+		case SOCIAL_MEDIA:
+			generateSocialMedia(socialMediaConfig(), handler);
+			break;
+		case LIBRARY:
+			generateLibrary(libraryConfig(), handler);
+			break;
+		case ENGINEERING:
+			generateEngineering(engineeringConfig(), handler);
+			break;
+		case HIGHLY_CONNECTED:
+			generateHighlyConnected(highlyConnectedConfig(), handler);
+			break;
+		case TRAIN:
+			generateTrain(trainConfig(), handler);
+			break;
+		case ELECTRICAL_GRID:
+			generateElectricalGrid(electricalGridConfig(), handler);
+			break;
+		default:
+			throw new IllegalArgumentException("Unsupported theme " + theme);
+		}
+	}
+
 	public static Model generateMedicalRecords(MedicalConfig config) {
 		return generateModel(handler -> generateMedicalRecords(config, handler));
 	}
@@ -670,12 +704,12 @@ public final class ThemeDataSetGenerator {
 	}
 
 	public static final class MedicalConfig {
-		private int patientCount = 200;
+		private int patientCount = 100000;
 		private int encountersPerPatient = 3;
 		private int conditionsPerEncounter = 2;
 		private int medicationsPerPatient = 2;
 		private int observationsPerEncounter = 2;
-		private int practitionerCount = 20;
+		private int practitionerCount = 100000;
 		private long seed = 42L;
 
 		public MedicalConfig withPatientCount(int patientCount) {
