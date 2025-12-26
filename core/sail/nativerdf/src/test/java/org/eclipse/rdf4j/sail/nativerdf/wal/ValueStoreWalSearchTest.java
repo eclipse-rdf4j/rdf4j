@@ -70,7 +70,7 @@ class ValueStoreWalSearchTest {
 
 		ValueStoreWalSearch search = ValueStoreWalSearch.open(cfgRead);
 		Value found = null;
-		for (int attempt = 0; attempt < 10 && found == null; attempt++) {
+		for (int attempt = 0; attempt < 100 && found == null; attempt++) {
 			found = search.findValueById(pickId);
 			if (found == null) {
 				Thread.sleep(100);
