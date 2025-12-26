@@ -240,7 +240,7 @@ class ValueStoreWalIntegrationTest {
 					.filter(Files::isRegularFile)
 					.map(path -> path.getFileName().toString())
 					.filter(name -> name.startsWith("wal-")))
-					.allMatch(name -> name.matches("wal-[1-9]\\d*\\.v1(?:\\.gz)?"));
+							.allMatch(name -> name.matches("wal-[1-9]\\d*\\.v1(?:\\.gz)?"));
 		}
 	}
 }

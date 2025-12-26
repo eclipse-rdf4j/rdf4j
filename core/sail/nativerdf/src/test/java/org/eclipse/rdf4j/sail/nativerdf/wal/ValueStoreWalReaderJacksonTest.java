@@ -69,11 +69,11 @@ class ValueStoreWalReaderJacksonTest {
 			assertThat(records.stream()
 					.anyMatch(r -> r.valueKind() == ValueStoreWalValueKind.IRI
 							&& r.lexical().equals("http://example.com/resource")))
-					.isTrue();
+									.isTrue();
 			assertThat(records.stream()
 					.anyMatch(r -> r.valueKind() == ValueStoreWalValueKind.LITERAL
 							&& r.lexical().equals(specialText)))
-					.isTrue();
+									.isTrue();
 			assertThat(scan.lastValidLsn()).isGreaterThan(ValueStoreWAL.NO_LSN);
 		}
 	}

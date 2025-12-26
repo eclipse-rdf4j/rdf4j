@@ -305,8 +305,8 @@ class Rdf4jServerWorkbenchApplicationTest {
 					.isInstanceOf(RepositoryException.class)
 					.satisfies(ex -> assertThat(hasRootCause(ex, ShaclSailValidationException.class)
 							|| hasRootCause(ex, RemoteShaclValidationException.class))
-							.as("SHACL validation exception propagated to caller")
-							.isTrue());
+									.as("SHACL validation exception propagated to caller")
+									.isTrue());
 
 			String validInstance = String.join("\n",
 					"@prefix ex: <urn:example:> .",

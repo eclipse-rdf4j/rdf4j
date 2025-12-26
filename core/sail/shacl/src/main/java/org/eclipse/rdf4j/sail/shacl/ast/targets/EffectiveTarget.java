@@ -373,7 +373,7 @@ public class EffectiveTarget {
 		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, sparqlFragment,
 				last.var,
 				ValidationTuple::getActiveTarget, null, connectionsGroup)
-				.getTrueNode(UnBufferedPlanNode.class);
+						.getTrueNode(UnBufferedPlanNode.class);
 	}
 
 	public String getQuery(boolean includeOptional) {
