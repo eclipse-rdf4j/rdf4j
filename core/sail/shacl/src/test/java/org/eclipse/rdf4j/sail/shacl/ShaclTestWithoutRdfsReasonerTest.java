@@ -31,14 +31,12 @@ import org.junit.jupiter.params.provider.MethodSource;
 public class ShaclTestWithoutRdfsReasonerTest extends AbstractShaclTest {
 
 	@BeforeAll
-	public static void beforeAll() throws IllegalAccessException {
-		AbstractShaclTest.beforeAll();
+	public static void beforeAll() {
 		ParentReferenceChecker.skip = true;
 	}
 
 	@AfterAll
-	public static void afterAll() throws IllegalAccessException {
-		AbstractShaclTest.afterAll();
+	public static void afterAll() {
 		ParentReferenceChecker.skip = false;
 	}
 
