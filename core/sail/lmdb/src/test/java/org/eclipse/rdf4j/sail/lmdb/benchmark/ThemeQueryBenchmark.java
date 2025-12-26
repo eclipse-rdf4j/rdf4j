@@ -17,13 +17,13 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
+import org.eclipse.rdf4j.benchmark.common.ThemeDataSetCache;
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
-import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.repository.util.RDFInserter;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -87,11 +87,11 @@ public class ThemeQueryBenchmark {
 		loadData();
 	}
 
-	private void loadData() {
+	private void loadData() throws IOException {
+		File cacheFile = ThemeDataSetCache.getOrCreateNQuads(theme).toFile();
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			RDFInserter inserter = new RDFInserter(connection);
-			ThemeDataSetGenerator.generate(theme, inserter);
+			connection.add(cacheFile, "", RDFFormat.NQUADS);
 			connection.commit();
 		}
 	}

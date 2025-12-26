@@ -17,13 +17,13 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
+import org.eclipse.rdf4j.benchmark.common.ThemeDataSetCache;
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
-import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.repository.util.RDFInserter;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -44,10 +44,10 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 3)
+@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
-@Measurement(iterations = 5)
+@Fork(value = 1, jvmArgs = { "-Xms32G", "-Xmx32G" })
+@Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -88,11 +88,11 @@ public class ThemeQueryBenchmark {
 		loadData();
 	}
 
-	private void loadData() {
+	private void loadData() throws IOException {
+		File cacheFile = ThemeDataSetCache.getOrCreateNQuads(theme).toFile();
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			RDFInserter inserter = new RDFInserter(connection);
-			ThemeDataSetGenerator.generate(theme, inserter);
+			connection.add(cacheFile, "", RDFFormat.NQUADS);
 			connection.commit();
 		}
 	}
