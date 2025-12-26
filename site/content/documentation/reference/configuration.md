@@ -251,6 +251,8 @@ Creating more indexes potentially speeds up querying (a lot), but also adds over
 
 The native store automatically creates/drops indexes upon (re)initialization, so the parameter can be adjusted and upon the first refresh of the configuration the native store will change its indexing strategy, without loss of data.
 
+Set `config:native.memoryMappedTxnStatusFile` to `true` to enable the experimental memory-mapped transaction status file. When unset, the store falls back to the legacy file implementation.
+
 ##### Example configuration
 
 ```turtle
