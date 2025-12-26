@@ -1540,6 +1540,36 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			subjVar = mapValueExprToVar(data);
 		}
 
+		List<ValueExpr> objectList = null;
+		if (!(data instanceof PathSequenceContext)) {
+			ASTObjectList objectListNode = getObjectList(pathSeqNode);
+			if (objectListNode != null) {
+				@SuppressWarnings("unchecked")
+				List<ValueExpr> evaluatedObjectList = (List<ValueExpr>) objectListNode.jjtAccept(this, null);
+				objectList = evaluatedObjectList;
+
+				if (objectList.size() > 1) {
+					TupleExpr result = null;
+					for (ValueExpr objectItem : objectList) {
+						PathSequenceContext objectContext = new PathSequenceContext();
+						objectContext.scope = graphPattern.getStatementPatternScope();
+						objectContext.contextVar = graphPattern.getContextVar();
+						objectContext.startVar = subjVar;
+						objectContext.endVar = mapValueExprToVar(objectItem);
+
+						TupleExpr pathExpr = (TupleExpr) pathSeqNode.jjtAccept(this, objectContext);
+
+						if (result == null) {
+							result = pathExpr;
+						} else {
+							result = new Join(result, pathExpr);
+						}
+					}
+					return result;
+				}
+			}
+		}
+
 		List<ASTPathElt> pathElements = pathSeqNode.getPathElements();
 		int pathLength = pathElements.size();
 
@@ -1561,10 +1591,15 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 					// We handle this here instead of higher up in the tree visitor because here we have
 					// a reference to the "temporary" endVar that needs to be replaced.
-					@SuppressWarnings("unchecked")
-					List<ValueExpr> objectList = (List<ValueExpr>) getObjectList(pathSeqNode).jjtAccept(this, null);
+					List<ValueExpr> finalObjectList = objectList;
+					if (finalObjectList == null) {
+						@SuppressWarnings("unchecked")
+						List<ValueExpr> evaluatedObjectList = (List<ValueExpr>) getObjectList(pathSeqNode)
+								.jjtAccept(this, null);
+						finalObjectList = evaluatedObjectList;
+					}
 
-					for (ValueExpr objectItem : objectList) {
+					for (ValueExpr objectItem : finalObjectList) {
 						Var objectVar = mapValueExprToVar(objectItem);
 						Var replacement = objectVar;
 						if (objectVar.equals(subjVar)) { // corner case for cyclic expressions, see SES-1685
