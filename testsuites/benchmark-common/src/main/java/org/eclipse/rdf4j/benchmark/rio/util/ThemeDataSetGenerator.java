@@ -867,12 +867,12 @@ public final class ThemeDataSetGenerator {
 	}
 
 	public static final class LibraryConfig {
-		private int bookCount = 100;
-		private int authorCount = 30;
+		private int bookCount = 100000;
+		private int authorCount = 30000;
 		private int branchCount = 5;
 		private int copiesPerBook = 3;
 		private int authorsPerBook = 2;
-		private int memberCount = 50;
+		private int memberCount = 5000;
 		private int loansPerMember = 2;
 		private long seed = 42L;
 
@@ -928,10 +928,10 @@ public final class ThemeDataSetGenerator {
 	}
 
 	public static final class EngineeringConfig {
-		private int componentCount = 120;
-		private int assemblyCount = 15;
-		private int requirementCount = 40;
-		private int testsPerRequirement = 2;
+		private int componentCount = 120000;
+		private int assemblyCount = 1500;
+		private int requirementCount = 400;
+		private int testsPerRequirement = 3;
 		private long seed = 42L;
 
 		public EngineeringConfig withComponentCount(int componentCount) {

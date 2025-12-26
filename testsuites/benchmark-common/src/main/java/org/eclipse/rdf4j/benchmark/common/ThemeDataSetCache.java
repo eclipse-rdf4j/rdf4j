@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.UUID;
 
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
@@ -66,12 +67,14 @@ public final class ThemeDataSetCache {
 		}
 	}
 
+	private static String uuid = UUID.randomUUID().toString();
+
 	private static Path resolveCacheDir() {
 		String configured = System.getProperty(CACHE_DIR_PROPERTY);
 		if (configured != null && !configured.isBlank()) {
 			return Path.of(configured);
 		}
-		return Path.of(System.getProperty("java.io.tmpdir"), DEFAULT_CACHE_DIR_NAME);
+		return Path.of(System.getProperty("java.io.tmpdir"), DEFAULT_CACHE_DIR_NAME + "-" + uuid);
 	}
 
 	private static String fileName(Theme theme) {
