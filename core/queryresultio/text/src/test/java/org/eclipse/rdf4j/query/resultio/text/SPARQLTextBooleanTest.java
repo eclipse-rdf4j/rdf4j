@@ -14,8 +14,7 @@
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- * *****************************************************************************
- */
+ * ******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.text;
 
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;

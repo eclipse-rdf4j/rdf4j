@@ -1,4 +1,3 @@
-// File: src/jmh/java/org/eclipse/rdf4j/query/algebra/evaluation/benchmark/GeneralCompareBench.java
 /*******************************************************************************
  * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
  *

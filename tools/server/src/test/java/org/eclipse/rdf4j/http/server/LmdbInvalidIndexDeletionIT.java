@@ -1,4 +1,4 @@
-/**
+/*******************************************************************************
  * Copyright (c) 2025 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
@@ -7,7 +7,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
- */
+ *******************************************************************************/
 package org.eclipse.rdf4j.http.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
