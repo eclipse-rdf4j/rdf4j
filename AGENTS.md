@@ -429,6 +429,7 @@ Always keep untracked artifacts!
 3. **Migration/rename/autogen refresh** where behavior is already characterized by existing tests.
 4. **Build/CI/docs/logging/message changes** that do not alter runtime behavior or asserted outputs.
 5. **Data/resource tweaks** not asserted by tests and not affecting behavior.
+6. **Benchmark-only changes** (benchmark sources, harness scripts, or benchmark data) that do not alter production behavior.
 
 ### Routine B Gates (all must pass)
 - **Neutrality/Scope:** No externally observable behavior change. Localized edit.
