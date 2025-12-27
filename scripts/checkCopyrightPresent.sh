@@ -1,6 +1,13 @@
 #!/bin/bash
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
+rewrite_headers=false
+
+for arg in "$@"; do
+  if [ "$arg" = "--rewrite-header" ]; then
+    rewrite_headers=true
+  fi
+done
 
 filesWithOutCopyright=()
 filesWithOutSPDX=()
@@ -18,6 +25,15 @@ expectedHeader=(
   " * SPDX-License-Identifier: BSD-3-Clause"
   " *******************************************************************************/"
 )
+
+normalize_line() {
+  local line="$1"
+  line="${line//\*/}"
+  line=$(printf '%s' "$line" | tr -s '[:space:]' ' ')
+  line="${line#"${line%%[! ]*}"}"
+  line="${line%"${line##*[! ]}"}"
+  printf '%s' "$line"
+}
 
 rewrite_header() {
   local file="$1"
@@ -45,6 +61,41 @@ rewrite_header() {
   mv "$tmp_file" "$file"
 }
 
+read_header_lines() {
+  local file="$1"
+  header_lines=()
+  while IFS= read -r line; do
+    line="${line%$'\r'}"
+    header_lines+=("$line")
+  done < <(head -n 10 "$file")
+}
+
+compute_header_stats() {
+  local year_line_normalized
+  local expected_normalized
+  local actual_normalized
+  local idx
+  match_count=0
+  has_valid_year_line=false
+  aduna_year=""
+
+  year_line_normalized="$(normalize_line "${header_lines[1]}")"
+  if [[ "$year_line_normalized" =~ ^Copyright\ \(c\)\ ([0-9]{4})\ Eclipse\ RDF4J\ contributors\.$ ]]; then
+    has_valid_year_line=true
+  elif [[ "$year_line_normalized" =~ ^Copyright\ \(c\)\ ([0-9]{4})\ Eclipse\ RDF4J\ contributors,\ Aduna,\ and\ others\.$ ]]; then
+    has_valid_year_line=true
+    aduna_year="${BASH_REMATCH[1]}"
+  fi
+
+  for idx in 0 2 3 4 5 6 7 8 9; do
+    expected_normalized="$(normalize_line "${expectedHeader[$idx]}")"
+    actual_normalized="$(normalize_line "${header_lines[$idx]}")"
+    if [[ "$actual_normalized" == "$expected_normalized" ]]; then
+      match_count=$((match_count + 1))
+    fi
+  done
+}
+
 for i in $(find "${repo_root}" -name pom.xml); do
   if [[ "$i" == "${repo_root}/core/queryparser/sparql/JavaCC/"* ]]; then
     continue
@@ -66,11 +117,7 @@ for i in $(find "${repo_root}" -name pom.xml); do
         continue
       fi
 
-      header_lines=()
-      while IFS= read -r line; do
-        line="${line%$'\r'}"
-        header_lines+=("$line")
-      done < <(head -n 10 "$c")
+      read_header_lines "$c"
 
       has_copyright=false
       if grep -q "Copyright" "$c"; then
@@ -86,28 +133,16 @@ for i in $(find "${repo_root}" -name pom.xml); do
         continue
       fi
 
-      has_valid_year_line=false
-      if [[ "${header_lines[1]}" =~ ^\ \*\ Copyright\ \(c\)\ ([0-9]{4})\ Eclipse\ RDF4J\ contributors\.$ ]]; then
-        has_valid_year_line=true
-      elif [[ "${header_lines[1]}" =~ ^\ \*\ Copyright\ \(c\)\ ([0-9]{4})\ Eclipse\ RDF4J\ contributors,\ Aduna,\ and\ others\.$ ]]; then
-        has_valid_year_line=true
-        aduna_year="${BASH_REMATCH[1]}"
-        if [ "$aduna_year" -gt 2020 ]; then
-          filesWithAdunaYearAfter2020+=("$c")
-        fi
+      compute_header_stats
+
+      if [ "$rewrite_headers" = true ] && [ "$match_count" -ge 4 ] && [ "$match_count" -lt 9 ]; then
+        rewrite_header "$c" "${header_lines[1]}"
+        read_header_lines "$c"
+        compute_header_stats
       fi
 
-      match_count=0
-      for idx in 0 2 3 4 5 6 7 8 9; do
-        if [[ "${header_lines[$idx]}" == "${expectedHeader[$idx]}" ]]; then
-          match_count=$((match_count + 1))
-        fi
-      done
-
-      if [ "$match_count" -ge 2 ]; then
-        if [ "$match_count" -lt 9 ]; then
-          rewrite_header "$c" "${header_lines[1]}"
-        fi
+      if [ -n "$aduna_year" ] && [ "$aduna_year" -gt 2020 ]; then
+        filesWithAdunaYearAfter2020+=("$c")
       fi
 
       if [ "$has_valid_year_line" = false ]; then
@@ -116,7 +151,7 @@ for i in $(find "${repo_root}" -name pom.xml); do
         else
           filesWithOutCopyright+=("$c")
         fi
-      elif [ "$match_count" -lt 4 ]; then
+      elif [ "$match_count" -lt 9 ]; then
         filesWithInvalidHeader+=("$c")
       fi
     done
@@ -139,8 +174,14 @@ for f in "${filesWithOutSPDX[@]}"; do
   echo "Missing SPDX line in: $f"
 done
 if [ ${#filesWithOutCopyright[@]} -ne 0 ] || [ ${#filesWithInvalidHeader[@]} -ne 0 ] || [ ${#filesWithAdunaYearAfter2020[@]} -ne 0 ]; then
+  if [ "$rewrite_headers" = false ]; then
+    echo "Tip: rerun with --rewrite-header to auto-fix headers when possible."
+  fi
   exit 1
 fi
 if [ ${#filesWithOutSPDX[@]} -ne 0 ]; then
+  if [ "$rewrite_headers" = false ]; then
+    echo "Tip: rerun with --rewrite-header to auto-fix headers when possible."
+  fi
   exit 2
 fi
