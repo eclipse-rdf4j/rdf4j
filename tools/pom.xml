@@ -14,6 +14,7 @@
 		<module>config</module>
 		<module>console</module>
 		<module>federation</module>
+		<module>optimizer-harness</module>
 		<module>server</module>
 		<module>server-spring</module>
 		<module>server-boot</module>

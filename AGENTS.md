@@ -618,17 +618,18 @@ Immediately after creating any new Java source file, add the signature comment (
 
 * Branch names: start with `GH-XXXX` (GitHub issue number). Optional short slug, e.g., `GH-1234-trig-writer-check`.
 * Commit messages: `GH-XXXX <short imperative summary>` on every commit.
+* If no issue number is provided and you are operating autonomously, use `GH-0000` as a placeholder for both branch and commit prefixes, and call out the missing issue number in your final report.
 
 ---
 
 ## Branch & PR Workflow (Agent)
 
-* Confirm issue number first (mandatory).
-* Branch: `git checkout -b GH-XXXX-your-slug`
+* Confirm issue number first when possible. If none is provided and you are operating autonomously, proceed with `GH-0000` and note the missing issue number in your final report.
+* Branch: `git checkout -b GH-XXXX-your-slug` (or `git checkout -b GH-0000-your-slug` when using the placeholder).
 * Stage: `git add -A` (ensure new Java files have the required header).
 * Optional: formatter + quick install.
-* Commit: `git commit -m "GH-XXXX <short imperative summary>"`
-* Push & PR: use the default template; fill all fields; include `Fixes #XXXX`.
+* Commit: `git commit -m "GH-XXXX <short imperative summary>"` (or `GH-0000 ...` when using the placeholder).
+* Push & PR: use the default template; fill all fields; include `Fixes #XXXX` when a real issue number exists.
 
 ---
 
@@ -911,7 +912,7 @@ rdf4j: root project
 
 * Branch names must always start with the GitHub issue identifier in the form `GH-XXXX`, where `XXXX` is the numeric issue number.
 * Every commit message must be prefixed with the corresponding `GH-XXXX` label.
-* Exception: if no GitHub issue number is available for the task, clearly note this in your handoff and align with the requester on an appropriate branch/commit prefix before proceeding.
+* Exception: if no GitHub issue number is available and you are operating autonomously, use `GH-0000` as the placeholder prefix and clearly note the missing issue number in your final report. If you are not operating autonomously, align with the requester on an appropriate branch/commit prefix before proceeding.
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
