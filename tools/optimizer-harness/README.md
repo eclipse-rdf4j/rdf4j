@@ -12,6 +12,7 @@ From repo root:
 
 ## Options
 
+    --profile <tiny|small|medium>
     --seed <long>
     --subjects <int>
     --fanout <int>

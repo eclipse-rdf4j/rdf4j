@@ -14,7 +14,7 @@ Counterexample: flattening that drops or merges identical arms would be unsafe. 
 
 ## U2: UNION arm reordering by estimated cost
 
-Preconditions: optimizer flag enabled and estimates available with sufficient confidence. Reordering must not change duplicate semantics or variable scoping.
+Preconditions: optimizer flag enabled, estimates available, and the estimated cost ratio meets the minimum confidence threshold (`rdf4j.optimizer.unionOptional.unionReorder.minRatio`, default 1.5). Reordering must not change duplicate semantics or variable scoping.
 
 Transformation: reorder UNION arms to evaluate the cheapest arm first, while preserving all arms.
 
@@ -23,6 +23,8 @@ Why safe: UNION evaluation order is not semantically observable in RDF4J's evalu
 Counterexample: any rewrite that changes the set of arms, or reorders within a subquery where evaluation order is externally observed, would be unsafe. This rule must be gated and limited to plain UNION arms.
 
 ## O1: OPTIONAL LHS-only join reordering
+
+Status: currently enforced by existing `QueryJoinOptimizer` behavior and guarded by tests; no new optimizer rule has been added yet.
 
 Preconditions: only reorder joins that are entirely within the left-hand side of a LeftJoin. Do not move any part of the right-hand side or the LeftJoin itself.
 
@@ -33,6 +35,8 @@ Why safe: the LeftJoin boundary is unchanged, so null-extension and correlation 
 Counterexample: moving any right-hand side pattern into the left or outside the LeftJoin changes OPTIONAL semantics and is unsafe.
 
 ## O2: Safe filter handling around OPTIONAL
+
+Status: currently enforced by existing `FilterOptimizer` behavior and guarded by tests; no new optimizer rule has been added yet.
 
 Preconditions: filters referencing only left-side variables may be pushed into the left subtree. Filters referencing optional variables may only be pushed within the OPTIONAL if they are already syntactically scoped there.
 

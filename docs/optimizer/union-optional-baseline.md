@@ -55,7 +55,7 @@ Any new UNION/OPTIONAL rules must be compatible with these transformations.
 - Cardinality heuristics live in `core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/EvaluationStatistics.java`.
 - `EvaluationStatistics.getCardinality(TupleExpr)` assigns estimated result sizes per node, stored as `resultSizeEstimate`.
 - `QueryJoinOptimizer` uses these estimates to reorder join arguments.
-- Runtime actuals can be collected by enabling `EvaluationStrategy.setTrackResultSize(true)` and `setTrackTime(true)`; these populate `resultSizeActual` and `totalTimeNanosActual` on query model nodes.
+- Runtime actuals can be collected by enabling `EvaluationStrategy.setTrackResultSize(true)` and `setTrackTime(true)`; these populate `resultSizeActual` and `totalTimeActual` (milliseconds) on query model nodes.
 
 ## Plan inspection
 

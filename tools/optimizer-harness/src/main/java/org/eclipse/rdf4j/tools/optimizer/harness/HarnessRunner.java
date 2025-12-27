@@ -38,6 +38,8 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 public final class HarnessRunner {
 
 	private static final String OPTIMIZER_FLAG = "rdf4j.optimizer.unionOptional.enabled";
+	private static final String UNION_FLATTEN_FLAG = "rdf4j.optimizer.unionOptional.flatten.enabled";
+	private static final String UNION_REORDER_FLAG = "rdf4j.optimizer.unionOptional.unionReorder.enabled";
 
 	public static void main(String[] args) throws Exception {
 		HarnessConfig config = HarnessConfig.fromArgs(args);
@@ -64,7 +66,8 @@ public final class HarnessRunner {
 
 	private static RunResult runProfile(String profileName, boolean enableOptimizers, List<Statement> statements,
 			List<QueryCase> queries, HarnessConfig config, Path csvPath) throws Exception {
-		System.setProperty(OPTIMIZER_FLAG, Boolean.toString(enableOptimizers));
+		PropertySnapshot snapshot = PropertySnapshot.capture(OPTIMIZER_FLAG, UNION_FLATTEN_FLAG, UNION_REORDER_FLAG);
+		applyOptimizerFlags(enableOptimizers);
 		RunResult result = new RunResult(profileName);
 		Path plansDir = config.outputDir.resolve("plans");
 		Files.createDirectories(plansDir);
@@ -83,6 +86,7 @@ public final class HarnessRunner {
 			}
 		} finally {
 			repository.shutDown();
+			snapshot.restore();
 		}
 		return result;
 	}
@@ -208,6 +212,13 @@ public final class HarnessRunner {
 		Files.writeString(outputPath, summary.toString(), StandardCharsets.UTF_8);
 	}
 
+	private static void applyOptimizerFlags(boolean enabled) {
+		String value = Boolean.toString(enabled);
+		System.setProperty(OPTIMIZER_FLAG, value);
+		System.setProperty(UNION_FLATTEN_FLAG, value);
+		System.setProperty(UNION_REORDER_FLAG, value);
+	}
+
 	private static final class RunResult {
 		private final String profile;
 		private final Map<String, QueryOutcome> outcomes = new HashMap<>();
@@ -249,6 +260,32 @@ public final class HarnessRunner {
 			this.estimate = estimate;
 			this.actual = actual;
 			this.ratio = ratio;
+		}
+	}
+
+	private static final class PropertySnapshot {
+		private final Map<String, String> values;
+
+		private PropertySnapshot(Map<String, String> values) {
+			this.values = values;
+		}
+
+		private static PropertySnapshot capture(String... keys) {
+			Map<String, String> snapshot = new HashMap<>();
+			for (String key : keys) {
+				snapshot.put(key, System.getProperty(key));
+			}
+			return new PropertySnapshot(snapshot);
+		}
+
+		private void restore() {
+			for (Map.Entry<String, String> entry : values.entrySet()) {
+				if (entry.getValue() == null) {
+					System.clearProperty(entry.getKey());
+				} else {
+					System.setProperty(entry.getKey(), entry.getValue());
+				}
+			}
 		}
 	}
 }

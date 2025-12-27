@@ -31,6 +31,11 @@ final class QueryGenerator {
 				PREFIX + "\nSELECT * WHERE {\n  ?s ex:p1 ?x .\n  OPTIONAL { ?s ex:p2 ?y . }\n}"));
 
 		cases.add(new QueryCase(
+				"optional-independent",
+				"OPTIONAL with independent variable",
+				PREFIX + "\nSELECT * WHERE {\n  ?s ex:p1 ?x .\n  OPTIONAL { ?t ex:p2 ?y . }\n}"));
+
+		cases.add(new QueryCase(
 				"optional-filter-inside",
 				"OPTIONAL with filter inside referencing optional var",
 				PREFIX + "\nSELECT * WHERE {\n  ?s ex:p1 ?x .\n  OPTIONAL { ?s ex:p2 ?y . FILTER(?y < " + filterLimit

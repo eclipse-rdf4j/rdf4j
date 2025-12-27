@@ -16,18 +16,26 @@ The goal is to make UNION and OPTIONAL (LeftJoin) queries faster without changin
 - [x] (2025-12-27 21:39+01:00) Add Union flattening rule tests
 - [x] (2025-12-27 21:39+01:00) Implement Union flattening optimizer rule
 - [x] (2025-12-27 21:44+01:00) Add Union reorder rule and tests
-- [ ] (2025-12-27 21:40+01:00) Add Optional safe rules and tests
-- [ ] (2025-12-27 21:40+01:00) Refine estimator and expand harness
+- [x] (2025-12-27 21:48+01:00) Add Optional safety tests
+- [x] (2025-12-27 22:07+01:00) Add harness profiles + candidate flags
+- [x] (2025-12-27 22:07+01:00) Add independent OPTIONAL harness case
+- [x] (2025-12-27 22:12+01:00) Refine estimator and expand harness
 
 ## Surprises & Discoveries
 
 RDF4J already applies UNION and OPTIONAL related rewrites in the standard pipeline. `QueryModelNormalizerOptimizer` distributes Join over Union and lifts well-designed LeftJoin over Join, and `FilterOptimizer` pushes filters into Union arms. Any new rules must avoid duplicating or conflicting with these. Evidence is in `core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/QueryModelNormalizerOptimizer.java` and `core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/FilterOptimizer.java`.
 
+The harness CLI initially lacked a profile switch, so the test harness now provides `--profile` presets (tiny/small/medium) to make fast runs deterministic.
+
 ## Decision Log
 
 Decision: Place the harness in a new tools sub-module `tools/optimizer-harness` with a CLI main class. Rationale: A tools module isolates harness concerns from core and keeps CSV artifacts local and optional. Date/Author: 2025-12-27 / Codex.
 
-Decision: Do not auto-commit during implementation despite PLANS.md guidance. Rationale: `AGENTS.md` forbids commits unless explicitly requested, which is higher priority. Date/Author: 2025-12-27 / Codex.
+Decision: Treat OPTIONAL safety improvements as tests only, because existing QueryJoinOptimizer and FilterOptimizer already enforce LHS-only join reordering and safe filter scoping. Rationale: no additional rewrite was needed to preserve semantics; tests now guard against regressions. Date/Author: 2025-12-27 / Codex.
+
+Decision: Add `--profile` presets and enable UNION optimizer flags for candidate runs in the harness. Rationale: keeps fast, deterministic runs while ensuring candidate truly exercises the new rules. Date/Author: 2025-12-27 / Codex.
+
+Decision: Guard UNION arm reordering with a minimum cost ratio (`rdf4j.optimizer.unionOptional.unionReorder.minRatio`, default 1.5). Rationale: avoid reordering when estimates are too close to be reliable. Date/Author: 2025-12-27 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -35,7 +43,9 @@ Milestone A is complete. The harness module builds and runs on a small profile, 
 
 The baseline doc captures the current pipeline, UNION/OPTIONAL evaluation classes, and statistics hooks.
 The rewrites and rollout docs describe safe transformations and toggles.
-Milestone B is complete with Union flattening behind flags and tests covering enabled and disabled paths. Milestone C is complete with Union arm reordering and tests for enabled and disabled paths.
+Milestone B is complete with Union flattening behind flags and tests covering enabled and disabled paths. Milestone C is complete with Union arm reordering and tests for enabled and disabled paths. Milestone D is complete with OPTIONAL scoping tests that assert filters do not cross OPTIONAL boundaries.
+Harness now supports profile presets and an independent OPTIONAL query case to cover non-correlated optionals.
+Estimator refinement now includes a minimum cost ratio guard for UNION reordering.
 
 ## Context and Orientation
 
@@ -85,4 +95,5 @@ Expected harness outputs use a run directory under `tools/optimizer-harness/targ
 
 The harness depends on `rdf4j-repository-sail`, `rdf4j-sail-memory`, `rdf4j-queryparser-sparql`, and `rdf4j-query`. The CLI entry point remains `org.eclipse.rdf4j.tools.optimizer.harness.HarnessRunner` and accepts flags for seed, dataset shape, and output. Optimizer rules are guarded by `rdf4j.optimizer.unionOptional.enabled` and per-rule flags.
 
-Revision Note (2025-12-27): Updated progress for Milestone C and kept the plan in PLANS.md prose format with harness notes and supporting docs.
+Revision Note (2025-12-27): Updated progress for Milestone D and documented OPTIONAL safety tests.
+Revision Note (2025-12-27): Added harness profiles, candidate flags, independent OPTIONAL case, and UNION reorder min-ratio guard; updated progress/decisions.

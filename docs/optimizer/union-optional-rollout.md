@@ -9,13 +9,15 @@ The optimizer rules are guarded by system properties:
 - `rdf4j.optimizer.unionOptional.enabled` enables or disables all rules.
 - `rdf4j.optimizer.unionOptional.flatten.enabled` enables UNION flattening (U1).
 - `rdf4j.optimizer.unionOptional.unionReorder.enabled` enables UNION arm reordering (U2).
-- `rdf4j.optimizer.unionOptional.optionalLhs.enabled` enables OPTIONAL LHS-only improvements (O1/O2).
+- `rdf4j.optimizer.unionOptional.unionReorder.minRatio` sets the minimum cost ratio (default 1.5) required to reorder arms.
+
+Optional LHS-only improvements (O1/O2) are still planned; no runtime flag is wired yet.
 
 Set these properties on the JVM command line or in the harness runner before executing queries.
 
 ## Harness output
 
-Each harness run writes baseline and candidate CSV files under `tools/optimizer-harness/target/harness/run-<timestamp>/`. Each CSV row includes a stable node id (path index), operator type, estimates, actual row counts, and total time in milliseconds. Summary files list the worst estimate errors so the estimator can be refined with evidence.
+Each harness run writes baseline and candidate CSV files under `tools/optimizer-harness/target/harness/run-<timestamp>/`. Each CSV row includes a stable node id (path index), operator type, estimates, actual row counts, and total time in milliseconds. Summary files list the worst estimate errors so the estimator can be refined with evidence. Use `--profile tiny|small|medium` to scale dataset and query sizes.
 
 Plan dumps are written when mismatches or regressions occur. Use the `plans/` folder to inspect the before/after algebra and confirm which rewrite fired.
 

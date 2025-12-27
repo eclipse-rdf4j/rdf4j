@@ -50,20 +50,31 @@ final class HarnessConfig {
 	}
 
 	static HarnessConfig fromArgs(String[] args) {
-		long seed = 1L;
-		int subjects = 200;
-		int fanout = 3;
-		int objects = 50;
-		double optionalRate = 0.35;
-		double unionSkew = 0.05;
-		double filterSelectivity = 0.1;
-		double maxRegression = 0.10;
+		String profileName = null;
+		for (int i = 0; i < args.length; i++) {
+			if ("--profile".equals(args[i])) {
+				profileName = nextArg(args, ++i, "--profile");
+			}
+		}
+
+		Defaults defaults = defaultsForProfile(profileName);
+		long seed = defaults.seed;
+		int subjects = defaults.subjects;
+		int fanout = defaults.fanout;
+		int objects = defaults.objects;
+		double optionalRate = defaults.optionalRate;
+		double unionSkew = defaults.unionSkew;
+		double filterSelectivity = defaults.filterSelectivity;
+		double maxRegression = defaults.maxRegression;
 		boolean baselineOnly = false;
 		Path outputDir = defaultOutputDir();
 
 		for (int i = 0; i < args.length; i++) {
 			String arg = args[i];
-			if ("--seed".equals(arg)) {
+			if ("--profile".equals(arg)) {
+				i++;
+				continue;
+			} else if ("--seed".equals(arg)) {
 				seed = parseLong(nextArg(args, ++i, arg));
 			} else if ("--subjects".equals(arg)) {
 				subjects = parseInt(nextArg(args, ++i, arg));
@@ -126,6 +137,7 @@ final class HarnessConfig {
 	static String usage() {
 		return String.join(System.lineSeparator(),
 				"Optimizer harness options:",
+				"  --profile <tiny|small|medium>",
 				"  --seed <long>",
 				"  --subjects <int>",
 				"  --fanout <int>",
@@ -137,5 +149,57 @@ final class HarnessConfig {
 				"  --output <dir>",
 				"  --baseline-only",
 				"  --help | -h");
+	}
+
+	private static Defaults defaultsForProfile(String profileName) {
+		if (profileName == null || profileName.isBlank()) {
+			return Defaults.small();
+		}
+		String normalized = profileName.toLowerCase(Locale.ROOT);
+		switch (normalized) {
+		case "tiny":
+			return Defaults.tiny();
+		case "small":
+			return Defaults.small();
+		case "medium":
+			return Defaults.medium();
+		default:
+			throw new IllegalArgumentException("Unknown profile: " + profileName + System.lineSeparator() + usage());
+		}
+	}
+
+	private static final class Defaults {
+		private final long seed;
+		private final int subjects;
+		private final int fanout;
+		private final int objects;
+		private final double optionalRate;
+		private final double unionSkew;
+		private final double filterSelectivity;
+		private final double maxRegression;
+
+		private Defaults(long seed, int subjects, int fanout, int objects, double optionalRate, double unionSkew,
+				double filterSelectivity, double maxRegression) {
+			this.seed = seed;
+			this.subjects = subjects;
+			this.fanout = fanout;
+			this.objects = objects;
+			this.optionalRate = optionalRate;
+			this.unionSkew = unionSkew;
+			this.filterSelectivity = filterSelectivity;
+			this.maxRegression = maxRegression;
+		}
+
+		private static Defaults tiny() {
+			return new Defaults(1L, 30, 2, 20, 0.30, 0.05, 0.10, 0.25);
+		}
+
+		private static Defaults small() {
+			return new Defaults(1L, 200, 3, 50, 0.35, 0.05, 0.10, 0.10);
+		}
+
+		private static Defaults medium() {
+			return new Defaults(1L, 1000, 5, 200, 0.35, 0.02, 0.10, 0.10);
+		}
 	}
 }

@@ -24,10 +24,15 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
  */
 public class UnionReorderOptimizer implements QueryOptimizer {
 
+	private static final String MIN_RATIO_PROPERTY = "rdf4j.optimizer.unionOptional.unionReorder.minRatio";
+	private static final double DEFAULT_MIN_RATIO = 1.5;
+
 	private final EvaluationStatistics statistics;
+	private final double minRatio;
 
 	public UnionReorderOptimizer(EvaluationStatistics statistics) {
 		this.statistics = statistics;
+		this.minRatio = readMinRatio();
 	}
 
 	@Override
@@ -54,10 +59,28 @@ public class UnionReorderOptimizer implements QueryOptimizer {
 				return;
 			}
 
+			double ratio = Math.max(leftEstimate, rightEstimate) / Math.min(leftEstimate, rightEstimate);
+			if (ratio < minRatio) {
+				return;
+			}
+
 			if (rightEstimate < leftEstimate) {
 				union.setLeftArg(rightArg);
 				union.setRightArg(leftArg);
 			}
+		}
+	}
+
+	private static double readMinRatio() {
+		String raw = System.getProperty(MIN_RATIO_PROPERTY);
+		if (raw == null || raw.isBlank()) {
+			return DEFAULT_MIN_RATIO;
+		}
+		try {
+			double parsed = Double.parseDouble(raw.trim());
+			return parsed <= 1.0 ? DEFAULT_MIN_RATIO : parsed;
+		} catch (NumberFormatException ignore) {
+			return DEFAULT_MIN_RATIO;
 		}
 	}
 }

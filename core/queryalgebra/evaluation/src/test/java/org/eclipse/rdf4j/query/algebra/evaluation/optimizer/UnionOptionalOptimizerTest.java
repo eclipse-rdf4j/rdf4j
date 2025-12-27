@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -106,6 +107,18 @@ public class UnionOptionalOptimizerTest {
 			restoreProperty(UNION_OPTIONAL_ENABLED, previousEnabled);
 			restoreProperty(UNION_REORDER_ENABLED, previousReorder);
 		}
+	}
+
+	@Test
+	public void testUnionReorderSkipsLowConfidence() {
+		StatementPattern left = statementPatternWithCardinality(10.0);
+		StatementPattern right = statementPatternWithCardinality(9.0);
+		Union union = new Union(left, right);
+
+		new UnionReorderOptimizer(new EvaluationStatistics())
+				.optimize(union, null, EmptyBindingSet.getInstance());
+
+		assertThat(union.getLeftArg()).isSameAs(left);
 	}
 
 	@Test
@@ -207,6 +220,12 @@ public class UnionOptionalOptimizerTest {
 		} else {
 			System.setProperty(key, value);
 		}
+	}
+
+	private static StatementPattern statementPatternWithCardinality(double cardinality) {
+		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		pattern.setCardinality(cardinality);
+		return pattern;
 	}
 
 	private static final class UnionLeftArgChecker extends AbstractQueryModelVisitor<RuntimeException> {
