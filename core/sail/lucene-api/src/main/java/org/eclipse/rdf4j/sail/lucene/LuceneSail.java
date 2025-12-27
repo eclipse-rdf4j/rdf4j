@@ -95,7 +95,8 @@ import org.slf4j.LoggerFactory;
  * <p>
  * In SPARQL:
  *
- * <pre>{@code
+ * <pre>
+ * {@code
  * SELECT ?subject ?score ?snippet ?resource
  * WHERE {
  *   ?subject <http://www.openrdf.org/contrib/lucenesail#matches> [
@@ -106,7 +107,8 @@ import org.slf4j.LoggerFactory;
  *      <http://www.openrdf.org/contrib/lucenesail#resource> ?resource
  *   ]
  * }
- * }</pre>
+ * }
+ * </pre>
  *
  * When defining queries, these properties <b>type and query are mandatory</b>. Also, the <b>matches relation is
  * mandatory</b>. When one of these misses, the query will not be executed as expected. The failure behavior can be
@@ -152,14 +154,16 @@ import org.slf4j.LoggerFactory;
  * <h2 name="indexidsyntax">Set and select Lucene sail by id</h2> The property {@link #INDEX_ID} is to configure the id
  * of the index and filter every request without the search:indexid predicate, the request would be:
  *
- * <pre>{@code
+ * <pre>
+ * {@code
  * ?subj search:matches [
  * 	      search:indexid my:lucene_index_id;
  * 	      search:query "search terms...";
  * 	      search:property my:property;
  * 	      search:score ?score;
  * 	      search:snippet ?snippet ] .
- * }</pre>
+ * }
+ * </pre>
  * <p>
  * If a LuceneSail is using another LuceneSail as a base sail, the evaluation mode should be set to
  * {@link TupleFunctionEvaluationMode#NATIVE}.

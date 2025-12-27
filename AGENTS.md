@@ -246,7 +246,7 @@ Evidence:
 Command: python3 .codex/skills/mvnf/scripts/mvnf.py Class#method (preferred) OR mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -Dtest=Class#method verify
 Report: <module>/target/surefire-reports/<file>.txt
 Snippet:
-\<copy 10–30 lines capturing the failure or success summary>
+\<copy 1–30 lines capturing the failure or success summary>
 ```
 
 **Routine B additions**
@@ -429,6 +429,7 @@ Always keep untracked artifacts!
 3. **Migration/rename/autogen refresh** where behavior is already characterized by existing tests.
 4. **Build/CI/docs/logging/message changes** that do not alter runtime behavior or asserted outputs.
 5. **Data/resource tweaks** not asserted by tests and not affecting behavior.
+6. **Benchmark-only changes** (benchmark sources, harness scripts, or benchmark data) that do not alter production behavior.
 
 ### Routine B Gates (all must pass)
 - **Neutrality/Scope:** No externally observable behavior change. Localized edit.

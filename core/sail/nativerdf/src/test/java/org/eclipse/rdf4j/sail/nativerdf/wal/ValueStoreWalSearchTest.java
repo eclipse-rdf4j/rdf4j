@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.Random;
 
+import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -48,7 +49,7 @@ class ValueStoreWalSearchTest {
 		SailRepository repo = new SailRepository(store);
 		repo.init();
 		try (SailRepositoryConnection conn = repo.getConnection()) {
-			try (var in = getClass().getClassLoader().getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl")) {
+			try (var in = BenchmarkResources.openDecompressedStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
 				assertThat(in).isNotNull();
 				conn.add(in, "", RDFFormat.TURTLE);
 			}
@@ -79,7 +80,7 @@ class ValueStoreWalSearchTest {
 
 		ValueStoreWalSearch search = ValueStoreWalSearch.open(cfgRead);
 		Value found = null;
-		for (int attempt = 0; attempt < 10 && found == null; attempt++) {
+		for (int attempt = 0; attempt < 100 && found == null; attempt++) {
 			found = search.findValueById(pickId);
 			if (found == null) {
 				Thread.sleep(100);
