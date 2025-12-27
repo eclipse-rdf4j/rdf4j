@@ -119,12 +119,13 @@ while IFS= read -r -d '' i; do
   if [[ "$i" == "${repo_root}/core/queryparser/sparql/JavaCC/"* ]]; then
     continue
   fi
+
+  echo "$i"
   # only look in non test files but make sure src/main exists.
   # and not in package-info
   dir="${i/pom.xml/}src/"
   if [ -d "$dir" ]; then
     while IFS= read -r -d '' c; do
-      echo "$c"
       read_header_lines "$c"
 
       generated=false
