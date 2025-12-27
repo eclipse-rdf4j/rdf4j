@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.SparqlUoConfig;
 
 public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
@@ -27,8 +28,13 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
 	public SparqlUoQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
+		this(strategy, tripleSource, evaluationStatistics, SparqlUoConfig.fromSystemProperties());
+	}
+
+	public SparqlUoQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+			EvaluationStatistics evaluationStatistics, SparqlUoConfig config) {
 		this.delegate = new StandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);
-		this.sparqlUoOptimizer = new SparqlUoOptimizer(evaluationStatistics);
+		this.sparqlUoOptimizer = new SparqlUoOptimizer(evaluationStatistics, config);
 	}
 
 	@Override

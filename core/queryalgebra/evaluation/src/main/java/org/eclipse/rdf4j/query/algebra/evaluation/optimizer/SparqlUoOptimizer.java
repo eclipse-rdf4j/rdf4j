@@ -30,23 +30,35 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.BeGroupNode
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.BeTreeBuilder;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.BeTreeSerializer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.BeTreeTransformer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.SparqlUoConfig;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class SparqlUoOptimizer implements QueryOptimizer {
 
 	private static final ParentReferenceCleaner PARENT_REFERENCE_CLEANER = new ParentReferenceCleaner();
+	private static final Logger LOGGER = LoggerFactory.getLogger(SparqlUoOptimizer.class);
 
-	private final BeTreeBuilder builder = new BeTreeBuilder();
+	private final SparqlUoConfig config;
+	private final BeTreeBuilder builder;
 	private final BeTreeSerializer serializer = new BeTreeSerializer();
 	private final BeTreeTransformer transformer;
 
 	public SparqlUoOptimizer(EvaluationStatistics evaluationStatistics) {
-		this(evaluationStatistics, false);
+		this(evaluationStatistics, SparqlUoConfig.fromSystemProperties());
 	}
 
 	public SparqlUoOptimizer(EvaluationStatistics evaluationStatistics, boolean allowNonImprovingTransforms) {
-		this.transformer = new BeTreeTransformer(new BeCostEstimator(evaluationStatistics),
-				allowNonImprovingTransforms);
+		this(evaluationStatistics, SparqlUoConfig.builder()
+				.allowNonImprovingTransforms(allowNonImprovingTransforms)
+				.build());
+	}
+
+	public SparqlUoOptimizer(EvaluationStatistics evaluationStatistics, SparqlUoConfig config) {
+		this.config = config;
+		this.builder = new BeTreeBuilder(config);
+		this.transformer = new BeTreeTransformer(new BeCostEstimator(evaluationStatistics, config), config);
 	}
 
 	@Override
@@ -68,7 +80,7 @@ public class SparqlUoOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(LeftJoin node) {
-			if (node.getCondition() == null && isGroupRoot(node)) {
+			if (isGroupRoot(node)) {
 				rewrite(node);
 				return;
 			}
@@ -124,6 +136,9 @@ public class SparqlUoOptimizer implements QueryOptimizer {
 		}
 
 		private void rewrite(TupleExpr node) {
+			if (config.debugLogging() && LOGGER.isDebugEnabled()) {
+				LOGGER.debug("SparqlUo: rewriting group rooted at {}", node.getClass().getSimpleName());
+			}
 			BeGroupNode group = builder.build(node);
 			transformer.transform(group);
 			TupleExpr replacement = serializer.serialize(group);

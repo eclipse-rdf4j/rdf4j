@@ -30,12 +30,19 @@ public class BeTreeSerializer {
 				continue;
 			}
 			if (child instanceof BeOptionalNode) {
-				expr = new LeftJoin(expr, childExpr);
+				expr = toLeftJoin(expr, (BeOptionalNode) child, childExpr);
 			} else {
 				expr = new Join(expr, childExpr);
 			}
 		}
 		return expr != null ? expr : new SingletonSet();
+	}
+
+	public TupleExpr serialize(BeNode node) {
+		if (node instanceof BeGroupNode) {
+			return serialize((BeGroupNode) node);
+		}
+		return serializeNode(node);
 	}
 
 	private TupleExpr serializeNode(BeNode node) {
@@ -88,5 +95,12 @@ public class BeTreeSerializer {
 			}
 		}
 		return expr != null ? expr : new SingletonSet();
+	}
+
+	private TupleExpr toLeftJoin(TupleExpr left, BeOptionalNode optional, TupleExpr right) {
+		if (optional.getCondition() == null) {
+			return new LeftJoin(left, right);
+		}
+		return new LeftJoin(left, right, optional.getCondition().clone());
 	}
 }

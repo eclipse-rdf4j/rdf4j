@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -19,9 +21,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BatchJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinKeyCacheIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 public class JoinQueryEvaluationStep implements QueryEvaluationStep {
@@ -33,13 +37,13 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		// TODO maybe we can create a ServiceJoin node already in the parser?
 		QueryEvaluationStep leftPrepared = strategy.precompile(join.getLeftArg(), context);
 		QueryEvaluationStep rightPrepared = strategy.precompile(join.getRightArg(), context);
+		String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
 		if (join.getRightArg() instanceof Service) {
 			eval = bindings -> new ServiceJoinIterator(leftPrepared.evaluate(bindings),
 					(Service) join.getRightArg(), bindings,
 					strategy);
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
-			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
 			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
 					joinAttributes, context);
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
@@ -48,8 +52,25 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 					context.getComparator(), context.getValue(join.getOrder().getName()), context);
 			join.setAlgorithm(InnerMergeJoinIterator.class.getSimpleName());
 		} else {
-			eval = bindings -> JoinIterator.getInstance(leftPrepared, rightPrepared, bindings);
-			join.setAlgorithm(JoinIterator.class.getSimpleName());
+			if (JoinKeyCacheIterator.isEnabled(joinAttributes)) {
+				Set<String> rightBindingNames = join.getRightArg().getBindingNames();
+				eval = bindings -> JoinKeyCacheIterator.getInstance(leftPrepared, rightPrepared, bindings,
+						joinAttributes, rightBindingNames, context);
+				join.setAlgorithm(JoinKeyCacheIterator.class.getSimpleName());
+			} else if (rightPrepared instanceof BatchingQueryEvaluationStep) {
+				BatchingQueryEvaluationStep batching = (BatchingQueryEvaluationStep) rightPrepared;
+				eval = bindings -> {
+					CloseableIteration<BindingSet> leftIter = leftPrepared.evaluate(bindings);
+					if (leftIter == QueryEvaluationStep.EMPTY_ITERATION) {
+						return leftIter;
+					}
+					return new BatchJoinIterator(leftIter, batching);
+				};
+				join.setAlgorithm(BatchJoinIterator.class.getSimpleName());
+			} else {
+				eval = bindings -> JoinIterator.getInstance(leftPrepared, rightPrepared, bindings);
+				join.setAlgorithm(JoinIterator.class.getSimpleName());
+			}
 		}
 	}
 

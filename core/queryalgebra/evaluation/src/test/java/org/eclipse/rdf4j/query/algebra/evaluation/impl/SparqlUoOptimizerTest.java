@@ -17,7 +17,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -25,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
@@ -85,6 +89,32 @@ public class SparqlUoOptimizerTest extends QueryOptimizerTest {
 
 		List<String> rightPredicates = collectPredicates(leftJoin.getRightArg());
 		assertThat(rightPredicates).contains("urn:p1", "urn:p2", "urn:p3", "urn:p4");
+	}
+
+	@Test
+	public void testInjectRewritesOptionalWithCondition() {
+		StatementPattern left = new StatementPattern(
+				new Var("s"),
+				new Var("p1", SimpleValueFactory.getInstance().createIRI("urn:p1")),
+				new Var("o"));
+		StatementPattern right = new StatementPattern(
+				new Var("s"),
+				new Var("p2", SimpleValueFactory.getInstance().createIRI("urn:p2")),
+				new Var("o2"));
+		ValueConstant constant = new ValueConstant(SimpleValueFactory.getInstance().createIRI("urn:c"));
+		Compare condition = new Compare(new Var("o2"), constant, CompareOp.EQ);
+		LeftJoin join = new LeftJoin(left, right, condition);
+		QueryRoot root = new QueryRoot(join);
+
+		QueryOptimizer optimizer = getOptimizer();
+		optimizer.optimize(root, new SimpleDataset(), EmptyBindingSet.getInstance());
+		TupleExpr expr = root.getArg();
+
+		assertThat(expr).isInstanceOf(LeftJoin.class);
+		LeftJoin leftJoin = (LeftJoin) expr;
+		assertThat(leftJoin.getCondition()).isNotNull();
+		assertJoinPredicates(leftJoin.getLeftArg(), "urn:p1");
+		assertJoinPredicates(leftJoin.getRightArg(), "urn:p1", "urn:p2");
 	}
 
 	private TupleExpr optimize(String query) {

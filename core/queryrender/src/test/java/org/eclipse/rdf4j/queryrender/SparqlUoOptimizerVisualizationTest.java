@@ -68,13 +68,18 @@ public class SparqlUoOptimizerVisualizationTest {
 							"  { ?x ?p ?y } UNION { ?x ?p ?z }\n" +
 							"}\n",
 					PREFIXES + "SELECT ?s ?p ?o ?x ?y ?z WHERE {\n" +
-							"  ?s ?p ?o .\n" +
 							"  {\n" +
-							"    ?x ?p ?y .\n" +
+							"    ?s ?p ?o .\n" +
+							"    {\n" +
+							"      ?x ?p ?y .\n" +
+							"    }\n" +
 							"  }\n" +
 							"  UNION\n" +
 							"  {\n" +
-							"    ?x ?p ?z .\n" +
+							"    ?s ?p ?o .\n" +
+							"    {\n" +
+							"      ?x ?p ?z .\n" +
+							"    }\n" +
 							"  }\n" +
 							"}"),
 			new Example("counter_optional_no_shared_subject_or_object",

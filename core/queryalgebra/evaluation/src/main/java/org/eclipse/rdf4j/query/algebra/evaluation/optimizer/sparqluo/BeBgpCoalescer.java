@@ -100,11 +100,11 @@ public class BeBgpCoalescer {
 	}
 
 	private boolean coalescable(StatementPattern left, StatementPattern right) {
-		Set<String> leftVars = subjectObjectVars(left);
+		Set<String> leftVars = joinKeyVars(left);
 		if (leftVars.isEmpty()) {
 			return false;
 		}
-		Set<String> rightVars = subjectObjectVars(right);
+		Set<String> rightVars = joinKeyVars(right);
 		if (rightVars.isEmpty()) {
 			return false;
 		}
@@ -116,10 +116,12 @@ public class BeBgpCoalescer {
 		return false;
 	}
 
-	private Set<String> subjectObjectVars(StatementPattern pattern) {
-		Set<String> vars = new HashSet<>(2);
+	private Set<String> joinKeyVars(StatementPattern pattern) {
+		Set<String> vars = new HashSet<>(4);
 		collectVarName(vars, pattern.getSubjectVar());
+		collectVarName(vars, pattern.getPredicateVar());
 		collectVarName(vars, pattern.getObjectVar());
+		collectVarName(vars, pattern.getContextVar());
 		return vars;
 	}
 

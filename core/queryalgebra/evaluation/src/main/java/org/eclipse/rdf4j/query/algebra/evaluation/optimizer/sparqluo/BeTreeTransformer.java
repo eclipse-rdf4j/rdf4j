@@ -18,19 +18,30 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class BeTreeTransformer {
+	private static final Logger LOGGER = LoggerFactory.getLogger(BeTreeTransformer.class);
 	private final BeCostEstimator costEstimator;
 	private final BeBgpCoalescer coalescer = new BeBgpCoalescer();
 	private final boolean allowNonImprovingTransforms;
+	private final boolean debugLogging;
 
 	public BeTreeTransformer(BeCostEstimator costEstimator) {
-		this(costEstimator, false);
+		this(costEstimator, SparqlUoConfig.defaultConfig());
 	}
 
 	public BeTreeTransformer(BeCostEstimator costEstimator, boolean allowNonImprovingTransforms) {
+		this(costEstimator, SparqlUoConfig.builder()
+				.allowNonImprovingTransforms(allowNonImprovingTransforms)
+				.build());
+	}
+
+	public BeTreeTransformer(BeCostEstimator costEstimator, SparqlUoConfig config) {
 		this.costEstimator = costEstimator;
-		this.allowNonImprovingTransforms = allowNonImprovingTransforms;
+		this.allowNonImprovingTransforms = config.allowNonImprovingTransforms();
+		this.debugLogging = config.debugLogging();
 	}
 
 	public void transform(BeGroupNode root) {
@@ -88,8 +99,12 @@ public class BeTreeTransformer {
 			BeUndoToken undo = performInject(optional, bgp);
 			double newCost = costEstimator.estimateGroupCost(group);
 			double delta = newCost - baseCost;
+			logDecision("inject", bgp, optional, baseCost, newCost, delta);
 			if (delta >= 0.0 && !allowNonImprovingTransforms) {
+				logDecision("inject-reject", bgp, optional, baseCost, newCost, delta);
 				undo.undo();
+			} else {
+				logDecision("inject-accept", bgp, optional, baseCost, newCost, delta);
 			}
 		}
 	}
@@ -109,6 +124,7 @@ public class BeTreeTransformer {
 			BeUndoToken undo = performMerge(group, bgpIndex, bgp, union);
 			double newCost = costEstimator.estimateGroupCost(group);
 			double delta = newCost - baseCost;
+			logDecision("merge-candidate", bgp, union, baseCost, newCost, delta);
 			undo.undo();
 			if (best == null || delta < best.deltaCost) {
 				best = new MergeCandidate(union, delta);
@@ -227,9 +243,11 @@ public class BeTreeTransformer {
 	}
 
 	private List<String> subjectObjectVars(StatementPattern pattern) {
-		List<String> vars = new ArrayList<>(2);
+		List<String> vars = new ArrayList<>(4);
 		collectVar(vars, pattern.getSubjectVar());
+		collectVar(vars, pattern.getPredicateVar());
 		collectVar(vars, pattern.getObjectVar());
+		collectVar(vars, pattern.getContextVar());
 		return vars;
 	}
 
@@ -270,6 +288,19 @@ public class BeTreeTransformer {
 			for (Map.Entry<BeGroupNode, List<BeNode>> entry : snapshots.entrySet()) {
 				entry.getKey().replaceChildren(entry.getValue());
 			}
+		}
+	}
+
+	private void logDecision(String action, BeNode source, BeNode target, double baseCost, double newCost,
+			double delta) {
+		if (debugLogging && LOGGER.isDebugEnabled()) {
+			LOGGER.debug("SparqlUo: {} {} -> {} baseCost={} newCost={} delta={}",
+					action,
+					source.getType(),
+					target.getType(),
+					baseCost,
+					newCost,
+					delta);
 		}
 	}
 }

@@ -22,9 +22,17 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class BeTreeBuilder {
+	private static final Logger LOGGER = LoggerFactory.getLogger(BeTreeBuilder.class);
 	private final BeBgpCoalescer coalescer = new BeBgpCoalescer();
+	private final SparqlUoConfig config;
+
+	public BeTreeBuilder(SparqlUoConfig config) {
+		this.config = config;
+	}
 
 	public BeGroupNode build(TupleExpr expr) {
 		BeGroupNode group = new BeGroupNode();
@@ -44,14 +52,15 @@ public class BeTreeBuilder {
 		}
 		if (expr instanceof LeftJoin) {
 			LeftJoin leftJoin = (LeftJoin) expr;
-			if (leftJoin.getCondition() != null || !canFlattenLeftJoin(leftJoin, boundVars)) {
+			if (!canFlattenLeftJoin(leftJoin, boundVars)) {
+				logBarrier(expr, "left-join-not-flattenable");
 				group.addChild(new BeBarrierNode(expr));
 				boundVars.addAll(expr.getBindingNames());
 				return;
 			}
 			addGroupChildren(leftJoin.getLeftArg(), group, boundVars);
 			BeGroupNode rightGroup = build(leftJoin.getRightArg());
-			group.addChild(new BeOptionalNode(rightGroup));
+			group.addChild(new BeOptionalNode(rightGroup, leftJoin.getCondition()));
 			boundVars.addAll(leftJoin.getBindingNames());
 			return;
 		}
@@ -73,6 +82,7 @@ public class BeTreeBuilder {
 			return;
 		}
 
+		logBarrier(expr, "non-joinable-operator");
 		group.addChild(new BeBarrierNode(expr));
 		boundVars.addAll(expr.getBindingNames());
 	}
@@ -128,5 +138,11 @@ public class BeTreeBuilder {
 			}
 		}
 		return true;
+	}
+
+	private void logBarrier(TupleExpr expr, String reason) {
+		if (config != null && config.debugLogging() && LOGGER.isDebugEnabled()) {
+			LOGGER.debug("SparqlUo: barrier inserted for {} ({})", expr.getClass().getSimpleName(), reason);
+		}
 	}
 }
