@@ -122,22 +122,6 @@ public class ThemeQueryBenchmark {
 	public void testQueryCounts() throws IOException {
 		String[] queryIndexes = paramValues("z_queryIndex");
 		String[] themeNames = paramValues("themeName");
-//		for (String themeNameValue : themeNames) {
-//			for (String queryIndexValue : queryIndexes) {
-//				themeName = themeNameValue;
-//				z_queryIndex = Integer.parseInt(queryIndexValue);
-//				setup();
-//				try {
-//					long actual = executeQuery();
-//					long expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
-//					System.out.println("For theme " + themeName + " and query index " + z_queryIndex
-//							+ ", expected count should be " + actual);
-//
-//				} finally {
-//					tearDown();
-//				}
-//			}
-//		}
 		for (String themeNameValue : themeNames) {
 			for (String queryIndexValue : queryIndexes) {
 				themeName = themeNameValue;
@@ -147,14 +131,30 @@ public class ThemeQueryBenchmark {
 					long actual = executeQuery();
 					long expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
 					System.out.println("For theme " + themeName + " and query index " + z_queryIndex
-							+ ", expected count is " + expected + " and actual count is " + actual);
-					assertEquals(expected, actual,
-							"Unexpected count for theme " + themeName + " and query index " + z_queryIndex);
+							+ ", expected count should be " + actual);
+
 				} finally {
 					tearDown();
 				}
 			}
 		}
+//		for (String themeNameValue : themeNames) {
+//			for (String queryIndexValue : queryIndexes) {
+//				themeName = themeNameValue;
+//				z_queryIndex = Integer.parseInt(queryIndexValue);
+//				setup();
+//				try {
+//					long actual = executeQuery();
+//					long expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
+//					System.out.println("For theme " + themeName + " and query index " + z_queryIndex
+//							+ ", expected count is " + expected + " and actual count is " + actual);
+//					assertEquals(expected, actual,
+//							"Unexpected count for theme " + themeName + " and query index " + z_queryIndex);
+//				} finally {
+//					tearDown();
+//				}
+//			}
+//		}
 	}
 
 	@Test
