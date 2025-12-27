@@ -104,7 +104,6 @@ for i in $(find "${repo_root}" -name pom.xml); do
         fi
       done
 
-      echo "File: $c - Matches: $match_count"
       if [ "$match_count" -ge 2 ]; then
         if [ "$match_count" -lt 9 ]; then
           rewrite_header "$c" "${header_lines[1]}"
