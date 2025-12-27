@@ -9,6 +9,13 @@ for i in $(find "${repo_root}" -name pom.xml); do
   if [[ "$i" == "${repo_root}/core/queryparser/sparql/JavaCC/"* ]]; then
     continue
   fi
+  if [[ "$i" == *"/target/"* ]]; then
+    target_parent="${i%%/target/*}"
+    if [[ -f "${target_parent}/pom.xml" ]]; then
+      echo "Skipping target dir pom: $i"
+      continue
+    fi
+  fi
   echo $i;
   # only look in non test files but make sure src/main exists.
   # and not in package-info
