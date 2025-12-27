@@ -26,13 +26,53 @@ expectedHeader=(
   " *******************************************************************************/"
 )
 
-normalize_line() {
+normalize_line_for_compare() {
   local line="$1"
   line="${line//\*/}"
   line=$(printf '%s' "$line" | tr -s '[:space:]' ' ')
   line="${line#"${line%%[! ]*}"}"
   line="${line%"${line##*[! ]}"}"
   printf '%s' "$line"
+}
+
+count_asterisks() {
+  local line="$1"
+  local only
+  only="${line//[^*]/}"
+  printf '%s' "${#only}"
+}
+
+compare_header_line() {
+  local expected="$1"
+  local actual="$2"
+  local expected_text
+  local actual_text
+  local expected_count
+  local actual_count
+  local diff
+
+  expected_text="$(normalize_line_for_compare "$expected")"
+  actual_text="$(normalize_line_for_compare "$actual")"
+  if [ "$expected_text" != "$actual_text" ]; then
+    return 1
+  fi
+
+  expected_count="$(count_asterisks "$expected")"
+  actual_count="$(count_asterisks "$actual")"
+
+  if [ "$expected_count" -gt 10 ]; then
+    diff=$((expected_count - actual_count))
+    diff="${diff#-}"
+    if [ "$diff" -le 1 ]; then
+      return 0
+    fi
+    return 1
+  fi
+
+  if [ "$expected_count" -eq "$actual_count" ]; then
+    return 0
+  fi
+  return 1
 }
 
 rewrite_header() {
@@ -72,25 +112,25 @@ read_header_lines() {
 
 compute_header_stats() {
   local year_line_normalized
-  local expected_normalized
-  local actual_normalized
+  local year_asterisks
   local idx
   match_count=0
   has_valid_year_line=false
   aduna_year=""
 
-  year_line_normalized="$(normalize_line "${header_lines[1]}")"
-  if [[ "$year_line_normalized" =~ ^Copyright\ \(c\)\ ([0-9]{4})\ Eclipse\ RDF4J\ contributors\.$ ]]; then
-    has_valid_year_line=true
-  elif [[ "$year_line_normalized" =~ ^Copyright\ \(c\)\ ([0-9]{4})\ Eclipse\ RDF4J\ contributors,\ Aduna,\ and\ others\.$ ]]; then
-    has_valid_year_line=true
-    aduna_year="${BASH_REMATCH[1]}"
+  year_line_normalized="$(normalize_line_for_compare "${header_lines[1]}")"
+  year_asterisks="$(count_asterisks "${header_lines[1]}")"
+  if [ "$year_asterisks" -eq 1 ]; then
+    if [[ "$year_line_normalized" =~ ^Copyright\ \(c\)\ ([0-9]{4})\ Eclipse\ RDF4J\ contributors\.$ ]]; then
+      has_valid_year_line=true
+    elif [[ "$year_line_normalized" =~ ^Copyright\ \(c\)\ ([0-9]{4})\ Eclipse\ RDF4J\ contributors,\ Aduna,\ and\ others\.$ ]]; then
+      has_valid_year_line=true
+      aduna_year="${BASH_REMATCH[1]}"
+    fi
   fi
 
   for idx in 0 2 3 4 5 6 7 8 9; do
-    expected_normalized="$(normalize_line "${expectedHeader[$idx]}")"
-    actual_normalized="$(normalize_line "${header_lines[$idx]}")"
-    if [[ "$actual_normalized" == "$expected_normalized" ]]; then
+    if compare_header_line "${expectedHeader[$idx]}" "${header_lines[$idx]}"; then
       match_count=$((match_count + 1))
     fi
   done
