@@ -1,8 +1,11 @@
 #!/bin/bash
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
+
 filesWithOutCopyright=()
 filesWithOutSPDX=()
 
-for i in $(find ../ -name pom.xml); do
+for i in $(find "${repo_root}" -name pom.xml); do
   echo $i;
   # only look in non test files but make sure src/main exists.
   # and not in package-info
