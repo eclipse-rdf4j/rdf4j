@@ -285,7 +285,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		this.dataset = dataset;
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
-		this.pipeline = new org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline(this,
+		this.pipeline = new org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoQueryOptimizerPipeline(this,
 				tripleSource, evaluationStatistics);
 		this.trackResultSize = trackResultSize;
 		this.tupleFuncRegistry = tupleFunctionRegistry;
