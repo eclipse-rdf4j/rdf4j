@@ -12,42 +12,47 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 public class BeTreeBuilder {
 	private final BeBgpCoalescer coalescer = new BeBgpCoalescer();
 
 	public BeGroupNode build(TupleExpr expr) {
 		BeGroupNode group = new BeGroupNode();
-		addGroupChildren(expr, group);
+		addGroupChildren(expr, group, new HashSet<>());
 		coalescer.coalesce(group);
 		return group;
 	}
 
-	private void addGroupChildren(TupleExpr expr, BeGroupNode group) {
+	private void addGroupChildren(TupleExpr expr, BeGroupNode group, Set<String> boundVars) {
 		if (expr instanceof Join) {
 			List<TupleExpr> args = new ArrayList<>();
 			collectJoinArgs((Join) expr, args);
 			for (TupleExpr arg : args) {
-				addGroupChildren(arg, group);
+				addGroupChildren(arg, group, boundVars);
 			}
 			return;
 		}
 		if (expr instanceof LeftJoin) {
 			LeftJoin leftJoin = (LeftJoin) expr;
-			if (leftJoin.getCondition() != null) {
+			if (leftJoin.getCondition() != null || !canFlattenLeftJoin(leftJoin, boundVars)) {
 				group.addChild(new BeBarrierNode(expr));
+				boundVars.addAll(expr.getBindingNames());
 				return;
 			}
-			addGroupChildren(leftJoin.getLeftArg(), group);
+			addGroupChildren(leftJoin.getLeftArg(), group, boundVars);
 			BeGroupNode rightGroup = build(leftJoin.getRightArg());
 			group.addChild(new BeOptionalNode(rightGroup));
+			boundVars.addAll(leftJoin.getBindingNames());
 			return;
 		}
 		if (expr instanceof Union) {
@@ -59,14 +64,17 @@ public class BeTreeBuilder {
 				unionNode.addBranch(build(branch));
 			}
 			group.addChild(unionNode);
+			boundVars.addAll(union.getBindingNames());
 			return;
 		}
 		if (expr instanceof StatementPattern) {
 			group.addChild(new BeBgpNode(List.of((StatementPattern) expr)));
+			boundVars.addAll(expr.getBindingNames());
 			return;
 		}
 
 		group.addChild(new BeBarrierNode(expr));
+		boundVars.addAll(expr.getBindingNames());
 	}
 
 	private void collectJoinArgs(Join join, List<TupleExpr> args) {
@@ -100,5 +108,25 @@ public class BeTreeBuilder {
 			branches.add(right);
 		}
 		return scopeChange;
+	}
+
+	private boolean canFlattenLeftJoin(LeftJoin leftJoin, Set<String> boundVars) {
+		if (boundVars.isEmpty()) {
+			return true;
+		}
+		Set<String> optionalVars = new HashSet<>(VarNameCollector.process(leftJoin.getRightArg()));
+		if (leftJoin.hasCondition()) {
+			optionalVars.addAll(VarNameCollector.process(leftJoin.getCondition()));
+		}
+		optionalVars.removeAll(leftJoin.getLeftArg().getBindingNames());
+		if (optionalVars.isEmpty()) {
+			return true;
+		}
+		for (String var : optionalVars) {
+			if (boundVars.contains(var)) {
+				return false;
+			}
+		}
+		return true;
 	}
 }
