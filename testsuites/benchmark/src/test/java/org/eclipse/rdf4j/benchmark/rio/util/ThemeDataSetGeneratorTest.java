@@ -15,6 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -25,6 +28,11 @@ import org.junit.jupiter.api.Test;
 class ThemeDataSetGeneratorTest {
 
 	private static final String BASE = "http://example.com/theme/";
+	private static final long DEFAULT_SEED = 42L;
+	private static final long JITTER_SEED_XOR = 0x9E3779B97F4A7C15L;
+	private static final int DEFAULT_USER_COUNT = 20000;
+	private static final int DEFAULT_TAG_COUNT = 50;
+	private static final int[] DEFAULT_CLIQUE_SIZES = new int[] { 3, 4, 5, 6 };
 
 	@Test
 	void medicalRecordsGeneratorProducesPatients() throws Exception {
@@ -46,10 +54,12 @@ class ThemeDataSetGeneratorTest {
 	void socialMediaGeneratorProducesCliques() throws Exception {
 		Model model = generateModel("socialMediaConfig", "generateSocialMedia");
 		IRI follows = Values.iri(BASE, "social/follows");
-		assertClique(model, follows, 0, 3);
-		assertClique(model, follows, 3, 4);
-		assertClique(model, follows, 7, 5);
-		assertClique(model, follows, 12, 6);
+		int[] cliqueSizes = jitterCliqueSizes();
+		int startId = 0;
+		for (int size : cliqueSizes) {
+			assertClique(model, follows, startId, size);
+			startId += size;
+		}
 	}
 
 	@Test
@@ -129,5 +139,46 @@ class ThemeDataSetGeneratorTest {
 
 	private static IRI socialUser(int id) {
 		return Values.iri(BASE, "social/user/" + id);
+	}
+
+	private static int[] jitterCliqueSizes() {
+		Random jitter = new Random(DEFAULT_SEED ^ JITTER_SEED_XOR);
+		int userCount = jitterInt(jitter, DEFAULT_USER_COUNT, 1);
+		jitterInt(jitter, DEFAULT_TAG_COUNT, 1);
+		return jitterCliqueSizes(jitter, DEFAULT_CLIQUE_SIZES, userCount);
+	}
+
+	private static int jitterInt(Random random, int base, int minValue) {
+		int delta = base / 2;
+		int min = Math.max(minValue, base - delta);
+		int max = Math.max(min, base + delta);
+		if (min == max) {
+			return min;
+		}
+		return min + random.nextInt(max - min + 1);
+	}
+
+	private static int[] jitterCliqueSizes(Random random, int[] baseSizes, int maxTotal) {
+		List<Integer> sizes = new ArrayList<>(baseSizes.length);
+		int remaining = maxTotal;
+		for (int base : baseSizes) {
+			if (remaining < 2) {
+				break;
+			}
+			int size = jitterInt(random, base, 2);
+			if (size > remaining) {
+				size = remaining;
+			}
+			if (size < 2) {
+				break;
+			}
+			sizes.add(size);
+			remaining -= size;
+		}
+		int[] result = new int[sizes.size()];
+		for (int i = 0; i < sizes.size(); i++) {
+			result[i] = sizes.get(i);
+		}
+		return result;
 	}
 }

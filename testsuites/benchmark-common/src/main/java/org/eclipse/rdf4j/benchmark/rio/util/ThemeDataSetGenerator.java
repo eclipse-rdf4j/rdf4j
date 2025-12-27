@@ -62,6 +62,7 @@ public final class ThemeDataSetGenerator {
 			"signal", "sensor", "dataset", "record", "event", "network", "route", "station", "engine",
 			"grid", "current", "voltage", "load", "train", "cable", "user", "profile", "post", "comment"
 	};
+	private static final long JITTER_SEED_XOR = 0x9E3779B97F4A7C15L;
 
 	private ThemeDataSetGenerator() {
 	}
@@ -144,7 +145,8 @@ public final class ThemeDataSetGenerator {
 		Objects.requireNonNull(handler, "handler");
 		config.validate();
 
-		Random random = new Random(config.seed);
+		Random contentRandom = new Random(config.seed);
+		Random jitterRandom = jitterRandom(config.seed);
 
 		IRI patientType = iri(MEDICAL_NS, "Patient");
 		IRI encounterType = iri(MEDICAL_NS, "Encounter");
@@ -167,49 +169,58 @@ public final class ThemeDataSetGenerator {
 		handler.startRDF();
 		handler.handleNamespace("med", MEDICAL_NS);
 
-		List<IRI> practitioners = new ArrayList<>(config.practitionerCount);
-		for (int i = 0; i < config.practitionerCount; i++) {
+		int practitionerCount = jitterInt(jitterRandom, config.practitionerCount);
+		int patientCount = jitterInt(jitterRandom, config.patientCount);
+		List<IRI> practitioners = new ArrayList<>(practitionerCount);
+		for (int i = 0; i < practitionerCount; i++) {
 			IRI practitioner = entity(MEDICAL_NS, "practitioner", i);
 			practitioners.add(practitioner);
 			add(handler, practitioner, RDF.TYPE, practitionerType);
-			add(handler, practitioner, hasName, literal("Dr " + randomWord(random) + " " + i));
+			add(handler, practitioner, hasName, literal("Dr " + randomWord(contentRandom) + " " + i));
 		}
 
-		for (int p = 0; p < config.patientCount; p++) {
+		int medicationIndex = 0;
+		int encounterIndex = 0;
+		int conditionIndex = 0;
+		int observationIndex = 0;
+		for (int p = 0; p < patientCount; p++) {
 			IRI patient = entity(MEDICAL_NS, "patient", p);
 			add(handler, patient, RDF.TYPE, patientType);
 			add(handler, patient, hasName, literal("Patient " + p));
 
-			for (int m = 0; m < config.medicationsPerPatient; m++) {
-				IRI medication = entity(MEDICAL_NS, "medication", p * 100 + m);
+			int medicationsPerPatient = jitterInt(jitterRandom, config.medicationsPerPatient);
+			for (int m = 0; m < medicationsPerPatient; m++) {
+				IRI medication = entity(MEDICAL_NS, "medication", medicationIndex++);
 				add(handler, medication, RDF.TYPE, medicationType);
 				add(handler, medication, hasCode, literal("MED-" + (1000 + m)));
-				add(handler, medication, dosage, literal((1 + random.nextInt(3)) + "x daily"));
+				add(handler, medication, dosage, literal((1 + contentRandom.nextInt(3)) + "x daily"));
 				add(handler, patient, hasMedication, medication);
 			}
 
-			for (int e = 0; e < config.encountersPerPatient; e++) {
-				int encounterIndex = p * config.encountersPerPatient + e;
-				IRI encounter = entity(MEDICAL_NS, "encounter", encounterIndex);
+			int encountersPerPatient = jitterInt(jitterRandom, config.encountersPerPatient);
+			for (int e = 0; e < encountersPerPatient; e++) {
+				IRI encounter = entity(MEDICAL_NS, "encounter", encounterIndex++);
 				add(handler, encounter, RDF.TYPE, encounterType);
 				add(handler, patient, hasEncounter, encounter);
 				add(handler, encounter, recordedOn,
-						VF.createLiteral(LocalDate.of(2024, 1, 1).plusDays(random.nextInt(365))));
-				IRI practitioner = practitioners.get(random.nextInt(practitioners.size()));
+						VF.createLiteral(LocalDate.of(2024, 1, 1).plusDays(contentRandom.nextInt(365))));
+				IRI practitioner = practitioners.get(contentRandom.nextInt(practitioners.size()));
 				add(handler, encounter, handledBy, practitioner);
 
-				for (int c = 0; c < config.conditionsPerEncounter; c++) {
-					IRI condition = entity(MEDICAL_NS, "condition", encounterIndex * 10 + c);
+				int conditionsPerEncounter = jitterInt(jitterRandom, config.conditionsPerEncounter);
+				for (int c = 0; c < conditionsPerEncounter; c++) {
+					IRI condition = entity(MEDICAL_NS, "condition", conditionIndex++);
 					add(handler, condition, RDF.TYPE, conditionType);
 					add(handler, condition, hasCode, literal("DX-" + (200 + c)));
 					add(handler, encounter, hasCondition, condition);
 				}
 
-				for (int o = 0; o < config.observationsPerEncounter; o++) {
-					IRI observation = entity(MEDICAL_NS, "observation", encounterIndex * 10 + o);
+				int observationsPerEncounter = jitterInt(jitterRandom, config.observationsPerEncounter);
+				for (int o = 0; o < observationsPerEncounter; o++) {
+					IRI observation = entity(MEDICAL_NS, "observation", observationIndex++);
 					add(handler, observation, RDF.TYPE, observationType);
 					add(handler, observation, observationValue,
-							VF.createLiteral(50 + random.nextInt(50)));
+							VF.createLiteral(50 + contentRandom.nextInt(50)));
 					add(handler, encounter, hasObservation, observation);
 				}
 			}
@@ -227,7 +238,8 @@ public final class ThemeDataSetGenerator {
 		Objects.requireNonNull(handler, "handler");
 		config.validate();
 
-		Random random = new Random(config.seed);
+		Random contentRandom = new Random(config.seed);
+		Random jitterRandom = jitterRandom(config.seed);
 
 		IRI userType = iri(SOCIAL_NS, "User");
 		IRI postType = iri(SOCIAL_NS, "Post");
@@ -246,8 +258,12 @@ public final class ThemeDataSetGenerator {
 		handler.startRDF();
 		handler.handleNamespace("social", SOCIAL_NS);
 
-		List<IRI> users = new ArrayList<>(config.userCount);
-		for (int u = 0; u < config.userCount; u++) {
+		int userCount = jitterInt(jitterRandom, config.userCount);
+		int tagCount = jitterInt(jitterRandom, config.tagCount);
+		int[] cliqueSizes = jitterCliqueSizes(jitterRandom, config.cliqueSizes, userCount);
+
+		List<IRI> users = new ArrayList<>(userCount);
+		for (int u = 0; u < userCount; u++) {
 			IRI user = entity(SOCIAL_NS, "user", u);
 			users.add(user);
 			add(handler, user, RDF.TYPE, userType);
@@ -255,7 +271,7 @@ public final class ThemeDataSetGenerator {
 		}
 
 		int cliqueStart = 0;
-		for (int cliqueSize : config.cliqueSizes) {
+		for (int cliqueSize : cliqueSizes) {
 			List<IRI> clique = users.subList(cliqueStart, cliqueStart + cliqueSize);
 			for (int i = 0; i < clique.size(); i++) {
 				IRI source = clique.get(i);
@@ -269,8 +285,8 @@ public final class ThemeDataSetGenerator {
 			cliqueStart += cliqueSize;
 		}
 
-		List<IRI> tags = new ArrayList<>(config.tagCount);
-		for (int t = 0; t < config.tagCount; t++) {
+		List<IRI> tags = new ArrayList<>(tagCount);
+		for (int t = 0; t < tagCount; t++) {
 			IRI tag = entity(SOCIAL_NS, "tag", t);
 			tags.add(tag);
 			add(handler, tag, RDF.TYPE, tagType);
@@ -280,37 +296,42 @@ public final class ThemeDataSetGenerator {
 		int postIndex = 0;
 		int commentIndex = 0;
 		for (IRI user : users) {
-			for (int f = 0; f < config.followsPerUser; f++) {
-				IRI target = users.get(random.nextInt(users.size()));
+			int followsPerUser = jitterInt(jitterRandom, config.followsPerUser);
+			for (int f = 0; f < followsPerUser; f++) {
+				IRI target = users.get(contentRandom.nextInt(users.size()));
 				if (!user.equals(target)) {
 					add(handler, user, follows, target);
 				}
 			}
 
-			for (int p = 0; p < config.postsPerUser; p++) {
+			int postsPerUser = jitterInt(jitterRandom, config.postsPerUser);
+			for (int p = 0; p < postsPerUser; p++) {
 				IRI post = entity(SOCIAL_NS, "post", postIndex++);
 				add(handler, post, RDF.TYPE, postType);
 				add(handler, post, authored, user);
-				add(handler, post, content, literal(randomSentence(random, 5, 12)));
+				add(handler, post, content, literal(randomSentence(contentRandom, 5, 12)));
 				add(handler, post, createdAt,
-						VF.createLiteral(LocalDateTime.of(2024, 1, 1, 8, 0).plusHours(random.nextInt(500))));
+						VF.createLiteral(LocalDateTime.of(2024, 1, 1, 8, 0).plusHours(contentRandom.nextInt(500))));
 
-				for (int t = 0; t < config.tagsPerPost; t++) {
-					IRI tag = tags.get(random.nextInt(tags.size()));
+				int tagsPerPost = jitterInt(jitterRandom, config.tagsPerPost);
+				for (int t = 0; t < tagsPerPost; t++) {
+					IRI tag = tags.get(contentRandom.nextInt(tags.size()));
 					add(handler, post, hasTag, tag);
 				}
 
-				for (int l = 0; l < config.likesPerPost; l++) {
-					IRI liker = users.get(random.nextInt(users.size()));
+				int likesPerPost = jitterInt(jitterRandom, config.likesPerPost);
+				for (int l = 0; l < likesPerPost; l++) {
+					IRI liker = users.get(contentRandom.nextInt(users.size()));
 					add(handler, post, likedBy, liker);
 				}
 
-				for (int c = 0; c < config.commentsPerPost; c++) {
+				int commentsPerPost = jitterInt(jitterRandom, config.commentsPerPost);
+				for (int c = 0; c < commentsPerPost; c++) {
 					IRI comment = entity(SOCIAL_NS, "comment", commentIndex++);
-					IRI commenter = users.get(random.nextInt(users.size()));
+					IRI commenter = users.get(contentRandom.nextInt(users.size()));
 					add(handler, comment, RDF.TYPE, commentType);
 					add(handler, comment, authored, commenter);
-					add(handler, comment, content, literal(randomSentence(random, 3, 8)));
+					add(handler, comment, content, literal(randomSentence(contentRandom, 3, 8)));
 					add(handler, post, hasComment, comment);
 				}
 			}
@@ -328,7 +349,8 @@ public final class ThemeDataSetGenerator {
 		Objects.requireNonNull(handler, "handler");
 		config.validate();
 
-		Random random = new Random(config.seed);
+		Random contentRandom = new Random(config.seed);
+		Random jitterRandom = jitterRandom(config.seed);
 
 		IRI bookType = iri(LIBRARY_NS, "Book");
 		IRI authorType = iri(LIBRARY_NS, "Author");
@@ -350,45 +372,52 @@ public final class ThemeDataSetGenerator {
 		handler.startRDF();
 		handler.handleNamespace("lib", LIBRARY_NS);
 
-		List<IRI> authors = new ArrayList<>(config.authorCount);
-		for (int a = 0; a < config.authorCount; a++) {
+		int authorCount = jitterInt(jitterRandom, config.authorCount);
+		int branchCount = jitterInt(jitterRandom, config.branchCount);
+		int bookCount = jitterInt(jitterRandom, config.bookCount);
+		int memberCount = jitterInt(jitterRandom, config.memberCount);
+
+		List<IRI> authors = new ArrayList<>(authorCount);
+		for (int a = 0; a < authorCount; a++) {
 			IRI author = entity(LIBRARY_NS, "author", a);
 			authors.add(author);
 			add(handler, author, RDF.TYPE, authorType);
 			add(handler, author, hasName, literal("Author " + a));
 		}
 
-		List<IRI> branches = new ArrayList<>(config.branchCount);
-		for (int b = 0; b < config.branchCount; b++) {
+		List<IRI> branches = new ArrayList<>(branchCount);
+		for (int b = 0; b < branchCount; b++) {
 			IRI branch = entity(LIBRARY_NS, "branch", b);
 			branches.add(branch);
 			add(handler, branch, RDF.TYPE, branchType);
 			add(handler, branch, hasName, literal("Branch " + b));
 		}
 
-		List<IRI> copies = new ArrayList<>(config.bookCount * config.copiesPerBook);
+		List<IRI> copies = new ArrayList<>();
 		int copyIndex = 0;
-		for (int b = 0; b < config.bookCount; b++) {
+		for (int b = 0; b < bookCount; b++) {
 			IRI book = entity(LIBRARY_NS, "book", b);
 			add(handler, book, RDF.TYPE, bookType);
-			add(handler, book, title, literal("Book " + b + " " + randomWord(random)));
+			add(handler, book, title, literal("Book " + b + " " + randomWord(contentRandom)));
 
-			for (int a = 0; a < config.authorsPerBook; a++) {
-				IRI author = authors.get(random.nextInt(authors.size()));
+			int authorsPerBook = jitterInt(jitterRandom, config.authorsPerBook);
+			for (int a = 0; a < authorsPerBook; a++) {
+				IRI author = authors.get(contentRandom.nextInt(authors.size()));
 				add(handler, book, writtenBy, author);
 			}
 
-			for (int c = 0; c < config.copiesPerBook; c++) {
+			int copiesPerBook = jitterInt(jitterRandom, config.copiesPerBook);
+			for (int c = 0; c < copiesPerBook; c++) {
 				IRI copy = entity(LIBRARY_NS, "copy", copyIndex++);
 				copies.add(copy);
 				add(handler, copy, RDF.TYPE, copyType);
-				add(handler, copy, locatedAt, branches.get(random.nextInt(branches.size())));
+				add(handler, copy, locatedAt, branches.get(contentRandom.nextInt(branches.size())));
 				add(handler, book, hasCopy, copy);
 			}
 		}
 
-		List<IRI> members = new ArrayList<>(config.memberCount);
-		for (int m = 0; m < config.memberCount; m++) {
+		List<IRI> members = new ArrayList<>(memberCount);
+		for (int m = 0; m < memberCount; m++) {
 			IRI member = entity(LIBRARY_NS, "member", m);
 			members.add(member);
 			add(handler, member, RDF.TYPE, memberType);
@@ -397,13 +426,14 @@ public final class ThemeDataSetGenerator {
 
 		int loanIndex = 0;
 		for (IRI member : members) {
-			for (int l = 0; l < config.loansPerMember; l++) {
+			int loansPerMember = jitterInt(jitterRandom, config.loansPerMember);
+			for (int l = 0; l < loansPerMember; l++) {
 				IRI loan = entity(LIBRARY_NS, "loan", loanIndex++);
-				IRI copy = copies.get(random.nextInt(copies.size()));
+				IRI copy = copies.get(contentRandom.nextInt(copies.size()));
 				add(handler, loan, RDF.TYPE, loanType);
 				add(handler, loan, borrowedBy, member);
 				add(handler, loan, loanedCopy, copy);
-				LocalDate date = LocalDate.of(2024, 1, 1).plusDays(random.nextInt(90));
+				LocalDate date = LocalDate.of(2024, 1, 1).plusDays(contentRandom.nextInt(90));
 				add(handler, loan, loanDate, VF.createLiteral(date));
 				add(handler, loan, dueDate, VF.createLiteral(date.plusDays(14)));
 			}
@@ -421,7 +451,8 @@ public final class ThemeDataSetGenerator {
 		Objects.requireNonNull(handler, "handler");
 		config.validate();
 
-		Random random = new Random(config.seed);
+		Random contentRandom = new Random(config.seed);
+		Random jitterRandom = jitterRandom(config.seed);
 
 		IRI componentType = iri(ENGINEERING_NS, "Component");
 		IRI assemblyType = iri(ENGINEERING_NS, "Assembly");
@@ -439,48 +470,53 @@ public final class ThemeDataSetGenerator {
 		handler.startRDF();
 		handler.handleNamespace("eng", ENGINEERING_NS);
 
-		List<IRI> assemblies = new ArrayList<>(config.assemblyCount);
-		for (int a = 0; a < config.assemblyCount; a++) {
+		int assemblyCount = jitterInt(jitterRandom, config.assemblyCount);
+		int componentCount = jitterInt(jitterRandom, config.componentCount);
+		int requirementCount = jitterInt(jitterRandom, config.requirementCount);
+
+		List<IRI> assemblies = new ArrayList<>(assemblyCount);
+		for (int a = 0; a < assemblyCount; a++) {
 			IRI assembly = entity(ENGINEERING_NS, "assembly", a);
 			assemblies.add(assembly);
 			add(handler, assembly, RDF.TYPE, assemblyType);
 			add(handler, assembly, hasName, literal("Assembly " + a));
 		}
 
-		List<IRI> components = new ArrayList<>(config.componentCount);
-		for (int c = 0; c < config.componentCount; c++) {
+		List<IRI> components = new ArrayList<>(componentCount);
+		for (int c = 0; c < componentCount; c++) {
 			IRI component = entity(ENGINEERING_NS, "component", c);
 			components.add(component);
 			add(handler, component, RDF.TYPE, componentType);
 			add(handler, component, hasName, literal("Component " + c));
-			add(handler, component, partOf, assemblies.get(random.nextInt(assemblies.size())));
+			add(handler, component, partOf, assemblies.get(contentRandom.nextInt(assemblies.size())));
 			if (components.size() > 1) {
-				IRI dependency = components.get(random.nextInt(components.size() - 1));
+				IRI dependency = components.get(contentRandom.nextInt(components.size() - 1));
 				add(handler, component, dependsOn, dependency);
 			}
 		}
 
-		List<IRI> requirements = new ArrayList<>(config.requirementCount);
-		for (int r = 0; r < config.requirementCount; r++) {
+		List<IRI> requirements = new ArrayList<>(requirementCount);
+		for (int r = 0; r < requirementCount; r++) {
 			IRI requirement = entity(ENGINEERING_NS, "requirement", r);
 			requirements.add(requirement);
 			add(handler, requirement, RDF.TYPE, requirementType);
 			add(handler, requirement, hasName, literal("REQ-" + (1000 + r)));
-			IRI component = components.get(random.nextInt(components.size()));
+			IRI component = components.get(contentRandom.nextInt(components.size()));
 			add(handler, requirement, satisfies, component);
 		}
 
 		int testIndex = 0;
 		int measurementIndex = 0;
 		for (IRI requirement : requirements) {
-			for (int t = 0; t < config.testsPerRequirement; t++) {
+			int testsPerRequirement = jitterInt(jitterRandom, config.testsPerRequirement);
+			for (int t = 0; t < testsPerRequirement; t++) {
 				IRI test = entity(ENGINEERING_NS, "test", testIndex++);
 				add(handler, test, RDF.TYPE, testType);
 				add(handler, requirement, verifiedBy, test);
 
 				IRI measurement = entity(ENGINEERING_NS, "measurement", measurementIndex++);
 				add(handler, measurement, RDF.TYPE, measurementType);
-				add(handler, measurement, measuredValue, VF.createLiteral(0.8 + random.nextDouble() * 0.2));
+				add(handler, measurement, measuredValue, VF.createLiteral(0.8 + contentRandom.nextDouble() * 0.2));
 				add(handler, test, verifiedBy, measurement);
 			}
 		}
@@ -497,7 +533,8 @@ public final class ThemeDataSetGenerator {
 		Objects.requireNonNull(handler, "handler");
 		config.validate();
 
-		Random random = new Random(config.seed);
+		Random contentRandom = new Random(config.seed);
+		Random jitterRandom = jitterRandom(config.seed);
 
 		IRI nodeType = iri(CONNECTED_NS, "Node");
 		IRI connectsTo = iri(CONNECTED_NS, "connectsTo");
@@ -506,23 +543,28 @@ public final class ThemeDataSetGenerator {
 		handler.startRDF();
 		handler.handleNamespace("conn", CONNECTED_NS);
 
-		List<IRI> nodes = new ArrayList<>(config.nodeCount);
-		for (int i = 0; i < config.nodeCount; i++) {
+		int nodeCount = jitterInt(jitterRandom, config.nodeCount);
+		int hubCount = jitterInt(jitterRandom, config.hubCount);
+		double hubBias = jitterDouble(jitterRandom, config.hubBias, 0.0, 1.0);
+
+		List<IRI> nodes = new ArrayList<>(nodeCount);
+		for (int i = 0; i < nodeCount; i++) {
 			IRI node = entity(CONNECTED_NS, "node", i);
 			nodes.add(node);
 			add(handler, node, RDF.TYPE, nodeType);
 		}
 
-		List<IRI> hubs = nodes.subList(0, Math.min(config.hubCount, nodes.size()));
+		List<IRI> hubs = nodes.subList(0, Math.min(hubCount, nodes.size()));
 
 		for (IRI node : nodes) {
-			for (int e = 0; e < config.edgesPerNode; e++) {
-				IRI target = random.nextDouble() < config.hubBias
-						? hubs.get(random.nextInt(hubs.size()))
-						: nodes.get(random.nextInt(nodes.size()));
+			int edgesPerNode = jitterInt(jitterRandom, config.edgesPerNode);
+			for (int e = 0; e < edgesPerNode; e++) {
+				IRI target = contentRandom.nextDouble() < hubBias
+						? hubs.get(contentRandom.nextInt(hubs.size()))
+						: nodes.get(contentRandom.nextInt(nodes.size()));
 				if (!node.equals(target)) {
 					add(handler, node, connectsTo, target);
-					add(handler, node, linkWeight, VF.createLiteral(1 + random.nextInt(10)));
+					add(handler, node, linkWeight, VF.createLiteral(1 + contentRandom.nextInt(10)));
 				}
 			}
 		}
@@ -539,7 +581,8 @@ public final class ThemeDataSetGenerator {
 		Objects.requireNonNull(handler, "handler");
 		config.validate();
 
-		Random random = new Random(config.seed);
+		Random contentRandom = new Random(config.seed);
+		Random jitterRandom = jitterRandom(config.seed);
 
 		IRI operationalPointType = iri(TRAIN_NS, "OperationalPoint");
 		IRI lineType = iri(TRAIN_NS, "Line");
@@ -559,35 +602,41 @@ public final class ThemeDataSetGenerator {
 		handler.startRDF();
 		handler.handleNamespace("train", TRAIN_NS);
 
-		List<IRI> operationalPoints = new ArrayList<>(config.stationCount);
-		for (int s = 0; s < config.stationCount; s++) {
+		int stationCount = jitterInt(jitterRandom, config.stationCount);
+		int routeCount = jitterInt(jitterRandom, config.routeCount);
+		int trainCount = jitterInt(jitterRandom, config.trainCount);
+
+		List<IRI> operationalPoints = new ArrayList<>(stationCount);
+		for (int s = 0; s < stationCount; s++) {
 			IRI operationalPoint = entity(TRAIN_NS, "operational-point", s);
 			operationalPoints.add(operationalPoint);
 			add(handler, operationalPoint, RDF.TYPE, operationalPointType);
 			add(handler, operationalPoint, hasName, literal("OP " + s));
 		}
 
-		List<IRI> lines = new ArrayList<>(config.routeCount);
-		for (int l = 0; l < config.routeCount; l++) {
+		List<IRI> lines = new ArrayList<>(routeCount);
+		for (int l = 0; l < routeCount; l++) {
 			IRI line = entity(TRAIN_NS, "line", l);
 			lines.add(line);
 			add(handler, line, RDF.TYPE, lineType);
 			add(handler, line, hasName, literal("Line " + l));
 		}
 
-		List<IRI> sections = new ArrayList<>(config.routeCount * config.stopsPerRoute);
+		List<IRI> sections = new ArrayList<>();
 		int sectionIndex = 0;
 		int trackIndex = 0;
+		int stationOffset = 0;
 		for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
 			IRI line = lines.get(lineIndex);
-			for (int s = 0; s < config.stopsPerRoute; s++) {
+			int stopsPerRoute = jitterInt(jitterRandom, config.stopsPerRoute);
+			for (int s = 0; s < stopsPerRoute; s++) {
 				IRI section = entity(TRAIN_NS, "section", sectionIndex++);
 				sections.add(section);
 				add(handler, section, RDF.TYPE, sectionType);
 				add(handler, section, partOfLine, line);
 
-				IRI start = operationalPoints.get((lineIndex * config.stopsPerRoute + s) % operationalPoints.size());
-				IRI end = operationalPoints.get((lineIndex * config.stopsPerRoute + s + 1) % operationalPoints.size());
+				IRI start = operationalPoints.get((stationOffset + s) % operationalPoints.size());
+				IRI end = operationalPoints.get((stationOffset + s + 1) % operationalPoints.size());
 				add(handler, section, connectsOperationalPoint, start);
 				add(handler, section, connectsOperationalPoint, end);
 
@@ -596,21 +645,23 @@ public final class ThemeDataSetGenerator {
 				add(handler, section, hasTrackSection, trackSection);
 				add(handler, trackSection, trackSectionOf, section);
 			}
+			stationOffset += stopsPerRoute;
 		}
 
 		int serviceIndex = 0;
-		for (int t = 0; t < config.trainCount; t++) {
+		for (int t = 0; t < trainCount; t++) {
 			IRI service = entity(TRAIN_NS, "service", serviceIndex++);
 			add(handler, service, RDF.TYPE, serviceType);
 			add(handler, service, hasName, literal("Service " + t));
 
-			for (int tr = 0; tr < config.tripsPerTrain; tr++) {
-				IRI section = sections.get(random.nextInt(sections.size()));
-				IRI operationalPoint = operationalPoints.get(random.nextInt(operationalPoints.size()));
+			int tripsPerTrain = jitterInt(jitterRandom, config.tripsPerTrain);
+			for (int tr = 0; tr < tripsPerTrain; tr++) {
+				IRI section = sections.get(contentRandom.nextInt(sections.size()));
+				IRI operationalPoint = operationalPoints.get(contentRandom.nextInt(operationalPoints.size()));
 				add(handler, service, runsOnSection, section);
 				add(handler, service, passesThrough, operationalPoint);
 				add(handler, service, scheduledTime,
-						VF.createLiteral(LocalTime.of(5, 0).plusMinutes(random.nextInt(600))));
+						VF.createLiteral(LocalTime.of(5, 0).plusMinutes(contentRandom.nextInt(600))));
 			}
 		}
 
@@ -626,7 +677,8 @@ public final class ThemeDataSetGenerator {
 		Objects.requireNonNull(handler, "handler");
 		config.validate();
 
-		Random random = new Random(config.seed);
+		Random contentRandom = new Random(config.seed);
+		Random jitterRandom = jitterRandom(config.seed);
 
 		IRI substationType = iri(GRID_NS, "Substation");
 		IRI transformerType = iri(GRID_NS, "Transformer");
@@ -646,8 +698,10 @@ public final class ThemeDataSetGenerator {
 		handler.startRDF();
 		handler.handleNamespace("grid", GRID_NS);
 
-		List<IRI> substations = new ArrayList<>(config.substationCount);
-		for (int s = 0; s < config.substationCount; s++) {
+		int substationCount = jitterInt(jitterRandom, config.substationCount);
+
+		List<IRI> substations = new ArrayList<>(substationCount);
+		for (int s = 0; s < substationCount; s++) {
 			IRI substation = entity(GRID_NS, "substation", s);
 			substations.add(substation);
 			add(handler, substation, RDF.TYPE, substationType);
@@ -659,25 +713,28 @@ public final class ThemeDataSetGenerator {
 		int meterIndex = 0;
 		int loadIndex = 0;
 		for (IRI substation : substations) {
-			for (int t = 0; t < config.transformersPerSubstation; t++) {
+			int transformersPerSubstation = jitterInt(jitterRandom, config.transformersPerSubstation);
+			for (int t = 0; t < transformersPerSubstation; t++) {
 				IRI transformer = entity(GRID_NS, "transformer", transformerIndex++);
 				add(handler, transformer, RDF.TYPE, transformerType);
 				add(handler, transformer, feeds, substation);
 
-				for (int m = 0; m < config.metersPerTransformer; m++) {
+				int metersPerTransformer = jitterInt(jitterRandom, config.metersPerTransformer);
+				for (int m = 0; m < metersPerTransformer; m++) {
 					IRI meter = entity(GRID_NS, "meter", meterIndex++);
 					IRI load = entity(GRID_NS, "load", loadIndex++);
 					add(handler, meter, RDF.TYPE, meterType);
 					add(handler, load, RDF.TYPE, loadType);
 					add(handler, meter, measures, load);
 					add(handler, transformer, hasMeter, meter);
-					add(handler, load, loadValue, VF.createLiteral(50 + random.nextInt(150)));
+					add(handler, load, loadValue, VF.createLiteral(50 + contentRandom.nextInt(150)));
 				}
 			}
 
-			for (int l = 0; l < config.linesPerSubstation; l++) {
+			int linesPerSubstation = jitterInt(jitterRandom, config.linesPerSubstation);
+			for (int l = 0; l < linesPerSubstation; l++) {
 				IRI line = entity(GRID_NS, "line", lineIndex++);
-				IRI target = substations.get(random.nextInt(substations.size()));
+				IRI target = substations.get(contentRandom.nextInt(substations.size()));
 				add(handler, line, RDF.TYPE, lineType);
 				add(handler, line, connectsTo, substation);
 				add(handler, line, connectsTo, target);
@@ -686,7 +743,7 @@ public final class ThemeDataSetGenerator {
 			IRI generator = entity(GRID_NS, "generator", substationIndex(substation));
 			add(handler, generator, RDF.TYPE, generatorType);
 			add(handler, generator, feeds, substation);
-			add(handler, generator, capacity, VF.createLiteral(500 + random.nextInt(500)));
+			add(handler, generator, capacity, VF.createLiteral(500 + contentRandom.nextInt(500)));
 		}
 
 		handler.endRDF();
@@ -701,7 +758,8 @@ public final class ThemeDataSetGenerator {
 		Objects.requireNonNull(handler, "handler");
 		config.validate();
 
-		Random random = new Random(config.seed);
+		Random contentRandom = new Random(config.seed);
+		Random jitterRandom = jitterRandom(config.seed);
 
 		IRI drugType = iri(PHARMA_NS, "Drug");
 		IRI moleculeType = iri(PHARMA_NS, "Molecule");
@@ -746,56 +804,69 @@ public final class ThemeDataSetGenerator {
 		String[] severities = new String[] { "Mild", "Moderate", "Severe" };
 		String[] endpoints = new String[] { "OverallSurvival", "ProgressionFreeSurvival", "ResponseRate" };
 
+		int chemicalClassCount = jitterInt(jitterRandom, config.chemicalClassCount);
+		int pathwayCount = jitterInt(jitterRandom, config.pathwayCount);
+		int targetCount = jitterInt(jitterRandom, config.targetCount);
+		int moleculeCount = jitterInt(jitterRandom, config.moleculeCount);
+		int diseaseCount = jitterInt(jitterRandom, config.diseaseCount);
+		int sideEffectCount = jitterInt(jitterRandom, config.sideEffectCount);
+		int biomarkerCount = jitterInt(jitterRandom, config.biomarkerCount);
+		int drugCount = jitterInt(jitterRandom, config.drugCount);
+		int comparatorCount = jitterInt(jitterRandom, config.comparatorCount);
+		int trialCount = jitterInt(jitterRandom, config.trialCount);
+		int combinationCount = jitterInt(jitterRandom, config.combinationCount);
+
 		handler.startRDF();
 		handler.handleNamespace("pharma", PHARMA_NS);
 
-		List<IRI> chemicalClasses = new ArrayList<>(config.chemicalClassCount);
-		for (int c = 0; c < config.chemicalClassCount; c++) {
+		List<IRI> chemicalClasses = new ArrayList<>(chemicalClassCount);
+		for (int c = 0; c < chemicalClassCount; c++) {
 			IRI chemicalClass = entity(PHARMA_NS, "class", c);
 			chemicalClasses.add(chemicalClass);
 			add(handler, chemicalClass, RDF.TYPE, chemicalClassType);
 			add(handler, chemicalClass, hasName, literal("Class " + c));
 		}
 
-		List<IRI> pathways = new ArrayList<>(config.pathwayCount);
-		for (int p = 0; p < config.pathwayCount; p++) {
+		List<IRI> pathways = new ArrayList<>(pathwayCount);
+		for (int p = 0; p < pathwayCount; p++) {
 			IRI pathway = entity(PHARMA_NS, "pathway", p);
 			pathways.add(pathway);
 			add(handler, pathway, RDF.TYPE, pathwayType);
 			add(handler, pathway, hasName, literal("Pathway " + p));
 		}
 
-		List<IRI> targetsList = new ArrayList<>(config.targetCount);
-		for (int t = 0; t < config.targetCount; t++) {
+		List<IRI> targetsList = new ArrayList<>(targetCount);
+		for (int t = 0; t < targetCount; t++) {
 			IRI target = entity(PHARMA_NS, "target", t);
 			targetsList.add(target);
 			add(handler, target, RDF.TYPE, targetType);
 			add(handler, target, hasName, literal("Target " + t));
-			add(handler, target, inPathway, pathways.get(random.nextInt(pathways.size())));
+			add(handler, target, inPathway, pathways.get(contentRandom.nextInt(pathways.size())));
 		}
 
-		List<IRI> molecules = new ArrayList<>(config.moleculeCount);
-		for (int m = 0; m < config.moleculeCount; m++) {
+		List<IRI> molecules = new ArrayList<>(moleculeCount);
+		for (int m = 0; m < moleculeCount; m++) {
 			IRI molecule = entity(PHARMA_NS, "molecule", m);
 			molecules.add(molecule);
 			add(handler, molecule, RDF.TYPE, moleculeType);
 			add(handler, molecule, hasName, literal("Molecule " + m));
-			add(handler, molecule, inClass, chemicalClasses.get(random.nextInt(chemicalClasses.size())));
-			for (int t = 0; t < config.targetsPerMolecule; t++) {
-				add(handler, molecule, targets, targetsList.get(random.nextInt(targetsList.size())));
+			add(handler, molecule, inClass, chemicalClasses.get(contentRandom.nextInt(chemicalClasses.size())));
+			int targetsPerMolecule = jitterInt(jitterRandom, config.targetsPerMolecule);
+			for (int t = 0; t < targetsPerMolecule; t++) {
+				add(handler, molecule, targets, targetsList.get(contentRandom.nextInt(targetsList.size())));
 			}
 		}
 
-		List<IRI> diseases = new ArrayList<>(config.diseaseCount);
-		for (int d = 0; d < config.diseaseCount; d++) {
+		List<IRI> diseases = new ArrayList<>(diseaseCount);
+		for (int d = 0; d < diseaseCount; d++) {
 			IRI disease = entity(PHARMA_NS, "disease", d);
 			diseases.add(disease);
 			add(handler, disease, RDF.TYPE, diseaseType);
 			add(handler, disease, hasName, literal("Disease " + d));
 		}
 
-		List<IRI> sideEffects = new ArrayList<>(config.sideEffectCount);
-		for (int s = 0; s < config.sideEffectCount; s++) {
+		List<IRI> sideEffects = new ArrayList<>(sideEffectCount);
+		for (int s = 0; s < sideEffectCount; s++) {
 			IRI sideEffect = entity(PHARMA_NS, "side-effect", s);
 			sideEffects.add(sideEffect);
 			add(handler, sideEffect, RDF.TYPE, sideEffectType);
@@ -803,94 +874,161 @@ public final class ThemeDataSetGenerator {
 			add(handler, sideEffect, severity, literal(severities[s % severities.length]));
 		}
 
-		List<IRI> biomarkers = new ArrayList<>(config.biomarkerCount);
-		for (int b = 0; b < config.biomarkerCount; b++) {
+		List<IRI> biomarkers = new ArrayList<>(biomarkerCount);
+		for (int b = 0; b < biomarkerCount; b++) {
 			IRI marker = entity(PHARMA_NS, "biomarker", b);
 			biomarkers.add(marker);
 			add(handler, marker, RDF.TYPE, biomarkerType);
 			add(handler, marker, hasName, literal("Biomarker " + b));
 		}
 
-		List<IRI> drugs = new ArrayList<>(config.drugCount);
-		for (int d = 0; d < config.drugCount; d++) {
+		List<IRI> drugs = new ArrayList<>(drugCount);
+		for (int d = 0; d < drugCount; d++) {
 			IRI drug = entity(PHARMA_NS, "drug", d);
 			drugs.add(drug);
 			add(handler, drug, RDF.TYPE, drugType);
 			add(handler, drug, hasName, literal("Drug " + d));
 
-			for (int m = 0; m < config.moleculesPerDrug; m++) {
-				add(handler, drug, hasMolecule, molecules.get(random.nextInt(molecules.size())));
+			int moleculesPerDrug = jitterInt(jitterRandom, config.moleculesPerDrug);
+			for (int m = 0; m < moleculesPerDrug; m++) {
+				add(handler, drug, hasMolecule, molecules.get(contentRandom.nextInt(molecules.size())));
 			}
 
-			for (int t = 0; t < config.targetsPerDrug; t++) {
-				add(handler, drug, targets, targetsList.get(random.nextInt(targetsList.size())));
+			int targetsPerDrug = jitterInt(jitterRandom, config.targetsPerDrug);
+			for (int t = 0; t < targetsPerDrug; t++) {
+				add(handler, drug, targets, targetsList.get(contentRandom.nextInt(targetsList.size())));
 			}
 
-			for (int i = 0; i < config.indicationsPerDrug; i++) {
-				add(handler, drug, indicatedFor, diseases.get(random.nextInt(diseases.size())));
+			int indicationsPerDrug = jitterInt(jitterRandom, config.indicationsPerDrug);
+			for (int i = 0; i < indicationsPerDrug; i++) {
+				add(handler, drug, indicatedFor, diseases.get(contentRandom.nextInt(diseases.size())));
 			}
 
-			add(handler, drug, contraindicatedFor, diseases.get(random.nextInt(diseases.size())));
+			add(handler, drug, contraindicatedFor, diseases.get(contentRandom.nextInt(diseases.size())));
 
-			for (int s = 0; s < config.sideEffectsPerDrug; s++) {
-				add(handler, drug, hasSideEffect, sideEffects.get(random.nextInt(sideEffects.size())));
+			int sideEffectsPerDrug = jitterInt(jitterRandom, config.sideEffectsPerDrug);
+			for (int s = 0; s < sideEffectsPerDrug; s++) {
+				add(handler, drug, hasSideEffect, sideEffects.get(contentRandom.nextInt(sideEffects.size())));
 			}
 		}
 
-		List<IRI> comparators = new ArrayList<>(config.comparatorCount);
-		for (int c = 0; c < config.comparatorCount; c++) {
+		List<IRI> comparators = new ArrayList<>(comparatorCount);
+		for (int c = 0; c < comparatorCount; c++) {
 			IRI comparator = entity(PHARMA_NS, "comparator", c);
 			comparators.add(comparator);
 			add(handler, comparator, RDF.TYPE, comparatorType);
 			add(handler, comparator, hasName, literal("Comparator " + c));
 		}
 
+		List<IRI> trials = new ArrayList<>(trialCount);
 		int armIndex = 0;
 		int resultIndex = 0;
-		for (int t = 0; t < config.trialCount; t++) {
+		for (int t = 0; t < trialCount; t++) {
 			IRI trial = entity(PHARMA_NS, "trial", t);
+			trials.add(trial);
 			add(handler, trial, RDF.TYPE, trialType);
 			add(handler, trial, hasName, literal("Trial " + t));
-			add(handler, trial, studiesDisease, diseases.get(random.nextInt(diseases.size())));
-			add(handler, trial, phase, VF.createLiteral(1 + random.nextInt(3)));
+			add(handler, trial, studiesDisease, diseases.get(contentRandom.nextInt(diseases.size())));
+			add(handler, trial, phase, VF.createLiteral(1 + contentRandom.nextInt(3)));
 
-			for (int a = 0; a < config.armsPerTrial; a++) {
+			int armsPerTrial = jitterInt(jitterRandom, config.armsPerTrial);
+			for (int a = 0; a < armsPerTrial; a++) {
 				IRI arm = entity(PHARMA_NS, "arm", armIndex++);
 				add(handler, arm, RDF.TYPE, armType);
 				add(handler, trial, hasArm, arm);
-				IRI drug = drugs.get(random.nextInt(drugs.size()));
+				IRI drug = drugs.get(contentRandom.nextInt(drugs.size()));
 				add(handler, arm, armDrug, drug);
 				add(handler, drug, testedIn, trial);
-				add(handler, arm, armComparator, comparators.get(random.nextInt(comparators.size())));
+				add(handler, arm, armComparator, comparators.get(contentRandom.nextInt(comparators.size())));
 
 				IRI result = entity(PHARMA_NS, "result", resultIndex++);
 				add(handler, result, RDF.TYPE, resultType);
 				add(handler, arm, hasResult, result);
-				add(handler, result, endpoint, literal(endpoints[random.nextInt(endpoints.length)]));
-				add(handler, result, effectSize, VF.createLiteral(random.nextDouble()));
-				add(handler, result, pValue, VF.createLiteral(random.nextDouble() * 0.1));
-				add(handler, result, responseRate, VF.createLiteral(random.nextDouble()));
-				add(handler, result, observedSideEffect, sideEffects.get(random.nextInt(sideEffects.size())));
-				IRI marker = biomarkers.get(random.nextInt(biomarkers.size()));
+				add(handler, result, endpoint, literal(endpoints[contentRandom.nextInt(endpoints.length)]));
+				add(handler, result, effectSize, VF.createLiteral(contentRandom.nextDouble()));
+				add(handler, result, pValue, VF.createLiteral(contentRandom.nextDouble() * 0.1));
+				add(handler, result, responseRate, VF.createLiteral(contentRandom.nextDouble()));
+				add(handler, result, observedSideEffect, sideEffects.get(contentRandom.nextInt(sideEffects.size())));
+				IRI marker = biomarkers.get(contentRandom.nextInt(biomarkers.size()));
 				add(handler, result, biomarker, marker);
-				add(handler, result, biomarkerValue, VF.createLiteral(0.1 + random.nextDouble() * 2.0));
+				add(handler, result, biomarkerValue, VF.createLiteral(0.1 + contentRandom.nextDouble() * 2.0));
 			}
 		}
 
-		for (int c = 0; c < config.combinationCount; c++) {
+		for (int c = 0; c < combinationCount; c++) {
 			IRI combination = entity(PHARMA_NS, "combination", c);
 			add(handler, combination, RDF.TYPE, combinationType);
 			add(handler, combination, hasName, literal("Combination " + c));
-			add(handler, combination, synergyScore, VF.createLiteral(random.nextDouble()));
-			int members = config.drugsPerCombination;
+			add(handler, combination, synergyScore, VF.createLiteral(contentRandom.nextDouble()));
+			int members = jitterInt(jitterRandom, config.drugsPerCombination);
 			for (int m = 0; m < members; m++) {
-				add(handler, combination, combinationOf, drugs.get(random.nextInt(drugs.size())));
+				add(handler, combination, combinationOf, drugs.get(contentRandom.nextInt(drugs.size())));
 			}
-			IRI trial = entity(PHARMA_NS, "trial", random.nextInt(config.trialCount));
-			add(handler, combination, testedIn, trial);
+			if (!trials.isEmpty()) {
+				IRI trial = trials.get(contentRandom.nextInt(trials.size()));
+				add(handler, combination, testedIn, trial);
+			}
 		}
 
 		handler.endRDF();
+	}
+
+	private static Random jitterRandom(long seed) {
+		return new Random(seed ^ JITTER_SEED_XOR);
+	}
+
+	private static int jitterInt(Random random, int base) {
+		return jitterInt(random, base, 1);
+	}
+
+	private static int jitterInt(Random random, int base, int minValue) {
+		int delta = base / 2;
+		int min = Math.max(minValue, base - delta);
+		int max = Math.max(min, base + delta);
+		if (min == max) {
+			return min;
+		}
+		return min + random.nextInt(max - min + 1);
+	}
+
+	private static double jitterDouble(Random random, double base, double minValue, double maxValue) {
+		double delta = base * 0.5;
+		double min = Math.max(minValue, base - delta);
+		double max = Math.min(maxValue, base + delta);
+		if (max < min) {
+			double tmp = min;
+			min = max;
+			max = tmp;
+		}
+		if (max == min) {
+			return min;
+		}
+		return min + random.nextDouble() * (max - min);
+	}
+
+	private static int[] jitterCliqueSizes(Random random, int[] baseSizes, int maxTotal) {
+		Objects.requireNonNull(baseSizes, "baseSizes");
+		List<Integer> sizes = new ArrayList<>(baseSizes.length);
+		int remaining = maxTotal;
+		for (int base : baseSizes) {
+			if (remaining < 2) {
+				break;
+			}
+			int size = jitterInt(random, base, 2);
+			if (size > remaining) {
+				size = remaining;
+			}
+			if (size < 2) {
+				break;
+			}
+			sizes.add(size);
+			remaining -= size;
+		}
+		int[] result = new int[sizes.size()];
+		for (int i = 0; i < sizes.size(); i++) {
+			result[i] = sizes.get(i);
+		}
+		return result;
 	}
 
 	private static int substationIndex(IRI substation) {

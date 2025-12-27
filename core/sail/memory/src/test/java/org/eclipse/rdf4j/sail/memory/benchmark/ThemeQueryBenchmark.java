@@ -132,6 +132,8 @@ public class ThemeQueryBenchmark {
 					long expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
 					System.out.println("For theme " + themeName + " and query index " + z_queryIndex
 							+ ", expected count should be " + actual);
+					assertEquals(expected, actual,
+							"Unexpected count for theme " + themeName + " and query index " + z_queryIndex);
 
 				} finally {
 					tearDown();
