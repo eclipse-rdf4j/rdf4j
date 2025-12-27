@@ -338,6 +338,7 @@ public final class ThemeQueryCatalog {
 								"  ?a social:follows ?b .",
 								"  ?b social:follows ?c .",
 								"  ?c social:follows ?a .",
+								"  BIND(?a AS ?cycleStart)",
 								"  OPTIONAL { ?a social:name ?optName . }",
 								"  FILTER(?optName IN (\"user0\", \"user1\", \"user2\"))",
 								"}"),
