@@ -21,10 +21,12 @@ import org.eclipse.rdf4j.benchmark.common.ThemeDataSetCache;
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.junit.jupiter.api.Test;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -111,6 +113,41 @@ public class ThemeQueryBenchmark {
 					.evaluate()
 					.stream()
 					.count();
+		}
+	}
+
+	@Test
+	public void testQueryExplanation() throws IOException {
+		String[] queryIndexes = paramValues("z_queryIndex");
+		String[] themeNames = paramValues("themeName");
+		for (String themeNameValue : themeNames) {
+			for (String queryIndexValue : queryIndexes) {
+				themeName = themeNameValue;
+				z_queryIndex = Integer.parseInt(queryIndexValue);
+				setup();
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					String explanation = connection
+							.prepareTupleQuery(query)
+							.explain(Explanation.Level.Executed)
+							.toString();
+					System.out.println("Query Explanation for theme " + themeName + " and query index " + z_queryIndex
+							+ ":\n" + explanation);
+				} finally {
+					tearDown();
+				}
+			}
+		}
+	}
+
+	private static String[] paramValues(String fieldName) {
+		try {
+			Param param = ThemeQueryBenchmark.class.getField(fieldName).getAnnotation(Param.class);
+			if (param == null) {
+				throw new IllegalStateException("Missing @Param annotation for field " + fieldName);
+			}
+			return param.value();
+		} catch (NoSuchFieldException e) {
+			throw new IllegalStateException("Missing field " + fieldName, e);
 		}
 	}
 }
