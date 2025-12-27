@@ -61,7 +61,8 @@ public class ThemeQueryBenchmark {
 			"ENGINEERING",
 			"HIGHLY_CONNECTED",
 			"TRAIN",
-			"ELECTRICAL_GRID"
+			"ELECTRICAL_GRID",
+			"PHARMA"
 	})
 	public String themeName;
 

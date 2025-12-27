@@ -94,6 +94,18 @@ class ThemeDataSetGeneratorTest {
 		assertTrue(model.contains(null, RDF.TYPE, substationType));
 	}
 
+	@Test
+	void pharmaGeneratorProducesDrugsAndTrials() throws Exception {
+		Model model = generateModel("pharmaConfig", "generatePharma");
+		IRI drugType = Values.iri(BASE, "pharma/Drug");
+		IRI trialType = Values.iri(BASE, "pharma/ClinicalTrial");
+		IRI sideEffectType = Values.iri(BASE, "pharma/SideEffect");
+		assertFalse(model.isEmpty());
+		assertTrue(model.contains(null, RDF.TYPE, drugType));
+		assertTrue(model.contains(null, RDF.TYPE, trialType));
+		assertTrue(model.contains(null, RDF.TYPE, sideEffectType));
+	}
+
 	private static Model generateModel(String configMethodName, String generateMethodName) throws Exception {
 		Class<?> generator = Class.forName("org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator");
 		Object config = generator.getMethod(configMethodName).invoke(null);

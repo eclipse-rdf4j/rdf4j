@@ -41,7 +41,8 @@ public final class ThemeDataSetGenerator {
 		ENGINEERING,
 		HIGHLY_CONNECTED,
 		TRAIN,
-		ELECTRICAL_GRID
+		ELECTRICAL_GRID,
+		PHARMA
 	}
 
 	private static final String BASE = "http://example.com/theme/";
@@ -52,6 +53,7 @@ public final class ThemeDataSetGenerator {
 	private static final String CONNECTED_NS = BASE + "connected/";
 	private static final String TRAIN_NS = BASE + "train/";
 	private static final String GRID_NS = BASE + "grid/";
+	private static final String PHARMA_NS = BASE + "pharma/";
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
@@ -92,6 +94,10 @@ public final class ThemeDataSetGenerator {
 		return new ElectricalGridConfig();
 	}
 
+	public static PharmaConfig pharmaConfig() {
+		return new PharmaConfig();
+	}
+
 	public static Model generate(Theme theme) {
 		return generateModel(handler -> generate(theme, handler));
 	}
@@ -120,6 +126,9 @@ public final class ThemeDataSetGenerator {
 			break;
 		case ELECTRICAL_GRID:
 			generateElectricalGrid(electricalGridConfig(), handler);
+			break;
+		case PHARMA:
+			generatePharma(pharmaConfig(), handler);
 			break;
 		default:
 			throw new IllegalArgumentException("Unsupported theme " + theme);
@@ -683,6 +692,207 @@ public final class ThemeDataSetGenerator {
 		handler.endRDF();
 	}
 
+	public static Model generatePharma(PharmaConfig config) {
+		return generateModel(handler -> generatePharma(config, handler));
+	}
+
+	public static void generatePharma(PharmaConfig config, RDFHandler handler) {
+		Objects.requireNonNull(config, "config");
+		Objects.requireNonNull(handler, "handler");
+		config.validate();
+
+		Random random = new Random(config.seed);
+
+		IRI drugType = iri(PHARMA_NS, "Drug");
+		IRI moleculeType = iri(PHARMA_NS, "Molecule");
+		IRI chemicalClassType = iri(PHARMA_NS, "ChemicalClass");
+		IRI targetType = iri(PHARMA_NS, "Target");
+		IRI pathwayType = iri(PHARMA_NS, "Pathway");
+		IRI diseaseType = iri(PHARMA_NS, "Disease");
+		IRI trialType = iri(PHARMA_NS, "ClinicalTrial");
+		IRI armType = iri(PHARMA_NS, "TrialArm");
+		IRI resultType = iri(PHARMA_NS, "TrialResult");
+		IRI sideEffectType = iri(PHARMA_NS, "SideEffect");
+		IRI biomarkerType = iri(PHARMA_NS, "Biomarker");
+		IRI combinationType = iri(PHARMA_NS, "Combination");
+		IRI comparatorType = iri(PHARMA_NS, "Comparator");
+
+		IRI hasName = iri(PHARMA_NS, "name");
+		IRI hasMolecule = iri(PHARMA_NS, "hasMolecule");
+		IRI inClass = iri(PHARMA_NS, "inClass");
+		IRI targets = iri(PHARMA_NS, "targets");
+		IRI inPathway = iri(PHARMA_NS, "inPathway");
+		IRI indicatedFor = iri(PHARMA_NS, "indicatedFor");
+		IRI contraindicatedFor = iri(PHARMA_NS, "contraindicatedFor");
+		IRI testedIn = iri(PHARMA_NS, "testedIn");
+		IRI studiesDisease = iri(PHARMA_NS, "studiesDisease");
+		IRI hasArm = iri(PHARMA_NS, "hasArm");
+		IRI armDrug = iri(PHARMA_NS, "armDrug");
+		IRI armComparator = iri(PHARMA_NS, "armComparator");
+		IRI hasResult = iri(PHARMA_NS, "hasResult");
+		IRI endpoint = iri(PHARMA_NS, "endpoint");
+		IRI effectSize = iri(PHARMA_NS, "effectSize");
+		IRI pValue = iri(PHARMA_NS, "pValue");
+		IRI responseRate = iri(PHARMA_NS, "responseRate");
+		IRI observedSideEffect = iri(PHARMA_NS, "observedSideEffect");
+		IRI hasSideEffect = iri(PHARMA_NS, "hasSideEffect");
+		IRI severity = iri(PHARMA_NS, "severity");
+		IRI biomarker = iri(PHARMA_NS, "biomarker");
+		IRI biomarkerValue = iri(PHARMA_NS, "biomarkerValue");
+		IRI combinationOf = iri(PHARMA_NS, "combinationOf");
+		IRI synergyScore = iri(PHARMA_NS, "synergyScore");
+		IRI phase = iri(PHARMA_NS, "phase");
+
+		String[] severities = new String[] { "Mild", "Moderate", "Severe" };
+		String[] endpoints = new String[] { "OverallSurvival", "ProgressionFreeSurvival", "ResponseRate" };
+
+		handler.startRDF();
+		handler.handleNamespace("pharma", PHARMA_NS);
+
+		List<IRI> chemicalClasses = new ArrayList<>(config.chemicalClassCount);
+		for (int c = 0; c < config.chemicalClassCount; c++) {
+			IRI chemicalClass = entity(PHARMA_NS, "class", c);
+			chemicalClasses.add(chemicalClass);
+			add(handler, chemicalClass, RDF.TYPE, chemicalClassType);
+			add(handler, chemicalClass, hasName, literal("Class " + c));
+		}
+
+		List<IRI> pathways = new ArrayList<>(config.pathwayCount);
+		for (int p = 0; p < config.pathwayCount; p++) {
+			IRI pathway = entity(PHARMA_NS, "pathway", p);
+			pathways.add(pathway);
+			add(handler, pathway, RDF.TYPE, pathwayType);
+			add(handler, pathway, hasName, literal("Pathway " + p));
+		}
+
+		List<IRI> targetsList = new ArrayList<>(config.targetCount);
+		for (int t = 0; t < config.targetCount; t++) {
+			IRI target = entity(PHARMA_NS, "target", t);
+			targetsList.add(target);
+			add(handler, target, RDF.TYPE, targetType);
+			add(handler, target, hasName, literal("Target " + t));
+			add(handler, target, inPathway, pathways.get(random.nextInt(pathways.size())));
+		}
+
+		List<IRI> molecules = new ArrayList<>(config.moleculeCount);
+		for (int m = 0; m < config.moleculeCount; m++) {
+			IRI molecule = entity(PHARMA_NS, "molecule", m);
+			molecules.add(molecule);
+			add(handler, molecule, RDF.TYPE, moleculeType);
+			add(handler, molecule, hasName, literal("Molecule " + m));
+			add(handler, molecule, inClass, chemicalClasses.get(random.nextInt(chemicalClasses.size())));
+			for (int t = 0; t < config.targetsPerMolecule; t++) {
+				add(handler, molecule, targets, targetsList.get(random.nextInt(targetsList.size())));
+			}
+		}
+
+		List<IRI> diseases = new ArrayList<>(config.diseaseCount);
+		for (int d = 0; d < config.diseaseCount; d++) {
+			IRI disease = entity(PHARMA_NS, "disease", d);
+			diseases.add(disease);
+			add(handler, disease, RDF.TYPE, diseaseType);
+			add(handler, disease, hasName, literal("Disease " + d));
+		}
+
+		List<IRI> sideEffects = new ArrayList<>(config.sideEffectCount);
+		for (int s = 0; s < config.sideEffectCount; s++) {
+			IRI sideEffect = entity(PHARMA_NS, "side-effect", s);
+			sideEffects.add(sideEffect);
+			add(handler, sideEffect, RDF.TYPE, sideEffectType);
+			add(handler, sideEffect, hasName, literal("SideEffect " + s));
+			add(handler, sideEffect, severity, literal(severities[s % severities.length]));
+		}
+
+		List<IRI> biomarkers = new ArrayList<>(config.biomarkerCount);
+		for (int b = 0; b < config.biomarkerCount; b++) {
+			IRI marker = entity(PHARMA_NS, "biomarker", b);
+			biomarkers.add(marker);
+			add(handler, marker, RDF.TYPE, biomarkerType);
+			add(handler, marker, hasName, literal("Biomarker " + b));
+		}
+
+		List<IRI> drugs = new ArrayList<>(config.drugCount);
+		for (int d = 0; d < config.drugCount; d++) {
+			IRI drug = entity(PHARMA_NS, "drug", d);
+			drugs.add(drug);
+			add(handler, drug, RDF.TYPE, drugType);
+			add(handler, drug, hasName, literal("Drug " + d));
+
+			for (int m = 0; m < config.moleculesPerDrug; m++) {
+				add(handler, drug, hasMolecule, molecules.get(random.nextInt(molecules.size())));
+			}
+
+			for (int t = 0; t < config.targetsPerDrug; t++) {
+				add(handler, drug, targets, targetsList.get(random.nextInt(targetsList.size())));
+			}
+
+			for (int i = 0; i < config.indicationsPerDrug; i++) {
+				add(handler, drug, indicatedFor, diseases.get(random.nextInt(diseases.size())));
+			}
+
+			add(handler, drug, contraindicatedFor, diseases.get(random.nextInt(diseases.size())));
+
+			for (int s = 0; s < config.sideEffectsPerDrug; s++) {
+				add(handler, drug, hasSideEffect, sideEffects.get(random.nextInt(sideEffects.size())));
+			}
+		}
+
+		List<IRI> comparators = new ArrayList<>(config.comparatorCount);
+		for (int c = 0; c < config.comparatorCount; c++) {
+			IRI comparator = entity(PHARMA_NS, "comparator", c);
+			comparators.add(comparator);
+			add(handler, comparator, RDF.TYPE, comparatorType);
+			add(handler, comparator, hasName, literal("Comparator " + c));
+		}
+
+		int armIndex = 0;
+		int resultIndex = 0;
+		for (int t = 0; t < config.trialCount; t++) {
+			IRI trial = entity(PHARMA_NS, "trial", t);
+			add(handler, trial, RDF.TYPE, trialType);
+			add(handler, trial, hasName, literal("Trial " + t));
+			add(handler, trial, studiesDisease, diseases.get(random.nextInt(diseases.size())));
+			add(handler, trial, phase, VF.createLiteral(1 + random.nextInt(3)));
+
+			for (int a = 0; a < config.armsPerTrial; a++) {
+				IRI arm = entity(PHARMA_NS, "arm", armIndex++);
+				add(handler, arm, RDF.TYPE, armType);
+				add(handler, trial, hasArm, arm);
+				IRI drug = drugs.get(random.nextInt(drugs.size()));
+				add(handler, arm, armDrug, drug);
+				add(handler, drug, testedIn, trial);
+				add(handler, arm, armComparator, comparators.get(random.nextInt(comparators.size())));
+
+				IRI result = entity(PHARMA_NS, "result", resultIndex++);
+				add(handler, result, RDF.TYPE, resultType);
+				add(handler, arm, hasResult, result);
+				add(handler, result, endpoint, literal(endpoints[random.nextInt(endpoints.length)]));
+				add(handler, result, effectSize, VF.createLiteral(random.nextDouble()));
+				add(handler, result, pValue, VF.createLiteral(random.nextDouble() * 0.1));
+				add(handler, result, responseRate, VF.createLiteral(random.nextDouble()));
+				add(handler, result, observedSideEffect, sideEffects.get(random.nextInt(sideEffects.size())));
+				IRI marker = biomarkers.get(random.nextInt(biomarkers.size()));
+				add(handler, result, biomarker, marker);
+				add(handler, result, biomarkerValue, VF.createLiteral(0.1 + random.nextDouble() * 2.0));
+			}
+		}
+
+		for (int c = 0; c < config.combinationCount; c++) {
+			IRI combination = entity(PHARMA_NS, "combination", c);
+			add(handler, combination, RDF.TYPE, combinationType);
+			add(handler, combination, hasName, literal("Combination " + c));
+			add(handler, combination, synergyScore, VF.createLiteral(random.nextDouble()));
+			int members = config.drugsPerCombination;
+			for (int m = 0; m < members; m++) {
+				add(handler, combination, combinationOf, drugs.get(random.nextInt(drugs.size())));
+			}
+			IRI trial = entity(PHARMA_NS, "trial", random.nextInt(config.trialCount));
+			add(handler, combination, testedIn, trial);
+		}
+
+		handler.endRDF();
+	}
+
 	private static int substationIndex(IRI substation) {
 		String local = substation.getLocalName();
 		int slash = local.lastIndexOf('/');
@@ -968,7 +1178,7 @@ public final class ThemeDataSetGenerator {
 	}
 
 	public static final class HighlyConnectedConfig {
-		private int nodeCount = 300;
+		private int nodeCount = 30000;
 		private int hubCount = 10;
 		private int edgesPerNode = 8;
 		private double hubBias = 0.6;
@@ -1013,10 +1223,10 @@ public final class ThemeDataSetGenerator {
 	}
 
 	public static final class TrainConfig {
-		private int stationCount = 40;
-		private int routeCount = 6;
+		private int stationCount = 40000;
+		private int routeCount = 6000;
 		private int stopsPerRoute = 8;
-		private int trainCount = 12;
+		private int trainCount = 12000;
 		private int tripsPerTrain = 3;
 		private long seed = 42L;
 
@@ -1060,7 +1270,7 @@ public final class ThemeDataSetGenerator {
 	}
 
 	public static final class ElectricalGridConfig {
-		private int substationCount = 12;
+		private int substationCount = 12000;
 		private int transformersPerSubstation = 3;
 		private int linesPerSubstation = 2;
 		private int metersPerTransformer = 4;
@@ -1096,6 +1306,144 @@ public final class ThemeDataSetGenerator {
 			requirePositive(transformersPerSubstation, "transformersPerSubstation");
 			requirePositive(linesPerSubstation, "linesPerSubstation");
 			requirePositive(metersPerTransformer, "metersPerTransformer");
+		}
+	}
+
+	public static final class PharmaConfig {
+		private int drugCount = 5000;
+		private int moleculeCount = 7500;
+		private int chemicalClassCount = 200;
+		private int targetCount = 600;
+		private int pathwayCount = 150;
+		private int diseaseCount = 400;
+		private int trialCount = 1200;
+		private int armsPerTrial = 3;
+		private int sideEffectCount = 250;
+		private int sideEffectsPerDrug = 2;
+		private int biomarkerCount = 150;
+		private int combinationCount = 600;
+		private int moleculesPerDrug = 2;
+		private int targetsPerDrug = 2;
+		private int targetsPerMolecule = 2;
+		private int indicationsPerDrug = 2;
+		private int drugsPerCombination = 2;
+		private int comparatorCount = 12;
+		private long seed = 42L;
+
+		public PharmaConfig withDrugCount(int drugCount) {
+			this.drugCount = requirePositive(drugCount, "drugCount");
+			return this;
+		}
+
+		public PharmaConfig withMoleculeCount(int moleculeCount) {
+			this.moleculeCount = requirePositive(moleculeCount, "moleculeCount");
+			return this;
+		}
+
+		public PharmaConfig withChemicalClassCount(int chemicalClassCount) {
+			this.chemicalClassCount = requirePositive(chemicalClassCount, "chemicalClassCount");
+			return this;
+		}
+
+		public PharmaConfig withTargetCount(int targetCount) {
+			this.targetCount = requirePositive(targetCount, "targetCount");
+			return this;
+		}
+
+		public PharmaConfig withPathwayCount(int pathwayCount) {
+			this.pathwayCount = requirePositive(pathwayCount, "pathwayCount");
+			return this;
+		}
+
+		public PharmaConfig withDiseaseCount(int diseaseCount) {
+			this.diseaseCount = requirePositive(diseaseCount, "diseaseCount");
+			return this;
+		}
+
+		public PharmaConfig withTrialCount(int trialCount) {
+			this.trialCount = requirePositive(trialCount, "trialCount");
+			return this;
+		}
+
+		public PharmaConfig withArmsPerTrial(int armsPerTrial) {
+			this.armsPerTrial = requirePositive(armsPerTrial, "armsPerTrial");
+			return this;
+		}
+
+		public PharmaConfig withSideEffectCount(int sideEffectCount) {
+			this.sideEffectCount = requirePositive(sideEffectCount, "sideEffectCount");
+			return this;
+		}
+
+		public PharmaConfig withSideEffectsPerDrug(int sideEffectsPerDrug) {
+			this.sideEffectsPerDrug = requirePositive(sideEffectsPerDrug, "sideEffectsPerDrug");
+			return this;
+		}
+
+		public PharmaConfig withBiomarkerCount(int biomarkerCount) {
+			this.biomarkerCount = requirePositive(biomarkerCount, "biomarkerCount");
+			return this;
+		}
+
+		public PharmaConfig withCombinationCount(int combinationCount) {
+			this.combinationCount = requirePositive(combinationCount, "combinationCount");
+			return this;
+		}
+
+		public PharmaConfig withMoleculesPerDrug(int moleculesPerDrug) {
+			this.moleculesPerDrug = requirePositive(moleculesPerDrug, "moleculesPerDrug");
+			return this;
+		}
+
+		public PharmaConfig withTargetsPerDrug(int targetsPerDrug) {
+			this.targetsPerDrug = requirePositive(targetsPerDrug, "targetsPerDrug");
+			return this;
+		}
+
+		public PharmaConfig withTargetsPerMolecule(int targetsPerMolecule) {
+			this.targetsPerMolecule = requirePositive(targetsPerMolecule, "targetsPerMolecule");
+			return this;
+		}
+
+		public PharmaConfig withIndicationsPerDrug(int indicationsPerDrug) {
+			this.indicationsPerDrug = requirePositive(indicationsPerDrug, "indicationsPerDrug");
+			return this;
+		}
+
+		public PharmaConfig withDrugsPerCombination(int drugsPerCombination) {
+			this.drugsPerCombination = requirePositive(drugsPerCombination, "drugsPerCombination");
+			return this;
+		}
+
+		public PharmaConfig withComparatorCount(int comparatorCount) {
+			this.comparatorCount = requirePositive(comparatorCount, "comparatorCount");
+			return this;
+		}
+
+		public PharmaConfig withSeed(long seed) {
+			this.seed = seed;
+			return this;
+		}
+
+		private void validate() {
+			requirePositive(drugCount, "drugCount");
+			requirePositive(moleculeCount, "moleculeCount");
+			requirePositive(chemicalClassCount, "chemicalClassCount");
+			requirePositive(targetCount, "targetCount");
+			requirePositive(pathwayCount, "pathwayCount");
+			requirePositive(diseaseCount, "diseaseCount");
+			requirePositive(trialCount, "trialCount");
+			requirePositive(armsPerTrial, "armsPerTrial");
+			requirePositive(sideEffectCount, "sideEffectCount");
+			requirePositive(sideEffectsPerDrug, "sideEffectsPerDrug");
+			requirePositive(biomarkerCount, "biomarkerCount");
+			requirePositive(combinationCount, "combinationCount");
+			requirePositive(moleculesPerDrug, "moleculesPerDrug");
+			requirePositive(targetsPerDrug, "targetsPerDrug");
+			requirePositive(targetsPerMolecule, "targetsPerMolecule");
+			requirePositive(indicationsPerDrug, "indicationsPerDrug");
+			requirePositive(drugsPerCombination, "drugsPerCombination");
+			requirePositive(comparatorCount, "comparatorCount");
 		}
 	}
 
