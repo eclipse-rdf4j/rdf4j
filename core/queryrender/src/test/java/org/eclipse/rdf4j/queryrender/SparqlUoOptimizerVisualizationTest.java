@@ -52,18 +52,31 @@ public class SparqlUoOptimizerVisualizationTest {
 							"  ?s ex:p1 ?o .\n" +
 							"  { ?x ex:p2 ?y } UNION { ?a ex:p3 ?b }\n" +
 							"}\n",
-					PREFIXES + "SELECT ?s ?o ?x ?y WHERE {\n" +
-							"    ?s ex:p1 ?o .\n" +
-							"    OPTIONAL {\n" +
-							"      ?x ex:p2 ?y .\n" +
-							"    }\n" +
-							"  }"),
+					PREFIXES + "SELECT ?s ?o ?x ?y ?a ?b WHERE {\n" +
+							"  ?s ex:p1 ?o .\n" +
+							"  {\n" +
+							"    ?x ex:p2 ?y .\n" +
+							"  }\n" +
+							"  UNION\n" +
+							"  {\n" +
+							"    ?a ex:p3 ?b .\n" +
+							"  }\n" +
+							"}"),
 			new Example("counter_union_only_predicate_shared",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ?p ?o .\n" +
 							"  { ?x ?p ?y } UNION { ?x ?p ?z }\n" +
 							"}\n",
-					PREFIXES + ""),
+					PREFIXES + "SELECT ?s ?p ?o ?x ?y ?z WHERE {\n" +
+							"  ?s ?p ?o .\n" +
+							"  {\n" +
+							"    ?x ?p ?y .\n" +
+							"  }\n" +
+							"  UNION\n" +
+							"  {\n" +
+							"    ?x ?p ?z .\n" +
+							"  }\n" +
+							"}"),
 			new Example("counter_optional_no_shared_subject_or_object",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ex:p1 ?o\n" +
@@ -80,19 +93,41 @@ public class SparqlUoOptimizerVisualizationTest {
 							"  ?s ex:p1 ?o\n" +
 							"  OPTIONAL { FILTER(?o > 5) ?s ex:p2 ?o2 }\n" +
 							"}\n",
-					PREFIXES + ""),
+					PREFIXES + "SELECT ?s ?o ?o2 WHERE {\n" +
+							"  ?s ex:p1 ?o .\n" +
+							"  OPTIONAL {\n" +
+							"    ?s ex:p2 ?o2 .\n" +
+							"    FILTER (?o > 5)\n" +
+							"  }\n" +
+							"}"),
 			new Example("counter_union_with_filter_barrier",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ex:p1 ?o .\n" +
 							"  { FILTER(?o > 5) ?s ex:p2 ?o2 } UNION { FILTER(?o > 5) ?s ex:p3 ?o3 }\n" +
 							"}\n",
-					PREFIXES + ""),
+					PREFIXES + "SELECT ?s ?o ?o2 ?o3 WHERE {\n" +
+							"  ?s ex:p1 ?o .\n" +
+							"  {\n" +
+							"    ?s ex:p2 ?o2 .\n" +
+							"    FILTER (?o > 5)\n" +
+							"  }\n" +
+							"  UNION\n" +
+							"  {\n" +
+							"    ?s ex:p3 ?o3 .\n" +
+							"    FILTER (?o > 5)\n" +
+							"  }\n" +
+							"}"),
 			new Example("counter_service_barrier",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ex:p1 ?o\n" +
 							"  SERVICE <http://example.org/svc> { ?s ex:p2 ?o2 }\n" +
 							"}\n",
-					"")
+					PREFIXES + "SELECT ?s ?o ?o2 WHERE {\n" +
+							"  ?s ex:p1 ?o .\n" +
+							"  SERVICE ex:svc {\n" +
+							"    ?s ex:p2 ?o2 .\n" +
+							"  }\n" +
+							"}")
 	);
 
 	private static final List<Example> EXAMPLES = List.of(
@@ -101,49 +136,154 @@ public class SparqlUoOptimizerVisualizationTest {
 							"  ?s ex:p1 ?o .\n" +
 							"  { ?s ex:p2 ?o2 } UNION { ?s ex:p3 ?o3 }\n" +
 							"}\n",
-					PREFIXES + ""),
+					PREFIXES + "SELECT ?s ?o ?o2 ?o3 WHERE {\n" +
+							"  {\n" +
+							"    ?s ex:p1 ?o .\n" +
+							"    {\n" +
+							"      ?s ex:p2 ?o2 .\n" +
+							"    }\n" +
+							"  }\n" +
+							"  UNION\n" +
+							"  {\n" +
+							"    ?s ex:p1 ?o .\n" +
+							"    {\n" +
+							"      ?s ex:p3 ?o3 .\n" +
+							"    }\n" +
+							"  }\n" +
+							"}"),
 			new Example("merge_union_with_longer_branch",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ex:p1 ?o .\n" +
 							"  { ?s ex:p2 ?o2 . ?o2 ex:p4 ?x } UNION { ?s ex:p3 ?o3 }\n" +
 							"}\n",
-					PREFIXES + ""),
+					PREFIXES + "SELECT ?s ?o ?o2 ?x ?o3 WHERE {\n" +
+							"  {\n" +
+							"    ?s ex:p1 ?o .\n" +
+							"    ?s ex:p2 ?o2 .\n" +
+							"    ?o2 ex:p4 ?x .\n" +
+							"  }\n" +
+							"  UNION\n" +
+							"  {\n" +
+							"    ?s ex:p1 ?o .\n" +
+							"    {\n" +
+							"      ?s ex:p3 ?o3 .\n" +
+							"    }\n" +
+							"  }\n" +
+							"}"),
 			new Example("merge_union_shared_object",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ex:p1 ?o .\n" +
 							"  { ?x ex:p2 ?o } UNION { ?y ex:p3 ?o }\n" +
 							"}\n",
-					PREFIXES + ""),
+					PREFIXES + "SELECT ?s ?o ?x ?y WHERE {\n" +
+							"  {\n" +
+							"    ?s ex:p1 ?o .\n" +
+							"    {\n" +
+							"      ?x ex:p2 ?o .\n" +
+							"    }\n" +
+							"  }\n" +
+							"  UNION\n" +
+							"  {\n" +
+							"    ?s ex:p1 ?o .\n" +
+							"    {\n" +
+							"      ?y ex:p3 ?o .\n" +
+							"    }\n" +
+							"  }\n" +
+							"}"),
 			new Example("merge_three_union_branches",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ex:p1 ?o .\n" +
 							"  { ?s ex:p2 ?o2 } UNION { ?s ex:p3 ?o3 } UNION { ?s ex:p4 ?o4 }\n" +
 							"}\n",
-					PREFIXES + ""),
+					PREFIXES + "SELECT ?s ?o ?o2 ?o3 ?o4 WHERE {\n" +
+							"  {\n" +
+							"    {\n" +
+							"      ?s ex:p1 ?o .\n" +
+							"      {\n" +
+							"        ?s ex:p2 ?o2 .\n" +
+							"      }\n" +
+							"    }\n" +
+							"    UNION\n" +
+							"    {\n" +
+							"      ?s ex:p1 ?o .\n" +
+							"      {\n" +
+							"        ?s ex:p3 ?o3 .\n" +
+							"      }\n" +
+							"    }\n" +
+							"  }\n" +
+							"  UNION\n" +
+							"  {\n" +
+							"    ?s ex:p1 ?o .\n" +
+							"    {\n" +
+							"      ?s ex:p4 ?o4 .\n" +
+							"    }\n" +
+							"  }\n" +
+							"}"),
 			new Example("inject_simple_optional",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ex:p1 ?o\n" +
 							"  OPTIONAL { ?s ex:p2 ?o2 }\n" +
 							"}\n",
-					PREFIXES + ""),
+					PREFIXES + "SELECT ?s ?o ?o2 WHERE {\n" +
+							"  ?s ex:p1 ?o .\n" +
+							"  OPTIONAL {\n" +
+							"    ?s ex:p1 ?o .\n" +
+							"    ?s ex:p2 ?o2 .\n" +
+							"  }\n" +
+							"}"),
 			new Example("inject_optional_multi_bgp",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ex:p1 ?o\n" +
 							"  OPTIONAL { ?s ex:p2 ?o2 . ?o2 ex:p3 ?x }\n" +
 							"}\n",
-					PREFIXES + ""),
+					PREFIXES + "SELECT ?s ?o ?o2 ?x WHERE {\n" +
+							"  ?s ex:p1 ?o .\n" +
+							"  OPTIONAL {\n" +
+							"    ?s ex:p1 ?o .\n" +
+							"    ?s ex:p2 ?o2 .\n" +
+							"    ?o2 ex:p3 ?x .\n" +
+							"  }\n" +
+							"}"),
 			new Example("inject_optional_with_union_and_bgp",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ex:p1 ?o\n" +
 							"  OPTIONAL { ?s ex:p2 ?o2 . { ?s ex:p3 ?o3 } UNION { ?s ex:p4 ?o4 } }\n" +
 							"}\n",
-					PREFIXES + ""),
+					PREFIXES + "SELECT ?s ?o ?o2 ?o3 ?o4 WHERE {\n" +
+							"  ?s ex:p1 ?o .\n" +
+							"  OPTIONAL {\n" +
+							"    ?s ex:p1 ?o .\n" +
+							"    {\n" +
+							"      ?s ex:p2 ?o2 .\n" +
+							"      {\n" +
+							"        ?s ex:p3 ?o3 .\n" +
+							"      }\n" +
+							"    }\n" +
+							"    UNION\n" +
+							"    {\n" +
+							"      ?s ex:p2 ?o2 .\n" +
+							"      {\n" +
+							"        ?s ex:p4 ?o4 .\n" +
+							"      }\n" +
+							"    }\n" +
+							"  }\n" +
+							"}"),
 			new Example("inject_nested_optional",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ex:p1 ?o\n" +
 							"  OPTIONAL { ?s ex:p2 ?o2 OPTIONAL { ?s ex:p3 ?o3 } }\n" +
 							"}\n",
-					"")
+					PREFIXES + "SELECT ?s ?o ?o2 ?o3 WHERE {\n" +
+							"  ?s ex:p1 ?o .\n" +
+							"  OPTIONAL {\n" +
+							"    ?s ex:p1 ?o .\n" +
+							"    ?s ex:p2 ?o2 .\n" +
+							"    OPTIONAL {\n" +
+							"      ?s ex:p2 ?o2 .\n" +
+							"      ?s ex:p3 ?o3 .\n" +
+							"    }\n" +
+							"  }\n" +
+							"}")
 	);
 
 	@TestFactory
