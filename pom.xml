@@ -354,7 +354,7 @@
 									</includes>
 									<!-- Mirror old xml-format-maven-plugin excludes and avoid double-formatting POMs -->
 									<excludes>
-										<exclude>eclipse-settings/**</exclude>
+										<exclude>esclipse-settings/**</exclude>
 										<exclude>**/target/**</exclude>
 										<exclude>**/site/themes/**</exclude>
 										<exclude>**/.*/**</exclude>

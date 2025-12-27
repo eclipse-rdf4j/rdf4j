@@ -170,8 +170,8 @@ class ServerBootSignalIT {
 					synchronized (outputBuffer) {
 						outputBuffer.append(line).append(System.lineSeparator());
 					}
-					if (!signalLogged.get() && (line.contains("Tomcat initialized with port")
-							|| line.contains("Started Rdf4jServerWorkbenchApplication"))) {
+					if (!signalLogged.get() && (line.contains("Started Rdf4jServerWorkbenchApplication")
+							|| line.contains("Initializing Spring DispatcherServlet 'rdf4jServer'"))) {
 						started.countDown();
 						signalLogged.set(true);
 					}
