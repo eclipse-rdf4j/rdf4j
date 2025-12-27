@@ -217,12 +217,14 @@ public class FedXRepositoryConfigTest {
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_SOURCE_SELECTION_CACHE_SPEC,
 									null)))
-					.hasValueSatisfying(v -> assertThat(v.stringValue()).isEqualTo("spec-goes-here"));
+					.hasValueSatisfying(
+							v -> assertThat(v.stringValue()).isEqualTo("spec-goes-here"));
 			assertThat(
 					Models.objectLiteral(
 							export.getStatements(configNode, FedXRepositoryConfig.CONFIG_PREFIX_DECLARATIONS,
 									null)))
-					.hasValueSatisfying(v -> assertThat(v.stringValue()).isEqualTo("prefixes-go-here"));
+					.hasValueSatisfying(
+							v -> assertThat(v.stringValue()).isEqualTo("prefixes-go-here"));
 
 			assertThat(
 					Models.objectLiteral(
