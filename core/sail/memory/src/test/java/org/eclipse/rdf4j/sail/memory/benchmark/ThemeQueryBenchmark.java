@@ -17,8 +17,6 @@ import java.io.File;
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.io.FileUtils;
-import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.benchmark.common.ThemeDataSetCache;
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
@@ -28,6 +26,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -70,10 +69,10 @@ public class ThemeQueryBenchmark {
 	})
 	public String themeName;
 
-	private File dataDir;
 	private SailRepository repository;
 	private Theme theme;
 	private String query;
+	private long expected;
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
@@ -87,7 +86,7 @@ public class ThemeQueryBenchmark {
 	public void setup() throws IOException {
 		theme = Theme.valueOf(themeName);
 		query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
-		dataDir = Files.newTemporaryFolder();
+		expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
 		repository = new SailRepository(new MemoryStore());
 		loadData();
 	}
@@ -104,21 +103,27 @@ public class ThemeQueryBenchmark {
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
 		repository.shutDown();
-		FileUtils.deleteDirectory(dataDir);
 	}
 
 	@Benchmark
 	public long executeQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			long count = connection
 					.prepareTupleQuery(query)
 					.evaluate()
 					.stream()
 					.count();
+
+			if (count != expected) {
+				throw new IllegalStateException("Unexpected count: expected " + expected + " but got " + count);
+			}
+
+			return count;
 		}
 	}
 
 	@Test
+	@Disabled
 	public void testQueryCounts() throws IOException {
 		String[] queryIndexes = paramValues("z_queryIndex");
 		String[] themeNames = paramValues("themeName");
@@ -131,32 +136,14 @@ public class ThemeQueryBenchmark {
 					long actual = executeQuery();
 					long expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
 					System.out.println("For theme " + themeName + " and query index " + z_queryIndex
-							+ ", expected count should be " + actual);
+							+ ", expected count is " + expected + " and actual count is " + actual);
 					assertEquals(expected, actual,
 							"Unexpected count for theme " + themeName + " and query index " + z_queryIndex);
-
 				} finally {
 					tearDown();
 				}
 			}
 		}
-//		for (String themeNameValue : themeNames) {
-//			for (String queryIndexValue : queryIndexes) {
-//				themeName = themeNameValue;
-//				z_queryIndex = Integer.parseInt(queryIndexValue);
-//				setup();
-//				try {
-//					long actual = executeQuery();
-//					long expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
-//					System.out.println("For theme " + themeName + " and query index " + z_queryIndex
-//							+ ", expected count is " + expected + " and actual count is " + actual);
-//					assertEquals(expected, actual,
-//							"Unexpected count for theme " + themeName + " and query index " + z_queryIndex);
-//				} finally {
-//					tearDown();
-//				}
-//			}
-//		}
 	}
 
 	@Test
