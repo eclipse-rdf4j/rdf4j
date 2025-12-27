@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2022 Eclipse RDF4J contributors.
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql.aggregate;
 
-import java.util.function.Function;
+import java.util.function.BiFunction;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -19,23 +19,27 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
+ * N-ary aggregate function processor.
+ *
  * @param <T>
  * @param <D>
+ *
+ * @author Nik Kozlov
  */
 @Experimental
-public abstract class AggregateFunction<T extends AggregateCollector, D> implements AggregateProcessor<T, D> {
+public abstract class AggregateNAryFunction<T extends AggregateCollector, D> implements AggregateProcessor<T, D> {
 
-	protected final Function<BindingSet, Value> evaluationStep;
+	protected final BiFunction<Integer, BindingSet, Value> evaluationStepByIndex;
 
-	public AggregateFunction(Function<BindingSet, Value> evaluationStep) {
-		this.evaluationStep = evaluationStep;
+	protected AggregateNAryFunction(BiFunction<Integer, BindingSet, Value> evaluationStepByIndex) {
+		this.evaluationStepByIndex = evaluationStepByIndex;
 	}
 
 	@Override
 	public abstract void processAggregate(BindingSet bindingSet, Predicate<D> distinctValue, T agv)
 			throws QueryEvaluationException;
 
-	protected Value evaluate(BindingSet s) throws QueryEvaluationException {
-		return evaluationStep.apply(s);
+	protected Value evaluate(Integer index, BindingSet s) throws QueryEvaluationException {
+		return evaluationStepByIndex.apply(index, s);
 	}
 }
