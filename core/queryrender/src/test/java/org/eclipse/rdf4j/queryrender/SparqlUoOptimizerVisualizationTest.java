@@ -46,94 +46,104 @@ public class SparqlUoOptimizerVisualizationTest {
 	private static final Dataset DATASET = new SimpleDataset();
 	private static final BindingSet BINDINGS = EmptyBindingSet.getInstance();
 
-	private static final List<Example> EXAMPLES = List.of(
-			new Example("merge_simple_union",
-					PREFIXES + "SELECT * WHERE {\n" +
-							"  ?s ex:p1 ?o .\n" +
-							"  { ?s ex:p2 ?o2 } UNION { ?s ex:p3 ?o3 }\n" +
-							"}\n",
-					true),
-			new Example("merge_union_with_longer_branch",
-					PREFIXES + "SELECT * WHERE {\n" +
-							"  ?s ex:p1 ?o .\n" +
-							"  { ?s ex:p2 ?o2 . ?o2 ex:p4 ?x } UNION { ?s ex:p3 ?o3 }\n" +
-							"}\n",
-					true),
-			new Example("merge_union_shared_object",
-					PREFIXES + "SELECT * WHERE {\n" +
-							"  ?s ex:p1 ?o .\n" +
-							"  { ?x ex:p2 ?o } UNION { ?y ex:p3 ?o }\n" +
-							"}\n",
-					true),
-			new Example("merge_three_union_branches",
-					PREFIXES + "SELECT * WHERE {\n" +
-							"  ?s ex:p1 ?o .\n" +
-							"  { ?s ex:p2 ?o2 } UNION { ?s ex:p3 ?o3 } UNION { ?s ex:p4 ?o4 }\n" +
-							"}\n",
-					true),
-			new Example("inject_simple_optional",
-					PREFIXES + "SELECT * WHERE {\n" +
-							"  ?s ex:p1 ?o\n" +
-							"  OPTIONAL { ?s ex:p2 ?o2 }\n" +
-							"}\n",
-					true),
-			new Example("inject_optional_multi_bgp",
-					PREFIXES + "SELECT * WHERE {\n" +
-							"  ?s ex:p1 ?o\n" +
-							"  OPTIONAL { ?s ex:p2 ?o2 . ?o2 ex:p3 ?x }\n" +
-							"}\n",
-					true),
-			new Example("inject_optional_with_union_and_bgp",
-					PREFIXES + "SELECT * WHERE {\n" +
-							"  ?s ex:p1 ?o\n" +
-							"  OPTIONAL { ?s ex:p2 ?o2 . { ?s ex:p3 ?o3 } UNION { ?s ex:p4 ?o4 } }\n" +
-							"}\n",
-					true),
-			new Example("inject_nested_optional",
-					PREFIXES + "SELECT * WHERE {\n" +
-							"  ?s ex:p1 ?o\n" +
-							"  OPTIONAL { ?s ex:p2 ?o2 OPTIONAL { ?s ex:p3 ?o3 } }\n" +
-							"}\n",
-					true)
-	);
-
 	private static final List<Example> COUNTER_EXAMPLES = List.of(
 			new Example("counter_union_no_shared_subject_or_object",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ex:p1 ?o .\n" +
 							"  { ?x ex:p2 ?y } UNION { ?a ex:p3 ?b }\n" +
 							"}\n",
-					false),
+					PREFIXES + "SELECT ?s ?o ?x ?y WHERE {\n" +
+							"    ?s ex:p1 ?o .\n" +
+							"    OPTIONAL {\n" +
+							"      ?x ex:p2 ?y .\n" +
+							"    }\n" +
+							"  }"),
 			new Example("counter_union_only_predicate_shared",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ?p ?o .\n" +
 							"  { ?x ?p ?y } UNION { ?x ?p ?z }\n" +
 							"}\n",
-					false),
+					PREFIXES + ""),
 			new Example("counter_optional_no_shared_subject_or_object",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ex:p1 ?o\n" +
 							"  OPTIONAL { ?x ex:p2 ?y }\n" +
 							"}\n",
-					false),
+					PREFIXES + "SELECT ?s ?o ?x ?y WHERE {\n" +
+							"  ?s ex:p1 ?o .\n" +
+							"  OPTIONAL {\n" +
+							"    ?x ex:p2 ?y .\n" +
+							"  }\n" +
+							"}"),
 			new Example("counter_optional_with_filter_barrier",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ex:p1 ?o\n" +
 							"  OPTIONAL { FILTER(?o > 5) ?s ex:p2 ?o2 }\n" +
 							"}\n",
-					false),
+					PREFIXES + ""),
 			new Example("counter_union_with_filter_barrier",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ex:p1 ?o .\n" +
 							"  { FILTER(?o > 5) ?s ex:p2 ?o2 } UNION { FILTER(?o > 5) ?s ex:p3 ?o3 }\n" +
 							"}\n",
-					false),
+					PREFIXES + ""),
 			new Example("counter_service_barrier",
 					PREFIXES + "SELECT * WHERE {\n" +
 							"  ?s ex:p1 ?o\n" +
 							"  SERVICE <http://example.org/svc> { ?s ex:p2 ?o2 }\n" +
 							"}\n",
-					false)
+					"")
+	);
+
+	private static final List<Example> EXAMPLES = List.of(
+			new Example("merge_simple_union",
+					PREFIXES + "SELECT * WHERE {\n" +
+							"  ?s ex:p1 ?o .\n" +
+							"  { ?s ex:p2 ?o2 } UNION { ?s ex:p3 ?o3 }\n" +
+							"}\n",
+					PREFIXES + ""),
+			new Example("merge_union_with_longer_branch",
+					PREFIXES + "SELECT * WHERE {\n" +
+							"  ?s ex:p1 ?o .\n" +
+							"  { ?s ex:p2 ?o2 . ?o2 ex:p4 ?x } UNION { ?s ex:p3 ?o3 }\n" +
+							"}\n",
+					PREFIXES + ""),
+			new Example("merge_union_shared_object",
+					PREFIXES + "SELECT * WHERE {\n" +
+							"  ?s ex:p1 ?o .\n" +
+							"  { ?x ex:p2 ?o } UNION { ?y ex:p3 ?o }\n" +
+							"}\n",
+					PREFIXES + ""),
+			new Example("merge_three_union_branches",
+					PREFIXES + "SELECT * WHERE {\n" +
+							"  ?s ex:p1 ?o .\n" +
+							"  { ?s ex:p2 ?o2 } UNION { ?s ex:p3 ?o3 } UNION { ?s ex:p4 ?o4 }\n" +
+							"}\n",
+					PREFIXES + ""),
+			new Example("inject_simple_optional",
+					PREFIXES + "SELECT * WHERE {\n" +
+							"  ?s ex:p1 ?o\n" +
+							"  OPTIONAL { ?s ex:p2 ?o2 }\n" +
+							"}\n",
+					PREFIXES + ""),
+			new Example("inject_optional_multi_bgp",
+					PREFIXES + "SELECT * WHERE {\n" +
+							"  ?s ex:p1 ?o\n" +
+							"  OPTIONAL { ?s ex:p2 ?o2 . ?o2 ex:p3 ?x }\n" +
+							"}\n",
+					PREFIXES + ""),
+			new Example("inject_optional_with_union_and_bgp",
+					PREFIXES + "SELECT * WHERE {\n" +
+							"  ?s ex:p1 ?o\n" +
+							"  OPTIONAL { ?s ex:p2 ?o2 . { ?s ex:p3 ?o3 } UNION { ?s ex:p4 ?o4 } }\n" +
+							"}\n",
+					PREFIXES + ""),
+			new Example("inject_nested_optional",
+					PREFIXES + "SELECT * WHERE {\n" +
+							"  ?s ex:p1 ?o\n" +
+							"  OPTIONAL { ?s ex:p2 ?o2 OPTIONAL { ?s ex:p3 ?o3 } }\n" +
+							"}\n",
+					"")
 	);
 
 	@TestFactory
@@ -153,7 +163,7 @@ public class SparqlUoOptimizerVisualizationTest {
 
 		writeArtifacts(example.name, example.sparql, before, after, original, optimized);
 
-		assertThat(after).isEqualTo(example.expected);
+		assertThat(after).isEqualTo(example.expectedSparqlAfterOptimization);
 
 	}
 
@@ -204,13 +214,12 @@ public class SparqlUoOptimizerVisualizationTest {
 	private static final class Example {
 		private final String name;
 		private final String sparql;
-		private final boolean expectChange;
-		public String expected;
+		public final String expectedSparqlAfterOptimization;
 
-		private Example(String name, String sparql, boolean expectChange) {
+		private Example(String name, String sparql, String expectedSparqlAfterOptimization) {
 			this.name = name;
 			this.sparql = sparql;
-			this.expectChange = expectChange;
+			this.expectedSparqlAfterOptimization = expectedSparqlAfterOptimization;
 		}
 	}
 
