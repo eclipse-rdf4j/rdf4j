@@ -135,7 +135,10 @@ public class LeftJoinKeyCacheIterator extends LookAheadIteration<BindingSet> {
 		MutableBindingSet stripped = context.createBindingSet();
 		for (String name : candidate.getBindingNames()) {
 			if (rightBindingNames.contains(name)) {
-				stripped.addBinding(name, candidate.getValue(name));
+				var value = candidate.getValue(name);
+				if (value != null) {
+					context.addBinding(name).accept(value, stripped);
+				}
 			}
 		}
 		return stripped;
@@ -145,7 +148,10 @@ public class LeftJoinKeyCacheIterator extends LookAheadIteration<BindingSet> {
 		MutableBindingSet result = context.createBindingSet(left);
 		for (String name : right.getBindingNames()) {
 			if (!result.hasBinding(name)) {
-				result.addBinding(name, right.getValue(name));
+				var value = right.getValue(name);
+				if (value != null) {
+					context.addBinding(name).accept(value, result);
+				}
 			}
 		}
 		return result;

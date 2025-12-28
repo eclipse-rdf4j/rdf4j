@@ -19,6 +19,7 @@ public final class SparqlUoConfig {
 	public static final String PROP_OPTIONAL_MULTIPLICITY = "rdf4j.sparqluo.optionalMultiplicity";
 	public static final String PROP_DEBUG_LOGGING = "rdf4j.sparqluo.debugLogging";
 	public static final String PROP_SIMULATE_JOIN_ORDER = "rdf4j.sparqluo.simulateJoinOrder";
+	public static final String PROP_MAX_BSA_UNION_DISTRIBUTION = "rdf4j.sparqluo.maxBindingSetAssignmentUnionSize";
 
 	public static final boolean DEFAULT_ALLOW_NON_IMPROVING = false;
 	public static final double DEFAULT_VAR_DOMAIN = 10.0;
@@ -26,6 +27,7 @@ public final class SparqlUoConfig {
 	public static final double DEFAULT_OPTIONAL_MULTIPLICITY = 1.0;
 	public static final boolean DEFAULT_DEBUG_LOGGING = false;
 	public static final boolean DEFAULT_SIMULATE_JOIN_ORDER = true;
+	public static final int DEFAULT_MAX_BSA_UNION_DISTRIBUTION = 32;
 
 	private final boolean allowNonImprovingTransforms;
 	private final double assumedVarDomainCardinality;
@@ -33,6 +35,7 @@ public final class SparqlUoConfig {
 	private final double optionalMultiplicity;
 	private final boolean debugLogging;
 	private final boolean simulateJoinOrder;
+	private final int maxBindingSetAssignmentUnionSize;
 
 	private SparqlUoConfig(Builder builder) {
 		this.allowNonImprovingTransforms = builder.allowNonImprovingTransforms;
@@ -41,6 +44,8 @@ public final class SparqlUoConfig {
 		this.optionalMultiplicity = nonNegativeOrDefault(builder.optionalMultiplicity, DEFAULT_OPTIONAL_MULTIPLICITY);
 		this.debugLogging = builder.debugLogging;
 		this.simulateJoinOrder = builder.simulateJoinOrder;
+		this.maxBindingSetAssignmentUnionSize = nonNegativeOrDefault(builder.maxBindingSetAssignmentUnionSize,
+				DEFAULT_MAX_BSA_UNION_DISTRIBUTION);
 	}
 
 	public static SparqlUoConfig defaultConfig() {
@@ -73,6 +78,10 @@ public final class SparqlUoConfig {
 		if (simulateJoinOrder != null) {
 			builder.simulateJoinOrder(simulateJoinOrder);
 		}
+		Integer maxBsaUnion = readInt(PROP_MAX_BSA_UNION_DISTRIBUTION);
+		if (maxBsaUnion != null) {
+			builder.maxBindingSetAssignmentUnionSize(maxBsaUnion);
+		}
 		return builder.build();
 	}
 
@@ -104,6 +113,10 @@ public final class SparqlUoConfig {
 		return simulateJoinOrder;
 	}
 
+	public int maxBindingSetAssignmentUnionSize() {
+		return maxBindingSetAssignmentUnionSize;
+	}
+
 	private static Boolean readBoolean(String property) {
 		String value = System.getProperty(property);
 		if (value == null) {
@@ -124,12 +137,28 @@ public final class SparqlUoConfig {
 		}
 	}
 
+	private static Integer readInt(String property) {
+		String value = System.getProperty(property);
+		if (value == null) {
+			return null;
+		}
+		try {
+			return Integer.parseInt(value);
+		} catch (NumberFormatException ignore) {
+			return null;
+		}
+	}
+
 	private static double positiveOrDefault(double value, double fallback) {
 		return value > 0.0 ? value : fallback;
 	}
 
 	private static double nonNegativeOrDefault(double value, double fallback) {
 		return value >= 0.0 ? value : fallback;
+	}
+
+	private static int nonNegativeOrDefault(int value, int fallback) {
+		return value >= 0 ? value : fallback;
 	}
 
 	public static final class Builder {
@@ -139,6 +168,7 @@ public final class SparqlUoConfig {
 		private double optionalMultiplicity = DEFAULT_OPTIONAL_MULTIPLICITY;
 		private boolean debugLogging = DEFAULT_DEBUG_LOGGING;
 		private boolean simulateJoinOrder = DEFAULT_SIMULATE_JOIN_ORDER;
+		private int maxBindingSetAssignmentUnionSize = DEFAULT_MAX_BSA_UNION_DISTRIBUTION;
 
 		private Builder() {
 		}
@@ -170,6 +200,11 @@ public final class SparqlUoConfig {
 
 		public Builder simulateJoinOrder(boolean simulateJoinOrder) {
 			this.simulateJoinOrder = simulateJoinOrder;
+			return this;
+		}
+
+		public Builder maxBindingSetAssignmentUnionSize(int maxBindingSetAssignmentUnionSize) {
+			this.maxBindingSetAssignmentUnionSize = maxBindingSetAssignmentUnionSize;
 			return this;
 		}
 

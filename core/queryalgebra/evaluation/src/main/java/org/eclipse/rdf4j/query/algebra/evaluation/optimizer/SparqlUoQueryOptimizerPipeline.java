@@ -25,6 +25,7 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
 	private final QueryOptimizerPipeline delegate;
 	private final SparqlUoOptimizer sparqlUoOptimizer;
+	private final BindingSetAssignmentUnionOptimizer bindingSetAssignmentUnionOptimizer;
 	private final QueryJoinOptimizer joinOptimizer;
 
 	public SparqlUoQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
@@ -36,6 +37,8 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 			EvaluationStatistics evaluationStatistics, SparqlUoConfig config) {
 		this.delegate = new StandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);
 		this.sparqlUoOptimizer = new SparqlUoOptimizer(evaluationStatistics, config);
+		this.bindingSetAssignmentUnionOptimizer = new BindingSetAssignmentUnionOptimizer(
+				config.maxBindingSetAssignmentUnionSize());
 		this.joinOptimizer = new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource,
 				false);
 	}
@@ -44,6 +47,7 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	public Iterable<QueryOptimizer> getOptimizers() {
 		List<QueryOptimizer> optimizers = new ArrayList<>();
 		boolean inserted = false;
+		boolean bindingSetUnionInserted = false;
 		for (QueryOptimizer optimizer : delegate.getOptimizers()) {
 			if (optimizer instanceof QueryJoinOptimizer) {
 				if (!inserted) {
@@ -54,9 +58,17 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				continue;
 			}
 			optimizers.add(optimizer);
+			if (optimizer instanceof IterativeEvaluationOptimizer) {
+				optimizers.add(bindingSetAssignmentUnionOptimizer);
+				bindingSetUnionInserted = true;
+			}
 		}
 		if (!inserted) {
 			optimizers.add(sparqlUoOptimizer);
+			optimizers.add(joinOptimizer);
+		}
+		if (!bindingSetUnionInserted) {
+			optimizers.add(bindingSetAssignmentUnionOptimizer);
 		}
 		return optimizers;
 	}

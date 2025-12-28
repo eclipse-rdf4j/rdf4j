@@ -35,8 +35,12 @@ public class BeTreeBuilder {
 	}
 
 	public BeGroupNode build(TupleExpr expr) {
+		return build(expr, new HashSet<>());
+	}
+
+	private BeGroupNode build(TupleExpr expr, Set<String> boundVars) {
 		BeGroupNode group = new BeGroupNode();
-		addGroupChildren(expr, group, new HashSet<>());
+		addGroupChildren(expr, group, boundVars);
 		coalescer.coalesce(group);
 		return group;
 	}
@@ -59,7 +63,7 @@ public class BeTreeBuilder {
 				return;
 			}
 			addGroupChildren(leftJoin.getLeftArg(), group, boundVars);
-			BeGroupNode rightGroup = build(leftJoin.getRightArg());
+			BeGroupNode rightGroup = build(leftJoin.getRightArg(), new HashSet<>(boundVars));
 			group.addChild(new BeOptionalNode(rightGroup, leftJoin.getCondition()));
 			boundVars.addAll(leftJoin.getBindingNames());
 			return;
@@ -70,7 +74,7 @@ public class BeTreeBuilder {
 			boolean scopeChange = collectUnionArgs(union, branches, union.isVariableScopeChange());
 			BeUnionNode unionNode = new BeUnionNode(scopeChange);
 			for (TupleExpr branch : branches) {
-				unionNode.addBranch(build(branch));
+				unionNode.addBranch(build(branch, new HashSet<>(boundVars)));
 			}
 			group.addChild(unionNode);
 			boundVars.addAll(union.getBindingNames());
