@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -62,6 +63,23 @@ public class SparqlUoOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void testPullUpCommonBgpOutOfUnionBranches() {
+		String query = "SELECT * WHERE { { ?s <urn:p1> ?o . ?s <urn:p2> ?x } UNION { ?s <urn:p1> ?o . ?s <urn:p3> ?y } }";
+		TupleExpr expr = optimize(query);
+
+		assertThat(expr).isInstanceOf(Projection.class);
+		Projection projection = (Projection) expr;
+		assertThat(projection.getArg()).isInstanceOf(Join.class);
+		Join join = (Join) projection.getArg();
+
+		assertJoinPredicates(join.getLeftArg(), "urn:p1");
+		assertThat(join.getRightArg()).isInstanceOf(Union.class);
+		Union union = (Union) join.getRightArg();
+		assertJoinPredicates(union.getLeftArg(), "urn:p2");
+		assertJoinPredicates(union.getRightArg(), "urn:p3");
+	}
+
+	@Test
 	public void testInjectRewritesOptional() {
 		String query = "SELECT * WHERE { ?s <urn:p1> ?o OPTIONAL { ?s <urn:p2> ?o2 } }";
 		TupleExpr expr = optimize(query);
@@ -73,6 +91,37 @@ public class SparqlUoOptimizerTest extends QueryOptimizerTest {
 
 		assertJoinPredicates(leftJoin.getLeftArg(), "urn:p1");
 		assertJoinPredicates(leftJoin.getRightArg(), "urn:p1", "urn:p2");
+	}
+
+	@Test
+	public void testLiftBgpBeforeOptionalWhenSafe() {
+		String query = "SELECT * WHERE { ?s <urn:p1> ?o OPTIONAL { ?s <urn:p2> ?o2 } ?s <urn:p3> ?o3 }";
+		TupleExpr expr = optimize(query);
+
+		assertThat(expr).isInstanceOf(Projection.class);
+		Projection projection = (Projection) expr;
+		assertThat(projection.getArg()).isInstanceOf(LeftJoin.class);
+		LeftJoin leftJoin = (LeftJoin) projection.getArg();
+
+		assertJoinPredicates(leftJoin.getLeftArg(), "urn:p1", "urn:p3");
+		assertThat(collectPredicates(leftJoin.getRightArg())).contains("urn:p2");
+	}
+
+	@Test
+	public void testDoesNotLiftBgpAcrossOptionalWhenItSharesOptionalOnlyVar() {
+		String query = "SELECT * WHERE { ?s <urn:p1> ?o OPTIONAL { ?s <urn:p2> ?x } ?s <urn:p3> ?x }";
+		TupleExpr expr = optimize(query);
+
+		assertThat(expr).isInstanceOf(Projection.class);
+		Projection projection = (Projection) expr;
+		assertThat(projection.getArg()).isInstanceOf(Join.class);
+		Join join = (Join) projection.getArg();
+		assertThat(join.getLeftArg()).isInstanceOf(LeftJoin.class);
+		LeftJoin leftJoin = (LeftJoin) join.getLeftArg();
+
+		assertJoinPredicates(leftJoin.getLeftArg(), "urn:p1");
+		assertThat(collectPredicates(leftJoin.getRightArg())).contains("urn:p2");
+		assertJoinPredicates(join.getRightArg(), "urn:p3");
 	}
 
 	@Test
@@ -119,6 +168,8 @@ public class SparqlUoOptimizerTest extends QueryOptimizerTest {
 
 	private TupleExpr optimize(String query) {
 		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		UnionScopeChangeOptimizer scopeChangeOptimizer = new UnionScopeChangeOptimizer();
+		scopeChangeOptimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
 		QueryOptimizer optimizer = getOptimizer();
 		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
 		TupleExpr root = parsedQuery.getTupleExpr();

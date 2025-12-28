@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoQueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.SparqlUoConfig;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -60,6 +61,16 @@ class SparqlUoOptimizerSemanticEquivalenceTest {
 
 		assertEquivalentResults(
 				"SELECT ?s ?o2 WHERE { ?s <urn:p1> ?o OPTIONAL { ?s <urn:p2> ?o2 } }",
+				strategies
+		);
+
+		assertEquivalentResults(
+				"SELECT * WHERE { { ?s <urn:p1> ?o . ?s <urn:p2> ?x } UNION { ?s <urn:p1> ?o . ?s <urn:p3> ?y } }",
+				strategies
+		);
+
+		assertEquivalentResults(
+				"SELECT * WHERE { ?s <urn:p1> ?o OPTIONAL { ?s <urn:p2> ?o2 } ?s <urn:p3> ?o3 }",
 				strategies
 		);
 	}
@@ -120,8 +131,9 @@ class SparqlUoOptimizerSemanticEquivalenceTest {
 				evaluationStatistics);
 		DefaultEvaluationStrategy optimized = new DefaultEvaluationStrategy(tripleSource, null, null, 0L,
 				evaluationStatistics);
+		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(true).build();
 		optimized.setOptimizerPipeline(new SparqlUoQueryOptimizerPipeline(optimized, tripleSource,
-				evaluationStatistics));
+				evaluationStatistics, config));
 		return new Strategies(baseline, optimized);
 	}
 

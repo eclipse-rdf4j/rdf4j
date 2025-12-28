@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.memory.benchmark;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
@@ -51,6 +53,7 @@ import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
+import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
 @Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 12)
@@ -84,11 +87,37 @@ public class ThemeQueryBenchmark {
 	private long expected;
 
 	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder()
-				.include("ThemeQueryBenchmark")
-				.forks(1)
-				.build();
-		new Runner(opt).run();
+		// combinations with >30 % and >0.02 ms difference
+		List<String[]> significant = new ArrayList<>();
+		significant.add(new String[] { "MEDICAL_RECORDS", "8" });
+		significant.add(new String[] { "SOCIAL_MEDIA", "2" });
+		significant.add(new String[] { "SOCIAL_MEDIA", "6" });
+		significant.add(new String[] { "ELECTRICAL_GRID", "1" });
+		significant.add(new String[] { "PHARMA", "4" });
+		significant.add(new String[] { "TRAIN", "9" });
+
+		// When no arguments are supplied, run the flagged combinations
+		if (args == null || args.length == 0) {
+			for (String[] combo : significant) {
+				String themeName = combo[0];
+				String queryIndex = combo[1];
+				Options opt = new OptionsBuilder()
+						.include(ThemeQueryBenchmark.class.getSimpleName() + ".executeQuery")
+						.param("themeName", themeName)
+						.param("x_queryIndex", queryIndex)
+						.param("z_useSparqlUo", "true", "false")
+						.warmupIterations(10)
+						.warmupTime(TimeValue.seconds(1))
+						.measurementIterations(5)
+						.measurementTime(TimeValue.seconds(1))
+						.forks(1)
+						.build();
+				new Runner(opt).run();
+			}
+		} else {
+			// fallback to default JMH behaviour
+			new Runner(new OptionsBuilder().build()).run();
+		}
 	}
 
 	@Setup(Level.Trial)

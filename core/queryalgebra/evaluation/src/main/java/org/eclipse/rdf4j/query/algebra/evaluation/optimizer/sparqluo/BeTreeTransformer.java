@@ -12,12 +12,26 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,6 +39,7 @@ public class BeTreeTransformer {
 	private static final Logger LOGGER = LoggerFactory.getLogger(BeTreeTransformer.class);
 	private final BeCostEstimator costEstimator;
 	private final BeBgpCoalescer coalescer = new BeBgpCoalescer();
+	private final BeTreeSerializer serializer = new BeTreeSerializer();
 	private final boolean allowNonImprovingTransforms;
 	private final boolean debugLogging;
 
@@ -64,6 +79,8 @@ public class BeTreeTransformer {
 	}
 
 	private void singleLevelTransform(BeGroupNode group) {
+		Set<BeUnionNode> unionsMergedThisPass = Collections.newSetFromMap(new IdentityHashMap<>());
+		applyOptionalJoinLifting(group);
 		int index = 0;
 		while (index < group.size()) {
 			BeNode node = group.getChild(index);
@@ -77,11 +94,72 @@ public class BeTreeTransformer {
 			MergeCandidate bestMerge = decideMerge(group, index, bgp, segment);
 			if (bestMerge != null && (bestMerge.deltaCost < 0.0 || allowNonImprovingTransforms)) {
 				performMerge(group, index, bgp, bestMerge.union);
+				unionsMergedThisPass.add(bestMerge.union);
 				continue;
 			}
 
 			applyInjects(group, index, bgp, segment);
 			index++;
+		}
+
+		applyUnionCommonPrefixPullUp(group, unionsMergedThisPass);
+	}
+
+	private void applyOptionalJoinLifting(BeGroupNode group) {
+		int index = 0;
+		while (index < group.size()) {
+			BeNode node = group.getChild(index);
+			if (!(node instanceof BeOptionalNode)) {
+				index++;
+				continue;
+			}
+			int optionalIndex = index;
+			BeOptionalNode optional = (BeOptionalNode) node;
+			Set<String> rightBindingNames = optionalRightBindingNames(optional);
+			Segment segment = segmentForIndex(group, optionalIndex);
+			int candidateIndex = optionalIndex + 1;
+			while (candidateIndex <= segment.end) {
+				BeNode candidate = group.getChild(candidateIndex);
+				if (candidate instanceof BeOptionalNode) {
+					break;
+				}
+				if (!(candidate instanceof BeBgpNode || candidate instanceof BeUnionNode)) {
+					candidateIndex++;
+					continue;
+				}
+				Set<String> assured = buildPrefixExpr(group, optionalIndex).getAssuredBindingNames();
+				Set<String> shared = new HashSet<>(bindingNames(candidate));
+				shared.retainAll(rightBindingNames);
+				if (!assured.containsAll(shared)) {
+					candidateIndex++;
+					continue;
+				}
+				double baseCost = costEstimator.estimateGroupCost(group);
+				BeUndoToken undo = new BeUndoToken();
+				undo.capture(group);
+				group.removeChild(candidateIndex);
+				group.addChild(optionalIndex, candidate);
+				coalescer.coalesce(group);
+				double newCost = costEstimator.estimateGroupCost(group);
+				double delta = newCost - baseCost;
+				logDecision("lift", candidate, optional, baseCost, newCost, delta);
+				if (delta >= 0.0 && !allowNonImprovingTransforms) {
+					logDecision("lift-reject", candidate, optional, baseCost, newCost, delta);
+					undo.undo();
+					candidateIndex++;
+					continue;
+				}
+				logDecision("lift-accept", candidate, optional, baseCost, newCost, delta);
+				optionalIndex++;
+				if (optionalIndex >= group.size() || !(group.getChild(optionalIndex) instanceof BeOptionalNode)) {
+					break;
+				}
+				optional = (BeOptionalNode) group.getChild(optionalIndex);
+				rightBindingNames = optionalRightBindingNames(optional);
+				segment = segmentForIndex(group, optionalIndex);
+				candidateIndex = optionalIndex + 1;
+			}
+			index = optionalIndex + 1;
 		}
 	}
 
@@ -106,6 +184,49 @@ public class BeTreeTransformer {
 			} else {
 				logDecision("inject-accept", bgp, optional, baseCost, newCost, delta);
 			}
+		}
+	}
+
+	private void applyUnionCommonPrefixPullUp(BeGroupNode group, Set<BeUnionNode> unionsMergedThisPass) {
+		int index = 0;
+		while (index < group.size()) {
+			BeNode node = group.getChild(index);
+			if (!(node instanceof BeUnionNode)) {
+				index++;
+				continue;
+			}
+			BeUnionNode union = (BeUnionNode) node;
+			if (union.isVariableScopeChange() || unionsMergedThisPass.contains(union)) {
+				index++;
+				continue;
+			}
+			List<StatementPattern> common = collectCommonLeadingPatterns(union);
+			if (common.isEmpty()) {
+				index++;
+				continue;
+			}
+			double baseCost = costEstimator.estimateGroupCost(group);
+			BeUndoToken undo = new BeUndoToken();
+			undo.capture(group);
+			Map<StatementPatternKey, Integer> removalCounts = countPatterns(common);
+			for (BeGroupNode branch : union.getBranches()) {
+				undo.capture(branch);
+				removeLeadingPatterns(branch, new HashMap<>(removalCounts));
+				coalescer.coalesce(branch);
+			}
+			BeBgpNode pulledBgp = new BeBgpNode(clonePatterns(common));
+			group.addChild(index, pulledBgp);
+			coalescer.coalesce(group);
+			double newCost = costEstimator.estimateGroupCost(group);
+			double delta = newCost - baseCost;
+			logDecision("pull-up", pulledBgp, union, baseCost, newCost, delta);
+			if (delta >= 0.0 && !allowNonImprovingTransforms) {
+				logDecision("pull-up-reject", pulledBgp, union, baseCost, newCost, delta);
+				undo.undo();
+			} else {
+				logDecision("pull-up-accept", pulledBgp, union, baseCost, newCost, delta);
+			}
+			index++;
 		}
 	}
 
@@ -214,6 +335,151 @@ public class BeTreeTransformer {
 		return new BeBgpNode(clones);
 	}
 
+	private List<StatementPattern> clonePatterns(List<StatementPattern> patterns) {
+		List<StatementPattern> clones = new ArrayList<>(patterns.size());
+		for (StatementPattern pattern : patterns) {
+			clones.add(pattern.clone());
+		}
+		return clones;
+	}
+
+	private List<StatementPattern> collectCommonLeadingPatterns(BeUnionNode union) {
+		if (union.getBranches().isEmpty()) {
+			return Collections.emptyList();
+		}
+		List<StatementPattern> firstPatterns = leadingStatementPatterns(union.getBranches().get(0));
+		if (firstPatterns.isEmpty()) {
+			return Collections.emptyList();
+		}
+		Map<StatementPatternKey, Integer> minCounts = countPatterns(firstPatterns);
+		for (int i = 1; i < union.getBranches().size(); i++) {
+			List<StatementPattern> branchPatterns = leadingStatementPatterns(union.getBranches().get(i));
+			if (branchPatterns.isEmpty()) {
+				return Collections.emptyList();
+			}
+			Map<StatementPatternKey, Integer> branchCounts = countPatterns(branchPatterns);
+			for (StatementPatternKey key : new HashSet<>(minCounts.keySet())) {
+				Integer count = branchCounts.get(key);
+				if (count == null || count == 0) {
+					minCounts.remove(key);
+				} else {
+					minCounts.put(key, Math.min(minCounts.get(key), count));
+				}
+			}
+			if (minCounts.isEmpty()) {
+				return Collections.emptyList();
+			}
+		}
+		List<StatementPattern> common = new ArrayList<>();
+		Map<StatementPatternKey, Integer> remaining = new HashMap<>(minCounts);
+		for (StatementPattern pattern : firstPatterns) {
+			StatementPatternKey key = StatementPatternKey.of(pattern);
+			Integer count = remaining.get(key);
+			if (count != null && count > 0) {
+				common.add(pattern);
+				remaining.put(key, count - 1);
+			}
+		}
+		return common;
+	}
+
+	private List<StatementPattern> leadingStatementPatterns(BeGroupNode branch) {
+		List<StatementPattern> patterns = new ArrayList<>();
+		for (BeNode child : branch.getChildren()) {
+			if (!(child instanceof BeBgpNode)) {
+				break;
+			}
+			patterns.addAll(((BeBgpNode) child).getStatementPatterns());
+		}
+		return patterns;
+	}
+
+	private Map<StatementPatternKey, Integer> countPatterns(List<StatementPattern> patterns) {
+		Map<StatementPatternKey, Integer> counts = new HashMap<>();
+		for (StatementPattern pattern : patterns) {
+			StatementPatternKey key = StatementPatternKey.of(pattern);
+			counts.merge(key, 1, Integer::sum);
+		}
+		return counts;
+	}
+
+	private void removeLeadingPatterns(BeGroupNode branch, Map<StatementPatternKey, Integer> removalCounts) {
+		List<BeNode> rebuilt = new ArrayList<>();
+		boolean inLeadingBgp = true;
+		for (BeNode child : branch.getChildren()) {
+			if (inLeadingBgp && child instanceof BeBgpNode) {
+				List<StatementPattern> kept = new ArrayList<>();
+				for (StatementPattern pattern : ((BeBgpNode) child).getStatementPatterns()) {
+					StatementPatternKey key = StatementPatternKey.of(pattern);
+					Integer remaining = removalCounts.get(key);
+					if (remaining != null && remaining > 0) {
+						removalCounts.put(key, remaining - 1);
+						continue;
+					}
+					kept.add(pattern);
+				}
+				if (!kept.isEmpty()) {
+					rebuilt.add(new BeBgpNode(kept));
+				}
+				continue;
+			}
+			inLeadingBgp = false;
+			rebuilt.add(child);
+		}
+		branch.replaceChildren(rebuilt);
+	}
+
+	private Set<String> optionalRightBindingNames(BeOptionalNode optional) {
+		Set<String> names = new HashSet<>(bindingNames(optional.getRight()));
+		names.addAll(conditionBindingNames(optional.getCondition()));
+		return names;
+	}
+
+	private Set<String> bindingNames(BeNode node) {
+		return serializer.serialize(node).getBindingNames();
+	}
+
+	private Set<String> conditionBindingNames(ValueExpr condition) {
+		if (condition == null) {
+			return Collections.emptySet();
+		}
+		Set<String> names = new HashSet<>();
+		condition.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (!var.hasValue()) {
+					names.add(var.getName());
+				}
+			}
+		});
+		return names;
+	}
+
+	private TupleExpr buildPrefixExpr(BeGroupNode group, int endExclusive) {
+		TupleExpr expr = null;
+		for (int i = 0; i < endExclusive; i++) {
+			BeNode child = group.getChild(i);
+			TupleExpr childExpr = serializer.serialize(child);
+			if (expr == null) {
+				expr = childExpr;
+				continue;
+			}
+			if (child instanceof BeOptionalNode) {
+				expr = toLeftJoin(expr, (BeOptionalNode) child, childExpr);
+			} else {
+				expr = new Join(expr, childExpr);
+			}
+		}
+		return expr != null ? expr : new SingletonSet();
+	}
+
+	private TupleExpr toLeftJoin(TupleExpr left, BeOptionalNode optional, TupleExpr right) {
+		if (optional.getCondition() == null) {
+			return new LeftJoin(left, right);
+		}
+		return new LeftJoin(left, right, optional.getCondition().clone());
+	}
+
 	private boolean coalescable(BeBgpNode left, BeBgpNode right) {
 		for (StatementPattern leftPattern : left.getStatementPatterns()) {
 			for (StatementPattern rightPattern : right.getStatementPatterns()) {
@@ -254,6 +520,84 @@ public class BeTreeTransformer {
 	private void collectVar(List<String> target, Var var) {
 		if (var != null && !var.hasValue()) {
 			target.add(var.getName());
+		}
+	}
+
+	private static final class StatementPatternKey {
+		private final String subject;
+		private final String predicate;
+		private final String object;
+		private final String context;
+
+		private StatementPatternKey(String subject, String predicate, String object, String context) {
+			this.subject = subject;
+			this.predicate = predicate;
+			this.object = object;
+			this.context = context;
+		}
+
+		static StatementPatternKey of(StatementPattern pattern) {
+			return new StatementPatternKey(
+					varKey(pattern.getSubjectVar()),
+					varKey(pattern.getPredicateVar()),
+					varKey(pattern.getObjectVar()),
+					varKey(pattern.getContextVar()));
+		}
+
+		private static String varKey(Var var) {
+			if (var == null) {
+				return "_";
+			}
+			if (var.hasValue()) {
+				return valueKey(var.getValue());
+			}
+			String suffix = var.isAnonymous() ? "#anon" : "";
+			return "?" + var.getName() + suffix;
+		}
+
+		private static String valueKey(Value value) {
+			if (value instanceof IRI) {
+				return "<" + ((IRI) value).stringValue() + ">";
+			}
+			if (value instanceof Literal) {
+				Literal literal = (Literal) value;
+				StringBuilder builder = new StringBuilder();
+				builder.append("\"").append(literal.getLabel()).append("\"");
+				if (literal.getLanguage().isPresent()) {
+					builder.append("@").append(literal.getLanguage().get());
+				} else if (literal.getDatatype() != null) {
+					builder.append("^^<").append(literal.getDatatype().stringValue()).append(">");
+				}
+				return builder.toString();
+			}
+			if (value instanceof BNode) {
+				return "_:" + ((BNode) value).getID();
+			}
+			return value.stringValue();
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof StatementPatternKey)) {
+				return false;
+			}
+			StatementPatternKey that = (StatementPatternKey) other;
+			return subject.equals(that.subject)
+					&& predicate.equals(that.predicate)
+					&& object.equals(that.object)
+					&& context.equals(that.context);
+		}
+
+		@Override
+		public int hashCode() {
+			int result = subject.hashCode();
+			result = 31 * result + predicate.hashCode();
+			result = 31 * result + object.hashCode();
+			result = 31 * result + context.hashCode();
+			return result;
 		}
 	}
 

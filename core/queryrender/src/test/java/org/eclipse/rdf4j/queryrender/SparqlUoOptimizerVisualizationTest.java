@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOptimizer;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -101,6 +102,7 @@ public class SparqlUoOptimizerVisualizationTest {
 					PREFIXES + "SELECT ?s ?o ?o2 WHERE {\n" +
 							"  ?s ex:p1 ?o .\n" +
 							"  OPTIONAL {\n" +
+							"    ?s ex:p1 ?o .\n" +
 							"    ?s ex:p2 ?o2 .\n" +
 							"    FILTER (?o > 5)\n" +
 							"  }\n" +
@@ -132,6 +134,19 @@ public class SparqlUoOptimizerVisualizationTest {
 							"  SERVICE ex:svc {\n" +
 							"    ?s ex:p2 ?o2 .\n" +
 							"  }\n" +
+							"}"),
+			new Example("counter_optional_lift_shared_optional_only_vars",
+					PREFIXES + "SELECT * WHERE {\n" +
+							"  ?s ex:p1 ?o\n" +
+							"  OPTIONAL { ?x ex:p2 ?y }\n" +
+							"  ?x ex:p3 ?y\n" +
+							"}\n",
+					PREFIXES + "SELECT ?s ?o ?x ?y WHERE {\n" +
+							"  ?s ex:p1 ?o .\n" +
+							"  OPTIONAL {\n" +
+							"    ?x ex:p2 ?y .\n" +
+							"  }\n" +
+							"  ?x ex:p3 ?y .\n" +
 							"}")
 	);
 
@@ -202,18 +217,16 @@ public class SparqlUoOptimizerVisualizationTest {
 							"}\n",
 					PREFIXES + "SELECT ?s ?o ?o2 ?o3 ?o4 WHERE {\n" +
 							"  {\n" +
+							"    ?s ex:p1 ?o .\n" +
 							"    {\n" +
-							"      ?s ex:p1 ?o .\n" +
-							"      {\n" +
-							"        ?s ex:p2 ?o2 .\n" +
-							"      }\n" +
+							"      ?s ex:p2 ?o2 .\n" +
 							"    }\n" +
-							"    UNION\n" +
+							"  }\n" +
+							"  UNION\n" +
+							"  {\n" +
+							"    ?s ex:p1 ?o .\n" +
 							"    {\n" +
-							"      ?s ex:p1 ?o .\n" +
-							"      {\n" +
-							"        ?s ex:p3 ?o3 .\n" +
-							"      }\n" +
+							"      ?s ex:p3 ?o3 .\n" +
 							"    }\n" +
 							"  }\n" +
 							"  UNION\n" +
@@ -288,6 +301,35 @@ public class SparqlUoOptimizerVisualizationTest {
 							"      ?s ex:p3 ?o3 .\n" +
 							"    }\n" +
 							"  }\n" +
+							"}"),
+			new Example("pullup_union_common_prefix",
+					PREFIXES + "SELECT * WHERE {\n" +
+							"  { ?s ex:p1 ?o . ?s ex:p2 ?x } UNION { ?s ex:p1 ?o . ?s ex:p3 ?y }\n" +
+							"}\n",
+					PREFIXES + "SELECT ?s ?o ?x ?y WHERE {\n" +
+							"  ?s ex:p1 ?o .\n" +
+							"  {\n" +
+							"    ?s ex:p2 ?x .\n" +
+							"  }\n" +
+							"  UNION\n" +
+							"  {\n" +
+							"    ?s ex:p3 ?y .\n" +
+							"  }\n" +
+							"}"),
+			new Example("lift_optional_safe",
+					PREFIXES + "SELECT * WHERE {\n" +
+							"  ?s ex:p1 ?o\n" +
+							"  OPTIONAL { ?s ex:p2 ?o2 }\n" +
+							"  ?s ex:p3 ?o3\n" +
+							"}\n",
+					PREFIXES + "SELECT ?s ?o ?o2 ?o3 WHERE {\n" +
+							"  ?s ex:p1 ?o .\n" +
+							"  ?s ex:p3 ?o3 .\n" +
+							"  OPTIONAL {\n" +
+							"    ?s ex:p1 ?o .\n" +
+							"    ?s ex:p3 ?o3 .\n" +
+							"    ?s ex:p2 ?o2 .\n" +
+							"  }\n" +
 							"}")
 	);
 
@@ -302,6 +344,7 @@ public class SparqlUoOptimizerVisualizationTest {
 		String before = render(original, style);
 
 		TupleExpr optimized = original.clone();
+		new UnionScopeChangeOptimizer().optimize(optimized, DATASET, BINDINGS);
 		new SparqlUoOptimizer(new FixedEvaluationStatistics(), true)
 				.optimize(optimized, DATASET, BINDINGS);
 		String after = render(optimized, style);
