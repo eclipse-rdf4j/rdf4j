@@ -40,6 +40,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private final String[] joinAttributes;
 	private final Set<String> rightBindingNames;
 	private final boolean cacheableCondition;
+	private final boolean nonDeterministicRight;
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context) {
@@ -99,6 +100,8 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		this.rightBindingNames = leftJoin.getRightArg().getBindingNames();
 		this.cacheableCondition = !leftJoin.hasCondition()
 				|| rightBindingNames.containsAll(VarNameCollector.process(leftJoin.getCondition()));
+		this.nonDeterministicRight = DeterminismChecks.containsNonDeterministicFunction(leftJoin.getRightArg())
+				|| DeterminismChecks.containsNonDeterministicFunction(leftJoin.getCondition());
 		this.wellDesignedRightEvaluationStep = determineRightEvaluationStep(
 				leftJoin,
 				right,
@@ -120,7 +123,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 		if (containsNone) {
 			// left join is "well designed"
-			if (JoinKeyCacheIterator.isEnabled(joinAttributes) && cacheableCondition) {
+			if (JoinKeyCacheIterator.isEnabled(joinAttributes) && cacheableCondition && !nonDeterministicRight) {
 				leftJoin.setAlgorithm(LeftJoinKeyCacheIterator.class.getSimpleName());
 				return LeftJoinKeyCacheIterator.getInstance(left, wellDesignedRightEvaluationStep, bindings,
 						joinAttributes, rightBindingNames, context);

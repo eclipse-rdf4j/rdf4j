@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -73,23 +74,30 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	protected final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
 	private final TripleSource tripleSource;
+	private final boolean prioritizeExtensions;
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics) {
-		this(statistics, false, new EmptyTripleSource());
+		this(statistics, false, new EmptyTripleSource(), true);
 	}
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics, TripleSource tripleSource) {
-		this(statistics, false, tripleSource);
+		this(statistics, false, tripleSource, true);
 	}
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize) {
-		this(statistics, trackResultSize, new EmptyTripleSource());
+		this(statistics, trackResultSize, new EmptyTripleSource(), true);
 	}
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource) {
+		this(statistics, trackResultSize, tripleSource, true);
+	}
+
+	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource,
+			boolean prioritizeExtensions) {
 		this.statistics = statistics;
 		this.trackResultSize = trackResultSize;
 		this.tripleSource = tripleSource;
+		this.prioritizeExtensions = prioritizeExtensions;
 	}
 
 	/**
@@ -546,20 +554,74 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return List.of();
 			}
 
+			if (prioritizeExtensions) {
+				return collectExtensionTupleExprs(expressions);
+			}
+
+			Map<String, Integer> bindingNameCounts = getBindingNameCounts(expressions);
 			List<TupleExpr> extensions = List.of();
 			for (TupleExpr expr : expressions) {
-				if (TupleExprs.containsExtension(expr)) {
-					if (extensions.isEmpty()) {
-						extensions = List.of(expr);
-					} else {
-						if (extensions.size() == 1) {
-							extensions = new ArrayList<>(extensions);
-						}
-						extensions.add(expr);
+				if (!TupleExprs.containsExtension(expr)) {
+					continue;
+				}
+
+				if (!(expr instanceof Extension)) {
+					extensions = addTupleExpr(extensions, expr);
+					continue;
+				}
+
+				Extension extension = (Extension) expr;
+				Set<String> introducedBindings = new HashSet<>(extension.getBindingNames());
+				introducedBindings.removeAll(extension.getArg().getBindingNames());
+				if (introducedBindings.isEmpty()) {
+					continue;
+				}
+
+				boolean usedElsewhere = false;
+				for (String name : introducedBindings) {
+					Integer count = bindingNameCounts.get(name);
+					if (count != null && count > 1) {
+						usedElsewhere = true;
+						break;
 					}
+				}
+
+				if (usedElsewhere) {
+					extensions = addTupleExpr(extensions, expr);
 				}
 			}
 			return extensions;
+		}
+
+		private List<TupleExpr> collectExtensionTupleExprs(List<TupleExpr> expressions) {
+			List<TupleExpr> extensions = List.of();
+			for (TupleExpr expr : expressions) {
+				if (TupleExprs.containsExtension(expr)) {
+					extensions = addTupleExpr(extensions, expr);
+				}
+			}
+			return extensions;
+		}
+
+		private List<TupleExpr> addTupleExpr(List<TupleExpr> expressions, TupleExpr expr) {
+			if (expressions.isEmpty()) {
+				return List.of(expr);
+			}
+			if (expressions.size() == 1) {
+				expressions = new ArrayList<>(expressions);
+			}
+			expressions.add(expr);
+			return expressions;
+		}
+
+		private Map<String, Integer> getBindingNameCounts(List<TupleExpr> expressions) {
+			Map<String, Integer> counts = new HashMap<>();
+			for (TupleExpr expr : expressions) {
+				for (String name : expr.getBindingNames()) {
+					counts.merge(name, 1, Integer::sum);
+				}
+			}
+			return counts;
 		}
 
 		/**

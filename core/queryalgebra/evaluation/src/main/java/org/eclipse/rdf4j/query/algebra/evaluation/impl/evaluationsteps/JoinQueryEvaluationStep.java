@@ -14,6 +14,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -52,8 +53,11 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 					context.getComparator(), context.getValue(join.getOrder().getName()), context);
 			join.setAlgorithm(InnerMergeJoinIterator.class.getSimpleName());
 		} else {
-			if (JoinKeyCacheIterator.isEnabled(joinAttributes)) {
-				Set<String> rightBindingNames = join.getRightArg().getBindingNames();
+			boolean nonDeterministicRight = DeterminismChecks.containsNonDeterministicFunction(join.getRightArg());
+			Set<String> rightBindingNames = join.getRightArg().getBindingNames();
+			boolean cacheableRight = !(join.getRightArg() instanceof BindingSetAssignment)
+					&& joinAttributes.length < rightBindingNames.size();
+			if (JoinKeyCacheIterator.isEnabled(joinAttributes) && !nonDeterministicRight && cacheableRight) {
 				eval = bindings -> JoinKeyCacheIterator.getInstance(leftPrepared, rightPrepared, bindings,
 						joinAttributes, rightBindingNames, context);
 				join.setAlgorithm(JoinKeyCacheIterator.class.getSimpleName());

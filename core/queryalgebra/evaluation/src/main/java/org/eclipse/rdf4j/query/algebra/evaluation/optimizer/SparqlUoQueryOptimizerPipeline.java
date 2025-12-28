@@ -25,6 +25,7 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
 	private final QueryOptimizerPipeline delegate;
 	private final SparqlUoOptimizer sparqlUoOptimizer;
+	private final QueryJoinOptimizer joinOptimizer;
 
 	public SparqlUoQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
@@ -35,6 +36,8 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 			EvaluationStatistics evaluationStatistics, SparqlUoConfig config) {
 		this.delegate = new StandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);
 		this.sparqlUoOptimizer = new SparqlUoOptimizer(evaluationStatistics, config);
+		this.joinOptimizer = new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource,
+				false);
 	}
 
 	@Override
@@ -42,9 +45,13 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		List<QueryOptimizer> optimizers = new ArrayList<>();
 		boolean inserted = false;
 		for (QueryOptimizer optimizer : delegate.getOptimizers()) {
-			if (!inserted && optimizer instanceof QueryJoinOptimizer) {
-				optimizers.add(sparqlUoOptimizer);
-				inserted = true;
+			if (optimizer instanceof QueryJoinOptimizer) {
+				if (!inserted) {
+					optimizers.add(sparqlUoOptimizer);
+					inserted = true;
+				}
+				optimizers.add(joinOptimizer);
+				continue;
 			}
 			optimizers.add(optimizer);
 		}
