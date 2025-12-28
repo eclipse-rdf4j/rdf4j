@@ -57,7 +57,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 public class ThemeQueryBenchmark {
 
 	@Param({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" })
-	public int z_queryIndex;
+	public int x_queryIndex;
 
 	@Param({
 			"MEDICAL_RECORDS",
@@ -88,8 +88,8 @@ public class ThemeQueryBenchmark {
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
 		theme = Theme.valueOf(themeName);
-		query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
-		expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
+		query = ThemeQueryCatalog.queryFor(theme, x_queryIndex);
+		expected = ThemeQueryCatalog.expectedCountFor(theme, x_queryIndex);
 		dataDir = Files.newTemporaryFolder();
 		NativeStore sail = new NativeStore(dataDir, "spoc,ospc,psoc");
 		repository = new SailRepository(sail);
@@ -131,20 +131,20 @@ public class ThemeQueryBenchmark {
 	@Test
 	@Disabled
 	public void testQueryCounts() throws IOException {
-		String[] queryIndexes = paramValues("z_queryIndex");
+		String[] queryIndexes = paramValues("x_queryIndex");
 		String[] themeNames = paramValues("themeName");
 		for (String themeNameValue : themeNames) {
 			for (String queryIndexValue : queryIndexes) {
 				themeName = themeNameValue;
-				z_queryIndex = Integer.parseInt(queryIndexValue);
+				x_queryIndex = Integer.parseInt(queryIndexValue);
 				setup();
 				try {
 					long actual = executeQuery();
-					long expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
-					System.out.println("For theme " + themeName + " and query index " + z_queryIndex
+					long expected = ThemeQueryCatalog.expectedCountFor(theme, x_queryIndex);
+					System.out.println("For theme " + themeName + " and query index " + x_queryIndex
 							+ ", expected count is " + expected + " and actual count is " + actual);
 					assertEquals(expected, actual,
-							"Unexpected count for theme " + themeName + " and query index " + z_queryIndex);
+							"Unexpected count for theme " + themeName + " and query index " + x_queryIndex);
 				} finally {
 					tearDown();
 				}
@@ -154,19 +154,19 @@ public class ThemeQueryBenchmark {
 
 	@Test
 	public void testQueryExplanation() throws IOException {
-		String[] queryIndexes = paramValues("z_queryIndex");
+		String[] queryIndexes = paramValues("x_queryIndex");
 		String[] themeNames = paramValues("themeName");
 		for (String themeNameValue : themeNames) {
 			for (String queryIndexValue : queryIndexes) {
 				themeName = themeNameValue;
-				z_queryIndex = Integer.parseInt(queryIndexValue);
+				x_queryIndex = Integer.parseInt(queryIndexValue);
 				setup();
 				try (SailRepositoryConnection connection = repository.getConnection()) {
 					String explanation = connection
 							.prepareTupleQuery(query)
 							.explain(Explanation.Level.Executed)
 							.toString();
-					System.out.println("Query Explanation for theme " + themeName + " and query index " + z_queryIndex
+					System.out.println("Query Explanation for theme " + themeName + " and query index " + x_queryIndex
 							+ ":\n" + explanation);
 				} finally {
 					tearDown();
