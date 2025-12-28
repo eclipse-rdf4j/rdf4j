@@ -96,6 +96,26 @@ public class ThemeQueryBenchmark {
 		significant.add(new String[] { "PHARMA", "4" });
 		significant.add(new String[] { "TRAIN", "9" });
 
+		if (args != null && args.length >= 2) {
+			String themeName = args[0];
+			String queryIndex = args[1];
+			String useSparqlUo = args.length >= 3 ? args[2] : "both";
+			String[] uoValues = parseUseSparqlUo(useSparqlUo);
+			Options opt = new OptionsBuilder()
+					.include(ThemeQueryBenchmark.class.getSimpleName() + ".executeQuery")
+					.param("themeName", themeName)
+					.param("x_queryIndex", queryIndex)
+					.param("z_useSparqlUo", uoValues)
+					.warmupIterations(10)
+					.warmupTime(TimeValue.seconds(1))
+					.measurementIterations(5)
+					.measurementTime(TimeValue.seconds(1))
+					.forks(1)
+					.build();
+			new Runner(opt).run();
+			return;
+		}
+
 		// When no arguments are supplied, run the flagged combinations
 		if (args == null || args.length == 0) {
 			for (String[] combo : significant) {
@@ -114,10 +134,16 @@ public class ThemeQueryBenchmark {
 						.build();
 				new Runner(opt).run();
 			}
-		} else {
-			// fallback to default JMH behaviour
-			new Runner(new OptionsBuilder().build()).run();
+			return;
 		}
+
+		if (args != null && args.length == 1) {
+			System.err.println("Usage: ThemeQueryBenchmark <themeName> <queryIndex> [true|false|both]");
+			return;
+		}
+
+		// fallback to default JMH behaviour
+		new Runner(new OptionsBuilder().build()).run();
 	}
 
 	@Setup(Level.Trial)
@@ -239,5 +265,18 @@ public class ThemeQueryBenchmark {
 		factory.setQuerySolutionCacheThreshold(store.getIterationCacheSyncThreshold());
 		factory.setTrackResultSize(store.isTrackResultSize());
 		return factory;
+	}
+
+	private static String[] parseUseSparqlUo(String value) {
+		if (value == null || value.isBlank() || "both".equalsIgnoreCase(value)) {
+			return new String[] { "true", "false" };
+		}
+		if ("true".equalsIgnoreCase(value)) {
+			return new String[] { "true" };
+		}
+		if ("false".equalsIgnoreCase(value)) {
+			return new String[] { "false" };
+		}
+		throw new IllegalArgumentException("Unexpected z_useSparqlUo value: " + value);
 	}
 }

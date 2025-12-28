@@ -26,6 +26,7 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private final QueryOptimizerPipeline delegate;
 	private final SparqlUoOptimizer sparqlUoOptimizer;
 	private final BindingSetAssignmentUnionOptimizer bindingSetAssignmentUnionOptimizer;
+	private final UnionCommonFilterBindingSetOptimizer unionCommonFilterBindingSetOptimizer;
 	private final QueryJoinOptimizer joinOptimizer;
 
 	public SparqlUoQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
@@ -39,6 +40,7 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		this.sparqlUoOptimizer = new SparqlUoOptimizer(evaluationStatistics, config);
 		this.bindingSetAssignmentUnionOptimizer = new BindingSetAssignmentUnionOptimizer(
 				config.maxBindingSetAssignmentUnionSize());
+		this.unionCommonFilterBindingSetOptimizer = new UnionCommonFilterBindingSetOptimizer();
 		this.joinOptimizer = new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource,
 				false);
 	}
@@ -61,6 +63,9 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 			if (optimizer instanceof IterativeEvaluationOptimizer) {
 				optimizers.add(bindingSetAssignmentUnionOptimizer);
 				bindingSetUnionInserted = true;
+			}
+			if (optimizer instanceof FilterOptimizer) {
+				optimizers.add(unionCommonFilterBindingSetOptimizer);
 			}
 		}
 		if (!inserted) {
