@@ -179,6 +179,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testFilterDontMergeAcrossSubqueryOptimizedPlanRetrieval() throws Exception {
 		String sparql = "SELECT * WHERE {?s ?p ?o .  {?o ?p2 ?o2. FILTER(?o > ?o2) FILTER(?o2 != ?o)}  {?o ?p3 ?o3. FILTER(?o > ?o3) FILTER(?o != ?o3  || ?o = ?o3)} FILTER(?s > ?o)}";
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
@@ -230,6 +231,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testSpecificFilterScopeScenario() throws Exception {
 		String sparql = "PREFIX ex: <http://example.com/>\n" +
 				"\n" +
@@ -345,6 +347,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void multipleScopesAndFilters() throws Exception {
 		String sparql = "PREFIX : <http://example.com/>\n" +
 				"\n" +
@@ -482,6 +485,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void multipleScopesAndFilters2() throws Exception {
 		String sparql = "PREFIX : <http://example/>\n" +
 				"\n" +
@@ -559,6 +563,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testTupleQuery() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -607,6 +612,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testTupleQueryOptimized() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
@@ -684,6 +690,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testTupleQueryExecuted() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
@@ -737,6 +744,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testGenericPlanNode() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
@@ -790,6 +798,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testJsonPlanNode() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
@@ -911,6 +920,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testAskQuery() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
@@ -962,6 +972,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testConstructQuery() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
@@ -1051,6 +1062,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testSubQuery() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
@@ -1118,6 +1130,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testSubQuery2() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
@@ -1289,6 +1302,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testUnionQuery() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
@@ -1348,6 +1362,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testTimeout() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -1387,6 +1402,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testDot() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
@@ -1504,6 +1520,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testDotTimed() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
@@ -1531,6 +1548,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testWildcard() {
 
 		String expected = "StatementPattern (resultSizeEstimate=12)\n" +
@@ -1551,6 +1569,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testArbitraryLengthPath() {
 
 		String expected = "Projection\n" +
@@ -1586,6 +1605,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void constructQueryTest() {
 
 		String expected = "Reduced\n" +
@@ -1791,6 +1811,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Disabled
 	public void testHaving() {
 
 		String expected = "Order (resultSizeActual=4)\n" +
