@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 
 class ThemeQueryCatalogExpansionTest {
 
-	private static final int EXPANDED_QUERY_COUNT = 11;
+	private static final int EXPANDED_QUERY_COUNT = 14;
 
 	@Test
 	void eachThemeHasExpandedQueryCount() {
