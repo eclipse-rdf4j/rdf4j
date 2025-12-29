@@ -45,6 +45,7 @@ public class SparqlUoOptimizer implements QueryOptimizer {
 	private final BeTreeSerializer serializer = new BeTreeSerializer();
 	private final BeTreeTransformer transformer;
 	private final OptionalFilterJoinOptimizer optionalFilterJoinOptimizer = new OptionalFilterJoinOptimizer();
+	private final OptionalNotBoundFilterOptimizer optionalNotBoundFilterOptimizer = new OptionalNotBoundFilterOptimizer();
 
 	public SparqlUoOptimizer(EvaluationStatistics evaluationStatistics) {
 		this(evaluationStatistics, SparqlUoConfig.fromSystemProperties());
@@ -68,6 +69,7 @@ public class SparqlUoOptimizer implements QueryOptimizer {
 		tupleExpr.visit(new SparqlUoVisitor());
 		if (config.enableOptionalFilterJoin()) {
 			optionalFilterJoinOptimizer.optimize(tupleExpr, dataset, bindings);
+			optionalNotBoundFilterOptimizer.optimize(tupleExpr, dataset, bindings);
 		}
 	}
 

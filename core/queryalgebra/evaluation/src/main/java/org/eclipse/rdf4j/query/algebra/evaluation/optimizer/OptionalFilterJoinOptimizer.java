@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Coalesce;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -85,6 +86,14 @@ public class OptionalFilterJoinOptimizer implements QueryOptimizer {
 			return rightOnly.contains(((Bound) expr).getArg().getName());
 		}
 		if (expr instanceof If || expr instanceof Coalesce || expr instanceof Exists) {
+			return false;
+		}
+		if (expr instanceof FunctionCall) {
+			for (ValueExpr arg : ((FunctionCall) expr).getArgs()) {
+				if (requiresRightVars(arg, rightOnly)) {
+					return true;
+				}
+			}
 			return false;
 		}
 		if (expr instanceof Or) {
