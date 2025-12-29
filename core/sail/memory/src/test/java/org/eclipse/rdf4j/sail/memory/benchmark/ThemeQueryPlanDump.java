@@ -78,6 +78,8 @@ public final class ThemeQueryPlanDump {
 
 	private static void writeExplanation(SailRepository repository, Theme theme, int queryIndex, boolean useSparqlUo,
 			Path outputRoot) throws IOException {
+		System.out.println("Generating plan explanation for Theme=" + theme.name() + ", QueryIndex=" + queryIndex
+				+ ", UseSparqlUo=" + useSparqlUo);
 		String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
 		long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
 		String explanation = explain(repository, query);
