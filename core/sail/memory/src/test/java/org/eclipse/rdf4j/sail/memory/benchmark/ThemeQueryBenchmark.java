@@ -16,12 +16,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
@@ -56,7 +58,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 5, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
+@Warmup(iterations = 10, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms32G", "-Xmx32G" })
 @Measurement(iterations = 5, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
@@ -190,6 +192,36 @@ public class ThemeQueryBenchmark {
 		}
 	}
 
+	public long[] runQueryForTest() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			List<BindingSet> list = connection
+					.prepareTupleQuery(query)
+					.evaluate()
+					.stream()
+					.sorted((b1, b2) -> {
+						int hash1 = b1.toString().hashCode();
+						int hash2 = b2.toString().hashCode();
+						return Integer.compare(hash1, hash2);
+					})
+					.toList();
+
+			Long reduce = list.stream()
+					.map(Objects::toString)
+					.map(Objects::hashCode)
+					.map(l -> (long) l)
+					.reduce(-1L, Long::sum);
+
+			long count = list.size();
+
+			if (count != expected) {
+				throw new IllegalStateException("Unexpected count: expected " + expected + " but got " + count);
+			}
+
+			return new long[] { count, reduce };
+		}
+	}
+
 	@Test
 	@Disabled
 	public void testQueryCounts() throws IOException {
@@ -197,19 +229,41 @@ public class ThemeQueryBenchmark {
 		String[] themeNames = paramValues("themeName");
 		for (String themeNameValue : themeNames) {
 			for (String queryIndexValue : queryIndexes) {
-				themeName = themeNameValue;
-				x_queryIndex = Integer.parseInt(queryIndexValue);
-				setup();
-				try {
-					long actual = executeQuery();
-					long expected = ThemeQueryCatalog.expectedCountFor(theme, x_queryIndex);
-					System.out.println("For theme " + themeName + " and query index " + x_queryIndex
-							+ ", expected count is " + expected + " and actual count is " + actual);
-					assertEquals(expected, actual,
-							"Unexpected count for theme " + themeName + " and query index " + x_queryIndex);
-				} finally {
-					tearDown();
+
+				long prevHash = 0;
+
+				for (boolean useSparqlUo : List.of(true, false)) {
+					z_useSparqlUo = useSparqlUo;
+					System.out.println("Testing with z_useSparqlUo=" + z_useSparqlUo);
+
+					themeName = themeNameValue;
+					x_queryIndex = Integer.parseInt(queryIndexValue);
+					setup();
+					try {
+
+						long[] actualRes = runQueryForTest();
+
+						long actual = actualRes[0];
+						System.out.println("Computed hash: " + actualRes[1]);
+						long expected = ThemeQueryCatalog.expectedCountFor(theme, x_queryIndex);
+						System.out.println("For theme " + themeName + " and query index " + x_queryIndex
+								+ ", expected count is " + expected + " and actual count is " + actual);
+						assertEquals(expected, actual,
+								"Unexpected count for theme " + themeName + " and query index " + x_queryIndex);
+
+						if (prevHash != 0) {
+							assertEquals(prevHash, actualRes[1],
+									"Different result hashes for theme " + themeName + " and query index "
+											+ x_queryIndex);
+						}
+						prevHash = actualRes[1];
+						System.out.println();
+					} finally {
+						tearDown();
+					}
 				}
+				System.out.println("----------------------------------------");
+				System.out.println();
 			}
 		}
 	}

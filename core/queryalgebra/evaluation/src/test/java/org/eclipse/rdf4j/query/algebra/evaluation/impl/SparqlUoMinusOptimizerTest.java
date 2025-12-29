@@ -16,6 +16,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -23,11 +27,14 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoQueryOptimiz
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.SparqlUoConfig;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 class SparqlUoMinusOptimizerTest {
+
+	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
 	@Test
 	void removesMinusWhenNoSharedVariables() {
@@ -37,6 +44,49 @@ class SparqlUoMinusOptimizerTest {
 		TupleExpr expr = optimize(query, config);
 
 		assertThat(containsDifference(expr)).isFalse();
+	}
+
+	@Test
+	void removesMinusWhenRightSideIsGround() {
+		String query = "SELECT * WHERE { ?s <urn:p1> ?o MINUS { <urn:a> <urn:p2> <urn:b> } }";
+
+		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(true).build();
+		TupleExpr expr = optimize(query, config);
+
+		assertThat(containsDifference(expr)).isFalse();
+	}
+
+	@Test
+	void doesNotRemoveMinusWhenVariablesOverlap() {
+		String query = "SELECT * WHERE { ?s <urn:p1> ?o MINUS { ?s <urn:p2> ?x } }";
+
+		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(true).build();
+		TupleExpr expr = optimize(query, config);
+
+		assertThat(containsDifference(expr)).isTrue();
+	}
+
+	@Test
+	void doesNotRemoveMinusWhenOuterOptionalScopeBindsRightVariables() {
+		String query = "SELECT * WHERE { ?s <urn:p1> ?o OPTIONAL { BIND(1 AS ?maybe) MINUS { ?s <urn:p2> ?x } } }";
+
+		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(true).build();
+		TupleExpr expr = optimize(query, config);
+
+		assertThat(containsDifference(expr)).isTrue();
+	}
+
+	@Test
+	void doesNotRemoveMinusWhenIncomingBindingsShareVariables() {
+		String query = "SELECT * WHERE { ?s <urn:p1> ?o MINUS { ?x <urn:p2> ?y } }";
+
+		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(true).build();
+		MapBindingSet bindings = new MapBindingSet();
+		IRI boundValue = VF.createIRI("urn:bound");
+		bindings.addBinding("x", boundValue);
+		TupleExpr expr = optimize(query, config, bindings);
+
+		assertThat(containsDifference(expr)).isTrue();
 	}
 
 	@Test
@@ -88,6 +138,10 @@ class SparqlUoMinusOptimizerTest {
 	}
 
 	private static TupleExpr optimize(String query, SparqlUoConfig config) {
+		return optimize(query, config, EmptyBindingSet.getInstance());
+	}
+
+	private static TupleExpr optimize(String query, SparqlUoConfig config, BindingSet bindings) {
 		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		TupleExpr expr = parsedQuery.getTupleExpr();
 
@@ -97,7 +151,7 @@ class SparqlUoMinusOptimizerTest {
 				evaluationStatistics);
 		strategy.setOptimizerPipeline(
 				new SparqlUoQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics, config));
-		strategy.optimize(expr, evaluationStatistics, EmptyBindingSet.getInstance());
+		strategy.optimize(expr, evaluationStatistics, bindings);
 		return expr;
 	}
 
