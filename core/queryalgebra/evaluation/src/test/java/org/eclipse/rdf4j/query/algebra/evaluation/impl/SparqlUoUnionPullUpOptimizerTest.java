@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoQueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionCommonFilterBindingSetOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionCommonStatementPatternOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.SparqlUoConfig;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -57,6 +58,23 @@ class SparqlUoUnionPullUpOptimizerTest {
 
 		assertThat(counts.filterCount).isEqualTo(1);
 		assertThat(counts.bindingSetAssignmentCount).isEqualTo(1);
+		assertThat(counts.unionCount).isEqualTo(1);
+	}
+
+	@Test
+	void pullsCommonFilterStackOutOfUnionBranches() {
+		String query = "SELECT * WHERE { { ?s <urn:p1> ?name . FILTER(?name != \"\") FILTER(?name != \"x\") } "
+				+ "UNION { ?s <urn:p2> ?name . FILTER(?name != \"x\") FILTER(?name != \"\") } }";
+
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		TupleExpr expr = parsedQuery.getTupleExpr();
+
+		new UnionCommonFilterBindingSetOptimizer().optimize(expr, null, EmptyBindingSet.getInstance());
+
+		NodeCounts counts = new NodeCounts();
+		expr.visit(counts);
+
+		assertThat(counts.filterCount).isEqualTo(2);
 		assertThat(counts.unionCount).isEqualTo(1);
 	}
 

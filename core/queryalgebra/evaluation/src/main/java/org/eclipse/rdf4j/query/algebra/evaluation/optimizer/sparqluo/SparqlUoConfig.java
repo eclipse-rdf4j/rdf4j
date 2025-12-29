@@ -20,6 +20,7 @@ public final class SparqlUoConfig {
 	public static final String PROP_DEBUG_LOGGING = "rdf4j.sparqluo.debugLogging";
 	public static final String PROP_SIMULATE_JOIN_ORDER = "rdf4j.sparqluo.simulateJoinOrder";
 	public static final String PROP_MAX_BSA_UNION_DISTRIBUTION = "rdf4j.sparqluo.maxBindingSetAssignmentUnionSize";
+	public static final String PROP_ENABLE_MINUS_UNION_SPLIT = "rdf4j.sparqluo.enableMinusUnionSplit";
 
 	public static final boolean DEFAULT_ALLOW_NON_IMPROVING = false;
 	public static final double DEFAULT_VAR_DOMAIN = 10.0;
@@ -28,6 +29,7 @@ public final class SparqlUoConfig {
 	public static final boolean DEFAULT_DEBUG_LOGGING = false;
 	public static final boolean DEFAULT_SIMULATE_JOIN_ORDER = true;
 	public static final int DEFAULT_MAX_BSA_UNION_DISTRIBUTION = 32;
+	public static final boolean DEFAULT_ENABLE_MINUS_UNION_SPLIT = true;
 
 	private final boolean allowNonImprovingTransforms;
 	private final double assumedVarDomainCardinality;
@@ -36,6 +38,7 @@ public final class SparqlUoConfig {
 	private final boolean debugLogging;
 	private final boolean simulateJoinOrder;
 	private final int maxBindingSetAssignmentUnionSize;
+	private final boolean enableMinusUnionSplit;
 
 	private SparqlUoConfig(Builder builder) {
 		this.allowNonImprovingTransforms = builder.allowNonImprovingTransforms;
@@ -46,6 +49,7 @@ public final class SparqlUoConfig {
 		this.simulateJoinOrder = builder.simulateJoinOrder;
 		this.maxBindingSetAssignmentUnionSize = nonNegativeOrDefault(builder.maxBindingSetAssignmentUnionSize,
 				DEFAULT_MAX_BSA_UNION_DISTRIBUTION);
+		this.enableMinusUnionSplit = builder.enableMinusUnionSplit;
 	}
 
 	public static SparqlUoConfig defaultConfig() {
@@ -82,6 +86,10 @@ public final class SparqlUoConfig {
 		if (maxBsaUnion != null) {
 			builder.maxBindingSetAssignmentUnionSize(maxBsaUnion);
 		}
+		Boolean enableMinusUnionSplit = readBoolean(PROP_ENABLE_MINUS_UNION_SPLIT);
+		if (enableMinusUnionSplit != null) {
+			builder.enableMinusUnionSplit(enableMinusUnionSplit);
+		}
 		return builder.build();
 	}
 
@@ -115,6 +123,10 @@ public final class SparqlUoConfig {
 
 	public int maxBindingSetAssignmentUnionSize() {
 		return maxBindingSetAssignmentUnionSize;
+	}
+
+	public boolean enableMinusUnionSplit() {
+		return enableMinusUnionSplit;
 	}
 
 	private static Boolean readBoolean(String property) {
@@ -169,6 +181,7 @@ public final class SparqlUoConfig {
 		private boolean debugLogging = DEFAULT_DEBUG_LOGGING;
 		private boolean simulateJoinOrder = DEFAULT_SIMULATE_JOIN_ORDER;
 		private int maxBindingSetAssignmentUnionSize = DEFAULT_MAX_BSA_UNION_DISTRIBUTION;
+		private boolean enableMinusUnionSplit = DEFAULT_ENABLE_MINUS_UNION_SPLIT;
 
 		private Builder() {
 		}
@@ -205,6 +218,11 @@ public final class SparqlUoConfig {
 
 		public Builder maxBindingSetAssignmentUnionSize(int maxBindingSetAssignmentUnionSize) {
 			this.maxBindingSetAssignmentUnionSize = maxBindingSetAssignmentUnionSize;
+			return this;
+		}
+
+		public Builder enableMinusUnionSplit(boolean enableMinusUnionSplit) {
+			this.enableMinusUnionSplit = enableMinusUnionSplit;
 			return this;
 		}
 

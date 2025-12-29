@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -32,19 +33,31 @@ class SparqlUoMinusOptimizerTest {
 	void removesMinusWhenNoSharedVariables() {
 		String query = "SELECT * WHERE { ?s <urn:p1> ?o MINUS { ?x <urn:p2> ?y } }";
 
-		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
-		TupleExpr expr = parsedQuery.getTupleExpr();
-
-		EmptyTripleSource tripleSource = new EmptyTripleSource();
-		EvaluationStatistics evaluationStatistics = new EvaluationStatistics();
-		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, null, null, 0L,
-				evaluationStatistics);
 		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(true).build();
-		strategy.setOptimizerPipeline(
-				new SparqlUoQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics, config));
-		strategy.optimize(expr, evaluationStatistics, EmptyBindingSet.getInstance());
+		TupleExpr expr = optimize(query, config);
 
 		assertThat(containsDifference(expr)).isFalse();
+	}
+
+	@Test
+	void splitsMinusUnionWhenEnabled() {
+		String query = "SELECT * WHERE { ?s <urn:p1> ?o MINUS { { ?s <urn:p2> ?o } UNION { ?s <urn:p3> ?o } } }";
+		String property = SparqlUoConfig.PROP_ENABLE_MINUS_UNION_SPLIT;
+		String previous = System.getProperty(property);
+		System.setProperty(property, "true");
+		try {
+			SparqlUoConfig config = SparqlUoConfig.fromSystemProperties();
+			TupleExpr expr = optimize(query, config);
+			DifferenceStats stats = differenceStats(expr);
+			assertThat(stats.unionOnRight).isFalse();
+			assertThat(stats.count).isEqualTo(2);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
 	}
 
 	private static boolean containsDifference(TupleExpr expr) {
@@ -56,5 +69,45 @@ class SparqlUoMinusOptimizerTest {
 			}
 		});
 		return found.get();
+	}
+
+	private static DifferenceStats differenceStats(TupleExpr expr) {
+		AtomicInteger count = new AtomicInteger();
+		AtomicBoolean unionOnRight = new AtomicBoolean();
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Difference node) {
+				count.incrementAndGet();
+				if (node.getRightArg() instanceof org.eclipse.rdf4j.query.algebra.Union) {
+					unionOnRight.set(true);
+				}
+				super.meet(node);
+			}
+		});
+		return new DifferenceStats(count.get(), unionOnRight.get());
+	}
+
+	private static TupleExpr optimize(String query, SparqlUoConfig config) {
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		TupleExpr expr = parsedQuery.getTupleExpr();
+
+		EmptyTripleSource tripleSource = new EmptyTripleSource();
+		EvaluationStatistics evaluationStatistics = new EvaluationStatistics();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, null, null, 0L,
+				evaluationStatistics);
+		strategy.setOptimizerPipeline(
+				new SparqlUoQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics, config));
+		strategy.optimize(expr, evaluationStatistics, EmptyBindingSet.getInstance());
+		return expr;
+	}
+
+	private static final class DifferenceStats {
+		private final int count;
+		private final boolean unionOnRight;
+
+		private DifferenceStats(int count, boolean unionOnRight) {
+			this.count = count;
+			this.unionOnRight = unionOnRight;
+		}
 	}
 }
