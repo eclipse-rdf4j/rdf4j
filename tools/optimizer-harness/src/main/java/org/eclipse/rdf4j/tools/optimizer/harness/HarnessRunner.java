@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -29,6 +30,12 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CardinalityEstimator;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -40,6 +47,7 @@ public final class HarnessRunner {
 	private static final String OPTIMIZER_FLAG = "rdf4j.optimizer.unionOptional.enabled";
 	private static final String UNION_FLATTEN_FLAG = "rdf4j.optimizer.unionOptional.flatten.enabled";
 	private static final String UNION_REORDER_FLAG = "rdf4j.optimizer.unionOptional.unionReorder.enabled";
+	private static final String DUMP_PLANS_FLAG = "rdf4j.optimizer.unionOptional.dumpPlans";
 
 	public static void main(String[] args) throws Exception {
 		HarnessConfig config = HarnessConfig.fromArgs(args);
@@ -66,8 +74,10 @@ public final class HarnessRunner {
 
 	private static RunResult runProfile(String profileName, boolean enableOptimizers, List<Statement> statements,
 			List<QueryCase> queries, HarnessConfig config, Path csvPath) throws Exception {
-		PropertySnapshot snapshot = PropertySnapshot.capture(OPTIMIZER_FLAG, UNION_FLATTEN_FLAG, UNION_REORDER_FLAG);
+		PropertySnapshot snapshot = PropertySnapshot.capture(OPTIMIZER_FLAG, UNION_FLATTEN_FLAG, UNION_REORDER_FLAG,
+				DUMP_PLANS_FLAG);
 		applyOptimizerFlags(enableOptimizers);
+		boolean dumpPlans = isDumpPlansEnabled();
 		RunResult result = new RunResult(profileName);
 		Path plansDir = config.outputDir.resolve("plans");
 		Files.createDirectories(plansDir);
@@ -79,7 +89,7 @@ public final class HarnessRunner {
 			try (PlanMetricsWriter writer = new PlanMetricsWriter(csvPath)) {
 				for (QueryCase queryCase : queries) {
 					QueryOutcome outcome = executeQuery(connection, queryCase, writer, profileName, plansDir,
-							config);
+							config, dumpPlans);
 					result.outcomes.put(queryCase.id, outcome);
 					result.estimationErrors.addAll(outcome.estimationErrors);
 				}
@@ -92,7 +102,8 @@ public final class HarnessRunner {
 	}
 
 	private static QueryOutcome executeQuery(RepositoryConnection connection, QueryCase queryCase,
-			PlanMetricsWriter writer, String runId, Path plansDir, HarnessConfig config) throws IOException {
+			PlanMetricsWriter writer, String runId, Path plansDir, HarnessConfig config, boolean dumpPlans)
+			throws IOException {
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryCase.query);
 		Map<String, Long> multiset;
 		try (TupleQueryResult result = query.evaluate()) {
@@ -102,14 +113,73 @@ public final class HarnessRunner {
 
 		Explanation explanation = query.explain(Explanation.Level.Timed);
 		GenericPlanNode plan = explanation.toGenericPlanNode();
-		writer.writePlan(runId, queryCase.id, plan);
+		Map<String, CardinalityEstimator.Estimate> estimates = estimateNodeIds(explanation);
+		writer.writePlan(runId, queryCase.id, plan, estimates);
 
 		double totalTimeMs = plan.getTotalTimeActual() == null ? 0.0 : plan.getTotalTimeActual();
 		String planText = plan.toString();
+		if (dumpPlans) {
+			writePlanDumpForProfile(plansDir, queryCase.id, runId, planText);
+		}
 		List<EstimationError> errors = new ArrayList<>();
 		collectEstimationErrors(queryCase.id, plan, "0", errors);
 
 		return new QueryOutcome(multiset, totalTimeMs, planText, errors);
+	}
+
+	private static Map<String, CardinalityEstimator.Estimate> estimateNodeIds(Explanation explanation) {
+		QueryModelNode root = extractQueryRoot(explanation);
+		if (root == null) {
+			return Map.of();
+		}
+		CardinalityEstimator estimator = new CardinalityEstimator(new EvaluationStatistics());
+		Map<String, CardinalityEstimator.Estimate> estimates = new HashMap<>();
+		collectEstimates(root, "0", estimator, estimates);
+		return estimates;
+	}
+
+	private static QueryModelNode extractQueryRoot(Explanation explanation) {
+		Object tupleExpr = explanation.tupleExpr();
+		if (tupleExpr instanceof QueryRoot) {
+			return ((QueryRoot) tupleExpr).getArg();
+		}
+		if (tupleExpr instanceof QueryModelNode) {
+			return (QueryModelNode) tupleExpr;
+		}
+		return null;
+	}
+
+	private static void collectEstimates(QueryModelNode node, String nodeId, CardinalityEstimator estimator,
+			Map<String, CardinalityEstimator.Estimate> estimates) {
+		if (node instanceof TupleExpr) {
+			estimates.put(nodeId, estimator.estimate((TupleExpr) node));
+		}
+		List<QueryModelNode> children = getChildren(node);
+		for (int i = 0; i < children.size(); i++) {
+			collectEstimates(children.get(i), nodeId + "." + i, estimator, estimates);
+		}
+	}
+
+	private static List<QueryModelNode> getChildren(QueryModelNode node) {
+		QueryModelChildrenVisitor visitor = new QueryModelChildrenVisitor();
+		node.visitChildren(visitor);
+		return visitor.getChildren();
+	}
+
+	private static final class QueryModelChildrenVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+		private List<QueryModelNode> children;
+
+		@Override
+		public void meetNode(QueryModelNode node) {
+			if (children == null) {
+				children = new ArrayList<>();
+			}
+			children.add(node);
+		}
+
+		List<QueryModelNode> getChildren() {
+			return children == null ? Collections.emptyList() : children;
+		}
 	}
 
 	private static void compareResults(RunResult baseline, RunResult candidate, HarnessConfig config)
@@ -160,6 +230,12 @@ public final class HarnessRunner {
 		Path candidatePath = plansDir.resolve("query-" + queryId + "-candidate.txt");
 		Files.writeString(baselinePath, baselinePlan, StandardCharsets.UTF_8);
 		Files.writeString(candidatePath, candidatePlan, StandardCharsets.UTF_8);
+	}
+
+	private static void writePlanDumpForProfile(Path plansDir, String queryId, String profile, String planText)
+			throws IOException {
+		Path planPath = plansDir.resolve("query-" + queryId + "-" + profile + ".txt");
+		Files.writeString(planPath, planText, StandardCharsets.UTF_8);
 	}
 
 	private static Map<String, Long> toMultiset(List<BindingSet> bindings) {
@@ -217,6 +293,10 @@ public final class HarnessRunner {
 		System.setProperty(OPTIMIZER_FLAG, value);
 		System.setProperty(UNION_FLATTEN_FLAG, value);
 		System.setProperty(UNION_REORDER_FLAG, value);
+	}
+
+	private static boolean isDumpPlansEnabled() {
+		return Boolean.parseBoolean(System.getProperty(DUMP_PLANS_FLAG, "false"));
 	}
 
 	private static final class RunResult {

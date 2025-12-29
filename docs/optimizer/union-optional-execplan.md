@@ -20,6 +20,10 @@ The goal is to make UNION and OPTIONAL (LeftJoin) queries faster without changin
 - [x] (2025-12-27 22:07+01:00) Add harness profiles + candidate flags
 - [x] (2025-12-27 22:07+01:00) Add independent OPTIONAL harness case
 - [x] (2025-12-27 22:12+01:00) Refine estimator and expand harness
+- [x] (2025-12-27 22:27+01:00) Add UNION/OPTIONAL semantic trap tests
+- [x] (2025-12-27 22:39+01:00) Add dump-plans debug hook in harness
+- [x] (2025-12-27 22:47+01:00) Log rewrite applications when dump-plans enabled
+- [x] (2025-12-27 22:56+01:00) Add CardinalityEstimator with rows/work estimates
 
 ## Surprises & Discoveries
 
@@ -37,6 +41,12 @@ Decision: Add `--profile` presets and enable UNION optimizer flags for candidate
 
 Decision: Guard UNION arm reordering with a minimum cost ratio (`rdf4j.optimizer.unionOptional.unionReorder.minRatio`, default 1.5). Rationale: avoid reordering when estimates are too close to be reliable. Date/Author: 2025-12-27 / Codex.
 
+Decision: Add `rdf4j.optimizer.unionOptional.dumpPlans` support in the harness to emit per-query plan dumps when enabled. Rationale: provide the required debug hook without changing core optimizer semantics. Date/Author: 2025-12-27 / Codex.
+
+Decision: Emit debug logs for UNION rewrites when `rdf4j.optimizer.unionOptional.dumpPlans=true` and debug logging is enabled. Rationale: satisfy the observability requirement without changing semantics. Date/Author: 2025-12-27 / Codex.
+
+Decision: Introduce a lightweight `CardinalityEstimator` that wraps `EvaluationStatistics` and provides rows/work estimates for Union, Join, LeftJoin, and Filter. Rationale: enable cost-aware UNION reordering without changing SPARQL semantics. Date/Author: 2025-12-27 / Codex.
+
 ## Outcomes & Retrospective
 
 Milestone A is complete. The harness module builds and runs on a small profile, writing baseline and candidate CSV plus summary files under `tools/optimizer-harness/target/harness/run-<timestamp>/`. No optimizer behavior changes yet; candidate equals baseline.
@@ -46,6 +56,11 @@ The rewrites and rollout docs describe safe transformations and toggles.
 Milestone B is complete with Union flattening behind flags and tests covering enabled and disabled paths. Milestone C is complete with Union arm reordering and tests for enabled and disabled paths. Milestone D is complete with OPTIONAL scoping tests that assert filters do not cross OPTIONAL boundaries.
 Harness now supports profile presets and an independent OPTIONAL query case to cover non-correlated optionals.
 Estimator refinement now includes a minimum cost ratio guard for UNION reordering.
+Manual harness sweeps (`manual-tiny`, `manual-small`) show candidate improvements over baseline, with union-skew improving by ~26% in the small profile (see `tools/optimizer-harness/target/harness/manual-small`).
+The harness now honors `rdf4j.optimizer.unionOptional.dumpPlans=true` and writes per-query plan dumps under the run output `plans/` directory.
+When dump-plans is enabled and debug logging is on for the optimizer package, UNION flatten/reorder rewrites emit a node-path and precondition summary.
+`CardinalityEstimator` now provides per-node rows/work estimates and is used by UNION arm reordering.
+Harness CSV output now includes `cardRowsEstimate` and `cardWorkEstimate` columns derived from the estimator.
 
 ## Context and Orientation
 
@@ -93,7 +108,14 @@ Expected harness outputs use a run directory under `tools/optimizer-harness/targ
 
 ## Interfaces and Dependencies
 
-The harness depends on `rdf4j-repository-sail`, `rdf4j-sail-memory`, `rdf4j-queryparser-sparql`, and `rdf4j-query`. The CLI entry point remains `org.eclipse.rdf4j.tools.optimizer.harness.HarnessRunner` and accepts flags for seed, dataset shape, and output. Optimizer rules are guarded by `rdf4j.optimizer.unionOptional.enabled` and per-rule flags.
+The harness depends on `rdf4j-repository-sail`, `rdf4j-sail-memory`, `rdf4j-queryparser-sparql`, `rdf4j-query`, and `rdf4j-queryalgebra-evaluation` (for the CardinalityEstimator). The CLI entry point remains `org.eclipse.rdf4j.tools.optimizer.harness.HarnessRunner` and accepts flags for seed, dataset shape, and output. Optimizer rules are guarded by `rdf4j.optimizer.unionOptional.enabled` and per-rule flags.
 
 Revision Note (2025-12-27): Updated progress for Milestone D and documented OPTIONAL safety tests.
 Revision Note (2025-12-27): Added harness profiles, candidate flags, independent OPTIONAL case, and UNION reorder min-ratio guard; updated progress/decisions.
+Revision Note (2025-12-27): Added UNION/OPTIONAL semantic trap tests and recorded a small-profile win case.
+Revision Note (2025-12-27): Added dump-plans debug hook support to the harness.
+Revision Note (2025-12-27): Added debug logging for UNION rewrites behind the dump-plans flag.
+Revision Note (2025-12-27): Added CardinalityEstimator and used it for UNION cost ordering.
+Revision Note (2025-12-27): Added estimator rows/work columns to harness CSV output.
+Revision Note (2025-12-27): Ran a manual small harness sweep (`tools/optimizer-harness/target/harness/manual-small-20251227-231808`) confirming CSV headers include estimator columns and no regressions were reported.
+Revision Note (2025-12-27): Manual small sweep win case: `optional-basic` improved from 1.5836ms baseline to 0.4346ms candidate (ratio 0.27) in `tools/optimizer-harness/target/harness/manual-small-20251227-231808`.

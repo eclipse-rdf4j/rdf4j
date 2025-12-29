@@ -122,6 +122,55 @@ public class UnionOptionalOptimizerTest {
 	}
 
 	@Test
+	public void testUnionReorderSkipsSmallWork() {
+		StatementPattern left = statementPatternWithCardinality(100.0);
+		StatementPattern right = statementPatternWithCardinality(1.0);
+		Union union = new Union(left, right);
+
+		new UnionReorderOptimizer(new EvaluationStatistics())
+				.optimize(union, null, EmptyBindingSet.getInstance());
+
+		assertThat(union.getLeftArg()).isSameAs(left);
+	}
+
+	@Test
+	public void testUnionDuplicatesPreserved() {
+		String previousEnabled = System.getProperty(UNION_OPTIONAL_ENABLED);
+		String previousFlatten = System.getProperty(UNION_FLATTEN_ENABLED);
+		String previousReorder = System.getProperty(UNION_REORDER_ENABLED);
+		System.setProperty(UNION_OPTIONAL_ENABLED, "true");
+		System.setProperty(UNION_FLATTEN_ENABLED, "true");
+		System.setProperty(UNION_REORDER_ENABLED, "true");
+		try {
+			TupleExpr expr = parseUnionWithDuplicateArms();
+			runStandardPipeline(expr);
+			assertThat(countStatementPatterns(expr)).isEqualTo(2);
+		} finally {
+			restoreProperty(UNION_OPTIONAL_ENABLED, previousEnabled);
+			restoreProperty(UNION_FLATTEN_ENABLED, previousFlatten);
+			restoreProperty(UNION_REORDER_ENABLED, previousReorder);
+		}
+	}
+
+	@Test
+	public void testUnionFilterArmStaysScoped() {
+		TupleExpr expr = parseUnionFilterInside();
+		runStandardPipeline(expr);
+		Union union = firstUnion(expr);
+		assertThat(union.getParentNode()).isNotInstanceOf(Filter.class);
+		assertThat(containsFilter(union)).isTrue();
+	}
+
+	@Test
+	public void testOptionalCorrelationPreserved() {
+		TupleExpr expr = parseOptionalCorrelation();
+		runStandardPipeline(expr);
+		LeftJoin leftJoin = firstLeftJoin(expr);
+		assertThat(containsVar(leftJoin.getLeftArg(), "s")).isTrue();
+		assertThat(containsVar(leftJoin.getRightArg(), "s")).isTrue();
+	}
+
+	@Test
 	public void testOptionalFilterOutsideStaysOutside() {
 		TupleExpr expr = parseOptionalFilterOutside();
 		runStandardPipeline(expr);
@@ -180,6 +229,38 @@ public class UnionOptionalOptimizerTest {
 		return parsed.getTupleExpr();
 	}
 
+	private static TupleExpr parseUnionWithDuplicateArms() {
+		String query = String.join(System.lineSeparator(),
+				"SELECT * WHERE {",
+				"  { ?s <http://example.com/p1> ?x }",
+				"  UNION",
+				"  { ?s <http://example.com/p1> ?x }",
+				"}");
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		return parsed.getTupleExpr();
+	}
+
+	private static TupleExpr parseUnionFilterInside() {
+		String query = String.join(System.lineSeparator(),
+				"SELECT * WHERE {",
+				"  { ?s <http://example.com/p1> ?x }",
+				"  UNION",
+				"  { ?s <http://example.com/p2> ?y . FILTER(?y < 5) }",
+				"}");
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		return parsed.getTupleExpr();
+	}
+
+	private static TupleExpr parseOptionalCorrelation() {
+		String query = String.join(System.lineSeparator(),
+				"SELECT * WHERE {",
+				"  ?s <http://example.com/p1> ?x .",
+				"  OPTIONAL { ?s <http://example.com/p2> ?y . }",
+				"}");
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		return parsed.getTupleExpr();
+	}
+
 	private static void runStandardPipeline(TupleExpr expr) {
 		StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
 				mock(EvaluationStrategy.class),
@@ -212,6 +293,18 @@ public class UnionOptionalOptimizerTest {
 		FilterCollector collector = new FilterCollector();
 		expr.visit(collector);
 		return collector.foundFilter;
+	}
+
+	private static int countStatementPatterns(TupleExpr expr) {
+		StatementPatternCounter counter = new StatementPatternCounter();
+		expr.visit(counter);
+		return counter.count;
+	}
+
+	private static boolean containsVar(TupleExpr expr, String name) {
+		VarNameCollector collector = new VarNameCollector(name);
+		expr.visit(collector);
+		return collector.foundVar;
 	}
 
 	private static void restoreProperty(String key, String value) {
@@ -271,6 +364,32 @@ public class UnionOptionalOptimizerTest {
 		public void meet(Filter node) {
 			foundFilter = true;
 			super.meet(node);
+		}
+	}
+
+	private static final class StatementPatternCounter extends AbstractQueryModelVisitor<RuntimeException> {
+		private int count = 0;
+
+		@Override
+		public void meet(StatementPattern node) {
+			count++;
+			super.meet(node);
+		}
+	}
+
+	private static final class VarNameCollector extends AbstractQueryModelVisitor<RuntimeException> {
+		private final String name;
+		private boolean foundVar = false;
+
+		private VarNameCollector(String name) {
+			this.name = name;
+		}
+
+		@Override
+		public void meet(Var var) {
+			if (name.equals(var.getName())) {
+				foundVar = true;
+			}
 		}
 	}
 }

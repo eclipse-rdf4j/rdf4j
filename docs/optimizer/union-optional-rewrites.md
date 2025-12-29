@@ -14,7 +14,7 @@ Counterexample: flattening that drops or merges identical arms would be unsafe. 
 
 ## U2: UNION arm reordering by estimated cost
 
-Preconditions: optimizer flag enabled, estimates available, and the estimated cost ratio meets the minimum confidence threshold (`rdf4j.optimizer.unionOptional.unionReorder.minRatio`, default 1.5). Reordering must not change duplicate semantics or variable scoping.
+Preconditions: optimizer flag enabled, estimates available, and the estimated cost ratio meets the minimum confidence threshold (`rdf4j.optimizer.unionOptional.unionReorder.minRatio`, default 1.5). The estimate uses `CardinalityEstimator` work costs derived from `EvaluationStatistics`. Reordering must not change duplicate semantics or variable scoping.
 
 Transformation: reorder UNION arms to evaluate the cheapest arm first, while preserving all arms.
 

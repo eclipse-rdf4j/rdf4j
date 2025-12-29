@@ -18,7 +18,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CardinalityEstimator;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 
 final class PlanMetricsWriter implements Closeable {
@@ -36,28 +38,35 @@ final class PlanMetricsWriter implements Closeable {
 				"newScope",
 				"costEstimate",
 				"resultSizeEstimate",
+				"cardRowsEstimate",
+				"cardWorkEstimate",
 				"resultSizeActual",
 				"totalTimeMs"));
 		writer.newLine();
 	}
 
-	void writePlan(String runId, String queryId, GenericPlanNode plan) throws IOException {
-		visit(runId, queryId, plan, "0");
+	void writePlan(String runId, String queryId, GenericPlanNode plan,
+			Map<String, CardinalityEstimator.Estimate> estimates) throws IOException {
+		visit(runId, queryId, plan, "0", estimates);
 		writer.flush();
 	}
 
-	private void visit(String runId, String queryId, GenericPlanNode node, String nodeId) throws IOException {
-		writeRow(runId, queryId, nodeId, node);
+	private void visit(String runId, String queryId, GenericPlanNode node, String nodeId,
+			Map<String, CardinalityEstimator.Estimate> estimates) throws IOException {
+		writeRow(runId, queryId, nodeId, node, estimates.get(nodeId));
 		List<GenericPlanNode> children = node.getPlans();
 		if (children == null || children.isEmpty()) {
 			return;
 		}
 		for (int i = 0; i < children.size(); i++) {
-			visit(runId, queryId, children.get(i), nodeId + "." + i);
+			visit(runId, queryId, children.get(i), nodeId + "." + i, estimates);
 		}
 	}
 
-	private void writeRow(String runId, String queryId, String nodeId, GenericPlanNode node) throws IOException {
+	private void writeRow(String runId, String queryId, String nodeId, GenericPlanNode node,
+			CardinalityEstimator.Estimate estimate) throws IOException {
+		Double rowsEstimate = estimate == null ? null : estimate.getRows();
+		Double workEstimate = estimate == null ? null : estimate.getWork();
 		writer.write(String.join(",",
 				escape(runId),
 				escape(queryId),
@@ -67,6 +76,8 @@ final class PlanMetricsWriter implements Closeable {
 				escape(toStringOrEmpty(node.isNewScope())),
 				escape(toStringOrEmpty(node.getCostEstimate())),
 				escape(toStringOrEmpty(node.getResultSizeEstimate())),
+				escape(toStringOrEmpty(rowsEstimate)),
+				escape(toStringOrEmpty(workEstimate)),
 				escape(toStringOrEmpty(node.getResultSizeActual())),
 				escape(toStringOrEmpty(node.getTotalTimeActual()))));
 		writer.newLine();

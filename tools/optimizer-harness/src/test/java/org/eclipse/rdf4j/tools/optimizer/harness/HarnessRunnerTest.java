@@ -19,11 +19,15 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class HarnessRunnerTest {
+
+	private static final String DUMP_PLANS_FLAG = "rdf4j.optimizer.unionOptional.dumpPlans";
 
 	@Test
 	void writesCsvOutputs(@TempDir Path tempDir) throws Exception {
@@ -40,11 +44,121 @@ class HarnessRunnerTest {
 		assertThat(hasDataRow(candidate)).isTrue();
 	}
 
+	@Test
+	void writesPlanDumpsWhenEnabled(@TempDir Path tempDir) throws Exception {
+		String previous = System.getProperty(DUMP_PLANS_FLAG);
+		System.setProperty(DUMP_PLANS_FLAG, "true");
+		try {
+			Class<?> runner = Class.forName("org.eclipse.rdf4j.tools.optimizer.harness.HarnessRunner");
+			Method main = runner.getMethod("main", String[].class);
+			main.invoke(null, (Object) new String[] { "--output", tempDir.toString(), "--profile", "tiny",
+					"--max-regression", "1.0", "--baseline-only" });
+
+			Path plansDir = tempDir.resolve("plans");
+			assertThat(Files.exists(plansDir)).isTrue();
+			try (Stream<Path> files = Files.list(plansDir)) {
+				assertThat(files.anyMatch(path -> path.getFileName().toString().endsWith(".txt"))).isTrue();
+			}
+		} finally {
+			restoreProperty(DUMP_PLANS_FLAG, previous);
+		}
+	}
+
+	@Test
+	void writesCardinalityEstimates(@TempDir Path tempDir) throws Exception {
+		Class<?> runner = Class.forName("org.eclipse.rdf4j.tools.optimizer.harness.HarnessRunner");
+		Method main = runner.getMethod("main", String[].class);
+		main.invoke(null, (Object) new String[] { "--output", tempDir.toString(), "--profile", "tiny",
+				"--max-regression", "1.0", "--baseline-only" });
+
+		Path baseline = tempDir.resolve("baseline.csv");
+		CsvRow header = readCsvRow(baseline, 0);
+		CsvRow row = readCsvRow(baseline, 1);
+
+		int rowsIndex = header.indexOf("cardRowsEstimate");
+		int workIndex = header.indexOf("cardWorkEstimate");
+		assertThat(rowsIndex).isGreaterThan(-1);
+		assertThat(workIndex).isGreaterThan(-1);
+		assertThat(row.valueAt(rowsIndex)).isNotBlank();
+		assertThat(row.valueAt(workIndex)).isNotBlank();
+	}
+
 	private static boolean hasDataRow(Path csv) throws IOException {
 		try (BufferedReader reader = Files.newBufferedReader(csv, StandardCharsets.UTF_8)) {
 			String header = reader.readLine();
 			String row = reader.readLine();
 			return header != null && row != null;
+		}
+	}
+
+	private static CsvRow readCsvRow(Path csv, int lineIndex) throws IOException {
+		try (BufferedReader reader = Files.newBufferedReader(csv, StandardCharsets.UTF_8)) {
+			String line = null;
+			for (int i = 0; i <= lineIndex; i++) {
+				line = reader.readLine();
+				if (line == null) {
+					throw new IOException("Missing CSV line " + lineIndex);
+				}
+			}
+			return CsvRow.parse(line);
+		}
+	}
+
+	private static final class CsvRow {
+		private final String[] values;
+
+		private CsvRow(String[] values) {
+			this.values = values;
+		}
+
+		static CsvRow parse(String line) {
+			StringBuilder current = new StringBuilder();
+			boolean inQuotes = false;
+			List<String> parsed = new java.util.ArrayList<>();
+			for (int i = 0; i < line.length(); i++) {
+				char ch = line.charAt(i);
+				if (ch == '\"') {
+					if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '\"') {
+						current.append('\"');
+						i++;
+					} else {
+						inQuotes = !inQuotes;
+					}
+					continue;
+				}
+				if (ch == ',' && !inQuotes) {
+					parsed.add(current.toString());
+					current.setLength(0);
+				} else {
+					current.append(ch);
+				}
+			}
+			parsed.add(current.toString());
+			return new CsvRow(parsed.toArray(new String[0]));
+		}
+
+		int indexOf(String column) {
+			for (int i = 0; i < values.length; i++) {
+				if (column.equals(values[i])) {
+					return i;
+				}
+			}
+			return -1;
+		}
+
+		String valueAt(int index) {
+			if (index < 0 || index >= values.length) {
+				return "";
+			}
+			return values[index];
+		}
+	}
+
+	private static void restoreProperty(String key, String value) {
+		if (value == null) {
+			System.clearProperty(key);
+		} else {
+			System.setProperty(key, value);
 		}
 	}
 }

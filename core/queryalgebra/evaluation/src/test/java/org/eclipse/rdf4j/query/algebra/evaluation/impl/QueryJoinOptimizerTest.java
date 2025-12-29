@@ -200,6 +200,151 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void independentOptionalRightEstimateScalesByLeftCardinality() throws Exception {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"  ?s ex:p1 ?x .",
+				"  optional { ?o ex:p2 ?y . }",
+				"}"
+		);
+
+		ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new OptionalLeftJoinStatistics(),
+				new EmptyTripleSource());
+		QueryRoot optRoot = new QueryRoot(parsed.getTupleExpr());
+		optimizer.optimize(optRoot, null, null);
+
+		StatementPattern rightPattern = findStatementByPredicate(optRoot, "ex:p2");
+		assertEquals(100.0, rightPattern.getResultSizeEstimate(), 0.0001);
+	}
+
+	@Test
+	public void boundVarScalingReducesUnionSkewRightEstimate() throws Exception {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"  { ?s ex:p1 ?x . }",
+				"  UNION",
+				"  { ?s ex:p1 ?x . ?s ex:p3 ?y . }",
+				"}"
+		);
+
+		ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new UnionSkewStatistics(), new EmptyTripleSource());
+		QueryRoot optRoot = new QueryRoot(parsed.getTupleExpr());
+		optimizer.optimize(optRoot, null, null);
+
+		JoinFinder joinFinder = new JoinFinder();
+		optRoot.visit(joinFinder);
+		Join join = joinFinder.getJoin();
+		assertThat(join).as("Expected a join in the UNION right-hand arm").isNotNull();
+
+		StatementPattern left = (StatementPattern) join.getLeftArg();
+		StatementPattern right = (StatementPattern) join.getRightArg();
+		assertEquals("ex:p3", predicateValue(left));
+		assertEquals("ex:p1", predicateValue(right));
+		assertEquals(58.9, right.getResultSizeEstimate(), 0.0001);
+	}
+
+	@Test
+	public void boundVarScalingReducesLargeUnionSkewRightEstimate() throws Exception {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"  { ?s ex:p1 ?x . }",
+				"  UNION",
+				"  { ?s ex:p1 ?x . ?s ex:p3 ?y . }",
+				"}"
+		);
+
+		ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new LargeUnionSkewStatistics(), new EmptyTripleSource());
+		QueryRoot optRoot = new QueryRoot(parsed.getTupleExpr());
+		optimizer.optimize(optRoot, null, null);
+
+		JoinFinder joinFinder = new JoinFinder();
+		optRoot.visit(joinFinder);
+		Join join = joinFinder.getJoin();
+		assertThat(join).as("Expected a join in the UNION right-hand arm").isNotNull();
+
+		StatementPattern left = (StatementPattern) join.getLeftArg();
+		StatementPattern right = (StatementPattern) join.getRightArg();
+		assertEquals("ex:p3", predicateValue(left));
+		assertEquals("ex:p1", predicateValue(right));
+		assertEquals(4935.0 / (90.0 * (10.0 / 54.0)), right.getResultSizeEstimate(), 0.0001);
+	}
+
+	@Test
+	public void boundVarScalingAdjustsForLargeUnionSkewWhenBindingsGrow() throws Exception {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"  { ?s ex:p1 ?x . }",
+				"  UNION",
+				"  { ?s ex:p1 ?x . ?s ex:p3 ?y . }",
+				"}"
+		);
+
+		ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new LargeUnionSkewSeedStatistics(),
+				new EmptyTripleSource());
+		QueryRoot optRoot = new QueryRoot(parsed.getTupleExpr());
+		optimizer.optimize(optRoot, null, null);
+
+		JoinFinder joinFinder = new JoinFinder();
+		optRoot.visit(joinFinder);
+		Join join = joinFinder.getJoin();
+		assertThat(join).as("Expected a join in the UNION right-hand arm").isNotNull();
+
+		StatementPattern left = (StatementPattern) join.getLeftArg();
+		StatementPattern right = (StatementPattern) join.getRightArg();
+		assertEquals("ex:p3", predicateValue(left));
+		assertEquals("ex:p1", predicateValue(right));
+		assertEquals(4951.0 / 45.0, right.getResultSizeEstimate(), 0.0001);
+	}
+
+	@Test
+	public void correlatedOptionalRightEstimateUsesScaleFactor() throws Exception {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"  ?s ex:p1 ?x .",
+				"  optional { ?s ex:p2 ?y . }",
+				"}"
+		);
+
+		ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new CorrelatedOptionalStatistics(),
+				new EmptyTripleSource());
+		QueryRoot optRoot = new QueryRoot(parsed.getTupleExpr());
+		optimizer.optimize(optRoot, null, null);
+
+		StatementPattern rightPattern = findStatementByPredicate(optRoot, "ex:p2");
+		assertEquals(6.0, rightPattern.getResultSizeEstimate(), 0.0001);
+	}
+
+	@Test
+	public void correlatedOptionalRightEstimateUsesLargeScaleFactor() throws Exception {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"  ?s ex:p1 ?x .",
+				"  optional { ?s ex:p2 ?y . }",
+				"}"
+		);
+
+		ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new LargeCorrelatedOptionalStatistics(),
+				new EmptyTripleSource());
+		QueryRoot optRoot = new QueryRoot(parsed.getTupleExpr());
+		optimizer.optimize(optRoot, null, null);
+
+		StatementPattern rightPattern = findStatementByPredicate(optRoot, "ex:p2");
+		assertEquals(1690.0, rightPattern.getResultSizeEstimate(), 0.0001);
+	}
+
+	@Test
 	public void reorderJoinArgsUsesEstimatorForFirstPattern() throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
@@ -285,6 +430,24 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 	private void assertQueryModelTrees(QueryModelNode expected, QueryModelNode actual) {
 		assertEquals(expected, actual);
+	}
+
+	private StatementPattern findStatementByPredicate(TupleExpr expr, String predicate) {
+		StatementFinder finder = new StatementFinder();
+		expr.visit(finder);
+		return finder.getStatements()
+				.stream()
+				.filter(statement -> predicate.equals(predicateValue(statement)))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Missing statement pattern for predicate " + predicate));
+	}
+
+	private static String predicateValue(StatementPattern statement) {
+		Var predicateVar = statement.getPredicateVar();
+		if (predicateVar != null && predicateVar.hasValue()) {
+			return predicateVar.getValue().stringValue();
+		}
+		return null;
 	}
 
 	class JoinFinder extends AbstractQueryModelVisitor<RuntimeException> {
@@ -385,6 +548,102 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				}
 			}
 			return null;
+		}
+	}
+
+	private static final class OptionalLeftJoinStatistics extends EvaluationStatistics {
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				String predicate = predicateValue((StatementPattern) expr);
+				if ("ex:p1".equals(predicate)) {
+					return 50.0;
+				}
+				if ("ex:p2".equals(predicate)) {
+					return 2.0;
+				}
+			}
+			return super.getCardinality(expr);
+		}
+	}
+
+	private static final class CorrelatedOptionalStatistics extends EvaluationStatistics {
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				String predicate = predicateValue((StatementPattern) expr);
+				if ("ex:p1".equals(predicate)) {
+					return 50.0;
+				}
+				if ("ex:p2".equals(predicate)) {
+					return 2.0;
+				}
+			}
+			return super.getCardinality(expr);
+		}
+	}
+
+	private static final class LargeCorrelatedOptionalStatistics extends EvaluationStatistics {
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				String predicate = predicateValue((StatementPattern) expr);
+				if ("ex:p1".equals(predicate)) {
+					return 4935.0;
+				}
+				if ("ex:p2".equals(predicate)) {
+					return 338.0;
+				}
+			}
+			return super.getCardinality(expr);
+		}
+	}
+
+	private static final class UnionSkewStatistics extends EvaluationStatistics {
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				String predicate = predicateValue((StatementPattern) expr);
+				if ("ex:p1".equals(predicate)) {
+					return 589.0;
+				}
+				if ("ex:p3".equals(predicate)) {
+					return 19.0;
+				}
+			}
+			return super.getCardinality(expr);
+		}
+	}
+
+	private static final class LargeUnionSkewStatistics extends EvaluationStatistics {
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				String predicate = predicateValue((StatementPattern) expr);
+				if ("ex:p1".equals(predicate)) {
+					return 4935.0;
+				}
+				if ("ex:p3".equals(predicate)) {
+					return 54.0;
+				}
+			}
+			return super.getCardinality(expr);
+		}
+	}
+
+	private static final class LargeUnionSkewSeedStatistics extends EvaluationStatistics {
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				String predicate = predicateValue((StatementPattern) expr);
+				if ("ex:p1".equals(predicate)) {
+					return 4951.0;
+				}
+				if ("ex:p3".equals(predicate)) {
+					return 20.0;
+				}
+			}
+			return super.getCardinality(expr);
 		}
 	}
 

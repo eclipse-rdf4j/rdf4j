@@ -28,12 +28,16 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
+	private static final String[] EMPTY_JOIN_ATTRIBUTES = new String[0];
+	private static final String HASH_JOIN_PROPERTY = "rdf4j.optimizer.unionOptional.independentOptionalHashJoin.enabled";
+
 	private final QueryEvaluationStep right;
 	private final QueryValueEvaluationStep condition;
 	private final QueryEvaluationStep left;
 	private final LeftJoin leftJoin;
 	private final Set<String> optionalVars;
 	private final QueryEvaluationStep wellDesignedRightEvaluationStep;
+	private final QueryEvaluationContext context;
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context) {
@@ -59,15 +63,17 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		} else {
 			condition = null;
 		}
-		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector.getVarNames());
+		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector.getVarNames(),
+				context);
 	}
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
-			QueryEvaluationStep left, LeftJoin leftJoin, Set<String> optionalVars) {
+			QueryEvaluationStep left, LeftJoin leftJoin, Set<String> optionalVars, QueryEvaluationContext context) {
 		this.right = right;
 		this.condition = condition;
 		this.left = left;
 		this.leftJoin = leftJoin;
+		this.context = context;
 		// This is used to determine if the left join is well designed.
 
 		Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
@@ -108,6 +114,11 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 		if (containsNone) {
 			// left join is "well designed"
+			if (canUseHashJoin(leftJoin)) {
+				leftJoin.setAlgorithm(HashJoinIteration.class.getSimpleName());
+				return new HashJoinIteration(left, wellDesignedRightEvaluationStep, bindings, true,
+						EMPTY_JOIN_ATTRIBUTES, context);
+			}
 			leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
 			return LeftJoinIterator.getInstance(left, bindings, wellDesignedRightEvaluationStep);
 		} else {
@@ -185,5 +196,28 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private static boolean canEvaluateConditionBasedOnLeftHandSide(LeftJoin leftJoin) {
 		var varNames = VarNameCollector.process(leftJoin.getCondition());
 		return leftJoin.getAssuredBindingNames().containsAll(varNames);
+	}
+
+	private static boolean canUseHashJoin(LeftJoin leftJoin) {
+		if (!isHashJoinEnabled()) {
+			return false;
+		}
+		if (leftJoin.hasCondition()) {
+			return false;
+		}
+		Set<String> leftBindings = leftJoin.getLeftArg().getBindingNames();
+		if (leftBindings.isEmpty()) {
+			return false;
+		}
+		for (String rightBinding : leftJoin.getRightArg().getBindingNames()) {
+			if (leftBindings.contains(rightBinding)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean isHashJoinEnabled() {
+		return Boolean.parseBoolean(System.getProperty(HASH_JOIN_PROPERTY, "true"));
 	}
 }

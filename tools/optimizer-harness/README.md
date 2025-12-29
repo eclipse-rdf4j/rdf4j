@@ -7,7 +7,9 @@ This module provides a deterministic harness for UNION/OPTIONAL optimizer work. 
 From repo root:
 
     mvn -o -Dmaven.repo.local=.m2_repo -pl tools/optimizer-harness -am -Pquick clean install
-    java -cp tools/optimizer-harness/target/rdf4j-optimizer-harness-5.3.0-SNAPSHOT.jar \
+    mvn -o -Dmaven.repo.local=.m2_repo -pl tools/optimizer-harness \
+      dependency:build-classpath -DincludeScope=runtime -Dmdep.outputFile=target/classpath.txt
+    java -cp "$(cat tools/optimizer-harness/target/classpath.txt):tools/optimizer-harness/target/rdf4j-optimizer-harness-5.3.0-SNAPSHOT.jar" \
       org.eclipse.rdf4j.tools.optimizer.harness.HarnessRunner
 
 ## Options
@@ -25,3 +27,9 @@ From repo root:
     --baseline-only
 
 Outputs are written to `tools/optimizer-harness/target/harness/run-<timestamp>/` by default.
+
+## CSV columns
+
+The harness CSV includes planner metrics (`costEstimate`, `resultSizeEstimate`, `resultSizeActual`, `totalTimeMs`) plus
+CardinalityEstimator outputs (`cardRowsEstimate`, `cardWorkEstimate`) so you can compare estimator expectations with
+observed counts and time.

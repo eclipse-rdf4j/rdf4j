@@ -69,6 +69,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	public static boolean USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN = true;
 
 	private static final int FULL_PAIRWISE_START_LIMIT = 6;
+	private static final double BOUND_VAR_CARDINALITY = 10.0;
+	private static final double LARGE_BOUND_VAR_CARDINALITY = 90.0;
+	private static final double LARGE_BOUND_VAR_THRESHOLD = 1000.0;
+	private static final double CORRELATED_OPTIONAL_RIGHT_SCALE = 3.0;
+	private static final double LARGE_CORRELATED_OPTIONAL_RIGHT_SCALE = 5.0;
+	private static final double LARGE_CORRELATED_OPTIONAL_THRESHOLD = 2000.0;
 
 	protected final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
@@ -109,7 +115,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	protected class JoinVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		private Set<String> boundVars = new HashSet<>();
+		private Map<String, Double> boundVarCardinalities = new HashMap<>();
 		private double currentHighestCost = 1;
+		private double independentLeftJoinMultiplier = 1.0;
+		private double correlatedLeftJoinMultiplier = 1.0;
+		private int leftJoinRightDepth = 0;
 
 		protected JoinVisitor() {
 			super(trackResultSize);
@@ -121,28 +131,98 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			leftJoin.getLeftArg().visit(this);
 
 			Set<String> origBoundVars = boundVars;
+			Map<String, Double> originalBoundVarCardinalities = boundVarCardinalities;
+			double originalMultiplier = independentLeftJoinMultiplier;
+			double originalCorrelatedMultiplier = correlatedLeftJoinMultiplier;
+			int originalLeftJoinRightDepth = leftJoinRightDepth;
+			boolean correlated = sharesBindings(leftJoin.getLeftArg(), leftJoin.getRightArg());
 			try {
 				boundVars = new HashSet<>(boundVars);
+				boundVarCardinalities = new HashMap<>(boundVarCardinalities);
+				recordBindingCardinalities(leftJoin.getLeftArg(), boundVars);
 				boundVars.addAll(leftJoin.getLeftArg().getBindingNames());
 
+				double multiplier = estimateIndependentLeftJoinMultiplier(leftJoin);
+				independentLeftJoinMultiplier = independentLeftJoinMultiplier * multiplier;
+				if (correlated) {
+					correlatedLeftJoinMultiplier = correlatedLeftJoinMultiplier * correlatedOptionalScale(leftJoin);
+				}
+				leftJoinRightDepth++;
 				leftJoin.getRightArg().visit(this);
 			} finally {
+				leftJoinRightDepth = originalLeftJoinRightDepth;
+				independentLeftJoinMultiplier = originalMultiplier;
+				correlatedLeftJoinMultiplier = originalCorrelatedMultiplier;
+				boundVarCardinalities = originalBoundVarCardinalities;
 				boundVars = origBoundVars;
 			}
 		}
 
 		@Override
 		public void meet(StatementPattern node) throws RuntimeException {
-			node.setResultSizeEstimate(Math.max(statistics.getCardinality(node), node.getResultSizeEstimate()));
+			double estimate = Math.max(statistics.getCardinality(node), node.getResultSizeEstimate());
+			estimate = scaleForBoundVariables(node, estimate);
+			if (independentLeftJoinMultiplier > 1.0) {
+				estimate = estimate * independentLeftJoinMultiplier;
+			}
+			if (correlatedLeftJoinMultiplier > 1.0 && hasBoundPredicate(node)) {
+				estimate = estimate * correlatedLeftJoinMultiplier;
+			}
+			node.setResultSizeEstimate(estimate);
+		}
+
+		private double scaleForBoundVariables(StatementPattern node, double estimate) {
+			if (leftJoinRightDepth > 0) {
+				return estimate;
+			}
+			double scaled = estimate;
+			boolean scaledAny = false;
+			scaled = scaleForBoundVar(node.getSubjectVar(), estimate, scaled);
+			scaledAny = scaledAny || scaled != estimate;
+			scaled = scaleForBoundVar(node.getPredicateVar(), estimate, scaled);
+			scaledAny = scaledAny || scaled != estimate;
+			scaled = scaleForBoundVar(node.getObjectVar(), estimate, scaled);
+			scaledAny = scaledAny || scaled != estimate;
+			scaled = scaleForBoundVar(node.getContextVar(), estimate, scaled);
+			scaledAny = scaledAny || scaled != estimate;
+			if (!scaledAny) {
+				return estimate;
+			}
+			return Math.max(1.0, scaled);
+		}
+
+		private double scaleForBoundVar(Var var, double estimate, double scaled) {
+			if (!isBoundVar(var)) {
+				return scaled;
+			}
+			double perVarScale = estimate >= LARGE_BOUND_VAR_THRESHOLD
+					? LARGE_BOUND_VAR_CARDINALITY
+					: BOUND_VAR_CARDINALITY;
+			if (perVarScale == LARGE_BOUND_VAR_CARDINALITY) {
+				perVarScale = adjustLargeBoundVarScale(perVarScale, var.getName());
+			}
+			return scaled / perVarScale;
+		}
+
+		private boolean isBoundVar(Var var) {
+			return var != null && !var.hasValue() && var.getName() != null && boundVars.contains(var.getName());
+		}
+
+		private boolean hasBoundPredicate(StatementPattern node) {
+			Var predicate = node.getPredicateVar();
+			return predicate != null && predicate.hasValue();
 		}
 
 		private void optimizePriorityJoin(Set<String> origBoundVars, TupleExpr join) {
 
 			Set<String> saveBoundVars = boundVars;
+			Map<String, Double> saveBoundVarCardinalities = boundVarCardinalities;
 			try {
 				boundVars = new HashSet<>(origBoundVars);
+				boundVarCardinalities = new HashMap<>(boundVarCardinalities);
 				join.visit(this);
 			} finally {
+				boundVarCardinalities = saveBoundVarCardinalities;
 				boundVars = saveBoundVars;
 			}
 		}
@@ -150,8 +230,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Join node) {
 			Set<String> origBoundVars = boundVars;
+			Map<String, Double> origBoundVarCardinalities = boundVarCardinalities;
 			try {
 				boundVars = new HashSet<>(boundVars);
+				boundVarCardinalities = new HashMap<>(boundVarCardinalities);
 
 				// Recursively get the join arguments
 				List<TupleExpr> joinArgs = getJoinArgs(node, new ArrayList<>());
@@ -229,6 +311,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						// Recursively optimize join arguments
 						tupleExpr.visit(this);
 
+						recordBindingCardinalities(tupleExpr, boundVars);
 						boundVars.addAll(tupleExpr.getBindingNames());
 					}
 				}
@@ -328,6 +411,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					node.replaceWith(priorityJoins);
 				}
 			} finally {
+				boundVarCardinalities = origBoundVarCardinalities;
 				boundVars = origBoundVars;
 			}
 		}
@@ -878,6 +962,27 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return ret != null ? ret : Collections.emptyList();
 		}
 
+		private void recordBindingCardinalities(TupleExpr tupleExpr, Set<String> alreadyBound) {
+			double estimate = tupleExpr.getResultSizeEstimate();
+			if (estimate <= 0.0) {
+				return;
+			}
+			for (String name : tupleExpr.getBindingNames()) {
+				if (!alreadyBound.contains(name)) {
+					boundVarCardinalities.putIfAbsent(name, estimate);
+				}
+			}
+		}
+
+		private double adjustLargeBoundVarScale(double baseScale, String varName) {
+			Double boundCardinality = boundVarCardinalities.get(varName);
+			if (boundCardinality == null || boundCardinality <= 0.0) {
+				return baseScale;
+			}
+			double adjusted = baseScale * (BOUND_VAR_CARDINALITY / Math.max(1.0, boundCardinality));
+			return Math.max(1.0, adjusted);
+		}
+
 		protected int getForeignVarFreq(List<Var> ownUnboundVars, Map<Var, Integer> varFreqMap) {
 			if (ownUnboundVars.isEmpty()) {
 				return 0;
@@ -966,6 +1071,40 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
+	}
+
+	private double estimateIndependentLeftJoinMultiplier(LeftJoin leftJoin) {
+		if (sharesBindings(leftJoin.getLeftArg(), leftJoin.getRightArg())) {
+			return 1.0;
+		}
+		double leftEstimate = Math.max(statistics.getCardinality(leftJoin.getLeftArg()),
+				leftJoin.getLeftArg().getResultSizeEstimate());
+		if (leftEstimate < 1.0) {
+			return 1.0;
+		}
+		return leftEstimate;
+	}
+
+	private double correlatedOptionalScale(LeftJoin leftJoin) {
+		double leftEstimate = Math.max(statistics.getCardinality(leftJoin.getLeftArg()),
+				leftJoin.getLeftArg().getResultSizeEstimate());
+		if (leftEstimate >= LARGE_CORRELATED_OPTIONAL_THRESHOLD) {
+			return LARGE_CORRELATED_OPTIONAL_RIGHT_SCALE;
+		}
+		return CORRELATED_OPTIONAL_RIGHT_SCALE;
+	}
+
+	private static boolean sharesBindings(TupleExpr left, TupleExpr right) {
+		Set<String> leftNames = left.getBindingNames();
+		if (leftNames.isEmpty()) {
+			return false;
+		}
+		for (String name : right.getBindingNames()) {
+			if (leftNames.contains(name)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static boolean statementPatternWithMinimumOneConstant(TupleExpr cand) {
