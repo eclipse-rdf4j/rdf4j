@@ -112,18 +112,19 @@ public class JoinKeyCacheIterator extends LookAheadIteration<BindingSet> {
 			return CacheEntry.empty();
 		}
 		List<BindingSet> results = new ArrayList<>();
+		boolean cacheable = true;
 		try {
 			while (iteration.hasNext()) {
 				BindingSet candidate = iteration.next();
 				results.add(stripLeftBindings(candidate));
 				if (maxResultsPerKey > 0 && results.size() > maxResultsPerKey) {
-					return new CacheEntry(results, false);
+					cacheable = false;
 				}
 			}
 		} finally {
 			iteration.close();
 		}
-		return new CacheEntry(results, true);
+		return new CacheEntry(results, cacheable);
 	}
 
 	private BindingSet stripLeftBindings(BindingSet candidate) {

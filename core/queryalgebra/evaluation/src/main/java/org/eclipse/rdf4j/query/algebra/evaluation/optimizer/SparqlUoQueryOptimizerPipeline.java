@@ -32,6 +32,7 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private final MinusOptimizer minusOptimizer;
 	private final ExistsConstantOptimizer existsConstantOptimizer;
 	private final QueryJoinOptimizer joinOptimizer;
+	private final boolean enableOptionalFilterJoin;
 
 	public SparqlUoQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
@@ -51,6 +52,7 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		this.existsConstantOptimizer = new ExistsConstantOptimizer();
 		this.joinOptimizer = new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource,
 				false);
+		this.enableOptionalFilterJoin = config.enableOptionalFilterJoin();
 	}
 
 	@Override
@@ -73,7 +75,9 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 			if (optimizer instanceof FilterOptimizer) {
 				optimizers.add(optimizer);
 				optimizers.add(unionCommonFilterBindingSetOptimizer);
-				optimizers.add(optionalFilterJoinOptimizer);
+				if (enableOptionalFilterJoin) {
+					optimizers.add(optionalFilterJoinOptimizer);
+				}
 				if (!statementPatternInserted) {
 					optimizers.add(unionCommonStatementPatternOptimizer);
 					statementPatternInserted = true;

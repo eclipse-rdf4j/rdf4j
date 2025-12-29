@@ -66,7 +66,9 @@ public class SparqlUoOptimizer implements QueryOptimizer {
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		PARENT_REFERENCE_CLEANER.optimize(tupleExpr, dataset, bindings);
 		tupleExpr.visit(new SparqlUoVisitor());
-		optionalFilterJoinOptimizer.optimize(tupleExpr, dataset, bindings);
+		if (config.enableOptionalFilterJoin()) {
+			optionalFilterJoinOptimizer.optimize(tupleExpr, dataset, bindings);
+		}
 	}
 
 	private class SparqlUoVisitor extends AbstractQueryModelVisitor<RuntimeException> {
