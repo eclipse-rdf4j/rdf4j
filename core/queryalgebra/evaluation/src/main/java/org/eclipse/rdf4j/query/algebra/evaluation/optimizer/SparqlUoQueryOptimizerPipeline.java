@@ -47,7 +47,7 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		this.unionCommonStatementPatternOptimizer = new UnionCommonStatementPatternOptimizer(evaluationStatistics);
 		this.unionCommonFilterBindingSetOptimizer = new UnionCommonFilterBindingSetOptimizer();
 		this.optionalFilterJoinOptimizer = new OptionalFilterJoinOptimizer();
-		this.minusOptimizer = new MinusOptimizer();
+		this.minusOptimizer = new MinusOptimizer(config.enableMinusUnionSplit());
 		this.existsConstantOptimizer = new ExistsConstantOptimizer();
 		this.joinOptimizer = new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource,
 				false);
