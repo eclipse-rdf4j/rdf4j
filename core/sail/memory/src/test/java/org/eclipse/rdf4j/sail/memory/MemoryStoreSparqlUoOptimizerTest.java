@@ -16,15 +16,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.junit.jupiter.api.Test;
@@ -34,6 +43,11 @@ class MemoryStoreSparqlUoOptimizerTest {
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI P1 = VF.createIRI("urn:p1");
 	private static final IRI P2 = VF.createIRI("urn:p2");
+	private static final IRI EX_P = VF.createIRI("http://ex/p");
+	private static final IRI EX_Q = VF.createIRI("http://ex/q");
+	private static final IRI FOAF_MBOX = VF.createIRI("http://xmlns.com/foaf/0.1/mbox");
+	private static final IRI FOAF_NAME = VF.createIRI("http://xmlns.com/foaf/0.1/name");
+	private static final IRI FOAF_NICK = VF.createIRI("http://xmlns.com/foaf/0.1/nick");
 
 	@Test
 	void unionAndOptionalQueriesEvaluateCorrectly() {
@@ -48,11 +62,114 @@ class MemoryStoreSparqlUoOptimizerTest {
 		}
 	}
 
+	@Test
+	void unionCommonPrefixWithoutSparqlUoBehavesCorrectly() {
+		assertUnionCommonPrefix(false);
+	}
+
+	@Test
+	void unionCommonPrefixWithSparqlUoBehavesCorrectly() {
+		assertUnionCommonPrefix(true);
+	}
+
+	@Test
+	void minusInsideOptionalWithoutSparqlUoBehavesCorrectly() {
+		assertMinusInsideOptional(false);
+	}
+
+	@Test
+	void minusInsideOptionalWithSparqlUoBehavesCorrectly() {
+		assertMinusInsideOptional(true);
+	}
+
+	private void assertUnionCommonPrefix(boolean useSparqlUo) {
+		SailRepository repo = createRepository(useSparqlUo);
+		try (RepositoryConnection connection = repo.getConnection()) {
+			seedUnionCommonPrefixData(connection);
+			Map<BindingSet, Long> actual = evaluateCounts(connection,
+					"PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" +
+							"SELECT ?mbox ?name {\n" +
+							"  { ?x foaf:mbox ?mbox }\n" +
+							"  UNION\n" +
+							"  { ?x foaf:mbox ?mbox . ?x foaf:name ?name }\n" +
+							"}");
+
+			Map<BindingSet, Long> expected = new HashMap<>();
+			Value alice = VF.createIRI("mailto:alice@example.net");
+			Value bert = VF.createIRI("mailto:bert@example.net");
+			Value eve = VF.createIRI("mailto:eve@example.net");
+			expected.put(bindingSet("mbox", alice, "name", null), 1L);
+			expected.put(bindingSet("mbox", alice, "name", VF.createLiteral("Alice")), 1L);
+			expected.put(bindingSet("mbox", bert, "name", null), 1L);
+			expected.put(bindingSet("mbox", bert, "name", VF.createLiteral("Bert")), 1L);
+			expected.put(bindingSet("mbox", eve, "name", null), 1L);
+
+			assertThat(actual).isEqualTo(expected);
+		} finally {
+			repo.shutDown();
+		}
+	}
+
+
+	private void assertMinusInsideOptional(boolean useSparqlUo) {
+		SailRepository repo = createRepository(useSparqlUo);
+		try (RepositoryConnection connection = repo.getConnection()) {
+			seedMinusInsideOptionalData(connection);
+			Map<BindingSet, Long> actual = evaluateCounts(connection,
+					"PREFIX : <http://ex/>\n" +
+							"SELECT ?s ?maybe WHERE {\n" +
+							"  ?s :p ?v .\n" +
+							"  OPTIONAL {\n" +
+							"    BIND(1 AS ?maybe)\n" +
+							"    MINUS { ?s :q ?w }\n" +
+							"  }\n" +
+							"}");
+
+			Map<BindingSet, Long> expected = new HashMap<>();
+			Value a = VF.createIRI("http://ex/a");
+			Value b = VF.createIRI("http://ex/b");
+			Value c = VF.createIRI("http://ex/c");
+			Value e = VF.createIRI("http://ex/e");
+			Value maybe = VF.createLiteral("1", XMLSchema.INTEGER);
+			expected.put(bindingSet("s", a, "maybe", null), 1L);
+			expected.put(bindingSet("s", b, "maybe", null), 1L);
+			expected.put(bindingSet("s", c, "maybe", maybe), 1L);
+			expected.put(bindingSet("s", e, "maybe", null), 1L);
+
+			assertThat(actual).isEqualTo(expected);
+		} finally {
+			repo.shutDown();
+		}
+	}
+
 	private void seedData(RepositoryConnection connection) {
 		connection.add(VF.createIRI("urn:a"), P1, VF.createIRI("urn:o1"));
 		connection.add(VF.createIRI("urn:a"), P2, VF.createIRI("urn:o2"));
 		connection.add(VF.createIRI("urn:b"), P1, VF.createIRI("urn:o3"));
 		connection.add(VF.createIRI("urn:c"), P1, VF.createIRI("urn:o4"));
+	}
+
+	private void seedUnionCommonPrefixData(RepositoryConnection connection) {
+		BNode alice = VF.createBNode();
+		BNode bert = VF.createBNode();
+		BNode eve = VF.createBNode();
+		connection.add(alice, FOAF_MBOX, VF.createIRI("mailto:alice@example.net"));
+		connection.add(alice, FOAF_NAME, VF.createLiteral("Alice"));
+		connection.add(alice, FOAF_NICK, VF.createLiteral("WhoMe?"));
+		connection.add(bert, FOAF_MBOX, VF.createIRI("mailto:bert@example.net"));
+		connection.add(bert, FOAF_NAME, VF.createLiteral("Bert"));
+		connection.add(eve, FOAF_MBOX, VF.createIRI("mailto:eve@example.net"));
+		connection.add(eve, FOAF_NICK, VF.createLiteral("DuckSoup"));
+	}
+
+	private void seedMinusInsideOptionalData(RepositoryConnection connection) {
+		connection.add(VF.createIRI("http://ex/a"), EX_P, VF.createLiteral(1));
+		connection.add(VF.createIRI("http://ex/a"), EX_Q, VF.createLiteral(10));
+		connection.add(VF.createIRI("http://ex/b"), EX_P, VF.createLiteral(2));
+		connection.add(VF.createIRI("http://ex/b"), EX_Q, VF.createLiteral(20));
+		connection.add(VF.createIRI("http://ex/c"), EX_P, VF.createLiteral(3));
+		connection.add(VF.createIRI("http://ex/e"), EX_P, VF.createLiteral(5));
+		connection.add(VF.createIRI("http://ex/e"), EX_Q, VF.createLiteral(50));
 	}
 
 	private void assertUnionDuplicates(RepositoryConnection connection) {
@@ -92,13 +209,46 @@ class MemoryStoreSparqlUoOptimizerTest {
 	}
 
 	private QueryBindingSet bindingSet(Value sValue, Value o2Value) {
+		return bindingSet("s", sValue, "o2", o2Value);
+	}
+
+	private QueryBindingSet bindingSet(String firstName, Value firstValue, String secondName, Value secondValue) {
 		QueryBindingSet bindings = new QueryBindingSet();
-		if (sValue != null) {
-			bindings.addBinding("s", sValue);
+		if (firstValue != null) {
+			bindings.addBinding(firstName, firstValue);
 		}
-		if (o2Value != null) {
-			bindings.addBinding("o2", o2Value);
+		if (secondValue != null) {
+			bindings.addBinding(secondName, secondValue);
 		}
 		return bindings;
+	}
+
+	private SailRepository createRepository(boolean useSparqlUo) {
+		MemoryStore store = new MemoryStore();
+		if (!useSparqlUo) {
+			store.setEvaluationStrategyFactory(createStandardPipelineFactory(store));
+		}
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		return repository;
+	}
+
+
+	private EvaluationStrategyFactory createStandardPipelineFactory(MemoryStore store) {
+		DefaultEvaluationStrategyFactory factory = new DefaultEvaluationStrategyFactory(
+				store.getFederatedServiceResolver()) {
+			@Override
+			public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+					EvaluationStatistics evaluationStatistics) {
+				EvaluationStrategy strategy = super.createEvaluationStrategy(dataset, tripleSource,
+						evaluationStatistics);
+				strategy.setOptimizerPipeline(
+						new StandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics));
+				return strategy;
+			}
+		};
+		factory.setQuerySolutionCacheThreshold(store.getIterationCacheSyncThreshold());
+		factory.setTrackResultSize(store.isTrackResultSize());
+		return factory;
 	}
 }
