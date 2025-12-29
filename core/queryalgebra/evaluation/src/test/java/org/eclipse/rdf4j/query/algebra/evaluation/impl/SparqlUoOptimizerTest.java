@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -125,6 +126,29 @@ public class SparqlUoOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void testFilterOnOptionalVarTurnsIntoJoin() {
+		String query = "SELECT * WHERE { ?s <urn:p1> ?o OPTIONAL { ?s <urn:p2> ?opt } "
+				+ "FILTER(?opt IN (\"a\", \"b\")) }";
+		TupleExpr expr = optimize(query);
+
+		assertThat(expr).isInstanceOf(Projection.class);
+		Projection projection = (Projection) expr;
+		assertThat(containsLeftJoin(projection.getArg())).isFalse();
+		assertThat(collectPredicates(projection.getArg())).contains("urn:p1", "urn:p2");
+	}
+
+	@Test
+	public void testBoundOnOptionalVarTurnsIntoJoin() {
+		String query = "SELECT * WHERE { ?s <urn:p1> ?o OPTIONAL { ?s <urn:p2> ?opt } FILTER(BOUND(?opt)) }";
+		TupleExpr expr = optimize(query);
+
+		assertThat(expr).isInstanceOf(Projection.class);
+		Projection projection = (Projection) expr;
+		assertThat(containsLeftJoin(projection.getArg())).isFalse();
+		assertThat(collectPredicates(projection.getArg())).contains("urn:p1", "urn:p2");
+	}
+
+	@Test
 	public void testInjectIntoOptionalWithUnion() {
 		String query = "SELECT * WHERE { ?s <urn:p1> ?o OPTIONAL { ?s <urn:p2> ?o2 . { ?s <urn:p3> ?o3 } UNION { ?s <urn:p4> ?o4 } } }";
 		TupleExpr expr = optimize(query);
@@ -216,6 +240,17 @@ public class SparqlUoOptimizerTest extends QueryOptimizerTest {
 			}
 		});
 		return predicates;
+	}
+
+	private boolean containsLeftJoin(TupleExpr expr) {
+		AtomicBoolean found = new AtomicBoolean(false);
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(LeftJoin node) {
+				found.set(true);
+			}
+		});
+		return found.get();
 	}
 
 	private static final class FixedEvaluationStatistics extends EvaluationStatistics {

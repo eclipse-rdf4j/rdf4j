@@ -23,6 +23,13 @@ import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -47,6 +54,7 @@ import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
+import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
 @Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 3)
@@ -71,6 +79,9 @@ public class ThemeQueryBenchmark {
 	})
 	public String themeName;
 
+	@Param({ "true", "false" })
+	public boolean z_useSparqlUo;
+
 	private File dataDir;
 	private SailRepository repository;
 	private Theme theme;
@@ -78,6 +89,31 @@ public class ThemeQueryBenchmark {
 	private long expected;
 
 	public static void main(String[] args) throws RunnerException {
+		if (args != null && args.length >= 2) {
+			String themeName = args[0];
+			String queryIndex = args[1];
+			String useSparqlUo = args.length >= 3 ? args[2] : "both";
+			String[] uoValues = parseUseSparqlUo(useSparqlUo);
+			Options opt = new OptionsBuilder()
+					.include(ThemeQueryBenchmark.class.getSimpleName() + ".executeQuery")
+					.param("themeName", themeName)
+					.param("x_queryIndex", queryIndex)
+					.param("z_useSparqlUo", uoValues)
+					.warmupIterations(10)
+					.warmupTime(TimeValue.seconds(1))
+					.measurementIterations(5)
+					.measurementTime(TimeValue.seconds(1))
+					.forks(1)
+					.build();
+			new Runner(opt).run();
+			return;
+		}
+
+		if (args != null && args.length == 1) {
+			System.err.println("Usage: ThemeQueryBenchmark <themeName> <queryIndex> [true|false|both]");
+			return;
+		}
+
 		Options opt = new OptionsBuilder()
 				.include("ThemeQueryBenchmark")
 				.forks(1)
@@ -92,6 +128,9 @@ public class ThemeQueryBenchmark {
 		expected = ThemeQueryCatalog.expectedCountFor(theme, x_queryIndex);
 		dataDir = Files.newTemporaryFolder();
 		NativeStore sail = new NativeStore(dataDir, "spoc,ospc,psoc");
+		if (!z_useSparqlUo) {
+			sail.setEvaluationStrategyFactory(createStandardPipelineFactory(sail));
+		}
 		repository = new SailRepository(sail);
 		loadData();
 	}
@@ -185,5 +224,36 @@ public class ThemeQueryBenchmark {
 		} catch (NoSuchFieldException e) {
 			throw new IllegalStateException("Missing field " + fieldName, e);
 		}
+	}
+
+	private static EvaluationStrategyFactory createStandardPipelineFactory(NativeStore store) {
+		DefaultEvaluationStrategyFactory factory = new DefaultEvaluationStrategyFactory(
+				store.getFederatedServiceResolver()) {
+			@Override
+			public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+					EvaluationStatistics evaluationStatistics) {
+				EvaluationStrategy strategy = super.createEvaluationStrategy(dataset, tripleSource,
+						evaluationStatistics);
+				strategy.setOptimizerPipeline(
+						new StandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics));
+				return strategy;
+			}
+		};
+		factory.setQuerySolutionCacheThreshold(store.getIterationCacheSyncThreshold());
+		factory.setTrackResultSize(store.isTrackResultSize());
+		return factory;
+	}
+
+	private static String[] parseUseSparqlUo(String value) {
+		if (value == null || value.isBlank() || "both".equalsIgnoreCase(value)) {
+			return new String[] { "true", "false" };
+		}
+		if ("true".equalsIgnoreCase(value)) {
+			return new String[] { "true" };
+		}
+		if ("false".equalsIgnoreCase(value)) {
+			return new String[] { "false" };
+		}
+		throw new IllegalArgumentException("Unexpected z_useSparqlUo value: " + value);
 	}
 }

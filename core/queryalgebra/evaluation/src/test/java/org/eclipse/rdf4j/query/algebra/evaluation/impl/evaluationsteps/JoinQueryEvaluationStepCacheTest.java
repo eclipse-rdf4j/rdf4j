@@ -205,7 +205,9 @@ class JoinQueryEvaluationStepCacheTest {
 		BindingSetAssignment right = new BindingSetAssignment();
 		MutableBindingSet rightBinding1 = new QueryBindingSet();
 		rightBinding1.addBinding("s", vf.createIRI("urn:subj"));
-		right.setBindingSets(List.of(rightBinding1));
+		MutableBindingSet rightBinding2 = new QueryBindingSet();
+		rightBinding2.addBinding("s", vf.createIRI("urn:subj"));
+		right.setBindingSets(List.of(rightBinding1, rightBinding2));
 
 		Join join = new Join(left, right);
 

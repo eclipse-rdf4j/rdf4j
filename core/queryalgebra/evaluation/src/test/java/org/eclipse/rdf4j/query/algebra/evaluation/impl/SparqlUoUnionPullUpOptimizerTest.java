@@ -13,12 +13,18 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoQueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionCommonStatementPatternOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.SparqlUoConfig;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -54,6 +60,115 @@ class SparqlUoUnionPullUpOptimizerTest {
 		assertThat(counts.unionCount).isEqualTo(1);
 	}
 
+	@Test
+	void pullsCommonStatementPatternOutOfUnionBranches() {
+		String query = "SELECT * WHERE { VALUES ?target { \"A\" \"B\" } "
+				+ "{ ?s <urn:p1> ?name . ?s <urn:code> ?code } "
+				+ "UNION { ?s <urn:p2> ?name . ?s <urn:code> ?code } "
+				+ "FILTER(?code = ?target) }";
+
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		TupleExpr expr = parsedQuery.getTupleExpr();
+
+		EmptyTripleSource tripleSource = new EmptyTripleSource();
+		EvaluationStatistics evaluationStatistics = new EvaluationStatistics();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, null, null, 0L,
+				evaluationStatistics);
+		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(true).build();
+		strategy.setOptimizerPipeline(
+				new SparqlUoQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics, config));
+		strategy.optimize(expr, evaluationStatistics, EmptyBindingSet.getInstance());
+
+		AtomicInteger codePatternCount = new AtomicInteger();
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (node.getPredicateVar() != null
+						&& node.getPredicateVar().hasValue()
+						&& "urn:code".equals(node.getPredicateVar().getValue().stringValue())) {
+					codePatternCount.incrementAndGet();
+				}
+			}
+		});
+
+		assertThat(codePatternCount.get()).isEqualTo(1);
+	}
+
+	@Test
+	void skipsPullUpWhenCommonPatternIsLessSelective() {
+		String query = "SELECT * WHERE { "
+				+ "{ ?s <urn:type> <urn:Condition> . ?s <urn:code> ?code } "
+				+ "UNION { ?s <urn:type> <urn:Medication> . ?s <urn:code> ?code } }";
+
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		TupleExpr expr = parsedQuery.getTupleExpr();
+
+		EvaluationStatistics evaluationStatistics = new EvaluationStatistics() {
+			@Override
+			protected CardinalityCalculator createCardinalityCalculator() {
+				return new CardinalityCalculator() {
+					@Override
+					public void meet(StatementPattern node) {
+						if (node.getPredicateVar() != null && node.getPredicateVar().hasValue()) {
+							String iri = node.getPredicateVar().getValue().stringValue();
+							if ("urn:code".equals(iri)) {
+								cardinality = 1000.0;
+								return;
+							}
+							if ("urn:type".equals(iri)) {
+								cardinality = 1.0;
+								return;
+							}
+						}
+						super.meet(node);
+					}
+				};
+			}
+		};
+		new UnionCommonStatementPatternOptimizer(evaluationStatistics)
+				.optimize(expr, null, EmptyBindingSet.getInstance());
+
+		AtomicInteger codePatternCount = new AtomicInteger();
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (node.getPredicateVar() != null
+						&& node.getPredicateVar().hasValue()
+						&& "urn:code".equals(node.getPredicateVar().getValue().stringValue())) {
+					codePatternCount.incrementAndGet();
+				}
+			}
+		});
+
+		assertThat(codePatternCount.get()).isEqualTo(2);
+	}
+
+	@Test
+	void filterOnOptionalVarIsRewrittenToJoinInPipeline() {
+		String query = "SELECT (COUNT(DISTINCT ?pair) AS ?count) WHERE { "
+				+ "VALUES ?u { <urn:u1> <urn:u2> <urn:u3> } "
+				+ "VALUES ?v { <urn:u1> <urn:u2> <urn:u3> } "
+				+ "FILTER(?u != ?v) "
+				+ "?u <urn:follows> ?v . "
+				+ "OPTIONAL { ?u <urn:name> ?optName . } "
+				+ "FILTER(?optName IN (\"a\", \"b\", \"c\")) "
+				+ "BIND(CONCAT(STR(?u), STR(?v)) AS ?pair) }";
+
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		TupleExpr expr = parsedQuery.getTupleExpr();
+
+		EmptyTripleSource tripleSource = new EmptyTripleSource();
+		EvaluationStatistics evaluationStatistics = new EvaluationStatistics();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, null, null, 0L,
+				evaluationStatistics);
+		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(true).build();
+		strategy.setOptimizerPipeline(
+				new SparqlUoQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics, config));
+		strategy.optimize(expr, evaluationStatistics, EmptyBindingSet.getInstance());
+
+		assertThat(containsLeftJoin(expr)).isFalse();
+	}
+
 	private static final class NodeCounts extends AbstractQueryModelVisitor<RuntimeException> {
 		private int filterCount;
 		private int bindingSetAssignmentCount;
@@ -76,5 +191,16 @@ class SparqlUoUnionPullUpOptimizerTest {
 			unionCount++;
 			super.meet(node);
 		}
+	}
+
+	private static boolean containsLeftJoin(TupleExpr expr) {
+		AtomicBoolean found = new AtomicBoolean(false);
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(LeftJoin node) {
+				found.set(true);
+			}
+		});
+		return found.get();
 	}
 }

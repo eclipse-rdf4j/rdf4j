@@ -44,6 +44,7 @@ public class SparqlUoOptimizer implements QueryOptimizer {
 	private final BeTreeBuilder builder;
 	private final BeTreeSerializer serializer = new BeTreeSerializer();
 	private final BeTreeTransformer transformer;
+	private final OptionalFilterJoinOptimizer optionalFilterJoinOptimizer = new OptionalFilterJoinOptimizer();
 
 	public SparqlUoOptimizer(EvaluationStatistics evaluationStatistics) {
 		this(evaluationStatistics, SparqlUoConfig.fromSystemProperties());
@@ -65,6 +66,7 @@ public class SparqlUoOptimizer implements QueryOptimizer {
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		PARENT_REFERENCE_CLEANER.optimize(tupleExpr, dataset, bindings);
 		tupleExpr.visit(new SparqlUoVisitor());
+		optionalFilterJoinOptimizer.optimize(tupleExpr, dataset, bindings);
 	}
 
 	private class SparqlUoVisitor extends AbstractQueryModelVisitor<RuntimeException> {
