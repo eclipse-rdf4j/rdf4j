@@ -52,24 +52,33 @@ public class OptionalFilterJoinOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			if (!(filter.getArg() instanceof LeftJoin)) {
-				return;
-			}
-			LeftJoin leftJoin = (LeftJoin) filter.getArg();
-			if (leftJoin.getCondition() != null) {
-				return;
-			}
-			Set<String> rightOnly = new HashSet<>(leftJoin.getRightArg().getBindingNames());
-			rightOnly.removeAll(leftJoin.getLeftArg().getBindingNames());
-			if (rightOnly.isEmpty()) {
-				return;
-			}
-			if (!requiresRightVars(filter.getCondition(), rightOnly)) {
-				return;
-			}
-			Join join = new Join(leftJoin.getLeftArg(), leftJoin.getRightArg());
-			filter.setArg(join);
+			rewriteOptionalJoins(filter.getCondition(), filter.getArg());
 		}
+	}
+
+	private static void rewriteOptionalJoins(ValueExpr condition, TupleExpr arg) {
+		if (condition == null || arg == null) {
+			return;
+		}
+		arg.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(LeftJoin leftJoin) {
+				super.meet(leftJoin);
+				if (leftJoin.getCondition() != null) {
+					return;
+				}
+				Set<String> rightOnly = new HashSet<>(leftJoin.getRightArg().getBindingNames());
+				rightOnly.removeAll(leftJoin.getLeftArg().getBindingNames());
+				if (rightOnly.isEmpty()) {
+					return;
+				}
+				if (!requiresRightVars(condition, rightOnly)) {
+					return;
+				}
+				Join join = new Join(leftJoin.getLeftArg(), leftJoin.getRightArg());
+				leftJoin.replaceWith(join);
+			}
+		});
 	}
 
 	private static boolean requiresRightVars(ValueExpr expr, Set<String> rightOnly) {

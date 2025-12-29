@@ -27,9 +27,11 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private final SparqlUoOptimizer sparqlUoOptimizer;
 	private final BindingSetAssignmentUnionOptimizer bindingSetAssignmentUnionOptimizer;
 	private final UnionCommonStatementPatternOptimizer unionCommonStatementPatternOptimizer;
+	private final UnionCommonJoinFactorOptimizer unionCommonJoinFactorOptimizer;
 	private final UnionCommonFilterBindingSetOptimizer unionCommonFilterBindingSetOptimizer;
 	private final OptionalFilterJoinOptimizer optionalFilterJoinOptimizer;
 	private final OptionalNotBoundFilterOptimizer optionalNotBoundFilterOptimizer;
+	private final OptionalBindLeftJoinOptimizer optionalBindLeftJoinOptimizer;
 	private final MinusOptimizer minusOptimizer;
 	private final ExistsConstantOptimizer existsConstantOptimizer;
 	private final QueryJoinOptimizer joinOptimizer;
@@ -47,9 +49,12 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		this.bindingSetAssignmentUnionOptimizer = new BindingSetAssignmentUnionOptimizer(
 				config.maxBindingSetAssignmentUnionSize());
 		this.unionCommonStatementPatternOptimizer = new UnionCommonStatementPatternOptimizer(evaluationStatistics);
+		this.unionCommonJoinFactorOptimizer = new UnionCommonJoinFactorOptimizer(evaluationStatistics,
+				config.allowNonImprovingTransforms());
 		this.unionCommonFilterBindingSetOptimizer = new UnionCommonFilterBindingSetOptimizer();
 		this.optionalFilterJoinOptimizer = new OptionalFilterJoinOptimizer();
 		this.optionalNotBoundFilterOptimizer = new OptionalNotBoundFilterOptimizer();
+		this.optionalBindLeftJoinOptimizer = new OptionalBindLeftJoinOptimizer();
 		this.minusOptimizer = new MinusOptimizer(config.enableMinusUnionSplit());
 		this.existsConstantOptimizer = new ExistsConstantOptimizer();
 		this.joinOptimizer = new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource,
@@ -63,6 +68,7 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		boolean inserted = false;
 		boolean bindingSetUnionInserted = false;
 		boolean statementPatternInserted = false;
+		boolean commonFactorInserted = false;
 		for (QueryOptimizer optimizer : delegate.getOptimizers()) {
 			if (optimizer instanceof QueryJoinOptimizer) {
 				if (!inserted) {
@@ -80,10 +86,13 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				if (enableOptionalFilterJoin) {
 					optimizers.add(optionalFilterJoinOptimizer);
 					optimizers.add(optionalNotBoundFilterOptimizer);
+					optimizers.add(optionalBindLeftJoinOptimizer);
 				}
 				if (!statementPatternInserted) {
 					optimizers.add(unionCommonStatementPatternOptimizer);
+					optimizers.add(unionCommonJoinFactorOptimizer);
 					statementPatternInserted = true;
+					commonFactorInserted = true;
 				}
 				continue;
 			}
@@ -104,6 +113,9 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		}
 		if (!statementPatternInserted) {
 			optimizers.add(unionCommonStatementPatternOptimizer);
+		}
+		if (!commonFactorInserted) {
+			optimizers.add(unionCommonJoinFactorOptimizer);
 		}
 		return optimizers;
 	}

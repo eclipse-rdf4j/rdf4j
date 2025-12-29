@@ -58,6 +58,34 @@ class SparqlUoOptionalFilterRewriteTest {
 		assertThat(containsNotExists(expr)).isTrue();
 	}
 
+	@Test
+	void convertsNestedOptionalFilterToJoins() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:p1> ?o . "
+				+ "OPTIONAL { ?s <urn:p2> ?a . BIND(?a AS ?optA) } "
+				+ "OPTIONAL { ?s <urn:p3> ?b . BIND(?b AS ?optB) } "
+				+ "FILTER(?optA = ?optB) "
+				+ "}";
+
+		TupleExpr expr = optimize(query);
+
+		assertThat(containsLeftJoin(expr)).isFalse();
+	}
+
+	@Test
+	void removesOptionalBindLeftJoin() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:p1> ?o . "
+				+ "OPTIONAL { BIND(STR(?s) AS ?sStr) } "
+				+ "OPTIONAL { BIND(STR(?o) AS ?oStr) } "
+				+ "FILTER(CONTAINS(?sStr, \"foo\") || CONTAINS(?oStr, \"foo\")) "
+				+ "}";
+
+		TupleExpr expr = optimize(query);
+
+		assertThat(containsLeftJoin(expr)).isFalse();
+	}
+
 	private static TupleExpr optimize(String query) {
 		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		TupleExpr expr = parsedQuery.getTupleExpr();

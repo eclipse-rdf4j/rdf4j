@@ -46,6 +46,7 @@ public class SparqlUoOptimizer implements QueryOptimizer {
 	private final BeTreeTransformer transformer;
 	private final OptionalFilterJoinOptimizer optionalFilterJoinOptimizer = new OptionalFilterJoinOptimizer();
 	private final OptionalNotBoundFilterOptimizer optionalNotBoundFilterOptimizer = new OptionalNotBoundFilterOptimizer();
+	private final OptionalBindLeftJoinOptimizer optionalBindLeftJoinOptimizer = new OptionalBindLeftJoinOptimizer();
 
 	public SparqlUoOptimizer(EvaluationStatistics evaluationStatistics) {
 		this(evaluationStatistics, SparqlUoConfig.fromSystemProperties());
@@ -70,6 +71,7 @@ public class SparqlUoOptimizer implements QueryOptimizer {
 		if (config.enableOptionalFilterJoin()) {
 			optionalFilterJoinOptimizer.optimize(tupleExpr, dataset, bindings);
 			optionalNotBoundFilterOptimizer.optimize(tupleExpr, dataset, bindings);
+			optionalBindLeftJoinOptimizer.optimize(tupleExpr, dataset, bindings);
 		}
 	}
 
