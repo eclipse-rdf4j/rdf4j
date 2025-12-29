@@ -29,6 +29,8 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private final UnionCommonStatementPatternOptimizer unionCommonStatementPatternOptimizer;
 	private final UnionCommonFilterBindingSetOptimizer unionCommonFilterBindingSetOptimizer;
 	private final OptionalFilterJoinOptimizer optionalFilterJoinOptimizer;
+	private final MinusOptimizer minusOptimizer;
+	private final ExistsConstantOptimizer existsConstantOptimizer;
 	private final QueryJoinOptimizer joinOptimizer;
 
 	public SparqlUoQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
@@ -45,6 +47,8 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		this.unionCommonStatementPatternOptimizer = new UnionCommonStatementPatternOptimizer(evaluationStatistics);
 		this.unionCommonFilterBindingSetOptimizer = new UnionCommonFilterBindingSetOptimizer();
 		this.optionalFilterJoinOptimizer = new OptionalFilterJoinOptimizer();
+		this.minusOptimizer = new MinusOptimizer();
+		this.existsConstantOptimizer = new ExistsConstantOptimizer();
 		this.joinOptimizer = new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource,
 				false);
 	}
@@ -58,6 +62,8 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		for (QueryOptimizer optimizer : delegate.getOptimizers()) {
 			if (optimizer instanceof QueryJoinOptimizer) {
 				if (!inserted) {
+					optimizers.add(existsConstantOptimizer);
+					optimizers.add(minusOptimizer);
 					optimizers.add(sparqlUoOptimizer);
 					inserted = true;
 				}
@@ -81,6 +87,8 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 			}
 		}
 		if (!inserted) {
+			optimizers.add(existsConstantOptimizer);
+			optimizers.add(minusOptimizer);
 			optimizers.add(sparqlUoOptimizer);
 			optimizers.add(joinOptimizer);
 		}
