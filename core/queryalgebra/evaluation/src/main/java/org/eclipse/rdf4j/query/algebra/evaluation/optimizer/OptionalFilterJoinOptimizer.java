@@ -96,7 +96,11 @@ public class OptionalFilterJoinOptimizer implements QueryOptimizer {
 			return requiresRightVars(and.getLeftArg(), rightOnly) || requiresRightVars(and.getRightArg(), rightOnly);
 		}
 		if (expr instanceof Not) {
-			return requiresRightVars(((Not) expr).getArg(), rightOnly);
+			ValueExpr arg = ((Not) expr).getArg();
+			if (arg instanceof Bound && rightOnly.contains(((Bound) arg).getArg().getName())) {
+				return false;
+			}
+			return requiresRightVars(arg, rightOnly);
 		}
 		if (expr instanceof UnaryValueOperator) {
 			return requiresRightVars(((UnaryValueOperator) expr).getArg(), rightOnly);

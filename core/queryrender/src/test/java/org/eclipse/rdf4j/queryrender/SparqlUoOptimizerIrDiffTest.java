@@ -18,15 +18,27 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Comparator;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoQueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.SparqlUoConfig;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -77,8 +89,7 @@ public class SparqlUoOptimizerIrDiffTest {
 		assertNotNull(before);
 		TupleExpr after = before.clone();
 
-		new UnionScopeChangeOptimizer().optimize(after, DATASET, BINDINGS);
-		new SparqlUoOptimizer(new EvaluationStatistics(), true).optimize(after, DATASET, BINDINGS);
+		optimizeWithPipeline(after);
 
 		TupleExprIRRenderer renderer = new TupleExprIRRenderer(style);
 		writeReportFile(baseName, "SPARQL_input", sparql);
@@ -92,6 +103,17 @@ public class SparqlUoOptimizerIrDiffTest {
 		writeReportFile(baseName, "TupleExpr_after", VarNameNormalizer.normalizeVars(after.toString()));
 	}
 
+	private static void optimizeWithPipeline(TupleExpr expr) {
+		EmptyTripleSource tripleSource = new EmptyTripleSource();
+		EvaluationStatistics evaluationStatistics = new EvaluationStatistics();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, null, null, 0L,
+				evaluationStatistics);
+		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(true).build();
+		strategy.setOptimizerPipeline(
+				new SparqlUoQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics, config));
+		strategy.optimize(expr, evaluationStatistics, BINDINGS);
+	}
+
 	@Test
 	@DisplayName("IR diff: UNION common-prefix pull-up")
 	void irDiff_unionCommonPrefixPullUp() {
@@ -101,6 +123,17 @@ public class SparqlUoOptimizerIrDiffTest {
 				"  { ?s <urn:p1> ?o . ?s <urn:p3> ?y }\n" +
 				"}";
 		dump("SparqlUo_ir_union_common_prefix", q, cfg());
+	}
+
+	@Test
+	@DisplayName("IR diff: UNION common-filter hoist")
+	void irDiff_unionCommonFilterHoist() {
+		String q = "SELECT * WHERE {\n" +
+				"  { ?s <urn:p1> ?name . FILTER(?name != \"\") FILTER(?name != \"x\") }\n" +
+				"  UNION\n" +
+				"  { ?s <urn:p2> ?name . FILTER(?name != \"x\") FILTER(?name != \"\") }\n" +
+				"}";
+		dump("SparqlUo_ir_union_filter_hoist", q, cfg());
 	}
 
 	@Test
@@ -123,5 +156,41 @@ public class SparqlUoOptimizerIrDiffTest {
 				"  ?s <urn:p3> ?x\n" +
 				"}";
 		dump("SparqlUo_ir_optional_lift_negative", q, cfg());
+	}
+
+	@Test
+	@DisplayName("IR diff: MINUS UNION split")
+	void irDiff_minusUnionSplit() {
+		String q = "SELECT * WHERE {\n" +
+				"  ?s <urn:p1> ?o\n" +
+				"  MINUS { { ?s <urn:p2> ?o2 } UNION { ?s <urn:p3> ?o3 } }\n" +
+				"}";
+		dump("SparqlUo_ir_minus_union_split", q, cfg());
+	}
+
+	private static final class EmptyTripleSource implements TripleSource {
+		private final ValueFactory vf = SimpleValueFactory.getInstance();
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return vf;
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) throws QueryEvaluationException {
+			return TripleSource.EMPTY_ITERATION;
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subj, IRI pred,
+				Value obj, Resource... contexts) throws QueryEvaluationException {
+			return TripleSource.EMPTY_ITERATION;
+		}
+
+		@Override
+		public Comparator<Value> getComparator() {
+			return null;
+		}
 	}
 }
