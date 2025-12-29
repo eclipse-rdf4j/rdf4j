@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -65,10 +64,6 @@ public class MinusOptimizer implements QueryOptimizer {
 				difference.replaceWith(leftArg);
 				return;
 			}
-			if (disjoint(leftArg.getBindingNames(), rightArg.getBindingNames())) {
-				difference.replaceWith(leftArg);
-				return;
-			}
 			if (enableUnionSplit && rightArg instanceof Union) {
 				Union union = (Union) rightArg;
 				List<TupleExpr> branches = new ArrayList<>();
@@ -82,18 +77,6 @@ public class MinusOptimizer implements QueryOptimizer {
 				}
 			}
 		}
-	}
-
-	private static boolean disjoint(Set<String> leftBindings, Set<String> rightBindings) {
-		if (leftBindings.isEmpty() || rightBindings.isEmpty()) {
-			return true;
-		}
-		for (String name : leftBindings) {
-			if (rightBindings.contains(name)) {
-				return false;
-			}
-		}
-		return true;
 	}
 
 	private static void collectUnionBranches(TupleExpr expr, boolean variableScopeChange, List<TupleExpr> branches) {

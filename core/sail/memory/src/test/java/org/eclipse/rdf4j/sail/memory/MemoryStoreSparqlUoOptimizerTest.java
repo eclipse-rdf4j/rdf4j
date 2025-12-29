@@ -110,7 +110,6 @@ class MemoryStoreSparqlUoOptimizerTest {
 		}
 	}
 
-
 	private void assertMinusInsideOptional(boolean useSparqlUo) {
 		SailRepository repo = createRepository(useSparqlUo);
 		try (RepositoryConnection connection = repo.getConnection()) {
@@ -232,7 +231,6 @@ class MemoryStoreSparqlUoOptimizerTest {
 		repository.init();
 		return repository;
 	}
-
 
 	private EvaluationStrategyFactory createStandardPipelineFactory(MemoryStore store) {
 		DefaultEvaluationStrategyFactory factory = new DefaultEvaluationStrategyFactory(

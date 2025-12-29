@@ -205,6 +205,10 @@ public class BeTreeTransformer {
 				index++;
 				continue;
 			}
+			if (leavesEmptyBranch(union, common)) {
+				index++;
+				continue;
+			}
 			double baseCost = costEstimator.estimateGroupCost(group);
 			BeUndoToken undo = new BeUndoToken();
 			undo.capture(group);
@@ -392,6 +396,38 @@ public class BeTreeTransformer {
 			patterns.addAll(((BeBgpNode) child).getStatementPatterns());
 		}
 		return patterns;
+	}
+
+	private boolean leavesEmptyBranch(BeUnionNode union, List<StatementPattern> common) {
+		Map<StatementPatternKey, Integer> counts = countPatterns(common);
+		for (BeGroupNode branch : union.getBranches()) {
+			if (branchWouldBeEmpty(branch, new HashMap<>(counts))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean branchWouldBeEmpty(BeGroupNode branch, Map<StatementPatternKey, Integer> removalCounts) {
+		int totalPatterns = 0;
+		for (BeNode child : branch.getChildren()) {
+			if (!(child instanceof BeBgpNode)) {
+				return false;
+			}
+			totalPatterns += ((BeBgpNode) child).getStatementPatterns().size();
+		}
+		int removed = 0;
+		for (BeNode child : branch.getChildren()) {
+			for (StatementPattern pattern : ((BeBgpNode) child).getStatementPatterns()) {
+				StatementPatternKey key = StatementPatternKey.of(pattern);
+				Integer remaining = removalCounts.get(key);
+				if (remaining != null && remaining > 0) {
+					removalCounts.put(key, remaining - 1);
+					removed++;
+				}
+			}
+		}
+		return removed == totalPatterns;
 	}
 
 	private Map<StatementPatternKey, Integer> countPatterns(List<StatementPattern> patterns) {
