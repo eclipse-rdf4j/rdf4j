@@ -56,10 +56,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 12)
+@Warmup(iterations = 5, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms32G", "-Xmx32G" })
-@Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 1)
+@Measurement(iterations = 5, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
