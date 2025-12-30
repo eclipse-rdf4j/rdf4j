@@ -55,6 +55,7 @@ public class SparqlUoOptimizer implements QueryOptimizer {
 	public SparqlUoOptimizer(EvaluationStatistics evaluationStatistics, boolean allowNonImprovingTransforms) {
 		this(evaluationStatistics, SparqlUoConfig.builder()
 				.allowNonImprovingTransforms(allowNonImprovingTransforms)
+				.enableUnionCommonPrefixPullUp(allowNonImprovingTransforms)
 				.build());
 	}
 

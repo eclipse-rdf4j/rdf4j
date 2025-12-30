@@ -202,6 +202,10 @@ public class NotExistsSemiJoinOptimizer implements QueryOptimizer {
 				}
 			}
 		});
+		Map<String, String> aliases = collectAliasMap(expr);
+		if (!aliases.isEmpty()) {
+			names.addAll(aliases.keySet());
+		}
 		return names;
 	}
 
