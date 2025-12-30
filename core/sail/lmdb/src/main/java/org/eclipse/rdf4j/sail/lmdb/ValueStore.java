@@ -454,19 +454,44 @@ class ValueStore extends AbstractValueFactory {
 		return revision;
 	}
 
+
+
+
+	private final LmdbUtil.TransactionWithId<byte[]> GET_DATA_FN = this::getDataInTxn;
+
 	protected byte[] getData(long id) throws IOException {
-		return readTransaction(env, (stack, txn) -> {
-			MDBVal keyData = MDBVal.calloc(stack);
-			keyData.mv_data(id2data(idBuffer(stack), id).flip());
-			MDBVal valueData = MDBVal.calloc(stack);
-			if (mdb_get(txn, dbi, keyData, valueData) == MDB_SUCCESS) {
-				byte[] valueBytes = new byte[valueData.mv_data().remaining()];
-				valueData.mv_data().get(valueBytes);
-				return valueBytes;
-			}
-			return null;
-		});
+		return readTransaction(env, id, GET_DATA_FN);
 	}
+
+	<T> T readTransaction(long env, long id, LmdbUtil.TransactionWithId<T> getDataFn) throws IOException {
+		txnLock.readLock().lock();
+		try {
+			if (writeTxn != 0) {
+				return LmdbUtil.readTransaction(env, writeTxn, id, getDataFn);
+			}
+			return threadLocalReadTxn.get().execute(getDataFn, env, id);
+		} finally {
+			txnLock.readLock().unlock();
+		}
+	}
+
+	private byte[] getDataInTxn(MemoryStack stack, long txn, long id) {
+		MDBVal keyData = MDBVal.malloc(stack);
+		ByteBuffer keyBuf = id2data(idBuffer(stack), id);
+		keyBuf.flip();
+		keyData.mv_data(keyBuf);
+
+		MDBVal valueData = MDBVal.malloc(stack);
+		if (mdb_get(txn, dbi, keyData, valueData) != MDB_SUCCESS) {
+			return null;
+		}
+
+		ByteBuffer src = valueData.mv_data();     // don’t call twice
+		byte[] out = new byte[src.remaining()];
+		src.get(out);
+		return out;
+	}
+
 
 	/**
 	 * Get value from cache by ID.
@@ -1405,6 +1430,38 @@ class ValueStore extends AbstractValueFactory {
 					state.depth++;
 					try {
 						return transaction.exec(stack, state.txn);
+					} finally {
+						releaseTxn();
+					}
+				}
+			}
+		}
+
+		synchronized <T> T execute(LmdbUtil.TransactionWithId<T> transaction, long env, long id) throws IOException {
+			try (MemoryStack stack = MemoryStack.stackPush()) {
+				try {
+					ensureTxn(env);
+					state.depth++;
+					try {
+						return transaction.exec(stack, state.txn, id);
+					} finally {
+						releaseTxn();
+					}
+				} catch (Exception e) {
+					// Retry once
+					try {
+						System.gc();
+						Thread.sleep(1);
+						System.gc();
+						Thread.sleep(1);
+					} catch (InterruptedException ie) {
+						Thread.currentThread().interrupt();
+					}
+
+					ensureTxn(env);
+					state.depth++;
+					try {
+						return transaction.exec(stack, state.txn, id);
 					} finally {
 						releaseTxn();
 					}

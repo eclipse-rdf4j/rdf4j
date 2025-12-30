@@ -236,6 +236,14 @@ public class MinusOptimizer implements QueryOptimizer {
 					names.add(node.getName());
 				}
 			}
+
+			@Override
+			public void meet(Extension node) {
+				for (ExtensionElem elem : node.getElements()) {
+					names.add(elem.getName());
+				}
+				super.meet(node);
+			}
 		});
 		return names;
 	}

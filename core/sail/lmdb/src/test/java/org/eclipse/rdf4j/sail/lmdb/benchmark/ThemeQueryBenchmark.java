@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
@@ -197,19 +198,24 @@ public class ThemeQueryBenchmark {
 		String[] themeNames = paramValues("themeName");
 		for (String themeNameValue : themeNames) {
 			for (String queryIndexValue : queryIndexes) {
-				themeName = themeNameValue;
-				x_queryIndex = Integer.parseInt(queryIndexValue);
-				setup();
-				try (SailRepositoryConnection connection = repository.getConnection()) {
-					String explanation = connection
-							.prepareTupleQuery(query)
-							.explain(Explanation.Level.Executed)
-							.toString();
-					System.out.println("Query Explanation for theme " + themeName + " and query index " + x_queryIndex
-							+ ":\n" + explanation);
-				} finally {
-					tearDown();
+				for (Boolean b : List.of(false, true)) {
+					this.z_useSparqlUo = b;
+					themeName = themeNameValue;
+					x_queryIndex = Integer.parseInt(queryIndexValue);
+					setup();
+					try (SailRepositoryConnection connection = repository.getConnection()) {
+						String explanation = connection
+								.prepareTupleQuery(query)
+								.explain(Explanation.Level.Executed)
+								.toString();
+						System.out
+								.println("Query Explanation for theme " + themeName + " and query index " + x_queryIndex
+										+ " and z_useSparqlUo=" + b + " :\n" + explanation);
+					} finally {
+						tearDown();
+					}
 				}
+				System.out.println("----------------------------------------\n");
 			}
 		}
 	}
