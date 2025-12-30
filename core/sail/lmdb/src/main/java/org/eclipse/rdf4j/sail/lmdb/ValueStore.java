@@ -454,9 +454,6 @@ class ValueStore extends AbstractValueFactory {
 		return revision;
 	}
 
-
-
-
 	private final LmdbUtil.TransactionWithId<byte[]> GET_DATA_FN = this::getDataInTxn;
 
 	protected byte[] getData(long id) throws IOException {
@@ -486,12 +483,11 @@ class ValueStore extends AbstractValueFactory {
 			return null;
 		}
 
-		ByteBuffer src = valueData.mv_data();     // don’t call twice
+		ByteBuffer src = valueData.mv_data(); // don’t call twice
 		byte[] out = new byte[src.remaining()];
 		src.get(out);
 		return out;
 	}
-
 
 	/**
 	 * Get value from cache by ID.

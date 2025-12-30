@@ -99,8 +99,8 @@ final class LmdbUtil {
 		return ret;
 	}
 
-
-	static <T> T readTransaction(long env, long writeTxn, long id, TransactionWithId<T> transaction) throws IOException {
+	static <T> T readTransaction(long env, long writeTxn, long id, TransactionWithId<T> transaction)
+			throws IOException {
 		try (MemoryStack stack = stackPush()) {
 			long txn;
 			if (writeTxn == 0) {
@@ -121,8 +121,6 @@ final class LmdbUtil {
 		}
 
 	}
-
-
 
 	static <T> T transaction(long env, Transaction<T> transaction) throws IOException {
 		T ret;
