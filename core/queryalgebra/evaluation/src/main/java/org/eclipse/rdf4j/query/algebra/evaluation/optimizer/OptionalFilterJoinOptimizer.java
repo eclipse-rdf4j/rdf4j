@@ -45,6 +45,9 @@ public class OptionalFilterJoinOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		if (UnorderedSliceDetector.hasUnorderedSlice(tupleExpr)) {
+			return;
+		}
 		tupleExpr.visit(new OptionalFilterVisitor());
 	}
 
@@ -138,4 +141,5 @@ public class OptionalFilterJoinOptimizer implements QueryOptimizer {
 		}
 		return false;
 	}
+
 }

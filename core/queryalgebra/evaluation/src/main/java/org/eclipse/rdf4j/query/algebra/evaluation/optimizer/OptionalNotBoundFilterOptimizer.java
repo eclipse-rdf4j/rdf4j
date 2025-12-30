@@ -34,6 +34,9 @@ public class OptionalNotBoundFilterOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		if (UnorderedSliceDetector.hasUnorderedSlice(tupleExpr)) {
+			return;
+		}
 		tupleExpr.visit(new OptionalNotBoundVisitor());
 	}
 

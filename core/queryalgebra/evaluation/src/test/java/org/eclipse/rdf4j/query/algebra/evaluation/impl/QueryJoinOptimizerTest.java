@@ -119,6 +119,36 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void prefersCheapestFilterWithExtensionWhenNotUsedElsewhere() throws Exception {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:>",
+				"select * where {",
+				"  {",
+				"    ?s ex:pExpensive ?o1 .",
+				"    BIND(?o1 AS ?o1Alias)",
+				"    FILTER(?o1Alias = \"expensive\")",
+				"  }",
+				"  {",
+				"    ?s ex:pCheap ?o2 .",
+				"    BIND(?o2 AS ?o2Alias)",
+				"    FILTER(?o2Alias = \"cheap\")",
+				"  }",
+				"}"
+		);
+
+		ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new JoinEstimatingStatistics(), false,
+				new EmptyTripleSource(), false);
+		QueryRoot optRoot = new QueryRoot(parsed.getTupleExpr());
+		optimizer.optimize(optRoot, null, null);
+
+		TupleExpr leaf = findLeaf(optRoot);
+		assertTrue(leaf instanceof StatementPattern, "Expected statement pattern as left-most leaf");
+		String predicate = ((StatementPattern) leaf).getPredicateVar().getValue().stringValue();
+		assertEquals("ex:pCheap", predicate);
+	}
+
+	@Test
 	public void bindSubselectJoinOrder() {
 		String query = "SELECT * WHERE {\n" + "    BIND (bnode() as ?ct01) \n" + "    { SELECT ?s WHERE {\n"
 				+ "            ?s ?p ?o .\n" + "      }\n" + "      LIMIT 10\n" + "    }\n" + "}";
@@ -396,6 +426,11 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		}
 
 		@Override
+		protected CardinalityCalculator createCardinalityCalculator() {
+			return new JoinEstimatingCardinalityCalculator();
+		}
+
+		@Override
 		public double getCardinality(TupleExpr expr) {
 			if (expr instanceof StatementPattern) {
 				return getStatementCardinality((StatementPattern) expr);
@@ -424,6 +459,19 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 			}
 
 			return 100;
+		}
+
+		private final class JoinEstimatingCardinalityCalculator extends CardinalityCalculator {
+
+			@Override
+			protected double getCardinality(StatementPattern sp) {
+				return getStatementCardinality(sp);
+			}
+
+			@Override
+			protected CardinalityCalculator newCalculator() {
+				return new JoinEstimatingCardinalityCalculator();
+			}
 		}
 	}
 

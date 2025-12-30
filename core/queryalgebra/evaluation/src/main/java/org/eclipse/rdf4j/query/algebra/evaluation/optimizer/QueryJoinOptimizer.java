@@ -34,12 +34,16 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -165,7 +169,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				List<TupleExpr> joinArgs = getJoinArgs(node, new ArrayList<>());
 
 				// get all extensions (BIND clause)
-				List<TupleExpr> orderedExtensions = getExtensionTupleExprs(joinArgs);
+				List<TupleExpr> orderedExtensions = getExtensionTupleExprs(joinArgs, shouldPrioritizeExtensions());
 				optimizeInNewScope(orderedExtensions);
 				joinArgs.removeAll(orderedExtensions);
 
@@ -549,12 +553,34 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
-		private List<TupleExpr> getExtensionTupleExprs(List<TupleExpr> expressions) {
+		private final Deque<Boolean> sliceOrderStack = new ArrayDeque<>();
+
+		@Override
+		public void meet(Slice node) {
+			if (node.hasLimit() || node.hasOffset()) {
+				sliceOrderStack.push(false);
+				node.getArg().visit(this);
+				sliceOrderStack.pop();
+				return;
+			}
+			super.meet(node);
+		}
+
+		@Override
+		public void meet(Order node) {
+			if (!sliceOrderStack.isEmpty()) {
+				sliceOrderStack.pop();
+				sliceOrderStack.push(true);
+			}
+			super.meet(node);
+		}
+
+		private List<TupleExpr> getExtensionTupleExprs(List<TupleExpr> expressions, boolean prioritize) {
 			if (expressions.isEmpty()) {
 				return List.of();
 			}
 
-			if (prioritizeExtensions) {
+			if (prioritize) {
 				return collectExtensionTupleExprs(expressions);
 			}
 
@@ -565,14 +591,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					continue;
 				}
 
-				if (!(expr instanceof Extension)) {
-					extensions = addTupleExpr(extensions, expr);
-					continue;
+				Set<String> introducedBindings;
+				if (expr instanceof Extension) {
+					Extension extension = (Extension) expr;
+					introducedBindings = new HashSet<>(extension.getBindingNames());
+					introducedBindings.removeAll(extension.getArg().getBindingNames());
+				} else {
+					introducedBindings = collectIntroducedBindings(expr);
 				}
-
-				Extension extension = (Extension) expr;
-				Set<String> introducedBindings = new HashSet<>(extension.getBindingNames());
-				introducedBindings.removeAll(extension.getArg().getBindingNames());
 				if (introducedBindings.isEmpty()) {
 					continue;
 				}
@@ -591,6 +617,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			return extensions;
+		}
+
+		private boolean shouldPrioritizeExtensions() {
+			return prioritizeExtensions || isUnderUnorderedSlice();
+		}
+
+		private boolean isUnderUnorderedSlice() {
+			return !sliceOrderStack.isEmpty() && !sliceOrderStack.peek();
 		}
 
 		private List<TupleExpr> collectExtensionTupleExprs(List<TupleExpr> expressions) {
@@ -622,6 +656,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			return counts;
+		}
+
+		private Set<String> collectIntroducedBindings(TupleExpr expr) {
+			ExtensionBindingCollector collector = new ExtensionBindingCollector();
+			expr.visit(collector);
+			return collector.getIntroducedBindings();
 		}
 
 		/**
@@ -1028,6 +1068,40 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
+	}
+
+	private static final class ExtensionBindingCollector extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+		private final Set<String> introduced = new HashSet<>();
+
+		ExtensionBindingCollector() {
+			super(true);
+		}
+
+		@Override
+		public void meet(Extension node) {
+			Set<String> introducedBindings = new HashSet<>(node.getBindingNames());
+			introducedBindings.removeAll(node.getArg().getBindingNames());
+			introduced.addAll(introducedBindings);
+			super.meet(node);
+		}
+
+		@Override
+		public void meetUnaryTupleOperator(UnaryTupleOperator node) {
+			if (!node.isVariableScopeChange()) {
+				super.meetUnaryTupleOperator(node);
+			}
+		}
+
+		@Override
+		public void meetBinaryTupleOperator(BinaryTupleOperator node) {
+			if (!node.isVariableScopeChange()) {
+				super.meetBinaryTupleOperator(node);
+			}
+		}
+
+		private Set<String> getIntroducedBindings() {
+			return introduced;
+		}
 	}
 
 	private static boolean statementPatternWithMinimumOneConstant(TupleExpr cand) {

@@ -22,6 +22,7 @@ public final class SparqlUoConfig {
 	public static final String PROP_MAX_BSA_UNION_DISTRIBUTION = "rdf4j.sparqluo.maxBindingSetAssignmentUnionSize";
 	public static final String PROP_ENABLE_MINUS_UNION_SPLIT = "rdf4j.sparqluo.enableMinusUnionSplit";
 	public static final String PROP_ENABLE_OPTIONAL_FILTER_JOIN = "rdf4j.sparqluo.enableOptionalFilterJoin";
+	public static final String PROP_ENABLE_UNION_COMMON_PREFIX_PULL_UP = "rdf4j.sparqluo.enableUnionCommonPrefixPullUp";
 
 	public static final boolean DEFAULT_ALLOW_NON_IMPROVING = false;
 	public static final double DEFAULT_VAR_DOMAIN = 10.0;
@@ -32,6 +33,7 @@ public final class SparqlUoConfig {
 	public static final int DEFAULT_MAX_BSA_UNION_DISTRIBUTION = 32;
 	public static final boolean DEFAULT_ENABLE_MINUS_UNION_SPLIT = true;
 	public static final boolean DEFAULT_ENABLE_OPTIONAL_FILTER_JOIN = true;
+	public static final boolean DEFAULT_ENABLE_UNION_COMMON_PREFIX_PULL_UP = false;
 
 	private final boolean allowNonImprovingTransforms;
 	private final double assumedVarDomainCardinality;
@@ -42,6 +44,7 @@ public final class SparqlUoConfig {
 	private final int maxBindingSetAssignmentUnionSize;
 	private final boolean enableMinusUnionSplit;
 	private final boolean enableOptionalFilterJoin;
+	private final boolean enableUnionCommonPrefixPullUp;
 
 	private SparqlUoConfig(Builder builder) {
 		this.allowNonImprovingTransforms = builder.allowNonImprovingTransforms;
@@ -54,6 +57,7 @@ public final class SparqlUoConfig {
 				DEFAULT_MAX_BSA_UNION_DISTRIBUTION);
 		this.enableMinusUnionSplit = builder.enableMinusUnionSplit;
 		this.enableOptionalFilterJoin = builder.enableOptionalFilterJoin;
+		this.enableUnionCommonPrefixPullUp = builder.enableUnionCommonPrefixPullUp;
 	}
 
 	public static SparqlUoConfig defaultConfig() {
@@ -98,6 +102,10 @@ public final class SparqlUoConfig {
 		if (enableOptionalFilterJoin != null) {
 			builder.enableOptionalFilterJoin(enableOptionalFilterJoin);
 		}
+		Boolean enableUnionCommonPrefixPullUp = readBoolean(PROP_ENABLE_UNION_COMMON_PREFIX_PULL_UP);
+		if (enableUnionCommonPrefixPullUp != null) {
+			builder.enableUnionCommonPrefixPullUp(enableUnionCommonPrefixPullUp);
+		}
 		return builder.build();
 	}
 
@@ -139,6 +147,10 @@ public final class SparqlUoConfig {
 
 	public boolean enableOptionalFilterJoin() {
 		return enableOptionalFilterJoin;
+	}
+
+	public boolean enableUnionCommonPrefixPullUp() {
+		return enableUnionCommonPrefixPullUp;
 	}
 
 	private static Boolean readBoolean(String property) {
@@ -195,6 +207,7 @@ public final class SparqlUoConfig {
 		private int maxBindingSetAssignmentUnionSize = DEFAULT_MAX_BSA_UNION_DISTRIBUTION;
 		private boolean enableMinusUnionSplit = DEFAULT_ENABLE_MINUS_UNION_SPLIT;
 		private boolean enableOptionalFilterJoin = DEFAULT_ENABLE_OPTIONAL_FILTER_JOIN;
+		private boolean enableUnionCommonPrefixPullUp = DEFAULT_ENABLE_UNION_COMMON_PREFIX_PULL_UP;
 
 		private Builder() {
 		}
@@ -241,6 +254,11 @@ public final class SparqlUoConfig {
 
 		public Builder enableOptionalFilterJoin(boolean enableOptionalFilterJoin) {
 			this.enableOptionalFilterJoin = enableOptionalFilterJoin;
+			return this;
+		}
+
+		public Builder enableUnionCommonPrefixPullUp(boolean enableUnionCommonPrefixPullUp) {
+			this.enableUnionCommonPrefixPullUp = enableUnionCommonPrefixPullUp;
 			return this;
 		}
 

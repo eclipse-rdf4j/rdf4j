@@ -66,7 +66,16 @@ public class SparqlUoOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		if (UnorderedSliceDetector.hasUnorderedSlice(tupleExpr)) {
+			// Avoid plan rewrites that can change LIMIT/OFFSET truncation order.
+			return;
+		}
 		PARENT_REFERENCE_CLEANER.optimize(tupleExpr, dataset, bindings);
+		if (config.enableOptionalFilterJoin()) {
+			optionalFilterJoinOptimizer.optimize(tupleExpr, dataset, bindings);
+			optionalNotBoundFilterOptimizer.optimize(tupleExpr, dataset, bindings);
+			optionalBindLeftJoinOptimizer.optimize(tupleExpr, dataset, bindings);
+		}
 		tupleExpr.visit(new SparqlUoVisitor());
 		if (config.enableOptionalFilterJoin()) {
 			optionalFilterJoinOptimizer.optimize(tupleExpr, dataset, bindings);
@@ -152,5 +161,6 @@ public class SparqlUoOptimizer implements QueryOptimizer {
 			TupleExpr replacement = serializer.serialize(group);
 			node.replaceWith(replacement);
 		}
+
 	}
 }

@@ -41,6 +41,7 @@ public class BeTreeTransformer {
 	private final BeBgpCoalescer coalescer = new BeBgpCoalescer();
 	private final BeTreeSerializer serializer = new BeTreeSerializer();
 	private final boolean allowNonImprovingTransforms;
+	private final boolean enableUnionCommonPrefixPullUp;
 	private final boolean debugLogging;
 
 	public BeTreeTransformer(BeCostEstimator costEstimator) {
@@ -56,6 +57,7 @@ public class BeTreeTransformer {
 	public BeTreeTransformer(BeCostEstimator costEstimator, SparqlUoConfig config) {
 		this.costEstimator = costEstimator;
 		this.allowNonImprovingTransforms = config.allowNonImprovingTransforms();
+		this.enableUnionCommonPrefixPullUp = config.enableUnionCommonPrefixPullUp();
 		this.debugLogging = config.debugLogging();
 	}
 
@@ -188,6 +190,9 @@ public class BeTreeTransformer {
 	}
 
 	private void applyUnionCommonPrefixPullUp(BeGroupNode group, Set<BeUnionNode> unionsMergedThisPass) {
+		if (!enableUnionCommonPrefixPullUp) {
+			return;
+		}
 		int index = 0;
 		while (index < group.size()) {
 			BeNode node = group.getChild(index);

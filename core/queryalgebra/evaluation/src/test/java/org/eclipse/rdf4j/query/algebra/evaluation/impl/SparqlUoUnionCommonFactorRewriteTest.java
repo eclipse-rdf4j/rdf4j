@@ -75,15 +75,54 @@ class SparqlUoUnionCommonFactorRewriteTest {
 				.isEqualTo(1);
 	}
 
+	@Test
+	void skipsCommonFactorPullUpWhenRangeFiltersMakeBranchesSelective() {
+		String query = String.join(" ",
+				"PREFIX pharma: <http://example.com/theme/pharma/>",
+				"SELECT ?trial ?result ?bv WHERE {",
+				"  {",
+				"    ?trial a pharma:ClinicalTrial ; pharma:phase ?phase .",
+				"    FILTER(?phase = 3)",
+				"    ?trial pharma:hasArm ?arm .",
+				"    ?arm pharma:hasResult ?result .",
+				"    ?result pharma:biomarkerValue ?bv .",
+				"    FILTER(?bv > 2.0)",
+				"  }",
+				"  UNION",
+				"  {",
+				"    ?trial a pharma:ClinicalTrial ; pharma:phase ?phase .",
+				"    FILTER(?phase = 3)",
+				"    ?trial pharma:hasArm ?arm .",
+				"    ?arm pharma:hasResult ?result .",
+				"    ?result pharma:pValue ?p .",
+				"    FILTER(?p < 0.001)",
+				"    OPTIONAL { ?result pharma:biomarkerValue ?bv . }",
+				"  }",
+				"}");
+
+		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(false).build();
+		TupleExpr expr = optimize(query, new EvaluationStatistics(), config);
+		Union union = findUnion(expr);
+
+		assertThat(union).as("union should still exist").isNotNull();
+		assertThat(union.getParentNode()).as("common factors should stay inside union")
+				.isNotInstanceOf(Join.class);
+		assertThat(countClinicalTrialType(union)).as("clinical trial type appears in each branch")
+				.isEqualTo(2);
+	}
+
 	private static TupleExpr optimize(String query) {
+		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(true).build();
+		return optimize(query, new EvaluationStatistics(), config);
+	}
+
+	private static TupleExpr optimize(String query, EvaluationStatistics evaluationStatistics, SparqlUoConfig config) {
 		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		TupleExpr expr = parsedQuery.getTupleExpr();
 
 		EmptyTripleSource tripleSource = new EmptyTripleSource();
-		EvaluationStatistics evaluationStatistics = new EvaluationStatistics();
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, null, null, 0L,
 				evaluationStatistics);
-		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(true).build();
 		strategy.setOptimizerPipeline(
 				new SparqlUoQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics, config));
 		BindingSet bindings = EmptyBindingSet.getInstance();

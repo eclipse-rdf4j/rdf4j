@@ -15,12 +15,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.SparqlUoConfig;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -45,7 +54,7 @@ class SparqlUoOptionalFilterRewriteTest {
 	}
 
 	@Test
-	void rewritesNotBoundOptionalToNotExists() {
+	void rewritesNotBoundOptionalToAntiJoin() {
 		String query = "SELECT * WHERE { "
 				+ "?s <urn:p1> ?o . "
 				+ "OPTIONAL { ?s <urn:p2> ?x . } "
@@ -55,7 +64,83 @@ class SparqlUoOptionalFilterRewriteTest {
 		TupleExpr expr = optimize(query);
 
 		assertThat(containsLeftJoin(expr)).isFalse();
+		assertThat(containsDifference(expr)).isTrue();
+		assertThat(containsNotExists(expr)).isFalse();
+	}
+
+	@Test
+	void rewritesNotExistsFilterToAntiJoin() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:p1> ?o . "
+				+ "FILTER NOT EXISTS { ?s <urn:p2> ?v . } "
+				+ "}";
+
+		TupleExpr expr = optimize(query);
+
+		assertThat(containsDifference(expr)).isTrue();
+		assertThat(containsNotExists(expr)).isFalse();
+	}
+
+	@Test
+	void skipsNotExistsRewriteWhenRightSideIsMuchLarger() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:p1> ?o . "
+				+ "FILTER NOT EXISTS { ?s <urn:p2> ?v . } "
+				+ "}";
+
+		EvaluationStatistics skewed = new SkewedCardinalityStatistics("urn:p1", 10.0, "urn:p2", 1000.0);
+		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(false).build();
+		TupleExpr expr = optimize(query, skewed, config);
+
+		assertThat(containsDifference(expr)).isFalse();
 		assertThat(containsNotExists(expr)).isTrue();
+	}
+
+	@Test
+	void skipsNotExistsRewriteWhenRightSideExceedsAbsoluteLimit() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:p1> ?o . "
+				+ "FILTER NOT EXISTS { ?s <urn:p2> ?v . } "
+				+ "}";
+
+		EvaluationStatistics skewed = new SkewedCardinalityStatistics("urn:p1", 50_000.0, "urn:p2", 200_000.0);
+		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(false).build();
+		TupleExpr expr = optimize(query, skewed, config);
+
+		assertThat(containsDifference(expr)).isFalse();
+		assertThat(containsNotExists(expr)).isTrue();
+	}
+
+	@Test
+	void skipsExistsRewriteWhenRightSideIsMuchLarger() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:p1> ?o . "
+				+ "FILTER EXISTS { ?s <urn:p2> ?v . } "
+				+ "}";
+
+		EvaluationStatistics skewed = new SkewedCardinalityStatistics("urn:p1", 10.0, "urn:p2", 1000.0);
+		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(false).build();
+		TupleExpr expr = optimize(query, skewed, config);
+
+		assertThat(containsExists(expr)).isTrue();
+		assertThat(containsDistinct(expr)).isFalse();
+	}
+
+	@Test
+	void keepsRemainingFiltersOnLeftOfDifference() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:p1> ?o . "
+				+ "OPTIONAL { ?o <urn:name> ?n . BIND(LCASE(STR(?n)) AS ?nLc) } "
+				+ "FILTER(CONTAINS(?nLc, \"foo\")) "
+				+ "FILTER NOT EXISTS { ?s <urn:p2> ?v . } "
+				+ "}";
+
+		TupleExpr expr = optimize(query);
+
+		assertThat(containsDifference(expr)).isTrue();
+		Difference difference = findFirstDifference(expr);
+		assertThat(difference).isNotNull();
+		assertThat(containsVarName(difference.getRightArg(), "nLc")).isFalse();
 	}
 
 	@Test
@@ -86,19 +171,149 @@ class SparqlUoOptionalFilterRewriteTest {
 		assertThat(containsLeftJoin(expr)).isFalse();
 	}
 
+	@Test
+	void rewritesExistsToSemiJoinWhenCorrelationAssured() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:p1> ?o . "
+				+ "FILTER EXISTS { ?s <urn:p2> ?v . } "
+				+ "}";
+
+		TupleExpr expr = optimize(query);
+
+		assertThat(containsExists(expr)).isFalse();
+		assertThat(containsDistinct(expr)).isTrue();
+	}
+
+	@Test
+	void keepsExistsWhenCorrelationNotAssured() {
+		String query = "SELECT * WHERE { "
+				+ "OPTIONAL { ?s <urn:p1> ?o . } "
+				+ "FILTER EXISTS { ?s <urn:p2> ?v . } "
+				+ "}";
+
+		TupleExpr expr = optimize(query);
+
+		assertThat(containsExists(expr)).isTrue();
+	}
+
+	@Test
+	void rewritesExistsWhenSharedConstantsAppearInOptional() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:p1> ?o . "
+				+ "OPTIONAL { ?s <urn:name> ?n . } "
+				+ "FILTER EXISTS { ?s <urn:p2> ?v . ?x <urn:name> ?n2 . } "
+				+ "}";
+
+		TupleExpr expr = optimize(query);
+
+		assertThat(containsExists(expr)).isFalse();
+		assertThat(containsDistinct(expr)).isTrue();
+	}
+
+	@Test
+	void rewritesExistsWhenCorrelationUsesAliasOfAssuredVar() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:p1> ?o . "
+				+ "BIND(?s AS ?alias) "
+				+ "FILTER EXISTS { ?alias <urn:p2> ?v . } "
+				+ "}";
+
+		TupleExpr expr = optimize(query);
+
+		assertThat(containsExists(expr)).isFalse();
+		assertThat(containsDistinct(expr)).isTrue();
+	}
+
+	@Test
+	void keepsExistsWhenCorrelationRequiresJoin() {
+		String query = "SELECT * WHERE { "
+				+ "?combo <urn:rel> ?a . "
+				+ "?combo <urn:rel> ?b . "
+				+ "FILTER EXISTS { ?a <urn:p> ?t . ?b <urn:p> ?t . } "
+				+ "}";
+
+		TupleExpr expr = optimize(query);
+
+		assertThat(containsExists(expr)).isTrue();
+	}
+
+	@Test
+	void inlinesCompareEqFilterWithAlias() {
+		String query = "SELECT * WHERE { "
+				+ "?post <urn:hasTag> ?tag . "
+				+ "?tag <urn:name> ?tn . "
+				+ "BIND(?tn AS ?optTn) "
+				+ "FILTER(?optTn = \"tag1\") "
+				+ "}";
+
+		TupleExpr expr = optimize(query);
+		Value expected = SimpleValueFactory.getInstance().createLiteral("tag1");
+
+		assertThat(containsStatementPatternWithObjectValue(expr, expected)).isTrue();
+	}
+
+	@Test
+	void doesNotInlineNumericEqualityFilter() {
+		String query = "SELECT * WHERE { "
+				+ "?node <urn:weight> ?w . "
+				+ "BIND(?w AS ?optW) "
+				+ "FILTER(?optW = 10) "
+				+ "}";
+
+		TupleExpr expr = optimize(query);
+		Value numeric = SimpleValueFactory.getInstance().createLiteral("10", XMLSchema.INTEGER);
+
+		assertThat(containsStatementPatternWithObjectValue(expr, numeric)).isFalse();
+	}
+
+	@Test
+	void prefersAliasEqualityFilterBeforeOtherJoins() {
+		String query = "SELECT * WHERE { "
+				+ "?post <urn:hasTag> ?tag . "
+				+ "?tag <urn:name> ?tn . "
+				+ "BIND(?tn AS ?optTn) "
+				+ "FILTER(?optTn = \"tag1\") "
+				+ "?post <urn:other> ?o . "
+				+ "}";
+
+		TupleExpr expr = optimize(query, new TagSelectivityStatistics());
+		TupleExpr leaf = findLeaf(expr);
+
+		assertThat(leaf).isInstanceOf(StatementPattern.class);
+		String predicate = ((StatementPattern) leaf).getPredicateVar().getValue().stringValue();
+		assertThat(predicate).isEqualTo("urn:name");
+	}
+
 	private static TupleExpr optimize(String query) {
+		return optimize(query, new EvaluationStatistics());
+	}
+
+	private static TupleExpr optimize(String query, EvaluationStatistics evaluationStatistics) {
+		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(true).build();
+		return optimize(query, evaluationStatistics, config);
+	}
+
+	private static TupleExpr optimize(String query, EvaluationStatistics evaluationStatistics, SparqlUoConfig config) {
 		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		TupleExpr expr = parsedQuery.getTupleExpr();
 
 		EmptyTripleSource tripleSource = new EmptyTripleSource();
-		EvaluationStatistics evaluationStatistics = new EvaluationStatistics();
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, null, null, 0L,
 				evaluationStatistics);
-		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(true).build();
 		strategy.setOptimizerPipeline(
 				new SparqlUoQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics, config));
 		BindingSet bindings = EmptyBindingSet.getInstance();
 		strategy.optimize(expr, evaluationStatistics, bindings);
+		return expr;
+	}
+
+	private static TupleExpr findLeaf(TupleExpr expr) {
+		if (expr instanceof UnaryTupleOperator) {
+			return findLeaf(((UnaryTupleOperator) expr).getArg());
+		}
+		if (expr instanceof BinaryTupleOperator) {
+			return findLeaf(((BinaryTupleOperator) expr).getLeftArg());
+		}
 		return expr;
 	}
 
@@ -125,5 +340,166 @@ class SparqlUoOptionalFilterRewriteTest {
 			}
 		});
 		return found.get();
+	}
+
+	private static boolean hasFilterAboveDifference(TupleExpr expr) {
+		AtomicBoolean found = new AtomicBoolean(false);
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (node.getArg() instanceof Difference) {
+					found.set(true);
+				}
+				super.meet(node);
+			}
+		});
+		return found.get();
+	}
+
+	private static boolean containsVarName(TupleExpr expr, String name) {
+		AtomicBoolean found = new AtomicBoolean(false);
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(org.eclipse.rdf4j.query.algebra.Var node) {
+				if (name.equals(node.getName())) {
+					found.set(true);
+				}
+			}
+		});
+		return found.get();
+	}
+
+	private static Difference findFirstDifference(TupleExpr expr) {
+		AtomicBoolean found = new AtomicBoolean(false);
+		final Difference[] result = new Difference[1];
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Difference node) {
+				if (!found.get()) {
+					found.set(true);
+					result[0] = node;
+				}
+			}
+		});
+		return result[0];
+	}
+
+	private static boolean containsDifference(TupleExpr expr) {
+		AtomicBoolean found = new AtomicBoolean(false);
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Difference node) {
+				found.set(true);
+			}
+		});
+		return found.get();
+	}
+
+	private static boolean containsExists(TupleExpr expr) {
+		AtomicBoolean found = new AtomicBoolean(false);
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Exists node) {
+				found.set(true);
+			}
+		});
+		return found.get();
+	}
+
+	private static boolean containsDistinct(TupleExpr expr) {
+		AtomicBoolean found = new AtomicBoolean(false);
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Distinct node) {
+				found.set(true);
+			}
+		});
+		return found.get();
+	}
+
+	private static boolean containsStatementPatternWithObjectValue(TupleExpr expr, Value value) {
+		AtomicBoolean found = new AtomicBoolean(false);
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (value.equals(node.getObjectVar().getValue())) {
+					found.set(true);
+				}
+			}
+		});
+		return found.get();
+	}
+
+	private static final class TagSelectivityStatistics extends EvaluationStatistics {
+
+		@Override
+		protected CardinalityCalculator createCardinalityCalculator() {
+			return new TagSelectivityCalculator();
+		}
+
+		private final class TagSelectivityCalculator extends CardinalityCalculator {
+			@Override
+			protected double getCardinality(StatementPattern sp) {
+				if (sp.getPredicateVar() != null && sp.getPredicateVar().hasValue()) {
+					String predicate = sp.getPredicateVar().getValue().stringValue();
+					if ("urn:hasTag".equals(predicate)) {
+						return 1000;
+					}
+					if ("urn:name".equals(predicate)) {
+						return 1;
+					}
+					if ("urn:other".equals(predicate)) {
+						return 10;
+					}
+				}
+				return 100;
+			}
+
+			@Override
+			protected CardinalityCalculator newCalculator() {
+				return new TagSelectivityCalculator();
+			}
+		}
+	}
+
+	private static final class SkewedCardinalityStatistics extends EvaluationStatistics {
+		private final String leftPredicate;
+		private final double leftCardinality;
+		private final String rightPredicate;
+		private final double rightCardinality;
+
+		private SkewedCardinalityStatistics(String leftPredicate, double leftCardinality, String rightPredicate,
+				double rightCardinality) {
+			this.leftPredicate = leftPredicate;
+			this.leftCardinality = leftCardinality;
+			this.rightPredicate = rightPredicate;
+			this.rightCardinality = rightCardinality;
+		}
+
+		@Override
+		protected CardinalityCalculator createCardinalityCalculator() {
+			return new SkewedCardinalityCalculator();
+		}
+
+		private final class SkewedCardinalityCalculator extends CardinalityCalculator {
+			@Override
+			protected double getCardinality(StatementPattern sp) {
+				if (sp.getPredicateVar() != null && sp.getPredicateVar().hasValue()) {
+					String predicate = sp.getPredicateVar().getValue().stringValue();
+					if (leftPredicate.equals(predicate)) {
+						return leftCardinality;
+					}
+					if (rightPredicate.equals(predicate)) {
+						return rightCardinality;
+					}
+				}
+				return 100.0;
+			}
+
+			@Override
+			protected CardinalityCalculator newCalculator() {
+				return new SkewedCardinalityCalculator();
+			}
+		}
 	}
 }

@@ -38,6 +38,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
  */
 public class UnionCommonJoinFactorOptimizer implements QueryOptimizer {
 
+	private static final double COMMON_FACTOR_MAX_RATIO = 0.25;
+
 	private final EvaluationStatistics evaluationStatistics;
 	private final boolean allowNonImprovingTransforms;
 
@@ -69,6 +71,9 @@ public class UnionCommonJoinFactorOptimizer implements QueryOptimizer {
 	}
 
 	private TupleExpr pullUpCommonJoinFactors(Union union) {
+		if (!allowNonImprovingTransforms) {
+			return union;
+		}
 		if (union.isVariableScopeChange()) {
 			return union;
 		}
@@ -169,7 +174,10 @@ public class UnionCommonJoinFactorOptimizer implements QueryOptimizer {
 				continue;
 			}
 			double remainingCardinality = estimateCardinality(remaining);
-			if (commonCardinality > remainingCardinality) {
+			if (!Double.isFinite(commonCardinality) || !Double.isFinite(remainingCardinality)) {
+				return false;
+			}
+			if (commonCardinality > remainingCardinality * COMMON_FACTOR_MAX_RATIO) {
 				return false;
 			}
 		}

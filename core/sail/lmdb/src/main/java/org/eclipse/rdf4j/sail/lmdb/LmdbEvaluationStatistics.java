@@ -46,6 +46,11 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 	protected class LmdbCardinalityCalculator extends CardinalityCalculator {
 
 		@Override
+		protected CardinalityCalculator newCalculator() {
+			return new LmdbCardinalityCalculator();
+		}
+
+		@Override
 		protected double getCardinality(StatementPattern sp) {
 			try {
 				Value subj = getConstantValue(sp.getSubjectVar());

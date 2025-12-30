@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -22,6 +23,9 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.SparqlUoConfig;
@@ -110,6 +114,25 @@ class SparqlUoMinusOptimizerTest {
 		}
 	}
 
+	@Test
+	void projectsMinusRightSideToSharedKeysWhenAssured() {
+		String query = "SELECT * WHERE { ?s <urn:p1> ?o MINUS { ?s <urn:p2> ?x . ?x <urn:p3> ?y } }";
+
+		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(true).build();
+		TupleExpr expr = optimize(query, config);
+
+		Difference difference = findFirstDifference(expr);
+		assertThat(difference).isNotNull();
+		assertThat(difference.getRightArg()).isInstanceOf(Distinct.class);
+
+		TupleExpr right = ((Distinct) difference.getRightArg()).getArg();
+		assertThat(right).isInstanceOf(Projection.class);
+		Projection projection = (Projection) right;
+		assertThat(projection.getProjectionElemList().getElements())
+				.extracting(ProjectionElem::getName)
+				.containsExactly("s");
+	}
+
 	private static boolean containsDifference(TupleExpr expr) {
 		AtomicBoolean found = new AtomicBoolean(false);
 		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -135,6 +158,19 @@ class SparqlUoMinusOptimizerTest {
 			}
 		});
 		return new DifferenceStats(count.get(), unionOnRight.get());
+	}
+
+	private static Difference findFirstDifference(TupleExpr expr) {
+		AtomicReference<Difference> found = new AtomicReference<>();
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Difference node) {
+				if (found.get() == null) {
+					found.set(node);
+				}
+			}
+		});
+		return found.get();
 	}
 
 	private static TupleExpr optimize(String query, SparqlUoConfig config) {
