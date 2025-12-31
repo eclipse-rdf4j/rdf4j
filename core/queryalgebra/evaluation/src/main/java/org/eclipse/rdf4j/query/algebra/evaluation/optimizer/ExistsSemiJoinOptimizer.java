@@ -55,6 +55,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 public class ExistsSemiJoinOptimizer implements QueryOptimizer {
 
 	private static final double MAX_RIGHT_TO_LEFT_RATIO = 8.0;
+	private static final double MIN_LEFT_TO_RIGHT_RATIO_FOR_SINGLE_STATEMENT_PATTERN = 8.0;
 
 	private final EvaluationStatistics evaluationStatistics;
 	private final boolean allowNonImprovingTransforms;
@@ -112,7 +113,7 @@ public class ExistsSemiJoinOptimizer implements QueryOptimizer {
 			if (!hasStatementPatternCoveringVars(subQuery, shared)) {
 				return;
 			}
-			if (shouldKeepExistsAsFilter(subQuery, shared)) {
+			if (shouldKeepExistsAsFilter(arg, subQuery, shared)) {
 				return;
 			}
 			TupleExpr right = buildDistinctProjection(subQuery.clone(), shared);
@@ -128,12 +129,27 @@ public class ExistsSemiJoinOptimizer implements QueryOptimizer {
 			filter.setCondition(extraction.remainingCondition);
 		}
 
-		private boolean shouldKeepExistsAsFilter(TupleExpr subQuery, Set<String> joinVars) {
+		private boolean shouldKeepExistsAsFilter(TupleExpr leftArg, TupleExpr subQuery, Set<String> joinVars) {
 			StatementPattern statementPattern = singleStatementPatternOrNull(subQuery);
 			if (statementPattern == null) {
 				return false;
 			}
-			return countUnboundNonJoinVars(statementPattern, joinVars) == 0;
+			Map<String, String> aliases = collectAliasMap(leftArg);
+			if (!aliases.isEmpty() && joinVars.stream().anyMatch(aliases::containsKey)) {
+				return false;
+			}
+
+			int localVarCount = countUnboundNonJoinVars(statementPattern, joinVars);
+			if (localVarCount == 0) {
+				return true;
+			}
+
+			double leftCardinality = evaluationStatistics.getCardinality(leftArg);
+			double rightCardinality = evaluationStatistics.getCardinality(subQuery);
+			if (!Double.isFinite(leftCardinality) || !Double.isFinite(rightCardinality) || rightCardinality <= 0.0) {
+				return true;
+			}
+			return leftCardinality < rightCardinality * MIN_LEFT_TO_RIGHT_RATIO_FOR_SINGLE_STATEMENT_PATTERN;
 		}
 
 		private boolean shouldRewrite(TupleExpr left, TupleExpr right) {
