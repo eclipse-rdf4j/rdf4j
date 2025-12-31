@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -144,12 +146,71 @@ public class ExistsSemiJoinOptimizer implements QueryOptimizer {
 				return true;
 			}
 
-			double leftCardinality = evaluationStatistics.getCardinality(leftArg);
+			double leftCardinality = estimateLeftArgCardinality(leftArg, joinVars);
 			double rightCardinality = evaluationStatistics.getCardinality(subQuery);
 			if (!Double.isFinite(leftCardinality) || !Double.isFinite(rightCardinality) || rightCardinality <= 0.0) {
 				return true;
 			}
 			return leftCardinality < rightCardinality * MIN_LEFT_TO_RIGHT_RATIO_FOR_SINGLE_STATEMENT_PATTERN;
+		}
+
+		private double estimateLeftArgCardinality(TupleExpr leftArg, Set<String> joinVars) {
+			if (joinVars.isEmpty()) {
+				return evaluationStatistics.getCardinality(leftArg);
+			}
+			double[] min = { Double.POSITIVE_INFINITY };
+			leftArg.visit(new StopAtScopeChange(true) {
+				@Override
+				public void meet(BindingSetAssignment node) {
+					if (node.getBindingNames().containsAll(joinVars)) {
+						min[0] = Math.min(min[0], estimateBindingSetSize(node.getBindingSets()));
+					}
+					super.meet(node);
+				}
+
+				@Override
+				public void meet(StatementPattern node) {
+					if (!statementPatternContainsAllNames(node, joinVars)) {
+						return;
+					}
+					double cardinality = evaluationStatistics.getCardinality(node);
+					if (Double.isFinite(cardinality)) {
+						min[0] = Math.min(min[0], cardinality);
+					}
+				}
+			});
+			if (Double.isFinite(min[0]) && min[0] != Double.POSITIVE_INFINITY) {
+				return min[0];
+			}
+			return evaluationStatistics.getCardinality(leftArg);
+		}
+
+		private int estimateBindingSetSize(Iterable<BindingSet> bindingSets) {
+			if (bindingSets == null) {
+				return 0;
+			}
+			if (bindingSets instanceof Collection<?>) {
+				return ((Collection<?>) bindingSets).size();
+			}
+			return 1;
+		}
+
+		private boolean statementPatternContainsAllNames(StatementPattern pattern, Set<String> requiredNames) {
+			for (String name : requiredNames) {
+				if (!statementPatternContainsName(pattern, name)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private boolean statementPatternContainsName(StatementPattern pattern, String name) {
+			return varHasName(pattern.getSubjectVar(), name) || varHasName(pattern.getPredicateVar(), name)
+					|| varHasName(pattern.getObjectVar(), name) || varHasName(pattern.getContextVar(), name);
+		}
+
+		private boolean varHasName(Var var, String name) {
+			return var != null && name.equals(var.getName());
 		}
 
 		private boolean shouldRewrite(TupleExpr left, TupleExpr right) {
@@ -209,9 +270,7 @@ public class ExistsSemiJoinOptimizer implements QueryOptimizer {
 
 	private static Set<String> collectSharedUnboundNames(TupleExpr left, TupleExpr right) {
 		Set<String> leftUnbound = collectUnboundVarNames(left);
-		if (leftUnbound.isEmpty()) {
-			return Set.of();
-		}
+		leftUnbound.addAll(left.getBindingNames());
 		Set<String> rightUnbound = collectUnboundVarNames(right);
 		if (rightUnbound.isEmpty()) {
 			return Set.of();

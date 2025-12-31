@@ -275,4 +275,58 @@ class JoinQueryEvaluationStepCacheTest {
 
 		assertThat(join.getAlgorithmName()).isNotEqualTo("JoinKeyCacheIterator");
 	}
+
+	@Test
+	void joinKeyCachingSkippedWhenRightAddsOnlyConstantBindings() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		Statement statement = vf.createStatement(
+				vf.createIRI("urn:subj"),
+				vf.createIRI("urn:p"),
+				vf.createIRI("urn:obj"));
+
+		TripleSource tripleSource = new TripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+					Resource... contexts) throws QueryEvaluationException {
+				if (subj != null && !subj.equals(statement.getSubject())) {
+					return new EmptyIteration<>();
+				}
+				if (pred != null && !pred.equals(statement.getPredicate())) {
+					return new EmptyIteration<>();
+				}
+				if (obj != null && !obj.equals(statement.getObject())) {
+					return new EmptyIteration<>();
+				}
+				return new CloseableIteratorIteration<>(List.of(statement).iterator());
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return vf;
+			}
+		};
+
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null, null);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((org.eclipse.rdf4j.query.Dataset) null);
+
+		BindingSetAssignment left = new BindingSetAssignment();
+		MutableBindingSet leftBinding = new QueryBindingSet();
+		leftBinding.addBinding("s", vf.createIRI("urn:subj"));
+		left.setBindingSets(List.of(leftBinding));
+
+		StatementPattern right = new StatementPattern(
+				new Var("s"),
+				new Var("p", vf.createIRI("urn:p")),
+				new Var("o", vf.createIRI("urn:obj")));
+		Join join = new Join(left, right);
+
+		JoinQueryEvaluationStep step = new JoinQueryEvaluationStep(strategy, join, context);
+
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			List<BindingSet> results = Iterations.asList(iteration);
+			assertThat(results).hasSize(1);
+		}
+
+		assertThat(join.getAlgorithmName()).isNotEqualTo("JoinKeyCacheIterator");
+	}
 }

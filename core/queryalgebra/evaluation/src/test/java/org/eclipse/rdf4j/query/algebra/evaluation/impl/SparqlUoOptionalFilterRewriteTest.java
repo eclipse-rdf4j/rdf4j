@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.model.Value;
@@ -71,6 +72,51 @@ class SparqlUoOptionalFilterRewriteTest {
 		assertThat(join).isNotNull();
 		assertThat(containsStatementPatternWithPredicate(join.getLeftArg(), "urn:follows")).isTrue();
 		assertThat(containsStatementPatternWithPredicate(join.getRightArg(), "urn:name")).isTrue();
+	}
+
+	@Test
+	void reordersTrialJoinToStartWithJoinVarAfterOptionalFilters() {
+		String query = "SELECT * WHERE { "
+				+ "?drug <urn:dp> ?do . "
+				+ "?drug <urn:isDrug> <urn:Drug> . "
+				+ "OPTIONAL { ?drug <urn:indicatedFor> ?disease . BIND(STR(?disease) AS ?dStr) } "
+				+ "FILTER(CONTAINS(?dStr, \"disease/1\")) "
+				+ "OPTIONAL { ?drug <urn:hasSideEffect> ?se . ?se <urn:severity> ?sev . BIND(?sev AS ?optSev) } "
+				+ "FILTER(?optSev != \"\") "
+				+ "MINUS { ?drug <urn:hasSideEffect> ?seBad . ?seBad <urn:severity> \"Severe\" . } "
+				+ "?trial <urn:type> <urn:ClinicalTrial> ; <urn:hasArm> ?arm . "
+				+ "?arm <urn:armDrug> ?drug ; <urn:hasResult> ?result . "
+				+ "OPTIONAL { ?result <urn:effectSize> ?effect . BIND(?effect AS ?optEffect) } "
+				+ "OPTIONAL { ?result <urn:pValue> ?p . BIND(?p AS ?optP) } "
+				+ "FILTER(?optEffect > 0.7 && ?optP < 0.05) "
+				+ "OPTIONAL { ?result <urn:biomarkerValue> ?bv . BIND(?bv AS ?optBv) } "
+				+ "FILTER(?optBv > 1.0) "
+				+ "}";
+
+		EvaluationStatistics stats = new PredicateCardinalityStatistics(Map.ofEntries(
+				Map.entry("urn:dp", 131_600.0),
+				Map.entry("urn:isDrug", 5_000.0),
+				Map.entry("urn:indicatedFor", 9_900.0),
+				Map.entry("urn:hasSideEffect", 10_000.0),
+				Map.entry("urn:severity", 267.0),
+				Map.entry("urn:type", 955.0),
+				Map.entry("urn:hasArm", 2_900.0),
+				Map.entry("urn:armDrug", 2_900.0),
+				Map.entry("urn:hasResult", 2_900.0),
+				Map.entry("urn:effectSize", 2_900.0),
+				Map.entry("urn:pValue", 2_900.0),
+				Map.entry("urn:biomarkerValue", 2_900.0)));
+		TupleExpr expr = optimize(query, stats);
+
+		assertThat(containsLeftJoin(expr)).isFalse();
+
+		Join trialJoin = findJoinWithStatementPatternPredicates(expr, "urn:type", "urn:armDrug");
+		assertThat(trialJoin).isNotNull();
+
+		TupleExpr leaf = findLeaf(trialJoin);
+		assertThat(leaf).isInstanceOf(StatementPattern.class);
+		String predicate = ((StatementPattern) leaf).getPredicateVar().getValue().stringValue();
+		assertThat(predicate).isEqualTo("urn:armDrug");
 	}
 
 	@Test
@@ -225,6 +271,22 @@ class SparqlUoOptionalFilterRewriteTest {
 				+ "}";
 
 		TupleExpr expr = optimize(query);
+
+		assertThat(containsExists(expr)).isTrue();
+		assertThat(containsDistinct(expr)).isFalse();
+	}
+
+	@Test
+	void keepsExistsWhenLeftCardinalityOverestimatedByJoinMultiplication() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:pJoin1> ?x . "
+				+ "?s <urn:pJoin2> ?y . "
+				+ "FILTER EXISTS { ?s <urn:pExists> ?v . } "
+				+ "}";
+
+		EvaluationStatistics stats = new PredicateCardinalityStatistics(Map.of("urn:pJoin1", 1_000_000.0, "urn:pJoin2",
+				1_000_000.0, "urn:pExists", 200_000.0));
+		TupleExpr expr = optimize(query, stats);
 
 		assertThat(containsExists(expr)).isTrue();
 		assertThat(containsDistinct(expr)).isFalse();
@@ -686,6 +748,37 @@ class SparqlUoOptionalFilterRewriteTest {
 			@Override
 			protected CardinalityCalculator newCalculator() {
 				return new SkewedCardinalityCalculator();
+			}
+		}
+	}
+
+	private static final class PredicateCardinalityStatistics extends EvaluationStatistics {
+		private final Map<String, Double> predicateCardinalities;
+
+		private PredicateCardinalityStatistics(Map<String, Double> predicateCardinalities) {
+			this.predicateCardinalities = predicateCardinalities;
+		}
+
+		@Override
+		protected CardinalityCalculator createCardinalityCalculator() {
+			return new PredicateCardinalityCalculator();
+		}
+
+		private final class PredicateCardinalityCalculator extends CardinalityCalculator {
+			@Override
+			protected double getCardinality(StatementPattern sp) {
+				if (sp.getPredicateVar() != null && sp.getPredicateVar().hasValue()) {
+					Double cardinality = predicateCardinalities.get(sp.getPredicateVar().getValue().stringValue());
+					if (cardinality != null) {
+						return cardinality;
+					}
+				}
+				return 100.0;
+			}
+
+			@Override
+			protected CardinalityCalculator newCalculator() {
+				return new PredicateCardinalityCalculator();
 			}
 		}
 	}

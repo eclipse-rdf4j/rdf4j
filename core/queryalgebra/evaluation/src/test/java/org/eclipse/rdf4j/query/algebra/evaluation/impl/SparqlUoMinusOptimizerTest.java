@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Difference;
-import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -123,11 +122,9 @@ class SparqlUoMinusOptimizerTest {
 
 		Difference difference = findFirstDifference(expr);
 		assertThat(difference).isNotNull();
-		assertThat(difference.getRightArg()).isInstanceOf(Distinct.class);
+		assertThat(difference.getRightArg()).isInstanceOf(Projection.class);
 
-		TupleExpr right = ((Distinct) difference.getRightArg()).getArg();
-		assertThat(right).isInstanceOf(Projection.class);
-		Projection projection = (Projection) right;
+		Projection projection = (Projection) difference.getRightArg();
 		assertThat(projection.getProjectionElemList().getElements())
 				.extracting(ProjectionElem::getName)
 				.containsExactly("s");

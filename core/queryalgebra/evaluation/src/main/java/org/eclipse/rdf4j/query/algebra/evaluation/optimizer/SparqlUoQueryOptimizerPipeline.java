@@ -13,9 +13,13 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -23,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.SparqlUoConfig;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
@@ -40,6 +45,7 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private final ExistsSemiJoinOptimizer existsSemiJoinOptimizer;
 	private final NotExistsSemiJoinOptimizer notExistsSemiJoinOptimizer;
 	private final QueryJoinOptimizer joinOptimizer;
+	private final QueryOptimizer boundJoinRightArgOptimizer;
 	private final FilterOptimizer preJoinFilterOptimizer = new LimitAwareFilterOptimizer();
 	private final boolean enableOptionalFilterJoin;
 	private final boolean enableUnionCommonPullUp;
@@ -70,6 +76,7 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				config.allowNonImprovingTransforms());
 		this.joinOptimizer = new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource,
 				false);
+		this.boundJoinRightArgOptimizer = new BoundJoinRightArgOptimizer(this.joinOptimizer);
 		this.enableOptionalFilterJoin = config.enableOptionalFilterJoin();
 		this.enableUnionCommonPullUp = config.allowNonImprovingTransforms();
 	}
@@ -96,6 +103,7 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 					optimizers.add(optionalFilterJoinOptimizer);
 					optimizers.add(optionalNotBoundFilterOptimizer);
 					optimizers.add(optionalBindLeftJoinOptimizer);
+					optimizers.add(boundJoinRightArgOptimizer);
 					optionalFilterJoinInserted = true;
 				}
 				optimizers.add(existsSemiJoinOptimizer);
@@ -131,6 +139,7 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				optimizers.add(optionalFilterJoinOptimizer);
 				optimizers.add(optionalNotBoundFilterOptimizer);
 				optimizers.add(optionalBindLeftJoinOptimizer);
+				optimizers.add(boundJoinRightArgOptimizer);
 				optionalFilterJoinInserted = true;
 			}
 			optimizers.add(existsSemiJoinOptimizer);
@@ -146,6 +155,51 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 			optimizers.add(unionCommonJoinFactorOptimizer);
 		}
 		return optimizers;
+	}
+
+	private static final class BoundJoinRightArgOptimizer implements QueryOptimizer {
+
+		private final QueryJoinOptimizer joinOptimizer;
+
+		private BoundJoinRightArgOptimizer(QueryJoinOptimizer joinOptimizer) {
+			this.joinOptimizer = joinOptimizer;
+		}
+
+		@Override
+		public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+			if (UnorderedSliceDetector.hasUnorderedSlice(tupleExpr)) {
+				return;
+			}
+			tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Join node) throws RuntimeException {
+					super.meet(node);
+
+					Set<String> boundNames = node.getLeftArg().getBindingNames();
+					if (boundNames.isEmpty()) {
+						return;
+					}
+					Set<String> shared = node.getRightArg().getBindingNames();
+					boolean sharesBindings = false;
+					for (String name : boundNames) {
+						if (shared.contains(name)) {
+							sharesBindings = true;
+							break;
+						}
+					}
+					if (!sharesBindings) {
+						return;
+					}
+					BindingSetAssignment seed = new BindingSetAssignment();
+					seed.setBindingNames(boundNames);
+					seed.setBindingSets(List.of());
+					TupleExpr optimizedRight = (TupleExpr) node.getRightArg().clone();
+					LeftJoin leftJoin = new LeftJoin(seed, optimizedRight);
+					joinOptimizer.optimize(leftJoin, dataset, bindings);
+					node.setRightArg(leftJoin.getRightArg());
+				}
+			});
+		}
 	}
 
 	private static SparqlUoConfig disableOptionalFilterJoin(SparqlUoConfig config) {

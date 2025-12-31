@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterato
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinKeyCacheIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 
@@ -55,8 +56,12 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		} else {
 			boolean nonDeterministicRight = DeterminismChecks.containsNonDeterministicFunction(join.getRightArg());
 			Set<String> rightBindingNames = join.getRightArg().getBindingNames();
+			Set<String> leftVarNames = join.getLeftArg() instanceof BindingSetAssignment
+					? join.getLeftArg().getBindingNames()
+					: VarNameCollector.process(join.getLeftArg());
+			Set<String> rightVarNames = VarNameCollector.process(join.getRightArg());
 			boolean cacheableRight = !(join.getRightArg() instanceof BindingSetAssignment)
-					&& joinAttributes.length < rightBindingNames.size();
+					&& rightVarNames.stream().anyMatch(varName -> !leftVarNames.contains(varName));
 			if (JoinKeyCacheIterator.isEnabled(joinAttributes) && !nonDeterministicRight && cacheableRight) {
 				eval = bindings -> JoinKeyCacheIterator.getInstance(leftPrepared, rightPrepared, bindings,
 						joinAttributes, rightBindingNames, context);

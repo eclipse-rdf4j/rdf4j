@@ -184,9 +184,7 @@ public class NotExistsSemiJoinOptimizer implements QueryOptimizer {
 
 	private static Set<String> collectSharedUnboundNames(TupleExpr left, TupleExpr right) {
 		Set<String> leftUnbound = collectUnboundVarNames(left);
-		if (leftUnbound.isEmpty()) {
-			return Set.of();
-		}
+		leftUnbound.addAll(left.getBindingNames());
 		Set<String> rightUnbound = collectUnboundVarNames(right);
 		if (rightUnbound.isEmpty()) {
 			return Set.of();

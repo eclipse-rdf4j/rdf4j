@@ -27,7 +27,6 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Difference;
-import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -170,19 +169,18 @@ public class MinusOptimizer implements QueryOptimizer {
 		if (!hasStatementPatternCoveringVars(rightArg, shared)) {
 			return;
 		}
-		TupleExpr projected = buildDistinctProjection(rightArg.clone(), shared);
+		TupleExpr projected = buildProjection(rightArg.clone(), shared);
 		difference.setRightArg(projected);
 	}
 
-	private static TupleExpr buildDistinctProjection(TupleExpr subQuery, Set<String> joinVars) {
+	private static TupleExpr buildProjection(TupleExpr subQuery, Set<String> joinVars) {
 		List<String> ordered = new ArrayList<>(joinVars);
 		Collections.sort(ordered);
 		ProjectionElemList projectionElemList = new ProjectionElemList();
 		for (String name : ordered) {
 			projectionElemList.addElement(new ProjectionElem(name));
 		}
-		Projection projection = new Projection(subQuery, projectionElemList);
-		return new Distinct(projection);
+		return new Projection(subQuery, projectionElemList);
 	}
 
 	private static boolean containsService(TupleExpr subQuery) {
