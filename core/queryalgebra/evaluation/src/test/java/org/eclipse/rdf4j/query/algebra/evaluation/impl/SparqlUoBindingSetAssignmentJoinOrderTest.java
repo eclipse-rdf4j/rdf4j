@@ -21,14 +21,18 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.NAryValueOperator;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.SparqlUoConfig;
@@ -63,7 +67,8 @@ class SparqlUoBindingSetAssignmentJoinOrderTest {
 
 		optimize(expr);
 
-		assertThat(containsDirectValuesToStatementPatternJoin(expr, follows)).isTrue();
+		assertThat(containsCartesianJoinBetweenValues(expr)).isFalse();
+		assertThat(containsExistsFilterOnStatementPattern(expr, follows)).isTrue();
 	}
 
 	private static BindingSetAssignment createValues(String name, String... values) {
@@ -128,5 +133,88 @@ class SparqlUoBindingSetAssignmentJoinOrderTest {
 			}
 		});
 		return found.get();
+	}
+
+	private static boolean containsCartesianJoinBetweenValues(TupleExpr expr) {
+		AtomicBoolean found = new AtomicBoolean(false);
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join node) throws RuntimeException {
+				if (found.get()) {
+					return;
+				}
+
+				if (node.getLeftArg() instanceof BindingSetAssignment
+						&& node.getRightArg() instanceof BindingSetAssignment) {
+					BindingSetAssignment left = (BindingSetAssignment) node.getLeftArg();
+					BindingSetAssignment right = (BindingSetAssignment) node.getRightArg();
+					if (isDisjoint(left.getBindingNames(), right.getBindingNames())) {
+						found.set(true);
+						return;
+					}
+				}
+
+				super.meet(node);
+			}
+		});
+		return found.get();
+	}
+
+	private static boolean isDisjoint(Set<String> left, Set<String> right) {
+		for (String name : left) {
+			if (right.contains(name)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean containsExistsFilterOnStatementPattern(TupleExpr expr, IRI predicate) {
+		AtomicBoolean found = new AtomicBoolean(false);
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) throws RuntimeException {
+				if (found.get()) {
+					return;
+				}
+				if (!(node.getArg() instanceof StatementPattern)) {
+					return;
+				}
+				StatementPattern statementPattern = (StatementPattern) node.getArg();
+				Var predicateVar = statementPattern.getPredicateVar();
+				if (predicateVar == null || !predicateVar.hasValue() || !predicateVar.getValue().equals(predicate)) {
+					return;
+				}
+				if (!containsExists(node.getCondition())) {
+					return;
+				}
+				found.set(true);
+			}
+		});
+		return found.get();
+	}
+
+	private static boolean containsExists(ValueExpr expr) {
+		if (expr == null) {
+			return false;
+		}
+		if (expr instanceof Exists) {
+			return true;
+		}
+		if (expr instanceof UnaryValueOperator) {
+			return containsExists(((UnaryValueOperator) expr).getArg());
+		}
+		if (expr instanceof BinaryValueOperator) {
+			BinaryValueOperator binary = (BinaryValueOperator) expr;
+			return containsExists(binary.getLeftArg()) || containsExists(binary.getRightArg());
+		}
+		if (expr instanceof NAryValueOperator) {
+			for (ValueExpr arg : ((NAryValueOperator) expr).getArguments()) {
+				if (containsExists(arg)) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 }
