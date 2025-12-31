@@ -91,6 +91,10 @@ public class BeCostEstimator {
 		}
 
 		List<BeNode> remaining = new ArrayList<>(segment);
+		Map<BeNode, NodeEstimate> estimates = new IdentityHashMap<>();
+		for (BeNode node : segment) {
+			estimates.put(node, estimateNode(node));
+		}
 		double cost = 0.0;
 		double currentSize = seedSize;
 		BindingInfo currentInfo = seedInfo;
@@ -100,7 +104,7 @@ public class BeCostEstimator {
 			NodeEstimate bestEstimate = null;
 			double bestScore = Double.POSITIVE_INFINITY;
 			for (BeNode candidate : remaining) {
-				NodeEstimate estimate = estimateNode(candidate);
+				NodeEstimate estimate = estimates.get(candidate);
 				int sharedVars = sharedAssuredCount(currentInfo, estimate.info);
 				double joinedSize = fAnd(currentSize, estimate.resultSize, sharedVars);
 				double score = estimate.cost + joinedSize;
