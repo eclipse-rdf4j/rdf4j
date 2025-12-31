@@ -42,6 +42,8 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private final OptionalBindLeftJoinOptimizer optionalBindLeftJoinOptimizer;
 	private final MinusOptimizer minusOptimizer;
 	private final ExistsConstantOptimizer existsConstantOptimizer;
+	private final ExistsFilterPullUpOptimizer existsFilterPullUpOptimizer;
+	private final BindingSetAssignmentJoinOrderOptimizer bindingSetAssignmentJoinOrderOptimizer;
 	private final ExistsSemiJoinOptimizer existsSemiJoinOptimizer;
 	private final NotExistsSemiJoinOptimizer notExistsSemiJoinOptimizer;
 	private final QueryJoinOptimizer joinOptimizer;
@@ -70,6 +72,8 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		this.optionalBindLeftJoinOptimizer = new OptionalBindLeftJoinOptimizer();
 		this.minusOptimizer = new MinusOptimizer(config.enableMinusUnionSplit());
 		this.existsConstantOptimizer = new ExistsConstantOptimizer();
+		this.existsFilterPullUpOptimizer = new ExistsFilterPullUpOptimizer();
+		this.bindingSetAssignmentJoinOrderOptimizer = new BindingSetAssignmentJoinOrderOptimizer();
 		this.existsSemiJoinOptimizer = new ExistsSemiJoinOptimizer(evaluationStatistics,
 				config.allowNonImprovingTransforms());
 		this.notExistsSemiJoinOptimizer = new NotExistsSemiJoinOptimizer(evaluationStatistics,
@@ -112,6 +116,8 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 			}
 			if (optimizer instanceof FilterOptimizer) {
 				optimizers.add(optimizer);
+				optimizers.add(existsFilterPullUpOptimizer);
+				optimizers.add(bindingSetAssignmentJoinOrderOptimizer);
 				optimizers.add(unionCommonFilterBindingSetOptimizer);
 				if (!statementPatternInserted) {
 					if (enableUnionCommonPullUp) {
