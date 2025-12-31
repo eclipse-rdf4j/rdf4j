@@ -71,16 +71,12 @@ public class SparqlUoOptimizerVisualizationTest {
 					PREFIXES + "SELECT ?s ?p ?o ?x ?y ?z WHERE {\n" +
 							"  {\n" +
 							"    ?s ?p ?o .\n" +
-							"    {\n" +
-							"      ?x ?p ?y .\n" +
-							"    }\n" +
+							"    ?x ?p ?y .\n" +
 							"  }\n" +
 							"  UNION\n" +
 							"  {\n" +
 							"    ?s ?p ?o .\n" +
-							"    {\n" +
-							"      ?x ?p ?z .\n" +
-							"    }\n" +
+							"    ?x ?p ?z .\n" +
 							"  }\n" +
 							"}"),
 			new Example("counter_optional_no_shared_subject_or_object",
@@ -159,16 +155,12 @@ public class SparqlUoOptimizerVisualizationTest {
 					PREFIXES + "SELECT ?s ?o ?o2 ?o3 WHERE {\n" +
 							"  {\n" +
 							"    ?s ex:p1 ?o .\n" +
-							"    {\n" +
-							"      ?s ex:p2 ?o2 .\n" +
-							"    }\n" +
+							"    ?s ex:p2 ?o2 .\n" +
 							"  }\n" +
 							"  UNION\n" +
 							"  {\n" +
 							"    ?s ex:p1 ?o .\n" +
-							"    {\n" +
-							"      ?s ex:p3 ?o3 .\n" +
-							"    }\n" +
+							"    ?s ex:p3 ?o3 .\n" +
 							"  }\n" +
 							"}"),
 			new Example("merge_union_with_longer_branch",
@@ -185,9 +177,7 @@ public class SparqlUoOptimizerVisualizationTest {
 							"  UNION\n" +
 							"  {\n" +
 							"    ?s ex:p1 ?o .\n" +
-							"    {\n" +
-							"      ?s ex:p3 ?o3 .\n" +
-							"    }\n" +
+							"    ?s ex:p3 ?o3 .\n" +
 							"  }\n" +
 							"}"),
 			new Example("merge_union_shared_object",
@@ -198,16 +188,12 @@ public class SparqlUoOptimizerVisualizationTest {
 					PREFIXES + "SELECT ?s ?o ?x ?y WHERE {\n" +
 							"  {\n" +
 							"    ?s ex:p1 ?o .\n" +
-							"    {\n" +
-							"      ?x ex:p2 ?o .\n" +
-							"    }\n" +
+							"    ?x ex:p2 ?o .\n" +
 							"  }\n" +
 							"  UNION\n" +
 							"  {\n" +
 							"    ?s ex:p1 ?o .\n" +
-							"    {\n" +
-							"      ?y ex:p3 ?o .\n" +
-							"    }\n" +
+							"    ?y ex:p3 ?o .\n" +
 							"  }\n" +
 							"}"),
 			new Example("merge_three_union_branches",
@@ -218,23 +204,17 @@ public class SparqlUoOptimizerVisualizationTest {
 					PREFIXES + "SELECT ?s ?o ?o2 ?o3 ?o4 WHERE {\n" +
 							"  {\n" +
 							"    ?s ex:p1 ?o .\n" +
-							"    {\n" +
-							"      ?s ex:p2 ?o2 .\n" +
-							"    }\n" +
+							"    ?s ex:p2 ?o2 .\n" +
 							"  }\n" +
 							"  UNION\n" +
 							"  {\n" +
 							"    ?s ex:p1 ?o .\n" +
-							"    {\n" +
-							"      ?s ex:p3 ?o3 .\n" +
-							"    }\n" +
+							"    ?s ex:p3 ?o3 .\n" +
 							"  }\n" +
 							"  UNION\n" +
 							"  {\n" +
 							"    ?s ex:p1 ?o .\n" +
-							"    {\n" +
-							"      ?s ex:p4 ?o4 .\n" +
-							"    }\n" +
+							"    ?s ex:p4 ?o4 .\n" +
 							"  }\n" +
 							"}"),
 			new Example("inject_simple_optional",
@@ -273,16 +253,12 @@ public class SparqlUoOptimizerVisualizationTest {
 							"    ?s ex:p1 ?o .\n" +
 							"    {\n" +
 							"      ?s ex:p2 ?o2 .\n" +
-							"      {\n" +
-							"        ?s ex:p3 ?o3 .\n" +
-							"      }\n" +
+							"      ?s ex:p3 ?o3 .\n" +
 							"    }\n" +
 							"    UNION\n" +
 							"    {\n" +
 							"      ?s ex:p2 ?o2 .\n" +
-							"      {\n" +
-							"        ?s ex:p4 ?o4 .\n" +
-							"      }\n" +
+							"      ?s ex:p4 ?o4 .\n" +
 							"    }\n" +
 							"  }\n" +
 							"}"),
