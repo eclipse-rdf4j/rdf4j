@@ -52,7 +52,7 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	public SparqlUoQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics, SparqlUoConfig config) {
 		this.delegate = new StandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);
-		this.sparqlUoOptimizer = new SparqlUoOptimizer(evaluationStatistics, config);
+		this.sparqlUoOptimizer = new SparqlUoOptimizer(evaluationStatistics, disableOptionalFilterJoin(config));
 		this.bindingSetAssignmentUnionOptimizer = new BindingSetAssignmentUnionOptimizer(
 				config.maxBindingSetAssignmentUnionSize());
 		this.unionCommonStatementPatternOptimizer = new UnionCommonStatementPatternOptimizer(evaluationStatistics);
@@ -89,28 +89,22 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 					optimizers.add(minusOptimizer);
 					optimizers.add(preJoinFilterOptimizer);
 					optimizers.add(sparqlUoOptimizer);
-					optimizers.add(existsSemiJoinOptimizer);
-					optimizers.add(notExistsSemiJoinOptimizer);
 					inserted = true;
 				}
+				optimizers.add(joinOptimizer);
 				if (enableOptionalFilterJoin && !optionalFilterJoinInserted) {
 					optimizers.add(optionalFilterJoinOptimizer);
 					optimizers.add(optionalNotBoundFilterOptimizer);
 					optimizers.add(optionalBindLeftJoinOptimizer);
 					optionalFilterJoinInserted = true;
 				}
-				optimizers.add(joinOptimizer);
+				optimizers.add(existsSemiJoinOptimizer);
+				optimizers.add(notExistsSemiJoinOptimizer);
 				continue;
 			}
 			if (optimizer instanceof FilterOptimizer) {
 				optimizers.add(optimizer);
 				optimizers.add(unionCommonFilterBindingSetOptimizer);
-				if (enableOptionalFilterJoin && !optionalFilterJoinInserted) {
-					optimizers.add(optionalFilterJoinOptimizer);
-					optimizers.add(optionalNotBoundFilterOptimizer);
-					optimizers.add(optionalBindLeftJoinOptimizer);
-					optionalFilterJoinInserted = true;
-				}
 				if (!statementPatternInserted) {
 					if (enableUnionCommonPullUp) {
 						optimizers.add(unionCommonStatementPatternOptimizer);
@@ -132,15 +126,15 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 			optimizers.add(minusOptimizer);
 			optimizers.add(preJoinFilterOptimizer);
 			optimizers.add(sparqlUoOptimizer);
-			optimizers.add(existsSemiJoinOptimizer);
-			optimizers.add(notExistsSemiJoinOptimizer);
+			optimizers.add(joinOptimizer);
 			if (enableOptionalFilterJoin && !optionalFilterJoinInserted) {
 				optimizers.add(optionalFilterJoinOptimizer);
 				optimizers.add(optionalNotBoundFilterOptimizer);
 				optimizers.add(optionalBindLeftJoinOptimizer);
 				optionalFilterJoinInserted = true;
 			}
-			optimizers.add(joinOptimizer);
+			optimizers.add(existsSemiJoinOptimizer);
+			optimizers.add(notExistsSemiJoinOptimizer);
 		}
 		if (!bindingSetUnionInserted) {
 			optimizers.add(bindingSetAssignmentUnionOptimizer);
@@ -152,6 +146,24 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 			optimizers.add(unionCommonJoinFactorOptimizer);
 		}
 		return optimizers;
+	}
+
+	private static SparqlUoConfig disableOptionalFilterJoin(SparqlUoConfig config) {
+		if (!config.enableOptionalFilterJoin()) {
+			return config;
+		}
+		return SparqlUoConfig.builder()
+				.allowNonImprovingTransforms(config.allowNonImprovingTransforms())
+				.assumedVarDomainCardinality(config.assumedVarDomainCardinality())
+				.optionalMatchRate(config.optionalMatchRate())
+				.optionalMultiplicity(config.optionalMultiplicity())
+				.debugLogging(config.debugLogging())
+				.simulateJoinOrder(config.simulateJoinOrder())
+				.maxBindingSetAssignmentUnionSize(config.maxBindingSetAssignmentUnionSize())
+				.enableMinusUnionSplit(config.enableMinusUnionSplit())
+				.enableOptionalFilterJoin(false)
+				.enableUnionCommonPrefixPullUp(config.enableUnionCommonPrefixPullUp())
+				.build();
 	}
 
 	private static final class LimitAwareFilterOptimizer extends FilterOptimizer {

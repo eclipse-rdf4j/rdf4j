@@ -25,8 +25,10 @@ import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
@@ -51,6 +53,24 @@ class SparqlUoOptionalFilterRewriteTest {
 		TupleExpr expr = optimize(query);
 
 		assertThat(containsLeftJoin(expr)).isFalse();
+	}
+
+	@Test
+	void keepsOptionalFilterJoinOnRightSide() {
+		String query = "SELECT * WHERE { "
+				+ "?a <urn:follows> ?b . "
+				+ "OPTIONAL { ?b <urn:name> ?n . BIND(?n AS ?optAlias) } "
+				+ "FILTER(?optAlias != \"\") "
+				+ "}";
+
+		EvaluationStatistics skewed = new SkewedCardinalityStatistics("urn:follows", 1_000_000_000.0, "urn:name",
+				1.0);
+		TupleExpr expr = optimize(query, skewed);
+
+		Join join = findJoinWithStatementPatternPredicates(expr, "urn:follows", "urn:name");
+		assertThat(join).isNotNull();
+		assertThat(containsStatementPatternWithPredicate(join.getLeftArg(), "urn:follows")).isTrue();
+		assertThat(containsStatementPatternWithPredicate(join.getRightArg(), "urn:name")).isTrue();
 	}
 
 	@Test
@@ -106,6 +126,19 @@ class SparqlUoOptionalFilterRewriteTest {
 		EvaluationStatistics skewed = new SkewedCardinalityStatistics("urn:p1", 50_000.0, "urn:p2", 200_000.0);
 		SparqlUoConfig config = SparqlUoConfig.builder().allowNonImprovingTransforms(false).build();
 		TupleExpr expr = optimize(query, skewed, config);
+
+		assertThat(containsDifference(expr)).isFalse();
+		assertThat(containsNotExists(expr)).isTrue();
+	}
+
+	@Test
+	void skipsNotExistsRewriteWhenRightSideIsExactMatchOnJoinVars() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:p1> ?o . "
+				+ "FILTER NOT EXISTS { ?s <urn:p2> ?o . } "
+				+ "}";
+
+		TupleExpr expr = optimize(query);
 
 		assertThat(containsDifference(expr)).isFalse();
 		assertThat(containsNotExists(expr)).isTrue();
@@ -172,7 +205,7 @@ class SparqlUoOptionalFilterRewriteTest {
 	}
 
 	@Test
-	void rewritesExistsToSemiJoinWhenCorrelationAssured() {
+	void skipsExistsRewriteForSingleStatementPatternWithLocalVar() {
 		String query = "SELECT * WHERE { "
 				+ "?s <urn:p1> ?o . "
 				+ "FILTER EXISTS { ?s <urn:p2> ?v . } "
@@ -180,8 +213,81 @@ class SparqlUoOptionalFilterRewriteTest {
 
 		TupleExpr expr = optimize(query);
 
-		assertThat(containsExists(expr)).isFalse();
-		assertThat(containsDistinct(expr)).isTrue();
+		assertThat(containsExists(expr)).isTrue();
+		assertThat(containsDistinct(expr)).isFalse();
+	}
+
+	@Test
+	void skipsExistsRewriteForSingleStatementPatternBoundByJoinVar() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:p1> ?o . "
+				+ "FILTER EXISTS { ?o <urn:p2> <urn:c> . } "
+				+ "}";
+
+		TupleExpr expr = optimize(query);
+
+		assertThat(containsExists(expr)).isTrue();
+		assertThat(containsDistinct(expr)).isFalse();
+	}
+
+	@Test
+	void keepsExistsSemiJoinDistinctOnRightSide() {
+		String query = "SELECT * WHERE { "
+				+ "?line <urn:pJoin> ?substation . "
+				+ "?substation <urn:name> ?name . "
+				+ "FILTER(?name = \"Substation 0\" || ?name = \"Substation 1\") "
+				+ "FILTER EXISTS { ?line <urn:pExists> ?other . } "
+				+ "}";
+
+		EvaluationStatistics skewed = new SkewedCardinalityStatistics("urn:pJoin", 1_000_000_000.0, "urn:pExists", 1.0);
+		TupleExpr expr = optimize(query, skewed);
+
+		Join join = findJoinWithDistinctStatementPatternPredicate(expr, "urn:pExists");
+		assertThat(join).isNotNull();
+		assertThat(join.getLeftArg()).isNotInstanceOf(Distinct.class);
+		assertThat(join.getRightArg()).isInstanceOf(Distinct.class);
+	}
+
+	@Test
+	void marksExistsSemiJoinProjectionAsNonSubquery() {
+		String query = "SELECT * WHERE { "
+				+ "?line <urn:pJoin> ?substation . "
+				+ "?substation <urn:name> ?name . "
+				+ "FILTER(?name = \"Substation 0\" || ?name = \"Substation 1\") "
+				+ "FILTER EXISTS { ?line <urn:pExists> ?other . } "
+				+ "}";
+
+		EvaluationStatistics skewed = new SkewedCardinalityStatistics("urn:pJoin", 1_000_000_000.0, "urn:pExists", 1.0);
+		TupleExpr expr = optimize(query, skewed);
+
+		Join join = findJoinWithDistinctStatementPatternPredicate(expr, "urn:pExists");
+		assertThat(join).isNotNull();
+		assertThat(join.getRightArg()).isInstanceOf(Distinct.class);
+		Distinct distinct = (Distinct) join.getRightArg();
+
+		assertThat(distinct.getArg()).isInstanceOf(Projection.class);
+		Projection projection = (Projection) distinct.getArg();
+		assertThat(projection.isSubquery()).isFalse();
+	}
+
+	@Test
+	void marksExistsSemiJoinDistinctAsNewScope() {
+		String query = "SELECT * WHERE { "
+				+ "?line <urn:pJoin> ?substation . "
+				+ "?substation <urn:name> ?name . "
+				+ "FILTER(?name = \"Substation 0\" || ?name = \"Substation 1\") "
+				+ "FILTER EXISTS { ?line <urn:pExists> ?other . } "
+				+ "}";
+
+		EvaluationStatistics skewed = new SkewedCardinalityStatistics("urn:pJoin", 1_000_000_000.0, "urn:pExists", 1.0);
+		TupleExpr expr = optimize(query, skewed);
+
+		Join join = findJoinWithDistinctStatementPatternPredicate(expr, "urn:pExists");
+		assertThat(join).isNotNull();
+		assertThat(join.getRightArg()).isInstanceOf(Distinct.class);
+		Distinct distinct = (Distinct) join.getRightArg();
+
+		assertThat(distinct.isVariableScopeChange()).isTrue();
 	}
 
 	@Test
@@ -423,6 +529,87 @@ class SparqlUoOptionalFilterRewriteTest {
 			@Override
 			public void meet(StatementPattern node) {
 				if (value.equals(node.getObjectVar().getValue())) {
+					found.set(true);
+				}
+			}
+		});
+		return found.get();
+	}
+
+	private static Join findJoinWithDistinctStatementPatternPredicate(TupleExpr expr, String predicate) {
+		AtomicBoolean found = new AtomicBoolean(false);
+		final Join[] result = new Join[1];
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join node) {
+				if (found.get()) {
+					return;
+				}
+				if (isDistinctOverStatementPatternPredicate(node.getLeftArg(), predicate)
+						|| isDistinctOverStatementPatternPredicate(node.getRightArg(), predicate)) {
+					found.set(true);
+					result[0] = node;
+				}
+				super.meet(node);
+			}
+		});
+		return result[0];
+	}
+
+	private static boolean isDistinctOverStatementPatternPredicate(TupleExpr expr, String predicate) {
+		if (!(expr instanceof Distinct)) {
+			return false;
+		}
+		AtomicBoolean found = new AtomicBoolean(false);
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (node.getPredicateVar() != null && node.getPredicateVar().hasValue()
+						&& predicate.equals(node.getPredicateVar().getValue().stringValue())) {
+					found.set(true);
+				}
+			}
+		});
+		return found.get();
+	}
+
+	private static Join findJoinWithStatementPatternPredicates(TupleExpr expr, String leftPredicate,
+			String rightPredicate) {
+		AtomicBoolean found = new AtomicBoolean(false);
+		final Join[] result = new Join[1];
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join node) {
+				if (found.get()) {
+					return;
+				}
+				boolean leftHasLeft = containsStatementPatternWithPredicate(node.getLeftArg(), leftPredicate);
+				boolean rightHasLeft = containsStatementPatternWithPredicate(node.getRightArg(), leftPredicate);
+				boolean leftHasRight = containsStatementPatternWithPredicate(node.getLeftArg(), rightPredicate);
+				boolean rightHasRight = containsStatementPatternWithPredicate(node.getRightArg(), rightPredicate);
+
+				if ((leftHasLeft && rightHasRight) || (leftHasRight && rightHasLeft)) {
+					found.set(true);
+					result[0] = node;
+					return;
+				}
+
+				super.meet(node);
+			}
+		});
+		return result[0];
+	}
+
+	private static boolean containsStatementPatternWithPredicate(TupleExpr expr, String predicate) {
+		AtomicBoolean found = new AtomicBoolean(false);
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (found.get()) {
+					return;
+				}
+				if (node.getPredicateVar() != null && node.getPredicateVar().hasValue()
+						&& predicate.equals(node.getPredicateVar().getValue().stringValue())) {
 					found.set(true);
 				}
 			}

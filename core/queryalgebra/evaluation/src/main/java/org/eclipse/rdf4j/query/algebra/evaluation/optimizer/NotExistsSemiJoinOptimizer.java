@@ -107,6 +107,9 @@ public class NotExistsSemiJoinOptimizer implements QueryOptimizer {
 			if (!hasStatementPatternCoveringVars(subQuery, shared)) {
 				return;
 			}
+			if (isExactJoinVarMatch(subQuery, shared)) {
+				return;
+			}
 			TupleExpr leftForEstimate = arg;
 			if (extraction.remainingCondition != null) {
 				leftForEstimate = new Filter(arg.clone(), extraction.remainingCondition.clone());
@@ -146,7 +149,7 @@ public class NotExistsSemiJoinOptimizer implements QueryOptimizer {
 		for (String name : ordered) {
 			projectionElemList.addElement(new ProjectionElem(name));
 		}
-		Projection projection = new Projection(subQuery, projectionElemList);
+		Projection projection = new Projection(subQuery, projectionElemList, false);
 		return new Distinct(projection);
 	}
 
@@ -213,6 +216,13 @@ public class NotExistsSemiJoinOptimizer implements QueryOptimizer {
 		Map<String, String> aliasMap = new HashMap<>();
 		expr.visit(new AliasCollector(aliasMap));
 		return aliasMap;
+	}
+
+	private static boolean isExactJoinVarMatch(TupleExpr expr, Set<String> joinVars) {
+		if (joinVars.isEmpty()) {
+			return false;
+		}
+		return collectUnboundVarNames(expr).equals(joinVars);
 	}
 
 	private static boolean hasStatementPatternCoveringVars(TupleExpr expr, Set<String> joinVars) {

@@ -112,6 +112,9 @@ public class ExistsSemiJoinOptimizer implements QueryOptimizer {
 			if (!hasStatementPatternCoveringVars(subQuery, shared)) {
 				return;
 			}
+			if (shouldKeepExistsAsFilter(subQuery, shared)) {
+				return;
+			}
 			TupleExpr right = buildDistinctProjection(subQuery.clone(), shared);
 			if (!shouldRewrite(arg, right)) {
 				return;
@@ -123,6 +126,14 @@ public class ExistsSemiJoinOptimizer implements QueryOptimizer {
 			}
 			filter.setArg(join);
 			filter.setCondition(extraction.remainingCondition);
+		}
+
+		private boolean shouldKeepExistsAsFilter(TupleExpr subQuery, Set<String> joinVars) {
+			StatementPattern statementPattern = singleStatementPatternOrNull(subQuery);
+			if (statementPattern == null) {
+				return false;
+			}
+			return countUnboundNonJoinVars(statementPattern, joinVars) == 0;
 		}
 
 		private boolean shouldRewrite(TupleExpr left, TupleExpr right) {
@@ -145,8 +156,10 @@ public class ExistsSemiJoinOptimizer implements QueryOptimizer {
 		for (String name : ordered) {
 			projectionElemList.addElement(new ProjectionElem(name));
 		}
-		Projection projection = new Projection(subQuery, projectionElemList);
-		return new Distinct(projection);
+		Projection projection = new Projection(subQuery, projectionElemList, false);
+		Distinct distinct = new Distinct(projection);
+		distinct.setVariableScopeChange(true);
+		return distinct;
 	}
 
 	private static boolean containsService(TupleExpr subQuery) {
@@ -212,6 +225,32 @@ public class ExistsSemiJoinOptimizer implements QueryOptimizer {
 		Map<String, String> aliasMap = new HashMap<>();
 		expr.visit(new AliasCollector(aliasMap));
 		return aliasMap;
+	}
+
+	private static StatementPattern singleStatementPatternOrNull(TupleExpr expr) {
+		StatementPattern[] match = { null };
+		int[] count = { 0 };
+		expr.visit(new StopAtScopeChange(true) {
+			@Override
+			public void meet(StatementPattern node) {
+				count[0]++;
+				match[0] = node;
+			}
+		});
+		return count[0] == 1 ? match[0] : null;
+	}
+
+	private static int countUnboundNonJoinVars(StatementPattern statementPattern, Set<String> joinVars) {
+		int count = 0;
+		count += isUnboundNonJoinVar(statementPattern.getSubjectVar(), joinVars) ? 1 : 0;
+		count += isUnboundNonJoinVar(statementPattern.getPredicateVar(), joinVars) ? 1 : 0;
+		count += isUnboundNonJoinVar(statementPattern.getObjectVar(), joinVars) ? 1 : 0;
+		count += isUnboundNonJoinVar(statementPattern.getContextVar(), joinVars) ? 1 : 0;
+		return count;
+	}
+
+	private static boolean isUnboundNonJoinVar(Var var, Set<String> joinVars) {
+		return var != null && !var.hasValue() && !joinVars.contains(var.getName());
 	}
 
 	private static boolean hasStatementPatternCoveringVars(TupleExpr expr, Set<String> joinVars) {
