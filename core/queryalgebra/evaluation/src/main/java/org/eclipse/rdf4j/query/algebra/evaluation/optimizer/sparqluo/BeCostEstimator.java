@@ -299,8 +299,8 @@ public class BeCostEstimator {
 		private final Set<String> assuredBindingNames;
 
 		private BindingInfo(Set<String> bindingNames, Set<String> assuredBindingNames) {
-			this.bindingNames = Set.copyOf(bindingNames);
-			this.assuredBindingNames = Set.copyOf(assuredBindingNames);
+			this.bindingNames = bindingNames;
+			this.assuredBindingNames = assuredBindingNames;
 		}
 
 		private static BindingInfo empty() {
