@@ -618,17 +618,23 @@ Immediately after creating any new Java source file, add the signature comment (
 
 * Branch names: start with `GH-XXXX` (GitHub issue number). Optional short slug, e.g., `GH-1234-trig-writer-check`.
 * Commit messages: `GH-XXXX <short imperative summary>` on every commit.
+* If no GitHub issue number was provided, do **not** block progress by asking for one — use `GH-0000` and explicitly call this out in your final summary/handoff.
+* If the current branch name already starts with `GH-XXXX-...` and the user did not provide an issue number, reuse that `GH-XXXX` prefix for any branch/commit labeling in this task.
 
 ---
 
 ## Branch & PR Workflow (Agent)
 
-* Confirm issue number first (mandatory).
+* Determine the `GH-XXXX` label (in priority order):
+  * If the user provided an issue number, use it.
+  * Else, if the current git branch name starts with `GH-XXXX-...`, reuse that prefix.
+  * Else, use `GH-0000` and note the missing issue number in the final summary/handoff.
+* Do not interrupt feature work to ask for an issue number; complete the request first, then apply the best-available `GH-XXXX` label when/if branching/committing is needed.
 * Branch: `git checkout -b GH-XXXX-your-slug`
 * Stage: `git add -A` (ensure new Java files have the required header).
 * Optional: formatter + quick install.
 * Commit: `git commit -m "GH-XXXX <short imperative summary>"`
-* Push & PR: use the default template; fill all fields; include `Fixes #XXXX`.
+* Push & PR: use the default template; fill all fields; include `Fixes #XXXX` when an issue exists (if using `GH-0000`, omit `Fixes #...` and note the missing issue number in the final summary/handoff).
 
 ---
 
@@ -911,7 +917,9 @@ rdf4j: root project
 
 * Branch names must always start with the GitHub issue identifier in the form `GH-XXXX`, where `XXXX` is the numeric issue number.
 * Every commit message must be prefixed with the corresponding `GH-XXXX` label.
-* Exception: if no GitHub issue number is available for the task, clearly note this in your handoff and align with the requester on an appropriate branch/commit prefix before proceeding.
+* Exception (no issue number available):
+  * Prefer reusing the current branch prefix if it already starts with `GH-XXXX-...`.
+  * Otherwise, use `GH-0000` and explicitly mention the missing issue number in the final summary/handoff.
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
