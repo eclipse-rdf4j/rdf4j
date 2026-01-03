@@ -158,7 +158,7 @@ public class MonotonicTest {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		assertEquals(1, size(a, null, RDF.TYPE, PAINTER, false));
 		a.commit();
-		assertEquals(2, size(b, null, RDF.TYPE, PAINTER, false));
+		assertEquals(1, size(b, null, RDF.TYPE, PAINTER, false));
 		b.commit();
 	}
 
@@ -170,7 +170,7 @@ public class MonotonicTest {
 		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT DATA { <rembrandt> a <Painter> }", NS).execute();
 		assertEquals(1, size(a, null, RDF.TYPE, PAINTER, false));
 		a.commit();
-		assertEquals(2, size(b, null, RDF.TYPE, PAINTER, false));
+		assertEquals(1, size(b, null, RDF.TYPE, PAINTER, false));
 		b.commit();
 	}
 
@@ -182,7 +182,7 @@ public class MonotonicTest {
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		assertEquals(1, size(b, null, RDF.TYPE, PAINTER, false));
 		a.commit();
-		assertEquals(2, size(b, null, RDF.TYPE, PAINTER, false));
+		assertEquals(1, size(b, null, RDF.TYPE, PAINTER, false));
 		b.commit();
 	}
 
@@ -285,7 +285,7 @@ public class MonotonicTest {
 			b.add((Resource) painting, RDF.TYPE, PAINTING);
 		}
 		a.commit();
-		assertEquals(5, size(b, null, PAINTS, null, false));
+		assertEquals(3, size(b, null, PAINTS, null, false));
 		b.commit();
 		assertEquals(3, size(a, null, RDF.TYPE, PAINTING, false));
 	}
@@ -305,7 +305,7 @@ public class MonotonicTest {
 		b.prepareUpdate(QueryLanguage.SPARQL,
 				"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting }", NS).execute();
 		a.commit();
-		assertEquals(5, size(b, null, PAINTS, null, false));
+		assertEquals(3, size(b, null, PAINTS, null, false));
 		b.commit();
 		assertEquals(3, size(a, null, RDF.TYPE, PAINTING, false));
 	}
@@ -418,7 +418,7 @@ public class MonotonicTest {
 			}
 		}
 		a.commit();
-		assertEquals(5, size(b, null, PAINTS, null, false));
+		assertEquals(3, size(b, null, PAINTS, null, false));
 		b.commit();
 		assertEquals(10, size(a, null, null, null, false));
 	}
@@ -438,7 +438,7 @@ public class MonotonicTest {
 		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting a <Painting> }\n" + "WHERE { ?painter a <Painter> "
 				+ "OPTIONAL { ?painter <paints> ?painting } }", NS).execute();
 		a.commit();
-		assertEquals(5, size(b, null, PAINTS, null, false));
+		assertEquals(3, size(b, null, PAINTS, null, false));
 		b.commit();
 		assertEquals(10, size(a, null, null, null, false));
 	}
@@ -720,7 +720,7 @@ public class MonotonicTest {
 		a.add(REMBRANDT, PAINTS, BELSHAZZAR);
 		a.add(BELSHAZZAR, YEAR, lf.createLiteral(1635));
 		a.commit();
-		assertEquals(6, size(b, REMBRANDT, PAINTS, null, false));
+		assertEquals(5, size(b, REMBRANDT, PAINTS, null, false));
 		b.commit();
 		assertEquals(16, size(a, null, null, null, false));
 	}
@@ -748,7 +748,7 @@ public class MonotonicTest {
 		a.add(REMBRANDT, PAINTS, BELSHAZZAR);
 		a.add(BELSHAZZAR, YEAR, lf.createLiteral(1635));
 		a.commit();
-		assertEquals(6, size(b, REMBRANDT, PAINTS, null, false));
+		assertEquals(5, size(b, REMBRANDT, PAINTS, null, false));
 		b.commit();
 		assertEquals(16, size(a, null, null, null, false));
 	}
