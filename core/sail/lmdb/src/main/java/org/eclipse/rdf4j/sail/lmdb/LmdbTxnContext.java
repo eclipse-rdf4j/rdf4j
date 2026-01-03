@@ -92,11 +92,9 @@ class LmdbTxnContext {
 		this.level = level;
 		initialized = true;
 		snapshotWriteMode = IsolationLevels.SNAPSHOT.equals(level);
-		snapshotReadMode = IsolationLevels.SNAPSHOT_READ.equals(level)
+		snapshotReadMode = snapshotWriteMode || IsolationLevels.SNAPSHOT_READ.equals(level)
 				|| IsolationLevels.SERIALIZABLE.equals(level);
-		if (snapshotWriteMode) {
-			ensureWriteTxnInitialized();
-		} else if (snapshotReadMode) {
+		if (snapshotReadMode) {
 			ensurePinnedReadSnapshot();
 			deferWrites = true;
 			overlayChanges = true;
@@ -118,10 +116,8 @@ class LmdbTxnContext {
 
 	void markManagedTransaction() {
 		managedTransaction = true;
-		if (!snapshotWriteMode) {
-			deferWrites = true;
-			overlayChanges = true;
-		}
+		deferWrites = true;
+		overlayChanges = true;
 	}
 
 	boolean isManagedTransaction() {
@@ -370,7 +366,7 @@ class LmdbTxnContext {
 		}
 		deferWrites = true;
 		overlayChanges = true;
-		if (!(snapshotReadMode || snapshotWriteMode) && level != null && !shouldDeferWriteFlush()) {
+		if (!managedTransaction && !snapshotReadMode && level != null) {
 			ensureWriteTxn(level);
 		}
 		pendingUpdates.push(new PendingChanges());
@@ -388,7 +384,7 @@ class LmdbTxnContext {
 		}
 		if (deferWrites) {
 			mergeIntoMain(completed);
-			if (shouldDeferWriteFlush()) {
+			if (managedTransaction) {
 				return;
 			}
 			try {
@@ -413,17 +409,13 @@ class LmdbTxnContext {
 			pendingUpdates.pop();
 		}
 		if (pendingUpdates.isEmpty() && deferWrites) {
-			if (shouldDeferWriteFlush()) {
+			if (managedTransaction) {
 				return;
 			}
 			clearStatementChanges();
 			deferWrites = false;
 			overlayChanges = false;
 		}
-	}
-
-	private boolean shouldDeferWriteFlush() {
-		return managedTransaction && !snapshotWriteMode;
 	}
 
 	void recordAdd(Resource subj, IRI pred, Value obj, Resource ctx, boolean explicit) {
