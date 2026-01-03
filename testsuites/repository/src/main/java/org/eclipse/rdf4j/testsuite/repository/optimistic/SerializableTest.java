@@ -16,6 +16,7 @@ import static org.junit.Assert.fail;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -36,7 +37,9 @@ import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.Timeout;
 
 /**
  * Tests on behavior of SERIALIZABLE transactions.
@@ -55,6 +58,9 @@ public class SerializableTest {
 	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
+
+	@Rule
+	public Timeout timeout = Timeout.millis(TimeUnit.MINUTES.toMillis(1));
 
 	private Repository repo;
 

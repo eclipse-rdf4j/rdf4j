@@ -76,9 +76,17 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		if (!lmdbStore.isWritable()) {
 			throw new SailReadOnlyException("Unable to start transaction: data file is locked or read-only");
 		}
-		super.startTransactionInternal();
 		IsolationLevel level = getTransactionIsolation();
 		connectionStore.initTransaction(level);
+		boolean started = false;
+		try {
+			super.startTransactionInternal();
+			started = true;
+		} finally {
+			if (!started) {
+				connectionStore.endTransaction(false);
+			}
+		}
 	}
 
 	@Override

@@ -479,6 +479,9 @@ class LmdbTxnContext {
 
 	private void verifyThread() throws SailException {
 		if (ownerThreadId != -1 && ownerThreadId != Thread.currentThread().getId()) {
+			if (!managedTransaction && !writeActive) {
+				return;
+			}
 			throw new SailException("LMDB transactions are thread-bound; use a single thread per transaction");
 		}
 	}
@@ -615,6 +618,26 @@ class LmdbTxnContext {
 	private void applyPendingDeprecated(PendingChanges changes, boolean explicit) {
 		Set<Quad> deprecated = explicit ? deprecatedExplicit : deprecatedInferred;
 		changes.applyDeprecatedTo(deprecated, explicit);
+	}
+
+	private void applyPendingTo(Set<Quad> added, Set<Quad> removed, boolean explicit) {
+		if (pendingUpdates.isEmpty()) {
+			return;
+		}
+		for (var iterator = pendingUpdates.descendingIterator(); iterator.hasNext();) {
+			PendingChanges pending = iterator.next();
+			pending.applyTo(added, removed, explicit);
+		}
+	}
+
+	private void applyPendingDeprecatedTo(Set<Quad> deprecated, boolean explicit) {
+		if (pendingUpdates.isEmpty()) {
+			return;
+		}
+		for (var iterator = pendingUpdates.descendingIterator(); iterator.hasNext();) {
+			PendingChanges pending = iterator.next();
+			pending.applyDeprecatedTo(deprecated, explicit);
+		}
 	}
 
 	private boolean existsInStore(Quad quad, boolean explicit) {

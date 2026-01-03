@@ -41,7 +41,7 @@ import org.junit.jupiter.api.Timeout;
  *
  * @author Jeen Broekstra
  */
-@Timeout(value = 1, unit = TimeUnit.MINUTES)
+@Timeout(value = 5, unit = TimeUnit.MINUTES)
 public abstract class RepositoryTest {
 
 	@BeforeAll

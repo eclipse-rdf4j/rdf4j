@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.model;
 
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -21,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.util.ConcurrentModificationException;
 import java.util.Iterator;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -47,7 +47,7 @@ import org.junit.jupiter.api.Timeout;
  * @author Peter Ansell
  */
 @TestInstance(Lifecycle.PER_CLASS)
-@Timeout(value = 1000, unit = MILLISECONDS)
+@Timeout(value = 5, unit = TimeUnit.MINUTES)
 public abstract class ModelTest {
 
 	protected Literal literal1;

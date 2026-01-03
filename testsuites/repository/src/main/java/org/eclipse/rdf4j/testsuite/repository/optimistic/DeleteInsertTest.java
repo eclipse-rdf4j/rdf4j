@@ -12,6 +12,8 @@ package org.eclipse.rdf4j.testsuite.repository.optimistic;
 
 import static org.junit.Assert.assertTrue;
 
+import java.util.concurrent.TimeUnit;
+
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -23,7 +25,9 @@ import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.Timeout;
 
 /**
  * Test that a complex delete-insert SPARQL query gets correctly executed.
@@ -40,6 +44,9 @@ public class DeleteInsertTest {
 	public static void afterClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
+
+	@Rule
+	public Timeout timeout = Timeout.millis(TimeUnit.MINUTES.toMillis(1));
 
 	private Repository repo;
 

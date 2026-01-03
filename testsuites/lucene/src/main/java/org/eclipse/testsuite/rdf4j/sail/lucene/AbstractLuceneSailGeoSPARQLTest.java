@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -41,7 +42,9 @@ import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.Timeout;
 
 public abstract class AbstractLuceneSailGeoSPARQLTest {
 
@@ -81,6 +84,9 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 			.createLiteral("POLYGON ((2.315 48.855, 2.360 48.835, 2.370 48.850, 2.315 48.855))", GEO.WKT_LITERAL);
 
 	private static final double ERROR = 2.0;
+
+	@Rule
+	public Timeout timeout = Timeout.millis(TimeUnit.MINUTES.toMillis(5));
 
 	protected LuceneSail sail;
 

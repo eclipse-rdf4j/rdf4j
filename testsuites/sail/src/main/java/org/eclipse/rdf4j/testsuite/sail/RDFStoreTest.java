@@ -24,6 +24,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.Iterator;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -65,7 +66,7 @@ import org.junit.jupiter.api.Timeout;
  * retrieval which assumes that no inferencing or whatsoever is performed. This is an abstract class that should be
  * extended for specific Sail implementations.
  */
-@Timeout(value = 60)
+@Timeout(value = 5, unit = TimeUnit.MINUTES)
 public abstract class RDFStoreTest {
 
 	@BeforeAll

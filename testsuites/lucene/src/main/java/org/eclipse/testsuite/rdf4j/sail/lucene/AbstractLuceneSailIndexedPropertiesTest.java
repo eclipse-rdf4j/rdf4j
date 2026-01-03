@@ -23,6 +23,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -41,11 +42,16 @@ import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.Timeout;
 
 public abstract class AbstractLuceneSailIndexedPropertiesTest {
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
+
+	@Rule
+	public Timeout timeout = Timeout.millis(TimeUnit.MINUTES.toMillis(5));
 
 	protected LuceneSail sail;
 

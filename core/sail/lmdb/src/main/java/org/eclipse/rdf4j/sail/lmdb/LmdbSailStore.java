@@ -296,12 +296,16 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public SailSource getExplicitSailSource() {
-			return new LmdbSailSource(true, contextKey);
+			return new LmdbSailSource(true, selectContextKey());
 		}
 
 		@Override
 		public SailSource getInferredSailSource() {
-			return new LmdbSailSource(false, contextKey);
+			return new LmdbSailSource(false, selectContextKey());
+		}
+
+		private Object selectContextKey() {
+			return transactionInitialized ? contextKey : new Object();
 		}
 
 		@Override
