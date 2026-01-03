@@ -457,6 +457,7 @@ class LmdbTxnContext {
 
 	Set<Quad> snapshotDeprecated(boolean explicit) {
 		Set<Quad> deprecated = new LinkedHashSet<>(explicit ? deprecatedExplicit : deprecatedInferred);
+		applyPendingDeprecatedTo(deprecated, explicit);
 		return deprecated;
 	}
 
