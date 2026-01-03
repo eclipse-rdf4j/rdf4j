@@ -92,9 +92,11 @@ class LmdbTxnContext {
 		this.level = level;
 		initialized = true;
 		snapshotWriteMode = IsolationLevels.SNAPSHOT.equals(level);
-		snapshotReadMode = IsolationLevels.SNAPSHOT_READ.equals(level) || snapshotWriteMode
+		snapshotReadMode = IsolationLevels.SNAPSHOT_READ.equals(level)
 				|| IsolationLevels.SERIALIZABLE.equals(level);
-		if (snapshotReadMode) {
+		if (snapshotWriteMode) {
+			ensureWriteTxnInitialized();
+		} else if (snapshotReadMode) {
 			ensurePinnedReadSnapshot();
 			deferWrites = true;
 			overlayChanges = true;
@@ -116,6 +118,10 @@ class LmdbTxnContext {
 
 	void markManagedTransaction() {
 		managedTransaction = true;
+		if (!snapshotWriteMode) {
+			deferWrites = true;
+			overlayChanges = true;
+		}
 	}
 
 	boolean isManagedTransaction() {
@@ -222,7 +228,8 @@ class LmdbTxnContext {
 			int i = 0;
 			while (!b) {
 				i++;
-				System.err.println(Thread.currentThread() + " - LMDB writeTxnLock wait took more than " + i * 10 + " seconds");
+				System.err.println(
+						Thread.currentThread() + " - LMDB writeTxnLock wait took more than " + i * 10 + " seconds");
 				// print lock diagnostics
 				printWriteTxnLockDiagnostics(i * 10, i == 1 || i % 6 == 0);
 
@@ -310,7 +317,7 @@ class LmdbTxnContext {
 			return;
 		}
 		try (Txn snapshotTxn = acquirePinnedReadTxn();
-			 Txn currentTxn = store.getTripleStore().getTxnManager().createReadTxn()) {
+				Txn currentTxn = store.getTripleStore().getTxnManager().createReadTxn()) {
 			store.ensureObservedPatternsUnchanged(snapshotTxn, currentTxn, observedExplicit, true);
 			store.ensureObservedPatternsUnchanged(snapshotTxn, currentTxn, observedInferred, false);
 		} catch (IOException e) {
@@ -363,7 +370,7 @@ class LmdbTxnContext {
 		}
 		deferWrites = true;
 		overlayChanges = true;
-		if (!(snapshotReadMode || snapshotWriteMode) && level != null) {
+		if (!(snapshotReadMode || snapshotWriteMode) && level != null && !shouldDeferWriteFlush()) {
 			ensureWriteTxn(level);
 		}
 		pendingUpdates.push(new PendingChanges());
@@ -381,7 +388,7 @@ class LmdbTxnContext {
 		}
 		if (deferWrites) {
 			mergeIntoMain(completed);
-			if (snapshotReadMode) {
+			if (shouldDeferWriteFlush()) {
 				return;
 			}
 			try {
@@ -406,13 +413,17 @@ class LmdbTxnContext {
 			pendingUpdates.pop();
 		}
 		if (pendingUpdates.isEmpty() && deferWrites) {
-			if (snapshotReadMode) {
+			if (shouldDeferWriteFlush()) {
 				return;
 			}
 			clearStatementChanges();
 			deferWrites = false;
 			overlayChanges = false;
 		}
+	}
+
+	private boolean shouldDeferWriteFlush() {
+		return managedTransaction && !snapshotWriteMode;
 	}
 
 	void recordAdd(Resource subj, IRI pred, Value obj, Resource ctx, boolean explicit) {
@@ -643,7 +654,7 @@ class LmdbTxnContext {
 		if (pendingUpdates.isEmpty()) {
 			return;
 		}
-		for (var iterator = pendingUpdates.descendingIterator(); iterator.hasNext(); ) {
+		for (var iterator = pendingUpdates.descendingIterator(); iterator.hasNext();) {
 			PendingChanges pending = iterator.next();
 			pending.applyTo(added, removed, explicit);
 		}
@@ -653,7 +664,7 @@ class LmdbTxnContext {
 		if (pendingUpdates.isEmpty()) {
 			return;
 		}
-		for (var iterator = pendingUpdates.descendingIterator(); iterator.hasNext(); ) {
+		for (var iterator = pendingUpdates.descendingIterator(); iterator.hasNext();) {
 			PendingChanges pending = iterator.next();
 			pending.applyDeprecatedTo(deprecated, explicit);
 		}
@@ -907,7 +918,6 @@ class LmdbTxnContext {
 			clear();
 		}
 	}
-
 
 	private void printWriteTxnLockDiagnostics(int waitedSeconds, boolean includeThreadDump) {
 		try {
