@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  *
  * @author Andreas Schwarte
  */
+@Deprecated(forRemoval = true)
 public class IndependentJoingroupBindingsIteration extends LookAheadIteration<BindingSet> {
 
 	protected final BindingSet bindings;

@@ -14,8 +14,6 @@ import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * A wrapping iteration that attempts to close the dependent {@link RepositoryConnection} after consumption.
@@ -23,8 +21,6 @@ import org.slf4j.LoggerFactory;
  * @author Andreas Schwarte
  */
 public class CloseDependentConnectionIteration<T> extends AbstractCloseableIteration<T> {
-
-	private static final Logger logger = LoggerFactory.getLogger(CloseDependentConnectionIteration.class);
 
 	protected final CloseableIteration<T> inner;
 	protected final RepositoryConnection dependentConn;

@@ -31,6 +31,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author Andreas Schwarte
  */
+@Deprecated(forRemoval = true) // only support controlled worker bind join
 public class SynchronousBoundJoin extends SynchronousJoin {
 
 	private static final Logger log = LoggerFactory.getLogger(SynchronousBoundJoin.class);

@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
  * @author Andreas Schwarte
  *
  */
+@Deprecated(forRemoval = true)
 public class FedXWithRemoteRepositoryManager {
 
 	public static void main(String[] args) {

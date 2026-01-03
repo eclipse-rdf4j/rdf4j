@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  *
  * @author Andreas Schwarte
  */
+@Deprecated(forRemoval = true) // only support controlled worker bind join
 public class SynchronousJoin extends JoinExecutorBase<BindingSet> {
 
 	public SynchronousJoin(FederationEvalStrategy strategy,
