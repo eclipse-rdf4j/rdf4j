@@ -555,8 +555,8 @@ public abstract class SailConcurrencyTest {
 
 	}
 
-//	@Test
-	@RepeatedTest(5)
+	@Test
+//	@RepeatedTest(5)
 	@Timeout(value = 5, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdownAndClose() throws InterruptedException {
 		System.err.println("Running testConcurrentConnectionsShutdownAndClose");

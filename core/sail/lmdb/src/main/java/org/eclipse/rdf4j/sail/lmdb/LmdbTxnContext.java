@@ -12,6 +12,10 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.lang.management.LockInfo;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -22,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -213,7 +218,20 @@ class LmdbTxnContext {
 		}
 		bindToCurrentThread();
 		try {
-			writeTxnLock.lockInterruptibly();
+			boolean b = writeTxnLock.tryLock(10, TimeUnit.SECONDS);
+			int i = 0;
+			while (!b) {
+				i++;
+				System.err.println(Thread.currentThread() + " - LMDB writeTxnLock wait took more than " + i * 10 + " seconds");
+				// print lock diagnostics
+				printWriteTxnLockDiagnostics(i * 10, i == 1 || i % 6 == 0);
+
+				b = writeTxnLock.tryLock(10, TimeUnit.SECONDS);
+				if (Thread.currentThread().isInterrupted()) {
+					throw new InterruptedSailException();
+				}
+			}
+
 			writeLockHeld = true;
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
@@ -292,7 +310,7 @@ class LmdbTxnContext {
 			return;
 		}
 		try (Txn snapshotTxn = acquirePinnedReadTxn();
-				Txn currentTxn = store.getTripleStore().getTxnManager().createReadTxn()) {
+			 Txn currentTxn = store.getTripleStore().getTxnManager().createReadTxn()) {
 			store.ensureObservedPatternsUnchanged(snapshotTxn, currentTxn, observedExplicit, true);
 			store.ensureObservedPatternsUnchanged(snapshotTxn, currentTxn, observedInferred, false);
 		} catch (IOException e) {
@@ -625,7 +643,7 @@ class LmdbTxnContext {
 		if (pendingUpdates.isEmpty()) {
 			return;
 		}
-		for (var iterator = pendingUpdates.descendingIterator(); iterator.hasNext();) {
+		for (var iterator = pendingUpdates.descendingIterator(); iterator.hasNext(); ) {
 			PendingChanges pending = iterator.next();
 			pending.applyTo(added, removed, explicit);
 		}
@@ -635,7 +653,7 @@ class LmdbTxnContext {
 		if (pendingUpdates.isEmpty()) {
 			return;
 		}
-		for (var iterator = pendingUpdates.descendingIterator(); iterator.hasNext();) {
+		for (var iterator = pendingUpdates.descendingIterator(); iterator.hasNext(); ) {
 			PendingChanges pending = iterator.next();
 			pending.applyDeprecatedTo(deprecated, explicit);
 		}
@@ -887,6 +905,162 @@ class LmdbTxnContext {
 				base.setNamespace(entry.getKey(), entry.getValue());
 			}
 			clear();
+		}
+	}
+
+
+	private void printWriteTxnLockDiagnostics(int waitedSeconds, boolean includeThreadDump) {
+		try {
+			System.err.println("LMDB writeTxnLock diagnostics after waiting " + waitedSeconds + " seconds");
+			System.err.println("  lock=" + writeTxnLock);
+			System.err.println("  isLocked=" + writeTxnLock.isLocked()
+					+ ", isHeldByCurrentThread=" + writeTxnLock.isHeldByCurrentThread()
+					+ ", holdCount=" + writeTxnLock.getHoldCount()
+					+ ", hasQueuedThreads=" + writeTxnLock.hasQueuedThreads()
+					+ ", queueLength~=" + writeTxnLock.getQueueLength()
+					+ ", isFair=" + writeTxnLock.isFair());
+
+			ThreadMXBean bean = ManagementFactory.getThreadMXBean();
+
+			// Deadlock detection can be very useful when a lock wait stretches out.
+			try {
+				long[] deadlocked = bean.findDeadlockedThreads();
+				if (deadlocked != null && deadlocked.length > 0) {
+					System.err.println("  DEADLOCK DETECTED (thread ids): " + java.util.Arrays.toString(deadlocked));
+					ThreadInfo[] infos = bean.getThreadInfo(deadlocked, true, true);
+					if (infos != null) {
+						for (ThreadInfo info : infos) {
+							if (info != null) {
+								printThreadInfo(info, 80);
+							}
+						}
+					}
+				}
+			} catch (Throwable t) {
+				System.err.println("  (Deadlock detection failed: " + t + ")");
+			}
+
+			// Try to identify and dump the owner thread stack if the lock can tell us.
+			String ownerThreadName = extractOwnerThreadName(writeTxnLock.toString());
+			if (ownerThreadName != null) {
+				dumpThreadByName(ownerThreadName, 120);
+			}
+
+			// Full-ish dump is intentionally throttled (e.g., first time and then every ~60s).
+			if (includeThreadDump) {
+				System.err.println("  --- Threads waiting on / holding ReentrantLock synchronizers (best effort) ---");
+				ThreadInfo[] all = bean.dumpAllThreads(true, true);
+				if (all != null) {
+					for (ThreadInfo info : all) {
+						if (info == null) {
+							continue;
+						}
+						if (isReentrantLockRelated(info)
+								|| (ownerThreadName != null && ownerThreadName.equals(info.getThreadName()))) {
+							printThreadInfo(info, 60);
+						}
+					}
+				}
+			}
+		} catch (Throwable t) {
+			// Diagnostics must never prevent progress/interrupt handling.
+			System.err.println("LMDB writeTxnLock diagnostics failed: " + t);
+		}
+	}
+
+	private static boolean isReentrantLockRelated(ThreadInfo info) {
+		LockInfo lock = info.getLockInfo();
+		if (lock != null && lock.getClassName() != null
+				&& lock.getClassName().startsWith("java.util.concurrent.locks.ReentrantLock")) {
+			return true;
+		}
+		LockInfo[] synchronizers = info.getLockedSynchronizers();
+		if (synchronizers != null) {
+			for (LockInfo li : synchronizers) {
+				if (li != null && li.getClassName() != null
+						&& li.getClassName().startsWith("java.util.concurrent.locks.ReentrantLock")) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private static void printThreadInfo(ThreadInfo info, int maxFrames) {
+		System.err.println("Thread \"" + info.getThreadName() + "\" id=" + info.getThreadId()
+				+ " state=" + info.getThreadState());
+		if (info.getLockInfo() != null) {
+			System.err.println("  waitingOn=" + info.getLockInfo());
+		}
+		if (info.getLockOwnerName() != null) {
+			System.err.println("  lockOwner=" + info.getLockOwnerName() + " (id=" + info.getLockOwnerId() + ")");
+		}
+		StackTraceElement[] stack = info.getStackTrace();
+		if (stack != null) {
+			int limit = Math.min(stack.length, Math.max(0, maxFrames));
+			for (int frame = 0; frame < limit; frame++) {
+				System.err.println("\tat " + stack[frame]);
+			}
+			if (stack.length > limit) {
+				System.err.println("\t... " + (stack.length - limit) + " more");
+			}
+		}
+		System.err.println();
+	}
+
+	private static String extractOwnerThreadName(String lockString) {
+		if (lockString == null) {
+			return null;
+		}
+		int idx = lockString.indexOf("Locked by thread ");
+		if (idx < 0) {
+			return null;
+		}
+		int start = idx + "Locked by thread ".length();
+		int end = lockString.indexOf(']', start);
+		if (end < 0) {
+			end = lockString.length();
+		}
+		String name = lockString.substring(start, end).trim();
+		return name.isEmpty() ? null : name;
+	}
+
+	private static void dumpThreadByName(String threadName, int maxFrames) {
+		try {
+			for (Map.Entry<Thread, StackTraceElement[]> entry : Thread.getAllStackTraces().entrySet()) {
+				Thread t = entry.getKey();
+				if (t != null && threadName.equals(t.getName())) {
+					System.err.println("  --- Owner thread stack (" + t + ") ---");
+					StackTraceElement[] stack = entry.getValue();
+					if (stack != null) {
+						int limit = Math.min(stack.length, Math.max(0, maxFrames));
+						for (int frame = 0; frame < limit; frame++) {
+							System.err.println("\tat " + stack[frame]);
+						}
+						if (stack.length > limit) {
+							System.err.println("\t... " + (stack.length - limit) + " more");
+						}
+					}
+					System.err.println();
+					return;
+				}
+			}
+			System.err.println("  (Could not find owner thread named: " + threadName + ")");
+
+			System.err.println("----------------------------------------------------------");
+			System.err.println("  Available threads: ");
+
+			for (Map.Entry<Thread, StackTraceElement[]> entry : Thread.getAllStackTraces().entrySet()) {
+				Thread t = entry.getKey();
+				if (t != null) {
+					System.err.println("    - " + t.getName() + " (id=" + t.getId() + ")");
+				}
+			}
+			System.err.println("----------------------------------------------------------");
+			System.err.println();
+
+		} catch (Throwable t) {
+			System.err.println("  (Owner thread dump failed: " + t + ")");
 		}
 	}
 }
