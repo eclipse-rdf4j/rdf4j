@@ -53,7 +53,9 @@ public class SnapshotTest {
 	}
 
 	@Rule
-	public Timeout timeout = Timeout.millis(TimeUnit.MINUTES.toMillis(1));
+	public Timeout timeout = Timeout.millis(TimeUnit.SECONDS.toMillis(5));
+
+	static boolean timedOut = false;
 
 	private Repository repo;
 
