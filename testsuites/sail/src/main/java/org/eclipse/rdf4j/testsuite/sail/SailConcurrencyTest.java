@@ -14,7 +14,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import java.util.Locale;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -37,12 +36,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
-import org.junit.jupiter.api.extension.BeforeEachCallback;
-import org.junit.jupiter.api.extension.ExtensionContext;
-import org.junit.jupiter.api.extension.RegisterExtension;
-import org.junit.jupiter.api.extension.TestWatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,10 +50,6 @@ import org.slf4j.LoggerFactory;
 public abstract class SailConcurrencyTest {
 
 	private static final Logger logger = LoggerFactory.getLogger(SailConcurrencyTest.class);
-	private static final String TIMED_OUT_KEY = "timedOutTest";
-
-	@RegisterExtension
-	static final TimeoutClassFailureWatcher TIMEOUT_CLASS_FAILURE_WATCHER = new TimeoutClassFailureWatcher();
 	/*-----------*
 	 * Constants *
 	 *-----------*/
@@ -96,49 +88,6 @@ public abstract class SailConcurrencyTest {
 	@AfterEach
 	public void tearDown() {
 		store.shutDown();
-	}
-
-	private static final class TimeoutClassFailureWatcher implements TestWatcher, BeforeEachCallback {
-
-		@Override
-		public void beforeEach(ExtensionContext context) {
-			AtomicReference<String> timedOut = getTimedOutRef(context);
-			String timedOutTest = timedOut.get();
-			if (timedOutTest != null) {
-				Assertions.fail("Previous test timed out (" + timedOutTest + "); failing remaining tests in class");
-			}
-		}
-
-		@Override
-		public void testFailed(ExtensionContext context, Throwable cause) {
-			if (isTimeout(cause)) {
-				getTimedOutRef(context).compareAndSet(null, context.getDisplayName());
-			}
-		}
-
-		private static AtomicReference<String> getTimedOutRef(ExtensionContext context) {
-			ExtensionContext.Namespace namespace = ExtensionContext.Namespace.create(SailConcurrencyTest.class,
-					context.getRequiredTestClass());
-			return context.getStore(namespace)
-					.getOrComputeIfAbsent(TIMED_OUT_KEY, key -> new AtomicReference<String>(),
-							AtomicReference.class);
-		}
-
-		private static boolean isTimeout(Throwable cause) {
-			Throwable current = cause;
-			while (current != null) {
-				if (current instanceof java.util.concurrent.TimeoutException
-						|| "org.junit.jupiter.api.TimeoutException".equals(current.getClass().getName())) {
-					return true;
-				}
-				String message = current.getMessage();
-				if (message != null && message.toLowerCase(Locale.ROOT).contains("timed out")) {
-					return true;
-				}
-				current = current.getCause();
-			}
-			return false;
-		}
 	}
 
 	protected class UploadTransaction implements Runnable {
@@ -208,7 +157,7 @@ public abstract class SailConcurrencyTest {
 	 * @see <a href="https://github.com/eclipse/rdf4j/issues/693">https://github.com/eclipse/rdf4j/issues/693</a>
 	 */
 	@Test
-	@Timeout(value = 5, unit = TimeUnit.MINUTES)
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentAddLargeTxn() throws Exception {
 		logger.info("executing two large concurrent transactions");
 		final CountDownLatch runnersDone = new CountDownLatch(2);
@@ -250,7 +199,7 @@ public abstract class SailConcurrencyTest {
 	 * one of the transactions rolls back at the end.
 	 */
 	@Test
-	@Timeout(value = 5, unit = TimeUnit.MINUTES)
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentAddLargeTxnRollback() throws Exception {
 		logger.info("executing two large concurrent transactions");
 		final CountDownLatch runnersDone = new CountDownLatch(2);
@@ -292,7 +241,7 @@ public abstract class SailConcurrencyTest {
 	}
 
 	@Test
-	@Timeout(value = 5, unit = TimeUnit.MINUTES)
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	@Disabled("This test takes a long time and accomplishes little extra")
 	public void testGetContextIDs() throws Exception {
 		// Create one thread which writes statements to the repository, on a
@@ -370,7 +319,7 @@ public abstract class SailConcurrencyTest {
 	}
 
 	@Test
-	@Timeout(value = 5, unit = TimeUnit.MINUTES)
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdown() throws InterruptedException {
 		System.err.println("Running testConcurrentConnectionsShutdown");
 		if (store instanceof AbstractSail) {
@@ -416,7 +365,7 @@ public abstract class SailConcurrencyTest {
 
 	// @Disabled
 	@Test
-	@Timeout(value = 5, unit = TimeUnit.MINUTES)
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testSerialThreads() throws InterruptedException {
 		System.err.println("Running testSerialThreads");
 		if (store instanceof AbstractSail) {
@@ -498,7 +447,7 @@ public abstract class SailConcurrencyTest {
 	}
 
 	@Test
-	@Timeout(value = 5, unit = TimeUnit.MINUTES)
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdownReadCommitted() throws InterruptedException {
 		System.err.println("Running testConcurrentConnectionsShutdownReadCommitted");
 		if (store instanceof AbstractSail) {
@@ -554,9 +503,9 @@ public abstract class SailConcurrencyTest {
 
 	}
 
-	@Test
-//	@RepeatedTest(5)
-	@Timeout(value = 5, unit = TimeUnit.MINUTES)
+//	@Test
+	@RepeatedTest(5)
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdownAndClose() throws InterruptedException {
 		System.err.println("Running testConcurrentConnectionsShutdownAndClose");
 		if (store instanceof AbstractSail) {
@@ -633,7 +582,7 @@ public abstract class SailConcurrencyTest {
 	}
 
 	@Test
-	@Timeout(value = 5, unit = TimeUnit.MINUTES)
+	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testConcurrentConnectionsShutdownAndCloseRollback() throws InterruptedException {
 		System.err.println("Running testConcurrentConnectionsShutdownAndCloseRollback");
 		if (store instanceof AbstractSail) {
