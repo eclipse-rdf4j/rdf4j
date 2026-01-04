@@ -1298,6 +1298,9 @@ class LmdbSailStore implements SailStore {
 					sharedTxn.close();
 				}
 			} finally {
+				if (txnContext != null) {
+					txnContext.releaseReadSnapshot();
+				}
 				releaseContext(contextKey, txnContext);
 			}
 		}

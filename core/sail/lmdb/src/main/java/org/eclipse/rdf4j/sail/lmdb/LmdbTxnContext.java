@@ -70,6 +70,8 @@ class LmdbTxnContext {
 	private boolean overlayChanges;
 	private boolean snapshotReadMode;
 	private boolean snapshotWriteMode;
+	private boolean pinnedSnapshotTransactionScoped;
+	private int pinnedSnapshotRefCount;
 	private long ownerThreadId = -1;
 
 	private Txn pinnedTripleReadTxn;
@@ -92,10 +94,13 @@ class LmdbTxnContext {
 		this.level = level;
 		initialized = true;
 		snapshotWriteMode = IsolationLevels.SNAPSHOT.equals(level);
-		snapshotReadMode = snapshotWriteMode || IsolationLevels.SNAPSHOT_READ.equals(level)
-				|| IsolationLevels.SERIALIZABLE.equals(level);
-		if (snapshotReadMode) {
+		boolean serializable = IsolationLevels.SERIALIZABLE.equals(level);
+		snapshotReadMode = snapshotWriteMode || IsolationLevels.SNAPSHOT_READ.equals(level) || serializable;
+		if (snapshotWriteMode || serializable) {
 			ensurePinnedReadSnapshot();
+			pinnedSnapshotTransactionScoped = true;
+		}
+		if (snapshotReadMode) {
 			deferWrites = true;
 			overlayChanges = true;
 		}
@@ -157,6 +162,10 @@ class LmdbTxnContext {
 		init(level);
 		verifyThread();
 		try {
+			if (snapshotReadMode && !pinnedSnapshotTransactionScoped) {
+				ensurePinnedReadSnapshot();
+				pinnedSnapshotRefCount++;
+			}
 			if (pinnedTripleReadTxn != null) {
 				return store.getTripleStore().getTxnManager().createTxn(pinnedTripleReadTxn.get());
 			}
@@ -318,6 +327,18 @@ class LmdbTxnContext {
 			store.ensureObservedPatternsUnchanged(snapshotTxn, currentTxn, observedInferred, false);
 		} catch (IOException e) {
 			throw new SailException(e);
+		}
+	}
+
+	void releaseReadSnapshot() {
+		if (!snapshotReadMode || pinnedSnapshotTransactionScoped) {
+			return;
+		}
+		if (pinnedSnapshotRefCount > 0) {
+			pinnedSnapshotRefCount--;
+		}
+		if (pinnedSnapshotRefCount == 0) {
+			closePinnedReadSnapshot();
 		}
 	}
 
@@ -519,14 +540,9 @@ class LmdbTxnContext {
 		overlayChanges = false;
 		snapshotReadMode = false;
 		snapshotWriteMode = false;
-		if (pinnedTripleReadTxn != null) {
-			pinnedTripleReadTxn.close();
-			pinnedTripleReadTxn = null;
-		}
-		if (pinnedValueReadTxn != null) {
-			store.getValueStore().clearPinnedReadTxn(pinnedValueReadTxn);
-			pinnedValueReadTxn = null;
-		}
+		pinnedSnapshotTransactionScoped = false;
+		pinnedSnapshotRefCount = 0;
+		closePinnedReadSnapshot();
 		releaseWriteLock();
 	}
 
@@ -540,18 +556,13 @@ class LmdbTxnContext {
 		overlayChanges = false;
 		snapshotReadMode = false;
 		snapshotWriteMode = false;
+		pinnedSnapshotTransactionScoped = false;
+		pinnedSnapshotRefCount = 0;
 		observedExplicit = null;
 		observedInferred = null;
 		ownerThreadId = -1;
 		clearStatementChanges();
-		if (pinnedTripleReadTxn != null) {
-			pinnedTripleReadTxn.close();
-			pinnedTripleReadTxn = null;
-		}
-		if (pinnedValueReadTxn != null) {
-			store.getValueStore().clearPinnedReadTxn(pinnedValueReadTxn);
-			pinnedValueReadTxn = null;
-		}
+		closePinnedReadSnapshot();
 	}
 
 	private void releaseWriteLock() {
@@ -571,6 +582,17 @@ class LmdbTxnContext {
 			// ignore
 		} finally {
 			store.clearUnusedIds();
+		}
+	}
+
+	private void closePinnedReadSnapshot() {
+		if (pinnedTripleReadTxn != null) {
+			pinnedTripleReadTxn.close();
+			pinnedTripleReadTxn = null;
+		}
+		if (pinnedValueReadTxn != null) {
+			store.getValueStore().clearPinnedReadTxn(pinnedValueReadTxn);
+			pinnedValueReadTxn = null;
 		}
 	}
 
@@ -665,8 +687,10 @@ class LmdbTxnContext {
 	private boolean existsInStore(Quad quad, boolean explicit) {
 		store.acquireCommitReadLock();
 		Txn txn = null;
+		boolean releaseSnapshot = false;
 		try {
 			txn = acquireReadTxn(level);
+			releaseSnapshot = snapshotReadMode && !pinnedSnapshotTransactionScoped;
 			ValueStore valueStore = store.getValueStore();
 			long subjId = valueStore.getId(quad.subj, false);
 			if (subjId == LmdbValue.UNKNOWN_ID) {
@@ -701,6 +725,9 @@ class LmdbTxnContext {
 		} finally {
 			if (txn != null) {
 				txn.close();
+			}
+			if (releaseSnapshot) {
+				releaseReadSnapshot();
 			}
 			store.releaseCommitReadLock();
 		}
