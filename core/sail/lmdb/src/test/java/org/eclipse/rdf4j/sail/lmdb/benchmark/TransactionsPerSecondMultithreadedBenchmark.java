@@ -47,15 +47,14 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmarks insertion performance with synthetic data using multiple threads.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 2)
+@Warmup(iterations = 5)
 @BenchmarkMode({ Mode.Throughput })
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 3)
+@Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.SECONDS)
 @Threads(4)
 public class TransactionsPerSecondMultithreadedBenchmark {
 
-	SailRepositoryConnection connection;
 	RandomLiteralGenerator literalGenerator;
 	Random random;
 	int i;
@@ -76,25 +75,23 @@ public class TransactionsPerSecondMultithreadedBenchmark {
 
 	@Setup(Level.Iteration)
 	public void beforeClass() {
-		if (connection != null) {
-			connection.close();
-			connection = null;
-		}
 		i = 0;
 		file = Files.newTemporaryFolder();
 
 		LmdbStore sail = new LmdbStore(file, ConfigUtil.createConfig().setForceSync(forceSync));
 		repository = new SailRepository(sail);
-		connection = repository.getConnection();
 		random = new Random(1337);
-		literalGenerator = new RandomLiteralGenerator(connection.getValueFactory(), random);
-		resources = new ArrayList<>();
-		for (int i = 0; i < 10; i++) {
-			resources.add(connection.getValueFactory().createIRI("some:resource-" + i));
-		}
-		predicates = new ArrayList<>();
-		for (int i = 0; i < 10; i++) {
-			predicates.add(connection.getValueFactory().createIRI("some:predicate-" + i));
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			literalGenerator = new RandomLiteralGenerator(connection.getValueFactory(), random);
+			resources = new ArrayList<>();
+			for (int i = 0; i < 10; i++) {
+				resources.add(connection.getValueFactory().createIRI("some:resource-" + i));
+			}
+			predicates = new ArrayList<>();
+			for (int i = 0; i < 10; i++) {
+				predicates.add(connection.getValueFactory().createIRI("some:predicate-" + i));
+			}
 		}
 
 		System.gc();
@@ -110,80 +107,100 @@ public class TransactionsPerSecondMultithreadedBenchmark {
 
 	@TearDown(Level.Iteration)
 	public void afterClass() throws IOException {
-		if (connection != null) {
-			connection.close();
-			connection = null;
-		}
 		repository.shutDown();
 		FileUtils.deleteDirectory(file);
 
 	}
 
-	@Benchmark
-	public void transactions() {
-		connection.begin();
-		connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
-		connection.commit();
-	}
-
-	@Benchmark
-	public void transactionsLevelNone() {
-		connection.begin(IsolationLevels.NONE);
-		connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
-		connection.commit();
-	}
+//	@Benchmark
+//	public void transactions() {
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//
+//			connection.begin();
+//			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+//			connection.commit();
+//		}
+//	}
+//
+//	@Benchmark
+//	public void transactionsLevelNone() {
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//
+//			connection.begin(IsolationLevels.NONE);
+//			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+//			connection.commit();
+//		}
+//	}
 
 	@Benchmark
 	public void mediumTransactionsLevelNone() {
-		connection.begin(IsolationLevels.NONE);
-		for (int k = 0; k < 10; k++) {
-			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(IsolationLevels.NONE);
+			for (int k = 0; k < 10; k++) {
+				connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+			}
+			connection.commit();
 		}
-		connection.commit();
 	}
 
 	@Benchmark
 	public void mediumTransactionsLevelSnapshot() {
-		connection.begin(IsolationLevels.SNAPSHOT);
-		for (int k = 0; k < 10; k++) {
-			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(IsolationLevels.SNAPSHOT);
+			for (int k = 0; k < 10; k++) {
+				connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+			}
+			connection.commit();
 		}
-		connection.commit();
 	}
 
 	@Benchmark
 	public void mediumTransactionsLevelSerializable() {
-		connection.begin(IsolationLevels.SERIALIZABLE);
-		for (int k = 0; k < 10; k++) {
-			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(IsolationLevels.SERIALIZABLE);
+			for (int k = 0; k < 10; k++) {
+				connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+			}
+			connection.commit();
 		}
-		connection.commit();
 	}
 
 	@Benchmark
 	public void largerTransaction() {
-		connection.begin();
-		for (int k = 0; k < 10000; k++) {
-			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin();
+			for (int k = 0; k < 10000; k++) {
+				connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+			}
+			connection.commit();
 		}
-		connection.commit();
 	}
 
 	@Benchmark
 	public void largerTransactionLevelNone() {
-		connection.begin(IsolationLevels.NONE);
-		for (int k = 0; k < 10000; k++) {
-			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(IsolationLevels.NONE);
+			for (int k = 0; k < 10000; k++) {
+				connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+			}
+			connection.commit();
 		}
-		connection.commit();
 	}
 
 	@Benchmark
 	public void veryLargerTransactionLevelNone() {
-		connection.begin(IsolationLevels.NONE);
-		for (int k = 0; k < 1000000; k++) {
-			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(IsolationLevels.NONE);
+			for (int k = 0; k < 1000000; k++) {
+				connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+			}
+			connection.commit();
 		}
-		connection.commit();
 	}
 }
