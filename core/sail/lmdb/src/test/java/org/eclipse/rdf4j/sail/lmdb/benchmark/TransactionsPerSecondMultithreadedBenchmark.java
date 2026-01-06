@@ -36,6 +36,7 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
+import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
@@ -43,7 +44,7 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
- * Benchmarks insertion performance with synthetic data.
+ * Benchmarks insertion performance with synthetic data using multiple threads.
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 2)
@@ -51,7 +52,8 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
 @Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.SECONDS)
-public class TransactionsPerSecondBenchmark {
+@Threads(4)
+public class TransactionsPerSecondMultithreadedBenchmark {
 
 	SailRepositoryConnection connection;
 	RandomLiteralGenerator literalGenerator;
