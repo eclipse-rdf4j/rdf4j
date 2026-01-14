@@ -308,9 +308,8 @@ public class LuceneSail extends NotifyingSailWrapper {
 	/**
 	 * Set the key "fsyncInterval=&lt;t&gt;" as sail parameter to configure the interval in milliseconds in which fsync
 	 * is called on the Lucene index, default is defined in {@link #DEFAULT_FSYNC_INTERVAL}. Changes in the index will
-	 * become visible to readers at most after the interval is elapsed. If set to 0 or a negative value, fsync will be
-	 * disabled completely and there are no guarantees as to when your data will be persisted. This setting is only used
-	 * when {@link #TRANSACTIONAL_KEY} is set to false (rollbacks disabled).
+	 * become visible to readers at most after the interval is elapsed. This must be set to a value &gt; 0. This setting
+	 * is only used when {@link #TRANSACTIONAL_KEY} is set to false (rollbacks disabled).
 	 */
 	public static final String FSYNC_INTERVAL_KEY = "fsyncInterval";
 

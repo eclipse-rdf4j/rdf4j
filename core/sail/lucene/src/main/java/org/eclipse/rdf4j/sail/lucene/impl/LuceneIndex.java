@@ -229,6 +229,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			this.fsyncIntervalMillis = NumberUtils.toLong(
 					parameters.getProperty(LuceneSail.FSYNC_INTERVAL_KEY),
 					LuceneSail.DEFAULT_FSYNC_INTERVAL);
+			if (this.fsyncIntervalMillis <= 0) {
+				throw new IllegalArgumentException(LuceneSail.FSYNC_INTERVAL_KEY + " must be > 0");
+			}
 		}
 
 		postInit();
@@ -294,9 +297,11 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	private void setUpFsyncScheduler() {
 		// If transactions are disabled, launch a background thread to fsync periodically.
-		if (this.transactionsEnabled || this.fsyncIntervalMillis <= 0) {
+		if (this.transactionsEnabled) {
 			return;
 		}
+		// Checked in initialize(), assertion here for clarity.
+		assert this.fsyncIntervalMillis > 0;
 
 		// Use a daemon thread so the scheduler does not prevent JVM shutdown.
 		this.fsyncScheduler = new ScheduledThreadPoolExecutor(1, r -> {
