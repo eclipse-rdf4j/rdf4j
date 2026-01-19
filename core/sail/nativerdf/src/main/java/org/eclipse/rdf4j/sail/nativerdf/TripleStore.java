@@ -81,12 +81,6 @@ class TripleStore implements Closeable {
 	private static final String INDEXES_KEY = "triple-indexes";
 
 	/**
-	 * System property that enables the experimental {@link MemoryMappedTxnStatusFile} implementation instead of the
-	 * default {@link TxnStatusFile}.
-	 */
-	private static final String MEMORY_MAPPED_TXN_STATUS_FILE_ENABLED_PROP = "org.eclipse.rdf4j.sail.nativerdf.MemoryMappedTxnStatusFile.enabled";
-
-	/**
 	 * The version number for the current triple store.
 	 * <ul>
 	 * <li>version 0: The first version which used a single spo-index. This version did not have a properties file yet.
@@ -168,13 +162,18 @@ class TripleStore implements Closeable {
 	 *--------------*/
 
 	public TripleStore(File dir, String indexSpecStr) throws IOException, SailException {
-		this(dir, indexSpecStr, false);
+		this(dir, indexSpecStr, false, null);
 	}
 
 	public TripleStore(File dir, String indexSpecStr, boolean forceSync) throws IOException, SailException {
+		this(dir, indexSpecStr, forceSync, null);
+	}
+
+	public TripleStore(File dir, String indexSpecStr, boolean forceSync, Boolean memoryMappedTxnStatusFileEnabled)
+			throws IOException, SailException {
 		this.dir = dir;
 		this.forceSync = forceSync;
-		this.txnStatusFile = createTxnStatusFile(dir);
+		this.txnStatusFile = createTxnStatusFile(dir, memoryMappedTxnStatusFileEnabled);
 
 		File propFile = new File(dir, PROPERTIES_FILE);
 
@@ -229,8 +228,10 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private static TxnStatusFile createTxnStatusFile(File dir) throws IOException {
-		if (Boolean.getBoolean(MEMORY_MAPPED_TXN_STATUS_FILE_ENABLED_PROP)) {
+	private static TxnStatusFile createTxnStatusFile(File dir, Boolean memoryMappedTxnStatusFileEnabled)
+			throws IOException {
+		boolean enabled = Boolean.TRUE.equals(memoryMappedTxnStatusFileEnabled);
+		if (enabled) {
 			return new MemoryMappedTxnStatusFile(dir);
 		}
 		return new TxnStatusFile(dir);

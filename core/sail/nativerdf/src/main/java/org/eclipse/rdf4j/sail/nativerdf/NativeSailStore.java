@@ -80,6 +80,7 @@ class NativeSailStore implements SailStore {
 
 	private final ContextStore contextStore;
 	private final boolean walEnabled;
+	private final Boolean memoryMappedTxnStatusFileEnabled;
 
 	/**
 	 * A lock to control concurrent access by {@link NativeSailSink} to the TripleStore, ValueStore, and NamespaceStore.
@@ -99,7 +100,7 @@ class NativeSailStore implements SailStore {
 	public NativeSailStore(File dataDir, String tripleIndexes) throws IOException, SailException {
 		this(dataDir, tripleIndexes, false, ValueStore.VALUE_CACHE_SIZE, ValueStore.VALUE_ID_CACHE_SIZE,
 				ValueStore.NAMESPACE_CACHE_SIZE, ValueStore.NAMESPACE_ID_CACHE_SIZE,
-				-1L, -1, -1, null, -1L, -1L, null, false, false, true);
+				-1L, -1, -1, null, -1L, -1L, null, false, false, true, null);
 	}
 
 	/**
@@ -114,7 +115,7 @@ class NativeSailStore implements SailStore {
 			throws IOException, SailException {
 		this(dataDir, tripleIndexes, forceSync, valueCacheSize, valueIDCacheSize, namespaceCacheSize,
 				namespaceIDCacheSize, walMaxSegmentBytes, walQueueCapacity, walBatchBufferBytes, walSyncPolicy,
-				walSyncIntervalMillis, walIdlePollIntervalMillis, walDirectoryName, false, false, true);
+				walSyncIntervalMillis, walIdlePollIntervalMillis, walDirectoryName, false, false, true, null);
 	}
 
 	public NativeSailStore(File dataDir, String tripleIndexes, boolean forceSync, int valueCacheSize,
@@ -122,9 +123,11 @@ class NativeSailStore implements SailStore {
 			int walQueueCapacity, int walBatchBufferBytes,
 			ValueStoreWalConfig.SyncPolicy walSyncPolicy,
 			long walSyncIntervalMillis, long walIdlePollIntervalMillis, String walDirectoryName,
-			boolean walSyncBootstrapOnOpen, boolean walAutoRecoverOnOpen, boolean walEnabled)
+			boolean walSyncBootstrapOnOpen, boolean walAutoRecoverOnOpen, boolean walEnabled,
+			Boolean memoryMappedTxnStatusFileEnabled)
 			throws IOException, SailException {
 		this.walEnabled = walEnabled;
+		this.memoryMappedTxnStatusFileEnabled = memoryMappedTxnStatusFileEnabled;
 		NamespaceStore createdNamespaceStore = null;
 		ValueStoreWAL createdWal = null;
 		ValueStore createdValueStore = null;
@@ -171,7 +174,7 @@ class NativeSailStore implements SailStore {
 			}
 			createdValueStore = new ValueStore(dataDir, forceSync, valueCacheSize, valueIDCacheSize,
 					namespaceCacheSize, namespaceIDCacheSize, createdWal);
-			createdTripleStore = new TripleStore(dataDir, tripleIndexes, forceSync);
+			createdTripleStore = new TripleStore(dataDir, tripleIndexes, forceSync, memoryMappedTxnStatusFileEnabled);
 
 			// Assign fields required by ContextStore before constructing it
 			namespaceStore = createdNamespaceStore;

@@ -37,6 +37,7 @@ public class NativeStoreConfig extends BaseSailConfig {
 	private int valueIDCacheSize = -1;
 	private int namespaceCacheSize = -1;
 	private int namespaceIDCacheSize = -1;
+	private Boolean memoryMappedTxnStatusFileEnabled;
 
 	// WAL: expose max segment bytes via config (optional)
 	private long walMaxSegmentBytes = -1L;
@@ -122,6 +123,14 @@ public class NativeStoreConfig extends BaseSailConfig {
 
 	public void setNamespaceIDCacheSize(int namespaceIDCacheSize) {
 		this.namespaceIDCacheSize = namespaceIDCacheSize;
+	}
+
+	public Boolean getMemoryMappedTxnStatusFileEnabled() {
+		return memoryMappedTxnStatusFileEnabled;
+	}
+
+	public void setMemoryMappedTxnStatusFileEnabled(Boolean memoryMappedTxnStatusFileEnabled) {
+		this.memoryMappedTxnStatusFileEnabled = memoryMappedTxnStatusFileEnabled;
 	}
 
 	public long getWalMaxSegmentBytes() {
@@ -230,6 +239,10 @@ public class NativeStoreConfig extends BaseSailConfig {
 		}
 		if (namespaceIDCacheSize >= 0) {
 			m.add(implNode, CONFIG.Native.namespaceIDCacheSize, literal(namespaceIDCacheSize));
+		}
+		if (memoryMappedTxnStatusFileEnabled != null) {
+			m.add(implNode, CONFIG.Native.memoryMappedTxnStatusFile,
+					literal(memoryMappedTxnStatusFileEnabled));
 		}
 		// WAL configuration properties
 		if (walMaxSegmentBytes >= 0) {
@@ -347,14 +360,24 @@ public class NativeStoreConfig extends BaseSailConfig {
 						}
 					});
 
-			Configurations.getLiteralValue(m, implNode, CONFIG.Native.namespaceIDCacheSize, NAMESPACE_ID_CACHE_SIZE)
-					.ifPresent(lit -> {
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.namespaceIDCacheSize,
+					NAMESPACE_ID_CACHE_SIZE).ifPresent(lit -> {
 						try {
 							setNamespaceIDCacheSize(lit.intValue());
 						} catch (NumberFormatException e) {
 							throw new SailConfigException(
 									"Integer value required for " + CONFIG.Native.namespaceIDCacheSize
 											+ " property, found " + lit);
+						}
+					});
+
+			Configurations.getLiteralValue(m, implNode, CONFIG.Native.memoryMappedTxnStatusFile)
+					.ifPresent(lit -> {
+						try {
+							setMemoryMappedTxnStatusFileEnabled(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException("Boolean value required for "
+									+ CONFIG.Native.memoryMappedTxnStatusFile + " property, found " + lit);
 						}
 					});
 
