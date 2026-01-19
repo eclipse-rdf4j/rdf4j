@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.util.Repositories;
 
+@Deprecated(forRemoval = true)
 public class GettingStartedDemoMinimal {
 
 	public static void main(String[] args) {

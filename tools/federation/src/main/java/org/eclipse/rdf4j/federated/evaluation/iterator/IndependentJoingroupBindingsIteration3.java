@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  *
  * @author Andreas Schwarte
  */
+@Deprecated(forRemoval = true)
 public class IndependentJoingroupBindingsIteration3 extends LookAheadIteration<BindingSet> {
 
 	// a pattern matcher for the binding resolver, pattern: myVar_%outerID%#bindingId, e.g. name_0#0

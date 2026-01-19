@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  * @author Andreas Schwarte
  *
  */
+@Deprecated(forRemoval = true) // will be replaced with single unified federation eval strategy
 public class SailFederationEvalStrategy extends FederationEvalStrategy {
 
 	public SailFederationEvalStrategy(FederationContext federationContext) {

@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Test;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
+@Deprecated(forRemoval = true)
 public class HashJoinTest {
 
 	@Test
