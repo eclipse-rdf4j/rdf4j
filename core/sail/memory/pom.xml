@@ -99,6 +99,24 @@
 			<plugin>
 				<artifactId>maven-assembly-plugin</artifactId>
 			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>default-testCompile</id>
+						<configuration>
+							<annotationProcessorPaths>
+								<path>
+									<groupId>org.openjdk.jmh</groupId>
+									<artifactId>jmh-generator-annprocess</artifactId>
+									<version>${jmhVersion}</version>
+								</path>
+							</annotationProcessorPaths>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
 		</plugins>
 	</build>
 </project>

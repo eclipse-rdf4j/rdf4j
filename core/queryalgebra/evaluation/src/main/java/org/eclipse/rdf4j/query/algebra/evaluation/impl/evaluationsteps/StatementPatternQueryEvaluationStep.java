@@ -10,6 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -19,6 +23,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -36,6 +41,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.BulkTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -44,7 +50,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
  * Evaluate the StatementPattern - taking care of graph/datasets - avoiding redoing work every call of evaluate if
  * possible.
  */
-public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep {
+public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep, BatchingQueryEvaluationStep {
 
 	public static final EmptyIteration<? extends Statement> EMPTY_ITERATION = new EmptyIteration<>();
 
@@ -300,6 +306,64 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 			return iteration;
 		}
+	}
+
+	@Override
+	public CloseableIteration<BindingSet> evaluateBatch(Iterable<BindingSet> bindings) {
+		if (emptyGraph) {
+			return QueryEvaluationStep.EMPTY_ITERATION;
+		}
+
+		List<BindingSet> batch = new ArrayList<>();
+		Resource[] contexts = null;
+		boolean contextsCompatible = true;
+
+		for (BindingSet bindingSet : bindings) {
+			if (unboundTest.test(bindingSet)) {
+				continue;
+			}
+
+			Value contextValue = getContextVar != null ? getContextVar.apply(bindingSet) : null;
+			Resource[] bindingContexts = contextSup.apply(contextValue);
+			if (bindingContexts == null) {
+				continue;
+			}
+
+			Value subject = getSubjectVar != null ? getSubjectVar.apply(bindingSet) : null;
+			if (subject != null && !subject.isResource()) {
+				continue;
+			}
+
+			Value predicate = getPredicateVar != null ? getPredicateVar.apply(bindingSet) : null;
+			if (predicate != null && !predicate.isIRI()) {
+				continue;
+			}
+
+			if (contexts == null) {
+				contexts = bindingContexts;
+			} else if (!Arrays.equals(contexts, bindingContexts)) {
+				contextsCompatible = false;
+			}
+
+			batch.add(bindingSet);
+		}
+
+		if (batch.isEmpty()) {
+			return QueryEvaluationStep.EMPTY_ITERATION;
+		}
+
+		if (contextsCompatible && tripleSource instanceof BulkTripleSource) {
+			try {
+				return ((BulkTripleSource) tripleSource).getStatementsBatch(statementPattern, batch, contexts, order);
+			} catch (Throwable t) {
+				if (t instanceof InterruptedException) {
+					Thread.currentThread().interrupt();
+				}
+				throw new QueryEvaluationException(t);
+			}
+		}
+
+		return new BatchIteration(batch.iterator());
 	}
 
 	private JoinStatementWithBindingSetIterator getIteration(BindingSet bindings) {
@@ -717,6 +781,44 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			if (!closed) {
 				closed = true;
 				iteration.close();
+			}
+		}
+	}
+
+	private class BatchIteration extends LookAheadIteration<BindingSet> {
+		private final Iterator<BindingSet> bindings;
+		private CloseableIteration<BindingSet> currentIter;
+
+		private BatchIteration(Iterator<BindingSet> bindings) {
+			this.bindings = bindings;
+		}
+
+		@Override
+		protected BindingSet getNextElement() throws QueryEvaluationException {
+			while (true) {
+				if (currentIter != null && currentIter.hasNext()) {
+					return currentIter.next();
+				}
+				closeCurrent();
+				if (!bindings.hasNext()) {
+					return null;
+				}
+				currentIter = StatementPatternQueryEvaluationStep.this.evaluate(bindings.next());
+				if (currentIter == QueryEvaluationStep.EMPTY_ITERATION) {
+					currentIter = null;
+				}
+			}
+		}
+
+		@Override
+		protected void handleClose() throws QueryEvaluationException {
+			closeCurrent();
+		}
+
+		private void closeCurrent() throws QueryEvaluationException {
+			if (currentIter != null) {
+				currentIter.close();
+				currentIter = null;
 			}
 		}
 	}

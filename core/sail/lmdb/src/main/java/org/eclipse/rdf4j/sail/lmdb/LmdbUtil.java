@@ -99,6 +99,29 @@ final class LmdbUtil {
 		return ret;
 	}
 
+	static <T> T readTransaction(long env, long writeTxn, long id, TransactionWithId<T> transaction)
+			throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			long txn;
+			if (writeTxn == 0) {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
+				txn = pp.get(0);
+			} else {
+				txn = writeTxn;
+			}
+
+			try {
+				return transaction.exec(stack, txn, id);
+			} finally {
+				if (writeTxn == 0) {
+					mdb_txn_abort(txn);
+				}
+			}
+		}
+
+	}
+
 	static <T> T transaction(long env, Transaction<T> transaction) throws IOException {
 		T ret;
 		try (MemoryStack stack = stackPush()) {
@@ -200,6 +223,11 @@ final class LmdbUtil {
 	interface Transaction<T> {
 
 		T exec(MemoryStack stack, long txn) throws IOException;
+	}
+
+	@FunctionalInterface
+	interface TransactionWithId<T> {
+		T exec(MemoryStack stack, long txn, long id) throws IOException;
 	}
 
 }

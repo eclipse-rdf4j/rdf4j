@@ -17,6 +17,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -86,14 +87,18 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			newUnion.setVariableScopeChange(union.isVariableScopeChange());
 			join.replaceWith(newUnion);
 			newUnion.visit(this);
-		} else if (leftArg instanceof LeftJoin && isWellDesigned((LeftJoin) leftArg)) {
+		} else if (leftArg instanceof LeftJoin && isWellDesigned((LeftJoin) leftArg)
+				&& !bindsOptionalVars(rightArg, (LeftJoin) leftArg)
+				&& !containsBindingSetAssignment(rightArg)) {
 			// sort left join above normal joins
 			LeftJoin leftJoin = (LeftJoin) leftArg;
 			join.replaceWith(leftJoin);
 			join.setLeftArg(leftJoin.getLeftArg());
 			leftJoin.setLeftArg(join);
 			leftJoin.visit(this);
-		} else if (rightArg instanceof LeftJoin && isWellDesigned((LeftJoin) rightArg)) {
+		} else if (rightArg instanceof LeftJoin && isWellDesigned((LeftJoin) rightArg)
+				&& !bindsOptionalVars(leftArg, (LeftJoin) rightArg)
+				&& !containsBindingSetAssignment(leftArg)) {
 			// sort left join above normal joins
 			LeftJoin leftJoin = (LeftJoin) rightArg;
 			join.replaceWith(leftJoin);
@@ -242,6 +247,50 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		}
 
 		return checkAgainstParent(leftJoin, problemVars);
+	}
+
+	private boolean bindsOptionalVars(TupleExpr otherArg, LeftJoin leftJoin) {
+		Set<String> optionalVars = VarNameCollector.process(leftJoin.getRightArg());
+		if (leftJoin.hasCondition()) {
+			optionalVars = new HashSet<>(optionalVars);
+			optionalVars.addAll(VarNameCollector.process(leftJoin.getCondition()));
+		}
+
+		optionalVars = retainAll(optionalVars, leftJoin.getLeftArg().getBindingNames());
+		if (optionalVars.isEmpty()) {
+			return false;
+		}
+
+		Set<String> otherBindingNames = otherArg.getBindingNames();
+		for (String var : optionalVars) {
+			if (otherBindingNames.contains(var)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean containsBindingSetAssignment(TupleExpr tupleExpr) {
+		BindingSetAssignmentFinder finder = new BindingSetAssignmentFinder();
+		tupleExpr.visit(finder);
+		return finder.found;
+	}
+
+	private static class BindingSetAssignmentFinder extends AbstractQueryModelVisitor<RuntimeException> {
+
+		private boolean found;
+
+		@Override
+		public void meet(BindingSetAssignment node) {
+			found = true;
+		}
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			if (!found) {
+				super.meetNode(node);
+			}
+		}
 	}
 
 	private Set<String> retainAll(Set<String> problemVars, Set<String> leftBindingNames) {

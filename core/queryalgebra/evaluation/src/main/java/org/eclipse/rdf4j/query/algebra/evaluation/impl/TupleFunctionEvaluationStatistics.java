@@ -25,6 +25,11 @@ public class TupleFunctionEvaluationStatistics extends EvaluationStatistics {
 		private static final double VAR_CARDINALITY = 10;
 
 		@Override
+		protected CardinalityCalculator newCalculator() {
+			return new TupleFunctionCardinalityCalculator();
+		}
+
+		@Override
 		protected void meetNode(QueryModelNode node) {
 			if (node instanceof TupleFunctionCall) {
 				cardinality = getCardinality(VAR_CARDINALITY, ((TupleFunctionCall) node).getResultVars());
