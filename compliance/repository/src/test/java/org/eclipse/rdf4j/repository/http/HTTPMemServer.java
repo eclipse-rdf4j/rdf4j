@@ -15,8 +15,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
 
+import org.eclipse.jetty.ee11.webapp.WebAppContext;
 import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.webapp.WebAppContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -66,7 +66,7 @@ public class HTTPMemServer {
 		WebAppContext webapp = new WebAppContext();
 		webapp.setContextPath(RDF4J_CONTEXT);
 		webapp.setWar(webappDir);
-		webapp.getServerClasspathPattern().add("org.slf4j.", "ch.qos.logback.");
+		WebAppContext.addServerClasses(jetty, "org.slf4j.", "ch.qos.logback.");
 		jetty.setHandler(webapp);
 
 		manager = RemoteRepositoryManager.getInstance(SERVER_URL);

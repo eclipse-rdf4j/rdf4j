@@ -17,10 +17,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-
-import javax.servlet.MultipartConfigElement;
 
 import org.apache.catalina.Context;
 import org.eclipse.rdf4j.common.platform.Platform;
@@ -37,6 +36,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.web.embedded.tomcat.TomcatContextCustomizer;
 import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
+import org.springframework.boot.web.server.Compression;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.ApplicationContext;
@@ -46,12 +46,11 @@ import org.springframework.web.context.support.XmlWebApplicationContext;
 import org.springframework.web.servlet.DispatcherServlet;
 import org.tuckey.web.filters.urlrewrite.UrlRewriteFilter;
 
-import com.github.ziplet.filter.compression.CompressingFilter;
-
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.ConsoleAppender;
+import jakarta.servlet.MultipartConfigElement;
 
 @SpringBootApplication
 public class Rdf4jServerWorkbenchApplication {
@@ -114,7 +113,14 @@ public class Rdf4jServerWorkbenchApplication {
 	@Bean
 	TomcatServletWebServerFactory tomcatFactory(WebappResourceExtractor extractor) {
 		TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
+		factory.setDocumentRoot(extractor.getServerDocBase().toFile());
 		factory.addContextCustomizers(workbenchResourcesCustomizer(extractor));
+		Compression compression = new Compression();
+		compression.setEnabled(true);
+		compression.setMimeTypes(
+				new String[] { "text/html", "text/xml", "text/plain", "application/json", "application/xml",
+						"text/css", "application/javascript", "text/javascript" });
+		factory.setCompression(compression);
 		return factory;
 	}
 
@@ -124,7 +130,7 @@ public class Rdf4jServerWorkbenchApplication {
 
 	@Bean
 	ServletRegistrationBean<DispatcherServlet> rdf4jServerServlet(ApplicationContext parentContext) {
-		DispatcherServlet dispatcherServlet = new DispatcherServlet();
+		DispatcherServlet dispatcherServlet = new LoggingDispatcherServlet();
 		dispatcherServlet.setContextClass(ServerXmlWebApplicationContext.class);
 		dispatcherServlet.setContextConfigLocation(String.join(",",
 				"classpath:/rdf4j/server-webapp/WEB-INF/common-webapp-servlet.xml",
@@ -132,6 +138,7 @@ public class Rdf4jServerWorkbenchApplication {
 				"classpath:/rdf4j/server-webapp/WEB-INF/rdf4j-http-server-servlet.xml"));
 		ServletRegistrationBean<DispatcherServlet> registration = new ServletRegistrationBean<>(dispatcherServlet,
 				serverServletUrlMappings().toArray(new String[0]));
+		logger.info("Registering rdf4jServer servlet with mappings {}", registration.getUrlMappings());
 		registration.setName("rdf4jServer");
 		registration.setLoadOnStartup(1);
 		return registration;
@@ -182,6 +189,7 @@ public class Rdf4jServerWorkbenchApplication {
 
 	@Bean
 	FilterRegistrationBean<ServerPrefixForwardFilter> serverPrefixForwardFilter() {
+		logger.info("Registering ServerPrefixForwardFilter");
 		FilterRegistrationBean<ServerPrefixForwardFilter> registration = new FilterRegistrationBean<>(
 				new ServerPrefixForwardFilter());
 		registration.addUrlPatterns("/rdf4j-server", "/rdf4j-server/*", "/rdf4j-workbench", "/rdf4j-workbench/*");
@@ -201,24 +209,21 @@ public class Rdf4jServerWorkbenchApplication {
 	}
 
 	private List<String> serverServletUrlMappings() {
-		return WebXmlServletMappingExtractor.extractMappings(
-				"rdf4j/server-webapp/WEB-INF/web.xml", "rdf4j-http-server", "/rdf4j-server", true);
+		LinkedHashSet<String> mappings = new LinkedHashSet<>(WebXmlServletMappingExtractor.extractMappings(
+				"rdf4j/server-webapp/WEB-INF/web.xml", "rdf4j-http-server", "", true));
+		mappings.add("/rdf4j-server/*");
+		mappings.add("/rdf4j-server");
+		List<String> orderedMappings = List.copyOf(mappings);
+		logger.info("Resolved server servlet url mappings {}", orderedMappings);
+		return orderedMappings;
 	}
 
 	private List<String> workbenchServletUrlMappings() {
 		return WebXmlServletMappingExtractor.extractMappings(
-				"rdf4j/workbench-webapp/WEB-INF/web.xml", "workbench", "/rdf4j-workbench", false);
-	}
-
-	@Bean
-	FilterRegistrationBean<CompressingFilter> compressingFilter() {
-		FilterRegistrationBean<CompressingFilter> registration = new FilterRegistrationBean<>(new CompressingFilter());
-		registration.addUrlPatterns("/rdf4j-server/*");
-		registration.setName("CompressingFilter");
-		registration.setOrder(-10);
-		registration.addInitParameter("excludeContentTypes",
-				"application/x-binary-rdf,application/x-binary-rdf-results-table");
-		return registration;
+				"rdf4j/workbench-webapp/WEB-INF/web.xml",
+				"workbench",
+				"/rdf4j-workbench",
+				false);
 	}
 
 	@Bean

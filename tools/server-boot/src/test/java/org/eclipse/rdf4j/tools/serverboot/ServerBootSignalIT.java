@@ -47,17 +47,12 @@ import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 @EnabledOnOs({ OS.LINUX, OS.MAC })
 class ServerBootSignalIT {
-
-	private static final Logger LOGGER = LoggerFactory.getLogger(ServerBootSignalIT.class);
 
 	private ExecutorService streamExecutor;
 	private final List<Runnable> cleanupActions = new ArrayList<>();
@@ -85,9 +80,8 @@ class ServerBootSignalIT {
 	}
 
 	@Test
-	@Disabled("Disabled due to flakiness on CI servers")
 	void gracefullyStopsOnSigint() throws Exception {
-		assertGracefulShutdownWithSigintFallback();
+		assertGracefulShutdown("INT");
 	}
 
 	@Test
@@ -95,15 +89,7 @@ class ServerBootSignalIT {
 		assertGracefulShutdown("TERM");
 	}
 
-	private void assertGracefulShutdownWithSigintFallback() throws Exception {
-		assertGracefulShutdown("INT", true);
-	}
-
 	private void assertGracefulShutdown(String signalName) throws Exception {
-		assertGracefulShutdown(signalName, false);
-	}
-
-	private void assertGracefulShutdown(String signalName, boolean allowSigtermFallback) throws Exception {
 		Path projectRoot = Path.of("").toAbsolutePath();
 		String javaBin = Path.of(System.getProperty("java.home"), "bin", "java").toString();
 		int serverPort = findFreePort();
@@ -134,7 +120,7 @@ class ServerBootSignalIT {
 
 		boolean startedInTime = started.await(90, SECONDS);
 		assertThat(startedInTime)
-				.as(() -> "Server failed to start within timeout. Output:\\n" + outputBuffer)
+				.as(() -> "Server failed to start within timeout. Output:\n" + outputBuffer)
 				.isTrue();
 
 		String serverUrl = serverUrl(serverPort);
@@ -143,20 +129,12 @@ class ServerBootSignalIT {
 		long pid = process.pid();
 		sendSignal(pid, signalName);
 
-		boolean exited = process.waitFor(allowSigtermFallback ? 5 : 30, SECONDS);
-		if (!exited && allowSigtermFallback) {
-			LOGGER.warn("Server did not exit on SIGINT within 5 seconds. Sending SIGTERM.");
-			sendSignal(pid, "TERM");
-			exited = process.waitFor(5, SECONDS);
-			assertThat(exited)
-					.as(() -> "Process did not exit after SIGTERM. Output:\\n" + outputBuffer)
-					.isTrue();
-		}
+		boolean exited = process.waitFor(30, SECONDS);
 		assertThat(exited)
-				.as(() -> "Process did not exit after SIG" + signalName + ". Output:\\n" + outputBuffer)
+				.as(() -> "Process did not exit after SIG" + signalName + ". Output:\n" + outputBuffer)
 				.isTrue();
 		assertThat(process.exitValue())
-				.as(() -> "Process exit value after SIG" + signalName + ". Output:\\n" + outputBuffer)
+				.as(() -> "Process exit value after SIG" + signalName + ". Output:\n" + outputBuffer)
 				.isEqualTo(0);
 	}
 
@@ -170,8 +148,8 @@ class ServerBootSignalIT {
 					synchronized (outputBuffer) {
 						outputBuffer.append(line).append(System.lineSeparator());
 					}
-					if (!signalLogged.get() && (line.contains("Started Rdf4jServerWorkbenchApplication")
-							|| line.contains("Initializing Spring DispatcherServlet 'rdf4jServer'"))) {
+					if (!signalLogged.get() && (line.contains("Tomcat initialized with port")
+							|| line.contains("Started Rdf4jServerWorkbenchApplication"))) {
 						started.countDown();
 						signalLogged.set(true);
 					}
@@ -260,7 +238,7 @@ class ServerBootSignalIT {
 				Thread.sleep(500);
 			}
 		}
-		String errorMessage = "Timed out connecting to " + serverUrl + " Output:\\n" + outputBuffer
+		String errorMessage = "Timed out connecting to " + serverUrl + " Output:\n" + outputBuffer
 				+ (lastException == null ? "" : ("\nLast error: " + lastException));
 		fail(errorMessage);
 		return null;

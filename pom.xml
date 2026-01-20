@@ -55,11 +55,11 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<enforce-javaee-provided.fail>true</enforce-javaee-provided.fail>
-		<slf4j.version>1.7.36</slf4j.version>
-		<logback.version>1.2.13</logback.version>
+		<slf4j.version>2.0.17</slf4j.version>
+		<logback.version>1.5.21</logback.version>
 		<log4j.version>2.25.3</log4j.version>
 		<httpclient.version>4.5.14</httpclient.version>
-		<jackson.version>2.13.5</jackson.version>
+		<jackson.version>2.17.2</jackson.version>
 		<httpcore.version>4.4.16</httpcore.version>
 		<jsonldjava.version>0.13.4</jsonldjava.version>
 		<last.japicmp.compare.version>6.0.0</last.japicmp.compare.version>
@@ -67,12 +67,15 @@
 		<lwjgl.version>3.3.6</lwjgl.version>
 		<lucene.version>8.9.0</lucene.version>
 		<elasticsearch.version>9.2.1</elasticsearch.version>
-		<spring.version>5.3.39</spring.version>
+		<spring.version>6.2.14</spring.version>
 		<guava.version>32.1.3-jre</guava.version>
 		<jmhVersion>1.37</jmhVersion>
-		<servlet.version>4.0.0</servlet.version>
+		<servlet.version>6.1.0</servlet.version>
+		<jakarta.jsp.version>3.0.0</jakarta.jsp.version>
+		<jakarta.jstl.version>2.0.0</jakarta.jstl.version>
 		<junit.version>5.9.3</junit.version>
-		<jetty.version>9.4.54.v20240208</jetty.version>
+		<wiremock.version>4.0.0-beta.25</wiremock.version>
+		<jetty.version>12.1.4</jetty.version>
 		<netty.version>4.1.111.Final</netty.version>
 		<testcontainers.version>1.20.6</testcontainers.version>
 		<argLine />
@@ -443,11 +446,23 @@
 				<scope>import</scope>
 			</dependency>
 			<dependency>
+				<groupId>org.eclipse.jetty.ee11</groupId>
+				<artifactId>jetty-ee11-bom</artifactId>
+				<version>${jetty.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
 				<groupId>io.netty</groupId>
 				<artifactId>netty-bom</artifactId>
 				<version>${netty.version}</version>
 				<type>pom</type>
 				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.wiremock</groupId>
+				<artifactId>wiremock</artifactId>
+				<version>${wiremock.version}</version>
 			</dependency>
 			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level, but in practice is still being released for
 				2.8.x patch versions. See https://github.com/FasterXML/jackson-bom/issues/4 -->
@@ -916,13 +931,13 @@
 					<artifactId>impsort-maven-plugin</artifactId>
 					<version>1.9.0</version>
 					<configuration>
-						<groups>java.,javax.,org.,com.</groups>
+						<groups>java.,javax.,jakarta.,org.,com.</groups>
 						<staticGroups>java,*</staticGroups>
 					</configuration>
 				</plugin>
 				<plugin>
-					<groupId>org.eclipse.jetty</groupId>
-					<artifactId>jetty-maven-plugin</artifactId>
+					<groupId>org.eclipse.jetty.ee11</groupId>
+					<artifactId>jetty-ee11-maven-plugin</artifactId>
 					<version>${jetty.version}</version>
 				</plugin>
 				<plugin>
@@ -1042,13 +1057,6 @@
 										<excludes>
 											<exclude>javax*</exclude>
 										</excludes>
-										<includes>
-											<include>javax.servlet:javax.servlet-api:*:*:provided</include>
-											<include>javax.servlet.jsp:jsp-api:*:*:provided</include>
-											<include>javax.servlet:jstl:*:*:provided</include>
-											<!-- Allow test server dependencies -->
-											<include>javax.servlet:javax.servlet-api:*:*:test</include>
-										</includes>
 									</bannedDependencies>
 								</rules>
 								<fail>${enforce-javaee-provided.fail}</fail>

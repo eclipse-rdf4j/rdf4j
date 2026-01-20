@@ -11,17 +11,20 @@
 package org.eclipse.rdf4j.federated.server;
 
 import java.io.File;
+import java.nio.file.Paths;
 
+import org.eclipse.jetty.ee11.webapp.WebAppContext;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
-import org.eclipse.jetty.webapp.WebAppContext;
 
 public class EmbeddedServer {
 
 	public static final String HOST = "localhost";
 	public static final int PORT = 18080;
 	public static final String CONTEXT_PATH = "/";
-	public static final String WAR_PATH = "./build/test/rdf4j-server/";
+	public static final String WAR_PATH = Paths.get("build", "test", "rdf4j-server")
+			.toAbsolutePath()
+			.toString();
 
 	private final Server jetty;
 
@@ -39,7 +42,7 @@ public class EmbeddedServer {
 		jetty.addConnector(conn);
 
 		WebAppContext webapp = new WebAppContext();
-		webapp.getServerClasspathPattern().add("org.slf4j.", "ch.qos.logback.");
+		WebAppContext.addServerClasses(jetty, "org.slf4j.", "ch.qos.logback.");
 		webapp.setContextPath(contextPath);
 		webapp.setTempDirectory(new File("temp/webapp/"));
 		webapp.setWar(warPath);
