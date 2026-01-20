@@ -14,8 +14,6 @@ import java.io.BufferedWriter;
 import java.io.PrintWriter;
 import java.util.List;
 
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
@@ -26,6 +24,8 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * Servlet responsible for presenting the list of repositories, and deleting the chosen one.

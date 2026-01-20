@@ -355,7 +355,7 @@ The ElasticsearchStore takes the following configuration options:
 - `config:ess.clusterName` (string). Specifies the Elasticsearch cluster name (optional). This is retained for backward compatibility but no longer affects client construction because the store now connects via HTTP using the official `elasticsearch-java` client.
 - `config:ess.index` (string). Specifies the index name to use for storage and  retrieval of data (optional).
 
-The ElasticsearchStore test suite runs against Elasticsearch 9.2.1 and is expected to work with other 9.x releases.
+The ElasticsearchStore test suite runs against Elasticsearch 9.2.4 and is expected to work with other 9.x releases.
 
 ##### Example configuration
 

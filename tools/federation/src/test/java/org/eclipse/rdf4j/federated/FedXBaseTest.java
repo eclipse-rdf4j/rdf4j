@@ -144,7 +144,7 @@ public abstract class FedXBaseTest {
 		expectedQueryPlan = expectedQueryPlan.replace("\r\n", "\n");
 		actualQueryPlan = actualQueryPlan.replace("\r\n", "\n");
 
-		actualQueryPlan = actualQueryPlan.replace("sparql_localhost:18080_repositories_", "");
+		actualQueryPlan = actualQueryPlan.replaceAll("sparql_localhost:[0-9]+_repositories_", "");
 		actualQueryPlan = actualQueryPlan.replace("remote_", "");
 		Assertions.assertEquals(expectedQueryPlan, actualQueryPlan);
 	}

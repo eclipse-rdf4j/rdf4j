@@ -47,6 +47,9 @@
 	<bean id="rdf4jProtocolUrlMapping" class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping">
 		<property name="order" value="0" />
 		<property name="alwaysUseFullPath" value="true" />
+		<property name="patternParser">
+			<null />
+		</property>
 		<property name="mappings">
 			<props>
 				<prop key="/protocol">rdf4jProtocolController</prop>
@@ -61,6 +64,9 @@
 	<bean id="rdf4jRepositoryListUrlMapping" class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping">
 		<property name="order" value="1" />
 		<property name="alwaysUseFullPath" value="true" />
+		<property name="patternParser">
+			<null />
+		</property>
 		<property name="mappings">
 			<props>
 				<prop key="/repositories">rdf4jRepositoryListController</prop>
@@ -70,6 +76,9 @@
 	<bean id="rdf4jRepositoryUrlMapping" class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping">
 		<property name="order" value="2" />
 		<property name="alwaysUseFullPath" value="true" />
+		<property name="patternParser">
+			<null />
+		</property>
 		<property name="mappings">
 			<props>
 				<prop key="/repositories/*/namespaces/*">rdf4jRepositoryNamespaceController</prop>
@@ -94,6 +103,9 @@
 	<bean id="rdf4jServerHomeUrlMapping" class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping">
 		<property name="order" value="3" />
 		<property name="alwaysUseFullPath" value="true" />
+		<property name="patternParser">
+			<null />
+		</property>
 		<property name="mappings">
 			<props>
 				<prop key="/overview.view">filenameViewController</prop>

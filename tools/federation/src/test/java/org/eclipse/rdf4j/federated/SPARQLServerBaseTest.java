@@ -155,6 +155,10 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 		return server.getRepository(i);
 	}
 
+	protected String getSparqlEndpointUrl(int endpointIndex) {
+		return ((SPARQLEmbeddedServer) server).getRepositoryUrl("endpoint" + endpointIndex);
+	}
+
 	protected List<Endpoint> prepareTest(List<String> sparqlEndpointData) throws Exception {
 
 		// clear federation
@@ -272,6 +276,20 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 		Assertions.assertEquals(expectedRequests,
 				(monitoringInformation != null ? monitoringInformation.getNumberOfRequests() : 0));
 
+	}
+
+	@Override
+	protected String readQueryString(String queryFile) throws RepositoryException, IOException {
+		String query = super.readQueryString(queryFile);
+		if (!(server instanceof SPARQLEmbeddedServer)) {
+			return query;
+		}
+
+		String serverUrl = ((SPARQLEmbeddedServer) server).getServerUrl();
+		String serverBase = serverUrl.endsWith("/") ? serverUrl.substring(0, serverUrl.length() - 1) : serverUrl;
+		return query.replace("http://localhost:18080/rdf4j-server", serverUrl)
+				.replace("http://localhost:18080",
+						serverBase);
 	}
 
 }

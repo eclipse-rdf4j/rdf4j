@@ -14,15 +14,14 @@ package org.eclipse.rdf4j.tools.serverboot;
 import java.io.IOException;
 import java.util.Optional;
 
-import javax.servlet.FilterChain;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpServletResponseWrapper;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.filter.OncePerRequestFilter;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 class ErrorLoggingFilter extends OncePerRequestFilter {
 
@@ -31,17 +30,18 @@ class ErrorLoggingFilter extends OncePerRequestFilter {
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
 			throws ServletException, IOException {
-		StatusCapturingResponseWrapper responseWrapper = new StatusCapturingResponseWrapper(response);
 		boolean logged = false;
+		int status = HttpServletResponse.SC_OK;
 		try {
-			filterChain.doFilter(request, responseWrapper);
+			filterChain.doFilter(request, response);
+			status = response.getStatus();
 		} catch (Exception ex) {
 			logged = true;
-			logEvent(request, responseWrapper.getStatus(), ex);
+			logEvent(request, response.getStatus(), ex);
 			throw ex;
 		} finally {
 			if (!logged) {
-				logEvent(request, responseWrapper.getStatus(), null);
+				logEvent(request, status, null);
 			}
 		}
 	}
@@ -60,50 +60,6 @@ class ErrorLoggingFilter extends OncePerRequestFilter {
 			logger.error("HTTP {} {}", status, target, error);
 		} else {
 			logger.warn("HTTP {} {}", status, target);
-		}
-	}
-
-	private static final class StatusCapturingResponseWrapper extends HttpServletResponseWrapper {
-
-		private int status = HttpServletResponse.SC_OK;
-
-		StatusCapturingResponseWrapper(HttpServletResponse response) {
-			super(response);
-		}
-
-		@Override
-		public void sendError(int sc) throws IOException {
-			this.status = sc;
-			super.sendError(sc);
-		}
-
-		@Override
-		public void sendError(int sc, String msg) throws IOException {
-			this.status = sc;
-			super.sendError(sc, msg);
-		}
-
-		@Override
-		public void setStatus(int sc) {
-			this.status = sc;
-			super.setStatus(sc);
-		}
-
-		@Override
-		public void setStatus(int sc, String sm) {
-			this.status = sc;
-			super.setStatus(sc, sm);
-		}
-
-		@Override
-		public void sendRedirect(String location) throws IOException {
-			this.status = HttpServletResponse.SC_FOUND;
-			super.sendRedirect(location);
-		}
-
-		@Override
-		public int getStatus() {
-			return status;
 		}
 	}
 }

@@ -48,17 +48,49 @@ public class SingletonClientProvider implements ClientProvider {
 		}
 
 		synchronized (this) {
+			if (client != null) {
+				return client;
+			}
 			if (closed) {
 				throw new IllegalStateException("Elasticsearch Client Provider is closed!");
 			}
 
-			lowLevelClient = Rest5Client.builder(new HttpHost("http", hostname, port)).build();
-			transport = new Rest5ClientTransport(lowLevelClient, new JacksonJsonpMapper());
-			client = new ElasticsearchClient(transport);
+			Rest5Client newLowLevelClient = null;
+			ElasticsearchTransport newTransport = null;
+			try {
+				newLowLevelClient = Rest5Client.builder(new HttpHost("http", hostname, port)).build();
+				newTransport = new Rest5ClientTransport(newLowLevelClient, new JacksonJsonpMapper());
+				ElasticsearchClient newClient = new ElasticsearchClient(newTransport);
+				validateClusterName(newClient);
+				lowLevelClient = newLowLevelClient;
+				transport = newTransport;
+				client = newClient;
+			} catch (Exception e) {
+				try {
+					if (newLowLevelClient != null) {
+						newLowLevelClient.close();
+					}
+				} catch (IOException closeException) {
+					e.addSuppressed(closeException);
+				}
+				throw e instanceof SailException ? (SailException) e
+						: new SailException("Failed to initialize Elasticsearch client", e);
+			}
 
 		}
 
 		return client;
+	}
+
+	private void validateClusterName(ElasticsearchClient candidateClient) throws IOException {
+		if (clusterName == null || clusterName.isBlank()) {
+			throw new SailException("Elasticsearch cluster name must be configured");
+		}
+		String remoteClusterName = candidateClient.info().clusterName();
+		if (!clusterName.equals(remoteClusterName)) {
+			throw new SailException("Configured Elasticsearch cluster name '" + clusterName
+					+ "' does not match remote cluster '" + remoteClusterName + "'");
+		}
 	}
 
 	@Override

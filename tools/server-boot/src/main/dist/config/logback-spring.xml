@@ -4,13 +4,15 @@
 	<property name="LOG_DIR" value="${org.eclipse.rdf4j.server.logdir:-${RDF4J_BASE}/logs}" />
 	<appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
 		<encoder>
-			<pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} [%thread] %-5level %logger{64} - %msg%n</pattern>
+			<pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} [%thread] %-5level
+				%logger{64} - %msg%n</pattern>
 		</encoder>
 	</appender>
 	<appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
 		<file>${LOG_DIR}/rdf4j-server.log</file>
 		<encoder>
-			<pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} [%thread] %-5level %logger{48} - %msg%n</pattern>
+			<pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} [%thread] %-5level
+				%logger{48} - %msg%n</pattern>
 		</encoder>
 		<rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
 			<fileNamePattern>${LOG_DIR}/rdf4j-server.%d{yyyy-MM-dd}.%i.log</fileNamePattern>

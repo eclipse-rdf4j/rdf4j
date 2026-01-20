@@ -12,13 +12,13 @@ package org.eclipse.rdf4j.workbench.base;
 
 import java.util.List;
 
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+
+import jakarta.servlet.http.HttpServletResponse;
 
 public abstract class TupleServlet extends TransformationServlet {
 

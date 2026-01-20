@@ -1,24 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<web-app xmlns="http://java.sun.com/xml/ns/j2ee" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee http://java.sun.com/xml/ns/j2ee/web-app_2_4.xsd" version="2.4">
+<web-app xmlns="https://jakarta.ee/xml/ns/jakartaee" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee https://jakarta.ee/xml/ns/jakartaee/web-app_5_0.xsd" version="5.0">
 	<display-name>RDF4J Server</display-name>
 	<description>RDF4J Server</description>
-	<!-- Uncomment this and the associated filter-mapping to enable cross-origin requests.
-	See https://github.com/eBay/cors-filter to change default configuration settings.
-	<filter>
-		<filter-name>CORSFilter</filter-name>
-		<filter-class>
-			org.ebaysf.web.cors.CORSFilter
-		</filter-class>
-	</filter>
-	 -->
-	<filter>
-		<filter-name>CompressingFilter</filter-name>
-		<filter-class>com.github.ziplet.filter.compression.CompressingFilter</filter-class>
-		<init-param>
-			<param-name>excludeContentTypes</param-name>
-			<param-value>application/x-binary-rdf,application/x-binary-rdf-results-table</param-value>
-		</init-param>
-	</filter>
+    <!-- Uncomment this and the associated filter-mapping to enable cross-origin
+        requests. See https://github.com/eBay/cors-filter to change default configuration
+        settings. <filter> <filter-name>CORSFilter</filter-name> <filter-class> org.ebaysf.web.cors.CORSFilter
+        </filter-class> </filter> -->
 	<filter>
 		<filter-name>PathFilter</filter-name>
 		<filter-class>org.eclipse.rdf4j.common.webapp.filters.PathFilter</filter-class>
@@ -38,19 +25,7 @@
 	</servlet>
 	<servlet-mapping>
 		<servlet-name>rdf4j-http-server</servlet-name>
-		<url-pattern>/protocol/*</url-pattern>
-	</servlet-mapping>
-	<servlet-mapping>
-		<servlet-name>rdf4j-http-server</servlet-name>
-		<url-pattern>/repositories/*</url-pattern>
-	</servlet-mapping>
-	<servlet-mapping>
-		<servlet-name>rdf4j-http-server</servlet-name>
-		<url-pattern>*.view</url-pattern>
-	</servlet-mapping>
-	<servlet-mapping>
-		<servlet-name>rdf4j-http-server</servlet-name>
-		<url-pattern>*.form</url-pattern>
+		<url-pattern>/</url-pattern>
 	</servlet-mapping>
 	<!--
 	<security-constraint>

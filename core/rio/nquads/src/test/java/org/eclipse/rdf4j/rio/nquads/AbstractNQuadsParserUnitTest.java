@@ -282,7 +282,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
 				("<http://www.v/dat/4b2-21> " + "<http://www.w3.org/20/ica#dtend> "
 						+ "\"2010\"^^<http://www.w3.org/2001/XMLSchema#integer> " + "<http://sin.siteserv.org/def/>.")
-								.getBytes());
+						.getBytes());
 		final TestRDFHandler rdfHandler = new TestRDFHandler();
 		parser.setRDFHandler(rdfHandler);
 		parser.parse(bais, "http://test.base.uri");
@@ -491,7 +491,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 						+ "<http://dbpedia.org/property/mandatofine> "
 						+ "\"1380.0\"^^<http://www.w3.org/2001/XMLSchema#int> "
 						+ "<http://it.wikipedia.org/wiki/Camillo_Benso,_conte_di_Cavour#absolute-line=20> .")
-								.getBytes());
+						.getBytes());
 		parser.getParserConfig().set(BasicParserSettings.VERIFY_DATATYPE_VALUES, false);
 		parser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, false);
 		parser.parse(bais, "http://base-uri");
@@ -506,7 +506,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 						+ "<http://dbpedia.org/property/mandatofine> "
 						+ "\"1380.0\"^^<http://www.w3.org/2001/XMLSchema#int> "
 						+ "<http://it.wikipedia.org/wiki/Camillo_Benso,_conte_di_Cavour#absolute-line=20> .")
-								.getBytes());
+						.getBytes());
 		parser.getParserConfig().set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
 		parser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, true);
 		try {
@@ -601,7 +601,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 						+ "<http://dbpedia.org/property/mandatofine> "
 						+ "\"1380.0\"^^<http://dbpedia.org/invalid/datatype/second> "
 						+ "<http://it.wikipedia.org/wiki/Camillo_Benso,_conte_di_Cavour#absolute-line=20> .")
-								.getBytes());
+						.getBytes());
 		parser.parse(bais, "http://base-uri");
 		rdfHandler.assertHandler(1);
 	}

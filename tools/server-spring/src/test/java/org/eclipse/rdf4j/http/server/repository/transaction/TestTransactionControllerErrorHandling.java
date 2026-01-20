@@ -101,4 +101,33 @@ public class TestTransactionControllerErrorHandling {
 		});
 
 	}
+
+	@Test
+	public void shouldHandleDeleteWithRepositoriesPrefixInPathInfo() throws Exception {
+		Transaction txn = new Transaction(repository);
+		ActiveTransactionRegistry.INSTANCE.register(txn);
+		final UUID transactionId = txn.getID();
+
+		request.setRequestURI("/repositories/" + repositoryID + "/transactions/" + transactionId);
+		request.setPathInfo("/repositories/" + repositoryID + "/transactions/" + transactionId);
+		request.setMethod(HttpMethod.DELETE.name());
+
+		TransactionController transactionController = new TransactionController();
+		response = new MockHttpServletResponse();
+
+		try {
+			Assertions.assertDoesNotThrow(() -> transactionController.handleRequestInternal(request, response));
+		} finally {
+			try {
+				txn.close();
+			} catch (Exception ignored) {
+				// transaction may already be closed by controller rollback
+			}
+			try {
+				ActiveTransactionRegistry.INSTANCE.deregister(txn);
+			} catch (Exception ignored) {
+				// transaction may already be deregistered by controller rollback
+			}
+		}
+	}
 }

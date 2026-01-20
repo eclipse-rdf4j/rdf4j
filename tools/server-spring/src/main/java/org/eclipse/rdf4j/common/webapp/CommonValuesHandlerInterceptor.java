@@ -12,11 +12,11 @@ package org.eclipse.rdf4j.common.webapp;
 
 import java.util.Calendar;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
 import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.ModelAndView;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * Interceptor that inserts some commonly used values into the model. The inserted values are: - path, equal to
