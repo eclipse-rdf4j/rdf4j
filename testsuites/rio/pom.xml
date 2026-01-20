@@ -31,9 +31,8 @@
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
-			<groupId>xml-security</groupId>
+			<groupId>org.apache.santuario</groupId>
 			<artifactId>xmlsec</artifactId>
-			<version>1.3.0</version>
 		</dependency>
 		<!-- This module uses legacy test/suite setup, and cannot be fully migrated to JUnit 5 now -->
 		<dependency>

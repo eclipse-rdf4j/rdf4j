@@ -50,9 +50,8 @@ import co.elastic.clients.elasticsearch.cluster.HealthResponse;
  * There is no write-ahead logging, so a failure during a transaction may result in partially persisted changes.
  * </p>
  *
- * @see <a href="https://www.elastic.co/licensing/elastic-license/faq">Elastic License FAQ</a>
- *
  * @author Håvard Mikkelsen Ottestad
+ * @see <a href="https://www.elastic.co/licensing/elastic-license/faq">Elastic License FAQ</a>
  */
 @Experimental
 public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructure, ElasticsearchNamespaceStore> {

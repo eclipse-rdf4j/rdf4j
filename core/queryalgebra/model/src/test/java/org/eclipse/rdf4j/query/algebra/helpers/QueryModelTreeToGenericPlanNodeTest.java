@@ -238,7 +238,7 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertThat(outerPlan.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)).isNull();
 		assertThat(findFirstPlan(outerPlan.getPlans().get(1),
 				node -> node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE) != null))
-						.isNull();
+				.isNull();
 	}
 
 	@Test

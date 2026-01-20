@@ -216,11 +216,12 @@ public class ServiceTests extends SPARQLBaseTest {
 				"/tests/data/data4.ttl"));
 		Endpoint endpoint1 = federationContext().getEndpointManager().getEndpointByName("http://endpoint1");
 		fedxRule.removeEndpoint(endpoint1);
+		String endpoint1Url = getSparqlEndpointUrl(1);
 		execute("/tests/service/query03.rq", "/tests/service/query03.srx", false, false);
 
 		Assertions.assertEquals(1,
 				((TestSparqlFederatedService) serviceResolver
-						.getService("http://localhost:18080/repositories/endpoint1")).serviceRequestCount.get());
+						.getService(endpoint1Url)).serviceRequestCount.get());
 	}
 
 	@Test
@@ -252,6 +253,7 @@ public class ServiceTests extends SPARQLBaseTest {
 				"/tests/data/data4.ttl"));
 		Endpoint endpoint1 = federationContext().getEndpointManager().getEndpointByName("http://endpoint1");
 		fedxRule.removeEndpoint(endpoint1);
+		String endpoint1Url = getSparqlEndpointUrl(1);
 
 		StringBuilder query = new StringBuilder();
 		query.append("SELECT * WHERE { VALUES ?input { ");
@@ -259,8 +261,9 @@ public class ServiceTests extends SPARQLBaseTest {
 			query.append(" \"input").append(i).append("\" ");
 		}
 		query.append(" }");
-		query.append(
-				" SERVICE <http://localhost:18080/repositories/endpoint1> { BIND (CONCAT(?input, '_processed') AS ?output) } ");
+		query.append(" SERVICE <")
+				.append(endpoint1Url)
+				.append("> { BIND (CONCAT(?input, '_processed') AS ?output) } ");
 		query.append(" }");
 
 		try (TupleQueryResult tqr = queryManager().prepareTupleQuery(query.toString()).evaluate()) {
@@ -276,7 +279,7 @@ public class ServiceTests extends SPARQLBaseTest {
 		// all requests are executed in bind-join with constant size
 		// for this test bind join size is set to 5, hence we see 10 bind join requests
 		TestSparqlFederatedService tfs = ((TestSparqlFederatedService) serviceResolver
-				.getService("http://localhost:18080/repositories/endpoint1"));
+				.getService(endpoint1Url));
 		Assertions.assertEquals(10, tfs.boundJoinRequestCount.get());
 	}
 
@@ -309,6 +312,7 @@ public class ServiceTests extends SPARQLBaseTest {
 				"/tests/data/data4.ttl"));
 		Endpoint endpoint1 = federationContext().getEndpointManager().getEndpointByName("http://endpoint1");
 		fedxRule.removeEndpoint(endpoint1);
+		String endpoint1Url = getSparqlEndpointUrl(1);
 
 		StringBuilder query = new StringBuilder();
 		query.append("SELECT * WHERE { VALUES ?input { ");
@@ -316,8 +320,9 @@ public class ServiceTests extends SPARQLBaseTest {
 			query.append(" \"input").append(i).append("\" ");
 		}
 		query.append(" }");
-		query.append(
-				" SERVICE <http://localhost:18080/repositories/endpoint1> { BIND (CONCAT(?input, '_processed') AS ?output) } ");
+		query.append(" SERVICE <")
+				.append(endpoint1Url)
+				.append("> { BIND (CONCAT(?input, '_processed') AS ?output) } ");
 		query.append(" }");
 
 		try (TupleQueryResult tqr = queryManager().prepareTupleQuery(query.toString()).evaluate()) {
@@ -332,7 +337,7 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		// all input bindings are evaluated as simple join
 		TestSparqlFederatedService tfs = ((TestSparqlFederatedService) serviceResolver
-				.getService("http://localhost:18080/repositories/endpoint1"));
+				.getService(endpoint1Url));
 		Assertions.assertEquals(50, tfs.serviceRequestCount.get());
 		Assertions.assertEquals(0, tfs.boundJoinRequestCount.get());
 	}

@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.federated.server;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.List;
 
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
@@ -51,7 +52,8 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 	/**
 	 * @param repositoryIds
 	 */
-	public SPARQLEmbeddedServer(File dataDir, List<String> repositoryIds, boolean useRemoteRepositoryEndpoint) {
+	public SPARQLEmbeddedServer(File dataDir, List<String> repositoryIds, boolean useRemoteRepositoryEndpoint)
+			throws IOException {
 		super();
 		this.dataDir = dataDir;
 		this.repositoryIds = repositoryIds;
@@ -69,7 +71,7 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 	 * @return the server url
 	 */
 	public String getServerUrl() {
-		return "http://" + HOST + ":" + PORT + CONTEXT_PATH;
+		return super.getServerUrl();
 	}
 
 	@Override

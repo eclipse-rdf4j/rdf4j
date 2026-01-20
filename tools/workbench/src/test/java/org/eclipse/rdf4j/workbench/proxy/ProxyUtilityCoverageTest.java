@@ -27,12 +27,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
-import javax.servlet.FilterChain;
-import javax.servlet.ServletException;
-import javax.servlet.http.Cookie;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.workbench.support.TestFilterConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -44,6 +38,12 @@ import org.springframework.mock.web.MockServletContext;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 class ProxyUtilityCoverageTest {
 
@@ -157,9 +157,10 @@ class ProxyUtilityCoverageTest {
 		MockHttpServletResponse response = new MockHttpServletResponse();
 
 		filter.doFilter(request, response, (req, resp) -> {
-			assertThat(((javax.servlet.http.HttpServletRequest) req).getDateHeader("If-Modified-Since")).isEqualTo(-1L);
-			((javax.servlet.http.HttpServletResponse) resp).addCookie(new Cookie("session", "changed"));
-			((javax.servlet.http.HttpServletResponse) resp).setDateHeader("Last-Modified", 1000L);
+			assertThat(((jakarta.servlet.http.HttpServletRequest) req).getDateHeader("If-Modified-Since"))
+					.isEqualTo(-1L);
+			((jakarta.servlet.http.HttpServletResponse) resp).addCookie(new Cookie("session", "changed"));
+			((jakarta.servlet.http.HttpServletResponse) resp).setDateHeader("Last-Modified", 1000L);
 		});
 
 		assertThat(response.getCookies()).extracting(Cookie::getName).contains("session", "Last-Modified");
@@ -175,8 +176,8 @@ class ProxyUtilityCoverageTest {
 		MockHttpServletResponse response = new MockHttpServletResponse();
 
 		filter.doFilter(request, response, (req, resp) -> {
-			((javax.servlet.http.HttpServletResponse) resp).addCookie(new Cookie("same", "value"));
-			((javax.servlet.http.HttpServletResponse) resp).setDateHeader("Last-Modified", 1000L);
+			((jakarta.servlet.http.HttpServletResponse) resp).addCookie(new Cookie("same", "value"));
+			((jakarta.servlet.http.HttpServletResponse) resp).setDateHeader("Last-Modified", 1000L);
 		});
 
 		assertThat(response.getCookies()).extracting(Cookie::getName).contains("same");
@@ -322,7 +323,7 @@ class ProxyUtilityCoverageTest {
 		private boolean wasInvoked;
 
 		@Override
-		public void doFilter(javax.servlet.ServletRequest request, javax.servlet.ServletResponse response)
+		public void doFilter(jakarta.servlet.ServletRequest request, jakarta.servlet.ServletResponse response)
 				throws IOException, ServletException {
 			wasInvoked = true;
 		}

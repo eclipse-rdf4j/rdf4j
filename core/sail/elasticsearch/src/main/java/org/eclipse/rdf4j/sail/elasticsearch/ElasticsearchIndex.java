@@ -418,12 +418,14 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 			return Map.of();
 		}
 		TypeMapping mapping = mappingRecord.mappings();
-		if (mapping.meta() == null) {
-			return Map.of();
+		Map<String, Object> mappings = new HashMap<>();
+		if (mapping.properties() != null && !mapping.properties().isEmpty()) {
+			mappings.put("properties", mapping.properties());
 		}
-		Map<String, Object> meta = new HashMap<>();
-		mapping.meta().forEach((k, v) -> meta.put(k, v == null ? null : v.toString()));
-		return meta;
+		if (mapping.meta() != null && !mapping.meta().isEmpty()) {
+			mappings.put("_meta", mapping.meta());
+		}
+		return mappings;
 	}
 
 	private void createIndex() throws IOException {

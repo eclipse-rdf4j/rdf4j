@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.eclipse.rdf4j.http.client.shacl.RemoteShaclValidationException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -51,13 +52,15 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.boot.web.server.LocalServerPort;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.web.servlet.DispatcherServlet;
 
 import ch.qos.logback.classic.Level;
@@ -66,6 +69,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureTestRestTemplate
 class Rdf4jServerWorkbenchApplicationTest {
 
 	@LocalServerPort
@@ -101,6 +105,10 @@ class Rdf4jServerWorkbenchApplicationTest {
 
 	@BeforeEach
 	void attachLoggingAppender() throws RepositoryException {
+		HttpComponentsClientHttpRequestFactory requestFactory = new HttpComponentsClientHttpRequestFactory(
+				HttpClients.custom().disableRedirectHandling().build());
+		restTemplate.getRestTemplate().setRequestFactory(requestFactory);
+
 		loggingFilterLogger = (Logger) LoggerFactory.getLogger(ErrorLoggingFilter.class);
 		loggingAppender = new ListAppender<>();
 		loggingAppender.start();
@@ -124,6 +132,18 @@ class Rdf4jServerWorkbenchApplicationTest {
 
 		assertThat(response.getStatusCode()).as("HTTP status for /rdf4j-server/repositories")
 				.isEqualTo(HttpStatus.OK);
+	}
+
+	@Test
+	void serverProtocolEndpointResponds() {
+		ResponseEntity<String> response = restTemplate.getForEntity(
+				"http://localhost:" + port + "/rdf4j-server/protocol", String.class);
+
+		assertThat(response.getStatusCode()).as("HTTP status for /rdf4j-server/protocol")
+				.isEqualTo(HttpStatus.OK);
+		assertThat(response.getBody()).as("Protocol response body")
+				.isNotNull()
+				.isNotEmpty();
 	}
 
 	@Test
@@ -335,8 +355,8 @@ class Rdf4jServerWorkbenchApplicationTest {
 					.isInstanceOf(RepositoryException.class)
 					.satisfies(ex -> assertThat(hasRootCause(ex, ShaclSailValidationException.class)
 							|| hasRootCause(ex, RemoteShaclValidationException.class))
-									.as("SHACL validation exception propagated to caller")
-									.isTrue());
+							.as("SHACL validation exception propagated to caller")
+							.isTrue());
 
 			String validInstance = String.join("\n",
 					"@prefix ex: <urn:example:> .",

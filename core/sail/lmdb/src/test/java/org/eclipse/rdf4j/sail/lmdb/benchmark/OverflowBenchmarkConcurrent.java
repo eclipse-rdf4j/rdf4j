@@ -80,11 +80,11 @@ public class OverflowBenchmarkConcurrent {
 	public void setup() {
 		((Logger) (LoggerFactory
 				.getLogger("org.eclipse.rdf4j.sail.lmdb.MemoryOverflowModel")))
-						.setLevel(ch.qos.logback.classic.Level.DEBUG);
+				.setLevel(ch.qos.logback.classic.Level.DEBUG);
 
 		((Logger) (LoggerFactory
 				.getLogger("org.eclipse.rdf4j.model.impl.AbstractMemoryOverflowModel")))
-						.setLevel(ch.qos.logback.classic.Level.DEBUG);
+				.setLevel(ch.qos.logback.classic.Level.DEBUG);
 	}
 
 	@TearDown(Level.Trial)
