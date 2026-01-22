@@ -49,7 +49,8 @@ public class QueryResponder {
 		this.repository = repository;
 	}
 
-	@RequestMapping(value = "/sparql", method = RequestMethod.POST, consumes = APPLICATION_FORM_URLENCODED_VALUE)
+	@RequestMapping(value = { "/sparql",
+			"/sparql/" }, method = RequestMethod.POST, consumes = APPLICATION_FORM_URLENCODED_VALUE)
 	public void sparqlPostURLencoded(
 			@RequestParam(value = "default-graph-uri", required = false) String defaultGraphUri,
 			@RequestParam(value = "named-graph-uri", required = false) String namedGraphUri,
@@ -64,7 +65,7 @@ public class QueryResponder {
 		}
 	}
 
-	@RequestMapping(value = "/sparql", method = RequestMethod.GET)
+	@RequestMapping(value = { "/sparql", "/sparql/" }, method = RequestMethod.GET)
 	public void sparqlGet(@RequestParam(value = "default-graph-uri", required = false) String defaultGraphUri,
 			@RequestParam(value = "named-graph-uri", required = false) String namedGraphUri,
 			@RequestParam(value = "query") String query, @RequestHeader(ACCEPT) String acceptHeader,
