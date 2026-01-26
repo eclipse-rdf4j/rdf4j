@@ -112,25 +112,25 @@ public class TransactionsPerSecondMultithreadedBenchmark {
 
 	}
 
-//	@Benchmark
-//	public void transactions() {
-//		try (SailRepositoryConnection connection = repository.getConnection()) {
-//
-//			connection.begin();
-//			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
-//			connection.commit();
-//		}
-//	}
-//
-//	@Benchmark
-//	public void transactionsLevelNone() {
-//		try (SailRepositoryConnection connection = repository.getConnection()) {
-//
-//			connection.begin(IsolationLevels.NONE);
-//			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
-//			connection.commit();
-//		}
-//	}
+	@Benchmark
+	public void transactions() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin();
+			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+			connection.commit();
+		}
+	}
+
+	@Benchmark
+	public void transactionsLevelNone() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(IsolationLevels.NONE);
+			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+			connection.commit();
+		}
+	}
 
 	@Benchmark
 	public void mediumTransactionsLevelNone() {
