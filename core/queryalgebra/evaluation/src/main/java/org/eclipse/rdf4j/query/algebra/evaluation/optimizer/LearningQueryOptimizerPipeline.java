@@ -13,12 +13,14 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedJoinConfig;
 
 /**
  * Standard optimizer pipeline with a learned join optimizer.
@@ -36,13 +38,20 @@ public class LearningQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private final TripleSource tripleSource;
 	private final EvaluationStrategy strategy;
 	private final JoinStatsProvider statsProvider;
+	private final LearnedJoinConfig joinConfig;
 
 	public LearningQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics, JoinStatsProvider statsProvider) {
+		this(strategy, tripleSource, evaluationStatistics, statsProvider, new LearnedJoinConfig());
+	}
+
+	public LearningQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+			EvaluationStatistics evaluationStatistics, JoinStatsProvider statsProvider, LearnedJoinConfig joinConfig) {
 		this.strategy = strategy;
 		this.tripleSource = tripleSource;
 		this.evaluationStatistics = evaluationStatistics;
 		this.statsProvider = statsProvider;
+		this.joinConfig = Objects.requireNonNull(joinConfig, "joinConfig");
 	}
 
 	@Override
@@ -60,7 +69,7 @@ public class LearningQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				StandardQueryOptimizerPipeline.QUERY_MODEL_NORMALIZER,
 				StandardQueryOptimizerPipeline.PROJECTION_REMOVAL_OPTIMIZER,
 				new LearnedQueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource,
-						statsProvider),
+						statsProvider, joinConfig),
 				StandardQueryOptimizerPipeline.ITERATIVE_EVALUATION_OPTIMIZER,
 				StandardQueryOptimizerPipeline.FILTER_OPTIMIZER,
 				StandardQueryOptimizerPipeline.ORDER_LIMIT_OPTIMIZER

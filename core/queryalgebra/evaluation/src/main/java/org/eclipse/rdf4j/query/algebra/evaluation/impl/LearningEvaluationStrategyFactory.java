@@ -12,7 +12,9 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Objects;
+import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource;
@@ -23,40 +25,87 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearningQueryOptimiz
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearningRdfStarTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearningTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.MemoryJoinStats;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedJoinConfig;
 
 /**
  * Evaluation strategy factory that injects a learned join optimizer.
+ *
+ * <p>
+ * Example enablement:
+ *
+ * <pre>{@code
+ * LearnedJoinConfig config = new LearnedJoinConfig(
+ * 		LearnedJoinConfig.DEFAULT_DP_THRESHOLD,
+ * 		true,
+ * 		true,
+ * 		true,
+ * 		LearnedJoinConfig.DEFAULT_RUNTIME_SAMPLING_MAX_OPERANDS,
+ * 		LearnedJoinConfig.DEFAULT_RUNTIME_SAMPLING_MAX_STATEMENTS,
+ * 		true,
+ * 		LearnedJoinConfig.DEFAULT_ADAPTIVE_NESTED_LOOP_THRESHOLD,
+ * 		LearnedJoinConfig.DEFAULT_HASH_JOIN_MAX_BUILD_ROWS);
+ * LearningEvaluationStrategyFactory factory = new LearningEvaluationStrategyFactory(new MemoryJoinStats(), null,
+ * 		config);
+ * NativeStore store = new NativeStore(dataDir);
+ * store.setEvaluationStrategyFactory(factory);
+ * }</pre>
  */
 public class LearningEvaluationStrategyFactory extends DefaultEvaluationStrategyFactory {
 
 	private final JoinStatsProvider statsProvider;
 	private final EvaluationStatistics optimizerStatisticsOverride;
+	private final LearnedJoinConfig joinConfig;
+	private Supplier<CollectionFactory> collectionFactorySupplier;
 
 	public LearningEvaluationStrategyFactory() {
-		this(new MemoryJoinStats(), null);
+		this(new MemoryJoinStats(), null, new LearnedJoinConfig());
 	}
 
 	public LearningEvaluationStrategyFactory(FederatedServiceResolver resolver) {
-		this(new MemoryJoinStats(), null);
+		this(new MemoryJoinStats(), null, new LearnedJoinConfig());
 		setFederatedServiceResolver(resolver);
 	}
 
 	public LearningEvaluationStrategyFactory(EvaluationStatistics optimizerStatisticsOverride) {
-		this(new MemoryJoinStats(), optimizerStatisticsOverride);
+		this(new MemoryJoinStats(), optimizerStatisticsOverride, new LearnedJoinConfig());
 	}
 
 	public LearningEvaluationStrategyFactory(JoinStatsProvider statsProvider) {
-		this(statsProvider, null);
+		this(statsProvider, null, new LearnedJoinConfig());
 	}
 
 	public LearningEvaluationStrategyFactory(JoinStatsProvider statsProvider,
 			EvaluationStatistics optimizerStatisticsOverride) {
+		this(statsProvider, optimizerStatisticsOverride, new LearnedJoinConfig());
+	}
+
+	public LearningEvaluationStrategyFactory(LearnedJoinConfig joinConfig) {
+		this(new MemoryJoinStats(), null, joinConfig);
+	}
+
+	public LearningEvaluationStrategyFactory(JoinStatsProvider statsProvider, LearnedJoinConfig joinConfig) {
+		this(statsProvider, null, joinConfig);
+	}
+
+	public LearningEvaluationStrategyFactory(JoinStatsProvider statsProvider,
+			EvaluationStatistics optimizerStatisticsOverride, LearnedJoinConfig joinConfig) {
 		this.statsProvider = Objects.requireNonNull(statsProvider, "statsProvider");
 		this.optimizerStatisticsOverride = optimizerStatisticsOverride;
+		this.joinConfig = Objects.requireNonNull(joinConfig, "joinConfig");
 	}
 
 	public JoinStatsProvider getStatsProvider() {
 		return statsProvider;
+	}
+
+	public LearnedJoinConfig getJoinConfig() {
+		return joinConfig;
+	}
+
+	@Override
+	public void setCollectionFactory(Supplier<CollectionFactory> collectionFactory) {
+		super.setCollectionFactory(collectionFactory);
+		this.collectionFactorySupplier = collectionFactory;
 	}
 
 	@Override
@@ -65,14 +114,23 @@ public class LearningEvaluationStrategyFactory extends DefaultEvaluationStrategy
 		TripleSource learningTripleSource = tripleSource instanceof RDFStarTripleSource
 				? new LearningRdfStarTripleSource((RDFStarTripleSource) tripleSource, statsProvider)
 				: new LearningTripleSource(tripleSource, statsProvider);
-		EvaluationStrategy strategy = super.createEvaluationStrategy(dataset, learningTripleSource,
-				evaluationStatistics);
+		EvaluationStrategy strategy;
+		if (joinConfig.isEnableAdaptiveHashJoin()) {
+			strategy = new AdaptiveEvaluationStrategy(learningTripleSource, dataset, getFederatedServiceResolver(),
+					getQuerySolutionCacheThreshold(), evaluationStatistics, isTrackResultSize(),
+					joinConfig.getAdaptiveJoinNestedLoopThreshold(), joinConfig.getHashJoinMaxBuildRows());
+			if (collectionFactorySupplier != null) {
+				strategy.setCollectionFactory(collectionFactorySupplier);
+			}
+		} else {
+			strategy = super.createEvaluationStrategy(dataset, learningTripleSource, evaluationStatistics);
+		}
 		EvaluationStatistics optimizerStatistics = optimizerStatisticsOverride != null
 				? optimizerStatisticsOverride
 				: evaluationStatistics;
 		strategy.setOptimizerPipeline(
 				new LearningQueryOptimizerPipeline(strategy, learningTripleSource, optimizerStatistics,
-						statsProvider));
+						statsProvider, joinConfig));
 		return strategy;
 	}
 }
