@@ -15,6 +15,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Reduced;
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 public class LearnedBindJoinCostModel implements BindJoinCostModel {
 
 	private static final long DEFAULT_PRIOR_CALLS = 2;
+	private static final IRI BOUND_VALUE = SimpleValueFactory.getInstance().createIRI("urn:bound");
 
 	private final EvaluationStatistics fallbackStats;
 	private final JoinStatsProvider learnedStats;
@@ -66,7 +68,8 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 
 	private double estimatePattern(StatementPattern pattern, Set<String> boundVars) {
 		PatternKey key = buildKey(pattern, boundVars);
-		double defaultEstimate = fallbackStats.getCardinality(pattern);
+		StatementPattern boundPattern = applyBoundVars(pattern, boundVars);
+		double defaultEstimate = fallbackStats.getCardinality(boundPattern);
 		learnedStats.seedIfAbsent(key, defaultEstimate, DEFAULT_PRIOR_CALLS);
 		double estimate = learnedStats.getAverageResults(key);
 		return estimate > 0.0d ? estimate : defaultEstimate;
@@ -108,5 +111,43 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			current = ((UnaryTupleOperator) current).getArg();
 		}
 		return current instanceof StatementPattern ? (StatementPattern) current : null;
+	}
+
+	private StatementPattern applyBoundVars(StatementPattern pattern, Set<String> boundVars) {
+		if (boundVars.isEmpty()) {
+			return pattern;
+		}
+		if (!needsBinding(pattern.getSubjectVar(), boundVars)
+				&& !needsBinding(pattern.getPredicateVar(), boundVars)
+				&& !needsBinding(pattern.getObjectVar(), boundVars)
+				&& !needsBinding(pattern.getContextVar(), boundVars)) {
+			return pattern;
+		}
+		Var subject = boundVar(pattern.getSubjectVar(), boundVars);
+		Var predicate = boundVar(pattern.getPredicateVar(), boundVars);
+		Var object = boundVar(pattern.getObjectVar(), boundVars);
+		Var context = boundVar(pattern.getContextVar(), boundVars);
+		return new StatementPattern(pattern.getScope(), subject, predicate, object, context);
+	}
+
+	private boolean needsBinding(Var var, Set<String> boundVars) {
+		if (var == null || var.hasValue()) {
+			return false;
+		}
+		String name = var.getName();
+		return name != null && boundVars.contains(name);
+	}
+
+	private Var boundVar(Var var, Set<String> boundVars) {
+		if (var == null) {
+			return null;
+		}
+		Var clone = var.clone();
+		if (!needsBinding(clone, boundVars)) {
+			return clone;
+		}
+		Var bound = Var.of(clone.getName(), BOUND_VALUE, clone.isAnonymous(), clone.isConstant());
+		bound.setVariableScopeChange(clone.isVariableScopeChange());
+		return bound;
 	}
 }
