@@ -71,13 +71,11 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 
 		private double estimateCardinality(StatementPattern node) {
 			PatternKey key = buildKey(node);
-			if (!statsProvider.hasStats(key)) {
-				double defaultEstimate = statistics.getCardinality(node);
-				statsProvider.seedIfAbsent(key, defaultEstimate, DEFAULT_PRIOR_CALLS);
-			}
+			double defaultEstimate = statistics.getCardinality(node);
+			statsProvider.seedIfAbsent(key, defaultEstimate, DEFAULT_PRIOR_CALLS);
 			double estimate = statsProvider.getAverageResults(key);
 			if (estimate <= 0.0d) {
-				estimate = statistics.getCardinality(node);
+				estimate = defaultEstimate;
 			}
 			return estimate;
 		}

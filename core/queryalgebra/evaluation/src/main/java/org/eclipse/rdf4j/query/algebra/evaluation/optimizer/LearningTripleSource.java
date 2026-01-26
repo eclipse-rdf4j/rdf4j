@@ -31,8 +31,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
  */
 public class LearningTripleSource implements TripleSource {
 
-	private final TripleSource delegate;
-	private final JoinStatsProvider statsProvider;
+	protected final TripleSource delegate;
+	protected final JoinStatsProvider statsProvider;
 
 	public LearningTripleSource(TripleSource delegate, JoinStatsProvider statsProvider) {
 		this.delegate = Objects.requireNonNull(delegate, "delegate");
@@ -72,7 +72,7 @@ public class LearningTripleSource implements TripleSource {
 		return delegate.getValueFactory();
 	}
 
-	private static PatternKey buildKey(Resource subj, IRI pred, Value obj) {
+	protected static PatternKey buildKey(Resource subj, IRI pred, Value obj) {
 		int mask = 0;
 		if (subj != null) {
 			mask |= PatternKey.SUBJECT_BOUND;
@@ -86,14 +86,14 @@ public class LearningTripleSource implements TripleSource {
 		return new PatternKey(pred, mask);
 	}
 
-	private static final class CountingIteration extends AbstractCloseableIteration<Statement> {
+	protected static final class CountingIteration<T> extends AbstractCloseableIteration<T> {
 
-		private final CloseableIteration<? extends Statement> delegate;
+		private final CloseableIteration<? extends T> delegate;
 		private final JoinStatsProvider statsProvider;
 		private final PatternKey key;
 		private long count;
 
-		private CountingIteration(CloseableIteration<? extends Statement> delegate, JoinStatsProvider statsProvider,
+		protected CountingIteration(CloseableIteration<? extends T> delegate, JoinStatsProvider statsProvider,
 				PatternKey key) {
 			this.delegate = delegate;
 			this.statsProvider = statsProvider;
@@ -116,7 +116,7 @@ public class LearningTripleSource implements TripleSource {
 		}
 
 		@Override
-		public Statement next() {
+		public T next() {
 			if (isClosed()) {
 				throw new NoSuchElementException("The iteration has been closed.");
 			} else if (Thread.currentThread().isInterrupted()) {
@@ -124,7 +124,7 @@ public class LearningTripleSource implements TripleSource {
 				throw new NoSuchElementException("The iteration has been interrupted.");
 			}
 			try {
-				Statement statement = delegate.next();
+				T statement = delegate.next();
 				count++;
 				return statement;
 			} catch (NoSuchElementException e) {

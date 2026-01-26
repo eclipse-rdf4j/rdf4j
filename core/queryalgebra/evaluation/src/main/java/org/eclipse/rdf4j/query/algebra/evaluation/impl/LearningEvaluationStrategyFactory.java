@@ -15,10 +15,12 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearningQueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearningRdfStarTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearningTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.MemoryJoinStats;
 
@@ -60,7 +62,9 @@ public class LearningEvaluationStrategyFactory extends DefaultEvaluationStrategy
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
-		TripleSource learningTripleSource = new LearningTripleSource(tripleSource, statsProvider);
+		TripleSource learningTripleSource = tripleSource instanceof RDFStarTripleSource
+				? new LearningRdfStarTripleSource((RDFStarTripleSource) tripleSource, statsProvider)
+				: new LearningTripleSource(tripleSource, statsProvider);
 		EvaluationStrategy strategy = super.createEvaluationStrategy(dataset, learningTripleSource,
 				evaluationStatistics);
 		EvaluationStatistics optimizerStatistics = optimizerStatisticsOverride != null

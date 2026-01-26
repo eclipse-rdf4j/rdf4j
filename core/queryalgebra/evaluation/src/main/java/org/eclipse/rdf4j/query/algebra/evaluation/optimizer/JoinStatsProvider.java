@@ -22,6 +22,10 @@ public interface JoinStatsProvider {
 
 	void recordResults(PatternKey key, long resultCount);
 
+	/**
+	 * Seeds statistics for the given key. Implementations may also invalidate or refresh existing entries if the
+	 * supplied default cardinality has drifted significantly from the stored baseline.
+	 */
 	void seedIfAbsent(PatternKey key, double defaultCardinality, long priorCalls);
 
 	double getAverageResults(PatternKey key);
@@ -29,4 +33,12 @@ public interface JoinStatsProvider {
 	boolean hasStats(PatternKey key);
 
 	long getTotalCalls();
+
+	/**
+	 * Records that statements have been added to the store. Implementations may use this to invalidate statistics when
+	 * a write threshold is exceeded in a time window.
+	 */
+	default void recordStatementsAdded(long statementCount) {
+		// no-op by default
+	}
 }
