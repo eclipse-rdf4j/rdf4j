@@ -596,7 +596,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testProjectionHandling_FunctionCallWithArgsFails() {
+	public void testProjectionHandling_FunctionCallWithArgsDoesNotFail() {
 		var factory = buildDummyFactory();
 		String query = "prefix rj: <https://www.rdf4j.org/aggregate#>"
 				+ "SELECT (rj:x(?o, ?p) AS ?o1) \n"
@@ -605,10 +605,35 @@ public class SPARQLParserTest {
 				+ "} GROUP BY ?s ?o";
 		try {
 			CustomAggregateFunctionRegistry.getInstance().add(factory);
-			parser.parseQuery(query, null);
-			fail("Should not be able to parse function calls with multiple args");
-		} catch (Exception e) {
-			assertTrue(e instanceof IllegalArgumentException);
+			var tupleExpr = parser.parseQuery(query, null).getTupleExpr();
+			assertTrue(tupleExpr instanceof QueryRoot);
+			tupleExpr = ((QueryRoot) tupleExpr).getArg();
+			assertTrue(tupleExpr instanceof Projection);
+			tupleExpr = ((Projection) tupleExpr).getArg();
+			assertTrue(tupleExpr instanceof Extension);
+			var extensionElements = ((Extension) tupleExpr).getElements();
+			assertEquals(1, extensionElements.size());
+			assertTrue(extensionElements.get(0).getExpr() instanceof AggregateFunctionCall);
+			var aggregateCall = (AggregateFunctionCall) extensionElements.get(0).getExpr();
+			assertEquals(factory.getIri(), aggregateCall.getIRI());
+			assertEquals(2, aggregateCall.getArguments().size());
+		} finally {
+			CustomAggregateFunctionRegistry.getInstance().remove(factory);
+		}
+	}
+
+	@Test
+	public void testProjectionHandling_FunctionCallWithoutArgsFails() {
+		var factory = buildDummyFactory();
+		String query = "prefix rj: <https://www.rdf4j.org/aggregate#>"
+				+ "SELECT (rj:x() AS ?o1) \n"
+				+ "WHERE {\n"
+				+ "	?s ?p ?o \n"
+				+ "} GROUP BY ?s ?o";
+		try {
+			CustomAggregateFunctionRegistry.getInstance().add(factory);
+			assertThatExceptionOfType(IllegalArgumentException.class).isThrownBy(() -> parser.parseQuery(query, null))
+					.withMessageStartingWith("Aggregate function calls must have at least one argument");
 		} finally {
 			CustomAggregateFunctionRegistry.getInstance().remove(factory);
 		}

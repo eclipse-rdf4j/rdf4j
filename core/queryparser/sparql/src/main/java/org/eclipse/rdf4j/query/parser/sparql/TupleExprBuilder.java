@@ -106,6 +106,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollec
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRegistry;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateNAryFunctionRegistry;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAbs;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAnd;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAskQuery;
@@ -1994,14 +1995,19 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	public Object visit(ASTFunctionCall node, Object data) throws VisitorException {
 		ValueConstant uriNode = (ValueConstant) node.jjtGetChild(0).jjtAccept(this, null);
 		IRI functionURI = (IRI) uriNode.getValue();
-		if (CustomAggregateFunctionRegistry.getInstance().has(functionURI.stringValue()) || node.isDistinct()) {
+		if (CustomAggregateNAryFunctionRegistry.getInstance().has(functionURI.stringValue())
+				|| CustomAggregateFunctionRegistry.getInstance().has(functionURI.stringValue()) || node.isDistinct()) {
 			AggregateFunctionCall aggregateCall = new AggregateFunctionCall(functionURI.stringValue(),
 					node.isDistinct());
-			if (node.jjtGetNumChildren() > 2) {
-				throw new IllegalArgumentException("Custom aggregate functions cannot have more than one argument");
+			for (int i = 1; i < node.jjtGetNumChildren(); i++) {
+				Node argNode = node.jjtGetChild(i);
+				aggregateCall.addArgument(castToValueExpr(argNode.jjtAccept(this, null)));
 			}
-			Node argNode = node.jjtGetChild(1);
-			aggregateCall.setArg(castToValueExpr(argNode.jjtAccept(this, null)));
+
+			if (aggregateCall.getArguments().isEmpty()) {
+				throw new IllegalArgumentException("Aggregate function calls must have at least one argument");
+			}
+
 			return aggregateCall;
 		} else {
 			if (node.isDistinct()) {
