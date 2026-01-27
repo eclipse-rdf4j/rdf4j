@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedBindJ
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedJoinConfig;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.RuntimeSamplingRefiner;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 
 /**
  * Join optimizer that uses learned fanout statistics to estimate costs.
@@ -107,6 +108,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				List<TupleExpr> orderedSubselects = reorderSubselects(subSelects);
 				joinArgs.removeAll(orderedSubselects);
 				if (joinArgs.isEmpty()) {
+					plannedOrder = null;
+				} else if (!hasLearnedStats(joinArgs)) {
 					plannedOrder = null;
 				} else {
 					Set<String> initiallyBoundVars = determineInitiallyBoundVars(joinArgs);
@@ -202,9 +205,29 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			return extensions;
 		}
 
+		private boolean hasLearnedStats(List<TupleExpr> expressions) {
+			for (TupleExpr expr : expressions) {
+				if (expr instanceof StatementPattern) {
+					if (statsProvider.hasStats(buildKey((StatementPattern) expr))) {
+						return true;
+					}
+					continue;
+				}
+				for (StatementPattern pattern : StatementPatternCollector.process(expr)) {
+					if (statsProvider.hasStats(buildKey(pattern))) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
 		private double estimateCardinality(StatementPattern node) {
 			PatternKey key = buildKey(node);
 			double defaultEstimate = statistics.getCardinality(node);
+			if (!statsProvider.hasStats(key)) {
+				return defaultEstimate;
+			}
 			statsProvider.seedIfAbsent(key, defaultEstimate, DEFAULT_PRIOR_CALLS);
 			double estimate = statsProvider.getAverageResults(key);
 			if (estimate <= 0.0d) {

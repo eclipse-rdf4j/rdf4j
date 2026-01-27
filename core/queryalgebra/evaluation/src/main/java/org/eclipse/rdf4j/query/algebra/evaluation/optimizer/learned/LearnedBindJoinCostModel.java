@@ -70,6 +70,9 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		PatternKey key = buildKey(pattern, boundVars);
 		StatementPattern boundPattern = applyBoundVars(pattern, boundVars);
 		double defaultEstimate = fallbackStats.getCardinality(boundPattern);
+		if (!learnedStats.hasStats(key)) {
+			return defaultEstimate;
+		}
 		learnedStats.seedIfAbsent(key, defaultEstimate, DEFAULT_PRIOR_CALLS);
 		double estimate = learnedStats.getAverageResults(key);
 		return estimate > 0.0d ? estimate : defaultEstimate;
