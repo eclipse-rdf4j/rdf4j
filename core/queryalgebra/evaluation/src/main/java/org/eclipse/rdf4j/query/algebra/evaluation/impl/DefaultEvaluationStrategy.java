@@ -1634,6 +1634,6 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	@Override
 	public void setCollectionFactory(Supplier<CollectionFactory> cf) {
-		this.collectionFactory = cf;
+		this.collectionFactory = cf != null ? cf : DefaultCollectionFactory::new;
 	}
 }
