@@ -120,10 +120,7 @@ class DpJoinOrderingIntegrationTest {
 				true,
 				false,
 				LearnedJoinConfig.DEFAULT_RUNTIME_SAMPLING_MAX_OPERANDS,
-				LearnedJoinConfig.DEFAULT_RUNTIME_SAMPLING_MAX_STATEMENTS,
-				false,
-				LearnedJoinConfig.DEFAULT_ADAPTIVE_NESTED_LOOP_THRESHOLD,
-				LearnedJoinConfig.DEFAULT_HASH_JOIN_MAX_BUILD_ROWS);
+				LearnedJoinConfig.DEFAULT_RUNTIME_SAMPLING_MAX_STATEMENTS);
 	}
 
 	private static final class FixedJoinStats implements JoinStatsProvider {

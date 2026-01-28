@@ -12,15 +12,13 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned;
 
 /**
- * Configuration for learned join ordering and adaptive execution.
+ * Configuration for learned join ordering and runtime sampling.
  */
 public final class LearnedJoinConfig {
 
 	public static final int DEFAULT_DP_THRESHOLD = 8;
 	public static final int DEFAULT_RUNTIME_SAMPLING_MAX_OPERANDS = 6;
 	public static final int DEFAULT_RUNTIME_SAMPLING_MAX_STATEMENTS = 200;
-	public static final int DEFAULT_ADAPTIVE_NESTED_LOOP_THRESHOLD = 1000;
-	public static final long DEFAULT_HASH_JOIN_MAX_BUILD_ROWS = 200_000L;
 
 	private final int dpThreshold;
 	private final boolean enableDp;
@@ -28,9 +26,6 @@ public final class LearnedJoinConfig {
 	private final boolean enableRuntimeSampling;
 	private final int runtimeSamplingMaxOperands;
 	private final int runtimeSamplingMaxStatementsPerPattern;
-	private final boolean enableAdaptiveHashJoin;
-	private final int adaptiveJoinNestedLoopThreshold;
-	private final long hashJoinMaxBuildRows;
 
 	public LearnedJoinConfig() {
 		this(DEFAULT_DP_THRESHOLD,
@@ -38,10 +33,7 @@ public final class LearnedJoinConfig {
 				true,
 				false,
 				DEFAULT_RUNTIME_SAMPLING_MAX_OPERANDS,
-				DEFAULT_RUNTIME_SAMPLING_MAX_STATEMENTS,
-				false,
-				DEFAULT_ADAPTIVE_NESTED_LOOP_THRESHOLD,
-				DEFAULT_HASH_JOIN_MAX_BUILD_ROWS);
+				DEFAULT_RUNTIME_SAMPLING_MAX_STATEMENTS);
 	}
 
 	public LearnedJoinConfig(int dpThreshold,
@@ -49,19 +41,13 @@ public final class LearnedJoinConfig {
 			boolean enableGreedy,
 			boolean enableRuntimeSampling,
 			int runtimeSamplingMaxOperands,
-			int runtimeSamplingMaxStatementsPerPattern,
-			boolean enableAdaptiveHashJoin,
-			int adaptiveJoinNestedLoopThreshold,
-			long hashJoinMaxBuildRows) {
+			int runtimeSamplingMaxStatementsPerPattern) {
 		this.dpThreshold = dpThreshold;
 		this.enableDp = enableDp;
 		this.enableGreedy = enableGreedy;
 		this.enableRuntimeSampling = enableRuntimeSampling;
 		this.runtimeSamplingMaxOperands = runtimeSamplingMaxOperands;
 		this.runtimeSamplingMaxStatementsPerPattern = runtimeSamplingMaxStatementsPerPattern;
-		this.enableAdaptiveHashJoin = enableAdaptiveHashJoin;
-		this.adaptiveJoinNestedLoopThreshold = adaptiveJoinNestedLoopThreshold;
-		this.hashJoinMaxBuildRows = hashJoinMaxBuildRows;
 	}
 
 	public int getDpThreshold() {
@@ -86,17 +72,5 @@ public final class LearnedJoinConfig {
 
 	public int getRuntimeSamplingMaxStatementsPerPattern() {
 		return runtimeSamplingMaxStatementsPerPattern;
-	}
-
-	public boolean isEnableAdaptiveHashJoin() {
-		return enableAdaptiveHashJoin;
-	}
-
-	public int getAdaptiveJoinNestedLoopThreshold() {
-		return adaptiveJoinNestedLoopThreshold;
-	}
-
-	public long getHashJoinMaxBuildRows() {
-		return hashJoinMaxBuildRows;
 	}
 }
