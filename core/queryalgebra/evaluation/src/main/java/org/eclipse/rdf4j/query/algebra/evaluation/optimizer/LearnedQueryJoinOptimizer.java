@@ -36,7 +36,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.HybridBindJo
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedBindJoinCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedJoinConfig;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.RuntimeSamplingRefiner;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 
@@ -50,8 +49,6 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 	private final JoinStatsProvider statsProvider;
 	private final JoinOrderPlanner joinPlanner;
 	private final LearnedJoinConfig config;
-	private final TripleSource samplingTripleSource;
-	private final RuntimeSamplingRefiner runtimeSamplingRefiner;
 
 	public LearnedQueryJoinOptimizer(EvaluationStatistics statistics, TripleSource tripleSource,
 			JoinStatsProvider statsProvider) {
@@ -73,12 +70,11 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		super(statistics, trackResultSize, tripleSource);
 		this.statsProvider = Objects.requireNonNull(statsProvider, "statsProvider");
 		this.config = Objects.requireNonNull(config, "config");
-		this.samplingTripleSource = Objects.requireNonNull(tripleSource, "tripleSource");
+		Objects.requireNonNull(tripleSource, "tripleSource");
 		BindJoinCostModel costModel = new LearnedBindJoinCostModel(statistics, statsProvider);
 		JoinOrderPlanner greedy = new GreedyBindJoinOrderPlanner(costModel);
 		JoinOrderPlanner dp = new DpLeftDeepBindJoinOrderPlanner(costModel);
 		this.joinPlanner = new HybridBindJoinOrderPlanner(config, greedy, dp);
-		this.runtimeSamplingRefiner = new RuntimeSamplingRefiner(samplingTripleSource, config);
 	}
 
 	@Override
@@ -114,9 +110,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				} else {
 					Set<String> initiallyBoundVars = determineInitiallyBoundVars(joinArgs);
 					List<TupleExpr> planned = joinPlanner.order(joinArgs, initiallyBoundVars);
-					List<TupleExpr> refined = runtimeSamplingRefiner.refine(planned, dataset, bindings)
-							.orElse(planned);
-					plannedOrder = new ArrayDeque<>(refined);
+					plannedOrder = new ArrayDeque<>(planned);
 				}
 				super.meet(node);
 			} finally {

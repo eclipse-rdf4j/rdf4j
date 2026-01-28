@@ -35,10 +35,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedJoinC
  * LearnedJoinConfig config = new LearnedJoinConfig(
  * 		LearnedJoinConfig.DEFAULT_DP_THRESHOLD,
  * 		true,
- * 		true,
- * 		true,
- * 		LearnedJoinConfig.DEFAULT_RUNTIME_SAMPLING_MAX_OPERANDS,
- * 		LearnedJoinConfig.DEFAULT_RUNTIME_SAMPLING_MAX_STATEMENTS);
+ * 		true);
  * LearningEvaluationStrategyFactory factory = new LearningEvaluationStrategyFactory(new MemoryJoinStats(), null,
  * 		config);
  * NativeStore store = new NativeStore(dataDir);

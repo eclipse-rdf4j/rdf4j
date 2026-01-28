@@ -12,42 +12,28 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned;
 
 /**
- * Configuration for learned join ordering and runtime sampling.
+ * Configuration for learned join ordering.
  */
 public final class LearnedJoinConfig {
 
-	public static final int DEFAULT_DP_THRESHOLD = 8;
-	public static final int DEFAULT_RUNTIME_SAMPLING_MAX_OPERANDS = 6;
-	public static final int DEFAULT_RUNTIME_SAMPLING_MAX_STATEMENTS = 200;
+	public static final int DEFAULT_DP_THRESHOLD = 16;
 
 	private final int dpThreshold;
 	private final boolean enableDp;
 	private final boolean enableGreedy;
-	private final boolean enableRuntimeSampling;
-	private final int runtimeSamplingMaxOperands;
-	private final int runtimeSamplingMaxStatementsPerPattern;
 
 	public LearnedJoinConfig() {
 		this(DEFAULT_DP_THRESHOLD,
 				true,
-				true,
-				false,
-				DEFAULT_RUNTIME_SAMPLING_MAX_OPERANDS,
-				DEFAULT_RUNTIME_SAMPLING_MAX_STATEMENTS);
+				true);
 	}
 
 	public LearnedJoinConfig(int dpThreshold,
 			boolean enableDp,
-			boolean enableGreedy,
-			boolean enableRuntimeSampling,
-			int runtimeSamplingMaxOperands,
-			int runtimeSamplingMaxStatementsPerPattern) {
+			boolean enableGreedy) {
 		this.dpThreshold = dpThreshold;
 		this.enableDp = enableDp;
 		this.enableGreedy = enableGreedy;
-		this.enableRuntimeSampling = enableRuntimeSampling;
-		this.runtimeSamplingMaxOperands = runtimeSamplingMaxOperands;
-		this.runtimeSamplingMaxStatementsPerPattern = runtimeSamplingMaxStatementsPerPattern;
 	}
 
 	public int getDpThreshold() {
@@ -60,17 +46,5 @@ public final class LearnedJoinConfig {
 
 	public boolean isEnableGreedy() {
 		return enableGreedy;
-	}
-
-	public boolean isEnableRuntimeSampling() {
-		return enableRuntimeSampling;
-	}
-
-	public int getRuntimeSamplingMaxOperands() {
-		return runtimeSamplingMaxOperands;
-	}
-
-	public int getRuntimeSamplingMaxStatementsPerPattern() {
-		return runtimeSamplingMaxStatementsPerPattern;
 	}
 }

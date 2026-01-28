@@ -117,10 +117,7 @@ class DpJoinOrderingIntegrationTest {
 		return new LearnedJoinConfig(
 				LearnedJoinConfig.DEFAULT_DP_THRESHOLD,
 				enableDp,
-				true,
-				false,
-				LearnedJoinConfig.DEFAULT_RUNTIME_SAMPLING_MAX_OPERANDS,
-				LearnedJoinConfig.DEFAULT_RUNTIME_SAMPLING_MAX_STATEMENTS);
+				true);
 	}
 
 	private static final class FixedJoinStats implements JoinStatsProvider {
