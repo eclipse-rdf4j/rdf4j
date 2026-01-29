@@ -59,10 +59,10 @@ public class GreedyBindJoinOrderPlanner implements JoinOrderPlanner {
 
 	private TupleExpr selectFirst(List<TupleExpr> remaining, Set<String> bound) {
 		TupleExpr best = remaining.get(0);
-		double bestCardinality = costModel.estimateScanCardinality(best, bound);
+		double bestCardinality = firstScore(best, remaining, bound);
 		for (int i = 1; i < remaining.size(); i++) {
 			TupleExpr candidate = remaining.get(i);
-			double cardinality = costModel.estimateScanCardinality(candidate, bound);
+			double cardinality = firstScore(candidate, remaining, bound);
 			if (cardinality < bestCardinality) {
 				bestCardinality = cardinality;
 				best = candidate;
@@ -92,9 +92,36 @@ public class GreedyBindJoinOrderPlanner implements JoinOrderPlanner {
 		}
 		Set<String> names = filteredBindingNames(expr);
 		if (names.isEmpty() || bound.isEmpty() || disjoint(names, bound)) {
+			if (fanout <= 0.0d) {
+				fanout = 1.0d;
+			}
 			return fanout * DISCONNECTED_PENALTY;
 		}
 		return fanout;
+	}
+
+	private double firstScore(TupleExpr expr, List<TupleExpr> remaining, Set<String> bound) {
+		double cardinality = costModel.estimateScanCardinality(expr, bound);
+		if (isIsolated(expr, remaining)) {
+			return cardinality * DISCONNECTED_PENALTY;
+		}
+		return cardinality;
+	}
+
+	private boolean isIsolated(TupleExpr expr, List<TupleExpr> remaining) {
+		Set<String> names = filteredBindingNames(expr);
+		if (names.isEmpty()) {
+			return true;
+		}
+		for (TupleExpr candidate : remaining) {
+			if (candidate == expr) {
+				continue;
+			}
+			if (!disjoint(names, filteredBindingNames(candidate))) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private Set<String> filteredBindingNames(TupleExpr expr) {

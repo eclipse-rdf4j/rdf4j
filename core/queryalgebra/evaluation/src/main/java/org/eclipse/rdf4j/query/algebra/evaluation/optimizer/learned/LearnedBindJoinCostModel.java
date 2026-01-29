@@ -58,7 +58,8 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		if (pattern == null) {
 			return fallbackStats.getCardinality(expr);
 		}
-		return estimatePattern(pattern, initiallyBoundVars);
+		StatementPattern boundPattern = applyBoundVars(pattern, initiallyBoundVars);
+		return fallbackStats.getCardinality(boundPattern);
 	}
 
 	@Override

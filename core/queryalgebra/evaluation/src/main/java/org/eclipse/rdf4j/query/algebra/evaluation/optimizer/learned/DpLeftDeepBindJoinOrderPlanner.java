@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 
 	private static final double INF = Double.POSITIVE_INFINITY;
+	private static final double DISCONNECTED_PENALTY = 1.0e9d;
 
 	private final BindJoinCostModel costModel;
 
@@ -59,6 +60,9 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 		for (int i = 0; i < size; i++) {
 			int mask = 1 << i;
 			double scanCard = costModel.estimateScanCardinality(operands.get(i), initiallyBoundVars);
+			if (isIsolated(operands.get(i), operands)) {
+				scanCard *= DISCONNECTED_PENALTY;
+			}
 			card[mask] = scanCard;
 			cost[mask] = 1.0d;
 			prevMask[mask] = 0;
@@ -114,7 +118,11 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 			Set<String> initiallyBoundVars) {
 		Set<String> names = filteredBindingNames(expr);
 		if (names.isEmpty() || boundVars.isEmpty() || disjoint(names, boundVars)) {
-			return costModel.estimateScanCardinality(expr, initiallyBoundVars);
+			double scan = costModel.estimateScanCardinality(expr, initiallyBoundVars);
+			if (scan <= 0.0d) {
+				scan = 1.0d;
+			}
+			return scan * DISCONNECTED_PENALTY;
 		}
 		return costModel.estimateFanout(expr, boundVars);
 	}
@@ -123,6 +131,22 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 		Set<String> names = new HashSet<>(costModel.bindingNames(expr));
 		names.removeIf(name -> name.startsWith("_const_"));
 		return names;
+	}
+
+	private boolean isIsolated(TupleExpr expr, List<TupleExpr> operands) {
+		Set<String> names = filteredBindingNames(expr);
+		if (names.isEmpty()) {
+			return true;
+		}
+		for (TupleExpr candidate : operands) {
+			if (candidate == expr) {
+				continue;
+			}
+			if (!disjoint(names, filteredBindingNames(candidate))) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private boolean disjoint(Set<String> left, Set<String> right) {

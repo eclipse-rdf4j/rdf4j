@@ -107,6 +107,13 @@ public class MemoryJoinStats implements JoinStatsProvider {
 		private double baselineCardinality() {
 			return baselineCardinality;
 		}
+
+		private Stats withBaseline(double newBaseline) {
+			Stats updated = new Stats(priorCalls, priorResults, newBaseline);
+			updated.calls.add(calls.sum());
+			updated.results.add(results.sum());
+			return updated;
+		}
 	}
 
 	private final Map<PatternKey, Stats> stats = new ConcurrentHashMap<>();
@@ -160,6 +167,9 @@ public class MemoryJoinStats implements JoinStatsProvider {
 			}
 			if (baselineDrifted(existing, defaultCardinality)) {
 				return new Stats(seedCalls, priorResults, defaultCardinality);
+			}
+			if (shouldInitializeBaseline(existing, defaultCardinality)) {
+				return existing.withBaseline(defaultCardinality);
 			}
 			return existing;
 		});
@@ -224,5 +234,9 @@ public class MemoryJoinStats implements JoinStatsProvider {
 		}
 		double relativeChange = Math.abs(newBaseline - baseline) / baseline;
 		return relativeChange >= driftRatio;
+	}
+
+	private boolean shouldInitializeBaseline(Stats existing, double newBaseline) {
+		return existing.baselineCardinality() <= 0.0d && newBaseline > 0.0d;
 	}
 }

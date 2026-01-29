@@ -110,7 +110,11 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				} else {
 					Set<String> initiallyBoundVars = determineInitiallyBoundVars(joinArgs);
 					List<TupleExpr> planned = joinPlanner.order(joinArgs, initiallyBoundVars);
-					plannedOrder = new ArrayDeque<>(planned);
+					if (isConnectedPlan(planned, initiallyBoundVars)) {
+						plannedOrder = new ArrayDeque<>(planned);
+					} else {
+						plannedOrder = null;
+					}
 				}
 				super.meet(node);
 			} finally {
@@ -176,6 +180,36 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				}
 			}
 			return bound;
+		}
+
+		private boolean isConnectedPlan(List<TupleExpr> plan, Set<String> initiallyBoundVars) {
+			if (plan.isEmpty()) {
+				return true;
+			}
+			Set<String> bound = new HashSet<>();
+			for (TupleExpr expr : plan) {
+				Set<String> names = filteredBindingNames(expr);
+				if (!bound.isEmpty() && disjoint(bound, names)) {
+					return false;
+				}
+				bound.addAll(names);
+			}
+			return true;
+		}
+
+		private Set<String> filteredBindingNames(TupleExpr expr) {
+			Set<String> names = new HashSet<>(expr.getBindingNames());
+			names.removeIf(name -> name.startsWith("_const_"));
+			return names;
+		}
+
+		private boolean disjoint(Set<String> left, Set<String> right) {
+			for (String name : left) {
+				if (right.contains(name)) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		private List<TupleExpr> getExtensionTupleExprs(List<TupleExpr> expressions) {

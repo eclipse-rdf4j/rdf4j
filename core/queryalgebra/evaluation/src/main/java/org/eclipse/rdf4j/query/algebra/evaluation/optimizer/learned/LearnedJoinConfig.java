@@ -20,20 +20,15 @@ public final class LearnedJoinConfig {
 
 	private final int dpThreshold;
 	private final boolean enableDp;
-	private final boolean enableGreedy;
 
 	public LearnedJoinConfig() {
 		this(DEFAULT_DP_THRESHOLD,
-				true,
 				true);
 	}
 
-	public LearnedJoinConfig(int dpThreshold,
-			boolean enableDp,
-			boolean enableGreedy) {
+	public LearnedJoinConfig(int dpThreshold, boolean enableDp) {
 		this.dpThreshold = dpThreshold;
 		this.enableDp = enableDp;
-		this.enableGreedy = enableGreedy;
 	}
 
 	public int getDpThreshold() {
@@ -42,9 +37,5 @@ public final class LearnedJoinConfig {
 
 	public boolean isEnableDp() {
 		return enableDp;
-	}
-
-	public boolean isEnableGreedy() {
-		return enableGreedy;
 	}
 }

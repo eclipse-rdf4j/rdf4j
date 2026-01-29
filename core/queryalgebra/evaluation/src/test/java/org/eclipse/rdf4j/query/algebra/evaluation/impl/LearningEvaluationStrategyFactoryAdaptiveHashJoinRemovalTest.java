@@ -24,7 +24,6 @@ class LearningEvaluationStrategyFactoryAdaptiveHashJoinRemovalTest {
 	void ignoresAdaptiveHashJoinConfig() {
 		LearnedJoinConfig config = new LearnedJoinConfig(
 				LearnedJoinConfig.DEFAULT_DP_THRESHOLD,
-				true,
 				true);
 
 		LearningEvaluationStrategyFactory factory = new LearningEvaluationStrategyFactory(config);

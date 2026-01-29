@@ -37,9 +37,6 @@ public class HybridBindJoinOrderPlanner implements JoinOrderPlanner {
 		if (config.isEnableDp() && operands.size() <= config.getDpThreshold()) {
 			return dp.order(operands, initiallyBoundVars);
 		}
-		if (config.isEnableGreedy()) {
-			return greedy.order(operands, initiallyBoundVars);
-		}
 		return greedy.order(operands, initiallyBoundVars);
 	}
 }

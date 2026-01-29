@@ -98,4 +98,54 @@ class LearnedBindJoinCostModelTest {
 
 		assertEquals(expected, estimate);
 	}
+
+	@Test
+	void scanCardinalityIgnoresLearnedStats() {
+		EvaluationStatistics stats = new EvaluationStatistics();
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		double fallback = stats.getCardinality(pattern);
+		double learned = fallback + 42.0d;
+
+		JoinStatsProvider statsProvider = new JoinStatsProvider() {
+			@Override
+			public void reset() {
+			}
+
+			@Override
+			public void recordCall(PatternKey key) {
+			}
+
+			@Override
+			public void recordResults(PatternKey key, long resultCount) {
+			}
+
+			@Override
+			public void seedIfAbsent(PatternKey key, double defaultCardinality, long priorCalls) {
+			}
+
+			@Override
+			public double getAverageResults(PatternKey key) {
+				return learned;
+			}
+
+			@Override
+			public boolean hasStats(PatternKey key) {
+				return true;
+			}
+
+			@Override
+			public long getTotalCalls() {
+				return 1;
+			}
+		};
+
+		LearnedBindJoinCostModel costModel = new LearnedBindJoinCostModel(stats, statsProvider);
+
+		double fanout = costModel.estimateFanout(pattern, Set.of());
+		double scan = costModel.estimateScanCardinality(pattern, Set.of());
+
+		assertNotEquals(fallback, learned);
+		assertEquals(learned, fanout);
+		assertEquals(fallback, scan);
+	}
 }

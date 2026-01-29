@@ -34,7 +34,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedJoinC
  * <pre>{@code
  * LearnedJoinConfig config = new LearnedJoinConfig(
  * 		LearnedJoinConfig.DEFAULT_DP_THRESHOLD,
- * 		true,
  * 		true);
  * LearningEvaluationStrategyFactory factory = new LearningEvaluationStrategyFactory(new MemoryJoinStats(), null,
  * 		config);

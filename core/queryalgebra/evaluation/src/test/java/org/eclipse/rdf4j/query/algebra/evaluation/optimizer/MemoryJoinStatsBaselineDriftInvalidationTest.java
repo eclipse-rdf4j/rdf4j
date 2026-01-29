@@ -33,4 +33,21 @@ class MemoryJoinStatsBaselineDriftInvalidationTest {
 		stats.seedIfAbsent(key, 100.0d, 2);
 		assertEquals(100.0d, stats.getAverageResults(key), 0.0001d);
 	}
+
+	@Test
+	void initializesBaselineAfterObservedStats() {
+		PatternKey key = new PatternKey(null, PatternKey.SUBJECT_BOUND);
+		MemoryJoinStats.InvalidationSettings settings = MemoryJoinStats.InvalidationSettings.of(Duration.ofMinutes(5),
+				10);
+		MemoryJoinStats stats = new MemoryJoinStats(settings);
+		stats.recordCall(key);
+		stats.recordResults(key, 10);
+		assertEquals(10.0d, stats.getAverageResults(key), 0.0001d);
+
+		stats.seedIfAbsent(key, 10.0d, 2);
+		assertEquals(10.0d, stats.getAverageResults(key), 0.0001d);
+
+		stats.seedIfAbsent(key, 100.0d, 2);
+		assertEquals(100.0d, stats.getAverageResults(key), 0.0001d);
+	}
 }

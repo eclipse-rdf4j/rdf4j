@@ -44,6 +44,54 @@ class DpVsGreedyJoinOrderingTest {
 		assertNotEquals(greedyOrder, dpOrder);
 	}
 
+	@Test
+	void avoidsIsolatedFirstPattern() {
+		TupleExpr a = new StatementPattern(new Var("sa"), new Var("pa"), new Var("oa"));
+		TupleExpr b = new StatementPattern(new Var("sb"), new Var("pb"), new Var("ob"));
+		TupleExpr c = new StatementPattern(new Var("sc"), new Var("pc"), new Var("oc"));
+
+		BindJoinCostModel costModel = new BindJoinCostModel() {
+			private final Map<TupleExpr, Set<String>> bindings = Map.of(
+					a, Set.of("x"),
+					b, Set.of("x", "y"),
+					c, Set.of("z"));
+
+			@Override
+			public double estimateFanout(TupleExpr expr, Set<String> boundVars) {
+				return 1.0d;
+			}
+
+			@Override
+			public double estimateScanCardinality(TupleExpr expr, Set<String> initiallyBoundVars) {
+				if (expr == a) {
+					return 10.0d;
+				}
+				if (expr == b) {
+					return 20.0d;
+				}
+				if (expr == c) {
+					return 1.0d;
+				}
+				return 1.0d;
+			}
+
+			@Override
+			public Set<String> bindingNames(TupleExpr expr) {
+				return bindings.getOrDefault(expr, Set.of());
+			}
+		};
+
+		JoinOrderPlanner greedy = new GreedyBindJoinOrderPlanner(costModel);
+		JoinOrderPlanner dp = new DpLeftDeepBindJoinOrderPlanner(costModel);
+		List<TupleExpr> operands = List.of(a, b, c);
+
+		List<TupleExpr> greedyOrder = greedy.order(operands, Set.of());
+		List<TupleExpr> dpOrder = dp.order(operands, Set.of());
+
+		assertEquals(a, greedyOrder.get(0));
+		assertEquals(a, dpOrder.get(0));
+	}
+
 	private static final class StubCostModel implements BindJoinCostModel {
 
 		private final Map<TupleExpr, Set<String>> bindings;

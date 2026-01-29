@@ -116,8 +116,7 @@ class DpJoinOrderingIntegrationTest {
 	private static LearnedJoinConfig newConfig(boolean enableDp) {
 		return new LearnedJoinConfig(
 				LearnedJoinConfig.DEFAULT_DP_THRESHOLD,
-				enableDp,
-				true);
+				enableDp);
 	}
 
 	private static final class FixedJoinStats implements JoinStatsProvider {

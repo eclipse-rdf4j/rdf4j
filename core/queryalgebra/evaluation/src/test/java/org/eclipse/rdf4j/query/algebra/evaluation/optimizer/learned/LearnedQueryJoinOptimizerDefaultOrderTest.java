@@ -67,6 +67,7 @@ class LearnedQueryJoinOptimizerDefaultOrderTest {
 				"Learned join ordering should match default when no learned stats exist");
 	}
 
+	@Test
 	private List<String> orderedPredicateIris(TupleExpr tupleExpr) {
 		List<String> order = new ArrayList<>();
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
