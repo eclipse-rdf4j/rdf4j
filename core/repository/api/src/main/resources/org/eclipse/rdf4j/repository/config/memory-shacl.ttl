@@ -11,6 +11,21 @@
         config:rep.type "openrdf:SailRepository" ;
         config:sail.impl [
             config:sail.type "rdf4j:ShaclSail" ;
+            config:shacl.parallelValidation {%Parallel validation|true|false%} ;
+            config:shacl.logValidationPlans {%Log validation plans|true|false%} ;
+            config:shacl.logValidationViolations {%Log validation violations|true|false%} ;
+            config:shacl.validationEnabled {%Validation enabled|true|false%} ;
+            config:shacl.cacheSelectNodes {%Cache select nodes|true|false%} ;
+            config:shacl.globalLogValidationExecution {%Global log validation execution|true|false%} ;
+            config:shacl.rdfsSubClassReasoning {%RDFS subclass reasoning|true|false%} ;
+            config:shacl.performanceLogging {%Performance logging|true|false%} ;
+            config:shacl.serializableValidation {%Serializable validation|true|false%} ;
+            config:shacl.eclipseRdf4jShaclExtensions {%Eclipse RDF4J SHACL extensions|true|false%} ;
+            config:shacl.dashDataShapes {%DASH data shapes|true|false%} ;
+            config:shacl.validationResultsLimitTotal {%Validation results limit total|1000000%} ;
+            config:shacl.validationResultsLimitPerConstraint {%Validation results limit per constraint|1000%} ;
+            config:shacl.transactionalValidationLimit {%Transactional validation limit|500000%} ;
+            config:shacl.shapesGraph {%Shapes graphs|<http://rdf4j.org/schema/rdf4j#SHACLShapeGraph>%} ;
             config:delegate [
                 config:sail.type "openrdf:MemoryStore" ;
                 config:iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
