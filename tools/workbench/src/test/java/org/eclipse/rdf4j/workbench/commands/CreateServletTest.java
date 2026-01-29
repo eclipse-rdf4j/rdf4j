@@ -130,6 +130,9 @@ public class CreateServletTest {
 			assertThat(nativeTemplate).contains("{%" + option + "|");
 		}
 
+		assertShaclDefaultsMatchConfig(memoryTemplate);
+		assertShaclDefaultsMatchConfig(nativeTemplate);
+
 		assertShaclInputsPresent(Paths.get("src/main/webapp/transformations/create-memory-shacl.xsl"));
 		assertShaclInputsPresent(Paths.get("src/main/webapp/transformations/create-native-shacl.xsl"));
 	}
@@ -152,6 +155,15 @@ public class CreateServletTest {
 			"Shapes graphs"
 	};
 
+	private static final String[] SHACL_FALSE_DEFAULTS = {
+			"Log validation plans",
+			"Log validation violations",
+			"Global log validation execution",
+			"Performance logging",
+			"Eclipse RDF4J SHACL extensions",
+			"DASH data shapes"
+	};
+
 	private static String readConfigTemplate(String resource) throws IOException {
 		try (InputStream input = RepositoryConfig.class.getResourceAsStream(resource)) {
 			assertThat(input).as(resource).isNotNull();
@@ -163,6 +175,12 @@ public class CreateServletTest {
 		String xsl = Files.readString(path, StandardCharsets.UTF_8);
 		for (String option : SHACL_OPTION_NAMES) {
 			assertThat(xsl).contains("name=\"" + option + "\"");
+		}
+	}
+
+	private static void assertShaclDefaultsMatchConfig(String template) {
+		for (String option : SHACL_FALSE_DEFAULTS) {
+			assertThat(template).contains("{%" + option + "|false|true%}");
 		}
 	}
 }
