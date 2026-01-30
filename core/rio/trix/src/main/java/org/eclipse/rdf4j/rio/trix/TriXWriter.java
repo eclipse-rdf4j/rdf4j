@@ -51,7 +51,6 @@ public class TriXWriter extends AbstractRDFWriter implements CharSink {
 
 	private boolean inActiveContext = false;
 
-	private boolean convertRDFStar;
 	private Resource currentContext = null;
 
 	/**

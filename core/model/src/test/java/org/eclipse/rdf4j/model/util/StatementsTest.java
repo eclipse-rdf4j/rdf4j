@@ -20,7 +20,7 @@ import static org.junit.Assert.fail;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -86,32 +86,26 @@ public class StatementsTest {
 
 	@Test
 	public void testRDFStarReification() {
-		Model rdfStarModel = RDFStarTestHelper.createRDFStarModel();
+		Model rdfStarModel = ModelReificationTestHelper.createRDF12ReificationModel();
 
-		Model reifiedModel = RDFStarTestHelper.createRDFReificationModel();
+		Model reifiedModel = ModelReificationTestHelper.createRDF11ReificationModel();
 
 		Model convertedModel1 = new LinkedHashModel();
-		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(s, convertedModel1::add));
-		assertTrue("RDF-star conversion to reification with implicit VF",
+		rdfStarModel.forEach((s) -> Statements.convertRDF12ReificationToRDF11(s, convertedModel1::add));
+		assertTrue("RDF 1.2 conversion to reification with implicit VF",
 				Models.isomorphic(reifiedModel, convertedModel1));
 
 		Model convertedModel2 = new LinkedHashModel();
-		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(vf, s, convertedModel2::add));
-		assertTrue("RDF-star conversion to reification with explicit VF",
+		rdfStarModel.forEach((s) -> Statements.convertRDF12ReificationToRDF11(vf, s, convertedModel2::add));
+		assertTrue("RDF 1.2 conversion to reification with explicit VF",
 				Models.isomorphic(reifiedModel, convertedModel2));
-
-		Model convertedModel3 = new LinkedHashModel();
-		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(vf, (t) -> vf.createBNode(t.stringValue()),
-				s, convertedModel3::add));
-		assertTrue("RDF-star conversion to reification with explicit VF and custom BNode mapping",
-				Models.isomorphic(reifiedModel, convertedModel3));
 	}
 
 	@Test
 	public void testTripleToResourceMapper() {
-		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+		TripleTerm t1 = vf.createTripleTerm(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
 				vf.createLiteral("data"));
-		Triple t2 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+		TripleTerm t2 = vf.createTripleTerm(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
 				vf.createLiteral("data"));
 		assertEquals("Identical triples must produce the same blank node",
 				Statements.TRIPLE_BNODE_MAPPER.apply(t1), Statements.TRIPLE_BNODE_MAPPER.apply(t2));
@@ -119,7 +113,7 @@ public class StatementsTest {
 
 	@Test
 	public void testToTriple() {
-		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+		TripleTerm t1 = vf.createTripleTerm(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
 				vf.createLiteral("data"));
 
 		Statement st1 = vf.createStatement(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
@@ -132,7 +126,7 @@ public class StatementsTest {
 	public void testStatement() {
 
 		Resource context = vf.createIRI("http://example.org/context");
-		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+		TripleTerm t1 = vf.createTripleTerm(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
 				vf.createLiteral("data"));
 
 		Statement st1 = vf.createStatement(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
@@ -145,7 +139,7 @@ public class StatementsTest {
 	public void testStatement_Context() {
 
 		Resource context = vf.createIRI("http://example.org/context");
-		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+		TripleTerm t1 = vf.createTripleTerm(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
 				vf.createLiteral("data"));
 
 		Statement st1 = vf.createStatement(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
@@ -156,7 +150,7 @@ public class StatementsTest {
 
 	@Test
 	public void testStatement_NullContext() {
-		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+		TripleTerm t1 = vf.createTripleTerm(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
 				vf.createLiteral("data"));
 
 		Statement st1 = vf.createStatement(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),

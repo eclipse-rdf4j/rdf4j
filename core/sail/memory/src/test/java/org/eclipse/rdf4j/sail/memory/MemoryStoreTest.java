@@ -16,7 +16,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -69,4 +71,23 @@ public class MemoryStoreTest extends RDFNotifyingStoreTest {
 		assertEquals(1, count, "expect single solution");
 	}
 
+	@Test
+	public void testTripleRoundTrip1() {
+		IRI subj = vf.createIRI("http://example.org/subject");
+		IRI pred = vf.createIRI("http://example.org/predicate");
+		TripleTerm obj = vf.createTripleTerm(subj, pred, vf.createLiteral("object"));
+
+		testValueRoundTrip(subj, pred, obj);
+	}
+
+	@Test
+	public void testTripleRoundTrip2() {
+		IRI subj = vf.createIRI("http://example.org/subject");
+		IRI pred = RDF.REIFIES;
+		TripleTerm obj = vf.createTripleTerm(vf.createBNode("b"), vf.createIRI("http://example.org/predicate"),
+				vf.createTripleTerm(vf.createIRI("http://example.org/subject2"),
+						vf.createIRI("http://example.org/predicate2"), vf.createLiteral("object")));
+
+		testValueRoundTrip(subj, pred, obj);
+	}
 }

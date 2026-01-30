@@ -89,7 +89,7 @@ Depending on the specific literal type (plain, language-tagged, datatyped), a li
 
 #### RDF\* triples
 
-RDF\* triples are recorded by the `TRIPLE_VALUE` marker, followed by value markers and values for the triple's subject, predicate, and object, in order.
+RDF\* triples are recorded by the `TRIPLE_VALUE` marker, followed by value markers and values for the tripleTerm's subject, predicate, and object, in order.
 
 ### Value reference declaration records
 

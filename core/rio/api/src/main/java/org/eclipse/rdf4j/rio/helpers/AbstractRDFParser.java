@@ -291,8 +291,8 @@ public abstract class AbstractRDFParser implements RDFParser {
 		nextBNodePrefix = createUniqueBNodePrefix();
 		namespaceTable.clear();
 		// Don't use the setter setValueFactory() as it will update originalValueFactory too
-		if (getParserConfig().get(BasicParserSettings.PROCESS_ENCODED_RDF_STAR)) {
-			valueFactory = new RDFStarDecodingValueFactory(originalValueFactory);
+		if (getParserConfig().get(BasicParserSettings.PROCESS_ENCODED_TRIPLE_TERMS)) {
+			valueFactory = new TripleTermDecodingValueFactory(originalValueFactory);
 		} else {
 			valueFactory = originalValueFactory;
 		}

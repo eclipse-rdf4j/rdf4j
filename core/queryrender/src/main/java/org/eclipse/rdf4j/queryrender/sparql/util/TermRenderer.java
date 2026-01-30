@@ -13,11 +13,8 @@ package org.eclipse.rdf4j.queryrender.sparql.util;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 
-import org.eclipse.rdf4j.model.BNode;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Triple;
-import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.*;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.queryrender.sparql.PrefixIndex;
 import org.eclipse.rdf4j.queryrender.sparql.PrefixIndex.PrefixHit;
@@ -74,13 +71,13 @@ public final class TermRenderer {
 			return "\"" + TextEscapes.escapeLiteral(label) + "\"";
 		} else if (val instanceof BNode) {
 			return "_:" + ((BNode) val).getID();
-		} else if (val instanceof Triple) {
-			Triple t = (Triple) val;
+		} else if (val instanceof TripleTerm) {
+			TripleTerm t = (TripleTerm) val;
 			// Render components recursively; nested triples are allowed.
 			String s = convertValueToString(t.getSubject(), index, usePrefixCompaction);
 			String p = convertValueToString(t.getPredicate(), index, usePrefixCompaction);
 			String o = convertValueToString(t.getObject(), index, usePrefixCompaction);
-			return "<<" + s + " " + p + " " + o + ">>";
+			return "<<(" + s + " " + p + " " + o + ")>>";
 		}
 		return "\"" + TextEscapes.escapeLiteral(String.valueOf(val)) + "\"";
 	}

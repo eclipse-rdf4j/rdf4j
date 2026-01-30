@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
@@ -462,61 +463,73 @@ public class QueryResults extends Iterations {
 			Value value1 = binding1.getValue();
 			Value value2 = bs2.getValue(binding1.getName());
 
-			if (value1 instanceof BNode && value2 instanceof BNode) {
-				BNode mappedBNode = bNodeMapping.get(value1);
+			if (!valuesMatch(value1, value2, bNodeMapping)) {
+				return false;
+			}
+		}
 
-				if (mappedBNode != null) {
-					// bNode 'value1' was already mapped to some other bNode
-					if (!value2.equals(mappedBNode)) {
-						// 'value1' and 'value2' do not match
-						return false;
-					}
-				} else {
-					// 'value1' was not yet mapped, we need to check if 'value2' is a
-					// possible mapping candidate
-					if (bNodeMapping.containsValue(value2)) {
-						// 'value2' is already mapped to some other value.
-						return false;
-					}
+		return true;
+	}
+
+	private static boolean valuesMatch(Value value1, Value value2, Map<BNode, BNode> bNodeMapping) {
+		if (value1 instanceof BNode && value2 instanceof BNode) {
+			BNode mappedBNode = bNodeMapping.get(value1);
+
+			if (mappedBNode != null) {
+				// bNode 'value1' was already mapped to some other bNode
+				if (!value2.equals(mappedBNode)) {
+					// 'value1' and 'value2' do not match
+					return false;
 				}
 			} else {
-				// values are not (both) bNodes
-				if (value1 instanceof Literal && value2 instanceof Literal) {
-					// do literal value-based comparison for supported datatypes
-					Literal leftLit = (Literal) value1;
-					Literal rightLit = (Literal) value2;
+				// 'value1' was not yet mapped, we need to check if 'value2' is a
+				// possible mapping candidate
+				if (bNodeMapping.containsValue(value2)) {
+					// 'value2' is already mapped to some other value.
+					return false;
+				}
+			}
+		} else if (value1 instanceof TripleTerm && value2 instanceof TripleTerm) {
+			TripleTerm t1 = (TripleTerm) value1;
+			TripleTerm t2 = (TripleTerm) value2;
+			return valuesMatch(t1.getSubject(), t2.getSubject(), bNodeMapping)
+					&& valuesMatch(t1.getPredicate(), t2.getPredicate(), bNodeMapping)
+					&& valuesMatch(t1.getObject(), t2.getObject(), bNodeMapping);
+		} else {
+			// values are not (both) bNodes
+			if (value1 instanceof Literal && value2 instanceof Literal) {
+				// do literal value-based comparison for supported datatypes
+				Literal leftLit = (Literal) value1;
+				Literal rightLit = (Literal) value2;
 
-					IRI dt1 = leftLit.getDatatype();
-					IRI dt2 = rightLit.getDatatype();
+				IRI dt1 = leftLit.getDatatype();
+				IRI dt2 = rightLit.getDatatype();
 
-					if (dt1 != null && dt1.equals(dt2)
-							&& XMLDatatypeUtil.isValidValue(leftLit.getLabel(), dt1)
-							&& XMLDatatypeUtil.isValidValue(rightLit.getLabel(), dt2)) {
-						Integer compareResult = null;
-						if (dt1.equals(XSD.DOUBLE)) {
-							compareResult = Double.compare(leftLit.doubleValue(), rightLit.doubleValue());
-						} else if (dt1.equals(XSD.FLOAT)) {
-							compareResult = Float.compare(leftLit.floatValue(), rightLit.floatValue());
-						} else if (dt1.equals(XSD.DECIMAL)) {
-							compareResult = leftLit.decimalValue().compareTo(rightLit.decimalValue());
-						} else if (XMLDatatypeUtil.isIntegerDatatype(dt1)) {
-							compareResult = leftLit.integerValue().compareTo(rightLit.integerValue());
-						} else if (dt1.equals(XSD.BOOLEAN)) {
-							Boolean leftBool = leftLit.booleanValue();
-							Boolean rightBool = rightLit.booleanValue();
-							compareResult = leftBool.compareTo(rightBool);
-						} else if (XMLDatatypeUtil.isCalendarDatatype(dt1)) {
-							XMLGregorianCalendar left = leftLit.calendarValue();
-							XMLGregorianCalendar right = rightLit.calendarValue();
+				if (dt1 != null && dt1.equals(dt2)
+						&& XMLDatatypeUtil.isValidValue(leftLit.getLabel(), dt1)
+						&& XMLDatatypeUtil.isValidValue(rightLit.getLabel(), dt2)) {
+					Integer compareResult = null;
+					if (dt1.equals(XSD.DOUBLE)) {
+						compareResult = Double.compare(leftLit.doubleValue(), rightLit.doubleValue());
+					} else if (dt1.equals(XSD.FLOAT)) {
+						compareResult = Float.compare(leftLit.floatValue(), rightLit.floatValue());
+					} else if (dt1.equals(XSD.DECIMAL)) {
+						compareResult = leftLit.decimalValue().compareTo(rightLit.decimalValue());
+					} else if (XMLDatatypeUtil.isIntegerDatatype(dt1)) {
+						compareResult = leftLit.integerValue().compareTo(rightLit.integerValue());
+					} else if (dt1.equals(XSD.BOOLEAN)) {
+						Boolean leftBool = leftLit.booleanValue();
+						Boolean rightBool = rightLit.booleanValue();
+						compareResult = leftBool.compareTo(rightBool);
+					} else if (XMLDatatypeUtil.isCalendarDatatype(dt1)) {
+						XMLGregorianCalendar left = leftLit.calendarValue();
+						XMLGregorianCalendar right = rightLit.calendarValue();
 
-							compareResult = left.compare(right);
-						}
+						compareResult = left.compare(right);
+					}
 
-						if (compareResult != null) {
-							if (compareResult != 0) {
-								return false;
-							}
-						} else if (!value1.equals(value2)) {
+					if (compareResult != null) {
+						if (compareResult != 0) {
 							return false;
 						}
 					} else if (!value1.equals(value2)) {
@@ -525,9 +538,10 @@ public class QueryResults extends Iterations {
 				} else if (!value1.equals(value2)) {
 					return false;
 				}
+			} else if (!value1.equals(value2)) {
+				return false;
 			}
 		}
-
 		return true;
 	}
 

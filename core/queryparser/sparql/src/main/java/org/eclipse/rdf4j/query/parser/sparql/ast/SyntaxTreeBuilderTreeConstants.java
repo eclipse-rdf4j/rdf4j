@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2019 Eclipse RDF4J contributors.
+ * Copyright (c) 2026 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -18,145 +18,157 @@ public interface SyntaxTreeBuilderTreeConstants {
 	public int JJTVOID = 3;
 	public int JJTBASEDECL = 4;
 	public int JJTPREFIXDECL = 5;
-	public int JJTSELECTQUERY = 6;
-	public int JJTSELECT = 7;
-	public int JJTPROJECTIONELEM = 8;
-	public int JJTCONSTRUCTQUERY = 9;
-	public int JJTCONSTRUCT = 10;
-	public int JJTDESCRIBEQUERY = 11;
-	public int JJTDESCRIBE = 12;
-	public int JJTASKQUERY = 13;
-	public int JJTDATASETCLAUSE = 14;
-	public int JJTWHERECLAUSE = 15;
-	public int JJTBINDINGSCLAUSE = 16;
-	public int JJTINLINEDATA = 17;
-	public int JJTBINDINGSET = 18;
-	public int JJTBINDINGVALUE = 19;
-	public int JJTGROUPCLAUSE = 20;
-	public int JJTORDERCLAUSE = 21;
-	public int JJTGROUPCONDITION = 22;
-	public int JJTHAVINGCLAUSE = 23;
-	public int JJTORDERCONDITION = 24;
-	public int JJTLIMIT = 25;
-	public int JJTOFFSET = 26;
-	public int JJTGRAPHPATTERNGROUP = 27;
-	public int JJTBASICGRAPHPATTERN = 28;
-	public int JJTOPTIONALGRAPHPATTERN = 29;
-	public int JJTGRAPHGRAPHPATTERN = 30;
-	public int JJTUNIONGRAPHPATTERN = 31;
-	public int JJTMINUSGRAPHPATTERN = 32;
-	public int JJTSERVICEGRAPHPATTERN = 33;
-	public int JJTCONSTRAINT = 34;
-	public int JJTFUNCTIONCALL = 35;
-	public int JJTTRIPLESSAMESUBJECT = 36;
-	public int JJTPROPERTYLIST = 37;
-	public int JJTOBJECTLIST = 38;
-	public int JJTTRIPLESSAMESUBJECTPATH = 39;
-	public int JJTPROPERTYLISTPATH = 40;
-	public int JJTPATHALTERNATIVE = 41;
-	public int JJTPATHSEQUENCE = 42;
-	public int JJTPATHELT = 43;
-	public int JJTIRI = 44;
-	public int JJTPATHONEINPROPERTYSET = 45;
-	public int JJTPATHMOD = 46;
-	public int JJTBLANKNODEPROPERTYLIST = 47;
-	public int JJTCOLLECTION = 48;
-	public int JJTVAR = 49;
-	public int JJTTRIPLEREF = 50;
-	public int JJTCONSTTRIPLEREF = 51;
-	public int JJTOR = 52;
-	public int JJTAND = 53;
-	public int JJTCOMPARE = 54;
-	public int JJTINFIX = 55;
-	public int JJTMATH = 56;
-	public int JJTNOT = 57;
-	public int JJTNUMERICLITERAL = 58;
-	public int JJTCOUNT = 59;
-	public int JJTSUM = 60;
-	public int JJTMIN = 61;
-	public int JJTMAX = 62;
-	public int JJTAVG = 63;
-	public int JJTSAMPLE = 64;
-	public int JJTGROUPCONCAT = 65;
-	public int JJTMD5 = 66;
-	public int JJTSHA1 = 67;
-	public int JJTSHA224 = 68;
-	public int JJTSHA256 = 69;
-	public int JJTSHA384 = 70;
-	public int JJTSHA512 = 71;
-	public int JJTNOW = 72;
-	public int JJTYEAR = 73;
-	public int JJTMONTH = 74;
-	public int JJTDAY = 75;
-	public int JJTHOURS = 76;
-	public int JJTMINUTES = 77;
-	public int JJTSECONDS = 78;
-	public int JJTTIMEZONE = 79;
-	public int JJTTZ = 80;
-	public int JJTRAND = 81;
-	public int JJTABS = 82;
-	public int JJTCEIL = 83;
-	public int JJTFLOOR = 84;
-	public int JJTROUND = 85;
-	public int JJTSUBSTR = 86;
-	public int JJTSTRLEN = 87;
-	public int JJTUPPERCASE = 88;
-	public int JJTLOWERCASE = 89;
-	public int JJTSTRSTARTS = 90;
-	public int JJTSTRENDS = 91;
-	public int JJTSTRBEFORE = 92;
-	public int JJTSTRAFTER = 93;
-	public int JJTREPLACE = 94;
-	public int JJTCONCAT = 95;
-	public int JJTCONTAINS = 96;
-	public int JJTENCODEFORURI = 97;
-	public int JJTIF = 98;
-	public int JJTIN = 99;
-	public int JJTNOTIN = 100;
-	public int JJTCOALESCE = 101;
-	public int JJTSTR = 102;
-	public int JJTLANG = 103;
-	public int JJTLANGMATCHES = 104;
-	public int JJTDATATYPE = 105;
-	public int JJTBOUND = 106;
-	public int JJTSAMETERM = 107;
-	public int JJTISIRI = 108;
-	public int JJTISBLANK = 109;
-	public int JJTISLITERAL = 110;
-	public int JJTISNUMERIC = 111;
-	public int JJTBNODEFUNC = 112;
-	public int JJTIRIFUNC = 113;
-	public int JJTSTRDT = 114;
-	public int JJTSTRLANG = 115;
-	public int JJTUUID = 116;
-	public int JJTSTRUUID = 117;
-	public int JJTBIND = 118;
-	public int JJTREGEXEXPRESSION = 119;
-	public int JJTEXISTSFUNC = 120;
-	public int JJTNOTEXISTSFUNC = 121;
-	public int JJTRDFLITERAL = 122;
-	public int JJTTRUE = 123;
-	public int JJTFALSE = 124;
-	public int JJTSTRING = 125;
-	public int JJTQNAME = 126;
-	public int JJTBLANKNODE = 127;
-	public int JJTGRAPHREFALL = 128;
-	public int JJTGRAPHORDEFAULT = 129;
-	public int JJTUNPARSEDQUADDATABLOCK = 130;
-	public int JJTQUADSNOTTRIPLES = 131;
-	public int JJTLOAD = 132;
-	public int JJTCLEAR = 133;
-	public int JJTDROP = 134;
-	public int JJTADD = 135;
-	public int JJTMOVE = 136;
-	public int JJTCOPY = 137;
-	public int JJTCREATE = 138;
-	public int JJTINSERTDATA = 139;
-	public int JJTDELETEDATA = 140;
-	public int JJTDELETEWHERE = 141;
-	public int JJTDELETECLAUSE = 142;
-	public int JJTINSERTCLAUSE = 143;
-	public int JJTMODIFY = 144;
+	public int JJTVERSIONDECL = 6;
+	public int JJTSELECTQUERY = 7;
+	public int JJTSELECT = 8;
+	public int JJTPROJECTIONELEM = 9;
+	public int JJTCONSTRUCTQUERY = 10;
+	public int JJTCONSTRUCT = 11;
+	public int JJTDESCRIBEQUERY = 12;
+	public int JJTDESCRIBE = 13;
+	public int JJTASKQUERY = 14;
+	public int JJTDATASETCLAUSE = 15;
+	public int JJTWHERECLAUSE = 16;
+	public int JJTBINDINGSCLAUSE = 17;
+	public int JJTINLINEDATA = 18;
+	public int JJTBINDINGSET = 19;
+	public int JJTBINDINGVALUE = 20;
+	public int JJTGROUPCLAUSE = 21;
+	public int JJTORDERCLAUSE = 22;
+	public int JJTGROUPCONDITION = 23;
+	public int JJTHAVINGCLAUSE = 24;
+	public int JJTORDERCONDITION = 25;
+	public int JJTLIMIT = 26;
+	public int JJTOFFSET = 27;
+	public int JJTGRAPHPATTERNGROUP = 28;
+	public int JJTBASICGRAPHPATTERN = 29;
+	public int JJTOPTIONALGRAPHPATTERN = 30;
+	public int JJTGRAPHGRAPHPATTERN = 31;
+	public int JJTUNIONGRAPHPATTERN = 32;
+	public int JJTMINUSGRAPHPATTERN = 33;
+	public int JJTSERVICEGRAPHPATTERN = 34;
+	public int JJTCONSTRAINT = 35;
+	public int JJTFUNCTIONCALL = 36;
+	public int JJTTRIPLESSAMESUBJECT = 37;
+	public int JJTPROPERTYLIST = 38;
+	public int JJTOBJECTLIST = 39;
+	public int JJTTRIPLESSAMESUBJECTPATH = 40;
+	public int JJTPROPERTYLISTPATH = 41;
+	public int JJTPATHALTERNATIVE = 42;
+	public int JJTPATHSEQUENCE = 43;
+	public int JJTPATHELT = 44;
+	public int JJTIRI = 45;
+	public int JJTPATHONEINPROPERTYSET = 46;
+	public int JJTPATHMOD = 47;
+	public int JJTBLANKNODEPROPERTYLIST = 48;
+	public int JJTCOLLECTION = 49;
+	public int JJTVAR = 50;
+	public int JJTREIFIEDTRIPLE = 51;
+	public int JJTTRIPLETERM = 52;
+	public int JJTLABELEDTRIPLETERM = 53;
+	public int JJTCONSTTRIPLETERM = 54;
+	public int JJTOR = 55;
+	public int JJTAND = 56;
+	public int JJTCOMPARE = 57;
+	public int JJTINFIX = 58;
+	public int JJTMATH = 59;
+	public int JJTNOT = 60;
+	public int JJTNUMERICLITERAL = 61;
+	public int JJTCOUNT = 62;
+	public int JJTSUM = 63;
+	public int JJTMIN = 64;
+	public int JJTMAX = 65;
+	public int JJTAVG = 66;
+	public int JJTSAMPLE = 67;
+	public int JJTGROUPCONCAT = 68;
+	public int JJTMD5 = 69;
+	public int JJTSHA1 = 70;
+	public int JJTSHA224 = 71;
+	public int JJTSHA256 = 72;
+	public int JJTSHA384 = 73;
+	public int JJTSHA512 = 74;
+	public int JJTNOW = 75;
+	public int JJTYEAR = 76;
+	public int JJTMONTH = 77;
+	public int JJTDAY = 78;
+	public int JJTHOURS = 79;
+	public int JJTMINUTES = 80;
+	public int JJTSECONDS = 81;
+	public int JJTTIMEZONE = 82;
+	public int JJTTZ = 83;
+	public int JJTRAND = 84;
+	public int JJTABS = 85;
+	public int JJTCEIL = 86;
+	public int JJTFLOOR = 87;
+	public int JJTROUND = 88;
+	public int JJTSUBSTR = 89;
+	public int JJTSTRLEN = 90;
+	public int JJTUPPERCASE = 91;
+	public int JJTLOWERCASE = 92;
+	public int JJTSTRSTARTS = 93;
+	public int JJTSTRENDS = 94;
+	public int JJTSTRBEFORE = 95;
+	public int JJTSTRAFTER = 96;
+	public int JJTREPLACE = 97;
+	public int JJTCONCAT = 98;
+	public int JJTCONTAINS = 99;
+	public int JJTENCODEFORURI = 100;
+	public int JJTIF = 101;
+	public int JJTIN = 102;
+	public int JJTNOTIN = 103;
+	public int JJTCOALESCE = 104;
+	public int JJTSTR = 105;
+	public int JJTLANG = 106;
+	public int JJTLANGMATCHES = 107;
+	public int JJTDATATYPE = 108;
+	public int JJTBOUND = 109;
+	public int JJTSAMETERM = 110;
+	public int JJTISIRI = 111;
+	public int JJTISBLANK = 112;
+	public int JJTISLITERAL = 113;
+	public int JJTISNUMERIC = 114;
+	public int JJTBNODEFUNC = 115;
+	public int JJTIRIFUNC = 116;
+	public int JJTSTRDT = 117;
+	public int JJTSTRLANG = 118;
+	public int JJTUUID = 119;
+	public int JJTSTRUUID = 120;
+	public int JJTBIND = 121;
+	public int JJTREGEXEXPRESSION = 122;
+	public int JJTEXISTSFUNC = 123;
+	public int JJTNOTEXISTSFUNC = 124;
+	public int JJTISTRIPLE = 125;
+	public int JJTTRIPLEFUNC = 126;
+	public int JJTSUBJECTFUNC = 127;
+	public int JJTPREDICATEFUNC = 128;
+	public int JJTOBJECTFUNC = 129;
+	public int JJTLANGDIRFUNC = 130;
+	public int JJTHASLANGFUNC = 131;
+	public int JJTHASLANGDIRFUNC = 132;
+	public int JJTSTRLANGDIRFUNC = 133;
+	public int JJTRDFLITERAL = 134;
+	public int JJTTRUE = 135;
+	public int JJTFALSE = 136;
+	public int JJTSTRING = 137;
+	public int JJTQNAME = 138;
+	public int JJTBLANKNODE = 139;
+	public int JJTGRAPHREFALL = 140;
+	public int JJTGRAPHORDEFAULT = 141;
+	public int JJTUNPARSEDQUADDATABLOCK = 142;
+	public int JJTQUADSNOTTRIPLES = 143;
+	public int JJTLOAD = 144;
+	public int JJTCLEAR = 145;
+	public int JJTDROP = 146;
+	public int JJTADD = 147;
+	public int JJTMOVE = 148;
+	public int JJTCOPY = 149;
+	public int JJTCREATE = 150;
+	public int JJTINSERTDATA = 151;
+	public int JJTDELETEDATA = 152;
+	public int JJTDELETEWHERE = 153;
+	public int JJTDELETECLAUSE = 154;
+	public int JJTINSERTCLAUSE = 155;
+	public int JJTMODIFY = 156;
 
 	public String[] jjtNodeName = {
 			"UpdateSequence",
@@ -165,6 +177,7 @@ public interface SyntaxTreeBuilderTreeConstants {
 			"void",
 			"BaseDecl",
 			"PrefixDecl",
+			"VersionDecl",
 			"SelectQuery",
 			"Select",
 			"ProjectionElem",
@@ -209,8 +222,10 @@ public interface SyntaxTreeBuilderTreeConstants {
 			"BlankNodePropertyList",
 			"Collection",
 			"Var",
-			"TripleRef",
-			"ConstTripleRef",
+			"ReifiedTriple",
+			"TripleTerm",
+			"LabeledTripleTerm",
+			"ConstTripleTerm",
 			"Or",
 			"And",
 			"Compare",
@@ -281,6 +296,15 @@ public interface SyntaxTreeBuilderTreeConstants {
 			"RegexExpression",
 			"ExistsFunc",
 			"NotExistsFunc",
+			"IsTriple",
+			"TripleFunc",
+			"SubjectFunc",
+			"PredicateFunc",
+			"ObjectFunc",
+			"LangDirFunc",
+			"HasLangFunc",
+			"HasLangDirFunc",
+			"StrLangDirFunc",
 			"RDFLiteral",
 			"True",
 			"False",
@@ -306,4 +330,4 @@ public interface SyntaxTreeBuilderTreeConstants {
 			"Modify",
 	};
 }
-/* JavaCC - OriginalChecksum=c1140ec61eef88fc83def974a6deba48 (do not edit this line) */
+/* JavaCC - OriginalChecksum=49cc2255cd1c6e17ff4dd91a105e1f20 (do not edit this line) */

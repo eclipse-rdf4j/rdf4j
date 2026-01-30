@@ -33,68 +33,9 @@ import org.eclipse.rdf4j.model.vocabulary.SP;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.algebra.And;
-import org.eclipse.rdf4j.query.algebra.Avg;
-import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.Bound;
-import org.eclipse.rdf4j.query.algebra.Clear;
-import org.eclipse.rdf4j.query.algebra.Coalesce;
-import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.*;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
-import org.eclipse.rdf4j.query.algebra.Count;
-import org.eclipse.rdf4j.query.algebra.Create;
-import org.eclipse.rdf4j.query.algebra.Datatype;
-import org.eclipse.rdf4j.query.algebra.DeleteData;
-import org.eclipse.rdf4j.query.algebra.Difference;
-import org.eclipse.rdf4j.query.algebra.Distinct;
-import org.eclipse.rdf4j.query.algebra.Exists;
-import org.eclipse.rdf4j.query.algebra.Extension;
-import org.eclipse.rdf4j.query.algebra.ExtensionElem;
-import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.FunctionCall;
-import org.eclipse.rdf4j.query.algebra.Group;
-import org.eclipse.rdf4j.query.algebra.GroupConcat;
-import org.eclipse.rdf4j.query.algebra.IRIFunction;
-import org.eclipse.rdf4j.query.algebra.If;
-import org.eclipse.rdf4j.query.algebra.InsertData;
-import org.eclipse.rdf4j.query.algebra.IsBNode;
-import org.eclipse.rdf4j.query.algebra.IsLiteral;
-import org.eclipse.rdf4j.query.algebra.IsNumeric;
-import org.eclipse.rdf4j.query.algebra.IsURI;
-import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.Lang;
-import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.Load;
-import org.eclipse.rdf4j.query.algebra.LocalName;
-import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
-import org.eclipse.rdf4j.query.algebra.Max;
-import org.eclipse.rdf4j.query.algebra.Min;
-import org.eclipse.rdf4j.query.algebra.Modify;
-import org.eclipse.rdf4j.query.algebra.MultiProjection;
-import org.eclipse.rdf4j.query.algebra.Not;
-import org.eclipse.rdf4j.query.algebra.Or;
-import org.eclipse.rdf4j.query.algebra.Order;
-import org.eclipse.rdf4j.query.algebra.OrderElem;
-import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.ProjectionElem;
-import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.Reduced;
-import org.eclipse.rdf4j.query.algebra.Regex;
-import org.eclipse.rdf4j.query.algebra.Sample;
-import org.eclipse.rdf4j.query.algebra.Service;
-import org.eclipse.rdf4j.query.algebra.Slice;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Str;
-import org.eclipse.rdf4j.query.algebra.Sum;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Union;
-import org.eclipse.rdf4j.query.algebra.UpdateExpr;
-import org.eclipse.rdf4j.query.algebra.ValueConstant;
-import org.eclipse.rdf4j.query.algebra.ValueExpr;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedDescribeQuery;
@@ -882,6 +823,60 @@ public class SpinRenderer {
 			Resource currentSubj = subject;
 			flushPendingStatement();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.LANG));
+			predicate = SP.ARG1_PROPERTY;
+			node.getArg().visit(this);
+			subject = currentSubj;
+			predicate = null;
+		}
+
+		@Override
+		public void meet(LangDir node) throws RDFHandlerException {
+			Resource currentSubj = subject;
+			flushPendingStatement();
+			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.LANG_DIR));
+			predicate = SP.ARG1_PROPERTY;
+			node.getArg().visit(this);
+			subject = currentSubj;
+			predicate = null;
+		}
+
+		@Override
+		public void meet(StrLangDir node) throws RDFHandlerException {
+			Resource currentSubj = subject;
+			flushPendingStatement();
+			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.STR_LANG_DIR));
+
+			predicate = SP.ARG1_PROPERTY;
+			node.getLexicalFormArg().visit(this);
+
+			subject = currentSubj;
+			predicate = SP.ARG2_PROPERTY;
+			node.getLangArg().visit(this);
+
+			subject = currentSubj;
+			predicate = SP.ARG3_PROPERTY;
+			node.getDirArg().visit(this);
+
+			subject = currentSubj;
+			predicate = null;
+		}
+
+		@Override
+		public void meet(HasLang node) throws RDFHandlerException {
+			Resource currentSubj = subject;
+			flushPendingStatement();
+			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.HAS_LANG));
+			predicate = SP.ARG1_PROPERTY;
+			node.getArg().visit(this);
+			subject = currentSubj;
+			predicate = null;
+		}
+
+		@Override
+		public void meet(HasLangDir node) throws RDFHandlerException {
+			Resource currentSubj = subject;
+			flushPendingStatement();
+			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.HAS_LANGDIR));
 			predicate = SP.ARG1_PROPERTY;
 			node.getArg().visit(this);
 			subject = currentSubj;

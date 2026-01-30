@@ -30,7 +30,7 @@ You can create `Triple` objects using a `ValueFactory` or through the static `Va
 
 ```java
 IRI bob = Values.iri("http://example.org/bob");
-Triple bobsAge = Values.triple(bob, FOAF.AGE, Values.literal(23));
+Triple bobsAge = Values.tripleTerm(bob, FOAF.AGE, Values.literal(23));
 
 IRI certainty = Values.iri("http://example.org/certainty");
 Statement aboutBobsAge = Statements.statement(bobsAge, certainty, Values.literal(0.9), null);
@@ -40,10 +40,10 @@ The {{< javadoc "Statements" "model/util/Statements.html" >}} and {{< javadoc "V
 
 ```java
 IRI bob = Values.iri("http://example.org/bob");
-Triple bobsAge = Values.triple(bob, FOAF.AGE, valueFactory.createLiteral(23));
+Triple bobsAge = Values.tripleTerm(bob, FOAF.AGE, valueFactory.createLiteral(23));
 
 Statement ageStatement = Statements.toStatement(bobsAge);
-Triple backToTriple = Values.triple(ageStatement);
+Triple backToTriple = Values.tripleTerm(ageStatement);
 ```
 
 ## Reading and writing RDF-star data
@@ -98,7 +98,7 @@ will output:
 <<<http://example.org/bob> <http://xmlns.com/foaf/0.1/age> 23>> <http://example.org/certainty> 0.9
 ```
 
-and of course the subject triple can be inspected in code as well:
+and of course the subject tripleTerm can be inspected in code as well:
 
 ```java
 try(RepositoryConnection conn = repo.getConnection()) {
@@ -161,7 +161,7 @@ The default [SPARQL 1.1 Query Results JSON format](https://www.w3.org/TR/sparql1
 }
 ```
 
-RDF4J introduces a new, custom content type `application/x-sparqlstar-results+json` to specifically request this extended content. By default, if a client requests the standard content type (`application/sparql-results+json` or `application/json`), the response serializer will instead "compress" the RDF-star triple into a single IRI, using Base64 encoding:
+RDF4J introduces a new, custom content type `application/x-sparqlstar-results+json` to specifically request this extended content. By default, if a client requests the standard content type (`application/sparql-results+json` or `application/json`), the response serializer will instead "compress" the RDF-star tripleTerm into a single IRI, using Base64 encoding:
 
 ```json
 {
@@ -176,7 +176,7 @@ RDF4J introduces a new, custom content type `application/x-sparqlstar-results+js
     "bindings": [
       { "a" : {
           "type" : "uri",
-          "value" : "urn:rdf4j:triple:PDw8aHR0cDovL2V4YW1wbGUub3JnL2JvYj4gPGh0dHA6Ly94bWxucy5jb20vZm9hZi8wLjEvYWdlPiAiMjMiXl48aHR0cDovL3d3dy53My5vcmcvMjAwMS9YTUxTY2hlbWEjaW50ZWdlcj4-Pg=="
+          "value" : "urn:rdf4j:tripleTerm:PDw8aHR0cDovL2V4YW1wbGUub3JnL2JvYj4gPGh0dHA6Ly94bWxucy5jb20vZm9hZi8wLjEvYWdlPiAiMjMiXl48aHR0cDovL3d3dy53My5vcmcvMjAwMS9YTUxTY2hlbWEjaW50ZWdlcj4-Pg=="
         },
         "b": {
           "type": "uri",
@@ -212,7 +212,7 @@ The default [SPARQL Query Results XML format](https://www.w3.org/TR/rdf-sparql-X
   <results>
     <result>
       <binding name='a'>
-        <triple>
+        <tripleTerm>
           <subject>
             <uri>http://example.org/bob</uri>
           </subject>
@@ -222,7 +222,7 @@ The default [SPARQL Query Results XML format](https://www.w3.org/TR/rdf-sparql-X
           <object>
             <literal datatype='http://www.w3.org/2001/XMLSchema#integer'>23</literal>
           </object>
-        </triple>
+        </tripleTerm>
       </binding>
       <binding name='b'>
         <uri>http://example.org/certainty</uri>
@@ -250,7 +250,7 @@ The [SPARQL 1.1 Query Results TSV format](https://www.w3.org/TR/sparql11-results
 
 The SPARQL engine in RDF4J has been extended to allow for SPARQL-star queries. Executing a SPARQL-star query relies on the underlying store supporting RDF-star data storage.
 
-SPARQL-star allows accessing the RDF-star triple patterns directly in the query. For example, after you have uploaded the above simple RDF-star model to a MemoryStore, you can execute a query like this:
+SPARQL-star allows accessing the RDF-star tripleTerm patterns directly in the query. For example, after you have uploaded the above simple RDF-star model to a MemoryStore, you can execute a query like this:
 
 ```sparql
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
@@ -267,7 +267,7 @@ The result will be:
 
 ## Converting RDF-star to regular RDF and back
 
-RDF4J offers functions to convert between RDF-star data and regular RDF. In the converted regular RDF, the RDF-star triple is replaced with a reified statement using the [RDF Reification vocabulary](https://www.w3.org/wiki/RdfReification). For example:
+RDF4J offers functions to convert between RDF-star data and regular RDF. In the converted regular RDF, the RDF-star tripleTerm is replaced with a reified statement using the [RDF Reification vocabulary](https://www.w3.org/wiki/RdfReification). For example:
 
 
 ```turtle

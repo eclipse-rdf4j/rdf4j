@@ -43,6 +43,8 @@ import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.HasLang;
+import org.eclipse.rdf4j.query.algebra.HasLangDir;
 import org.eclipse.rdf4j.query.algebra.IRIFunction;
 import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.In;
@@ -52,10 +54,12 @@ import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.IsNumeric;
 import org.eclipse.rdf4j.query.algebra.IsResource;
+import org.eclipse.rdf4j.query.algebra.IsTriple;
 import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Label;
 import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LangDir;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -88,6 +92,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.StrLangDir;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
@@ -331,6 +336,26 @@ public abstract class AbstractSimpleQueryModelVisitor<X extends Exception> imple
 
 	@Override
 	public void meet(Lang node) throws X {
+		meetUnaryValueOperator(node);
+	}
+
+	@Override
+	public void meet(LangDir node) throws X {
+		meetUnaryValueOperator(node);
+	}
+
+	@Override
+	public void meet(StrLangDir node) throws X {
+		meetNAryValueOperator(node);
+	}
+
+	@Override
+	public void meet(HasLang node) throws X {
+		meetUnaryValueOperator(node);
+	}
+
+	@Override
+	public void meet(HasLangDir node) throws X {
 		meetUnaryValueOperator(node);
 	}
 
@@ -611,5 +636,10 @@ public abstract class AbstractSimpleQueryModelVisitor<X extends Exception> imple
 	 */
 	protected void meetUpdateExpr(UpdateExpr node) throws X {
 
+	}
+
+	@Override
+	public void meet(IsTriple node) throws X {
+		meetUnaryValueOperator(node);
 	}
 }

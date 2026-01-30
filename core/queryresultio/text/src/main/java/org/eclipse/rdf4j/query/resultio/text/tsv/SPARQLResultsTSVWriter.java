@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
@@ -39,7 +39,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
  * TupleQueryResultWriter for the SPARQL TSV (Tab-Separated Values) format.
  *
  * @author Jeen Broekstra
- * @see <a href="http://www.w3.org/TR/sparql11-results-csv-tsv/#tsv">SPARQL 1.1 Query Results TSV Format</a>
+ * @see <a href="http://www.w3.org/TR/sparql12-results-csv-tsv/#tsv">SPARQL 1.2 Query Results TSV Format</a>
  */
 public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter, CharSink {
 
@@ -136,14 +136,14 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 	}
 
 	protected void writeValue(Value val) throws IOException {
-		if (val instanceof Triple) {
-			writer.write("<<");
-			writeValue(((Triple) val).getSubject());
+		if (val instanceof TripleTerm) {
+			writer.write("<<( ");
+			writeValue(((TripleTerm) val).getSubject());
 			writer.write(' ');
-			writeValue(((Triple) val).getPredicate());
+			writeValue(((TripleTerm) val).getPredicate());
 			writer.write(' ');
-			writeValue(((Triple) val).getObject());
-			writer.write(">>");
+			writeValue(((TripleTerm) val).getObject());
+			writer.write(" )>>");
 		} else if (val instanceof Resource) {
 			writeResource((Resource) val);
 		} else {

@@ -44,7 +44,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -220,7 +220,7 @@ public class BinaryRDFParser extends AbstractRDFParser {
 		case DATATYPE_LITERAL_VALUE:
 			return readDatatypeLiteral();
 		case TRIPLE_VALUE:
-			return readTriple();
+			return readTripleTerm();
 		default:
 			reportFatalError("Unknown value type: " + valueType);
 			return null;
@@ -260,14 +260,14 @@ public class BinaryRDFParser extends AbstractRDFParser {
 		return createLiteral(label, null, dtUri, -1, -1);
 	}
 
-	private Triple readTriple() throws IOException {
+	private TripleTerm readTripleTerm() throws IOException {
 		Value subject = readValue();
 		if (subject instanceof Resource) {
 			Value predicate = readValue();
 			if (predicate instanceof IRI) {
 				Value object = readValue();
 
-				return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);
+				return valueFactory.createTripleTerm((Resource) subject, (IRI) predicate, object);
 			}
 		}
 

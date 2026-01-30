@@ -90,7 +90,7 @@ public class TransactionReaderTest {
 	public void testRoundtripRDFStar() throws Exception {
 
 		AddStatementOperation rdfStarOperation = new AddStatementOperation(alice, knows,
-				vf.createTriple(bob, knows, alice), context1);
+				vf.createTripleTerm(bob, knows, alice), context1);
 
 		List<TransactionOperation> txn = new ArrayList<>();
 		txn.add(rdfStarOperation);

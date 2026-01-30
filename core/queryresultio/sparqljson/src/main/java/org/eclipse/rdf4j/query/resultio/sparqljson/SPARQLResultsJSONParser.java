@@ -10,21 +10,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
-import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.OBJECT;
-import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.OBJECT_JENA;
-import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.PREDICATE;
-import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.PREDICATE_JENA;
-import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.SUBJECT;
-import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.SUBJECT_JENA;
-import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.TRIPLE;
-import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.TRIPLE_STARDOG;
+import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLTripleTermResultsJSONConstants.OBJECT;
+import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLTripleTermResultsJSONConstants.PREDICATE;
+import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLTripleTermResultsJSONConstants.SUBJECT;
+import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLTripleTermResultsJSONConstants.TRIPLE_STARDOG;
+import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLTripleTermResultsJSONConstants.TRIPLE_TERM;
 
 import java.io.IOException;
 import java.io.InputStream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
@@ -91,7 +88,7 @@ public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements
 	}
 
 	@Override
-	protected Triple parseTripleValue(JsonParser jp, String fieldName) throws IOException {
+	protected TripleTerm parseTripleTermValue(JsonParser jp, String fieldName) throws IOException {
 		Value subject = null, predicate = null, object = null;
 
 		while (jp.nextToken() != JsonToken.END_OBJECT) {
@@ -101,7 +98,7 @@ public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements
 						jp.currentLocation().getColumnNr());
 			}
 			String posName = jp.currentName();
-			if (SUBJECT.equals(posName) || SUBJECT_JENA.equals(posName)) {
+			if (SUBJECT.equals(posName)) {
 				if (subject != null) {
 					throw new QueryResultParseException(
 							posName + " field encountered twice in triple value: ",
@@ -109,7 +106,7 @@ public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements
 							jp.currentLocation().getColumnNr());
 				}
 				subject = parseValue(jp, fieldName + ":" + posName);
-			} else if (PREDICATE.equals(posName) || PREDICATE_JENA.equals(posName)) {
+			} else if (PREDICATE.equals(posName)) {
 				if (predicate != null) {
 					throw new QueryResultParseException(
 							posName + " field encountered twice in triple value: ",
@@ -117,7 +114,7 @@ public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements
 							jp.currentLocation().getColumnNr());
 				}
 				predicate = parseValue(jp, fieldName + ":" + posName);
-			} else if (OBJECT.equals(posName) || OBJECT_JENA.equals(posName)) {
+			} else if (OBJECT.equals(posName)) {
 				if (object != null) {
 					throw new QueryResultParseException(
 							posName + " field encountered twice in triple value: ",
@@ -136,7 +133,7 @@ public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements
 		}
 
 		if (subject instanceof Resource && predicate instanceof IRI && object != null) {
-			return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);
+			return valueFactory.createTripleTerm((Resource) subject, (IRI) predicate, object);
 		} else {
 			throw new QueryResultParseException("Incomplete or invalid triple value",
 					jp.currentLocation().getLineNr(),
@@ -146,7 +143,7 @@ public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements
 
 	@Override
 	protected boolean checkTripleType(JsonParser jp, String type) {
-		if (!TRIPLE.equals(type) && !TRIPLE_STARDOG.equals(type)) {
+		if (!TRIPLE_TERM.equals(type) && !TRIPLE_STARDOG.equals(type)) {
 			throw new QueryResultParseException("Found a triple value but unexpected type: " + type,
 					jp.currentLocation().getLineNr(),
 					jp.currentLocation().getColumnNr());

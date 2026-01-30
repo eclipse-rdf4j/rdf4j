@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2022 Eclipse RDF4J contributors.
+ * Copyright (c) 2026 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -38,6 +38,10 @@ public class SyntaxTreeBuilderDefaultVisitor implements SyntaxTreeBuilderVisitor
 	}
 
 	public Object visit(ASTPrefixDecl node, Object data) throws VisitorException {
+		return defaultVisit(node, data);
+	}
+
+	public Object visit(ASTVersionDecl node, Object data) throws VisitorException {
 		return defaultVisit(node, data);
 	}
 
@@ -217,11 +221,19 @@ public class SyntaxTreeBuilderDefaultVisitor implements SyntaxTreeBuilderVisitor
 		return defaultVisit(node, data);
 	}
 
-	public Object visit(ASTTripleRef node, Object data) throws VisitorException {
+	public Object visit(ASTReifiedTriple node, Object data) throws VisitorException {
 		return defaultVisit(node, data);
 	}
 
-	public Object visit(ASTConstTripleRef node, Object data) throws VisitorException {
+	public Object visit(ASTTripleTerm node, Object data) throws VisitorException {
+		return defaultVisit(node, data);
+	}
+
+	public Object visit(ASTLabeledTripleTerm node, Object data) throws VisitorException {
+		return defaultVisit(node, data);
+	}
+
+	public Object visit(ASTConstTripleTerm node, Object data) throws VisitorException {
 		return defaultVisit(node, data);
 	}
 
@@ -505,6 +517,42 @@ public class SyntaxTreeBuilderDefaultVisitor implements SyntaxTreeBuilderVisitor
 		return defaultVisit(node, data);
 	}
 
+	public Object visit(ASTIsTriple node, Object data) throws VisitorException {
+		return defaultVisit(node, data);
+	}
+
+	public Object visit(ASTTripleFunc node, Object data) throws VisitorException {
+		return defaultVisit(node, data);
+	}
+
+	public Object visit(ASTSubjectFunc node, Object data) throws VisitorException {
+		return defaultVisit(node, data);
+	}
+
+	public Object visit(ASTPredicateFunc node, Object data) throws VisitorException {
+		return defaultVisit(node, data);
+	}
+
+	public Object visit(ASTObjectFunc node, Object data) throws VisitorException {
+		return defaultVisit(node, data);
+	}
+
+	public Object visit(ASTLangDirFunc node, Object data) throws VisitorException {
+		return defaultVisit(node, data);
+	}
+
+	public Object visit(ASTHasLangFunc node, Object data) throws VisitorException {
+		return defaultVisit(node, data);
+	}
+
+	public Object visit(ASTHasLangDirFunc node, Object data) throws VisitorException {
+		return defaultVisit(node, data);
+	}
+
+	public Object visit(ASTStrLangDirFunc node, Object data) throws VisitorException {
+		return defaultVisit(node, data);
+	}
+
 	public Object visit(ASTRDFLiteral node, Object data) throws VisitorException {
 		return defaultVisit(node, data);
 	}
@@ -597,4 +645,4 @@ public class SyntaxTreeBuilderDefaultVisitor implements SyntaxTreeBuilderVisitor
 		return defaultVisit(node, data);
 	}
 }
-/* JavaCC - OriginalChecksum=036e1b73d00ab5e63cd04ddbfdb54c3b (do not edit this line) */
+/* JavaCC - OriginalChecksum=a4ab9b7123c8eec92073d189c9c45351 (do not edit this line) */

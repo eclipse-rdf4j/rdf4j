@@ -406,11 +406,11 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 
 		if (value instanceof IRI) {
 			IRI uri = (IRI) value;
-			writeAttribute(RDF.NAMESPACE, "about", uri.toString());
+			writeAttribute("about", uri.toString());
 		} else {
 			BNode bNode = (BNode) value;
 			if (!inlineBlankNodes) {
-				writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
+				writeAttribute("nodeID", getValidNodeId(bNode));
 			}
 		}
 	}
@@ -457,10 +457,10 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 
 			if (objRes instanceof IRI) {
 				IRI uri = (IRI) objRes;
-				writeAttribute(RDF.NAMESPACE, "resource", uri.toString());
+				writeAttribute("resource", uri.toString());
 			} else {
 				BNode bNode = (BNode) objRes;
-				writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
+				writeAttribute("nodeID", getValidNodeId(bNode));
 			}
 
 			writeEndOfEmptyTag();
@@ -473,12 +473,12 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 
 			// language attribute
 			if (Literals.isLanguageLiteral(objLit)) {
-				writeAttribute("xml:lang", objLit.getLanguage().get());
+				writeAttribute(objLit.getLanguage().get());
 			} else {
 				if (isXmlLiteral) {
-					writeAttribute(RDF.NAMESPACE, "parseType", "Literal");
+					writeAttribute("parseType", "Literal");
 				} else {
-					writeAttribute(RDF.NAMESPACE, "datatype", objLit.getDatatype().toString());
+					writeAttribute("datatype", objLit.getDatatype().toString());
 				}
 			}
 

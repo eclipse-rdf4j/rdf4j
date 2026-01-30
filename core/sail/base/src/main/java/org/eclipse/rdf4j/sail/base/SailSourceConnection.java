@@ -243,7 +243,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			branch = branch(IncludeInferred.fromBoolean(includeInferred));
 			rdfDataset = branch.dataset(getIsolationLevel());
 
-			TripleSource tripleSource = new SailDatasetTripleSource(vf, rdfDataset);
+			TripleSource tripleSource = new SailDatasetTripleTermSource(vf, rdfDataset);
 			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
 			if (trackResultSize) {
 				strategy.setTrackResultSize(trackResultSize);
@@ -808,8 +808,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			}
 		} else {
 			for (Resource ctx : contexts) {
-				if (ctx != null && ctx.isTriple()) {
-					throw new SailException("context argument can not be of type Triple: " + ctx.stringValue());
+				if (ctx != null && ctx.isTripleTerm()) {
+					throw new SailException("context argument can not be of type TripleTerm: " + ctx.stringValue());
 				}
 
 				Resource[] contextsToCheck;

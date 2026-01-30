@@ -46,7 +46,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -191,7 +191,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 					value = readLiteral(recordTypeMarker);
 					break;
 				case TRIPLE_RECORD_MARKER:
-					value = readTriple();
+					value = readTripleTerm();
 					break;
 				default:
 					logger.error(extractInvalidContentAsString(recordTypeMarker));
@@ -351,7 +351,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 		return charBuf.toString();
 	}
 
-	private Triple readTriple() throws IOException {
+	private TripleTerm readTripleTerm() throws IOException {
 		Value subject = readDirectValue();
 		if (!(subject instanceof Resource)) {
 			throw new IOException("Unexpected value type: " + subject);
@@ -364,7 +364,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 
 		Value object = readDirectValue();
 
-		return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);
+		return valueFactory.createTripleTerm((Resource) subject, (IRI) predicate, object);
 	}
 
 	private Value readDirectValue() throws IOException {
@@ -385,7 +385,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 		case DATATYPE_LITERAL_RECORD_MARKER:
 			return readLiteral(recordTypeMarker);
 		case TRIPLE_RECORD_MARKER:
-			return readTriple();
+			return readTripleTerm();
 		default:
 			throw new IOException("Unexpected record type: " + recordTypeMarker);
 		}

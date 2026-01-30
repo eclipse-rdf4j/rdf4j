@@ -192,7 +192,7 @@ public class ValueCreationBenchmark {
 	@Benchmark
 	public void createTriple() {
 		for (long c = samples; c > 0; --c) {
-			factory.createTriple(iri, iri, iri);
+			factory.createTripleTerm(iri, iri, iri);
 		}
 	}
 
