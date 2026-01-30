@@ -106,7 +106,7 @@ this property as it allows the NativeStore to delete corrupt indexes in an attem
 
 For workloads with repeated or similar queries, the learned join optimizer records join fanout at runtime and uses it to reorder joins on subsequent executions. Statistics are kept in memory and reset on restart.
 
-MemoryStore and NativeStore enable the learned optimizer by default. To override or disable it, configure the evaluation strategy factory before initializing the repository:
+NativeStore enables the learned optimizer by default. MemoryStore and LmdbStore default to the standard/strict evaluation strategies, so enable the learned optimizer explicitly when needed. To override or disable it, configure the evaluation strategy factory before initializing the repository:
 
 ```java
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.LearningEvaluationStrategyFactory;

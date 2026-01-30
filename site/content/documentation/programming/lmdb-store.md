@@ -118,9 +118,9 @@ Repository repo = new SailRepository(new LmdbStore(dataDir), config);
 
 ### Learned join order optimization (experimental)
 
-The LMDB store defaults to the learned join optimizer. It records join fanout statistics in memory and uses them to reorder joins on subsequent query executions. By default, statistics are invalidated after 100,000 statement additions within 10 minutes, or when the default cardinality estimate for a pattern drifts by 50% or more.
+The LMDB store can use the learned join optimizer (experimental). It records join fanout statistics in memory and uses them to reorder joins on subsequent query executions. By default, statistics are invalidated after 100,000 statement additions within 10 minutes, or when the default cardinality estimate for a pattern drifts by 50% or more.
 
-To explicitly configure or override the evaluation strategy factory, set it before the repository is initialized:
+To enable or override the evaluation strategy factory, set it before the repository is initialized:
 
 ```java
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.LearningEvaluationStrategyFactory;
@@ -155,7 +155,7 @@ repo.init();
 
 Use `MemoryJoinStats.InvalidationSettings.disabled()` to keep stats indefinitely.
 
-To disable the learned optimizer, replace the factory with `DefaultEvaluationStrategyFactory` (or the deprecated `StrictEvaluationStrategyFactory`).
+To disable the learned optimizer, replace the factory with `DefaultEvaluationStrategyFactory` (or the deprecated `StrictEvaluationStrategyFactory`, which is the LMDB default).
 
 ## Required storage space, RAM size and disk performance
 You can expect a footprint of around 120 - 130 bytes per quad when using the LMDB store

@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import java.io.File;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.LearningEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -26,10 +26,10 @@ class LmdbStoreLearningEvaluationDefaultTest {
 	File dataDir;
 
 	@Test
-	void defaultsToLearningEvaluationStrategyFactory() {
+	void defaultsToStrictEvaluationStrategyFactory() {
 		LmdbStore store = new LmdbStore(dataDir);
 		EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
-		assertInstanceOf(LearningEvaluationStrategyFactory.class, factory,
-				"Expected LMDB store to default to the learned evaluation strategy");
+		assertInstanceOf(StrictEvaluationStrategyFactory.class, factory,
+				"Expected LMDB store to default to the strict evaluation strategy");
 	}
 }
