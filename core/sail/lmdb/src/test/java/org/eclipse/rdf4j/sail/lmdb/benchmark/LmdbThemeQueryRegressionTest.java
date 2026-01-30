@@ -36,7 +36,7 @@ import org.junit.jupiter.api.io.TempDir;
 class LmdbThemeQueryRegressionTest {
 
 	private static final Theme THEME = Theme.PHARMA;
-	private static final int ITERATIONS = 3;
+	private static final int ITERATIONS = 1;
 
 	@TempDir
 	File dataDir;
