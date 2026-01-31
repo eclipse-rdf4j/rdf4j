@@ -17,13 +17,17 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned;
 public final class LearnedJoinConfig {
 
 	public static final int DEFAULT_DP_THRESHOLD = 16;
-	public static final boolean DEFAULT_DP_ENABLED = true;
+	/**
+	 * System property to configure the default DP enabled flag.
+	 */
+	public static final String DP_ENABLED_PROPERTY = "org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedJoinConfig.dpEnabled";
+	public static final boolean DEFAULT_DP_ENABLED = resolveDefaultDpEnabled();
 
 	private final int dpThreshold;
 	private final boolean enableDp;
 
 	public LearnedJoinConfig() {
-		this(DEFAULT_DP_THRESHOLD, DEFAULT_DP_ENABLED);
+		this(DEFAULT_DP_THRESHOLD, resolveDefaultDpEnabled());
 	}
 
 	public LearnedJoinConfig(int dpThreshold, boolean enableDp) {
@@ -37,5 +41,9 @@ public final class LearnedJoinConfig {
 
 	public boolean isEnableDp() {
 		return enableDp;
+	}
+
+	private static boolean resolveDefaultDpEnabled() {
+		return Boolean.parseBoolean(System.getProperty(DP_ENABLED_PROPERTY, "true"));
 	}
 }
