@@ -83,7 +83,7 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 				Set<String> fromBound = boundVars[fromMask];
 				double fanout = estimateFanoutWithConnectivity(operands.get(j), fromBound, initiallyBoundVars);
 				double candidateCard = outer * fanout;
-				double candidateCost = cost[fromMask] + outer;
+				double candidateCost = cost[fromMask] + candidateCard;
 				if (candidateCost < cost[mask]
 						|| (candidateCost == cost[mask] && candidateCard < card[mask])) {
 					cost[mask] = candidateCost;

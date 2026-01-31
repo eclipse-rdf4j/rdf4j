@@ -19,7 +19,9 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
@@ -147,5 +149,35 @@ class LearnedBindJoinCostModelTest {
 		assertNotEquals(fallback, learned);
 		assertEquals(learned, fanout);
 //		assertEquals(fallback, scan);
+	}
+
+	@Test
+	void filterUsesFallbackStatistics() {
+		EvaluationStatistics stats = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(org.eclipse.rdf4j.query.algebra.TupleExpr expr) {
+				if (expr instanceof Filter) {
+					return 10.0d;
+				}
+				if (expr instanceof StatementPattern) {
+					return 100.0d;
+				}
+				return 1.0d;
+			}
+		};
+
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:pred");
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("o"));
+		Filter filter = new Filter(pattern, new ValueConstant(SimpleValueFactory.getInstance().createLiteral(true)));
+
+		MemoryJoinStats statsProvider = new MemoryJoinStats(MemoryJoinStats.InvalidationSettings.disabled());
+		PatternKey key = new PatternKey(predicate, 0);
+		statsProvider.recordCall(key);
+		statsProvider.recordResults(key, 1000);
+
+		LearnedBindJoinCostModel costModel = new LearnedBindJoinCostModel(stats, statsProvider);
+		double estimate = costModel.estimateFanout(filter, Set.of());
+
+		assertEquals(10.0d, estimate);
 	}
 }

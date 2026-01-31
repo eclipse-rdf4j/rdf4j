@@ -110,8 +110,15 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 
 	private StatementPattern unwrapToStatementPattern(TupleExpr expr) {
 		TupleExpr current = expr;
-		while (current instanceof Filter || current instanceof Extension || current instanceof Reduced) {
-			current = ((UnaryTupleOperator) current).getArg();
+		while (true) {
+			if (current instanceof Filter) {
+				return null;
+			}
+			if (current instanceof Extension || current instanceof Reduced) {
+				current = ((UnaryTupleOperator) current).getArg();
+				continue;
+			}
+			break;
 		}
 		return current instanceof StatementPattern ? (StatementPattern) current : null;
 	}
