@@ -47,6 +47,11 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 	protected class MemCardinalityCalculator extends CardinalityCalculator {
 
 		@Override
+		protected CardinalityCalculator newCalculator() {
+			return new MemCardinalityCalculator();
+		}
+
+		@Override
 		public double getCardinality(StatementPattern sp) {
 
 			Value subj = getConstantValue(sp.getSubjectVar());

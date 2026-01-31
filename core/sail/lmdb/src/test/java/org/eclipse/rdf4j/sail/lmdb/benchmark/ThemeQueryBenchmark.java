@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
@@ -23,6 +24,13 @@ import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -47,6 +55,7 @@ import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
+import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
 @Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 3)
@@ -57,7 +66,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 public class ThemeQueryBenchmark {
 
 	@Param({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" })
-	public int z_queryIndex;
+	public int x_queryIndex;
 
 	@Param({
 			"MEDICAL_RECORDS",
@@ -71,6 +80,9 @@ public class ThemeQueryBenchmark {
 	})
 	public String themeName;
 
+	@Param({ "true", "false" })
+	public boolean z_useSparqlUo;
+
 	private File dataDir;
 	private SailRepository repository;
 	private Theme theme;
@@ -78,6 +90,31 @@ public class ThemeQueryBenchmark {
 	private long expected;
 
 	public static void main(String[] args) throws RunnerException {
+		if (args != null && args.length >= 2) {
+			String themeName = args[0];
+			String queryIndex = args[1];
+			String useSparqlUo = args.length >= 3 ? args[2] : "both";
+			String[] uoValues = parseUseSparqlUo(useSparqlUo);
+			Options opt = new OptionsBuilder()
+					.include(ThemeQueryBenchmark.class.getSimpleName() + ".executeQuery")
+					.param("themeName", themeName)
+					.param("x_queryIndex", queryIndex)
+					.param("z_useSparqlUo", uoValues)
+					.warmupIterations(10)
+					.warmupTime(TimeValue.seconds(1))
+					.measurementIterations(5)
+					.measurementTime(TimeValue.seconds(1))
+					.forks(1)
+					.build();
+			new Runner(opt).run();
+			return;
+		}
+
+		if (args != null && args.length == 1) {
+			System.err.println("Usage: ThemeQueryBenchmark <themeName> <queryIndex> [true|false|both]");
+			return;
+		}
+
 		Options opt = new OptionsBuilder()
 				.include("ThemeQueryBenchmark")
 				.forks(1)
@@ -88,10 +125,14 @@ public class ThemeQueryBenchmark {
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
 		theme = Theme.valueOf(themeName);
-		query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
-		expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
+		query = ThemeQueryCatalog.queryFor(theme, x_queryIndex);
+		expected = ThemeQueryCatalog.expectedCountFor(theme, x_queryIndex);
 		dataDir = Files.newTemporaryFolder();
-		repository = new SailRepository(new LmdbStore(dataDir, ConfigUtil.createConfig()));
+		LmdbStore store = new LmdbStore(dataDir, ConfigUtil.createConfig());
+		if (!z_useSparqlUo) {
+			store.setEvaluationStrategyFactory(createStandardPipelineFactory(store));
+		}
+		repository = new SailRepository(store);
 		loadData();
 	}
 
@@ -130,20 +171,20 @@ public class ThemeQueryBenchmark {
 	@Test
 	@Disabled
 	public void testQueryCounts() throws IOException {
-		String[] queryIndexes = paramValues("z_queryIndex");
+		String[] queryIndexes = paramValues("x_queryIndex");
 		String[] themeNames = paramValues("themeName");
 		for (String themeNameValue : themeNames) {
 			for (String queryIndexValue : queryIndexes) {
 				themeName = themeNameValue;
-				z_queryIndex = Integer.parseInt(queryIndexValue);
+				x_queryIndex = Integer.parseInt(queryIndexValue);
 				setup();
 				try {
 					long actual = executeQuery();
-					long expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
-					System.out.println("For theme " + themeName + " and query index " + z_queryIndex
+					long expected = ThemeQueryCatalog.expectedCountFor(theme, x_queryIndex);
+					System.out.println("For theme " + themeName + " and query index " + x_queryIndex
 							+ ", expected count is " + expected + " and actual count is " + actual);
 					assertEquals(expected, actual,
-							"Unexpected count for theme " + themeName + " and query index " + z_queryIndex);
+							"Unexpected count for theme " + themeName + " and query index " + x_queryIndex);
 				} finally {
 					tearDown();
 				}
@@ -153,23 +194,28 @@ public class ThemeQueryBenchmark {
 
 	@Test
 	public void testQueryExplanation() throws IOException {
-		String[] queryIndexes = paramValues("z_queryIndex");
+		String[] queryIndexes = paramValues("x_queryIndex");
 		String[] themeNames = paramValues("themeName");
 		for (String themeNameValue : themeNames) {
 			for (String queryIndexValue : queryIndexes) {
-				themeName = themeNameValue;
-				z_queryIndex = Integer.parseInt(queryIndexValue);
-				setup();
-				try (SailRepositoryConnection connection = repository.getConnection()) {
-					String explanation = connection
-							.prepareTupleQuery(query)
-							.explain(Explanation.Level.Executed)
-							.toString();
-					System.out.println("Query Explanation for theme " + themeName + " and query index " + z_queryIndex
-							+ ":\n" + explanation);
-				} finally {
-					tearDown();
+				for (Boolean b : List.of(false, true)) {
+					this.z_useSparqlUo = b;
+					themeName = themeNameValue;
+					x_queryIndex = Integer.parseInt(queryIndexValue);
+					setup();
+					try (SailRepositoryConnection connection = repository.getConnection()) {
+						String explanation = connection
+								.prepareTupleQuery(query)
+								.explain(Explanation.Level.Executed)
+								.toString();
+						System.out
+								.println("Query Explanation for theme " + themeName + " and query index " + x_queryIndex
+										+ " and z_useSparqlUo=" + b + " :\n" + explanation);
+					} finally {
+						tearDown();
+					}
 				}
+				System.out.println("----------------------------------------\n");
 			}
 		}
 	}
@@ -184,5 +230,36 @@ public class ThemeQueryBenchmark {
 		} catch (NoSuchFieldException e) {
 			throw new IllegalStateException("Missing field " + fieldName, e);
 		}
+	}
+
+	private static EvaluationStrategyFactory createStandardPipelineFactory(LmdbStore store) {
+		DefaultEvaluationStrategyFactory factory = new DefaultEvaluationStrategyFactory(
+				store.getFederatedServiceResolver()) {
+			@Override
+			public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+					EvaluationStatistics evaluationStatistics) {
+				EvaluationStrategy strategy = super.createEvaluationStrategy(dataset, tripleSource,
+						evaluationStatistics);
+				strategy.setOptimizerPipeline(
+						new StandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics));
+				return strategy;
+			}
+		};
+		factory.setQuerySolutionCacheThreshold(store.getIterationCacheSyncThreshold());
+		factory.setTrackResultSize(store.isTrackResultSize());
+		return factory;
+	}
+
+	private static String[] parseUseSparqlUo(String value) {
+		if (value == null || value.isBlank() || "both".equalsIgnoreCase(value)) {
+			return new String[] { "true", "false" };
+		}
+		if ("true".equalsIgnoreCase(value)) {
+			return new String[] { "true" };
+		}
+		if ("false".equalsIgnoreCase(value)) {
+			return new String[] { "false" };
+		}
+		throw new IllegalArgumentException("Unexpected z_useSparqlUo value: " + value);
 	}
 }

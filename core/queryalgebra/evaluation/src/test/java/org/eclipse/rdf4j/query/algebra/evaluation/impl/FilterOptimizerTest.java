@@ -11,6 +11,10 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -21,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
@@ -31,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
@@ -107,6 +113,21 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		testOptimizer(expectedQuery, query);
 	}
 
+	@Test
+	public void optionalFilterIsAlreadyALeftJoinCondition()
+			throws MalformedQueryException, UnsupportedQueryLanguageException {
+		String query = "SELECT * WHERE { ?s <urn:p1> ?o OPTIONAL { ?s <urn:p2> ?o2 . FILTER(?o2 > 2) } }";
+
+		ParsedQuery optimizedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		FilterOptimizer opt = getOptimizer();
+		opt.optimize(optimizedQuery.getTupleExpr(), null, null);
+
+		LeftJoin leftJoin = findLeftJoin(optimizedQuery.getTupleExpr());
+		assertNotNull(leftJoin, "Expected a LeftJoin in the parsed query");
+		assertNotNull(leftJoin.getCondition(), "Expected OPTIONAL filter to be folded into the LeftJoin condition");
+		assertTrue(!(leftJoin.getRightArg() instanceof Filter), "Expected OPTIONAL right arg to be filter-free");
+	}
+
 	void testOptimizer(String expectedQuery, String actualQuery)
 			throws MalformedQueryException, UnsupportedQueryLanguageException {
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, actualQuery, null);
@@ -124,5 +145,19 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		opt.optimize(pq.getTupleExpr(), null, null);
 
 		assertEquals(expectedQuery, pq.getTupleExpr());
+	}
+
+	private static LeftJoin findLeftJoin(TupleExpr expr) {
+		AtomicReference<LeftJoin> ref = new AtomicReference<>();
+		expr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(LeftJoin node) {
+				if (ref.get() == null) {
+					ref.set(node);
+				}
+				super.meet(node);
+			}
+		});
+		return ref.get();
 	}
 }

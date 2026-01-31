@@ -23,7 +23,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ScopedQueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinKeyCacheIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinKeyCacheIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -34,6 +36,11 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private final LeftJoin leftJoin;
 	private final Set<String> optionalVars;
 	private final QueryEvaluationStep wellDesignedRightEvaluationStep;
+	private final QueryEvaluationContext context;
+	private final String[] joinAttributes;
+	private final Set<String> rightBindingNames;
+	private final boolean cacheableCondition;
+	private final boolean nonDeterministicRight;
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context) {
@@ -59,15 +66,17 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		} else {
 			condition = null;
 		}
-		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector.getVarNames());
+		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector.getVarNames(),
+				context);
 	}
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
-			QueryEvaluationStep left, LeftJoin leftJoin, Set<String> optionalVars) {
+			QueryEvaluationStep left, LeftJoin leftJoin, Set<String> optionalVars, QueryEvaluationContext context) {
 		this.right = right;
 		this.condition = condition;
 		this.left = left;
 		this.leftJoin = leftJoin;
+		this.context = context;
 		// This is used to determine if the left join is well designed.
 
 		Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
@@ -87,6 +96,12 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		}
 
 		this.optionalVars = optionalVars;
+		this.joinAttributes = HashJoinIteration.hashJoinAttributeNames(leftJoin);
+		this.rightBindingNames = leftJoin.getRightArg().getBindingNames();
+		this.cacheableCondition = !leftJoin.hasCondition()
+				|| rightBindingNames.containsAll(VarNameCollector.process(leftJoin.getCondition()));
+		this.nonDeterministicRight = DeterminismChecks.containsNonDeterministicFunction(leftJoin.getRightArg())
+				|| DeterminismChecks.containsNonDeterministicFunction(leftJoin.getCondition());
 		this.wellDesignedRightEvaluationStep = determineRightEvaluationStep(
 				leftJoin,
 				right,
@@ -108,6 +123,11 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 		if (containsNone) {
 			// left join is "well designed"
+			if (JoinKeyCacheIterator.isEnabled(joinAttributes) && cacheableCondition && !nonDeterministicRight) {
+				leftJoin.setAlgorithm(LeftJoinKeyCacheIterator.class.getSimpleName());
+				return LeftJoinKeyCacheIterator.getInstance(left, wellDesignedRightEvaluationStep, bindings,
+						joinAttributes, rightBindingNames, context);
+			}
 			leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
 			return LeftJoinIterator.getInstance(left, bindings, wellDesignedRightEvaluationStep);
 		} else {

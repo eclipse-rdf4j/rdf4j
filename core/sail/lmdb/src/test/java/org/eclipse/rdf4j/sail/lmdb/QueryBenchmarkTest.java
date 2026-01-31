@@ -23,13 +23,25 @@ import java.util.stream.Stream;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.DCAT;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoQueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.SparqlUoConfig;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -71,6 +83,8 @@ public class QueryBenchmarkTest {
 	private static final String wild_card_chain_with_common_ends;
 	private static final String sub_select;
 	private static final String multiple_sub_select;
+	private static final boolean DEBUG_OPTIONAL_FILTER_JOIN = Boolean.getBoolean("rdf4j.debug.optionalFilterJoinPlan");
+	private static boolean statsLogged;
 
 	static {
 		try {
@@ -186,6 +200,7 @@ public class QueryBenchmarkTest {
 
 	@Test
 	public void optionalLhsFilterQueryProducesExpectedCount() {
+		maybeLogOptionalFilterJoinPlans("optional_lhs_filter", optional_lhs_filter);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
 			try (var stream = connection.prepareTupleQuery(optional_lhs_filter).evaluate().stream()) {
@@ -197,6 +212,7 @@ public class QueryBenchmarkTest {
 
 	@Test
 	public void optionalRhsFilterQueryProducesExpectedCount() {
+		maybeLogOptionalFilterJoinPlans("optional_rhs_filter", optional_rhs_filter);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
 			try (var stream = connection.prepareTupleQuery(optional_rhs_filter).evaluate().stream()) {
@@ -322,6 +338,116 @@ public class QueryBenchmarkTest {
 	private static long count(TupleQueryResult evaluate) {
 		try (Stream<BindingSet> stream = evaluate.stream()) {
 			return stream.count();
+		}
+	}
+
+	private static void maybeLogOptionalFilterJoinPlans(String label, String query) {
+		if (!DEBUG_OPTIONAL_FILTER_JOIN) {
+			return;
+		}
+		logDatasetStatsOnce();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		EvaluationStrategyFactory originalFactory = store.getEvaluationStrategyFactory();
+		SparqlUoConfig baseConfig = SparqlUoConfig.fromSystemProperties();
+		try {
+			System.out.println("==== OptionalFilterJoin plan dump: " + label + " ====");
+			System.out.println(query.trim());
+			store.setEvaluationStrategyFactory(createSparqlUoPipelineFactory(store, baseConfig));
+			logExecutedPlan(query, "OptionalFilterJoinOptimizer enabled");
+
+			SparqlUoConfig disabledConfig = copyConfigWithOptionalFilterJoin(baseConfig, false);
+			store.setEvaluationStrategyFactory(createSparqlUoPipelineFactory(store, disabledConfig));
+			logExecutedPlan(query, "OptionalFilterJoinOptimizer disabled");
+
+			store.setEvaluationStrategyFactory(createStandardPipelineFactory(store));
+			logExecutedPlan(query, "SparqlUo disabled (StandardQueryOptimizerPipeline)");
+		} finally {
+			store.setEvaluationStrategyFactory(originalFactory);
+		}
+	}
+
+	private static void logExecutedPlan(String query, String label) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			String explanation = connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Executed)
+					.toString();
+			System.out.println("---- " + label + " ----");
+			System.out.println(explanation);
+		}
+	}
+
+	private static EvaluationStrategyFactory createSparqlUoPipelineFactory(LmdbStore store, SparqlUoConfig config) {
+		DefaultEvaluationStrategyFactory factory = new DefaultEvaluationStrategyFactory(
+				store.getFederatedServiceResolver()) {
+			@Override
+			public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+					EvaluationStatistics evaluationStatistics) {
+				EvaluationStrategy strategy = super.createEvaluationStrategy(dataset, tripleSource,
+						evaluationStatistics);
+				strategy.setOptimizerPipeline(
+						new SparqlUoQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics, config));
+				return strategy;
+			}
+		};
+		factory.setQuerySolutionCacheThreshold(store.getIterationCacheSyncThreshold());
+		factory.setTrackResultSize(store.isTrackResultSize());
+		return factory;
+	}
+
+	private static EvaluationStrategyFactory createStandardPipelineFactory(LmdbStore store) {
+		DefaultEvaluationStrategyFactory factory = new DefaultEvaluationStrategyFactory(
+				store.getFederatedServiceResolver()) {
+			@Override
+			public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+					EvaluationStatistics evaluationStatistics) {
+				EvaluationStrategy strategy = super.createEvaluationStrategy(dataset, tripleSource,
+						evaluationStatistics);
+				strategy.setOptimizerPipeline(
+						new StandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics));
+				return strategy;
+			}
+		};
+		factory.setQuerySolutionCacheThreshold(store.getIterationCacheSyncThreshold());
+		factory.setTrackResultSize(store.isTrackResultSize());
+		return factory;
+	}
+
+	private static SparqlUoConfig copyConfigWithOptionalFilterJoin(SparqlUoConfig base, boolean enabled) {
+		return SparqlUoConfig.builder()
+				.allowNonImprovingTransforms(base.allowNonImprovingTransforms())
+				.assumedVarDomainCardinality(base.assumedVarDomainCardinality())
+				.optionalMatchRate(base.optionalMatchRate())
+				.optionalMultiplicity(base.optionalMultiplicity())
+				.debugLogging(base.debugLogging())
+				.simulateJoinOrder(base.simulateJoinOrder())
+				.maxBindingSetAssignmentUnionSize(base.maxBindingSetAssignmentUnionSize())
+				.enableMinusUnionSplit(base.enableMinusUnionSplit())
+				.enableOptionalFilterJoin(enabled)
+				.build();
+	}
+
+	private static void logDatasetStatsOnce() {
+		if (statsLogged) {
+			return;
+		}
+		statsLogged = true;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			long totalStatements = connection.size();
+			long typeDistribution = countStatements(connection, null, RDF.TYPE, DCAT.DISTRIBUTION);
+			long typeDistributionProperty = countStatements(connection, null, RDF.TYPE, DCAT.HAS_DISTRIBUTION);
+			long hasDistribution = countStatements(connection, null, DCAT.HAS_DISTRIBUTION, null);
+			System.out.println("==== Dataset stats ====");
+			System.out.println("Total statements: " + totalStatements);
+			System.out.println("rdf:type dcat:Distribution: " + typeDistribution);
+			System.out.println("rdf:type dcat:distribution: " + typeDistributionProperty);
+			System.out.println("dcat:distribution triples: " + hasDistribution);
+		}
+	}
+
+	private static long countStatements(SailRepositoryConnection connection, Resource subj,
+			org.eclipse.rdf4j.model.IRI pred, org.eclipse.rdf4j.model.Value obj) {
+		try (CloseableIteration<? extends Statement> iteration = connection.getStatements(subj, pred, obj, false)) {
+			return Iterations.stream(iteration).count();
 		}
 	}
 

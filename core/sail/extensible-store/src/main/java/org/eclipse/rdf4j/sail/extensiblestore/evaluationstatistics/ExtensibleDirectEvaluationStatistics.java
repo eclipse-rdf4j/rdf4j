@@ -37,30 +37,39 @@ public class ExtensibleDirectEvaluationStatistics extends ExtensibleEvaluationSt
 		return cardinalityCalculator;
 	}
 
-	CardinalityCalculator cardinalityCalculator = new CardinalityCalculator() {
-		@Override
-		protected double getCardinality(StatementPattern sp) {
+	private final CardinalityCalculator cardinalityCalculator = createDirectCardinalityCalculator();
 
-			SailDataset dataset = extensibleSailStore.getExplicitSailSource().dataset(IsolationLevels.NONE);
-
-			Resource subject = (Resource) sp.getSubjectVar().getValue();
-			IRI predicate = (IRI) sp.getPredicateVar().getValue();
-			Value object = sp.getObjectVar().getValue();
-
-			if (sp.getScope() == StatementPattern.Scope.DEFAULT_CONTEXTS) {
-				try (Stream<? extends Statement> stream = Iterations
-						.stream(dataset.getStatements(subject, predicate, object))) {
-					return stream.count();
-				}
-			} else {
-				Resource[] context = new Resource[] { (Resource) sp.getContextVar().getValue() };
-				try (Stream<? extends Statement> stream = Iterations
-						.stream(dataset.getStatements(subject, predicate, object, context))) {
-					return stream.count();
-				}
+	private CardinalityCalculator createDirectCardinalityCalculator() {
+		return new CardinalityCalculator() {
+			@Override
+			protected CardinalityCalculator newCalculator() {
+				return createDirectCardinalityCalculator();
 			}
 
-		}
-	};
+			@Override
+			protected double getCardinality(StatementPattern sp) {
+
+				SailDataset dataset = extensibleSailStore.getExplicitSailSource().dataset(IsolationLevels.NONE);
+
+				Resource subject = (Resource) sp.getSubjectVar().getValue();
+				IRI predicate = (IRI) sp.getPredicateVar().getValue();
+				Value object = sp.getObjectVar().getValue();
+
+				if (sp.getScope() == StatementPattern.Scope.DEFAULT_CONTEXTS) {
+					try (Stream<? extends Statement> stream = Iterations
+							.stream(dataset.getStatements(subject, predicate, object))) {
+						return stream.count();
+					}
+				} else {
+					Resource[] context = new Resource[] { (Resource) sp.getContextVar().getValue() };
+					try (Stream<? extends Statement> stream = Iterations
+							.stream(dataset.getStatements(subject, predicate, object, context))) {
+						return stream.count();
+					}
+				}
+
+			}
+		};
+	}
 
 }

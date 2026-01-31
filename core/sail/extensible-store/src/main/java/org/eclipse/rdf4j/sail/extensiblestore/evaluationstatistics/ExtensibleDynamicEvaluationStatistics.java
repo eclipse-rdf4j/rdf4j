@@ -153,6 +153,11 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	class ExtensibleDynamicEvaluationStatisticsCardinalityCalculator extends CardinalityCalculator {
 
 		@Override
+		protected CardinalityCalculator newCalculator() {
+			return new ExtensibleDynamicEvaluationStatisticsCardinalityCalculator();
+		}
+
+		@Override
 		protected double getCardinality(StatementPattern sp) {
 			synchronized (monitor) {
 

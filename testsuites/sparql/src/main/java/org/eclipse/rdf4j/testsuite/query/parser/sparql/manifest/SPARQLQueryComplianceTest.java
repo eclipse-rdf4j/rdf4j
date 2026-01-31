@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -46,6 +47,7 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.dawg.DAWGTestResultSetUtil;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.MutableTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
@@ -378,9 +380,10 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 				}
 
 				if (query instanceof TupleQuery) {
-					TupleQueryResult actualResult = ((TupleQuery) query).evaluate();
+					TupleQuery tupleQuery = (TupleQuery) query;
+					TupleQueryResult actualResult = tupleQuery.evaluate();
 					TupleQueryResult expectedResult = readExpectedTupleQueryResult();
-					compareTupleQueryResults(actualResult, expectedResult);
+					compareTupleQueryResults(tupleQuery, actualResult, expectedResult);
 				} else if (query instanceof GraphQuery) {
 					GraphQueryResult gqr = ((GraphQuery) query).evaluate();
 					Set<Statement> actualResult = Iterations.asSet(gqr);
@@ -420,8 +423,8 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 			return result;
 		}
 
-		private void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult)
-				throws Exception {
+		private void compareTupleQueryResults(TupleQuery query, TupleQueryResult queryResult,
+				TupleQueryResult expectedResult) throws Exception {
 			// Create MutableTupleQueryResult to be able to re-iterate over the
 			// results
 			MutableTupleQueryResult queryResultTable = new MutableTupleQueryResult(queryResult);
@@ -485,6 +488,9 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 				message.append(readQueryString().trim()).append("\n");
 				message.append(footer).append("\n");
 
+				appendRepositorySnapshot(message, footer);
+				appendQueryExplanation(message, footer, query);
+
 				message.append("# Expected bindings:\n\n");
 				for (BindingSet bs : expectedBindings) {
 					printBindingSet(bs, message);
@@ -544,6 +550,56 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 
 				fail(message.toString());
 			}
+		}
+
+		private void appendRepositorySnapshot(StringBuilder message, String footer) {
+			message.append("# Repository data:\n\n");
+			try (RepositoryConnection connection = getDataRepository().getConnection()) {
+				List<Statement> statements = Iterations.asList(connection.getStatements(null, null, null, true));
+				statements.sort(Comparator.comparing(this::statementKey));
+				if (statements.isEmpty()) {
+					message.append("(no statements)\n");
+				} else {
+					for (Statement statement : statements) {
+						message.append(formatStatement(statement)).append("\n");
+					}
+				}
+			} catch (Exception e) {
+				message.append("Failed to read repository data: ").append(e).append("\n");
+			}
+			message.append(footer).append("\n");
+		}
+
+		private void appendQueryExplanation(StringBuilder message, String footer, TupleQuery query) {
+			message.append("# Query plan (unoptimized):\n\n");
+			appendExplanation(message, query, Explanation.Level.Unoptimized);
+			message.append(footer).append("\n");
+
+			message.append("# Query plan (executed):\n\n");
+			appendExplanation(message, query, Explanation.Level.Executed);
+			message.append(footer).append("\n");
+		}
+
+		private void appendExplanation(StringBuilder message, TupleQuery query, Explanation.Level level) {
+			try {
+				Explanation explanation = query.explain(level);
+				message.append(explanation.toString()).append("\n");
+			} catch (Exception e) {
+				message.append("Failed to retrieve ")
+						.append(level)
+						.append(" plan: ")
+						.append(e.getMessage())
+						.append("\n");
+			}
+		}
+
+		private String statementKey(Statement statement) {
+			return formatStatement(statement);
+		}
+
+		private String formatStatement(Statement statement) {
+			String context = statement.getContext() == null ? "" : " " + statement.getContext();
+			return statement.getSubject() + " " + statement.getPredicate() + " " + statement.getObject() + context;
 		}
 	}
 

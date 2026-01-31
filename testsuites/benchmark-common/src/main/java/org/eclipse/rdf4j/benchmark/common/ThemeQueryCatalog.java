@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 
 public final class ThemeQueryCatalog {
 
-	public static final int QUERY_COUNT = 11;
+	public static final int QUERY_COUNT = 14;
 
 	private static final Map<Theme, List<BenchmarkQuery>> QUERIES = new EnumMap<>(Theme.class);
 
@@ -160,7 +160,68 @@ public final class ThemeQueryCatalog {
 								"  FILTER NOT EXISTS { ?patient med:hasMedication ?m2 . ?m2 med:code ?c .",
 								"                      FILTER(?c = \"MED-1005\") }",
 								"}"),
-						1L)));
+						1L),
+				query("Medical: DX-200 Q1 encounters with very high observations (optimizer torture)",
+						medicalPrefix + String.join("\n",
+								"SELECT ?enc ?obs ?optValue WHERE {",
+								"  ?enc ?anyP ?anyO .",
+								"  ?enc a med:Encounter .",
+								"  OPTIONAL {",
+								"    ?enc med:recordedOn ?date .",
+								"    BIND(?date AS ?optDate)",
+								"  }",
+								"  FILTER(?optDate >= \"2024-01-01\"^^xsd:date && ?optDate < \"2024-04-01\"^^xsd:date)",
+								"  OPTIONAL { ?enc med:hasCondition ?cond . ?cond med:code ?code . BIND(STR(?code) AS ?codeStr) }",
+								"  FILTER(?codeStr = \"DX-200\")",
+								"  OPTIONAL { ?enc med:hasObservation ?obs . ?obs med:value ?value . BIND(?value AS ?optValue) }",
+								"  FILTER(?optValue > 95)",
+								"}"),
+						7280L), // Optimization: avoid the broad `?enc ?anyP ?anyO` scan by starting from selective
+								// patterns (DX-200, date window, high observation), and rewrite OPTIONAL+FILTER into
+								// inner joins with filter pushdown.
+				query("Medical: MED-1000 patients excluding any DX-202 encounter (anti-join stress)",
+						medicalPrefix + String.join("\n",
+								"SELECT ?patient ?m ?optCode WHERE {",
+								"  { ?patient a med:Patient . }",
+								"  UNION",
+								"  { ?patient med:hasEncounter ?e . }",
+								"  OPTIONAL {",
+								"    ?patient med:hasMedication ?m .",
+								"    ?m med:code ?code .",
+								"    BIND(?code AS ?optCode)",
+								"  }",
+								"  FILTER(?optCode = \"MED-1000\")",
+								"  MINUS {",
+								"    ?patient med:hasEncounter ?e2 .",
+								"    ?e2 med:hasCondition ?c2 .",
+								"    ?c2 med:code \"DX-202\" .",
+								"  }",
+								"  OPTIONAL { ?patient med:name ?n . }",
+								"  FILTER(?n != \"\")",
+								"}"),
+						9863L), // Optimization: remove the redundant UNION branch, turn the medication OPTIONAL+FILTER
+								// into a selective inner join, and implement the DX-202 exclusion as an indexed
+								// anti-join evaluated early.
+				query("Medical: practitioners treating 'patient 1*' with DX-201 (correlated EXISTS)",
+						medicalPrefix + String.join("\n",
+								"SELECT ?practitioner ?pp ?po WHERE {",
+								"  ?practitioner a med:Practitioner .",
+								"  ?practitioner ?pp ?po .",
+								"  OPTIONAL { ?practitioner med:name ?pName . BIND(LCASE(STR(?pName)) AS ?pNameLc) }",
+								"  FILTER(CONTAINS(?pNameLc, \"alpha\"))",
+								"  FILTER EXISTS {",
+								"    ?enc med:handledBy ?practitioner .",
+								"    ?patient med:hasEncounter ?enc .",
+								"    OPTIONAL { ?patient med:name ?name . BIND(LCASE(STR(?name)) AS ?nameLc) }",
+								"    FILTER(CONTAINS(?nameLc, \"patient 1\"))",
+								"    OPTIONAL { ?enc med:hasCondition ?cond . ?cond med:code ?c . BIND(?c AS ?optC) }",
+								"    FILTER(?optC = \"DX-201\")",
+								"  }",
+								"}"),
+						146L) // Optimization: decorrelate EXISTS into a semi-join, push down the patient-name + DX-201
+								// filters, and avoid expanding `?practitioner ?pp ?po` until after the selective join
+								// has reduced candidates.
+		));
 
 		String socialPrefix = String.join("\n",
 				"PREFIX social: <http://example.com/theme/social/>",
@@ -398,7 +459,56 @@ public final class ThemeQueryCatalog {
 								"  OPTIONAL { ?e social:name ?optName . }",
 								"  FILTER(?optName IN (\"user7\", \"user8\", \"user9\", \"user10\", \"user11\"))",
 								"}"),
-						1L)));
+						1L),
+				query("Social: tag0 posts mentioning alpha with >=4 likes (optimizer torture)",
+						socialPrefix + String.join("\n",
+								"SELECT ?post ?l1 ?l2 ?l3 ?l4 WHERE {",
+								"  ?post ?pp ?po .",
+								"  ?post a social:Post .",
+								"  ?post social:likedBy ?l1 .",
+								"  ?post social:likedBy ?l2 .",
+								"  ?post social:likedBy ?l3 .",
+								"  ?post social:likedBy ?l4 .",
+								"  FILTER(STR(?l1) < STR(?l2) && STR(?l2) < STR(?l3) && STR(?l3) < STR(?l4))",
+								"  OPTIONAL { ?post social:hasTag ?tag . ?tag social:name ?tagName . BIND(?tagName AS ?optTagName) }",
+								"  FILTER(?optTagName = \"tag0\")",
+								"  OPTIONAL { ?post social:content ?content . BIND(LCASE(?content) AS ?lc) }",
+								"  FILTER(CONTAINS(?lc, \"alpha\"))",
+								"} LIMIT 181843"),
+						181843L), // Optimization: recognize the 4-way likedBy self-join as an “at least 4 likes”
+									// pattern, push down tag/content predicates before expanding likes, and (ideally)
+									// rewrite to a precomputed like-degree path/index.
+				query("Social: user1* with mutual follower who liked their tag1 post (join-order trap)",
+						socialPrefix + String.join("\n",
+								"SELECT ?u ?v ?post WHERE {",
+								"  ?u a social:User .",
+								"  OPTIONAL { ?u social:name ?name . BIND(?name AS ?n) }",
+								"  FILTER(CONTAINS(?n, \"user1\"))",
+								"  ?u social:follows ?v .",
+								"  ?v social:follows ?u .",
+								"  ?post a social:Post ; social:authored ?u ; social:likedBy ?v .",
+								"  OPTIONAL { ?post social:hasTag ?tag . ?tag social:name ?tn . BIND(?tn AS ?optTn) }",
+								"  FILTER(?optTn = \"tag1\")",
+								"  OPTIONAL { ?post social:createdAt ?t . BIND(?t AS ?optT) }",
+								"  FILTER(?optT > \"2024-01-10T00:00:00\"^^xsd:dateTime)",
+								"}"),
+						0L), // Optimization: start from selective tag/time constraints (tag1 + createdAt) and join
+								// outward to post→author/liker→mutual-follows, instead of scanning large user-name
+								// prefixes then exploding joins.
+				query("Social: posts with likes but no comments (left-join anti-pattern)",
+						socialPrefix + String.join("\n",
+								"SELECT ?post ?liker ?optLn WHERE {",
+								"  ?post a social:Post .",
+								"  OPTIONAL { ?post social:hasComment ?c . }",
+								"  FILTER(!BOUND(?c))",
+								"  ?post social:likedBy ?liker .",
+								"  OPTIONAL { ?liker social:name ?ln . BIND(?ln AS ?optLn) }",
+								"  FILTER(?optLn != \"\")",
+								"}"),
+						0L) // Optimization: rewrite OPTIONAL+FILTER(!BOUND) into an anti-join (`FILTER NOT EXISTS {
+							// ?post social:hasComment ?c }`) and reorder so the engine doesn’t build massive
+							// NULL-extended intermediates.
+		));
 
 		String libraryPrefix = String.join("\n",
 				"PREFIX lib: <http://example.com/theme/library/>",
@@ -532,7 +642,59 @@ public final class ThemeQueryCatalog {
 								"  MINUS { ?branch lib:name ?name2 .",
 								"          FILTER(CONTAINS(LCASE(STR(?name2)), \"branch 0\")) }",
 								"}"),
-						1L)));
+						1L),
+				query("Library: Branch 0 copies of Author 1 books (broad scan + OPTIONAL trap)",
+						libraryPrefix + String.join("\n",
+								"SELECT ?copy ?book ?author ?branch WHERE {",
+								"  ?copy ?p ?o .",
+								"  ?copy a lib:Copy .",
+								"  OPTIONAL {",
+								"    ?copy lib:locatedAt ?branch .",
+								"    ?branch lib:name ?bn .",
+								"    BIND(LCASE(STR(?bn)) AS ?bnLc)",
+								"  }",
+								"  FILTER(CONTAINS(?bnLc, \"branch 0\"))",
+								"  OPTIONAL {",
+								"    ?book lib:hasCopy ?copy .",
+								"    ?book lib:writtenBy ?author .",
+								"    ?author lib:name ?an .",
+								"    BIND(?an AS ?optAuthorName)",
+								"  }",
+								"  FILTER(?optAuthorName = \"Author 1\")",
+								"  OPTIONAL { ?book lib:title ?title . BIND(LCASE(STR(?title)) AS ?titleLc) }",
+								"  FILTER(CONTAINS(?titleLc, \"book\"))",
+								"}"),
+						0L), // Optimization: drop/reorder the `?copy ?p ?o` scan, turn OPTIONAL+FILTER blocks into
+								// inner joins, and start from the highly selective Branch/Author constraints before
+								// touching the huge Book space.
+				query("Library: loans for Branch 0 books due after Jan 10 (join-order nightmare)",
+						libraryPrefix + String.join("\n",
+								"SELECT ?loan ?book ?copy ?optDue WHERE {",
+								"  ?book ?bp ?bo .",
+								"  ?book a lib:Book .",
+								"  OPTIONAL { ?book lib:hasCopy ?copy . BIND(?copy AS ?optCopy) }",
+								"  FILTER(?optCopy != ?book)",
+								"  OPTIONAL { ?copy lib:locatedAt ?branch . ?branch lib:name ?bn . BIND(LCASE(STR(?bn)) AS ?bnLc) }",
+								"  FILTER(CONTAINS(?bnLc, \"branch 0\"))",
+								"  OPTIONAL { ?loan a lib:Loan ; lib:loanedCopy ?copy ; lib:dueDate ?due . BIND(?due AS ?optDue) }",
+								"  FILTER(?optDue > \"2024-01-10\"^^xsd:date)",
+								"}"),
+						14377L), // Optimization: start from the smaller Loan/Copy/Branch side (or Branch→Copy→Loan) and
+									// push the dueDate filter down; avoid scanning Books and then “discovering” loans
+									// late.
+				query("Library: omega-title books that were ever loaned (correlated EXISTS)",
+						libraryPrefix + String.join("\n",
+								"SELECT ?book ?copy ?loan WHERE {",
+								"  ?book a lib:Book .",
+								"  OPTIONAL { ?book lib:title ?t . BIND(LCASE(STR(?t)) AS ?tlc) }",
+								"  FILTER(CONTAINS(?tlc, \"omega\"))",
+								"  ?book lib:hasCopy ?copy .",
+								"  ?loan lib:loanedCopy ?copy .",
+								"  FILTER EXISTS { ?loan lib:borrowedBy ?m . }",
+								"}"),
+						339L) // Optimization: treat the EXISTS as a semi-join (or remove it as redundant), and reorder
+								// to start from the smaller Loan→Copy→Book path instead of scanning all book titles.
+		));
 
 		String engineeringPrefix = String.join("\n",
 				"PREFIX eng: <http://example.com/theme/engineering/>",
@@ -649,7 +811,59 @@ public final class ThemeQueryCatalog {
 								"  FILTER(?optComponent != ?assembly)",
 								"  MINUS { ?requirement eng:satisfies ?component . }",
 								"}"),
-						1L)));
+						1L),
+				query("Engineering: high measurements for requirements in 'Assembly 1*' (OPTIONAL chain trap)",
+						engineeringPrefix + String.join("\n",
+								"SELECT ?requirement ?measurement ?optV ?assembly ?optAn WHERE {",
+								"  ?requirement ?p ?o .",
+								"  ?requirement a eng:Requirement .",
+								"  OPTIONAL {",
+								"    ?requirement eng:verifiedBy ?test .",
+								"    ?test eng:verifiedBy ?measurement .",
+								"    ?measurement eng:measuredValue ?v .",
+								"    BIND(?v AS ?optV)",
+								"  }",
+								"  FILTER(?optV > 0.99)",
+								"  OPTIONAL {",
+								"    ?requirement eng:satisfies ?component .",
+								"    ?component eng:partOf ?assembly .",
+								"    ?assembly eng:name ?an .",
+								"    BIND(?an AS ?optAn)",
+								"  }",
+								"  FILTER(CONTAINS(?optAn, \"Assembly 1\"))",
+								"}"),
+						57L), // Optimization: convert OPTIONAL+FILTER chains into inner joins, push the `measuredValue
+								// > 0.99` filter down, and join to assemblies only after the measurement filter has
+								// reduced candidates.
+				query("Engineering: components whose dependency is in the same assembly (redundant UNION)",
+						engineeringPrefix + String.join("\n",
+								"SELECT ?component ?dep ?optA1 ?optA2 WHERE {",
+								"  { ?component a eng:Component . }",
+								"  UNION",
+								"  { ?component eng:dependsOn ?dep . }",
+								"  OPTIONAL { ?component eng:partOf ?a1 . BIND(?a1 AS ?optA1) }",
+								"  OPTIONAL { ?component eng:dependsOn ?dep . ?dep eng:partOf ?a2 . BIND(?a2 AS ?optA2) }",
+								"  FILTER(?optA1 = ?optA2)",
+								"}"),
+						326L), // Optimization: eliminate the redundant UNION, rewrite OPTIONAL+FILTER into inner joins,
+								// and start from the selective dependsOn edge to avoid scanning all components.
+				query("Engineering: requirements for Component 1/2 with no low measurements (anti-join + string filter)",
+						engineeringPrefix + String.join("\n",
+								"SELECT ?requirement ?component WHERE {",
+								"  ?requirement a eng:Requirement ; eng:satisfies ?component .",
+								"  OPTIONAL { ?component eng:name ?cn . BIND(LCASE(STR(?cn)) AS ?cnLc) }",
+								"  FILTER(CONTAINS(?cnLc, \"component 1\") || CONTAINS(?cnLc, \"component 2\"))",
+								"  FILTER NOT EXISTS {",
+								"    ?requirement eng:verifiedBy ?t .",
+								"    ?t eng:verifiedBy ?m .",
+								"    ?m eng:measuredValue ?v .",
+								"    FILTER(?v < 0.85)",
+								"  }",
+								"}"),
+						79L) // Optimization: push the component-name predicate down (prefer exact IRIs over CONTAINS),
+								// and execute the NOT EXISTS as an indexed anti-join so low-measurement requirements
+								// are eliminated early.
+		));
 
 		String connectedPrefix = String.join("\n",
 				"PREFIX conn: <http://example.com/theme/connected/>",
@@ -766,7 +980,48 @@ public final class ThemeQueryCatalog {
 								"                      ?n2 conn:weight ?w2 . FILTER(?w2 < ?threshold) }",
 								"  MINUS { ?node conn:connectsTo ?node . }",
 								"}"),
-						1L)));
+						1L),
+				query("Connected: nodes pointing to node/0 with weight>8 (IRI string trap)",
+						connectedPrefix + String.join("\n",
+								"SELECT ?node ?nbr ?optW WHERE {",
+								"  ?node a conn:Node .",
+								"  OPTIONAL { ?node conn:connectsTo ?nbr . BIND(STR(?nbr) AS ?nbrStr) }",
+								"  FILTER(CONTAINS(?nbrStr, \"node/0\"))",
+								"  OPTIONAL { ?node conn:weight ?w . BIND(?w AS ?optW) }",
+								"  FILTER(?optW > 8)",
+								"}"),
+						26949L), // Optimization: rewrite CONTAINS(STR(?nbr),\"node/0\") to an equality against the
+									// concrete IRI, turn OPTIONAL+FILTER into inner joins, and start from selective
+									// weight/edge bindings instead of scanning all nodes.
+				query("Connected: weight-10 nodes participating in a mutual edge (UNION + EXISTS redundancy)",
+						connectedPrefix + String.join("\n",
+								"SELECT ?node ?other ?optW WHERE {",
+								"  { ?node conn:connectsTo ?other . }",
+								"  UNION",
+								"  { ?other conn:connectsTo ?node . }",
+								"  OPTIONAL { ?node conn:weight ?w . BIND(?w AS ?optW) }",
+								"  FILTER(?optW = 10)",
+								"  FILTER EXISTS { ?node conn:connectsTo ?other . ?other conn:connectsTo ?node . }",
+								"}"),
+						54L), // Optimization: drop the redundant UNION and implement mutual-edge checking as a single
+								// join/semi-join; push `weight=10` down to shrink candidates before testing mutuality.
+				query("Connected: low-weight nodes with no very-low-weight neighbors (anti-join over UNION)",
+						connectedPrefix + String.join("\n",
+								"SELECT ?node ?optW WHERE {",
+								"  ?node a conn:Node .",
+								"  OPTIONAL { ?node conn:weight ?w . BIND((?w + 0) AS ?optW) }",
+								"  FILTER(?optW <= 2)",
+								"  FILTER NOT EXISTS {",
+								"    { ?node conn:connectsTo ?n2 . }",
+								"    UNION",
+								"    { ?n2 conn:connectsTo ?node . }",
+								"    ?n2 conn:weight ?w2 .",
+								"    FILTER(?w2 < 3)",
+								"  }",
+								"}"),
+						2L) // Optimization: collapse incoming/outgoing neighbor scans into efficient index scans
+							// feeding one anti-join, and execute the NOT EXISTS with early cutoff.
+		));
 
 		String trainPrefix = String.join("\n",
 				"PREFIX train: <http://example.com/theme/train/>",
@@ -888,7 +1143,58 @@ public final class ThemeQueryCatalog {
 								"  FILTER(?optSection != ?op)",
 								"  MINUS { ?op train:name ?name2 . FILTER(CONTAINS(LCASE(STR(?name2)), \"op 1\")) }",
 								"}"),
-						1L)));
+						1L),
+				query("Train: services whose earliest time is after noon on 'Line 1*' (anti-join + pushdown)",
+						trainPrefix + String.join("\n",
+								"SELECT ?service ?t ?section ?line WHERE {",
+								"  ?service a train:TrainService .",
+								"  ?service train:scheduledTime ?t .",
+								"  FILTER(?t > \"12:00:00\"^^xsd:time)",
+								"  FILTER NOT EXISTS { ?service train:scheduledTime ?t2 . FILTER(?t2 <= \"12:00:00\"^^xsd:time) }",
+								"  OPTIONAL {",
+								"    ?service train:runsOnSection ?section .",
+								"    ?section train:partOfLine ?line .",
+								"    ?line train:name ?ln .",
+								"    BIND(LCASE(STR(?ln)) AS ?lnLc)",
+								"  }",
+								"  FILTER(CONTAINS(?lnLc, \"line 1\"))",
+								"}"),
+						276L), // Optimization: rewrite the time constraint into a single indexed anti-join, and push
+								// the line-name restriction down (ideally avoid CONTAINS by binding concrete line IRIs
+								// when possible).
+				query("Train: operational points on Line 1 via track back-link (OPTIONAL self-join)",
+						trainPrefix + String.join("\n",
+								"SELECT ?op ?section ?track WHERE {",
+								"  ?op a train:OperationalPoint .",
+								"  OPTIONAL {",
+								"    ?section train:connectsOperationalPoint ?op .",
+								"    ?section train:partOfLine ?line .",
+								"    ?line train:name ?name .",
+								"    BIND(LCASE(STR(?name)) AS ?nameLc)",
+								"  }",
+								"  FILTER(CONTAINS(?nameLc, \"line 1\"))",
+								"  OPTIONAL {",
+								"    ?section train:hasTrackSection ?track .",
+								"    ?track train:trackSectionOf ?section2 .",
+								"    BIND(?section2 AS ?optSection2)",
+								"  }",
+								"  FILTER(?optSection2 = ?section)",
+								"}"),
+						17794L), // Optimization: drop/reorder the redundant backlink self-join (`trackSectionOf`) and
+									// start from selective Line/Section bindings before touching the huge
+									// OperationalPoint set.
+				query("Train: services passing through OP 1* and OP 2* (Cartesian-product trap)",
+						trainPrefix + String.join("\n",
+								"SELECT ?service ?opA ?opB WHERE {",
+								"  ?service a train:TrainService .",
+								"  OPTIONAL { ?service train:passesThrough ?opA . ?opA train:name ?nA . BIND(LCASE(STR(?nA)) AS ?optNA) }",
+								"  OPTIONAL { ?service train:passesThrough ?opB . ?opB train:name ?nB . BIND(LCASE(STR(?nB)) AS ?optNB) }",
+								"  FILTER(CONTAINS(?optNA, \"op 1\") && CONTAINS(?optNB, \"op 2\"))",
+								"}"),
+						7849L) // Optimization: rewrite the two OPTIONALs into two semi-joins/EXISTS checks to avoid the
+								// quadratic cross-product over multi-valued passesThrough, and push name filters down
+								// to the op binding.
+		));
 
 		String gridPrefix = String.join("\n",
 				"PREFIX grid: <http://example.com/theme/grid/>",
@@ -1005,7 +1311,60 @@ public final class ThemeQueryCatalog {
 								"  FILTER(?optValue > 200)",
 								"  FILTER NOT EXISTS { ?load grid:loadValue ?low . FILTER(?low < 50) }",
 								"}"),
-						1L)));
+						1L),
+				query("Grid: substations with a very high load (>190) (OPTIONAL value trap)",
+						gridPrefix + String.join("\n",
+								"SELECT ?substation ?transformer ?meter ?load ?optV WHERE {",
+								"  ?substation a grid:Substation .",
+								"  ?transformer a grid:Transformer ; grid:feeds ?substation ; grid:hasMeter ?meter .",
+								"  ?meter grid:measures ?load .",
+								"  OPTIONAL { ?load grid:loadValue ?value . BIND(?value AS ?optV) }",
+								"  FILTER(?optV > 190)",
+								"  OPTIONAL { ?substation grid:name ?n . BIND(LCASE(STR(?n)) AS ?nlc) }",
+								"  FILTER(CONTAINS(?nlc, \"substation\"))",
+								"}"),
+						6714L), // Optimization: push the `loadValue > 190` predicate down to the loadValue index and
+								// rewrite OPTIONAL+FILTER into a proper inner join so the engine doesn’t generate
+								// NULL-extended intermediates.
+				query("Grid: lines connecting substations '1*' and '2*' (IRI string + multi-join trap)",
+						gridPrefix + String.join("\n",
+								"SELECT ?line ?s1 ?s2 WHERE {",
+								"  ?line a grid:Line .",
+								"  ?line grid:connectsTo ?s1 .",
+								"  ?line grid:connectsTo ?s2 .",
+								"  OPTIONAL { BIND(STR(?s1) AS ?s1Str) }",
+								"  OPTIONAL { BIND(STR(?s2) AS ?s2Str) }",
+								"  FILTER((",
+								"    (CONTAINS(?s1Str, \"substation/1\") || CONTAINS(?s2Str, \"substation/1\"))",
+								"    &&",
+								"    (CONTAINS(?s1Str, \"substation/2\") || CONTAINS(?s2Str, \"substation/2\"))",
+								"  ))",
+								"}"),
+						1168L), // Optimization: replace CONTAINS-on-IRI with equality against concrete IRIs (or
+								// pre-bound substation groups), and bind the target substations first so only matching
+								// lines are scanned.
+				query("Grid: transformers with no load <60 (anti-join via MINUS)",
+						gridPrefix + String.join("\n",
+								"SELECT ?transformer ?substation WHERE {",
+								"  ?transformer a grid:Transformer ; grid:feeds ?substation .",
+								"  OPTIONAL {",
+								"    ?transformer grid:hasMeter ?m .",
+								"    ?m grid:measures ?load .",
+								"    ?load grid:loadValue ?v .",
+								"    BIND(?v AS ?optV)",
+								"  }",
+								"  FILTER(?optV > 0)",
+								"  MINUS {",
+								"    ?transformer grid:hasMeter ?m2 .",
+								"    ?m2 grid:measures ?load2 .",
+								"    ?load2 grid:loadValue ?v2 .",
+								"    FILTER(?v2 < 60)",
+								"  }",
+								"}"),
+						83387L) // Optimization: execute the MINUS as an indexed anti-join (subtract transformers seen
+								// with <60 loads early), and avoid building large intermediate join results before
+								// applying the exclusion.
+		));
 
 		String pharmaPrefix = String.join("\n",
 				"PREFIX pharma: <http://example.com/theme/pharma/>",
@@ -1168,7 +1527,66 @@ public final class ThemeQueryCatalog {
 								"}",
 								"GROUP BY ?pathway",
 								"HAVING(COUNT(DISTINCT ?drug) > 1)"),
-						51L)));
+						51L),
+				query("Pharma: disease '1*' drugs with strong trial results excluding Severe SE (optimizer torture)",
+						pharmaPrefix + String.join("\n",
+								"SELECT ?drug ?trial ?result ?optEffect ?optP ?optBv WHERE {",
+								"  ?drug ?dp ?do .",
+								"  ?drug a pharma:Drug .",
+								"  OPTIONAL { ?drug pharma:indicatedFor ?disease . BIND(STR(?disease) AS ?dStr) }",
+								"  FILTER(CONTAINS(?dStr, \"disease/1\"))",
+								"  OPTIONAL { ?drug pharma:hasSideEffect ?se . ?se pharma:severity ?sev . BIND(?sev AS ?optSev) }",
+								"  FILTER(?optSev != \"\")",
+								"  MINUS { ?drug pharma:hasSideEffect ?seBad . ?seBad pharma:severity \"Severe\" . }",
+								"  ?trial a pharma:ClinicalTrial ; pharma:hasArm ?arm .",
+								"  ?arm pharma:armDrug ?drug ; pharma:hasResult ?result .",
+								"  OPTIONAL { ?result pharma:effectSize ?effect . BIND(?effect AS ?optEffect) }",
+								"  OPTIONAL { ?result pharma:pValue ?p . BIND(?p AS ?optP) }",
+								"  FILTER(?optEffect > 0.7 && ?optP < 0.05)",
+								"  OPTIONAL { ?result pharma:biomarkerValue ?bv . BIND(?bv AS ?optBv) }",
+								"  FILTER(?optBv > 1.0)",
+								"}"),
+						1535L), // Optimization: turn OPTIONAL+FILTER blocks into inner joins with pushdown (especially
+								// effect/pValue/biomarker thresholds), and run the “no Severe side effects” MINUS as an
+								// indexed anti-join early.
+				query("Pharma: phase-3 trials with extreme biomarker or p-value (common-subexpression UNION)",
+						pharmaPrefix + String.join("\n",
+								"SELECT ?trial ?result ?bv WHERE {",
+								"  {",
+								"    ?trial a pharma:ClinicalTrial ; pharma:phase ?phase .",
+								"    FILTER(?phase = 3)",
+								"    ?trial pharma:hasArm ?arm .",
+								"    ?arm pharma:hasResult ?result .",
+								"    ?result pharma:biomarkerValue ?bv .",
+								"    FILTER(?bv > 2.0)",
+								"  }",
+								"  UNION",
+								"  {",
+								"    ?trial a pharma:ClinicalTrial ; pharma:phase ?phase .",
+								"    FILTER(?phase = 3)",
+								"    ?trial pharma:hasArm ?arm .",
+								"    ?arm pharma:hasResult ?result .",
+								"    ?result pharma:pValue ?p .",
+								"    FILTER(?p < 0.001)",
+								"    OPTIONAL { ?result pharma:biomarkerValue ?bv . }",
+								"  }",
+								"}"),
+						65L), // Optimization: factor out the duplicated `trial→arm→result` prefix (evaluate once) and
+								// convert UNION to a single scan with an OR filter when beneficial.
+				query("Pharma: high-synergy combinations whose member drugs share a target (O(n^2) member join)",
+						pharmaPrefix + String.join("\n",
+								"SELECT ?combo ?a ?b ?t WHERE {",
+								"  ?combo a pharma:Combination ; pharma:synergyScore ?score .",
+								"  FILTER(?score > 0.9)",
+								"  OPTIONAL { ?combo pharma:combinationOf ?drugA . BIND(?drugA AS ?a) }",
+								"  OPTIONAL { ?combo pharma:combinationOf ?drugB . BIND(?drugB AS ?b) }",
+								"  FILTER(?a != ?b)",
+								"  FILTER EXISTS { ?a pharma:targets ?t . ?b pharma:targets ?t . }",
+								"}"),
+						0L) // Optimization: avoid the quadratic self-join over combination members by using a
+							// grouped/member-scan strategy (or specialized intersection join), and evaluate the
+							// shared-target EXISTS as a semi-join with early pruning.
+		));
 
 		validateQueries();
 	}

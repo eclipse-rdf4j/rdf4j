@@ -14,18 +14,29 @@ package org.eclipse.rdf4j.sail.memory.benchmark;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -44,17 +55,19 @@ import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
+import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 3)
+@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 20)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms32G", "-Xmx32G" })
-@Measurement(iterations = 2, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 100)
+@Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
-	@Param({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" })
-	public int z_queryIndex;
+//	@Param({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13" })
+	@Param({ "11", "12", "13" })
+	public int x_queryIndex;
 
 	@Param({
 			"MEDICAL_RECORDS",
@@ -68,25 +81,84 @@ public class ThemeQueryBenchmark {
 	})
 	public String themeName;
 
+	@Param({ "true", "false" })
+	public boolean z_useSparqlUo;
+
 	private SailRepository repository;
 	private Theme theme;
 	private String query;
 	private long expected;
 
 	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder()
-				.include("ThemeQueryBenchmark")
-				.forks(1)
-				.build();
-		new Runner(opt).run();
+		// combinations with >30 % and >0.02 ms difference
+		List<String[]> significant = new ArrayList<>();
+		significant.add(new String[] { "MEDICAL_RECORDS", "8" });
+		significant.add(new String[] { "SOCIAL_MEDIA", "2" });
+		significant.add(new String[] { "SOCIAL_MEDIA", "6" });
+		significant.add(new String[] { "ELECTRICAL_GRID", "1" });
+		significant.add(new String[] { "PHARMA", "4" });
+		significant.add(new String[] { "TRAIN", "9" });
+
+		if (args != null && args.length >= 2) {
+			String themeName = args[0];
+			String queryIndex = args[1];
+			String useSparqlUo = args.length >= 3 ? args[2] : "both";
+			String[] uoValues = parseUseSparqlUo(useSparqlUo);
+			Options opt = new OptionsBuilder()
+					.include(ThemeQueryBenchmark.class.getSimpleName() + ".executeQuery")
+					.param("themeName", themeName)
+					.param("x_queryIndex", queryIndex)
+					.param("z_useSparqlUo", uoValues)
+					.warmupIterations(10)
+					.warmupTime(TimeValue.seconds(1))
+					.measurementIterations(5)
+					.measurementTime(TimeValue.seconds(1))
+					.forks(1)
+					.build();
+			new Runner(opt).run();
+			return;
+		}
+
+		// When no arguments are supplied, run the flagged combinations
+		if (args == null || args.length == 0) {
+			for (String[] combo : significant) {
+				String themeName = combo[0];
+				String queryIndex = combo[1];
+				Options opt = new OptionsBuilder()
+						.include(ThemeQueryBenchmark.class.getSimpleName() + ".executeQuery")
+						.param("themeName", themeName)
+						.param("x_queryIndex", queryIndex)
+						.param("z_useSparqlUo", "true", "false")
+						.warmupIterations(10)
+						.warmupTime(TimeValue.seconds(1))
+						.measurementIterations(5)
+						.measurementTime(TimeValue.seconds(1))
+						.forks(1)
+						.build();
+				new Runner(opt).run();
+			}
+			return;
+		}
+
+		if (args != null && args.length == 1) {
+			System.err.println("Usage: ThemeQueryBenchmark <themeName> <queryIndex> [true|false|both]");
+			return;
+		}
+
+		// fallback to default JMH behaviour
+		new Runner(new OptionsBuilder().build()).run();
 	}
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
 		theme = Theme.valueOf(themeName);
-		query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
-		expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
-		repository = new SailRepository(new MemoryStore());
+		query = ThemeQueryCatalog.queryFor(theme, x_queryIndex);
+		expected = ThemeQueryCatalog.expectedCountFor(theme, x_queryIndex);
+		MemoryStore store = new MemoryStore();
+		if (!z_useSparqlUo) {
+			store.setEvaluationStrategyFactory(createStandardPipelineFactory(store));
+		}
+		repository = new SailRepository(store);
 		loadData();
 	}
 
@@ -121,25 +193,134 @@ public class ThemeQueryBenchmark {
 		}
 	}
 
+	public long[] runQueryForTest(boolean logResults) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			List<BindingSet> list = connection
+					.prepareTupleQuery(query)
+					.evaluate()
+					.stream()
+					.peek(bindingSet -> {
+						if (logResults) {
+							System.out.println(bindingSet);
+						}
+					})
+					.sorted((b1, b2) -> {
+						Stream<String> sorted = b1.getBindingNames().stream().sorted();
+						for (String name : (Iterable<String>) sorted::iterator) {
+							String v1 = b1.getValue(name).toString();
+							String v2 = b2.getValue(name).toString();
+							int cmp = v1.compareTo(v2);
+							if (cmp != 0) {
+								return cmp;
+							}
+						}
+						return 0;
+					})
+					.toList();
+
+			Long reduce = list.stream()
+					.map(a -> {
+						StringBuilder sb = new StringBuilder();
+						Stream<String> sorted = a.getBindingNames().stream().sorted();
+						for (String name : (Iterable<String>) sorted::iterator) {
+							sb.append(name).append("=");
+							sb.append(a.getValue(name).toString()).append(";");
+						}
+						return sb.toString();
+					})
+					.map(Objects::hashCode)
+					.map(l -> (long) l)
+					.reduce(-1L, Long::sum);
+
+			long count = list.size();
+
+			return new long[] { count, reduce };
+		}
+	}
+
 	@Test
-	@Disabled
 	public void testQueryCounts() throws IOException {
-		String[] queryIndexes = paramValues("z_queryIndex");
+		String[] queryIndexes = paramValues("x_queryIndex");
 		String[] themeNames = paramValues("themeName");
 		for (String themeNameValue : themeNames) {
 			for (String queryIndexValue : queryIndexes) {
-				themeName = themeNameValue;
-				z_queryIndex = Integer.parseInt(queryIndexValue);
-				setup();
-				try {
-					long actual = executeQuery();
-					long expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
-					System.out.println("For theme " + themeName + " and query index " + z_queryIndex
-							+ ", expected count is " + expected + " and actual count is " + actual);
-					assertEquals(expected, actual,
-							"Unexpected count for theme " + themeName + " and query index " + z_queryIndex);
-				} finally {
-					tearDown();
+
+				long prevHash = 0;
+				boolean rerunWithLogging = false;
+
+				for (boolean useSparqlUo : List.of(false, true)) {
+					z_useSparqlUo = useSparqlUo;
+					System.out.println("Testing with z_useSparqlUo=" + z_useSparqlUo);
+
+					themeName = themeNameValue;
+					x_queryIndex = Integer.parseInt(queryIndexValue);
+					setup();
+					try {
+
+						long[] actualRes = runQueryForTest(false);
+
+						long actual = actualRes[0];
+						System.out.println("Computed hash: " + actualRes[1]);
+						long expected = ThemeQueryCatalog.expectedCountFor(theme, x_queryIndex);
+						System.out.println("For theme " + themeName + " and query index " + x_queryIndex
+								+ ", expected count is " + expected + " and actual count is " + actual);
+
+						assertEquals(expected, actual,
+								"Unexpected count for theme " + themeName + " and query index " + x_queryIndex);
+
+						if (prevHash != 0) {
+
+							if (prevHash != actualRes[1]) {
+								rerunWithLogging = true;
+							}
+
+						}
+						prevHash = actualRes[1];
+						System.out.println();
+					} finally {
+						tearDown();
+					}
+
+				}
+
+				if (rerunWithLogging) {
+
+					prevHash = 0;
+					for (boolean useSparqlUo : List.of(false, true)) {
+						z_useSparqlUo = useSparqlUo;
+						System.out.println("Testing with z_useSparqlUo=" + z_useSparqlUo);
+
+						themeName = themeNameValue;
+						x_queryIndex = Integer.parseInt(queryIndexValue);
+						setup();
+						try {
+
+							long[] actualRes = runQueryForTest(true);
+
+							long actual = actualRes[0];
+							System.out.println("Computed hash: " + actualRes[1]);
+							long expected = ThemeQueryCatalog.expectedCountFor(theme, x_queryIndex);
+							System.out.println("For theme " + themeName + " and query index " + x_queryIndex
+									+ ", expected count is " + expected + " and actual count is " + actual);
+
+							assertEquals(expected, actual,
+									"Unexpected count for theme " + themeName + " and query index " + x_queryIndex);
+
+							if (prevHash != 0) {
+								assertEquals(prevHash, actualRes[1],
+										"Different result hashes for theme " + themeName + " and query index "
+												+ x_queryIndex);
+							}
+							prevHash = actualRes[1];
+							System.out.println();
+						} finally {
+							tearDown();
+						}
+					}
+
+					System.out.println("----------------------------------------");
+					System.out.println();
 				}
 			}
 		}
@@ -147,19 +328,19 @@ public class ThemeQueryBenchmark {
 
 	@Test
 	public void testQueryExplanation() throws IOException {
-		String[] queryIndexes = paramValues("z_queryIndex");
+		String[] queryIndexes = paramValues("x_queryIndex");
 		String[] themeNames = paramValues("themeName");
 		for (String themeNameValue : themeNames) {
 			for (String queryIndexValue : queryIndexes) {
 				themeName = themeNameValue;
-				z_queryIndex = Integer.parseInt(queryIndexValue);
+				x_queryIndex = Integer.parseInt(queryIndexValue);
 				setup();
 				try (SailRepositoryConnection connection = repository.getConnection()) {
 					String explanation = connection
 							.prepareTupleQuery(query)
 							.explain(Explanation.Level.Executed)
 							.toString();
-					System.out.println("Query Explanation for theme " + themeName + " and query index " + z_queryIndex
+					System.out.println("Query Explanation for theme " + themeName + " and query index " + x_queryIndex
 							+ ":\n" + explanation);
 				} finally {
 					tearDown();
@@ -178,5 +359,36 @@ public class ThemeQueryBenchmark {
 		} catch (NoSuchFieldException e) {
 			throw new IllegalStateException("Missing field " + fieldName, e);
 		}
+	}
+
+	private static EvaluationStrategyFactory createStandardPipelineFactory(MemoryStore store) {
+		DefaultEvaluationStrategyFactory factory = new DefaultEvaluationStrategyFactory(
+				store.getFederatedServiceResolver()) {
+			@Override
+			public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+					EvaluationStatistics evaluationStatistics) {
+				EvaluationStrategy strategy = super.createEvaluationStrategy(dataset, tripleSource,
+						evaluationStatistics);
+				strategy.setOptimizerPipeline(
+						new StandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics));
+				return strategy;
+			}
+		};
+		factory.setQuerySolutionCacheThreshold(store.getIterationCacheSyncThreshold());
+		factory.setTrackResultSize(store.isTrackResultSize());
+		return factory;
+	}
+
+	private static String[] parseUseSparqlUo(String value) {
+		if (value == null || value.isBlank() || "both".equalsIgnoreCase(value)) {
+			return new String[] { "true", "false" };
+		}
+		if ("true".equalsIgnoreCase(value)) {
+			return new String[] { "true" };
+		}
+		if ("false".equalsIgnoreCase(value)) {
+			return new String[] { "false" };
+		}
+		throw new IllegalArgumentException("Unexpected z_useSparqlUo value: " + value);
 	}
 }

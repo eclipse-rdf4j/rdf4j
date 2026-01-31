@@ -34,11 +34,16 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -73,23 +78,30 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	protected final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
 	private final TripleSource tripleSource;
+	private final boolean prioritizeExtensions;
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics) {
-		this(statistics, false, new EmptyTripleSource());
+		this(statistics, false, new EmptyTripleSource(), true);
 	}
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics, TripleSource tripleSource) {
-		this(statistics, false, tripleSource);
+		this(statistics, false, tripleSource, true);
 	}
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize) {
-		this(statistics, trackResultSize, new EmptyTripleSource());
+		this(statistics, trackResultSize, new EmptyTripleSource(), true);
 	}
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource) {
+		this(statistics, trackResultSize, tripleSource, true);
+	}
+
+	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource,
+			boolean prioritizeExtensions) {
 		this.statistics = statistics;
 		this.trackResultSize = trackResultSize;
 		this.tripleSource = tripleSource;
+		this.prioritizeExtensions = prioritizeExtensions;
 	}
 
 	/**
@@ -157,7 +169,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				List<TupleExpr> joinArgs = getJoinArgs(node, new ArrayList<>());
 
 				// get all extensions (BIND clause)
-				List<TupleExpr> orderedExtensions = getExtensionTupleExprs(joinArgs);
+				List<TupleExpr> orderedExtensions = getExtensionTupleExprs(joinArgs, shouldPrioritizeExtensions());
 				optimizeInNewScope(orderedExtensions);
 				joinArgs.removeAll(orderedExtensions);
 
@@ -541,25 +553,115 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
-		private List<TupleExpr> getExtensionTupleExprs(List<TupleExpr> expressions) {
+		private final Deque<Boolean> sliceOrderStack = new ArrayDeque<>();
+
+		@Override
+		public void meet(Slice node) {
+			if (node.hasLimit() || node.hasOffset()) {
+				sliceOrderStack.push(false);
+				node.getArg().visit(this);
+				sliceOrderStack.pop();
+				return;
+			}
+			super.meet(node);
+		}
+
+		@Override
+		public void meet(Order node) {
+			if (!sliceOrderStack.isEmpty()) {
+				sliceOrderStack.pop();
+				sliceOrderStack.push(true);
+			}
+			super.meet(node);
+		}
+
+		private List<TupleExpr> getExtensionTupleExprs(List<TupleExpr> expressions, boolean prioritize) {
 			if (expressions.isEmpty()) {
 				return List.of();
 			}
 
+			if (prioritize) {
+				return collectExtensionTupleExprs(expressions);
+			}
+
+			Map<String, Integer> bindingNameCounts = getBindingNameCounts(expressions);
 			List<TupleExpr> extensions = List.of();
 			for (TupleExpr expr : expressions) {
-				if (TupleExprs.containsExtension(expr)) {
-					if (extensions.isEmpty()) {
-						extensions = List.of(expr);
-					} else {
-						if (extensions.size() == 1) {
-							extensions = new ArrayList<>(extensions);
-						}
-						extensions.add(expr);
+				if (!TupleExprs.containsExtension(expr)) {
+					continue;
+				}
+
+				Set<String> introducedBindings;
+				if (expr instanceof Extension) {
+					Extension extension = (Extension) expr;
+					introducedBindings = new HashSet<>(extension.getBindingNames());
+					introducedBindings.removeAll(extension.getArg().getBindingNames());
+				} else {
+					introducedBindings = collectIntroducedBindings(expr);
+				}
+				if (introducedBindings.isEmpty()) {
+					continue;
+				}
+
+				boolean usedElsewhere = false;
+				for (String name : introducedBindings) {
+					Integer count = bindingNameCounts.get(name);
+					if (count != null && count > 1) {
+						usedElsewhere = true;
+						break;
 					}
+				}
+
+				if (usedElsewhere) {
+					extensions = addTupleExpr(extensions, expr);
 				}
 			}
 			return extensions;
+		}
+
+		private boolean shouldPrioritizeExtensions() {
+			return prioritizeExtensions || isUnderUnorderedSlice();
+		}
+
+		private boolean isUnderUnorderedSlice() {
+			return !sliceOrderStack.isEmpty() && !sliceOrderStack.peek();
+		}
+
+		private List<TupleExpr> collectExtensionTupleExprs(List<TupleExpr> expressions) {
+			List<TupleExpr> extensions = List.of();
+			for (TupleExpr expr : expressions) {
+				if (TupleExprs.containsExtension(expr)) {
+					extensions = addTupleExpr(extensions, expr);
+				}
+			}
+			return extensions;
+		}
+
+		private List<TupleExpr> addTupleExpr(List<TupleExpr> expressions, TupleExpr expr) {
+			if (expressions.isEmpty()) {
+				return List.of(expr);
+			}
+			if (expressions.size() == 1) {
+				expressions = new ArrayList<>(expressions);
+			}
+			expressions.add(expr);
+			return expressions;
+		}
+
+		private Map<String, Integer> getBindingNameCounts(List<TupleExpr> expressions) {
+			Map<String, Integer> counts = new HashMap<>();
+			for (TupleExpr expr : expressions) {
+				for (String name : expr.getBindingNames()) {
+					counts.merge(name, 1, Integer::sum);
+				}
+			}
+			return counts;
+		}
+
+		private Set<String> collectIntroducedBindings(TupleExpr expr) {
+			ExtensionBindingCollector collector = new ExtensionBindingCollector();
+			expr.visit(collector);
+			return collector.getIntroducedBindings();
 		}
 
 		/**
@@ -966,6 +1068,40 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
+	}
+
+	private static final class ExtensionBindingCollector extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+		private final Set<String> introduced = new HashSet<>();
+
+		ExtensionBindingCollector() {
+			super(true);
+		}
+
+		@Override
+		public void meet(Extension node) {
+			Set<String> introducedBindings = new HashSet<>(node.getBindingNames());
+			introducedBindings.removeAll(node.getArg().getBindingNames());
+			introduced.addAll(introducedBindings);
+			super.meet(node);
+		}
+
+		@Override
+		public void meetUnaryTupleOperator(UnaryTupleOperator node) {
+			if (!node.isVariableScopeChange()) {
+				super.meetUnaryTupleOperator(node);
+			}
+		}
+
+		@Override
+		public void meetBinaryTupleOperator(BinaryTupleOperator node) {
+			if (!node.isVariableScopeChange()) {
+				super.meetBinaryTupleOperator(node);
+			}
+		}
+
+		private Set<String> getIntroducedBindings() {
+			return introduced;
+		}
 	}
 
 	private static boolean statementPatternWithMinimumOneConstant(TupleExpr cand) {
