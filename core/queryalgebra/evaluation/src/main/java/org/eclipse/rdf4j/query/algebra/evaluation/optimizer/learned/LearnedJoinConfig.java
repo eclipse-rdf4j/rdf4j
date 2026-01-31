@@ -17,13 +17,13 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned;
 public final class LearnedJoinConfig {
 
 	public static final int DEFAULT_DP_THRESHOLD = 16;
+	public static final boolean DEFAULT_DP_ENABLED = true;
 
 	private final int dpThreshold;
 	private final boolean enableDp;
 
 	public LearnedJoinConfig() {
-		this(DEFAULT_DP_THRESHOLD,
-				true);
+		this(DEFAULT_DP_THRESHOLD, DEFAULT_DP_ENABLED);
 	}
 
 	public LearnedJoinConfig(int dpThreshold, boolean enableDp) {
