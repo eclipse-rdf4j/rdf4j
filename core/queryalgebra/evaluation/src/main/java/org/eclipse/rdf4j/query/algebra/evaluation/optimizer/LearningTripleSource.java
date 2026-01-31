@@ -43,18 +43,16 @@ public class LearningTripleSource implements TripleSource {
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) {
 		PatternKey key = buildKey(subj, pred, obj);
-		statsProvider.recordCall(key);
 		CloseableIteration<? extends Statement> base = delegate.getStatements(subj, pred, obj, contexts);
-		return new CountingIteration(base, statsProvider, key);
+		return new CountingIteration<>(base, statsProvider, key);
 	}
 
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subj, IRI pred,
 			Value obj, Resource... contexts) {
 		PatternKey key = buildKey(subj, pred, obj);
-		statsProvider.recordCall(key);
 		CloseableIteration<? extends Statement> base = delegate.getStatements(order, subj, pred, obj, contexts);
-		return new CountingIteration(base, statsProvider, key);
+		return new CountingIteration<>(base, statsProvider, key);
 	}
 
 	@Override
@@ -92,6 +90,8 @@ public class LearningTripleSource implements TripleSource {
 		private final JoinStatsProvider statsProvider;
 		private final PatternKey key;
 		private long count;
+		private boolean recordedCall;
+		private boolean sawHasNextTrue;
 
 		protected CountingIteration(CloseableIteration<? extends T> delegate, JoinStatsProvider statsProvider,
 				PatternKey key) {
@@ -109,6 +109,9 @@ public class LearningTripleSource implements TripleSource {
 				return false;
 			}
 			boolean result = delegate.hasNext();
+			if (result) {
+				sawHasNextTrue = true;
+			}
 			if (!result) {
 				close();
 			}
@@ -125,6 +128,10 @@ public class LearningTripleSource implements TripleSource {
 			}
 			try {
 				T statement = delegate.next();
+				if (!recordedCall) {
+					statsProvider.recordCall(key);
+					recordedCall = true;
+				}
 				count++;
 				return statement;
 			} catch (NoSuchElementException e) {
@@ -154,6 +161,13 @@ public class LearningTripleSource implements TripleSource {
 			try {
 				delegate.close();
 			} finally {
+				if (!recordedCall) {
+					if (sawHasNextTrue) {
+						return;
+					}
+					statsProvider.recordCall(key);
+					recordedCall = true;
+				}
 				statsProvider.recordResults(key, count);
 			}
 		}

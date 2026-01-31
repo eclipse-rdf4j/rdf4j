@@ -130,6 +130,44 @@ class DpVsGreedyJoinOrderingTest {
 		assertEquals(List.of(a, b), order);
 	}
 
+	@Test
+	void dpAccountsForScanCost() {
+		TupleExpr a = new StatementPattern(new Var("sa"), new Var("pa"), new Var("oa"));
+		TupleExpr b = new StatementPattern(new Var("sb"), new Var("pb"), new Var("ob"));
+
+		BindJoinCostModel costModel = new BindJoinCostModel() {
+			private final Map<TupleExpr, Set<String>> bindings = Map.of(
+					a, Set.of("x"),
+					b, Set.of("x"));
+
+			@Override
+			public double estimateFanout(TupleExpr expr, Set<String> boundVars) {
+				if (expr == a) {
+					return 100.0d;
+				}
+				return 0.00001d;
+			}
+
+			@Override
+			public double estimateScanCardinality(TupleExpr expr, Set<String> initiallyBoundVars) {
+				if (expr == a) {
+					return 1000.0d;
+				}
+				return 1.0d;
+			}
+
+			@Override
+			public Set<String> bindingNames(TupleExpr expr) {
+				return bindings.getOrDefault(expr, Set.of());
+			}
+		};
+
+		JoinOrderPlanner dp = new DpLeftDeepBindJoinOrderPlanner(costModel);
+		List<TupleExpr> order = dp.order(List.of(a, b), Set.of());
+
+		assertEquals(List.of(b, a), order);
+	}
+
 	private static final class StubCostModel implements BindJoinCostModel {
 
 		private final Map<TupleExpr, Set<String>> bindings;

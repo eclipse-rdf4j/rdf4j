@@ -35,7 +35,6 @@ public class LearningRdfStarTripleSource extends LearningTripleSource implements
 	public CloseableIteration<? extends Triple> getRdfStarTriples(Resource subj, IRI pred, Value obj)
 			throws QueryEvaluationException {
 		PatternKey key = buildKey(subj, pred, obj);
-		statsProvider.recordCall(key);
 		CloseableIteration<? extends Triple> base = rdfStarDelegate.getRdfStarTriples(subj, pred, obj);
 		return new CountingIteration<>(base, statsProvider, key);
 	}

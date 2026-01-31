@@ -38,4 +38,5 @@ class HybridBindJoinOrderPlannerTest {
 
 		assertEquals(greedy.order(operands, Set.of()), planner.order(operands, Set.of()));
 	}
+
 }

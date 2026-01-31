@@ -64,7 +64,7 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 				scanCard *= DISCONNECTED_PENALTY;
 			}
 			card[mask] = scanCard;
-			cost[mask] = 1.0d;
+			cost[mask] = scanCard;
 			prevMask[mask] = 0;
 			prevIndex[mask] = i;
 		}
