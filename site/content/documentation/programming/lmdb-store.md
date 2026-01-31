@@ -116,6 +116,47 @@ config.setTripleDBSize(1_073_741_824L);
 Repository repo = new SailRepository(new LmdbStore(dataDir), config);
 ```
 
+### Learned join order optimization (experimental)
+
+The LMDB store can use the learned join optimizer (experimental). It records join fanout statistics in memory and uses them to reorder joins on subsequent query executions. By default, statistics are invalidated after 100,000 statement additions within 10 minutes, or when the default cardinality estimate for a pattern drifts by 50% or more.
+
+To enable or override the evaluation strategy factory, set it before the repository is initialized:
+
+```java
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.LearningEvaluationStrategyFactory;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+...
+LmdbStore store = new LmdbStore(dataDir);
+store.setEvaluationStrategyFactory(new LearningEvaluationStrategyFactory());
+Repository repo = new SailRepository(store);
+repo.init();
+```
+
+To configure or disable invalidation of learned stats based on write volume, pass a configured `MemoryJoinStats`:
+
+```java
+import java.time.Duration;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.LearningEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.MemoryJoinStats;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+...
+MemoryJoinStats.InvalidationSettings settings =
+		MemoryJoinStats.InvalidationSettings.of(Duration.ofMinutes(10), 100_000, 0.5d);
+LearningEvaluationStrategyFactory factory = new LearningEvaluationStrategyFactory(new MemoryJoinStats(settings));
+LmdbStore store = new LmdbStore(dataDir);
+store.setEvaluationStrategyFactory(factory);
+Repository repo = new SailRepository(store);
+repo.init();
+```
+
+Use `MemoryJoinStats.InvalidationSettings.disabled()` to keep stats indefinitely.
+
+To disable the learned optimizer, replace the factory with `DefaultEvaluationStrategyFactory` (or the deprecated `StrictEvaluationStrategyFactory`, which is the LMDB default).
+
 ## Required storage space, RAM size and disk performance
 You can expect a footprint of around 120 - 130 bytes per quad when using the LMDB store
 with 3 indexes (like spoc, ospc and psoc).

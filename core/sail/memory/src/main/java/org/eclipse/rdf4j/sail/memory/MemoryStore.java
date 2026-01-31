@@ -17,15 +17,19 @@ import java.util.TimerTask;
 
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.LearningEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailChangedEvent;
+import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
@@ -364,7 +368,28 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 
 	@Override
 	protected NotifyingSailConnection getConnectionInternal() throws SailException {
-		return new MemoryStoreConnection(this);
+		MemoryStoreConnection connection = new MemoryStoreConnection(this);
+		EvaluationStrategyFactory factory = getEvaluationStrategyFactory();
+		if (factory instanceof LearningEvaluationStrategyFactory) {
+			JoinStatsProvider statsProvider = ((LearningEvaluationStrategyFactory) factory).getStatsProvider();
+			connection.addConnectionListener(new SailConnectionListener() {
+				@Override
+				public void statementAdded(Statement statement) {
+					statsProvider.recordStatementsAdded(1);
+				}
+
+				@Override
+				public void statementRemoved(Statement statement) {
+					// no-op
+				}
+
+				@Override
+				public void statementAdded(Statement statement, boolean inferred) {
+					statsProvider.recordStatementsAdded(1);
+				}
+			});
+		}
+		return connection;
 	}
 
 	@Override

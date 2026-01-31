@@ -102,6 +102,28 @@ In the unlikely event of corruption the system property `org.eclipse.rdf4j.sail.
 allow the NativeStore to output CorruptValue/CorruptIRI/CorruptIRIOrBNode/CorruptLiteral objects. Take a backup of all data before setting 
 this property as it allows the NativeStore to delete corrupt indexes in an attempt to recreate them. Consider this feature experimental and use with caution.
 
+#### Learned join order optimization (experimental)
+
+For workloads with repeated or similar queries, the learned join optimizer records join fanout at runtime and uses it to reorder joins on subsequent executions. Statistics are kept in memory and reset on restart.
+
+NativeStore enables the learned optimizer by default. MemoryStore and LmdbStore default to the standard/strict evaluation strategies, so enable the learned optimizer explicitly when needed. To override or disable it, configure the evaluation strategy factory before initializing the repository:
+
+```java
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.LearningEvaluationStrategyFactory;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
+...
+NativeStore store = new NativeStore(dataDir);
+store.setEvaluationStrategyFactory(new LearningEvaluationStrategyFactory());
+Repository repo = new SailRepository(store);
+repo.init();
+```
+
+By default, statistics are invalidated after 100,000 statement additions within 10 minutes, or when the default cardinality estimate for a pattern drifts by 50% or more. You can customize this by supplying a configured `MemoryJoinStats` to the factory (including `MemoryJoinStats.InvalidationSettings.of(window, threshold, baselineDriftRatio)`), or disable it entirely via `MemoryJoinStats.InvalidationSettings.disabled()`.
+
+To disable the learned optimizer, replace the factory with the default `DefaultEvaluationStrategyFactory`.
+
 ### Elasticsearch RDF Repository
 
 {{< tag " New in RDF4J 3.1" >}}

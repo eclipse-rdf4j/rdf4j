@@ -49,14 +49,18 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 3)
+@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 30)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms32G", "-Xmx32G" })
-@Measurement(iterations = 2, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 100)
+@Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 101)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
-	@Param({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" })
+	@Param({
+			"0", "1",
+			"2",
+			"3", "4", "5", "6", "7", "8", "9", "10"
+	})
 	public int z_queryIndex;
 
 	@Param({
@@ -79,8 +83,8 @@ public class ThemeQueryBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("ThemeQueryBenchmark")
-				.forks(1)
+				.include(ThemeQueryBenchmark.class.getName())
+				.forks(0)
 				.build();
 		new Runner(opt).run();
 	}
@@ -152,6 +156,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	@Test
+//	@Disabled
 	public void testQueryExplanation() throws IOException {
 		String[] queryIndexes = paramValues("z_queryIndex");
 		String[] themeNames = paramValues("themeName");
@@ -163,7 +168,7 @@ public class ThemeQueryBenchmark {
 				try (SailRepositoryConnection connection = repository.getConnection()) {
 					String explanation = connection
 							.prepareTupleQuery(query)
-							.explain(Explanation.Level.Executed)
+							.explain(Explanation.Level.Optimized)
 							.toString();
 					System.out.println("Query Explanation for theme " + themeName + " and query index " + z_queryIndex
 							+ ":\n" + explanation);
