@@ -15,6 +15,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
@@ -23,6 +27,12 @@ import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -56,10 +66,15 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
+	private static final String EXPLAIN_PROPERTY = "rdf4j.jmh.explain";
+	private static final String EXPLAIN_TIMED_PROPERTY = "rdf4j.jmh.explain.timed";
+	private static final String EXPLAIN_PRINT_PLAN_PROPERTY = "rdf4j.jmh.explain.printPlan";
+
 	@Param({
-			"0", "1",
-			"2",
-			"3", "4", "5", "6", "7", "8", "9", "10"
+//			"0", "1",
+//			"2",
+//			"3", "4", "5", "6", "7", "8", "9",
+			"10"
 	})
 	public int z_queryIndex;
 
@@ -80,6 +95,7 @@ public class ThemeQueryBenchmark {
 	private Theme theme;
 	private String query;
 	private long expected;
+	private List<String> lastJoinOrder;
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
@@ -112,6 +128,28 @@ public class ThemeQueryBenchmark {
 	public void tearDown() throws IOException {
 		repository.shutDown();
 		FileUtils.deleteDirectory(dataDir);
+	}
+
+	@TearDown(Level.Iteration)
+	public void logJoinOrderAfterIteration() {
+		if (!Boolean.getBoolean(EXPLAIN_PROPERTY)) {
+			return;
+		}
+		Explanation.Level level = Boolean.getBoolean(EXPLAIN_TIMED_PROPERTY)
+				? Explanation.Level.Timed
+				: Explanation.Level.Optimized;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			Explanation explanation = connection.prepareTupleQuery(query).explain(level);
+			List<String> signature = joinOrderSignature(explanation);
+			if (lastJoinOrder == null || !lastJoinOrder.equals(signature)) {
+				System.out.println("JMH explain " + themeName + " #" + z_queryIndex + " " + level + " joinOrder="
+						+ signature);
+				if (Boolean.getBoolean(EXPLAIN_PRINT_PLAN_PROPERTY)) {
+					System.out.println(explanation);
+				}
+			}
+			lastJoinOrder = signature;
+		}
 	}
 
 	@Benchmark
@@ -189,5 +227,69 @@ public class ThemeQueryBenchmark {
 		} catch (NoSuchFieldException e) {
 			throw new IllegalStateException("Missing field " + fieldName, e);
 		}
+	}
+
+	private static List<String> joinOrderSignature(Explanation explanation) {
+		Object tupleExpr = explanation.tupleExpr();
+		if (!(tupleExpr instanceof TupleExpr)) {
+			return List.of("<no-tuple-expr>");
+		}
+		Join join = findLargestJoin((TupleExpr) tupleExpr);
+		if (join == null) {
+			return List.of("<no-join>");
+		}
+		List<TupleExpr> operands = flattenJoin(join);
+		List<String> order = new ArrayList<>(operands.size());
+		for (TupleExpr expr : operands) {
+			List<StatementPattern> patterns = StatementPatternCollector.process(expr);
+			if (patterns.isEmpty()) {
+				order.add(expr.getClass().getSimpleName());
+				continue;
+			}
+			Var predicate = patterns.get(0).getPredicateVar();
+			order.add(predicateLabel(predicate));
+		}
+		return order;
+	}
+
+	private static Join findLargestJoin(TupleExpr expr) {
+		Join[] best = new Join[1];
+		int[] bestSize = new int[1];
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join node) {
+				int size = flattenJoin(node).size();
+				if (size > bestSize[0]) {
+					bestSize[0] = size;
+					best[0] = node;
+				}
+				super.meet(node);
+			}
+		});
+		return best[0];
+	}
+
+	private static List<TupleExpr> flattenJoin(TupleExpr expr) {
+		List<TupleExpr> operands = new ArrayList<>();
+		Deque<TupleExpr> stack = new ArrayDeque<>();
+		stack.push(expr);
+		while (!stack.isEmpty()) {
+			TupleExpr current = stack.pop();
+			if (current instanceof Join) {
+				Join join = (Join) current;
+				stack.push(join.getRightArg());
+				stack.push(join.getLeftArg());
+			} else {
+				operands.add(current);
+			}
+		}
+		return operands;
+	}
+
+	private static String predicateLabel(Var predicate) {
+		if (predicate == null || !predicate.hasValue()) {
+			return "<var>";
+		}
+		return predicate.getValue().stringValue();
 	}
 }

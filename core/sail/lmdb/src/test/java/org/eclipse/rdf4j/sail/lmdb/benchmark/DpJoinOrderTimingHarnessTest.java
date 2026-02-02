@@ -54,13 +54,11 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class DpJoinOrderTimingHarnessTest {
 
-	private static final String ENABLE_PROPERTY = "rdf4j.dp.timing.harness";
 	private static final String EXPECTED_PLAN_DIR = "expected-plans";
 	private static final Duration CAPTURE_MAX_DURATION = Duration.ofSeconds(30);
 	private static final Duration VERIFY_MIN_DURATION = Duration.ofSeconds(10);
@@ -87,25 +85,26 @@ class DpJoinOrderTimingHarnessTest {
 
 	@Test
 	void electricalGridQuery4() throws IOException {
-		assumeEnabled();
 		runScenario(Theme.ELECTRICAL_GRID, 4, "ELECTRICAL_GRID #4");
 	}
 
 	@Test
 	void pharmaQuery6() throws IOException {
-		assumeEnabled();
 		runScenario(Theme.PHARMA, 6, "PHARMA #6");
 	}
 
 	@Test
 	void highlyConnectedQuery10ExplainEvolution() throws IOException {
-		assumeEnabled();
 		runExplainEvolution(Theme.HIGHLY_CONNECTED, 10, "HIGHLY_CONNECTED #10", true);
 	}
 
 	@Test
+	void test1() throws IOException {
+		runExplainEvolution(Theme.LIBRARY, 10, "LIBRARY #1", true);
+	}
+
+	@Test
 	void expectedPlansMatch() throws IOException {
-		assumeEnabled();
 		verifyExpectedPlans(VERIFY_MIN_DURATION, VERIFY_MAX_DURATION);
 	}
 
@@ -485,11 +484,6 @@ class DpJoinOrderTimingHarnessTest {
 		return Path.of("core", "sail", "lmdb", "src", "test", "resources", EXPECTED_PLAN_DIR);
 	}
 
-	private void assumeEnabled() {
-		Assumptions.assumeTrue(Boolean.getBoolean(ENABLE_PROPERTY),
-				() -> "Set -D" + ENABLE_PROPERTY + "=true to run the timing harness");
-	}
-
 	private List<String> normalizeExplainLines(String text, Map<String, String> normalizedNames,
 			Map<String, Integer> prefixCounters, List<String> previousLines) {
 		String[] lines = text.split("\\R", -1);
@@ -618,11 +612,8 @@ class DpJoinOrderTimingHarnessTest {
 		if (!(tupleExpr instanceof TupleExpr)) {
 			return "<no-tuple-expr>";
 		}
-		try {
-			return renderer.render((TupleExpr) tupleExpr).trim();
-		} catch (RuntimeException e) {
-			return "<render-error:" + e.getClass().getSimpleName() + ":" + e.getMessage() + ">";
-		}
+
+		return renderer.render((TupleExpr) tupleExpr).trim();
 	}
 
 	private String normalizeVarLine(String line, Map<String, String> normalizedNames,
