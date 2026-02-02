@@ -13,12 +13,17 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
@@ -49,11 +54,17 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class DpJoinOrderTimingHarnessTest {
 
+	private static final String ENABLE_PROPERTY = "rdf4j.dp.timing.harness";
+	private static final String EXPECTED_PLAN_DIR = "expected-plans";
+	private static final Duration CAPTURE_MAX_DURATION = Duration.ofSeconds(30);
+	private static final Duration VERIFY_MIN_DURATION = Duration.ofSeconds(10);
+	private static final Duration VERIFY_MAX_DURATION = Duration.ofSeconds(60);
 	private static final int ITERATIONS = 100;
 	private static final int AVERAGE_WINDOW = 20;
 	private static final int EXPLAIN_TIMEOUT_SECONDS = 10;
@@ -64,7 +75,9 @@ class DpJoinOrderTimingHarnessTest {
 	private static final String ANSI_YELLOW = "\u001B[33m";
 	private static final Pattern VAR_NAME_PATTERN = Pattern.compile("name=([^,\\)]+)");
 	private static final Pattern ANON_SUFFIX_PATTERN = Pattern.compile("^(.*_)([0-9A-Za-z]+)$");
-	private static final Pattern ANON_TOKEN_PATTERN = Pattern.compile("(_anon_[A-Za-z0-9]*_)([0-9A-Za-z]+)");
+	private static final Pattern ANON_TOKEN_PATTERN = Pattern.compile("(_anon_[A-Za-z0-9_]+)");
+	private static final Pattern TIME_PATTERN = Pattern
+			.compile("(totalTimeActual|selfTimeActual)=([0-9]+(?:\\.[0-9]+)?)(ms)");
 	private static final Pattern ESTIMATE_PATTERN = Pattern
 			.compile("(costEstimate|resultSizeEstimate)=([0-9]+(?:\\.[0-9]+)?)([KMBG]?)");
 	private static final double ESTIMATE_TOLERANCE = 0.05d;
@@ -74,22 +87,32 @@ class DpJoinOrderTimingHarnessTest {
 
 	@Test
 	void electricalGridQuery4() throws IOException {
+		assumeEnabled();
 		runScenario(Theme.ELECTRICAL_GRID, 4, "ELECTRICAL_GRID #4");
 	}
 
 	@Test
 	void pharmaQuery6() throws IOException {
+		assumeEnabled();
 		runScenario(Theme.PHARMA, 6, "PHARMA #6");
 	}
 
 	@Test
 	void highlyConnectedQuery10ExplainEvolution() throws IOException {
+		assumeEnabled();
 		runExplainEvolution(Theme.HIGHLY_CONNECTED, 10, "HIGHLY_CONNECTED #10", true);
 	}
 
 	@Test
-	void test1() throws IOException {
-		runExplainEvolution(Theme.MEDICAL_RECORDS, 2, "MEDICAL_RECORDS #2", true);
+	void expectedPlansMatch() throws IOException {
+		assumeEnabled();
+		verifyExpectedPlans(VERIFY_MIN_DURATION, VERIFY_MAX_DURATION);
+	}
+
+	public static void main(String[] args) throws Exception {
+		DpJoinOrderTimingHarnessTest harness = new DpJoinOrderTimingHarnessTest();
+		harness.dataDir = Files.createTempDirectory("rdf4j-dp-plans").toFile();
+		harness.captureExpectedPlans(CAPTURE_MAX_DURATION);
 	}
 
 	private void runScenario(Theme theme, int queryIndex, String label) throws IOException {
@@ -118,6 +141,130 @@ class DpJoinOrderTimingHarnessTest {
 			runExplainLoop(repository, query, expected, label, enableDp, HIGHLY_CONNECTED_EXPLAIN_ITERATIONS);
 		} finally {
 			repository.shutDown();
+		}
+	}
+
+	private void captureExpectedPlans(Duration maxDuration) throws IOException {
+		Objects.requireNonNull(maxDuration, "maxDuration");
+		Path resourcesRoot = expectedPlansRoot();
+		Files.createDirectories(resourcesRoot);
+		for (Theme theme : Theme.values()) {
+			Path themeDir = resourcesRoot.resolve(theme.name());
+			Files.createDirectories(themeDir);
+			File scenarioDir = new File(dataDir, theme.name() + "_expected");
+			SailRepository repository = createRepository(scenarioDir, true);
+			try {
+				loadData(repository, theme);
+				for (int index = 0; index < ThemeQueryCatalog.QUERY_COUNT; index++) {
+					String query = ThemeQueryCatalog.queryFor(theme, index);
+					long expected = ThemeQueryCatalog.expectedCountFor(theme, index);
+					String plan = captureFinalExplanation(repository, query, expected, maxDuration);
+					Path output = themeDir.resolve("query-" + index + ".txt");
+					Files.writeString(output, plan + System.lineSeparator(), StandardCharsets.UTF_8);
+					System.out.println("Wrote " + output);
+				}
+			} finally {
+				repository.shutDown();
+			}
+		}
+	}
+
+	private void verifyExpectedPlans(Duration minDuration, Duration maxDuration) throws IOException {
+		Objects.requireNonNull(minDuration, "minDuration");
+		Objects.requireNonNull(maxDuration, "maxDuration");
+		Path resourcesRoot = expectedPlansRoot();
+		for (Theme theme : Theme.values()) {
+			File scenarioDir = new File(dataDir, theme.name() + "_verify");
+			SailRepository repository = createRepository(scenarioDir, true);
+			try {
+				loadData(repository, theme);
+				for (int index = 0; index < ThemeQueryCatalog.QUERY_COUNT; index++) {
+					Path expectedPath = resourcesRoot.resolve(theme.name()).resolve("query-" + index + ".txt");
+					if (!Files.exists(expectedPath)) {
+						throw new IllegalStateException(
+								"Missing expected plan: " + expectedPath + " (run main to generate)");
+					}
+					String expected = Files.readString(expectedPath, StandardCharsets.UTF_8).stripTrailing();
+					String drift = verifyPlanWithTimeout(repository,
+							ThemeQueryCatalog.queryFor(theme, index),
+							ThemeQueryCatalog.expectedCountFor(theme, index),
+							expected,
+							minDuration,
+							maxDuration,
+							theme,
+							index);
+					if (drift != null) {
+						System.out.println("Plan drift for " + theme + " #" + index);
+						printDiff(expected, drift);
+						throw new AssertionError("Plan drift for " + theme + " #" + index);
+					}
+				}
+			} finally {
+				repository.shutDown();
+			}
+		}
+	}
+
+	private SailRepository createRepository(File storeDir, boolean enableDp) {
+		MemoryJoinStats learnedStats = new MemoryJoinStats(InvalidationSettings.disabled());
+		RecordingJoinStatsProvider statsProvider = new RecordingJoinStatsProvider(learnedStats);
+		LearnedJoinConfig config = new LearnedJoinConfig(LearnedJoinConfig.DEFAULT_DP_THRESHOLD, enableDp);
+		LearningEvaluationStrategyFactory factory = new LearningEvaluationStrategyFactory(statsProvider, null, config);
+		LmdbStore store = new LmdbStore(storeDir, ConfigUtil.createConfig());
+		store.setEvaluationStrategyFactory(factory);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		return repository;
+	}
+
+	private String captureFinalExplanation(SailRepository repository, String query, long expected,
+			Duration maxDuration) {
+		long start = System.nanoTime();
+		String plan = null;
+		List<String> lastLines = null;
+		while (Duration.ofNanos(System.nanoTime() - start).compareTo(maxDuration) < 0) {
+			plan = executeAndExplain(repository, query, expected, lastLines, null);
+			lastLines = plan == null ? lastLines : List.of(plan.split("\\R", -1));
+		}
+		return plan == null ? "<no-plan>" : plan;
+	}
+
+	private String verifyPlanWithTimeout(SailRepository repository, String query, long expected, String expectedPlan,
+			Duration minDuration, Duration maxDuration, Theme theme, int index) {
+		long start = System.nanoTime();
+		List<String> expectedLines = List.of(expectedPlan.split("\\R", -1));
+		List<String> lastLines = expectedLines;
+		String actualPlan = null;
+		while (true) {
+			actualPlan = executeAndExplain(repository, query, expected, lastLines, expectedLines);
+			Duration elapsed = Duration.ofNanos(System.nanoTime() - start);
+			if (elapsed.compareTo(minDuration) >= 0 && expectedPlan.equals(actualPlan)) {
+				return null;
+			}
+			if (elapsed.compareTo(maxDuration) >= 0) {
+				return actualPlan;
+			}
+			System.out.println("Waiting for plan match " + theme + " #" + index + " elapsed=" + elapsed.toSeconds()
+					+ "s");
+		}
+	}
+
+	private String executeAndExplain(SailRepository repository, String query, long expected, List<String> previousLines,
+			List<String> expectedLines) {
+		Map<String, String> normalizedNames = new LinkedHashMap<>();
+		Map<String, Integer> prefixCounters = new LinkedHashMap<>();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+			long count = executeCount(tupleQuery);
+			if (count != expected) {
+				throw new IllegalStateException("Unexpected count: expected " + expected + " but got " + count);
+			}
+			TupleQuery explainQuery = connection.prepareTupleQuery(query);
+			explainQuery.setMaxExecutionTime(EXPLAIN_TIMEOUT_SECONDS);
+			Explanation explanation = explainQuery.explain(Explanation.Level.Executed);
+			List<String> normalized = normalizeExplainLines(explanation.toString(), normalizedNames, prefixCounters,
+					expectedLines != null ? expectedLines : previousLines);
+			return joinLines(normalized);
 		}
 	}
 
@@ -334,16 +481,28 @@ class DpJoinOrderTimingHarnessTest {
 		return count == 0 ? 0L : total / count;
 	}
 
+	private Path expectedPlansRoot() {
+		return Path.of("core", "sail", "lmdb", "src", "test", "resources", EXPECTED_PLAN_DIR);
+	}
+
+	private void assumeEnabled() {
+		Assumptions.assumeTrue(Boolean.getBoolean(ENABLE_PROPERTY),
+				() -> "Set -D" + ENABLE_PROPERTY + "=true to run the timing harness");
+	}
+
 	private List<String> normalizeExplainLines(String text, Map<String, String> normalizedNames,
 			Map<String, Integer> prefixCounters, List<String> previousLines) {
 		String[] lines = text.split("\\R", -1);
 		List<String> normalized = new ArrayList<>(lines.length);
 		for (int i = 0; i < lines.length; i++) {
 			String line = lines[i];
-			if (line.contains("Var (name=") && line.contains("anonymous")) {
+			line = normalizeTiming(line);
+			boolean normalizedVar = false;
+			if (line.contains("Var (name=")) {
 				line = normalizeVarLine(line, normalizedNames, prefixCounters);
+				normalizedVar = true;
 			}
-			if (line.contains("_anon_")) {
+			if (!normalizedVar && line.contains("_anon_")) {
 				line = normalizeAnonTokensInText(line, normalizedNames, prefixCounters);
 			}
 			if (previousLines != null && i < previousLines.size()) {
@@ -366,6 +525,23 @@ class DpJoinOrderTimingHarnessTest {
 			}
 		}
 		return joined.toString();
+	}
+
+	private String normalizeTiming(String line) {
+		Matcher matcher = TIME_PATTERN.matcher(line);
+		StringBuilder normalized = new StringBuilder(line.length());
+		int last = 0;
+		while (matcher.find()) {
+			normalized.append(line, last, matcher.start(2));
+			normalized.append("<t>");
+			normalized.append(matcher.group(3));
+			last = matcher.end(3);
+		}
+		if (last == 0) {
+			return line;
+		}
+		normalized.append(line, last, line.length());
+		return normalized.toString();
 	}
 
 	private String normalizeEstimates(String line, String previousLine) {
@@ -490,17 +666,17 @@ class DpJoinOrderTimingHarnessTest {
 		StringBuilder normalized = new StringBuilder(text.length());
 		int last = 0;
 		while (matcher.find()) {
-			String token = matcher.group(0);
+			String token = matcher.group(1);
 			String normalizedToken = normalizedNames.get(token);
 			if (normalizedToken == null) {
-				String prefix = matcher.group(1);
+				String prefix = normalizedPrefix(token);
 				int next = prefixCounters.merge(prefix, 1, Integer::sum);
 				normalizedToken = prefix + next;
 				normalizedNames.put(token, normalizedToken);
 			}
-			normalized.append(text, last, matcher.start());
+			normalized.append(text, last, matcher.start(1));
 			normalized.append(normalizedToken);
-			last = matcher.end();
+			last = matcher.end(1);
 		}
 		normalized.append(text, last, text.length());
 		return normalized.toString();
