@@ -57,13 +57,14 @@ class DpJoinOrderTimingHarnessTest {
 	private static final int ITERATIONS = 100;
 	private static final int AVERAGE_WINDOW = 20;
 	private static final int EXPLAIN_TIMEOUT_SECONDS = 10;
-	private static final int HIGHLY_CONNECTED_EXPLAIN_ITERATIONS = 100;
+	private static final int HIGHLY_CONNECTED_EXPLAIN_ITERATIONS = 20;
 	private static final String ANSI_RESET = "\u001B[0m";
 	private static final String ANSI_GREEN = "\u001B[32m";
 	private static final String ANSI_RED = "\u001B[31m";
 	private static final String ANSI_YELLOW = "\u001B[33m";
 	private static final Pattern VAR_NAME_PATTERN = Pattern.compile("name=([^,\\)]+)");
-	private static final Pattern ANON_SUFFIX_PATTERN = Pattern.compile("^(.*?_)([0-9a-fA-F]{6,})(_.+)?$");
+	private static final Pattern ANON_SUFFIX_PATTERN = Pattern.compile("^(.*_)([0-9A-Za-z]+)$");
+	private static final Pattern ANON_TOKEN_PATTERN = Pattern.compile("(_anon_[A-Za-z0-9]*_)([0-9A-Za-z]+)");
 	private static final Pattern ESTIMATE_PATTERN = Pattern
 			.compile("(costEstimate|resultSizeEstimate)=([0-9]+(?:\\.[0-9]+)?)([KMBG]?)");
 	private static final double ESTIMATE_TOLERANCE = 0.05d;
@@ -172,7 +173,11 @@ class DpJoinOrderTimingHarnessTest {
 				if (lastSignature == null || !lastSignature.equals(signature)) {
 					System.out.println(label + " " + modeLabel(enableDp) + " iteration " + (i + 1)
 							+ " joinOrder=" + signature);
-					System.out.println(explanation);
+					Map<String, String> normalizedNames = new LinkedHashMap<>();
+					Map<String, Integer> prefixCounters = new LinkedHashMap<>();
+					List<String> explainLines = normalizeExplainLines(explanation.toString(), normalizedNames,
+							prefixCounters, null);
+					System.out.println(joinLines(explainLines));
 				}
 				lastSignature = signature;
 			}
@@ -189,8 +194,6 @@ class DpJoinOrderTimingHarnessTest {
 		List<String> lastExplainLines = null;
 		List<String> lastSignature = null;
 		String lastRenderedQuery = null;
-		Map<String, String> normalizedNames = new LinkedHashMap<>();
-		Map<String, Integer> prefixCounters = new LinkedHashMap<>();
 		TupleExprIRRenderer renderer = new TupleExprIRRenderer();
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (int i = 0; i < iterations; i++) {
@@ -203,11 +206,14 @@ class DpJoinOrderTimingHarnessTest {
 				TupleQuery explainQuery = connection.prepareTupleQuery(query);
 				explainQuery.setMaxExecutionTime(EXPLAIN_TIMEOUT_SECONDS);
 				Explanation explanation = explainQuery.explain(Explanation.Level.Executed);
+				Map<String, String> normalizedNames = new LinkedHashMap<>();
+				Map<String, Integer> prefixCounters = new LinkedHashMap<>();
 				List<String> explainLines = normalizeExplainLines(explanation.toString(), normalizedNames,
 						prefixCounters,
 						lastExplainLines);
 				String explainText = joinLines(explainLines);
-				String renderedQuery = renderOptimizedQuery(explanation, renderer);
+				String renderedQuery = normalizeAnonTokensInText(renderOptimizedQuery(explanation, renderer),
+						normalizedNames, prefixCounters);
 				boolean explainChanged = lastExplainText == null || !lastExplainText.equals(explainText);
 				boolean queryChanged = lastRenderedQuery == null || !lastRenderedQuery.equals(renderedQuery);
 				List<String> signature = joinOrderSignature(explanation);
@@ -337,6 +343,9 @@ class DpJoinOrderTimingHarnessTest {
 			if (line.contains("Var (name=") && line.contains("anonymous")) {
 				line = normalizeVarLine(line, normalizedNames, prefixCounters);
 			}
+			if (line.contains("_anon_")) {
+				line = normalizeAnonTokensInText(line, normalizedNames, prefixCounters);
+			}
 			if (previousLines != null && i < previousLines.size()) {
 				line = normalizeEstimates(line, previousLines.get(i));
 			}
@@ -447,6 +456,9 @@ class DpJoinOrderTimingHarnessTest {
 			return line;
 		}
 		String name = matcher.group(1);
+		if (!name.startsWith("_anon_")) {
+			return line;
+		}
 		String normalized = normalizedNames.get(name);
 		if (normalized == null) {
 			String base = normalizedPrefix(name);
@@ -461,22 +473,37 @@ class DpJoinOrderTimingHarnessTest {
 		Matcher matcher = ANON_SUFFIX_PATTERN.matcher(name);
 		String base = name;
 		if (matcher.matches()) {
-			String prefix = matcher.group(1);
-			String suffix = matcher.group(3);
-			if (suffix != null) {
-				if (prefix.endsWith("_") && suffix.startsWith("_")) {
-					base = prefix + suffix.substring(1);
-				} else {
-					base = prefix + suffix;
-				}
-			} else {
-				base = prefix;
-			}
+			base = matcher.group(1);
 		}
 		if (!base.endsWith("_")) {
 			base = base + "_";
 		}
 		return base;
+	}
+
+	private String normalizeAnonTokensInText(String text, Map<String, String> normalizedNames,
+			Map<String, Integer> prefixCounters) {
+		if (!text.contains("_anon_")) {
+			return text;
+		}
+		Matcher matcher = ANON_TOKEN_PATTERN.matcher(text);
+		StringBuilder normalized = new StringBuilder(text.length());
+		int last = 0;
+		while (matcher.find()) {
+			String token = matcher.group(0);
+			String normalizedToken = normalizedNames.get(token);
+			if (normalizedToken == null) {
+				String prefix = matcher.group(1);
+				int next = prefixCounters.merge(prefix, 1, Integer::sum);
+				normalizedToken = prefix + next;
+				normalizedNames.put(token, normalizedToken);
+			}
+			normalized.append(text, last, matcher.start());
+			normalized.append(normalizedToken);
+			last = matcher.end();
+		}
+		normalized.append(text, last, text.length());
+		return normalized.toString();
 	}
 
 	private static final class EstimateValue {
