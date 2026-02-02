@@ -71,22 +71,22 @@ public class ThemeQueryBenchmark {
 	private static final String EXPLAIN_PRINT_PLAN_PROPERTY = "rdf4j.jmh.explain.printPlan";
 
 	@Param({
-//			"0", "1",
-//			"2",
-//			"3", "4", "5", "6", "7", "8", "9",
+			"0", "1",
+			"2",
+			"3", "4", "5", "6", "7", "8", "9",
 			"10"
 	})
 	public int z_queryIndex;
 
 	@Param({
-			"MEDICAL_RECORDS",
+//			"MEDICAL_RECORDS",
 //			"SOCIAL_MEDIA",
-			"LIBRARY",
+//			"LIBRARY",
 			"ENGINEERING",
-			"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
-			"PHARMA"
+//			"HIGHLY_CONNECTED",
+//			"TRAIN",
+//			"ELECTRICAL_GRID",
+//			"PHARMA"
 	})
 	public String themeName;
 
