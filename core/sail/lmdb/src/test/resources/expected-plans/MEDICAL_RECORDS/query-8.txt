@@ -1,0 +1,51 @@
+Projection (resultSizeActual=8.3K)
+╠══ ProjectionElemList
+║     ProjectionElem "patient"
+║     ProjectionElem "encCount"
+╚══ Extension (resultSizeActual=8.3K)
+   ├── Extension (resultSizeActual=8.3K)
+   │  ╠══ Filter (resultSizeActual=8.3K)
+   │  ║  ├── Compare (>=)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="2"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (patient) (resultSizeActual=8.3K)
+   │  ║        Filter (resultSizeActual=24.9K)
+   │  ║        ├── And
+   │  ║        │  ╠══ Exists
+   │  ║        │  ║     StatementPattern (resultSizeEstimate=32.2K, resultSizeActual=0)
+   │  ║        │  ║        s: Var (name=enc)
+   │  ║        │  ║        p: Var (name=_const_7e7389c9_uri, value=http://example.com/theme/medical/hasCondition, anonymous)
+   │  ║        │  ║        o: Var (name=cond)
+   │  ║        │  ╚══ Compare (!=)
+   │  ║        │        Var (name=optPractitioner)
+   │  ║        │        Var (name=patient)
+   │  ║        └── LeftJoin (LeftJoinIterator) (resultSizeActual=24.9K)
+   │  ║           ╠══ StatementPattern (resultSizeEstimate=17.6K, resultSizeActual=8.3K) [left]
+   │  ║           ║     s: Var (name=patient)
+   │  ║           ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           ║     o: Var (name=_const_24be87bd_uri, value=http://example.com/theme/medical/Patient, anonymous)
+   │  ║           ╚══ Extension (resultSizeActual=24.9K) [right]
+   │  ║              ├── Join (JoinIterator) (resultSizeActual=24.9K)
+   │  ║              │  ╠══ StatementPattern (costEstimate=1.41, resultSizeEstimate=3.00, resultSizeActual=24.9K) [left]
+   │  ║              │  ║     s: Var (name=patient)
+   │  ║              │  ║     p: Var (name=_const_ca285e1_uri, value=http://example.com/theme/medical/hasEncounter, anonymous)
+   │  ║              │  ║     o: Var (name=enc)
+   │  ║              │  ╚══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=24.9K) [right]
+   │  ║              │        s: Var (name=enc)
+   │  ║              │        p: Var (name=_const_9016af8b_uri, value=http://example.com/theme/medical/handledBy, anonymous)
+   │  ║              │        o: Var (name=practitioner)
+   │  ║              └── ExtensionElem (optPractitioner)
+   │  ║                    Var (name=practitioner)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count
+   │  ║              Var (name=enc)
+   │  ║        GroupElem (encCount)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=enc)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count
+   │           Var (name=enc)
+   └── ExtensionElem (encCount)
+         Count (Distinct)
+            Var (name=enc)
+

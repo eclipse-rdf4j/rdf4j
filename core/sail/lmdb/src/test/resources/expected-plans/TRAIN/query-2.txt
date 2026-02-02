@@ -1,0 +1,44 @@
+Projection (resultSizeActual=3)
+╠══ ProjectionElemList
+║     ProjectionElem "line"
+║     ProjectionElem "sectionCount"
+╚══ Extension (resultSizeActual=3)
+   ├── Extension (resultSizeActual=3)
+   │  ╠══ Filter (resultSizeActual=3)
+   │  ║  ├── Compare (>)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (line) (resultSizeActual=3)
+   │  ║        LeftJoin (LeftJoinIterator) (resultSizeActual=26)
+   │  ║        ├── Join (JoinIterator) (resultSizeActual=3) [left]
+   │  ║        │  ╠══ StatementPattern (costEstimate=5.7K, resultSizeEstimate=11.8K, resultSizeActual=8.4K) [left]
+   │  ║        │  ║     s: Var (name=line)
+   │  ║        │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║        │  ║     o: Var (name=_const_cef39ba5_uri, value=http://example.com/theme/train/Line, anonymous)
+   │  ║        │  ╚══ Filter (resultSizeActual=3) [right]
+   │  ║        │     ├── ListMemberOperator
+   │  ║        │     │     Var (name=lineName)
+   │  ║        │     │     ValueConstant (value="Line 0")
+   │  ║        │     │     ValueConstant (value="Line 1")
+   │  ║        │     │     ValueConstant (value="Line 2")
+   │  ║        │     └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=8.4K)
+   │  ║        │           s: Var (name=line)
+   │  ║        │           p: Var (name=_const_cf02f21c_uri, value=http://example.com/theme/train/name, anonymous)
+   │  ║        │           o: Var (name=lineName)
+   │  ║        └── StatementPattern (resultSizeEstimate=8.67, resultSizeActual=26) [right]
+   │  ║              s: Var (name=section)
+   │  ║              p: Var (name=_const_8ba830f_uri, value=http://example.com/theme/train/partOfLine, anonymous)
+   │  ║              o: Var (name=line)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count
+   │  ║              Var (name=section)
+   │  ║        GroupElem (sectionCount)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=section)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count
+   │           Var (name=section)
+   └── ExtensionElem (sectionCount)
+         Count (Distinct)
+            Var (name=section)
+

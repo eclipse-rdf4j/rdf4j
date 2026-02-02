@@ -1,0 +1,46 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Difference (resultSizeActual=1)
+   │  ║  ├── Filter (resultSizeActual=1)
+   │  ║  │  ╠══ Exists
+   │  ║  │  ║     StatementPattern (resultSizeEstimate=9.5K, resultSizeActual=0)
+   │  ║  │  ║        s: Var (name=service)
+   │  ║  │  ║        p: Var (name=_const_b4130d5_uri, value=http://example.com/theme/train/passesThrough, anonymous)
+   │  ║  │  ║        o: Var (name=op)
+   │  ║  │  ╚══ Join (JoinIterator) (resultSizeActual=2)
+   │  ║  │     ├── StatementPattern (costEstimate=5.9K, resultSizeEstimate=11.8K, resultSizeActual=29.8K) [left]
+   │  ║  │     │     s: Var (name=op)
+   │  ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │     o: Var (name=_const_9807bf0f_uri, value=http://example.com/theme/train/OperationalPoint, anonymous)
+   │  ║  │     └── Filter (resultSizeActual=2) [right]
+   │  ║  │        ╠══ Or
+   │  ║  │        ║  ├── Compare (=)
+   │  ║  │        ║  │     Var (name=name)
+   │  ║  │        ║  │     ValueConstant (value="OP 1")
+   │  ║  │        ║  └── Compare (=)
+   │  ║  │        ║        Var (name=name)
+   │  ║  │        ║        ValueConstant (value="OP 2")
+   │  ║  │        ╚══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=29.8K)
+   │  ║  │              s: Var (name=op)
+   │  ║  │              p: Var (name=_const_cf02f21c_uri, value=http://example.com/theme/train/name, anonymous)
+   │  ║  │              o: Var (name=name)
+   │  ║  └── Filter (new scope) (resultSizeActual=1)
+   │  ║     ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#contains)
+   │  ║     ║  ├── FunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)
+   │  ║     ║  │     Str
+   │  ║     ║  │        Var (name=name2)
+   │  ║     ║  └── ValueConstant (value="op 0")
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=46.4K, resultSizeActual=46.9K)
+   │  ║           s: Var (name=op)
+   │  ║           p: Var (name=_const_cf02f21c_uri, value=http://example.com/theme/train/name, anonymous)
+   │  ║           o: Var (name=name2)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=op)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=op)
+

@@ -1,0 +1,38 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=29.1K)
+   │  ║  ├── Filter (resultSizeActual=14.5K) [left]
+   │  ║  │  ╠══ Compare (>=)
+   │  ║  │  ║     Var (name=optDate)
+   │  ║  │  ║     ValueConstant (value="2024-06-01"^^<http://www.w3.org/2001/XMLSchema#date>)
+   │  ║  │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=24.9K)
+   │  ║  │     ├── StatementPattern (resultSizeEstimate=8.3K, resultSizeActual=8.3K) [left]
+   │  ║  │     │     s: Var (name=patient)
+   │  ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │     o: Var (name=_const_24be87bd_uri, value=http://example.com/theme/medical/Patient, anonymous)
+   │  ║  │     └── Extension (resultSizeActual=24.9K) [right]
+   │  ║  │        ╠══ Join (JoinIterator) (resultSizeActual=24.9K)
+   │  ║  │        ║  ├── StatementPattern (costEstimate=1.48, resultSizeEstimate=3.10, resultSizeActual=24.9K) [left]
+   │  ║  │        ║  │     s: Var (name=patient)
+   │  ║  │        ║  │     p: Var (name=_const_ca285e1_uri, value=http://example.com/theme/medical/hasEncounter, anonymous)
+   │  ║  │        ║  │     o: Var (name=enc)
+   │  ║  │        ║  └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=24.9K) [right]
+   │  ║  │        ║        s: Var (name=enc)
+   │  ║  │        ║        p: Var (name=_const_2816f2d7_uri, value=http://example.com/theme/medical/recordedOn, anonymous)
+   │  ║  │        ║        o: Var (name=date)
+   │  ║  │        ╚══ ExtensionElem (optDate)
+   │  ║  │              Var (name=date)
+   │  ║  └── StatementPattern (resultSizeEstimate=2.01, resultSizeActual=29.1K) [right]
+   │  ║        s: Var (name=patient)
+   │  ║        p: Var (name=_const_fe9f43e1_uri, value=http://example.com/theme/medical/hasMedication, anonymous)
+   │  ║        o: Var (name=med)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=patient)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=patient)
+

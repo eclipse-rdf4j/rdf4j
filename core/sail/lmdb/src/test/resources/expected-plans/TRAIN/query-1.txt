@@ -1,0 +1,46 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=4)
+   │  ║  ├── Filter (resultSizeActual=4) [left]
+   │  ║  │  ╠══ Or
+   │  ║  │  ║  ├── Compare (=)
+   │  ║  │  ║  │     Var (name=name)
+   │  ║  │  ║  │     Var (name=target)
+   │  ║  │  ║  └── Compare (=)
+   │  ║  │  ║        Var (name=name)
+   │  ║  │  ║        ValueConstant (value="OP 3")
+   │  ║  │  ╚══ Join (JoinIterator) (resultSizeActual=76.7K)
+   │  ║  │     ├── BindingSetAssignment ([[target="OP 1"], [target="OP 2"]]) (costEstimate=6.00, resultSizeEstimate=1.00, resultSizeActual=2) [left]
+   │  ║  │     └── Union (resultSizeActual=76.7K) [right]
+   │  ║  │        ╠══ Join (JoinIterator) (resultSizeActual=59.7K)
+   │  ║  │        ║  ├── StatementPattern (costEstimate=45.6K, resultSizeEstimate=15.4K, resultSizeActual=59.7K) [left]
+   │  ║  │        ║  │     s: Var (name=entity)
+   │  ║  │        ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │        ║  │     o: Var (name=_const_9807bf0f_uri, value=http://example.com/theme/train/OperationalPoint, anonymous)
+   │  ║  │        ║  └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=59.7K) [right]
+   │  ║  │        ║        s: Var (name=entity)
+   │  ║  │        ║        p: Var (name=_const_cf02f21c_uri, value=http://example.com/theme/train/name, anonymous)
+   │  ║  │        ║        o: Var (name=name)
+   │  ║  │        ╚══ Join (JoinIterator) (resultSizeActual=16.9K)
+   │  ║  │           ├── StatementPattern (costEstimate=348.5M, resultSizeEstimate=15.4K, resultSizeActual=16.9K) [left]
+   │  ║  │           │     s: Var (name=entity)
+   │  ║  │           │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │           │     o: Var (name=_const_cef39ba5_uri, value=http://example.com/theme/train/Line, anonymous)
+   │  ║  │           └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=16.9K) [right]
+   │  ║  │                 s: Var (name=entity)
+   │  ║  │                 p: Var (name=_const_cf02f21c_uri, value=http://example.com/theme/train/name, anonymous)
+   │  ║  │                 o: Var (name=name)
+   │  ║  └── StatementPattern (resultSizeEstimate=45.6K, resultSizeActual=0) [right]
+   │  ║        s: Var (name=entity)
+   │  ║        p: Var (name=_const_26ff10d8_uri, value=http://example.com/theme/train/connectsOperationalPoint, anonymous)
+   │  ║        o: Var (name=op)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=entity)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=entity)
+

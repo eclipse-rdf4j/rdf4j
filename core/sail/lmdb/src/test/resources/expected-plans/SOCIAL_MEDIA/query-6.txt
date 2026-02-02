@@ -1,0 +1,45 @@
+Projection (resultSizeActual=0)
+╠══ ProjectionElemList
+║     ProjectionElem "u"
+║     ProjectionElem "connections"
+╚══ Extension (resultSizeActual=0)
+   ├── Extension (resultSizeActual=0)
+   │  ╠══ Filter (resultSizeActual=0)
+   │  ║  ├── Compare (>=)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="5"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (u) (resultSizeActual=5)
+   │  ║        Filter (resultSizeActual=20)
+   │  ║        ├── Compare (!=)
+   │  ║        │     Var (name=optName)
+   │  ║        │     ValueConstant (value="")
+   │  ║        └── LeftJoin (LeftJoinIterator) (resultSizeActual=20)
+   │  ║           ╠══ Join (JoinIterator) (resultSizeActual=20) [left]
+   │  ║           ║  ├── BindingSetAssignment ([[u=http://example.com/theme/social/user/12], [u=http://example.com/theme/social/user/13], [u=http://example.com/theme/social/user/14], [u=http://example.com/theme/social/user/15], [u=http://example.com/theme/social/user/16], [u=http://example.com/theme/social/user/17]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=6) [left]
+   │  ║           ║  └── Join (JoinIterator) (resultSizeActual=20) [right]
+   │  ║           ║     ╠══ Filter (resultSizeActual=92) [left]
+   │  ║           ║     ║  ├── Compare (!=)
+   │  ║           ║     ║  │     Var (name=u)
+   │  ║           ║     ║  │     Var (name=v)
+   │  ║           ║     ║  └── StatementPattern (costEstimate=4.49, resultSizeEstimate=15, resultSizeActual=92)
+   │  ║           ║     ║        s: Var (name=u)
+   │  ║           ║     ║        p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║           ║     ║        o: Var (name=v)
+   │  ║           ║     ╚══ BindingSetAssignment ([[v=http://example.com/theme/social/user/12], [v=http://example.com/theme/social/user/13], [v=http://example.com/theme/social/user/14], [v=http://example.com/theme/social/user/15], [v=http://example.com/theme/social/user/16], [v=http://example.com/theme/social/user/17]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=20) [right]
+   │  ║           ╚══ StatementPattern (resultSizeEstimate=1.00, resultSizeActual=20) [right]
+   │  ║                 s: Var (name=u)
+   │  ║                 p: Var (name=_const_7d17b943_uri, value=http://example.com/theme/social/name, anonymous)
+   │  ║                 o: Var (name=optName)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=v)
+   │  ║        GroupElem (connections)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=v)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count (Distinct)
+   │           Var (name=v)
+   └── ExtensionElem (connections)
+         Count (Distinct)
+            Var (name=v)
+

@@ -1,0 +1,40 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Filter (resultSizeActual=18)
+   │  ║  ├── ListMemberOperator
+   │  ║  │     Var (name=optName)
+   │  ║  │     ValueConstant (value="user0")
+   │  ║  │     ValueConstant (value="user1")
+   │  ║  │     ValueConstant (value="user2")
+   │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=1.1K)
+   │  ║     ╠══ Extension (resultSizeActual=1.1K) [left]
+   │  ║     ║  ├── Join (JoinIterator) (resultSizeActual=1.1K)
+   │  ║     ║  │  ╠══ StatementPattern (costEstimate=47.9K, resultSizeEstimate=143.7K, resultSizeActual=143.7K) [left]
+   │  ║     ║  │  ║     s: Var (name=b)
+   │  ║     ║  │  ║     p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║     ║  │  ║     o: Var (name=c)
+   │  ║     ║  │  ╚══ Join (JoinIterator) (resultSizeActual=1.1K) [right]
+   │  ║     ║  │     ├── StatementPattern (costEstimate=1.97, resultSizeEstimate=10, resultSizeActual=1.2M) [left]
+   │  ║     ║  │     │     s: Var (name=c)
+   │  ║     ║  │     │     p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║     ║  │     │     o: Var (name=a)
+   │  ║     ║  │     └── StatementPattern (costEstimate=0.50, resultSizeEstimate=0.00, resultSizeActual=1.1K) [right]
+   │  ║     ║  │           s: Var (name=a)
+   │  ║     ║  │           p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║     ║  │           o: Var (name=b)
+   │  ║     ║  └── ExtensionElem (cycleStart)
+   │  ║     ║        Var (name=a)
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=1.00, resultSizeActual=1.1K) [right]
+   │  ║           s: Var (name=a)
+   │  ║           p: Var (name=_const_7d17b943_uri, value=http://example.com/theme/social/name, anonymous)
+   │  ║           o: Var (name=optName)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=a)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=a)
+

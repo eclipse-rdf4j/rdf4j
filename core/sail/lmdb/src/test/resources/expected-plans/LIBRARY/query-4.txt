@@ -1,0 +1,40 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Filter (resultSizeActual=0)
+   │  ║  ├── Exists
+   │  ║  │     StatementPattern (resultSizeEstimate=172.2K)
+   │  ║  │        s: Var (name=book)
+   │  ║  │        p: Var (name=_const_469a1e31_uri, value=http://example.com/theme/library/hasCopy, anonymous)
+   │  ║  │        o: Var (name=copy)
+   │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=0)
+   │  ║     ╠══ Join (JoinIterator) (resultSizeActual=0) [left]
+   │  ║     ║  ├── StatementPattern (costEstimate=64.4K, resultSizeEstimate=128.9K, resultSizeActual=128.8K) [left]
+   │  ║     ║  │     s: Var (name=book)
+   │  ║     ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║  │     o: Var (name=_const_6cec5947_uri, value=http://example.com/theme/library/Book, anonymous)
+   │  ║     ║  └── Filter (resultSizeActual=0) [right]
+   │  ║     ║     ╠══ Or
+   │  ║     ║     ║  ├── Compare (=)
+   │  ║     ║     ║  │     Var (name=title)
+   │  ║     ║     ║  │     ValueConstant (value="Book 1")
+   │  ║     ║     ║  └── Compare (=)
+   │  ║     ║     ║        Var (name=title)
+   │  ║     ║     ║        ValueConstant (value="Book 2")
+   │  ║     ║     ╚══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=128.8K)
+   │  ║     ║           s: Var (name=book)
+   │  ║     ║           p: Var (name=_const_335cbfda_uri, value=http://example.com/theme/library/title, anonymous)
+   │  ║     ║           o: Var (name=title)
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=2.00) [right]
+   │  ║           s: Var (name=book)
+   │  ║           p: Var (name=_const_e1624c50_uri, value=http://example.com/theme/library/writtenBy, anonymous)
+   │  ║           o: Var (name=author)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=book)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=book)
+

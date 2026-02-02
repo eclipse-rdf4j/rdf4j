@@ -1,0 +1,46 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=4)
+   │  ║  ├── Filter (resultSizeActual=4) [left]
+   │  ║  │  ╠══ Or
+   │  ║  │  ║  ├── Compare (=)
+   │  ║  │  ║  │     Var (name=name)
+   │  ║  │  ║  │     Var (name=target)
+   │  ║  │  ║  └── Compare (=)
+   │  ║  │  ║        Var (name=name)
+   │  ║  │  ║        ValueConstant (value="Member 3")
+   │  ║  │  ╚══ Join (JoinIterator) (resultSizeActual=267.8K)
+   │  ║  │     ├── BindingSetAssignment ([[target="Member 1"], [target="Member 2"]]) (costEstimate=6.00, resultSizeEstimate=1.00, resultSizeActual=2) [left]
+   │  ║  │     └── Union (resultSizeActual=267.8K) [right]
+   │  ║  │        ╠══ Join (JoinIterator) (resultSizeActual=10.1K)
+   │  ║  │        ║  ├── StatementPattern (costEstimate=129.6K, resultSizeEstimate=43.2K, resultSizeActual=90.6K) [left]
+   │  ║  │        ║  │     s: Var (name=entity)
+   │  ║  │        ║  │     p: Var (name=_const_6d0024c9_uri, value=http://example.com/theme/library/name, anonymous)
+   │  ║  │        ║  │     o: Var (name=name)
+   │  ║  │        ║  └── StatementPattern (costEstimate=1.00, resultSizeEstimate=0.77, resultSizeActual=10.1K) [right]
+   │  ║  │        ║        s: Var (name=entity)
+   │  ║  │        ║        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │        ║        o: Var (name=_const_f5728978_uri, value=http://example.com/theme/library/Member, anonymous)
+   │  ║  │        ╚══ Join (JoinIterator) (resultSizeActual=257.7K)
+   │  ║  │           ├── StatementPattern (costEstimate=8412.8M, resultSizeEstimate=122.5K, resultSizeActual=257.7K) [left]
+   │  ║  │           │     s: Var (name=entity)
+   │  ║  │           │     p: Var (name=_const_335cbfda_uri, value=http://example.com/theme/library/title, anonymous)
+   │  ║  │           │     o: Var (name=name)
+   │  ║  │           └── StatementPattern (costEstimate=1.00, resultSizeEstimate=0.77, resultSizeActual=257.7K) [right]
+   │  ║  │                 s: Var (name=entity)
+   │  ║  │                 p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │                 o: Var (name=_const_6cec5947_uri, value=http://example.com/theme/library/Book, anonymous)
+   │  ║  └── StatementPattern (resultSizeEstimate=3.07, resultSizeActual=0) [right]
+   │  ║        s: Var (name=entity)
+   │  ║        p: Var (name=_const_469a1e31_uri, value=http://example.com/theme/library/hasCopy, anonymous)
+   │  ║        o: Var (name=copy)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=entity)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=entity)
+

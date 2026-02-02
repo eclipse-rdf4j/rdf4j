@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -275,7 +276,7 @@ public class TupleExprIRRenderer {
 		final IrSelect ir = toIRSelect(tupleExpr);
 		final boolean asSub = mode == RenderMode.SUBSELECT;
 		String rendered = render(ir, dataset, asSub);
-//		verifyRoundTrip(tupleExpr, rendered);
+		verifyRoundTrip(tupleExpr, rendered);
 		return rendered;
 	}
 
@@ -286,8 +287,8 @@ public class TupleExprIRRenderer {
 
 		try {
 			ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, rendered, null);
-			String expected = VarNameNormalizer.normalizeVars(original.toString());
-			String actual = VarNameNormalizer.normalizeVars(parsed.getTupleExpr().toString());
+			String expected = normalizeForRoundTripComparison(original);
+			String actual = normalizeForRoundTripComparison(parsed.getTupleExpr());
 			if (!expected.equals(actual)) {
 				String message = "Rendered SPARQL does not round-trip to the original TupleExpr."
 						+ "\n# Rendered query\n" + rendered
@@ -303,6 +304,29 @@ public class TupleExprIRRenderer {
 					original, rendered, e);
 			throw new IllegalStateException("Failed to verify rendered SPARQL against the original TupleExpr", e);
 		}
+	}
+
+	private static String normalizeForRoundTripComparison(final TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return "";
+		}
+
+		TupleExpr clone = tupleExpr.clone();
+		clearPlanAnnotations(clone);
+		return VarNameNormalizer.normalizeVars(clone.toString());
+	}
+
+	private static void clearPlanAnnotations(final QueryModelNode root) {
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				node.setCostEstimate(-1);
+				node.setResultSizeEstimate(-1);
+				node.setResultSizeActual(-1);
+				node.setTotalTimeNanosActual(-1);
+				super.meetNode(node);
+			}
+		});
 	}
 
 	// diff the two strings to help debugging

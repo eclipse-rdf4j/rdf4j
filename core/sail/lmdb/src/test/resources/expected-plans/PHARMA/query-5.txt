@@ -1,0 +1,58 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Filter (resultSizeActual=32)
+   │  ║  ├── Compare (>)
+   │  ║  │     Var (name=optEffect)
+   │  ║  │     ValueConstant (value="0.3"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+   │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=44)
+   │  ║     ╠══ Join (JoinIterator) (resultSizeActual=44) [left]
+   │  ║     ║  ├── BindingSetAssignment ([[marker=http://example.com/theme/pharma/biomarker/0], [marker=http://example.com/theme/pharma/biomarker/1], [marker=http://example.com/theme/pharma/biomarker/2]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=3) [left]
+   │  ║     ║  └── Join (JoinIterator) (resultSizeActual=44) [right]
+   │  ║     ║     ╠══ StatementPattern (costEstimate=1.87, resultSizeEstimate=26, resultSizeActual=79) [left]
+   │  ║     ║     ║     s: Var (name=result)
+   │  ║     ║     ║     p: Var (name=_const_80a6979a_uri, value=http://example.com/theme/pharma/biomarker, anonymous)
+   │  ║     ║     ║     o: Var (name=marker)
+   │  ║     ║     ╚══ Join (JoinIterator) (resultSizeActual=44) [right]
+   │  ║     ║        ├── StatementPattern (costEstimate=1.22, resultSizeEstimate=1.00, resultSizeActual=79) [left]
+   │  ║     ║        │     s: Var (name=arm)
+   │  ║     ║        │     p: Var (name=_const_60f6d7af_uri, value=http://example.com/theme/pharma/hasResult, anonymous)
+   │  ║     ║        │     o: Var (name=result)
+   │  ║     ║        └── Join (JoinIterator) (resultSizeActual=44) [right]
+   │  ║     ║           ╠══ StatementPattern (costEstimate=1.22, resultSizeEstimate=1.00, resultSizeActual=79) [left]
+   │  ║     ║           ║     s: Var (name=trial)
+   │  ║     ║           ║     p: Var (name=_const_73c2e40a_uri, value=http://example.com/theme/pharma/hasArm, anonymous)
+   │  ║     ║           ║     o: Var (name=arm)
+   │  ║     ║           ╚══ Join (JoinIterator) (resultSizeActual=44) [right]
+   │  ║     ║              ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=0.67, resultSizeActual=79) [left]
+   │  ║     ║              │     s: Var (name=trial)
+   │  ║     ║              │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║              │     o: Var (name=_const_4795bbfb_uri, value=http://example.com/theme/pharma/ClinicalTrial, anonymous)
+   │  ║     ║              └── Filter (resultSizeActual=44) [right]
+   │  ║     ║                 ╠══ Or
+   │  ║     ║                 ║  ├── Compare (<)
+   │  ║     ║                 ║  │     Var (name=p)
+   │  ║     ║                 ║  │     ValueConstant (value="0.05"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+   │  ║     ║                 ║  └── Compare (=)
+   │  ║     ║                 ║        Var (name=p)
+   │  ║     ║                 ║        ValueConstant (value="0.05"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+   │  ║     ║                 ╚══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=79)
+   │  ║     ║                       s: Var (name=result)
+   │  ║     ║                       p: Var (name=_const_80c71989_uri, value=http://example.com/theme/pharma/pValue, anonymous)
+   │  ║     ║                       o: Var (name=p)
+   │  ║     ╚══ Extension (resultSizeActual=44) [right]
+   │  ║        ├── StatementPattern (resultSizeEstimate=1.00, resultSizeActual=44)
+   │  ║        │     s: Var (name=result)
+   │  ║        │     p: Var (name=_const_6999fbda_uri, value=http://example.com/theme/pharma/effectSize, anonymous)
+   │  ║        │     o: Var (name=effect)
+   │  ║        └── ExtensionElem (optEffect)
+   │  ║              Var (name=effect)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=trial)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=trial)
+

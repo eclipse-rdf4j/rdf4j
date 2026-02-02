@@ -1,0 +1,40 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Filter (resultSizeActual=1.0K)
+   │  ║  ├── Exists
+   │  ║  │     StatementPattern (resultSizeEstimate=266.2K, resultSizeActual=0)
+   │  ║  │        s: Var (name=node)
+   │  ║  │        p: Var (name=_const_2e732754_uri, value=http://example.com/theme/connected/connectsTo, anonymous)
+   │  ║  │        o: Var (name=neighbor)
+   │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=238.7K)
+   │  ║     ╠══ Join (JoinIterator) (resultSizeActual=44.6K) [left]
+   │  ║     ║  ├── Filter (resultSizeActual=44.6K) [left]
+   │  ║     ║  │  ╠══ Or
+   │  ║     ║  │  ║  ├── Compare (=)
+   │  ║     ║  │  ║  │     Var (name=w)
+   │  ║     ║  │  ║  │     ValueConstant (value="1"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║     ║  │  ║  └── Compare (=)
+   │  ║     ║  │  ║        Var (name=w)
+   │  ║     ║  │  ║        ValueConstant (value="2"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║     ║  │  ╚══ StatementPattern (costEstimate=108.8K, resultSizeEstimate=217.5K, resultSizeActual=222.7K)
+   │  ║     ║  │        s: Var (name=node)
+   │  ║     ║  │        p: Var (name=_const_909a60a8_uri, value=http://example.com/theme/connected/weight, anonymous)
+   │  ║     ║  │        o: Var (name=w)
+   │  ║     ║  └── StatementPattern (costEstimate=1.00, resultSizeEstimate=1.00, resultSizeActual=44.6K) [right]
+   │  ║     ║        s: Var (name=node)
+   │  ║     ║        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║        o: Var (name=_const_b000c52_uri, value=http://example.com/theme/connected/Node, anonymous)
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=5.33, resultSizeActual=237.7K) [right]
+   │  ║           s: Var (name=neighbor)
+   │  ║           p: Var (name=_const_2e732754_uri, value=http://example.com/theme/connected/connectsTo, anonymous)
+   │  ║           o: Var (name=node)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=node)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=node)
+

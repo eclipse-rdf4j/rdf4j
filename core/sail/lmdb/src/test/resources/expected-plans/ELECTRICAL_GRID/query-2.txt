@@ -1,0 +1,49 @@
+Projection (resultSizeActual=10)
+╠══ ProjectionElemList
+║     ProjectionElem "transformer"
+║     ProjectionElem "meterCount"
+╚══ Extension (resultSizeActual=10)
+   ├── Extension (resultSizeActual=10)
+   │  ╠══ Filter (resultSizeActual=10)
+   │  ║  ├── Compare (>)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (transformer) (resultSizeActual=10)
+   │  ║        LeftJoin (LeftJoinIterator) (resultSizeActual=38)
+   │  ║        ├── Join (JoinIterator) (resultSizeActual=10) [left]
+   │  ║        │  ╠══ StatementPattern (costEstimate=9.2K, resultSizeEstimate=18.3K, resultSizeActual=28.0K) [left]
+   │  ║        │  ║     s: Var (name=transformer)
+   │  ║        │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║        │  ║     o: Var (name=_const_d6ff201a_uri, value=http://example.com/theme/grid/Transformer, anonymous)
+   │  ║        │  ╚══ Join (JoinIterator) (resultSizeActual=10) [right]
+   │  ║        │     ├── StatementPattern (costEstimate=1.22, resultSizeEstimate=1.00, resultSizeActual=28.0K) [left]
+   │  ║        │     │     s: Var (name=transformer)
+   │  ║        │     │     p: Var (name=_const_35542676_uri, value=http://example.com/theme/grid/feeds, anonymous)
+   │  ║        │     │     o: Var (name=substation)
+   │  ║        │     └── Filter (resultSizeActual=10) [right]
+   │  ║        │        ╠══ ListMemberOperator
+   │  ║        │        ║     Var (name=name)
+   │  ║        │        ║     ValueConstant (value="Substation 0")
+   │  ║        │        ║     ValueConstant (value="Substation 1")
+   │  ║        │        ║     ValueConstant (value="Substation 2")
+   │  ║        │        ╚══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=28.0K)
+   │  ║        │              s: Var (name=substation)
+   │  ║        │              p: Var (name=_const_9661228a_uri, value=http://example.com/theme/grid/name, anonymous)
+   │  ║        │              o: Var (name=name)
+   │  ║        └── StatementPattern (resultSizeEstimate=3.80, resultSizeActual=38) [right]
+   │  ║              s: Var (name=transformer)
+   │  ║              p: Var (name=_const_fe6c498e_uri, value=http://example.com/theme/grid/hasMeter, anonymous)
+   │  ║              o: Var (name=meter)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count
+   │  ║              Var (name=meter)
+   │  ║        GroupElem (meterCount)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=meter)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count
+   │           Var (name=meter)
+   └── ExtensionElem (meterCount)
+         Count (Distinct)
+            Var (name=meter)
+

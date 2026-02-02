@@ -1,0 +1,49 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Filter (resultSizeActual=494)
+   │  ║  ├── ListMemberOperator
+   │  ║  │     Var (name=optName)
+   │  ║  │     ValueConstant (value="user7")
+   │  ║  │     ValueConstant (value="user8")
+   │  ║  │     ValueConstant (value="user9")
+   │  ║  │     ValueConstant (value="user10")
+   │  ║  │     ValueConstant (value="user11")
+   │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=494)
+   │  ║     ╠══ Union (new scope) (resultSizeActual=494) [left]
+   │  ║     ║  ├── Join (JoinIterator) (resultSizeActual=27)
+   │  ║     ║  │  ╠══ Extension (new scope) (resultSizeActual=192) [left]
+   │  ║     ║  │  ║  ├── Join (JoinIterator) (resultSizeActual=192)
+   │  ║     ║  │  ║  │  ╠══ StatementPattern (costEstimate=0.50, resultSizeEstimate=143.6K, resultSizeActual=143.7K) [left]
+   │  ║     ║  │  ║  │  ║     s: Var (name=v)
+   │  ║     ║  │  ║  │  ║     p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║     ║  │  ║  │  ║     o: Var (name=u)
+   │  ║     ║  │  ║  │  ╚══ StatementPattern (costEstimate=31.9K, resultSizeEstimate=0.00, resultSizeActual=192) [right]
+   │  ║     ║  │  ║  │        s: Var (name=u)
+   │  ║     ║  │  ║  │        p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║     ║  │  ║  │        o: Var (name=v)
+   │  ║     ║  │  ║  └── ExtensionElem (activity)
+   │  ║     ║  │  ║        Var (name=v)
+   │  ║     ║  │  ╚══ BindingSetAssignment ([[u=http://example.com/theme/social/user/7], [u=http://example.com/theme/social/user/8], [u=http://example.com/theme/social/user/9], [u=http://example.com/theme/social/user/10], [u=http://example.com/theme/social/user/11]]) (costEstimate=6.00, resultSizeEstimate=1.00, resultSizeActual=27) [right]
+   │  ║     ║  └── Join (JoinIterator) (resultSizeActual=467)
+   │  ║     ║     ╠══ Extension (new scope) (resultSizeActual=1.4M) [left]
+   │  ║     ║     ║  ├── StatementPattern (resultSizeEstimate=1.4M, resultSizeActual=1.4M)
+   │  ║     ║     ║  │     s: Var (name=post)
+   │  ║     ║     ║  │     p: Var (name=_const_34211a22_uri, value=http://example.com/theme/social/authored, anonymous)
+   │  ║     ║     ║  │     o: Var (name=u)
+   │  ║     ║     ║  └── ExtensionElem (activity)
+   │  ║     ║     ║        Var (name=post)
+   │  ║     ║     ╚══ BindingSetAssignment ([[u=http://example.com/theme/social/user/7], [u=http://example.com/theme/social/user/8], [u=http://example.com/theme/social/user/9], [u=http://example.com/theme/social/user/10], [u=http://example.com/theme/social/user/11]]) (costEstimate=6.00, resultSizeEstimate=1.00, resultSizeActual=467) [right]
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=1.00, resultSizeActual=494) [right]
+   │  ║           s: Var (name=u)
+   │  ║           p: Var (name=_const_7d17b943_uri, value=http://example.com/theme/social/name, anonymous)
+   │  ║           o: Var (name=optName)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=activity)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=activity)
+

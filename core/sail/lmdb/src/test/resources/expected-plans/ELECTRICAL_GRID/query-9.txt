@@ -1,0 +1,41 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Difference (resultSizeActual=0)
+   │  ║  ├── LeftJoin (LeftJoinIterator) (resultSizeActual=0)
+   │  ║  │  ╠══ Join (JoinIterator) (resultSizeActual=0) [left]
+   │  ║  │  ║  ├── Filter (resultSizeActual=58) [left]
+   │  ║  │  ║  │  ╠══ ListMemberOperator
+   │  ║  │  ║  │  ║     Var (name=cap)
+   │  ║  │  ║  │  ║     ValueConstant (value="500"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  │  ║  │  ║     ValueConstant (value="600"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  │  ║  │  ║     ValueConstant (value="700"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  │  ║  │  ╚══ StatementPattern (costEstimate=4.7K, resultSizeEstimate=9.4K, resultSizeActual=9.3K)
+   │  ║  │  ║  │        s: Var (name=line)
+   │  ║  │  ║  │        p: Var (name=_const_f300a539_uri, value=http://example.com/theme/grid/capacity, anonymous)
+   │  ║  │  ║  │        o: Var (name=cap)
+   │  ║  │  ║  └── StatementPattern (costEstimate=1.00, resultSizeEstimate=0.55, resultSizeActual=0) [right]
+   │  ║  │  ║        s: Var (name=line)
+   │  ║  │  ║        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │  ║        o: Var (name=_const_9651cc13_uri, value=http://example.com/theme/grid/Line, anonymous)
+   │  ║  │  ╚══ StatementPattern (resultSizeEstimate=2.00) [right]
+   │  ║  │        s: Var (name=line)
+   │  ║  │        p: Var (name=_const_342e0de3_uri, value=http://example.com/theme/grid/connectsTo, anonymous)
+   │  ║  │        o: Var (name=substation)
+   │  ║  └── Filter (new scope)
+   │  ║     ╠══ Compare (<)
+   │  ║     ║     Var (name=cap2)
+   │  ║     ║     ValueConstant (value="500"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=9.4K)
+   │  ║           s: Var (name=line)
+   │  ║           p: Var (name=_const_f300a539_uri, value=http://example.com/theme/grid/capacity, anonymous)
+   │  ║           o: Var (name=cap2)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=line)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=line)
+

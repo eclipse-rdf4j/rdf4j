@@ -1,0 +1,46 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Difference (resultSizeActual=0)
+   │  ║  ├── Filter (resultSizeActual=13.8K)
+   │  ║  │  ╠══ Exists
+   │  ║  │  ║     StatementPattern (resultSizeEstimate=5.8K, resultSizeActual=0)
+   │  ║  │  ║        s: Var (name=patient)
+   │  ║  │  ║        p: Var (name=_const_fe9f43e1_uri, value=http://example.com/theme/medical/hasMedication, anonymous)
+   │  ║  │  ║        o: Var (name=med)
+   │  ║  │  ╚══ Join (JoinIterator) (resultSizeActual=13.8K)
+   │  ║  │     ├── StatementPattern (costEstimate=8.9K, resultSizeEstimate=17.8K, resultSizeActual=16.6K) [left]
+   │  ║  │     │     s: Var (name=med)
+   │  ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │     o: Var (name=_const_ea395317_uri, value=http://example.com/theme/medical/Medication, anonymous)
+   │  ║  │     └── Filter (resultSizeActual=13.8K) [right]
+   │  ║  │        ╠══ Or
+   │  ║  │        ║  ├── Compare (=)
+   │  ║  │        ║  │     Var (name=code)
+   │  ║  │        ║  │     ValueConstant (value="MED-1000")
+   │  ║  │        ║  └── Compare (=)
+   │  ║  │        ║        Var (name=code)
+   │  ║  │        ║        ValueConstant (value="MED-1001")
+   │  ║  │        ╚══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=16.6K)
+   │  ║  │              s: Var (name=med)
+   │  ║  │              p: Var (name=_const_98e9815_uri, value=http://example.com/theme/medical/code, anonymous)
+   │  ║  │              o: Var (name=code)
+   │  ║  └── Filter (new scope) (resultSizeActual=16.6K)
+   │  ║     ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#contains)
+   │  ║     ║  ├── FunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)
+   │  ║     ║  │     Str
+   │  ║     ║  │        Var (name=dose)
+   │  ║     ║  └── ValueConstant (value="x")
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=16.7K, resultSizeActual=16.6K)
+   │  ║           s: Var (name=med)
+   │  ║           p: Var (name=_const_e2048edf_uri, value=http://example.com/theme/medical/dosage, anonymous)
+   │  ║           o: Var (name=dose)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=med)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=med)
+

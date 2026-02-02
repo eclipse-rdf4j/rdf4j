@@ -1,0 +1,46 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Difference (resultSizeActual=283)
+   │  ║  ├── Filter (resultSizeActual=284)
+   │  ║  │  ╠══ Compare (!=)
+   │  ║  │  ║     Var (name=optComponent)
+   │  ║  │  ║     Var (name=assembly)
+   │  ║  │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=284)
+   │  ║  │     ├── Join (JoinIterator) (resultSizeActual=2) [left]
+   │  ║  │     │  ╠══ Filter (resultSizeActual=2) [left]
+   │  ║  │     │  ║  ├── Or
+   │  ║  │     │  ║  │  ╠══ Compare (=)
+   │  ║  │     │  ║  │  ║     Var (name=name)
+   │  ║  │     │  ║  │  ║     ValueConstant (value="Assembly 1")
+   │  ║  │     │  ║  │  ╚══ Compare (=)
+   │  ║  │     │  ║  │        Var (name=name)
+   │  ║  │     │  ║  │        ValueConstant (value="Assembly 2")
+   │  ║  │     │  ║  └── StatementPattern (costEstimate=66.9K, resultSizeEstimate=133.8K, resultSizeActual=134.1K)
+   │  ║  │     │  ║        s: Var (name=assembly)
+   │  ║  │     │  ║        p: Var (name=_const_b8416c71_uri, value=http://example.com/theme/engineering/name, anonymous)
+   │  ║  │     │  ║        o: Var (name=name)
+   │  ║  │     │  ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0.61, resultSizeActual=2) [right]
+   │  ║  │     │        s: Var (name=assembly)
+   │  ║  │     │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │        o: Var (name=_const_27ef30ec_uri, value=http://example.com/theme/engineering/Assembly, anonymous)
+   │  ║  │     └── Extension (resultSizeActual=284) [right]
+   │  ║  │        ╠══ StatementPattern (resultSizeEstimate=140, resultSizeActual=284)
+   │  ║  │        ║     s: Var (name=component)
+   │  ║  │        ║     p: Var (name=_const_b1044d90_uri, value=http://example.com/theme/engineering/partOf, anonymous)
+   │  ║  │        ║     o: Var (name=assembly)
+   │  ║  │        ╚══ ExtensionElem (optComponent)
+   │  ║  │              Var (name=component)
+   │  ║  └── StatementPattern (new scope) (resultSizeEstimate=520, resultSizeActual=520)
+   │  ║        s: Var (name=requirement)
+   │  ║        p: Var (name=_const_b98f621b_uri, value=http://example.com/theme/engineering/satisfies, anonymous)
+   │  ║        o: Var (name=component)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=assembly)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=assembly)
+

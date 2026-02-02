@@ -1,0 +1,51 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Filter (resultSizeActual=0)
+   │  ║  ├── And
+   │  ║  │  ╠══ Not
+   │  ║  │  ║     Exists
+   │  ║  │  ║        Filter (resultSizeActual=0)
+   │  ║  │  ║        ├── Compare (<)
+   │  ║  │  ║        │     Var (name=low)
+   │  ║  │  ║        │     ValueConstant (value="50"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  │  ║        └── StatementPattern (resultSizeEstimate=109.5K, resultSizeActual=224.1K)
+   │  ║  │  ║              s: Var (name=load)
+   │  ║  │  ║              p: Var (name=_const_3cb27b8c_uri, value=http://example.com/theme/grid/loadValue, anonymous)
+   │  ║  │  ║              o: Var (name=low)
+   │  ║  │  ╚══ Compare (>)
+   │  ║  │        Var (name=optValue)
+   │  ║  │        ValueConstant (value="200"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=224.1K)
+   │  ║     ╠══ Join (JoinIterator) (resultSizeActual=224.1K) [left]
+   │  ║     ║  ├── StatementPattern (costEstimate=7.7K, resultSizeEstimate=15.4K, resultSizeActual=112.0K) [left]
+   │  ║     ║  │     s: Var (name=meter)
+   │  ║     ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║  │     o: Var (name=_const_33f4134a_uri, value=http://example.com/theme/grid/Meter, anonymous)
+   │  ║     ║  └── Union (resultSizeActual=224.1K) [right]
+   │  ║     ║     ╠══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=112.0K)
+   │  ║     ║     ║     s: Var (name=meter)
+   │  ║     ║     ║     p: Var (name=_const_bcd29754_uri, value=http://example.com/theme/grid/measures, anonymous)
+   │  ║     ║     ║     o: Var (name=load)
+   │  ║     ║     ╚══ Join (JoinIterator) (resultSizeActual=112.0K)
+   │  ║     ║        ├── StatementPattern (costEstimate=1.22, resultSizeEstimate=1.00, resultSizeActual=112.0K) [left]
+   │  ║     ║        │     s: Var (name=meter)
+   │  ║     ║        │     p: Var (name=_const_bcd29754_uri, value=http://example.com/theme/grid/measures, anonymous)
+   │  ║     ║        │     o: Var (name=load)
+   │  ║     ║        └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=112.0K) [right]
+   │  ║     ║              s: Var (name=load)
+   │  ║     ║              p: Var (name=_const_3cb27b8c_uri, value=http://example.com/theme/grid/loadValue, anonymous)
+   │  ║     ║              o: Var (name=value)
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=1.00, resultSizeActual=224.1K) [right]
+   │  ║           s: Var (name=load)
+   │  ║           p: Var (name=_const_3cb27b8c_uri, value=http://example.com/theme/grid/loadValue, anonymous)
+   │  ║           o: Var (name=optValue)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=meter)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=meter)
+

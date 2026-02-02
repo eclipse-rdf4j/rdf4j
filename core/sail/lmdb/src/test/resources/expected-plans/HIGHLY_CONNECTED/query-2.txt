@@ -1,0 +1,49 @@
+Projection (resultSizeActual=36.7K)
+╠══ ProjectionElemList
+║     ProjectionElem "node"
+║     ProjectionElem "neighborCount"
+╚══ Extension (resultSizeActual=36.7K)
+   ├── Extension (resultSizeActual=36.7K)
+   │  ╠══ Filter (resultSizeActual=36.7K)
+   │  ║  ├── Compare (>)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (node) (resultSizeActual=36.7K)
+   │  ║        LeftJoin (LeftJoinIterator) (resultSizeActual=470.5K)
+   │  ║        ├── Join (JoinIterator) (resultSizeActual=470.5K) [left]
+   │  ║        │  ╠══ Filter (resultSizeActual=66.8K) [left]
+   │  ║        │  ║  ├── ListMemberOperator
+   │  ║        │  ║  │     Var (name=w)
+   │  ║        │  ║  │     ValueConstant (value="1"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║        │  ║  │     ValueConstant (value="2"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║        │  ║  │     ValueConstant (value="3"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║        │  ║  └── StatementPattern (costEstimate=72.2K, resultSizeEstimate=216.6K, resultSizeActual=222.7K)
+   │  ║        │  ║        s: Var (name=node)
+   │  ║        │  ║        p: Var (name=_const_909a60a8_uri, value=http://example.com/theme/connected/weight, anonymous)
+   │  ║        │  ║        o: Var (name=w)
+   │  ║        │  ╚══ Join (JoinIterator) (resultSizeActual=470.5K) [right]
+   │  ║        │     ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=1.00, resultSizeActual=66.8K) [left]
+   │  ║        │     │     s: Var (name=node)
+   │  ║        │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║        │     │     o: Var (name=_const_b000c52_uri, value=http://example.com/theme/connected/Node, anonymous)
+   │  ║        │     └── StatementPattern (costEstimate=3.29, resultSizeEstimate=6.77, resultSizeActual=470.5K) [right]
+   │  ║        │           s: Var (name=node)
+   │  ║        │           p: Var (name=_const_2e732754_uri, value=http://example.com/theme/connected/connectsTo, anonymous)
+   │  ║        │           o: Var (name=neighbor)
+   │  ║        └── StatementPattern (resultSizeEstimate=0.00, resultSizeActual=66) [right]
+   │  ║              s: Var (name=neighbor)
+   │  ║              p: Var (name=_const_2e732754_uri, value=http://example.com/theme/connected/connectsTo, anonymous)
+   │  ║              o: Var (name=node)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count
+   │  ║              Var (name=neighbor)
+   │  ║        GroupElem (neighborCount)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=neighbor)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count
+   │           Var (name=neighbor)
+   └── ExtensionElem (neighborCount)
+         Count (Distinct)
+            Var (name=neighbor)
+

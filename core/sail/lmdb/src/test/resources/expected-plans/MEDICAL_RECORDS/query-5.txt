@@ -1,0 +1,46 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Filter (resultSizeActual=0)
+   │  ║  ├── Not
+   │  ║  │     Exists
+   │  ║  │        StatementPattern (resultSizeEstimate=32.2K, resultSizeActual=0)
+   │  ║  │           s: Var (name=enc)
+   │  ║  │           p: Var (name=_const_7e7389c9_uri, value=http://example.com/theme/medical/hasCondition, anonymous)
+   │  ║  │           o: Var (name=cond)
+   │  ║  └── Join (JoinIterator) (resultSizeActual=3.0K)
+   │  ║     ╠══ BindingSetAssignment ([[limit="55"^^<http://www.w3.org/2001/XMLSchema#integer>]]) (costEstimate=6.00, resultSizeEstimate=1.00, resultSizeActual=1) [left]
+   │  ║     ╚══ Join (JoinIterator) (resultSizeActual=3.0K) [right]
+   │  ║        ├── StatementPattern (costEstimate=49.5K, resultSizeEstimate=24.8K, resultSizeActual=24.9K) [left]
+   │  ║        │     s: Var (name=patient)
+   │  ║        │     p: Var (name=_const_ca285e1_uri, value=http://example.com/theme/medical/hasEncounter, anonymous)
+   │  ║        │     o: Var (name=enc)
+   │  ║        └── Join (JoinIterator) (resultSizeActual=3.0K) [right]
+   │  ║           ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0.99, resultSizeActual=24.9K) [left]
+   │  ║           ║     s: Var (name=patient)
+   │  ║           ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           ║     o: Var (name=_const_24be87bd_uri, value=http://example.com/theme/medical/Patient, anonymous)
+   │  ║           ╚══ Join (JoinIterator) (resultSizeActual=3.0K) [right]
+   │  ║              ├── StatementPattern (costEstimate=1.32, resultSizeEstimate=1.99, resultSizeActual=49.6K) [left]
+   │  ║              │     s: Var (name=enc)
+   │  ║              │     p: Var (name=_const_6f00815a_uri, value=http://example.com/theme/medical/hasObservation, anonymous)
+   │  ║              │     o: Var (name=obs)
+   │  ║              └── Filter (resultSizeActual=3.0K) [right]
+   │  ║                 ╠══ ListMemberOperator
+   │  ║                 ║     Var (name=value)
+   │  ║                 ║     ValueConstant (value="50"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║                 ║     ValueConstant (value="60"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║                 ║     ValueConstant (value="70"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║                 ╚══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=49.6K)
+   │  ║                       s: Var (name=obs)
+   │  ║                       p: Var (name=_const_2949ec49_uri, value=http://example.com/theme/medical/value, anonymous)
+   │  ║                       o: Var (name=value)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=patient)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=patient)
+

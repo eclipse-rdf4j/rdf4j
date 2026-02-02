@@ -1,0 +1,49 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Difference (resultSizeActual=38.7K)
+   │  ║  ├── Filter (resultSizeActual=38.7K)
+   │  ║  │  ╠══ Compare (>)
+   │  ║  │  ║     Var (name=optValue)
+   │  ║  │  ║     ValueConstant (value="60"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=49.6K)
+   │  ║  │     ├── StatementPattern (resultSizeEstimate=19.8K, resultSizeActual=8.3K) [left]
+   │  ║  │     │     s: Var (name=patient)
+   │  ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │     o: Var (name=_const_24be87bd_uri, value=http://example.com/theme/medical/Patient, anonymous)
+   │  ║  │     └── Extension (resultSizeActual=49.6K) [right]
+   │  ║  │        ╠══ Join (JoinIterator) (resultSizeActual=49.6K)
+   │  ║  │        ║  ├── StatementPattern (costEstimate=1.41, resultSizeEstimate=3.00, resultSizeActual=24.9K) [left]
+   │  ║  │        ║  │     s: Var (name=patient)
+   │  ║  │        ║  │     p: Var (name=_const_ca285e1_uri, value=http://example.com/theme/medical/hasEncounter, anonymous)
+   │  ║  │        ║  │     o: Var (name=_anon_path_1, anonymous)
+   │  ║  │        ║  └── Join (JoinIterator) (resultSizeActual=49.6K) [right]
+   │  ║  │        ║     ╠══ StatementPattern (costEstimate=1.32, resultSizeEstimate=1.99, resultSizeActual=49.6K) [left]
+   │  ║  │        ║     ║     s: Var (name=_anon_path_1, anonymous)
+   │  ║  │        ║     ║     p: Var (name=_const_6f00815a_uri, value=http://example.com/theme/medical/hasObservation, anonymous)
+   │  ║  │        ║     ║     o: Var (name=obs)
+   │  ║  │        ║     ╚══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=49.6K) [right]
+   │  ║  │        ║           s: Var (name=obs)
+   │  ║  │        ║           p: Var (name=_const_2949ec49_uri, value=http://example.com/theme/medical/value, anonymous)
+   │  ║  │        ║           o: Var (name=value)
+   │  ║  │        ╚══ ExtensionElem (optValue)
+   │  ║  │              Var (name=value)
+   │  ║  └── Filter (new scope) (resultSizeActual=0)
+   │  ║     ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#contains)
+   │  ║     ║  ├── FunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)
+   │  ║     ║  │     Str
+   │  ║     ║  │        Var (name=name)
+   │  ║     ║  └── ValueConstant (value="test")
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=21.4K, resultSizeActual=21.4K)
+   │  ║           s: Var (name=patient)
+   │  ║           p: Var (name=_const_99364b3_uri, value=http://example.com/theme/medical/name, anonymous)
+   │  ║           o: Var (name=name)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=patient)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=patient)
+

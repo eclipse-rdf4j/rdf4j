@@ -1,0 +1,45 @@
+Projection (resultSizeActual=8.3K)
+╠══ ProjectionElemList
+║     ProjectionElem "patient"
+║     ProjectionElem "medCount"
+╚══ Extension (resultSizeActual=8.3K)
+   ├── Extension (resultSizeActual=8.3K)
+   │  ╠══ Filter (resultSizeActual=8.3K)
+   │  ║  ├── Compare (>)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (patient) (resultSizeActual=8.3K)
+   │  ║        Filter (resultSizeActual=66.8K)
+   │  ║        ├── Compare (!=)
+   │  ║        │     Var (name=optMed)
+   │  ║        │     Var (name=patient)
+   │  ║        └── LeftJoin (LeftJoinIterator) (resultSizeActual=66.8K)
+   │  ║           ╠══ Union (resultSizeActual=33.3K) [left]
+   │  ║           ║  ├── StatementPattern (new scope) (resultSizeEstimate=18.0K, resultSizeActual=8.3K)
+   │  ║           ║  │     s: Var (name=patient)
+   │  ║           ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           ║  │     o: Var (name=_const_24be87bd_uri, value=http://example.com/theme/medical/Patient, anonymous)
+   │  ║           ║  └── StatementPattern (new scope) (resultSizeEstimate=24.9K, resultSizeActual=24.9K)
+   │  ║           ║        s: Var (name=patient)
+   │  ║           ║        p: Var (name=_const_ca285e1_uri, value=http://example.com/theme/medical/hasEncounter, anonymous)
+   │  ║           ║        o: Var (name=enc)
+   │  ║           ╚══ Extension (resultSizeActual=66.8K) [right]
+   │  ║              ├── StatementPattern (resultSizeEstimate=2.01, resultSizeActual=66.8K)
+   │  ║              │     s: Var (name=patient)
+   │  ║              │     p: Var (name=_const_fe9f43e1_uri, value=http://example.com/theme/medical/hasMedication, anonymous)
+   │  ║              │     o: Var (name=med)
+   │  ║              └── ExtensionElem (optMed)
+   │  ║                    Var (name=med)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count
+   │  ║              Var (name=med)
+   │  ║        GroupElem (medCount)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=med)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count
+   │           Var (name=med)
+   └── ExtensionElem (medCount)
+         Count (Distinct)
+            Var (name=med)
+

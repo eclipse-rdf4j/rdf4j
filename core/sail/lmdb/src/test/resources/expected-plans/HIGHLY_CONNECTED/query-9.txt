@@ -1,0 +1,45 @@
+Projection (resultSizeActual=40.2K)
+╠══ ProjectionElemList
+║     ProjectionElem "node"
+║     ProjectionElem "degree"
+╚══ Extension (resultSizeActual=40.2K)
+   ├── Extension (resultSizeActual=40.2K)
+   │  ╠══ Filter (resultSizeActual=40.2K)
+   │  ║  ├── Compare (>)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="1"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (node) (resultSizeActual=40.2K)
+   │  ║        Filter (resultSizeActual=2.9M)
+   │  ║        ├── Compare (!=)
+   │  ║        │     Var (name=optWeight)
+   │  ║        │     ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║        └── LeftJoin (LeftJoinIterator) (resultSizeActual=2.9M)
+   │  ║           ╠══ Union (resultSizeActual=534.5K) [left]
+   │  ║           ║  ├── StatementPattern (new scope) (resultSizeEstimate=266.8K, resultSizeActual=267.2K)
+   │  ║           ║  │     s: Var (name=node)
+   │  ║           ║  │     p: Var (name=_const_2e732754_uri, value=http://example.com/theme/connected/connectsTo, anonymous)
+   │  ║           ║  │     o: Var (name=neighbor)
+   │  ║           ║  └── StatementPattern (new scope) (resultSizeEstimate=266.8K, resultSizeActual=267.2K)
+   │  ║           ║        s: Var (name=neighbor)
+   │  ║           ║        p: Var (name=_const_2e732754_uri, value=http://example.com/theme/connected/connectsTo, anonymous)
+   │  ║           ║        o: Var (name=node)
+   │  ║           ╚══ Extension (resultSizeActual=2.9M) [right]
+   │  ║              ├── StatementPattern (resultSizeEstimate=5.14, resultSizeActual=2.9M)
+   │  ║              │     s: Var (name=neighbor)
+   │  ║              │     p: Var (name=_const_909a60a8_uri, value=http://example.com/theme/connected/weight, anonymous)
+   │  ║              │     o: Var (name=w)
+   │  ║              └── ExtensionElem (optWeight)
+   │  ║                    Var (name=w)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count
+   │  ║              Var (name=neighbor)
+   │  ║        GroupElem (degree)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=neighbor)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count
+   │           Var (name=neighbor)
+   └── ExtensionElem (degree)
+         Count (Distinct)
+            Var (name=neighbor)
+

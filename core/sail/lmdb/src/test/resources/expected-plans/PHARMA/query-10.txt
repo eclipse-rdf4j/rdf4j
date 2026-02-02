@@ -1,0 +1,68 @@
+Projection (resultSizeActual=51)
+╠══ ProjectionElemList
+║     ProjectionElem "pathway"
+║     ProjectionElem "drugCount"
+╚══ Extension (resultSizeActual=51)
+   ├── Extension (resultSizeActual=51)
+   │  ╠══ Filter (resultSizeActual=51)
+   │  ║  ├── Compare (>)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="1"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (pathway) (resultSizeActual=105)
+   │  ║        Filter (resultSizeActual=206)
+   │  ║        ├── And
+   │  ║        │  ╠══ Exists
+   │  ║        │  ║     Join (JoinIterator) (resultSizeActual=0)
+   │  ║        │  ║     ╠══ StatementPattern (costEstimate=319.6K, resultSizeEstimate=314, resultSizeActual=191.6K) [left]
+   │  ║        │  ║     ║     s: Var (name=result)
+   │  ║        │  ║     ║     p: Var (name=_const_80a6979a_uri, value=http://example.com/theme/pharma/biomarker, anonymous)
+   │  ║        │  ║     ║     o: Var (name=marker)
+   │  ║        │  ║     ╚══ Join (JoinIterator) (resultSizeActual=11.4K) [right]
+   │  ║        │  ║        ├── StatementPattern (costEstimate=1.22, resultSizeEstimate=1.00, resultSizeActual=191.6K) [left]
+   │  ║        │  ║        │     s: Var (name=arm)
+   │  ║        │  ║        │     p: Var (name=_const_60f6d7af_uri, value=http://example.com/theme/pharma/hasResult, anonymous)
+   │  ║        │  ║        │     o: Var (name=result)
+   │  ║        │  ║        └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=11.4K) [right]
+   │  ║        │  ║              s: Var (name=trial)
+   │  ║        │  ║              p: Var (name=_const_73c2e40a_uri, value=http://example.com/theme/pharma/hasArm, anonymous)
+   │  ║        │  ║              o: Var (name=arm)
+   │  ║        │  ╚══ Compare (!=)
+   │  ║        │        Var (name=optTrial)
+   │  ║        │        ValueConstant (value=http://example.com/theme/pharma/trial/0)
+   │  ║        └── LeftJoin (LeftJoinIterator) (resultSizeActual=22.6K)
+   │  ║           ╠══ Join (JoinIterator) (resultSizeActual=19.8K) [left]
+   │  ║           ║  ├── BindingSetAssignment ([[marker=http://example.com/theme/pharma/biomarker/3], [marker=http://example.com/theme/pharma/biomarker/4]]) (costEstimate=6.00, resultSizeEstimate=1.00, resultSizeActual=2) [left]
+   │  ║           ║  └── Join (JoinIterator) (resultSizeActual=19.8K) [right]
+   │  ║           ║     ╠══ StatementPattern (costEstimate=2.0K, resultSizeEstimate=664, resultSizeActual=1.3K) [left]
+   │  ║           ║     ║     s: Var (name=target)
+   │  ║           ║     ║     p: Var (name=_const_1a978c1d_uri, value=http://example.com/theme/pharma/inPathway, anonymous)
+   │  ║           ║     ║     o: Var (name=pathway)
+   │  ║           ║     ╚══ Join (JoinIterator) (resultSizeActual=19.8K) [right]
+   │  ║           ║        ├── StatementPattern (costEstimate=2.96, resultSizeEstimate=30, resultSizeActual=40.0K) [left]
+   │  ║           ║        │     s: Var (name=drug)
+   │  ║           ║        │     p: Var (name=_const_7f67635a_uri, value=http://example.com/theme/pharma/targets, anonymous)
+   │  ║           ║        │     o: Var (name=target)
+   │  ║           ║        └── StatementPattern (costEstimate=1.00, resultSizeEstimate=0.79, resultSizeActual=19.8K) [right]
+   │  ║           ║              s: Var (name=drug)
+   │  ║           ║              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           ║              o: Var (name=_const_f6bbe068_uri, value=http://example.com/theme/pharma/Drug, anonymous)
+   │  ║           ╚══ Extension (resultSizeActual=11.3K) [right]
+   │  ║              ├── StatementPattern (resultSizeEstimate=0.57, resultSizeActual=11.3K)
+   │  ║              │     s: Var (name=drug)
+   │  ║              │     p: Var (name=_const_4389be5e_uri, value=http://example.com/theme/pharma/testedIn, anonymous)
+   │  ║              │     o: Var (name=trial)
+   │  ║              └── ExtensionElem (optTrial)
+   │  ║                    Var (name=trial)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=drug)
+   │  ║        GroupElem (drugCount)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=drug)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count (Distinct)
+   │           Var (name=drug)
+   └── ExtensionElem (drugCount)
+         Count (Distinct)
+            Var (name=drug)
+

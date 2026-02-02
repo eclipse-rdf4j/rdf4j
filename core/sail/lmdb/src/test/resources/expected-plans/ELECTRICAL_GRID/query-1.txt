@@ -1,0 +1,51 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=8)
+   │  ║  ├── Filter (resultSizeActual=8) [left]
+   │  ║  │  ╠══ Or
+   │  ║  │  ║  ├── Compare (=)
+   │  ║  │  ║  │     Var (name=name)
+   │  ║  │  ║  │     Var (name=target)
+   │  ║  │  ║  └── Compare (=)
+   │  ║  │  ║        Var (name=name)
+   │  ║  │  ║        ValueConstant (value="Substation 3")
+   │  ║  │  ╚══ Join (JoinIterator) (resultSizeActual=37.4K)
+   │  ║  │     ├── BindingSetAssignment ([[target="Substation 1"], [target="Substation 2"]]) (costEstimate=6.00, resultSizeEstimate=1.00, resultSizeActual=2) [left]
+   │  ║  │     └── Union (resultSizeActual=37.4K) [right]
+   │  ║  │        ╠══ Join (JoinIterator) (resultSizeActual=18.7K)
+   │  ║  │        ║  ├── StatementPattern (costEstimate=26.9K, resultSizeEstimate=9.0K, resultSizeActual=18.7K) [left]
+   │  ║  │        ║  │     s: Var (name=entity)
+   │  ║  │        ║  │     p: Var (name=_const_9661228a_uri, value=http://example.com/theme/grid/name, anonymous)
+   │  ║  │        ║  │     o: Var (name=name)
+   │  ║  │        ║  └── StatementPattern (costEstimate=1.00, resultSizeEstimate=0.40, resultSizeActual=18.7K) [right]
+   │  ║  │        ║        s: Var (name=entity)
+   │  ║  │        ║        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │        ║        o: Var (name=_const_ac9f03d3_uri, value=http://example.com/theme/grid/Substation, anonymous)
+   │  ║  │        ╚══ Join (JoinIterator) (resultSizeActual=18.7K)
+   │  ║  │           ├── StatementPattern (costEstimate=126.6M, resultSizeEstimate=9.0K, resultSizeActual=18.7K) [left]
+   │  ║  │           │     s: Var (name=substation)
+   │  ║  │           │     p: Var (name=_const_9661228a_uri, value=http://example.com/theme/grid/name, anonymous)
+   │  ║  │           │     o: Var (name=name)
+   │  ║  │           └── Join (JoinIterator) (resultSizeActual=18.7K) [right]
+   │  ║  │              ╠══ StatementPattern (costEstimate=1.50, resultSizeEstimate=3.99, resultSizeActual=74.7K) [left]
+   │  ║  │              ║     s: Var (name=entity)
+   │  ║  │              ║     p: Var (name=_const_35542676_uri, value=http://example.com/theme/grid/feeds, anonymous)
+   │  ║  │              ║     o: Var (name=substation)
+   │  ║  │              ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0.40, resultSizeActual=18.7K) [right]
+   │  ║  │                    s: Var (name=entity)
+   │  ║  │                    p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │                    o: Var (name=_const_72f33a14_uri, value=http://example.com/theme/grid/Generator, anonymous)
+   │  ║  └── StatementPattern (resultSizeEstimate=0.50, resultSizeActual=4) [right]
+   │  ║        s: Var (name=entity)
+   │  ║        p: Var (name=_const_35542676_uri, value=http://example.com/theme/grid/feeds, anonymous)
+   │  ║        o: Var (name=substation2)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=entity)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=entity)
+

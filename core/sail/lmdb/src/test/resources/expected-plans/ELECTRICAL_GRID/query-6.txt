@@ -1,0 +1,55 @@
+Projection (resultSizeActual=9.3K)
+╠══ ProjectionElemList
+║     ProjectionElem "substation"
+║     ProjectionElem "assetCount"
+╚══ Extension (resultSizeActual=9.3K)
+   ├── Extension (resultSizeActual=9.3K)
+   │  ╠══ Filter (resultSizeActual=9.3K)
+   │  ║  ├── Compare (>)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (substation) (resultSizeActual=9.3K)
+   │  ║        Filter (resultSizeActual=37.3K)
+   │  ║        ├── Compare (!=)
+   │  ║        │     Var (name=optSub)
+   │  ║        │     Var (name=asset)
+   │  ║        └── LeftJoin (LeftJoinIterator) (resultSizeActual=37.3K)
+   │  ║           ╠══ Union (resultSizeActual=37.3K) [left]
+   │  ║           ║  ├── Join (JoinIterator) (resultSizeActual=28.0K)
+   │  ║           ║  │  ╠══ StatementPattern (costEstimate=9.5K, resultSizeEstimate=19.0K, resultSizeActual=28.0K) [left]
+   │  ║           ║  │  ║     s: Var (name=asset)
+   │  ║           ║  │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           ║  │  ║     o: Var (name=_const_d6ff201a_uri, value=http://example.com/theme/grid/Transformer, anonymous)
+   │  ║           ║  │  ╚══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=28.0K) [right]
+   │  ║           ║  │        s: Var (name=asset)
+   │  ║           ║  │        p: Var (name=_const_35542676_uri, value=http://example.com/theme/grid/feeds, anonymous)
+   │  ║           ║  │        o: Var (name=substation)
+   │  ║           ║  └── Join (JoinIterator) (resultSizeActual=9.3K)
+   │  ║           ║     ╠══ StatementPattern (costEstimate=90.1M, resultSizeEstimate=19.0K, resultSizeActual=9.3K) [left]
+   │  ║           ║     ║     s: Var (name=asset)
+   │  ║           ║     ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           ║     ║     o: Var (name=_const_72f33a14_uri, value=http://example.com/theme/grid/Generator, anonymous)
+   │  ║           ║     ╚══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=9.3K) [right]
+   │  ║           ║           s: Var (name=asset)
+   │  ║           ║           p: Var (name=_const_35542676_uri, value=http://example.com/theme/grid/feeds, anonymous)
+   │  ║           ║           o: Var (name=substation)
+   │  ║           ╚══ Extension (resultSizeActual=37.3K) [right]
+   │  ║              ├── StatementPattern (resultSizeEstimate=1.00, resultSizeActual=37.3K)
+   │  ║              │     s: Var (name=asset)
+   │  ║              │     p: Var (name=_const_35542676_uri, value=http://example.com/theme/grid/feeds, anonymous)
+   │  ║              │     o: Var (name=substation)
+   │  ║              └── ExtensionElem (optSub)
+   │  ║                    Var (name=substation)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count
+   │  ║              Var (name=asset)
+   │  ║        GroupElem (assetCount)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=asset)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count
+   │           Var (name=asset)
+   └── ExtensionElem (assetCount)
+         Count (Distinct)
+            Var (name=asset)
+

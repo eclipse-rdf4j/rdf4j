@@ -1,0 +1,40 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Filter (resultSizeActual=47)
+   │  ║  ├── Not
+   │  ║  │     Exists
+   │  ║  │        Filter (resultSizeActual=0)
+   │  ║  │        ╠══ Compare (<)
+   │  ║  │        ║     Var (name=cap2)
+   │  ║  │        ║     Var (name=threshold)
+   │  ║  │        ╚══ StatementPattern (resultSizeEstimate=9.0K, resultSizeActual=47)
+   │  ║  │              s: Var (name=generator)
+   │  ║  │              p: Var (name=_const_f300a539_uri, value=http://example.com/theme/grid/capacity, anonymous)
+   │  ║  │              o: Var (name=cap2)
+   │  ║  └── Join (JoinIterator) (resultSizeActual=47)
+   │  ║     ╠══ BindingSetAssignment ([[threshold="700"^^<http://www.w3.org/2001/XMLSchema#integer>]]) (costEstimate=6.00, resultSizeEstimate=1.00, resultSizeActual=1) [left]
+   │  ║     ╚══ Join (JoinIterator) (resultSizeActual=47) [right]
+   │  ║        ├── Filter (resultSizeActual=47) [left]
+   │  ║        │  ╠══ ListMemberOperator
+   │  ║        │  ║     Var (name=capacity)
+   │  ║        │  ║     ValueConstant (value="700"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║        │  ║     ValueConstant (value="800"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║        │  ║     ValueConstant (value="900"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║        │  ╚══ StatementPattern (costEstimate=28.0K, resultSizeEstimate=9.0K, resultSizeActual=9.3K)
+   │  ║        │        s: Var (name=generator)
+   │  ║        │        p: Var (name=_const_f300a539_uri, value=http://example.com/theme/grid/capacity, anonymous)
+   │  ║        │        o: Var (name=capacity)
+   │  ║        └── StatementPattern (costEstimate=1.00, resultSizeEstimate=0.55, resultSizeActual=47) [right]
+   │  ║              s: Var (name=generator)
+   │  ║              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║              o: Var (name=_const_72f33a14_uri, value=http://example.com/theme/grid/Generator, anonymous)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=generator)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=generator)
+

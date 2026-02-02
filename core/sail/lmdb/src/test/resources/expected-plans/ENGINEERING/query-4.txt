@@ -1,0 +1,40 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Filter (resultSizeActual=2)
+   │  ║  ├── Exists
+   │  ║  │     StatementPattern (resultSizeEstimate=1.1K, resultSizeActual=0)
+   │  ║  │        s: Var (name=component)
+   │  ║  │        p: Var (name=_const_ce5e09a0_uri, value=http://example.com/theme/engineering/dependsOn, anonymous)
+   │  ║  │        o: Var (name=dep)
+   │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=2)
+   │  ║     ╠══ Join (JoinIterator) (resultSizeActual=2) [left]
+   │  ║     ║  ├── StatementPattern (costEstimate=66.3K, resultSizeEstimate=132.7K, resultSizeActual=132.6K) [left]
+   │  ║     ║  │     s: Var (name=component)
+   │  ║     ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║  │     o: Var (name=_const_347c8ab7_uri, value=http://example.com/theme/engineering/Component, anonymous)
+   │  ║     ║  └── Filter (resultSizeActual=2) [right]
+   │  ║     ║     ╠══ Or
+   │  ║     ║     ║  ├── Compare (=)
+   │  ║     ║     ║  │     Var (name=name)
+   │  ║     ║     ║  │     ValueConstant (value="Component 1")
+   │  ║     ║     ║  └── Compare (=)
+   │  ║     ║     ║        Var (name=name)
+   │  ║     ║     ║        ValueConstant (value="Component 2")
+   │  ║     ║     ╚══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=132.6K)
+   │  ║     ║           s: Var (name=component)
+   │  ║     ║           p: Var (name=_const_b8416c71_uri, value=http://example.com/theme/engineering/name, anonymous)
+   │  ║     ║           o: Var (name=name)
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=1.00, resultSizeActual=2) [right]
+   │  ║           s: Var (name=component)
+   │  ║           p: Var (name=_const_b1044d90_uri, value=http://example.com/theme/engineering/partOf, anonymous)
+   │  ║           o: Var (name=assembly)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=component)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=component)
+

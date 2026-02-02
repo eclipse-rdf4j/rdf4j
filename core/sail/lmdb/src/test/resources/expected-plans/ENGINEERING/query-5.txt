@@ -1,0 +1,39 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Filter (resultSizeActual=0)
+   │  ║  ├── Not
+   │  ║  │     Exists
+   │  ║  │        Filter
+   │  ║  │        ╠══ Compare (<)
+   │  ║  │        ║     Var (name=value2)
+   │  ║  │        ║     Var (name=threshold)
+   │  ║  │        ╚══ StatementPattern (resultSizeEstimate=1.6K)
+   │  ║  │              s: Var (name=measurement)
+   │  ║  │              p: Var (name=_const_f682b725_uri, value=http://example.com/theme/engineering/measuredValue, anonymous)
+   │  ║  │              o: Var (name=value2)
+   │  ║  └── Join (JoinIterator) (resultSizeActual=0)
+   │  ║     ╠══ BindingSetAssignment ([[threshold="0.85"^^<http://www.w3.org/2001/XMLSchema#decimal>]]) (costEstimate=6.00, resultSizeEstimate=1.00, resultSizeActual=1) [left]
+   │  ║     ╚══ Join (JoinIterator) (resultSizeActual=0) [right]
+   │  ║        ├── Filter (resultSizeActual=0) [left]
+   │  ║        │  ╠══ ListMemberOperator
+   │  ║        │  ║     Var (name=value)
+   │  ║        │  ║     ValueConstant (value="0.9"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+   │  ║        │  ║     ValueConstant (value="0.95"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+   │  ║        │  ╚══ StatementPattern (costEstimate=4.7K, resultSizeEstimate=1.6K, resultSizeActual=1.5K)
+   │  ║        │        s: Var (name=measurement)
+   │  ║        │        p: Var (name=_const_f682b725_uri, value=http://example.com/theme/engineering/measuredValue, anonymous)
+   │  ║        │        o: Var (name=value)
+   │  ║        └── StatementPattern (costEstimate=1.00, resultSizeEstimate=0.50) [right]
+   │  ║              s: Var (name=measurement)
+   │  ║              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║              o: Var (name=_const_d63bc2f6_uri, value=http://example.com/theme/engineering/Measurement, anonymous)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=measurement)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=measurement)
+

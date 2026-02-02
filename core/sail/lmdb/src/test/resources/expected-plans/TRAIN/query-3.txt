@@ -1,0 +1,43 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Difference (resultSizeActual=67.3K)
+   │  ║  ├── Filter (resultSizeActual=67.3K)
+   │  ║  │  ╠══ Compare (!=)
+   │  ║  │  ║     Var (name=optTrack)
+   │  ║  │  ║     Var (name=section)
+   │  ║  │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=67.3K)
+   │  ║  │     ├── Join (JoinIterator) (resultSizeActual=67.3K) [left]
+   │  ║  │     │  ╠══ StatementPattern (costEstimate=31.8K, resultSizeEstimate=64.7K, resultSizeActual=67.3K) [left]
+   │  ║  │     │  ║     s: Var (name=section)
+   │  ║  │     │  ║     p: Var (name=_const_8ba830f_uri, value=http://example.com/theme/train/partOfLine, anonymous)
+   │  ║  │     │  ║     o: Var (name=line)
+   │  ║  │     │  ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0.98, resultSizeActual=67.3K) [right]
+   │  ║  │     │        s: Var (name=section)
+   │  ║  │     │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │        o: Var (name=_const_b0bb051f_uri, value=http://example.com/theme/train/SectionOfLine, anonymous)
+   │  ║  │     └── Extension (resultSizeActual=67.3K) [right]
+   │  ║  │        ╠══ StatementPattern (resultSizeEstimate=1.00, resultSizeActual=67.3K)
+   │  ║  │        ║     s: Var (name=section)
+   │  ║  │        ║     p: Var (name=_const_5289cea3_uri, value=http://example.com/theme/train/hasTrackSection, anonymous)
+   │  ║  │        ║     o: Var (name=track)
+   │  ║  │        ╚══ ExtensionElem (optTrack)
+   │  ║  │              Var (name=track)
+   │  ║  └── Filter (new scope) (resultSizeActual=1)
+   │  ║     ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#contains)
+   │  ║     ║  ├── Str
+   │  ║     ║  │     Var (name=name)
+   │  ║     ║  └── ValueConstant (value="Line 0")
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=45.2K, resultSizeActual=46.9K)
+   │  ║           s: Var (name=line)
+   │  ║           p: Var (name=_const_cf02f21c_uri, value=http://example.com/theme/train/name, anonymous)
+   │  ║           o: Var (name=name)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=section)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=section)
+

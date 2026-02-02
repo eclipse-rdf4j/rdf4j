@@ -1,0 +1,70 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "combo"
+║     ProjectionElem "sharedTargets"
+╚══ Extension (resultSizeActual=1)
+   ├── Extension (resultSizeActual=1)
+   │  ╠══ Filter (resultSizeActual=1)
+   │  ║  ├── Compare (>)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="1"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (combo) (resultSizeActual=5)
+   │  ║        Filter (resultSizeActual=22)
+   │  ║        ├── And
+   │  ║        │  ╠══ Exists
+   │  ║        │  ║     StatementPattern (resultSizeEstimate=3.3K, resultSizeActual=0)
+   │  ║        │  ║        s: Var (name=drugB)
+   │  ║        │  ║        p: Var (name=_const_72f8dc5a_uri, value=http://example.com/theme/pharma/hasSideEffect, anonymous)
+   │  ║        │  ║        o: Var (name=sideEffect2)
+   │  ║        │  ╚══ Compare (!=)
+   │  ║        │        Var (name=optSideEffect)
+   │  ║        │        ValueConstant (value=http://example.com/theme/pharma/side-effect/0)
+   │  ║        └── LeftJoin (LeftJoinIterator) (resultSizeActual=22)
+   │  ║           ╠══ Join (JoinIterator) (resultSizeActual=12) [left]
+   │  ║           ║  ├── StatementPattern (costEstimate=238, resultSizeEstimate=948, resultSizeActual=949) [left]
+   │  ║           ║  │     s: Var (name=combo)
+   │  ║           ║  │     p: Var (name=_const_94a74d5e_uri, value=http://example.com/theme/pharma/combinationOf, anonymous)
+   │  ║           ║  │     o: Var (name=drugA)
+   │  ║           ║  └── Join (JoinIterator) (resultSizeActual=12) [right]
+   │  ║           ║     ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0.71, resultSizeActual=949) [left]
+   │  ║           ║     ║     s: Var (name=combo)
+   │  ║           ║     ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           ║     ║     o: Var (name=_const_a4089907_uri, value=http://example.com/theme/pharma/Combination, anonymous)
+   │  ║           ║     ╚══ Filter (resultSizeActual=12) [right]
+   │  ║           ║        ├── Compare (!=)
+   │  ║           ║        │     Var (name=drugA)
+   │  ║           ║        │     Var (name=drugB)
+   │  ║           ║        └── Join (JoinIterator) (resultSizeActual=1.9K)
+   │  ║           ║           ╠══ StatementPattern (costEstimate=1.32, resultSizeEstimate=1.97, resultSizeActual=1.9K) [left]
+   │  ║           ║           ║     s: Var (name=drugA)
+   │  ║           ║           ║     p: Var (name=_const_7f67635a_uri, value=http://example.com/theme/pharma/targets, anonymous)
+   │  ║           ║           ║     o: Var (name=target)
+   │  ║           ║           ╚══ Join (JoinIterator) (resultSizeActual=1.9K) [right]
+   │  ║           ║              ├── StatementPattern (costEstimate=1.32, resultSizeEstimate=2.24, resultSizeActual=4.4K) [left]
+   │  ║           ║              │     s: Var (name=combo)
+   │  ║           ║              │     p: Var (name=_const_94a74d5e_uri, value=http://example.com/theme/pharma/combinationOf, anonymous)
+   │  ║           ║              │     o: Var (name=drugB)
+   │  ║           ║              └── StatementPattern (costEstimate=0.50, resultSizeEstimate=0.43, resultSizeActual=1.9K) [right]
+   │  ║           ║                    s: Var (name=drugB)
+   │  ║           ║                    p: Var (name=_const_7f67635a_uri, value=http://example.com/theme/pharma/targets, anonymous)
+   │  ║           ║                    o: Var (name=target)
+   │  ║           ╚══ Extension (resultSizeActual=22) [right]
+   │  ║              ├── StatementPattern (resultSizeEstimate=2.08, resultSizeActual=22)
+   │  ║              │     s: Var (name=drugA)
+   │  ║              │     p: Var (name=_const_72f8dc5a_uri, value=http://example.com/theme/pharma/hasSideEffect, anonymous)
+   │  ║              │     o: Var (name=sideEffect)
+   │  ║              └── ExtensionElem (optSideEffect)
+   │  ║                    Var (name=sideEffect)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=target)
+   │  ║        GroupElem (sharedTargets)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=target)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count (Distinct)
+   │           Var (name=target)
+   └── ExtensionElem (sharedTargets)
+         Count (Distinct)
+            Var (name=target)
+

@@ -1,0 +1,38 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=770.9K)
+   │  ║  ├── Filter (resultSizeActual=386.3K) [left]
+   │  ║  │  ╠══ Compare (!=)
+   │  ║  │  ║     Var (name=optBranch)
+   │  ║  │  ║     Var (name=book)
+   │  ║  │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=386.3K)
+   │  ║  │     ├── StatementPattern (resultSizeEstimate=128.9K, resultSizeActual=128.8K) [left]
+   │  ║  │     │     s: Var (name=book)
+   │  ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │     o: Var (name=_const_6cec5947_uri, value=http://example.com/theme/library/Book, anonymous)
+   │  ║  │     └── Extension (resultSizeActual=386.3K) [right]
+   │  ║  │        ╠══ Join (JoinIterator) (resultSizeActual=386.3K)
+   │  ║  │        ║  ├── StatementPattern (costEstimate=1.49, resultSizeEstimate=3.13, resultSizeActual=386.3K) [left]
+   │  ║  │        ║  │     s: Var (name=book)
+   │  ║  │        ║  │     p: Var (name=_const_469a1e31_uri, value=http://example.com/theme/library/hasCopy, anonymous)
+   │  ║  │        ║  │     o: Var (name=copy)
+   │  ║  │        ║  └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=386.3K) [right]
+   │  ║  │        ║        s: Var (name=copy)
+   │  ║  │        ║        p: Var (name=_const_ecfc63a7_uri, value=http://example.com/theme/library/locatedAt, anonymous)
+   │  ║  │        ║        o: Var (name=branch)
+   │  ║  │        ╚══ ExtensionElem (optBranch)
+   │  ║  │              Var (name=branch)
+   │  ║  └── StatementPattern (resultSizeEstimate=2.00, resultSizeActual=770.9K) [right]
+   │  ║        s: Var (name=book)
+   │  ║        p: Var (name=_const_e1624c50_uri, value=http://example.com/theme/library/writtenBy, anonymous)
+   │  ║        o: Var (name=author)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=book)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=book)
+

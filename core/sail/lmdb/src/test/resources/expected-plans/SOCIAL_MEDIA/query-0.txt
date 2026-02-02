@@ -1,0 +1,42 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Extension (resultSizeActual=6)
+   │  ║  ├── Filter (resultSizeActual=6)
+   │  ║  │  ╠══ ListMemberOperator
+   │  ║  │  ║     Var (name=optName)
+   │  ║  │  ║     ValueConstant (value="user0")
+   │  ║  │  ║     ValueConstant (value="user1")
+   │  ║  │  ║     ValueConstant (value="user2")
+   │  ║  │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=6)
+   │  ║  │     ├── Join (JoinIterator) (resultSizeActual=6) [left]
+   │  ║  │     │  ╠══ BindingSetAssignment ([[v=http://example.com/theme/social/user/0], [v=http://example.com/theme/social/user/1], [v=http://example.com/theme/social/user/2]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=3) [left]
+   │  ║  │     │  ╚══ Join (JoinIterator) (resultSizeActual=6) [right]
+   │  ║  │     │     ├── Filter (resultSizeActual=33) [left]
+   │  ║  │     │     │  ╠══ Compare (!=)
+   │  ║  │     │     │  ║     Var (name=u)
+   │  ║  │     │     │  ║     Var (name=v)
+   │  ║  │     │     │  ╚══ StatementPattern (costEstimate=4.00, resultSizeEstimate=11, resultSizeActual=33)
+   │  ║  │     │     │        s: Var (name=u)
+   │  ║  │     │     │        p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║  │     │     │        o: Var (name=v)
+   │  ║  │     │     └── BindingSetAssignment ([[u=http://example.com/theme/social/user/0], [u=http://example.com/theme/social/user/1], [u=http://example.com/theme/social/user/2]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=6) [right]
+   │  ║  │     └── StatementPattern (resultSizeEstimate=1.00, resultSizeActual=6) [right]
+   │  ║  │           s: Var (name=u)
+   │  ║  │           p: Var (name=_const_7d17b943_uri, value=http://example.com/theme/social/name, anonymous)
+   │  ║  │           o: Var (name=optName)
+   │  ║  └── ExtensionElem (pair)
+   │  ║        FunctionCall (http://www.w3.org/2005/xpath-functions#concat)
+   │  ║        ├── Str
+   │  ║        │     Var (name=u)
+   │  ║        └── Str
+   │  ║              Var (name=v)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=pair)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=pair)
+

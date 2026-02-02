@@ -1,0 +1,60 @@
+Projection (resultSizeActual=80)
+╠══ ProjectionElemList
+║     ProjectionElem "combo"
+║     ProjectionElem "drugCount"
+╚══ Extension (resultSizeActual=80)
+   ├── Extension (resultSizeActual=80)
+   │  ╠══ Filter (resultSizeActual=80)
+   │  ║  ├── Compare (>=)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="2"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (combo) (resultSizeActual=134)
+   │  ║        Filter (resultSizeActual=388)
+   │  ║        ├── ListMemberOperator
+   │  ║        │     Var (name=optSeverity)
+   │  ║        │     ValueConstant (value="Mild")
+   │  ║        │     ValueConstant (value="Moderate")
+   │  ║        └── LeftJoin (LeftJoinIterator) (resultSizeActual=593)
+   │  ║           ╠══ Join (JoinIterator) (resultSizeActual=285) [left]
+   │  ║           ║  ├── Filter (resultSizeActual=141) [left]
+   │  ║           ║  │  ╠══ Compare (>)
+   │  ║           ║  │  ║     Var (name=score)
+   │  ║           ║  │  ║     ValueConstant (value="0.7"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+   │  ║           ║  │  ╚══ StatementPattern (costEstimate=160, resultSizeEstimate=460, resultSizeActual=477)
+   │  ║           ║  │        s: Var (name=combo)
+   │  ║           ║  │        p: Var (name=_const_2c1ec653_uri, value=http://example.com/theme/pharma/synergyScore, anonymous)
+   │  ║           ║  │        o: Var (name=score)
+   │  ║           ║  └── Join (JoinIterator) (resultSizeActual=285) [right]
+   │  ║           ║     ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=1.00, resultSizeActual=141) [left]
+   │  ║           ║     ║     s: Var (name=combo)
+   │  ║           ║     ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           ║     ║     o: Var (name=_const_a4089907_uri, value=http://example.com/theme/pharma/Combination, anonymous)
+   │  ║           ║     ╚══ StatementPattern (costEstimate=2.65, resultSizeEstimate=2.02, resultSizeActual=285) [right]
+   │  ║           ║           s: Var (name=combo)
+   │  ║           ║           p: Var (name=_const_94a74d5e_uri, value=http://example.com/theme/pharma/combinationOf, anonymous)
+   │  ║           ║           o: Var (name=drug)
+   │  ║           ╚══ Extension (resultSizeActual=593) [right]
+   │  ║              ├── Join (JoinIterator) (resultSizeActual=593)
+   │  ║              │  ╠══ StatementPattern (costEstimate=1.35, resultSizeEstimate=2.17, resultSizeActual=593) [left]
+   │  ║              │  ║     s: Var (name=drug)
+   │  ║              │  ║     p: Var (name=_const_72f8dc5a_uri, value=http://example.com/theme/pharma/hasSideEffect, anonymous)
+   │  ║              │  ║     o: Var (name=sideEffect)
+   │  ║              │  ╚══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=593) [right]
+   │  ║              │        s: Var (name=sideEffect)
+   │  ║              │        p: Var (name=_const_dff9bba5_uri, value=http://example.com/theme/pharma/severity, anonymous)
+   │  ║              │        o: Var (name=sev)
+   │  ║              └── ExtensionElem (optSeverity)
+   │  ║                    Var (name=sev)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=drug)
+   │  ║        GroupElem (drugCount)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=drug)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count (Distinct)
+   │           Var (name=drug)
+   └── ExtensionElem (drugCount)
+         Count (Distinct)
+            Var (name=drug)
+

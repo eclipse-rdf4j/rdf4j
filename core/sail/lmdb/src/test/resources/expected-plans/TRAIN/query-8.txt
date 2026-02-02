@@ -1,0 +1,57 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Filter (resultSizeActual=9)
+   │  ║  ├── And
+   │  ║  │  ╠══ Exists
+   │  ║  │  ║     Join (JoinIterator) (resultSizeActual=0)
+   │  ║  │  ║     ╠══ StatementPattern (costEstimate=1496.3M, resultSizeEstimate=134.8K, resultSizeActual=25.9K) [left]
+   │  ║  │  ║     ║     s: Var (name=s2)
+   │  ║  │  ║     ║     p: Var (name=_const_26ff10d8_uri, value=http://example.com/theme/train/connectsOperationalPoint, anonymous)
+   │  ║  │  ║     ║     o: Var (name=op)
+   │  ║  │  ║     ╚══ StatementPattern (costEstimate=213, resultSizeEstimate=45.6K, resultSizeActual=25.8K) [right]
+   │  ║  │  ║           s: Var (name=s1)
+   │  ║  │  ║           p: Var (name=_const_26ff10d8_uri, value=http://example.com/theme/train/connectsOperationalPoint, anonymous)
+   │  ║  │  ║           o: Var (name=op)
+   │  ║  │  ╚══ ListMemberOperator
+   │  ║  │        Var (name=optName)
+   │  ║  │        ValueConstant (value="Line 0")
+   │  ║  │        ValueConstant (value="Line 1")
+   │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=25.8K)
+   │  ║     ╠══ Join (JoinIterator) (resultSizeActual=25.8K) [left]
+   │  ║     ║  ├── StatementPattern (costEstimate=22.2K, resultSizeEstimate=66.6K, resultSizeActual=67.3K) [left]
+   │  ║     ║  │     s: Var (name=s2)
+   │  ║     ║  │     p: Var (name=_const_8ba830f_uri, value=http://example.com/theme/train/partOfLine, anonymous)
+   │  ║     ║  │     o: Var (name=line)
+   │  ║     ║  └── Join (JoinIterator) (resultSizeActual=25.8K) [right]
+   │  ║     ║     ╠══ StatementPattern (costEstimate=1.86, resultSizeEstimate=8.79, resultSizeActual=592.7K) [left]
+   │  ║     ║     ║     s: Var (name=s1)
+   │  ║     ║     ║     p: Var (name=_const_8ba830f_uri, value=http://example.com/theme/train/partOfLine, anonymous)
+   │  ║     ║     ║     o: Var (name=line)
+   │  ║     ║     ╚══ Join (JoinIterator) (resultSizeActual=25.8K) [right]
+   │  ║     ║        ├── StatementPattern (costEstimate=0.77, resultSizeEstimate=0.38, resultSizeActual=227.7K) [left]
+   │  ║     ║        │     s: Var (name=service)
+   │  ║     ║        │     p: Var (name=_const_9993352d_uri, value=http://example.com/theme/train/runsOnSection, anonymous)
+   │  ║     ║        │     o: Var (name=s2)
+   │  ║     ║        └── Join (JoinIterator) (resultSizeActual=25.8K) [right]
+   │  ║     ║           ╠══ StatementPattern (costEstimate=0.50, resultSizeEstimate=0.11, resultSizeActual=25.8K) [left]
+   │  ║     ║           ║     s: Var (name=service)
+   │  ║     ║           ║     p: Var (name=_const_9993352d_uri, value=http://example.com/theme/train/runsOnSection, anonymous)
+   │  ║     ║           ║     o: Var (name=s1)
+   │  ║     ║           ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0.99, resultSizeActual=25.8K) [right]
+   │  ║     ║                 s: Var (name=service)
+   │  ║     ║                 p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║                 o: Var (name=_const_a703e3e_uri, value=http://example.com/theme/train/TrainService, anonymous)
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=1.00, resultSizeActual=25.8K) [right]
+   │  ║           s: Var (name=line)
+   │  ║           p: Var (name=_const_cf02f21c_uri, value=http://example.com/theme/train/name, anonymous)
+   │  ║           o: Var (name=optName)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=service)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=service)
+

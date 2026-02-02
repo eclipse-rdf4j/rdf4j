@@ -1,0 +1,51 @@
+Projection (resultSizeActual=0)
+╠══ ProjectionElemList
+║     ProjectionElem "substation"
+║     ProjectionElem "transformerCount"
+╚══ Extension (resultSizeActual=0)
+   ├── Extension (resultSizeActual=0)
+   │  ╠══ Filter (resultSizeActual=0)
+   │  ║  ├── Compare (>)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (substation) (resultSizeActual=0)
+   │  ║        Filter (resultSizeActual=0)
+   │  ║        ├── And
+   │  ║        │  ╠══ Exists
+   │  ║        │  ║     StatementPattern (resultSizeEstimate=51.7K, resultSizeActual=0)
+   │  ║        │  ║        s: Var (name=transformer)
+   │  ║        │  ║        p: Var (name=_const_fe6c498e_uri, value=http://example.com/theme/grid/hasMeter, anonymous)
+   │  ║        │  ║        o: Var (name=meter)
+   │  ║        │  ╚══ Compare (!=)
+   │  ║        │        Var (name=optTransformer)
+   │  ║        │        Var (name=substation)
+   │  ║        └── LeftJoin (LeftJoinIterator) (resultSizeActual=9.3K)
+   │  ║           ╠══ Join (JoinIterator) (resultSizeActual=9.3K) [left]
+   │  ║           ║  ├── StatementPattern (costEstimate=7.5K, resultSizeEstimate=15.2K, resultSizeActual=9.3K) [left]
+   │  ║           ║  │     s: Var (name=substation)
+   │  ║           ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           ║  │     o: Var (name=_const_ac9f03d3_uri, value=http://example.com/theme/grid/Substation, anonymous)
+   │  ║           ║  └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=9.3K) [right]
+   │  ║           ║        s: Var (name=substation)
+   │  ║           ║        p: Var (name=_const_9661228a_uri, value=http://example.com/theme/grid/name, anonymous)
+   │  ║           ║        o: Var (name=name)
+   │  ║           ╚══ Extension (resultSizeActual=0) [right]
+   │  ║              ├── StatementPattern (resultSizeEstimate=0.68, resultSizeActual=0)
+   │  ║              │     s: Var (name=substation)
+   │  ║              │     p: Var (name=_const_35542676_uri, value=http://example.com/theme/grid/feeds, anonymous)
+   │  ║              │     o: Var (name=transformer)
+   │  ║              └── ExtensionElem (optTransformer)
+   │  ║                    Var (name=transformer)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count
+   │  ║              Var (name=transformer)
+   │  ║        GroupElem (transformerCount)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=transformer)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count
+   │           Var (name=transformer)
+   └── ExtensionElem (transformerCount)
+         Count (Distinct)
+            Var (name=transformer)
+

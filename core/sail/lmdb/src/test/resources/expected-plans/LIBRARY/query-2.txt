@@ -1,0 +1,44 @@
+Projection (resultSizeActual=3)
+╠══ ProjectionElemList
+║     ProjectionElem "author"
+║     ProjectionElem "bookCount"
+╚══ Extension (resultSizeActual=3)
+   ├── Extension (resultSizeActual=3)
+   │  ╠══ Filter (resultSizeActual=3)
+   │  ║  ├── Compare (>)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (author) (resultSizeActual=3)
+   │  ║        LeftJoin (LeftJoinIterator) (resultSizeActual=15)
+   │  ║        ├── Join (JoinIterator) (resultSizeActual=3) [left]
+   │  ║        │  ╠══ Filter (resultSizeActual=3) [left]
+   │  ║        │  ║  ├── ListMemberOperator
+   │  ║        │  ║  │     Var (name=authorName)
+   │  ║        │  ║  │     ValueConstant (value="Author 1")
+   │  ║        │  ║  │     ValueConstant (value="Author 2")
+   │  ║        │  ║  │     ValueConstant (value="Author 3")
+   │  ║        │  ║  └── StatementPattern (costEstimate=22.4K, resultSizeEstimate=44.8K, resultSizeActual=45.3K)
+   │  ║        │  ║        s: Var (name=author)
+   │  ║        │  ║        p: Var (name=_const_6d0024c9_uri, value=http://example.com/theme/library/name, anonymous)
+   │  ║        │  ║        o: Var (name=authorName)
+   │  ║        │  ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0.77, resultSizeActual=3) [right]
+   │  ║        │        s: Var (name=author)
+   │  ║        │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║        │        o: Var (name=_const_e1dd2069_uri, value=http://example.com/theme/library/Author, anonymous)
+   │  ║        └── StatementPattern (resultSizeEstimate=5.00, resultSizeActual=15) [right]
+   │  ║              s: Var (name=book)
+   │  ║              p: Var (name=_const_e1624c50_uri, value=http://example.com/theme/library/writtenBy, anonymous)
+   │  ║              o: Var (name=author)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count
+   │  ║              Var (name=book)
+   │  ║        GroupElem (bookCount)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=book)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count
+   │           Var (name=book)
+   └── ExtensionElem (bookCount)
+         Count (Distinct)
+            Var (name=book)
+

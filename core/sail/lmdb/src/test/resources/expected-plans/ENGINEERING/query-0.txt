@@ -1,0 +1,33 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=132.6K)
+   │  ║  ├── Filter (resultSizeActual=132.6K) [left]
+   │  ║  │  ╠══ Compare (!=)
+   │  ║  │  ║     Var (name=optAssembly)
+   │  ║  │  ║     Var (name=component)
+   │  ║  │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=132.6K)
+   │  ║  │     ├── StatementPattern (resultSizeEstimate=132.7K, resultSizeActual=132.6K) [left]
+   │  ║  │     │     s: Var (name=component)
+   │  ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │     o: Var (name=_const_347c8ab7_uri, value=http://example.com/theme/engineering/Component, anonymous)
+   │  ║  │     └── Extension (resultSizeActual=132.6K) [right]
+   │  ║  │        ╠══ StatementPattern (resultSizeEstimate=1.00, resultSizeActual=132.6K)
+   │  ║  │        ║     s: Var (name=component)
+   │  ║  │        ║     p: Var (name=_const_b1044d90_uri, value=http://example.com/theme/engineering/partOf, anonymous)
+   │  ║  │        ║     o: Var (name=assembly)
+   │  ║  │        ╚══ ExtensionElem (optAssembly)
+   │  ║  │              Var (name=assembly)
+   │  ║  └── StatementPattern (resultSizeEstimate=1.00, resultSizeActual=132.6K) [right]
+   │  ║        s: Var (name=component)
+   │  ║        p: Var (name=_const_ce5e09a0_uri, value=http://example.com/theme/engineering/dependsOn, anonymous)
+   │  ║        o: Var (name=dep)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=component)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=component)
+

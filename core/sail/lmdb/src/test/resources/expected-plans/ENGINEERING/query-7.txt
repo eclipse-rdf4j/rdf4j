@@ -1,0 +1,45 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Difference (resultSizeActual=0)
+   │  ║  ├── Filter (resultSizeActual=2)
+   │  ║  │  ╠══ Exists
+   │  ║  │  ║     StatementPattern (resultSizeEstimate=519, resultSizeActual=0)
+   │  ║  │  ║        s: Var (name=requirement)
+   │  ║  │  ║        p: Var (name=_const_b98f621b_uri, value=http://example.com/theme/engineering/satisfies, anonymous)
+   │  ║  │  ║        o: Var (name=component)
+   │  ║  │  ╚══ Join (JoinIterator) (resultSizeActual=2)
+   │  ║  │     ├── StatementPattern (costEstimate=4.7K, resultSizeEstimate=9.1K, resultSizeActual=520) [left]
+   │  ║  │     │     s: Var (name=requirement)
+   │  ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │     o: Var (name=_const_57f1c37d_uri, value=http://example.com/theme/engineering/Requirement, anonymous)
+   │  ║  │     └── Filter (resultSizeActual=2) [right]
+   │  ║  │        ╠══ Or
+   │  ║  │        ║  ├── Compare (=)
+   │  ║  │        ║  │     Var (name=name)
+   │  ║  │        ║  │     ValueConstant (value="REQ-1000")
+   │  ║  │        ║  └── Compare (=)
+   │  ║  │        ║        Var (name=name)
+   │  ║  │        ║        ValueConstant (value="REQ-1001")
+   │  ║  │        ╚══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=520)
+   │  ║  │              s: Var (name=requirement)
+   │  ║  │              p: Var (name=_const_b8416c71_uri, value=http://example.com/theme/engineering/name, anonymous)
+   │  ║  │              o: Var (name=name)
+   │  ║  └── Join (JoinIterator) (resultSizeActual=1.5K)
+   │  ║     ╠══ StatementPattern (costEstimate=7.4M, resultSizeEstimate=3.0K, resultSizeActual=3.1K) [left]
+   │  ║     ║     s: Var (name=requirement)
+   │  ║     ║     p: Var (name=_const_c08202a5_uri, value=http://example.com/theme/engineering/verifiedBy, anonymous)
+   │  ║     ║     o: Var (name=test)
+   │  ║     ╚══ StatementPattern (costEstimate=2.40, resultSizeEstimate=0.51, resultSizeActual=1.5K) [right]
+   │  ║           s: Var (name=test)
+   │  ║           p: Var (name=_const_c08202a5_uri, value=http://example.com/theme/engineering/verifiedBy, anonymous)
+   │  ║           o: Var (name=measurement)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=requirement)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=requirement)
+

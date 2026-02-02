@@ -1,0 +1,96 @@
+Timed out while retrieving explanation! Explanation may be incomplete!
+You can change the timeout by setting .setMaxExecutionTime(...) on your query.
+
+Projection (resultSizeActual=0)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=0)
+   ├── Group () (resultSizeActual=0)
+   │  ╠══ Filter (resultSizeActual=12)
+   │  ║  ├── And
+   │  ║  │  ╠══ ListMemberOperator
+   │  ║  │  ║     Var (name=optName)
+   │  ║  │  ║     ValueConstant (value="user7")
+   │  ║  │  ║     ValueConstant (value="user8")
+   │  ║  │  ║     ValueConstant (value="user9")
+   │  ║  │  ║     ValueConstant (value="user10")
+   │  ║  │  ║     ValueConstant (value="user11")
+   │  ║  │  ╚══ Exists
+   │  ║  │        Filter (resultSizeActual=0)
+   │  ║  │        ╠══ Or
+   │  ║  │        ║  ├── Compare (=)
+   │  ║  │        ║  │     Var (name=name)
+   │  ║  │        ║  │     ValueConstant (value="user7")
+   │  ║  │        ║  └── Compare (=)
+   │  ║  │        ║        Var (name=name)
+   │  ║  │        ║        ValueConstant (value="user8")
+   │  ║  │        ╚══ StatementPattern (resultSizeEstimate=378, resultSizeActual=18)
+   │  ║  │              s: Var (name=a)
+   │  ║  │              p: Var (name=_const_7d17b943_uri, value=http://example.com/theme/social/name, anonymous)
+   │  ║  │              o: Var (name=name)
+   │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=18)
+   │  ║     ╠══ Join (JoinIterator) (resultSizeActual=18) [left]
+   │  ║     ║  ├── StatementPattern (costEstimate=47.9K, resultSizeEstimate=143.7K, resultSizeActual=7.8K) [left]
+   │  ║     ║  │     s: Var (name=e)
+   │  ║     ║  │     p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║     ║  │     o: Var (name=a)
+   │  ║     ║  └── Join (JoinIterator) (resultSizeActual=18) [right]
+   │  ║     ║     ╠══ Filter (resultSizeActual=71.6K) [left]
+   │  ║     ║     ║  ├── Compare (!=)
+   │  ║     ║     ║  │     Var (name=d)
+   │  ║     ║     ║  │     Var (name=e)
+   │  ║     ║     ║  └── StatementPattern (costEstimate=1.89, resultSizeEstimate=9.22, resultSizeActual=71.6K)
+   │  ║     ║     ║        s: Var (name=d)
+   │  ║     ║     ║        p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║     ║     ║        o: Var (name=e)
+   │  ║     ║     ╚══ Join (JoinIterator) (resultSizeActual=18) [right]
+   │  ║     ║        ├── Filter (resultSizeActual=649.7K) [left]
+   │  ║     ║        │  ╠══ Compare (!=)
+   │  ║     ║        │  ║     Var (name=c)
+   │  ║     ║        │  ║     Var (name=d)
+   │  ║     ║        │  ╚══ StatementPattern (costEstimate=1.89, resultSizeEstimate=9.22, resultSizeActual=649.7K)
+   │  ║     ║        │        s: Var (name=c)
+   │  ║     ║        │        p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║     ║        │        o: Var (name=d)
+   │  ║     ║        └── Join (JoinIterator) (resultSizeActual=18) [right]
+   │  ║     ║           ╠══ Filter (resultSizeActual=5.9M) [left]
+   │  ║     ║           ║  ├── Compare (!=)
+   │  ║     ║           ║  │     Var (name=b)
+   │  ║     ║           ║  │     Var (name=c)
+   │  ║     ║           ║  └── StatementPattern (costEstimate=1.89, resultSizeEstimate=9.22, resultSizeActual=5.9M)
+   │  ║     ║           ║        s: Var (name=b)
+   │  ║     ║           ║        p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║     ║           ║        o: Var (name=c)
+   │  ║     ║           ╚══ Join (JoinIterator) (resultSizeActual=18) [right]
+   │  ║     ║              ├── Filter (resultSizeActual=15.0K) [left]
+   │  ║     ║              │  ╠══ Compare (!=)
+   │  ║     ║              │  ║     Var (name=a)
+   │  ║     ║              │  ║     Var (name=b)
+   │  ║     ║              │  ╚══ StatementPattern (costEstimate=0.50, resultSizeEstimate=0.01, resultSizeActual=15.0K)
+   │  ║     ║              │        s: Var (name=a)
+   │  ║     ║              │        p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║     ║              │        o: Var (name=b)
+   │  ║     ║              └── Join (JoinIterator) (resultSizeActual=18) [right]
+   │  ║     ║                 ╠══ BindingSetAssignment ([[e=http://example.com/theme/social/user/7], [e=http://example.com/theme/social/user/8], [e=http://example.com/theme/social/user/9], [e=http://example.com/theme/social/user/10], [e=http://example.com/theme/social/user/11]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=3.9K) [left]
+   │  ║     ║                 ╚══ Join (JoinIterator) (resultSizeActual=18) [right]
+   │  ║     ║                    ├── BindingSetAssignment ([[d=http://example.com/theme/social/user/7], [d=http://example.com/theme/social/user/8], [d=http://example.com/theme/social/user/9], [d=http://example.com/theme/social/user/10], [d=http://example.com/theme/social/user/11]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=1.0K) [left]
+   │  ║     ║                    └── Filter (resultSizeActual=18) [right]
+   │  ║     ║                       ╠══ Compare (!=)
+   │  ║     ║                       ║     Var (name=a)
+   │  ║     ║                       ║     Var (name=c)
+   │  ║     ║                       ╚══ Join (JoinIterator) (resultSizeActual=30)
+   │  ║     ║                          ├── BindingSetAssignment ([[c=http://example.com/theme/social/user/7], [c=http://example.com/theme/social/user/8], [c=http://example.com/theme/social/user/9], [c=http://example.com/theme/social/user/10], [c=http://example.com/theme/social/user/11]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=313) [left]
+   │  ║     ║                          └── Join (JoinIterator) (resultSizeActual=30) [right]
+   │  ║     ║                                BindingSetAssignment ([[b=http://example.com/theme/social/user/7], [b=http://example.com/theme/social/user/8], [b=http://example.com/theme/social/user/9], [b=http://example.com/theme/social/user/10], [b=http://example.com/theme/social/user/11]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=113)
+   │  ║     ║                                BindingSetAssignment ([[a=http://example.com/theme/social/user/7], [a=http://example.com/theme/social/user/8], [a=http://example.com/theme/social/user/9], [a=http://example.com/theme/social/user/10], [a=http://example.com/theme/social/user/11]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=30)
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=1.00, resultSizeActual=18) [right]
+   │  ║           s: Var (name=e)
+   │  ║           p: Var (name=_const_7d17b943_uri, value=http://example.com/theme/social/name, anonymous)
+   │  ║           o: Var (name=optName)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=a)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=a)
+

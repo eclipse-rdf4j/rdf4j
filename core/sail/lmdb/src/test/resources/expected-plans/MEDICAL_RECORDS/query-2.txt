@@ -1,0 +1,48 @@
+Projection (resultSizeActual=135)
+╠══ ProjectionElemList
+║     ProjectionElem "practitioner"
+║     ProjectionElem "encCount"
+╚══ Extension (resultSizeActual=135)
+   ├── Extension (resultSizeActual=135)
+   │  ╠══ Filter (resultSizeActual=135)
+   │  ║  ├── Compare (>)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (practitioner) (resultSizeActual=135)
+   │  ║        LeftJoin (LeftJoinIterator) (resultSizeActual=266)
+   │  ║        ├── Join (JoinIterator) (resultSizeActual=135) [left]
+   │  ║        │  ╠══ StatementPattern (costEstimate=8.2K, resultSizeEstimate=24.0K, resultSizeActual=24.9K) [left]
+   │  ║        │  ║     s: Var (name=enc)
+   │  ║        │  ║     p: Var (name=_const_9016af8b_uri, value=http://example.com/theme/medical/handledBy, anonymous)
+   │  ║        │  ║     o: Var (name=practitioner)
+   │  ║        │  ╚══ Join (JoinIterator) (resultSizeActual=135) [right]
+   │  ║        │     ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=0.97, resultSizeActual=24.9K) [left]
+   │  ║        │     │     s: Var (name=enc)
+   │  ║        │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║        │     │     o: Var (name=_const_5e8eb7eb_uri, value=http://example.com/theme/medical/Encounter, anonymous)
+   │  ║        │     └── Filter (resultSizeActual=135) [right]
+   │  ║        │        ╠══ ListMemberOperator
+   │  ║        │        ║     Var (name=date)
+   │  ║        │        ║     ValueConstant (value="2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date>)
+   │  ║        │        ║     ValueConstant (value="2024-02-01"^^<http://www.w3.org/2001/XMLSchema#date>)
+   │  ║        │        ╚══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=24.9K)
+   │  ║        │              s: Var (name=enc)
+   │  ║        │              p: Var (name=_const_2816f2d7_uri, value=http://example.com/theme/medical/recordedOn, anonymous)
+   │  ║        │              o: Var (name=date)
+   │  ║        └── StatementPattern (resultSizeEstimate=1.97, resultSizeActual=266) [right]
+   │  ║              s: Var (name=enc)
+   │  ║              p: Var (name=_const_7e7389c9_uri, value=http://example.com/theme/medical/hasCondition, anonymous)
+   │  ║              o: Var (name=cond)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count
+   │  ║              Var (name=enc)
+   │  ║        GroupElem (encCount)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=enc)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count
+   │           Var (name=enc)
+   └── ExtensionElem (encCount)
+         Count (Distinct)
+            Var (name=enc)
+

@@ -1,0 +1,44 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Difference (resultSizeActual=7.9K)
+   │  ║  ├── Filter (resultSizeActual=10.1K)
+   │  ║  │  ╠══ Compare (>)
+   │  ║  │  ║     Var (name=optDue)
+   │  ║  │  ║     ValueConstant (value="2024-01-10"^^<http://www.w3.org/2001/XMLSchema#date>)
+   │  ║  │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=10.1K)
+   │  ║  │     ├── Join (JoinIterator) (resultSizeActual=10.1K) [left]
+   │  ║  │     │  ╠══ StatementPattern (costEstimate=4.9K, resultSizeEstimate=10.1K, resultSizeActual=10.1K) [left]
+   │  ║  │     │  ║     s: Var (name=loan)
+   │  ║  │     │  ║     p: Var (name=_const_b9a39489_uri, value=http://example.com/theme/library/borrowedBy, anonymous)
+   │  ║  │     │  ║     o: Var (name=member)
+   │  ║  │     │  ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0.81, resultSizeActual=10.1K) [right]
+   │  ║  │     │        s: Var (name=loan)
+   │  ║  │     │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │        o: Var (name=_const_6cf0e34e_uri, value=http://example.com/theme/library/Loan, anonymous)
+   │  ║  │     └── Extension (resultSizeActual=10.1K) [right]
+   │  ║  │        ╠══ StatementPattern (resultSizeEstimate=1.00, resultSizeActual=10.1K)
+   │  ║  │        ║     s: Var (name=loan)
+   │  ║  │        ║     p: Var (name=_const_945d14c4_uri, value=http://example.com/theme/library/dueDate, anonymous)
+   │  ║  │        ║     o: Var (name=due)
+   │  ║  │        ╚══ ExtensionElem (optDue)
+   │  ║  │              Var (name=due)
+   │  ║  └── Filter (new scope) (resultSizeActual=1.1K)
+   │  ║     ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#contains)
+   │  ║     ║  ├── FunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)
+   │  ║     ║  │     Str
+   │  ║     ║  │        Var (name=name)
+   │  ║     ║  └── ValueConstant (value="member 1")
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=45.3K, resultSizeActual=45.3K)
+   │  ║           s: Var (name=member)
+   │  ║           p: Var (name=_const_6d0024c9_uri, value=http://example.com/theme/library/name, anonymous)
+   │  ║           o: Var (name=name)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=loan)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=loan)
+

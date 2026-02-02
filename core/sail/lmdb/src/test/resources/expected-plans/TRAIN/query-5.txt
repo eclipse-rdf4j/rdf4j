@@ -1,0 +1,39 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Filter (resultSizeActual=24)
+   │  ║  ├── Not
+   │  ║  │     Exists
+   │  ║  │        Filter (resultSizeActual=0)
+   │  ║  │        ╠══ Compare (>)
+   │  ║  │        ║     Var (name=late)
+   │  ║  │        ║     Var (name=threshold)
+   │  ║  │        ╚══ StatementPattern (resultSizeEstimate=14.9K, resultSizeActual=213)
+   │  ║  │              s: Var (name=service)
+   │  ║  │              p: Var (name=_const_4f78e4a9_uri, value=http://example.com/theme/train/scheduledTime, anonymous)
+   │  ║  │              o: Var (name=late)
+   │  ║  └── Join (JoinIterator) (resultSizeActual=94)
+   │  ║     ╠══ BindingSetAssignment ([[threshold="10:00:00"^^<http://www.w3.org/2001/XMLSchema#time>]]) (costEstimate=6.00, resultSizeEstimate=1.00, resultSizeActual=1) [left]
+   │  ║     ╚══ Join (JoinIterator) (resultSizeActual=94) [right]
+   │  ║        ├── StatementPattern (costEstimate=33.5K, resultSizeEstimate=11.2K, resultSizeActual=8.6K) [left]
+   │  ║        │     s: Var (name=service)
+   │  ║        │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║        │     o: Var (name=_const_a703e3e_uri, value=http://example.com/theme/train/TrainService, anonymous)
+   │  ║        └── Filter (resultSizeActual=94) [right]
+   │  ║           ╠══ ListMemberOperator
+   │  ║           ║     Var (name=time)
+   │  ║           ║     ValueConstant (value="08:00:00"^^<http://www.w3.org/2001/XMLSchema#time>)
+   │  ║           ║     ValueConstant (value="09:00:00"^^<http://www.w3.org/2001/XMLSchema#time>)
+   │  ║           ╚══ StatementPattern (costEstimate=2.83, resultSizeEstimate=3.00, resultSizeActual=25.8K)
+   │  ║                 s: Var (name=service)
+   │  ║                 p: Var (name=_const_4f78e4a9_uri, value=http://example.com/theme/train/scheduledTime, anonymous)
+   │  ║                 o: Var (name=time)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=service)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=service)
+

@@ -1,0 +1,68 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Difference (resultSizeActual=11.8K)
+   │  ║  ├── Filter (resultSizeActual=11.9K)
+   │  ║  │  ╠══ Compare (!=)
+   │  ║  │  ║     Var (name=optClassName)
+   │  ║  │  ║     ValueConstant (value="")
+   │  ║  │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=11.9K)
+   │  ║  │     ├── Union (resultSizeActual=11.9K) [left]
+   │  ║  │     │  ╠══ Join (JoinIterator) (resultSizeActual=10.0K)
+   │  ║  │     │  ║  ├── StatementPattern (costEstimate=977, resultSizeEstimate=2.0K, resultSizeActual=5.0K) [left]
+   │  ║  │     │  ║  │     s: Var (name=drug)
+   │  ║  │     │  ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │  ║  │     o: Var (name=_const_f6bbe068_uri, value=http://example.com/theme/pharma/Drug, anonymous)
+   │  ║  │     │  ║  └── Join (JoinIterator) (resultSizeActual=10.0K) [right]
+   │  ║  │     │  ║     ╠══ StatementPattern (costEstimate=1.32, resultSizeEstimate=2.02, resultSizeActual=10.0K) [left]
+   │  ║  │     │  ║     ║     s: Var (name=drug)
+   │  ║  │     │  ║     ║     p: Var (name=_const_fb60ad98_uri, value=http://example.com/theme/pharma/hasMolecule, anonymous)
+   │  ║  │     │  ║     ║     o: Var (name=mol)
+   │  ║  │     │  ║     ╚══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=10.0K) [right]
+   │  ║  │     │  ║           s: Var (name=mol)
+   │  ║  │     │  ║           p: Var (name=_const_4d1dbdab_uri, value=http://example.com/theme/pharma/inClass, anonymous)
+   │  ║  │     │  ║           o: Var (name=class)
+   │  ║  │     │  ╚══ Join (JoinIterator) (resultSizeActual=1.9K)
+   │  ║  │     │     ├── StatementPattern (costEstimate=318.2K, resultSizeEstimate=914, resultSizeActual=949) [left]
+   │  ║  │     │     │     s: Var (name=combo)
+   │  ║  │     │     │     p: Var (name=_const_94a74d5e_uri, value=http://example.com/theme/pharma/combinationOf, anonymous)
+   │  ║  │     │     │     o: Var (name=drug)
+   │  ║  │     │     └── Join (JoinIterator) (resultSizeActual=1.9K) [right]
+   │  ║  │     │        ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0.58, resultSizeActual=949) [left]
+   │  ║  │     │        ║     s: Var (name=combo)
+   │  ║  │     │        ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │        ║     o: Var (name=_const_a4089907_uri, value=http://example.com/theme/pharma/Combination, anonymous)
+   │  ║  │     │        ╚══ Join (JoinIterator) (resultSizeActual=1.9K) [right]
+   │  ║  │     │           ├── StatementPattern (costEstimate=1.32, resultSizeEstimate=2.02, resultSizeActual=1.9K) [left]
+   │  ║  │     │           │     s: Var (name=drug)
+   │  ║  │     │           │     p: Var (name=_const_fb60ad98_uri, value=http://example.com/theme/pharma/hasMolecule, anonymous)
+   │  ║  │     │           │     o: Var (name=mol)
+   │  ║  │     │           └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=1.9K) [right]
+   │  ║  │     │                 s: Var (name=mol)
+   │  ║  │     │                 p: Var (name=_const_4d1dbdab_uri, value=http://example.com/theme/pharma/inClass, anonymous)
+   │  ║  │     │                 o: Var (name=class)
+   │  ║  │     └── Extension (resultSizeActual=11.9K) [right]
+   │  ║  │        ╠══ StatementPattern (resultSizeEstimate=1.00, resultSizeActual=11.9K)
+   │  ║  │        ║     s: Var (name=class)
+   │  ║  │        ║     p: Var (name=_const_f6ceb733_uri, value=http://example.com/theme/pharma/name, anonymous)
+   │  ║  │        ║     o: Var (name=optName)
+   │  ║  │        ╚══ ExtensionElem (optClassName)
+   │  ║  │              Var (name=optName)
+   │  ║  └── Filter (new scope) (resultSizeActual=34)
+   │  ║     ╠══ ListMemberOperator
+   │  ║     ║     Var (name=disease)
+   │  ║     ║     ValueConstant (value=http://example.com/theme/pharma/disease/4)
+   │  ║     ║     ValueConstant (value=http://example.com/theme/pharma/disease/5)
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=5.0K, resultSizeActual=5.0K)
+   │  ║           s: Var (name=drug)
+   │  ║           p: Var (name=_const_28b88607_uri, value=http://example.com/theme/pharma/contraindicatedFor, anonymous)
+   │  ║           o: Var (name=disease)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=drug)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=drug)
+

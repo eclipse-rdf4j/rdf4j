@@ -1,0 +1,43 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Filter (resultSizeActual=432)
+   │  ║  ├── ListMemberOperator
+   │  ║  │     Var (name=optWeight)
+   │  ║  │     ValueConstant (value="7"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  │     ValueConstant (value="8"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  │     ValueConstant (value="9"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=1.6K)
+   │  ║     ╠══ Filter (resultSizeActual=294) [left]
+   │  ║     ║  ├── Exists
+   │  ║     ║  │     StatementPattern (resultSizeEstimate=266.7K, resultSizeActual=0)
+   │  ║     ║  │        s: Var (name=end)
+   │  ║     ║  │        p: Var (name=_const_2e732754_uri, value=http://example.com/theme/connected/connectsTo, anonymous)
+   │  ║     ║  │        o: Var (name=node)
+   │  ║     ║  └── Join (JoinIterator) (resultSizeActual=1.7M)
+   │  ║     ║     ╠══ StatementPattern (costEstimate=133.4K, resultSizeEstimate=266.7K, resultSizeActual=267.2K) [left]
+   │  ║     ║     ║     s: Var (name=mid)
+   │  ║     ║     ║     p: Var (name=_const_2e732754_uri, value=http://example.com/theme/connected/connectsTo, anonymous)
+   │  ║     ║     ║     o: Var (name=end)
+   │  ║     ║     ╚══ Join (JoinIterator) (resultSizeActual=1.7M) [right]
+   │  ║     ║        ├── StatementPattern (costEstimate=1.61, resultSizeEstimate=5.69, resultSizeActual=1.7M) [left]
+   │  ║     ║        │     s: Var (name=node)
+   │  ║     ║        │     p: Var (name=_const_2e732754_uri, value=http://example.com/theme/connected/connectsTo, anonymous)
+   │  ║     ║        │     o: Var (name=mid)
+   │  ║     ║        └── StatementPattern (costEstimate=1.00, resultSizeEstimate=1.00, resultSizeActual=1.7M) [right]
+   │  ║     ║              s: Var (name=node)
+   │  ║     ║              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║              o: Var (name=_const_b000c52_uri, value=http://example.com/theme/connected/Node, anonymous)
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=5.13, resultSizeActual=1.6K) [right]
+   │  ║           s: Var (name=node)
+   │  ║           p: Var (name=_const_909a60a8_uri, value=http://example.com/theme/connected/weight, anonymous)
+   │  ║           o: Var (name=optWeight)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=node)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=node)
+

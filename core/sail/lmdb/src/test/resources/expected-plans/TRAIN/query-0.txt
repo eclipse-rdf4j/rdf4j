@@ -1,0 +1,33 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=18.0K)
+   │  ║  ├── Filter (resultSizeActual=18.0K) [left]
+   │  ║  │  ╠══ Compare (>)
+   │  ║  │  ║     Var (name=optTime)
+   │  ║  │  ║     ValueConstant (value="08:00:00"^^<http://www.w3.org/2001/XMLSchema#time>)
+   │  ║  │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=25.8K)
+   │  ║  │     ├── StatementPattern (resultSizeEstimate=8.6K, resultSizeActual=8.6K) [left]
+   │  ║  │     │     s: Var (name=service)
+   │  ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │     o: Var (name=_const_a703e3e_uri, value=http://example.com/theme/train/TrainService, anonymous)
+   │  ║  │     └── Extension (resultSizeActual=25.8K) [right]
+   │  ║  │        ╠══ StatementPattern (resultSizeEstimate=3.00, resultSizeActual=25.8K)
+   │  ║  │        ║     s: Var (name=service)
+   │  ║  │        ║     p: Var (name=_const_4f78e4a9_uri, value=http://example.com/theme/train/scheduledTime, anonymous)
+   │  ║  │        ║     o: Var (name=time)
+   │  ║  │        ╚══ ExtensionElem (optTime)
+   │  ║  │              Var (name=time)
+   │  ║  └── StatementPattern (resultSizeEstimate=1.00, resultSizeActual=18.0K) [right]
+   │  ║        s: Var (name=service)
+   │  ║        p: Var (name=_const_cf02f21c_uri, value=http://example.com/theme/train/name, anonymous)
+   │  ║        o: Var (name=name)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=service)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=service)
+

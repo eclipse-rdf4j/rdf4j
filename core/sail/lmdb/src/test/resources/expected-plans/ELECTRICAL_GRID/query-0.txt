@@ -1,0 +1,38 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=7.3K)
+   │  ║  ├── Filter (resultSizeActual=7.3K) [left]
+   │  ║  │  ╠══ Compare (>)
+   │  ║  │  ║     Var (name=optCap)
+   │  ║  │  ║     ValueConstant (value="600"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=9.3K)
+   │  ║  │     ├── StatementPattern (resultSizeEstimate=9.4K, resultSizeActual=9.3K) [left]
+   │  ║  │     │     s: Var (name=substation)
+   │  ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │     o: Var (name=_const_ac9f03d3_uri, value=http://example.com/theme/grid/Substation, anonymous)
+   │  ║  │     └── Extension (resultSizeActual=9.3K) [right]
+   │  ║  │        ╠══ Join (JoinIterator) (resultSizeActual=9.3K)
+   │  ║  │        ║  ├── StatementPattern (costEstimate=1.52, resultSizeEstimate=3.99, resultSizeActual=37.3K) [left]
+   │  ║  │        ║  │     s: Var (name=generator)
+   │  ║  │        ║  │     p: Var (name=_const_35542676_uri, value=http://example.com/theme/grid/feeds, anonymous)
+   │  ║  │        ║  │     o: Var (name=substation)
+   │  ║  │        ║  └── StatementPattern (costEstimate=2.29, resultSizeEstimate=0.25, resultSizeActual=9.3K) [right]
+   │  ║  │        ║        s: Var (name=generator)
+   │  ║  │        ║        p: Var (name=_const_f300a539_uri, value=http://example.com/theme/grid/capacity, anonymous)
+   │  ║  │        ║        o: Var (name=cap)
+   │  ║  │        ╚══ ExtensionElem (optCap)
+   │  ║  │              Var (name=cap)
+   │  ║  └── StatementPattern (resultSizeEstimate=1.00, resultSizeActual=7.3K) [right]
+   │  ║        s: Var (name=substation)
+   │  ║        p: Var (name=_const_9661228a_uri, value=http://example.com/theme/grid/name, anonymous)
+   │  ║        o: Var (name=name)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=substation)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=substation)
+

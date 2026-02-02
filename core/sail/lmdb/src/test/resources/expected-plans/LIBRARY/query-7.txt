@@ -1,0 +1,53 @@
+Timed out while retrieving explanation! Explanation may be incomplete!
+You can change the timeout by setting .setMaxExecutionTime(...) on your query.
+
+Projection (resultSizeActual=0)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=0)
+   ├── Group () (resultSizeActual=0)
+   │  ╠══ Difference (resultSizeActual=0)
+   │  ║  ├── Join (JoinIterator) (resultSizeActual=24.1K)
+   │  ║  │  ╠══ Filter (resultSizeActual=1) [left]
+   │  ║  │  ║  ├── Or
+   │  ║  │  ║  │  ╠══ Compare (=)
+   │  ║  │  ║  │  ║     Var (name=branchName)
+   │  ║  │  ║  │  ║     ValueConstant (value="Branch 0")
+   │  ║  │  ║  │  ╚══ Compare (=)
+   │  ║  │  ║  │        Var (name=branchName)
+   │  ║  │  ║  │        ValueConstant (value="Branch 1")
+   │  ║  │  ║  └── StatementPattern (costEstimate=22.7K, resultSizeEstimate=45.3K, resultSizeActual=40.2K)
+   │  ║  │  ║        s: Var (name=branch)
+   │  ║  │  ║        p: Var (name=_const_6d0024c9_uri, value=http://example.com/theme/library/name, anonymous)
+   │  ║  │  ║        o: Var (name=branchName)
+   │  ║  │  ╚══ Join (JoinIterator) (resultSizeActual=24.1K) [right]
+   │  ║  │     ├── Filter (resultSizeActual=24.1K) [left]
+   │  ║  │     │  ╠══ Exists
+   │  ║  │     │  ║     StatementPattern (resultSizeEstimate=127.8K, resultSizeActual=0)
+   │  ║  │     │  ║        s: Var (name=copy)
+   │  ║  │     │  ║        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │  ║        o: Var (name=_const_6ceccdd3_uri, value=http://example.com/theme/library/Copy, anonymous)
+   │  ║  │     │  ╚══ StatementPattern (costEstimate=116, resultSizeEstimate=53.8K, resultSizeActual=24.1K)
+   │  ║  │     │        s: Var (name=copy)
+   │  ║  │     │        p: Var (name=_const_ecfc63a7_uri, value=http://example.com/theme/library/locatedAt, anonymous)
+   │  ║  │     │        o: Var (name=branch)
+   │  ║  │     └── StatementPattern (costEstimate=1.00, resultSizeEstimate=0.82, resultSizeActual=24.1K) [right]
+   │  ║  │           s: Var (name=copy)
+   │  ║  │           p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │           o: Var (name=_const_6ceccdd3_uri, value=http://example.com/theme/library/Copy, anonymous)
+   │  ║  └── Filter (new scope) (resultSizeActual=77.1K)
+   │  ║     ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#contains)
+   │  ║     ║  ├── Str
+   │  ║     ║  │     Var (name=branch)
+   │  ║     ║  └── ValueConstant (value="branch/0")
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=258.7K, resultSizeActual=386.3K)
+   │  ║           s: Var (name=copy)
+   │  ║           p: Var (name=_const_ecfc63a7_uri, value=http://example.com/theme/library/locatedAt, anonymous)
+   │  ║           o: Var (name=branch)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=copy)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=copy)
+

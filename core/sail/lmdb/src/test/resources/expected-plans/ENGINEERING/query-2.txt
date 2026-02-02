@@ -1,0 +1,44 @@
+Projection (resultSizeActual=3)
+╠══ ProjectionElemList
+║     ProjectionElem "assembly"
+║     ProjectionElem "componentCount"
+╚══ Extension (resultSizeActual=3)
+   ├── Extension (resultSizeActual=3)
+   │  ╠══ Filter (resultSizeActual=3)
+   │  ║  ├── Compare (>)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (assembly) (resultSizeActual=3)
+   │  ║        LeftJoin (LeftJoinIterator) (resultSizeActual=420)
+   │  ║        ├── Join (JoinIterator) (resultSizeActual=3) [left]
+   │  ║        │  ╠══ Filter (resultSizeActual=3) [left]
+   │  ║        │  ║  ├── ListMemberOperator
+   │  ║        │  ║  │     Var (name=assemblyName)
+   │  ║        │  ║  │     ValueConstant (value="Assembly 1")
+   │  ║        │  ║  │     ValueConstant (value="Assembly 2")
+   │  ║        │  ║  │     ValueConstant (value="Assembly 3")
+   │  ║        │  ║  └── StatementPattern (costEstimate=66.1K, resultSizeEstimate=132.1K, resultSizeActual=134.1K)
+   │  ║        │  ║        s: Var (name=assembly)
+   │  ║        │  ║        p: Var (name=_const_b8416c71_uri, value=http://example.com/theme/engineering/name, anonymous)
+   │  ║        │  ║        o: Var (name=assemblyName)
+   │  ║        │  ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0.50, resultSizeActual=3) [right]
+   │  ║        │        s: Var (name=assembly)
+   │  ║        │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║        │        o: Var (name=_const_27ef30ec_uri, value=http://example.com/theme/engineering/Assembly, anonymous)
+   │  ║        └── StatementPattern (resultSizeEstimate=140, resultSizeActual=420) [right]
+   │  ║              s: Var (name=component)
+   │  ║              p: Var (name=_const_b1044d90_uri, value=http://example.com/theme/engineering/partOf, anonymous)
+   │  ║              o: Var (name=assembly)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count
+   │  ║              Var (name=component)
+   │  ║        GroupElem (componentCount)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=component)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count
+   │           Var (name=component)
+   └── ExtensionElem (componentCount)
+         Count (Distinct)
+            Var (name=component)
+

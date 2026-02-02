@@ -1,0 +1,39 @@
+Projection (resultSizeActual=1)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=1)
+   ├── Group () (resultSizeActual=1)
+   │  ╠══ Filter (resultSizeActual=6)
+   │  ║  ├── Compare (!=)
+   │  ║  │     Var (name=optName)
+   │  ║  │     ValueConstant (value="")
+   │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=6)
+   │  ║     ╠══ Join (JoinIterator) (resultSizeActual=6) [left]
+   │  ║     ║  ├── Filter (resultSizeActual=192) [left]
+   │  ║     ║  │  ╠══ And
+   │  ║     ║  │  ║  ├── Exists
+   │  ║     ║  │  ║  │     StatementPattern (resultSizeEstimate=143.6K, resultSizeActual=0)
+   │  ║     ║  │  ║  │        s: Var (name=v)
+   │  ║     ║  │  ║  │        p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║     ║  │  ║  │        o: Var (name=u)
+   │  ║     ║  │  ║  └── Compare (!=)
+   │  ║     ║  │  ║        Var (name=u)
+   │  ║     ║  │  ║        Var (name=v)
+   │  ║     ║  │  ╚══ StatementPattern (costEstimate=143.6K, resultSizeEstimate=143.6K, resultSizeActual=143.7K)
+   │  ║     ║  │        s: Var (name=u)
+   │  ║     ║  │        p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║     ║  │        o: Var (name=v)
+   │  ║     ║  └── Join (JoinIterator) (resultSizeActual=6) [right]
+   │  ║     ║        BindingSetAssignment ([[v=http://example.com/theme/social/user/3], [v=http://example.com/theme/social/user/4], [v=http://example.com/theme/social/user/5], [v=http://example.com/theme/social/user/6]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=18)
+   │  ║     ║        BindingSetAssignment ([[u=http://example.com/theme/social/user/3], [u=http://example.com/theme/social/user/4], [u=http://example.com/theme/social/user/5], [u=http://example.com/theme/social/user/6]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=6)
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=1.00, resultSizeActual=6) [right]
+   │  ║           s: Var (name=v)
+   │  ║           p: Var (name=_const_7d17b943_uri, value=http://example.com/theme/social/name, anonymous)
+   │  ║           o: Var (name=optName)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=u)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=u)
+

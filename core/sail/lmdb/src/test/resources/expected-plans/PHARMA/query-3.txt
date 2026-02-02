@@ -1,0 +1,57 @@
+Projection (resultSizeActual=2.2K)
+╠══ ProjectionElemList
+║     ProjectionElem "drug"
+║     ProjectionElem "disease"
+╚══ Filter (resultSizeActual=2.2K)
+   ├── Compare (!=)
+   │     Var (name=optTarget)
+   │     ValueConstant (value=http://example.com/theme/pharma/target/0)
+   └── LeftJoin (LeftJoinIterator) (resultSizeActual=2.2K)
+      ╠══ Join (JoinIterator) (resultSizeActual=1.1K) [left]
+      ║  ├── StatementPattern (costEstimate=305, resultSizeEstimate=910, resultSizeActual=955) [left]
+      ║  │     s: Var (name=trial)
+      ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+      ║  │     o: Var (name=_const_4795bbfb_uri, value=http://example.com/theme/pharma/ClinicalTrial, anonymous)
+      ║  └── Join (JoinIterator) (resultSizeActual=1.1K) [right]
+      ║     ╠══ StatementPattern (costEstimate=0.95, resultSizeEstimate=3.05, resultSizeActual=2.8K) [left]
+      ║     ║     s: Var (name=trial)
+      ║     ║     p: Var (name=_const_73c2e40a_uri, value=http://example.com/theme/pharma/hasArm, anonymous)
+      ║     ║     o: Var (name=arm)
+      ║     ╚══ Join (JoinIterator) (resultSizeActual=1.1K) [right]
+      ║        ├── StatementPattern (costEstimate=1.22, resultSizeEstimate=1.00, resultSizeActual=2.8K) [left]
+      ║        │     s: Var (name=arm)
+      ║        │     p: Var (name=_const_60f6d7af_uri, value=http://example.com/theme/pharma/hasResult, anonymous)
+      ║        │     o: Var (name=result)
+      ║        └── Filter (resultSizeActual=1.1K) [right]
+      ║           ╠══ Not
+      ║           ║     Exists
+      ║           ║        StatementPattern (resultSizeEstimate=3.6K, resultSizeActual=0)
+      ║           ║           s: Var (name=drug)
+      ║           ║           p: Var (name=_const_e46c34a6_uri, value=http://example.com/theme/pharma/indicatedFor, anonymous)
+      ║           ║           o: Var (name=disease)
+      ║           ╚══ Join (JoinIterator) (resultSizeActual=1.1K)
+      ║              ├── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=2.8K) [left]
+      ║              │     s: Var (name=trial)
+      ║              │     p: Var (name=_const_5a7b59fd_uri, value=http://example.com/theme/pharma/studiesDisease, anonymous)
+      ║              │     o: Var (name=disease)
+      ║              └── Join (JoinIterator) (resultSizeActual=1.1K) [right]
+      ║                 ╠══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=2.8K) [left]
+      ║                 ║     s: Var (name=arm)
+      ║                 ║     p: Var (name=_const_aefd3274_uri, value=http://example.com/theme/pharma/armDrug, anonymous)
+      ║                 ║     o: Var (name=drug)
+      ║                 ╚══ Filter (resultSizeActual=1.1K) [right]
+      ║                    ├── Compare (>)
+      ║                    │     Var (name=rate)
+      ║                    │     ValueConstant (value="0.6"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+      ║                    └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=2.8K)
+      ║                          s: Var (name=result)
+      ║                          p: Var (name=_const_d84fe169_uri, value=http://example.com/theme/pharma/responseRate, anonymous)
+      ║                          o: Var (name=rate)
+      ╚══ Extension (resultSizeActual=2.2K) [right]
+         ├── StatementPattern (resultSizeEstimate=1.97, resultSizeActual=2.2K)
+         │     s: Var (name=drug)
+         │     p: Var (name=_const_7f67635a_uri, value=http://example.com/theme/pharma/targets, anonymous)
+         │     o: Var (name=target)
+         └── ExtensionElem (optTarget)
+               Var (name=target)
+
