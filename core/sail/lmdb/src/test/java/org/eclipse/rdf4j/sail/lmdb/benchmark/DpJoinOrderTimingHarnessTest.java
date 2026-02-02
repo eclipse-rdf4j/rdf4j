@@ -18,8 +18,14 @@ import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
@@ -32,12 +38,15 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.LearningEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.MemoryJoinStats;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.MemoryJoinStats.InvalidationSettings;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedJoinConfig;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
@@ -47,23 +56,36 @@ import org.junit.jupiter.api.io.TempDir;
 
 class DpJoinOrderTimingHarnessTest {
 
-	private static final String ENABLE_PROPERTY = "rdf4j.dp.timing.harness";
 	private static final int ITERATIONS = 100;
 	private static final int AVERAGE_WINDOW = 20;
+	private static final int EXPLAIN_TIMEOUT_SECONDS = 10;
+	private static final int HIGHLY_CONNECTED_EXPLAIN_ITERATIONS = 20;
+	private static final String ANSI_RESET = "\u001B[0m";
+	private static final String ANSI_GREEN = "\u001B[32m";
+	private static final String ANSI_RED = "\u001B[31m";
+	private static final String ANSI_YELLOW = "\u001B[33m";
+	private static final Pattern VAR_NAME_PATTERN = Pattern.compile("name=([^,\\)]+)");
+	private static final Pattern ANON_SUFFIX_PATTERN = Pattern.compile("^(.*?_)([0-9a-fA-F]{6,})(_.+)?$");
+	private static final Pattern ESTIMATE_PATTERN = Pattern
+			.compile("(costEstimate|resultSizeEstimate)=([0-9]+(?:\\.[0-9]+)?)([KMBG]?)");
+	private static final double ESTIMATE_TOLERANCE = 0.05d;
 
 	@TempDir
 	File dataDir;
 
 	@Test
 	void electricalGridQuery4() throws IOException {
-		assumeEnabled();
 		runScenario(Theme.ELECTRICAL_GRID, 4, "ELECTRICAL_GRID #4");
 	}
 
 	@Test
 	void pharmaQuery6() throws IOException {
-		assumeEnabled();
 		runScenario(Theme.PHARMA, 6, "PHARMA #6");
+	}
+
+	@Test
+	void highlyConnectedQuery10ExplainEvolution() throws IOException {
+		runExplainEvolution(Theme.HIGHLY_CONNECTED, 10, "HIGHLY_CONNECTED #10", true);
 	}
 
 	private void runScenario(Theme theme, int queryIndex, String label) throws IOException {
@@ -71,10 +93,11 @@ class DpJoinOrderTimingHarnessTest {
 		runWithDpSetting(theme, queryIndex, label, false);
 	}
 
-	private void runWithDpSetting(Theme theme, int queryIndex, String label, boolean enableDp) throws IOException {
-		File scenarioDir = new File(dataDir, label.replace(' ', '_') + (enableDp ? "_dp" : "_greedy"));
+	private void runExplainEvolution(Theme theme, int queryIndex, String label, boolean enableDp) throws IOException {
+		File scenarioDir = new File(dataDir, label.replace(' ', '_') + "_evolution_" + modeLabel(enableDp));
 		long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
-		MemoryJoinStats statsProvider = new MemoryJoinStats(InvalidationSettings.disabled());
+		MemoryJoinStats learnedStats = new MemoryJoinStats(InvalidationSettings.disabled());
+		RecordingJoinStatsProvider statsProvider = new RecordingJoinStatsProvider(learnedStats);
 		LearnedJoinConfig config = new LearnedJoinConfig(LearnedJoinConfig.DEFAULT_DP_THRESHOLD, enableDp);
 		LearningEvaluationStrategyFactory factory = new LearningEvaluationStrategyFactory(statsProvider, null, config);
 		LmdbStore store = new LmdbStore(scenarioDir, ConfigUtil.createConfig());
@@ -85,7 +108,31 @@ class DpJoinOrderTimingHarnessTest {
 		try {
 			loadData(repository, theme);
 			String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
-			runLoop(repository, query, expected, label, enableDp);
+			System.out.println("Original query:");
+			System.out.println(query);
+			System.out.println();
+			runExplainLoop(repository, query, expected, label, enableDp, HIGHLY_CONNECTED_EXPLAIN_ITERATIONS);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private void runWithDpSetting(Theme theme, int queryIndex, String label, boolean enableDp) throws IOException {
+		File scenarioDir = new File(dataDir, label.replace(' ', '_') + (enableDp ? "_dp" : "_greedy"));
+		long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
+		MemoryJoinStats learnedStats = new MemoryJoinStats(InvalidationSettings.disabled());
+		RecordingJoinStatsProvider statsProvider = new RecordingJoinStatsProvider(learnedStats);
+		LearnedJoinConfig config = new LearnedJoinConfig(LearnedJoinConfig.DEFAULT_DP_THRESHOLD, enableDp);
+		LearningEvaluationStrategyFactory factory = new LearningEvaluationStrategyFactory(statsProvider, null, config);
+		LmdbStore store = new LmdbStore(scenarioDir, ConfigUtil.createConfig());
+		store.setEvaluationStrategyFactory(factory);
+
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			loadData(repository, theme);
+			String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
+			runLoop(repository, query, expected, label, enableDp, learnedStats, statsProvider);
 		} finally {
 			repository.shutDown();
 		}
@@ -100,12 +147,13 @@ class DpJoinOrderTimingHarnessTest {
 		}
 	}
 
-	private void runLoop(SailRepository repository, String query, long expected, String label, boolean enableDp) {
+	private void runLoop(SailRepository repository, String query, long expected, String label, boolean enableDp,
+			MemoryJoinStats learnedStats, RecordingJoinStatsProvider statsProvider) {
 		long[] durations = new long[ITERATIONS];
 		List<String> lastSignature = null;
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
 			for (int i = 0; i < ITERATIONS; i++) {
+				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
 				long start = System.nanoTime();
 				long count = executeCount(tupleQuery);
 				long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
@@ -114,7 +162,9 @@ class DpJoinOrderTimingHarnessTest {
 					throw new IllegalStateException(
 							"Unexpected count for " + label + ": expected " + expected + " but got " + count);
 				}
-				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				TupleQuery explainQuery = connection.prepareTupleQuery(query);
+				explainQuery.setMaxExecutionTime(EXPLAIN_TIMEOUT_SECONDS);
+				Explanation explanation = explainQuery.explain(Explanation.Level.Timed);
 				List<String> signature = joinOrderSignature(explanation);
 				if (lastSignature == null || !lastSignature.equals(signature)) {
 					System.out.println(label + " " + modeLabel(enableDp) + " iteration " + (i + 1)
@@ -127,6 +177,66 @@ class DpJoinOrderTimingHarnessTest {
 		long average = averageLast(durations, AVERAGE_WINDOW);
 		System.out.println(label + " " + modeLabel(enableDp) + " average last " + AVERAGE_WINDOW + " = " + average
 				+ " ms");
+		statsProvider.logStats(label, enableDp, learnedStats);
+	}
+
+	private void runExplainLoop(SailRepository repository, String query, long expected, String label, boolean enableDp,
+			int iterations) {
+		String lastExplainText = null;
+		List<String> lastExplainLines = null;
+		List<String> lastSignature = null;
+		String lastRenderedQuery = null;
+		Map<String, String> normalizedNames = new LinkedHashMap<>();
+		Map<String, Integer> prefixCounters = new LinkedHashMap<>();
+		TupleExprIRRenderer renderer = new TupleExprIRRenderer();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			for (int i = 0; i < iterations; i++) {
+				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+				long count = executeCount(tupleQuery);
+				if (count != expected) {
+					throw new IllegalStateException(
+							"Unexpected count for " + label + ": expected " + expected + " but got " + count);
+				}
+				TupleQuery explainQuery = connection.prepareTupleQuery(query);
+				explainQuery.setMaxExecutionTime(EXPLAIN_TIMEOUT_SECONDS);
+				Explanation explanation = explainQuery.explain(Explanation.Level.Executed);
+				List<String> explainLines = normalizeExplainLines(explanation.toString(), normalizedNames,
+						prefixCounters,
+						lastExplainLines);
+				String explainText = joinLines(explainLines);
+				String renderedQuery = renderOptimizedQuery(explanation, renderer);
+				boolean explainChanged = lastExplainText == null || !lastExplainText.equals(explainText);
+				boolean queryChanged = lastRenderedQuery == null || !lastRenderedQuery.equals(renderedQuery);
+				List<String> signature = joinOrderSignature(explanation);
+				if (explainChanged || queryChanged || lastSignature == null || !lastSignature.equals(signature)) {
+					System.out.println(label + " " + modeLabel(enableDp) + " iteration " + (i + 1)
+							+ " joinOrder=" + signature);
+					if (explainChanged) {
+						System.out.println("Executed plan (normalized):");
+						if (lastExplainText == null) {
+							System.out.println(explainText);
+						} else {
+							printDiff(lastExplainText, explainText);
+						}
+					}
+					if (queryChanged) {
+						System.out.println("Optimized SPARQL (TupleExprIRRenderer):");
+						if (lastRenderedQuery == null) {
+							System.out.println(renderedQuery);
+						} else {
+							printDiff(lastRenderedQuery, renderedQuery);
+						}
+					}
+				} else if (lastSignature == null || !lastSignature.equals(signature)) {
+					System.out.println(label + " " + modeLabel(enableDp) + " iteration " + (i + 1)
+							+ " joinOrder=" + signature);
+				}
+				lastSignature = signature;
+				lastExplainLines = explainLines;
+				lastExplainText = explainText;
+				lastRenderedQuery = renderedQuery;
+			}
+		}
 	}
 
 	private long executeCount(TupleQuery tupleQuery) {
@@ -215,12 +325,329 @@ class DpJoinOrderTimingHarnessTest {
 		return count == 0 ? 0L : total / count;
 	}
 
-	private void assumeEnabled() {
-		assumeTrue(Boolean.getBoolean(ENABLE_PROPERTY),
-				() -> "Set -D" + ENABLE_PROPERTY + "=true to run the timing harness");
+	private List<String> normalizeExplainLines(String text, Map<String, String> normalizedNames,
+			Map<String, Integer> prefixCounters, List<String> previousLines) {
+		String[] lines = text.split("\\R", -1);
+		List<String> normalized = new ArrayList<>(lines.length);
+		for (int i = 0; i < lines.length; i++) {
+			String line = lines[i];
+			if (line.contains("Var (name=") && line.contains("anonymous")) {
+				line = normalizeVarLine(line, normalizedNames, prefixCounters);
+			}
+			if (previousLines != null && i < previousLines.size()) {
+				line = normalizeEstimates(line, previousLines.get(i));
+			}
+			normalized.add(line);
+		}
+		return normalized;
+	}
+
+	private String joinLines(List<String> lines) {
+		if (lines.isEmpty()) {
+			return "";
+		}
+		StringBuilder joined = new StringBuilder();
+		for (int i = 0; i < lines.size(); i++) {
+			joined.append(lines.get(i));
+			if (i < lines.size() - 1) {
+				joined.append(System.lineSeparator());
+			}
+		}
+		return joined.toString();
+	}
+
+	private String normalizeEstimates(String line, String previousLine) {
+		Map<String, EstimateValue> previous = extractEstimates(previousLine);
+		if (previous.isEmpty()) {
+			return line;
+		}
+		Matcher matcher = ESTIMATE_PATTERN.matcher(line);
+		StringBuilder normalized = new StringBuilder(line.length());
+		int last = 0;
+		while (matcher.find()) {
+			String key = matcher.group(1);
+			EstimateValue previousValue = previous.get(key);
+			String replacement = matcher.group(2) + matcher.group(3);
+			if (previousValue != null) {
+				double currentValue = parseEstimate(matcher.group(2), matcher.group(3));
+				if (Double.isFinite(currentValue) && Double.isFinite(previousValue.value)) {
+					double denom = Math.max(previousValue.value, 1.0e-12d);
+					if (Math.abs(currentValue - previousValue.value) / denom <= ESTIMATE_TOLERANCE) {
+						replacement = previousValue.original;
+					}
+				}
+			}
+			normalized.append(line, last, matcher.start(2));
+			normalized.append(replacement);
+			last = matcher.end(3);
+		}
+		normalized.append(line, last, line.length());
+		return normalized.toString();
+	}
+
+	private Map<String, EstimateValue> extractEstimates(String line) {
+		Matcher matcher = ESTIMATE_PATTERN.matcher(line);
+		Map<String, EstimateValue> values = new LinkedHashMap<>();
+		while (matcher.find()) {
+			String key = matcher.group(1);
+			String original = matcher.group(2) + matcher.group(3);
+			double value = parseEstimate(matcher.group(2), matcher.group(3));
+			values.put(key, new EstimateValue(value, original));
+		}
+		return values;
+	}
+
+	private double parseEstimate(String number, String suffix) {
+		double base;
+		try {
+			base = Double.parseDouble(number);
+		} catch (NumberFormatException e) {
+			return Double.NaN;
+		}
+		if (suffix == null || suffix.isEmpty()) {
+			return base;
+		}
+		switch (suffix.charAt(0)) {
+		case 'K':
+		case 'k':
+			return base * 1.0e3d;
+		case 'M':
+		case 'm':
+			return base * 1.0e6d;
+		case 'B':
+		case 'b':
+			return base * 1.0e9d;
+		case 'G':
+		case 'g':
+			return base * 1.0e9d;
+		default:
+			return Double.NaN;
+		}
+	}
+
+	private String renderOptimizedQuery(Explanation explanation, TupleExprIRRenderer renderer) {
+		Object tupleExpr = explanation.tupleExpr();
+		if (!(tupleExpr instanceof TupleExpr)) {
+			return "<no-tuple-expr>";
+		}
+		try {
+			return renderer.render((TupleExpr) tupleExpr).trim();
+		} catch (RuntimeException e) {
+			return "<render-error:" + e.getClass().getSimpleName() + ":" + e.getMessage() + ">";
+		}
+	}
+
+	private String normalizeVarLine(String line, Map<String, String> normalizedNames,
+			Map<String, Integer> prefixCounters) {
+		Matcher matcher = VAR_NAME_PATTERN.matcher(line);
+		if (!matcher.find()) {
+			return line;
+		}
+		String name = matcher.group(1);
+		String normalized = normalizedNames.get(name);
+		if (normalized == null) {
+			String base = normalizedPrefix(name);
+			int next = prefixCounters.merge(base, 1, Integer::sum);
+			normalized = base + next;
+			normalizedNames.put(name, normalized);
+		}
+		return line.substring(0, matcher.start(1)) + normalized + line.substring(matcher.end(1));
+	}
+
+	private String normalizedPrefix(String name) {
+		Matcher matcher = ANON_SUFFIX_PATTERN.matcher(name);
+		String base = name;
+		if (matcher.matches()) {
+			String prefix = matcher.group(1);
+			String suffix = matcher.group(3);
+			if (suffix != null) {
+				if (prefix.endsWith("_") && suffix.startsWith("_")) {
+					base = prefix + suffix.substring(1);
+				} else {
+					base = prefix + suffix;
+				}
+			} else {
+				base = prefix;
+			}
+		}
+		if (!base.endsWith("_")) {
+			base = base + "_";
+		}
+		return base;
+	}
+
+	private static final class EstimateValue {
+		private final double value;
+		private final String original;
+
+		private EstimateValue(double value, String original) {
+			this.value = value;
+			this.original = original;
+		}
+	}
+
+	private void printDiff(String before, String after) {
+		List<String> diff = diffLines(before, after);
+		int unchangedRun = 0;
+		for (int i = 0; i < diff.size(); i++) {
+			String line = diff.get(i);
+			boolean unchanged = line.startsWith("  ");
+			if (unchanged) {
+				unchangedRun++;
+				continue;
+			}
+			flushUnchanged(diff, i - unchangedRun, unchangedRun);
+			unchangedRun = 0;
+			System.out.println(line);
+		}
+		flushUnchanged(diff, diff.size() - unchangedRun, unchangedRun);
+	}
+
+	private void flushUnchanged(List<String> diff, int start, int count) {
+		if (count == 0) {
+			return;
+		}
+		int keep = 3;
+		if (count <= keep * 2) {
+			for (int i = start; i < start + count; i++) {
+				System.out.println(diff.get(i));
+			}
+			return;
+		}
+		for (int i = start; i < start + keep; i++) {
+			System.out.println(diff.get(i));
+		}
+		System.out.println(ANSI_YELLOW + "  ... " + (count - keep * 2) + " lines unchanged ..." + ANSI_RESET);
+		for (int i = start + count - keep; i < start + count; i++) {
+			System.out.println(diff.get(i));
+		}
+	}
+
+	private List<String> diffLines(String before, String after) {
+		List<String> left = List.of(before.split("\\R", -1));
+		List<String> right = List.of(after.split("\\R", -1));
+		int n = left.size();
+		int m = right.size();
+		int[][] lcs = new int[n + 1][m + 1];
+		for (int i = n - 1; i >= 0; i--) {
+			for (int j = m - 1; j >= 0; j--) {
+				if (left.get(i).equals(right.get(j))) {
+					lcs[i][j] = lcs[i + 1][j + 1] + 1;
+				} else {
+					lcs[i][j] = Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+				}
+			}
+		}
+		List<String> diff = new ArrayList<>();
+		int i = 0;
+		int j = 0;
+		while (i < n && j < m) {
+			String leftLine = left.get(i);
+			String rightLine = right.get(j);
+			if (leftLine.equals(rightLine)) {
+				diff.add("  " + leftLine);
+				i++;
+				j++;
+				continue;
+			}
+			if (lcs[i + 1][j] >= lcs[i][j + 1]) {
+				diff.add(ANSI_RED + "- " + leftLine + ANSI_RESET);
+				i++;
+			} else {
+				diff.add(ANSI_GREEN + "+ " + rightLine + ANSI_RESET);
+				j++;
+			}
+		}
+		while (i < n) {
+			diff.add(ANSI_RED + "- " + left.get(i++) + ANSI_RESET);
+		}
+		while (j < m) {
+			diff.add(ANSI_GREEN + "+ " + right.get(j++) + ANSI_RESET);
+		}
+		return diff;
 	}
 
 	private String modeLabel(boolean enableDp) {
 		return enableDp ? "DP" : "Greedy";
+	}
+
+	private static final class RecordingJoinStatsProvider implements JoinStatsProvider {
+
+		private static final class Entry {
+			private final LongAdder calls = new LongAdder();
+			private final LongAdder results = new LongAdder();
+		}
+
+		private final JoinStatsProvider delegate;
+		private final Map<PatternKey, Entry> entries = new ConcurrentHashMap<>();
+
+		private RecordingJoinStatsProvider(JoinStatsProvider delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public void reset() {
+			delegate.reset();
+			entries.clear();
+		}
+
+		@Override
+		public void recordCall(PatternKey key) {
+			entries.computeIfAbsent(key, ignored -> new Entry()).calls.increment();
+			delegate.recordCall(key);
+		}
+
+		@Override
+		public void recordResults(PatternKey key, long resultCount) {
+			entries.computeIfAbsent(key, ignored -> new Entry()).results.add(Math.max(0L, resultCount));
+			delegate.recordResults(key, resultCount);
+		}
+
+		@Override
+		public void seedIfAbsent(PatternKey key, double defaultCardinality, long priorCalls) {
+			delegate.seedIfAbsent(key, defaultCardinality, priorCalls);
+		}
+
+		@Override
+		public double getAverageResults(PatternKey key) {
+			return delegate.getAverageResults(key);
+		}
+
+		@Override
+		public double getMaxResults(PatternKey key) {
+			return delegate.getMaxResults(key);
+		}
+
+		@Override
+		public boolean hasStats(PatternKey key) {
+			return delegate.hasStats(key);
+		}
+
+		@Override
+		public long getTotalCalls() {
+			return delegate.getTotalCalls();
+		}
+
+		@Override
+		public void recordStatementsAdded(long statementCount) {
+			delegate.recordStatementsAdded(statementCount);
+		}
+
+		private void logStats(String label, boolean enableDp, MemoryJoinStats learnedStats) {
+			String header = label + " " + (enableDp ? "DP" : "Greedy") + " learned stats";
+			System.out.println(header + " entries=" + entries.size());
+			entries.entrySet()
+					.stream()
+					.sorted(Map.Entry.comparingByKey((a, b) -> a.toString().compareTo(b.toString())))
+					.forEach(entry -> {
+						PatternKey key = entry.getKey();
+						Entry stats = entry.getValue();
+						long calls = stats.calls.sum();
+						double avg = calls == 0 ? 0.0d : stats.results.sum() / (double) calls;
+						double learnedAvg = learnedStats.getAverageResults(key);
+						System.out.println("  " + key + " calls=" + calls + " avg=" + avg + " learnedAvg="
+								+ learnedAvg);
+					});
+		}
 	}
 }
