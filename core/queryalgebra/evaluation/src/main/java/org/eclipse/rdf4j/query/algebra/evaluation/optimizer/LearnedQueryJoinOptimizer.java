@@ -254,7 +254,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			if (plan.isEmpty()) {
 				return true;
 			}
-			Set<String> bound = new HashSet<>();
+			Set<String> bound = initiallyBoundVars == null ? new HashSet<>() : new HashSet<>(initiallyBoundVars);
 			for (TupleExpr expr : plan) {
 				Set<String> names = filteredBindingNames(expr);
 				if (!bound.isEmpty() && disjoint(bound, names)) {
