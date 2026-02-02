@@ -15,14 +15,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
@@ -284,5 +290,73 @@ class LearnedBindJoinCostModelTest {
 		double estimate = costModel.estimateFanout(filter, Set.of());
 
 		assertEquals(10.0d, estimate);
+	}
+
+	@Test
+	void collectsExternalConstraintsPastUnsupportedFilters() {
+		EvaluationStatistics stats = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expr) {
+				if (expr instanceof StatementPattern) {
+					StatementPattern pattern = (StatementPattern) expr;
+					return hasValue(pattern.getObjectVar()) ? 1.0d : 100.0d;
+				}
+				return super.getCardinality(expr);
+			}
+
+			private boolean hasValue(Var var) {
+				return var != null && var.hasValue();
+			}
+		};
+		JoinStatsProvider statsProvider = new JoinStatsProvider() {
+			@Override
+			public void reset() {
+			}
+
+			@Override
+			public void recordCall(PatternKey key) {
+			}
+
+			@Override
+			public void recordResults(PatternKey key, long resultCount) {
+			}
+
+			@Override
+			public void seedIfAbsent(PatternKey key, double defaultCardinality, long priorCalls) {
+				fail("seedIfAbsent should not run when no learned estimate exists");
+			}
+
+			@Override
+			public double getAverageResults(PatternKey key) {
+				fail("getAverageResults should not run when no learned estimate exists");
+				return 0.0d;
+			}
+
+			@Override
+			public boolean hasStats(PatternKey key) {
+				return false;
+			}
+
+			@Override
+			public long getTotalCalls() {
+				return 0;
+			}
+		};
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		ValueExpr unsupported = new Compare(Var.of("o"), new ValueConstant(vf.createLiteral("0")), CompareOp.GT);
+		ValueExpr eqA = new Compare(Var.of("o"), new ValueConstant(vf.createLiteral("a")), CompareOp.EQ);
+		ValueExpr eqB = new Compare(Var.of("o"), new ValueConstant(vf.createLiteral("b")), CompareOp.EQ);
+		ValueExpr supported = new Or(eqA, eqB);
+
+		LearnedBindJoinCostModel costModel = new LearnedBindJoinCostModel(stats, statsProvider,
+				List.of(unsupported, supported));
+
+		IRI predicate = vf.createIRI("urn:pred");
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("o"));
+
+		double estimate = costModel.estimateFanout(pattern, Set.of());
+
+		assertEquals(2.0d, estimate);
 	}
 }

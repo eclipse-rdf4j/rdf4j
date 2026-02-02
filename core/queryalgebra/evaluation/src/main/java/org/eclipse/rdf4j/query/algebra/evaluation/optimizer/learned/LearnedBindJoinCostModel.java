@@ -348,9 +348,6 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		FilterConstraints constraints = FilterConstraints.empty();
 		for (ValueExpr expr : filters) {
 			constraints = constraints.and(extractFilterConstraints(expr));
-			if (constraints.isEmpty()) {
-				return constraints;
-			}
 		}
 		return constraints;
 	}

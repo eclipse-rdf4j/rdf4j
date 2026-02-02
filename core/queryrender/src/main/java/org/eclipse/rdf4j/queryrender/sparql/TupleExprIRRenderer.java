@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -324,6 +325,9 @@ public class TupleExprIRRenderer {
 				node.setResultSizeEstimate(-1);
 				node.setResultSizeActual(-1);
 				node.setTotalTimeNanosActual(-1);
+				if (node instanceof BinaryTupleOperator) {
+					((BinaryTupleOperator) node).setAlgorithm((String) null);
+				}
 				super.meetNode(node);
 			}
 		});

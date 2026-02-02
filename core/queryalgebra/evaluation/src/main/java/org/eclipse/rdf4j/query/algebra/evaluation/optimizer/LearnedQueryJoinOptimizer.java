@@ -134,16 +134,20 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		public void meet(Filter node) {
 			if (containsExists(node.getCondition())) {
 				Set<String> bound = filterBoundVars(node);
+				// EXISTS subqueries are evaluated per incoming binding, so correlated vars
+				// are effectively bound while optimizing the EXISTS condition, but not the arg.
+				node.getArg().visit(this);
 				if (!bound.isEmpty()) {
 					scopedBoundVars.push(bound);
 					try {
-						node.getArg().visit(this);
 						node.getCondition().visit(this);
 					} finally {
 						scopedBoundVars.pop();
 					}
-					return;
+				} else {
+					node.getCondition().visit(this);
 				}
+				return;
 			}
 			super.meet(node);
 		}
@@ -288,7 +292,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		}
 
 		private Set<String> filterBoundVars(Filter filter) {
-			Set<String> bound = new HashSet<>(filter.getBindingNames());
+			Set<String> bound = new HashSet<>(filter.getArg().getBindingNames());
 			bound.removeIf(name -> name.startsWith("_const_"));
 			return bound;
 		}
