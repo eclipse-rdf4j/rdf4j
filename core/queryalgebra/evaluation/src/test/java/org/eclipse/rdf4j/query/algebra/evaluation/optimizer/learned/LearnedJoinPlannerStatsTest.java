@@ -24,11 +24,15 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -94,6 +98,27 @@ class LearnedJoinPlannerStatsTest {
 	}
 
 	@Test
+	void gridQueryDpTreatsLiteralFilterAsBinding() {
+		TupleExpr expr = parse(GRID_QUERY);
+		new FilterOptimizer().optimize(expr, null, null);
+		List<TupleExpr> operands = flattenJoin(findLargestJoin(expr));
+
+		IRI connectsTo = iri("http://example.com/theme/grid/connectsTo");
+		IRI name = iri("http://example.com/theme/grid/name");
+		IRI rdfType = RDF.TYPE;
+
+		JoinStatsProvider stats = stats(Map.of(
+				key(name, PatternKey.PREDICATE_BOUND), 10000.0d,
+				key(name, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 1.0d,
+				key(connectsTo, PatternKey.PREDICATE_BOUND), 100.0d,
+				key(connectsTo, PatternKey.PREDICATE_BOUND | PatternKey.SUBJECT_BOUND), 2.0d,
+				key(rdfType, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 50.0d));
+
+		List<String> order = dpOrder(operands, stats);
+		assertEquals(List.of(name.stringValue(), connectsTo.stringValue(), rdfType.stringValue()), order);
+	}
+
+	@Test
 	void pharmaQueryDpOrderRespondsToTargetsStats() {
 		TupleExpr expr = parse(PHARMA_QUERY);
 		List<TupleExpr> operands = flattenJoin(findLargestJoin(expr));
@@ -122,6 +147,103 @@ class LearnedJoinPlannerStatsTest {
 		assertEquals(List.of(targets.stringValue(), combinationOf.stringValue(), rdfType.stringValue(),
 				targets.stringValue(), combinationOf.stringValue()), preferTargetsOrder);
 		assertNotEquals(avoidTargetsOrder, preferTargetsOrder);
+	}
+
+	@Test
+	void pharmaQueryDpAvoidsTargetsWhenSkewed() {
+		TupleExpr expr = parse(PHARMA_QUERY);
+		List<TupleExpr> operands = flattenJoin(findLargestJoin(expr));
+
+		IRI targets = iri("http://example.com/theme/pharma/targets");
+		IRI combinationOf = iri("http://example.com/theme/pharma/combinationOf");
+		IRI rdfType = RDF.TYPE;
+
+		JoinStatsProvider stats = stats(Map.of(
+				key(targets, PatternKey.PREDICATE_BOUND), 1.0d,
+				key(targets, PatternKey.PREDICATE_BOUND | PatternKey.SUBJECT_BOUND), 1.0d,
+				key(targets, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 1.0d,
+				key(combinationOf, PatternKey.PREDICATE_BOUND), 10.0d,
+				key(combinationOf, PatternKey.PREDICATE_BOUND | PatternKey.SUBJECT_BOUND), 1.0d,
+				key(combinationOf, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 1.0d,
+				key(rdfType, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 15.0d,
+				key(rdfType, PatternKey.SUBJECT_BOUND | PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 1.0d),
+				Map.of(key(targets, PatternKey.PREDICATE_BOUND), 10000.0d));
+
+		List<String> dpOrder = dpOrder(operands, stats);
+		assertNotEquals(targets.stringValue(), dpOrder.get(0));
+	}
+
+	@Test
+	void dpAvoidsExistsFilterBeforeBindings() {
+		IRI hasEncounter = iri("http://example.com/theme/medical/hasEncounter");
+		IRI hasMedication = iri("http://example.com/theme/medical/hasMedication");
+		IRI medCode = iri("http://example.com/theme/medical/code");
+
+		EvaluationStatistics stats = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expr) {
+				if (expr instanceof StatementPattern) {
+					StatementPattern pattern = (StatementPattern) expr;
+					Var pred = pattern.getPredicateVar();
+					if (pred != null && pred.hasValue() && pred.getValue() instanceof IRI) {
+						IRI predIri = (IRI) pred.getValue();
+						if (hasMedication.equals(predIri)) {
+							return 1.0d;
+						}
+						if (hasEncounter.equals(predIri)) {
+							return 1_000.0d;
+						}
+					}
+					return 1_000.0d;
+				}
+				if (expr instanceof Filter) {
+					return 1.0d;
+				}
+				return 1_000.0d;
+			}
+		};
+
+		StatementPattern encounterPattern = statementPattern(hasEncounter, "patient", "encounter");
+		StatementPattern medicationPattern = statementPattern(hasMedication, "patient", "med");
+		StatementPattern subMedication = statementPattern(hasMedication, "patient", "m2");
+		StatementPattern subCode = statementPattern(medCode, "m2", "code");
+		Join subQuery = new Join(subMedication, subCode);
+		Filter existsFilter = new Filter(medicationPattern, new Not(new Exists(subQuery)));
+
+		JoinStatsProvider statsProvider = stats(Map.of());
+		BindJoinCostModel costModel = new LearnedBindJoinCostModel(stats, statsProvider);
+		JoinOrderPlanner planner = new DpLeftDeepBindJoinOrderPlanner(costModel);
+
+		List<TupleExpr> ordered = planner.order(new ArrayList<>(List.of(existsFilter, encounterPattern)), Set.of());
+
+		assertEquals(encounterPattern, ordered.get(0));
+	}
+
+	@Test
+	void dpPlannerKeepsSlightlyBetterOrder() {
+		IRI predA = iri("urn:pred:A");
+		IRI predB = iri("urn:pred:B");
+		IRI predC = iri("urn:pred:C");
+		List<TupleExpr> operands = List.of(
+				statementPattern(predA, "s", "o1"),
+				statementPattern(predB, "s", "o2"),
+				statementPattern(predC, "s", "o3"));
+
+		BindJoinCostModel costModel = new FixedCostModel(Map.of(
+				predA, 10.0d,
+				predB, 13.0d,
+				predC, 50.0d),
+				Map.of(
+						predA, 1.0d,
+						predB, 1.5d,
+						predC, 5.0d));
+
+		List<String> greedyOrder = orderWithPlanner(operands, new GreedyBindJoinOrderPlanner(costModel));
+		List<String> dpOrder = orderWithPlanner(operands, new DpLeftDeepBindJoinOrderPlanner(costModel));
+
+		assertEquals(predA.stringValue(), greedyOrder.get(0));
+		assertEquals(predB.stringValue(), dpOrder.get(0));
+		assertNotEquals(greedyOrder, dpOrder);
 	}
 
 	private static TupleExpr parse(String query) {
@@ -166,8 +288,16 @@ class LearnedJoinPlannerStatsTest {
 	}
 
 	private static List<String> dpOrder(List<TupleExpr> operands, JoinStatsProvider statsProvider) {
-		BindJoinCostModel costModel = new LearnedBindJoinCostModel(new EvaluationStatistics(), statsProvider);
-		JoinOrderPlanner planner = new DpLeftDeepBindJoinOrderPlanner(costModel);
+		JoinOrderPlanner planner = dpPlanner(statsProvider);
+		return orderWithPlanner(operands, planner);
+	}
+
+	private static List<String> greedyOrder(List<TupleExpr> operands, JoinStatsProvider statsProvider) {
+		JoinOrderPlanner planner = greedyPlanner(statsProvider);
+		return orderWithPlanner(operands, planner);
+	}
+
+	private static List<String> orderWithPlanner(List<TupleExpr> operands, JoinOrderPlanner planner) {
 		List<TupleExpr> ordered = planner.order(new ArrayList<>(operands), Set.of());
 		List<String> order = new ArrayList<>();
 		for (TupleExpr expr : ordered) {
@@ -181,6 +311,16 @@ class LearnedJoinPlannerStatsTest {
 		return order;
 	}
 
+	private static JoinOrderPlanner dpPlanner(JoinStatsProvider statsProvider) {
+		BindJoinCostModel costModel = new LearnedBindJoinCostModel(new EvaluationStatistics(), statsProvider);
+		return new DpLeftDeepBindJoinOrderPlanner(costModel);
+	}
+
+	private static JoinOrderPlanner greedyPlanner(JoinStatsProvider statsProvider) {
+		BindJoinCostModel costModel = new LearnedBindJoinCostModel(new EvaluationStatistics(), statsProvider);
+		return new GreedyBindJoinOrderPlanner(costModel);
+	}
+
 	private static String predicateLabel(Var predicate) {
 		if (predicate == null || !predicate.hasValue()) {
 			return "<var>";
@@ -189,7 +329,11 @@ class LearnedJoinPlannerStatsTest {
 	}
 
 	private static JoinStatsProvider stats(Map<PatternKey, Double> estimates) {
-		return new PatternKeyStatsProvider(estimates);
+		return new PatternKeyStatsProvider(estimates, Map.of());
+	}
+
+	private static JoinStatsProvider stats(Map<PatternKey, Double> averages, Map<PatternKey, Double> maxResults) {
+		return new PatternKeyStatsProvider(averages, maxResults);
 	}
 
 	private static IRI iri(String value) {
@@ -200,11 +344,20 @@ class LearnedJoinPlannerStatsTest {
 		return new PatternKey(predicate, mask);
 	}
 
-	private static final class PatternKeyStatsProvider implements JoinStatsProvider {
-		private final Map<PatternKey, Double> estimates;
+	private static StatementPattern statementPattern(IRI predicate, String subjectName, String objectName) {
+		Var subject = Var.of(subjectName);
+		Var pred = Var.of("_const_pred", predicate, true, true);
+		Var object = Var.of(objectName);
+		return new StatementPattern(subject, pred, object);
+	}
 
-		private PatternKeyStatsProvider(Map<PatternKey, Double> estimates) {
-			this.estimates = Objects.requireNonNull(estimates, "estimates");
+	private static final class PatternKeyStatsProvider implements JoinStatsProvider {
+		private final Map<PatternKey, Double> averages;
+		private final Map<PatternKey, Double> maxResults;
+
+		private PatternKeyStatsProvider(Map<PatternKey, Double> averages, Map<PatternKey, Double> maxResults) {
+			this.averages = Objects.requireNonNull(averages, "averages");
+			this.maxResults = Objects.requireNonNull(maxResults, "maxResults");
 		}
 
 		@Override
@@ -225,13 +378,19 @@ class LearnedJoinPlannerStatsTest {
 
 		@Override
 		public double getAverageResults(PatternKey key) {
-			Double estimate = estimates.get(key);
+			Double estimate = averages.get(key);
 			return estimate == null ? 0.0d : estimate;
 		}
 
 		@Override
+		public double getMaxResults(PatternKey key) {
+			Double max = maxResults.get(key);
+			return max == null ? getAverageResults(key) : max;
+		}
+
+		@Override
 		public boolean hasStats(PatternKey key) {
-			return estimates.containsKey(key);
+			return averages.containsKey(key);
 		}
 
 		@Override
@@ -241,6 +400,46 @@ class LearnedJoinPlannerStatsTest {
 
 		@Override
 		public void recordStatementsAdded(long statementCount) {
+		}
+	}
+
+	private static final class FixedCostModel implements BindJoinCostModel {
+
+		private final Map<IRI, Double> scanCosts;
+		private final Map<IRI, Double> fanouts;
+
+		private FixedCostModel(Map<IRI, Double> scanCosts, Map<IRI, Double> fanouts) {
+			this.scanCosts = Objects.requireNonNull(scanCosts, "scanCosts");
+			this.fanouts = Objects.requireNonNull(fanouts, "fanouts");
+		}
+
+		@Override
+		public double estimateFanout(TupleExpr expr, Set<String> boundVars) {
+			IRI predicate = predicateValue(expr);
+			return predicate == null ? 0.0d : fanouts.getOrDefault(predicate, 1.0d);
+		}
+
+		@Override
+		public double estimateScanCardinality(TupleExpr expr, Set<String> initiallyBoundVars) {
+			IRI predicate = predicateValue(expr);
+			return predicate == null ? 0.0d : scanCosts.getOrDefault(predicate, 1.0d);
+		}
+
+		@Override
+		public Set<String> bindingNames(TupleExpr expr) {
+			return expr.getBindingNames();
+		}
+
+		private IRI predicateValue(TupleExpr expr) {
+			if (!(expr instanceof StatementPattern)) {
+				return null;
+			}
+			StatementPattern pattern = (StatementPattern) expr;
+			Var pred = pattern.getPredicateVar();
+			if (pred == null || !pred.hasValue()) {
+				return null;
+			}
+			return (IRI) pred.getValue();
 		}
 	}
 }

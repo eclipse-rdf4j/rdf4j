@@ -23,10 +23,15 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.BindJoinCostModel;
@@ -36,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.HybridBindJo
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedBindJoinCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedJoinConfig;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 
@@ -86,6 +92,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 
 		private final Dataset dataset;
 		private final BindingSet bindings;
+		private final Deque<Set<String>> scopedBoundVars = new ArrayDeque<>();
 		private Deque<TupleExpr> plannedOrder;
 
 		private LearnedJoinVisitor(Dataset dataset, BindingSet bindings) {
@@ -109,7 +116,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 					plannedOrder = null;
 				} else {
 					Set<String> initiallyBoundVars = determineInitiallyBoundVars(joinArgs);
-					List<TupleExpr> planned = joinPlanner.order(joinArgs, initiallyBoundVars);
+					JoinOrderPlanner planner = plannerFor(node);
+					List<TupleExpr> planned = planner.order(joinArgs, initiallyBoundVars);
 					if (isConnectedPlan(planned, initiallyBoundVars)) {
 						plannedOrder = new ArrayDeque<>(planned);
 					} else {
@@ -120,6 +128,24 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			} finally {
 				plannedOrder = previousPlan;
 			}
+		}
+
+		@Override
+		public void meet(Filter node) {
+			if (containsExists(node.getCondition())) {
+				Set<String> bound = filterBoundVars(node);
+				if (!bound.isEmpty()) {
+					scopedBoundVars.push(bound);
+					try {
+						node.getArg().visit(this);
+						node.getCondition().visit(this);
+					} finally {
+						scopedBoundVars.pop();
+					}
+					return;
+				}
+			}
+			super.meet(node);
 		}
 
 		@Override
@@ -165,14 +191,52 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			return null;
 		}
 
+		private JoinOrderPlanner plannerFor(Join node) {
+			List<ValueExpr> filters = collectAncestorFilters(node);
+			if (filters.isEmpty()) {
+				return joinPlanner;
+			}
+			BindJoinCostModel costModel = new LearnedBindJoinCostModel(statistics, statsProvider, filters);
+			JoinOrderPlanner greedy = new GreedyBindJoinOrderPlanner(costModel);
+			JoinOrderPlanner dp = new DpLeftDeepBindJoinOrderPlanner(costModel);
+			return new HybridBindJoinOrderPlanner(config, greedy, dp);
+		}
+
+		private List<ValueExpr> collectAncestorFilters(Join node) {
+			List<ValueExpr> filters = List.of();
+			QueryModelNode current = node.getParentNode();
+			while (current != null) {
+				if (current instanceof VariableScopeChange
+						&& ((VariableScopeChange) current).isVariableScopeChange()) {
+					break;
+				}
+				if (current instanceof Filter) {
+					Filter filter = (Filter) current;
+					if (filters.isEmpty()) {
+						filters = List.of(filter.getCondition());
+					} else {
+						if (filters.size() == 1) {
+							filters = new ArrayList<>(filters);
+						}
+						filters.add(filter.getCondition());
+					}
+				}
+				current = current.getParentNode();
+			}
+			return filters;
+		}
+
 		private Set<String> determineInitiallyBoundVars(List<TupleExpr> joinArgs) {
 			Set<String> candidates = new HashSet<>();
 			for (TupleExpr expr : joinArgs) {
 				candidates.addAll(expr.getBindingNames());
 			}
-			Set<String> bound = new HashSet<>();
+			Set<String> bound = new HashSet<>(scopedBoundVars());
 			for (String name : candidates) {
 				if (name.startsWith("_const_")) {
+					continue;
+				}
+				if (bound.contains(name)) {
 					continue;
 				}
 				if (getUnboundVars(List.of(Var.of(name))).isEmpty()) {
@@ -212,6 +276,44 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			return true;
 		}
 
+		private Set<String> scopedBoundVars() {
+			if (scopedBoundVars.isEmpty()) {
+				return Set.of();
+			}
+			Set<String> bound = new HashSet<>();
+			for (Set<String> scope : scopedBoundVars) {
+				bound.addAll(scope);
+			}
+			return bound;
+		}
+
+		private Set<String> filterBoundVars(Filter filter) {
+			Set<String> bound = new HashSet<>(filter.getBindingNames());
+			bound.removeIf(name -> name.startsWith("_const_"));
+			return bound;
+		}
+
+		private boolean containsExists(ValueExpr expr) {
+			if (expr == null) {
+				return false;
+			}
+			boolean[] found = new boolean[1];
+			expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Exists node) {
+					found[0] = true;
+				}
+
+				@Override
+				protected void meetNode(QueryModelNode node) {
+					if (!found[0]) {
+						super.meetNode(node);
+					}
+				}
+			});
+			return found[0];
+		}
+
 		private List<TupleExpr> getExtensionTupleExprs(List<TupleExpr> expressions) {
 			if (expressions.isEmpty()) {
 				return List.of();
@@ -234,20 +336,31 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		}
 
 		private boolean hasLearnedStats(List<TupleExpr> expressions) {
+			boolean seeded = false;
 			for (TupleExpr expr : expressions) {
 				if (expr instanceof StatementPattern) {
-					if (statsProvider.hasStats(buildKey((StatementPattern) expr))) {
-						return true;
+					if (ensureStats((StatementPattern) expr)) {
+						seeded = true;
 					}
 					continue;
 				}
 				for (StatementPattern pattern : StatementPatternCollector.process(expr)) {
-					if (statsProvider.hasStats(buildKey(pattern))) {
-						return true;
+					if (ensureStats(pattern)) {
+						seeded = true;
 					}
 				}
 			}
-			return false;
+			return seeded;
+		}
+
+		private boolean ensureStats(StatementPattern pattern) {
+			PatternKey key = buildKey(pattern);
+			if (statsProvider.hasStats(key)) {
+				return true;
+			}
+			double defaultEstimate = statistics.getCardinality(pattern);
+			statsProvider.seedIfAbsent(key, defaultEstimate, DEFAULT_PRIOR_CALLS);
+			return statsProvider.hasStats(key);
 		}
 
 		private double estimateCardinality(StatementPattern node) {

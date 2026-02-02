@@ -80,7 +80,7 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
+//			"SOCIAL_MEDIA",
 			"LIBRARY",
 			"ENGINEERING",
 			"HIGHLY_CONNECTED",

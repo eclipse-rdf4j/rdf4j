@@ -81,6 +81,7 @@ public class MemoryJoinStats implements JoinStatsProvider {
 	private static final class Stats {
 		private final LongAdder calls = new LongAdder();
 		private final LongAdder results = new LongAdder();
+		private final java.util.concurrent.atomic.AtomicLong maxResults = new java.util.concurrent.atomic.AtomicLong();
 		private final long priorCalls;
 		private final double priorResults;
 		private final double baselineCardinality;
@@ -100,6 +101,10 @@ public class MemoryJoinStats implements JoinStatsProvider {
 			return (results.sum() + priorResults) / totalCalls;
 		}
 
+		private double maxResults() {
+			return maxResults.get();
+		}
+
 		private long actualCalls() {
 			return calls.sum();
 		}
@@ -112,7 +117,13 @@ public class MemoryJoinStats implements JoinStatsProvider {
 			Stats updated = new Stats(priorCalls, priorResults, newBaseline);
 			updated.calls.add(calls.sum());
 			updated.results.add(results.sum());
+			updated.maxResults.set(maxResults.get());
 			return updated;
+		}
+
+		private void recordResults(long resultCount) {
+			results.add(resultCount);
+			maxResults.accumulateAndGet(resultCount, Math::max);
 		}
 	}
 
@@ -154,7 +165,7 @@ public class MemoryJoinStats implements JoinStatsProvider {
 		if (resultCount < 0) {
 			resultCount = 0;
 		}
-		stats.computeIfAbsent(key, ignored -> new Stats(0, 0, 0.0d)).results.add(resultCount);
+		stats.computeIfAbsent(key, ignored -> new Stats(0, 0, 0.0d)).recordResults(resultCount);
 	}
 
 	@Override
@@ -179,6 +190,12 @@ public class MemoryJoinStats implements JoinStatsProvider {
 	public double getAverageResults(PatternKey key) {
 		Stats entry = stats.get(key);
 		return entry == null ? 0.0d : entry.averageResults();
+	}
+
+	@Override
+	public double getMaxResults(PatternKey key) {
+		Stats entry = stats.get(key);
+		return entry == null ? 0.0d : entry.maxResults();
 	}
 
 	@Override

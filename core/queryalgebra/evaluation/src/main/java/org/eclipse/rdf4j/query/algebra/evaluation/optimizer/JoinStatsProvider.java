@@ -30,6 +30,14 @@ public interface JoinStatsProvider {
 
 	double getAverageResults(PatternKey key);
 
+	/**
+	 * Returns the maximum observed result count per call for the given key. Defaults to the average result count when
+	 * not supported by an implementation.
+	 */
+	default double getMaxResults(PatternKey key) {
+		return getAverageResults(key);
+	}
+
 	boolean hasStats(PatternKey key);
 
 	long getTotalCalls();

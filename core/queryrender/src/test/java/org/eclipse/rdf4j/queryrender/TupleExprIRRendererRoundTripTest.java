@@ -16,6 +16,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -29,6 +31,18 @@ import org.junit.jupiter.api.parallel.ExecutionMode;
 
 @Execution(ExecutionMode.SAME_THREAD)
 class TupleExprIRRendererRoundTripTest {
+
+	private static final String COMPLEX_QUERY_PREFIXED = "PREFIX lib: <http://example.com/theme/library/>\n" +
+			"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n" +
+			"SELECT (COUNT(DISTINCT ?branch) AS ?count) WHERE {\n" +
+			"  { ?branch a lib:Branch . }\n" +
+			"  UNION\n" +
+			"  { ?branch a lib:Branch ; lib:name ?name . }\n" +
+			"  OPTIONAL { ?copy lib:locatedAt ?branch . BIND(?copy AS ?optCopy) }\n" +
+			"  FILTER(?optCopy != ?branch)\n" +
+			"  MINUS { ?branch lib:name ?name2 .\n" +
+			"          FILTER(CONTAINS(LCASE(STR(?name2)), \"branch 0\")) }\n" +
+			"}";
 
 	@RepeatedTest(10)
 	void roundTrip_countDistinct_union_optional_bind_filter_minus() {
@@ -57,19 +71,20 @@ class TupleExprIRRendererRoundTripTest {
 
 	@RepeatedTest(10)
 	void roundTrip_countDistinct_union_optional_bind_filter_minus_withPrefixes() {
-		String sparql = "PREFIX lib: <http://example.com/theme/library/>\n" +
-				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n" +
-				"SELECT (COUNT(DISTINCT ?branch) AS ?count) WHERE {\n" +
-				"  { ?branch a lib:Branch . }\n" +
-				"  UNION\n" +
-				"  { ?branch a lib:Branch ; lib:name ?name . }\n" +
-				"  OPTIONAL { ?copy lib:locatedAt ?branch . BIND(?copy AS ?optCopy) }\n" +
-				"  FILTER(?optCopy != ?branch)\n" +
-				"  MINUS { ?branch lib:name ?name2 .\n" +
-				"          FILTER(CONTAINS(LCASE(STR(?name2)), \"branch 0\")) }\n" +
-				"}";
+		assertRoundTrip(COMPLEX_QUERY_PREFIXED);
+	}
 
-		assertRoundTrip(sparql);
+	@Test
+	void verifyRoundTrip_ignores_algorithmNames() {
+		TupleExpr tupleExpr = parseTupleExpr(COMPLEX_QUERY_PREFIXED);
+		addJoinAlgorithmNames(tupleExpr);
+		addCostAndSizeAnnotations(tupleExpr);
+
+		TupleExprIRRenderer.Config cfg = new TupleExprIRRenderer.Config();
+		cfg.verifyRoundTrip = true;
+
+		assertThatCode(() -> new TupleExprIRRenderer(cfg).render(tupleExpr, null))
+				.doesNotThrowAnyException();
 	}
 
 	@Test
@@ -120,6 +135,20 @@ class TupleExprIRRendererRoundTripTest {
 				node.setCostEstimate(123.45);
 				node.setResultSizeEstimate(678.0);
 				node.setResultSizeActual(9_101);
+				super.meetNode(node);
+			}
+		});
+	}
+
+	private static void addJoinAlgorithmNames(TupleExpr tupleExpr) {
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof Join) {
+					((Join) node).setAlgorithm("JoinIterator");
+				} else if (node instanceof LeftJoin) {
+					((LeftJoin) node).setAlgorithm("LeftJoinIterator");
+				}
 				super.meetNode(node);
 			}
 		});

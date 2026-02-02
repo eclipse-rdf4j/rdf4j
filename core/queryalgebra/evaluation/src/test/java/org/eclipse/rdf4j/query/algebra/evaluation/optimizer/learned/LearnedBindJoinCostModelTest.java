@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -52,6 +53,110 @@ class LearnedBindJoinCostModelTest {
 		assertEquals(expectedUnbound, unboundEstimate);
 		assertEquals(expectedBound, boundEstimate);
 		assertEquals(expectedBound, boundScanEstimate);
+	}
+
+	@Test
+	void avoidsZeroFallbackWhenPlaceholderNotInStats() {
+		EvaluationStatistics stats = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expr) {
+				if (expr instanceof StatementPattern) {
+					StatementPattern sp = (StatementPattern) expr;
+					if (hasValue(sp.getSubjectVar()) || hasValue(sp.getPredicateVar()) || hasValue(sp.getObjectVar())) {
+						return 0.0d;
+					}
+					return 100.0d;
+				}
+				return super.getCardinality(expr);
+			}
+
+			private boolean hasValue(Var var) {
+				return var != null && var.hasValue();
+			}
+		};
+		JoinStatsProvider statsProvider = new MemoryJoinStats(MemoryJoinStats.InvalidationSettings.disabled());
+		LearnedBindJoinCostModel costModel = new LearnedBindJoinCostModel(stats, statsProvider);
+
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		IRI boundValue = SimpleValueFactory.getInstance().createIRI("urn:test");
+		StatementPattern boundPattern = new StatementPattern(Var.of("s", boundValue), Var.of("p"), Var.of("o"));
+
+		EvaluationStatistics generic = new EvaluationStatistics();
+		double ratio = generic.getCardinality(boundPattern) / generic.getCardinality(pattern);
+		double expected = 100.0d * ratio;
+
+		double estimate = costModel.estimateFanout(pattern, Set.of("s"));
+
+		assertEquals(expected, estimate);
+	}
+
+	@Test
+	void capsPlaceholderFallbackWhenStoreIgnoresBindings() {
+		EvaluationStatistics stats = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expr) {
+				if (expr instanceof StatementPattern) {
+					return 10_000.0d;
+				}
+				return super.getCardinality(expr);
+			}
+		};
+		JoinStatsProvider statsProvider = new MemoryJoinStats(MemoryJoinStats.InvalidationSettings.disabled());
+		LearnedBindJoinCostModel costModel = new LearnedBindJoinCostModel(stats, statsProvider);
+
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+
+		double estimate = costModel.estimateFanout(pattern, Set.of("s"));
+
+		assertEquals(100.0d, estimate);
+	}
+
+	@Test
+	void capsFullyBoundPlaceholderToSingleResult() {
+		EvaluationStatistics stats = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expr) {
+				if (expr instanceof StatementPattern) {
+					return 1000.0d;
+				}
+				return super.getCardinality(expr);
+			}
+		};
+		JoinStatsProvider statsProvider = new MemoryJoinStats(MemoryJoinStats.InvalidationSettings.disabled());
+		LearnedBindJoinCostModel costModel = new LearnedBindJoinCostModel(stats, statsProvider);
+
+		IRI type = SimpleValueFactory.getInstance().createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI line = SimpleValueFactory.getInstance().createIRI("http://example.com/theme/grid/Line");
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", type), Var.of("o", line));
+
+		double estimate = costModel.estimateFanout(pattern, Set.of("s"));
+
+		assertEquals(1.0d, estimate);
+	}
+
+	@Test
+	void capsPlaceholderFallbackToGenericBoundWhenSingleVarUnbound() {
+		EvaluationStatistics stats = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expr) {
+				if (expr instanceof StatementPattern) {
+					return 1_000_000.0d;
+				}
+				return super.getCardinality(expr);
+			}
+		};
+		JoinStatsProvider statsProvider = new MemoryJoinStats(MemoryJoinStats.InvalidationSettings.disabled());
+		LearnedBindJoinCostModel costModel = new LearnedBindJoinCostModel(stats, statsProvider);
+
+		IRI pred = SimpleValueFactory.getInstance().createIRI("http://example.com/theme/grid/connectsTo");
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", pred), Var.of("o"));
+		StatementPattern boundPattern = new StatementPattern(Var.of("s", pred), Var.of("p", pred), Var.of("o"));
+		EvaluationStatistics generic = new EvaluationStatistics();
+		double genericBound = generic.getCardinality(boundPattern);
+
+		double estimate = costModel.estimateFanout(pattern, Set.of("s"));
+
+		assertEquals(genericBound, estimate);
 	}
 
 	@Test

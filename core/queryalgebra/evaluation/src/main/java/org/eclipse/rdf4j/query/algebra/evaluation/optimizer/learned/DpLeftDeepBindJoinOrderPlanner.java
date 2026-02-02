@@ -19,15 +19,20 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 
 /**
  * Left-deep dynamic programming planner for small join groups.
  */
 public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 
-	private static final double INF = Double.POSITIVE_INFINITY;
 	private static final double DISCONNECTED_PENALTY = 1.0e9d;
+	private static final String DEBUG_PROPERTY = "rdf4j.dp.debug";
+	private static final String DEBUG_MAX_OPERANDS_PROPERTY = "rdf4j.dp.debug.maxOperands";
+	private static final int DEFAULT_DEBUG_MAX_OPERANDS = 6;
 
 	private final BindJoinCostModel costModel;
 
@@ -42,59 +47,101 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 			return new ArrayList<>(operands);
 		}
 
+		boolean debug = isDebugEnabled(size);
+		List<String> debugLabels = debug ? operandLabels(operands) : List.of();
+		if (debug) {
+			System.out.println("DP debug operands=" + debugLabels);
+		}
+
 		int totalMasks = 1 << size;
-		double[] cost = new double[totalMasks];
-		double[] card = new double[totalMasks];
-		int[] prevMask = new int[totalMasks];
-		int[] prevIndex = new int[totalMasks];
+		@SuppressWarnings("unchecked")
+		List<PlanEntry>[] plans = (List<PlanEntry>[]) new List<?>[totalMasks];
 
 		Set<String>[] boundVars = buildBoundVars(operands, initiallyBoundVars);
 
-		for (int mask = 0; mask < totalMasks; mask++) {
-			cost[mask] = INF;
-			card[mask] = INF;
-			prevMask[mask] = -1;
-			prevIndex[mask] = -1;
-		}
-
 		for (int i = 0; i < size; i++) {
 			int mask = 1 << i;
-			double scanCard = costModel.estimateScanCardinality(operands.get(i), initiallyBoundVars);
-			if (isIsolated(operands.get(i), operands)) {
+			TupleExpr operand = operands.get(i);
+			double scanCard = costModel.estimateScanCardinality(operand, initiallyBoundVars);
+			Set<String> names = filteredBindingNames(operand);
+			boolean disconnected = isIsolated(operand, operands);
+			if (!initiallyBoundVars.isEmpty() && (names.isEmpty() || disjoint(names, initiallyBoundVars))) {
+				disconnected = true;
+			}
+			if (disconnected) {
+				if (scanCard <= 0.0d) {
+					scanCard = 1.0d;
+				}
 				scanCard *= DISCONNECTED_PENALTY;
 			}
-			card[mask] = scanCard;
-			cost[mask] = scanCard;
-			prevMask[mask] = 0;
-			prevIndex[mask] = i;
+			List<PlanEntry> entries = new ArrayList<>(1);
+			entries.add(new PlanEntry(scanCard, scanCard, 0, i, -1));
+			plans[mask] = entries;
+			if (debug) {
+				System.out.println("DP debug mask=" + maskBits(mask, size) + " init="
+						+ debugLabels.get(i) + " cost=" + format(scanCard) + " card=" + format(scanCard));
+			}
 		}
 
 		for (int mask = 1; mask < totalMasks; mask++) {
 			if ((mask & (mask - 1)) == 0) {
 				continue;
 			}
+			List<PlanEntry> entries = new ArrayList<>();
 			for (int j = 0; j < size; j++) {
 				int bit = 1 << j;
 				if ((mask & bit) == 0) {
 					continue;
 				}
 				int fromMask = mask ^ bit;
-				double outer = card[fromMask];
+				List<PlanEntry> fromPlans = plans[fromMask];
+				if (fromPlans == null || fromPlans.isEmpty()) {
+					continue;
+				}
 				Set<String> fromBound = boundVars[fromMask];
 				double fanout = estimateFanoutWithConnectivity(operands.get(j), fromBound, initiallyBoundVars);
-				double candidateCard = outer * fanout;
-				double candidateCost = cost[fromMask] + candidateCard;
-				if (candidateCost < cost[mask]
-						|| (candidateCost == cost[mask] && candidateCard < card[mask])) {
-					cost[mask] = candidateCost;
-					card[mask] = candidateCard;
-					prevMask[mask] = fromMask;
-					prevIndex[mask] = j;
+				if (debug) {
+					System.out.println("DP debug mask=" + maskBits(mask, size) + " from=" + maskBits(fromMask, size)
+							+ " add=" + debugLabels.get(j) + " fanout=" + format(fanout));
+				}
+				for (int entryIndex = 0; entryIndex < fromPlans.size(); entryIndex++) {
+					PlanEntry from = fromPlans.get(entryIndex);
+					double outer = from.cardinality;
+					double candidateCard = outer * fanout;
+					double candidateCost = from.cost + candidateCard;
+					if (!Double.isFinite(candidateCost) || !Double.isFinite(candidateCard)) {
+						continue;
+					}
+					if (debug) {
+						System.out.println("DP debug  -> order=" + orderLabels(operands, plans, fromMask, entryIndex,
+								debugLabels, size)
+								+ " + " + debugLabels.get(j)
+								+ " outer=" + format(outer)
+								+ " card=" + format(candidateCard)
+								+ " cost=" + format(candidateCost));
+					}
+					addCandidate(entries, new PlanEntry(candidateCost, candidateCard, fromMask, j, entryIndex));
+				}
+			}
+			plans[mask] = entries;
+			if (debug) {
+				for (int entryIndex = 0; entryIndex < entries.size(); entryIndex++) {
+					PlanEntry entry = entries.get(entryIndex);
+					System.out.println("DP debug mask=" + maskBits(mask, size) + " plan="
+							+ orderLabels(operands, plans, mask, entryIndex, debugLabels, size)
+							+ " cost=" + format(entry.cost)
+							+ " card=" + format(entry.cardinality));
 				}
 			}
 		}
 
-		return reconstructOrder(operands, prevMask, prevIndex, totalMasks - 1);
+		int finalMask = totalMasks - 1;
+		List<PlanEntry> finalPlans = plans[finalMask];
+		if (finalPlans == null || finalPlans.isEmpty()) {
+			return new ArrayList<>(operands);
+		}
+		int bestIndex = selectBestPlan(finalPlans);
+		return reconstructOrder(operands, plans, finalMask, bestIndex);
 	}
 
 	private Set<String>[] buildBoundVars(List<TupleExpr> operands, Set<String> initiallyBoundVars) {
@@ -158,15 +205,135 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 		return true;
 	}
 
-	private List<TupleExpr> reconstructOrder(List<TupleExpr> operands, int[] prevMask, int[] prevIndex,
-			int finalMask) {
+	private List<TupleExpr> reconstructOrder(List<TupleExpr> operands, List<PlanEntry>[] plans, int finalMask,
+			int finalEntry) {
 		Deque<TupleExpr> order = new ArrayDeque<>(operands.size());
 		int mask = finalMask;
+		int entryIndex = finalEntry;
 		while (mask != 0) {
-			int index = prevIndex[mask];
-			order.addFirst(operands.get(index));
-			mask = prevMask[mask];
+			PlanEntry entry = plans[mask].get(entryIndex);
+			order.addFirst(operands.get(entry.prevIndex));
+			entryIndex = entry.prevEntry;
+			mask = entry.prevMask;
 		}
 		return new ArrayList<>(order);
+	}
+
+	private void addCandidate(List<PlanEntry> entries, PlanEntry candidate) {
+		for (int i = 0; i < entries.size();) {
+			PlanEntry existing = entries.get(i);
+			if (dominates(existing, candidate)) {
+				return;
+			}
+			if (dominates(candidate, existing)) {
+				entries.remove(i);
+				continue;
+			}
+			i++;
+		}
+		entries.add(candidate);
+	}
+
+	private boolean dominates(PlanEntry left, PlanEntry right) {
+		return left.cost <= right.cost && left.cardinality <= right.cardinality;
+	}
+
+	private int selectBestPlan(List<PlanEntry> entries) {
+		int bestIndex = 0;
+		PlanEntry best = entries.get(0);
+		for (int i = 1; i < entries.size(); i++) {
+			PlanEntry candidate = entries.get(i);
+			if (candidate.cost < best.cost
+					|| (candidate.cost == best.cost && candidate.cardinality < best.cardinality)) {
+				best = candidate;
+				bestIndex = i;
+			}
+		}
+		return bestIndex;
+	}
+
+	private boolean isDebugEnabled(int size) {
+		if (!Boolean.getBoolean(DEBUG_PROPERTY)) {
+			return false;
+		}
+		int max = Integer.getInteger(DEBUG_MAX_OPERANDS_PROPERTY, DEFAULT_DEBUG_MAX_OPERANDS);
+		return size <= Math.max(1, max);
+	}
+
+	private List<String> operandLabels(List<TupleExpr> operands) {
+		List<String> labels = new ArrayList<>(operands.size());
+		for (TupleExpr expr : operands) {
+			List<StatementPattern> patterns = StatementPatternCollector.process(expr);
+			if (patterns.isEmpty()) {
+				labels.add(expr.getClass().getSimpleName());
+				continue;
+			}
+			Var predicate = patterns.get(0).getPredicateVar();
+			labels.add(predicateLabel(predicate));
+		}
+		return labels;
+	}
+
+	private String predicateLabel(Var predicate) {
+		if (predicate == null || !predicate.hasValue()) {
+			return "<var>";
+		}
+		return predicate.getValue().stringValue();
+	}
+
+	private String orderLabels(List<TupleExpr> operands, List<PlanEntry>[] plans, int mask, int entryIndex,
+			List<String> labels, int size) {
+		List<String> order = new ArrayList<>(size);
+		int currentMask = mask;
+		int currentEntry = entryIndex;
+		while (currentMask != 0) {
+			PlanEntry entry = plans[currentMask].get(currentEntry);
+			order.add(0, labels.get(entry.prevIndex));
+			currentEntry = entry.prevEntry;
+			currentMask = entry.prevMask;
+		}
+		return order.toString();
+	}
+
+	private String maskBits(int mask, int size) {
+		String binary = Integer.toBinaryString(mask);
+		if (binary.length() >= size) {
+			return binary;
+		}
+		StringBuilder builder = new StringBuilder(size);
+		for (int i = binary.length(); i < size; i++) {
+			builder.append('0');
+		}
+		builder.append(binary);
+		return builder.toString();
+	}
+
+	private String format(double value) {
+		if (value == 0.0d) {
+			return "0";
+		}
+		if (value < 1.0d) {
+			return String.format("%.3f", value);
+		}
+		if (value < 1000.0d) {
+			return String.format("%.3f", value);
+		}
+		return String.format("%.0f", value);
+	}
+
+	private static final class PlanEntry {
+		private final double cost;
+		private final double cardinality;
+		private final int prevMask;
+		private final int prevIndex;
+		private final int prevEntry;
+
+		private PlanEntry(double cost, double cardinality, int prevMask, int prevIndex, int prevEntry) {
+			this.cost = cost;
+			this.cardinality = cardinality;
+			this.prevMask = prevMask;
+			this.prevIndex = prevIndex;
+			this.prevEntry = prevEntry;
+		}
 	}
 }

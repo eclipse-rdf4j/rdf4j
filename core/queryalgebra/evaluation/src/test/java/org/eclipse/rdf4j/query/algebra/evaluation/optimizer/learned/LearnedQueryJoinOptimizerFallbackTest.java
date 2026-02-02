@@ -12,8 +12,11 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
@@ -26,19 +29,28 @@ import org.junit.jupiter.api.Test;
 class LearnedQueryJoinOptimizerFallbackTest {
 
 	@Test
-	void usesEvaluationStatisticsWhenLearnedStatsMissing() {
+	void seedsDefaultStatsWhenLearnedStatsMissing() {
 		EvaluationStatistics stats = new EvaluationStatistics();
-		JoinStatsProvider statsProvider = new NoEstimateJoinStatsProvider();
+		SeedTrackingStatsProvider statsProvider = new SeedTrackingStatsProvider();
 		LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(stats, new EmptyTripleSource(),
 				statsProvider);
-		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		StatementPattern left = new StatementPattern(Var.of("s"),
+				Var.of("p", SimpleValueFactory.getInstance().createIRI("urn:left")),
+				Var.of("o"));
+		StatementPattern right = new StatementPattern(Var.of("s"),
+				Var.of("p", SimpleValueFactory.getInstance().createIRI("urn:right")),
+				Var.of("o2"));
+		Join join = new Join(left, right);
 
-		optimizer.optimize(pattern, null, null);
+		QueryRoot root = new QueryRoot(join);
+		optimizer.optimize(root, null, null);
 
-		assertEquals(stats.getCardinality(pattern), pattern.getResultSizeEstimate());
+		assertTrue(statsProvider.seedCalls > 0, "Expected default stats to be seeded");
+		assertEquals(stats.getCardinality(left), left.getResultSizeEstimate());
 	}
 
-	private static final class NoEstimateJoinStatsProvider implements JoinStatsProvider {
+	private static final class SeedTrackingStatsProvider implements JoinStatsProvider {
+		private int seedCalls;
 
 		@Override
 		public void reset() {
@@ -54,12 +66,11 @@ class LearnedQueryJoinOptimizerFallbackTest {
 
 		@Override
 		public void seedIfAbsent(PatternKey key, double defaultCardinality, long priorCalls) {
-			fail("seedIfAbsent should not run when no learned estimate exists");
+			seedCalls++;
 		}
 
 		@Override
 		public double getAverageResults(PatternKey key) {
-			fail("getAverageResults should not run when no learned estimate exists");
 			return 0.0d;
 		}
 
