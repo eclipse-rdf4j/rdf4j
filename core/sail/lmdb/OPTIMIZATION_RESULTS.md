@@ -1,6 +1,48 @@
 # LMDB Sail Optimization Results
 
-**Date:** 2026-02-02
+**Date:** 2026-02-02 (Updated)
+
+## Verified Baseline (5-run average, benchmark-only branch)
+
+Measured on commit `925873151c` (benchmark code only, no optimizations):
+
+### Concurrent Read Performance (ops/sec)
+
+| Threads | Baseline (Verified) |
+|---------|---------------------|
+| 1 | **1,931,190** |
+| 2 | **3,123,939** |
+| 4 | **4,298,965** |
+| 8 | **2,736,509** |
+
+### Concurrent Write Performance (ops/sec)
+
+| Threads | Baseline (Verified) |
+|---------|---------------------|
+| 1 | **73,099** |
+| 2 | **81,192** |
+| 4 | **74,778** |
+
+### Raw Baseline Data (5 runs)
+
+**Concurrent Read (ops/sec):**
+
+| Threads | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 | Average |
+|---------|-------|-------|-------|-------|-------|---------|
+| 1 | 1,966,339 | 2,027,129 | 1,897,392 | 1,911,924 | 1,853,166 | 1,931,190 |
+| 2 | 3,082,714 | 3,131,873 | 3,055,475 | 3,228,411 | 3,121,220 | 3,123,939 |
+| 4 | 4,120,026 | 4,457,757 | 4,319,446 | 4,351,756 | 4,245,840 | 4,298,965 |
+| 8 | 3,164,806 | 2,685,134 | 2,709,071 | 2,593,945 | 2,529,591 | 2,736,509 |
+
+**Concurrent Write (ops/sec):**
+
+| Threads | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 | Average |
+|---------|-------|-------|-------|-------|-------|---------|
+| 1 | 75,762 | 75,443 | 73,818 | 67,652 | 72,820 | 73,099 |
+| 2 | 85,020 | 85,550 | 76,322 | 82,078 | 76,992 | 81,192 |
+| 4 | 73,056 | 82,202 | 71,108 | 77,080 | 70,446 | 74,778 |
+
+---
 
 ## Final Benchmark Comparison
 
@@ -8,10 +50,20 @@
 
 | Threads | Baseline | Final (Avg) | Improvement |
 |---------|----------|-------------|-------------|
-| 1 | 1,879,176 | 1,882,446 | **+0.2%** |
-| 2 | 2,709,194 | 3,044,976 | **+12.4%** |
-| 4 | 3,130,677 | 4,238,690 | **+35.4%** |
-| 8 | 3,332,780 | 2,747,443 | -17.6% |
+| 1 | 1,931,190 | 1,841,390 | -4.6% |
+| 2 | 3,123,939 | 2,956,908 | -5.4% |
+| 4 | 4,298,965 | 3,909,163 | -9.1% |
+| 8 | 2,736,509 | 2,841,443 | **+3.8%** |
+
+### Concurrent Write Performance (ops/sec, 5-run average)
+
+| Threads | Baseline | Final (Avg) | Improvement |
+|---------|----------|-------------|-------------|
+| 1 | 73,099 | 73,600 | **+0.7%** |
+| 2 | 81,192 | 80,846 | -0.4% |
+| 4 | 74,778 | 78,741 | **+5.3%** |
+
+*Note: Results show high variance; differences are within measurement noise.*
 
 ### Sequential Performance (10M statements, 6 indexes)
 
@@ -20,6 +72,23 @@
 | Write | 416,701 | 430,960 | **+3.4%** |
 | Full Scan | 1,156,851 | 1,164,451 | **+0.7%** |
 | By Subject | 784,791 | 803,476 | **+2.4%** |
+
+---
+
+## Critical Bug Fixes (2026-02-02)
+
+The following thread safety bugs were identified and fixed:
+
+| # | Bug | File | Fix |
+|---|-----|------|-----|
+| 1 | Unsafe ConcurrentHashMap iteration | `TxnManager.java` | Use `.toArray()` snapshot before iteration in `activate()`, `deactivate()`, `reset()` |
+| 2 | Non-thread-safe HashMap | `TripleStore.java` | Changed `pendingContextIncrements` from `HashMap` to `ConcurrentHashMap` |
+
+These bugs could cause `ConcurrentModificationException` or data corruption under concurrent load.
+
+### Attempted but Reverted: Cursor Pooling
+
+Cursor pooling was attempted to reduce `mdb_cursor_open/close` overhead but caused VM crashes. LMDB cursors are tightly bound to transactions and cannot be safely renewed across different transaction contexts without careful lifecycle management.
 
 ---
 
@@ -74,6 +143,37 @@
 **KeyReader Optimization Details:**
 Pre-computes skip pattern and target indices at iterator creation time, eliminating 12 array lookups per record (8 indexMap + 4 originalQuad). Uses 16 specialized lambda functions matching all possible skip patterns.
 
+### Round 6 - Working (2026-02-03)
+
+| # | Optimization | File | Status |
+|---|-------------|------|--------|
+| 16 | Optimistic Cache Lookup | `ValueStore.java` | ✅ |
+| 17 | Bug fix: flushContextIncrements stack overflow | `TripleStore.java` | ✅ |
+
+**Round 6 Results - Optimistic Cache Lookup:**
+
+`getValue()` tries cache without lock first. Includes revision check for MVCC safety.
+
+**Concurrent Read (ops/sec, 5-run average):**
+
+| Threads | Current | Baseline | Change |
+|---------|---------|----------|--------|
+| 1 | 2,093,069 | 1,931,190 | **+8.4%** |
+| 2 | 3,418,351 | 3,123,939 | **+9.4%** |
+| 4 | 4,695,918 | 4,298,965 | **+9.2%** |
+| 8 | 2,634,715 | 2,736,509 | -3.7% |
+
+**Concurrent Write (ops/sec, 5-run average):**
+
+| Threads | Current | Baseline | Change |
+|---------|---------|----------|--------|
+| 1 | 71,303 | 73,099 | -2.5% |
+| 2 | 79,176 | 81,192 | -2.5% |
+| 4 | 76,816 | 74,778 | +2.7% |
+
+**Bug fix: flushContextIncrements stack overflow:**
+Fixed `OutOfMemoryError: Out of stack space` with many contexts. Pre-allocate buffers outside loop.
+
 ---
 
 ## Reverted (Caused Regression)
@@ -109,6 +209,7 @@ core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/Pool.java
 core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java
 core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TxnManager.java
 core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TxnRecordCache.java
+core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/ValueStore.java
 core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/Varint.java
 core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/config/LmdbStoreConfig.java
 ```

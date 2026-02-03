@@ -544,11 +544,19 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public LmdbValue getValue(long id) throws IOException {
+		// Optimistic: try cache first without lock (cache is designed for lock-free reads)
+		// Also verify revision matches to ensure MVCC safety
+		LmdbValue resultValue = cachedValue(id);
+		if (resultValue != null
+				&& resultValue.getValueStoreRevision().getRevisionId() == revision.getRevisionId()) {
+			return resultValue; // Cache hit with valid revision - no lock needed
+		}
+
+		// Cache miss or stale revision: acquire lock for database access
 		long stamp = revisionLock.readLock();
 		try {
-			// Check value cache
-			LmdbValue resultValue = cachedValue(id);
-
+			// Double-check cache in case another thread populated it
+			resultValue = cachedValue(id);
 			if (resultValue == null) {
 				// Value not in cache, fetch it from file
 				byte[] data = getData(id);

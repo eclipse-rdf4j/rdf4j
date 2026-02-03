@@ -1002,15 +1002,20 @@ class TripleStore implements Closeable {
 			MDBVal idVal = MDBVal.calloc(stack);
 			MDBVal dataVal = MDBVal.calloc(stack);
 
+			// Pre-allocate reusable buffers outside the loop to avoid stack exhaustion
+			// Max varint size is 9 bytes, context ID needs 1 + 9 = 10 bytes max
+			ByteBuffer keyBuffer = stack.malloc(10);
+			ByteBuffer valueBuffer = stack.malloc(9);
+
 			for (Map.Entry<Long, Long> entry : pendingContextIncrements.entrySet()) {
 				long context = entry.getKey();
 				long delta = entry.getValue();
 
-				// Prepare the context ID key
-				ByteBuffer bb = stack.malloc(1 + Long.BYTES);
-				Varint.writeUnsigned(bb, context);
-				bb.flip();
-				idVal.mv_data(bb);
+				// Prepare the context ID key - reuse buffer
+				keyBuffer.clear();
+				Varint.writeUnsigned(keyBuffer, context);
+				keyBuffer.flip();
+				idVal.mv_data(keyBuffer);
 
 				// Read current count from database
 				long currentCount = 0;
@@ -1025,10 +1030,11 @@ class TripleStore implements Closeable {
 					// Delete the context entry if count reaches zero or below
 					E(mdb_del(writeTxn, contextsDbi, idVal, null));
 				} else {
-					// Write the updated count
-					ByteBuffer countBb = stack.malloc(Varint.calcLengthUnsigned(newCount));
-					Varint.writeUnsigned(countBb, newCount);
-					dataVal.mv_data(countBb.flip());
+					// Write the updated count - reuse buffer
+					valueBuffer.clear();
+					Varint.writeUnsigned(valueBuffer, newCount);
+					valueBuffer.flip();
+					dataVal.mv_data(valueBuffer);
 					E(mdb_put(writeTxn, contextsDbi, idVal, dataVal, 0));
 				}
 			}

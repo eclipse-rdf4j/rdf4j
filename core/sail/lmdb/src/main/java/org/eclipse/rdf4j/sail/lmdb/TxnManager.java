@@ -146,19 +146,22 @@ class TxnManager {
 	}
 
 	void activate() throws IOException {
-		for (Txn txn : active.keySet()) {
+		// Take a snapshot to avoid ConcurrentModificationException during iteration
+		for (Txn txn : active.keySet().toArray(new Txn[0])) {
 			txn.setActive(true);
 		}
 	}
 
 	void deactivate() throws IOException {
-		for (Txn txn : active.keySet()) {
+		// Take a snapshot to avoid ConcurrentModificationException during iteration
+		for (Txn txn : active.keySet().toArray(new Txn[0])) {
 			txn.setActive(false);
 		}
 	}
 
 	void reset() throws IOException {
-		for (Txn txn : active.keySet()) {
+		// Take a snapshot to avoid ConcurrentModificationException during iteration
+		for (Txn txn : active.keySet().toArray(new Txn[0])) {
 			txn.reset();
 		}
 	}
