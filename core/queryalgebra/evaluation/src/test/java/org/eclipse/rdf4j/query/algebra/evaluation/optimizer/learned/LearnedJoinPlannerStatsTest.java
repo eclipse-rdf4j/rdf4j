@@ -98,7 +98,7 @@ class LearnedJoinPlannerStatsTest {
 	}
 
 	@Test
-	void gridQueryDpTreatsLiteralFilterAsBinding() {
+	void gridQueryDpDoesNotTreatLiteralFilterAsScanBinding() {
 		TupleExpr expr = parse(GRID_QUERY);
 		new FilterOptimizer().optimize(expr, null, null);
 		List<TupleExpr> operands = flattenJoin(findLargestJoin(expr));
@@ -115,7 +115,7 @@ class LearnedJoinPlannerStatsTest {
 				key(rdfType, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 50.0d));
 
 		List<String> order = dpOrder(operands, stats);
-		assertEquals(List.of(name.stringValue(), connectsTo.stringValue(), rdfType.stringValue()), order);
+		assertEquals(List.of(rdfType.stringValue(), connectsTo.stringValue(), name.stringValue()), order);
 	}
 
 	@Test

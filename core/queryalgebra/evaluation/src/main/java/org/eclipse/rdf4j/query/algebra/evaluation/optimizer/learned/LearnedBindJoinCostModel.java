@@ -88,7 +88,30 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		if (context == null) {
 			return fallbackStats.getCardinality(expr);
 		}
-		return estimatePattern(context, initiallyBoundVars);
+		return estimateScanPattern(context.pattern, initiallyBoundVars);
+	}
+
+	private double estimateScanPattern(StatementPattern pattern, Set<String> boundVars) {
+		StatementPattern boundPattern = applyBoundVars(pattern, boundVars);
+		double defaultEstimate = fallbackStats.getCardinality(boundPattern);
+		if (usesPlaceholder(boundPattern)) {
+			defaultEstimate = fallbackEstimateForBoundPlaceholder(pattern, boundPattern, defaultEstimate);
+		}
+		PatternKey key = buildKey(pattern, boundVars);
+		if (!learnedStats.hasStats(key)) {
+			return defaultEstimate > 0.0d ? defaultEstimate : 1.0d;
+		}
+		learnedStats.seedIfAbsent(key, defaultEstimate, DEFAULT_PRIOR_CALLS);
+		double average = learnedStats.getAverageResults(key);
+		double estimate = average > 0.0d ? average : defaultEstimate;
+		double max = learnedStats.getMaxResults(key);
+		if (max > estimate && estimate > 0.0d) {
+			double skewed = Math.sqrt(estimate * max);
+			if (skewed > estimate) {
+				estimate = skewed;
+			}
+		}
+		return estimate > 0.0d ? estimate : 1.0d;
 	}
 
 	@Override
@@ -322,7 +345,6 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			return new FilterApplication(new HashSet<>(boundVars), 1.0d);
 		}
 		Set<String> effectiveBound = new HashSet<>(boundVars);
-		double multiplier = 1.0d;
 		Set<String> patternNames = context.pattern.getBindingNames();
 		for (Map.Entry<String, Set<Value>> entry : constraints.bindings.entrySet()) {
 			String name = entry.getKey();
@@ -333,12 +355,8 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 				continue;
 			}
 			effectiveBound.add(name);
-			int count = entry.getValue().size();
-			if (count > 1) {
-				multiplier *= count;
-			}
 		}
-		return new FilterApplication(effectiveBound, multiplier);
+		return new FilterApplication(effectiveBound, 1.0d);
 	}
 
 	private FilterConstraints collectExternalConstraints(List<ValueExpr> filters) {
