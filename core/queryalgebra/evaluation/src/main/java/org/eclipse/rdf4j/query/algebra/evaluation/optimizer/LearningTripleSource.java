@@ -81,7 +81,8 @@ public class LearningTripleSource implements TripleSource {
 		if (obj != null) {
 			mask |= PatternKey.OBJECT_BOUND;
 		}
-		return new PatternKey(pred, mask);
+		IRI predicateKey = PatternKeys.predicateKey(pred, obj);
+		return new PatternKey(predicateKey, mask);
 	}
 
 	protected static final class CountingIteration<T> extends AbstractCloseableIteration<T> {

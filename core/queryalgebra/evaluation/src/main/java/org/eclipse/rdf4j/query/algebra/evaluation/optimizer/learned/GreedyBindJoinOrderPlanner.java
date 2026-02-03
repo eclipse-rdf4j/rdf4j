@@ -101,19 +101,27 @@ public class GreedyBindJoinOrderPlanner implements JoinOrderPlanner {
 	}
 
 	private double firstScore(TupleExpr expr, List<TupleExpr> remaining, Set<String> bound) {
-		double cardinality = costModel.estimateScanCardinality(expr, bound);
+		double scanCost = costModel.estimateScanCardinality(expr, bound);
+		if (scanCost <= 0.0d) {
+			scanCost = 1.0d;
+		}
+		double fanout = costModel.estimateFanout(expr, bound);
+		if (fanout < 0.0d) {
+			fanout = 0.0d;
+		}
+		double score = scanCost + fanout;
 		Set<String> names = filteredBindingNames(expr);
 		boolean disconnected = isIsolated(expr, remaining);
 		if (!bound.isEmpty() && (names.isEmpty() || disjoint(names, bound))) {
 			disconnected = true;
 		}
 		if (disconnected) {
-			if (cardinality <= 0.0d) {
-				cardinality = 1.0d;
+			if (score <= 0.0d) {
+				score = 1.0d;
 			}
-			return cardinality * DISCONNECTED_PENALTY;
+			return score * DISCONNECTED_PENALTY;
 		}
-		return cardinality;
+		return score;
 	}
 
 	private boolean isIsolated(TupleExpr expr, List<TupleExpr> remaining) {

@@ -16,15 +16,15 @@ Projection (resultSizeActual=520)
    │  ║        └── LeftJoin (LeftJoinIterator) (resultSizeActual=133.1K)
    │  ║           ╠══ Union (resultSizeActual=133.1K) [left]
    │  ║           ║  ├── Join (JoinIterator) (resultSizeActual=520)
-   │  ║           ║  │  ╠══ StatementPattern (costEstimate=262, resultSizeEstimate=518, resultSizeActual=520) [left]
+   │  ║           ║  │  ╠══ StatementPattern (costEstimate=262, resultSizeEstimate=519, resultSizeActual=520) [left]
    │  ║           ║  │  ║     s: Var (name=requirement)
    │  ║           ║  │  ║     p: Var (name=_const_b98f621b_uri, value=http://example.com/theme/engineering/satisfies, anonymous)
    │  ║           ║  │  ║     o: Var (name=component)
-   │  ║           ║  │  ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=1.00, resultSizeActual=520) [right]
+   │  ║           ║  │  ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0.50, resultSizeActual=520) [right]
    │  ║           ║  │        s: Var (name=requirement)
    │  ║           ║  │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
    │  ║           ║  │        o: Var (name=_const_57f1c37d_uri, value=http://example.com/theme/engineering/Requirement, anonymous)
-   │  ║           ║  └── StatementPattern (new scope) (resultSizeEstimate=132.7K, resultSizeActual=132.6K)
+   │  ║           ║  └── StatementPattern (new scope) (resultSizeEstimate=5.3K, resultSizeActual=132.6K)
    │  ║           ║        s: Var (name=component)
    │  ║           ║        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
    │  ║           ║        o: Var (name=_const_347c8ab7_uri, value=http://example.com/theme/engineering/Component, anonymous)
@@ -47,3 +47,4 @@ Projection (resultSizeActual=520)
    └── ExtensionElem (reqCount)
          Count (Distinct)
             Var (name=requirement)
+

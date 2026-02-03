@@ -15,24 +15,24 @@ Projection (resultSizeActual=520)
    │  ║        │     Var (name=component)
    │  ║        └── LeftJoin (LeftJoinIterator) (resultSizeActual=520)
    │  ║           ╠══ Join (JoinIterator) (resultSizeActual=520) [left]
-   │  ║           ║  ├── StatementPattern (costEstimate=131, resultSizeEstimate=519, resultSizeActual=520) [left]
+   │  ║           ║  ├── StatementPattern (costEstimate=131, resultSizeEstimate=520, resultSizeActual=520) [left]
    │  ║           ║  │     s: Var (name=requirement)
    │  ║           ║  │     p: Var (name=_const_b98f621b_uri, value=http://example.com/theme/engineering/satisfies, anonymous)
    │  ║           ║  │     o: Var (name=component)
    │  ║           ║  └── Join (JoinIterator) (resultSizeActual=520) [right]
-   │  ║           ║     ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0.99, resultSizeActual=520) [left]
-   │  ║           ║     ║     s: Var (name=component)
+   │  ║           ║     ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0.62, resultSizeActual=520) [left]
+   │  ║           ║     ║     s: Var (name=requirement)
    │  ║           ║     ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-   │  ║           ║     ║     o: Var (name=_const_347c8ab7_uri, value=http://example.com/theme/engineering/Component, anonymous)
+   │  ║           ║     ║     o: Var (name=_const_57f1c37d_uri, value=http://example.com/theme/engineering/Requirement, anonymous)
    │  ║           ║     ╚══ Join (JoinIterator) (resultSizeActual=520) [right]
-   │  ║           ║        ├── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=520) [left]
+   │  ║           ║        ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=0.62, resultSizeActual=520) [left]
    │  ║           ║        │     s: Var (name=component)
-   │  ║           ║        │     p: Var (name=_const_b1044d90_uri, value=http://example.com/theme/engineering/partOf, anonymous)
-   │  ║           ║        │     o: Var (name=assembly)
-   │  ║           ║        └── StatementPattern (costEstimate=1.00, resultSizeEstimate=1.00, resultSizeActual=520) [right]
-   │  ║           ║              s: Var (name=requirement)
-   │  ║           ║              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-   │  ║           ║              o: Var (name=_const_57f1c37d_uri, value=http://example.com/theme/engineering/Requirement, anonymous)
+   │  ║           ║        │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           ║        │     o: Var (name=_const_347c8ab7_uri, value=http://example.com/theme/engineering/Component, anonymous)
+   │  ║           ║        └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=520) [right]
+   │  ║           ║              s: Var (name=component)
+   │  ║           ║              p: Var (name=_const_b1044d90_uri, value=http://example.com/theme/engineering/partOf, anonymous)
+   │  ║           ║              o: Var (name=assembly)
    │  ║           ╚══ Extension (resultSizeActual=520) [right]
    │  ║              ├── StatementPattern (resultSizeEstimate=1.00, resultSizeActual=520)
    │  ║              │     s: Var (name=component)
@@ -52,3 +52,4 @@ Projection (resultSizeActual=520)
    └── ExtensionElem (reqCount)
          Count (Distinct)
             Var (name=requirement)
+

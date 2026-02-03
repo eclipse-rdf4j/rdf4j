@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
@@ -30,12 +31,15 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.Explanation.Level;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -54,12 +58,14 @@ class EngineeringQueryPlanRegressionTest {
 	File dataDir;
 
 	@Test
-	void typeFirstInJoinOrderForEngineeringQueries7And10() throws IOException {
+	void joinOrderRegressionForEngineeringQueries4_7_10() throws IOException {
 		LmdbStore store = new LmdbStore(dataDir, ConfigUtil.createConfig());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try {
 			loadData(repository);
+			assertTypeFirst(repository, Theme.ENGINEERING, 4);
+			assertExistsFilterRunsAfterNameFilter(repository, Theme.ENGINEERING, 4);
 			assertTypeFirst(repository, Theme.ENGINEERING, 7);
 			assertTypeFirst(repository, Theme.ENGINEERING, 10);
 		} finally {
@@ -97,6 +103,113 @@ class EngineeringQueryPlanRegressionTest {
 						+ joinOrderSignature(explanation));
 	}
 
+	private void assertNameFirst(SailRepository repository, Theme theme, int queryIndex) {
+		String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
+		long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
+		Explanation explanation;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			long count = connection.prepareTupleQuery(query).evaluate().stream().count();
+			assertEquals(expected, count);
+			explanation = connection.prepareTupleQuery(query).explain(Level.Optimized);
+		}
+
+		Join nameTypeJoin = findNameTypeJoin(explanation);
+		assertNotNull(nameTypeJoin, "Expected join containing rdf:type and eng:name for ENGINEERING #" + queryIndex);
+
+		assertTrue(operandPredicates(nameTypeJoin.getLeftArg()).contains(ENG_NAME),
+				"Expected eng:name on left for ENGINEERING #" + queryIndex + " but got joinOrder="
+						+ joinOrderSignature(explanation));
+		assertTrue(operandPredicates(nameTypeJoin.getRightArg()).contains(RDF.TYPE),
+				"Expected rdf:type on right for ENGINEERING #" + queryIndex + " but got joinOrder="
+						+ joinOrderSignature(explanation));
+	}
+
+	private void assertExistsFilterRunsAfterNameFilter(SailRepository repository, Theme theme, int queryIndex) {
+		String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
+		long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
+		Explanation explanation;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			long count = connection.prepareTupleQuery(query).evaluate().stream().count();
+			assertEquals(expected, count);
+			explanation = connection.prepareTupleQuery(query).explain(Level.Optimized);
+		}
+
+		Filter existsFilter = findFilter(explanation, TupleExprs::isFilterExistsFunction);
+		assertNotNull(existsFilter,
+				"Expected FILTER EXISTS in optimized plan for ENGINEERING #" + queryIndex + " but got joinOrder="
+						+ joinOrderSignature(explanation));
+
+		Filter nameFilter = findFilter(explanation,
+				filter -> !TupleExprs.isFilterExistsFunction(filter) && VarNameCollector.process(filter.getCondition())
+						.contains("name"));
+		assertNotNull(nameFilter,
+				"Expected name FILTER in optimized plan for ENGINEERING #" + queryIndex + " but got joinOrder="
+						+ joinOrderSignature(explanation));
+
+		assertTrue(containsNode(existsFilter.getArg(), nameFilter),
+				"Expected FILTER EXISTS to run after name FILTER for ENGINEERING #" + queryIndex
+						+ " but got filterNesting="
+						+ filterNestingSignature(existsFilter, nameFilter) + " joinOrder="
+						+ joinOrderSignature(explanation));
+	}
+
+	private static Filter findFilter(Explanation explanation, Predicate<Filter> predicate) {
+		Object tupleExpr = explanation.tupleExpr();
+		if (!(tupleExpr instanceof TupleExpr)) {
+			return null;
+		}
+		Filter[] found = new Filter[1];
+		((TupleExpr) tupleExpr).visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (found[0] != null) {
+					return;
+				}
+				if (predicate.test(node)) {
+					found[0] = node;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsNode(TupleExpr root, TupleExpr node) {
+		if (root == null || node == null) {
+			return false;
+		}
+		if (root == node) {
+			return true;
+		}
+		boolean[] found = new boolean[1];
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode current) {
+				if (found[0]) {
+					return;
+				}
+				if (current == node) {
+					found[0] = true;
+				}
+				super.meetNode(current);
+			}
+		});
+		return found[0];
+	}
+
+	private static List<String> filterNestingSignature(Filter existsFilter, Filter nameFilter) {
+		if (existsFilter == null || nameFilter == null) {
+			return List.of("<missing-filter>");
+		}
+		if (containsNode(existsFilter.getArg(), nameFilter)) {
+			return List.of("EXISTS(name(...))");
+		}
+		if (containsNode(nameFilter.getArg(), existsFilter)) {
+			return List.of("name(EXISTS(...))");
+		}
+		return List.of("<no-nesting>");
+	}
+
 	private static List<String> joinOrderSignature(Explanation explanation) {
 		Object tupleExpr = explanation.tupleExpr();
 		if (!(tupleExpr instanceof TupleExpr)) {
@@ -114,10 +227,21 @@ class EngineeringQueryPlanRegressionTest {
 				order.add(expr.getClass().getSimpleName());
 				continue;
 			}
-			Var predicate = patterns.get(0).getPredicateVar();
-			order.add(predicateLabel(predicate));
+			order.add(patternLabel(patterns.get(0)));
 		}
 		return order;
+	}
+
+	private static String patternLabel(StatementPattern pattern) {
+		Var predicate = pattern.getPredicateVar();
+		String label = predicateLabel(predicate);
+		if (predicate != null && predicate.hasValue() && RDF.TYPE.equals(predicate.getValue())) {
+			Var object = pattern.getObjectVar();
+			if (object != null && object.hasValue()) {
+				label = label + "(" + object.getValue().stringValue() + ")";
+			}
+		}
+		return label;
 	}
 
 	private static Join findLargestJoin(TupleExpr expr) {

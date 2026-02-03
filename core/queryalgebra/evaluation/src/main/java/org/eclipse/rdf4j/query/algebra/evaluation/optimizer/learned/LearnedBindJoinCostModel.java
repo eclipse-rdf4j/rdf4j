@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKeys;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -293,7 +294,10 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		if (predVar != null && predVar.hasValue() && predVar.getValue() instanceof IRI) {
 			predicateKey = (IRI) predVar.getValue();
 		}
-		return new PatternKey(predicateKey, mask);
+		Var objVar = node.getObjectVar();
+		Value objectValue = objVar != null && objVar.hasValue() ? objVar.getValue() : null;
+		IRI statsPredicate = PatternKeys.predicateKey(predicateKey, objectValue);
+		return new PatternKey(statsPredicate, mask);
 	}
 
 	private boolean isBound(Var var, Set<String> boundVars) {

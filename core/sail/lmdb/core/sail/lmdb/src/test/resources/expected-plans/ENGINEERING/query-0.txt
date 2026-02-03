@@ -30,3 +30,4 @@ Projection (resultSizeActual=1)
    └── ExtensionElem (count)
          Count (Distinct)
             Var (name=component)
+

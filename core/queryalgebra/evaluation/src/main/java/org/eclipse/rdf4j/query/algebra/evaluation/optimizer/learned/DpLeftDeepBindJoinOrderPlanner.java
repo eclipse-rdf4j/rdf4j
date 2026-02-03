@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -62,24 +63,26 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 		for (int i = 0; i < size; i++) {
 			int mask = 1 << i;
 			TupleExpr operand = operands.get(i);
-			double scanCard = costModel.estimateScanCardinality(operand, initiallyBoundVars);
+			double scanCost = costModel.estimateScanCardinality(operand, initiallyBoundVars);
+			if (scanCost <= 0.0d) {
+				scanCost = 1.0d;
+			}
+			double cardinality = scanCost;
 			Set<String> names = filteredBindingNames(operand);
 			boolean disconnected = isIsolated(operand, operands);
 			if (!initiallyBoundVars.isEmpty() && (names.isEmpty() || disjoint(names, initiallyBoundVars))) {
 				disconnected = true;
 			}
 			if (disconnected) {
-				if (scanCard <= 0.0d) {
-					scanCard = 1.0d;
-				}
-				scanCard *= DISCONNECTED_PENALTY;
+				scanCost *= DISCONNECTED_PENALTY;
+				cardinality *= DISCONNECTED_PENALTY;
 			}
 			List<PlanEntry> entries = new ArrayList<>(1);
-			entries.add(new PlanEntry(scanCard, scanCard, 0, i, -1));
+			entries.add(new PlanEntry(scanCost, cardinality, 0, i, -1));
 			plans[mask] = entries;
 			if (debug) {
 				System.out.println("DP debug mask=" + maskBits(mask, size) + " init="
-						+ debugLabels.get(i) + " cost=" + format(scanCard) + " card=" + format(scanCard));
+						+ debugLabels.get(i) + " cost=" + format(scanCost) + " card=" + format(cardinality));
 			}
 		}
 
@@ -268,10 +271,21 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 				labels.add(expr.getClass().getSimpleName());
 				continue;
 			}
-			Var predicate = patterns.get(0).getPredicateVar();
-			labels.add(predicateLabel(predicate));
+			labels.add(patternLabel(patterns.get(0)));
 		}
 		return labels;
+	}
+
+	private String patternLabel(StatementPattern pattern) {
+		Var predicate = pattern.getPredicateVar();
+		String label = predicateLabel(predicate);
+		if (predicate != null && predicate.hasValue() && RDF.TYPE.equals(predicate.getValue())) {
+			Var object = pattern.getObjectVar();
+			if (object != null && object.hasValue()) {
+				label = label + "(" + object.getValue().stringValue() + ")";
+			}
+		}
+		return label;
 	}
 
 	private String predicateLabel(Var predicate) {

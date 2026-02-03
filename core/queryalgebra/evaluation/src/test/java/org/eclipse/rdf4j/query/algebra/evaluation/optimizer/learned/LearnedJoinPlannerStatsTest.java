@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKeys;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
@@ -75,20 +76,21 @@ class LearnedJoinPlannerStatsTest {
 		IRI connectsTo = iri("http://example.com/theme/grid/connectsTo");
 		IRI name = iri("http://example.com/theme/grid/name");
 		IRI rdfType = RDF.TYPE;
+		IRI rdfTypeKey = PatternKeys.predicateKey(RDF.TYPE, iri("http://example.com/theme/grid/Line"));
 
 		JoinStatsProvider statsPreferName = stats(Map.of(
 				key(name, PatternKey.PREDICATE_BOUND), 10.0d,
 				key(name, PatternKey.SUBJECT_BOUND | PatternKey.PREDICATE_BOUND), 1.0d,
 				key(connectsTo, PatternKey.PREDICATE_BOUND), 100000.0d,
 				key(connectsTo, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 1.0d,
-				key(rdfType, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 50.0d));
+				key(rdfTypeKey, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 50.0d));
 		List<String> preferNameOrder = dpOrder(operands, statsPreferName);
 
 		JoinStatsProvider statsPreferConnectsTo = stats(Map.of(
 				key(name, PatternKey.PREDICATE_BOUND), 10000.0d,
 				key(connectsTo, PatternKey.PREDICATE_BOUND), 1.0d,
 				key(connectsTo, PatternKey.PREDICATE_BOUND | PatternKey.SUBJECT_BOUND), 1.0d,
-				key(rdfType, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 50.0d));
+				key(rdfTypeKey, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 50.0d));
 		List<String> preferConnectsToOrder = dpOrder(operands, statsPreferConnectsTo);
 
 		assertEquals(List.of(name.stringValue(), connectsTo.stringValue(), rdfType.stringValue()), preferNameOrder);
@@ -106,13 +108,14 @@ class LearnedJoinPlannerStatsTest {
 		IRI connectsTo = iri("http://example.com/theme/grid/connectsTo");
 		IRI name = iri("http://example.com/theme/grid/name");
 		IRI rdfType = RDF.TYPE;
+		IRI rdfTypeKey = PatternKeys.predicateKey(RDF.TYPE, iri("http://example.com/theme/grid/Line"));
 
 		JoinStatsProvider stats = stats(Map.of(
 				key(name, PatternKey.PREDICATE_BOUND), 10000.0d,
 				key(name, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 1.0d,
 				key(connectsTo, PatternKey.PREDICATE_BOUND), 100.0d,
 				key(connectsTo, PatternKey.PREDICATE_BOUND | PatternKey.SUBJECT_BOUND), 2.0d,
-				key(rdfType, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 50.0d));
+				key(rdfTypeKey, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 50.0d));
 
 		List<String> order = dpOrder(operands, stats);
 		assertEquals(List.of(rdfType.stringValue(), connectsTo.stringValue(), name.stringValue()), order);
@@ -126,20 +129,21 @@ class LearnedJoinPlannerStatsTest {
 		IRI targets = iri("http://example.com/theme/pharma/targets");
 		IRI combinationOf = iri("http://example.com/theme/pharma/combinationOf");
 		IRI rdfType = RDF.TYPE;
+		IRI rdfTypeKey = PatternKeys.predicateKey(RDF.TYPE, iri("http://example.com/theme/pharma/Combination"));
 
 		JoinStatsProvider statsAvoidTargets = stats(Map.of(
 				key(targets, PatternKey.PREDICATE_BOUND), 50000.0d,
 				key(targets, PatternKey.PREDICATE_BOUND | PatternKey.SUBJECT_BOUND), 5.0d,
 				key(combinationOf, PatternKey.PREDICATE_BOUND), 100.0d,
 				key(combinationOf, PatternKey.PREDICATE_BOUND | PatternKey.SUBJECT_BOUND), 10.0d,
-				key(rdfType, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 50.0d));
+				key(rdfTypeKey, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 50.0d));
 		List<String> avoidTargetsOrder = dpOrder(operands, statsAvoidTargets);
 
 		JoinStatsProvider statsPreferTargets = stats(Map.of(
 				key(targets, PatternKey.PREDICATE_BOUND), 1.0d,
 				key(targets, PatternKey.PREDICATE_BOUND | PatternKey.SUBJECT_BOUND), 1.0d,
 				key(combinationOf, PatternKey.PREDICATE_BOUND), 10000.0d,
-				key(rdfType, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 10000.0d));
+				key(rdfTypeKey, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 10000.0d));
 		List<String> preferTargetsOrder = dpOrder(operands, statsPreferTargets);
 
 		assertEquals(List.of(combinationOf.stringValue(), rdfType.stringValue(), targets.stringValue(),
@@ -157,6 +161,7 @@ class LearnedJoinPlannerStatsTest {
 		IRI targets = iri("http://example.com/theme/pharma/targets");
 		IRI combinationOf = iri("http://example.com/theme/pharma/combinationOf");
 		IRI rdfType = RDF.TYPE;
+		IRI rdfTypeKey = PatternKeys.predicateKey(RDF.TYPE, iri("http://example.com/theme/pharma/Combination"));
 
 		JoinStatsProvider stats = stats(Map.of(
 				key(targets, PatternKey.PREDICATE_BOUND), 1.0d,
@@ -165,8 +170,9 @@ class LearnedJoinPlannerStatsTest {
 				key(combinationOf, PatternKey.PREDICATE_BOUND), 10.0d,
 				key(combinationOf, PatternKey.PREDICATE_BOUND | PatternKey.SUBJECT_BOUND), 1.0d,
 				key(combinationOf, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 1.0d,
-				key(rdfType, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 15.0d,
-				key(rdfType, PatternKey.SUBJECT_BOUND | PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 1.0d),
+				key(rdfTypeKey, PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND), 15.0d,
+				key(rdfTypeKey, PatternKey.SUBJECT_BOUND | PatternKey.PREDICATE_BOUND | PatternKey.OBJECT_BOUND),
+				1.0d),
 				Map.of(key(targets, PatternKey.PREDICATE_BOUND), 10000.0d));
 
 		List<String> dpOrder = dpOrder(operands, stats);

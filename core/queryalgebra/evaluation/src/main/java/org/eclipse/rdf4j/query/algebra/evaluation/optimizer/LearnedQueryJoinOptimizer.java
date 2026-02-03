@@ -21,6 +21,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -397,7 +398,10 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			if (predVar != null && predVar.hasValue() && predVar.getValue() instanceof IRI) {
 				predicateKey = (IRI) predVar.getValue();
 			}
-			return new PatternKey(predicateKey, mask);
+			Var objVar = node.getObjectVar();
+			Value objectValue = objVar != null && objVar.hasValue() ? objVar.getValue() : null;
+			IRI statsPredicate = PatternKeys.predicateKey(predicateKey, objectValue);
+			return new PatternKey(statsPredicate, mask);
 		}
 
 		private boolean isBound(Var var) {

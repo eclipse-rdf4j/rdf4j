@@ -22,11 +22,11 @@ Projection (resultSizeActual=1)
    │  ║        │  ║     Var (name=value)
    │  ║        │  ║     ValueConstant (value="0.9"^^<http://www.w3.org/2001/XMLSchema#decimal>)
    │  ║        │  ║     ValueConstant (value="0.95"^^<http://www.w3.org/2001/XMLSchema#decimal>)
-   │  ║        │  ╚══ StatementPattern (costEstimate=4.7K, resultSizeEstimate=1.6K, resultSizeActual=1.5K)
+   │  ║        │  ╚══ StatementPattern (costEstimate=4.5K, resultSizeEstimate=1.6K, resultSizeActual=1.5K)
    │  ║        │        s: Var (name=measurement)
    │  ║        │        p: Var (name=_const_f682b725_uri, value=http://example.com/theme/engineering/measuredValue, anonymous)
    │  ║        │        o: Var (name=value)
-   │  ║        └── StatementPattern (costEstimate=1.00, resultSizeEstimate=1.6K) [right]
+   │  ║        └── StatementPattern (costEstimate=1.00, resultSizeEstimate=0.50) [right]
    │  ║              s: Var (name=measurement)
    │  ║              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
    │  ║              o: Var (name=_const_d63bc2f6_uri, value=http://example.com/theme/engineering/Measurement, anonymous)
@@ -36,3 +36,4 @@ Projection (resultSizeActual=1)
    └── ExtensionElem (count)
          Count (Distinct)
             Var (name=measurement)
+

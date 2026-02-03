@@ -11,7 +11,7 @@ Projection (resultSizeActual=3)
    │  ║  └── Group (assembly) (resultSizeActual=3)
    │  ║        LeftJoin (LeftJoinIterator) (resultSizeActual=420)
    │  ║        ├── Join (JoinIterator) (resultSizeActual=3) [left]
-   │  ║        │  ╠══ StatementPattern (costEstimate=458, resultSizeEstimate=916, resultSizeActual=921) [left]
+   │  ║        │  ╠══ StatementPattern (costEstimate=2.0K, resultSizeEstimate=4.1K, resultSizeActual=921) [left]
    │  ║        │  ║     s: Var (name=assembly)
    │  ║        │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
    │  ║        │  ║     o: Var (name=_const_27ef30ec_uri, value=http://example.com/theme/engineering/Assembly, anonymous)
@@ -41,3 +41,4 @@ Projection (resultSizeActual=3)
    └── ExtensionElem (componentCount)
          Count (Distinct)
             Var (name=component)
+

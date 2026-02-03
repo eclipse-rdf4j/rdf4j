@@ -60,6 +60,8 @@ import org.junit.jupiter.api.io.TempDir;
 class DpJoinOrderTimingHarnessTest {
 
 	private static final String EXPECTED_PLAN_DIR = "expected-plans";
+	private static final String EXPECTED_PLAN_THEME_PROPERTY = "rdf4j.expectedPlans.theme";
+	private static final String UPDATE_EXPECTED_PLANS_PROPERTY = "rdf4j.expectedPlans.update";
 	private static final Duration CAPTURE_MAX_DURATION = Duration.ofSeconds(30);
 	private static final Duration VERIFY_MIN_DURATION = Duration.ofSeconds(10);
 	private static final Duration VERIFY_MAX_DURATION = Duration.ofSeconds(60);
@@ -108,6 +110,14 @@ class DpJoinOrderTimingHarnessTest {
 		verifyExpectedPlans(VERIFY_MIN_DURATION, VERIFY_MAX_DURATION);
 	}
 
+	@Test
+	void updateEngineeringExpectedPlans() throws IOException {
+		if (!Boolean.getBoolean(UPDATE_EXPECTED_PLANS_PROPERTY)) {
+			return;
+		}
+		updateExpectedPlans(Theme.ENGINEERING, CAPTURE_MAX_DURATION, index -> index != 4);
+	}
+
 	public static void main(String[] args) throws Exception {
 		DpJoinOrderTimingHarnessTest harness = new DpJoinOrderTimingHarnessTest();
 		harness.dataDir = Files.createTempDirectory("rdf4j-dp-plans").toFile();
@@ -145,9 +155,13 @@ class DpJoinOrderTimingHarnessTest {
 
 	private void captureExpectedPlans(Duration maxDuration) throws IOException {
 		Objects.requireNonNull(maxDuration, "maxDuration");
+		Theme onlyTheme = selectedTheme();
 		Path resourcesRoot = expectedPlansRoot();
 		Files.createDirectories(resourcesRoot);
 		for (Theme theme : Theme.values()) {
+			if (onlyTheme != null && theme != onlyTheme) {
+				continue;
+			}
 			Path themeDir = resourcesRoot.resolve(theme.name());
 			Files.createDirectories(themeDir);
 			File scenarioDir = new File(dataDir, theme.name() + "_expected");
@@ -171,8 +185,12 @@ class DpJoinOrderTimingHarnessTest {
 	private void verifyExpectedPlans(Duration minDuration, Duration maxDuration) throws IOException {
 		Objects.requireNonNull(minDuration, "minDuration");
 		Objects.requireNonNull(maxDuration, "maxDuration");
+		Theme onlyTheme = selectedTheme();
 		Path resourcesRoot = expectedPlansRoot();
 		for (Theme theme : Theme.values()) {
+			if (onlyTheme != null && theme != onlyTheme) {
+				continue;
+			}
 			File scenarioDir = new File(dataDir, theme.name() + "_verify");
 			SailRepository repository = createRepository(scenarioDir, true);
 			try {
@@ -202,6 +220,41 @@ class DpJoinOrderTimingHarnessTest {
 				repository.shutDown();
 			}
 		}
+	}
+
+	private void updateExpectedPlans(Theme theme, Duration maxDuration, java.util.function.IntPredicate includeIndex)
+			throws IOException {
+		Objects.requireNonNull(theme, "theme");
+		Objects.requireNonNull(maxDuration, "maxDuration");
+		Objects.requireNonNull(includeIndex, "includeIndex");
+		Path themeDir = expectedPlansRoot().resolve(theme.name());
+		Files.createDirectories(themeDir);
+		File scenarioDir = new File(dataDir, theme.name() + "_expected_update");
+		SailRepository repository = createRepository(scenarioDir, true);
+		try {
+			loadData(repository, theme);
+			for (int index = 0; index < ThemeQueryCatalog.QUERY_COUNT; index++) {
+				if (!includeIndex.test(index)) {
+					continue;
+				}
+				String query = ThemeQueryCatalog.queryFor(theme, index);
+				long expected = ThemeQueryCatalog.expectedCountFor(theme, index);
+				String plan = captureFinalExplanation(repository, query, expected, maxDuration);
+				Path output = themeDir.resolve("query-" + index + ".txt");
+				Files.writeString(output, plan + System.lineSeparator(), StandardCharsets.UTF_8);
+				System.out.println("Wrote " + output);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private Theme selectedTheme() {
+		String value = System.getProperty(EXPECTED_PLAN_THEME_PROPERTY);
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		return Theme.valueOf(value.trim());
 	}
 
 	private SailRepository createRepository(File storeDir, boolean enableDp) {
@@ -263,7 +316,7 @@ class DpJoinOrderTimingHarnessTest {
 			Explanation explanation = explainQuery.explain(Explanation.Level.Executed);
 			List<String> normalized = normalizeExplainLines(explanation.toString(), normalizedNames, prefixCounters,
 					expectedLines != null ? expectedLines : previousLines);
-			return joinLines(normalized);
+			return joinLines(normalized).stripTrailing();
 		}
 	}
 
@@ -481,7 +534,27 @@ class DpJoinOrderTimingHarnessTest {
 	}
 
 	private Path expectedPlansRoot() {
-		return Path.of("core", "sail", "lmdb", "src", "test", "resources", EXPECTED_PLAN_DIR);
+		return repoRoot().resolve("core")
+				.resolve("sail")
+				.resolve("lmdb")
+				.resolve("src")
+				.resolve("test")
+				.resolve("resources")
+				.resolve(EXPECTED_PLAN_DIR);
+	}
+
+	private Path repoRoot() {
+		String multiModuleRoot = System.getProperty("maven.multiModuleProjectDirectory");
+		if (multiModuleRoot != null && !multiModuleRoot.isBlank()) {
+			return Path.of(multiModuleRoot);
+		}
+		Path current = Path.of("").toAbsolutePath();
+		for (Path candidate = current; candidate != null; candidate = candidate.getParent()) {
+			if (Files.exists(candidate.resolve(".git"))) {
+				return candidate;
+			}
+		}
+		return current;
 	}
 
 	private List<String> normalizeExplainLines(String text, Map<String, String> normalizedNames,
