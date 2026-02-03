@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.nio.ByteBuffer;
 
+import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.lmdb.MDBVal;
 
@@ -28,6 +29,14 @@ class Pool {
 	private int valPoolIndex = -1;
 	private int keyPoolIndex = -1;
 	private int statisticsPoolIndex = -1;
+
+	// Cached PointerBuffer for cursor operations to avoid allocation
+	private PointerBuffer cachedPointerBuffer;
+
+	// Pool for quad arrays (long[4]) to reduce allocation in hot paths
+	private static final int QUAD_POOL_SIZE = 256;
+	private final long[][] quadPool = new long[QUAD_POOL_SIZE][];
+	private int quadPoolIndex = -1;
 
 	final MDBVal getVal() {
 		if (valPoolIndex >= 0) {
@@ -74,12 +83,54 @@ class Pool {
 		}
 	}
 
+	/**
+	 * Get a cached PointerBuffer for cursor operations. This avoids allocation on every cursor open. The buffer is
+	 * reused across calls on the same thread.
+	 *
+	 * @return a PointerBuffer with capacity 1
+	 */
+	final PointerBuffer getPointerBuffer() {
+		if (cachedPointerBuffer == null) {
+			cachedPointerBuffer = MemoryUtil.memAllocPointer(1);
+		}
+		return cachedPointerBuffer;
+	}
+
+	/**
+	 * Get a pooled quad array (long[4]) for iterator operations. This reduces allocation in the hot path of record
+	 * iteration.
+	 *
+	 * @return a long[4] array
+	 */
+	final long[] getQuadArray() {
+		if (quadPoolIndex >= 0) {
+			return quadPool[quadPoolIndex--];
+		}
+		return new long[4];
+	}
+
+	/**
+	 * Return a quad array to the pool for reuse.
+	 *
+	 * @param quad the array to return (must be long[4])
+	 */
+	final void free(long[] quad) {
+		if (quadPoolIndex < quadPool.length - 1) {
+			quadPool[++quadPoolIndex] = quad;
+		}
+		// If pool is full, just let it be garbage collected
+	}
+
 	final void close() {
 		while (valPoolIndex >= 0) {
 			valPool[valPoolIndex--].close();
 		}
 		while (keyPoolIndex >= 0) {
 			MemoryUtil.memFree(keyPool[keyPoolIndex--]);
+		}
+		if (cachedPointerBuffer != null) {
+			MemoryUtil.memFree(cachedPointerBuffer);
+			cachedPointerBuffer = null;
 		}
 	}
 

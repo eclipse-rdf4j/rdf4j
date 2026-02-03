@@ -12,8 +12,14 @@
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import java.io.File;
+import java.io.FileWriter;
+import java.io.PrintWriter;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 import org.apache.commons.io.FileUtils;
@@ -33,7 +39,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /**
- * Benchmark LMDB with all 6 indexes enabled: spoc,sopc,posc,ospc,opsc,cspo
+ * Benchmark LMDB with all 6 indexes enabled: spoc,sopc,posc,ospc,opsc,cspo Outputs results in markdown report format.
  */
 public class FullIndexBenchmark {
 
@@ -51,6 +57,9 @@ public class FullIndexBenchmark {
 	private List<IRI> types;
 	private List<Resource> contexts;
 
+	// Results storage
+	private final Map<String, ScaleResult> results = new LinkedHashMap<>();
+
 	public static void main(String[] args) throws Exception {
 		FullIndexBenchmark benchmark = new FullIndexBenchmark();
 		benchmark.run();
@@ -67,19 +76,37 @@ public class FullIndexBenchmark {
 		int[] scales = { 100_000, 1_000_000, 10_000_000 };
 
 		for (int scale : scales) {
+			String scaleLabel = formatScale(scale);
 			System.out.println("=".repeat(80));
-			System.out.printf("Scale: %,d statements%n", scale);
+			System.out.printf("Scale: %s statements%n", scaleLabel);
 			System.out.println("=".repeat(80));
+
+			ScaleResult result = new ScaleResult(scale);
+			results.put(scaleLabel, result);
 
 			setup(scale);
 			try {
-				runWriteBenchmark(scale);
-				runReadBenchmarks();
+				runWriteBenchmark(scale, result);
+				runReadBenchmarks(result);
 			} finally {
 				teardown();
 			}
 			System.out.println();
 		}
+
+		// Generate report
+		generateReport();
+	}
+
+	private String formatScale(int scale) {
+		if (scale >= 1_000_000_000) {
+			return (scale / 1_000_000_000) + "B";
+		} else if (scale >= 1_000_000) {
+			return (scale / 1_000_000) + "M";
+		} else if (scale >= 1_000) {
+			return (scale / 1_000) + "K";
+		}
+		return String.valueOf(scale);
 	}
 
 	private void initTestData() {
@@ -92,6 +119,7 @@ public class FullIndexBenchmark {
 		types = new ArrayList<>(500);
 		contexts = new ArrayList<>(100);
 
+		System.out.println("Generating test data pools...");
 		for (int i = 0; i < 100_000; i++) {
 			subjects.add(vf.createIRI(NAMESPACE, "subject-" + i));
 		}
@@ -104,6 +132,7 @@ public class FullIndexBenchmark {
 		for (int i = 0; i < 100; i++) {
 			contexts.add(vf.createIRI(NAMESPACE, "graph-" + i));
 		}
+		System.out.println("Done.\n");
 	}
 
 	private void setup(int scale) throws Exception {
@@ -126,7 +155,7 @@ public class FullIndexBenchmark {
 		FileUtils.deleteDirectory(dataDir);
 	}
 
-	private void runWriteBenchmark(int numStatements) throws Exception {
+	private void runWriteBenchmark(int numStatements, ScaleResult result) throws Exception {
 		System.out.println("\n--- WRITE ---");
 
 		long start = System.currentTimeMillis();
@@ -146,7 +175,7 @@ public class FullIndexBenchmark {
 					conn.add(subject, predicate, object, context);
 				}
 
-				if (i > 0 && i % 1_000_000 == 0) {
+				if (i > 0 && i % 10_000_000 == 0) {
 					System.out.printf("  Progress: %,d statements...%n", i);
 				}
 			}
@@ -156,13 +185,18 @@ public class FullIndexBenchmark {
 		double rate = numStatements * 1000.0 / elapsed;
 
 		long storeSize = FileUtils.sizeOfDirectory(dataDir);
+		double bytesPerStmt = (double) storeSize / numStatements;
+
+		result.writeTimeMs = elapsed;
+		result.writeRate = (long) rate;
+		result.storeSizeBytes = storeSize;
+		result.bytesPerStatement = bytesPerStmt;
 
 		System.out.printf("Write:        %,d stmts in %,d ms = %,.0f stmts/sec%n", numStatements, elapsed, rate);
-		System.out.printf("Store size:   %,.2f MB (%.1f bytes/stmt)%n",
-				storeSize / (1024.0 * 1024.0), (double) storeSize / numStatements);
+		System.out.printf("Store size:   %,.2f MB (%.1f bytes/stmt)%n", storeSize / (1024.0 * 1024.0), bytesPerStmt);
 	}
 
-	private void runReadBenchmarks() throws Exception {
+	private void runReadBenchmarks(ScaleResult result) throws Exception {
 		System.out.println("\n--- READ ---");
 
 		// Full Scan
@@ -177,8 +211,9 @@ public class FullIndexBenchmark {
 			}
 		}
 		long elapsed = System.currentTimeMillis() - start;
-		System.out.printf("Full Scan:    %,d stmts in %,d ms = %,.0f stmts/sec%n",
-				count, elapsed, count * 1000.0 / elapsed);
+		result.fullScanRate = (long) (count * 1000.0 / elapsed);
+		System.out.printf("Full Scan:    %,d stmts in %,d ms = %,.0f stmts/sec%n", count, elapsed,
+				(double) result.fullScanRate);
 
 		// By Subject (1000 lookups)
 		start = System.currentTimeMillis();
@@ -195,8 +230,9 @@ public class FullIndexBenchmark {
 			}
 		}
 		elapsed = System.currentTimeMillis() - start;
-		System.out.printf("By Subject:   %,d stmts in %,d ms = %,.0f stmts/sec%n",
-				count, elapsed, count * 1000.0 / elapsed);
+		result.bySubjectRate = elapsed > 0 ? (long) (count * 1000.0 / elapsed) : 0;
+		System.out.printf("By Subject:   %,d stmts in %,d ms = %,.0f stmts/sec%n", count, elapsed,
+				(double) result.bySubjectRate);
 
 		// By Predicate (100 lookups)
 		start = System.currentTimeMillis();
@@ -213,8 +249,9 @@ public class FullIndexBenchmark {
 			}
 		}
 		elapsed = System.currentTimeMillis() - start;
-		System.out.printf("By Predicate: %,d stmts in %,d ms = %,.0f stmts/sec%n",
-				count, elapsed, count * 1000.0 / elapsed);
+		result.byPredicateRate = elapsed > 0 ? (long) (count * 1000.0 / elapsed) : 0;
+		System.out.printf("By Predicate: %,d stmts in %,d ms = %,.0f stmts/sec%n", count, elapsed,
+				(double) result.byPredicateRate);
 
 		// By Object (100 lookups)
 		start = System.currentTimeMillis();
@@ -231,8 +268,9 @@ public class FullIndexBenchmark {
 			}
 		}
 		elapsed = System.currentTimeMillis() - start;
-		System.out.printf("By Object:    %,d stmts in %,d ms = %,.0f stmts/sec%n",
-				count, elapsed, count * 1000.0 / elapsed);
+		result.byObjectRate = elapsed > 0 ? (long) (count * 1000.0 / elapsed) : 0;
+		System.out.printf("By Object:    %,d stmts in %,d ms = %,.0f stmts/sec%n", count, elapsed,
+				(double) result.byObjectRate);
 
 		// By Context (all contexts)
 		start = System.currentTimeMillis();
@@ -248,7 +286,108 @@ public class FullIndexBenchmark {
 			}
 		}
 		elapsed = System.currentTimeMillis() - start;
-		System.out.printf("By Context:   %,d stmts in %,d ms = %,.0f stmts/sec%n",
-				count, elapsed, count * 1000.0 / elapsed);
+		result.byContextRate = elapsed > 0 ? (long) (count * 1000.0 / elapsed) : 0;
+		System.out.printf("By Context:   %,d stmts in %,d ms = %,.0f stmts/sec%n", count, elapsed,
+				(double) result.byContextRate);
+	}
+
+	private void generateReport() throws Exception {
+		String timestamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
+		String reportFile = "lmdb-benchmark-report-" + timestamp + ".md";
+
+		try (PrintWriter out = new PrintWriter(new FileWriter(reportFile))) {
+			out.println("# LMDB Benchmark Report");
+			out.println();
+			out.println("**Date:** " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()));
+			out.println();
+			out.println("**Index Configuration:** `" + INDEX_CONFIG + "`");
+			out.println();
+			out.println("**Java Version:** " + System.getProperty("java.version"));
+			out.println();
+			out.println("**OS:** " + System.getProperty("os.name") + " " + System.getProperty("os.arch"));
+			out.println();
+
+			// Write Performance Table
+			out.println("## Write Performance");
+			out.println();
+			out.println("| Scale | Time (ms) | Rate (stmts/sec) | Store Size | Bytes/stmt |");
+			out.println("|-------|-----------|------------------|------------|------------|");
+			for (Map.Entry<String, ScaleResult> entry : results.entrySet()) {
+				ScaleResult r = entry.getValue();
+				out.printf("| %s | %,d | %,d | %.2f MB | %.1f |%n",
+						entry.getKey(),
+						r.writeTimeMs,
+						r.writeRate,
+						r.storeSizeBytes / (1024.0 * 1024.0),
+						r.bytesPerStatement);
+			}
+			out.println();
+
+			// Read Performance Table
+			out.println("## Read Performance (stmts/sec)");
+			out.println();
+			out.println("| Scale | Full Scan | By Subject | By Predicate | By Object | By Context |");
+			out.println("|-------|-----------|------------|--------------|-----------|------------|");
+			for (Map.Entry<String, ScaleResult> entry : results.entrySet()) {
+				ScaleResult r = entry.getValue();
+				out.printf("| %s | %,d | %,d | %,d | %,d | %,d |%n",
+						entry.getKey(),
+						r.fullScanRate,
+						r.bySubjectRate,
+						r.byPredicateRate,
+						r.byObjectRate,
+						r.byContextRate);
+			}
+			out.println();
+
+			// Summary
+			out.println("## Summary");
+			out.println();
+
+			ScaleResult largest = null;
+			String largestScale = "";
+			for (Map.Entry<String, ScaleResult> entry : results.entrySet()) {
+				largest = entry.getValue();
+				largestScale = entry.getKey();
+			}
+
+			if (largest != null) {
+				out.println("At **" + largestScale + "** scale:");
+				out.println();
+				out.printf("- **Write throughput:** %,d statements/sec%n", largest.writeRate);
+				out.printf("- **Storage efficiency:** %.1f bytes/statement%n", largest.bytesPerStatement);
+				out.printf("- **Full scan:** %,d statements/sec%n", largest.fullScanRate);
+				out.printf("- **Indexed lookups:** %,d - %,d statements/sec%n",
+						Math.min(Math.min(largest.bySubjectRate, largest.byPredicateRate),
+								Math.min(largest.byObjectRate, largest.byContextRate)),
+						Math.max(Math.max(largest.bySubjectRate, largest.byPredicateRate),
+								Math.max(largest.byObjectRate, largest.byContextRate)));
+			}
+		}
+
+		System.out.println("\n" + "=".repeat(80));
+		System.out.println("Report saved to: " + reportFile);
+		System.out.println("=".repeat(80));
+
+		// Also print report to console
+		System.out.println();
+		java.nio.file.Files.readAllLines(new File(reportFile).toPath()).forEach(System.out::println);
+	}
+
+	static class ScaleResult {
+		int scale;
+		long writeTimeMs;
+		long writeRate;
+		long storeSizeBytes;
+		double bytesPerStatement;
+		long fullScanRate;
+		long bySubjectRate;
+		long byPredicateRate;
+		long byObjectRate;
+		long byContextRate;
+
+		ScaleResult(int scale) {
+			this.scale = scale;
+		}
 	}
 }

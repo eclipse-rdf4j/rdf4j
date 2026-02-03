@@ -104,6 +104,15 @@ import org.slf4j.LoggerFactory;
 @SuppressWarnings("deprecation")
 class TripleStore implements Closeable {
 
+	/**
+	 * Functional interface for reading quad values from a key buffer. Pre-computed instances eliminate array lookups in
+	 * the hot path.
+	 */
+	@FunctionalInterface
+	interface KeyReader {
+		void read(ByteBuffer key, long[] quad);
+	}
+
 	static ConcurrentHashMap<TripleIndex.KeyStats, TripleIndex.KeyStats> stats = new ConcurrentHashMap<>();
 	static long hit = 0;
 	static long fullHit = 0;
@@ -171,6 +180,18 @@ class TripleStore implements Closeable {
 	private final TxnManager txnManager;
 
 	private TxnRecordCache recordCache = null;
+
+	/**
+	 * Buffer for context counter increments/decrements to avoid read-modify-write on every statement. Positive values
+	 * are increments, negative values are decrements. Flushed at commit time.
+	 */
+	private final Map<Long, Long> pendingContextIncrements = new HashMap<>();
+
+	/**
+	 * Cache for index selection. There are only 16 possible query patterns (2^4 combinations of s/p/o/c bound/unbound).
+	 * Pre-computing the best index for each pattern eliminates O(N) scans in getBestIndex().
+	 */
+	private final TripleIndex[] indexSelectionCache = new TripleIndex[16];
 
 	static final Comparator<ByteBuffer> COMPARATOR = new Comparator<ByteBuffer>() {
 		@Override
@@ -273,6 +294,40 @@ class TripleStore implements Closeable {
 			properties.setProperty(INDEXES_KEY, indexSpecStr);
 			storeProperties(propFile);
 		}
+
+		// Initialize index selection cache for O(1) lookups
+		initIndexSelectionCache();
+	}
+
+	/**
+	 * Pre-computes the best index for all 16 possible query patterns. Pattern is a 4-bit value where each bit indicates
+	 * if s/p/o/c is bound (1) or unbound (0). Bit positions: s=3, p=2, o=1, c=0.
+	 */
+	private void initIndexSelectionCache() {
+		for (int pattern = 0; pattern < 16; pattern++) {
+			// Convert pattern bits to test values (1 for bound, -1 for unbound)
+			long s = (pattern & 0b1000) != 0 ? 1 : -1;
+			long p = (pattern & 0b0100) != 0 ? 1 : -1;
+			long o = (pattern & 0b0010) != 0 ? 1 : -1;
+			long c = (pattern & 0b0001) != 0 ? 1 : -1;
+			indexSelectionCache[pattern] = computeBestIndex(s, p, o, c);
+		}
+	}
+
+	/**
+	 * Computes the best index for the given pattern by scanning all indexes.
+	 */
+	private TripleIndex computeBestIndex(long subj, long pred, long obj, long context) {
+		int bestScore = -1;
+		TripleIndex bestIndex = null;
+		for (TripleIndex index : indexes) {
+			int score = index.getPatternScore(subj, pred, obj, context);
+			if (score > bestScore) {
+				bestScore = score;
+				bestIndex = index;
+			}
+		}
+		return bestIndex;
 	}
 
 	private void checkVersion() throws SailException {
@@ -839,18 +894,13 @@ class TripleStore implements Closeable {
 	}
 
 	protected TripleIndex getBestIndex(long subj, long pred, long obj, long context) {
-		int bestScore = -1;
-		TripleIndex bestIndex = null;
-
-		for (TripleIndex index : indexes) {
-			int score = index.getPatternScore(subj, pred, obj, context);
-			if (score > bestScore) {
-				bestScore = score;
-				bestIndex = index;
-			}
-		}
-
-		return bestIndex;
+		// O(1) lookup using pre-computed cache
+		// Pattern: 4 bits where s=bit3, p=bit2, o=bit1, c=bit0
+		int pattern = ((subj >= 0 ? 1 : 0) << 3)
+				| ((pred >= 0 ? 1 : 0) << 2)
+				| ((obj >= 0 ? 1 : 0) << 1)
+				| (context >= 0 ? 1 : 0);
+		return indexSelectionCache[pattern];
 	}
 
 	private boolean requiresResize() {
@@ -928,58 +978,64 @@ class TripleStore implements Closeable {
 	}
 
 	private void incrementContext(MemoryStack stack, long context) throws IOException {
-		try {
-			stack.push();
-
-			MDBVal idVal = MDBVal.calloc(stack);
-			ByteBuffer bb = stack.malloc(1 + Long.BYTES);
-			Varint.writeUnsigned(bb, context);
-			bb.flip();
-			idVal.mv_data(bb);
-			MDBVal dataVal = MDBVal.calloc(stack);
-			long newCount = 1;
-			if (mdb_get(writeTxn, contextsDbi, idVal, dataVal) == MDB_SUCCESS) {
-				// update count
-				newCount = Varint.readUnsigned(dataVal.mv_data()) + 1;
-			}
-			// write count
-			ByteBuffer countBb = stack.malloc(Varint.calcLengthUnsigned(newCount));
-			Varint.writeUnsigned(countBb, newCount);
-			dataVal.mv_data(countBb.flip());
-			E(mdb_put(writeTxn, contextsDbi, idVal, dataVal, 0));
-		} finally {
-			stack.pop();
-		}
+		// Buffer the increment instead of writing to DB immediately
+		pendingContextIncrements.merge(context, 1L, Long::sum);
 	}
 
 	private boolean decrementContext(MemoryStack stack, long context) throws IOException {
-		try {
-			stack.push();
+		// Buffer the decrement instead of writing to DB immediately
+		pendingContextIncrements.merge(context, -1L, Long::sum);
+		// Return value is not used in a meaningful way, so return false as default
+		return false;
+	}
 
+	/**
+	 * Flushes all pending context counter increments/decrements to the database. This is called before committing a
+	 * transaction to apply all batched changes.
+	 */
+	private void flushContextIncrements() throws IOException {
+		if (pendingContextIncrements.isEmpty()) {
+			return;
+		}
+
+		try (MemoryStack stack = stackPush()) {
 			MDBVal idVal = MDBVal.calloc(stack);
-			ByteBuffer bb = stack.malloc(1 + Long.BYTES);
-			Varint.writeUnsigned(bb, context);
-			bb.flip();
-			idVal.mv_data(bb);
 			MDBVal dataVal = MDBVal.calloc(stack);
-			if (mdb_get(writeTxn, contextsDbi, idVal, dataVal) == MDB_SUCCESS) {
-				// update count
-				long newCount = Varint.readUnsigned(dataVal.mv_data()) - 1;
+
+			for (Map.Entry<Long, Long> entry : pendingContextIncrements.entrySet()) {
+				long context = entry.getKey();
+				long delta = entry.getValue();
+
+				// Prepare the context ID key
+				ByteBuffer bb = stack.malloc(1 + Long.BYTES);
+				Varint.writeUnsigned(bb, context);
+				bb.flip();
+				idVal.mv_data(bb);
+
+				// Read current count from database
+				long currentCount = 0;
+				if (mdb_get(writeTxn, contextsDbi, idVal, dataVal) == MDB_SUCCESS) {
+					currentCount = Varint.readUnsigned(dataVal.mv_data());
+				}
+
+				// Apply the delta
+				long newCount = currentCount + delta;
+
 				if (newCount <= 0) {
+					// Delete the context entry if count reaches zero or below
 					E(mdb_del(writeTxn, contextsDbi, idVal, null));
-					return true;
 				} else {
-					// write count
+					// Write the updated count
 					ByteBuffer countBb = stack.malloc(Varint.calcLengthUnsigned(newCount));
 					Varint.writeUnsigned(countBb, newCount);
 					dataVal.mv_data(countBb.flip());
 					E(mdb_put(writeTxn, contextsDbi, idVal, dataVal, 0));
 				}
 			}
-			return false;
-		} finally {
-			stack.pop();
 		}
+
+		// Clear the buffer after flushing
+		pendingContextIncrements.clear();
 	}
 
 	/**
@@ -1096,6 +1152,8 @@ class TripleStore implements Closeable {
 			try {
 				if (commit) {
 					try {
+						// Flush pending context increments before committing
+						flushContextIncrements();
 						E(mdb_txn_commit(writeTxn));
 						if (recordCache != null) {
 							StampedLongAdderLockManager lockManager = txnManager.lockManager();
@@ -1117,6 +1175,8 @@ class TripleStore implements Closeable {
 									writeTxn = pp.get(0);
 								}
 								updateFromCache();
+								// Flush pending context increments before final commit
+								flushContextIncrements();
 								// finally, commit write transaction
 								E(mdb_txn_commit(writeTxn));
 							} finally {
@@ -1142,6 +1202,8 @@ class TripleStore implements Closeable {
 				}
 			} finally {
 				writeTxn = 0;
+				// Clear pending context increments on transaction end (commit or rollback)
+				pendingContextIncrements.clear();
 				// ensure that record cache is always reset
 				if (recordCache != null) {
 					try {
@@ -1417,6 +1479,144 @@ class TripleStore implements Closeable {
 				Varint.skipUnsigned(key);
 			} else {
 				quad[indexMap[3]] = Varint.readUnsigned(key);
+			}
+		}
+
+		/**
+		 * Creates a specialized KeyReader that pre-computes the skip pattern and target indices based on the query
+		 * pattern. This eliminates array lookups in the hot path (8 indexMap accesses + 4 originalQuad accesses per
+		 * record → 0 per record).
+		 *
+		 * @param originalQuad The query pattern array (-1 for unbound positions)
+		 * @return A KeyReader optimized for this specific query pattern
+		 */
+		KeyReader createKeyReader(long[] originalQuad) {
+			// Pre-compute target indices and skip flags
+			final int idx0 = indexMap[0], idx1 = indexMap[1], idx2 = indexMap[2], idx3 = indexMap[3];
+			final boolean skip0 = originalQuad[idx0] != -1;
+			final boolean skip1 = originalQuad[idx1] != -1;
+			final boolean skip2 = originalQuad[idx2] != -1;
+			final boolean skip3 = originalQuad[idx3] != -1;
+
+			// Create a mask: bit i set means skip position i
+			int mask = (skip0 ? 1 : 0) | (skip1 ? 2 : 0) | (skip2 ? 4 : 0) | (skip3 ? 8 : 0);
+
+			// Select from 16 pre-defined reader patterns to avoid lambda allocation per iterator
+			switch (mask) {
+			case 0b0000: // Read all 4
+				return (key, quad) -> {
+					quad[idx0] = Varint.readUnsigned(key);
+					quad[idx1] = Varint.readUnsigned(key);
+					quad[idx2] = Varint.readUnsigned(key);
+					quad[idx3] = Varint.readUnsigned(key);
+				};
+			case 0b0001: // Skip 0, read 1,2,3
+				return (key, quad) -> {
+					Varint.skipUnsigned(key);
+					quad[idx1] = Varint.readUnsigned(key);
+					quad[idx2] = Varint.readUnsigned(key);
+					quad[idx3] = Varint.readUnsigned(key);
+				};
+			case 0b0010: // Read 0, skip 1, read 2,3
+				return (key, quad) -> {
+					quad[idx0] = Varint.readUnsigned(key);
+					Varint.skipUnsigned(key);
+					quad[idx2] = Varint.readUnsigned(key);
+					quad[idx3] = Varint.readUnsigned(key);
+				};
+			case 0b0011: // Skip 0,1, read 2,3
+				return (key, quad) -> {
+					Varint.skipUnsigned(key);
+					Varint.skipUnsigned(key);
+					quad[idx2] = Varint.readUnsigned(key);
+					quad[idx3] = Varint.readUnsigned(key);
+				};
+			case 0b0100: // Read 0,1, skip 2, read 3
+				return (key, quad) -> {
+					quad[idx0] = Varint.readUnsigned(key);
+					quad[idx1] = Varint.readUnsigned(key);
+					Varint.skipUnsigned(key);
+					quad[idx3] = Varint.readUnsigned(key);
+				};
+			case 0b0101: // Skip 0, read 1, skip 2, read 3
+				return (key, quad) -> {
+					Varint.skipUnsigned(key);
+					quad[idx1] = Varint.readUnsigned(key);
+					Varint.skipUnsigned(key);
+					quad[idx3] = Varint.readUnsigned(key);
+				};
+			case 0b0110: // Read 0, skip 1,2, read 3
+				return (key, quad) -> {
+					quad[idx0] = Varint.readUnsigned(key);
+					Varint.skipUnsigned(key);
+					Varint.skipUnsigned(key);
+					quad[idx3] = Varint.readUnsigned(key);
+				};
+			case 0b0111: // Skip 0,1,2, read 3
+				return (key, quad) -> {
+					Varint.skipUnsigned(key);
+					Varint.skipUnsigned(key);
+					Varint.skipUnsigned(key);
+					quad[idx3] = Varint.readUnsigned(key);
+				};
+			case 0b1000: // Read 0,1,2, skip 3
+				return (key, quad) -> {
+					quad[idx0] = Varint.readUnsigned(key);
+					quad[idx1] = Varint.readUnsigned(key);
+					quad[idx2] = Varint.readUnsigned(key);
+					Varint.skipUnsigned(key);
+				};
+			case 0b1001: // Skip 0, read 1,2, skip 3
+				return (key, quad) -> {
+					Varint.skipUnsigned(key);
+					quad[idx1] = Varint.readUnsigned(key);
+					quad[idx2] = Varint.readUnsigned(key);
+					Varint.skipUnsigned(key);
+				};
+			case 0b1010: // Read 0, skip 1, read 2, skip 3
+				return (key, quad) -> {
+					quad[idx0] = Varint.readUnsigned(key);
+					Varint.skipUnsigned(key);
+					quad[idx2] = Varint.readUnsigned(key);
+					Varint.skipUnsigned(key);
+				};
+			case 0b1011: // Skip 0,1, read 2, skip 3
+				return (key, quad) -> {
+					Varint.skipUnsigned(key);
+					Varint.skipUnsigned(key);
+					quad[idx2] = Varint.readUnsigned(key);
+					Varint.skipUnsigned(key);
+				};
+			case 0b1100: // Read 0,1, skip 2,3
+				return (key, quad) -> {
+					quad[idx0] = Varint.readUnsigned(key);
+					quad[idx1] = Varint.readUnsigned(key);
+					Varint.skipUnsigned(key);
+					Varint.skipUnsigned(key);
+				};
+			case 0b1101: // Skip 0, read 1, skip 2,3
+				return (key, quad) -> {
+					Varint.skipUnsigned(key);
+					quad[idx1] = Varint.readUnsigned(key);
+					Varint.skipUnsigned(key);
+					Varint.skipUnsigned(key);
+				};
+			case 0b1110: // Read 0, skip 1,2,3
+				return (key, quad) -> {
+					quad[idx0] = Varint.readUnsigned(key);
+					Varint.skipUnsigned(key);
+					Varint.skipUnsigned(key);
+					Varint.skipUnsigned(key);
+				};
+			case 0b1111: // Skip all 4
+				return (key, quad) -> {
+					Varint.skipUnsigned(key);
+					Varint.skipUnsigned(key);
+					Varint.skipUnsigned(key);
+					Varint.skipUnsigned(key);
+				};
+			default:
+				throw new IllegalStateException("Invalid mask: " + mask);
 			}
 		}
 

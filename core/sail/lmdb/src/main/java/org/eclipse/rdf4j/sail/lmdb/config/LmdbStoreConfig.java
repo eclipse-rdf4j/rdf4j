@@ -38,22 +38,22 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	/**
 	 * The default value cache size.
 	 */
-	public static final int VALUE_CACHE_SIZE = 512;
+	public static final int VALUE_CACHE_SIZE = 8192;
 
 	/**
 	 * The default value id cache size.
 	 */
-	public static final int VALUE_ID_CACHE_SIZE = 128;
+	public static final int VALUE_ID_CACHE_SIZE = 4096;
 
 	/**
 	 * The default namespace cache size.
 	 */
-	public static final int NAMESPACE_CACHE_SIZE = 64;
+	public static final int NAMESPACE_CACHE_SIZE = 1024;
 
 	/**
 	 * The default namespace id cache size.
 	 */
-	public static final int NAMESPACE_ID_CACHE_SIZE = 32;
+	public static final int NAMESPACE_ID_CACHE_SIZE = 512;
 
 	private String tripleIndexes;
 

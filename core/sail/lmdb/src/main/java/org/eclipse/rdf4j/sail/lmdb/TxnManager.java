@@ -21,7 +21,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_reset;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.IdentityHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
@@ -35,11 +35,17 @@ import org.lwjgl.system.MemoryStack;
 class TxnManager {
 
 	private final Mode mode;
-	private final IdentityHashMap<Txn, Boolean> active = new IdentityHashMap<>();
+	private final ConcurrentHashMap<Txn, Boolean> active = new ConcurrentHashMap<>();
 	private final long[] pool;
 	private final StampedLongAdderLockManager lockManager = new StampedLongAdderLockManager();
 	private final long env;
 	private volatile int poolIndex = -1;
+
+	/**
+	 * Thread-local cache for read transactions to avoid pool contention on repeated short operations. Each thread can
+	 * cache one transaction to eliminate synchronization overhead for the common case.
+	 */
+	private final ThreadLocal<Long> threadLocalTxn = ThreadLocal.withInitial(() -> 0L);
 
 	TxnManager(long env, Mode mode) {
 		this.env = env;
@@ -80,15 +86,24 @@ class TxnManager {
 	 */
 	Txn createReadTxn() throws IOException {
 		Txn txnRef = new Txn(createReadTxnInternal());
-		synchronized (active) {
-			active.put(txnRef, Boolean.TRUE);
-		}
+		active.put(txnRef, Boolean.TRUE);
 		return txnRef;
 	}
 
 	long createReadTxnInternal() throws IOException {
 		long txn = 0;
 		if (mode == Mode.RESET) {
+			// First, try to get transaction from thread-local cache
+			txn = threadLocalTxn.get();
+			if (txn != 0) {
+				// Clear the thread-local cache immediately
+				threadLocalTxn.set(0L);
+				// Renew the cached transaction
+				mdb_txn_renew(txn);
+				return txn;
+			}
+
+			// If no thread-local cache, fall back to shared pool
 			synchronized (pool) {
 				if (poolIndex >= 0) {
 					txn = pool[poolIndex--];
@@ -131,26 +146,20 @@ class TxnManager {
 	}
 
 	void activate() throws IOException {
-		synchronized (active) {
-			for (Txn txn : active.keySet()) {
-				txn.setActive(true);
-			}
+		for (Txn txn : active.keySet()) {
+			txn.setActive(true);
 		}
 	}
 
 	void deactivate() throws IOException {
-		synchronized (active) {
-			for (Txn txn : active.keySet()) {
-				txn.setActive(false);
-			}
+		for (Txn txn : active.keySet()) {
+			txn.setActive(false);
 		}
 	}
 
 	void reset() throws IOException {
-		synchronized (active) {
-			for (Txn txn : active.keySet()) {
-				txn.reset();
-			}
+		for (Txn txn : active.keySet()) {
+			txn.reset();
 		}
 	}
 
@@ -180,6 +189,13 @@ class TxnManager {
 		private void free(long txn) {
 			switch (mode) {
 			case RESET:
+				// Try to return to thread-local cache first
+				if (threadLocalTxn.get() == 0L) {
+					mdb_txn_reset(txn);
+					threadLocalTxn.set(txn);
+					return;
+				}
+				// If thread-local cache is occupied, fall back to shared pool
 				synchronized (pool) {
 					if (poolIndex < pool.length - 1) {
 						mdb_txn_reset(txn);
@@ -199,9 +215,7 @@ class TxnManager {
 
 		@Override
 		public void close() {
-			synchronized (active) {
-				active.remove(this);
-			}
+			active.remove(this);
 			free(txn);
 		}
 
