@@ -36,16 +36,21 @@ class ShapeValidationContainer {
 	private final long effectiveValidationResultsLimitPerConstraint;
 	private final boolean performanceLogging;
 	private final Logger logger;
+	private final ConnectionsGroup connectionsGroup;
+	private final boolean closeConnectionsGroup;
 	private volatile CloseableIteration<? extends ValidationTuple> iterator;
 
 	public ShapeValidationContainer(Shape shape, Supplier<PlanNode> planNodeSupplier, boolean logValidationExecution,
 			boolean logValidationViolations, long effectiveValidationResultsLimitPerConstraint,
-			boolean performanceLogging, boolean logValidationPlans, Logger logger, ConnectionsGroup connectionsGroup) {
+			boolean performanceLogging, boolean logValidationPlans, Logger logger, ConnectionsGroup connectionsGroup,
+			boolean closeConnectionsGroup) {
 		this.shape = shape;
 		this.logValidationViolations = logValidationViolations;
 		this.effectiveValidationResultsLimitPerConstraint = effectiveValidationResultsLimitPerConstraint;
 		this.performanceLogging = performanceLogging;
 		this.logger = logger;
+		this.connectionsGroup = connectionsGroup;
+		this.closeConnectionsGroup = closeConnectionsGroup;
 		try {
 			PlanNode planNode = planNodeSupplier.get();
 
@@ -108,6 +113,13 @@ class ShapeValidationContainer {
 				this.planNode = planNode;
 			}
 		} catch (Throwable e) {
+			if (closeConnectionsGroup) {
+				try {
+					connectionsGroup.close();
+				} catch (Exception closeException) {
+					logger.debug("Error closing connections group after plan construction failure", closeException);
+				}
+			}
 			logger.warn("Error processing SHACL Shape {}", shape.getId(), e);
 			logger.warn("Error processing SHACL Shape\n{}", shape, e);
 			if (e instanceof Error) {
@@ -154,6 +166,13 @@ class ShapeValidationContainer {
 			}
 		} finally {
 			this.iterator = null;
+			if (closeConnectionsGroup) {
+				try {
+					connectionsGroup.close();
+				} catch (Exception closeException) {
+					logger.debug("Error closing connections group after validation", closeException);
+				}
+			}
 		}
 
 	}

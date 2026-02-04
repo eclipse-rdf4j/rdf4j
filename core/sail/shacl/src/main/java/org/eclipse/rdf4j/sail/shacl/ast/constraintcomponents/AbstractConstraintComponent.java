@@ -125,6 +125,9 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 	}
 
 	public String stringRepresentationOfValue(Value value) {
+		if (value == null) {
+			return "null";
+		}
 		if (value.isIRI()) {
 			return "<" + value + ">";
 		}

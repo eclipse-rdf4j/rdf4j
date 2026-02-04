@@ -258,6 +258,30 @@ ex:PartyShape a sh:NodeShape;
 </section>
 
 <section>
+    <h2>Per-shape Reasoning Controls</h2>
+
+    <p>
+        Shapes may override the global SHACL reasoning settings with RSX properties.
+        <code>rsx:rdfsSubClassReasoning</code> controls whether built-in RDFS subclass reasoning is applied for a shape,
+        and <code>rsx:includeInferredStatements</code> controls whether inferred statements from the underlying store
+        are considered for that shape.
+    </p>
+
+    <h4>Example</h4>
+    <pre class="example-shapes" title="Per-shape reasoning controls">
+@prefix ex: &lt;http://example.com/ns#&gt; .
+@prefix rsx: &lt;http://rdf4j.org/shacl-extensions#&gt; .
+@prefix sh: &lt;http://www.w3.org/ns/shacl#&gt; .
+
+ex:RailcarShape a sh:NodeShape;
+  rsx:rdfsSubClassReasoning true;
+  rsx:includeInferredStatements true;
+  sh:targetClass ex:Railcar;
+  sh:property [sh:path ex:hasBrake; sh:minCount 1].
+    </pre>
+</section>
+
+<section>
     <h2>Validation and Graphs</h2>
 
 

@@ -156,6 +156,7 @@ public class ShaclValidator {
 			builder.setGlobalLogValidationExecution(shaclSail.isGlobalLogValidationExecution());
 			builder.setCacheSelectNodes(shaclSail.isCacheSelectNodes());
 			builder.setRdfsSubClassReasoning(shaclSail.isRdfsSubClassReasoning());
+			builder.setIncludeInferredStatements(shaclSail.isIncludeInferredStatements());
 			builder.setSerializableValidation(shaclSail.isSerializableValidation());
 			builder.setPerformanceLogging(shaclSail.isPerformanceLogging());
 			builder.setEclipseRdf4jShaclExtensions(shaclSail.isEclipseRdf4jShaclExtensions());
@@ -384,6 +385,7 @@ public class ShaclValidator {
 		private boolean cacheSelectNodes = true;
 		private boolean globalLogValidationExecution = false;
 		private boolean rdfsSubClassReasoning = true;
+		private boolean includeInferredStatements = false;
 		private boolean performanceLogging = false;
 		private boolean serializableValidation = false;
 		private boolean eclipseRdf4jShaclExtensions = true;
@@ -404,6 +406,7 @@ public class ShaclValidator {
 			this.cacheSelectNodes = other.cacheSelectNodes;
 			this.globalLogValidationExecution = other.globalLogValidationExecution;
 			this.rdfsSubClassReasoning = other.rdfsSubClassReasoning;
+			this.includeInferredStatements = other.includeInferredStatements;
 			this.performanceLogging = other.performanceLogging;
 			this.serializableValidation = other.serializableValidation;
 			this.eclipseRdf4jShaclExtensions = other.eclipseRdf4jShaclExtensions;
@@ -478,6 +481,17 @@ public class ShaclValidator {
 		 */
 		public T setRdfsSubClassReasoning(boolean rdfsSubClassReasoning) {
 			this.rdfsSubClassReasoning = rdfsSubClassReasoning;
+			return (T) this;
+		}
+
+		/**
+		 * Enable or disable inclusion of inferred statements during validation.
+		 *
+		 * @param includeInferredStatements whether to include inferred statements
+		 * @return this builder instance
+		 */
+		public T setIncludeInferredStatements(boolean includeInferredStatements) {
+			this.includeInferredStatements = includeInferredStatements;
 			return (T) this;
 		}
 
@@ -1543,11 +1557,11 @@ public class ShaclValidator {
 		try (SailConnection dataRepoConnection = dataRepo.getConnection()) {
 			dataRepoConnection.begin(IsolationLevels.NONE);
 			try {
-				RdfsSubClassOfReasoner reasoner;
-				SailConnection baseConnection = dataRepoConnection;
+				boolean requiresReasoner = settings.rdfsSubClassReasoning || requiresRdfsSubClassReasoner(shapes);
+				RdfsSubClassOfReasoner reasoner = null;
 				ConnectionsGroup.RdfsSubClassOfReasonerProvider rdfsSubClassOfReasonerProvider = null;
 
-				if (settings.rdfsSubClassReasoning) {
+				if (requiresReasoner) {
 					try (SailConnection shapesConnection = shapesRepo.getConnection()) {
 						shapesConnection.begin(IsolationLevels.NONE);
 						try {
@@ -1561,8 +1575,10 @@ public class ShaclValidator {
 
 					RdfsSubClassOfReasoner finalReasoner = reasoner;
 					rdfsSubClassOfReasonerProvider = () -> finalReasoner;
-					baseConnection = new VerySimpleRdfsBackwardsChainingConnection(dataRepoConnection, finalReasoner);
 				}
+
+				SailConnection baseConnection = new VerySimpleRdfsBackwardsChainingConnection(dataRepoConnection,
+						reasoner, settings.includeInferredStatements);
 
 				ShaclSailConnection.Settings transactionSettings = new ShaclSailConnection.Settings(
 						settings.cacheSelectNodes,
@@ -1579,7 +1595,7 @@ public class ShaclValidator {
 						rdfsSubClassOfReasonerProvider,
 						transactionSettings,
 						settings.sparqlValidation)) {
-					return performValidation(shapes, connectionsGroup, settings);
+					return performValidation(shapes, connectionsGroup, settings, dataRepoConnection, reasoner);
 				}
 			} finally {
 				dataRepoConnection.commit();
@@ -1634,29 +1650,70 @@ public class ShaclValidator {
 		}
 	}
 
+	private static boolean requiresRdfsSubClassReasoner(List<ContextWithShape> shapes) {
+		return shapes.stream()
+				.map(ContextWithShape::getShape)
+				.map(Shape::getRdfsSubClassReasoningOverride)
+				.anyMatch(Boolean.TRUE::equals);
+	}
+
+	private static ConnectionsGroup createConnectionsGroup(SailConnection baseConnection,
+			RdfsSubClassOfReasoner reasoner,
+			boolean includeInferredStatements, boolean useRdfsSubClassReasoning, ConnectionsGroup defaults) {
+		RdfsSubClassOfReasoner effectiveReasoner = useRdfsSubClassReasoning ? reasoner : null;
+		ConnectionsGroup.RdfsSubClassOfReasonerProvider provider = effectiveReasoner == null
+				? null
+				: () -> effectiveReasoner;
+
+		SailConnection wrappedConnection = new VerySimpleRdfsBackwardsChainingConnection(baseConnection,
+				effectiveReasoner,
+				includeInferredStatements);
+
+		return new ConnectionsGroup(wrappedConnection, null, null, null, defaults.getStats(), provider,
+				defaults.getTransactionSettings(), defaults.isSparqlValidation());
+	}
+
 	private static ValidationReport performValidation(List<ContextWithShape> shapes, ConnectionsGroup connectionsGroup,
-			InternalBuilder<?> settings) {
+			InternalBuilder<?> settings, SailConnection baseConnection, RdfsSubClassOfReasoner reasoner) {
 
 		long effectiveValidationResultsLimitPerConstraint = settings.getEffectiveValidationResultsLimitPerConstraint();
 		long validationResultsLimitTotal = settings.validationResultsLimitTotal;
+		boolean defaultIncludeInferredStatements = settings.includeInferredStatements;
+		boolean defaultRdfsSubClassReasoning = settings.rdfsSubClassReasoning;
 
 		List<ValidationResultIterator> validationResultIterators = shapes
 				.stream()
-				.map(contextWithShape -> new ShapeValidationContainer(
-						contextWithShape.getShape(),
-						() -> contextWithShape.getShape()
-								.generatePlans(connectionsGroup,
-										new ValidationSettings(contextWithShape.getDataGraph(),
-												settings.logValidationPlans,
-												true, settings.performanceLogging)),
-						settings.globalLogValidationExecution,
-						settings.logValidationViolations,
-						effectiveValidationResultsLimitPerConstraint,
-						settings.performanceLogging,
-						settings.logValidationPlans,
-						logger,
-						connectionsGroup)
-				)
+				.map(contextWithShape -> {
+					Shape shape = contextWithShape.getShape();
+					boolean shapeRdfsSubClassReasoning = shape.usesRdfsSubClassReasoning(defaultRdfsSubClassReasoning);
+					boolean shapeIncludeInferredStatements = shape
+							.usesIncludeInferredStatements(defaultIncludeInferredStatements);
+
+					boolean closeConnectionsGroup = false;
+					ConnectionsGroup shapeConnectionsGroup = connectionsGroup;
+					if (shapeRdfsSubClassReasoning != defaultRdfsSubClassReasoning
+							|| shapeIncludeInferredStatements != defaultIncludeInferredStatements) {
+						shapeConnectionsGroup = createConnectionsGroup(baseConnection, reasoner,
+								shapeIncludeInferredStatements, shapeRdfsSubClassReasoning, connectionsGroup);
+						closeConnectionsGroup = true;
+					}
+					ConnectionsGroup planConnectionsGroup = shapeConnectionsGroup;
+
+					return new ShapeValidationContainer(
+							shape,
+							() -> shape.generatePlans(planConnectionsGroup,
+									new ValidationSettings(contextWithShape.getDataGraph(),
+											settings.logValidationPlans,
+											true, settings.performanceLogging)),
+							settings.globalLogValidationExecution,
+							settings.logValidationViolations,
+							effectiveValidationResultsLimitPerConstraint,
+							settings.performanceLogging,
+							settings.logValidationPlans,
+							logger,
+							shapeConnectionsGroup,
+							closeConnectionsGroup);
+				})
 				.filter(ShapeValidationContainer::hasPlanNode)
 				.map(ShapeValidationContainer::performValidation)
 				.collect(Collectors.toList());

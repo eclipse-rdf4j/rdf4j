@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShape;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.lazy.LazyValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.lazy.ValidationResultIterator;
@@ -497,7 +498,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		try {
 			try (ConnectionsGroup connectionsGroup = getConnectionsGroup()) {
-				return performValidation(shapes, validateEntireBaseSail, connectionsGroup);
+				return performValidation(shapes, validateEntireBaseSail, connectionsGroup, this,
+						previousStateConnection);
 			}
 		} finally {
 			rdfsSubClassOfReasoner = null;
@@ -505,12 +507,15 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	}
 
-	void prepareValidation(ValidationSettings validationSettings) throws InterruptedException {
+	void prepareValidation(ValidationSettings validationSettings, boolean requireRdfsSubClassReasoning)
+			throws InterruptedException {
 
 		assert isValidationEnabled();
 
-		if (sail.isRdfsSubClassReasoning()) {
+		if (requireRdfsSubClassReasoning) {
 			rdfsSubClassOfReasoner = RdfsSubClassOfReasoner.createReasoner(this, validationSettings);
+		} else {
+			rdfsSubClassOfReasoner = null;
 		}
 
 		if (sail.isShutdown()) {
@@ -528,15 +533,34 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	ConnectionsGroup getConnectionsGroup() {
+		return getConnectionsGroup(this, previousStateConnection, sail.isIncludeInferredStatements(),
+				sail.isRdfsSubClassReasoning());
+	}
 
-		return new ConnectionsGroup(new VerySimpleRdfsBackwardsChainingConnection(this, rdfsSubClassOfReasoner),
+	ConnectionsGroup getConnectionsGroup(SailConnection baseConnection, SailConnection previousStateConnection,
+			boolean includeInferredStatements, boolean useRdfsSubClassReasoning) {
+		RdfsSubClassOfReasoner reasoner = useRdfsSubClassReasoning ? rdfsSubClassOfReasoner : null;
+		ConnectionsGroup.RdfsSubClassOfReasonerProvider provider = reasoner == null ? null : () -> reasoner;
+
+		return new ConnectionsGroup(
+				new VerySimpleRdfsBackwardsChainingConnection(baseConnection, reasoner, includeInferredStatements),
 				previousStateConnection, addedStatements, removedStatements, stats,
-				this::getRdfsSubClassOfReasoner, transactionSettings, sail.sparqlValidation);
+				provider, transactionSettings, sail.sparqlValidation);
+	}
+
+	private boolean requiresRdfsSubClassReasoner(List<ContextWithShape> shapes) {
+		return shapes.stream()
+				.map(ContextWithShape::getShape)
+				.map(Shape::getRdfsSubClassReasoningOverride)
+				.anyMatch(Boolean.TRUE::equals);
 	}
 
 	private ValidationReport performValidation(List<ContextWithShape> shapes, boolean validateEntireBaseSail,
-			ConnectionsGroup connectionsGroup) throws InterruptedException {
+			ConnectionsGroup connectionsGroup, SailConnection baseConnection, SailConnection previousStateConnection)
+			throws InterruptedException {
 		long beforeValidation = 0;
+		boolean defaultIncludeInferredStatements = sail.isIncludeInferredStatements();
+		boolean defaultRdfsSubClassReasoning = sail.isRdfsSubClassReasoning();
 
 		if (sail.isPerformanceLogging()) {
 			beforeValidation = System.currentTimeMillis();
@@ -547,18 +571,36 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			Stream<Callable<ValidationResultIterator>> callableStream = shapes
 					.stream()
-					.map(contextWithShapes -> new ShapeValidationContainer(
-							contextWithShapes.getShape(),
-							() -> contextWithShapes.getShape()
-									.generatePlans(connectionsGroup,
-											new ValidationSettings(contextWithShapes.getDataGraph(),
-													sail.isLogValidationPlans(), validateEntireBaseSail,
-													sail.isPerformanceLogging())),
-							sail.isGlobalLogValidationExecution(), sail.isLogValidationViolations(),
-							sail.getEffectiveValidationResultsLimitPerConstraint(), sail.isPerformanceLogging(),
-							sail.isLogValidationPlans(),
-							logger,
-							connectionsGroup))
+					.map(contextWithShapes -> {
+						Shape shape = contextWithShapes.getShape();
+						boolean shapeRdfsSubClassReasoning = shape
+								.usesRdfsSubClassReasoning(defaultRdfsSubClassReasoning);
+						boolean shapeIncludeInferredStatements = shape
+								.usesIncludeInferredStatements(defaultIncludeInferredStatements);
+
+						boolean closeConnectionsGroup = false;
+						ConnectionsGroup shapeConnectionsGroup = connectionsGroup;
+						if (shapeRdfsSubClassReasoning != defaultRdfsSubClassReasoning
+								|| shapeIncludeInferredStatements != defaultIncludeInferredStatements) {
+							shapeConnectionsGroup = getConnectionsGroup(baseConnection, previousStateConnection,
+									shapeIncludeInferredStatements, shapeRdfsSubClassReasoning);
+							closeConnectionsGroup = true;
+						}
+						ConnectionsGroup planConnectionsGroup = shapeConnectionsGroup;
+
+						return new ShapeValidationContainer(
+								shape,
+								() -> shape.generatePlans(planConnectionsGroup,
+										new ValidationSettings(contextWithShapes.getDataGraph(),
+												sail.isLogValidationPlans(), validateEntireBaseSail,
+												sail.isPerformanceLogging())),
+								sail.isGlobalLogValidationExecution(), sail.isLogValidationViolations(),
+								sail.getEffectiveValidationResultsLimitPerConstraint(), sail.isPerformanceLogging(),
+								sail.isLogValidationPlans(),
+								logger,
+								shapeConnectionsGroup,
+								closeConnectionsGroup);
+					})
 
 					.filter(ShapeValidationContainer::hasPlanNode)
 					.peek(s -> {
@@ -1071,24 +1113,28 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				return;
 			}
 
+			List<ContextWithShape> shapesToValidate = shapesAfterRefresh != null ? shapesAfterRefresh : currentShapes;
+			boolean requiresRdfsSubClassReasoner = sail.isRdfsSubClassReasoning()
+					|| requiresRdfsSubClassReasoner(shapesToValidate);
+
 			stats.setEmptyIncludingCurrentTransaction(ConnectionHelper.isEmpty(this));
 
 			prepareValidation(
-					new ValidationSettings(null, sail.isLogValidationPlans(), false, sail.isPerformanceLogging()));
+					new ValidationSettings(null, sail.isLogValidationPlans(), false, sail.isPerformanceLogging()),
+					requiresRdfsSubClassReasoner);
 
 			ValidationReport invalidTuples = null;
 			if (useSerializableValidation) {
 				synchronized (sail.singleConnectionMonitor) {
 					if (!sail.usesSingleConnection()) {
-						invalidTuples = serializableValidation(
-								shapesAfterRefresh != null ? shapesAfterRefresh : currentShapes);
+						invalidTuples = serializableValidation(shapesToValidate);
 					}
 				}
 			}
 
 			if (invalidTuples == null) {
 				invalidTuples = validate(
-						shapesAfterRefresh != null ? shapesAfterRefresh : currentShapes,
+						shapesToValidate,
 						shapesModifiedInCurrentTransaction || isBulkValidation());
 			}
 
@@ -1152,10 +1198,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private ValidationReport serializableValidation(List<ContextWithShape> shapesAfterRefresh)
 			throws InterruptedException {
 		try {
-			try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(
-					new VerySimpleRdfsBackwardsChainingConnection(serializableConnection, rdfsSubClassOfReasoner), null,
-					addedStatements, removedStatements, stats, this::getRdfsSubClassOfReasoner, transactionSettings,
-					sail.sparqlValidation)) {
+			try (ConnectionsGroup connectionsGroup = getConnectionsGroup(serializableConnection, null,
+					sail.isIncludeInferredStatements(), sail.isRdfsSubClassReasoning())) {
 
 				connectionsGroup.getBaseConnection().begin(IsolationLevels.SNAPSHOT);
 				// actually force a transaction to start
@@ -1176,7 +1220,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				serializableConnection.flush();
 
 				return performValidation(shapesAfterRefresh, shapesModifiedInCurrentTransaction || isBulkValidation(),
-						connectionsGroup);
+						connectionsGroup, serializableConnection, null);
 
 			} finally {
 				serializableConnection.rollback();

@@ -35,6 +35,7 @@ abstract class ShaclSailBaseConfiguration extends NotifyingSailWrapper {
 	private boolean validationEnabled = ShaclSailConfig.VALIDATION_ENABLED_DEFAULT;
 	private boolean cacheSelectNodes = ShaclSailConfig.CACHE_SELECT_NODES_DEFAULT;
 	private boolean rdfsSubClassReasoning = ShaclSailConfig.RDFS_SUB_CLASS_REASONING_DEFAULT;
+	private boolean includeInferredStatements = false;
 	private boolean serializableValidation = ShaclSailConfig.SERIALIZABLE_VALIDATION_DEFAULT;
 	private boolean performanceLogging = ShaclSailConfig.PERFORMANCE_LOGGING_DEFAULT;
 	private boolean eclipseRdf4jShaclExtensions = ShaclSailConfig.ECLIPSE_RDF4J_SHACL_EXTENSIONS_DEFAULT;
@@ -144,6 +145,25 @@ abstract class ShaclSailBaseConfiguration extends NotifyingSailWrapper {
 
 	public void setRdfsSubClassReasoning(boolean rdfsSubClassReasoning) {
 		this.rdfsSubClassReasoning = rdfsSubClassReasoning;
+	}
+
+	/**
+	 * Check if inferred statements from the base sail should be used during SHACL validation when
+	 * {@link #isRdfsSubClassReasoning()} is disabled.
+	 *
+	 * @return <code>true</code> if inferred statements should be considered, <code>false</code> otherwise.
+	 */
+	public boolean isIncludeInferredStatements() {
+		return includeInferredStatements;
+	}
+
+	/**
+	 * Allow SHACL validation to use inferred statements from the base sail when RDFS subclass reasoning is disabled.
+	 *
+	 * @param includeInferredStatements default false
+	 */
+	public void setIncludeInferredStatements(boolean includeInferredStatements) {
+		this.includeInferredStatements = includeInferredStatements;
 	}
 
 	/**

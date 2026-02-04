@@ -36,17 +36,28 @@ import org.slf4j.LoggerFactory;
 public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWrapper {
 
 	private final RdfsSubClassOfReasoner rdfsSubClassOfReasoner;
+	private final boolean includeInferredStatements;
 	private static final Logger logger = LoggerFactory.getLogger(VerySimpleRdfsBackwardsChainingConnection.class);
 
 	public VerySimpleRdfsBackwardsChainingConnection(SailConnection wrappedCon,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+		this(wrappedCon, rdfsSubClassOfReasoner, false);
+	}
+
+	public VerySimpleRdfsBackwardsChainingConnection(SailConnection wrappedCon,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, boolean includeInferredStatements) {
 		super(wrappedCon);
 		this.rdfsSubClassOfReasoner = rdfsSubClassOfReasoner;
+		this.includeInferredStatements = includeInferredStatements;
 	}
 
 	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
 			throws SailException {
+
+		if (rdfsSubClassOfReasoner == null && includeInferredStatements) {
+			return super.hasStatement(subj, pred, obj, includeInferred, contexts);
+		}
 
 		boolean hasStatement = super.hasStatement(subj, pred, obj, false, contexts);
 
