@@ -35,7 +35,7 @@ abstract class ShaclSailBaseConfiguration extends NotifyingSailWrapper {
 	private boolean validationEnabled = ShaclSailConfig.VALIDATION_ENABLED_DEFAULT;
 	private boolean cacheSelectNodes = ShaclSailConfig.CACHE_SELECT_NODES_DEFAULT;
 	private boolean rdfsSubClassReasoning = ShaclSailConfig.RDFS_SUB_CLASS_REASONING_DEFAULT;
-	private boolean includeInferredStatements = false;
+	private boolean includeInferredStatements = true;
 	private boolean serializableValidation = ShaclSailConfig.SERIALIZABLE_VALIDATION_DEFAULT;
 	private boolean performanceLogging = ShaclSailConfig.PERFORMANCE_LOGGING_DEFAULT;
 	private boolean eclipseRdf4jShaclExtensions = ShaclSailConfig.ECLIPSE_RDF4J_SHACL_EXTENSIONS_DEFAULT;
@@ -160,7 +160,7 @@ abstract class ShaclSailBaseConfiguration extends NotifyingSailWrapper {
 	/**
 	 * Allow SHACL validation to use inferred statements from the base sail when RDFS subclass reasoning is disabled.
 	 *
-	 * @param includeInferredStatements default false
+	 * @param includeInferredStatements default true
 	 */
 	public void setIncludeInferredStatements(boolean includeInferredStatements) {
 		this.includeInferredStatements = includeInferredStatements;

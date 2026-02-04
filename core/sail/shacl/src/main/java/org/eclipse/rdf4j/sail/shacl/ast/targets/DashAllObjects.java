@@ -64,8 +64,8 @@ public class DashAllObjects extends Target {
 			ConstraintComponent.Scope scope, ConnectionsGroup connectionsGroup) {
 
 		return Unique.getInstance(new UnorderedSelect(connection, null,
-				null, null, dataGraph, UnorderedSelect.Mapper.ObjectScopedMapper.getFunction(scope), null), false,
-				connectionsGroup);
+				null, null, dataGraph, UnorderedSelect.Mapper.ObjectScopedMapper.getFunction(scope), null,
+				connectionsGroup.isIncludeInferredStatements()), false, connectionsGroup);
 
 	}
 

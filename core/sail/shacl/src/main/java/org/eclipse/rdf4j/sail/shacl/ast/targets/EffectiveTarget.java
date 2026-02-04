@@ -239,7 +239,8 @@ public class EffectiveTarget {
 
 	public PlanNode getAllTargets(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			ConstraintComponent.Scope scope) {
-		return new AllTargetsPlanNode(connectionsGroup.getBaseConnection(), dataGraph, chain, getVars(false), scope);
+		return new AllTargetsPlanNode(connectionsGroup.getBaseConnection(), dataGraph, chain, getVars(false), scope,
+				connectionsGroup.isIncludeInferredStatements());
 	}
 
 	public PlanNode getPlanNode(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
@@ -323,7 +324,7 @@ public class EffectiveTarget {
 			} else {
 
 				targetsPlanNode = new AllTargetsPlanNode(connectionsGroup.getBaseConnection(), dataGraph, chain,
-						getVars(false), scope);
+						getVars(false), scope, connectionsGroup.isIncludeInferredStatements());
 
 			}
 

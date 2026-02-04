@@ -31,6 +31,8 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach;
+import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShape;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -41,6 +43,8 @@ public class ShaclReasoningSettingsTest {
 
 	private static final IRI DATA_GRAPH = Values.iri("urn:data");
 	private static final IRI ONTOLOGY_GRAPH = Values.iri("urn:ontology");
+	private static final IRI RAILCAR_SHAPE = Values.iri("https://example.com/trains/RailcarBrakeShape");
+	private static final IRI TRAIN_SHAPE = Values.iri("https://example.com/trains/TrainShape");
 
 	enum Scenario {
 		RDFS,
@@ -124,9 +128,17 @@ public class ShaclReasoningSettingsTest {
 	private static void assertSingleTransaction(ReasoningCase testCase) {
 		SailRepository repository = createRepository(testCase);
 		try {
+			assertShapeOverridesParsed(repository, testCase);
+			if (testCase.scenario == Scenario.INCLUDE_INFERRED) {
+				loadBaseDataWithoutValidation(repository, testCase);
+			}
 			try (RepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE);
-				addTurtle(connection, dataTurtle(testCase), DATA_GRAPH);
+				if (testCase.scenario == Scenario.INCLUDE_INFERRED) {
+					connection.prepareUpdate(QueryLanguage.SPARQL, updatePart2(testCase)).execute();
+				} else {
+					addTurtle(connection, dataTurtle(testCase), DATA_GRAPH);
+				}
 				commitExpecting(testCase, connection, "single transaction");
 			}
 		} finally {
@@ -200,6 +212,26 @@ public class ShaclReasoningSettingsTest {
 			} finally {
 				dataRepo.shutDown();
 			}
+		}
+	}
+
+	private static void assertShapeOverridesParsed(SailRepository repository, ReasoningCase testCase) {
+		ShaclSail shaclSail = (ShaclSail) repository.getSail();
+		IRI shapeId = testCase.scenario == Scenario.RDFS ? RAILCAR_SHAPE : TRAIN_SHAPE;
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			List<ContextWithShape> shapes = shaclSail.getShapes(connection,
+					new IRI[] { RDF4J.SHACL_SHAPE_GRAPH });
+			Shape shape = shapes.stream()
+					.map(ContextWithShape::getShape)
+					.filter(candidate -> shapeId.equals(candidate.getId()))
+					.findFirst()
+					.orElseThrow(() -> new AssertionError("Missing shape: " + shapeId));
+			Assertions.assertEquals(testCase.shapeRdfsOverride, shape.getRdfsSubClassReasoningOverride(),
+					"Shape RDFS override parse mismatch");
+			Assertions.assertEquals(testCase.shapeIncludeOverride, shape.getIncludeInferredStatementsOverride(),
+					"Shape include-inferred override parse mismatch");
+			connection.commit();
 		}
 	}
 
@@ -281,6 +313,14 @@ public class ShaclReasoningSettingsTest {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE, ValidationApproach.Disabled);
 			addTurtle(connection, dataTurtle(testCase), DATA_GRAPH);
+			connection.commit();
+		}
+	}
+
+	private static void loadBaseDataWithoutValidation(SailRepository repository, ReasoningCase testCase) {
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE, ValidationApproach.Disabled);
+			addTurtle(connection, baseDataTurtle(testCase), DATA_GRAPH);
 			connection.commit();
 		}
 	}
@@ -378,6 +418,19 @@ public class ShaclReasoningSettingsTest {
 				"<urn:train1> a tr:Train .",
 				"<urn:wagon1> a tr:FreightWagon ;",
 				"  tr:isRailcarOf <urn:train1> .",
+				""
+		);
+	}
+
+	private static String baseDataTurtle(ReasoningCase testCase) {
+		if (testCase.scenario != Scenario.INCLUDE_INFERRED) {
+			return dataTurtle(testCase);
+		}
+		return String.join("\n",
+				"@prefix tr: <https://example.com/trains/> .",
+				"",
+				"<urn:train1> a tr:Train .",
+				"<urn:wagon1> a tr:FreightWagon .",
 				""
 		);
 	}

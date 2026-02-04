@@ -77,9 +77,21 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	Sail addedStatements;
 	Sail removedStatements;
+	Sail addedStatementsInferred;
+	Sail removedStatementsInferred;
+	Sail addedStatementsRdfsInferred;
+	Sail removedStatementsRdfsInferred;
+	Sail addedStatementsWithInferred;
+	Sail removedStatementsWithInferred;
+	Sail addedStatementsWithRdfsInferred;
+	Sail removedStatementsWithRdfsInferred;
+	Sail addedStatementsWithInferredAndRdfs;
+	Sail removedStatementsWithInferredAndRdfs;
 
 	private final HashSet<Statement> addedStatementsSet = new HashSet<>();
 	private final HashSet<Statement> removedStatementsSet = new HashSet<>();
+	private final HashSet<Statement> addedStatementsInferredSet = new HashSet<>();
+	private final HashSet<Statement> removedStatementsInferredSet = new HashSet<>();
 
 	private boolean shapeRefreshNeeded = false;
 	private boolean shapesModifiedInCurrentTransaction = false;
@@ -428,9 +440,51 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				removedStatements.shutDown();
 				removedStatements = null;
 			}
+			if (addedStatementsInferred != null) {
+				addedStatementsInferred.shutDown();
+				addedStatementsInferred = null;
+			}
+			if (removedStatementsInferred != null) {
+				removedStatementsInferred.shutDown();
+				removedStatementsInferred = null;
+			}
+			if (addedStatementsRdfsInferred != null) {
+				addedStatementsRdfsInferred.shutDown();
+				addedStatementsRdfsInferred = null;
+			}
+			if (removedStatementsRdfsInferred != null) {
+				removedStatementsRdfsInferred.shutDown();
+				removedStatementsRdfsInferred = null;
+			}
+			if (addedStatementsWithInferred != null) {
+				addedStatementsWithInferred.shutDown();
+				addedStatementsWithInferred = null;
+			}
+			if (removedStatementsWithInferred != null) {
+				removedStatementsWithInferred.shutDown();
+				removedStatementsWithInferred = null;
+			}
+			if (addedStatementsWithRdfsInferred != null) {
+				addedStatementsWithRdfsInferred.shutDown();
+				addedStatementsWithRdfsInferred = null;
+			}
+			if (removedStatementsWithRdfsInferred != null) {
+				removedStatementsWithRdfsInferred.shutDown();
+				removedStatementsWithRdfsInferred = null;
+			}
+			if (addedStatementsWithInferredAndRdfs != null) {
+				addedStatementsWithInferredAndRdfs.shutDown();
+				addedStatementsWithInferredAndRdfs = null;
+			}
+			if (removedStatementsWithInferredAndRdfs != null) {
+				removedStatementsWithInferredAndRdfs.shutDown();
+				removedStatementsWithInferredAndRdfs = null;
+			}
 
 			addedStatementsSet.clear();
 			removedStatementsSet.clear();
+			addedStatementsInferredSet.clear();
+			removedStatementsInferredSet.clear();
 			stats = null;
 			prepareHasBeenCalled = false;
 			shapeRefreshNeeded = false;
@@ -541,11 +595,120 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			boolean includeInferredStatements, boolean useRdfsSubClassReasoning) {
 		RdfsSubClassOfReasoner reasoner = useRdfsSubClassReasoning ? rdfsSubClassOfReasoner : null;
 		ConnectionsGroup.RdfsSubClassOfReasonerProvider provider = reasoner == null ? null : () -> reasoner;
+		Sail effectiveAddedStatements = getEffectiveAddedStatements(includeInferredStatements,
+				useRdfsSubClassReasoning);
+		Sail effectiveRemovedStatements = getEffectiveRemovedStatements(includeInferredStatements,
+				useRdfsSubClassReasoning);
 
 		return new ConnectionsGroup(
 				new VerySimpleRdfsBackwardsChainingConnection(baseConnection, reasoner, includeInferredStatements),
-				previousStateConnection, addedStatements, removedStatements, stats,
-				provider, transactionSettings, sail.sparqlValidation);
+				previousStateConnection, effectiveAddedStatements, effectiveRemovedStatements, stats,
+				provider, includeInferredStatements, transactionSettings, sail.sparqlValidation);
+	}
+
+	private Sail getEffectiveAddedStatements(boolean includeInferredStatements, boolean useRdfsSubClassReasoning) {
+		boolean includeBaseInferred = includeInferredStatements && addedStatementsInferred != null;
+		boolean includeRdfsInferred = useRdfsSubClassReasoning && addedStatementsRdfsInferred != null;
+		if (!includeBaseInferred && !includeRdfsInferred) {
+			return addedStatements;
+		}
+		if (includeBaseInferred && includeRdfsInferred) {
+			if (addedStatementsWithInferredAndRdfs == null) {
+				addedStatementsWithInferredAndRdfs = buildCombinedStatements(addedStatements,
+						addedStatementsInferred, addedStatementsRdfsInferred);
+			}
+			return addedStatementsWithInferredAndRdfs;
+		}
+		if (includeBaseInferred) {
+			if (addedStatementsWithInferred == null) {
+				addedStatementsWithInferred = buildCombinedStatements(addedStatements, addedStatementsInferred, null);
+			}
+			return addedStatementsWithInferred;
+		}
+		if (addedStatementsWithRdfsInferred == null) {
+			addedStatementsWithRdfsInferred = buildCombinedStatements(addedStatements, null,
+					addedStatementsRdfsInferred);
+		}
+		return addedStatementsWithRdfsInferred;
+	}
+
+	private Sail getEffectiveRemovedStatements(boolean includeInferredStatements, boolean useRdfsSubClassReasoning) {
+		boolean includeBaseInferred = includeInferredStatements && removedStatementsInferred != null;
+		boolean includeRdfsInferred = useRdfsSubClassReasoning && removedStatementsRdfsInferred != null;
+		if (!includeBaseInferred && !includeRdfsInferred) {
+			return removedStatements;
+		}
+		if (includeBaseInferred && includeRdfsInferred) {
+			if (removedStatementsWithInferredAndRdfs == null) {
+				removedStatementsWithInferredAndRdfs = buildCombinedStatements(removedStatements,
+						removedStatementsInferred, removedStatementsRdfsInferred);
+			}
+			return removedStatementsWithInferredAndRdfs;
+		}
+		if (includeBaseInferred) {
+			if (removedStatementsWithInferred == null) {
+				removedStatementsWithInferred = buildCombinedStatements(removedStatements, removedStatementsInferred,
+						null);
+			}
+			return removedStatementsWithInferred;
+		}
+		if (removedStatementsWithRdfsInferred == null) {
+			removedStatementsWithRdfsInferred = buildCombinedStatements(removedStatements, null,
+					removedStatementsRdfsInferred);
+		}
+		return removedStatementsWithRdfsInferred;
+	}
+
+	private Sail buildCombinedStatements(Sail explicitStatements, Sail inferredStatements,
+			Sail rdfsInferredStatements) {
+		if (explicitStatements == null && inferredStatements == null && rdfsInferredStatements == null) {
+			return null;
+		}
+		Sail combinedStatements = getNewMemorySail();
+		try (SailConnection combinedConnection = combinedStatements.getConnection()) {
+			combinedConnection.begin(IsolationLevels.NONE);
+			copyStatements(explicitStatements, combinedConnection);
+			copyStatements(inferredStatements, combinedConnection);
+			copyStatements(rdfsInferredStatements, combinedConnection);
+			combinedConnection.commit();
+		}
+		return combinedStatements;
+	}
+
+	private void copyStatements(Sail source, SailConnection target) {
+		if (source == null) {
+			return;
+		}
+		try (SailConnection from = source.getConnection()) {
+			ConnectionHelper.transferStatements(from, target::addStatement);
+		}
+	}
+
+	private void resetCombinedStatementStores() {
+		if (addedStatementsWithInferred != null) {
+			addedStatementsWithInferred.shutDown();
+			addedStatementsWithInferred = null;
+		}
+		if (removedStatementsWithInferred != null) {
+			removedStatementsWithInferred.shutDown();
+			removedStatementsWithInferred = null;
+		}
+		if (addedStatementsWithRdfsInferred != null) {
+			addedStatementsWithRdfsInferred.shutDown();
+			addedStatementsWithRdfsInferred = null;
+		}
+		if (removedStatementsWithRdfsInferred != null) {
+			removedStatementsWithRdfsInferred.shutDown();
+			removedStatementsWithRdfsInferred = null;
+		}
+		if (addedStatementsWithInferredAndRdfs != null) {
+			addedStatementsWithInferredAndRdfs.shutDown();
+			addedStatementsWithInferredAndRdfs = null;
+		}
+		if (removedStatementsWithInferredAndRdfs != null) {
+			removedStatementsWithInferredAndRdfs.shutDown();
+			removedStatementsWithInferredAndRdfs = null;
+		}
 	}
 
 	private boolean requiresRdfsSubClassReasoner(List<ContextWithShape> shapes) {
@@ -792,12 +955,15 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		boolean parallelValidation = isParallelValidation() && !addedStatementsSet.isEmpty()
 				&& !removedStatementsSet.isEmpty();
 
+		resetCombinedStatementStores();
+
 		try {
 			Stream.of(addedStatementsSet, removedStatementsSet)
 					.map(set -> (Callable<Object>) () -> {
 
 						Set<Statement> otherSet;
-						Sail repository;
+						Sail explicitRepository;
+						Sail inferredRepository = null;
 						if (set == addedStatementsSet) {
 							otherSet = removedStatementsSet;
 
@@ -806,7 +972,17 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							}
 
 							addedStatements = getNewMemorySail();
-							repository = addedStatements;
+							explicitRepository = addedStatements;
+							if (rdfsSubClassOfReasoner != null) {
+								if (addedStatementsRdfsInferred != null) {
+									addedStatementsRdfsInferred.shutDown();
+								}
+								addedStatementsRdfsInferred = getNewMemorySail();
+								inferredRepository = addedStatementsRdfsInferred;
+							} else if (addedStatementsRdfsInferred != null) {
+								addedStatementsRdfsInferred.shutDown();
+								addedStatementsRdfsInferred = null;
+							}
 
 							set.forEach(stats::added);
 
@@ -819,13 +995,29 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							}
 
 							removedStatements = getNewMemorySail();
-							repository = removedStatements;
+							explicitRepository = removedStatements;
+							if (rdfsSubClassOfReasoner != null) {
+								if (removedStatementsRdfsInferred != null) {
+									removedStatementsRdfsInferred.shutDown();
+								}
+								removedStatementsRdfsInferred = getNewMemorySail();
+								inferredRepository = removedStatementsRdfsInferred;
+							} else if (removedStatementsRdfsInferred != null) {
+								removedStatementsRdfsInferred.shutDown();
+								removedStatementsRdfsInferred = null;
+							}
 
 							set.forEach(stats::removed);
 						}
 
-						try (SailConnection connection = repository.getConnection()) {
-							connection.begin(IsolationLevels.NONE);
+						try (SailConnection explicitConnection = explicitRepository.getConnection();
+								SailConnection inferredConnection = inferredRepository != null
+										? inferredRepository.getConnection()
+										: null) {
+							explicitConnection.begin(IsolationLevels.NONE);
+							if (inferredConnection != null) {
+								inferredConnection.begin(IsolationLevels.NONE);
+							}
 							set.stream()
 									.peek(s -> {
 										if (Thread.currentThread().isInterrupted()) {
@@ -834,13 +1026,19 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 										}
 									})
 									.filter(statement -> !otherSet.contains(statement))
-									.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement)
-											: rdfsSubClassOfReasoner.forwardChain(statement))
 									.forEach(statement -> {
 										if (!Thread.currentThread().isInterrupted()) {
-											connection.addStatement(statement.getSubject(),
+											explicitConnection.addStatement(statement.getSubject(),
 													statement.getPredicate(), statement.getObject(),
 													statement.getContext());
+											if (inferredConnection != null) {
+												rdfsSubClassOfReasoner.forwardChain(statement)
+														.forEach(inferredStatement -> inferredConnection
+																.addStatement(inferredStatement.getSubject(),
+																		inferredStatement.getPredicate(),
+																		inferredStatement.getObject(),
+																		inferredStatement.getContext()));
+											}
 										}
 
 									});
@@ -848,7 +1046,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								throw new InterruptedException();
 							}
 
-							connection.commit();
+							if (inferredConnection != null) {
+								inferredConnection.commit();
+							}
+							explicitConnection.commit();
 						}
 
 						return null;
@@ -896,6 +1097,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				}
 			}
 
+			fillInferredStatementRepository(addedStatementsInferredSet, removedStatementsInferredSet, true);
+			fillInferredStatementRepository(removedStatementsInferredSet, addedStatementsInferredSet, false);
+
 		} finally {
 			if (futures != null) {
 				for (Future<Object> future : futures) {
@@ -908,6 +1112,63 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			logger.info("fillAddedAndRemovedStatementRepositories() took {} ms", System.currentTimeMillis() - before);
 		}
 
+	}
+
+	private void fillInferredStatementRepository(Set<Statement> sourceSet, Set<Statement> otherSet,
+			boolean added) throws InterruptedException {
+		if (sourceSet.isEmpty()) {
+			if (added) {
+				if (addedStatementsInferred != null) {
+					addedStatementsInferred.shutDown();
+					addedStatementsInferred = null;
+				}
+			} else {
+				if (removedStatementsInferred != null) {
+					removedStatementsInferred.shutDown();
+					removedStatementsInferred = null;
+				}
+			}
+			return;
+		}
+
+		Sail inferredRepository;
+		if (added) {
+			if (addedStatementsInferred != null) {
+				addedStatementsInferred.shutDown();
+			}
+			addedStatementsInferred = getNewMemorySail();
+			inferredRepository = addedStatementsInferred;
+			sourceSet.forEach(stats::added);
+		} else {
+			if (removedStatementsInferred != null) {
+				removedStatementsInferred.shutDown();
+			}
+			removedStatementsInferred = getNewMemorySail();
+			inferredRepository = removedStatementsInferred;
+			sourceSet.forEach(stats::removed);
+		}
+
+		try (SailConnection inferredConnection = inferredRepository.getConnection()) {
+			inferredConnection.begin(IsolationLevels.NONE);
+			sourceSet.stream()
+					.peek(s -> {
+						if (Thread.currentThread().isInterrupted()) {
+							throw new SailException(
+									"ShacilSailConnection was interrupted while filling inferred statement repositories");
+						}
+					})
+					.filter(statement -> !otherSet.contains(statement))
+					.forEach(statement -> {
+						if (!Thread.currentThread().isInterrupted()) {
+							inferredConnection.addStatement(statement.getSubject(),
+									statement.getPredicate(), statement.getObject(), statement.getContext());
+						}
+					});
+			if (Thread.interrupted()) {
+				throw new InterruptedException();
+			}
+			inferredConnection.commit();
+		}
 	}
 
 	private IsolationLevel getIsolationLevel() {
@@ -1234,13 +1495,25 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void statementAdded(Statement statement) {
+		statementAdded(statement, false);
+	}
+
+	@Override
+	public void statementAdded(Statement statement, boolean inferred) {
 		if (prepareHasBeenCalled) {
 			throw new IllegalStateException("Detected changes after prepare() has been called.");
 		}
 		checkIfShapesRefreshIsNeeded(statement);
-		boolean add = addedStatementsSet.add(statement);
-		if (!add) {
-			removedStatementsSet.remove(statement);
+		if (inferred) {
+			boolean add = addedStatementsInferredSet.add(statement);
+			if (!add) {
+				removedStatementsInferredSet.remove(statement);
+			}
+		} else {
+			boolean add = addedStatementsSet.add(statement);
+			if (!add) {
+				removedStatementsSet.remove(statement);
+			}
 		}
 
 		checkTransactionalValidationLimit();
@@ -1249,14 +1522,26 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void statementRemoved(Statement statement) {
+		statementRemoved(statement, false);
+	}
+
+	@Override
+	public void statementRemoved(Statement statement, boolean inferred) {
 		if (prepareHasBeenCalled) {
 			throw new IllegalStateException("Detected changes after prepare() has been called.");
 		}
 		checkIfShapesRefreshIsNeeded(statement);
 
-		boolean add = removedStatementsSet.add(statement);
-		if (!add) {
-			addedStatementsSet.remove(statement);
+		if (inferred) {
+			boolean add = removedStatementsInferredSet.add(statement);
+			if (!add) {
+				addedStatementsInferredSet.remove(statement);
+			}
+		} else {
+			boolean add = removedStatementsSet.add(statement);
+			if (!add) {
+				addedStatementsSet.remove(statement);
+			}
 		}
 
 		checkTransactionalValidationLimit();
@@ -1275,7 +1560,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	private void checkTransactionalValidationLimit() {
-		if ((addedStatementsSet.size() + removedStatementsSet.size()) > sail.getTransactionalValidationLimit()) {
+		int changeCount = addedStatementsSet.size() + removedStatementsSet.size()
+				+ addedStatementsInferredSet.size() + removedStatementsInferredSet.size();
+		if (changeCount > sail.getTransactionalValidationLimit()) {
 			if (shouldUseSerializableValidation()) {
 				logger.debug(
 						"Transaction size limit exceeded, could not switch to bulk validation because serializable validation is enabled.");
@@ -1287,6 +1574,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				getTransactionSettings().applyTransactionSettings(bulkValidation);
 				removedStatementsSet.clear();
 				addedStatementsSet.clear();
+				removedStatementsInferredSet.clear();
+				addedStatementsInferredSet.clear();
 			}
 		}
 	}

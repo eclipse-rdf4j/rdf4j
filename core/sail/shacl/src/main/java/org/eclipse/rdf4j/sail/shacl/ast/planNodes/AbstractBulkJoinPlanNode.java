@@ -85,7 +85,7 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 //		System.out.println(stackTrace[3].getClassName());
 		try (Stream<? extends BindingSet> stream = connection
-				.evaluate(parsedQuery, dataset, EmptyBindingSet.getInstance(), true)
+				.evaluate(parsedQuery, dataset, EmptyBindingSet.getInstance(), includeInferredStatements())
 				.stream()) {
 			stream
 					.map(mapper)
@@ -93,6 +93,10 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 					.forEachOrdered(right::addFirst);
 		}
 
+	}
+
+	protected boolean includeInferredStatements() {
+		return true;
 	}
 
 	private void updateQuery(TupleExpr parsedQuery, List<BindingSet> newBindindingSet) {
@@ -133,13 +137,13 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 					if (!(tuple.getActiveTarget().isResource())) {
 						hasStatement = previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(),
-								true, dataGraph);
+								includeInferredStatements(), dataGraph);
 
 					} else {
 						hasStatement = previousStateConnection.hasStatement(((Resource) tuple.getActiveTarget()),
-								null, null, true, dataGraph) ||
-								previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(), true,
-										dataGraph);
+								null, null, includeInferredStatements(), dataGraph) ||
+								previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(),
+										includeInferredStatements(), dataGraph);
 
 					}
 

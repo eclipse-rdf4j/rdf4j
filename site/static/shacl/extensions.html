@@ -264,7 +264,8 @@ ex:PartyShape a sh:NodeShape;
         Shapes may override the global SHACL reasoning settings with RSX properties.
         <code>rsx:rdfsSubClassReasoning</code> controls whether built-in RDFS subclass reasoning is applied for a shape,
         and <code>rsx:includeInferredStatements</code> controls whether inferred statements from the underlying store
-        are considered for that shape.
+        are considered for that shape. When RDF4J SHACL extensions are enabled, both settings default to
+        <code>true</code>.
     </p>
 
     <h4>Example</h4>
@@ -273,12 +274,39 @@ ex:PartyShape a sh:NodeShape;
 @prefix rsx: &lt;http://rdf4j.org/shacl-extensions#&gt; .
 @prefix sh: &lt;http://www.w3.org/ns/shacl#&gt; .
 
-ex:RailcarShape a sh:NodeShape;
-  rsx:rdfsSubClassReasoning true;
-  rsx:includeInferredStatements true;
-  sh:targetClass ex:Railcar;
-  sh:property [sh:path ex:hasBrake; sh:minCount 1].
+ex:RailcarBrakeShape a sh:NodeShape;
+  sh:targetObjectsOf ex:relatedRailcar;
+  sh:property [
+    sh:path ex:hasBrake;
+    sh:minCount 1
+  ].
+
+ex:RailcarBrakeShapeNoInferred a sh:NodeShape;
+  rsx:includeInferredStatements false;
+  sh:targetObjectsOf ex:relatedRailcar;
+  sh:property [
+    sh:path ex:hasBrake;
+    sh:minCount 1
+  ].
     </pre>
+    <pre class="example-data" title="Per-shape reasoning data">
+@prefix ex: &lt;http://example.com/ns#&gt; .
+
+ex:train1 ex:hasRailcar ex:wagon1.
+ex:wagon1 a ex:Railcar.
+    </pre>
+    <pre class="example-data" title="Per-shape reasoning ontology">
+@prefix ex: &lt;http://example.com/ns#&gt; .
+@prefix rdfs: &lt;http://www.w3.org/2000/01/rdf-schema#&gt; .
+
+ex:hasRailcar rdfs:subPropertyOf ex:relatedRailcar.
+    </pre>
+    <p>
+        With defaults, the inferred <code>ex:train1 ex:relatedRailcar ex:wagon1</code> statement is included,
+        so <code>ex:RailcarBrakeShape</code> targets <code>ex:wagon1</code> and fails because it has no brake.
+        The <code>ex:RailcarBrakeShapeNoInferred</code> override excludes inferred statements, so the inferred
+        target is not selected and the shape passes.
+    </p>
 </section>
 
 <section>

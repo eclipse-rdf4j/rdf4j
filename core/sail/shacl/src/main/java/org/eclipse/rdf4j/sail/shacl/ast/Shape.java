@@ -439,7 +439,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 							.generateSparqlValidationQuery(connectionsGroup, validationSettings, false, false,
 									Scope.none)
 							.getValidationPlan(connectionsGroup.getBaseConnection(), validationSettings.getDataGraph(),
-									getContexts()),
+									getContexts(), connectionsGroup.isIncludeInferredStatements()),
 							this, connectionsGroup);
 				} else {
 					logger.debug("Use fall back validation approach for bulk validation instead of SPARQL for shape {}",

@@ -42,6 +42,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	private final Resource[] dataGraph;
 	private TupleExpr parsedQuery;
 	private final String query;
+	private final boolean includeInferredStatements;
 	private boolean printed = false;
 
 	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection connection, Resource[] dataGraph,
@@ -58,6 +59,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 		this.mapper = mapper;
 		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
 		this.dataGraph = dataGraph;
+		this.includeInferredStatements = connectionsGroup.isIncludeInferredStatements();
 	}
 
 	@Override
@@ -176,6 +178,11 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	@Override
 	public int depth() {
 		return leftNode.depth() + 1;
+	}
+
+	@Override
+	protected boolean includeInferredStatements() {
+		return includeInferredStatements;
 	}
 
 	@Override

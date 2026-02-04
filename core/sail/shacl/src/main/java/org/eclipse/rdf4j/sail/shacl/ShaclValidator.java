@@ -385,7 +385,7 @@ public class ShaclValidator {
 		private boolean cacheSelectNodes = true;
 		private boolean globalLogValidationExecution = false;
 		private boolean rdfsSubClassReasoning = true;
-		private boolean includeInferredStatements = false;
+		private boolean includeInferredStatements = true;
 		private boolean performanceLogging = false;
 		private boolean serializableValidation = false;
 		private boolean eclipseRdf4jShaclExtensions = true;
@@ -1593,6 +1593,7 @@ public class ShaclValidator {
 						null,
 						new Stats(),
 						rdfsSubClassOfReasonerProvider,
+						settings.includeInferredStatements,
 						transactionSettings,
 						settings.sparqlValidation)) {
 					return performValidation(shapes, connectionsGroup, settings, dataRepoConnection, reasoner);
@@ -1670,7 +1671,8 @@ public class ShaclValidator {
 				includeInferredStatements);
 
 		return new ConnectionsGroup(wrappedConnection, null, null, null, defaults.getStats(), provider,
-				defaults.getTransactionSettings(), defaults.isSparqlValidation());
+				includeInferredStatements, defaults.getTransactionSettings(),
+				defaults.isSparqlValidation());
 	}
 
 	private static ValidationReport performValidation(List<ContextWithShape> shapes, ConnectionsGroup connectionsGroup,

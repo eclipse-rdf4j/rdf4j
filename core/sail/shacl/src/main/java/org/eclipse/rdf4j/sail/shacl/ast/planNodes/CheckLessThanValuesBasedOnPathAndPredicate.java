@@ -33,9 +33,9 @@ public class CheckLessThanValuesBasedOnPathAndPredicate extends AbstractPairwise
 	public CheckLessThanValuesBasedOnPathAndPredicate(SailConnection connection, Resource[] dataGraph, PlanNode parent,
 			IRI predicate, StatementMatcher.Variable<Resource> subject, StatementMatcher.Variable<Value> object,
 			SparqlFragment targetQueryFragment, Shape shape, ConstraintComponent constraintComponent,
-			boolean produceValidationReports) {
+			boolean produceValidationReports, boolean includeInferredStatements) {
 		super(connection, dataGraph, parent, predicate, subject, object, targetQueryFragment, shape,
-				constraintComponent, produceValidationReports);
+				constraintComponent, produceValidationReports, includeInferredStatements);
 	}
 
 	Set<Value> getInvalidValues(Set<Value> valuesByPath, Set<Value> valuesByPredicate) {

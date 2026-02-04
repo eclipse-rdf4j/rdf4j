@@ -289,7 +289,7 @@ public class TargetChainRetriever implements PlanNode {
 
 						results = connectionsGroup.getBaseConnection()
 								.evaluate(parsedQuery.getTupleExpr(), dataset,
-										EmptyBindingSet.getInstance(), true);
+										EmptyBindingSet.getInstance(), connectionsGroup.isIncludeInferredStatements());
 
 					} catch (MalformedQueryException e) {
 						logger.error("Malformed query:\n{}", queryFragment);

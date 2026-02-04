@@ -36,6 +36,7 @@ public class FilterByPredicate implements PlanNode {
 	final PlanNode parent;
 	private final On on;
 	private final ConnectionsGroup connectionsGroup;
+	private final boolean includeInferredStatements;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 	private final Resource[] dataGraph;
@@ -54,6 +55,7 @@ public class FilterByPredicate implements PlanNode {
 		this.filterOnPredicates = filterOnPredicates;
 		this.on = on;
 		this.connectionsGroup = connectionsGroup;
+		this.includeInferredStatements = connectionsGroup.isIncludeInferredStatements();
 	}
 
 	@Override
@@ -121,15 +123,16 @@ public class FilterByPredicate implements PlanNode {
 				if (node.isResource() && on == On.Subject) {
 
 					return filterOnPredicates.stream()
-							.filter(predicate -> connection.hasStatement((Resource) node, predicate, null, true,
-									dataGraph))
+							.filter(predicate -> connection.hasStatement((Resource) node, predicate, null,
+									includeInferredStatements, dataGraph))
 							.findFirst()
 							.orElse(null);
 
 				} else if (on == On.Object) {
 
 					return filterOnPredicates.stream()
-							.filter(predicate -> connection.hasStatement(null, predicate, node, true, dataGraph))
+							.filter(predicate -> connection.hasStatement(null, predicate, node,
+									includeInferredStatements, dataGraph))
 							.findFirst()
 							.orElse(null);
 
