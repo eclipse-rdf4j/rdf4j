@@ -41,12 +41,14 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 	protected static final int BULK_SIZE = 1000;
 	private final List<StatementMatcher.Variable> vars;
 	private final String varsQueryString;
+	private final boolean includeInferredStatements;
 	StackTraceElement[] stackTrace;
 	protected Function<BindingSet, ValidationTuple> mapper;
 	ValidationExecutionLogger validationExecutionLogger;
 
-	public AbstractBulkJoinPlanNode(List<StatementMatcher.Variable> vars) {
+	public AbstractBulkJoinPlanNode(List<StatementMatcher.Variable> vars, boolean includeInferredStatements) {
 		this.vars = vars;
+		this.includeInferredStatements = includeInferredStatements;
 		this.varsQueryString = vars.stream()
 				.map(StatementMatcher.Variable::asSparqlVariable)
 				.reduce((a, b) -> a + " " + b)
@@ -85,7 +87,7 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 //		System.out.println(stackTrace[3].getClassName());
 		try (Stream<? extends BindingSet> stream = connection
-				.evaluate(parsedQuery, dataset, EmptyBindingSet.getInstance(), includeInferredStatements())
+				.evaluate(parsedQuery, dataset, EmptyBindingSet.getInstance(), includeInferredStatements)
 				.stream()) {
 			stream
 					.map(mapper)
@@ -93,10 +95,6 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 					.forEachOrdered(right::addFirst);
 		}
 
-	}
-
-	protected boolean includeInferredStatements() {
-		return true;
 	}
 
 	private void updateQuery(TupleExpr parsedQuery, List<BindingSet> newBindindingSet) {
@@ -137,13 +135,13 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 					if (!(tuple.getActiveTarget().isResource())) {
 						hasStatement = previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(),
-								includeInferredStatements(), dataGraph);
+								includeInferredStatements, dataGraph);
 
 					} else {
 						hasStatement = previousStateConnection.hasStatement(((Resource) tuple.getActiveTarget()),
-								null, null, includeInferredStatements(), dataGraph) ||
+								null, null, includeInferredStatements, dataGraph) ||
 								previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(),
-										includeInferredStatements(), dataGraph);
+										includeInferredStatements, dataGraph);
 
 					}
 

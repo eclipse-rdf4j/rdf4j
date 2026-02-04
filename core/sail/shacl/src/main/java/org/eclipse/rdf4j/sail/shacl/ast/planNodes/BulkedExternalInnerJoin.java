@@ -56,7 +56,6 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	private final boolean skipBasedOnPreviousConnection;
 	private final SailConnection previousStateConnection;
 	private final String query;
-	private final boolean includeInferredStatements;
 	private boolean printed = false;
 
 	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, Resource[] dataGraph,
@@ -64,7 +63,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
 			Function<BindingSet, ValidationTuple> mapper, ConnectionsGroup connectionsGroup,
 			List<StatementMatcher.Variable> vars) {
-		super(vars);
+		super(vars, connectionsGroup.isIncludeInferredStatements());
 		assert !skipBasedOnPreviousConnection || previousStateConnection != null;
 
 		this.leftNode = PlanNodeHelper.handleSorting(this, leftNode, connectionsGroup);
@@ -77,7 +76,6 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 		this.previousStateConnection = previousStateConnection;
 		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
 		this.dataGraph = dataGraph;
-		this.includeInferredStatements = connectionsGroup.isIncludeInferredStatements();
 	}
 
 	public static Function<BindingSet, ValidationTuple> getMapper(String a, String c, ConstraintComponent.Scope scope,
@@ -193,11 +191,6 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	@Override
 	public int depth() {
 		return leftNode.depth() + 1;
-	}
-
-	@Override
-	protected boolean includeInferredStatements() {
-		return includeInferredStatements;
 	}
 
 	@Override
