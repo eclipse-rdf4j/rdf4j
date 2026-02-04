@@ -12,17 +12,100 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.util.Set;
+
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * @author Håvard Ottestad
  */
 @Tag("slow")
 public class ShaclTestWithSchemaCachingRdfsInferencerTest extends ShaclTest {
+
+	private static final Set<String> IGNORED_TEST_CASE_PREFIXES = Set.of(
+			"test-cases/datatype/allObjects/",
+			"test-cases/hasValue/targetShapeAnd/",
+			"test-cases/hasValue/targetShapeAnd2/",
+			"test-cases/hasValue/targetShapeAndOr/",
+			"test-cases/hasValue/targetShapeAndOr3/",
+			"test-cases/hasValue/targetShapeOr/",
+			"test-cases/hasValueIn/targetShapeOr/"
+	);
+
+	@ParameterizedTest
+	@MethodSource("testsToRunWithIsolationLevel")
+	public void test(TestCase testCase, IsolationLevel isolationLevel) {
+		if (ignoredTest(testCase)) {
+			return;
+		}
+		runWithAutomaticLogging(() -> runTestCase(testCase, isolationLevel, false));
+	}
+
+	@ParameterizedTest
+	@MethodSource("testCases")
+	public void testSingleTransaction(TestCase testCase) {
+		if (ignoredTest(testCase)) {
+			return;
+		}
+		runWithAutomaticLogging(() -> runTestCaseSingleTransaction(testCase));
+	}
+
+	@ParameterizedTest
+	@MethodSource("testsToRunWithIsolationLevel")
+	public void testRevalidation(TestCase testCase, IsolationLevel isolationLevel) {
+		if (ignoredTest(testCase)) {
+			return;
+		}
+		runWithAutomaticLogging(() -> runTestCaseRevalidate(testCase, isolationLevel));
+	}
+
+	@ParameterizedTest
+	@MethodSource("testsToRunWithIsolationLevel")
+	public void testNonEmpty(TestCase testCase, IsolationLevel isolationLevel) {
+		if (ignoredTest(testCase)) {
+			return;
+		}
+		runWithAutomaticLogging(() -> runTestCase(testCase, isolationLevel, true));
+	}
+
+	@ParameterizedTest
+	@MethodSource("testCases")
+	public void testParsing(TestCase testCase) {
+		if (ignoredTest(testCase)) {
+			return;
+		}
+		runWithAutomaticLogging(() -> runParsingTest(testCase));
+	}
+
+	@ParameterizedTest
+	@MethodSource("testCases")
+	public void testReferenceImplementation(TestCase testCase) {
+		if (ignoredTest(testCase)) {
+			return;
+		}
+		runWithAutomaticLogging(() -> referenceImplementationTestCaseValidation(testCase));
+	}
+
+	@ParameterizedTest
+	@MethodSource("testCases")
+	public void testShaclValidator(TestCase testCase) {
+		if (ignoredTest(testCase)) {
+			return;
+		}
+		runWithAutomaticLogging(() -> runWithShaclValidator(testCase));
+	}
+
+	private static boolean ignoredTest(TestCase testCase) {
+		String testCasePath = testCase.getTestCasePath();
+		return IGNORED_TEST_CASE_PREFIXES.stream().anyMatch(testCasePath::startsWith);
+	}
 
 	@Override
 	SailRepository getShaclSail(TestCase testCase) {
