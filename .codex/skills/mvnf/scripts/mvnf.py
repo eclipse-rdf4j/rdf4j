@@ -298,7 +298,7 @@ def main() -> int:
 
     rc, _ = _run(install_cmd, repo_root, args.tail, log_paths[1], args.stream)
     if rc != 0:
-        print("\n[mvnf] Root clean install failed.")
+        print("\n[mvnf] Root install failed.")
         return rc
 
     rc, _ = _run(verify_cmd, repo_root, args.tail, log_paths[2], args.stream)
