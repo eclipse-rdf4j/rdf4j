@@ -19,13 +19,17 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
@@ -50,12 +54,15 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 	private static final long DEFAULT_PRIOR_CALLS = 2;
 	private static final double FILTER_EXISTS_UNBOUND_PENALTY = 1.0e9d;
 	private static final double GENERIC_BOUND_CAP_MULTIPLIER = 10.0d;
+	private static final double FILTER_VALUE_CARDINALITY = 40.0d;
+	private static final double MIN_FILTER_MULTIPLIER = 0.05d;
 	private static final IRI BOUND_VALUE = SimpleValueFactory.getInstance().createIRI("urn:bound");
 	private static final EvaluationStatistics GENERIC_STATS = new EvaluationStatistics();
 
 	private final EvaluationStatistics fallbackStats;
 	private final JoinStatsProvider learnedStats;
 	private final FilterConstraints externalConstraints;
+	private final Set<String> typeSubjectNames;
 
 	public LearnedBindJoinCostModel(EvaluationStatistics fallbackStats, JoinStatsProvider learnedStats) {
 		this(fallbackStats, learnedStats, List.of());
@@ -63,9 +70,17 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 
 	public LearnedBindJoinCostModel(EvaluationStatistics fallbackStats, JoinStatsProvider learnedStats,
 			List<ValueExpr> externalFilters) {
+		this(fallbackStats, learnedStats, externalFilters, List.of());
+	}
+
+	public LearnedBindJoinCostModel(EvaluationStatistics fallbackStats, JoinStatsProvider learnedStats,
+			List<ValueExpr> externalFilters, List<StatementPattern> contextPatterns) {
 		this.fallbackStats = Objects.requireNonNull(fallbackStats, "fallbackStats");
 		this.learnedStats = Objects.requireNonNull(learnedStats, "learnedStats");
-		this.externalConstraints = collectExternalConstraints(externalFilters);
+		this.typeSubjectNames = collectTypeSubjects(contextPatterns);
+		FilterConstraints constraints = collectExternalConstraints(externalFilters);
+		constraints = constraints.and(derivePatternConstraints(contextPatterns, constraints));
+		this.externalConstraints = constraints;
 	}
 
 	@Override
@@ -89,18 +104,23 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		if (context == null) {
 			return fallbackStats.getCardinality(expr);
 		}
-		return estimateScanPattern(context.pattern, initiallyBoundVars);
+		return estimateScanPattern(context, initiallyBoundVars);
 	}
 
-	private double estimateScanPattern(StatementPattern pattern, Set<String> boundVars) {
-		StatementPattern boundPattern = applyBoundVars(pattern, boundVars);
+	private double estimateScanPattern(PatternContext context, Set<String> boundVars) {
+		FilterApplication filterApplication = applyScanConstraints(context, boundVars);
+		StatementPattern pattern = context.pattern;
+		Set<String> effectiveBoundVars = filterApplication.boundVars;
+		StatementPattern boundPattern = applyBoundVars(pattern, effectiveBoundVars);
 		double defaultEstimate = fallbackStats.getCardinality(boundPattern);
 		if (usesPlaceholder(boundPattern)) {
 			defaultEstimate = fallbackEstimateForBoundPlaceholder(pattern, boundPattern, defaultEstimate);
 		}
-		PatternKey key = buildKey(pattern, boundVars);
+		PatternKey key = buildKey(pattern, effectiveBoundVars);
 		if (!learnedStats.hasStats(key)) {
-			return defaultEstimate > 0.0d ? defaultEstimate : 1.0d;
+			double estimate = defaultEstimate > 0.0d ? defaultEstimate : 1.0d;
+			double filtered = applyFilterMultiplier(estimate, filterApplication, pattern);
+			return applyFilterFallbackCap(filtered, context);
 		}
 		learnedStats.seedIfAbsent(key, defaultEstimate, DEFAULT_PRIOR_CALLS);
 		double average = learnedStats.getAverageResults(key);
@@ -112,7 +132,10 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 				estimate = skewed;
 			}
 		}
-		return estimate > 0.0d ? estimate : 1.0d;
+		double adjusted = estimate > 0.0d ? estimate : defaultEstimate;
+		double filtered = applyFilterMultiplier(adjusted, filterApplication, pattern);
+		filtered = capFilteredToFallback(filtered, defaultEstimate, filterApplication, pattern);
+		return applyFilterFallbackCap(filtered, context);
 	}
 
 	@Override
@@ -146,7 +169,23 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		}
 		double adjusted = estimate > 0.0d ? estimate : defaultEstimate;
 		double filtered = applyFilterMultiplier(adjusted, filterApplication, pattern);
+		filtered = capFilteredToFallback(filtered, defaultEstimate, filterApplication, pattern);
 		return applyFilterFallbackCap(filtered, context);
+	}
+
+	private double capFilteredToFallback(double filteredEstimate, double defaultEstimate,
+			FilterApplication filterApplication, StatementPattern pattern) {
+		if (filterApplication.multiplier >= 1.0d) {
+			return filteredEstimate;
+		}
+		if (defaultEstimate <= 0.0d) {
+			return filteredEstimate;
+		}
+		double filteredDefault = applyFilterMultiplier(defaultEstimate, filterApplication, pattern);
+		if (filteredDefault > 0.0d && filteredEstimate > filteredDefault) {
+			return filteredDefault;
+		}
+		return filteredEstimate;
 	}
 
 	private double estimateFilterExistsCardinality(Filter filter, Set<String> boundVars) {
@@ -271,11 +310,32 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		if (context.filters.isEmpty()) {
 			return estimate;
 		}
-		double filterEstimate = fallbackStats.getCardinality(context.filters.get(0));
-		if (filterEstimate > 0.0d && filterEstimate < estimate) {
-			return filterEstimate;
+		Set<String> patternNames = context.pattern.getBindingNames();
+		if (patternNames.isEmpty()) {
+			return estimate;
 		}
-		return estimate;
+		double capped = estimate;
+		for (Filter filter : context.filters) {
+			Set<String> filterVars = VarNameCollector.process(filter.getCondition());
+			if (filterVars.isEmpty()) {
+				continue;
+			}
+			boolean intersects = false;
+			for (String name : filterVars) {
+				if (patternNames.contains(name)) {
+					intersects = true;
+					break;
+				}
+			}
+			if (!intersects) {
+				continue;
+			}
+			double filterEstimate = fallbackStats.getCardinality(filter);
+			if (filterEstimate > 0.0d && filterEstimate < capped) {
+				capped = filterEstimate;
+			}
+		}
+		return capped;
 	}
 
 	private PatternKey buildKey(StatementPattern node, Set<String> boundVars) {
@@ -350,17 +410,94 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		}
 		Set<String> effectiveBound = new HashSet<>(boundVars);
 		Set<String> patternNames = context.pattern.getBindingNames();
+		double multiplier = 1.0d;
 		for (Map.Entry<String, Set<Value>> entry : constraints.bindings.entrySet()) {
 			String name = entry.getKey();
 			if (!patternNames.contains(name)) {
 				continue;
 			}
-			if (effectiveBound.contains(name)) {
+			Set<Value> values = entry.getValue();
+			if (values != null && !values.isEmpty() && !boundVars.contains(name)) {
+				double ratio = values.size() / FILTER_VALUE_CARDINALITY;
+				double selectivity = Math.min(1.0d, Math.max(MIN_FILTER_MULTIPLIER, ratio));
+				if (selectivity < multiplier) {
+					multiplier = selectivity;
+				}
+			}
+		}
+		for (String name : constraints.constrained) {
+			if (!patternNames.contains(name)) {
 				continue;
 			}
-			effectiveBound.add(name);
+			if (!boundVars.contains(name) && MIN_FILTER_MULTIPLIER < multiplier) {
+				multiplier = MIN_FILTER_MULTIPLIER;
+			}
 		}
-		return new FilterApplication(effectiveBound, 1.0d);
+		return new FilterApplication(effectiveBound, multiplier);
+	}
+
+	private FilterApplication applyScanConstraints(PatternContext context, Set<String> boundVars) {
+		FilterConstraints constraints = externalConstraints;
+		for (Filter filter : context.filters) {
+			constraints = constraints.and(extractFilterConstraints(filter.getCondition()));
+		}
+		if (constraints.isEmpty() || constraints.bindings.isEmpty()) {
+			return new FilterApplication(new HashSet<>(boundVars), 1.0d);
+		}
+		Set<String> effectiveBound = new HashSet<>(boundVars);
+		Set<String> patternNames = context.pattern.getBindingNames();
+		double multiplier = 1.0d;
+		for (Map.Entry<String, Set<Value>> entry : constraints.bindings.entrySet()) {
+			String name = entry.getKey();
+			if (!patternNames.contains(name)) {
+				continue;
+			}
+			Set<Value> values = entry.getValue();
+			if (values != null && !values.isEmpty() && !boundVars.contains(name)) {
+				double ratio = values.size() / FILTER_VALUE_CARDINALITY;
+				double selectivity = Math.min(1.0d, Math.max(MIN_FILTER_MULTIPLIER, ratio));
+				if (selectivity < multiplier) {
+					multiplier = selectivity;
+				}
+			}
+		}
+		return new FilterApplication(effectiveBound, multiplier);
+	}
+
+	private FilterConstraints derivePatternConstraints(List<StatementPattern> patterns, FilterConstraints constraints) {
+		if (patterns == null || patterns.isEmpty() || constraints.isEmpty()) {
+			return FilterConstraints.empty();
+		}
+		if (constraints.bindings.isEmpty()) {
+			return FilterConstraints.empty();
+		}
+		Set<String> constrainedNames = constraints.bindings.keySet();
+		Set<String> derived = new HashSet<>();
+		for (StatementPattern pattern : patterns) {
+			Var object = pattern.getObjectVar();
+			if (object == null || object.hasValue()) {
+				continue;
+			}
+			String objectName = object.getName();
+			if (objectName == null || !constrainedNames.contains(objectName)) {
+				continue;
+			}
+			Var subject = pattern.getSubjectVar();
+			if (subject == null || subject.hasValue()) {
+				continue;
+			}
+			String subjectName = subject.getName();
+			if (subjectName != null && typeSubjectNames.contains(subjectName)) {
+				Set<Value> values = constraints.bindings.get(objectName);
+				if (isNonNumericLiteralConstraint(values)) {
+					continue;
+				}
+			}
+			if (subjectName != null && !subjectName.startsWith("_const_")) {
+				derived.add(subjectName);
+			}
+		}
+		return derived.isEmpty() ? FilterConstraints.empty() : FilterConstraints.constrained(derived);
 	}
 
 	private FilterConstraints collectExternalConstraints(List<ValueExpr> filters) {
@@ -378,6 +515,9 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		if (expr instanceof Compare) {
 			return compareConstraints((Compare) expr);
 		}
+		if (expr instanceof ListMemberOperator) {
+			return listMemberConstraints((ListMemberOperator) expr);
+		}
 		if (expr instanceof SameTerm) {
 			SameTerm sameTerm = (SameTerm) expr;
 			return equalityConstraints(sameTerm.getLeftArg(), sameTerm.getRightArg());
@@ -391,6 +531,96 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			return extractFilterConstraints(or.getLeftArg()).or(extractFilterConstraints(or.getRightArg()));
 		}
 		return FilterConstraints.empty();
+	}
+
+	private FilterConstraints listMemberConstraints(ListMemberOperator operator) {
+		List<ValueExpr> args = operator.getArguments();
+		if (args == null || args.size() < 2) {
+			return FilterConstraints.empty();
+		}
+		ValueExpr target = args.get(0);
+		if (!(target instanceof Var)) {
+			return FilterConstraints.empty();
+		}
+		String name = ((Var) target).getName();
+		if (name == null) {
+			return FilterConstraints.empty();
+		}
+		Set<Value> values = new HashSet<>();
+		for (int i = 1; i < args.size(); i++) {
+			ValueExpr candidate = args.get(i);
+			if (candidate instanceof ValueConstant) {
+				values.add(((ValueConstant) candidate).getValue());
+			} else if (candidate instanceof Var) {
+				Var var = (Var) candidate;
+				if (var.hasValue()) {
+					values.add(var.getValue());
+				}
+			}
+		}
+		if (!areNumericValues(values)) {
+			return FilterConstraints.empty();
+		}
+		return FilterConstraints.ofValues(name, values);
+	}
+
+	private boolean areNumericValues(Set<Value> values) {
+		if (values.isEmpty()) {
+			return false;
+		}
+		for (Value value : values) {
+			if (!(value instanceof Literal)) {
+				return false;
+			}
+			Literal literal = (Literal) value;
+			IRI datatype = literal.getDatatype();
+			if (datatype == null || !XMLDatatypeUtil.isNumericDatatype(datatype)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean isNonNumericLiteralConstraint(Set<Value> values) {
+		if (values == null || values.isEmpty()) {
+			return false;
+		}
+		for (Value value : values) {
+			if (!(value instanceof Literal)) {
+				return false;
+			}
+			Literal literal = (Literal) value;
+			IRI datatype = literal.getDatatype();
+			if (datatype != null && XMLDatatypeUtil.isNumericDatatype(datatype)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private Set<String> collectTypeSubjects(List<StatementPattern> patterns) {
+		if (patterns == null || patterns.isEmpty()) {
+			return Set.of();
+		}
+		Set<String> subjects = new HashSet<>();
+		for (StatementPattern pattern : patterns) {
+			Var predicate = pattern.getPredicateVar();
+			if (predicate == null || !predicate.hasValue() || !(predicate.getValue() instanceof IRI)) {
+				continue;
+			}
+			if (!RDF.TYPE.equals(predicate.getValue())) {
+				continue;
+			}
+			Var subject = pattern.getSubjectVar();
+			if (subject == null || subject.hasValue()) {
+				continue;
+			}
+			String name = subject.getName();
+			if (name != null && !name.startsWith("_const_")) {
+				subjects.add(name);
+			}
+		}
+		return subjects.isEmpty() ? Set.of() : subjects;
 	}
 
 	private FilterConstraints compareConstraints(Compare compare) {
@@ -410,6 +640,9 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		}
 		if (rightValue != null && leftVar != null) {
 			return FilterConstraints.of(leftVar.getName(), rightValue);
+		}
+		if (leftVar != null && rightVar != null) {
+			return FilterConstraints.ofVars(leftVar.getName(), rightVar.getName());
 		}
 		return FilterConstraints.empty();
 	}
@@ -439,11 +672,14 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 
 	private double applyFilterMultiplier(double estimate, FilterApplication filterApplication,
 			StatementPattern pattern) {
-		if (filterApplication.multiplier <= 1.0d) {
+		if (filterApplication.multiplier == 1.0d) {
 			return estimate;
 		}
-		double unfiltered = fallbackStats.getCardinality(pattern);
 		double adjusted = estimate * filterApplication.multiplier;
+		if (filterApplication.multiplier < 1.0d) {
+			return Math.max(1.0d, adjusted);
+		}
+		double unfiltered = fallbackStats.getCardinality(pattern);
 		if (unfiltered > 0.0d && adjusted > unfiltered) {
 			return unfiltered;
 		}
@@ -509,12 +745,14 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 	}
 
 	private static final class FilterConstraints {
-		private static final FilterConstraints EMPTY = new FilterConstraints(Map.of());
+		private static final FilterConstraints EMPTY = new FilterConstraints(Map.of(), Set.of());
 
 		private final Map<String, Set<Value>> bindings;
+		private final Set<String> constrained;
 
-		private FilterConstraints(Map<String, Set<Value>> bindings) {
+		private FilterConstraints(Map<String, Set<Value>> bindings, Set<String> constrained) {
 			this.bindings = bindings;
+			this.constrained = constrained;
 		}
 
 		private static FilterConstraints empty() {
@@ -529,11 +767,51 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			Set<Value> values = new HashSet<>();
 			values.add(value);
 			map.put(name, values);
-			return new FilterConstraints(map);
+			Set<String> constrained = new HashSet<>();
+			constrained.add(name);
+			return new FilterConstraints(map, constrained);
+		}
+
+		private static FilterConstraints ofValues(String name, Set<Value> values) {
+			if (name == null || values == null || values.isEmpty()) {
+				return EMPTY;
+			}
+			Map<String, Set<Value>> map = new HashMap<>();
+			map.put(name, new HashSet<>(values));
+			Set<String> constrained = new HashSet<>();
+			constrained.add(name);
+			return new FilterConstraints(map, constrained);
+		}
+
+		private static FilterConstraints ofVars(String left, String right) {
+			if (left == null || right == null) {
+				return EMPTY;
+			}
+			Set<String> constrained = new HashSet<>();
+			constrained.add(left);
+			constrained.add(right);
+			return new FilterConstraints(Map.of(), constrained);
+		}
+
+		private static FilterConstraints constrained(Set<String> names) {
+			if (names == null || names.isEmpty()) {
+				return EMPTY;
+			}
+			Set<String> constrained = new HashSet<>(names);
+			return new FilterConstraints(Map.of(), constrained);
+		}
+
+		private Set<String> constrainedNames() {
+			if (bindings.isEmpty()) {
+				return constrained;
+			}
+			Set<String> names = new HashSet<>(constrained);
+			names.addAll(bindings.keySet());
+			return names;
 		}
 
 		private boolean isEmpty() {
-			return bindings.isEmpty();
+			return bindings.isEmpty() && constrained.isEmpty();
 		}
 
 		private FilterConstraints and(FilterConstraints other) {
@@ -544,6 +822,8 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 				return this;
 			}
 			Map<String, Set<Value>> merged = new HashMap<>();
+			Set<String> mergedConstrained = new HashSet<>(constrained);
+			mergedConstrained.addAll(other.constrained);
 			Set<String> names = new HashSet<>(bindings.keySet());
 			names.addAll(other.bindings.keySet());
 			for (String name : names) {
@@ -562,23 +842,29 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 					merged.put(name, right);
 				}
 			}
-			return new FilterConstraints(merged);
+			return new FilterConstraints(merged, mergedConstrained);
 		}
 
 		private FilterConstraints or(FilterConstraints other) {
 			if (this.isEmpty() || other.isEmpty()) {
 				return EMPTY;
 			}
-			if (!bindings.keySet().equals(other.bindings.keySet())) {
+			Set<String> common = new HashSet<>(constrained);
+			common.retainAll(other.constrained);
+			if (common.isEmpty()) {
 				return EMPTY;
 			}
 			Map<String, Set<Value>> merged = new HashMap<>();
-			for (Map.Entry<String, Set<Value>> entry : bindings.entrySet()) {
-				Set<Value> values = new HashSet<>(entry.getValue());
-				values.addAll(other.bindings.get(entry.getKey()));
-				merged.put(entry.getKey(), values);
+			for (String name : common) {
+				Set<Value> left = bindings.get(name);
+				Set<Value> right = other.bindings.get(name);
+				if (left != null && right != null) {
+					Set<Value> values = new HashSet<>(left);
+					values.addAll(right);
+					merged.put(name, values);
+				}
 			}
-			return new FilterConstraints(merged);
+			return new FilterConstraints(merged, common);
 		}
 	}
 }

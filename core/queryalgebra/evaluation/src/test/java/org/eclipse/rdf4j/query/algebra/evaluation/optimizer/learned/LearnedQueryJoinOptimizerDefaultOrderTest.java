@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -38,6 +39,13 @@ class LearnedQueryJoinOptimizerDefaultOrderTest {
 	private static final String P_B = EX_NS + "pB";
 	private static final String P_C = EX_NS + "pC";
 	private static final Set<String> TARGET_PREDICATES = Set.of(P_A, P_B, P_C);
+	private static final String CYCLE_QUERY = String.join("\n",
+			"PREFIX ex: <http://example.com/>",
+			"SELECT * WHERE {",
+			"  ?a ex:pA ?b .",
+			"  ?b ex:pB ?c .",
+			"  ?c ex:pC ?a .",
+			"}");
 
 	private static final String QUERY = String.join("\n",
 			"PREFIX ex: <http://example.com/>",
@@ -65,6 +73,26 @@ class LearnedQueryJoinOptimizerDefaultOrderTest {
 
 		assertEquals(defaultOrder, learnedOrder,
 				"Learned join ordering should match default when no learned stats exist");
+	}
+
+	@Test
+	void predicateOnlyUnobservedStatsFallbacksToDefaultOrder() throws Exception {
+		SPARQLParser parser = new SPARQLParser();
+		EvaluationStatistics stats = new SkewedEvaluationStatistics();
+
+		ParsedQuery defaultQuery = parser.parseQuery(CYCLE_QUERY, null);
+		QueryJoinOptimizer defaultOptimizer = new QueryJoinOptimizer(stats, new EmptyTripleSource());
+		defaultOptimizer.optimize(defaultQuery.getTupleExpr(), null, null);
+		List<String> defaultOrder = orderedPredicateIris(defaultQuery.getTupleExpr());
+
+		ParsedQuery learnedQuery = parser.parseQuery(CYCLE_QUERY, null);
+		LearnedQueryJoinOptimizer learnedOptimizer = new LearnedQueryJoinOptimizer(stats, new EmptyTripleSource(),
+				new UnobservedJoinStatsProvider());
+		learnedOptimizer.optimize(learnedQuery.getTupleExpr(), null, null);
+		List<String> learnedOrder = orderedPredicateIris(learnedQuery.getTupleExpr());
+
+		assertEquals(defaultOrder, learnedOrder,
+				"Predicate-only patterns without observations should fall back to default ordering");
 	}
 
 	@Test
@@ -122,6 +150,52 @@ class LearnedQueryJoinOptimizerDefaultOrderTest {
 		}
 	}
 
+	private static final class UnobservedJoinStatsProvider implements JoinStatsProvider {
+		private final Map<String, Double> averages = Map.of(
+				P_A, 1000.0d,
+				P_B, 1.0d,
+				P_C, 1000.0d);
+
+		@Override
+		public void reset() {
+		}
+
+		@Override
+		public void recordCall(PatternKey key) {
+		}
+
+		@Override
+		public void recordResults(PatternKey key, long resultCount) {
+		}
+
+		@Override
+		public void seedIfAbsent(PatternKey key, double defaultCardinality, long priorCalls) {
+		}
+
+		@Override
+		public double getAverageResults(PatternKey key) {
+			IRI predicate = key.getPredicate();
+			return predicate == null ? 0.0d : averages.getOrDefault(predicate.stringValue(), 0.0d);
+		}
+
+		@Override
+		public boolean hasStats(PatternKey key) {
+			return key.getBoundMask() == PatternKey.PREDICATE_BOUND
+					&& key.getPredicate() != null
+					&& averages.containsKey(key.getPredicate().stringValue());
+		}
+
+		@Override
+		public long getCalls(PatternKey key) {
+			return 0L;
+		}
+
+		@Override
+		public long getTotalCalls() {
+			return 0;
+		}
+	}
+
 	private static final class FixedEvaluationStatistics extends EvaluationStatistics {
 		@Override
 		public double getCardinality(TupleExpr expr) {
@@ -135,6 +209,33 @@ class LearnedQueryJoinOptimizerDefaultOrderTest {
 				}
 				if (P_C.equals(predicate)) {
 					return 8.0d;
+				}
+			}
+			return super.getCardinality(expr);
+		}
+
+		private String predicate(StatementPattern pattern) {
+			if (pattern.getPredicateVar() == null || !pattern.getPredicateVar().hasValue()
+					|| !(pattern.getPredicateVar().getValue() instanceof IRI)) {
+				return null;
+			}
+			return ((IRI) pattern.getPredicateVar().getValue()).stringValue();
+		}
+	}
+
+	private static final class SkewedEvaluationStatistics extends EvaluationStatistics {
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				String predicate = predicate((StatementPattern) expr);
+				if (P_A.equals(predicate)) {
+					return 1.0d;
+				}
+				if (P_B.equals(predicate)) {
+					return 1000.0d;
+				}
+				if (P_C.equals(predicate)) {
+					return 1000.0d;
 				}
 			}
 			return super.getCardinality(expr);

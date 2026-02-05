@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -111,16 +112,35 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				List<TupleExpr> subSelects = getSubSelects(joinArgs);
 				List<TupleExpr> orderedSubselects = reorderSubselects(subSelects);
 				joinArgs.removeAll(orderedSubselects);
+				List<TupleExpr> bindingAssignments = getBindingSetAssignments(joinArgs);
+				joinArgs.removeAll(bindingAssignments);
 				if (joinArgs.isEmpty()) {
 					plannedOrder = null;
 				} else if (!hasLearnedStats(joinArgs)) {
 					plannedOrder = null;
 				} else {
 					Set<String> initiallyBoundVars = determineInitiallyBoundVars(joinArgs);
-					JoinOrderPlanner planner = plannerFor(node);
+					if (!bindingAssignments.isEmpty()) {
+						Set<String> assignmentVars = new HashSet<>();
+						for (TupleExpr assignment : bindingAssignments) {
+							assignmentVars.addAll(filteredBindingNames(assignment));
+						}
+						if (!assignmentVars.isEmpty()) {
+							initiallyBoundVars.addAll(assignmentVars);
+						}
+					}
+					initiallyBoundVars = retainRelevantBoundVars(initiallyBoundVars, joinArgs);
+					JoinOrderPlanner planner = plannerFor(node, joinArgs);
 					List<TupleExpr> planned = planner.order(joinArgs, initiallyBoundVars);
 					if (isConnectedPlan(planned, initiallyBoundVars)) {
-						plannedOrder = new ArrayDeque<>(planned);
+						if (bindingAssignments.isEmpty()) {
+							plannedOrder = new ArrayDeque<>(planned);
+						} else {
+							List<TupleExpr> combined = new ArrayList<>(bindingAssignments.size() + planned.size());
+							combined.addAll(bindingAssignments);
+							combined.addAll(planned);
+							plannedOrder = new ArrayDeque<>(combined);
+						}
 					} else {
 						plannedOrder = null;
 					}
@@ -196,12 +216,17 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			return null;
 		}
 
-		private JoinOrderPlanner plannerFor(Join node) {
+		private JoinOrderPlanner plannerFor(Join node, List<TupleExpr> joinArgs) {
 			List<ValueExpr> filters = collectAncestorFilters(node);
 			if (filters.isEmpty()) {
 				return joinPlanner;
 			}
-			BindJoinCostModel costModel = new LearnedBindJoinCostModel(statistics, statsProvider, filters);
+			List<StatementPattern> contextPatterns = new ArrayList<>();
+			for (TupleExpr expr : joinArgs) {
+				contextPatterns.addAll(StatementPatternCollector.process(expr));
+			}
+			BindJoinCostModel costModel = new LearnedBindJoinCostModel(statistics, statsProvider, filters,
+					contextPatterns);
 			JoinOrderPlanner greedy = new GreedyBindJoinOrderPlanner(costModel);
 			JoinOrderPlanner dp = new DpLeftDeepBindJoinOrderPlanner(costModel);
 			return new HybridBindJoinOrderPlanner(config, greedy, dp);
@@ -256,6 +281,13 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				return true;
 			}
 			Set<String> bound = initiallyBoundVars == null ? new HashSet<>() : new HashSet<>(initiallyBoundVars);
+			if (!bound.isEmpty()) {
+				Set<String> relevant = new HashSet<>();
+				for (TupleExpr expr : plan) {
+					relevant.addAll(filteredBindingNames(expr));
+				}
+				bound.retainAll(relevant);
+			}
 			for (TupleExpr expr : plan) {
 				Set<String> names = filteredBindingNames(expr);
 				if (!bound.isEmpty() && disjoint(bound, names)) {
@@ -264,6 +296,42 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				bound.addAll(names);
 			}
 			return true;
+		}
+
+		private Set<String> retainRelevantBoundVars(Set<String> boundVars, List<TupleExpr> plan) {
+			if (boundVars == null || boundVars.isEmpty()) {
+				return boundVars;
+			}
+			Set<String> relevant = new HashSet<>();
+			for (TupleExpr expr : plan) {
+				relevant.addAll(filteredBindingNames(expr));
+			}
+			if (relevant.isEmpty()) {
+				return new HashSet<>();
+			}
+			Set<String> filtered = new HashSet<>(boundVars);
+			filtered.retainAll(relevant);
+			return filtered;
+		}
+
+		private List<TupleExpr> getBindingSetAssignments(List<TupleExpr> expressions) {
+			if (expressions.isEmpty()) {
+				return List.of();
+			}
+			List<TupleExpr> assignments = List.of();
+			for (TupleExpr expr : expressions) {
+				if (expr instanceof BindingSetAssignment) {
+					if (assignments.isEmpty()) {
+						assignments = List.of(expr);
+					} else {
+						if (assignments.size() == 1) {
+							assignments = new ArrayList<>(assignments);
+						}
+						assignments.add(expr);
+					}
+				}
+			}
+			return assignments;
 		}
 
 		private Set<String> filteredBindingNames(TupleExpr expr) {
@@ -361,17 +429,17 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		private boolean ensureStats(StatementPattern pattern) {
 			PatternKey key = buildKey(pattern);
 			if (statsProvider.hasStats(key)) {
-				return true;
+				return !isUnobservedPredicateOnly(key);
 			}
 			double defaultEstimate = statistics.getCardinality(pattern);
 			statsProvider.seedIfAbsent(key, defaultEstimate, DEFAULT_PRIOR_CALLS);
-			return statsProvider.hasStats(key);
+			return statsProvider.hasStats(key) && !isUnobservedPredicateOnly(key);
 		}
 
 		private double estimateCardinality(StatementPattern node) {
 			PatternKey key = buildKey(node);
 			double defaultEstimate = statistics.getCardinality(node);
-			if (!statsProvider.hasStats(key)) {
+			if (!statsProvider.hasStats(key) || isUnobservedPredicateOnly(key)) {
 				return defaultEstimate;
 			}
 			statsProvider.seedIfAbsent(key, defaultEstimate, DEFAULT_PRIOR_CALLS);
@@ -402,6 +470,14 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			Value objectValue = objVar != null && objVar.hasValue() ? objVar.getValue() : null;
 			IRI statsPredicate = PatternKeys.predicateKey(predicateKey, objectValue);
 			return new PatternKey(statsPredicate, mask);
+		}
+
+		private boolean isUnobservedPredicateOnly(PatternKey key) {
+			if (key.getBoundMask() != PatternKey.PREDICATE_BOUND) {
+				return false;
+			}
+			long calls = statsProvider.getCalls(key);
+			return calls == 0L;
 		}
 
 		private boolean isBound(Var var) {

@@ -69,6 +69,7 @@ class DpJoinOrderTimingHarnessTest {
 	private static final int AVERAGE_WINDOW = 20;
 	private static final int EXPLAIN_TIMEOUT_SECONDS = 10;
 	private static final int HIGHLY_CONNECTED_EXPLAIN_ITERATIONS = 20;
+	private static final int STABILITY_ITERATIONS = 6;
 	private static final String ANSI_RESET = "\u001B[0m";
 	private static final String ANSI_GREEN = "\u001B[32m";
 	private static final String ANSI_RED = "\u001B[31m";
@@ -88,6 +89,11 @@ class DpJoinOrderTimingHarnessTest {
 	@Test
 	void electricalGridQuery4() throws IOException {
 		runScenario(Theme.ELECTRICAL_GRID, 4, "ELECTRICAL_GRID #4");
+	}
+
+	@Test
+	void electricalGridQuery4PlanStable() throws IOException {
+		assertPlanStable(Theme.ELECTRICAL_GRID, 4, STABILITY_ITERATIONS);
 	}
 
 	@Test
@@ -127,6 +133,40 @@ class DpJoinOrderTimingHarnessTest {
 	private void runScenario(Theme theme, int queryIndex, String label) throws IOException {
 		runWithDpSetting(theme, queryIndex, label, true);
 		runWithDpSetting(theme, queryIndex, label, false);
+	}
+
+	private void assertPlanStable(Theme theme, int queryIndex, int iterations) throws IOException {
+		File scenarioDir = new File(dataDir, theme.name() + "_stability");
+		SailRepository repository = createRepository(scenarioDir, true);
+		try {
+			loadData(repository, theme);
+			String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
+			long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
+			List<String> baseline = null;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (int i = 0; i < iterations; i++) {
+					TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+					long count = executeCount(tupleQuery);
+					if (count != expected) {
+						throw new IllegalStateException(
+								"Unexpected count for " + theme + " #" + queryIndex + ": expected " + expected
+										+ " but got " + count);
+					}
+					TupleQuery explainQuery = connection.prepareTupleQuery(query);
+					explainQuery.setMaxExecutionTime(EXPLAIN_TIMEOUT_SECONDS);
+					Explanation explanation = explainQuery.explain(Explanation.Level.Executed);
+					List<String> signature = joinOrderSignature(explanation);
+					if (baseline == null) {
+						baseline = signature;
+					} else if (!baseline.equals(signature)) {
+						throw new AssertionError("Join order drift for " + theme + " #" + queryIndex + " at iteration "
+								+ (i + 1) + ": expected " + baseline + " but got " + signature);
+					}
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	private void runExplainEvolution(Theme theme, int queryIndex, String label, boolean enableDp) throws IOException {

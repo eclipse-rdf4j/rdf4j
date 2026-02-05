@@ -64,10 +64,10 @@ class EngineeringQueryPlanRegressionTest {
 		repository.init();
 		try {
 			loadData(repository);
-			assertTypeFirst(repository, Theme.ENGINEERING, 4);
+			assertNameFirst(repository, Theme.ENGINEERING, 4);
 			assertExistsFilterRunsAfterNameFilter(repository, Theme.ENGINEERING, 4);
-			assertTypeFirst(repository, Theme.ENGINEERING, 7);
-			assertTypeFirst(repository, Theme.ENGINEERING, 10);
+			assertNameFirst(repository, Theme.ENGINEERING, 7);
+			assertNameFirst(repository, Theme.ENGINEERING, 10);
 		} finally {
 			repository.shutDown();
 		}

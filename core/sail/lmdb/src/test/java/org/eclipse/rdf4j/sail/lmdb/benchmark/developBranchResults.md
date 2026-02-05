@@ -1,12 +1,89 @@
-Benchmark                         (themeName)  (z_queryIndex)  Mode  Cnt    Score   Error  Units
-ThemeQueryBenchmark.executeQuery       ENGINEERING               0  avgt    2     233.185          ms/op
-ThemeQueryBenchmark.executeQuery       ENGINEERING               1  avgt    2     303.684          ms/op
-ThemeQueryBenchmark.executeQuery       ENGINEERING               2  avgt    2       1.289          ms/op
-ThemeQueryBenchmark.executeQuery       ENGINEERING               3  avgt    2     150.705          ms/op
-ThemeQueryBenchmark.executeQuery       ENGINEERING               4  avgt    2      60.455          ms/op
-ThemeQueryBenchmark.executeQuery       ENGINEERING               5  avgt    2       2.357          ms/op
-ThemeQueryBenchmark.executeQuery       ENGINEERING               6  avgt    2     248.904          ms/op
-ThemeQueryBenchmark.executeQuery       ENGINEERING               7  avgt    2       4.436          ms/op
-ThemeQueryBenchmark.executeQuery       ENGINEERING               8  avgt    2       2.528          ms/op
-ThemeQueryBenchmark.executeQuery       ENGINEERING               9  avgt    2       3.786          ms/op
-ThemeQueryBenchmark.executeQuery       ENGINEERING              10  avgt    2       1.922          ms/op
+Benchmark                              (themeName)  (z_queryIndex)  Mode  Cnt       Score   Error  Units
+ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS               0  avgt           51.256          ms/op
+ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS               1  avgt          186.645          ms/op
+ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS               2  avgt           50.005          ms/op
+ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS               3  avgt           98.563          ms/op
+ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS               4  avgt          121.535          ms/op
+ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS               5  avgt           64.928          ms/op
+ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS               6  avgt           61.191          ms/op
+ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS               7  avgt           51.656          ms/op
+ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS               8  avgt           58.814          ms/op
+ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS               9  avgt          272.421          ms/op
+ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS              10  avgt    2  293429.747          ms/op
+ThemeQueryBenchmark.executeQuery      SOCIAL_MEDIA               0  avgt            0.061          ms/op
+ThemeQueryBenchmark.executeQuery      SOCIAL_MEDIA               1  avgt            6.016          ms/op
+ThemeQueryBenchmark.executeQuery      SOCIAL_MEDIA               2  avgt            0.076          ms/op
+ThemeQueryBenchmark.executeQuery      SOCIAL_MEDIA               3  avgt            0.069          ms/op
+ThemeQueryBenchmark.executeQuery      SOCIAL_MEDIA               4  avgt            0.087          ms/op
+ThemeQueryBenchmark.executeQuery      SOCIAL_MEDIA               5  avgt          861.699          ms/op
+ThemeQueryBenchmark.executeQuery      SOCIAL_MEDIA               6  avgt            0.088          ms/op
+ThemeQueryBenchmark.executeQuery      SOCIAL_MEDIA               7  avgt            5.986          ms/op
+ThemeQueryBenchmark.executeQuery      SOCIAL_MEDIA               8  avgt          737.210          ms/op
+ThemeQueryBenchmark.executeQuery      SOCIAL_MEDIA               9  avgt            5.751          ms/op
+ThemeQueryBenchmark.executeQuery      SOCIAL_MEDIA              10  avgt            2.608          ms/op
+ThemeQueryBenchmark.executeQuery           LIBRARY               0  avgt          665.671          ms/op
+ThemeQueryBenchmark.executeQuery           LIBRARY               1  avgt          254.135          ms/op
+ThemeQueryBenchmark.executeQuery           LIBRARY               2  avgt           36.678          ms/op
+ThemeQueryBenchmark.executeQuery           LIBRARY               3  avgt           42.249          ms/op
+ThemeQueryBenchmark.executeQuery           LIBRARY               4  avgt          120.662          ms/op
+ThemeQueryBenchmark.executeQuery           LIBRARY               5  avgt            9.535          ms/op
+ThemeQueryBenchmark.executeQuery           LIBRARY               6  avgt        23784.702          ms/op
+ThemeQueryBenchmark.executeQuery           LIBRARY               7  avgt        91930.684          ms/op
+ThemeQueryBenchmark.executeQuery           LIBRARY               8  avgt           74.209          ms/op
+ThemeQueryBenchmark.executeQuery           LIBRARY               9  avgt          151.046          ms/op
+ThemeQueryBenchmark.executeQuery           LIBRARY              10  avgt          183.888          ms/op
+ThemeQueryBenchmark.executeQuery       ENGINEERING               0  avgt          233.185          ms/op
+ThemeQueryBenchmark.executeQuery       ENGINEERING               1  avgt          303.684          ms/op
+ThemeQueryBenchmark.executeQuery       ENGINEERING               2  avgt            1.289          ms/op
+ThemeQueryBenchmark.executeQuery       ENGINEERING               3  avgt          150.705          ms/op
+ThemeQueryBenchmark.executeQuery       ENGINEERING               4  avgt           60.455          ms/op
+ThemeQueryBenchmark.executeQuery       ENGINEERING               5  avgt            2.357          ms/op
+ThemeQueryBenchmark.executeQuery       ENGINEERING               6  avgt          248.904          ms/op
+ThemeQueryBenchmark.executeQuery       ENGINEERING               7  avgt            4.436          ms/op
+ThemeQueryBenchmark.executeQuery       ENGINEERING               8  avgt            2.528          ms/op
+ThemeQueryBenchmark.executeQuery       ENGINEERING               9  avgt            3.786          ms/op
+ThemeQueryBenchmark.executeQuery       ENGINEERING              10  avgt            1.922          ms/op
+ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               0  avgt          323.203          ms/op
+ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               1  avgt         1165.947          ms/op
+ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               2  avgt          548.036          ms/op
+ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               3  avgt           99.026          ms/op
+ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               4  avgt          248.351          ms/op
+ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               5  avgt          109.557          ms/op
+ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               6  avgt         1463.763          ms/op
+ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               7  avgt          152.188          ms/op
+ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               8  avgt         1170.030          ms/op
+ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               9  avgt         1481.964          ms/op
+ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED              10  avgt       126334.595          ms/op
+ThemeQueryBenchmark.executeQuery             TRAIN               0  avgt           37.937          ms/op
+ThemeQueryBenchmark.executeQuery             TRAIN               1  avgt           86.435          ms/op
+ThemeQueryBenchmark.executeQuery             TRAIN               2  avgt            8.738          ms/op
+ThemeQueryBenchmark.executeQuery             TRAIN               3  avgt          162.916          ms/op
+ThemeQueryBenchmark.executeQuery             TRAIN               4  avgt          138.137          ms/op
+ThemeQueryBenchmark.executeQuery             TRAIN               5  avgt           26.519          ms/op
+ThemeQueryBenchmark.executeQuery             TRAIN               6  avgt           97.552          ms/op
+ThemeQueryBenchmark.executeQuery             TRAIN               7  avgt           51.524          ms/op
+ThemeQueryBenchmark.executeQuery             TRAIN               8  avgt          269.601          ms/op
+ThemeQueryBenchmark.executeQuery             TRAIN               9  avgt          262.040          ms/op
+ThemeQueryBenchmark.executeQuery             TRAIN              10  avgt          226.000          ms/op
+ThemeQueryBenchmark.executeQuery   ELECTRICAL_GRID               0  avgt           42.103          ms/op
+ThemeQueryBenchmark.executeQuery   ELECTRICAL_GRID               1  avgt           87.022          ms/op
+ThemeQueryBenchmark.executeQuery   ELECTRICAL_GRID               2  avgt            4.939          ms/op
+ThemeQueryBenchmark.executeQuery   ELECTRICAL_GRID               3  avgt          328.922          ms/op
+ThemeQueryBenchmark.executeQuery   ELECTRICAL_GRID               4  avgt            4.621          ms/op
+ThemeQueryBenchmark.executeQuery   ELECTRICAL_GRID               5  avgt           11.560          ms/op
+ThemeQueryBenchmark.executeQuery   ELECTRICAL_GRID               6  avgt           95.600          ms/op
+ThemeQueryBenchmark.executeQuery   ELECTRICAL_GRID               7  avgt           19.453          ms/op
+ThemeQueryBenchmark.executeQuery   ELECTRICAL_GRID               8  avgt           13.925          ms/op
+ThemeQueryBenchmark.executeQuery   ELECTRICAL_GRID               9  avgt            5.615          ms/op
+ThemeQueryBenchmark.executeQuery   ELECTRICAL_GRID              10  avgt          524.353          ms/op
+ThemeQueryBenchmark.executeQuery            PHARMA               0  avgt            0.303          ms/op
+ThemeQueryBenchmark.executeQuery            PHARMA               1  avgt            1.736          ms/op
+ThemeQueryBenchmark.executeQuery            PHARMA               2  avgt           39.557          ms/op
+ThemeQueryBenchmark.executeQuery            PHARMA               3  avgt           14.988          ms/op
+ThemeQueryBenchmark.executeQuery            PHARMA               4  avgt           31.892          ms/op
+ThemeQueryBenchmark.executeQuery            PHARMA               5  avgt            0.408          ms/op
+ThemeQueryBenchmark.executeQuery            PHARMA               6  avgt            5.374          ms/op
+ThemeQueryBenchmark.executeQuery            PHARMA               7  avgt           22.562          ms/op
+ThemeQueryBenchmark.executeQuery            PHARMA               8  avgt           32.379          ms/op
+ThemeQueryBenchmark.executeQuery            PHARMA               9  avgt           18.538          ms/op
+ThemeQueryBenchmark.executeQuery            PHARMA              10  avgt        13561.666          ms/op

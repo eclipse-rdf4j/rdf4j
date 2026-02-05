@@ -15,6 +15,7 @@ import java.util.Comparator;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -31,6 +32,25 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
  */
 public class LearningTripleSource implements TripleSource {
 
+	private static final int DEFAULT_SAMPLE_RATE = 8;
+	private static final int SAMPLE_RATE = Integer.getInteger("rdf4j.learned.stats.sampleRate", DEFAULT_SAMPLE_RATE);
+	private static final AtomicLong SAMPLE_COUNTER = new AtomicLong();
+	private static final long HOT_KEY_CALL_THRESHOLD = Long.getLong("rdf4j.learned.stats.hotKeyCalls", 256L);
+	private static final double HOT_KEY_RESULT_THRESHOLD = parseDoubleProperty(
+			"rdf4j.learned.stats.hotKeyResults", 100_000d);
+
+	private static double parseDoubleProperty(String name, double defaultValue) {
+		String value = System.getProperty(name);
+		if (value == null) {
+			return defaultValue;
+		}
+		try {
+			return Double.parseDouble(value);
+		} catch (NumberFormatException e) {
+			return defaultValue;
+		}
+	}
+
 	protected final TripleSource delegate;
 	protected final JoinStatsProvider statsProvider;
 
@@ -42,16 +62,22 @@ public class LearningTripleSource implements TripleSource {
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) {
-		PatternKey key = buildKey(subj, pred, obj);
 		CloseableIteration<? extends Statement> base = delegate.getStatements(subj, pred, obj, contexts);
+		PatternKey key = keyForRecording(subj, pred, obj);
+		if (key == null) {
+			return base;
+		}
 		return new CountingIteration<>(base, statsProvider, key);
 	}
 
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subj, IRI pred,
 			Value obj, Resource... contexts) {
-		PatternKey key = buildKey(subj, pred, obj);
 		CloseableIteration<? extends Statement> base = delegate.getStatements(order, subj, pred, obj, contexts);
+		PatternKey key = keyForRecording(subj, pred, obj);
+		if (key == null) {
+			return base;
+		}
 		return new CountingIteration<>(base, statsProvider, key);
 	}
 
@@ -83,6 +109,44 @@ public class LearningTripleSource implements TripleSource {
 		}
 		IRI predicateKey = PatternKeys.predicateKey(pred, obj);
 		return new PatternKey(predicateKey, mask);
+	}
+
+	private PatternKey keyForRecording(Resource subj, IRI pred, Value obj) {
+		if (pred != null && subj == null && obj == null) {
+			return null;
+		}
+		if (!shouldSample()) {
+			return null;
+		}
+		PatternKey key = buildKey(subj, pred, obj);
+		if (isHotKey(key)) {
+			return null;
+		}
+		return key;
+	}
+
+	private boolean isHotKey(PatternKey key) {
+		if (HOT_KEY_CALL_THRESHOLD <= 0L || HOT_KEY_RESULT_THRESHOLD <= 0.0d) {
+			return false;
+		}
+		if (!statsProvider.hasStats(key)) {
+			return false;
+		}
+		long calls = statsProvider.getCalls(key);
+		if (calls < 0L || calls < HOT_KEY_CALL_THRESHOLD) {
+			return false;
+		}
+		return statsProvider.getAverageResults(key) >= HOT_KEY_RESULT_THRESHOLD;
+	}
+
+	private static boolean shouldSample() {
+		if (SAMPLE_RATE <= 0) {
+			return false;
+		}
+		if (SAMPLE_RATE == 1) {
+			return true;
+		}
+		return SAMPLE_COUNTER.getAndIncrement() % SAMPLE_RATE == 0;
 	}
 
 	protected static final class CountingIteration<T> extends AbstractCloseableIteration<T> {

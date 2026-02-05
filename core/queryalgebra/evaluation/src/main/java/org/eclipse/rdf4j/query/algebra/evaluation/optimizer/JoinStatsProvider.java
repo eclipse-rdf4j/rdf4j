@@ -40,6 +40,13 @@ public interface JoinStatsProvider {
 
 	boolean hasStats(PatternKey key);
 
+	/**
+	 * Returns the number of observed calls for the given key, or a negative value when unavailable.
+	 */
+	default long getCalls(PatternKey key) {
+		return -1L;
+	}
+
 	long getTotalCalls();
 
 	/**

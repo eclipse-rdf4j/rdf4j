@@ -53,17 +53,55 @@ class LearningTripleSourceStatsTest {
 	}
 
 	@Test
-	void iterationRecordsFullCounts() throws QueryEvaluationException {
+	void predicateOnlyPatternsSkipStats() throws QueryEvaluationException {
 		MemoryJoinStats stats = new MemoryJoinStats(InvalidationSettings.disabled());
 		LearningTripleSource source = new LearningTripleSource(new StubTripleSource(3, PREDICATE), stats);
 
-		try (CloseableIteration<? extends Statement> iter = source.getStatements(null, PREDICATE, null)) {
-			while (iter.hasNext()) {
-				iter.next();
+		for (int i = 0; i < 32; i++) {
+			try (CloseableIteration<? extends Statement> iter = source.getStatements(null, PREDICATE, null)) {
+				while (iter.hasNext()) {
+					iter.next();
+				}
 			}
 		}
 
 		PatternKey key = new PatternKey(PREDICATE, PatternKey.PREDICATE_BOUND);
+		assertFalse(stats.hasStats(key), "Predicate-only patterns should not record learned stats");
+	}
+
+	@Test
+	void hotKeySkipsRecording() throws QueryEvaluationException {
+		HotKeyJoinStatsProvider stats = new HotKeyJoinStatsProvider();
+		LearningTripleSource source = new LearningTripleSource(new StubTripleSource(3, PREDICATE), stats);
+		Resource subject = VF.createIRI("urn:test:s0");
+
+		for (int i = 0; i < 8; i++) {
+			try (CloseableIteration<? extends Statement> iter = source.getStatements(subject, PREDICATE, null)) {
+				while (iter.hasNext()) {
+					iter.next();
+				}
+			}
+		}
+
+		assertEquals(0, stats.recordedCalls(), "Hot keys should skip stats recording");
+		assertEquals(0, stats.recordedResults(), "Hot keys should skip stats recording");
+	}
+
+	@Test
+	void iterationRecordsFullCounts() throws QueryEvaluationException {
+		MemoryJoinStats stats = new MemoryJoinStats(InvalidationSettings.disabled());
+		LearningTripleSource source = new LearningTripleSource(new StubTripleSource(3, PREDICATE), stats);
+		Resource subject = VF.createIRI("urn:test:s0");
+
+		for (int i = 0; i < 32; i++) {
+			try (CloseableIteration<? extends Statement> iter = source.getStatements(subject, PREDICATE, null)) {
+				while (iter.hasNext()) {
+					iter.next();
+				}
+			}
+		}
+
+		PatternKey key = new PatternKey(PREDICATE, PatternKey.SUBJECT_BOUND | PatternKey.PREDICATE_BOUND);
 		assertTrue(stats.hasStats(key), "Expected learned stats for fully iterated patterns");
 		assertEquals(3.0d, stats.getAverageResults(key));
 	}
@@ -106,6 +144,59 @@ class LearningTripleSourceStatsTest {
 		@Override
 		public Comparator<Value> getComparator() {
 			return Comparator.comparing(Value::stringValue);
+		}
+	}
+
+	private static final class HotKeyJoinStatsProvider implements JoinStatsProvider {
+		private int calls;
+		private int results;
+
+		@Override
+		public void reset() {
+			calls = 0;
+			results = 0;
+		}
+
+		@Override
+		public void recordCall(PatternKey key) {
+			calls++;
+		}
+
+		@Override
+		public void recordResults(PatternKey key, long resultCount) {
+			results++;
+		}
+
+		@Override
+		public void seedIfAbsent(PatternKey key, double defaultCardinality, long priorCalls) {
+		}
+
+		@Override
+		public double getAverageResults(PatternKey key) {
+			return Double.MAX_VALUE;
+		}
+
+		@Override
+		public boolean hasStats(PatternKey key) {
+			return true;
+		}
+
+		@Override
+		public long getCalls(PatternKey key) {
+			return Long.MAX_VALUE;
+		}
+
+		@Override
+		public long getTotalCalls() {
+			return calls;
+		}
+
+		private int recordedCalls() {
+			return calls;
+		}
+
+		private int recordedResults() {
+			return results;
 		}
 	}
 }

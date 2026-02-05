@@ -157,7 +157,7 @@ public class MemoryJoinStats implements JoinStatsProvider {
 
 	@Override
 	public void recordCall(PatternKey key) {
-		stats.computeIfAbsent(key, ignored -> new Stats(0, 0, 0.0d)).calls.increment();
+		statsFor(key).calls.increment();
 	}
 
 	@Override
@@ -165,7 +165,17 @@ public class MemoryJoinStats implements JoinStatsProvider {
 		if (resultCount < 0) {
 			resultCount = 0;
 		}
-		stats.computeIfAbsent(key, ignored -> new Stats(0, 0, 0.0d)).recordResults(resultCount);
+		statsFor(key).recordResults(resultCount);
+	}
+
+	private Stats statsFor(PatternKey key) {
+		Stats entry = stats.get(key);
+		if (entry != null) {
+			return entry;
+		}
+		Stats created = new Stats(0, 0, 0.0d);
+		Stats existing = stats.putIfAbsent(key, created);
+		return existing != null ? existing : created;
 	}
 
 	@Override
@@ -201,6 +211,12 @@ public class MemoryJoinStats implements JoinStatsProvider {
 	@Override
 	public boolean hasStats(PatternKey key) {
 		return stats.containsKey(key);
+	}
+
+	@Override
+	public long getCalls(PatternKey key) {
+		Stats entry = stats.get(key);
+		return entry == null ? 0L : entry.actualCalls();
 	}
 
 	@Override

@@ -357,6 +357,6 @@ class LearnedBindJoinCostModelTest {
 
 		double estimate = costModel.estimateFanout(pattern, Set.of());
 
-		assertEquals(2.0d, estimate);
+		assertEquals(1.0d, estimate);
 	}
 }
