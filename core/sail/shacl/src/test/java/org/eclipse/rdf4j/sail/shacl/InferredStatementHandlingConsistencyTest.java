@@ -12,30 +12,39 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.util.ArrayDeque;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.Targetable;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BindSelect;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterByQuery;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterByPredicateObject;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
+import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetChainRetriever;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -46,7 +55,9 @@ class InferredStatementHandlingConsistencyTest {
 	private static final IRI TARGET = Values.iri("urn:target");
 	private static final IRI P = Values.iri("urn:p");
 	private static final IRI P_SUB = Values.iri("urn:pSub");
+	private static final IRI DOMAIN_P = Values.iri("urn:domainP");
 	private static final IRI O = Values.iri("urn:o");
+	private static final IRI C = Values.iri("urn:c");
 
 	@Test
 	void externalFilterByQueryShouldUseConnectionsGroupIncludeInferredStatements() {
@@ -103,6 +114,182 @@ class InferredStatementHandlingConsistencyTest {
 
 				Assertions.assertEquals(0, countTuples(bindSelect),
 						"Expected inferred statements to be hidden when includeInferredStatements is disabled");
+			}
+		}
+	}
+
+	@Test
+	void filterByPredicateObjectShouldIncludeInferredTypeStatementsWhenReasonerEnabled() {
+		try (TestSailContext context = TestSailContext.withInferredTypeFromDomain()) {
+			try (ConnectionsGroup connectionsGroup = context.connectionsGroup(true, new RdfsSubClassOfReasoner())) {
+				PlanNode parent = new SingletonPlanNode(
+						new ValidationTuple(TARGET, ConstraintComponent.Scope.nodeShape, false, ALL_CONTEXTS));
+
+				PlanNode accepted = new FilterByPredicateObject(
+						connectionsGroup.getBaseConnection(),
+						ALL_CONTEXTS,
+						RDF.TYPE,
+						Set.of(C),
+						parent,
+						true,
+						FilterByPredicateObject.FilterOn.activeTarget,
+						connectionsGroup.isIncludeInferredStatements(),
+						connectionsGroup
+				);
+
+				Assertions.assertEquals(1, countTuples(accepted),
+						"Expected inferred rdf:type statements to be visible when includeInferredStatements is enabled");
+			}
+		}
+	}
+
+	@Test
+	void targetChainRetrieverShouldSeeInferredStatementsInAddedStatementsDelta() {
+		MemoryStore baseStore = new MemoryStore();
+		baseStore.init();
+
+		NotifyingSail addedStatements = new SchemaCachingRDFSInferencer(new MemoryStore(), false);
+		addedStatements.init();
+
+		try (SailConnection baseConnection = baseStore.getConnection()) {
+			baseConnection.begin(IsolationLevels.NONE);
+			baseConnection.addStatement(TARGET, P, O);
+			baseConnection.commit();
+			baseConnection.begin(IsolationLevels.NONE);
+
+			try (InferencerConnection addedConnection = (InferencerConnection) addedStatements.getConnection()) {
+				addedConnection.begin(IsolationLevels.NONE);
+				addedConnection.addInferredStatement(TARGET, P, O, (Resource) null);
+				addedConnection.commit();
+			}
+
+			try (SailConnection checkConnection = addedStatements.getConnection()) {
+				checkConnection.begin(IsolationLevels.NONE);
+				Assertions.assertTrue(checkConnection.hasStatement(TARGET, P, O, true, (Resource) null),
+						"Sanity check: expected inferred statement in added-statements delta to exist");
+				Assertions.assertFalse(checkConnection.hasStatement(TARGET, P, O, false, (Resource) null),
+						"Sanity check: expected inferred statement to be hidden when includeInferred=false");
+				checkConnection.commit();
+			}
+
+			ShaclSailConnection.Settings transactionSettings = new ShaclSailConnection.Settings(false, true, false,
+					IsolationLevels.NONE);
+
+			try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(baseConnection, null, addedStatements, null,
+					new Stats(), null, true, transactionSettings, true)) {
+				StatementMatcher statementMatcher = new StatementMatcher(
+						new StatementMatcher.Variable<>("this"),
+						new StatementMatcher.Variable<>(P),
+						new StatementMatcher.Variable<>(O),
+						null,
+						Set.of());
+
+				SparqlFragment query = SparqlFragment.bgp(List.of(),
+						StatementMatcher.Variable.THIS.asSparqlVariable() + " <urn:p> <urn:o> .",
+						false);
+
+				PlanNode retriever = new TargetChainRetriever(
+						connectionsGroup,
+						new Resource[] { null },
+						List.of(statementMatcher),
+						null,
+						null,
+						query,
+						List.of(StatementMatcher.Variable.THIS),
+						ConstraintComponent.Scope.nodeShape,
+						false);
+
+				Assertions.assertEquals(1, countTuples(retriever),
+						"Expected inferred statements in the delta store to be visible to target-chain retrieval");
+			}
+		} finally {
+			try {
+				addedStatements.shutDown();
+			} finally {
+				baseStore.shutDown();
+			}
+		}
+	}
+
+	@Test
+	void effectiveTargetCouldMatchShouldSeeInferredStatementsInAddedStatementsDelta() {
+		MemoryStore baseStore = new MemoryStore();
+		baseStore.init();
+
+		NotifyingSail addedStatements = new SchemaCachingRDFSInferencer(new MemoryStore(), false);
+		addedStatements.init();
+
+		MemoryStore removedStatements = new MemoryStore();
+		removedStatements.init();
+
+		try (SailConnection baseConnection = baseStore.getConnection()) {
+			baseConnection.begin(IsolationLevels.NONE);
+
+			try (InferencerConnection addedConnection = (InferencerConnection) addedStatements.getConnection()) {
+				addedConnection.begin(IsolationLevels.NONE);
+				addedConnection.addInferredStatement(TARGET, P, O, (Resource) null);
+				addedConnection.commit();
+			}
+
+			try (SailConnection checkConnection = addedStatements.getConnection()) {
+				checkConnection.begin(IsolationLevels.NONE);
+				Assertions.assertTrue(checkConnection.hasStatement(TARGET, P, O, true, (Resource) null),
+						"Sanity check: expected inferred statement in added-statements delta to exist");
+				Assertions.assertFalse(checkConnection.hasStatement(TARGET, P, O, false, (Resource) null),
+						"Sanity check: expected inferred statement to be hidden when includeInferred=false");
+				checkConnection.commit();
+			}
+
+			ShaclSailConnection.Settings transactionSettings = new ShaclSailConnection.Settings(false, true, false,
+					IsolationLevels.NONE);
+
+			try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(baseConnection, null, addedStatements,
+					removedStatements,
+					new Stats(), null, true, transactionSettings, true)) {
+
+				Targetable targetable = new Targetable() {
+					@Override
+					public SparqlFragment getTargetQueryFragment(StatementMatcher.Variable subject,
+							StatementMatcher.Variable object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+							StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider,
+							Set<String> inheritedVarNames) {
+						StatementMatcher.Variable targetVariable = subject != null ? subject : object;
+						StatementMatcher statementMatcher = new StatementMatcher(
+								targetVariable,
+								new StatementMatcher.Variable<>(P),
+								new StatementMatcher.Variable<>(O),
+								null,
+								inheritedVarNames);
+
+						return SparqlFragment.bgp(List.of(),
+								targetVariable.asSparqlVariable() + " <urn:p> <urn:o> .",
+								statementMatcher);
+					}
+
+					@Override
+					public Set<Namespace> getNamespaces() {
+						return Set.of();
+					}
+				};
+
+				ArrayDeque<Targetable> chain = new ArrayDeque<>();
+				chain.add(targetable);
+
+				EffectiveTarget effectiveTarget = new EffectiveTarget(chain, null, null,
+						new StatementMatcher.StableRandomVariableProvider());
+
+				Assertions.assertTrue(effectiveTarget.couldMatch(connectionsGroup, new Resource[] { null }),
+						"Expected couldMatch() to see inferred statements in the delta store when includeInferredStatements is enabled");
+			}
+		} finally {
+			try {
+				removedStatements.shutDown();
+			} finally {
+				try {
+					addedStatements.shutDown();
+				} finally {
+					baseStore.shutDown();
+				}
 			}
 		}
 	}
@@ -218,11 +405,38 @@ class InferredStatementHandlingConsistencyTest {
 			return new TestSailContext(sail, connection);
 		}
 
+		static TestSailContext withInferredTypeFromDomain() {
+			MemoryStore memoryStore = new MemoryStore();
+			NotifyingSail sail = new SchemaCachingRDFSInferencer(memoryStore, false);
+			sail.init();
+
+			SailConnection connection = sail.getConnection();
+			connection.begin(IsolationLevels.NONE);
+			connection.addStatement(DOMAIN_P, RDFS.DOMAIN, C);
+			connection.addStatement(TARGET, DOMAIN_P, O);
+			connection.commit();
+
+			connection.begin(IsolationLevels.NONE);
+			Assertions.assertTrue(connection.hasStatement(TARGET, RDF.TYPE, C, true),
+					"Sanity check: expected inferred rdf:type statement to exist");
+			Assertions.assertFalse(connection.hasStatement(TARGET, RDF.TYPE, C, false),
+					"Sanity check: expected inferred rdf:type statement to be hidden when includeInferred=false");
+
+			return new TestSailContext(sail, connection);
+		}
+
 		ConnectionsGroup connectionsGroup(boolean includeInferredStatements) {
 			ShaclSailConnection.Settings transactionSettings = new ShaclSailConnection.Settings(false, true, false,
 					IsolationLevels.NONE);
 			return new ConnectionsGroup(connection, null, null, null, new Stats(), null, includeInferredStatements,
 					transactionSettings, true);
+		}
+
+		ConnectionsGroup connectionsGroup(boolean includeInferredStatements, RdfsSubClassOfReasoner reasoner) {
+			ShaclSailConnection.Settings transactionSettings = new ShaclSailConnection.Settings(false, true, false,
+					IsolationLevels.NONE);
+			return new ConnectionsGroup(connection, null, null, null, new Stats(), () -> reasoner,
+					includeInferredStatements, transactionSettings, true);
 		}
 
 		@Override
