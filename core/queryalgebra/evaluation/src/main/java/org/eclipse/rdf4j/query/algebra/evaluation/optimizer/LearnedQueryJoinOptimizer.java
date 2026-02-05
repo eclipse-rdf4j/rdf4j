@@ -114,22 +114,22 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				joinArgs.removeAll(orderedSubselects);
 				List<TupleExpr> bindingAssignments = getBindingSetAssignments(joinArgs);
 				joinArgs.removeAll(bindingAssignments);
+				Set<String> initiallyBoundVars = determineInitiallyBoundVars(joinArgs);
+				if (!bindingAssignments.isEmpty()) {
+					Set<String> assignmentVars = new HashSet<>();
+					for (TupleExpr assignment : bindingAssignments) {
+						assignmentVars.addAll(filteredBindingNames(assignment));
+					}
+					if (!assignmentVars.isEmpty()) {
+						initiallyBoundVars.addAll(assignmentVars);
+					}
+				}
+				initiallyBoundVars = retainRelevantBoundVars(initiallyBoundVars, joinArgs);
 				if (joinArgs.isEmpty()) {
 					plannedOrder = null;
-				} else if (!hasLearnedStats(joinArgs)) {
+				} else if (!hasLearnedStats(joinArgs, initiallyBoundVars)) {
 					plannedOrder = null;
 				} else {
-					Set<String> initiallyBoundVars = determineInitiallyBoundVars(joinArgs);
-					if (!bindingAssignments.isEmpty()) {
-						Set<String> assignmentVars = new HashSet<>();
-						for (TupleExpr assignment : bindingAssignments) {
-							assignmentVars.addAll(filteredBindingNames(assignment));
-						}
-						if (!assignmentVars.isEmpty()) {
-							initiallyBoundVars.addAll(assignmentVars);
-						}
-					}
-					initiallyBoundVars = retainRelevantBoundVars(initiallyBoundVars, joinArgs);
 					JoinOrderPlanner planner = plannerFor(node, joinArgs);
 					List<TupleExpr> planned = planner.order(joinArgs, initiallyBoundVars);
 					if (isConnectedPlan(planned, initiallyBoundVars)) {
@@ -408,17 +408,17 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			return extensions;
 		}
 
-		private boolean hasLearnedStats(List<TupleExpr> expressions) {
+		private boolean hasLearnedStats(List<TupleExpr> expressions, Set<String> initiallyBoundVars) {
 			boolean seeded = false;
 			for (TupleExpr expr : expressions) {
 				if (expr instanceof StatementPattern) {
-					if (ensureStats((StatementPattern) expr)) {
+					if (ensureStats((StatementPattern) expr, initiallyBoundVars)) {
 						seeded = true;
 					}
 					continue;
 				}
 				for (StatementPattern pattern : StatementPatternCollector.process(expr)) {
-					if (ensureStats(pattern)) {
+					if (ensureStats(pattern, initiallyBoundVars)) {
 						seeded = true;
 					}
 				}
@@ -426,8 +426,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			return seeded;
 		}
 
-		private boolean ensureStats(StatementPattern pattern) {
-			PatternKey key = buildKey(pattern);
+		private boolean ensureStats(StatementPattern pattern, Set<String> boundVars) {
+			PatternKey key = buildKey(pattern, boundVars);
 			if (statsProvider.hasStats(key)) {
 				return !isUnobservedPredicateOnly(key);
 			}
@@ -472,6 +472,28 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			return new PatternKey(statsPredicate, mask);
 		}
 
+		private PatternKey buildKey(StatementPattern node, Set<String> boundVars) {
+			int mask = 0;
+			if (isBound(node.getSubjectVar(), boundVars)) {
+				mask |= PatternKey.SUBJECT_BOUND;
+			}
+			if (isBound(node.getPredicateVar(), boundVars)) {
+				mask |= PatternKey.PREDICATE_BOUND;
+			}
+			if (isBound(node.getObjectVar(), boundVars)) {
+				mask |= PatternKey.OBJECT_BOUND;
+			}
+			Var predVar = node.getPredicateVar();
+			IRI predicateKey = null;
+			if (predVar != null && predVar.hasValue() && predVar.getValue() instanceof IRI) {
+				predicateKey = (IRI) predVar.getValue();
+			}
+			Var objVar = node.getObjectVar();
+			Value objectValue = objVar != null && objVar.hasValue() ? objVar.getValue() : null;
+			IRI statsPredicate = PatternKeys.predicateKey(predicateKey, objectValue);
+			return new PatternKey(statsPredicate, mask);
+		}
+
 		private boolean isUnobservedPredicateOnly(PatternKey key) {
 			if (key.getBoundMask() != PatternKey.PREDICATE_BOUND) {
 				return false;
@@ -486,6 +508,17 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			}
 			List<Var> unbound = getUnboundVars(List.of(var));
 			return unbound.isEmpty();
+		}
+
+		private boolean isBound(Var var, Set<String> boundVars) {
+			if (var == null) {
+				return false;
+			}
+			if (var.hasValue()) {
+				return true;
+			}
+			String name = var.getName();
+			return name != null && boundVars.contains(name);
 		}
 	}
 }
