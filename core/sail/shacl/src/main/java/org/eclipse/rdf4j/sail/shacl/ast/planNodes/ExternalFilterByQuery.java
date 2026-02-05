@@ -45,6 +45,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	private final Function<ValidationTuple, Value> filterOn;
 	private final String queryString;
 	private final BiFunction<ValidationTuple, BindingSet, ValidationTuple> map;
+	private final boolean includeInferredStatements;
 
 	public ExternalFilterByQuery(SailConnection connection, Resource[] dataGraph, PlanNode parent,
 			SparqlFragment queryFragment,
@@ -78,6 +79,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 
 		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
 		this.map = map;
+		this.includeInferredStatements = connectionsGroup.isIncludeInferredStatements();
 
 	}
 
@@ -87,7 +89,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 		Value value = filterOn.apply(t.get());
 		SingletonBindingSet bindings = new SingletonBindingSet(queryVariable.getName(), value);
 
-		try (var bindingSet = connection.evaluate(query, dataset, bindings, false)) {
+		try (var bindingSet = connection.evaluate(query, dataset, bindings, includeInferredStatements)) {
 			if (bindingSet.hasNext()) {
 				if (map != null) {
 					do {
