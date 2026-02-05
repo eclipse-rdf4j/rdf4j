@@ -919,10 +919,24 @@ class ValueStore extends AbstractValueFactory {
 			}
 		}
 
+		// Optimistic: try cache first without lock (caches are designed for concurrent access)
+		Long cachedID = valueIDCache.get(value);
+		if (cachedID == null) {
+			cachedID = commonVocabulary.get(value);
+		}
+		if (cachedID != null) {
+			long id = cachedID;
+			if (isOwnValue) {
+				((LmdbValue) value).setInternalID(id, revision);
+			}
+			return id;
+		}
+
+		// Cache miss: acquire lock for database access
 		long stamp = revisionLock.readLock();
 		try {
-			// Check cache
-			Long cachedID = valueIDCache.get(value);
+			// Double-check cache in case another thread populated it
+			cachedID = valueIDCache.get(value);
 			if (cachedID == null) {
 				cachedID = commonVocabulary.get(value);
 			}

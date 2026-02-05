@@ -34,7 +34,7 @@ class Pool {
 	private PointerBuffer cachedPointerBuffer;
 
 	// Pool for quad arrays (long[4]) to reduce allocation in hot paths
-	private static final int QUAD_POOL_SIZE = 256;
+	private static final int QUAD_POOL_SIZE = 512;
 	private final long[][] quadPool = new long[QUAD_POOL_SIZE][];
 	private int quadPoolIndex = -1;
 

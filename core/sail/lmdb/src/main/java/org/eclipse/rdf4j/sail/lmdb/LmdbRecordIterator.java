@@ -86,8 +86,8 @@ class LmdbRecordIterator implements RecordIterator {
 
 	// Lock batching optimization: hold lock for multiple rows to reduce contention
 	// Larger batch sizes reduce lock acquisition overhead but may increase contention
-	// Testing showed 256 provides good balance between throughput and latency
-	private static final int LOCK_BATCH_SIZE = 256;
+	// Testing showed 512 provides good balance between throughput and latency
+	private static final int LOCK_BATCH_SIZE = 512;
 	private int batchCounter = 0;
 	private long heldReadStamp = 0L;
 	private boolean lockHeld = false;

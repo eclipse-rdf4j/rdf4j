@@ -174,6 +174,27 @@ Pre-computes skip pattern and target indices at iterator creation time, eliminat
 **Bug fix: flushContextIncrements stack overflow:**
 Fixed `OutOfMemoryError: Out of stack space` with many contexts. Pre-allocate buffers outside loop.
 
+### Round 7 - Working (2026-02-04)
+
+| # | Optimization | File | Status |
+|---|-------------|------|--------|
+| 18 | Increased Lock Batch Size (256→512) | `LmdbRecordIterator.java` | ✅ |
+| 19 | Increased Quad Pool Size (256→512) | `Pool.java` | ✅ |
+| 20 | Optimistic getId Cache Lookup | `ValueStore.java` | ✅ |
+
+**Round 7 Results - Optimistic getId Cache Lookup:**
+
+`getId()` tries cache without lock first (similar to `getValue()` optimization). Both `valueIDCache` and `commonVocabulary` are concurrent-safe, so no lock needed for read hits.
+
+**Quick Benchmark Results (5-run average, 100K preloaded statements):**
+
+| Threads | ops/sec |
+|---------|---------|
+| 1 | 537,584 |
+| 2 | 777,718 |
+| 4 | 742,277 |
+| 8 | 843,402 |
+
 ---
 
 ## Reverted (Caused Regression)
@@ -218,7 +239,7 @@ core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/config/LmdbStoreConfig.
 
 ## Test Results
 
-- **816 tests passing** (2 skipped)
+- **817 tests passing** (2 skipped)
 - No regressions
 
 ---
