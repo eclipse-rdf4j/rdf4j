@@ -87,6 +87,163 @@
 						<td></td>
 					</tr>
 					<tr>
+						<th>Parallel validation</th>
+						<td>
+							<input type="radio" name="Parallel validation" value="true"
+								checked="true" />
+							<xsl:value-of select="$true.label" />
+							<input type="radio" name="Parallel validation" value="false" />
+							<xsl:value-of select="$false.label" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Log validation plans</th>
+						<td>
+							<input type="radio" name="Log validation plans" value="true" />
+							<xsl:value-of select="$true.label" />
+							<input type="radio" name="Log validation plans" value="false"
+								checked="true" />
+							<xsl:value-of select="$false.label" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Log validation violations</th>
+						<td>
+							<input type="radio" name="Log validation violations" value="true" />
+							<xsl:value-of select="$true.label" />
+							<input type="radio" name="Log validation violations" value="false"
+								checked="true" />
+							<xsl:value-of select="$false.label" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Validation enabled</th>
+						<td>
+							<input type="radio" name="Validation enabled" value="true"
+								checked="true" />
+							<xsl:value-of select="$true.label" />
+							<input type="radio" name="Validation enabled" value="false" />
+							<xsl:value-of select="$false.label" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Cache select nodes</th>
+						<td>
+							<input type="radio" name="Cache select nodes" value="true"
+								checked="true" />
+							<xsl:value-of select="$true.label" />
+							<input type="radio" name="Cache select nodes" value="false" />
+							<xsl:value-of select="$false.label" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Global log validation execution</th>
+						<td>
+							<input type="radio" name="Global log validation execution"
+								value="true" />
+							<xsl:value-of select="$true.label" />
+							<input type="radio" name="Global log validation execution"
+								value="false" checked="true" />
+							<xsl:value-of select="$false.label" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>RDFS subclass reasoning</th>
+						<td>
+							<input type="radio" name="RDFS subclass reasoning" value="true"
+								checked="true" />
+							<xsl:value-of select="$true.label" />
+							<input type="radio" name="RDFS subclass reasoning" value="false" />
+							<xsl:value-of select="$false.label" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Performance logging</th>
+						<td>
+							<input type="radio" name="Performance logging" value="true" />
+							<xsl:value-of select="$true.label" />
+							<input type="radio" name="Performance logging" value="false"
+								checked="true" />
+							<xsl:value-of select="$false.label" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Serializable validation</th>
+						<td>
+							<input type="radio" name="Serializable validation" value="true"
+								checked="true" />
+							<xsl:value-of select="$true.label" />
+							<input type="radio" name="Serializable validation" value="false" />
+							<xsl:value-of select="$false.label" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Eclipse RDF4J SHACL extensions</th>
+						<td>
+							<input type="radio" name="Eclipse RDF4J SHACL extensions"
+								value="true" />
+							<xsl:value-of select="$true.label" />
+							<input type="radio" name="Eclipse RDF4J SHACL extensions"
+								value="false" checked="true" />
+							<xsl:value-of select="$false.label" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>DASH data shapes</th>
+						<td>
+							<input type="radio" name="DASH data shapes" value="true" />
+							<xsl:value-of select="$true.label" />
+							<input type="radio" name="DASH data shapes" value="false"
+								checked="true" />
+							<xsl:value-of select="$false.label" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Validation results limit total</th>
+						<td>
+							<input type="text" id="validationResultsLimitTotal"
+								name="Validation results limit total" size="10"
+								value="1000000" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Validation results limit per constraint</th>
+						<td>
+							<input type="text" id="validationResultsLimitPerConstraint"
+								name="Validation results limit per constraint" size="10"
+								value="1000" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Transactional validation limit</th>
+						<td>
+							<input type="text" id="transactionalValidationLimit"
+								name="Transactional validation limit" size="10" value="500000" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Shapes graphs</th>
+						<td>
+							<input type="text" id="shapesGraphs" name="Shapes graphs" size="64"
+								value="&lt;http://rdf4j.org/schema/rdf4j#SHACLShapeGraph&gt;" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
 						<td></td>
 						<td>
 							<input type="button" value="{$cancel.label}" style="float:right"
