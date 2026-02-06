@@ -210,6 +210,34 @@ public class RdfsReasoningShaclSailTest {
 	}
 
 	@Test
+	public void legacyCallbacksWithoutInferenceMetadataFailWhenGlobalIncludeInferredStatementsIsDisabled()
+			throws Exception {
+		SailRepository repo = createRepositoryWithLegacyCallbackForwarding(false);
+
+		IRI ontologyGraph = repo.getValueFactory().createIRI("urn:ontology");
+		IRI dataGraph = repo.getValueFactory().createIRI("urn:data");
+
+		loadTurtle(repo, ontologyTurtle(), ontologyGraph);
+		loadTurtle(repo, railcarBrakeShapeTurtle(null, null), RDF4J.SHACL_SHAPE_GRAPH);
+
+		IRI wagon1 = repo.getValueFactory().createIRI("urn:wagon1");
+		IRI freightWagon = repo.getValueFactory().createIRI("https://example.com/trains/FreightWagon");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.begin();
+			conn.add(wagon1, RDF.TYPE, freightWagon, dataGraph);
+			ShaclSailValidationException exception = assertThrows(ShaclSailValidationException.class,
+					() -> commitAndRethrow(conn));
+			assertTrue(exception.getMessage()
+					.contains("deprecated SailConnectionListener callbacks without inferred flags"));
+			assertTrue(exception.getMessage().contains("statementAdded(Statement, boolean inferred)"));
+			assertTrue(exception.getMessage().contains("statementRemoved(Statement, boolean inferred)"));
+		} finally {
+			repo.shutDown();
+		}
+	}
+
+	@Test
 	public void legacyCallbacksWithoutInferenceMetadataAreAcceptedWhenAllShapesIncludeInferredStatements()
 			throws Exception {
 		SailRepository repo = createRepositoryWithLegacyCallbackForwarding(true);

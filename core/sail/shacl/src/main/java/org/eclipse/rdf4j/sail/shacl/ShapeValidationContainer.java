@@ -39,6 +39,7 @@ class ShapeValidationContainer {
 	private final ConnectionsGroup connectionsGroup;
 	private final boolean closeConnectionsGroup;
 	private volatile CloseableIteration<? extends ValidationTuple> iterator;
+	private volatile boolean connectionsGroupClosed;
 
 	public ShapeValidationContainer(Shape shape, Supplier<PlanNode> planNodeSupplier, boolean logValidationExecution,
 			boolean logValidationViolations, long effectiveValidationResultsLimitPerConstraint,
@@ -113,13 +114,7 @@ class ShapeValidationContainer {
 				this.planNode = planNode;
 			}
 		} catch (Throwable e) {
-			if (closeConnectionsGroup) {
-				try {
-					connectionsGroup.close();
-				} catch (Exception closeException) {
-					logger.debug("Error closing connections group after plan construction failure", closeException);
-				}
-			}
+			closeConnectionsGroup("after plan construction failure");
 			logger.warn("Error processing SHACL Shape {}", shape.getId(), e);
 			logger.warn("Error processing SHACL Shape\n{}", shape, e);
 			if (e instanceof Error) {
@@ -135,7 +130,11 @@ class ShapeValidationContainer {
 	}
 
 	public boolean hasPlanNode() {
-		return !(planNode.isGuaranteedEmpty());
+		boolean hasPlanNode = !(planNode.isGuaranteedEmpty());
+		if (!hasPlanNode) {
+			closeConnectionsGroup("for guaranteed-empty plan");
+		}
+		return hasPlanNode;
 	}
 
 	public ValidationResultIterator performValidation() throws SailException {
@@ -166,15 +165,26 @@ class ShapeValidationContainer {
 			}
 		} finally {
 			this.iterator = null;
-			if (closeConnectionsGroup) {
-				try {
-					connectionsGroup.close();
-				} catch (Exception closeException) {
-					logger.debug("Error closing connections group after validation", closeException);
-				}
-			}
+			closeConnectionsGroup("after validation");
 		}
 
+	}
+
+	private void closeConnectionsGroup(String context) {
+		if (!closeConnectionsGroup || connectionsGroupClosed) {
+			return;
+		}
+		synchronized (this) {
+			if (connectionsGroupClosed) {
+				return;
+			}
+			connectionsGroupClosed = true;
+		}
+		try {
+			connectionsGroup.close();
+		} catch (Exception closeException) {
+			logger.debug("Error closing connections group {}", context, closeException);
+		}
 	}
 
 	private long getTimeStamp() {

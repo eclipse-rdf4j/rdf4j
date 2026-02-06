@@ -1601,8 +1601,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	/**
-	 * Reject legacy no-flag callbacks only when a shape explicitly disables inferred statements using
-	 * rsx:includeInferredStatements=false. In that case, inferred-vs-explicit classification is required for correct
+	 * Reject legacy no-flag callbacks whenever effective includeInferredStatements=false is active for at least one
+	 * validated shape (globally through ShaclSail#setIncludeInferredStatements(false) and/or via
+	 * rsx:includeInferredStatements=false). In that case, inferred-vs-explicit classification is required for correct
 	 * validation and stores must use statementAdded/Removed callbacks with the inferred boolean argument.
 	 */
 	private void validateLegacyCallbackInferredSupport(List<ContextWithShape> shapesToValidate) {
@@ -1610,19 +1611,20 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			return;
 		}
 
-		boolean hasExplicitIncludeInferredDisabled = shapesToValidate.stream()
+		boolean includeInferredStatementsEnabledByDefault = sail.isIncludeInferredStatements();
+		boolean requiresInferredClassification = shapesToValidate.stream()
 				.filter(ContextWithShape::hasShape)
 				.map(ContextWithShape::getShape)
-				.map(Shape::getIncludeInferredStatementsOverride)
-				.anyMatch(Boolean.FALSE::equals);
+				.anyMatch(shape -> !shape.usesIncludeInferredStatements(includeInferredStatementsEnabledByDefault));
 
-		if (!hasExplicitIncludeInferredDisabled) {
+		if (!requiresInferredClassification) {
 			return;
 		}
 
 		String callbackDetails = getObservedLegacyCallbacksWithoutInferredFlag();
 		String message = "Underlying Sail does not support shapes that explicitly set "
-				+ "rsx:includeInferredStatements=false because it emits deprecated "
+				+ "rsx:includeInferredStatements=false or globally configure "
+				+ "ShaclSail#setIncludeInferredStatements(false), because it emits deprecated "
 				+ "SailConnectionListener callbacks without inferred flags (" + callbackDetails + "). "
 				+ "Implement statementAdded(Statement, boolean inferred) and "
 				+ "statementRemoved(Statement, boolean inferred).";
