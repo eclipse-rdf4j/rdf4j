@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.shacl;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -181,9 +182,73 @@ public class RdfsReasoningShaclSailTest {
 		}
 	}
 
+	@Test
+	public void legacyCallbacksWithoutInferenceMetadataFailWhenAShapeDisablesInferredStatements()
+			throws Exception {
+		SailRepository repo = createRepositoryWithLegacyCallbackForwarding(true);
+
+		IRI ontologyGraph = repo.getValueFactory().createIRI("urn:ontology");
+		IRI dataGraph = repo.getValueFactory().createIRI("urn:data");
+
+		loadTurtle(repo, ontologyTurtle(), ontologyGraph);
+		loadTurtle(repo, railcarBrakeShapeTurtle(null, false), RDF4J.SHACL_SHAPE_GRAPH);
+
+		IRI wagon1 = repo.getValueFactory().createIRI("urn:wagon1");
+		IRI freightWagon = repo.getValueFactory().createIRI("https://example.com/trains/FreightWagon");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.begin();
+			conn.add(wagon1, RDF.TYPE, freightWagon, dataGraph);
+			ShaclSailValidationException exception = assertThrows(ShaclSailValidationException.class,
+					() -> commitAndRethrow(conn));
+			assertTrue(exception.getMessage().contains("does not support shapes that explicitly set"));
+			assertTrue(exception.getMessage().contains("statementAdded(Statement, boolean inferred)"));
+			assertTrue(exception.getMessage().contains("statementRemoved(Statement, boolean inferred)"));
+		} finally {
+			repo.shutDown();
+		}
+	}
+
+	@Test
+	public void legacyCallbacksWithoutInferenceMetadataAreAcceptedWhenAllShapesIncludeInferredStatements()
+			throws Exception {
+		SailRepository repo = createRepositoryWithLegacyCallbackForwarding(true);
+
+		IRI ontologyGraph = repo.getValueFactory().createIRI("urn:ontology");
+		IRI dataGraph = repo.getValueFactory().createIRI("urn:data");
+
+		loadTurtle(repo, ontologyTurtle(), ontologyGraph);
+		loadTurtle(repo, railcarBrakeShapeTurtle(null, null), RDF4J.SHACL_SHAPE_GRAPH);
+
+		IRI wagon1 = repo.getValueFactory().createIRI("urn:wagon1");
+		IRI freightWagon = repo.getValueFactory().createIRI("https://example.com/trains/FreightWagon");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.begin();
+			assertDoesNotThrow(() -> conn.add(wagon1, RDF.TYPE, freightWagon, dataGraph));
+			conn.rollback();
+		} finally {
+			repo.shutDown();
+		}
+	}
+
 	private static SailRepository createRepository(boolean includeInferredStatements,
 			boolean filterInferredNotifications) {
 		return createRepository(includeInferredStatements, filterInferredNotifications, true);
+	}
+
+	private static SailRepository createRepositoryWithLegacyCallbackForwarding(boolean includeInferredStatements) {
+		NotifyingSail baseSail = new LegacyCallbackForwardingSail(new MemoryStore());
+		NotifyingSail shaclBase = new SchemaCachingRDFSInferencer(baseSail);
+		ShaclSail shaclSail = new ShaclSail(shaclBase);
+		shaclSail.setRdfsSubClassReasoning(false);
+		shaclSail.setIncludeInferredStatements(includeInferredStatements);
+		shaclSail.setEclipseRdf4jShaclExtensions(true);
+		shaclSail.setSerializableValidation(false);
+
+		SailRepository repo = new SailRepository(shaclSail);
+		repo.init();
+		return repo;
 	}
 
 	private static SailRepository createRepository(boolean includeInferredStatements,
@@ -350,19 +415,77 @@ public class RdfsReasoningShaclSailTest {
 				@Override
 				public void statementAdded(Statement st, boolean inferred) {
 					if (!inferred) {
-						listener.statementAdded(st);
+						listener.statementAdded(st, false);
 					}
 				}
 
 				@Override
 				public void statementRemoved(Statement st, boolean inferred) {
 					if (!inferred) {
-						listener.statementRemoved(st);
+						listener.statementRemoved(st, false);
 					}
 				}
 			};
 			listenerMap.put(listener, filteringListener);
 			super.addConnectionListener(filteringListener);
+		}
+
+		@Override
+		public void removeConnectionListener(SailConnectionListener listener) {
+			SailConnectionListener filteringListener = listenerMap.remove(listener);
+			if (filteringListener != null) {
+				super.removeConnectionListener(filteringListener);
+			} else {
+				super.removeConnectionListener(listener);
+			}
+		}
+	}
+
+	// Test helper: force all notifications through deprecated no-flag listener methods.
+	private static final class LegacyCallbackForwardingSail extends NotifyingSailWrapper {
+		LegacyCallbackForwardingSail(NotifyingSail baseSail) {
+			super(baseSail);
+		}
+
+		@Override
+		public NotifyingSailConnection getConnection() throws SailException {
+			InferencerConnection connection = (InferencerConnection) super.getConnection();
+			return new LegacyCallbackForwardingConnection(connection);
+		}
+	}
+
+	private static final class LegacyCallbackForwardingConnection extends InferencerConnectionWrapper {
+		private final Map<SailConnectionListener, SailConnectionListener> listenerMap = new IdentityHashMap<>();
+
+		LegacyCallbackForwardingConnection(InferencerConnection wrappedCon) {
+			super(wrappedCon);
+		}
+
+		@Override
+		public void addConnectionListener(SailConnectionListener listener) {
+			SailConnectionListener legacyForwardingListener = new SailConnectionListener() {
+				@Override
+				public void statementAdded(Statement st) {
+					listener.statementAdded(st);
+				}
+
+				@Override
+				public void statementRemoved(Statement st) {
+					listener.statementRemoved(st);
+				}
+
+				@Override
+				public void statementAdded(Statement st, boolean inferred) {
+					listener.statementAdded(st);
+				}
+
+				@Override
+				public void statementRemoved(Statement st, boolean inferred) {
+					listener.statementRemoved(st);
+				}
+			};
+			listenerMap.put(listener, legacyForwardingListener);
+			super.addConnectionListener(legacyForwardingListener);
 		}
 
 		@Override

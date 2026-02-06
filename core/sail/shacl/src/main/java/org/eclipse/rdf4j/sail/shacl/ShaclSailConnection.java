@@ -94,6 +94,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private final HashSet<Statement> removedStatementsInferredSet = new HashSet<>();
 
 	private boolean shapeRefreshNeeded = false;
+	private boolean legacyStatementAddedWithoutInferredFlagObserved = false;
+	private boolean legacyStatementRemovedWithoutInferredFlagObserved = false;
 	private boolean shapesModifiedInCurrentTransaction = false;
 
 	public final ShaclSail sail;
@@ -316,7 +318,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			throws SailException {
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesRepoConnection.add(subj, pred, obj, contexts);
-			shapeRefreshNeeded = true;
+			markShapesRefreshNeeded();
 		} else {
 			super.addStatement(modify, subj, pred, obj, contexts);
 		}
@@ -327,7 +329,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			throws SailException {
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesRepoConnection.remove(subj, pred, obj, contexts);
-			shapeRefreshNeeded = true;
+			markShapesRefreshNeeded();
 		} else {
 			super.removeStatement(modify, subj, pred, obj, contexts);
 		}
@@ -337,7 +339,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesRepoConnection.add(subj, pred, obj, contexts);
-			shapeRefreshNeeded = true;
+			markShapesRefreshNeeded();
 		} else {
 			super.addStatement(subj, pred, obj, contexts);
 		}
@@ -347,7 +349,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesRepoConnection.remove(subj, pred, obj, contexts);
-			shapeRefreshNeeded = true;
+			markShapesRefreshNeeded();
 		} else {
 			super.removeStatements(subj, pred, obj, contexts);
 		}
@@ -357,7 +359,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void clear(Resource... contexts) throws SailException {
 		if (Arrays.asList(contexts).contains(RDF4J.SHACL_SHAPE_GRAPH)) {
 			shapesRepoConnection.clear();
-			shapeRefreshNeeded = true;
+			markShapesRefreshNeeded();
 		}
 		super.clear(contexts);
 	}
@@ -488,6 +490,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			stats = null;
 			prepareHasBeenCalled = false;
 			shapeRefreshNeeded = false;
+			legacyStatementAddedWithoutInferredFlagObserved = false;
+			legacyStatementRemovedWithoutInferredFlagObserved = false;
 			shapesModifiedInCurrentTransaction = false;
 
 			currentIsolationLevel = null;
@@ -1375,6 +1379,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			}
 
 			List<ContextWithShape> shapesToValidate = shapesAfterRefresh != null ? shapesAfterRefresh : currentShapes;
+			validateLegacyCallbackInferredSupport(shapesToValidate);
 			boolean requiresRdfsSubClassReasoner = sail.isRdfsSubClassReasoning()
 					|| requiresRdfsSubClassReasoner(shapesToValidate);
 
@@ -1495,6 +1500,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void statementAdded(Statement statement) {
+		legacyStatementAddedWithoutInferredFlagObserved = true;
 		statementAdded(statement, false);
 	}
 
@@ -1522,6 +1528,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void statementRemoved(Statement statement) {
+		legacyStatementRemovedWithoutInferredFlagObserved = true;
 		statementRemoved(statement, false);
 	}
 
@@ -1552,11 +1559,88 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		if (!shapeRefreshNeeded) {
 			for (IRI shapesGraph : shapesGraphs) {
 				if (Objects.equals(statement.getContext(), shapesGraph)) {
-					shapeRefreshNeeded = true;
+					markShapesRefreshNeeded();
 					break;
 				}
 			}
 		}
+	}
+
+	private void markShapesRefreshNeeded() {
+		shapeRefreshNeeded = true;
+	}
+
+	private Boolean inferInferredFromStatementMetadata(Statement statement) {
+		try {
+			Boolean inferred = invokeBooleanStatementMethod(statement, "isInferred");
+			if (inferred != null) {
+				return inferred;
+			}
+			Boolean explicit = invokeBooleanStatementMethod(statement, "isExplicit");
+			if (explicit != null) {
+				return !explicit;
+			}
+			return null;
+		} catch (ReflectiveOperationException e) {
+			if (logger.isDebugEnabled()) {
+				logger.debug("Unable to infer inferred-flag from legacy callback statement metadata.", e);
+			}
+			return null;
+		}
+	}
+
+	private Boolean invokeBooleanStatementMethod(Statement statement, String methodName)
+			throws ReflectiveOperationException {
+		var method = statement.getClass().getMethod(methodName);
+		Class<?> returnType = method.getReturnType();
+		if (returnType != boolean.class && returnType != Boolean.class) {
+			return null;
+		}
+		Object value = method.invoke(statement);
+		return value == null ? null : (Boolean) value;
+	}
+
+	/**
+	 * Reject legacy no-flag callbacks only when a shape explicitly disables inferred statements using
+	 * rsx:includeInferredStatements=false. In that case, inferred-vs-explicit classification is required for correct
+	 * validation and stores must use statementAdded/Removed callbacks with the inferred boolean argument.
+	 */
+	private void validateLegacyCallbackInferredSupport(List<ContextWithShape> shapesToValidate) {
+		if (!legacyStatementAddedWithoutInferredFlagObserved && !legacyStatementRemovedWithoutInferredFlagObserved) {
+			return;
+		}
+
+		boolean hasExplicitIncludeInferredDisabled = shapesToValidate.stream()
+				.filter(ContextWithShape::hasShape)
+				.map(ContextWithShape::getShape)
+				.map(Shape::getIncludeInferredStatementsOverride)
+				.anyMatch(Boolean.FALSE::equals);
+
+		if (!hasExplicitIncludeInferredDisabled) {
+			return;
+		}
+
+		String callbackDetails = getObservedLegacyCallbacksWithoutInferredFlag();
+		String message = "Underlying Sail does not support shapes that explicitly set "
+				+ "rsx:includeInferredStatements=false because it emits deprecated "
+				+ "SailConnectionListener callbacks without inferred flags (" + callbackDetails + "). "
+				+ "Implement statementAdded(Statement, boolean inferred) and "
+				+ "statementRemoved(Statement, boolean inferred).";
+		logger.error(message);
+		throw new ShaclSailValidationException(message);
+	}
+
+	private String getObservedLegacyCallbacksWithoutInferredFlag() {
+		if (legacyStatementAddedWithoutInferredFlagObserved && legacyStatementRemovedWithoutInferredFlagObserved) {
+			return "statementAdded(Statement), statementRemoved(Statement)";
+		}
+		if (legacyStatementAddedWithoutInferredFlagObserved) {
+			return "statementAdded(Statement)";
+		}
+		if (legacyStatementRemovedWithoutInferredFlagObserved) {
+			return "statementRemoved(Statement)";
+		}
+		return "<none>";
 	}
 
 	private void checkTransactionalValidationLimit() {
