@@ -132,6 +132,28 @@ public class RdfsReasoningShaclSailTest {
 	}
 
 	@Test
+	public void inferredOnlyNotificationsStillTriggerValidation() throws Exception {
+		SailRepository repo = createRepositoryWithExplicitStatementFiltering(true);
+
+		IRI ontologyGraph = repo.getValueFactory().createIRI("urn:ontology");
+		IRI dataGraph = repo.getValueFactory().createIRI("urn:data");
+
+		loadTurtle(repo, ontologyTurtle(), ontologyGraph);
+		loadTurtle(repo, railcarBrakeShapeTurtle(null, null), RDF4J.SHACL_SHAPE_GRAPH);
+
+		IRI wagon1 = repo.getValueFactory().createIRI("urn:wagon1");
+		IRI freightWagon = repo.getValueFactory().createIRI("https://example.com/trains/FreightWagon");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.begin();
+			conn.add(wagon1, RDF.TYPE, freightWagon, dataGraph);
+			assertThrows(ShaclSailValidationException.class, () -> commitAndRethrow(conn));
+		} finally {
+			repo.shutDown();
+		}
+	}
+
+	@Test
 	public void targetClassUsesPerShapeRdfsSubClassReasoning() throws Exception {
 		SailRepository repo = createRepository(false, false, false);
 
@@ -267,6 +289,20 @@ public class RdfsReasoningShaclSailTest {
 
 	private static SailRepository createRepositoryWithLegacyCallbackForwarding(boolean includeInferredStatements) {
 		NotifyingSail baseSail = new LegacyCallbackForwardingSail(new MemoryStore());
+		NotifyingSail shaclBase = new SchemaCachingRDFSInferencer(baseSail);
+		ShaclSail shaclSail = new ShaclSail(shaclBase);
+		shaclSail.setRdfsSubClassReasoning(false);
+		shaclSail.setIncludeInferredStatements(includeInferredStatements);
+		shaclSail.setEclipseRdf4jShaclExtensions(true);
+		shaclSail.setSerializableValidation(false);
+
+		SailRepository repo = new SailRepository(shaclSail);
+		repo.init();
+		return repo;
+	}
+
+	private static SailRepository createRepositoryWithExplicitStatementFiltering(boolean includeInferredStatements) {
+		NotifyingSail baseSail = new ExplicitStatementFilteringSail(new MemoryStore());
 		NotifyingSail shaclBase = new SchemaCachingRDFSInferencer(baseSail);
 		ShaclSail shaclSail = new ShaclSail(shaclBase);
 		shaclSail.setRdfsSubClassReasoning(false);
@@ -451,6 +487,68 @@ public class RdfsReasoningShaclSailTest {
 				public void statementRemoved(Statement st, boolean inferred) {
 					if (!inferred) {
 						listener.statementRemoved(st, false);
+					}
+				}
+			};
+			listenerMap.put(listener, filteringListener);
+			super.addConnectionListener(filteringListener);
+		}
+
+		@Override
+		public void removeConnectionListener(SailConnectionListener listener) {
+			SailConnectionListener filteringListener = listenerMap.remove(listener);
+			if (filteringListener != null) {
+				super.removeConnectionListener(filteringListener);
+			} else {
+				super.removeConnectionListener(listener);
+			}
+		}
+	}
+
+	// Test helper: hide explicit change notifications from listeners.
+	private static final class ExplicitStatementFilteringSail extends NotifyingSailWrapper {
+		ExplicitStatementFilteringSail(NotifyingSail baseSail) {
+			super(baseSail);
+		}
+
+		@Override
+		public NotifyingSailConnection getConnection() throws SailException {
+			InferencerConnection connection = (InferencerConnection) super.getConnection();
+			return new ExplicitStatementFilteringConnection(connection);
+		}
+	}
+
+	private static final class ExplicitStatementFilteringConnection extends InferencerConnectionWrapper {
+		private final Map<SailConnectionListener, SailConnectionListener> listenerMap = new IdentityHashMap<>();
+
+		ExplicitStatementFilteringConnection(InferencerConnection wrappedCon) {
+			super(wrappedCon);
+		}
+
+		@Override
+		public void addConnectionListener(SailConnectionListener listener) {
+			SailConnectionListener filteringListener = new SailConnectionListener() {
+				@Override
+				public void statementAdded(Statement st) {
+					statementAdded(st, false);
+				}
+
+				@Override
+				public void statementRemoved(Statement st) {
+					statementRemoved(st, false);
+				}
+
+				@Override
+				public void statementAdded(Statement st, boolean inferred) {
+					if (inferred) {
+						listener.statementAdded(st, true);
+					}
+				}
+
+				@Override
+				public void statementRemoved(Statement st, boolean inferred) {
+					if (inferred) {
+						listener.statementRemoved(st, true);
 					}
 				}
 			};

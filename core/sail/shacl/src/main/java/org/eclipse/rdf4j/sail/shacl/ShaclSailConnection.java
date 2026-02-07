@@ -1344,7 +1344,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					: "isShapeRefreshNeeded should trigger shapesModifiedInCurrentTransaction once we have loaded the modified shapes, but shapesModifiedInCurrentTransaction should be null until then";
 
 			if (!shapeRefreshNeeded && !isBulkValidation() && addedStatementsSet.isEmpty()
-					&& removedStatementsSet.isEmpty()) {
+					&& removedStatementsSet.isEmpty() && addedStatementsInferredSet.isEmpty()
+					&& removedStatementsInferredSet.isEmpty()) {
 				logger.debug("Nothing has changed, nothing to validate.");
 				return;
 			}
