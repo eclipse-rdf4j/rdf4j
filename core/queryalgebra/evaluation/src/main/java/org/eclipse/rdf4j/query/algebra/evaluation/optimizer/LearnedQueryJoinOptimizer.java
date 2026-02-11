@@ -19,6 +19,7 @@ import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
@@ -133,20 +134,65 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		}
 	}
 
+	public static final class PlanRewriteDiff {
+		private final String name;
+		private final List<String> beforeLabels;
+		private final List<String> afterLabels;
+
+		private PlanRewriteDiff(String name, List<String> beforeLabels, List<String> afterLabels) {
+			this.name = Objects.requireNonNull(name, "name");
+			this.beforeLabels = beforeLabels == null ? List.of() : List.copyOf(beforeLabels);
+			this.afterLabels = afterLabels == null ? List.of() : List.copyOf(afterLabels);
+		}
+
+		public String getName() {
+			return name;
+		}
+
+		public List<String> getBeforeLabels() {
+			return beforeLabels;
+		}
+
+		public List<String> getAfterLabels() {
+			return afterLabels;
+		}
+	}
+
 	public static final class PlanSelectionSnapshot {
 		private final String queryTemplateHash;
 		private final int selectedCandidateIndex;
 		private final String selectedPlanSignature;
 		private final List<JoinPlanCandidate> candidates;
 		private final String reason;
+		private final String plannerUsed;
+		private final List<String> rawOrderLabels;
+		private final List<String> finalOrderLabels;
+		private final List<PlanRewriteDiff> rebalanceDiffs;
+		private final boolean repairApplied;
+		private final List<String> repairBeforeLabels;
+		private final List<String> repairAfterLabels;
+		private final List<String> initiallyBoundVars;
+		private final List<String> unsupportedTargets;
 
 		private PlanSelectionSnapshot(String queryTemplateHash, int selectedCandidateIndex,
-				String selectedPlanSignature, List<JoinPlanCandidate> candidates, String reason) {
+				String selectedPlanSignature, List<JoinPlanCandidate> candidates, String reason, String plannerUsed,
+				List<String> rawOrderLabels, List<String> finalOrderLabels, List<PlanRewriteDiff> rebalanceDiffs,
+				boolean repairApplied, List<String> repairBeforeLabels, List<String> repairAfterLabels,
+				Set<String> initiallyBoundVars, Set<String> unsupportedTargets) {
 			this.queryTemplateHash = queryTemplateHash;
 			this.selectedCandidateIndex = selectedCandidateIndex;
 			this.selectedPlanSignature = selectedPlanSignature;
 			this.candidates = List.copyOf(candidates);
 			this.reason = reason;
+			this.plannerUsed = plannerUsed == null ? "none" : plannerUsed;
+			this.rawOrderLabels = rawOrderLabels == null ? List.of() : List.copyOf(rawOrderLabels);
+			this.finalOrderLabels = finalOrderLabels == null ? List.of() : List.copyOf(finalOrderLabels);
+			this.rebalanceDiffs = rebalanceDiffs == null ? List.of() : List.copyOf(rebalanceDiffs);
+			this.repairApplied = repairApplied;
+			this.repairBeforeLabels = repairBeforeLabels == null ? List.of() : List.copyOf(repairBeforeLabels);
+			this.repairAfterLabels = repairAfterLabels == null ? List.of() : List.copyOf(repairAfterLabels);
+			this.initiallyBoundVars = toSortedList(initiallyBoundVars);
+			this.unsupportedTargets = toSortedList(unsupportedTargets);
 		}
 
 		public String getQueryTemplateHash() {
@@ -168,6 +214,51 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		public String getReason() {
 			return reason;
 		}
+
+		public String getPlannerUsed() {
+			return plannerUsed;
+		}
+
+		public List<String> getRawOrderLabels() {
+			return rawOrderLabels;
+		}
+
+		public List<String> getFinalOrderLabels() {
+			return finalOrderLabels;
+		}
+
+		public List<PlanRewriteDiff> getRebalanceDiffs() {
+			return rebalanceDiffs;
+		}
+
+		public boolean isRepairApplied() {
+			return repairApplied;
+		}
+
+		public List<String> getRepairBeforeLabels() {
+			return repairBeforeLabels;
+		}
+
+		public List<String> getRepairAfterLabels() {
+			return repairAfterLabels;
+		}
+
+		public List<String> getInitiallyBoundVars() {
+			return initiallyBoundVars;
+		}
+
+		public List<String> getUnsupportedTargets() {
+			return unsupportedTargets;
+		}
+	}
+
+	private static List<String> toSortedList(Set<String> values) {
+		if (values == null || values.isEmpty()) {
+			return List.of();
+		}
+		List<String> sorted = new ArrayList<>(values);
+		Collections.sort(sorted);
+		return List.copyOf(sorted);
 	}
 
 	private static double parsePercentageProperty(String property, double defaultPercent) {
@@ -218,6 +309,36 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 						snapshot.getSelectedPlanSignature() == null ? "" : snapshot.getSelectedPlanSignature()))
 				.append('"');
 		builder.append(",\"reason\":\"").append(escapeJson(snapshot.getReason())).append('"');
+		builder.append(",\"plannerUsed\":\"").append(escapeJson(snapshot.getPlannerUsed())).append('"');
+		builder.append(",\"rawOrderLabels\":");
+		appendStringArray(builder, snapshot.getRawOrderLabels());
+		builder.append(",\"finalOrderLabels\":");
+		appendStringArray(builder, snapshot.getFinalOrderLabels());
+		builder.append(",\"repairApplied\":").append(snapshot.isRepairApplied());
+		builder.append(",\"repairBeforeLabels\":");
+		appendStringArray(builder, snapshot.getRepairBeforeLabels());
+		builder.append(",\"repairAfterLabels\":");
+		appendStringArray(builder, snapshot.getRepairAfterLabels());
+		builder.append(",\"initiallyBoundVars\":");
+		appendStringArray(builder, snapshot.getInitiallyBoundVars());
+		builder.append(",\"unsupportedTargets\":");
+		appendStringArray(builder, snapshot.getUnsupportedTargets());
+		builder.append(",\"rebalanceDiffs\":[");
+		List<PlanRewriteDiff> rebalanceDiffs = snapshot.getRebalanceDiffs();
+		for (int i = 0; i < rebalanceDiffs.size(); i++) {
+			PlanRewriteDiff diff = rebalanceDiffs.get(i);
+			if (i > 0) {
+				builder.append(',');
+			}
+			builder.append('{');
+			builder.append("\"name\":\"").append(escapeJson(diff.getName())).append('"');
+			builder.append(",\"before\":");
+			appendStringArray(builder, diff.getBeforeLabels());
+			builder.append(",\"after\":");
+			appendStringArray(builder, diff.getAfterLabels());
+			builder.append('}');
+		}
+		builder.append(']');
 		builder.append(",\"candidates\":[");
 		List<JoinPlanCandidate> candidates = snapshot.getCandidates();
 		for (int i = 0; i < candidates.size(); i++) {
@@ -235,6 +356,19 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		}
 		builder.append("]}");
 		return builder.toString();
+	}
+
+	private static void appendStringArray(StringBuilder builder, List<String> values) {
+		builder.append('[');
+		if (values != null) {
+			for (int i = 0; i < values.size(); i++) {
+				if (i > 0) {
+					builder.append(',');
+				}
+				builder.append('"').append(escapeJson(values.get(i))).append('"');
+			}
+		}
+		builder.append(']');
 	}
 
 	private static String formatNumber(double value) {
@@ -373,27 +507,40 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				List<JoinPlanCandidate> planCandidates = List.of();
 				int selectedCandidateIndex = -1;
 				String selectedPlanSignature = null;
+				String plannerUsed = "none";
+				List<String> rawOrderLabels = List.of();
+				List<String> finalOrderLabels = List.of();
+				List<PlanRewriteDiff> rebalanceDiffs = new ArrayList<>();
+				boolean repairApplied = false;
+				List<String> repairBeforeLabels = List.of();
+				List<String> repairAfterLabels = List.of();
 				String queryTemplateHash = queryTemplateHash(joinArgs, filters);
 				boolean allowTypeAnchored = UNSUPPORTED_LITERAL_JOIN_FALLBACK_ALLOW_TYPE_ANCHORED
 						&& isTypeAnchoredUnsupportedTriplet(joinArgs, relevantUnsupportedTargets);
 				boolean unsupportedTargetHasVariableEquality = relevantUnsupportedTargets.size() == 1
 						&& hasVariableEqualityFilter(relevantUnsupportedTargets.iterator().next(), filters);
 				boolean nestedUnsupportedTarget = hasOuterUnsupportedTarget(relevantUnsupportedTargets);
+				if (planner != null) {
+					plannerUsed = plannerUsed(planner, joinArgs.size());
+				}
 				if (forceMode == PlanForceMode.LEGACY) {
 					planner = null;
 					fallbackReason = "forced-legacy";
+					plannerUsed = "none";
 				}
 				if (UNSUPPORTED_LITERAL_JOIN_FALLBACK_ENABLED && relevantUnsupportedTargets.size() == 1
 						&& initiallyBoundVars.isEmpty() && !allowTypeAnchored
 						&& !unsupportedTargetHasVariableEquality && !nestedUnsupportedTarget) {
 					planner = null;
 					fallbackReason = "unsupported-literal-fallback";
+					plannerUsed = "none";
 				}
 				if (joinArgs.isEmpty()) {
 					plannedOrder = null;
 					fallbackReason = "empty-join";
 				} else if (planner == null) {
 					plannedOrder = null;
+					plannerUsed = "none";
 					if (fallbackReason == null) {
 						fallbackReason = "no-planner";
 					}
@@ -406,7 +553,10 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 						plannedOrder = null;
 						fallbackReason = "no-candidates";
 						publishPlanSelection(queryTemplateHash, selectedCandidateIndex, selectedPlanSignature,
-								planCandidates, fallbackReason);
+								planCandidates, fallbackReason, plannerUsed, rawOrderLabels, finalOrderLabels,
+								rebalanceDiffs, repairApplied, repairBeforeLabels, repairAfterLabels,
+								initiallyBoundVars,
+								relevantUnsupportedTargets);
 						super.meet(node);
 						return;
 					}
@@ -417,30 +567,45 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 					JoinPlanCandidate selectedCandidate = planCandidates.get(selectedCandidateIndex);
 					selectedPlanSignature = selectedCandidate.getPlanSignature();
 					List<TupleExpr> planned = new ArrayList<>(selectedCandidate.getOrder());
+					rawOrderLabels = labels(planned);
 					if (REBALANCE_PROMOTE_UNSUPPORTED_TARGET_ANCHORS_ENABLED) {
-						planned = promoteUnsupportedTargetAnchors(planned, relevantUnsupportedTargets,
-								initiallyBoundVars,
-								filters);
+						planned = captureRewrite("promoteUnsupportedTargetAnchors", planned,
+								promoteUnsupportedTargetAnchors(planned, relevantUnsupportedTargets, initiallyBoundVars,
+										filters),
+								rebalanceDiffs);
 					}
 					if (REBALANCE_TYPE_ANCHORED_BRIDGE_TRIPLET_ENABLED) {
-						planned = rebalanceTypeAnchoredBridgeTriplet(planned, relevantUnsupportedTargets);
+						planned = captureRewrite("rebalanceTypeAnchoredBridgeTriplet", planned,
+								rebalanceTypeAnchoredBridgeTriplet(planned, relevantUnsupportedTargets),
+								rebalanceDiffs);
 					}
 					if (REBALANCE_TYPE_ANCHORED_NEW_SCOPE_TRIPLET_ENABLED) {
-						planned = rebalanceTypeAnchoredNewScopeTriplet(planned);
+						planned = captureRewrite("rebalanceTypeAnchoredNewScopeTriplet", planned,
+								rebalanceTypeAnchoredNewScopeTriplet(planned), rebalanceDiffs);
 					}
 					if (REBALANCE_UNSUPPORTED_TARGET_TYPE_TRIPLET_ENABLED) {
-						planned = rebalanceUnsupportedTargetTypeTriplet(planned, relevantUnsupportedTargets, filters);
+						planned = captureRewrite("rebalanceUnsupportedTargetTypeTriplet", planned,
+								rebalanceUnsupportedTargetTypeTriplet(planned, relevantUnsupportedTargets, filters),
+								rebalanceDiffs);
 					}
 					if (REBALANCE_TYPE_BRIDGE_OUTER_CHAIN_ENABLED) {
-						planned = rebalanceTypeBridgeOuterChain(planned, relevantUnsupportedTargets);
+						planned = captureRewrite("rebalanceTypeBridgeOuterChain", planned,
+								rebalanceTypeBridgeOuterChain(planned, relevantUnsupportedTargets), rebalanceDiffs);
 					}
-					planned = rebalanceUnsupportedTargetTypePair(planned, relevantUnsupportedTargets);
-					planned = rebalanceTypeAfterDetachedPredecessor(planned);
-					planned = rebalanceLargeDualTypeHub(planned, joinArgs);
+					planned = captureRewrite("rebalanceUnsupportedTargetTypePair", planned,
+							rebalanceUnsupportedTargetTypePair(planned, relevantUnsupportedTargets), rebalanceDiffs);
+					planned = captureRewrite("rebalanceTypeAfterDetachedPredecessor", planned,
+							rebalanceTypeAfterDetachedPredecessor(planned), rebalanceDiffs);
+					planned = captureRewrite("rebalanceLargeDualTypeHub", planned,
+							rebalanceLargeDualTypeHub(planned, joinArgs), rebalanceDiffs);
 					if (!isConnectedPlan(planned, initiallyBoundVars)) {
+						repairApplied = true;
+						repairBeforeLabels = labels(planned);
 						planned = repairDisconnectedPlan(planned, initiallyBoundVars);
+						repairAfterLabels = labels(planned);
 					}
 					if (isConnectedPlan(planned, initiallyBoundVars)) {
+						finalOrderLabels = labels(planned);
 						if (bindingAssignments.isEmpty()) {
 							plannedOrder = new ArrayDeque<>(planned);
 						} else {
@@ -450,7 +615,10 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 							plannedOrder = new ArrayDeque<>(combined);
 						}
 						publishPlanSelection(queryTemplateHash, selectedCandidateIndex, selectedPlanSignature,
-								planCandidates, "planned");
+								planCandidates, "planned", plannerUsed, rawOrderLabels, finalOrderLabels,
+								rebalanceDiffs, repairApplied, repairBeforeLabels, repairAfterLabels,
+								initiallyBoundVars,
+								relevantUnsupportedTargets);
 						if (DEBUG_PLAN) {
 							System.out.println("LEARNED-PLAN used joinArgs=" + joinArgs.size()
 									+ " bound=" + initiallyBoundVars
@@ -458,15 +626,19 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 									+ " joinArgLabels=" + labels(joinArgs)
 									+ " selectedCandidate=" + selectedCandidateIndex
 									+ " candidateSignature=" + selectedPlanSignature
+									+ " plannerUsed=" + plannerUsed
 									+ " plannedOrder=" + labels(planned));
 						}
 					} else {
 						plannedOrder = null;
 						fallbackReason = "disconnected-plan";
+						finalOrderLabels = labels(planned);
 					}
 				}
 				if (plannedOrder == null) {
-					publishPlanSelection(queryTemplateHash, -1, selectedPlanSignature, planCandidates, fallbackReason);
+					publishPlanSelection(queryTemplateHash, -1, selectedPlanSignature, planCandidates, fallbackReason,
+							plannerUsed, rawOrderLabels, finalOrderLabels, rebalanceDiffs, repairApplied,
+							repairBeforeLabels, repairAfterLabels, initiallyBoundVars, relevantUnsupportedTargets);
 				}
 				if (DEBUG_PLAN && plannedOrder == null && !joinArgs.isEmpty()) {
 					System.out.println("LEARNED-PLAN fallback reason=" + fallbackReason
@@ -621,14 +793,45 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			return Integer.toHexString(key.toString().hashCode());
 		}
 
+		private String plannerUsed(JoinOrderPlanner planner, int operandCount) {
+			if (planner == null) {
+				return "none";
+			}
+			if (planner instanceof HybridBindJoinOrderPlanner) {
+				return ((HybridBindJoinOrderPlanner) planner).plannerUsedForOperandCount(operandCount);
+			}
+			if (planner instanceof DpLeftDeepBindJoinOrderPlanner) {
+				return "dp";
+			}
+			if (planner instanceof GreedyBindJoinOrderPlanner) {
+				return "greedy";
+			}
+			return planner.getClass().getSimpleName();
+		}
+
+		private List<TupleExpr> captureRewrite(String rewriteName, List<TupleExpr> before, List<TupleExpr> after,
+				List<PlanRewriteDiff> diffs) {
+			List<String> beforeLabels = labels(before);
+			List<String> afterLabels = labels(after);
+			if (!beforeLabels.equals(afterLabels)) {
+				diffs.add(new PlanRewriteDiff(rewriteName, beforeLabels, afterLabels));
+			}
+			return after;
+		}
+
 		private void publishPlanSelection(String templateHash, int selectedCandidateIndex, String selectedSignature,
-				List<JoinPlanCandidate> candidates, String reason) {
+				List<JoinPlanCandidate> candidates, String reason, String plannerUsed, List<String> rawOrderLabels,
+				List<String> finalOrderLabels, List<PlanRewriteDiff> rebalanceDiffs, boolean repairApplied,
+				List<String> repairBeforeLabels, List<String> repairAfterLabels, Set<String> initiallyBoundVars,
+				Set<String> unsupportedTargets) {
 			String signature = selectedSignature;
 			if (signature == null && selectedCandidateIndex >= 0 && selectedCandidateIndex < candidates.size()) {
 				signature = candidates.get(selectedCandidateIndex).getPlanSignature();
 			}
 			PlanSelectionSnapshot snapshot = new PlanSelectionSnapshot(templateHash, selectedCandidateIndex, signature,
-					candidates, reason == null ? "" : reason);
+					candidates, reason == null ? "" : reason, plannerUsed, rawOrderLabels, finalOrderLabels,
+					rebalanceDiffs, repairApplied, repairBeforeLabels, repairAfterLabels, initiallyBoundVars,
+					unsupportedTargets);
 			LAST_PLAN_SELECTION.set(snapshot);
 			writePlanTrace(snapshot);
 		}

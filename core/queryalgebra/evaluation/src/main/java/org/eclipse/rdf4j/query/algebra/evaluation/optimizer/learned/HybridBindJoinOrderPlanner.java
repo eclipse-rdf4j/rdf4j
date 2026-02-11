@@ -34,7 +34,7 @@ public class HybridBindJoinOrderPlanner implements JoinOrderPlanner {
 
 	@Override
 	public List<TupleExpr> order(List<TupleExpr> operands, Set<String> initiallyBoundVars) {
-		if (config.isEnableDp() && operands.size() <= config.getDpThreshold()) {
+		if ("dp".equals(plannerUsedForOperandCount(operands.size()))) {
 			return dp.order(operands, initiallyBoundVars);
 		}
 		return greedy.order(operands, initiallyBoundVars);
@@ -42,9 +42,16 @@ public class HybridBindJoinOrderPlanner implements JoinOrderPlanner {
 
 	@Override
 	public List<JoinPlanCandidate> orderCandidates(List<TupleExpr> operands, Set<String> initiallyBoundVars, int topK) {
-		if (config.isEnableDp() && operands.size() <= config.getDpThreshold()) {
+		if ("dp".equals(plannerUsedForOperandCount(operands.size()))) {
 			return dp.orderCandidates(operands, initiallyBoundVars, topK);
 		}
 		return greedy.orderCandidates(operands, initiallyBoundVars, topK);
+	}
+
+	public String plannerUsedForOperandCount(int operandCount) {
+		if (config.isEnableDp() && operandCount <= config.getDpThreshold()) {
+			return "dp";
+		}
+		return "greedy";
 	}
 }

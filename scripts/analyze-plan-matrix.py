@@ -15,6 +15,8 @@ def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(description="Analyze plan-matrix records")
 	parser.add_argument("--records", type=Path, required=True, help="Path to records.jsonl")
 	parser.add_argument("--out-dir", type=Path, required=True, help="Output artifact directory")
+	parser.add_argument("--rca", type=Path, default=None,
+		help="Optional path to RCA findings.jsonl for signature split")
 	parser.add_argument("--regression-threshold", type=float, default=20.0,
 		help="Slowdown percentage threshold (default: 20)")
 	return parser.parse_args()
@@ -29,6 +31,24 @@ def load_records(path: Path) -> list[dict]:
 				continue
 			records.append(json.loads(line))
 	return records
+
+
+def load_rca(path: Path | None) -> dict[str, dict[str, str]]:
+	if path is None or not path.exists():
+		return {}
+	by_query: dict[str, dict[str, str]] = defaultdict(dict)
+	with path.open("r", encoding="utf-8") as handle:
+		for line in handle:
+			line = line.strip()
+			if not line:
+				continue
+			row = json.loads(line)
+			query_label = f"{row.get('theme', '')}#{row.get('queryIndex', '')}"
+			mode = row.get("mode", "")
+			stable = row.get("stableSignature", "")
+			if query_label and mode:
+				by_query[query_label][mode] = stable
+	return by_query
 
 
 def reason_for(row: dict, slowdown_pct: float) -> str:
@@ -117,7 +137,28 @@ def write_regressions(rows: list[dict], threshold: float, out_path: Path) -> lis
 	return filtered
 
 
-def write_summary(stats: dict, all_rows: list[dict], regressions: list[dict], out_path: Path, threshold: float) -> None:
+def regression_signature_split(regressions: list[dict], rca_by_query: dict[str, dict[str, str]]) -> dict[str, int]:
+	split = {"same_plan": 0, "different_plan": 0, "unknown": 0}
+	for row in regressions:
+		query = row["queryLabel"]
+		signatures = rca_by_query.get(query)
+		if not signatures:
+			split["unknown"] += 1
+			continue
+		dp_sig = signatures.get("DP")
+		greedy_sig = signatures.get("Greedy")
+		if not dp_sig or not greedy_sig:
+			split["unknown"] += 1
+			continue
+		if dp_sig == greedy_sig:
+			split["same_plan"] += 1
+		else:
+			split["different_plan"] += 1
+	return split
+
+
+def write_summary(stats: dict, all_rows: list[dict], regressions: list[dict], out_path: Path, threshold: float,
+		signature_split: dict[str, int] | None = None) -> None:
 	geomean_ready = [row for row in all_rows if row["legacyMedianMs"] > 0 and row["runtimeMedianMs"] > 0]
 	ratios = [row["legacyMedianMs"] / row["runtimeMedianMs"] for row in geomean_ready]
 	geomean = 0.0
@@ -149,16 +190,26 @@ def write_summary(stats: dict, all_rows: list[dict], regressions: list[dict], ou
 			f"{row['slowdownPct']:.2f}% ({row['reason']})"
 		)
 
+	if signature_split:
+		lines.append("")
+		lines.append("## Plan Signature Split")
+		lines.append(f"- same-plan-but-slower: {signature_split['same_plan']}")
+		lines.append(f"- different-plan-slower: {signature_split['different_plan']}")
+		lines.append(f"- unknown-signature: {signature_split['unknown']}")
+
 	out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def main() -> int:
 	args = parse_args()
 	records = load_records(args.records)
+	rca_by_query = load_rca(args.rca)
 	regression_rows, stats = aggregate(records)
 	args.out_dir.mkdir(parents=True, exist_ok=True)
 	regressions = write_regressions(regression_rows, args.regression_threshold, args.out_dir / "regressions.csv")
-	write_summary(stats, regression_rows, regressions, args.out_dir / "summary.md", args.regression_threshold)
+	signature_split = regression_signature_split(regressions, rca_by_query) if rca_by_query else None
+	write_summary(stats, regression_rows, regressions, args.out_dir / "summary.md", args.regression_threshold,
+		signature_split)
 	print(f"Wrote {args.out_dir / 'summary.md'}")
 	print(f"Wrote {args.out_dir / 'regressions.csv'}")
 	return 0

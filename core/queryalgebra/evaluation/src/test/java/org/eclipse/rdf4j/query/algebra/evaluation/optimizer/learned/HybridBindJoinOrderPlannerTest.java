@@ -39,4 +39,24 @@ class HybridBindJoinOrderPlannerTest {
 		assertEquals(greedy.order(operands, Set.of()), planner.order(operands, Set.of()));
 	}
 
+	@Test
+	void reportsDpWhenOperandCountAtThreshold() {
+		LearnedJoinConfig config = new LearnedJoinConfig(3, true);
+		JoinOrderPlanner planner = new HybridBindJoinOrderPlanner(config,
+				(ops, bound) -> ops,
+				(ops, bound) -> ops);
+
+		assertEquals("dp", ((HybridBindJoinOrderPlanner) planner).plannerUsedForOperandCount(3));
+	}
+
+	@Test
+	void reportsGreedyWhenOperandCountExceedsThreshold() {
+		LearnedJoinConfig config = new LearnedJoinConfig(2, true);
+		JoinOrderPlanner planner = new HybridBindJoinOrderPlanner(config,
+				(ops, bound) -> ops,
+				(ops, bound) -> ops);
+
+		assertEquals("greedy", ((HybridBindJoinOrderPlanner) planner).plannerUsedForOperandCount(3));
+	}
+
 }
