@@ -42,7 +42,8 @@ public class AllTargetsPlanNode implements PlanNode {
 	public AllTargetsPlanNode(SailConnection sailConnection,
 			Resource[] dataGraph, ArrayDeque<EffectiveTarget.EffectiveTargetFragment> chain,
 			List<Variable<Value>> vars,
-			ConstraintComponent.Scope scope) {
+			ConstraintComponent.Scope scope,
+			boolean includeInferredStatements) {
 
 		List<SparqlFragment> sparqlFragments = chain.stream()
 				.map(EffectiveTarget.EffectiveTargetFragment::getQueryFragment)
@@ -53,7 +54,8 @@ public class AllTargetsPlanNode implements PlanNode {
 		List<String> varNames = vars.stream().map(StatementMatcher.Variable::getName).collect(Collectors.toList());
 
 		this.select = new Select(sailConnection, sparqlFragment, null,
-				new AllTargetsBindingSetMapper(varNames, scope, false, dataGraph), dataGraph);
+				new AllTargetsBindingSetMapper(varNames, scope, false, dataGraph), dataGraph,
+				includeInferredStatements);
 
 	}
 

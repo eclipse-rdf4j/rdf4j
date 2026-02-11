@@ -37,6 +37,7 @@ public class UnorderedSelect implements PlanNode {
 	private static final Logger logger = LoggerFactory.getLogger(UnorderedSelect.class);
 
 	private final SailConnection connection;
+	private final boolean includeInferredStatements;
 
 	private final Resource subject;
 	private final IRI predicate;
@@ -50,9 +51,10 @@ public class UnorderedSelect implements PlanNode {
 
 	public UnorderedSelect(SailConnection connection, Resource subject, IRI predicate, Value object,
 			Resource[] dataGraph, BiFunction<Statement, Resource[], ValidationTuple> mapper,
-			Function<Statement, Boolean> filter) {
+			Function<Statement, Boolean> filter, boolean includeInferredStatements) {
 		this.connection = connection;
 		assert this.connection != null;
+		this.includeInferredStatements = includeInferredStatements;
 		this.subject = subject;
 		this.predicate = predicate;
 		this.object = object;
@@ -72,7 +74,8 @@ public class UnorderedSelect implements PlanNode {
 				assert statements == null;
 				if (filter != null) {
 					statements = new FilterIteration<Statement>(
-							connection.getStatements(subject, predicate, object, true, dataGraph)) {
+							connection.getStatements(subject, predicate, object, includeInferredStatements,
+									dataGraph)) {
 						@Override
 						protected boolean accept(Statement st) {
 							return filter.apply(st);
@@ -84,7 +87,8 @@ public class UnorderedSelect implements PlanNode {
 						}
 					};
 				} else {
-					statements = connection.getStatements(subject, predicate, object, true, dataGraph);
+					statements = connection.getStatements(subject, predicate, object, includeInferredStatements,
+							dataGraph);
 				}
 			}
 

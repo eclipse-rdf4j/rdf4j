@@ -40,6 +40,9 @@ public class RSX {
 	/** <var>http://rdf4j.org/shacl-extensions#targetShape</var> */
 	public final static IRI targetShape = create("targetShape");
 
+	public final static IRI rdfsSubClassReasoning = create("rdfsSubClassReasoning");
+	public final static IRI includeInferredStatements = create("includeInferredStatements");
+
 	public final static IRI dataGraph = create("dataGraph");
 	public final static IRI shapesGraph = create("shapesGraph");
 
