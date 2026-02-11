@@ -61,8 +61,6 @@ import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
-import org.eclipse.rdf4j.federated.evaluation.join.SynchronousBoundJoin;
-import org.eclipse.rdf4j.federated.evaluation.join.SynchronousJoin;
 import org.eclipse.rdf4j.federated.evaluation.union.ControlledWorkerUnion;
 import org.eclipse.rdf4j.federated.evaluation.union.ParallelGetStatementsTask;
 import org.eclipse.rdf4j.federated.evaluation.union.ParallelPreparedAlgebraUnionTask;
@@ -889,8 +887,6 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 * Join executors are for instance:
 	 *
 	 * <ul>
-	 * <li>{@link SynchronousJoin}</li>
-	 * <li>{@link SynchronousBoundJoin}</li>
 	 * <li>{@link ControlledWorkerJoin}</li>
 	 * <li>{@link ControlledWorkerBindJoin}</li>
 	 * </ul>

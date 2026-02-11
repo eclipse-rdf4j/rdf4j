@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 
+@Deprecated(forRemoval = true)
 public interface FedXApi {
 
 	TupleQueryResult evaluate(String query) throws QueryEvaluationException;

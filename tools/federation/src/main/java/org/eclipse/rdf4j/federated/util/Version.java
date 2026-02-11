@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
  * @author Andreas Schwarte
  *
  */
+@Deprecated(forRemoval = true)
 public class Version {
 
 	protected static final Logger log = LoggerFactory.getLogger(Version.class);
