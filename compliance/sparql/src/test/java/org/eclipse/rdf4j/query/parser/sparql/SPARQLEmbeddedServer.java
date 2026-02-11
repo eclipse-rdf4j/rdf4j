@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.parser.sparql;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.ServerSocket;
 import java.util.List;
 import java.util.Properties;
 
@@ -39,8 +40,8 @@ public class SPARQLEmbeddedServer {
 	private static final Logger logger = LoggerFactory.getLogger(SPARQLEmbeddedServer.class);
 
 	private static final String HOST = "localhost";
-
-	private static final int PORT = 18080; // this port is hardcoded in some (service) query fixtures
+	private static final int MIN_TEST_PORT = 32768;
+	private static final int PORT_ALLOCATION_ATTEMPTS = 100;
 
 	private static final String SERVER_CONTEXT = "/rdf4j-server";
 
@@ -49,6 +50,8 @@ public class SPARQLEmbeddedServer {
 	private final RemoteRepositoryManager repositoryManager;
 
 	private final Server jetty;
+	private final int port;
+	private final String serverUrl;
 
 	/**
 	 * @param repositoryIds
@@ -57,11 +60,13 @@ public class SPARQLEmbeddedServer {
 	public SPARQLEmbeddedServer(List<String> repositoryIds) throws IOException {
 		this.repositoryIds = repositoryIds;
 		System.clearProperty("DEBUG");
+		port = allocatePortAbove32768();
+		serverUrl = "http://" + HOST + ":" + port + SERVER_CONTEXT;
 
 		PropertiesReader reader = new PropertiesReader("maven-config.properties");
 		String webappDir = reader.getProperty("testserver.webapp.dir");
 		logger.debug("build path: {}", webappDir);
-		jetty = new Server(PORT);
+		jetty = new Server(port);
 
 		WebAppContext webapp = new WebAppContext();
 		WebAppContext.addServerClasses(jetty, "org.slf4j.", "ch.qos.logback.");
@@ -70,7 +75,7 @@ public class SPARQLEmbeddedServer {
 		webapp.setWar(webappDir);
 		jetty.setHandler(webapp);
 
-		repositoryManager = new RemoteRepositoryManager(getServerUrl());
+		repositoryManager = new RemoteRepositoryManager(serverUrl);
 	}
 
 	/**
@@ -84,7 +89,7 @@ public class SPARQLEmbeddedServer {
 	 * @return the server url
 	 */
 	public String getServerUrl() {
-		return "http://" + HOST + ":" + PORT + SERVER_CONTEXT;
+		return serverUrl;
 	}
 
 	public void start() throws Exception {
@@ -132,5 +137,17 @@ public class SPARQLEmbeddedServer {
 		public String getProperty(String propertyName) {
 			return this.properties.getProperty(propertyName);
 		}
+	}
+
+	private static int allocatePortAbove32768() throws IOException {
+		for (int attempt = 0; attempt < PORT_ALLOCATION_ATTEMPTS; attempt++) {
+			try (ServerSocket socket = new ServerSocket(0)) {
+				int candidate = socket.getLocalPort();
+				if (candidate > MIN_TEST_PORT) {
+					return candidate;
+				}
+			}
+		}
+		throw new IOException("Unable to allocate random test port above " + MIN_TEST_PORT);
 	}
 }

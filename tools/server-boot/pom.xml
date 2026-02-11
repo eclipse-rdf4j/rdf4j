@@ -10,7 +10,7 @@
 	<packaging>jar</packaging>
 	<name>RDF4J: Server + Workbench Spring Boot runner</name>
 	<properties>
-		<spring.boot.version>4.0.1</spring.boot.version>
+		<spring.boot.version>4.0.2</spring.boot.version>
 		<spring-framework.version>${spring.version}</spring-framework.version>
 		<maven.compiler.release>${java.version}</maven.compiler.release>
 		<enforce-javaee-provided.fail>false</enforce-javaee-provided.fail>

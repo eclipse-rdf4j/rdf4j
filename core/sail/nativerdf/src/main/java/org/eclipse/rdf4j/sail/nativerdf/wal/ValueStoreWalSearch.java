@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.core.StreamReadConstraints;
 
 /**
  * Utility to search a ValueStore WAL for a specific minted value ID efficiently.
@@ -46,7 +47,10 @@ public final class ValueStoreWalSearch {
 	private static final Pattern SEGMENT_PATTERN = Pattern.compile("wal-(\\d+)\\.v1(?:\\.gz)?");
 
 	private final ValueStoreWalConfig config;
-	private final JsonFactory jsonFactory = new JsonFactory();
+	private final JsonFactory jsonFactory = JsonFactory.builder()
+			.streamReadConstraints(
+					StreamReadConstraints.builder().maxStringLength(ValueStoreWAL.MAX_FRAME_BYTES).build())
+			.build();
 	private volatile List<SegFirst> cachedSegments;
 
 	private ValueStoreWalSearch(ValueStoreWalConfig config) {

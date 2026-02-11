@@ -36,7 +36,8 @@ import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TotalHitCountCollector;
-import org.apache.lucene.store.RAMDirectory;
+import org.apache.lucene.store.ByteBuffersDirectory;
+import org.apache.lucene.store.Directory;
 import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -113,7 +114,7 @@ public class LuceneIndexTest {
 	Statement statementContext232 = vf.createStatement(subject2, predicate2, object5, CONTEXT_2);
 
 	// add a statement to an index
-	RAMDirectory directory;
+	Directory directory;
 
 	StandardAnalyzer analyzer;
 
@@ -121,7 +122,7 @@ public class LuceneIndexTest {
 
 	@BeforeEach
 	public void setUp() throws Exception {
-		directory = new RAMDirectory();
+		directory = new ByteBuffersDirectory();
 		analyzer = new StandardAnalyzer();
 		index = new LuceneIndex(directory, analyzer);
 	}
@@ -148,7 +149,7 @@ public class LuceneIndexTest {
 		assertTrue(next(docs));
 
 		int documentNr = docs.docID();
-		Document document = reader.document(documentNr);
+		Document document = reader.storedFields().document(documentNr);
 		assertEquals(subject.toString(), document.get(SearchFields.URI_FIELD_NAME));
 		assertEquals(object1.getLabel(), document.get(predicate1.toString()));
 
@@ -169,7 +170,7 @@ public class LuceneIndexTest {
 		assertTrue(next(docs));
 
 		documentNr = docs.docID();
-		document = reader.document(documentNr);
+		document = reader.storedFields().document(documentNr);
 		assertEquals(subject.toString(), document.get(SearchFields.URI_FIELD_NAME));
 		assertEquals(object1.getLabel(), document.get(predicate1.toString()));
 		assertEquals(object2.getLabel(), document.get(predicate2.toString()));
@@ -207,7 +208,7 @@ public class LuceneIndexTest {
 		assertTrue(next(docs));
 
 		documentNr = docs.docID();
-		document = reader.document(documentNr);
+		document = reader.storedFields().document(documentNr);
 		assertEquals(subject.toString(), document.get(SearchFields.URI_FIELD_NAME));
 		assertNull(document.get(predicate1.toString()));
 		assertEquals(object2.getLabel(), document.get(predicate2.toString()));

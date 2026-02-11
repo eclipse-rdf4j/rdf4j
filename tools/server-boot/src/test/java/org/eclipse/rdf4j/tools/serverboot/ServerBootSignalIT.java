@@ -54,6 +54,9 @@ import org.junit.jupiter.api.condition.OS;
 @EnabledOnOs({ OS.LINUX, OS.MAC })
 class ServerBootSignalIT {
 
+	private static final int MIN_TEST_PORT = 32768;
+	private static final int PORT_ALLOCATION_ATTEMPTS = 100;
+
 	private ExecutorService streamExecutor;
 	private final List<Runnable> cleanupActions = new ArrayList<>();
 
@@ -249,9 +252,15 @@ class ServerBootSignalIT {
 	}
 
 	private int findFreePort() throws IOException {
-		try (ServerSocket socket = new ServerSocket(0)) {
-			socket.setReuseAddress(true);
-			return socket.getLocalPort();
+		for (int attempt = 0; attempt < PORT_ALLOCATION_ATTEMPTS; attempt++) {
+			try (ServerSocket socket = new ServerSocket(0)) {
+				socket.setReuseAddress(true);
+				int candidate = socket.getLocalPort();
+				if (candidate > MIN_TEST_PORT) {
+					return candidate;
+				}
+			}
 		}
+		throw new IOException("Unable to allocate random test port above " + MIN_TEST_PORT);
 	}
 }

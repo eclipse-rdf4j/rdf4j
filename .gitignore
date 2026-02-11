@@ -56,3 +56,4 @@ e2e/test-results
 .serena/
 .vscode
 /rdf4j-upgrade-elasticsearch-lucene-and-solr/
+/.codex/environments/environment.toml

@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.http.server;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.ServerSocket;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Properties;
@@ -29,7 +30,6 @@ import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.inferencer.fc.config.SchemaCachingRDFSInferencerConfig;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,6 +40,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
+
 /**
  * @author Herko ter Horst
  */
@@ -48,8 +49,8 @@ public class TestServer {
 	private static final Logger logger = LoggerFactory.getLogger(TestServer.class);
 
 	private static final String HOST = "localhost";
-
-	private static final int PORT = 18080;
+	private static final int MIN_TEST_PORT = 32768;
+	private static final int PORT_ALLOCATION_ATTEMPTS = 100;
 
 	public static final String TEST_REPO_ID = "Test";
 
@@ -58,18 +59,25 @@ public class TestServer {
 
 	private static final String RDF4J_CONTEXT = "/rdf4j";
 
-	public static final String SERVER_URL = "http://" + HOST + ":" + PORT + RDF4J_CONTEXT;
-	public static String REPOSITORY_URL = Protocol.getRepositoryLocation(SERVER_URL, TEST_REPO_ID);
+	public static String SERVER_URL;
+	public static String REPOSITORY_URL;
 
 	private final RemoteRepositoryManager manager;
 
 	private final Server jetty;
 
 	private final WebAppContext webapp;
+	private final int port;
+	private final String serverUrl;
 	private static final String DISPATCHER_CONTEXT_ATTRIBUTE = "org.springframework.web.servlet.FrameworkServlet.CONTEXT.rdf4j-http-server";
 
 	public TestServer() throws IOException {
 		System.clearProperty("DEBUG");
+		port = allocatePortAbove32768();
+		serverUrl = "http://" + HOST + ":" + port + RDF4J_CONTEXT;
+		SERVER_URL = serverUrl;
+		REPOSITORY_URL = Protocol.getRepositoryLocation(serverUrl, TEST_REPO_ID);
+
 		PropertiesReader reader = new PropertiesReader("maven-config.properties");
 		String webappDir = reader.getProperty("testserver.webapp.dir");
 		logger.debug("build path: {}", webappDir);
@@ -78,7 +86,7 @@ public class TestServer {
 
 		ServerConnector conn = new ServerConnector(jetty);
 		conn.setHost(HOST);
-		conn.setPort(PORT);
+		conn.setPort(port);
 		jetty.addConnector(conn);
 
 		webapp = new WebAppContext();
@@ -91,7 +99,7 @@ public class TestServer {
 		}
 		jetty.setHandler(webapp);
 
-		manager = RemoteRepositoryManager.getInstance(SERVER_URL);
+		manager = RemoteRepositoryManager.getInstance(serverUrl);
 	}
 
 	public void start() throws Exception {
@@ -248,4 +256,15 @@ public class TestServer {
 		}
 	}
 
+	private static int allocatePortAbove32768() throws IOException {
+		for (int attempt = 0; attempt < PORT_ALLOCATION_ATTEMPTS; attempt++) {
+			try (ServerSocket socket = new ServerSocket(0)) {
+				int candidate = socket.getLocalPort();
+				if (candidate > MIN_TEST_PORT) {
+					return candidate;
+				}
+			}
+		}
+		throw new IOException("Unable to allocate random test port above " + MIN_TEST_PORT);
+	}
 }

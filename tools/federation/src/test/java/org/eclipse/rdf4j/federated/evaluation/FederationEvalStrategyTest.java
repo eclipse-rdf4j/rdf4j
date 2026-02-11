@@ -43,7 +43,8 @@ public class FederationEvalStrategyTest extends SPARQLBaseTest {
 		String query = "SELECT * WHERE { ?s ?o ?o }";
 		String queryPlan = federationContext().getQueryManager().getQueryPlan(query);
 
-		Assertions.assertTrue(queryPlan.startsWith("SingleSourceQuery @sparql_localhost:18080_repositories_endpoint1"));
+		Assertions.assertTrue(queryPlan.startsWith("SingleSourceQuery @sparql_localhost:"));
+		Assertions.assertTrue(queryPlan.contains("_repositories_endpoint1"));
 	}
 
 	@Test

@@ -21,11 +21,10 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.Random;
 
-import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStore;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreConfig;
@@ -40,25 +39,35 @@ class ValueStoreWalSearchTest {
 
 	@Test
 	void findsValueByIdViaSegmentProbe() throws Exception {
-		// Configure NativeStore with small WAL segment size to ensure multiple segments possible
+		// Configure NativeStore with small WAL segment size to ensure multiple segments.
 		NativeStoreConfig cfg = new NativeStoreConfig("spoc,ospc,psoc");
-		cfg.setWalMaxSegmentBytes(64 * 1024); // 64 KiB
-		cfg.setWalSyncPolicy(ValueStoreWalConfig.SyncPolicy.ALWAYS.name());
+		cfg.setWalMaxSegmentBytes(32 * 1024); // 32 KiB
+		cfg.setWalSyncPolicy(ValueStoreWalConfig.SyncPolicy.INTERVAL.name());
 		NativeStore store = (NativeStore) new NativeStoreFactory().getSail(cfg);
 		store.setDataDir(dataDir);
 		SailRepository repo = new SailRepository(store);
 		repo.init();
 		try (SailRepositoryConnection conn = repo.getConnection()) {
-			try (var in = BenchmarkResources.openDecompressedStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
-				assertThat(in).isNotNull();
-				conn.add(in, "", RDFFormat.TURTLE);
+			var vf = SimpleValueFactory.getInstance();
+			var predicate = vf.createIRI("urn:predicate");
+			conn.begin();
+			for (int i = 0; i < 1500; i++) {
+				conn.add(vf.createIRI("urn:subject:" + i), predicate,
+						vf.createLiteral("value-" + i + "-" + "x".repeat(40)));
 			}
+			conn.commit();
 		}
 		repo.shutDown();
 
 		Path walDir = dataDir.toPath().resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 		String storeUuid = Files.readString(walDir.resolve("store.uuid"), StandardCharsets.UTF_8).trim();
 		ValueStoreWalConfig cfgRead = ValueStoreWalConfig.builder().walDirectory(walDir).storeUuid(storeUuid).build();
+		try (var walFiles = Files.list(walDir)) {
+			long segmentCount = walFiles.map(path -> path.getFileName().toString())
+					.filter(name -> name.matches("wal-\\d+\\.v1(\\.gz)?"))
+					.count();
+			assertThat(segmentCount).as("expected multiple WAL segments for probe search").isGreaterThan(1);
+		}
 
 		// Build dictionary of minted values from WAL and pick a random entry
 		Map<Integer, ValueStoreWalRecord> dict = Map.of();

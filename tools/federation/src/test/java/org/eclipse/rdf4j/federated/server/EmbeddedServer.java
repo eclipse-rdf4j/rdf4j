@@ -11,6 +11,8 @@
 package org.eclipse.rdf4j.federated.server;
 
 import java.io.File;
+import java.io.IOException;
+import java.net.ServerSocket;
 import java.nio.file.Paths;
 
 import org.eclipse.jetty.ee11.webapp.WebAppContext;
@@ -20,19 +22,26 @@ import org.eclipse.jetty.server.ServerConnector;
 public class EmbeddedServer {
 
 	public static final String HOST = "localhost";
-	public static final int PORT = 18080;
+	private static final int MIN_TEST_PORT = 32768;
+	private static final int PORT_ALLOCATION_ATTEMPTS = 100;
 	public static final String CONTEXT_PATH = "/";
 	public static final String WAR_PATH = Paths.get("build", "test", "rdf4j-server")
 			.toAbsolutePath()
 			.toString();
 
 	private final Server jetty;
+	private final String host;
+	private final int port;
+	private final String contextPath;
 
-	public EmbeddedServer() {
-		this(HOST, PORT, CONTEXT_PATH, WAR_PATH);
+	public EmbeddedServer() throws IOException {
+		this(HOST, allocatePortAbove32768(), CONTEXT_PATH, WAR_PATH);
 	}
 
 	public EmbeddedServer(String host, int port, String contextPath, String warPath) {
+		this.host = host;
+		this.port = port;
+		this.contextPath = contextPath;
 
 		jetty = new Server();
 
@@ -47,6 +56,10 @@ public class EmbeddedServer {
 		webapp.setTempDirectory(new File("temp/webapp/"));
 		webapp.setWar(warPath);
 		jetty.setHandler(webapp);
+	}
+
+	public String getServerUrl() {
+		return "http://" + host + ":" + port + contextPath;
 	}
 
 	public void start() throws Exception {
@@ -65,5 +78,17 @@ public class EmbeddedServer {
 			throws Exception {
 		EmbeddedServer server = new EmbeddedServer();
 		server.start();
+	}
+
+	private static int allocatePortAbove32768() throws IOException {
+		for (int attempt = 0; attempt < PORT_ALLOCATION_ATTEMPTS; attempt++) {
+			try (ServerSocket socket = new ServerSocket(0)) {
+				int candidate = socket.getLocalPort();
+				if (candidate > MIN_TEST_PORT) {
+					return candidate;
+				}
+			}
+		}
+		throw new IOException("Unable to allocate random test port above " + MIN_TEST_PORT);
 	}
 }
