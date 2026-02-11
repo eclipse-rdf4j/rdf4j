@@ -276,7 +276,7 @@ def main() -> int:
         print(f"Test selector: {test_selector} ({'failsafe' if args.it else 'surefire'})")
 
     clean_cmd = mvn_cmd + common_flags + ["-pl", module, "clean"]
-    install_cmd = mvn_cmd + (offline_flag + ["-T", "1C", "-Dmaven.repo.local=.m2_repo", "-Pquick", "clean", "install"])
+    install_cmd = mvn_cmd + (offline_flag + ["-T", "1C", "-Dmaven.repo.local=.m2_repo", "-Pquick", "install"])
 
     verify_cmd = mvn_cmd + common_flags + ["-pl", module]
     if test_selector is not None:
@@ -298,7 +298,7 @@ def main() -> int:
 
     rc, _ = _run(install_cmd, repo_root, args.tail, log_paths[1], args.stream)
     if rc != 0:
-        print("\n[mvnf] Root clean install failed.")
+        print("\n[mvnf] Root install failed.")
         return rc
 
     rc, _ = _run(verify_cmd, repo_root, args.tail, log_paths[2], args.stream)

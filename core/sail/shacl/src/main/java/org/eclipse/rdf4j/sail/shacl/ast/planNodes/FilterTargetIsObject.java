@@ -27,6 +27,7 @@ public class FilterTargetIsObject extends FilterPlanNode {
 
 	private final SailConnection connection;
 	private final Resource[] dataGraph;
+	private final boolean includeInferredStatements;
 
 	public FilterTargetIsObject(SailConnection connection, Resource[] dataGraph, PlanNode parent,
 			ConnectionsGroup connectionsGroup) {
@@ -34,12 +35,13 @@ public class FilterTargetIsObject extends FilterPlanNode {
 		this.connection = connection;
 		assert this.connection != null;
 		this.dataGraph = dataGraph;
+		this.includeInferredStatements = connectionsGroup.isIncludeInferredStatements();
 	}
 
 	@Override
 	boolean checkTuple(Reference t) {
 		Value target = t.get().getActiveTarget();
-		return connection.hasStatement(null, null, target, true, dataGraph);
+		return connection.hasStatement(null, null, target, includeInferredStatements, dataGraph);
 	}
 
 	@Override
@@ -61,7 +63,8 @@ public class FilterTargetIsObject extends FilterPlanNode {
 					.equals(((MemoryStoreConnection) that.connection).getSail())
 					&& Arrays.equals(dataGraph, that.dataGraph);
 		}
-		return Objects.equals(connection, that.connection) && Arrays.equals(dataGraph, that.dataGraph);
+		return Objects.equals(connection, that.connection) && Arrays.equals(dataGraph, that.dataGraph)
+				&& includeInferredStatements == that.includeInferredStatements;
 	}
 
 	@Override
@@ -70,6 +73,6 @@ public class FilterTargetIsObject extends FilterPlanNode {
 			return Objects.hash(super.hashCode(), ((MemoryStoreConnection) connection).getSail(),
 					Arrays.hashCode(dataGraph));
 		}
-		return Objects.hash(super.hashCode(), connection, Arrays.hashCode(dataGraph));
+		return Objects.hash(super.hashCode(), connection, Arrays.hashCode(dataGraph), includeInferredStatements);
 	}
 }

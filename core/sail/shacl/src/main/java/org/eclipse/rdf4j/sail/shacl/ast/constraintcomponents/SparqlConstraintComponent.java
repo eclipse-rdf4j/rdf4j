@@ -199,7 +199,8 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent imple
 		}
 
 		return new SparqlConstraintSelect(connectionsGroup.getBaseConnection(), allTargets, select, scope,
-				validationSettings.getDataGraph(), produceValidationReports, this, shape);
+				validationSettings.getDataGraph(), produceValidationReports, this, shape,
+				connectionsGroup.isIncludeInferredStatements());
 
 	}
 

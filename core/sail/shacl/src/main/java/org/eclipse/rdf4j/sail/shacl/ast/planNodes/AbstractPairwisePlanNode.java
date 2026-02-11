@@ -56,13 +56,14 @@ abstract class AbstractPairwisePlanNode implements PlanNode {
 	private final PlanNode parent;
 	private final Shape shape;
 	private final ConstraintComponent constraintComponent;
+	private final boolean includeInferredStatements;
 	private ValidationExecutionLogger validationExecutionLogger;
 	private boolean produceValidationReports;
 
 	public AbstractPairwisePlanNode(SailConnection connection, Resource[] dataGraph, PlanNode parent,
 			IRI predicate, StatementMatcher.Variable<Resource> subject, StatementMatcher.Variable<Value> object,
 			SparqlFragment targetQueryFragment, Shape shape, ConstraintComponent constraintComponent,
-			boolean produceValidationReports) {
+			boolean produceValidationReports, boolean includeInferredStatements) {
 		this.parent = parent;
 		this.connection = connection;
 		assert this.connection != null;
@@ -79,6 +80,7 @@ abstract class AbstractPairwisePlanNode implements PlanNode {
 		this.shape = shape;
 		this.constraintComponent = constraintComponent;
 		this.produceValidationReports = produceValidationReports;
+		this.includeInferredStatements = includeInferredStatements;
 
 	}
 
@@ -95,14 +97,16 @@ abstract class AbstractPairwisePlanNode implements PlanNode {
 			TupleExpr tupleExpr = SparqlQueryParserCache.get(query);
 
 			try (Stream<? extends BindingSet> stream = connection
-					.evaluate(tupleExpr, dataset, new SingletonBindingSet(subject.getName(), target), true)
+					.evaluate(tupleExpr, dataset, new SingletonBindingSet(subject.getName(), target),
+							includeInferredStatements)
 					.stream()) {
 				valuesByPath = stream.map(bindingSet -> bindingSet.getValue(object.getName()))
 						.collect(Collectors.toSet());
 			}
 		}
 
-		try (Stream<? extends Statement> stream = connection.getStatements(target, predicate, null, false, dataGraph)
+		try (Stream<? extends Statement> stream = connection.getStatements(target, predicate, null,
+				includeInferredStatements, dataGraph)
 				.stream()) {
 			valuesByPredicate = stream.map(Statement::getObject).collect(Collectors.toSet());
 		}

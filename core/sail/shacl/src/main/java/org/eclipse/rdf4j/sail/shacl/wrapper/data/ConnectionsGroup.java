@@ -58,6 +58,7 @@ public class ConnectionsGroup implements AutoCloseable {
 
 	private final RdfsSubClassOfReasonerProvider rdfsSubClassOfReasonerProvider;
 	private final boolean sparqlValidation;
+	private final boolean includeInferredStatements;
 
 	// used to cache Select plan nodes so that we don't query a store for the same data during the same validation step.
 	private final Map<PlanNode, BufferedSplitter> nodeCache = new ConcurrentHashMap<>();
@@ -70,12 +71,14 @@ public class ConnectionsGroup implements AutoCloseable {
 	public ConnectionsGroup(SailConnection baseConnection,
 			SailConnection previousStateConnection, Sail addedStatements, Sail removedStatements,
 			Stats stats, RdfsSubClassOfReasonerProvider rdfsSubClassOfReasonerProvider,
-			ShaclSailConnection.Settings transactionSettings, boolean sparqlValidation) {
+			boolean includeInferredStatements, ShaclSailConnection.Settings transactionSettings,
+			boolean sparqlValidation) {
 		this.baseConnection = baseConnection;
 		this.previousStateConnection = previousStateConnection;
 
 		this.stats = stats;
 		this.rdfsSubClassOfReasonerProvider = rdfsSubClassOfReasonerProvider;
+		this.includeInferredStatements = includeInferredStatements;
 		this.transactionSettings = transactionSettings;
 		this.sparqlValidation = sparqlValidation;
 
@@ -240,6 +243,10 @@ public class ConnectionsGroup implements AutoCloseable {
 
 	public Stats getStats() {
 		return stats;
+	}
+
+	public boolean isIncludeInferredStatements() {
+		return includeInferredStatements;
 	}
 
 	public ShaclSailConnection.Settings getTransactionSettings() {

@@ -27,6 +27,7 @@ public class FilterTargetIsSubject extends FilterPlanNode {
 
 	private final SailConnection connection;
 	private final Resource[] dataGraph;
+	private final boolean includeInferredStatements;
 
 	public FilterTargetIsSubject(SailConnection connection, Resource[] dataGraph, PlanNode parent,
 			ConnectionsGroup connectionsGroup) {
@@ -34,6 +35,7 @@ public class FilterTargetIsSubject extends FilterPlanNode {
 		this.connection = connection;
 		assert this.connection != null;
 		this.dataGraph = dataGraph;
+		this.includeInferredStatements = connectionsGroup.isIncludeInferredStatements();
 	}
 
 	@Override
@@ -42,7 +44,7 @@ public class FilterTargetIsSubject extends FilterPlanNode {
 		Value target = t.get().getActiveTarget();
 
 		if (target.isResource()) {
-			return connection.hasStatement((Resource) target, null, null, true, dataGraph);
+			return connection.hasStatement((Resource) target, null, null, includeInferredStatements, dataGraph);
 		} else {
 			return false;
 		}
@@ -68,7 +70,8 @@ public class FilterTargetIsSubject extends FilterPlanNode {
 					.equals(((MemoryStoreConnection) that.connection).getSail())
 					&& Arrays.equals(dataGraph, that.dataGraph);
 		}
-		return Objects.equals(connection, that.connection) && Arrays.equals(dataGraph, that.dataGraph);
+		return Objects.equals(connection, that.connection) && Arrays.equals(dataGraph, that.dataGraph)
+				&& includeInferredStatements == that.includeInferredStatements;
 	}
 
 	@Override
@@ -77,6 +80,6 @@ public class FilterTargetIsSubject extends FilterPlanNode {
 			return Objects.hash(super.hashCode(), ((MemoryStoreConnection) connection).getSail(),
 					Arrays.hashCode(dataGraph));
 		}
-		return Objects.hash(super.hashCode(), connection, Arrays.hashCode(dataGraph));
+		return Objects.hash(super.hashCode(), connection, Arrays.hashCode(dataGraph), includeInferredStatements);
 	}
 }
