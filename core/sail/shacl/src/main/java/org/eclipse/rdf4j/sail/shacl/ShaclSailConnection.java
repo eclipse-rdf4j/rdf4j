@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShape;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.lazy.LazyValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.lazy.ValidationResultIterator;
@@ -76,11 +77,25 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	Sail addedStatements;
 	Sail removedStatements;
+	Sail addedStatementsInferred;
+	Sail removedStatementsInferred;
+	Sail addedStatementsRdfsInferred;
+	Sail removedStatementsRdfsInferred;
+	Sail addedStatementsWithInferred;
+	Sail removedStatementsWithInferred;
+	Sail addedStatementsWithRdfsInferred;
+	Sail removedStatementsWithRdfsInferred;
+	Sail addedStatementsWithInferredAndRdfs;
+	Sail removedStatementsWithInferredAndRdfs;
 
 	private final HashSet<Statement> addedStatementsSet = new HashSet<>();
 	private final HashSet<Statement> removedStatementsSet = new HashSet<>();
+	private final HashSet<Statement> addedStatementsInferredSet = new HashSet<>();
+	private final HashSet<Statement> removedStatementsInferredSet = new HashSet<>();
 
 	private boolean shapeRefreshNeeded = false;
+	private boolean legacyStatementAddedWithoutInferredFlagObserved = false;
+	private boolean legacyStatementRemovedWithoutInferredFlagObserved = false;
 	private boolean shapesModifiedInCurrentTransaction = false;
 
 	public final ShaclSail sail;
@@ -303,7 +318,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			throws SailException {
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesRepoConnection.add(subj, pred, obj, contexts);
-			shapeRefreshNeeded = true;
+			markShapesRefreshNeeded();
 		} else {
 			super.addStatement(modify, subj, pred, obj, contexts);
 		}
@@ -314,7 +329,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			throws SailException {
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesRepoConnection.remove(subj, pred, obj, contexts);
-			shapeRefreshNeeded = true;
+			markShapesRefreshNeeded();
 		} else {
 			super.removeStatement(modify, subj, pred, obj, contexts);
 		}
@@ -324,7 +339,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesRepoConnection.add(subj, pred, obj, contexts);
-			shapeRefreshNeeded = true;
+			markShapesRefreshNeeded();
 		} else {
 			super.addStatement(subj, pred, obj, contexts);
 		}
@@ -334,7 +349,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (useDefaultShapesGraph && contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesRepoConnection.remove(subj, pred, obj, contexts);
-			shapeRefreshNeeded = true;
+			markShapesRefreshNeeded();
 		} else {
 			super.removeStatements(subj, pred, obj, contexts);
 		}
@@ -344,7 +359,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void clear(Resource... contexts) throws SailException {
 		if (Arrays.asList(contexts).contains(RDF4J.SHACL_SHAPE_GRAPH)) {
 			shapesRepoConnection.clear();
-			shapeRefreshNeeded = true;
+			markShapesRefreshNeeded();
 		}
 		super.clear(contexts);
 	}
@@ -427,12 +442,56 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				removedStatements.shutDown();
 				removedStatements = null;
 			}
+			if (addedStatementsInferred != null) {
+				addedStatementsInferred.shutDown();
+				addedStatementsInferred = null;
+			}
+			if (removedStatementsInferred != null) {
+				removedStatementsInferred.shutDown();
+				removedStatementsInferred = null;
+			}
+			if (addedStatementsRdfsInferred != null) {
+				addedStatementsRdfsInferred.shutDown();
+				addedStatementsRdfsInferred = null;
+			}
+			if (removedStatementsRdfsInferred != null) {
+				removedStatementsRdfsInferred.shutDown();
+				removedStatementsRdfsInferred = null;
+			}
+			if (addedStatementsWithInferred != null) {
+				addedStatementsWithInferred.shutDown();
+				addedStatementsWithInferred = null;
+			}
+			if (removedStatementsWithInferred != null) {
+				removedStatementsWithInferred.shutDown();
+				removedStatementsWithInferred = null;
+			}
+			if (addedStatementsWithRdfsInferred != null) {
+				addedStatementsWithRdfsInferred.shutDown();
+				addedStatementsWithRdfsInferred = null;
+			}
+			if (removedStatementsWithRdfsInferred != null) {
+				removedStatementsWithRdfsInferred.shutDown();
+				removedStatementsWithRdfsInferred = null;
+			}
+			if (addedStatementsWithInferredAndRdfs != null) {
+				addedStatementsWithInferredAndRdfs.shutDown();
+				addedStatementsWithInferredAndRdfs = null;
+			}
+			if (removedStatementsWithInferredAndRdfs != null) {
+				removedStatementsWithInferredAndRdfs.shutDown();
+				removedStatementsWithInferredAndRdfs = null;
+			}
 
 			addedStatementsSet.clear();
 			removedStatementsSet.clear();
+			addedStatementsInferredSet.clear();
+			removedStatementsInferredSet.clear();
 			stats = null;
 			prepareHasBeenCalled = false;
 			shapeRefreshNeeded = false;
+			legacyStatementAddedWithoutInferredFlagObserved = false;
+			legacyStatementRemovedWithoutInferredFlagObserved = false;
 			shapesModifiedInCurrentTransaction = false;
 
 			currentIsolationLevel = null;
@@ -497,7 +556,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		try {
 			try (ConnectionsGroup connectionsGroup = getConnectionsGroup()) {
-				return performValidation(shapes, validateEntireBaseSail, connectionsGroup);
+				return performValidation(shapes, validateEntireBaseSail, connectionsGroup, this,
+						previousStateConnection);
 			}
 		} finally {
 			rdfsSubClassOfReasoner = null;
@@ -505,12 +565,15 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	}
 
-	void prepareValidation(ValidationSettings validationSettings) throws InterruptedException {
+	void prepareValidation(ValidationSettings validationSettings, boolean requireRdfsSubClassReasoning)
+			throws InterruptedException {
 
 		assert isValidationEnabled();
 
-		if (sail.isRdfsSubClassReasoning()) {
+		if (requireRdfsSubClassReasoning) {
 			rdfsSubClassOfReasoner = RdfsSubClassOfReasoner.createReasoner(this, validationSettings);
+		} else {
+			rdfsSubClassOfReasoner = null;
 		}
 
 		if (sail.isShutdown()) {
@@ -528,15 +591,143 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	ConnectionsGroup getConnectionsGroup() {
+		return getConnectionsGroup(this, previousStateConnection, sail.isIncludeInferredStatements(),
+				sail.isRdfsSubClassReasoning());
+	}
 
-		return new ConnectionsGroup(new VerySimpleRdfsBackwardsChainingConnection(this, rdfsSubClassOfReasoner),
-				previousStateConnection, addedStatements, removedStatements, stats,
-				this::getRdfsSubClassOfReasoner, transactionSettings, sail.sparqlValidation);
+	ConnectionsGroup getConnectionsGroup(SailConnection baseConnection, SailConnection previousStateConnection,
+			boolean includeInferredStatements, boolean useRdfsSubClassReasoning) {
+		RdfsSubClassOfReasoner reasoner = useRdfsSubClassReasoning ? rdfsSubClassOfReasoner : null;
+		ConnectionsGroup.RdfsSubClassOfReasonerProvider provider = reasoner == null ? null : () -> reasoner;
+		Sail effectiveAddedStatements = getEffectiveAddedStatements(includeInferredStatements,
+				useRdfsSubClassReasoning);
+		Sail effectiveRemovedStatements = getEffectiveRemovedStatements(includeInferredStatements,
+				useRdfsSubClassReasoning);
+
+		return new ConnectionsGroup(
+				new VerySimpleRdfsBackwardsChainingConnection(baseConnection, reasoner, includeInferredStatements),
+				previousStateConnection, effectiveAddedStatements, effectiveRemovedStatements, stats,
+				provider, includeInferredStatements, transactionSettings, sail.sparqlValidation);
+	}
+
+	private Sail getEffectiveAddedStatements(boolean includeInferredStatements, boolean useRdfsSubClassReasoning) {
+		boolean includeBaseInferred = includeInferredStatements && addedStatementsInferred != null;
+		boolean includeRdfsInferred = useRdfsSubClassReasoning && addedStatementsRdfsInferred != null;
+		if (!includeBaseInferred && !includeRdfsInferred) {
+			return addedStatements;
+		}
+		if (includeBaseInferred && includeRdfsInferred) {
+			if (addedStatementsWithInferredAndRdfs == null) {
+				addedStatementsWithInferredAndRdfs = buildCombinedStatements(addedStatements,
+						addedStatementsInferred, addedStatementsRdfsInferred);
+			}
+			return addedStatementsWithInferredAndRdfs;
+		}
+		if (includeBaseInferred) {
+			if (addedStatementsWithInferred == null) {
+				addedStatementsWithInferred = buildCombinedStatements(addedStatements, addedStatementsInferred, null);
+			}
+			return addedStatementsWithInferred;
+		}
+		if (addedStatementsWithRdfsInferred == null) {
+			addedStatementsWithRdfsInferred = buildCombinedStatements(addedStatements, null,
+					addedStatementsRdfsInferred);
+		}
+		return addedStatementsWithRdfsInferred;
+	}
+
+	private Sail getEffectiveRemovedStatements(boolean includeInferredStatements, boolean useRdfsSubClassReasoning) {
+		boolean includeBaseInferred = includeInferredStatements && removedStatementsInferred != null;
+		boolean includeRdfsInferred = useRdfsSubClassReasoning && removedStatementsRdfsInferred != null;
+		if (!includeBaseInferred && !includeRdfsInferred) {
+			return removedStatements;
+		}
+		if (includeBaseInferred && includeRdfsInferred) {
+			if (removedStatementsWithInferredAndRdfs == null) {
+				removedStatementsWithInferredAndRdfs = buildCombinedStatements(removedStatements,
+						removedStatementsInferred, removedStatementsRdfsInferred);
+			}
+			return removedStatementsWithInferredAndRdfs;
+		}
+		if (includeBaseInferred) {
+			if (removedStatementsWithInferred == null) {
+				removedStatementsWithInferred = buildCombinedStatements(removedStatements, removedStatementsInferred,
+						null);
+			}
+			return removedStatementsWithInferred;
+		}
+		if (removedStatementsWithRdfsInferred == null) {
+			removedStatementsWithRdfsInferred = buildCombinedStatements(removedStatements, null,
+					removedStatementsRdfsInferred);
+		}
+		return removedStatementsWithRdfsInferred;
+	}
+
+	private Sail buildCombinedStatements(Sail explicitStatements, Sail inferredStatements,
+			Sail rdfsInferredStatements) {
+		if (explicitStatements == null && inferredStatements == null && rdfsInferredStatements == null) {
+			return null;
+		}
+		Sail combinedStatements = getNewMemorySail();
+		try (SailConnection combinedConnection = combinedStatements.getConnection()) {
+			combinedConnection.begin(IsolationLevels.NONE);
+			copyStatements(explicitStatements, combinedConnection);
+			copyStatements(inferredStatements, combinedConnection);
+			copyStatements(rdfsInferredStatements, combinedConnection);
+			combinedConnection.commit();
+		}
+		return combinedStatements;
+	}
+
+	private void copyStatements(Sail source, SailConnection target) {
+		if (source == null) {
+			return;
+		}
+		try (SailConnection from = source.getConnection()) {
+			ConnectionHelper.transferStatements(from, target::addStatement);
+		}
+	}
+
+	private void resetCombinedStatementStores() {
+		if (addedStatementsWithInferred != null) {
+			addedStatementsWithInferred.shutDown();
+			addedStatementsWithInferred = null;
+		}
+		if (removedStatementsWithInferred != null) {
+			removedStatementsWithInferred.shutDown();
+			removedStatementsWithInferred = null;
+		}
+		if (addedStatementsWithRdfsInferred != null) {
+			addedStatementsWithRdfsInferred.shutDown();
+			addedStatementsWithRdfsInferred = null;
+		}
+		if (removedStatementsWithRdfsInferred != null) {
+			removedStatementsWithRdfsInferred.shutDown();
+			removedStatementsWithRdfsInferred = null;
+		}
+		if (addedStatementsWithInferredAndRdfs != null) {
+			addedStatementsWithInferredAndRdfs.shutDown();
+			addedStatementsWithInferredAndRdfs = null;
+		}
+		if (removedStatementsWithInferredAndRdfs != null) {
+			removedStatementsWithInferredAndRdfs.shutDown();
+			removedStatementsWithInferredAndRdfs = null;
+		}
+	}
+
+	private boolean requiresRdfsSubClassReasoner(List<ContextWithShape> shapes) {
+		return shapes.stream()
+				.map(ContextWithShape::getShape)
+				.map(Shape::getRdfsSubClassReasoningOverride)
+				.anyMatch(Boolean.TRUE::equals);
 	}
 
 	private ValidationReport performValidation(List<ContextWithShape> shapes, boolean validateEntireBaseSail,
-			ConnectionsGroup connectionsGroup) throws InterruptedException {
+			ConnectionsGroup connectionsGroup, SailConnection baseConnection, SailConnection previousStateConnection)
+			throws InterruptedException {
 		long beforeValidation = 0;
+		boolean defaultIncludeInferredStatements = sail.isIncludeInferredStatements();
+		boolean defaultRdfsSubClassReasoning = sail.isRdfsSubClassReasoning();
 
 		if (sail.isPerformanceLogging()) {
 			beforeValidation = System.currentTimeMillis();
@@ -547,18 +738,36 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			Stream<Callable<ValidationResultIterator>> callableStream = shapes
 					.stream()
-					.map(contextWithShapes -> new ShapeValidationContainer(
-							contextWithShapes.getShape(),
-							() -> contextWithShapes.getShape()
-									.generatePlans(connectionsGroup,
-											new ValidationSettings(contextWithShapes.getDataGraph(),
-													sail.isLogValidationPlans(), validateEntireBaseSail,
-													sail.isPerformanceLogging())),
-							sail.isGlobalLogValidationExecution(), sail.isLogValidationViolations(),
-							sail.getEffectiveValidationResultsLimitPerConstraint(), sail.isPerformanceLogging(),
-							sail.isLogValidationPlans(),
-							logger,
-							connectionsGroup))
+					.map(contextWithShapes -> {
+						Shape shape = contextWithShapes.getShape();
+						boolean shapeRdfsSubClassReasoning = shape
+								.usesRdfsSubClassReasoning(defaultRdfsSubClassReasoning);
+						boolean shapeIncludeInferredStatements = shape
+								.usesIncludeInferredStatements(defaultIncludeInferredStatements);
+
+						boolean closeConnectionsGroup = false;
+						ConnectionsGroup shapeConnectionsGroup = connectionsGroup;
+						if (shapeRdfsSubClassReasoning != defaultRdfsSubClassReasoning
+								|| shapeIncludeInferredStatements != defaultIncludeInferredStatements) {
+							shapeConnectionsGroup = getConnectionsGroup(baseConnection, previousStateConnection,
+									shapeIncludeInferredStatements, shapeRdfsSubClassReasoning);
+							closeConnectionsGroup = true;
+						}
+						ConnectionsGroup planConnectionsGroup = shapeConnectionsGroup;
+
+						return new ShapeValidationContainer(
+								shape,
+								() -> shape.generatePlans(planConnectionsGroup,
+										new ValidationSettings(contextWithShapes.getDataGraph(),
+												sail.isLogValidationPlans(), validateEntireBaseSail,
+												sail.isPerformanceLogging())),
+								sail.isGlobalLogValidationExecution(), sail.isLogValidationViolations(),
+								sail.getEffectiveValidationResultsLimitPerConstraint(), sail.isPerformanceLogging(),
+								sail.isLogValidationPlans(),
+								logger,
+								shapeConnectionsGroup,
+								closeConnectionsGroup);
+					})
 
 					.filter(ShapeValidationContainer::hasPlanNode)
 					.peek(s -> {
@@ -750,12 +959,15 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		boolean parallelValidation = isParallelValidation() && !addedStatementsSet.isEmpty()
 				&& !removedStatementsSet.isEmpty();
 
+		resetCombinedStatementStores();
+
 		try {
 			Stream.of(addedStatementsSet, removedStatementsSet)
 					.map(set -> (Callable<Object>) () -> {
 
 						Set<Statement> otherSet;
-						Sail repository;
+						Sail explicitRepository;
+						Sail inferredRepository = null;
 						if (set == addedStatementsSet) {
 							otherSet = removedStatementsSet;
 
@@ -764,7 +976,17 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							}
 
 							addedStatements = getNewMemorySail();
-							repository = addedStatements;
+							explicitRepository = addedStatements;
+							if (rdfsSubClassOfReasoner != null) {
+								if (addedStatementsRdfsInferred != null) {
+									addedStatementsRdfsInferred.shutDown();
+								}
+								addedStatementsRdfsInferred = getNewMemorySail();
+								inferredRepository = addedStatementsRdfsInferred;
+							} else if (addedStatementsRdfsInferred != null) {
+								addedStatementsRdfsInferred.shutDown();
+								addedStatementsRdfsInferred = null;
+							}
 
 							set.forEach(stats::added);
 
@@ -777,13 +999,29 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							}
 
 							removedStatements = getNewMemorySail();
-							repository = removedStatements;
+							explicitRepository = removedStatements;
+							if (rdfsSubClassOfReasoner != null) {
+								if (removedStatementsRdfsInferred != null) {
+									removedStatementsRdfsInferred.shutDown();
+								}
+								removedStatementsRdfsInferred = getNewMemorySail();
+								inferredRepository = removedStatementsRdfsInferred;
+							} else if (removedStatementsRdfsInferred != null) {
+								removedStatementsRdfsInferred.shutDown();
+								removedStatementsRdfsInferred = null;
+							}
 
 							set.forEach(stats::removed);
 						}
 
-						try (SailConnection connection = repository.getConnection()) {
-							connection.begin(IsolationLevels.NONE);
+						try (SailConnection explicitConnection = explicitRepository.getConnection();
+								SailConnection inferredConnection = inferredRepository != null
+										? inferredRepository.getConnection()
+										: null) {
+							explicitConnection.begin(IsolationLevels.NONE);
+							if (inferredConnection != null) {
+								inferredConnection.begin(IsolationLevels.NONE);
+							}
 							set.stream()
 									.peek(s -> {
 										if (Thread.currentThread().isInterrupted()) {
@@ -792,13 +1030,19 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 										}
 									})
 									.filter(statement -> !otherSet.contains(statement))
-									.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement)
-											: rdfsSubClassOfReasoner.forwardChain(statement))
 									.forEach(statement -> {
 										if (!Thread.currentThread().isInterrupted()) {
-											connection.addStatement(statement.getSubject(),
+											explicitConnection.addStatement(statement.getSubject(),
 													statement.getPredicate(), statement.getObject(),
 													statement.getContext());
+											if (inferredConnection != null) {
+												rdfsSubClassOfReasoner.forwardChain(statement)
+														.forEach(inferredStatement -> inferredConnection
+																.addStatement(inferredStatement.getSubject(),
+																		inferredStatement.getPredicate(),
+																		inferredStatement.getObject(),
+																		inferredStatement.getContext()));
+											}
 										}
 
 									});
@@ -806,7 +1050,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								throw new InterruptedException();
 							}
 
-							connection.commit();
+							if (inferredConnection != null) {
+								inferredConnection.commit();
+							}
+							explicitConnection.commit();
 						}
 
 						return null;
@@ -854,6 +1101,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				}
 			}
 
+			fillInferredStatementRepository(addedStatementsInferredSet, removedStatementsInferredSet, true);
+			fillInferredStatementRepository(removedStatementsInferredSet, addedStatementsInferredSet, false);
+
 		} finally {
 			if (futures != null) {
 				for (Future<Object> future : futures) {
@@ -866,6 +1116,63 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			logger.info("fillAddedAndRemovedStatementRepositories() took {} ms", System.currentTimeMillis() - before);
 		}
 
+	}
+
+	private void fillInferredStatementRepository(Set<Statement> sourceSet, Set<Statement> otherSet,
+			boolean added) throws InterruptedException {
+		if (sourceSet.isEmpty()) {
+			if (added) {
+				if (addedStatementsInferred != null) {
+					addedStatementsInferred.shutDown();
+					addedStatementsInferred = null;
+				}
+			} else {
+				if (removedStatementsInferred != null) {
+					removedStatementsInferred.shutDown();
+					removedStatementsInferred = null;
+				}
+			}
+			return;
+		}
+
+		Sail inferredRepository;
+		if (added) {
+			if (addedStatementsInferred != null) {
+				addedStatementsInferred.shutDown();
+			}
+			addedStatementsInferred = getNewMemorySail();
+			inferredRepository = addedStatementsInferred;
+			sourceSet.forEach(stats::added);
+		} else {
+			if (removedStatementsInferred != null) {
+				removedStatementsInferred.shutDown();
+			}
+			removedStatementsInferred = getNewMemorySail();
+			inferredRepository = removedStatementsInferred;
+			sourceSet.forEach(stats::removed);
+		}
+
+		try (SailConnection inferredConnection = inferredRepository.getConnection()) {
+			inferredConnection.begin(IsolationLevels.NONE);
+			sourceSet.stream()
+					.peek(s -> {
+						if (Thread.currentThread().isInterrupted()) {
+							throw new SailException(
+									"ShaclSailConnection was interrupted while filling inferred statement repositories");
+						}
+					})
+					.filter(statement -> !otherSet.contains(statement))
+					.forEach(statement -> {
+						if (!Thread.currentThread().isInterrupted()) {
+							inferredConnection.addStatement(statement.getSubject(),
+									statement.getPredicate(), statement.getObject(), statement.getContext());
+						}
+					});
+			if (Thread.interrupted()) {
+				throw new InterruptedException();
+			}
+			inferredConnection.commit();
+		}
 	}
 
 	private IsolationLevel getIsolationLevel() {
@@ -1037,7 +1344,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					: "isShapeRefreshNeeded should trigger shapesModifiedInCurrentTransaction once we have loaded the modified shapes, but shapesModifiedInCurrentTransaction should be null until then";
 
 			if (!shapeRefreshNeeded && !isBulkValidation() && addedStatementsSet.isEmpty()
-					&& removedStatementsSet.isEmpty()) {
+					&& removedStatementsSet.isEmpty() && addedStatementsInferredSet.isEmpty()
+					&& removedStatementsInferredSet.isEmpty()) {
 				logger.debug("Nothing has changed, nothing to validate.");
 				return;
 			}
@@ -1071,24 +1379,29 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				return;
 			}
 
+			List<ContextWithShape> shapesToValidate = shapesAfterRefresh != null ? shapesAfterRefresh : currentShapes;
+			validateLegacyCallbackInferredSupport(shapesToValidate);
+			boolean requiresRdfsSubClassReasoner = sail.isRdfsSubClassReasoning()
+					|| requiresRdfsSubClassReasoner(shapesToValidate);
+
 			stats.setEmptyIncludingCurrentTransaction(ConnectionHelper.isEmpty(this));
 
 			prepareValidation(
-					new ValidationSettings(null, sail.isLogValidationPlans(), false, sail.isPerformanceLogging()));
+					new ValidationSettings(null, sail.isLogValidationPlans(), false, sail.isPerformanceLogging()),
+					requiresRdfsSubClassReasoner);
 
 			ValidationReport invalidTuples = null;
 			if (useSerializableValidation) {
 				synchronized (sail.singleConnectionMonitor) {
 					if (!sail.usesSingleConnection()) {
-						invalidTuples = serializableValidation(
-								shapesAfterRefresh != null ? shapesAfterRefresh : currentShapes);
+						invalidTuples = serializableValidation(shapesToValidate);
 					}
 				}
 			}
 
 			if (invalidTuples == null) {
 				invalidTuples = validate(
-						shapesAfterRefresh != null ? shapesAfterRefresh : currentShapes,
+						shapesToValidate,
 						shapesModifiedInCurrentTransaction || isBulkValidation());
 			}
 
@@ -1152,10 +1465,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private ValidationReport serializableValidation(List<ContextWithShape> shapesAfterRefresh)
 			throws InterruptedException {
 		try {
-			try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(
-					new VerySimpleRdfsBackwardsChainingConnection(serializableConnection, rdfsSubClassOfReasoner), null,
-					addedStatements, removedStatements, stats, this::getRdfsSubClassOfReasoner, transactionSettings,
-					sail.sparqlValidation)) {
+			try (ConnectionsGroup connectionsGroup = getConnectionsGroup(serializableConnection, null,
+					sail.isIncludeInferredStatements(), sail.isRdfsSubClassReasoning())) {
 
 				connectionsGroup.getBaseConnection().begin(IsolationLevels.SNAPSHOT);
 				// actually force a transaction to start
@@ -1176,7 +1487,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				serializableConnection.flush();
 
 				return performValidation(shapesAfterRefresh, shapesModifiedInCurrentTransaction || isBulkValidation(),
-						connectionsGroup);
+						connectionsGroup, serializableConnection, null);
 
 			} finally {
 				serializableConnection.rollback();
@@ -1190,13 +1501,26 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void statementAdded(Statement statement) {
+		legacyStatementAddedWithoutInferredFlagObserved = true;
+		statementAdded(statement, false);
+	}
+
+	@Override
+	public void statementAdded(Statement statement, boolean inferred) {
 		if (prepareHasBeenCalled) {
 			throw new IllegalStateException("Detected changes after prepare() has been called.");
 		}
 		checkIfShapesRefreshIsNeeded(statement);
-		boolean add = addedStatementsSet.add(statement);
-		if (!add) {
-			removedStatementsSet.remove(statement);
+		if (inferred) {
+			boolean add = addedStatementsInferredSet.add(statement);
+			if (!add) {
+				removedStatementsInferredSet.remove(statement);
+			}
+		} else {
+			boolean add = addedStatementsSet.add(statement);
+			if (!add) {
+				removedStatementsSet.remove(statement);
+			}
 		}
 
 		checkTransactionalValidationLimit();
@@ -1205,14 +1529,27 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void statementRemoved(Statement statement) {
+		legacyStatementRemovedWithoutInferredFlagObserved = true;
+		statementRemoved(statement, false);
+	}
+
+	@Override
+	public void statementRemoved(Statement statement, boolean inferred) {
 		if (prepareHasBeenCalled) {
 			throw new IllegalStateException("Detected changes after prepare() has been called.");
 		}
 		checkIfShapesRefreshIsNeeded(statement);
 
-		boolean add = removedStatementsSet.add(statement);
-		if (!add) {
-			addedStatementsSet.remove(statement);
+		if (inferred) {
+			boolean add = removedStatementsInferredSet.add(statement);
+			if (!add) {
+				addedStatementsInferredSet.remove(statement);
+			}
+		} else {
+			boolean add = removedStatementsSet.add(statement);
+			if (!add) {
+				addedStatementsSet.remove(statement);
+			}
 		}
 
 		checkTransactionalValidationLimit();
@@ -1223,15 +1560,96 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		if (!shapeRefreshNeeded) {
 			for (IRI shapesGraph : shapesGraphs) {
 				if (Objects.equals(statement.getContext(), shapesGraph)) {
-					shapeRefreshNeeded = true;
+					markShapesRefreshNeeded();
 					break;
 				}
 			}
 		}
 	}
 
+	private void markShapesRefreshNeeded() {
+		shapeRefreshNeeded = true;
+	}
+
+	private Boolean inferInferredFromStatementMetadata(Statement statement) {
+		try {
+			Boolean inferred = invokeBooleanStatementMethod(statement, "isInferred");
+			if (inferred != null) {
+				return inferred;
+			}
+			Boolean explicit = invokeBooleanStatementMethod(statement, "isExplicit");
+			if (explicit != null) {
+				return !explicit;
+			}
+			return null;
+		} catch (ReflectiveOperationException e) {
+			if (logger.isDebugEnabled()) {
+				logger.debug("Unable to infer inferred-flag from legacy callback statement metadata.", e);
+			}
+			return null;
+		}
+	}
+
+	private Boolean invokeBooleanStatementMethod(Statement statement, String methodName)
+			throws ReflectiveOperationException {
+		var method = statement.getClass().getMethod(methodName);
+		Class<?> returnType = method.getReturnType();
+		if (returnType != boolean.class && returnType != Boolean.class) {
+			return null;
+		}
+		Object value = method.invoke(statement);
+		return value == null ? null : (Boolean) value;
+	}
+
+	/**
+	 * Reject legacy no-flag callbacks whenever effective includeInferredStatements=false is active for at least one
+	 * validated shape (globally through ShaclSail#setIncludeInferredStatements(false) and/or via
+	 * rsx:includeInferredStatements=false). In that case, inferred-vs-explicit classification is required for correct
+	 * validation and stores must use statementAdded/Removed callbacks with the inferred boolean argument.
+	 */
+	private void validateLegacyCallbackInferredSupport(List<ContextWithShape> shapesToValidate) {
+		if (!legacyStatementAddedWithoutInferredFlagObserved && !legacyStatementRemovedWithoutInferredFlagObserved) {
+			return;
+		}
+
+		boolean includeInferredStatementsEnabledByDefault = sail.isIncludeInferredStatements();
+		boolean requiresInferredClassification = shapesToValidate.stream()
+				.filter(ContextWithShape::hasShape)
+				.map(ContextWithShape::getShape)
+				.anyMatch(shape -> !shape.usesIncludeInferredStatements(includeInferredStatementsEnabledByDefault));
+
+		if (!requiresInferredClassification) {
+			return;
+		}
+
+		String callbackDetails = getObservedLegacyCallbacksWithoutInferredFlag();
+		String message = "Underlying Sail does not support shapes that explicitly set "
+				+ "rsx:includeInferredStatements=false or globally configure "
+				+ "ShaclSail#setIncludeInferredStatements(false), because it emits deprecated "
+				+ "SailConnectionListener callbacks without inferred flags (" + callbackDetails + "). "
+				+ "Implement statementAdded(Statement, boolean inferred) and "
+				+ "statementRemoved(Statement, boolean inferred).";
+		logger.error(message);
+		throw new ShaclSailValidationException(message);
+	}
+
+	private String getObservedLegacyCallbacksWithoutInferredFlag() {
+		if (legacyStatementAddedWithoutInferredFlagObserved && legacyStatementRemovedWithoutInferredFlagObserved) {
+			return "statementAdded(Statement), statementRemoved(Statement)";
+		}
+		if (legacyStatementAddedWithoutInferredFlagObserved) {
+			return "statementAdded(Statement)";
+		}
+		if (legacyStatementRemovedWithoutInferredFlagObserved) {
+			return "statementRemoved(Statement)";
+		}
+		return "<none>";
+	}
+
 	private void checkTransactionalValidationLimit() {
-		if ((addedStatementsSet.size() + removedStatementsSet.size()) > sail.getTransactionalValidationLimit()) {
+		int changeCount = addedStatementsSet.size() + removedStatementsSet.size()
+				+ addedStatementsInferredSet.size() + removedStatementsInferredSet.size();
+		if (changeCount > sail.getTransactionalValidationLimit()) {
 			if (shouldUseSerializableValidation()) {
 				logger.debug(
 						"Transaction size limit exceeded, could not switch to bulk validation because serializable validation is enabled.");
@@ -1243,6 +1661,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				getTransactionSettings().applyTransactionSettings(bulkValidation);
 				removedStatementsSet.clear();
 				addedStatementsSet.clear();
+				removedStatementsInferredSet.clear();
+				addedStatementsInferredSet.clear();
 			}
 		}
 	}

@@ -82,6 +82,13 @@ public class ShaclSailSchema {
 	public final static IRI RDFS_SUB_CLASS_REASONING = create("rdfsSubClassReasoning");
 
 	/**
+	 * <code>http://rdf4j.org/config/sail/shacl#includeInferredStatements</code>
+	 *
+	 * @deprecated use {@link CONFIG.Shacl#includeInferredStatements} instead.
+	 */
+	public final static IRI INCLUDE_INFERRED_STATEMENTS = create("includeInferredStatements");
+
+	/**
 	 * <code>http://rdf4j.org/config/sail/shacl#performanceLogging</code>
 	 *
 	 * @deprecated use {@link CONFIG.Shacl#performanceLogging} instead.

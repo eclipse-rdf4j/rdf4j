@@ -49,7 +49,7 @@ public class LessThanOrEqualsConstraintComponent extends AbstractPairwiseConstra
 			SparqlFragment targetQueryFragment) {
 		return new CheckLessThanOrEqualValuesBasedOnPathAndPredicate(connectionsGroup.getBaseConnection(),
 				validationSettings.getDataGraph(), allTargets, predicate, subject, object, targetQueryFragment, shape,
-				this, producesValidationReport);
+				this, producesValidationReport, connectionsGroup.isIncludeInferredStatements());
 	}
 
 	@Override

@@ -144,12 +144,12 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 		PlanNode addedByPredicate = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate, null,
 				validationSettings.getDataGraph(), (s, d) -> {
 					return new ValidationTuple(s.getSubject(), Scope.propertyShape, false, d);
-				}, null);
+				}, null, connectionsGroup.isIncludeInferredStatements());
 
 		PlanNode removedByPredicate = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, predicate,
 				null, validationSettings.getDataGraph(), (s, d) -> {
 					return new ValidationTuple(s.getSubject(), Scope.propertyShape, false, d);
-				}, null);
+				}, null, connectionsGroup.isIncludeInferredStatements());
 
 		PlanNode targetFilter1 = effectiveTarget.getTargetFilter(connectionsGroup, validationSettings.getDataGraph(),
 				addedByPredicate);
@@ -176,7 +176,8 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 			if (connectionsGroup.getStats().hasRemoved()) {
 				PlanNode deletedPredicates = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
 						predicate, null, dataGraph,
-						UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.propertyShape), null);
+						UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.propertyShape), null,
+						connectionsGroup.isIncludeInferredStatements());
 				deletedPredicates = getTargetChain()
 						.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 								stableRandomVariableProvider)
@@ -195,7 +196,7 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 			if (connectionsGroup.getStats().hasAdded()) {
 				PlanNode addedPredicates = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate,
 						null, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.propertyShape),
-						null);
+						null, connectionsGroup.isIncludeInferredStatements());
 				addedPredicates = getTargetChain()
 						.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 								stableRandomVariableProvider)
@@ -220,7 +221,8 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 			if (connectionsGroup.getStats().hasRemoved()) {
 				PlanNode deletedPredicates = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
 						predicate, null,
-						dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape), null);
+						dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape), null,
+						connectionsGroup.isIncludeInferredStatements());
 				deletedPredicates = getTargetChain()
 						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 								stableRandomVariableProvider)
@@ -239,7 +241,8 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 			if (connectionsGroup.getStats().hasAdded()) {
 				PlanNode addedPredicates = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate,
 						null,
-						dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape), null);
+						dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape), null,
+						connectionsGroup.isIncludeInferredStatements());
 				addedPredicates = getTargetChain()
 						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 								stableRandomVariableProvider)
@@ -264,8 +267,12 @@ abstract class AbstractPairwiseConstraintComponent extends AbstractConstraintCom
 	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		return super.requiresEvaluation(connectionsGroup, scope, dataGraph, stableRandomVariableProvider)
-				|| connectionsGroup.getRemovedStatements().hasStatement(null, predicate, null, true, dataGraph)
-				|| connectionsGroup.getAddedStatements().hasStatement(null, predicate, null, true, dataGraph);
+				|| connectionsGroup.getRemovedStatements()
+						.hasStatement(null, predicate, null,
+								connectionsGroup.isIncludeInferredStatements(), dataGraph)
+				|| connectionsGroup.getAddedStatements()
+						.hasStatement(null, predicate, null,
+								connectionsGroup.isIncludeInferredStatements(), dataGraph);
 	}
 
 	@Override

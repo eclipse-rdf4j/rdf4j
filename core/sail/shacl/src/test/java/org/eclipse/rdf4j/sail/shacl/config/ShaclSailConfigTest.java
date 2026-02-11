@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.CACHE_SELECT_N
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.DASH_DATA_SHAPES;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.ECLIPSE_RDF4J_SHACL_EXTENSIONS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.GLOBAL_LOG_VALIDATION_EXECUTION;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.INCLUDE_INFERRED_STATEMENTS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_PLANS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_VIOLATIONS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PARALLEL_VALIDATION;
@@ -58,6 +59,7 @@ public class ShaclSailConfigTest {
 		assertThat(shaclSailConfig.isCacheSelectNodes()).isTrue();
 		assertThat(shaclSailConfig.isGlobalLogValidationExecution()).isFalse();
 		assertThat(shaclSailConfig.isRdfsSubClassReasoning()).isTrue();
+		assertThat(shaclSailConfig.isIncludeInferredStatements()).isTrue();
 		assertThat(shaclSailConfig.isPerformanceLogging()).isFalse();
 		assertThat(shaclSailConfig.isSerializableValidation()).isTrue();
 		assertThat(shaclSailConfig.isEclipseRdf4jShaclExtensions()).isFalse();
@@ -67,6 +69,32 @@ public class ShaclSailConfigTest {
 		assertThat(shaclSailConfig.getTransactionalValidationLimit()).isEqualTo(500000);
 		assertThat(shaclSailConfig.getShapesGraphs()).isEqualTo(Set.of(RDF4J.SHACL_SHAPE_GRAPH));
 
+	}
+
+	@Test
+	public void shaclConfigVocabulariesExposeIncludeInferredStatementsConstant() throws Exception {
+		IRI modern = (IRI) CONFIG.Shacl.class.getField("includeInferredStatements").get(null);
+		IRI legacy = (IRI) ShaclSailSchema.class.getField("INCLUDE_INFERRED_STATEMENTS").get(null);
+
+		assertThat(modern.stringValue()).isEqualTo(CONFIG.NAMESPACE + "shacl.includeInferredStatements");
+		assertThat(legacy.stringValue()).isEqualTo(ShaclSailSchema.NAMESPACE + "includeInferredStatements");
+	}
+
+	@Test
+	public void parseIncludeInferredStatementsFromModelSetsValueCorrectly() {
+		ShaclSailConfig shaclSailConfig = new ShaclSailConfig();
+		BNode implNode = vf.createBNode();
+		ModelBuilder mb = new ModelBuilder().subject(implNode);
+
+		mb.add(CONFIG.Shacl.includeInferredStatements, false);
+		mb.add(INCLUDE_INFERRED_STATEMENTS, true);
+
+		shaclSailConfig.parse(mb.build(), implNode);
+
+		Model exported = new TreeModel();
+		Resource exportedNode = shaclSailConfig.export(exported);
+		assertThat(exported.contains(exportedNode, CONFIG.Shacl.includeInferredStatements, Values.literal(false)))
+				.isTrue();
 	}
 
 	@Test
@@ -83,6 +111,7 @@ public class ShaclSailConfigTest {
 		mb.add(CONFIG.Shacl.cacheSelectNodes, false);
 		mb.add(CONFIG.Shacl.globalLogValidationExecution, false);
 		mb.add(CONFIG.Shacl.rdfsSubClassReasoning, true);
+		mb.add(CONFIG.Shacl.includeInferredStatements, false);
 		mb.add(CONFIG.Shacl.performanceLogging, false);
 		mb.add(CONFIG.Shacl.eclipseRdf4jShaclExtensions, false);
 		mb.add(CONFIG.Shacl.dashDataShapes, false);
@@ -99,6 +128,7 @@ public class ShaclSailConfigTest {
 		mb.add(CACHE_SELECT_NODES, true);
 		mb.add(GLOBAL_LOG_VALIDATION_EXECUTION, true);
 		mb.add(RDFS_SUB_CLASS_REASONING, false);
+		mb.add(INCLUDE_INFERRED_STATEMENTS, true);
 		mb.add(PERFORMANCE_LOGGING, true);
 		mb.add(ECLIPSE_RDF4J_SHACL_EXTENSIONS, true);
 		mb.add(DASH_DATA_SHAPES, true);
@@ -122,6 +152,7 @@ public class ShaclSailConfigTest {
 		assertThat(shaclSailConfig.isCacheSelectNodes()).isFalse();
 		assertThat(shaclSailConfig.isGlobalLogValidationExecution()).isFalse();
 		assertThat(shaclSailConfig.isRdfsSubClassReasoning()).isTrue();
+		assertThat(shaclSailConfig.isIncludeInferredStatements()).isFalse();
 		assertThat(shaclSailConfig.isPerformanceLogging()).isFalse();
 		assertThat(shaclSailConfig.isSerializableValidation()).isTrue();
 		assertThat(shaclSailConfig.isEclipseRdf4jShaclExtensions()).isFalse();
@@ -187,6 +218,7 @@ public class ShaclSailConfigTest {
 		Assertions.assertTrue(m.contains(node, CONFIG.Shacl.cacheSelectNodes, null));
 		Assertions.assertTrue(m.contains(node, CONFIG.Shacl.globalLogValidationExecution, null));
 		Assertions.assertTrue(m.contains(node, CONFIG.Shacl.rdfsSubClassReasoning, null));
+		Assertions.assertTrue(m.contains(node, CONFIG.Shacl.includeInferredStatements, null));
 		Assertions.assertTrue(m.contains(node, CONFIG.Shacl.performanceLogging, null));
 		Assertions.assertTrue(m.contains(node, CONFIG.Shacl.serializableValidation, null));
 		Assertions.assertTrue(m.contains(node, CONFIG.Shacl.eclipseRdf4jShaclExtensions, null));

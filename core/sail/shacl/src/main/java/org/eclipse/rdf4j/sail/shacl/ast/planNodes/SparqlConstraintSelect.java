@@ -62,6 +62,7 @@ public class SparqlConstraintSelect implements PlanNode {
 	private final ConstraintComponent.Scope scope;
 	private final Dataset dataset;
 	private final ParsedQuery parsedQuery;
+	private final boolean includeInferredStatements;
 	private final boolean printed = false;
 	private final Value shapesGraphBinding;
 	private final Value currentShapeBinding;
@@ -71,7 +72,7 @@ public class SparqlConstraintSelect implements PlanNode {
 	public SparqlConstraintSelect(SailConnection connection, PlanNode targets, String query,
 			ConstraintComponent.Scope scope,
 			Resource[] dataGraph, boolean produceValidationReports, SparqlConstraintComponent constraintComponent,
-			Shape shape) {
+			Shape shape, boolean includeInferredStatements) {
 		this.connection = connection;
 		this.targets = targets;
 		this.query = query;
@@ -83,6 +84,7 @@ public class SparqlConstraintSelect implements PlanNode {
 		this.variables = new String[] { "$this" };
 		this.scope = scope;
 		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
+		this.includeInferredStatements = includeInferredStatements;
 		this.currentShapeBinding = shape != null ? shape.getId() : null;
 		this.shapesGraphBinding = determineShapesGraphBinding(shape);
 		this.pathForMessageBinding = determinePathForMessageBinding(constraintComponent, scope);
@@ -157,7 +159,8 @@ public class SparqlConstraintSelect implements PlanNode {
 						if (shapesGraphBinding != null) {
 							bindings.setBinding("shapesGraph", shapesGraphBinding);
 						}
-						results = connection.evaluate(parsedQuery.getTupleExpr(), dataset, bindings, true);
+						results = connection.evaluate(parsedQuery.getTupleExpr(), dataset, bindings,
+								includeInferredStatements);
 					}
 
 					if (results.hasNext()) {

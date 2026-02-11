@@ -65,13 +65,15 @@ public class TargetClass extends Target {
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
 			planNode = new UnorderedSelect(connection, null, RDF.TYPE, clazz,
-					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), null);
+					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), null,
+					connectionsGroup.isIncludeInferredStatements());
 //			return planNode;
 		} else {
 			planNode = new Select(connection,
 					SparqlFragment.bgp(Set.of(),
 							getQueryFragment("?a", "?c", null, new StatementMatcher.StableRandomVariableProvider())),
-					"?a", b -> new ValidationTuple(b.getValue("a"), scope, false, dataGraph), dataGraph);
+					"?a", b -> new ValidationTuple(b.getValue("a"), scope, false, dataGraph), dataGraph,
+					connectionsGroup.isIncludeInferredStatements());
 		}
 
 		return Unique.getInstance(planNode, false, connectionsGroup);
@@ -116,23 +118,25 @@ public class TargetClass extends Target {
 
 			FilterByPredicateObject typeFoundInAdded = new FilterByPredicateObject(
 					connectionsGroup.getAddedStatements(), dataGraph, RDF.TYPE, targetClass,
-					bufferedSplitter.getPlanNode(), true, FilterByPredicateObject.FilterOn.activeTarget, false,
-					connectionsGroup);
+					bufferedSplitter.getPlanNode(), true, FilterByPredicateObject.FilterOn.activeTarget,
+					connectionsGroup.isIncludeInferredStatements(), connectionsGroup);
 
 			FilterByPredicateObject typeNotFoundInAdded = new FilterByPredicateObject(
 					connectionsGroup.getAddedStatements(), dataGraph, RDF.TYPE, targetClass,
-					bufferedSplitter.getPlanNode(), false, FilterByPredicateObject.FilterOn.activeTarget, false,
-					connectionsGroup);
+					bufferedSplitter.getPlanNode(), false, FilterByPredicateObject.FilterOn.activeTarget,
+					connectionsGroup.isIncludeInferredStatements(), connectionsGroup);
 
 			FilterByPredicateObject filterAgainstBaseConnection = new FilterByPredicateObject(
 					connectionsGroup.getBaseConnection(), dataGraph, RDF.TYPE, targetClass, typeNotFoundInAdded, true,
-					FilterByPredicateObject.FilterOn.activeTarget, true, connectionsGroup);
+					FilterByPredicateObject.FilterOn.activeTarget, connectionsGroup.isIncludeInferredStatements(),
+					connectionsGroup);
 
 			return new Sort(UnionNode.getInstance(connectionsGroup, typeFoundInAdded, filterAgainstBaseConnection),
 					connectionsGroup);
 		} else {
 			return new FilterByPredicateObject(connectionsGroup.getBaseConnection(), dataGraph, RDF.TYPE,
-					targetClass, parent, true, FilterByPredicateObject.FilterOn.activeTarget, true, connectionsGroup);
+					targetClass, parent, true, FilterByPredicateObject.FilterOn.activeTarget,
+					connectionsGroup.isIncludeInferredStatements(), connectionsGroup);
 		}
 
 	}
