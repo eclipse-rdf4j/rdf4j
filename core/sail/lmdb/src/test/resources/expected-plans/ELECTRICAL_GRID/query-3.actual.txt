@@ -1,0 +1,46 @@
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension
+   ├── Group
+   │  ╠══ Difference
+   │  ║  ├── Filter
+   │  ║  │  ╠══ Compare (>)
+   │  ║  │  ║     Var (name=optValue)
+   │  ║  │  ║     ValueConstant (value="100"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  │  ╚══ LeftJoin
+   │  ║  │     ├── Join [left]
+   │  ║  │     │  ╠══ StatementPattern [left]
+   │  ║  │     │  ║     s: Var (name=meter)
+   │  ║  │     │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │  ║     o: Var (name=_const_33f4134a_uri, value=http://example.com/theme/grid/Meter, anonymous)
+   │  ║  │     │  ╚══ StatementPattern [right]
+   │  ║  │     │        s: Var (name=meter)
+   │  ║  │     │        p: Var (name=_const_bcd29754_uri, value=http://example.com/theme/grid/measures, anonymous)
+   │  ║  │     │        o: Var (name=load)
+   │  ║  │     └── Extension [right]
+   │  ║  │        ╠══ StatementPattern
+   │  ║  │        ║     s: Var (name=load)
+   │  ║  │        ║     p: Var (name=_const_3cb27b8c_uri, value=http://example.com/theme/grid/loadValue, anonymous)
+   │  ║  │        ║     o: Var (name=value)
+   │  ║  │        ╚══ ExtensionElem (optValue)
+   │  ║  │              Var (name=value)
+   │  ║  └── Join
+   │  ║     ╠══ Filter (new scope) [left]
+   │  ║     ║  ├── Compare (>)
+   │  ║     ║  │     Var (name=value2)
+   │  ║     ║  │     ValueConstant (value="180"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║     ║  └── StatementPattern
+   │  ║     ║        s: Var (name=load2)
+   │  ║     ║        p: Var (name=_const_3cb27b8c_uri, value=http://example.com/theme/grid/loadValue, anonymous)
+   │  ║     ║        o: Var (name=value2)
+   │  ║     ╚══ StatementPattern [right]
+   │  ║           s: Var (name=meter)
+   │  ║           p: Var (name=_const_bcd29754_uri, value=http://example.com/theme/grid/measures, anonymous)
+   │  ║           o: Var (name=load2)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=meter)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=meter)

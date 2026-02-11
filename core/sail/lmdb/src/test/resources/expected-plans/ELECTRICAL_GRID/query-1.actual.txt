@@ -1,0 +1,50 @@
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension
+   ├── Group
+   │  ╠══ LeftJoin
+   │  ║  ├── Filter [left]
+   │  ║  │  ╠══ Or
+   │  ║  │  ║  ├── Compare (=)
+   │  ║  │  ║  │     Var (name=name)
+   │  ║  │  ║  │     Var (name=target)
+   │  ║  │  ║  └── Compare (=)
+   │  ║  │  ║        Var (name=name)
+   │  ║  │  ║        ValueConstant (value="Substation 3")
+   │  ║  │  ╚══ Join
+   │  ║  │     ├── BindingSetAssignment ([[target="Substation 1"], [target="Substation 2"]]) [left]
+   │  ║  │     └── Union [right]
+   │  ║  │        ╠══ Join
+   │  ║  │        ║  ├── StatementPattern [left]
+   │  ║  │        ║  │     s: Var (name=entity)
+   │  ║  │        ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │        ║  │     o: Var (name=_const_ac9f03d3_uri, value=http://example.com/theme/grid/Substation, anonymous)
+   │  ║  │        ║  └── StatementPattern [right]
+   │  ║  │        ║        s: Var (name=entity)
+   │  ║  │        ║        p: Var (name=_const_9661228a_uri, value=http://example.com/theme/grid/name, anonymous)
+   │  ║  │        ║        o: Var (name=name)
+   │  ║  │        ╚══ Join
+   │  ║  │           ├── StatementPattern [left]
+   │  ║  │           │     s: Var (name=entity)
+   │  ║  │           │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │           │     o: Var (name=_const_72f33a14_uri, value=http://example.com/theme/grid/Generator, anonymous)
+   │  ║  │           └── Join [right]
+   │  ║  │              ╠══ StatementPattern [left]
+   │  ║  │              ║     s: Var (name=entity)
+   │  ║  │              ║     p: Var (name=_const_35542676_uri, value=http://example.com/theme/grid/feeds, anonymous)
+   │  ║  │              ║     o: Var (name=substation)
+   │  ║  │              ╚══ StatementPattern [right]
+   │  ║  │                    s: Var (name=substation)
+   │  ║  │                    p: Var (name=_const_9661228a_uri, value=http://example.com/theme/grid/name, anonymous)
+   │  ║  │                    o: Var (name=name)
+   │  ║  └── StatementPattern [right]
+   │  ║        s: Var (name=entity)
+   │  ║        p: Var (name=_const_35542676_uri, value=http://example.com/theme/grid/feeds, anonymous)
+   │  ║        o: Var (name=substation2)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=entity)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=entity)

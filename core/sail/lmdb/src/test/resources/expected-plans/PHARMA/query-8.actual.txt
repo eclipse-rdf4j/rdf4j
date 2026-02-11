@@ -1,0 +1,62 @@
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "drug"
+║     ProjectionElem "targetCount"
+╚══ Extension
+   ├── Extension
+   │  ╠══ Filter
+   │  ║  ├── Compare (>=)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="3"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (drug)
+   │  ║        Difference
+   │  ║        ├── Filter
+   │  ║        │  ╠══ Compare (!=)
+   │  ║        │  ║     Var (name=optMol)
+   │  ║        │  ║     ValueConstant (value=http://example.com/theme/pharma/molecule/0)
+   │  ║        │  ╚══ LeftJoin
+   │  ║        │     ├── Join [left]
+   │  ║        │     │  ╠══ StatementPattern [left]
+   │  ║        │     │  ║     s: Var (name=drug)
+   │  ║        │     │  ║     p: Var (name=_const_7f67635a_uri, value=http://example.com/theme/pharma/targets, anonymous)
+   │  ║        │     │  ║     o: Var (name=target)
+   │  ║        │     │  ╚══ StatementPattern [right]
+   │  ║        │     │        s: Var (name=drug)
+   │  ║        │     │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║        │     │        o: Var (name=_const_f6bbe068_uri, value=http://example.com/theme/pharma/Drug, anonymous)
+   │  ║        │     └── Extension [right]
+   │  ║        │        ╠══ StatementPattern
+   │  ║        │        ║     s: Var (name=drug)
+   │  ║        │        ║     p: Var (name=_const_fb60ad98_uri, value=http://example.com/theme/pharma/hasMolecule, anonymous)
+   │  ║        │        ║     o: Var (name=mol)
+   │  ║        │        ╚══ ExtensionElem (optMol)
+   │  ║        │              Var (name=mol)
+   │  ║        └── Union
+   │  ║           ╠══ Filter
+   │  ║           ║  ├── SameTerm
+   │  ║           ║  │     Var (name=disease)
+   │  ║           ║  │     ValueConstant (value=http://example.com/theme/pharma/disease/6)
+   │  ║           ║  └── StatementPattern
+   │  ║           ║        s: Var (name=drug)
+   │  ║           ║        p: Var (name=_const_28b88607_uri, value=http://example.com/theme/pharma/contraindicatedFor, anonymous)
+   │  ║           ║        o: Var (name=disease, value=http://example.com/theme/pharma/disease/6)
+   │  ║           ╚══ Filter
+   │  ║              ├── SameTerm
+   │  ║              │     Var (name=disease)
+   │  ║              │     ValueConstant (value=http://example.com/theme/pharma/disease/7)
+   │  ║              └── StatementPattern
+   │  ║                    s: Var (name=drug)
+   │  ║                    p: Var (name=_const_28b88607_uri, value=http://example.com/theme/pharma/contraindicatedFor, anonymous)
+   │  ║                    o: Var (name=disease, value=http://example.com/theme/pharma/disease/7)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=target)
+   │  ║        GroupElem (targetCount)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=target)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count (Distinct)
+   │           Var (name=target)
+   └── ExtensionElem (targetCount)
+         Count (Distinct)
+            Var (name=target)

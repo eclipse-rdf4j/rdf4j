@@ -1,10 +1,10 @@
-Projection (resultSizeActual=1)
+Projection (resultSizeActual=<e>)
 ╠══ ProjectionElemList
 ║     ProjectionElem "count"
-╚══ Extension (resultSizeActual=1)
-   ├── Group () (resultSizeActual=1)
-   │  ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=58.0K)
-   │  ║  ├── Filter (resultSizeActual=58.0K) [left]
+╚══ Extension (resultSizeActual=<e>)
+   ├── Group () (resultSizeActual=<e>)
+   │  ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=<e>)
+   │  ║  ├── Filter (resultSizeActual=<e>) [left]
    │  ║  │  ╠══ Or
    │  ║  │  ║  ├── Compare (=)
    │  ║  │  ║  │     Var (name=code)
@@ -12,28 +12,23 @@ Projection (resultSizeActual=1)
    │  ║  │  ║  └── Compare (=)
    │  ║  │  ║        Var (name=code)
    │  ║  │  ║        ValueConstant (value="DX-202")
-   │  ║  │  ╚══ Join (JoinIterator) (resultSizeActual=133.0K)
-   │  ║  │     ├── BindingSetAssignment ([[target="DX-200"], [target="DX-201"]]) (costEstimate=6.00, resultSizeEstimate=1.00, resultSizeActual=2) [left]
-   │  ║  │     └── Union (resultSizeActual=133.0K) [right]
-   │  ║  │        ╠══ Join (JoinIterator) (resultSizeActual=99.6K)
-   │  ║  │        ║  ├── StatementPattern (costEstimate=64.6K, resultSizeEstimate=21.5K, resultSizeActual=99.6K) [left]
-   │  ║  │        ║  │     s: Var (name=entity)
-   │  ║  │        ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-   │  ║  │        ║  │     o: Var (name=_const_d05fbbd3_uri, value=http://example.com/theme/medical/Condition, anonymous)
-   │  ║  │        ║  └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=99.6K) [right]
-   │  ║  │        ║        s: Var (name=entity)
-   │  ║  │        ║        p: Var (name=_const_98e9815_uri, value=http://example.com/theme/medical/code, anonymous)
-   │  ║  │        ║        o: Var (name=code)
-   │  ║  │        ╚══ Join (JoinIterator) (resultSizeActual=33.3K)
-   │  ║  │           ├── StatementPattern (costEstimate=726.4M, resultSizeEstimate=21.5K, resultSizeActual=33.3K) [left]
+   │  ║  │  ╚══ Join (JoinIterator) (resultSizeActual=<e>)
+   │  ║  │     ├── BindingSetAssignment ([[target="DX-200"], [target="DX-201"]]) (costEstimate=<e>, resultSizeEstimate=<e>, resultSizeActual=<e>) [left]
+   │  ║  │     └── Join (JoinIterator) (resultSizeActual=<e>) [right]
+   │  ║  │        ╠══ StatementPattern (costEstimate=<e>, resultSizeEstimate=<e>, resultSizeActual=<e>) [left]
+   │  ║  │        ║     s: Var (name=entity)
+   │  ║  │        ║     p: Var (name=_const_98e9815_uri, value=http://example.com/theme/medical/code, anonymous)
+   │  ║  │        ║     o: Var (name=code)
+   │  ║  │        ╚══ Union (resultSizeActual=<e>) [right]
+   │  ║  │           ├── StatementPattern (costEstimate=<e>, resultSizeEstimate=<e>, resultSizeActual=<e>)
    │  ║  │           │     s: Var (name=entity)
    │  ║  │           │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-   │  ║  │           │     o: Var (name=_const_ea395317_uri, value=http://example.com/theme/medical/Medication, anonymous)
-   │  ║  │           └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=33.3K) [right]
+   │  ║  │           │     o: Var (name=_const_d05fbbd3_uri, value=http://example.com/theme/medical/Condition, anonymous)
+   │  ║  │           └── StatementPattern (costEstimate=<e>, resultSizeEstimate=<e>, resultSizeActual=<e>)
    │  ║  │                 s: Var (name=entity)
-   │  ║  │                 p: Var (name=_const_98e9815_uri, value=http://example.com/theme/medical/code, anonymous)
-   │  ║  │                 o: Var (name=code)
-   │  ║  └── StatementPattern (resultSizeEstimate=1.00, resultSizeActual=58.0K) [right]
+   │  ║  │                 p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │                 o: Var (name=_const_ea395317_uri, value=http://example.com/theme/medical/Medication, anonymous)
+   │  ║  └── StatementPattern (resultSizeEstimate=<e>, resultSizeActual=<e>) [right]
    │  ║        s: Var (name=entity)
    │  ║        p: Var (name=_const_98e9815_uri, value=http://example.com/theme/medical/code, anonymous)
    │  ║        o: Var (name=alt)
@@ -43,4 +38,3 @@ Projection (resultSizeActual=1)
    └── ExtensionElem (count)
          Count (Distinct)
             Var (name=entity)
-

@@ -10,21 +10,21 @@ Projection (resultSizeActual=1)
    │  ║  │  ║     Var (name=branch)
    │  ║  │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=772.6K)
    │  ║  │     ├── Union (resultSizeActual=10) [left]
-   │  ║  │     │  ╠══ StatementPattern (new scope) (resultSizeEstimate=96.8K, resultSizeActual=5)
+   │  ║  │     │  ╠══ StatementPattern (new scope) (resultSizeEstimate=5.00, resultSizeActual=5)
    │  ║  │     │  ║     s: Var (name=branch)
    │  ║  │     │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
    │  ║  │     │  ║     o: Var (name=_const_e35f2480_uri, value=http://example.com/theme/library/Branch, anonymous)
    │  ║  │     │  ╚══ Join (JoinIterator) (resultSizeActual=5)
-   │  ║  │     │     ├── StatementPattern (costEstimate=22.7K, resultSizeEstimate=45.3K, resultSizeActual=45.3K) [left]
+   │  ║  │     │     ├── StatementPattern (costEstimate=5.00, resultSizeEstimate=5.00, resultSizeActual=5) [left]
    │  ║  │     │     │     s: Var (name=branch)
-   │  ║  │     │     │     p: Var (name=_const_6d0024c9_uri, value=http://example.com/theme/library/name, anonymous)
-   │  ║  │     │     │     o: Var (name=name)
-   │  ║  │     │     └── StatementPattern (costEstimate=1.00, resultSizeEstimate=0.82, resultSizeActual=5) [right]
+   │  ║  │     │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │     │     o: Var (name=_const_e35f2480_uri, value=http://example.com/theme/library/Branch, anonymous)
+   │  ║  │     │     └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=5) [right]
    │  ║  │     │           s: Var (name=branch)
-   │  ║  │     │           p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-   │  ║  │     │           o: Var (name=_const_e35f2480_uri, value=http://example.com/theme/library/Branch, anonymous)
+   │  ║  │     │           p: Var (name=_const_6d0024c9_uri, value=http://example.com/theme/library/name, anonymous)
+   │  ║  │     │           o: Var (name=name)
    │  ║  │     └── Extension (resultSizeActual=772.6K) [right]
-   │  ║  │        ╠══ StatementPattern (resultSizeEstimate=73.6K, resultSizeActual=772.6K)
+   │  ║  │        ╠══ StatementPattern (resultSizeEstimate=77.3K, resultSizeActual=772.6K)
    │  ║  │        ║     s: Var (name=copy)
    │  ║  │        ║     p: Var (name=_const_ecfc63a7_uri, value=http://example.com/theme/library/locatedAt, anonymous)
    │  ║  │        ║     o: Var (name=branch)
@@ -36,7 +36,7 @@ Projection (resultSizeActual=1)
    │  ║     ║  │     Str
    │  ║     ║  │        Var (name=name2)
    │  ║     ║  └── ValueConstant (value="branch 0")
-   │  ║     ╚══ StatementPattern (resultSizeEstimate=45.3K, resultSizeActual=45.3K)
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=2.2K, resultSizeActual=45.3K)
    │  ║           s: Var (name=branch)
    │  ║           p: Var (name=_const_6d0024c9_uri, value=http://example.com/theme/library/name, anonymous)
    │  ║           o: Var (name=name2)
@@ -46,4 +46,3 @@ Projection (resultSizeActual=1)
    └── ExtensionElem (count)
          Count (Distinct)
             Var (name=branch)
-

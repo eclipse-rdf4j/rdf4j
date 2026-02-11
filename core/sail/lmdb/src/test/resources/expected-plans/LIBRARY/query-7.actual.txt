@@ -1,0 +1,49 @@
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension
+   ├── Group
+   │  ╠══ Difference
+   │  ║  ├── Join
+   │  ║  │  ╠══ Filter [left]
+   │  ║  │  ║  ├── Exists
+   │  ║  │  ║  │     StatementPattern
+   │  ║  │  ║  │        s: Var (name=copy)
+   │  ║  │  ║  │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │  ║  │        o: Var (name=_const_6ceccdd3_uri, value=http://example.com/theme/library/Copy, anonymous)
+   │  ║  │  ║  └── StatementPattern
+   │  ║  │  ║        s: Var (name=copy)
+   │  ║  │  ║        p: Var (name=_const_ecfc63a7_uri, value=http://example.com/theme/library/locatedAt, anonymous)
+   │  ║  │  ║        o: Var (name=branch)
+   │  ║  │  ╚══ Join [right]
+   │  ║  │     ├── StatementPattern [left]
+   │  ║  │     │     s: Var (name=copy)
+   │  ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │     │     o: Var (name=_const_6ceccdd3_uri, value=http://example.com/theme/library/Copy, anonymous)
+   │  ║  │     └── Filter [right]
+   │  ║  │        ╠══ Or
+   │  ║  │        ║  ├── Compare (=)
+   │  ║  │        ║  │     Var (name=branchName)
+   │  ║  │        ║  │     ValueConstant (value="Branch 0")
+   │  ║  │        ║  └── Compare (=)
+   │  ║  │        ║        Var (name=branchName)
+   │  ║  │        ║        ValueConstant (value="Branch 1")
+   │  ║  │        ╚══ StatementPattern
+   │  ║  │              s: Var (name=branch)
+   │  ║  │              p: Var (name=_const_6d0024c9_uri, value=http://example.com/theme/library/name, anonymous)
+   │  ║  │              o: Var (name=branchName)
+   │  ║  └── Filter (new scope)
+   │  ║     ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#contains)
+   │  ║     ║  ├── Str
+   │  ║     ║  │     Var (name=branch)
+   │  ║     ║  └── ValueConstant (value="branch/0")
+   │  ║     ╚══ StatementPattern
+   │  ║           s: Var (name=copy)
+   │  ║           p: Var (name=_const_ecfc63a7_uri, value=http://example.com/theme/library/locatedAt, anonymous)
+   │  ║           o: Var (name=branch)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=copy)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=copy)

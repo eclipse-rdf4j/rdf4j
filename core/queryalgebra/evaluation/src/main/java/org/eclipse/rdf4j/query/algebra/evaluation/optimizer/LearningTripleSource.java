@@ -33,6 +33,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 public class LearningTripleSource implements TripleSource {
 
 	private static final int DEFAULT_SAMPLE_RATE = 8;
+	private static final String STATS_MODE_PROPERTY = "rdf4j.learned.stats.mode";
+	private static final String STATS_MODE_COLD = "cold";
+	private static final String STATS_MODE_SHARED = "shared";
+	private static final String STATS_MODE = System.getProperty(STATS_MODE_PROPERTY, STATS_MODE_SHARED);
+	private static final boolean COLD_MODE = STATS_MODE_COLD.equalsIgnoreCase(STATS_MODE);
 	private static final int SAMPLE_RATE = Integer.getInteger("rdf4j.learned.stats.sampleRate", DEFAULT_SAMPLE_RATE);
 	private static final AtomicLong SAMPLE_COUNTER = new AtomicLong();
 	private static final long HOT_KEY_CALL_THRESHOLD = Long.getLong("rdf4j.learned.stats.hotKeyCalls", 256L);
@@ -115,12 +120,14 @@ public class LearningTripleSource implements TripleSource {
 		if (pred != null && subj == null && obj == null) {
 			return null;
 		}
-		if (!shouldSample()) {
-			return null;
-		}
 		PatternKey key = buildKey(subj, pred, obj);
-		if (isHotKey(key)) {
-			return null;
+		if (!COLD_MODE) {
+			if (!shouldSample()) {
+				return null;
+			}
+			if (isHotKey(key)) {
+				return null;
+			}
 		}
 		return key;
 	}

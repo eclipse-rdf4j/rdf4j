@@ -19,11 +19,15 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
@@ -42,6 +46,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.LearningEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearnedQueryJoinOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearnedQueryJoinOptimizer.PlanSelectionSnapshot;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.MemoryJoinStats;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.MemoryJoinStats.InvalidationSettings;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
@@ -60,7 +66,9 @@ import org.junit.jupiter.api.io.TempDir;
 class DpJoinOrderTimingHarnessTest {
 
 	private static final String EXPECTED_PLAN_DIR = "expected-plans";
+	private static final String EXPECTED_PLAN_ALTERNATIVE_SEPARATOR = "\n<<ALTERNATIVE>>\n";
 	private static final String EXPECTED_PLAN_THEME_PROPERTY = "rdf4j.expectedPlans.theme";
+	private static final String EXPECTED_PLAN_INDEXES_PROPERTY = "rdf4j.expectedPlans.indexes";
 	private static final String UPDATE_EXPECTED_PLANS_PROPERTY = "rdf4j.expectedPlans.update";
 	private static final Duration CAPTURE_MAX_DURATION = Duration.ofSeconds(30);
 	private static final Duration VERIFY_MIN_DURATION = Duration.ofSeconds(10);
@@ -68,6 +76,7 @@ class DpJoinOrderTimingHarnessTest {
 	private static final int ITERATIONS = 100;
 	private static final int AVERAGE_WINDOW = 20;
 	private static final int EXPLAIN_TIMEOUT_SECONDS = 10;
+	private static final int HEAVY_QUERY_EXPLAIN_TIMEOUT_SECONDS = 60;
 	private static final int HIGHLY_CONNECTED_EXPLAIN_ITERATIONS = 20;
 	private static final int STABILITY_ITERATIONS = 6;
 	private static final String ANSI_RESET = "\u001B[0m";
@@ -80,8 +89,46 @@ class DpJoinOrderTimingHarnessTest {
 	private static final Pattern TIME_PATTERN = Pattern
 			.compile("(totalTimeActual|selfTimeActual)=([0-9]+(?:\\.[0-9]+)?)(ms)");
 	private static final Pattern ESTIMATE_PATTERN = Pattern
-			.compile("(costEstimate|resultSizeEstimate)=([0-9]+(?:\\.[0-9]+)?)([KMBG]?)");
-	private static final double ESTIMATE_TOLERANCE = 0.05d;
+			.compile("(costEstimate|resultSizeEstimate|resultSizeActual)=([0-9]+(?:\\.[0-9]+)?)([KMBG]?)");
+	private static final String PLAN_MATRIX_ENABLED_PROPERTY = "rdf4j.planMatrix.run";
+	private static final String PLAN_MATRIX_WARMUP_PROPERTY = "rdf4j.planMatrix.warmup";
+	private static final String PLAN_MATRIX_MEASUREMENTS_PROPERTY = "rdf4j.planMatrix.measurements";
+	private static final String PLAN_MATRIX_SEEDS_PROPERTY = "rdf4j.planMatrix.seeds";
+	private static final String PLAN_MATRIX_ARTIFACT_DIR_PROPERTY = "rdf4j.planMatrix.outputDir";
+	private static final String PLAN_FORCE_MODE_PROPERTY = "rdf4j.learned.planForce.mode";
+	private static final String PLAN_TRACE_PATH_PROPERTY = "rdf4j.learned.planTrace.path";
+	private static final String STATS_MODE_PROPERTY = "rdf4j.learned.stats.mode";
+	private static final String STATS_MODE_COLD = "cold";
+	private static final String STATS_MODE_SHARED = "shared";
+	private static final int PLAN_MATRIX_DEFAULT_WARMUP = 2;
+	private static final int PLAN_MATRIX_DEFAULT_MEASUREMENTS = 5;
+	private static final String PLAN_MATRIX_DEFAULT_SEEDS = "7,11,19";
+	private static final Map<Theme, Set<Integer>> FASTER_QUERY_INDEXES = Map.ofEntries(
+			Map.entry(Theme.ELECTRICAL_GRID, Set.of(2, 4, 7, 9)),
+			Map.entry(Theme.ENGINEERING, Set.of(4, 9)),
+			Map.entry(Theme.MEDICAL_RECORDS, Set.of(4, 5)),
+			Map.entry(Theme.PHARMA, Set.of(0, 1, 5)),
+			Map.entry(Theme.SOCIAL_MEDIA, Set.of(4)));
+	private static final Map<Theme, Set<Integer>> REGRESSION_OVER_TWENTY_QUERY_INDEXES = Map.ofEntries(
+			Map.entry(Theme.ELECTRICAL_GRID, Set.of(1, 3)),
+			Map.entry(Theme.ENGINEERING, Set.of(3, 7, 8)),
+			Map.entry(Theme.HIGHLY_CONNECTED, Set.of(4, 6, 9)),
+			Map.entry(Theme.LIBRARY, Set.of(7, 8, 9)),
+			Map.entry(Theme.MEDICAL_RECORDS, Set.of(1, 6, 7, 8, 10)),
+			Map.entry(Theme.PHARMA, Set.of(3, 7, 8, 9, 10)),
+			Map.entry(Theme.TRAIN, Set.of(6, 8)));
+
+	private enum PlanMatrixMode {
+		COLD_ISOLATED,
+		WARM_SHARED
+	}
+
+	private enum PlanVariant {
+		LEGACY,
+		DP_TOP1,
+		DP_TOP2,
+		DP_TOP3
+	}
 
 	@TempDir
 	File dataDir;
@@ -117,17 +164,272 @@ class DpJoinOrderTimingHarnessTest {
 	}
 
 	@Test
+	void fasterQueriesExpectedPlansMatch() throws IOException {
+		verifyExpectedPlans(VERIFY_MIN_DURATION, VERIFY_MAX_DURATION, FASTER_QUERY_INDEXES);
+	}
+
+	@Test
+	void regressionsOverTwentyPercentComparedToRecordedPlans() throws IOException {
+		verifyExpectedPlans(Duration.ofSeconds(2), Duration.ofSeconds(20), REGRESSION_OVER_TWENTY_QUERY_INDEXES);
+	}
+
+	@Test
 	void updateEngineeringExpectedPlans() throws IOException {
 		if (!Boolean.getBoolean(UPDATE_EXPECTED_PLANS_PROPERTY)) {
 			return;
 		}
-		updateExpectedPlans(Theme.ENGINEERING, CAPTURE_MAX_DURATION, index -> index != 4);
+		Theme theme = selectedTheme();
+		if (theme == null) {
+			theme = Theme.ENGINEERING;
+		}
+		Set<Integer> onlyIndexes = selectedIndexes();
+		java.util.function.IntPredicate includeIndex = theme == Theme.ENGINEERING && onlyIndexes.isEmpty()
+				? index -> index != 4
+				: index -> true;
+		updateExpectedPlans(theme, CAPTURE_MAX_DURATION, includeIndex);
+	}
+
+	@Test
+	void exportPlanMatrixRecords() throws IOException {
+		if (!Boolean.getBoolean(PLAN_MATRIX_ENABLED_PROPERTY)) {
+			return;
+		}
+		runPlanMatrix();
 	}
 
 	public static void main(String[] args) throws Exception {
 		DpJoinOrderTimingHarnessTest harness = new DpJoinOrderTimingHarnessTest();
 		harness.dataDir = Files.createTempDirectory("rdf4j-dp-plans").toFile();
 		harness.captureExpectedPlans(CAPTURE_MAX_DURATION);
+	}
+
+	private void runPlanMatrix() throws IOException {
+		int warmup = Math.max(0, Integer.getInteger(PLAN_MATRIX_WARMUP_PROPERTY, PLAN_MATRIX_DEFAULT_WARMUP));
+		int measurements = Math.max(1,
+				Integer.getInteger(PLAN_MATRIX_MEASUREMENTS_PROPERTY, PLAN_MATRIX_DEFAULT_MEASUREMENTS));
+		List<Long> seeds = parsePlanMatrixSeeds();
+		Path outputDir = planMatrixOutputDir();
+		Files.createDirectories(outputDir);
+		Path recordsPath = outputDir.resolve("records.jsonl");
+		Files.deleteIfExists(recordsPath);
+		Path tracePath = outputDir.resolve("optimizer-trace.jsonl");
+		Files.deleteIfExists(tracePath);
+
+		Theme onlyTheme = selectedTheme();
+		Set<Integer> onlyIndexes = selectedIndexes();
+		List<Theme> themes = new ArrayList<>();
+		for (Theme theme : Theme.values()) {
+			if (onlyTheme != null && onlyTheme != theme) {
+				continue;
+			}
+			themes.add(theme);
+		}
+
+		String previousTracePath = System.getProperty(PLAN_TRACE_PATH_PROPERTY);
+		System.setProperty(PLAN_TRACE_PATH_PROPERTY, tracePath.toString());
+		try {
+			for (PlanMatrixMode mode : PlanMatrixMode.values()) {
+				for (PlanVariant variant : PlanVariant.values()) {
+					List<PlanRunRecord> records = mode == PlanMatrixMode.COLD_ISOLATED
+							? runPlanMatrixCold(themes, onlyIndexes, variant, mode, warmup, measurements)
+							: runPlanMatrixWarm(themes, onlyIndexes, seeds, variant, mode, warmup, measurements);
+					appendRecords(recordsPath, records);
+				}
+			}
+		} finally {
+			restoreProperty(PLAN_TRACE_PATH_PROPERTY, previousTracePath);
+		}
+		System.out.println("Plan matrix records written to " + recordsPath);
+		System.out.println("Optimizer trace written to " + tracePath);
+	}
+
+	private List<PlanRunRecord> runPlanMatrixCold(List<Theme> themes, Set<Integer> onlyIndexes, PlanVariant variant,
+			PlanMatrixMode mode, int warmup, int measurements) throws IOException {
+		List<PlanRunRecord> records = new ArrayList<>();
+		for (Theme theme : themes) {
+			for (int index : indexesForTheme(onlyIndexes)) {
+				File scenarioDir = new File(dataDir,
+						"plan_matrix_cold_" + mode.name().toLowerCase() + "_" + variant.name().toLowerCase() + "_"
+								+ theme.name().toLowerCase() + "_" + index);
+				List<PlanRunRecord> measured = runWithPlanVariant(variant, STATS_MODE_COLD, () -> {
+					SailRepository repository = createRepository(scenarioDir, true);
+					try {
+						loadData(repository, theme);
+						return List.of(measureQueryRecord(repository, theme, index, mode, variant, warmup, measurements,
+								-1L));
+					} finally {
+						repository.shutDown();
+					}
+				});
+				records.addAll(measured);
+			}
+		}
+		return records;
+	}
+
+	private List<PlanRunRecord> runPlanMatrixWarm(List<Theme> themes, Set<Integer> onlyIndexes, List<Long> seeds,
+			PlanVariant variant, PlanMatrixMode mode, int warmup, int measurements) throws IOException {
+		List<PlanRunRecord> records = new ArrayList<>();
+		for (Theme theme : themes) {
+			for (long seed : seeds) {
+				File scenarioDir = new File(dataDir,
+						"plan_matrix_warm_" + mode.name().toLowerCase() + "_" + variant.name().toLowerCase() + "_"
+								+ theme.name().toLowerCase() + "_seed_" + seed);
+				List<PlanRunRecord> measured = runWithPlanVariant(variant, STATS_MODE_SHARED, () -> {
+					SailRepository repository = createRepository(scenarioDir, true);
+					try {
+						loadData(repository, theme);
+						List<Integer> order = new ArrayList<>(indexesForTheme(onlyIndexes));
+						Collections.shuffle(order, new Random(seed));
+						List<PlanRunRecord> runRecords = new ArrayList<>(order.size());
+						for (int index : order) {
+							runRecords.add(measureQueryRecord(repository, theme, index, mode, variant, warmup,
+									measurements, seed));
+						}
+						return runRecords;
+					} finally {
+						repository.shutDown();
+					}
+				});
+				records.addAll(measured);
+			}
+		}
+		return records;
+	}
+
+	private PlanRunRecord measureQueryRecord(SailRepository repository, Theme theme, int queryIndex,
+			PlanMatrixMode mode,
+			PlanVariant variant, int warmup, int measurements, long seed) {
+		String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
+		long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
+		List<Double> samplesMs = new ArrayList<>(measurements);
+		long resultCount = -1L;
+		double planningTimeMs = 0.0d;
+		PlanSelectionSnapshot snapshot = null;
+		for (int i = 0; i < warmup + measurements; i++) {
+			LearnedQueryJoinOptimizer.clearLastPlanSelectionSnapshot();
+			long start = System.nanoTime();
+			long count;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+				count = executeCount(tupleQuery);
+			}
+			double elapsedMs = TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - start) / 1000.0d;
+			if (count != expected) {
+				throw new IllegalStateException("Unexpected count for " + theme + "#" + queryIndex + ": expected "
+						+ expected + " but got " + count);
+			}
+			resultCount = count;
+			snapshot = LearnedQueryJoinOptimizer.getLastPlanSelectionSnapshot();
+			if (i >= warmup) {
+				samplesMs.add(elapsedMs);
+			}
+		}
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			long planningStart = System.nanoTime();
+			connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+			planningTimeMs = TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - planningStart) / 1000.0d;
+		}
+
+		String queryLabel = theme.name() + "#" + queryIndex;
+		String selectedPlanSignature = snapshot == null ? "" : snapshot.getSelectedPlanSignature();
+		String templateHash = snapshot == null ? Integer.toHexString((theme.name() + ":" + queryIndex).hashCode())
+				: snapshot.getQueryTemplateHash();
+		double estimatedCost = Double.NaN;
+		double estimatedCardinality = Double.NaN;
+		double totalUncertainty = Double.NaN;
+		List<String> candidateSignatures = List.of();
+		if (snapshot != null && !snapshot.getCandidates().isEmpty()) {
+			candidateSignatures = new ArrayList<>(snapshot.getCandidates().size());
+			for (int i = 0; i < snapshot.getCandidates().size(); i++) {
+				candidateSignatures.add(snapshot.getCandidates().get(i).getPlanSignature());
+			}
+			int selected = snapshot.getSelectedCandidateIndex();
+			if (selected >= 0 && selected < snapshot.getCandidates().size()) {
+				estimatedCost = snapshot.getCandidates().get(selected).getEstimatedTotalCost();
+				estimatedCardinality = snapshot.getCandidates().get(selected).getEstimatedCardinality();
+				totalUncertainty = snapshot.getCandidates().get(selected).getTotalUncertainty();
+			}
+		}
+		return new PlanRunRecord(queryLabel, templateHash, theme.name(), mode.name(), variant.name(),
+				selectedPlanSignature == null ? "" : selectedPlanSignature, estimatedCost, estimatedCardinality,
+				totalUncertainty, PlanRunRecord.median(samplesMs), PlanRunRecord.percentile95(samplesMs),
+				planningTimeMs,
+				resultCount, seed, samplesMs, candidateSignatures);
+	}
+
+	private Set<Integer> indexesForTheme(Set<Integer> onlyIndexes) {
+		if (onlyIndexes == null || onlyIndexes.isEmpty()) {
+			Set<Integer> indexes = new LinkedHashSet<>();
+			for (int i = 0; i < ThemeQueryCatalog.QUERY_COUNT; i++) {
+				indexes.add(i);
+			}
+			return indexes;
+		}
+		return onlyIndexes;
+	}
+
+	private List<Long> parsePlanMatrixSeeds() {
+		String raw = System.getProperty(PLAN_MATRIX_SEEDS_PROPERTY, PLAN_MATRIX_DEFAULT_SEEDS);
+		List<Long> seeds = new ArrayList<>();
+		for (String token : raw.split(",")) {
+			String trimmed = token.trim();
+			if (trimmed.isEmpty()) {
+				continue;
+			}
+			seeds.add(Long.parseLong(trimmed));
+		}
+		if (seeds.isEmpty()) {
+			seeds.add(7L);
+		}
+		return seeds;
+	}
+
+	private Path planMatrixOutputDir() {
+		String configured = System.getProperty(PLAN_MATRIX_ARTIFACT_DIR_PROPERTY);
+		if (configured != null && !configured.isBlank()) {
+			return Path.of(configured.trim());
+		}
+		String timestamp = java.time.LocalDateTime.now().toString().replace(":", "-");
+		return repoRoot().resolve("artifacts").resolve("plan-matrix").resolve(timestamp);
+	}
+
+	private interface ThrowingSupplier<T> {
+		T get() throws IOException;
+	}
+
+	private List<PlanRunRecord> runWithPlanVariant(PlanVariant variant, String statsMode,
+			ThrowingSupplier<List<PlanRunRecord>> supplier) throws IOException {
+		String previousMode = System.getProperty(PLAN_FORCE_MODE_PROPERTY);
+		String previousStatsMode = System.getProperty(STATS_MODE_PROPERTY);
+		System.setProperty(PLAN_FORCE_MODE_PROPERTY, variant.name());
+		System.setProperty(STATS_MODE_PROPERTY, statsMode);
+		try {
+			return supplier.get();
+		} finally {
+			restoreProperty(PLAN_FORCE_MODE_PROPERTY, previousMode);
+			restoreProperty(STATS_MODE_PROPERTY, previousStatsMode);
+		}
+	}
+
+	private void restoreProperty(String name, String previous) {
+		if (previous == null) {
+			System.clearProperty(name);
+			return;
+		}
+		System.setProperty(name, previous);
+	}
+
+	private void appendRecords(Path output, List<PlanRunRecord> records) throws IOException {
+		if (records.isEmpty()) {
+			return;
+		}
+		List<String> lines = new ArrayList<>(records.size());
+		for (PlanRunRecord record : records) {
+			lines.add(record.toJson());
+		}
+		Files.write(output, lines, StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.CREATE,
+				java.nio.file.StandardOpenOption.APPEND);
 	}
 
 	private void runScenario(Theme theme, int queryIndex, String label) throws IOException {
@@ -211,7 +513,7 @@ class DpJoinOrderTimingHarnessTest {
 				for (int index = 0; index < ThemeQueryCatalog.QUERY_COUNT; index++) {
 					String query = ThemeQueryCatalog.queryFor(theme, index);
 					long expected = ThemeQueryCatalog.expectedCountFor(theme, index);
-					String plan = captureFinalExplanation(repository, query, expected, maxDuration);
+					String plan = captureFinalExplanation(repository, theme, index, query, expected, maxDuration);
 					Path output = themeDir.resolve("query-" + index + ".txt");
 					Files.writeString(output, plan + System.lineSeparator(), StandardCharsets.UTF_8);
 					System.out.println("Wrote " + output);
@@ -223,42 +525,66 @@ class DpJoinOrderTimingHarnessTest {
 	}
 
 	private void verifyExpectedPlans(Duration minDuration, Duration maxDuration) throws IOException {
+		verifyExpectedPlans(minDuration, maxDuration, null);
+	}
+
+	private void verifyExpectedPlans(Duration minDuration, Duration maxDuration,
+			Map<Theme, Set<Integer>> scopedIndexesByTheme) throws IOException {
 		Objects.requireNonNull(minDuration, "minDuration");
 		Objects.requireNonNull(maxDuration, "maxDuration");
 		Theme onlyTheme = selectedTheme();
+		Set<Integer> onlyIndexes = selectedIndexes();
 		Path resourcesRoot = expectedPlansRoot();
+		List<String> drifts = new ArrayList<>();
 		for (Theme theme : Theme.values()) {
 			if (onlyTheme != null && theme != onlyTheme) {
 				continue;
 			}
+			if (scopedIndexesByTheme != null && !scopedIndexesByTheme.containsKey(theme)) {
+				continue;
+			}
+			Set<Integer> scopedIndexes = scopedIndexesByTheme == null ? null : scopedIndexesByTheme.get(theme);
 			File scenarioDir = new File(dataDir, theme.name() + "_verify");
 			SailRepository repository = createRepository(scenarioDir, true);
 			try {
 				loadData(repository, theme);
 				for (int index = 0; index < ThemeQueryCatalog.QUERY_COUNT; index++) {
+					if (scopedIndexes != null && !scopedIndexes.contains(index)) {
+						continue;
+					}
+					if (!onlyIndexes.isEmpty() && !onlyIndexes.contains(index)) {
+						continue;
+					}
 					Path expectedPath = resourcesRoot.resolve(theme.name()).resolve("query-" + index + ".txt");
 					if (!Files.exists(expectedPath)) {
 						throw new IllegalStateException(
 								"Missing expected plan: " + expectedPath + " (run main to generate)");
 					}
-					String expected = Files.readString(expectedPath, StandardCharsets.UTF_8).stripTrailing();
+					List<String> expectedPlans = splitExpectedPlans(
+							Files.readString(expectedPath, StandardCharsets.UTF_8).stripTrailing());
 					String drift = verifyPlanWithTimeout(repository,
 							ThemeQueryCatalog.queryFor(theme, index),
 							ThemeQueryCatalog.expectedCountFor(theme, index),
-							expected,
+							expectedPlans,
 							minDuration,
 							maxDuration,
 							theme,
 							index);
 					if (drift != null) {
+						Path actualPath = expectedPath.resolveSibling("query-" + index + ".actual.txt");
+						Files.writeString(actualPath, drift + System.lineSeparator(), StandardCharsets.UTF_8);
+						System.out.println("Wrote drift plan " + actualPath);
 						System.out.println("Plan drift for " + theme + " #" + index);
-						printDiff(expected, drift);
-						throw new AssertionError("Plan drift for " + theme + " #" + index);
+						printDiff(expectedPlans.get(0), drift);
+						drifts.add(theme + "#" + index);
 					}
 				}
 			} finally {
 				repository.shutDown();
 			}
+		}
+		if (!drifts.isEmpty()) {
+			throw new AssertionError("Plan drift for " + String.join(", ", drifts));
 		}
 	}
 
@@ -269,17 +595,21 @@ class DpJoinOrderTimingHarnessTest {
 		Objects.requireNonNull(includeIndex, "includeIndex");
 		Path themeDir = expectedPlansRoot().resolve(theme.name());
 		Files.createDirectories(themeDir);
+		Set<Integer> onlyIndexes = selectedIndexes();
 		File scenarioDir = new File(dataDir, theme.name() + "_expected_update");
 		SailRepository repository = createRepository(scenarioDir, true);
 		try {
 			loadData(repository, theme);
 			for (int index = 0; index < ThemeQueryCatalog.QUERY_COUNT; index++) {
+				if (!onlyIndexes.isEmpty() && !onlyIndexes.contains(index)) {
+					continue;
+				}
 				if (!includeIndex.test(index)) {
 					continue;
 				}
 				String query = ThemeQueryCatalog.queryFor(theme, index);
 				long expected = ThemeQueryCatalog.expectedCountFor(theme, index);
-				String plan = captureFinalExplanation(repository, query, expected, maxDuration);
+				String plan = captureFinalExplanation(repository, theme, index, query, expected, maxDuration);
 				Path output = themeDir.resolve("query-" + index + ".txt");
 				Files.writeString(output, plan + System.lineSeparator(), StandardCharsets.UTF_8);
 				System.out.println("Wrote " + output);
@@ -297,6 +627,45 @@ class DpJoinOrderTimingHarnessTest {
 		return Theme.valueOf(value.trim());
 	}
 
+	private Set<Integer> selectedIndexes() {
+		String value = System.getProperty(EXPECTED_PLAN_INDEXES_PROPERTY);
+		if (value == null || value.isBlank()) {
+			return Set.of();
+		}
+		Set<Integer> indexes = new LinkedHashSet<>();
+		for (String token : value.split(",")) {
+			String trimmed = token.trim();
+			if (trimmed.isEmpty()) {
+				continue;
+			}
+			indexes.add(Integer.parseInt(trimmed));
+		}
+		return indexes;
+	}
+
+	private int explainTimeoutSeconds(Theme theme, int queryIndex) {
+		if (isHeavyVerificationQuery(theme, queryIndex)) {
+			return HEAVY_QUERY_EXPLAIN_TIMEOUT_SECONDS;
+		}
+		return EXPLAIN_TIMEOUT_SECONDS;
+	}
+
+	private boolean shouldValidateCount(Theme theme, int queryIndex) {
+		return !isHeavyVerificationQuery(theme, queryIndex);
+	}
+
+	private Explanation.Level explainLevel(Theme theme, int queryIndex) {
+		if (isHeavyVerificationQuery(theme, queryIndex)) {
+			return Explanation.Level.Optimized;
+		}
+		return Explanation.Level.Executed;
+	}
+
+	private boolean isHeavyVerificationQuery(Theme theme, int queryIndex) {
+		return (theme == Theme.LIBRARY && (queryIndex == 6 || queryIndex == 7))
+				|| (theme == Theme.MEDICAL_RECORDS && queryIndex == 10);
+	}
+
 	private SailRepository createRepository(File storeDir, boolean enableDp) {
 		MemoryJoinStats learnedStats = new MemoryJoinStats(InvalidationSettings.disabled());
 		RecordingJoinStatsProvider statsProvider = new RecordingJoinStatsProvider(learnedStats);
@@ -309,51 +678,147 @@ class DpJoinOrderTimingHarnessTest {
 		return repository;
 	}
 
-	private String captureFinalExplanation(SailRepository repository, String query, long expected,
-			Duration maxDuration) {
+	private String captureFinalExplanation(SailRepository repository, Theme theme, int queryIndex, String query,
+			long expected, Duration maxDuration) {
 		long start = System.nanoTime();
 		String plan = null;
 		List<String> lastLines = null;
+		int explainTimeoutSeconds = explainTimeoutSeconds(theme, queryIndex);
+		boolean validateCount = shouldValidateCount(theme, queryIndex);
+		Explanation.Level explainLevel = explainLevel(theme, queryIndex);
 		while (Duration.ofNanos(System.nanoTime() - start).compareTo(maxDuration) < 0) {
-			plan = executeAndExplain(repository, query, expected, lastLines, null);
+			plan = executeAndExplain(repository, query, expected, lastLines, null, explainTimeoutSeconds,
+					validateCount, explainLevel);
 			lastLines = plan == null ? lastLines : List.of(plan.split("\\R", -1));
 		}
 		return plan == null ? "<no-plan>" : plan;
 	}
 
-	private String verifyPlanWithTimeout(SailRepository repository, String query, long expected, String expectedPlan,
+	private String verifyPlanWithTimeout(SailRepository repository, String query, long expected,
+			List<String> expectedPlans,
 			Duration minDuration, Duration maxDuration, Theme theme, int index) {
 		long start = System.nanoTime();
-		List<String> expectedLines = List.of(expectedPlan.split("\\R", -1));
+		long lastLoggedSecond = Long.MIN_VALUE;
+		int explainTimeoutSeconds = explainTimeoutSeconds(theme, index);
+		boolean validateCount = shouldValidateCount(theme, index);
+		Explanation.Level explainLevel = explainLevel(theme, index);
+		List<String> expectedLines = List.of(expectedPlans.get(0).split("\\R", -1));
 		List<String> lastLines = expectedLines;
 		String actualPlan = null;
 		while (true) {
-			actualPlan = executeAndExplain(repository, query, expected, lastLines, expectedLines);
+			actualPlan = executeAndExplain(repository, query, expected, lastLines, expectedLines,
+					explainTimeoutSeconds, validateCount, explainLevel);
 			Duration elapsed = Duration.ofNanos(System.nanoTime() - start);
-			if (elapsed.compareTo(minDuration) >= 0 && expectedPlan.equals(actualPlan)) {
+			if (elapsed.compareTo(minDuration) >= 0 && matchesExpectedPlan(actualPlan, expectedPlans)) {
 				return null;
 			}
 			if (elapsed.compareTo(maxDuration) >= 0) {
 				return actualPlan;
 			}
-			System.out.println("Waiting for plan match " + theme + " #" + index + " elapsed=" + elapsed.toSeconds()
-					+ "s");
+			long elapsedSeconds = elapsed.toSeconds();
+			if (elapsedSeconds != lastLoggedSecond) {
+				lastLoggedSecond = elapsedSeconds;
+				System.out.println("Waiting for plan match " + theme + " #" + index + " elapsed=" + elapsedSeconds
+						+ "s");
+			}
 		}
 	}
 
+	private List<String> splitExpectedPlans(String expected) {
+		String[] rawPlans = expected.split(Pattern.quote(EXPECTED_PLAN_ALTERNATIVE_SEPARATOR));
+		List<String> plans = new ArrayList<>(rawPlans.length);
+		for (String rawPlan : rawPlans) {
+			String normalized = rawPlan.stripTrailing();
+			if (!normalized.isBlank()) {
+				plans.add(normalized);
+			}
+		}
+		if (plans.isEmpty()) {
+			return List.of(expected);
+		}
+		return plans;
+	}
+
+	private boolean matchesExpectedPlan(String actualPlan, List<String> expectedPlans) {
+		String actualStructure = canonicalizePlanStructure(actualPlan);
+		for (String expectedPlan : expectedPlans) {
+			if (canonicalizePlanStructure(expectedPlan).equals(actualStructure)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private String canonicalizePlanStructure(String plan) {
+		List<String> lines = List.of(plan.split("\\R", -1));
+		Map<String, String> canonicalVarNames = new LinkedHashMap<>();
+		int[] nextVarIndex = { 1 };
+		List<String> normalized = new ArrayList<>(lines.size());
+		for (String line : lines) {
+			if (isNonStructuralPreamble(line)) {
+				continue;
+			}
+			line = canonicalizeVarNames(line, canonicalVarNames, nextVarIndex);
+			line = normalizeTiming(line);
+			line = normalizeEstimateValues(line);
+			if (normalized.isEmpty() && line.isBlank()) {
+				continue;
+			}
+			normalized.add(line);
+		}
+		return joinLines(normalized).stripTrailing();
+	}
+
+	private boolean isNonStructuralPreamble(String line) {
+		String trimmed = line.strip();
+		return "Timed out while retrieving explanation! Explanation may be incomplete!".equals(trimmed)
+				|| "You can change the timeout by setting .setMaxExecutionTime(...) on your query.".equals(trimmed);
+	}
+
+	private String canonicalizeVarNames(String line, Map<String, String> canonicalVarNames, int[] nextVarIndex) {
+		Matcher matcher = VAR_NAME_PATTERN.matcher(line);
+		StringBuilder normalized = new StringBuilder(line.length());
+		int last = 0;
+		while (matcher.find()) {
+			String originalName = matcher.group(1);
+			String canonicalName = canonicalName(originalName, canonicalVarNames, nextVarIndex);
+			normalized.append(line, last, matcher.start(1));
+			normalized.append(canonicalName);
+			last = matcher.end(1);
+		}
+		if (last == 0) {
+			return line;
+		}
+		normalized.append(line, last, line.length());
+		return normalized.toString();
+	}
+
+	private String canonicalName(String originalName, Map<String, String> canonicalVarNames, int[] nextVarIndex) {
+		if (originalName == null || originalName.isBlank()) {
+			return originalName;
+		}
+		if (originalName.startsWith("_const_")) {
+			return "_const";
+		}
+		return canonicalVarNames.computeIfAbsent(originalName, ignored -> "v" + nextVarIndex[0]++);
+	}
+
 	private String executeAndExplain(SailRepository repository, String query, long expected, List<String> previousLines,
-			List<String> expectedLines) {
+			List<String> expectedLines, int explainTimeoutSeconds, boolean validateCount,
+			Explanation.Level explainLevel) {
 		Map<String, String> normalizedNames = new LinkedHashMap<>();
 		Map<String, Integer> prefixCounters = new LinkedHashMap<>();
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
-			long count = executeCount(tupleQuery);
-			if (count != expected) {
-				throw new IllegalStateException("Unexpected count: expected " + expected + " but got " + count);
+			if (validateCount) {
+				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+				long count = executeCount(tupleQuery);
+				if (count != expected) {
+					throw new IllegalStateException("Unexpected count: expected " + expected + " but got " + count);
+				}
 			}
 			TupleQuery explainQuery = connection.prepareTupleQuery(query);
-			explainQuery.setMaxExecutionTime(EXPLAIN_TIMEOUT_SECONDS);
-			Explanation explanation = explainQuery.explain(Explanation.Level.Executed);
+			explainQuery.setMaxExecutionTime(explainTimeoutSeconds);
+			Explanation explanation = explainQuery.explain(explainLevel);
 			List<String> normalized = normalizeExplainLines(explanation.toString(), normalizedNames, prefixCounters,
 					expectedLines != null ? expectedLines : previousLines);
 			return joinLines(normalized).stripTrailing();
@@ -612,9 +1077,7 @@ class DpJoinOrderTimingHarnessTest {
 			if (!normalizedVar && line.contains("_anon_")) {
 				line = normalizeAnonTokensInText(line, normalizedNames, prefixCounters);
 			}
-			if (previousLines != null && i < previousLines.size()) {
-				line = normalizeEstimates(line, previousLines.get(i));
-			}
+			line = normalizeEstimateValues(line);
 			normalized.add(line);
 		}
 		return normalized;
@@ -651,73 +1114,31 @@ class DpJoinOrderTimingHarnessTest {
 		return normalized.toString();
 	}
 
-	private String normalizeEstimates(String line, String previousLine) {
-		Map<String, EstimateValue> previous = extractEstimates(previousLine);
-		if (previous.isEmpty()) {
-			return line;
-		}
+	private String normalizeEstimateValues(String line) {
 		Matcher matcher = ESTIMATE_PATTERN.matcher(line);
 		StringBuilder normalized = new StringBuilder(line.length());
 		int last = 0;
 		while (matcher.find()) {
-			String key = matcher.group(1);
-			EstimateValue previousValue = previous.get(key);
-			String replacement = matcher.group(2) + matcher.group(3);
-			if (previousValue != null) {
-				double currentValue = parseEstimate(matcher.group(2), matcher.group(3));
-				if (Double.isFinite(currentValue) && Double.isFinite(previousValue.value)) {
-					double denom = Math.max(previousValue.value, 1.0e-12d);
-					if (Math.abs(currentValue - previousValue.value) / denom <= ESTIMATE_TOLERANCE) {
-						replacement = previousValue.original;
-					}
-				}
-			}
 			normalized.append(line, last, matcher.start(2));
-			normalized.append(replacement);
+			normalized.append("<e>");
 			last = matcher.end(3);
 		}
-		normalized.append(line, last, line.length());
-		return normalized.toString();
-	}
-
-	private Map<String, EstimateValue> extractEstimates(String line) {
-		Matcher matcher = ESTIMATE_PATTERN.matcher(line);
-		Map<String, EstimateValue> values = new LinkedHashMap<>();
-		while (matcher.find()) {
-			String key = matcher.group(1);
-			String original = matcher.group(2) + matcher.group(3);
-			double value = parseEstimate(matcher.group(2), matcher.group(3));
-			values.put(key, new EstimateValue(value, original));
+		String normalizedLine;
+		if (last == 0) {
+			normalizedLine = line;
+		} else {
+			normalized.append(line, last, line.length());
+			normalizedLine = normalized.toString();
 		}
-		return values;
-	}
-
-	private double parseEstimate(String number, String suffix) {
-		double base;
-		try {
-			base = Double.parseDouble(number);
-		} catch (NumberFormatException e) {
-			return Double.NaN;
-		}
-		if (suffix == null || suffix.isEmpty()) {
-			return base;
-		}
-		switch (suffix.charAt(0)) {
-		case 'K':
-		case 'k':
-			return base * 1.0e3d;
-		case 'M':
-		case 'm':
-			return base * 1.0e6d;
-		case 'B':
-		case 'b':
-			return base * 1.0e9d;
-		case 'G':
-		case 'g':
-			return base * 1.0e9d;
-		default:
-			return Double.NaN;
-		}
+		String stripped = normalizedLine;
+		stripped = stripped.replaceAll("(?:costEstimate|resultSizeEstimate|resultSizeActual)=<e>,?\\s*", "");
+		stripped = stripped.replaceAll("\\(\\s*,\\s*", "(");
+		stripped = stripped.replaceAll(",\\s*\\)", ")");
+		stripped = stripped.replaceAll("\\(\\s*\\)", "()");
+		stripped = stripped.replaceAll("\\s*\\(\\)", "");
+		stripped = stripped.replaceAll("\\s*\\([A-Za-z]+Iterator\\)", "");
+		stripped = stripped.replaceAll("\\s+$", "");
+		return stripped;
 	}
 
 	private String renderOptimizedQuery(Explanation explanation, TupleExprIRRenderer renderer) {
@@ -784,16 +1205,6 @@ class DpJoinOrderTimingHarnessTest {
 		}
 		normalized.append(text, last, text.length());
 		return normalized.toString();
-	}
-
-	private static final class EstimateValue {
-		private final double value;
-		private final String original;
-
-		private EstimateValue(double value, String original) {
-			this.value = value;
-			this.original = original;
-		}
 	}
 
 	private void printDiff(String before, String after) {

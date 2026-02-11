@@ -1,36 +1,36 @@
-Projection (resultSizeActual=67.3K)
+Projection (resultSizeActual=<e>)
 ╠══ ProjectionElemList
 ║     ProjectionElem "section"
 ║     ProjectionElem "trackCount"
-╚══ Extension (resultSizeActual=67.3K)
-   ├── Extension (resultSizeActual=67.3K)
-   │  ╠══ Filter (resultSizeActual=67.3K)
+╚══ Extension (resultSizeActual=<e>)
+   ├── Extension (resultSizeActual=<e>)
+   │  ╠══ Filter (resultSizeActual=<e>)
    │  ║  ├── Compare (>)
    │  ║  │     Var (name=_anon_having_1, anonymous)
    │  ║  │     ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
-   │  ║  └── Group (section) (resultSizeActual=67.3K)
-   │  ║        Filter (resultSizeActual=134.7K)
+   │  ║  └── Group (section) (resultSizeActual=<e>)
+   │  ║        Filter (resultSizeActual=<e>)
    │  ║        ├── Compare (!=)
    │  ║        │     Var (name=optOp)
    │  ║        │     Var (name=section)
-   │  ║        └── LeftJoin (LeftJoinIterator) (resultSizeActual=134.7K)
-   │  ║           ╠══ Join (JoinIterator) (resultSizeActual=67.3K) [left]
-   │  ║           ║  ├── StatementPattern (costEstimate=6.4K, resultSizeEstimate=12.8K, resultSizeActual=67.3K) [left]
-   │  ║           ║  │     s: Var (name=section)
-   │  ║           ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-   │  ║           ║  │     o: Var (name=_const_b0bb051f_uri, value=http://example.com/theme/train/SectionOfLine, anonymous)
-   │  ║           ║  └── Filter (resultSizeActual=67.3K) [right]
-   │  ║           ║     ╠══ Exists
-   │  ║           ║     ║     StatementPattern (resultSizeEstimate=12.8K, resultSizeActual=0)
-   │  ║           ║     ║        s: Var (name=track)
-   │  ║           ║     ║        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-   │  ║           ║     ║        o: Var (name=_const_585dd5cb_uri, value=http://example.com/theme/train/TrackSection, anonymous)
-   │  ║           ║     ╚══ StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=67.3K)
-   │  ║           ║           s: Var (name=section)
-   │  ║           ║           p: Var (name=_const_5289cea3_uri, value=http://example.com/theme/train/hasTrackSection, anonymous)
-   │  ║           ║           o: Var (name=track)
-   │  ║           ╚══ Extension (resultSizeActual=134.7K) [right]
-   │  ║              ├── StatementPattern (resultSizeEstimate=1.79, resultSizeActual=134.7K)
+   │  ║        └── LeftJoin (LeftJoinIterator) (resultSizeActual=<e>)
+   │  ║           ╠══ Join (JoinIterator) (resultSizeActual=<e>) [left]
+   │  ║           ║  ├── Filter (resultSizeActual=<e>) [left]
+   │  ║           ║  │  ╠══ Exists
+   │  ║           ║  │  ║     StatementPattern (resultSizeEstimate=<e>, resultSizeActual=<e>)
+   │  ║           ║  │  ║        s: Var (name=track)
+   │  ║           ║  │  ║        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           ║  │  ║        o: Var (name=_const_585dd5cb_uri, value=http://example.com/theme/train/TrackSection, anonymous)
+   │  ║           ║  │  ╚══ StatementPattern (costEstimate=<e>, resultSizeEstimate=<e>, resultSizeActual=<e>)
+   │  ║           ║  │        s: Var (name=section)
+   │  ║           ║  │        p: Var (name=_const_5289cea3_uri, value=http://example.com/theme/train/hasTrackSection, anonymous)
+   │  ║           ║  │        o: Var (name=track)
+   │  ║           ║  └── StatementPattern (costEstimate=<e>, resultSizeEstimate=<e>, resultSizeActual=<e>) [right]
+   │  ║           ║        s: Var (name=section)
+   │  ║           ║        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           ║        o: Var (name=_const_b0bb051f_uri, value=http://example.com/theme/train/SectionOfLine, anonymous)
+   │  ║           ╚══ Extension (resultSizeActual=<e>) [right]
+   │  ║              ├── StatementPattern (resultSizeEstimate=<e>, resultSizeActual=<e>)
    │  ║              │     s: Var (name=section)
    │  ║              │     p: Var (name=_const_26ff10d8_uri, value=http://example.com/theme/train/connectsOperationalPoint, anonymous)
    │  ║              │     o: Var (name=op)
@@ -48,4 +48,3 @@ Projection (resultSizeActual=67.3K)
    └── ExtensionElem (trackCount)
          Count (Distinct)
             Var (name=track)
-

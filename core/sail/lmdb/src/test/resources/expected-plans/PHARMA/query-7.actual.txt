@@ -1,0 +1,69 @@
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension
+   ├── Group
+   │  ╠══ Filter
+   │  ║  ├── And
+   │  ║  │  ╠══ Not
+   │  ║  │  ║     Exists
+   │  ║  │  ║        Join
+   │  ║  │  ║        ├── StatementPattern [left]
+   │  ║  │  ║        │     s: Var (name=arm)
+   │  ║  │  ║        │     p: Var (name=_const_60f6d7af_uri, value=http://example.com/theme/pharma/hasResult, anonymous)
+   │  ║  │  ║        │     o: Var (name=r)
+   │  ║  │  ║        └── Filter [right]
+   │  ║  │  ║           ╠══ ListMemberOperator
+   │  ║  │  ║           ║     Var (name=p)
+   │  ║  │  ║           ║     ValueConstant (value="0.08"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+   │  ║  │  ║           ║     ValueConstant (value="0.09"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+   │  ║  │  ║           ╚══ StatementPattern
+   │  ║  │  ║                 s: Var (name=r)
+   │  ║  │  ║                 p: Var (name=_const_80c71989_uri, value=http://example.com/theme/pharma/pValue, anonymous)
+   │  ║  │  ║                 o: Var (name=p)
+   │  ║  │  ╚══ Compare (!=)
+   │  ║  │        Var (name=optCompName)
+   │  ║  │        ValueConstant (value="")
+   │  ║  └── LeftJoin
+   │  ║     ╠══ Union [left]
+   │  ║     ║  ├── Join
+   │  ║     ║  │  ╠══ StatementPattern (new scope) [left]
+   │  ║     ║  │  ║     s: Var (name=arm)
+   │  ║     ║  │  ║     p: Var (name=_const_4514e0aa_uri, value=http://example.com/theme/pharma/armComparator, anonymous)
+   │  ║     ║  │  ║     o: Var (name=comp)
+   │  ║     ║  │  ╚══ Join [right]
+   │  ║     ║  │     ├── StatementPattern [left]
+   │  ║     ║  │     │     s: Var (name=trial)
+   │  ║     ║  │     │     p: Var (name=_const_73c2e40a_uri, value=http://example.com/theme/pharma/hasArm, anonymous)
+   │  ║     ║  │     │     o: Var (name=arm)
+   │  ║     ║  │     └── StatementPattern [right]
+   │  ║     ║  │           s: Var (name=trial)
+   │  ║     ║  │           p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║  │           o: Var (name=_const_4795bbfb_uri, value=http://example.com/theme/pharma/ClinicalTrial, anonymous)
+   │  ║     ║  └── Join
+   │  ║     ║     ╠══ StatementPattern (new scope) [left]
+   │  ║     ║     ║     s: Var (name=arm)
+   │  ║     ║     ║     p: Var (name=_const_aefd3274_uri, value=http://example.com/theme/pharma/armDrug, anonymous)
+   │  ║     ║     ║     o: Var (name=comp)
+   │  ║     ║     ╚══ Join [right]
+   │  ║     ║        ├── StatementPattern [left]
+   │  ║     ║        │     s: Var (name=trial)
+   │  ║     ║        │     p: Var (name=_const_73c2e40a_uri, value=http://example.com/theme/pharma/hasArm, anonymous)
+   │  ║     ║        │     o: Var (name=arm)
+   │  ║     ║        └── StatementPattern [right]
+   │  ║     ║              s: Var (name=trial)
+   │  ║     ║              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║              o: Var (name=_const_4795bbfb_uri, value=http://example.com/theme/pharma/ClinicalTrial, anonymous)
+   │  ║     ╚══ Extension [right]
+   │  ║        ├── StatementPattern
+   │  ║        │     s: Var (name=comp)
+   │  ║        │     p: Var (name=_const_f6ceb733_uri, value=http://example.com/theme/pharma/name, anonymous)
+   │  ║        │     o: Var (name=optName)
+   │  ║        └── ExtensionElem (optCompName)
+   │  ║              Var (name=optName)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=arm)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=arm)

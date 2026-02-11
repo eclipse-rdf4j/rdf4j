@@ -1,0 +1,89 @@
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension
+   ├── Group
+   │  ╠══ Filter
+   │  ║  ├── And
+   │  ║  │  ╠══ ListMemberOperator
+   │  ║  │  ║     Var (name=optDisease)
+   │  ║  │  ║     ValueConstant (value=http://example.com/theme/pharma/disease/8)
+   │  ║  │  ║     ValueConstant (value=http://example.com/theme/pharma/disease/9)
+   │  ║  │  ╚══ Exists
+   │  ║  │        StatementPattern
+   │  ║  │           s: Var (name=drug)
+   │  ║  │           p: Var (name=_const_72f8dc5a_uri, value=http://example.com/theme/pharma/hasSideEffect, anonymous)
+   │  ║  │           o: Var (name=se)
+   │  ║  └── LeftJoin
+   │  ║     ╠══ Projection (new scope) [left]
+   │  ║     ║  ├── ProjectionElemList
+   │  ║     ║  │     ProjectionElem "drug"
+   │  ║     ║  │     ProjectionElem "avgEffect"
+   │  ║     ║  └── Extension
+   │  ║     ║     ╠══ Extension
+   │  ║     ║     ║  ├── Filter
+   │  ║     ║     ║  │  ╠══ Compare (>)
+   │  ║     ║     ║  │  ║     Var (name=_anon_having_1, anonymous)
+   │  ║     ║     ║  │  ║     ValueConstant (value="0.4"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+   │  ║     ║     ║  │  ╚══ Group (drug)
+   │  ║     ║     ║  │        Filter
+   │  ║     ║     ║  │        ╠══ Compare (>)
+   │  ║     ║     ║  │        ║     Var (name=optRate)
+   │  ║     ║     ║  │        ║     ValueConstant (value="0.2"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+   │  ║     ║     ║  │        ╚══ LeftJoin
+   │  ║     ║     ║  │           ├── Join [left]
+   │  ║     ║     ║  │           │  ╠══ StatementPattern [left]
+   │  ║     ║     ║  │           │  ║     s: Var (name=arm)
+   │  ║     ║     ║  │           │  ║     p: Var (name=_const_aefd3274_uri, value=http://example.com/theme/pharma/armDrug, anonymous)
+   │  ║     ║     ║  │           │  ║     o: Var (name=drug)
+   │  ║     ║     ║  │           │  ╚══ Join [right]
+   │  ║     ║     ║  │           │     ├── StatementPattern [left]
+   │  ║     ║     ║  │           │     │     s: Var (name=trial)
+   │  ║     ║     ║  │           │     │     p: Var (name=_const_73c2e40a_uri, value=http://example.com/theme/pharma/hasArm, anonymous)
+   │  ║     ║     ║  │           │     │     o: Var (name=arm)
+   │  ║     ║     ║  │           │     └── Join [right]
+   │  ║     ║     ║  │           │        ╠══ StatementPattern [left]
+   │  ║     ║     ║  │           │        ║     s: Var (name=arm)
+   │  ║     ║     ║  │           │        ║     p: Var (name=_const_60f6d7af_uri, value=http://example.com/theme/pharma/hasResult, anonymous)
+   │  ║     ║     ║  │           │        ║     o: Var (name=result)
+   │  ║     ║     ║  │           │        ╚══ Join [right]
+   │  ║     ║     ║  │           │           ├── StatementPattern [left]
+   │  ║     ║     ║  │           │           │     s: Var (name=result)
+   │  ║     ║     ║  │           │           │     p: Var (name=_const_6999fbda_uri, value=http://example.com/theme/pharma/effectSize, anonymous)
+   │  ║     ║     ║  │           │           │     o: Var (name=effect)
+   │  ║     ║     ║  │           │           └── StatementPattern [right]
+   │  ║     ║     ║  │           │                 s: Var (name=trial)
+   │  ║     ║     ║  │           │                 p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║     ║  │           │                 o: Var (name=_const_4795bbfb_uri, value=http://example.com/theme/pharma/ClinicalTrial, anonymous)
+   │  ║     ║     ║  │           └── Extension [right]
+   │  ║     ║     ║  │              ╠══ StatementPattern
+   │  ║     ║     ║  │              ║     s: Var (name=result)
+   │  ║     ║     ║  │              ║     p: Var (name=_const_d84fe169_uri, value=http://example.com/theme/pharma/responseRate, anonymous)
+   │  ║     ║     ║  │              ║     o: Var (name=rate)
+   │  ║     ║     ║  │              ╚══ ExtensionElem (optRate)
+   │  ║     ║     ║  │                    Var (name=rate)
+   │  ║     ║     ║  │        GroupElem (_anon_having_1)
+   │  ║     ║     ║  │           Avg
+   │  ║     ║     ║  │              Var (name=effect)
+   │  ║     ║     ║  │        GroupElem (avgEffect)
+   │  ║     ║     ║  │           Avg
+   │  ║     ║     ║  │              Var (name=effect)
+   │  ║     ║     ║  └── ExtensionElem (_anon_having_1)
+   │  ║     ║     ║        Avg
+   │  ║     ║     ║           Var (name=effect)
+   │  ║     ║     ╚══ ExtensionElem (avgEffect)
+   │  ║     ║           Avg
+   │  ║     ║              Var (name=effect)
+   │  ║     ╚══ Extension [right]
+   │  ║        ├── StatementPattern
+   │  ║        │     s: Var (name=drug)
+   │  ║        │     p: Var (name=_const_e46c34a6_uri, value=http://example.com/theme/pharma/indicatedFor, anonymous)
+   │  ║        │     o: Var (name=disease)
+   │  ║        └── ExtensionElem (optDisease)
+   │  ║              Var (name=disease)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=drug)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=drug)

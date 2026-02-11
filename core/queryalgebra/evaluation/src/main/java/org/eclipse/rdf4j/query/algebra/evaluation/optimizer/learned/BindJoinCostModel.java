@@ -24,5 +24,13 @@ public interface BindJoinCostModel {
 
 	double estimateScanCardinality(TupleExpr expr, Set<String> initiallyBoundVars);
 
+	default double estimateScanCost(TupleExpr expr, Set<String> initiallyBoundVars) {
+		return estimateScanCardinality(expr, initiallyBoundVars);
+	}
+
+	default double estimateUncertainty(TupleExpr expr, Set<String> boundVars) {
+		return 0.0d;
+	}
+
 	Set<String> bindingNames(TupleExpr expr);
 }

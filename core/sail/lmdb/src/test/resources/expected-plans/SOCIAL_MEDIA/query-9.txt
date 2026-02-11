@@ -11,40 +11,40 @@ Projection (resultSizeActual=1)
    │  ║     ╠══ Join (JoinIterator) (resultSizeActual=343) [left]
    │  ║     ║  ├── BindingSetAssignment ([[b=http://example.com/theme/social/user/3], [b=http://example.com/theme/social/user/4], [b=http://example.com/theme/social/user/5], [b=http://example.com/theme/social/user/6]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=4) [left]
    │  ║     ║  └── Join (JoinIterator) (resultSizeActual=343) [right]
-   │  ║     ║     ╠══ Filter (resultSizeActual=61) [left]
+   │  ║     ║     ╠══ Filter (resultSizeActual=57) [left]
    │  ║     ║     ║  ├── Compare (!=)
+   │  ║     ║     ║  │     Var (name=a)
    │  ║     ║     ║  │     Var (name=b)
-   │  ║     ║     ║  │     Var (name=c)
-   │  ║     ║     ║  └── StatementPattern (costEstimate=1.94, resultSizeEstimate=10, resultSizeActual=61)
-   │  ║     ║     ║        s: Var (name=b)
+   │  ║     ║     ║  └── StatementPattern (costEstimate=1.87, resultSizeEstimate=8.98, resultSizeActual=57)
+   │  ║     ║     ║        s: Var (name=a)
    │  ║     ║     ║        p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
-   │  ║     ║     ║        o: Var (name=c)
+   │  ║     ║     ║        o: Var (name=b)
    │  ║     ║     ╚══ Join (JoinIterator) (resultSizeActual=343) [right]
-   │  ║     ║        ├── Filter (resultSizeActual=630) [left]
+   │  ║     ║        ├── Filter (resultSizeActual=598) [left]
    │  ║     ║        │  ╠══ Compare (!=)
-   │  ║     ║        │  ║     Var (name=c)
    │  ║     ║        │  ║     Var (name=d)
-   │  ║     ║        │  ╚══ StatementPattern (costEstimate=1.94, resultSizeEstimate=10, resultSizeActual=630)
-   │  ║     ║        │        s: Var (name=c)
+   │  ║     ║        │  ║     Var (name=a)
+   │  ║     ║        │  ╚══ StatementPattern (costEstimate=1.87, resultSizeEstimate=8.98, resultSizeActual=598)
+   │  ║     ║        │        s: Var (name=d)
    │  ║     ║        │        p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
-   │  ║     ║        │        o: Var (name=d)
+   │  ║     ║        │        o: Var (name=a)
    │  ║     ║        └── Join (JoinIterator) (resultSizeActual=343) [right]
-   │  ║     ║           ╠══ Filter (resultSizeActual=6.1K) [left]
+   │  ║     ║           ╠══ Filter (resultSizeActual=5.6K) [left]
    │  ║     ║           ║  ├── Compare (!=)
+   │  ║     ║           ║  │     Var (name=c)
    │  ║     ║           ║  │     Var (name=d)
-   │  ║     ║           ║  │     Var (name=a)
-   │  ║     ║           ║  └── StatementPattern (costEstimate=1.94, resultSizeEstimate=10, resultSizeActual=6.1K)
-   │  ║     ║           ║        s: Var (name=d)
+   │  ║     ║           ║  └── StatementPattern (costEstimate=1.87, resultSizeEstimate=8.98, resultSizeActual=5.6K)
+   │  ║     ║           ║        s: Var (name=c)
    │  ║     ║           ║        p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
-   │  ║     ║           ║        o: Var (name=a)
+   │  ║     ║           ║        o: Var (name=d)
    │  ║     ║           ╚══ Filter (resultSizeActual=343) [right]
    │  ║     ║              ├── Compare (!=)
-   │  ║     ║              │     Var (name=a)
    │  ║     ║              │     Var (name=b)
-   │  ║     ║              └── StatementPattern (costEstimate=0.50, resultSizeEstimate=0.01, resultSizeActual=343)
-   │  ║     ║                    s: Var (name=a)
+   │  ║     ║              │     Var (name=c)
+   │  ║     ║              └── StatementPattern (costEstimate=0.50, resultSizeEstimate=0.13, resultSizeActual=343)
+   │  ║     ║                    s: Var (name=b)
    │  ║     ║                    p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
-   │  ║     ║                    o: Var (name=b)
+   │  ║     ║                    o: Var (name=c)
    │  ║     ╚══ Extension (resultSizeActual=343) [right]
    │  ║        ├── StatementPattern (resultSizeEstimate=1.00, resultSizeActual=343)
    │  ║        │     s: Var (name=b)
@@ -58,4 +58,3 @@ Projection (resultSizeActual=1)
    └── ExtensionElem (count)
          Count (Distinct)
             Var (name=a)
-

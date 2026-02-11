@@ -1,0 +1,49 @@
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "node"
+║     ProjectionElem "neighborCount"
+╚══ Extension
+   ├── Extension
+   │  ╠══ Filter
+   │  ║  ├── Compare (>)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (node)
+   │  ║        Filter
+   │  ║        ├── Compare (!=)
+   │  ║        │     Var (name=optWeight)
+   │  ║        │     ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║        └── LeftJoin
+   │  ║           ╠══ Union [left]
+   │  ║           ║  ├── Join
+   │  ║           ║  │  ╠══ StatementPattern [left]
+   │  ║           ║  │  ║     s: Var (name=node)
+   │  ║           ║  │  ║     p: Var (name=_const_2e732754_uri, value=http://example.com/theme/connected/connectsTo, anonymous)
+   │  ║           ║  │  ║     o: Var (name=neighbor)
+   │  ║           ║  │  ╚══ StatementPattern [right]
+   │  ║           ║  │        s: Var (name=node)
+   │  ║           ║  │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           ║  │        o: Var (name=_const_b000c52_uri, value=http://example.com/theme/connected/Node, anonymous)
+   │  ║           ║  └── StatementPattern (new scope)
+   │  ║           ║        s: Var (name=neighbor)
+   │  ║           ║        p: Var (name=_const_2e732754_uri, value=http://example.com/theme/connected/connectsTo, anonymous)
+   │  ║           ║        o: Var (name=node)
+   │  ║           ╚══ Extension [right]
+   │  ║              ├── StatementPattern
+   │  ║              │     s: Var (name=node)
+   │  ║              │     p: Var (name=_const_909a60a8_uri, value=http://example.com/theme/connected/weight, anonymous)
+   │  ║              │     o: Var (name=w)
+   │  ║              └── ExtensionElem (optWeight)
+   │  ║                    Var (name=w)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count
+   │  ║              Var (name=neighbor)
+   │  ║        GroupElem (neighborCount)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=neighbor)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count
+   │           Var (name=neighbor)
+   └── ExtensionElem (neighborCount)
+         Count (Distinct)
+            Var (name=neighbor)

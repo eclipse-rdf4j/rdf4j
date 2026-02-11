@@ -1,47 +1,47 @@
-Projection (resultSizeActual=1)
+Projection ()
 ╠══ ProjectionElemList
 ║     ProjectionElem "count"
-╚══ Extension (resultSizeActual=1)
-   ├── Group () (resultSizeActual=1)
-   │  ╠══ Filter (resultSizeActual=0)
+╚══ Extension ()
+   ├── Group () ()
+   │  ╠══ Filter ()
    │  ║  ├── And
    │  ║  │  ╠══ Compare (!=)
    │  ║  │  ║     Var (name=optName)
    │  ║  │  ║     ValueConstant (value="")
    │  ║  │  ╚══ Exists
-   │  ║  │        StatementPattern (resultSizeEstimate=520)
+   │  ║  │        StatementPattern ()
    │  ║  │           s: Var (name=requirement)
    │  ║  │           p: Var (name=_const_b98f621b_uri, value=http://example.com/theme/engineering/satisfies, anonymous)
    │  ║  │           o: Var (name=component)
-   │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=0)
-   │  ║     ╠══ Join (JoinIterator) (resultSizeActual=0) [left]
-   │  ║     ║  ├── BindingSetAssignment ([[threshold="0.85"^^<http://www.w3.org/2001/XMLSchema#decimal>]]) (costEstimate=6.00, resultSizeEstimate=1.00, resultSizeActual=1) [left]
-   │  ║     ║  └── Join (JoinIterator) (resultSizeActual=0) [right]
-   │  ║     ║     ╠══ StatementPattern (costEstimate=1.6K, resultSizeEstimate=520, resultSizeActual=520) [left]
-   │  ║     ║     ║     s: Var (name=requirement)
-   │  ║     ║     ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-   │  ║     ║     ║     o: Var (name=_const_57f1c37d_uri, value=http://example.com/theme/engineering/Requirement, anonymous)
-   │  ║     ║     ╚══ Join (JoinIterator) (resultSizeActual=0) [right]
-   │  ║     ║        ├── StatementPattern (costEstimate=1.17, resultSizeEstimate=0.91, resultSizeActual=1.5K) [left]
-   │  ║     ║        │     s: Var (name=requirement)
+   │  ║  └── LeftJoin (LeftJoinIterator) ()
+   │  ║     ╠══ Join (JoinIterator) () [left]
+   │  ║     ║  ├── BindingSetAssignment ([[threshold="0.85"^^<http://www.w3.org/2001/XMLSchema#decimal>]]) () [left]
+   │  ║     ║  └── Join (JoinIterator) () [right]
+   │  ║     ║     ╠══ Filter () [left]
+   │  ║     ║     ║  ├── ListMemberOperator
+   │  ║     ║     ║  │     Var (name=value)
+   │  ║     ║     ║  │     ValueConstant (value="0.85"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+   │  ║     ║     ║  │     ValueConstant (value="0.9"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+   │  ║     ║     ║  │     ValueConstant (value="0.95"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+   │  ║     ║     ║  └── StatementPattern ()
+   │  ║     ║     ║        s: Var (name=measurement)
+   │  ║     ║     ║        p: Var (name=_const_f682b725_uri, value=http://example.com/theme/engineering/measuredValue, anonymous)
+   │  ║     ║     ║        o: Var (name=value)
+   │  ║     ║     ╚══ Join (JoinIterator) [right]
+   │  ║     ║        ├── StatementPattern () [left]
+   │  ║     ║        │     s: Var (name=test)
    │  ║     ║        │     p: Var (name=_const_c08202a5_uri, value=http://example.com/theme/engineering/verifiedBy, anonymous)
-   │  ║     ║        │     o: Var (name=test)
-   │  ║     ║        └── Join (JoinIterator) (resultSizeActual=0) [right]
-   │  ║     ║           ╠══ StatementPattern (costEstimate=1.17, resultSizeEstimate=0.91, resultSizeActual=1.5K) [left]
-   │  ║     ║           ║     s: Var (name=test)
+   │  ║     ║        │     o: Var (name=measurement)
+   │  ║     ║        └── Join (JoinIterator) [right]
+   │  ║     ║           ╠══ StatementPattern () [left]
+   │  ║     ║           ║     s: Var (name=requirement)
    │  ║     ║           ║     p: Var (name=_const_c08202a5_uri, value=http://example.com/theme/engineering/verifiedBy, anonymous)
-   │  ║     ║           ║     o: Var (name=measurement)
-   │  ║     ║           ╚══ Filter (resultSizeActual=0) [right]
-   │  ║     ║              ├── ListMemberOperator
-   │  ║     ║              │     Var (name=value)
-   │  ║     ║              │     ValueConstant (value="0.85"^^<http://www.w3.org/2001/XMLSchema#decimal>)
-   │  ║     ║              │     ValueConstant (value="0.9"^^<http://www.w3.org/2001/XMLSchema#decimal>)
-   │  ║     ║              │     ValueConstant (value="0.95"^^<http://www.w3.org/2001/XMLSchema#decimal>)
-   │  ║     ║              └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=1.5K)
-   │  ║     ║                    s: Var (name=measurement)
-   │  ║     ║                    p: Var (name=_const_f682b725_uri, value=http://example.com/theme/engineering/measuredValue, anonymous)
-   │  ║     ║                    o: Var (name=value)
-   │  ║     ╚══ StatementPattern (resultSizeEstimate=133.5K) [right]
+   │  ║     ║           ║     o: Var (name=test)
+   │  ║     ║           ╚══ StatementPattern () [right]
+   │  ║     ║                 s: Var (name=requirement)
+   │  ║     ║                 p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║                 o: Var (name=_const_57f1c37d_uri, value=http://example.com/theme/engineering/Requirement, anonymous)
+   │  ║     ╚══ StatementPattern () [right]
    │  ║           s: Var (name=component)
    │  ║           p: Var (name=_const_b8416c71_uri, value=http://example.com/theme/engineering/name, anonymous)
    │  ║           o: Var (name=optName)

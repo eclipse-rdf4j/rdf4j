@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
@@ -166,6 +167,25 @@ class DpVsGreedyJoinOrderingTest {
 		List<TupleExpr> order = dp.order(List.of(a, b), Set.of());
 
 		assertEquals(List.of(b, a), order);
+	}
+
+	@Test
+	void dpEmitsDeterministicTopKCandidates() {
+		TupleExpr a = new StatementPattern(new Var("sa"), new Var("pa"), new Var("oa"));
+		TupleExpr b = new StatementPattern(new Var("sb"), new Var("pb"), new Var("ob"));
+		TupleExpr c = new StatementPattern(new Var("sc"), new Var("pc"), new Var("oc"));
+
+		BindJoinCostModel costModel = new StubCostModel(a, b, c);
+		JoinOrderPlanner dp = new DpLeftDeepBindJoinOrderPlanner(costModel);
+
+		List<JoinPlanCandidate> first = dp.orderCandidates(List.of(a, b, c), Set.of(), 3);
+		List<JoinPlanCandidate> second = dp.orderCandidates(List.of(a, b, c), Set.of(), 3);
+
+		assertEquals(first.size(), second.size());
+		assertTrue(first.size() >= 1);
+		for (int i = 0; i < first.size(); i++) {
+			assertEquals(first.get(i).getPlanSignature(), second.get(i).getPlanSignature());
+		}
 	}
 
 	private static final class StubCostModel implements BindJoinCostModel {

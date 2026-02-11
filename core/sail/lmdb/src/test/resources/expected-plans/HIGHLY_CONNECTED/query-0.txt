@@ -14,13 +14,13 @@ Projection (resultSizeActual=1)
    │  ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
    │  ║  │     │     o: Var (name=_const_b000c52_uri, value=http://example.com/theme/connected/Node, anonymous)
    │  ║  │     └── Extension (resultSizeActual=267.2K) [right]
-   │  ║  │        ╠══ StatementPattern (resultSizeEstimate=6.64, resultSizeActual=267.2K)
+   │  ║  │        ╠══ StatementPattern (resultSizeEstimate=6.66, resultSizeActual=267.2K)
    │  ║  │        ║     s: Var (name=node)
    │  ║  │        ║     p: Var (name=_const_2e732754_uri, value=http://example.com/theme/connected/connectsTo, anonymous)
    │  ║  │        ║     o: Var (name=neighbor)
    │  ║  │        ╚══ ExtensionElem (optNeighbor)
    │  ║  │              Var (name=neighbor)
-   │  ║  └── StatementPattern (resultSizeEstimate=5.86, resultSizeActual=1.5M) [right]
+   │  ║  └── StatementPattern (resultSizeEstimate=5.87, resultSizeActual=1.5M) [right]
    │  ║        s: Var (name=node)
    │  ║        p: Var (name=_const_909a60a8_uri, value=http://example.com/theme/connected/weight, anonymous)
    │  ║        o: Var (name=w)
@@ -30,4 +30,3 @@ Projection (resultSizeActual=1)
    └── ExtensionElem (count)
          Count (Distinct)
             Var (name=node)
-

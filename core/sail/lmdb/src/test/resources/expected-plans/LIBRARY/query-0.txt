@@ -15,7 +15,7 @@ Projection (resultSizeActual=1)
    │  ║  │     │     o: Var (name=_const_6cec5947_uri, value=http://example.com/theme/library/Book, anonymous)
    │  ║  │     └── Extension (resultSizeActual=386.3K) [right]
    │  ║  │        ╠══ Join (JoinIterator) (resultSizeActual=386.3K)
-   │  ║  │        ║  ├── StatementPattern (costEstimate=1.49, resultSizeEstimate=3.13, resultSizeActual=386.3K) [left]
+   │  ║  │        ║  ├── StatementPattern (costEstimate=1.61, resultSizeEstimate=5.37, resultSizeActual=386.3K) [left]
    │  ║  │        ║  │     s: Var (name=book)
    │  ║  │        ║  │     p: Var (name=_const_469a1e31_uri, value=http://example.com/theme/library/hasCopy, anonymous)
    │  ║  │        ║  │     o: Var (name=copy)
@@ -35,4 +35,3 @@ Projection (resultSizeActual=1)
    └── ExtensionElem (count)
          Count (Distinct)
             Var (name=book)
-

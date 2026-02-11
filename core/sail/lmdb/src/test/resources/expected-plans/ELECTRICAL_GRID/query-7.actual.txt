@@ -1,0 +1,48 @@
+Projection ()
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension ()
+   ├── Group () ()
+   │  ╠══ Difference ()
+   │  ║  ├── Filter ()
+   │  ║  │  ╠══ Exists
+   │  ║  │  ║     StatementPattern ()
+   │  ║  │  ║        s: Var (name=transformer)
+   │  ║  │  ║        p: Var (name=_const_fe6c498e_uri, value=http://example.com/theme/grid/hasMeter, anonymous)
+   │  ║  │  ║        o: Var (name=meter)
+   │  ║  │  ╚══ Join (JoinIterator) ()
+   │  ║  │     ├── Filter () [left]
+   │  ║  │     │  ╠══ Or
+   │  ║  │     │  ║  ├── Compare (=)
+   │  ║  │     │  ║  │     Var (name=name)
+   │  ║  │     │  ║  │     ValueConstant (value="Substation 0")
+   │  ║  │     │  ║  └── Compare (=)
+   │  ║  │     │  ║        Var (name=name)
+   │  ║  │     │  ║        ValueConstant (value="Substation 1")
+   │  ║  │     │  ╚══ StatementPattern ()
+   │  ║  │     │        s: Var (name=substation)
+   │  ║  │     │        p: Var (name=_const_9661228a_uri, value=http://example.com/theme/grid/name, anonymous)
+   │  ║  │     │        o: Var (name=name)
+   │  ║  │     └── Join (JoinIterator) () [right]
+   │  ║  │        ╠══ StatementPattern () [left]
+   │  ║  │        ║     s: Var (name=transformer)
+   │  ║  │        ║     p: Var (name=_const_35542676_uri, value=http://example.com/theme/grid/feeds, anonymous)
+   │  ║  │        ║     o: Var (name=substation)
+   │  ║  │        ╚══ StatementPattern () [right]
+   │  ║  │              s: Var (name=transformer)
+   │  ║  │              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │              o: Var (name=_const_d6ff201a_uri, value=http://example.com/theme/grid/Transformer, anonymous)
+   │  ║  └── Filter (new scope) ()
+   │  ║     ╠══ Compare (=)
+   │  ║     ║     Var (name=load)
+   │  ║     ║     Var (name=substation)
+   │  ║     ╚══ StatementPattern ()
+   │  ║           s: Var (name=meter)
+   │  ║           p: Var (name=_const_bcd29754_uri, value=http://example.com/theme/grid/measures, anonymous)
+   │  ║           o: Var (name=load)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=transformer)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=transformer)

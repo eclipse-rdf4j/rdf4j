@@ -22,4 +22,28 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 public interface JoinOrderPlanner {
 
 	List<TupleExpr> order(List<TupleExpr> operands, Set<String> initiallyBoundVars);
+
+	default List<JoinPlanCandidate> orderCandidates(List<TupleExpr> operands, Set<String> initiallyBoundVars,
+			int topK) {
+		List<TupleExpr> order = order(operands, initiallyBoundVars);
+		return List.of(JoinPlanCandidate.of(order, indexOrder(order, operands),
+				JoinPlanCandidate.signature(indexOrder(order, operands)), Double.NaN, Double.NaN, List.of()));
+	}
+
+	private static List<Integer> indexOrder(List<TupleExpr> ordered, List<TupleExpr> operands) {
+		List<Integer> indexes = new java.util.ArrayList<>(ordered.size());
+		boolean[] used = new boolean[operands.size()];
+		for (TupleExpr expr : ordered) {
+			int index = -1;
+			for (int i = 0; i < operands.size(); i++) {
+				if (!used[i] && operands.get(i) == expr) {
+					index = i;
+					used[i] = true;
+					break;
+				}
+			}
+			indexes.add(index);
+		}
+		return indexes;
+	}
 }

@@ -12,17 +12,17 @@ Projection (resultSizeActual=1)
    │  ║  │  ║     ValueConstant (value="user2")
    │  ║  │  ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=6)
    │  ║  │     ├── Join (JoinIterator) (resultSizeActual=6) [left]
-   │  ║  │     │  ╠══ BindingSetAssignment ([[v=http://example.com/theme/social/user/0], [v=http://example.com/theme/social/user/1], [v=http://example.com/theme/social/user/2]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=3) [left]
+   │  ║  │     │  ╠══ BindingSetAssignment ([[u=http://example.com/theme/social/user/0], [u=http://example.com/theme/social/user/1], [u=http://example.com/theme/social/user/2]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=3) [left]
    │  ║  │     │  ╚══ Join (JoinIterator) (resultSizeActual=6) [right]
-   │  ║  │     │     ├── Filter (resultSizeActual=33) [left]
-   │  ║  │     │     │  ╠══ Compare (!=)
-   │  ║  │     │     │  ║     Var (name=u)
-   │  ║  │     │     │  ║     Var (name=v)
-   │  ║  │     │     │  ╚══ StatementPattern (costEstimate=4.00, resultSizeEstimate=11, resultSizeActual=33)
-   │  ║  │     │     │        s: Var (name=u)
-   │  ║  │     │     │        p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
-   │  ║  │     │     │        o: Var (name=v)
-   │  ║  │     │     └── BindingSetAssignment ([[u=http://example.com/theme/social/user/0], [u=http://example.com/theme/social/user/1], [u=http://example.com/theme/social/user/2]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=6) [right]
+   │  ║  │     │     ├── BindingSetAssignment ([[v=http://example.com/theme/social/user/0], [v=http://example.com/theme/social/user/1], [v=http://example.com/theme/social/user/2]]) (costEstimate=0, resultSizeEstimate=1.00, resultSizeActual=9) [left]
+   │  ║  │     │     └── Filter (resultSizeActual=6) [right]
+   │  ║  │     │        ╠══ Compare (!=)
+   │  ║  │     │        ║     Var (name=u)
+   │  ║  │     │        ║     Var (name=v)
+   │  ║  │     │        ╚══ StatementPattern (costEstimate=0.50, resultSizeEstimate=8.21, resultSizeActual=6)
+   │  ║  │     │              s: Var (name=u)
+   │  ║  │     │              p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║  │     │              o: Var (name=v)
    │  ║  │     └── StatementPattern (resultSizeEstimate=1.00, resultSizeActual=6) [right]
    │  ║  │           s: Var (name=u)
    │  ║  │           p: Var (name=_const_7d17b943_uri, value=http://example.com/theme/social/name, anonymous)
@@ -39,4 +39,3 @@ Projection (resultSizeActual=1)
    └── ExtensionElem (count)
          Count (Distinct)
             Var (name=pair)
-

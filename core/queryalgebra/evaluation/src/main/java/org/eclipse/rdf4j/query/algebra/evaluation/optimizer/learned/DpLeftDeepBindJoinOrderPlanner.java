@@ -33,7 +33,13 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 	private static final double DISCONNECTED_PENALTY = 1.0e9d;
 	private static final String DEBUG_PROPERTY = "rdf4j.dp.debug";
 	private static final String DEBUG_MAX_OPERANDS_PROPERTY = "rdf4j.dp.debug.maxOperands";
+	private static final String SCAN_COST_ENABLED_PROPERTY = "rdf4j.optimizer.learned.scanCost.enabled";
+	private static final String LEXICOGRAPHIC_TIE_BREAK_PROPERTY = "rdf4j.optimizer.learned.dp.tieBreak.lexicographic";
 	private static final int DEFAULT_DEBUG_MAX_OPERANDS = 6;
+	private static final boolean SCAN_COST_ENABLED = Boolean
+			.parseBoolean(System.getProperty(SCAN_COST_ENABLED_PROPERTY, "true"));
+	private static final boolean LEXICOGRAPHIC_TIE_BREAK_ENABLED = Boolean
+			.parseBoolean(System.getProperty(LEXICOGRAPHIC_TIE_BREAK_PROPERTY, "true"));
 
 	private final BindJoinCostModel costModel;
 
@@ -43,9 +49,26 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 
 	@Override
 	public List<TupleExpr> order(List<TupleExpr> operands, Set<String> initiallyBoundVars) {
+		List<JoinPlanCandidate> candidates = orderCandidates(operands, initiallyBoundVars, 1);
+		if (candidates.isEmpty()) {
+			return new ArrayList<>(operands);
+		}
+		return candidates.get(0).getOrder();
+	}
+
+	@Override
+	public List<JoinPlanCandidate> orderCandidates(List<TupleExpr> operands, Set<String> initiallyBoundVars,
+			int topK) {
+		if (topK <= 0) {
+			return List.of();
+		}
 		int size = operands.size();
 		if (size <= 1) {
-			return new ArrayList<>(operands);
+			List<Integer> singleIndex = size == 1 ? List.of(0) : List.of();
+			JoinPlanCandidate candidate = JoinPlanCandidate.of(new ArrayList<>(operands), singleIndex,
+					JoinPlanCandidate.signature(singleIndex), 0.0d, size == 1 ? 1.0d : 0.0d,
+					estimateBreakdown(operands, singleIndex, initiallyBoundVars));
+			return List.of(candidate);
 		}
 
 		boolean debug = isDebugEnabled(size);
@@ -63,11 +86,16 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 		for (int i = 0; i < size; i++) {
 			int mask = 1 << i;
 			TupleExpr operand = operands.get(i);
-			double scanCost = costModel.estimateScanCardinality(operand, initiallyBoundVars);
-			if (scanCost <= 0.0d) {
-				scanCost = 1.0d;
+			double cardinality = costModel.estimateScanCardinality(operand, initiallyBoundVars);
+			if (cardinality <= 0.0d) {
+				cardinality = 1.0d;
 			}
-			double cardinality = scanCost;
+			double scanCost = SCAN_COST_ENABLED
+					? costModel.estimateScanCost(operand, initiallyBoundVars)
+					: cardinality;
+			if (scanCost <= 0.0d) {
+				scanCost = cardinality;
+			}
 			Set<String> names = filteredBindingNames(operand);
 			boolean disconnected = isIsolated(operand, operands);
 			if (!initiallyBoundVars.isEmpty() && (names.isEmpty() || disjoint(names, initiallyBoundVars))) {
@@ -123,7 +151,8 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 								+ " card=" + format(candidateCard)
 								+ " cost=" + format(candidateCost));
 					}
-					addCandidate(entries, new PlanEntry(candidateCost, candidateCard, fromMask, j, entryIndex));
+					addCandidate(plans, mask, entries,
+							new PlanEntry(candidateCost, candidateCard, fromMask, j, entryIndex));
 				}
 			}
 			plans[mask] = entries;
@@ -141,10 +170,31 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 		int finalMask = totalMasks - 1;
 		List<PlanEntry> finalPlans = plans[finalMask];
 		if (finalPlans == null || finalPlans.isEmpty()) {
-			return new ArrayList<>(operands);
+			List<Integer> indexOrder = defaultIndexOrder(operands.size());
+			JoinPlanCandidate candidate = JoinPlanCandidate.of(new ArrayList<>(operands), indexOrder,
+					JoinPlanCandidate.signature(indexOrder), Double.NaN, Double.NaN,
+					estimateBreakdown(operands, indexOrder, initiallyBoundVars));
+			return List.of(candidate);
 		}
-		int bestIndex = selectBestPlan(finalPlans);
-		return reconstructOrder(operands, plans, finalMask, bestIndex);
+		List<Integer> rankedPlanIndexes = rankPlanIndexes(plans, finalMask, finalPlans, topK);
+		List<JoinPlanCandidate> rankedCandidates = new ArrayList<>(rankedPlanIndexes.size());
+		for (int planIndex : rankedPlanIndexes) {
+			PlanEntry planEntry = finalPlans.get(planIndex);
+			List<TupleExpr> order = reconstructOrder(operands, plans, finalMask, planIndex);
+			List<Integer> orderIndices = reconstructOrderIndicesList(plans, finalMask, planEntry);
+			List<CardinalityEstimateBreakdown> breakdown = estimateBreakdown(order, orderIndices, initiallyBoundVars);
+			rankedCandidates.add(JoinPlanCandidate.of(order, orderIndices,
+					JoinPlanCandidate.signature(orderIndices), planEntry.cost, planEntry.cardinality, breakdown));
+		}
+		return rankedCandidates;
+	}
+
+	private List<Integer> defaultIndexOrder(int size) {
+		List<Integer> indexes = new ArrayList<>(size);
+		for (int i = 0; i < size; i++) {
+			indexes.add(i);
+		}
+		return indexes;
 	}
 
 	private Set<String>[] buildBoundVars(List<TupleExpr> operands, Set<String> initiallyBoundVars) {
@@ -222,9 +272,15 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 		return new ArrayList<>(order);
 	}
 
-	private void addCandidate(List<PlanEntry> entries, PlanEntry candidate) {
+	private void addCandidate(List<PlanEntry>[] plans, int mask, List<PlanEntry> entries, PlanEntry candidate) {
 		for (int i = 0; i < entries.size();) {
 			PlanEntry existing = entries.get(i);
+			if (sameCostAndCardinality(existing, candidate)) {
+				if (compareOrderIndices(plans, mask, candidate, existing) < 0) {
+					entries.set(i, candidate);
+				}
+				return;
+			}
 			if (dominates(existing, candidate)) {
 				return;
 			}
@@ -237,22 +293,124 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 		entries.add(candidate);
 	}
 
+	private boolean sameCostAndCardinality(PlanEntry left, PlanEntry right) {
+		return left.cost == right.cost && left.cardinality == right.cardinality;
+	}
+
 	private boolean dominates(PlanEntry left, PlanEntry right) {
 		return left.cost <= right.cost && left.cardinality <= right.cardinality;
 	}
 
-	private int selectBestPlan(List<PlanEntry> entries) {
-		int bestIndex = 0;
-		PlanEntry best = entries.get(0);
-		for (int i = 1; i < entries.size(); i++) {
-			PlanEntry candidate = entries.get(i);
-			if (candidate.cost < best.cost
-					|| (candidate.cost == best.cost && candidate.cardinality < best.cardinality)) {
-				best = candidate;
-				bestIndex = i;
+	private List<Integer> rankPlanIndexes(List<PlanEntry>[] plans, int mask, List<PlanEntry> entries, int topK) {
+		List<Integer> ranked = new ArrayList<>(entries.size());
+		for (int i = 0; i < entries.size(); i++) {
+			ranked.add(i);
+		}
+		ranked.sort((left, right) -> {
+			PlanEntry leftEntry = entries.get(left);
+			PlanEntry rightEntry = entries.get(right);
+			int byCost = Double.compare(leftEntry.cost, rightEntry.cost);
+			if (byCost != 0) {
+				return byCost;
+			}
+			int byCardinality = Double.compare(leftEntry.cardinality, rightEntry.cardinality);
+			if (byCardinality != 0) {
+				return byCardinality;
+			}
+			return compareOrderIndices(plans, mask, left, right);
+		});
+		if (ranked.size() > topK) {
+			return new ArrayList<>(ranked.subList(0, topK));
+		}
+		return ranked;
+	}
+
+	private List<Integer> reconstructOrderIndicesList(List<PlanEntry>[] plans, int mask, PlanEntry entry) {
+		int[] indices = reconstructOrderIndices(plans, mask, entry);
+		List<Integer> order = new ArrayList<>(indices.length);
+		for (int index : indices) {
+			order.add(index);
+		}
+		return order;
+	}
+
+	private List<CardinalityEstimateBreakdown> estimateBreakdown(List<TupleExpr> order, List<Integer> orderIndices,
+			Set<String> initiallyBoundVars) {
+		List<CardinalityEstimateBreakdown> breakdown = new ArrayList<>(order.size());
+		if (order.isEmpty()) {
+			return breakdown;
+		}
+		Set<String> bound = new HashSet<>(initiallyBoundVars);
+		double cumulativeCost = 0.0d;
+		double rows = 1.0d;
+		for (int step = 0; step < order.size(); step++) {
+			TupleExpr operand = order.get(step);
+			double uncertainty = Math.max(0.0d, costModel.estimateUncertainty(operand, bound));
+			if (step == 0) {
+				rows = Math.max(1.0d, costModel.estimateScanCardinality(operand, initiallyBoundVars));
+				double scanCost = SCAN_COST_ENABLED
+						? costModel.estimateScanCost(operand, initiallyBoundVars)
+						: rows;
+				if (scanCost <= 0.0d) {
+					scanCost = rows;
+				}
+				cumulativeCost = scanCost;
+			} else {
+				double fanout = estimateFanoutWithConnectivity(operand, bound, initiallyBoundVars);
+				rows = rows * fanout;
+				cumulativeCost += rows;
+			}
+			bound.addAll(filteredBindingNames(operand));
+			int operandIndex = step < orderIndices.size() ? orderIndices.get(step) : -1;
+			breakdown.add(new CardinalityEstimateBreakdown(step, operandIndex, rows, cumulativeCost, uncertainty));
+		}
+		return breakdown;
+	}
+
+	private int compareOrderIndices(List<PlanEntry>[] plans, int mask, int leftEntry, int rightEntry) {
+		int[] left = reconstructOrderIndices(plans, mask, leftEntry);
+		int[] right = reconstructOrderIndices(plans, mask, rightEntry);
+		return compareOrderIndices(left, right);
+	}
+
+	private int compareOrderIndices(List<PlanEntry>[] plans, int mask, PlanEntry left, PlanEntry right) {
+		int[] leftOrder = reconstructOrderIndices(plans, mask, left);
+		int[] rightOrder = reconstructOrderIndices(plans, mask, right);
+		return compareOrderIndices(leftOrder, rightOrder);
+	}
+
+	private int[] reconstructOrderIndices(List<PlanEntry>[] plans, int mask, int entryIndex) {
+		PlanEntry entry = plans[mask].get(entryIndex);
+		return reconstructOrderIndices(plans, mask, entry);
+	}
+
+	private int[] reconstructOrderIndices(List<PlanEntry>[] plans, int mask, PlanEntry entry) {
+		int length = Integer.bitCount(mask);
+		int[] indices = new int[length];
+		int cursor = length - 1;
+		PlanEntry current = entry;
+		while (true) {
+			indices[cursor--] = current.prevIndex;
+			if (current.prevMask == 0) {
+				break;
+			}
+			current = plans[current.prevMask].get(current.prevEntry);
+		}
+		return indices;
+	}
+
+	private int compareOrderIndices(int[] left, int[] right) {
+		if (!LEXICOGRAPHIC_TIE_BREAK_ENABLED) {
+			return 0;
+		}
+		int limit = Math.min(left.length, right.length);
+		for (int i = 0; i < limit; i++) {
+			int diff = left[i] - right[i];
+			if (diff != 0) {
+				return diff;
 			}
 		}
-		return bestIndex;
+		return left.length - right.length;
 	}
 
 	private boolean isDebugEnabled(int size) {

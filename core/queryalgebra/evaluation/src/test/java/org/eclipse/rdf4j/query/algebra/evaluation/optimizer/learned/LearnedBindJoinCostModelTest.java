@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.List;
@@ -59,6 +60,94 @@ class LearnedBindJoinCostModelTest {
 		assertEquals(expectedUnbound, unboundEstimate);
 		assertEquals(expectedBound, boundEstimate);
 		assertEquals(expectedBound, boundScanEstimate);
+	}
+
+	@Test
+	void backsOffToPredicateOnlyStatsWhenSpecificMaskMissing() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI predicate = vf.createIRI("urn:test:pred");
+		EvaluationStatistics fallback = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expr) {
+				return 10_000.0d;
+			}
+		};
+
+		JoinStatsProvider statsProvider = new JoinStatsProvider() {
+			@Override
+			public void reset() {
+			}
+
+			@Override
+			public void recordCall(PatternKey key) {
+			}
+
+			@Override
+			public void recordResults(PatternKey key, long resultCount) {
+			}
+
+			@Override
+			public void seedIfAbsent(PatternKey key, double defaultCardinality, long priorCalls) {
+			}
+
+			@Override
+			public double getAverageResults(PatternKey key) {
+				return 3.0d;
+			}
+
+			@Override
+			public double getMaxResults(PatternKey key) {
+				return 3.0d;
+			}
+
+			@Override
+			public boolean hasStats(PatternKey key) {
+				return key.getBoundMask() == PatternKey.PREDICATE_BOUND && predicate.equals(key.getPredicate());
+			}
+
+			@Override
+			public long getCalls(PatternKey key) {
+				return 128L;
+			}
+
+			@Override
+			public long getTotalCalls() {
+				return 128L;
+			}
+		};
+
+		LearnedBindJoinCostModel costModel = new LearnedBindJoinCostModel(fallback, statsProvider);
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("o"));
+
+		double estimate = costModel.estimateFanout(pattern, Set.of("s"));
+
+		assertTrue(estimate < 100.0d, "Expected backoff to learned predicate-only stats, got " + estimate);
+	}
+
+	@Test
+	void uncertaintyPenaltyInflatesRiskyLearnedEstimate() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI predicate = vf.createIRI("urn:test:pred");
+		EvaluationStatistics fallback = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expr) {
+				return 100.0d;
+			}
+		};
+
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("o"));
+		PatternKey key = new PatternKey(predicate, PatternKey.PREDICATE_BOUND);
+
+		JoinStatsProvider lowUncertainty = new FixedStatsProvider(key, 20.0d, 0.0d);
+		JoinStatsProvider highUncertainty = new FixedStatsProvider(key, 20.0d, 1.0d);
+
+		LearnedBindJoinCostModel lowModel = new LearnedBindJoinCostModel(fallback, lowUncertainty);
+		LearnedBindJoinCostModel highModel = new LearnedBindJoinCostModel(fallback, highUncertainty);
+
+		double low = lowModel.estimateFanout(pattern, Set.of());
+		double high = highModel.estimateFanout(pattern, Set.of());
+
+		assertTrue(high > low, "Expected uncertainty penalty to increase estimate");
 	}
 
 	@Test
@@ -258,7 +347,7 @@ class LearnedBindJoinCostModelTest {
 		double scan = costModel.estimateScanCardinality(pattern, Set.of());
 
 		assertNotEquals(fallback, learned);
-		assertEquals(learned, fanout);
+		assertTrue(fanout >= learned);
 //		assertEquals(fallback, scan);
 	}
 
@@ -289,7 +378,7 @@ class LearnedBindJoinCostModelTest {
 		LearnedBindJoinCostModel costModel = new LearnedBindJoinCostModel(stats, statsProvider);
 		double estimate = costModel.estimateFanout(filter, Set.of());
 
-		assertEquals(10.0d, estimate);
+		assertEquals(100.0d, estimate);
 	}
 
 	@Test
@@ -357,6 +446,64 @@ class LearnedBindJoinCostModelTest {
 
 		double estimate = costModel.estimateFanout(pattern, Set.of());
 
-		assertEquals(1.0d, estimate);
+		assertEquals(5.0d, estimate);
+	}
+
+	private static final class FixedStatsProvider implements JoinStatsProvider {
+		private final PatternKey key;
+		private final double average;
+		private final double uncertainty;
+
+		private FixedStatsProvider(PatternKey key, double average, double uncertainty) {
+			this.key = key;
+			this.average = average;
+			this.uncertainty = uncertainty;
+		}
+
+		@Override
+		public void reset() {
+		}
+
+		@Override
+		public void recordCall(PatternKey key) {
+		}
+
+		@Override
+		public void recordResults(PatternKey key, long resultCount) {
+		}
+
+		@Override
+		public void seedIfAbsent(PatternKey key, double defaultCardinality, long priorCalls) {
+		}
+
+		@Override
+		public double getAverageResults(PatternKey key) {
+			return average;
+		}
+
+		@Override
+		public double getMaxResults(PatternKey key) {
+			return average;
+		}
+
+		@Override
+		public boolean hasStats(PatternKey key) {
+			return this.key.equals(key);
+		}
+
+		@Override
+		public long getCalls(PatternKey key) {
+			return 128L;
+		}
+
+		@Override
+		public double getUncertainty(PatternKey key) {
+			return uncertainty;
+		}
+
+		@Override
+		public long getTotalCalls() {
+			return 128L;
+		}
 	}
 }

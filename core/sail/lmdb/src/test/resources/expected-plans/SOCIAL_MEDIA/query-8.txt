@@ -12,16 +12,16 @@ Projection (resultSizeActual=1)
    │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=1.1K)
    │  ║     ╠══ Extension (resultSizeActual=1.1K) [left]
    │  ║     ║  ├── Join (JoinIterator) (resultSizeActual=1.1K)
-   │  ║     ║  │  ╠══ StatementPattern (costEstimate=47.9K, resultSizeEstimate=143.7K, resultSizeActual=143.7K) [left]
-   │  ║     ║  │  ║     s: Var (name=b)
+   │  ║     ║  │  ╠══ StatementPattern (costEstimate=31.9K, resultSizeEstimate=95.8K, resultSizeActual=143.7K) [left]
+   │  ║     ║  │  ║     s: Var (name=c)
    │  ║     ║  │  ║     p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
-   │  ║     ║  │  ║     o: Var (name=c)
+   │  ║     ║  │  ║     o: Var (name=a)
    │  ║     ║  │  ╚══ Join (JoinIterator) (resultSizeActual=1.1K) [right]
-   │  ║     ║  │     ├── StatementPattern (costEstimate=1.97, resultSizeEstimate=10, resultSizeActual=1.2M) [left]
-   │  ║     ║  │     │     s: Var (name=c)
+   │  ║     ║  │     ├── StatementPattern (costEstimate=1.87, resultSizeEstimate=8.98, resultSizeActual=1.2M) [left]
+   │  ║     ║  │     │     s: Var (name=b)
    │  ║     ║  │     │     p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
-   │  ║     ║  │     │     o: Var (name=a)
-   │  ║     ║  │     └── StatementPattern (costEstimate=0.50, resultSizeEstimate=0.00, resultSizeActual=1.1K) [right]
+   │  ║     ║  │     │     o: Var (name=c)
+   │  ║     ║  │     └── StatementPattern (costEstimate=0.50, resultSizeEstimate=0.17, resultSizeActual=1.1K) [right]
    │  ║     ║  │           s: Var (name=a)
    │  ║     ║  │           p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
    │  ║     ║  │           o: Var (name=b)
@@ -37,4 +37,3 @@ Projection (resultSizeActual=1)
    └── ExtensionElem (count)
          Count (Distinct)
             Var (name=a)
-

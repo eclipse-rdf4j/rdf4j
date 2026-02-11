@@ -19,6 +19,10 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 final class ConfigUtil {
 	static LmdbStoreConfig createConfig() {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		String evaluationStrategyFactoryClass = System.getProperty("rdf4j.benchmark.evalStrategyFactoryClass");
+		if (evaluationStrategyFactoryClass != null && !evaluationStrategyFactoryClass.isBlank()) {
+			config.setEvaluationStrategyFactoryClassName(evaluationStrategyFactoryClass.trim());
+		}
 		config.setForceSync(false);
 		config.setValueDBSize(1_073_741_824L); // 1 GiB
 		config.setTripleDBSize(config.getValueDBSize());

@@ -47,6 +47,21 @@ public interface JoinStatsProvider {
 		return -1L;
 	}
 
+	/**
+	 * Returns an uncertainty score in [0,1] where 1 means highest uncertainty.
+	 */
+	default double getUncertainty(PatternKey key) {
+		long calls = getCalls(key);
+		if (calls <= 0L) {
+			return 1.0d;
+		}
+		double uncertainty = 1.0d / Math.sqrt(calls + 1.0d);
+		if (!Double.isFinite(uncertainty) || uncertainty < 0.0d) {
+			return 0.0d;
+		}
+		return Math.min(1.0d, uncertainty);
+	}
+
 	long getTotalCalls();
 
 	/**

@@ -25,6 +25,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 public class GreedyBindJoinOrderPlanner implements JoinOrderPlanner {
 
 	private static final double DISCONNECTED_PENALTY = 1.0e9d;
+	private static final String SCAN_COST_ENABLED_PROPERTY = "rdf4j.optimizer.learned.scanCost.enabled";
+	private static final boolean SCAN_COST_ENABLED = Boolean
+			.parseBoolean(System.getProperty(SCAN_COST_ENABLED_PROPERTY, "true"));
 
 	private final BindJoinCostModel costModel;
 
@@ -34,6 +37,18 @@ public class GreedyBindJoinOrderPlanner implements JoinOrderPlanner {
 
 	@Override
 	public List<TupleExpr> order(List<TupleExpr> operands, Set<String> initiallyBoundVars) {
+		List<JoinPlanCandidate> candidates = orderCandidates(operands, initiallyBoundVars, 1);
+		if (candidates.isEmpty()) {
+			return List.of();
+		}
+		return candidates.get(0).getOrder();
+	}
+
+	@Override
+	public List<JoinPlanCandidate> orderCandidates(List<TupleExpr> operands, Set<String> initiallyBoundVars, int topK) {
+		if (topK <= 0) {
+			return List.of();
+		}
 		if (operands.isEmpty()) {
 			return List.of();
 		}
@@ -54,7 +69,15 @@ public class GreedyBindJoinOrderPlanner implements JoinOrderPlanner {
 			bound.addAll(filteredBindingNames(next));
 		}
 
-		return ordered;
+		List<Integer> orderIndices = indexOrder(ordered, operands);
+		List<CardinalityEstimateBreakdown> breakdown = estimateBreakdown(ordered, orderIndices, initiallyBoundVars);
+		double finalCost = breakdown.isEmpty() ? Double.NaN
+				: breakdown.get(breakdown.size() - 1).getCumulativeCost();
+		double finalRows = breakdown.isEmpty() ? Double.NaN
+				: breakdown.get(breakdown.size() - 1).getEstimatedRows();
+		JoinPlanCandidate candidate = JoinPlanCandidate.of(ordered, orderIndices,
+				JoinPlanCandidate.signature(orderIndices), finalCost, finalRows, breakdown);
+		return List.of(candidate);
 	}
 
 	private TupleExpr selectFirst(List<TupleExpr> remaining, Set<String> bound) {
@@ -101,9 +124,15 @@ public class GreedyBindJoinOrderPlanner implements JoinOrderPlanner {
 	}
 
 	private double firstScore(TupleExpr expr, List<TupleExpr> remaining, Set<String> bound) {
-		double scanCost = costModel.estimateScanCardinality(expr, bound);
+		double scanCardinality = costModel.estimateScanCardinality(expr, bound);
+		if (scanCardinality <= 0.0d) {
+			scanCardinality = 1.0d;
+		}
+		double scanCost = SCAN_COST_ENABLED
+				? costModel.estimateScanCost(expr, bound)
+				: scanCardinality;
 		if (scanCost <= 0.0d) {
-			scanCost = 1.0d;
+			scanCost = scanCardinality;
 		}
 		double fanout = costModel.estimateFanout(expr, bound);
 		if (fanout < 0.0d) {
@@ -153,5 +182,56 @@ public class GreedyBindJoinOrderPlanner implements JoinOrderPlanner {
 			}
 		}
 		return true;
+	}
+
+	private List<Integer> indexOrder(List<TupleExpr> ordered, List<TupleExpr> operands) {
+		List<Integer> indexes = new ArrayList<>(ordered.size());
+		boolean[] used = new boolean[operands.size()];
+		for (TupleExpr expr : ordered) {
+			int index = -1;
+			for (int i = 0; i < operands.size(); i++) {
+				if (!used[i] && operands.get(i) == expr) {
+					index = i;
+					used[i] = true;
+					break;
+				}
+			}
+			indexes.add(index);
+		}
+		return indexes;
+	}
+
+	private List<CardinalityEstimateBreakdown> estimateBreakdown(List<TupleExpr> ordered, List<Integer> orderIndices,
+			Set<String> initiallyBoundVars) {
+		List<CardinalityEstimateBreakdown> breakdown = new ArrayList<>(ordered.size());
+		if (ordered.isEmpty()) {
+			return breakdown;
+		}
+		Set<String> bound = new HashSet<>(initiallyBoundVars);
+		double cumulativeCost = 0.0d;
+		double rows = 1.0d;
+		for (int step = 0; step < ordered.size(); step++) {
+			TupleExpr operand = ordered.get(step);
+			double uncertainty = Math.max(0.0d, costModel.estimateUncertainty(operand, bound));
+			if (step == 0) {
+				rows = Math.max(1.0d, costModel.estimateScanCardinality(operand, initiallyBoundVars));
+				double scanCost = costModel.estimateScanCost(operand, initiallyBoundVars);
+				if (scanCost <= 0.0d) {
+					scanCost = rows;
+				}
+				cumulativeCost = scanCost;
+			} else {
+				double fanout = costModel.estimateFanout(operand, bound);
+				if (fanout < 0.0d) {
+					fanout = 0.0d;
+				}
+				rows = rows * fanout;
+				cumulativeCost += rows;
+			}
+			bound.addAll(filteredBindingNames(operand));
+			int operandIndex = step < orderIndices.size() ? orderIndices.get(step) : -1;
+			breakdown.add(new CardinalityEstimateBreakdown(step, operandIndex, rows, cumulativeCost, uncertainty));
+		}
+		return breakdown;
 	}
 }

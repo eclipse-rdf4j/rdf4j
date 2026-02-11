@@ -1,0 +1,54 @@
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "component"
+║     ProjectionElem "reqCount"
+╚══ Extension
+   ├── Extension
+   │  ╠══ Filter
+   │  ║  ├── Compare (>=)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="1"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (component)
+   │  ║        Filter
+   │  ║        ├── Compare (!=)
+   │  ║        │     Var (name=optDep)
+   │  ║        │     Var (name=component)
+   │  ║        └── LeftJoin
+   │  ║           ╠══ Join [left]
+   │  ║           ║  ├── StatementPattern [left]
+   │  ║           ║  │     s: Var (name=requirement)
+   │  ║           ║  │     p: Var (name=_const_b98f621b_uri, value=http://example.com/theme/engineering/satisfies, anonymous)
+   │  ║           ║  │     o: Var (name=component)
+   │  ║           ║  └── Join [right]
+   │  ║           ║     ╠══ StatementPattern [left]
+   │  ║           ║     ║     s: Var (name=component)
+   │  ║           ║     ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           ║     ║     o: Var (name=_const_347c8ab7_uri, value=http://example.com/theme/engineering/Component, anonymous)
+   │  ║           ║     ╚══ Join [right]
+   │  ║           ║        ├── StatementPattern [left]
+   │  ║           ║        │     s: Var (name=requirement)
+   │  ║           ║        │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           ║        │     o: Var (name=_const_57f1c37d_uri, value=http://example.com/theme/engineering/Requirement, anonymous)
+   │  ║           ║        └── StatementPattern [right]
+   │  ║           ║              s: Var (name=component)
+   │  ║           ║              p: Var (name=_const_b1044d90_uri, value=http://example.com/theme/engineering/partOf, anonymous)
+   │  ║           ║              o: Var (name=assembly)
+   │  ║           ╚══ Extension [right]
+   │  ║              ├── StatementPattern
+   │  ║              │     s: Var (name=component)
+   │  ║              │     p: Var (name=_const_ce5e09a0_uri, value=http://example.com/theme/engineering/dependsOn, anonymous)
+   │  ║              │     o: Var (name=dep)
+   │  ║              └── ExtensionElem (optDep)
+   │  ║                    Var (name=dep)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count
+   │  ║              Var (name=requirement)
+   │  ║        GroupElem (reqCount)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=requirement)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count
+   │           Var (name=requirement)
+   └── ExtensionElem (reqCount)
+         Count (Distinct)
+            Var (name=requirement)

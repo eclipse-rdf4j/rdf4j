@@ -1,0 +1,52 @@
+Projection (resultSizeActual=<e>)
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension (resultSizeActual=<e>)
+   ├── Group () (resultSizeActual=<e>)
+   │  ╠══ Difference (resultSizeActual=<e>)
+   │  ║  ├── LeftJoin (LeftJoinIterator) (resultSizeActual=<e>)
+   │  ║  │  ╠══ Join (JoinIterator) (resultSizeActual=<e>) [left]
+   │  ║  │  ║  ├── BindingSetAssignment ([[code="DX-200"], [code="DX-201"]]) (costEstimate=<e>, resultSizeEstimate=<e>, resultSizeActual=<e>) [left]
+   │  ║  │  ║  └── Join (JoinIterator) (resultSizeActual=<e>) [right]
+   │  ║  │  ║     ╠══ Filter (resultSizeActual=<e>) [left]
+   │  ║  │  ║     ║  ├── ListMemberOperator
+   │  ║  │  ║     ║  │     Var (name=condCode)
+   │  ║  │  ║     ║  │     ValueConstant (value="DX-200")
+   │  ║  │  ║     ║  │     ValueConstant (value="DX-201")
+   │  ║  │  ║     ║  │     ValueConstant (value="DX-202")
+   │  ║  │  ║     ║  └── StatementPattern (costEstimate=<e>, resultSizeEstimate=<e>, resultSizeActual=<e>)
+   │  ║  │  ║     ║        s: Var (name=cond)
+   │  ║  │  ║     ║        p: Var (name=_const_98e9815_uri, value=http://example.com/theme/medical/code, anonymous)
+   │  ║  │  ║     ║        o: Var (name=condCode)
+   │  ║  │  ║     ╚══ Join (JoinIterator) (resultSizeActual=<e>) [right]
+   │  ║  │  ║        ├── StatementPattern (costEstimate=<e>, resultSizeEstimate=<e>, resultSizeActual=<e>) [left]
+   │  ║  │  ║        │     s: Var (name=enc)
+   │  ║  │  ║        │     p: Var (name=_const_7e7389c9_uri, value=http://example.com/theme/medical/hasCondition, anonymous)
+   │  ║  │  ║        │     o: Var (name=cond)
+   │  ║  │  ║        └── StatementPattern (costEstimate=<e>, resultSizeEstimate=<e>, resultSizeActual=<e>) [right]
+   │  ║  │  ║              s: Var (name=enc)
+   │  ║  │  ║              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │  ║              o: Var (name=_const_5e8eb7eb_uri, value=http://example.com/theme/medical/Encounter, anonymous)
+   │  ║  │  ╚══ StatementPattern (resultSizeEstimate=<e>, resultSizeActual=<e>) [right]
+   │  ║  │        s: Var (name=enc)
+   │  ║  │        p: Var (name=_const_9016af8b_uri, value=http://example.com/theme/medical/handledBy, anonymous)
+   │  ║  │        o: Var (name=practitioner)
+   │  ║  └── Join (JoinIterator) (resultSizeActual=<e>)
+   │  ║     ╠══ Filter (new scope) (resultSizeActual=<e>) [left]
+   │  ║     ║  ├── Compare (<)
+   │  ║     ║  │     Var (name=value)
+   │  ║     ║  │     ValueConstant (value="60"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║     ║  └── StatementPattern (costEstimate=<e>, resultSizeEstimate=<e>, resultSizeActual=<e>)
+   │  ║     ║        s: Var (name=obs)
+   │  ║     ║        p: Var (name=_const_2949ec49_uri, value=http://example.com/theme/medical/value, anonymous)
+   │  ║     ║        o: Var (name=value)
+   │  ║     ╚══ StatementPattern (costEstimate=<e>, resultSizeEstimate=<e>, resultSizeActual=<e>) [right]
+   │  ║           s: Var (name=enc)
+   │  ║           p: Var (name=_const_6f00815a_uri, value=http://example.com/theme/medical/hasObservation, anonymous)
+   │  ║           o: Var (name=obs)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=enc)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=enc)

@@ -1,38 +1,35 @@
-Timed out while retrieving explanation! Explanation may be incomplete!
-You can change the timeout by setting .setMaxExecutionTime(...) on your query.
-
-Projection (resultSizeActual=0)
+Projection
 ╠══ ProjectionElemList
 ║     ProjectionElem "member"
 ║     ProjectionElem "loanCount"
-╚══ Extension (resultSizeActual=0)
-   ├── Extension (resultSizeActual=0)
-   │  ╠══ Filter (resultSizeActual=0)
+╚══ Extension
+   ├── Extension
+   │  ╠══ Filter
    │  ║  ├── Compare (>)
    │  ║  │     Var (name=_anon_having_1, anonymous)
    │  ║  │     ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
-   │  ║  └── Group (member) (resultSizeActual=0)
-   │  ║        Filter (resultSizeActual=14.4M)
+   │  ║  └── Group (member)
+   │  ║        Filter
    │  ║        ├── Compare (!=)
    │  ║        │     Var (name=optCopy)
    │  ║        │     Var (name=member)
-   │  ║        └── LeftJoin (LeftJoinIterator) (resultSizeActual=14.4M)
-   │  ║           ╠══ Union (resultSizeActual=11.5K) [left]
-   │  ║           ║  ├── Join (JoinIterator) (resultSizeActual=10.1K)
-   │  ║           ║  │  ╠══ StatementPattern (costEstimate=5.1K, resultSizeEstimate=10.1K, resultSizeActual=10.1K) [left]
+   │  ║        └── LeftJoin
+   │  ║           ╠══ Union [left]
+   │  ║           ║  ├── Join (JoinIterator)
+   │  ║           ║  │  ╠══ StatementPattern (costEstimate=176, resultSizeEstimate=347) [left]
    │  ║           ║  │  ║     s: Var (name=loan)
    │  ║           ║  │  ║     p: Var (name=_const_b9a39489_uri, value=http://example.com/theme/library/borrowedBy, anonymous)
    │  ║           ║  │  ║     o: Var (name=member)
-   │  ║           ║  │  ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0.82, resultSizeActual=10.1K) [right]
+   │  ║           ║  │  ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=347) [right]
    │  ║           ║  │        s: Var (name=loan)
    │  ║           ║  │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
    │  ║           ║  │        o: Var (name=_const_6cf0e34e_uri, value=http://example.com/theme/library/Loan, anonymous)
-   │  ║           ║  └── StatementPattern (new scope) (resultSizeEstimate=128.3K, resultSizeActual=1.4K)
+   │  ║           ║  └── StatementPattern (new scope) (resultSizeEstimate=329)
    │  ║           ║        s: Var (name=member)
    │  ║           ║        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
    │  ║           ║        o: Var (name=_const_f5728978_uri, value=http://example.com/theme/library/Member, anonymous)
-   │  ║           ╚══ Extension (resultSizeActual=14.4M) [right]
-   │  ║              ├── StatementPattern (resultSizeEstimate=1.00, resultSizeActual=14.4M)
+   │  ║           ╚══ Extension [right]
+   │  ║              ├── StatementPattern (resultSizeEstimate=347)
    │  ║              │     s: Var (name=loan)
    │  ║              │     p: Var (name=_const_78c99d62_uri, value=http://example.com/theme/library/loanedCopy, anonymous)
    │  ║              │     o: Var (name=copy)
@@ -50,4 +47,3 @@ Projection (resultSizeActual=0)
    └── ExtensionElem (loanCount)
          Count (Distinct)
             Var (name=loan)
-

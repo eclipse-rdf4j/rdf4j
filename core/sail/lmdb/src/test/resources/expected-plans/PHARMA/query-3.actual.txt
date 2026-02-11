@@ -1,0 +1,56 @@
+Projection ()
+╠══ ProjectionElemList
+║     ProjectionElem "drug"
+║     ProjectionElem "disease"
+╚══ Filter ()
+   ├── Compare (!=)
+   │     Var (name=optTarget)
+   │     ValueConstant (value=http://example.com/theme/pharma/target/0)
+   └── LeftJoin (LeftJoinIterator) ()
+      ╠══ Join (JoinIterator) () [left]
+      ║  ├── Filter () [left]
+      ║  │  ╠══ Compare (>)
+      ║  │  ║     Var (name=rate)
+      ║  │  ║     ValueConstant (value="0.6"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+      ║  │  ╚══ StatementPattern ()
+      ║  │        s: Var (name=result)
+      ║  │        p: Var (name=_const_d84fe169_uri, value=http://example.com/theme/pharma/responseRate, anonymous)
+      ║  │        o: Var (name=rate)
+      ║  └── Join (JoinIterator) () [right]
+      ║     ╠══ StatementPattern () [left]
+      ║     ║     s: Var (name=arm)
+      ║     ║     p: Var (name=_const_60f6d7af_uri, value=http://example.com/theme/pharma/hasResult, anonymous)
+      ║     ║     o: Var (name=result)
+      ║     ╚══ Join (JoinIterator) () [right]
+      ║        ├── StatementPattern () [left]
+      ║        │     s: Var (name=trial)
+      ║        │     p: Var (name=_const_73c2e40a_uri, value=http://example.com/theme/pharma/hasArm, anonymous)
+      ║        │     o: Var (name=arm)
+      ║        └── Join (JoinIterator) () [right]
+      ║           ╠══ StatementPattern () [left]
+      ║           ║     s: Var (name=trial)
+      ║           ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+      ║           ║     o: Var (name=_const_4795bbfb_uri, value=http://example.com/theme/pharma/ClinicalTrial, anonymous)
+      ║           ╚══ Filter () [right]
+      ║              ├── Not
+      ║              │     Exists
+      ║              │        StatementPattern ()
+      ║              │           s: Var (name=drug)
+      ║              │           p: Var (name=_const_e46c34a6_uri, value=http://example.com/theme/pharma/indicatedFor, anonymous)
+      ║              │           o: Var (name=disease)
+      ║              └── Join (JoinIterator) ()
+      ║                 ╠══ StatementPattern () [left]
+      ║                 ║     s: Var (name=trial)
+      ║                 ║     p: Var (name=_const_5a7b59fd_uri, value=http://example.com/theme/pharma/studiesDisease, anonymous)
+      ║                 ║     o: Var (name=disease)
+      ║                 ╚══ StatementPattern () [right]
+      ║                       s: Var (name=arm)
+      ║                       p: Var (name=_const_aefd3274_uri, value=http://example.com/theme/pharma/armDrug, anonymous)
+      ║                       o: Var (name=drug)
+      ╚══ Extension () [right]
+         ├── StatementPattern ()
+         │     s: Var (name=drug)
+         │     p: Var (name=_const_7f67635a_uri, value=http://example.com/theme/pharma/targets, anonymous)
+         │     o: Var (name=target)
+         └── ExtensionElem (optTarget)
+               Var (name=target)

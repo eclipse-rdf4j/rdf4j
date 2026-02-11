@@ -220,6 +220,23 @@ public class MemoryJoinStats implements JoinStatsProvider {
 	}
 
 	@Override
+	public double getUncertainty(PatternKey key) {
+		Stats entry = stats.get(key);
+		if (entry == null) {
+			return 1.0d;
+		}
+		double totalCalls = entry.actualCalls() + entry.priorCalls;
+		if (totalCalls <= 0.0d) {
+			return 1.0d;
+		}
+		double uncertainty = 1.0d / Math.sqrt(totalCalls + 1.0d);
+		if (!Double.isFinite(uncertainty) || uncertainty < 0.0d) {
+			return 0.0d;
+		}
+		return Math.min(1.0d, uncertainty);
+	}
+
+	@Override
 	public long getTotalCalls() {
 		long total = 0;
 		for (Stats entry : stats.values()) {

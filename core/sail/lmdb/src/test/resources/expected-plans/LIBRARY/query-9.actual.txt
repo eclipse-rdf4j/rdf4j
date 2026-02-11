@@ -1,0 +1,75 @@
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension
+   ├── Group
+   │  ╠══ Filter
+   │  ║  ├── And
+   │  ║  │  ╠══ Compare (!=)
+   │  ║  │  ║     Var (name=optTitle)
+   │  ║  │  ║     ValueConstant (value="")
+   │  ║  │  ╚══ Not
+   │  ║  │        Exists
+   │  ║  │           Filter
+   │  ║  │           ├── Compare (<)
+   │  ║  │           │     Var (name=due)
+   │  ║  │           │     ValueConstant (value="2024-01-10"^^<http://www.w3.org/2001/XMLSchema#date>)
+   │  ║  │           └── StatementPattern
+   │  ║  │                 s: Var (name=loan)
+   │  ║  │                 p: Var (name=_const_945d14c4_uri, value=http://example.com/theme/library/dueDate, anonymous)
+   │  ║  │                 o: Var (name=due)
+   │  ║  └── LeftJoin
+   │  ║     ╠══ Filter [left]
+   │  ║     ║  ├── Or
+   │  ║     ║  │  ╠══ Compare (=)
+   │  ║     ║  │  ║     Var (name=authorName)
+   │  ║     ║  │  ║     Var (name=target)
+   │  ║     ║  │  ╚══ Compare (=)
+   │  ║     ║  │        Var (name=authorName)
+   │  ║     ║  │        ValueConstant (value="Author 3")
+   │  ║     ║  └── Join
+   │  ║     ║     ╠══ BindingSetAssignment ([[target="Author 1"], [target="Author 2"]]) [left]
+   │  ║     ║     ╚══ Join [right]
+   │  ║     ║        ├── StatementPattern [left]
+   │  ║     ║        │     s: Var (name=loan)
+   │  ║     ║        │     p: Var (name=_const_78c99d62_uri, value=http://example.com/theme/library/loanedCopy, anonymous)
+   │  ║     ║        │     o: Var (name=copy)
+   │  ║     ║        └── Join [right]
+   │  ║     ║           ╠══ StatementPattern [left]
+   │  ║     ║           ║     s: Var (name=loan)
+   │  ║     ║           ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║           ║     o: Var (name=_const_6cf0e34e_uri, value=http://example.com/theme/library/Loan, anonymous)
+   │  ║     ║           ╚══ Join [right]
+   │  ║     ║              ├── StatementPattern [left]
+   │  ║     ║              │     s: Var (name=loan)
+   │  ║     ║              │     p: Var (name=_const_b9a39489_uri, value=http://example.com/theme/library/borrowedBy, anonymous)
+   │  ║     ║              │     o: Var (name=member)
+   │  ║     ║              └── Join [right]
+   │  ║     ║                 ╠══ StatementPattern [left]
+   │  ║     ║                 ║     s: Var (name=member)
+   │  ║     ║                 ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║                 ║     o: Var (name=_const_f5728978_uri, value=http://example.com/theme/library/Member, anonymous)
+   │  ║     ║                 ╚══ Join [right]
+   │  ║     ║                    ├── StatementPattern [left]
+   │  ║     ║                    │     s: Var (name=book)
+   │  ║     ║                    │     p: Var (name=_const_469a1e31_uri, value=http://example.com/theme/library/hasCopy, anonymous)
+   │  ║     ║                    │     o: Var (name=copy)
+   │  ║     ║                    └── Join [right]
+   │  ║     ║                       ╠══ StatementPattern [left]
+   │  ║     ║                       ║     s: Var (name=book)
+   │  ║     ║                       ║     p: Var (name=_const_e1624c50_uri, value=http://example.com/theme/library/writtenBy, anonymous)
+   │  ║     ║                       ║     o: Var (name=author)
+   │  ║     ║                       ╚══ StatementPattern [right]
+   │  ║     ║                             s: Var (name=author)
+   │  ║     ║                             p: Var (name=_const_6d0024c9_uri, value=http://example.com/theme/library/name, anonymous)
+   │  ║     ║                             o: Var (name=authorName)
+   │  ║     ╚══ StatementPattern [right]
+   │  ║           s: Var (name=book)
+   │  ║           p: Var (name=_const_335cbfda_uri, value=http://example.com/theme/library/title, anonymous)
+   │  ║           o: Var (name=optTitle)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=member)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=member)

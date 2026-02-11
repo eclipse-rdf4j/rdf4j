@@ -1,0 +1,60 @@
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension
+   ├── Group
+   │  ╠══ Filter
+   │  ║  ├── And
+   │  ║  │  ╠══ Not
+   │  ║  │  ║     Exists
+   │  ║  │  ║        Join
+   │  ║  │  ║        ├── StatementPattern [left]
+   │  ║  │  ║        │     s: Var (name=patient)
+   │  ║  │  ║        │     p: Var (name=_const_fe9f43e1_uri, value=http://example.com/theme/medical/hasMedication, anonymous)
+   │  ║  │  ║        │     o: Var (name=m2)
+   │  ║  │  ║        └── Filter [right]
+   │  ║  │  ║           ╠══ Compare (=)
+   │  ║  │  ║           ║     Var (name=c)
+   │  ║  │  ║           ║     ValueConstant (value="MED-1005")
+   │  ║  │  ║           ╚══ StatementPattern
+   │  ║  │  ║                 s: Var (name=m2)
+   │  ║  │  ║                 p: Var (name=_const_98e9815_uri, value=http://example.com/theme/medical/code, anonymous)
+   │  ║  │  ║                 o: Var (name=c)
+   │  ║  │  ╚══ Compare (!=)
+   │  ║  │        Var (name=optName)
+   │  ║  │        ValueConstant (value="")
+   │  ║  └── LeftJoin
+   │  ║     ╠══ Union [left]
+   │  ║     ║  ├── Join
+   │  ║     ║  │  ╠══ StatementPattern [left]
+   │  ║     ║  │  ║     s: Var (name=patient)
+   │  ║     ║  │  ║     p: Var (name=_const_fe9f43e1_uri, value=http://example.com/theme/medical/hasMedication, anonymous)
+   │  ║     ║  │  ║     o: Var (name=med)
+   │  ║     ║  │  ╚══ StatementPattern [right]
+   │  ║     ║  │        s: Var (name=patient)
+   │  ║     ║  │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║  │        o: Var (name=_const_24be87bd_uri, value=http://example.com/theme/medical/Patient, anonymous)
+   │  ║     ║  └── Join
+   │  ║     ║     ╠══ StatementPattern [left]
+   │  ║     ║     ║     s: Var (name=patient)
+   │  ║     ║     ║     p: Var (name=_const_ca285e1_uri, value=http://example.com/theme/medical/hasEncounter, anonymous)
+   │  ║     ║     ║     o: Var (name=enc)
+   │  ║     ║     ╚══ Join [right]
+   │  ║     ║        ├── StatementPattern [left]
+   │  ║     ║        │     s: Var (name=patient)
+   │  ║     ║        │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║        │     o: Var (name=_const_24be87bd_uri, value=http://example.com/theme/medical/Patient, anonymous)
+   │  ║     ║        └── StatementPattern [right]
+   │  ║     ║              s: Var (name=enc)
+   │  ║     ║              p: Var (name=_const_6f00815a_uri, value=http://example.com/theme/medical/hasObservation, anonymous)
+   │  ║     ║              o: Var (name=obs)
+   │  ║     ╚══ StatementPattern [right]
+   │  ║           s: Var (name=patient)
+   │  ║           p: Var (name=_const_99364b3_uri, value=http://example.com/theme/medical/name, anonymous)
+   │  ║           o: Var (name=optName)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=patient)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=patient)

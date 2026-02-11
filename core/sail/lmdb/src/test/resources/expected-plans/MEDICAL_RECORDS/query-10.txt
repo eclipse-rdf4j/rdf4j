@@ -8,7 +8,7 @@ Projection (resultSizeActual=1)
    │  ║  │  ╠══ Not
    │  ║  │  ║     Exists
    │  ║  │  ║        Join (JoinIterator) (resultSizeActual=0)
-   │  ║  │  ║        ├── StatementPattern (costEstimate=217425.3M, resultSizeEstimate=5.8K, resultSizeActual=138.8K) [left]
+   │  ║  │  ║        ├── StatementPattern (costEstimate=50322.4M, resultSizeEstimate=5.8K, resultSizeActual=138.8K) [left]
    │  ║  │  ║        │     s: Var (name=patient)
    │  ║  │  ║        │     p: Var (name=_const_fe9f43e1_uri, value=http://example.com/theme/medical/hasMedication, anonymous)
    │  ║  │  ║        │     o: Var (name=m2)
@@ -24,26 +24,21 @@ Projection (resultSizeActual=1)
    │  ║  │        Var (name=optName)
    │  ║  │        ValueConstant (value="")
    │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=66.3K)
-   │  ║     ╠══ Union (resultSizeActual=66.3K) [left]
-   │  ║     ║  ├── Join (JoinIterator) (resultSizeActual=16.6K)
-   │  ║     ║  │  ╠══ StatementPattern (costEstimate=9.0K, resultSizeEstimate=18.1K, resultSizeActual=8.3K) [left]
-   │  ║     ║  │  ║     s: Var (name=patient)
-   │  ║     ║  │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-   │  ║     ║  │  ║     o: Var (name=_const_24be87bd_uri, value=http://example.com/theme/medical/Patient, anonymous)
-   │  ║     ║  │  ╚══ StatementPattern (costEstimate=2.65, resultSizeEstimate=2.01, resultSizeActual=16.6K) [right]
-   │  ║     ║  │        s: Var (name=patient)
-   │  ║     ║  │        p: Var (name=_const_fe9f43e1_uri, value=http://example.com/theme/medical/hasMedication, anonymous)
-   │  ║     ║  │        o: Var (name=med)
-   │  ║     ║  └── Join (JoinIterator) (resultSizeActual=49.6K)
-   │  ║     ║     ╠══ StatementPattern (costEstimate=75.1M, resultSizeEstimate=24.9K, resultSizeActual=24.9K) [left]
+   │  ║     ╠══ Join (JoinIterator) (resultSizeActual=66.3K) [left]
+   │  ║     ║  ├── StatementPattern (costEstimate=4.2K, resultSizeEstimate=8.3K, resultSizeActual=8.3K) [left]
+   │  ║     ║  │     s: Var (name=patient)
+   │  ║     ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║  │     o: Var (name=_const_24be87bd_uri, value=http://example.com/theme/medical/Patient, anonymous)
+   │  ║     ║  └── Union (resultSizeActual=66.3K) [right]
+   │  ║     ║     ╠══ StatementPattern (costEstimate=2.65, resultSizeEstimate=2.01, resultSizeActual=16.6K)
    │  ║     ║     ║     s: Var (name=patient)
-   │  ║     ║     ║     p: Var (name=_const_ca285e1_uri, value=http://example.com/theme/medical/hasEncounter, anonymous)
-   │  ║     ║     ║     o: Var (name=enc)
-   │  ║     ║     ╚══ Join (JoinIterator) (resultSizeActual=49.6K) [right]
-   │  ║     ║        ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=0.99, resultSizeActual=24.9K) [left]
+   │  ║     ║     ║     p: Var (name=_const_fe9f43e1_uri, value=http://example.com/theme/medical/hasMedication, anonymous)
+   │  ║     ║     ║     o: Var (name=med)
+   │  ║     ║     ╚══ Join (JoinIterator) (resultSizeActual=49.6K)
+   │  ║     ║        ├── StatementPattern (costEstimate=1.42, resultSizeEstimate=3.02, resultSizeActual=24.9K) [left]
    │  ║     ║        │     s: Var (name=patient)
-   │  ║     ║        │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-   │  ║     ║        │     o: Var (name=_const_24be87bd_uri, value=http://example.com/theme/medical/Patient, anonymous)
+   │  ║     ║        │     p: Var (name=_const_ca285e1_uri, value=http://example.com/theme/medical/hasEncounter, anonymous)
+   │  ║     ║        │     o: Var (name=enc)
    │  ║     ║        └── StatementPattern (costEstimate=2.64, resultSizeEstimate=1.99, resultSizeActual=49.6K) [right]
    │  ║     ║              s: Var (name=enc)
    │  ║     ║              p: Var (name=_const_6f00815a_uri, value=http://example.com/theme/medical/hasObservation, anonymous)
@@ -58,4 +53,3 @@ Projection (resultSizeActual=1)
    └── ExtensionElem (count)
          Count (Distinct)
             Var (name=patient)
-

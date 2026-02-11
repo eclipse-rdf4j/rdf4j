@@ -1,0 +1,59 @@
+Projection ()
+╠══ ProjectionElemList
+║     ProjectionElem "combo"
+║     ProjectionElem "drugCount"
+╚══ Extension ()
+   ├── Extension ()
+   │  ╠══ Filter ()
+   │  ║  ├── Compare (>=)
+   │  ║  │     Var (name=_anon_having_1, anonymous)
+   │  ║  │     ValueConstant (value="2"^^<http://www.w3.org/2001/XMLSchema#integer>)
+   │  ║  └── Group (combo) ()
+   │  ║        Filter ()
+   │  ║        ├── ListMemberOperator
+   │  ║        │     Var (name=optSeverity)
+   │  ║        │     ValueConstant (value="Mild")
+   │  ║        │     ValueConstant (value="Moderate")
+   │  ║        └── LeftJoin (LeftJoinIterator) ()
+   │  ║           ╠══ Join (JoinIterator) () [left]
+   │  ║           ║  ├── Filter () [left]
+   │  ║           ║  │  ╠══ Compare (>)
+   │  ║           ║  │  ║     Var (name=score)
+   │  ║           ║  │  ║     ValueConstant (value="0.7"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+   │  ║           ║  │  ╚══ StatementPattern ()
+   │  ║           ║  │        s: Var (name=combo)
+   │  ║           ║  │        p: Var (name=_const_2c1ec653_uri, value=http://example.com/theme/pharma/synergyScore, anonymous)
+   │  ║           ║  │        o: Var (name=score)
+   │  ║           ║  └── Join (JoinIterator) () [right]
+   │  ║           ║     ╠══ StatementPattern () [left]
+   │  ║           ║     ║     s: Var (name=combo)
+   │  ║           ║     ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           ║     ║     o: Var (name=_const_a4089907_uri, value=http://example.com/theme/pharma/Combination, anonymous)
+   │  ║           ║     ╚══ StatementPattern () [right]
+   │  ║           ║           s: Var (name=combo)
+   │  ║           ║           p: Var (name=_const_94a74d5e_uri, value=http://example.com/theme/pharma/combinationOf, anonymous)
+   │  ║           ║           o: Var (name=drug)
+   │  ║           ╚══ Extension () [right]
+   │  ║              ├── Join (JoinIterator) ()
+   │  ║              │  ╠══ StatementPattern () [left]
+   │  ║              │  ║     s: Var (name=drug)
+   │  ║              │  ║     p: Var (name=_const_72f8dc5a_uri, value=http://example.com/theme/pharma/hasSideEffect, anonymous)
+   │  ║              │  ║     o: Var (name=sideEffect)
+   │  ║              │  ╚══ StatementPattern () [right]
+   │  ║              │        s: Var (name=sideEffect)
+   │  ║              │        p: Var (name=_const_dff9bba5_uri, value=http://example.com/theme/pharma/severity, anonymous)
+   │  ║              │        o: Var (name=sev)
+   │  ║              └── ExtensionElem (optSeverity)
+   │  ║                    Var (name=sev)
+   │  ║        GroupElem (_anon_having_1)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=drug)
+   │  ║        GroupElem (drugCount)
+   │  ║           Count (Distinct)
+   │  ║              Var (name=drug)
+   │  ╚══ ExtensionElem (_anon_having_1)
+   │        Count (Distinct)
+   │           Var (name=drug)
+   └── ExtensionElem (drugCount)
+         Count (Distinct)
+            Var (name=drug)

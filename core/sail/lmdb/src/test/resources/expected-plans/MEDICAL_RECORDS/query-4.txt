@@ -1,26 +1,26 @@
-Projection (resultSizeActual=1)
+Projection ()
 ╠══ ProjectionElemList
 ║     ProjectionElem "count"
-╚══ Extension (resultSizeActual=1)
-   ├── Group () (resultSizeActual=1)
-   │  ╠══ Filter (resultSizeActual=41.6K)
+╚══ Extension ()
+   ├── Group () ()
+   │  ╠══ Filter ()
    │  ║  ├── Exists
-   │  ║  │     StatementPattern (resultSizeEstimate=15.1K, resultSizeActual=0)
+   │  ║  │     StatementPattern ()
    │  ║  │        s: Var (name=enc)
    │  ║  │        p: Var (name=_const_6f00815a_uri, value=http://example.com/theme/medical/hasObservation, anonymous)
    │  ║  │        o: Var (name=obs)
-   │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=41.6K)
-   │  ║     ╠══ Join (JoinIterator) (resultSizeActual=41.6K) [left]
-   │  ║     ║  ├── StatementPattern (costEstimate=9.7K, resultSizeEstimate=19.3K, resultSizeActual=24.9K) [left]
+   │  ║  └── LeftJoin (LeftJoinIterator) ()
+   │  ║     ╠══ Join (JoinIterator) () [left]
+   │  ║     ║  ├── StatementPattern () [left]
    │  ║     ║  │     s: Var (name=enc)
    │  ║     ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
    │  ║     ║  │     o: Var (name=_const_5e8eb7eb_uri, value=http://example.com/theme/medical/Encounter, anonymous)
-   │  ║     ║  └── Join (JoinIterator) (resultSizeActual=41.6K) [right]
-   │  ║     ║     ╠══ StatementPattern (costEstimate=1.32, resultSizeEstimate=1.97, resultSizeActual=49.8K) [left]
+   │  ║     ║  └── Join (JoinIterator) () [right]
+   │  ║     ║     ╠══ StatementPattern () [left]
    │  ║     ║     ║     s: Var (name=enc)
    │  ║     ║     ║     p: Var (name=_const_7e7389c9_uri, value=http://example.com/theme/medical/hasCondition, anonymous)
    │  ║     ║     ║     o: Var (name=cond)
-   │  ║     ║     ╚══ Filter (resultSizeActual=41.6K) [right]
+   │  ║     ║     ╚══ Filter () [right]
    │  ║     ║        ├── Or
    │  ║     ║        │  ╠══ Compare (=)
    │  ║     ║        │  ║     Var (name=code)
@@ -28,11 +28,11 @@ Projection (resultSizeActual=1)
    │  ║     ║        │  ╚══ Compare (=)
    │  ║     ║        │        Var (name=code)
    │  ║     ║        │        ValueConstant (value="DX-201")
-   │  ║     ║        └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=49.8K)
+   │  ║     ║        └── StatementPattern ()
    │  ║     ║              s: Var (name=cond)
    │  ║     ║              p: Var (name=_const_98e9815_uri, value=http://example.com/theme/medical/code, anonymous)
    │  ║     ║              o: Var (name=code)
-   │  ║     ╚══ StatementPattern (resultSizeEstimate=1.00, resultSizeActual=41.6K) [right]
+   │  ║     ╚══ StatementPattern () [right]
    │  ║           s: Var (name=enc)
    │  ║           p: Var (name=_const_9016af8b_uri, value=http://example.com/theme/medical/handledBy, anonymous)
    │  ║           o: Var (name=practitioner)
@@ -42,4 +42,3 @@ Projection (resultSizeActual=1)
    └── ExtensionElem (count)
          Count (Distinct)
             Var (name=enc)
-

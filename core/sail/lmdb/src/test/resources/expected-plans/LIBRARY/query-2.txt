@@ -11,20 +11,20 @@ Projection (resultSizeActual=3)
    │  ║  └── Group (author) (resultSizeActual=3)
    │  ║        LeftJoin (LeftJoinIterator) (resultSizeActual=15)
    │  ║        ├── Join (JoinIterator) (resultSizeActual=3) [left]
-   │  ║        │  ╠══ Filter (resultSizeActual=3) [left]
-   │  ║        │  ║  ├── ListMemberOperator
-   │  ║        │  ║  │     Var (name=authorName)
-   │  ║        │  ║  │     ValueConstant (value="Author 1")
-   │  ║        │  ║  │     ValueConstant (value="Author 2")
-   │  ║        │  ║  │     ValueConstant (value="Author 3")
-   │  ║        │  ║  └── StatementPattern (costEstimate=22.4K, resultSizeEstimate=44.8K, resultSizeActual=45.3K)
-   │  ║        │  ║        s: Var (name=author)
-   │  ║        │  ║        p: Var (name=_const_6d0024c9_uri, value=http://example.com/theme/library/name, anonymous)
-   │  ║        │  ║        o: Var (name=authorName)
-   │  ║        │  ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0.77, resultSizeActual=3) [right]
-   │  ║        │        s: Var (name=author)
-   │  ║        │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-   │  ║        │        o: Var (name=_const_e1dd2069_uri, value=http://example.com/theme/library/Author, anonymous)
+   │  ║        │  ╠══ StatementPattern (costEstimate=12.2K, resultSizeEstimate=24.4K, resultSizeActual=40.2K) [left]
+   │  ║        │  ║     s: Var (name=author)
+   │  ║        │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║        │  ║     o: Var (name=_const_e1dd2069_uri, value=http://example.com/theme/library/Author, anonymous)
+   │  ║        │  ╚══ Filter (resultSizeActual=3) [right]
+   │  ║        │     ├── ListMemberOperator
+   │  ║        │     │     Var (name=authorName)
+   │  ║        │     │     ValueConstant (value="Author 1")
+   │  ║        │     │     ValueConstant (value="Author 2")
+   │  ║        │     │     ValueConstant (value="Author 3")
+   │  ║        │     └── StatementPattern (costEstimate=2.45, resultSizeEstimate=1.00, resultSizeActual=40.2K)
+   │  ║        │           s: Var (name=author)
+   │  ║        │           p: Var (name=_const_6d0024c9_uri, value=http://example.com/theme/library/name, anonymous)
+   │  ║        │           o: Var (name=authorName)
    │  ║        └── StatementPattern (resultSizeEstimate=5.00, resultSizeActual=15) [right]
    │  ║              s: Var (name=book)
    │  ║              p: Var (name=_const_e1624c50_uri, value=http://example.com/theme/library/writtenBy, anonymous)
@@ -41,4 +41,3 @@ Projection (resultSizeActual=3)
    └── ExtensionElem (bookCount)
          Count (Distinct)
             Var (name=book)
-

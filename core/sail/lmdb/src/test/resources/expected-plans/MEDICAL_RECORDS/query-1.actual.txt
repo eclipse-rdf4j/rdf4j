@@ -1,0 +1,45 @@
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension
+   ├── Group
+   │  ╠══ LeftJoin
+   │  ║  ├── Filter [left]
+   │  ║  │  ╠══ Or
+   │  ║  │  ║  ├── Compare (=)
+   │  ║  │  ║  │     Var (name=code)
+   │  ║  │  ║  │     Var (name=target)
+   │  ║  │  ║  └── Compare (=)
+   │  ║  │  ║        Var (name=code)
+   │  ║  │  ║        ValueConstant (value="DX-202")
+   │  ║  │  ╚══ Join
+   │  ║  │     ├── BindingSetAssignment ([[target="DX-200"], [target="DX-201"]]) [left]
+   │  ║  │     └── Union [right]
+   │  ║  │        ╠══ Join
+   │  ║  │        ║  ├── StatementPattern [left]
+   │  ║  │        ║  │     s: Var (name=entity)
+   │  ║  │        ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │        ║  │     o: Var (name=_const_d05fbbd3_uri, value=http://example.com/theme/medical/Condition, anonymous)
+   │  ║  │        ║  └── StatementPattern [right]
+   │  ║  │        ║        s: Var (name=entity)
+   │  ║  │        ║        p: Var (name=_const_98e9815_uri, value=http://example.com/theme/medical/code, anonymous)
+   │  ║  │        ║        o: Var (name=code)
+   │  ║  │        ╚══ Join
+   │  ║  │           ├── StatementPattern [left]
+   │  ║  │           │     s: Var (name=entity)
+   │  ║  │           │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║  │           │     o: Var (name=_const_ea395317_uri, value=http://example.com/theme/medical/Medication, anonymous)
+   │  ║  │           └── StatementPattern [right]
+   │  ║  │                 s: Var (name=entity)
+   │  ║  │                 p: Var (name=_const_98e9815_uri, value=http://example.com/theme/medical/code, anonymous)
+   │  ║  │                 o: Var (name=code)
+   │  ║  └── StatementPattern [right]
+   │  ║        s: Var (name=entity)
+   │  ║        p: Var (name=_const_98e9815_uri, value=http://example.com/theme/medical/code, anonymous)
+   │  ║        o: Var (name=alt)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=entity)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=entity)

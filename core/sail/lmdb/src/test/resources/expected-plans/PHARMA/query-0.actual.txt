@@ -1,0 +1,67 @@
+Projection ()
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension ()
+   ├── Group () ()
+   │  ╠══ Filter ()
+   │  ║  ├── Compare (!=)
+   │  ║  │     Var (name=optMarker)
+   │  ║  │     ValueConstant (value=http://example.com/theme/pharma/biomarker/999)
+   │  ║  └── LeftJoin (LeftJoinIterator) ()
+   │  ║     ╠══ Join (JoinIterator) () [left]
+   │  ║     ║  ├── BindingSetAssignment ([[disease=http://example.com/theme/pharma/disease/0], [disease=http://example.com/theme/pharma/disease/1]]) () [left]
+   │  ║     ║  └── Join (JoinIterator) () [right]
+   │  ║     ║     ╠══ StatementPattern () [left]
+   │  ║     ║     ║     s: Var (name=trial)
+   │  ║     ║     ║     p: Var (name=_const_5a7b59fd_uri, value=http://example.com/theme/pharma/studiesDisease, anonymous)
+   │  ║     ║     ║     o: Var (name=disease)
+   │  ║     ║     ╚══ Join (JoinIterator) () [right]
+   │  ║     ║        ├── StatementPattern () [left]
+   │  ║     ║        │     s: Var (name=trial)
+   │  ║     ║        │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║        │     o: Var (name=_const_4795bbfb_uri, value=http://example.com/theme/pharma/ClinicalTrial, anonymous)
+   │  ║     ║        └── Join (JoinIterator) () [right]
+   │  ║     ║           ╠══ StatementPattern () [left]
+   │  ║     ║           ║     s: Var (name=trial)
+   │  ║     ║           ║     p: Var (name=_const_73c2e40a_uri, value=http://example.com/theme/pharma/hasArm, anonymous)
+   │  ║     ║           ║     o: Var (name=arm)
+   │  ║     ║           ╚══ Join (JoinIterator) () [right]
+   │  ║     ║              ├── StatementPattern () [left]
+   │  ║     ║              │     s: Var (name=arm)
+   │  ║     ║              │     p: Var (name=_const_60f6d7af_uri, value=http://example.com/theme/pharma/hasResult, anonymous)
+   │  ║     ║              │     o: Var (name=result)
+   │  ║     ║              └── Join (JoinIterator) () [right]
+   │  ║     ║                 ╠══ StatementPattern () [left]
+   │  ║     ║                 ║     s: Var (name=arm)
+   │  ║     ║                 ║     p: Var (name=_const_aefd3274_uri, value=http://example.com/theme/pharma/armDrug, anonymous)
+   │  ║     ║                 ║     o: Var (name=drug)
+   │  ║     ║                 ╚══ Filter () [right]
+   │  ║     ║                    ├── Or
+   │  ║     ║                    │  ╠══ Compare (<)
+   │  ║     ║                    │  ║     Var (name=p)
+   │  ║     ║                    │  ║     ValueConstant (value="0.05"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+   │  ║     ║                    │  ╚══ Compare (>)
+   │  ║     ║                    │        Var (name=effect)
+   │  ║     ║                    │        ValueConstant (value="0.7"^^<http://www.w3.org/2001/XMLSchema#decimal>)
+   │  ║     ║                    └── Join (JoinIterator) ()
+   │  ║     ║                       ╠══ StatementPattern () [left]
+   │  ║     ║                       ║     s: Var (name=result)
+   │  ║     ║                       ║     p: Var (name=_const_6999fbda_uri, value=http://example.com/theme/pharma/effectSize, anonymous)
+   │  ║     ║                       ║     o: Var (name=effect)
+   │  ║     ║                       ╚══ StatementPattern () [right]
+   │  ║     ║                             s: Var (name=result)
+   │  ║     ║                             p: Var (name=_const_80c71989_uri, value=http://example.com/theme/pharma/pValue, anonymous)
+   │  ║     ║                             o: Var (name=p)
+   │  ║     ╚══ Extension () [right]
+   │  ║        ├── StatementPattern ()
+   │  ║        │     s: Var (name=result)
+   │  ║        │     p: Var (name=_const_80a6979a_uri, value=http://example.com/theme/pharma/biomarker, anonymous)
+   │  ║        │     o: Var (name=marker)
+   │  ║        └── ExtensionElem (optMarker)
+   │  ║              Var (name=marker)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=drug)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=drug)

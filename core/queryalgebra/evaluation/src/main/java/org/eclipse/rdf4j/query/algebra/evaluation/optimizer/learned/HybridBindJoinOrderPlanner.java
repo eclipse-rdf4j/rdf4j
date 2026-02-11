@@ -39,4 +39,12 @@ public class HybridBindJoinOrderPlanner implements JoinOrderPlanner {
 		}
 		return greedy.order(operands, initiallyBoundVars);
 	}
+
+	@Override
+	public List<JoinPlanCandidate> orderCandidates(List<TupleExpr> operands, Set<String> initiallyBoundVars, int topK) {
+		if (config.isEnableDp() && operands.size() <= config.getDpThreshold()) {
+			return dp.orderCandidates(operands, initiallyBoundVars, topK);
+		}
+		return greedy.orderCandidates(operands, initiallyBoundVars, topK);
+	}
 }

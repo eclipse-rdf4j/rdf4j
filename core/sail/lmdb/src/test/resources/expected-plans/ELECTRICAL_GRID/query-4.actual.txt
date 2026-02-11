@@ -1,0 +1,44 @@
+Projection ()
+╠══ ProjectionElemList
+║     ProjectionElem "count"
+╚══ Extension ()
+   ├── Group () ()
+   │  ╠══ Filter ()
+   │  ║  ├── Exists
+   │  ║  │     StatementPattern ()
+   │  ║  │        s: Var (name=line)
+   │  ║  │        p: Var (name=_const_342e0de3_uri, value=http://example.com/theme/grid/connectsTo, anonymous)
+   │  ║  │        o: Var (name=other)
+   │  ║  └── LeftJoin (LeftJoinIterator) ()
+   │  ║     ╠══ Join (JoinIterator) () [left]
+   │  ║     ║  ├── Filter () [left]
+   │  ║     ║  │  ╠══ Or
+   │  ║     ║  │  ║  ├── Compare (=)
+   │  ║     ║  │  ║  │     Var (name=name)
+   │  ║     ║  │  ║  │     ValueConstant (value="Substation 0")
+   │  ║     ║  │  ║  └── Compare (=)
+   │  ║     ║  │  ║        Var (name=name)
+   │  ║     ║  │  ║        ValueConstant (value="Substation 1")
+   │  ║     ║  │  ╚══ StatementPattern ()
+   │  ║     ║  │        s: Var (name=substation)
+   │  ║     ║  │        p: Var (name=_const_9661228a_uri, value=http://example.com/theme/grid/name, anonymous)
+   │  ║     ║  │        o: Var (name=name)
+   │  ║     ║  └── Join (JoinIterator) () [right]
+   │  ║     ║     ╠══ StatementPattern () [left]
+   │  ║     ║     ║     s: Var (name=line)
+   │  ║     ║     ║     p: Var (name=_const_342e0de3_uri, value=http://example.com/theme/grid/connectsTo, anonymous)
+   │  ║     ║     ║     o: Var (name=substation)
+   │  ║     ║     ╚══ StatementPattern () [right]
+   │  ║     ║           s: Var (name=line)
+   │  ║     ║           p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║           o: Var (name=_const_9651cc13_uri, value=http://example.com/theme/grid/Line, anonymous)
+   │  ║     ╚══ StatementPattern () [right]
+   │  ║           s: Var (name=line)
+   │  ║           p: Var (name=_const_342e0de3_uri, value=http://example.com/theme/grid/connectsTo, anonymous)
+   │  ║           o: Var (name=other2)
+   │  ╚══ GroupElem (count)
+   │        Count (Distinct)
+   │           Var (name=line)
+   └── ExtensionElem (count)
+         Count (Distinct)
+            Var (name=line)

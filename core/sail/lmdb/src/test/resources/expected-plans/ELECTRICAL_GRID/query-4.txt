@@ -1,38 +1,38 @@
-Projection (resultSizeActual=1)
+Projection ()
 ╠══ ProjectionElemList
 ║     ProjectionElem "count"
-╚══ Extension (resultSizeActual=1)
-   ├── Group () (resultSizeActual=1)
-   │  ╠══ Filter (resultSizeActual=10)
+╚══ Extension ()
+   ├── Group () ()
+   │  ╠══ Filter ()
    │  ║  ├── Exists
-   │  ║  │     StatementPattern (resultSizeEstimate=91.8K, resultSizeActual=0)
+   │  ║  │     StatementPattern ()
    │  ║  │        s: Var (name=line)
    │  ║  │        p: Var (name=_const_342e0de3_uri, value=http://example.com/theme/grid/connectsTo, anonymous)
    │  ║  │        o: Var (name=other)
-   │  ║  └── LeftJoin (LeftJoinIterator) (resultSizeActual=10)
-   │  ║     ╠══ Join (JoinIterator) (resultSizeActual=5) [left]
-   │  ║     ║  ├── Filter (resultSizeActual=2) [left]
-   │  ║     ║  │  ╠══ Or
-   │  ║     ║  │  ║  ├── Compare (=)
-   │  ║     ║  │  ║  │     Var (name=name)
-   │  ║     ║  │  ║  │     ValueConstant (value="Substation 0")
-   │  ║     ║  │  ║  └── Compare (=)
-   │  ║     ║  │  ║        Var (name=name)
-   │  ║     ║  │  ║        ValueConstant (value="Substation 1")
-   │  ║     ║  │  ╚══ StatementPattern (costEstimate=4.7K, resultSizeEstimate=9.3K, resultSizeActual=9.3K)
-   │  ║     ║  │        s: Var (name=substation)
-   │  ║     ║  │        p: Var (name=_const_9661228a_uri, value=http://example.com/theme/grid/name, anonymous)
-   │  ║     ║  │        o: Var (name=name)
-   │  ║     ║  └── Join (JoinIterator) (resultSizeActual=5) [right]
-   │  ║     ║     ╠══ StatementPattern (costEstimate=1.37, resultSizeEstimate=2.50, resultSizeActual=5) [left]
+   │  ║  └── LeftJoin (LeftJoinIterator) ()
+   │  ║     ╠══ Join (JoinIterator) () [left]
+   │  ║     ║  ├── StatementPattern () [left]
+   │  ║     ║  │     s: Var (name=line)
+   │  ║     ║  │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║  │     o: Var (name=_const_9651cc13_uri, value=http://example.com/theme/grid/Line, anonymous)
+   │  ║     ║  └── Join (JoinIterator) () [right]
+   │  ║     ║     ╠══ StatementPattern () [left]
    │  ║     ║     ║     s: Var (name=line)
    │  ║     ║     ║     p: Var (name=_const_342e0de3_uri, value=http://example.com/theme/grid/connectsTo, anonymous)
    │  ║     ║     ║     o: Var (name=substation)
-   │  ║     ║     ╚══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0.55, resultSizeActual=5) [right]
-   │  ║     ║           s: Var (name=line)
-   │  ║     ║           p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-   │  ║     ║           o: Var (name=_const_9651cc13_uri, value=http://example.com/theme/grid/Line, anonymous)
-   │  ║     ╚══ StatementPattern (resultSizeEstimate=2.00, resultSizeActual=10) [right]
+   │  ║     ║     ╚══ Filter () [right]
+   │  ║     ║        ├── Or
+   │  ║     ║        │  ╠══ Compare (=)
+   │  ║     ║        │  ║     Var (name=name)
+   │  ║     ║        │  ║     ValueConstant (value="Substation 0")
+   │  ║     ║        │  ╚══ Compare (=)
+   │  ║     ║        │        Var (name=name)
+   │  ║     ║        │        ValueConstant (value="Substation 1")
+   │  ║     ║        └── StatementPattern ()
+   │  ║     ║              s: Var (name=substation)
+   │  ║     ║              p: Var (name=_const_9661228a_uri, value=http://example.com/theme/grid/name, anonymous)
+   │  ║     ║              o: Var (name=name)
+   │  ║     ╚══ StatementPattern () [right]
    │  ║           s: Var (name=line)
    │  ║           p: Var (name=_const_342e0de3_uri, value=http://example.com/theme/grid/connectsTo, anonymous)
    │  ║           o: Var (name=other2)
@@ -42,4 +42,3 @@ Projection (resultSizeActual=1)
    └── ExtensionElem (count)
          Count (Distinct)
             Var (name=line)
-
