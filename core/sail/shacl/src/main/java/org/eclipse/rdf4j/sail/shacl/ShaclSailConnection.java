@@ -1158,7 +1158,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					.peek(s -> {
 						if (Thread.currentThread().isInterrupted()) {
 							throw new SailException(
-									"ShacilSailConnection was interrupted while filling inferred statement repositories");
+									"ShaclSailConnection was interrupted while filling inferred statement repositories");
 						}
 					})
 					.filter(statement -> !otherSet.contains(statement))
