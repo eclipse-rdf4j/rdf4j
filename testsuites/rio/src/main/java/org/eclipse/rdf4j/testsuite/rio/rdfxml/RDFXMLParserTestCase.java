@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.rio.rdfxml;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
@@ -20,11 +21,10 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import javax.xml.parsers.ParserConfigurationException;
-
 import org.apache.xml.security.c14n.CanonicalizationException;
 import org.apache.xml.security.c14n.Canonicalizer;
 import org.apache.xml.security.c14n.InvalidCanonicalizerException;
+import org.apache.xml.security.parser.XMLParserException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
@@ -43,7 +43,6 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.xml.sax.SAXException;
 
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
@@ -300,10 +299,12 @@ public abstract class RDFXMLParserTestCase {
 		private String canonicalizeXmlLiteral(String value) {
 			// Canonicalize the literal value
 			try {
-				return new String(c14n.canonicalize(value.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8);
-			} catch (ParserConfigurationException | IOException e) {
+				ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+				c14n.canonicalize(value.getBytes(StandardCharsets.UTF_8), outputStream, false);
+				return outputStream.toString(StandardCharsets.UTF_8);
+			} catch (IOException e) {
 				throw new RuntimeException(e);
-			} catch (CanonicalizationException | SAXException e) {
+			} catch (CanonicalizationException | XMLParserException e) {
 				return value;
 			}
 		}

@@ -70,14 +70,20 @@
 		<spring.version>7.0.3</spring.version>
 		<guava.version>32.1.3-jre</guava.version>
 		<jmhVersion>1.37</jmhVersion>
+		<junit.version>6.0.2</junit.version>
+		<mockito.version>5.21.0</mockito.version>
+		<mockserver.version>5.15.0</mockserver.version>
+		<assertj.version>3.27.7</assertj.version>
+		<hamcrest.version>3.0</hamcrest.version>
+		<logstash.logback.encoder.version>9.0</logstash.logback.encoder.version>
+		<xmlsec.version>4.0.4</xmlsec.version>
 		<servlet.version>6.1.0</servlet.version>
 		<jakarta.jsp.version>4.0.0</jakarta.jsp.version>
 		<jakarta.jstl.version>3.0.1</jakarta.jstl.version>
-		<junit.version>6.0.1</junit.version>
-		<wiremock.version>4.0.0-beta.25</wiremock.version>
+		<wiremock.version>4.0.0-beta.29</wiremock.version>
 		<jetty.version>12.1.4</jetty.version>
 		<netty.version>4.2.8.Final</netty.version>
-		<testcontainers.version>1.21.3</testcontainers.version>
+		<testcontainers.version>1.21.4</testcontainers.version>
 		<argLine />
 	</properties>
 	<profiles>
@@ -671,17 +677,17 @@
 			<dependency>
 				<groupId>org.mockito</groupId>
 				<artifactId>mockito-core</artifactId>
-				<version>4.11.0</version>
+				<version>${mockito.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.mockito</groupId>
 				<artifactId>mockito-junit-jupiter</artifactId>
-				<version>4.11.0</version>
+				<version>${mockito.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.mock-server</groupId>
 				<artifactId>mockserver-junit-jupiter</artifactId>
-				<version>5.15.0</version>
+				<version>${mockserver.version}</version>
 				<exclusions>
 					<exclusion>
 						<groupId>commons-logging</groupId>
@@ -692,7 +698,42 @@
 			<dependency>
 				<groupId>org.assertj</groupId>
 				<artifactId>assertj-core</artifactId>
-				<version>3.24.2</version>
+				<version>${assertj.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.hamcrest</groupId>
+				<artifactId>hamcrest-core</artifactId>
+				<version>${hamcrest.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.hamcrest</groupId>
+				<artifactId>hamcrest-library</artifactId>
+				<version>${hamcrest.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.hamcrest</groupId>
+				<artifactId>hamcrest</artifactId>
+				<version>${hamcrest.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.testcontainers</groupId>
+				<artifactId>testcontainers</artifactId>
+				<version>${testcontainers.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.testcontainers</groupId>
+				<artifactId>junit-jupiter</artifactId>
+				<version>${testcontainers.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>net.logstash.logback</groupId>
+				<artifactId>logstash-logback-encoder</artifactId>
+				<version>${logstash.logback.encoder.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.santuario</groupId>
+				<artifactId>xmlsec</artifactId>
+				<version>${xmlsec.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>com.github.jsonld-java</groupId>
