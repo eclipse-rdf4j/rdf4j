@@ -81,8 +81,9 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	/**
 	 * SPARQL Query Result CSV Format.
 	 */
-	public static final TupleQueryResultFormat CSV = new TupleQueryResultFormat("SPARQL/CSV", List.of("text/csv"),
-			StandardCharsets.UTF_8, List.of("csv"), SPARQL_RESULTS_CSV_URI, NO_RDF_STAR);
+	public static final TupleQueryResultFormat CSV = new TupleQueryResultFormat("SPARQL/CSV",
+			List.of("text/csv;charset=UTF-8", "text/csv"), StandardCharsets.UTF_8, List.of("csv"),
+			SPARQL_RESULTS_CSV_URI, NO_RDF_STAR);
 
 	/**
 	 * SPARQL Query Result TSV Format.
