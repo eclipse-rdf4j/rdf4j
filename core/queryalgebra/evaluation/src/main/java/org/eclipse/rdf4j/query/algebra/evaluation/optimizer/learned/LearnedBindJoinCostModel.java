@@ -64,6 +64,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			UNSUPPORTED_LITERAL_BOUND_FANOUT_PENALTY_PROPERTY, 1.5d);
 	private static final double NUMERIC_INEQUALITY_MAX_HINT = 1.0d;
 	private static final double MIN_FILTER_MULTIPLIER = 0.05d;
+	private static final double DERIVED_SCAN_CONSTRAINT_MULTIPLIER = 0.5d;
 	private static final String TYPE_ANCHORING_ENABLED_PROPERTY = "rdf4j.optimizer.learned.typeAnchoring.enabled";
 	private static final boolean TYPE_ANCHORING_ENABLED = Boolean
 			.parseBoolean(System.getProperty(TYPE_ANCHORING_ENABLED_PROPERTY, "true"));
@@ -208,6 +209,8 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		LearnedEstimate learnedEstimate = resolveLearnedEstimate(pattern, key, defaultEstimate, unsupportedPattern);
 		if (learnedEstimate == null) {
 			double estimate = defaultEstimate > 0.0d ? defaultEstimate : 1.0d;
+			estimate = capEstimateWithFilterBindings(pattern, effectiveBoundVars, filterApplication.filterBoundNames,
+					estimate);
 			double filtered = applyFilterMultiplier(estimate, filterApplication, pattern);
 			filtered = applyTypeSubjectSelectivity(pattern, effectiveBoundVars, filtered, 1.0d);
 			filtered = applyNewScopeStartPenalty(pattern, effectiveBoundVars, filtered);
@@ -215,7 +218,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		}
 		double adjusted = learnedEstimate.estimate;
 		adjusted = stabilizePredicateOnlyScanEstimate(key, defaultEstimate, adjusted);
-		adjusted = stabilizeTypeScanEstimate(pattern, defaultEstimate, adjusted);
+		adjusted = stabilizeTypeScanEstimate(pattern, key, defaultEstimate, adjusted);
 		double filtered = applyFilterMultiplier(adjusted, filterApplication, pattern);
 		filtered = applyTypeSubjectSelectivity(pattern, effectiveBoundVars, filtered, 1.0d);
 		filtered = applyNewScopeStartPenalty(pattern, effectiveBoundVars, filtered);
@@ -238,19 +241,26 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		LearnedEstimate learnedEstimate = resolveLearnedEstimate(pattern, key, defaultEstimate, unsupportedPattern);
 		if (learnedEstimate == null) {
 			double estimate = defaultEstimate > 0.0d ? defaultEstimate : 1.0d;
-			estimate = stabilizeTypeScanEstimate(pattern, defaultEstimate, estimate);
+			estimate = stabilizeTypeScanEstimate(pattern, key, defaultEstimate, estimate);
 			estimate = inflateTypeSubjectScanCost(pattern, effectiveBoundVars, estimate);
 			estimate = applyTypeAnchorScanPenalty(pattern, estimate);
-			estimate = applyNewScopeStartPenalty(pattern, effectiveBoundVars, estimate);
-			return estimate > 0.0d ? estimate : 1.0d;
+			estimate = capEstimateWithFilterBindings(pattern, effectiveBoundVars, filterApplication.filterBoundNames,
+					estimate);
+			double filtered = applyFilterMultiplier(estimate, filterApplication, pattern);
+			filtered = applyTypeSubjectSelectivity(pattern, effectiveBoundVars, filtered, 1.0d);
+			filtered = applyNewScopeStartPenalty(pattern, effectiveBoundVars, filtered);
+			return applyFilterFallbackCap(filtered, context);
 		}
 		double adjusted = learnedEstimate.estimate;
 		adjusted = stabilizePredicateOnlyScanEstimate(key, defaultEstimate, adjusted);
-		adjusted = stabilizeTypeScanEstimate(pattern, defaultEstimate, adjusted);
+		adjusted = stabilizeTypeScanEstimate(pattern, key, defaultEstimate, adjusted);
 		adjusted = inflateTypeSubjectScanCost(pattern, effectiveBoundVars, adjusted);
 		adjusted = applyTypeAnchorScanPenalty(pattern, adjusted);
-		adjusted = applyNewScopeStartPenalty(pattern, effectiveBoundVars, adjusted);
-		return adjusted > 0.0d ? adjusted : 1.0d;
+		double filtered = applyFilterMultiplier(adjusted, filterApplication, pattern);
+		filtered = applyTypeSubjectSelectivity(pattern, effectiveBoundVars, filtered, 1.0d);
+		filtered = applyNewScopeStartPenalty(pattern, effectiveBoundVars, filtered);
+		filtered = capFilteredToFallback(filtered, defaultEstimate, filterApplication, pattern);
+		return applyFilterFallbackCap(filtered, context);
 	}
 
 	private double stabilizePredicateOnlyScanEstimate(PatternKey key, double defaultEstimate, double estimate) {
@@ -258,6 +268,9 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			return estimate;
 		}
 		if (key.getBoundMask() != PatternKey.PREDICATE_BOUND) {
+			return estimate;
+		}
+		if (!isUnobservedPredicateOnly(key)) {
 			return estimate;
 		}
 		return Math.max(estimate, defaultEstimate);
@@ -296,11 +309,15 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		return inflated > estimate ? inflated : estimate;
 	}
 
-	private double stabilizeTypeScanEstimate(StatementPattern pattern, double defaultEstimate, double estimate) {
+	private double stabilizeTypeScanEstimate(StatementPattern pattern, PatternKey key, double defaultEstimate,
+			double estimate) {
 		if (!TYPE_ANCHORING_ENABLED) {
 			return estimate;
 		}
 		if (estimate <= 0.0d || defaultEstimate <= 0.0d || !isTypePredicate(pattern)) {
+			return estimate;
+		}
+		if (key != null && learnedStats.getCalls(key) != 0L) {
 			return estimate;
 		}
 		return Math.min(estimate, defaultEstimate);
@@ -405,6 +422,9 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		if (learnedStats.hasStats(key) || !STATS_BACKOFF_ENABLED) {
 			return key;
 		}
+		if (isTypePredicate(pattern) && (key.getBoundMask() & PatternKey.SUBJECT_BOUND) != 0) {
+			return key;
+		}
 		if ((key.getBoundMask() & PatternKey.PREDICATE_BOUND) == 0) {
 			return key;
 		}
@@ -482,6 +502,26 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		Set<String> correlated = correlatedFilterVars(filter);
 		if (!correlated.isEmpty() && !boundVars.containsAll(correlated)) {
 			estimate *= FILTER_EXISTS_UNBOUND_PENALTY;
+		}
+		return estimate;
+	}
+
+	private double capEstimateWithFilterBindings(StatementPattern pattern, Set<String> effectiveBoundVars,
+			Set<String> filterBoundNames, double estimate) {
+		if (estimate <= 0.0d || filterBoundNames == null || filterBoundNames.isEmpty()) {
+			return estimate;
+		}
+		Set<String> combinedBound = new HashSet<>(effectiveBoundVars);
+		if (!combinedBound.addAll(filterBoundNames)) {
+			return estimate;
+		}
+		StatementPattern boundPattern = applyBoundVars(pattern, combinedBound);
+		double boundEstimate = fallbackStats.getCardinality(boundPattern);
+		if (usesPlaceholder(boundPattern)) {
+			boundEstimate = fallbackEstimateForBoundPlaceholder(pattern, boundPattern, boundEstimate);
+		}
+		if (boundEstimate > 0.0d && boundEstimate < estimate) {
+			return boundEstimate;
 		}
 		return estimate;
 	}
@@ -837,7 +877,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			constraints = constraints.and(extractFilterConstraints(filter.getCondition()));
 		}
 		if (constraints.isEmpty()) {
-			return new FilterApplication(new HashSet<>(boundVars), 1.0d);
+			return new FilterApplication(new HashSet<>(boundVars), 1.0d, Set.of());
 		}
 		Set<String> effectiveBound = new HashSet<>(boundVars);
 		Set<String> patternNames = context.pattern.getBindingNames();
@@ -877,7 +917,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		if (externalInequalityHint < multiplier) {
 			multiplier = externalInequalityHint;
 		}
-		return new FilterApplication(effectiveBound, multiplier);
+		return new FilterApplication(effectiveBound, multiplier, Set.of());
 	}
 
 	private FilterApplication applyScanConstraints(PatternContext context, Set<String> boundVars) {
@@ -886,9 +926,10 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			constraints = constraints.and(extractFilterConstraints(filter.getCondition()));
 		}
 		if (constraints.isEmpty() || constraints.bindings.isEmpty()) {
-			return new FilterApplication(new HashSet<>(boundVars), 1.0d);
+			return new FilterApplication(new HashSet<>(boundVars), 1.0d, Set.of());
 		}
 		Set<String> effectiveBound = new HashSet<>(boundVars);
+		Set<String> filterBoundNames = new HashSet<>();
 		Set<String> patternNames = context.pattern.getBindingNames();
 		double multiplier = 1.0d;
 		for (Map.Entry<String, Set<Value>> entry : constraints.bindings.entrySet()) {
@@ -898,6 +939,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			}
 			Set<Value> values = entry.getValue();
 			if (values != null && !values.isEmpty() && !boundVars.contains(name)) {
+				filterBoundNames.add(name);
 				double ratio = values.size() / FILTER_VALUE_CARDINALITY;
 				double selectivity = Math.min(1.0d, Math.max(MIN_FILTER_MULTIPLIER, ratio));
 				if (selectivity < multiplier) {
@@ -909,8 +951,13 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			if (!patternNames.contains(name)) {
 				continue;
 			}
-			if (!boundVars.contains(name) && MIN_FILTER_MULTIPLIER < multiplier) {
-				multiplier = MIN_FILTER_MULTIPLIER;
+			if (boundVars.contains(name)) {
+				continue;
+			}
+			double constrainedMultiplier = constraints.bindings.containsKey(name) ? MIN_FILTER_MULTIPLIER
+					: DERIVED_SCAN_CONSTRAINT_MULTIPLIER;
+			if (constrainedMultiplier < multiplier) {
+				multiplier = constrainedMultiplier;
 			}
 		}
 		double inequalityHint = extractNumericInequalityHintFromFilters(context.filters, patternNames, boundVars);
@@ -922,7 +969,8 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		if (externalInequalityHint < multiplier) {
 			multiplier = externalInequalityHint;
 		}
-		return new FilterApplication(effectiveBound, multiplier);
+		return new FilterApplication(effectiveBound, multiplier,
+				filterBoundNames.isEmpty() ? Set.of() : Set.copyOf(filterBoundNames));
 	}
 
 	private FilterConstraints derivePatternConstraints(List<StatementPattern> patterns, FilterConstraints constraints) {
@@ -1381,10 +1429,12 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 	private static final class FilterApplication {
 		private final Set<String> boundVars;
 		private final double multiplier;
+		private final Set<String> filterBoundNames;
 
-		private FilterApplication(Set<String> boundVars, double multiplier) {
+		private FilterApplication(Set<String> boundVars, double multiplier, Set<String> filterBoundNames) {
 			this.boundVars = boundVars;
 			this.multiplier = multiplier;
+			this.filterBoundNames = filterBoundNames;
 		}
 	}
 

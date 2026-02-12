@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -156,11 +158,15 @@ public class ThemeQueryBenchmark {
 	@Benchmark
 	public long executeQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			long count = connection
-					.prepareTupleQuery(query)
-					.evaluate()
-					.stream()
-					.count();
+			TupleQuery tupleQuery = connection
+					.prepareTupleQuery(query);
+			tupleQuery.setMaxExecutionTime(5*60); // 5 minutes
+			long count;
+			try (TupleQueryResult evaluate = tupleQuery.evaluate()) {
+				count = evaluate
+						.stream()
+						.count();
+			}
 
 			if (count != expected) {
 				throw new IllegalStateException("Unexpected count: expected " + expected + " but got " + count);

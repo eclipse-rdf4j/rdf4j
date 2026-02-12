@@ -103,12 +103,33 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 	private static final String PLAN_TRACE_TOPK_PROPERTY = "rdf4j.learned.planTrace.topK";
 	private static final String PLAN_EXPLORE_ENABLED_PROPERTY = "rdf4j.learned.planExplore.enabled";
 	private static final String PLAN_EXPLORE_MAX_EXTRA_MS_PROPERTY = "rdf4j.learned.planExplore.maxExtraMs";
+	private static final String DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_ENABLED_PROPERTY = "rdf4j.optimizer.learned.dp.highUncertaintyGreedyFallback.enabled";
+	private static final String DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_MIN_UNCERTAINTY_PROPERTY = "rdf4j.optimizer.learned.dp.highUncertaintyGreedyFallback.minUncertainty";
+	private static final String DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_MIN_OPERANDS_PROPERTY = "rdf4j.optimizer.learned.dp.highUncertaintyGreedyFallback.minOperands";
+	private static final String DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_ENABLED_PROPERTY = "rdf4j.optimizer.learned.dp.highUncertaintyLegacyFallback.enabled";
+	private static final String DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_OPERANDS_PROPERTY = "rdf4j.optimizer.learned.dp.highUncertaintyLegacyFallback.minOperands";
+	private static final String DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_UNCERTAINTY_FRACTION_PROPERTY = "rdf4j.optimizer.learned.dp.highUncertaintyLegacyFallback.minUncertaintyFraction";
+	private static final String DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_ESTIMATED_CARDINALITY_PROPERTY = "rdf4j.optimizer.learned.dp.highUncertaintyLegacyFallback.minEstimatedCardinality";
 	private static final int PLAN_TRACE_TOPK = Math.max(1, Integer.getInteger(PLAN_TRACE_TOPK_PROPERTY, 3));
 	private static final boolean PLAN_EXPLORE_ENABLED = Boolean
 			.parseBoolean(System.getProperty(PLAN_EXPLORE_ENABLED_PROPERTY, "true"));
 	private static final double PLAN_EXPLORE_MAX_EXTRA_RATIO = parsePercentageProperty(
 			PLAN_EXPLORE_MAX_EXTRA_MS_PROPERTY,
 			5.0d);
+	private static final boolean DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_ENABLED = Boolean.parseBoolean(
+			System.getProperty(DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_ENABLED_PROPERTY, "true"));
+	private static final double DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_MIN_UNCERTAINTY = parseDoubleProperty(
+			DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_MIN_UNCERTAINTY_PROPERTY, 6.0d);
+	private static final int DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_MIN_OPERANDS = Math.max(2,
+			Integer.getInteger(DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_MIN_OPERANDS_PROPERTY, 6));
+	private static final boolean DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_ENABLED = Boolean.parseBoolean(
+			System.getProperty(DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_ENABLED_PROPERTY, "true"));
+	private static final int DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_OPERANDS = Math.max(2,
+			Integer.getInteger(DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_OPERANDS_PROPERTY, 6));
+	private static final double DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_UNCERTAINTY_FRACTION = Math.max(0.0d,
+			parseDoubleProperty(DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_UNCERTAINTY_FRACTION_PROPERTY, 1.0d));
+	private static final double DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_ESTIMATED_CARDINALITY = Math.max(0.0d,
+			parseDoubleProperty(DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_ESTIMATED_CARDINALITY_PROPERTY, 10000.0d));
 	private static final String DEBUG_PLAN_PROPERTY = "rdf4j.optimizer.learned.debugPlan";
 	private static final boolean DEBUG_PLAN = Boolean.getBoolean(DEBUG_PLAN_PROPERTY);
 	private static final Map<String, Integer> EXPLORE_WINNER_CACHE = new ConcurrentHashMap<>();
@@ -277,6 +298,57 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		}
 	}
 
+	private static double parseDoubleProperty(String property, double defaultValue) {
+		String value = System.getProperty(property);
+		if (value == null || value.isBlank()) {
+			return defaultValue;
+		}
+		try {
+			double parsed = Double.parseDouble(value.trim());
+			if (!Double.isFinite(parsed)) {
+				return defaultValue;
+			}
+			return parsed;
+		} catch (NumberFormatException ignored) {
+			return defaultValue;
+		}
+	}
+
+	static boolean shouldUseHighUncertaintyGreedyFallback(String plannerUsed, int operandCount, double uncertainty) {
+		if (!DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_ENABLED) {
+			return false;
+		}
+		if (!"dp".equals(plannerUsed) || operandCount < DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_MIN_OPERANDS) {
+			return false;
+		}
+		return Double.isFinite(uncertainty) && uncertainty >= DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_MIN_UNCERTAINTY;
+	}
+
+	static boolean shouldUseHighUncertaintyLegacyFallback(String plannerUsed, int operandCount, double uncertainty,
+			double estimatedCardinality) {
+		if (!DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_ENABLED) {
+			return false;
+		}
+		if (!"dp".equals(plannerUsed) && !"greedy".equals(plannerUsed)) {
+			return false;
+		}
+		if (!Double.isFinite(uncertainty)) {
+			return false;
+		}
+		double minUncertainty = operandCount * DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_UNCERTAINTY_FRACTION;
+		if (uncertainty < minUncertainty) {
+			return false;
+		}
+		if ("greedy".equals(plannerUsed)) {
+			return true;
+		}
+		if (operandCount >= DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_OPERANDS) {
+			return true;
+		}
+		return Double.isFinite(estimatedCardinality)
+				&& estimatedCardinality >= DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_ESTIMATED_CARDINALITY;
+	}
+
 	private static void writePlanTrace(PlanSelectionSnapshot snapshot) {
 		String pathValue = System.getProperty(PLAN_TRACE_PATH_PROPERTY);
 		if (pathValue == null || pathValue.isBlank()) {
@@ -410,6 +482,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 
 	private final JoinStatsProvider statsProvider;
 	private final JoinOrderPlanner joinPlanner;
+	private final JoinOrderPlanner defaultGreedyPlanner;
 	private final LearnedJoinConfig config;
 
 	public LearnedQueryJoinOptimizer(EvaluationStatistics statistics, TripleSource tripleSource,
@@ -436,6 +509,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		BindJoinCostModel costModel = new LearnedBindJoinCostModel(statistics, statsProvider);
 		JoinOrderPlanner greedy = new GreedyBindJoinOrderPlanner(costModel);
 		JoinOrderPlanner dp = new DpLeftDeepBindJoinOrderPlanner(costModel);
+		this.defaultGreedyPlanner = greedy;
 		this.joinPlanner = new HybridBindJoinOrderPlanner(config, greedy, dp);
 	}
 
@@ -459,6 +533,16 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		private final Deque<Set<String>> scopedBoundVars = new ArrayDeque<>();
 		private final Deque<Set<String>> unsupportedLiteralTargets = new ArrayDeque<>();
 		private Deque<TupleExpr> plannedOrder;
+
+		private final class GreedyFallbackDecision {
+			private final List<JoinPlanCandidate> candidates;
+			private final int selectedCandidateIndex;
+
+			private GreedyFallbackDecision(List<JoinPlanCandidate> candidates, int selectedCandidateIndex) {
+				this.candidates = List.copyOf(candidates);
+				this.selectedCandidateIndex = selectedCandidateIndex;
+			}
+		}
 
 		private LearnedJoinVisitor(Dataset dataset, BindingSet bindings) {
 			this.dataset = dataset;
@@ -514,6 +598,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				boolean repairApplied = false;
 				List<String> repairBeforeLabels = List.of();
 				List<String> repairAfterLabels = List.of();
+				String planSelectionReason = "planned";
 				String queryTemplateHash = queryTemplateHash(joinArgs, filters);
 				boolean allowTypeAnchored = UNSUPPORTED_LITERAL_JOIN_FALLBACK_ALLOW_TYPE_ANCHORED
 						&& isTypeAnchoredUnsupportedTriplet(joinArgs, relevantUnsupportedTargets);
@@ -544,10 +629,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 					if (fallbackReason == null) {
 						fallbackReason = "no-planner";
 					}
-				} else if (!hasLearnedStats(joinArgs, initiallyBoundVars)) {
-					plannedOrder = null;
-					fallbackReason = "missing-learned-stats";
 				} else {
+					hasLearnedStats(joinArgs, initiallyBoundVars);
 					planCandidates = planner.orderCandidates(joinArgs, initiallyBoundVars, PLAN_TRACE_TOPK);
 					if (planCandidates.isEmpty()) {
 						plannedOrder = null;
@@ -565,6 +648,30 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 						selectedCandidateIndex = 0;
 					}
 					JoinPlanCandidate selectedCandidate = planCandidates.get(selectedCandidateIndex);
+					selectedPlanSignature = selectedCandidate.getPlanSignature();
+					if (LearnedQueryJoinOptimizer.shouldUseHighUncertaintyLegacyFallback(plannerUsed, joinArgs.size(),
+							selectedCandidate.getTotalUncertainty(), selectedCandidate.getEstimatedCardinality())) {
+						plannedOrder = null;
+						fallbackReason = "high-uncertainty-legacy-fallback";
+						plannerUsed = "none";
+						publishPlanSelection(queryTemplateHash, selectedCandidateIndex, selectedPlanSignature,
+								planCandidates, fallbackReason, plannerUsed, rawOrderLabels, finalOrderLabels,
+								rebalanceDiffs, repairApplied, repairBeforeLabels, repairAfterLabels,
+								initiallyBoundVars,
+								relevantUnsupportedTargets);
+						super.meet(node);
+						return;
+					}
+					GreedyFallbackDecision greedyFallback = maybeFallbackToGreedyOnHighUncertainty(joinArgs, filters,
+							relevantUnsupportedTargets, initiallyBoundVars, plannerUsed, planCandidates,
+							selectedCandidate);
+					if (greedyFallback != null) {
+						planCandidates = greedyFallback.candidates;
+						selectedCandidateIndex = greedyFallback.selectedCandidateIndex;
+						selectedCandidate = planCandidates.get(selectedCandidateIndex);
+						plannerUsed = "greedy";
+						planSelectionReason = "planned-high-uncertainty-greedy-fallback";
+					}
 					selectedPlanSignature = selectedCandidate.getPlanSignature();
 					List<TupleExpr> planned = new ArrayList<>(selectedCandidate.getOrder());
 					rawOrderLabels = labels(planned);
@@ -615,7 +722,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 							plannedOrder = new ArrayDeque<>(combined);
 						}
 						publishPlanSelection(queryTemplateHash, selectedCandidateIndex, selectedPlanSignature,
-								planCandidates, "planned", plannerUsed, rawOrderLabels, finalOrderLabels,
+								planCandidates, planSelectionReason, plannerUsed, rawOrderLabels, finalOrderLabels,
 								rebalanceDiffs, repairApplied, repairBeforeLabels, repairAfterLabels,
 								initiallyBoundVars,
 								relevantUnsupportedTargets);
@@ -624,6 +731,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 									+ " bound=" + initiallyBoundVars
 									+ " unsupportedTargets=" + relevantUnsupportedTargets
 									+ " joinArgLabels=" + labels(joinArgs)
+									+ " reason=" + planSelectionReason
 									+ " selectedCandidate=" + selectedCandidateIndex
 									+ " candidateSignature=" + selectedPlanSignature
 									+ " plannerUsed=" + plannerUsed
@@ -735,6 +843,78 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			JoinOrderPlanner greedy = new GreedyBindJoinOrderPlanner(costModel);
 			JoinOrderPlanner dp = new DpLeftDeepBindJoinOrderPlanner(costModel);
 			return new HybridBindJoinOrderPlanner(config, greedy, dp);
+		}
+
+		private JoinOrderPlanner greedyPlannerFor(List<TupleExpr> joinArgs, List<ValueExpr> filters,
+				Set<String> unsupportedTargets) {
+			List<StatementPattern> contextPatterns = new ArrayList<>();
+			for (TupleExpr expr : joinArgs) {
+				contextPatterns.addAll(StatementPatternCollector.process(expr));
+			}
+			if (filters.isEmpty() && contextPatterns.isEmpty()) {
+				return defaultGreedyPlanner;
+			}
+			BindJoinCostModel costModel = new LearnedBindJoinCostModel(statistics, statsProvider, filters,
+					contextPatterns, unsupportedTargets);
+			return new GreedyBindJoinOrderPlanner(costModel);
+		}
+
+		private GreedyFallbackDecision maybeFallbackToGreedyOnHighUncertainty(List<TupleExpr> joinArgs,
+				List<ValueExpr> filters, Set<String> unsupportedTargets, Set<String> initiallyBoundVars,
+				String plannerUsed, List<JoinPlanCandidate> planCandidates, JoinPlanCandidate selectedCandidate) {
+			if (!shouldUseHighUncertaintyGreedyFallback(plannerUsed, joinArgs.size(), selectedCandidate)) {
+				return null;
+			}
+			JoinOrderPlanner greedyPlanner = greedyPlannerFor(joinArgs, filters, unsupportedTargets);
+			List<JoinPlanCandidate> greedyCandidates = greedyPlanner.orderCandidates(joinArgs, initiallyBoundVars, 1);
+			if (greedyCandidates.isEmpty()) {
+				return null;
+			}
+			JoinPlanCandidate greedyCandidate = greedyCandidates.get(0);
+			if (samePlanSignature(selectedCandidate, greedyCandidate)) {
+				return null;
+			}
+			List<JoinPlanCandidate> mergedCandidates = new ArrayList<>(planCandidates);
+			int selectedIndex = findCandidateIndexBySignature(mergedCandidates, greedyCandidate.getPlanSignature());
+			if (selectedIndex < 0) {
+				mergedCandidates.add(greedyCandidate);
+				selectedIndex = mergedCandidates.size() - 1;
+			}
+			return new GreedyFallbackDecision(mergedCandidates, selectedIndex);
+		}
+
+		private boolean shouldUseHighUncertaintyGreedyFallback(String plannerUsed, int operandCount,
+				JoinPlanCandidate selectedCandidate) {
+			if (selectedCandidate == null) {
+				return false;
+			}
+			return LearnedQueryJoinOptimizer.shouldUseHighUncertaintyGreedyFallback(plannerUsed, operandCount,
+					selectedCandidate.getTotalUncertainty());
+		}
+
+		private int findCandidateIndexBySignature(List<JoinPlanCandidate> candidates, String signature) {
+			if (signature == null || signature.isBlank()) {
+				return -1;
+			}
+			for (int i = 0; i < candidates.size(); i++) {
+				JoinPlanCandidate candidate = candidates.get(i);
+				if (signature.equals(candidate.getPlanSignature())) {
+					return i;
+				}
+			}
+			return -1;
+		}
+
+		private boolean samePlanSignature(JoinPlanCandidate left, JoinPlanCandidate right) {
+			if (left == null || right == null) {
+				return false;
+			}
+			String leftSignature = left.getPlanSignature();
+			String rightSignature = right.getPlanSignature();
+			if (leftSignature == null || rightSignature == null) {
+				return false;
+			}
+			return leftSignature.equals(rightSignature);
 		}
 
 		private int selectCandidateIndex(PlanForceMode forceMode, String templateHash,
@@ -1381,6 +1561,9 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				if (!sharesVars(bridgePattern, targetPattern)) {
 					return planned;
 				}
+				if (!shouldPlaceTargetBeforeType(targetPattern, typePattern, planned, filters, unsupportedTargets)) {
+					return planned;
+				}
 				List<TupleExpr> reordered = new ArrayList<>(3);
 				reordered.add(targetPattern);
 				reordered.add(bridgePattern);
@@ -1394,11 +1577,45 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			if (!sharesVars(bridgePattern, targetPattern)) {
 				return planned;
 			}
+			if (!shouldPlaceTypeBeforeTarget(typePattern, targetPattern, planned, filters, unsupportedTargets)) {
+				return planned;
+			}
 			List<TupleExpr> reordered = new ArrayList<>(3);
 			reordered.add(typePattern);
 			reordered.add(bridgePattern);
 			reordered.add(targetPattern);
 			return reordered;
+		}
+
+		private boolean shouldPlaceTypeBeforeTarget(StatementPattern typePattern, StatementPattern targetPattern,
+				List<TupleExpr> planned, List<ValueExpr> filters, Set<String> unsupportedTargets) {
+			double typeEstimate = estimateRebalanceScan(typePattern, planned, filters, unsupportedTargets);
+			double targetEstimate = estimateRebalanceScan(targetPattern, planned, filters, unsupportedTargets);
+			if (!Double.isFinite(typeEstimate) || !Double.isFinite(targetEstimate)) {
+				return true;
+			}
+			return typeEstimate <= targetEstimate;
+		}
+
+		private boolean shouldPlaceTargetBeforeType(StatementPattern targetPattern, StatementPattern typePattern,
+				List<TupleExpr> planned, List<ValueExpr> filters, Set<String> unsupportedTargets) {
+			double targetEstimate = estimateRebalanceScan(targetPattern, planned, filters, unsupportedTargets);
+			double typeEstimate = estimateRebalanceScan(typePattern, planned, filters, unsupportedTargets);
+			if (!Double.isFinite(typeEstimate) || !Double.isFinite(targetEstimate)) {
+				return true;
+			}
+			return targetEstimate <= typeEstimate;
+		}
+
+		private double estimateRebalanceScan(StatementPattern pattern, List<TupleExpr> planned, List<ValueExpr> filters,
+				Set<String> unsupportedTargets) {
+			List<StatementPattern> contextPatterns = new ArrayList<>();
+			for (TupleExpr expr : planned) {
+				contextPatterns.addAll(StatementPatternCollector.process(expr));
+			}
+			BindJoinCostModel model = new LearnedBindJoinCostModel(statistics, statsProvider, filters, contextPatterns,
+					unsupportedTargets == null ? Set.of() : unsupportedTargets);
+			return model.estimateScanCardinality(pattern, Set.of());
 		}
 
 		private List<TupleExpr> rebalanceTypeBridgeOuterChain(List<TupleExpr> planned, Set<String> unsupportedTargets) {

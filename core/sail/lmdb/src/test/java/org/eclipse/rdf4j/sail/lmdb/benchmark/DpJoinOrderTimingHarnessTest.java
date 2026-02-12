@@ -108,6 +108,9 @@ class DpJoinOrderTimingHarnessTest {
 	private static final String PLAN_RCA_ITERATIONS_PROPERTY = "rdf4j.planRca.iterations";
 	private static final int PLAN_RCA_DEFAULT_ITERATIONS = 25;
 	private static final int PLAN_RCA_TOP_KEYS = 5;
+	private static final String PLAN_QUERY_TIMEOUT_SECONDS_PROPERTY = "rdf4j.planQuery.timeoutSeconds";
+	private static final int PLAN_QUERY_TIMEOUT_SECONDS = Math.max(0,
+			Integer.getInteger(PLAN_QUERY_TIMEOUT_SECONDS_PROPERTY, 0));
 	private static final String PLAN_FORCE_MODE_PROPERTY = "rdf4j.learned.planForce.mode";
 	private static final String PLAN_TRACE_PATH_PROPERTY = "rdf4j.learned.planTrace.path";
 	private static final String STATS_MODE_PROPERTY = "rdf4j.learned.stats.mode";
@@ -1349,6 +1352,9 @@ class DpJoinOrderTimingHarnessTest {
 	}
 
 	private long executeCount(TupleQuery tupleQuery) {
+		if (PLAN_QUERY_TIMEOUT_SECONDS > 0) {
+			tupleQuery.setMaxExecutionTime(PLAN_QUERY_TIMEOUT_SECONDS);
+		}
 		long count = 0L;
 		try (TupleQueryResult result = tupleQuery.evaluate()) {
 			while (result.hasNext()) {

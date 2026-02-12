@@ -59,4 +59,14 @@ class HybridBindJoinOrderPlannerTest {
 		assertEquals("greedy", ((HybridBindJoinOrderPlanner) planner).plannerUsedForOperandCount(3));
 	}
 
+	@Test
+	void reportsGreedyForTwoOperandsEvenWhenDpEnabled() {
+		LearnedJoinConfig config = new LearnedJoinConfig(16, true);
+		JoinOrderPlanner planner = new HybridBindJoinOrderPlanner(config,
+				(ops, bound) -> ops,
+				(ops, bound) -> ops);
+
+		assertEquals("greedy", ((HybridBindJoinOrderPlanner) planner).plannerUsedForOperandCount(2));
+	}
+
 }

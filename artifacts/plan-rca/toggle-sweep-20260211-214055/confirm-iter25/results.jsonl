@@ -1,0 +1,8 @@
+{"theme": "PHARMA", "queryIndex": 3, "toggle": "baseline", "exitCode": 0, "elapsedSec": 5.917, "slowdownPct": 5.555555555555555, "dpAvgLastMs": 19.0, "greedyAvgLastMs": 18.0, "error": ""}
+{"theme": "PHARMA", "queryIndex": 3, "toggle": "scan_cost_off", "exitCode": 0, "elapsedSec": 5.813, "slowdownPct": 5.555555555555555, "dpAvgLastMs": 19.0, "greedyAvgLastMs": 18.0, "error": ""}
+{"theme": "ELECTRICAL_GRID", "queryIndex": 1, "toggle": "baseline", "exitCode": 0, "elapsedSec": 13.451, "slowdownPct": -31.76470588235294, "dpAvgLastMs": 58.0, "greedyAvgLastMs": 85.0, "error": ""}
+{"theme": "ELECTRICAL_GRID", "queryIndex": 1, "toggle": "tie_break_off", "exitCode": 0, "elapsedSec": 13.759, "slowdownPct": -34.065934065934066, "dpAvgLastMs": 60.0, "greedyAvgLastMs": 91.0, "error": ""}
+{"theme": "ENGINEERING", "queryIndex": 3, "toggle": "baseline", "exitCode": 0, "elapsedSec": 19.874, "slowdownPct": 6.61764705882353, "dpAvgLastMs": 145.0, "greedyAvgLastMs": 136.0, "error": ""}
+{"theme": "ENGINEERING", "queryIndex": 3, "toggle": "rebalance_unsupportedTargetTypeTriplet_off", "exitCode": 0, "elapsedSec": 21.192, "slowdownPct": 5.633802816901409, "dpAvgLastMs": 150.0, "greedyAvgLastMs": 142.0, "error": ""}
+{"theme": "MEDICAL_RECORDS", "queryIndex": 6, "toggle": "baseline", "exitCode": 0, "elapsedSec": 13.401, "slowdownPct": 15.0, "dpAvgLastMs": 69.0, "greedyAvgLastMs": 60.0, "error": ""}
+{"theme": "MEDICAL_RECORDS", "queryIndex": 6, "toggle": "scan_cost_off", "exitCode": 0, "elapsedSec": 13.377, "slowdownPct": 20.33898305084746, "dpAvgLastMs": 71.0, "greedyAvgLastMs": 59.0, "error": ""}

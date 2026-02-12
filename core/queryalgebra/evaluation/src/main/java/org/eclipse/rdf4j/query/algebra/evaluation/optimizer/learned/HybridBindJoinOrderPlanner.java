@@ -49,6 +49,9 @@ public class HybridBindJoinOrderPlanner implements JoinOrderPlanner {
 	}
 
 	public String plannerUsedForOperandCount(int operandCount) {
+		if (operandCount <= 2) {
+			return "greedy";
+		}
 		if (config.isEnableDp() && operandCount <= config.getDpThreshold()) {
 			return "dp";
 		}
