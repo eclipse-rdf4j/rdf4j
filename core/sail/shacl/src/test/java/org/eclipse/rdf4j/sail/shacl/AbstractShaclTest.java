@@ -110,14 +110,6 @@ abstract public class AbstractShaclTest {
 	public static final String INITIAL_DATA_FILE = "initialData.trig";
 
 	private static final Set<String> ignoredTestCases = Set.of(
-			"test-cases/path/oneOrMorePath",
-			"test-cases/nodeKind/oneOrMorePathComplex",
-			"test-cases/nodeKind/zeroOrMorePathComplex",
-			"test-cases/nodeKind/oneOrMorePathSimple",
-			"test-cases/minCount/oneOrMorePath",
-			"test-cases/path/zeroOrMorePath",
-			"test-cases/minCount/zeroOrMorePath",
-			"test-cases/path/zeroOrOnePath"
 	);
 
 	public static final List<IsolationLevels> ISOLATION_LEVELS = List.of(
@@ -568,6 +560,13 @@ abstract public class AbstractShaclTest {
 
 		// uses rsx:targetShape
 		if (testCase.testCasePath.startsWith("test-cases/path/sequencePathTargetShape")) {
+			return;
+		}
+
+		// reference implementation does not support these SHACL path operators consistently
+		if (testCase.testCasePath.startsWith("test-cases/path/oneOrMorePath/")
+				|| testCase.testCasePath.startsWith("test-cases/path/zeroOrMorePath/")
+				|| testCase.testCasePath.startsWith("test-cases/path/zeroOrOnePath/")) {
 			return;
 		}
 

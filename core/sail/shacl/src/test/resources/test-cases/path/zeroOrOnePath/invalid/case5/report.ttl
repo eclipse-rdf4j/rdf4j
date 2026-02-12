@@ -14,14 +14,14 @@
       rsx:dataGraph rdf4j:nil;
       rsx:shapesGraph rdf4j:nil;
       sh:focusNode ex:validPerson1;
-      sh:resultPath _:5275250ab11a1ac40460a904175f3788157e401234;
+      sh:resultPath _:path;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:ClassConstraintComponent;
       sh:sourceShape [ a sh:PropertyShape;
           sh:class ex:Person;
-          sh:path _:5275250ab11a1ac40460a904175f3788157e401234
+          sh:path _:path
         ];
-      sh:value ex:validPerson1
+      sh:value ex:peter
     ] .
 
-_:5275250ab11a1ac40460a904175f3788157e401234 sh:zeroOrMorePath ex:knows .
+_:path sh:zeroOrOnePath ex:knows .

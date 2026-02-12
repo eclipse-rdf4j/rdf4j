@@ -57,10 +57,6 @@ public class W3cComplianceTest {
 	private final static Set<String> TESTS_FAILING_DUE_TO_MISSING_FEATURES_FROM_THE_SPEC = Set.of(
 			"/core/node/xone-001.ttl",
 			"/core/node/xone-duplicate.ttl",
-			"/core/path/path-complex-001.ttl",
-			"/core/path/path-oneOrMore-001.ttl",
-			"/core/path/path-zeroOrMore-001.ttl",
-			"/core/path/path-zeroOrOne-001.ttl",
 			"/core/property/qualifiedMinCountDisjoint-001.ttl",
 			"/core/property/qualifiedValueShapesDisjoint-001.ttl",
 			"/core/property/uniqueLang-002.ttl"

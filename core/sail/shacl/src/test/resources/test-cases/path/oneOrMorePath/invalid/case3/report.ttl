@@ -8,14 +8,20 @@
 @prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
 
 [] a sh:ValidationReport;
+  rdf4j:truncated false;
   sh:conforms false;
   sh:result [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
       sh:focusNode ex:validPerson1;
-      sh:resultPath [
-          sh:oneOrMorePath ex:knows
-        ];
+      sh:resultPath _:2554250ab11a1ac40460a904175f3788157e401;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:ClassConstraintComponent;
-      sh:sourceShape [];
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:class ex:Person;
+          sh:path _:2554250ab11a1ac40460a904175f3788157e401
+        ];
       sh:value ex:roseline
     ] .
+
+_:2554250ab11a1ac40460a904175f3788157e401 sh:oneOrMorePath ex:knows .
