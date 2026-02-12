@@ -12,7 +12,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.paths;
 
-import com.google.common.collect.Sets;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -27,9 +30,7 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Stream;
+import com.google.common.collect.Sets;
 
 public class ZeroOrOnePath extends Path {
 
@@ -58,7 +59,7 @@ public class ZeroOrOnePath extends Path {
 
 	@Override
 	public PlanNode getAllAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
-								PlanNodeWrapper planNodeWrapper) {
+			PlanNodeWrapper planNodeWrapper) {
 		var variables = List.of(new StatementMatcher.Variable<>("subject"),
 				new StatementMatcher.Variable<>("value"));
 
@@ -82,7 +83,7 @@ public class ZeroOrOnePath extends Path {
 
 	@Override
 	public PlanNode getAnyAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
-								PlanNodeWrapper planNodeWrapper) {
+			PlanNodeWrapper planNodeWrapper) {
 		return getAllAdded(connectionsGroup, dataGraph, planNodeWrapper);
 	}
 
@@ -102,8 +103,8 @@ public class ZeroOrOnePath extends Path {
 
 	@Override
 	public SparqlFragment getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
-												 RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
-												 StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, Set<String> inheritedVarNames) {
 
 		if (inheritedVarNames.isEmpty()) {
 			inheritedVarNames = Set.of(subject.getName());
