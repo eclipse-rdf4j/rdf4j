@@ -305,6 +305,11 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 
 		try {
 			if (inlineBNodes) {
+				if (pred.equals(RDF.TYPE) && obj.equals(RDF.LIST) && subj instanceof BNode
+						&& isWellFormedCollection(subj)) {
+					// skip explicit rdf:type rdf:List for collections we will inline as Turtle lists
+					return;
+				}
 				if ((pred.equals(RDF.FIRST) || pred.equals(RDF.REST)) && isWellFormedCollection(subj)) {
 					// we only use list shorthand syntax if the collection is considered well-formed
 					handleList(st, canShortenObjectBNode);
@@ -357,6 +362,9 @@ public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 							// second rdf:rest statement on same subject is invalid.
 							return false;
 						}
+					} else if (pred.equals(RDF.TYPE) && RDF.LIST.equals(st.getObject())) {
+						// allow explicit rdf:type rdf:List
+						continue;
 					} else {
 						// non-list-structure statement connected to collection subject blank node
 						return false;
