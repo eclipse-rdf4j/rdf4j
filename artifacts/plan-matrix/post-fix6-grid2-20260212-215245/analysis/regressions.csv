@@ -1,0 +1,3 @@
+queryLabel,mode,seed,variant,runtimeMedianMs,legacyMedianMs,slowdownPct,reason,selectedPlanSignature
+ELECTRICAL_GRID#2,WARM_SHARED,7,DP_TOP1,48.597,12.26,296.3866231647635,high_uncertainty,"[1,0,2]"
+ELECTRICAL_GRID#2,WARM_SHARED,7,DP_TOP2,47.306,12.26,285.85644371941277,high_uncertainty,"[1,0,2]"

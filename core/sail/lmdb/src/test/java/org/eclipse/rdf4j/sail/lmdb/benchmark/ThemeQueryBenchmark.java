@@ -160,7 +160,7 @@ public class ThemeQueryBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			TupleQuery tupleQuery = connection
 					.prepareTupleQuery(query);
-			tupleQuery.setMaxExecutionTime(5*60); // 5 minutes
+			tupleQuery.setMaxExecutionTime(5 * 60); // 5 minutes
 			long count;
 			try (TupleQueryResult evaluate = tupleQuery.evaluate()) {
 				count = evaluate

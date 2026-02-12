@@ -329,7 +329,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		if (!DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_ENABLED) {
 			return false;
 		}
-		if (!"dp".equals(plannerUsed) && !"greedy".equals(plannerUsed)) {
+		if (!"dp".equals(plannerUsed)) {
 			return false;
 		}
 		if (!Double.isFinite(uncertainty)) {
@@ -339,14 +339,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		if (uncertainty < minUncertainty) {
 			return false;
 		}
-		if ("greedy".equals(plannerUsed)) {
-			return true;
-		}
-		if (operandCount >= DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_OPERANDS) {
-			return true;
-		}
-		return Double.isFinite(estimatedCardinality)
-				&& estimatedCardinality >= DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_ESTIMATED_CARDINALITY;
+		return operandCount >= DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_OPERANDS;
 	}
 
 	private static void writePlanTrace(PlanSelectionSnapshot snapshot) {

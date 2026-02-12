@@ -1,0 +1,4 @@
+queryLabel,mode,seed,variant,runtimeMedianMs,legacyMedianMs,slowdownPct,reason,selectedPlanSignature
+ENGINEERING#1,WARM_SHARED,7,DP_TOP3,433.811,298.956,45.108644750398035,high_uncertainty,"[0,1]"
+ENGINEERING#1,WARM_SHARED,7,DP_TOP1,422.275,298.956,41.24988292591551,high_uncertainty,"[0,1]"
+ENGINEERING#1,WARM_SHARED,7,DP_TOP2,396.582,298.956,32.65564163288242,high_uncertainty,"[0,1]"

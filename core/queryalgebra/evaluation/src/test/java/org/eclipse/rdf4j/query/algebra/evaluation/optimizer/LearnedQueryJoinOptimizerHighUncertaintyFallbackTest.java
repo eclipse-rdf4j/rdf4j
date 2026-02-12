@@ -50,18 +50,18 @@ class LearnedQueryJoinOptimizerHighUncertaintyFallbackTest {
 	}
 
 	@Test
-	void enablesLegacyFallbackForSmallFullyUncertainLargeCardinalityDpPlan() {
-		assertTrue(LearnedQueryJoinOptimizer.shouldUseHighUncertaintyLegacyFallback("dp", 3, 3.0d, 20000.0d));
+	void doesNotEnableLegacyFallbackForSmallFullyUncertainLargeCardinalityDpPlan() {
+		assertFalse(LearnedQueryJoinOptimizer.shouldUseHighUncertaintyLegacyFallback("dp", 3, 3.0d, 20000.0d));
 	}
 
 	@Test
-	void enablesLegacyFallbackForSmallFullyUncertainLargeCardinalityGreedyPlan() {
-		assertTrue(LearnedQueryJoinOptimizer.shouldUseHighUncertaintyLegacyFallback("greedy", 2, 2.0d, 20000.0d));
+	void doesNotEnableLegacyFallbackForSmallFullyUncertainLargeCardinalityGreedyPlan() {
+		assertFalse(LearnedQueryJoinOptimizer.shouldUseHighUncertaintyLegacyFallback("greedy", 2, 2.0d, 20000.0d));
 	}
 
 	@Test
-	void enablesLegacyFallbackForSmallFullyUncertainLowCardinalityGreedyPlan() {
-		assertTrue(LearnedQueryJoinOptimizer.shouldUseHighUncertaintyLegacyFallback("greedy", 2, 2.0d, 100.0d));
+	void doesNotEnableLegacyFallbackForSmallFullyUncertainLowCardinalityGreedyPlan() {
+		assertFalse(LearnedQueryJoinOptimizer.shouldUseHighUncertaintyLegacyFallback("greedy", 2, 2.0d, 100.0d));
 	}
 
 	@Test
