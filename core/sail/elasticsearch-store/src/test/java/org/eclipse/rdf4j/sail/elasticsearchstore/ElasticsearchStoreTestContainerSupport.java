@@ -130,7 +130,7 @@ public final class ElasticsearchStoreTestContainerSupport {
 
 	private static GenericContainer<?> createContainer() {
 		String esVersion = System.getProperty("elasticsearch.docker.version",
-				System.getProperty("elasticsearch.version", "9.2.1"));
+				System.getProperty("elasticsearch.version", "9.2.4"));
 
 		DockerImageName imageName = DockerImageName
 				.parse("docker.elastic.co/elasticsearch/elasticsearch:" + esVersion)

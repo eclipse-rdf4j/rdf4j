@@ -90,7 +90,7 @@ public abstract class AbstractElasticsearchTest {
 
 	private static DockerImageName dockerImageName() {
 		String esVersion = System.getProperty("elasticsearch.docker.version",
-				System.getProperty("elasticsearch.version", "9.2.1"));
+				System.getProperty("elasticsearch.version", "9.2.4"));
 
 		return DockerImageName
 				.parse("docker.elastic.co/elasticsearch/elasticsearch:" + esVersion)
