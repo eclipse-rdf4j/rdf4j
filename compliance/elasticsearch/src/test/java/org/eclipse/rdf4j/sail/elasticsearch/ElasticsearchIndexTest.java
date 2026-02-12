@@ -160,6 +160,20 @@ public class ElasticsearchIndexTest extends AbstractElasticsearchTest {
 	}
 
 	@Test
+	@SuppressWarnings("unchecked")
+	public void getMappingsReturnsFieldProperties() throws Exception {
+		Map<String, Object> mappings = index.getMappings();
+		assertFalse(mappings.isEmpty(), "Index mappings should not be empty");
+		assertTrue(mappings.containsKey("properties"), "Index mappings should expose field properties");
+
+		Map<String, Object> properties = (Map<String, Object>) mappings.get("properties");
+		assertNotNull(properties);
+		assertTrue(properties.containsKey(SearchFields.URI_FIELD_NAME));
+		assertTrue(properties.containsKey(SearchFields.TEXT_FIELD_NAME));
+		assertTrue(properties.containsKey(SearchFields.CONTEXT_FIELD_NAME));
+	}
+
+	@Test
 	public void testAddStatement() throws IOException {
 		String predicate1Field = ElasticsearchIndex.toPropertyFieldName(SearchFields.getPropertyField(predicate1));
 		String predicate2Field = ElasticsearchIndex.toPropertyFieldName(SearchFields.getPropertyField(predicate2));
