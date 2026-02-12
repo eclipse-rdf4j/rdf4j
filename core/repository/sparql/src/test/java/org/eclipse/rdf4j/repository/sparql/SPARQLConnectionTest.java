@@ -63,8 +63,8 @@ public class SPARQLConnectionTest {
 		subject.commit();
 
 		// verify both method signatures for sendUpdate never get called.
-		verify(client, never()).sendUpdate(any(), any(), any(), any(), anyBoolean(), anyInt(), any());
-		verify(client, never()).sendUpdate(any(), any(), any(), any(), anyBoolean(), any());
+		verify(client, never()).sendUpdate(any(), any(), any(), any(), anyBoolean(), anyInt());
+		verify(client, never()).sendUpdate(any(), any(), any(), any(), anyBoolean());
 	}
 
 	@Test
@@ -76,7 +76,7 @@ public class SPARQLConnectionTest {
 		subject.add(FOAF.AGENT, RDF.TYPE, RDFS.CLASS);
 		subject.commit();
 
-		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt(), any());
+		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt());
 
 		String sparqlUpdate = sparqlUpdateCaptor.getValue();
 		String expectedTriple1 = "<" + FOAF.PERSON + "> <" + RDF.TYPE + "> <" + RDFS.CLASS + ">";
@@ -96,7 +96,7 @@ public class SPARQLConnectionTest {
 		subject.remove(FOAF.AGENT, RDF.TYPE, RDFS.CLASS);
 		subject.commit();
 
-		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt(), any());
+		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt());
 
 		String sparqlUpdate = sparqlUpdateCaptor.getValue();
 		String expectedAddPattern = "INSERT DATA[^{]*\\{[^G]*GRAPH <" + g1 + ">[^{]*\\{[^<]*<" + FOAF.PERSON + "> ";
@@ -147,7 +147,7 @@ public class SPARQLConnectionTest {
 		subject.remove(FOAF.AGENT, RDF.TYPE, RDFS.CLASS);
 		subject.commit();
 
-		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt(), any());
+		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt());
 
 		String sparqlUpdate = sparqlUpdateCaptor.getValue();
 		String expectedAddPattern1 = "INSERT DATA[^{]*\\{[^G]*GRAPH <" + g1 + ">[^{]*\\{[^<]*<" + FOAF.PERSON + "> ";
@@ -170,7 +170,7 @@ public class SPARQLConnectionTest {
 		subject.add(FOAF.AGE, RDF.TYPE, RDF.PROPERTY);
 		subject.commit();
 
-		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt(), any());
+		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt());
 
 		String sparqlUpdate = sparqlUpdateCaptor.getValue();
 
@@ -199,7 +199,7 @@ public class SPARQLConnectionTest {
 		subject.clear();
 		subject.commit();
 
-		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt(), any());
+		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt());
 
 		String sparqlUpdate = sparqlUpdateCaptor.getValue();
 		assertThat(sparqlUpdate).containsOnlyOnce("CLEAR SILENT");
@@ -215,7 +215,7 @@ public class SPARQLConnectionTest {
 		subject.clear(iri("http://example.org/"));
 		subject.commit();
 
-		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt(), any());
+		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt());
 
 		String sparqlUpdate = sparqlUpdateCaptor.getValue();
 		assertThat(sparqlUpdate).containsOnlyOnce("CLEAR SILENT GRAPH <http://example.org/>");
