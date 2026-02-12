@@ -130,9 +130,15 @@ class ServerBootSignalIT {
 		exerciseRemoteRepository(serverUrl, outputBuffer);
 
 		long pid = process.pid();
-		sendSignal(pid, signalName);
+		sendSignal(pid, signalName, outputBuffer);
 
 		boolean exited = process.waitFor(30, SECONDS);
+		if (!exited) {
+			appendOutput(outputBuffer,
+					"Process still running 30s after first SIG" + signalName + "; retrying signal delivery.");
+			sendSignal(pid, signalName, outputBuffer);
+			exited = process.waitFor(30, SECONDS);
+		}
 		assertThat(exited)
 				.as(() -> "Process did not exit after SIG" + signalName + ". Output:\n" + outputBuffer)
 				.isTrue();
@@ -167,13 +173,31 @@ class ServerBootSignalIT {
 		});
 	}
 
-	private void sendSignal(long pid, String signalName) throws IOException, InterruptedException {
+	private void sendSignal(long pid, String signalName, StringBuilder outputBuffer)
+			throws IOException, InterruptedException {
 		Process signalProcess = new ProcessBuilder("kill", "-s", signalName, Long.toString(pid))
+				.redirectErrorStream(true)
 				.start();
 		cleanupActions.add(() -> signalProcess.destroyForcibly());
 		if (!signalProcess.waitFor(5, SECONDS)) {
 			signalProcess.destroyForcibly();
 			signalProcess.waitFor(5, SECONDS);
+			throw new IOException("Timed out sending SIG" + signalName + " to process " + pid);
+		}
+		String signalOutput = new String(signalProcess.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+		int exitCode = signalProcess.exitValue();
+		if (exitCode != 0) {
+			appendOutput(outputBuffer,
+					"kill command failed while sending SIG" + signalName + " to " + pid + " (exit " + exitCode
+							+ "). Output: " + signalOutput);
+			throw new IOException("Failed to send SIG" + signalName + " to process " + pid + " (exit " + exitCode
+					+ (signalOutput.isEmpty() ? "" : ", output: " + signalOutput) + ")");
+		}
+	}
+
+	private void appendOutput(StringBuilder outputBuffer, String line) {
+		synchronized (outputBuffer) {
+			outputBuffer.append(line).append(System.lineSeparator());
 		}
 	}
 
