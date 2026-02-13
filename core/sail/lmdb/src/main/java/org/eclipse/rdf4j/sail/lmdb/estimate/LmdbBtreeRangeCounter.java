@@ -216,14 +216,18 @@ final class LmdbBtreeRangeCounter {
 
 	private boolean matches(LmdbNode node, ByteBuffer pageBuffer, GroupMatcher matcher) {
 		ByteBuffer keySlice = pageBuffer.duplicate();
+		keySlice.order(pageBuffer.order());
 		keySlice.position(node.keyOffset);
 		keySlice.limit(node.keyOffset + node.keySize);
-		return matcher.matches(keySlice.slice());
+		ByteBuffer keyView = keySlice.slice();
+		keyView.order(pageBuffer.order());
+		return matcher.matches(keyView);
 	}
 
 	private long countNodeEntries(LmdbNode node, LmdbPage page, RangeCountResult stats) throws IOException {
 		if ((node.nodeFlags & LmdbFormat.F_SUBDATA) != 0 && node.valueSize >= LmdbFormat.META_DB_SIZE) {
 			ByteBuffer dup = page.buffer.duplicate();
+			dup.order(page.buffer.order());
 			dup.position(node.valueOffset);
 			LmdbDb subDb = LmdbDb.parse(dup, node.valueOffset);
 			return subDb.entries;

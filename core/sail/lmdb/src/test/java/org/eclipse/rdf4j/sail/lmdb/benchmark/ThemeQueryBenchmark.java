@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCaptureContext;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -123,6 +124,7 @@ public class ThemeQueryBenchmark {
 			throw new IOException("Unable to create fixed LMDB benchmark directory: " + STORE_DIRECTORY);
 		}
 		storeConfig = ConfigUtil.createConfig();
+		storeConfig.setPageCardinalityEstimator(false);
 		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
 		repository = new SailRepository(store);
 		ensureDataLoadedAndValidated();
@@ -164,6 +166,7 @@ public class ThemeQueryBenchmark {
 		}
 
 		storeConfig = ConfigUtil.createConfig();
+		storeConfig.setPageCardinalityEstimator(false);
 		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
 		repository = new SailRepository(store);
 		loadData();
@@ -300,8 +303,10 @@ public class ThemeQueryBenchmark {
 	@Benchmark
 	public long executeQuery() {
 		try (var connection = repository.getConnection()) {
+			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+			tupleQuery.setMaxExecutionTime(180);
 			long count;
-			try (var evaluate = connection.prepareTupleQuery(query).evaluate()) {
+			try (var evaluate = tupleQuery.evaluate()) {
 				count = evaluate
 						.stream()
 						.count();
