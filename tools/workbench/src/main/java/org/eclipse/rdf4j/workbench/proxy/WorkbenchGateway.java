@@ -17,17 +17,17 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import javax.servlet.ServletConfig;
-import javax.servlet.ServletException;
-import javax.servlet.annotation.MultipartConfig;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.workbench.base.AbstractServlet;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+
+import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.MultipartConfig;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * All requests are serviced by this Servlet, though it usually delegates to other Servlets.

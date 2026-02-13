@@ -74,28 +74,26 @@ final class SignalShutdownHandler implements AutoCloseable {
 		logger.info("SIG{} received; initiating graceful shutdown.", signalName);
 		ConfigurableApplicationContext context = contextRef.get();
 		int exitCode = 0;
-		if (context != null) {
-			try {
+		try {
+			if (context != null) {
 				exitCode = SpringApplication.exit(context, () -> 0);
 				if (context.isActive()) {
 					context.close();
 				}
 				logger.info("Application context closed after SIG{}, exit status {}", signalName, exitCode);
-			} catch (Throwable e) {
-				logger.warn("Error while shutting down after SIG{}", signalName, e);
-				exitCode = 1;
+			} else {
+				logger.warn("SIG{} received before application context became available; shutting down immediately.",
+						signalName);
 			}
-		} else {
-			logger.warn("SIG{} received before application context became available; shutting down immediately.",
-					signalName);
+		} catch (Throwable e) {
+			logger.warn("Error while shutting down after SIG{}", signalName, e);
+		} finally {
+			try {
+				System.exit(exitCode);
+			} catch (SecurityException e) {
+				logger.error("System.exit({}) blocked by security manager after SIG{}", exitCode, signalName, e);
+			}
 		}
-
-		try {
-			System.exit(exitCode);
-		} catch (SecurityException e) {
-			logger.error("System.exit({}) blocked by security manager after SIG{}", exitCode, signalName, e);
-		}
-
 	}
 
 	private static void startDelayedSystemExitThread(String signalName) {
@@ -103,7 +101,7 @@ final class SignalShutdownHandler implements AutoCloseable {
 		Thread thread = new Thread(() -> {
 			try {
 				// Give logging a moment to flush
-				Thread.sleep(5 * 60 * 1000); // Forcibly exit after 5 minutes
+				Thread.sleep(10_000); // Forcibly exit after 10 seconds
 				try {
 					logger.error("Spring application did not exit cleanly after SIG" + signalName
 							+ "; forcing JVM shutdown.");

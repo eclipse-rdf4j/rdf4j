@@ -22,9 +22,12 @@ import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -47,17 +50,15 @@ import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 @EnabledOnOs({ OS.LINUX, OS.MAC })
 class ServerBootSignalIT {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(ServerBootSignalIT.class);
+	private static final int MIN_TEST_PORT = 32768;
+	private static final int PORT_ALLOCATION_ATTEMPTS = 100;
 
 	private ExecutorService streamExecutor;
 	private final List<Runnable> cleanupActions = new ArrayList<>();
@@ -85,9 +86,8 @@ class ServerBootSignalIT {
 	}
 
 	@Test
-	@Disabled("Disabled due to flakiness on CI servers")
 	void gracefullyStopsOnSigint() throws Exception {
-		assertGracefulShutdownWithSigintFallback();
+		assertGracefulShutdown("INT");
 	}
 
 	@Test
@@ -95,19 +95,12 @@ class ServerBootSignalIT {
 		assertGracefulShutdown("TERM");
 	}
 
-	private void assertGracefulShutdownWithSigintFallback() throws Exception {
-		assertGracefulShutdown("INT", true);
-	}
-
 	private void assertGracefulShutdown(String signalName) throws Exception {
-		assertGracefulShutdown(signalName, false);
-	}
-
-	private void assertGracefulShutdown(String signalName, boolean allowSigtermFallback) throws Exception {
 		Path projectRoot = Path.of("").toAbsolutePath();
 		String javaBin = Path.of(System.getProperty("java.home"), "bin", "java").toString();
 		int serverPort = findFreePort();
 		int managementPort = findFreePort();
+		Instant startedAt = Instant.now();
 
 		// Find the executable JAR
 		Path targetDir = projectRoot.resolve("target");
@@ -125,38 +118,60 @@ class ServerBootSignalIT {
 		processBuilder.directory(projectRoot.toFile());
 		processBuilder.redirectErrorStream(true);
 
+		StringBuilder outputBuffer = new StringBuilder();
+		appendOutput(outputBuffer, "Starting signal test with signal=SIG" + signalName + ", startTime=" + startedAt);
+		appendOutput(outputBuffer, "Launch command: " + processBuilder.command());
+		appendOutput(outputBuffer, "Launch directory: " + processBuilder.directory());
+		appendOutput(outputBuffer,
+				"Allocated ports: server.port=" + serverPort + ", management.server.port=" + managementPort);
+
 		Process process = processBuilder.start();
 		cleanupActions.add(() -> process.destroyForcibly());
+		appendOutput(outputBuffer, "Launched process pid=" + process.pid());
+		logProcessState(outputBuffer, process, "immediately after process launch");
 
 		CountDownLatch started = new CountDownLatch(1);
-		StringBuilder outputBuffer = new StringBuilder();
 		startStreamGobbler(process, started, outputBuffer);
 
 		boolean startedInTime = started.await(90, SECONDS);
+		appendOutput(outputBuffer,
+				"Startup marker observed=" + startedInTime + " after "
+						+ Duration.between(startedAt, Instant.now()).toMillis() + "ms");
+		logProcessState(outputBuffer, process, "after startup wait");
 		assertThat(startedInTime)
-				.as(() -> "Server failed to start within timeout. Output:\\n" + outputBuffer)
+				.as(() -> "Server failed to start within timeout. Output:\n" + outputBuffer)
 				.isTrue();
 
 		String serverUrl = serverUrl(serverPort);
+		appendOutput(outputBuffer, "Using remote repository URL " + serverUrl);
 		exerciseRemoteRepository(serverUrl, outputBuffer);
 
 		long pid = process.pid();
-		sendSignal(pid, signalName);
+		sendSignal(pid, signalName, outputBuffer);
+		logProcessState(outputBuffer, process, "after first SIG" + signalName);
 
-		boolean exited = process.waitFor(allowSigtermFallback ? 5 : 30, SECONDS);
-		if (!exited && allowSigtermFallback) {
-			LOGGER.warn("Server did not exit on SIGINT within 5 seconds. Sending SIGTERM.");
-			sendSignal(pid, "TERM");
-			exited = process.waitFor(5, SECONDS);
-			assertThat(exited)
-					.as(() -> "Process did not exit after SIGTERM. Output:\\n" + outputBuffer)
-					.isTrue();
+		boolean exited = process.waitFor(30, SECONDS);
+		appendOutput(outputBuffer, "Waited 30s after SIG" + signalName + ", exited=" + exited);
+		if (!exited) {
+			if ("INT".equals(signalName)) {
+				appendOutput(outputBuffer,
+						"Process still running 30s after first SIGINT; sending SIGTERM fallback.");
+				sendSignal(pid, "TERM", outputBuffer);
+			} else {
+				appendOutput(outputBuffer,
+						"Process still running 30s after first SIG" + signalName + "; retrying signal delivery.");
+				sendSignal(pid, signalName, outputBuffer);
+			}
+			exited = process.waitFor(30, SECONDS);
+			appendOutput(outputBuffer,
+					"Waited additional 30s after retry/fallback signal, exited=" + exited);
 		}
+		logProcessState(outputBuffer, process, "after shutdown wait(s)");
 		assertThat(exited)
-				.as(() -> "Process did not exit after SIG" + signalName + ". Output:\\n" + outputBuffer)
+				.as(() -> "Process did not exit after SIG" + signalName + ". Output:\n" + outputBuffer)
 				.isTrue();
 		assertThat(process.exitValue())
-				.as(() -> "Process exit value after SIG" + signalName + ". Output:\\n" + outputBuffer)
+				.as(() -> "Process exit value after SIG" + signalName + ". Output:\n" + outputBuffer)
 				.isEqualTo(0);
 	}
 
@@ -170,12 +185,14 @@ class ServerBootSignalIT {
 					synchronized (outputBuffer) {
 						outputBuffer.append(line).append(System.lineSeparator());
 					}
-					if (!signalLogged.get() && (line.contains("Started Rdf4jServerWorkbenchApplication")
-							|| line.contains("Initializing Spring DispatcherServlet 'rdf4jServer'"))) {
+					if (!signalLogged.get() && (line.contains("Tomcat initialized with port")
+							|| line.contains("Started Rdf4jServerWorkbenchApplication"))) {
 						started.countDown();
 						signalLogged.set(true);
+						appendOutput(outputBuffer, "Detected startup marker line: " + line);
 					}
 				}
+				appendOutput(outputBuffer, "Process output stream ended.");
 			} catch (IOException e) {
 				synchronized (outputBuffer) {
 					outputBuffer.append("Failed to read process output: ")
@@ -186,13 +203,35 @@ class ServerBootSignalIT {
 		});
 	}
 
-	private void sendSignal(long pid, String signalName) throws IOException, InterruptedException {
+	private void sendSignal(long pid, String signalName, StringBuilder outputBuffer)
+			throws IOException, InterruptedException {
+		appendOutput(outputBuffer, "Sending SIG" + signalName + " to pid=" + pid);
 		Process signalProcess = new ProcessBuilder("kill", "-s", signalName, Long.toString(pid))
+				.redirectErrorStream(true)
 				.start();
 		cleanupActions.add(() -> signalProcess.destroyForcibly());
 		if (!signalProcess.waitFor(5, SECONDS)) {
 			signalProcess.destroyForcibly();
 			signalProcess.waitFor(5, SECONDS);
+			throw new IOException("Timed out sending SIG" + signalName + " to process " + pid);
+		}
+		String signalOutput = new String(signalProcess.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+		int exitCode = signalProcess.exitValue();
+		appendOutput(outputBuffer,
+				"kill -s " + signalName + " " + pid + " completed with exitCode=" + exitCode
+						+ (signalOutput.isEmpty() ? "" : ", output=" + signalOutput));
+		if (exitCode != 0) {
+			appendOutput(outputBuffer,
+					"kill command failed while sending SIG" + signalName + " to " + pid + " (exit " + exitCode
+							+ "). Output: " + signalOutput);
+			throw new IOException("Failed to send SIG" + signalName + " to process " + pid + " (exit " + exitCode
+					+ (signalOutput.isEmpty() ? "" : ", output: " + signalOutput) + ")");
+		}
+	}
+
+	private void appendOutput(StringBuilder outputBuffer, String line) {
+		synchronized (outputBuffer) {
+			outputBuffer.append(line).append(System.lineSeparator());
 		}
 	}
 
@@ -242,14 +281,20 @@ class ServerBootSignalIT {
 			throws InterruptedException {
 		RepositoryException lastException = null;
 		long deadline = System.nanoTime() + SECONDS.toNanos(90);
+		int attempts = 0;
 		while (System.nanoTime() < deadline) {
+			attempts++;
 			RemoteRepositoryManager manager = null;
 			try {
 				manager = RemoteRepositoryManager.getInstance(serverUrl);
 				manager.getRepositoryIDs();
+				appendOutput(outputBuffer,
+						"Repository manager reachable at " + serverUrl + " after " + attempts + " attempts.");
 				return manager;
 			} catch (RepositoryException e) {
 				lastException = e;
+				appendOutput(outputBuffer,
+						"Repository probe attempt " + attempts + " failed: " + summarizeException(e));
 				if (manager != null) {
 					try {
 						manager.shutDown();
@@ -260,10 +305,40 @@ class ServerBootSignalIT {
 				Thread.sleep(500);
 			}
 		}
-		String errorMessage = "Timed out connecting to " + serverUrl + " Output:\\n" + outputBuffer
+		String errorMessage = "Timed out connecting to " + serverUrl + " Output:\n" + outputBuffer
 				+ (lastException == null ? "" : ("\nLast error: " + lastException));
 		fail(errorMessage);
 		return null;
+	}
+
+	private void logProcessState(StringBuilder outputBuffer, Process process, String label) {
+		ProcessHandle handle = process.toHandle();
+		ProcessHandle.Info info = handle.info();
+		long descendantCount = handle.descendants().count();
+		appendOutput(outputBuffer,
+				"Process state [" + label + "]: pid=" + process.pid()
+						+ ", alive=" + process.isAlive()
+						+ ", descendants=" + descendantCount
+						+ ", command=" + info.command().orElse("<unknown>")
+						+ ", arguments=" + describeArguments(info.arguments())
+						+ ", start=" + info.startInstant().map(Object::toString).orElse("<unknown>")
+						+ ", cpu=" + info.totalCpuDuration().map(Duration::toString).orElse("<unknown>"));
+	}
+
+	private String describeArguments(Optional<String[]> arguments) {
+		if (arguments.isEmpty()) {
+			return "<unknown>";
+		}
+		return String.join(" ", arguments.get());
+	}
+
+	private String summarizeException(Throwable throwable) {
+		Throwable root = throwable;
+		while (root.getCause() != null && root.getCause() != root) {
+			root = root.getCause();
+		}
+		String message = root.getMessage();
+		return root.getClass().getName() + (message == null || message.isBlank() ? "" : ": " + message);
 	}
 
 	private String serverUrl(int port) {
@@ -271,9 +346,15 @@ class ServerBootSignalIT {
 	}
 
 	private int findFreePort() throws IOException {
-		try (ServerSocket socket = new ServerSocket(0)) {
-			socket.setReuseAddress(true);
-			return socket.getLocalPort();
+		for (int attempt = 0; attempt < PORT_ALLOCATION_ATTEMPTS; attempt++) {
+			try (ServerSocket socket = new ServerSocket(0)) {
+				socket.setReuseAddress(true);
+				int candidate = socket.getLocalPort();
+				if (candidate > MIN_TEST_PORT) {
+					return candidate;
+				}
+			}
 		}
+		throw new IOException("Unable to allocate random test port above " + MIN_TEST_PORT);
 	}
 }

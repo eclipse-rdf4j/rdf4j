@@ -49,32 +49,43 @@
 		<module>bom</module>
 	</modules>
 	<properties>
-		<java.version>21</java.version>
+		<java.version>25</java.version>
 		<maven.compiler.release>${java.version}</maven.compiler.release>
 		<maven.compiler.source>${java.version}</maven.compiler.source>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<enforce-javaee-provided.fail>true</enforce-javaee-provided.fail>
-		<slf4j.version>1.7.36</slf4j.version>
-		<logback.version>1.2.13</logback.version>
+		<slf4j.version>2.0.17</slf4j.version>
+		<logback.version>1.5.21</logback.version>
 		<log4j.version>2.25.3</log4j.version>
 		<httpclient.version>4.5.14</httpclient.version>
-		<jackson.version>2.13.5</jackson.version>
+		<jackson.version>2.19.4</jackson.version>
 		<httpcore.version>4.4.16</httpcore.version>
 		<jsonldjava.version>0.13.4</jsonldjava.version>
 		<last.japicmp.compare.version>6.0.0</last.japicmp.compare.version>
 		<jaxb.version>2.3.8</jaxb.version>
 		<lwjgl.version>3.3.6</lwjgl.version>
-		<lucene.version>8.9.0</lucene.version>
-		<elasticsearch.version>7.15.2</elasticsearch.version>
-		<spring.version>5.3.39</spring.version>
+		<lucene.version>10.3.2</lucene.version>
+		<elasticsearch.version>9.2.4</elasticsearch.version>
+		<spring.version>7.0.3</spring.version>
 		<guava.version>32.1.3-jre</guava.version>
 		<jmhVersion>1.37</jmhVersion>
-		<servlet.version>4.0.0</servlet.version>
-		<junit.version>5.9.3</junit.version>
-		<jetty.version>9.4.54.v20240208</jetty.version>
-		<netty.version>4.1.111.Final</netty.version>
-		<testcontainers.version>1.20.6</testcontainers.version>
+		<junit.version>6.0.2</junit.version>
+		<mockito.version>5.21.0</mockito.version>
+		<mockserver.version>5.15.0</mockserver.version>
+		<assertj.version>3.27.7</assertj.version>
+		<hamcrest.version>3.0</hamcrest.version>
+		<topbraid.shacl.version>1.4.4</topbraid.shacl.version>
+		<logstash.logback.encoder.version>9.0</logstash.logback.encoder.version>
+		<xmlsec.version>4.0.4</xmlsec.version>
+		<servlet.version>6.1.0</servlet.version>
+		<jakarta.jsp.version>4.0.0</jakarta.jsp.version>
+		<jakarta.jstl.version>3.0.1</jakarta.jstl.version>
+		<wiremock.version>4.0.0-beta.29</wiremock.version>
+		<jetty.version>12.1.4</jetty.version>
+		<netty.version>4.2.8.Final</netty.version>
+		<testcontainers.version>1.21.4</testcontainers.version>
+		<mockito.javaagent>-javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar</mockito.javaagent>
 		<argLine />
 	</properties>
 	<profiles>
@@ -210,7 +221,7 @@
 										</group>
 									</groups>
 									<links>
-										<link>https://docs.oracle.com/en/java/javase/11/docs/api/</link>
+										<link>https://docs.oracle.com/en/java/javase/25/docs/api/</link>
 									</links>
 									<excludePackageNames>*.ast:*.AST:*.benchmark</excludePackageNames>
 								</configuration>
@@ -434,10 +445,17 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
-			<!-- fix dependencies for elastic/solr client libraries -->
+			<!-- fix dependencies for elasticsearch client libraries -->
 			<dependency>
 				<groupId>org.eclipse.jetty</groupId>
 				<artifactId>jetty-bom</artifactId>
+				<version>${jetty.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.eclipse.jetty.ee11</groupId>
+				<artifactId>jetty-ee11-bom</artifactId>
 				<version>${jetty.version}</version>
 				<type>pom</type>
 				<scope>import</scope>
@@ -448,6 +466,11 @@
 				<version>${netty.version}</version>
 				<type>pom</type>
 				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.wiremock</groupId>
+				<artifactId>wiremock</artifactId>
+				<version>${wiremock.version}</version>
 			</dependency>
 			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level, but in practice is still being released for
 				2.8.x patch versions. See https://github.com/FasterXML/jackson-bom/issues/4 -->
@@ -465,6 +488,14 @@
 						<groupId>commons-logging</groupId>
 						<artifactId>commons-logging</artifactId>
 					</exclusion>
+					<exclusion>
+						<groupId>javax.servlet</groupId>
+						<artifactId>javax.servlet-api</artifactId>
+					</exclusion>
+					<exclusion>
+						<groupId>com.sun.activation</groupId>
+						<artifactId>jakarta.activation</artifactId>
+					</exclusion>
 				</exclusions>
 			</dependency>
 			<!-- Apache Commons -->
@@ -478,6 +509,28 @@
 				<groupId>commons-io</groupId>
 				<artifactId>commons-io</artifactId>
 				<version>2.18.0</version>
+			</dependency>
+			<dependency>
+				<groupId>co.elastic.clients</groupId>
+				<artifactId>elasticsearch-java</artifactId>
+				<version>${elasticsearch.version}</version>
+				<exclusions>
+					<exclusion>
+						<groupId>commons-logging</groupId>
+						<artifactId>commons-logging</artifactId>
+					</exclusion>
+				</exclusions>
+			</dependency>
+			<dependency>
+				<groupId>org.elasticsearch.client</groupId>
+				<artifactId>elasticsearch-rest-client</artifactId>
+				<version>${elasticsearch.version}</version>
+				<exclusions>
+					<exclusion>
+						<groupId>commons-logging</groupId>
+						<artifactId>commons-logging</artifactId>
+					</exclusion>
+				</exclusions>
 			</dependency>
 			<dependency>
 				<groupId>commons-codec</groupId>
@@ -626,22 +679,68 @@
 			<dependency>
 				<groupId>org.mockito</groupId>
 				<artifactId>mockito-core</artifactId>
-				<version>4.11.0</version>
+				<version>${mockito.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.mockito</groupId>
 				<artifactId>mockito-junit-jupiter</artifactId>
-				<version>4.11.0</version>
+				<version>${mockito.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.mock-server</groupId>
-				<artifactId>mockserver-junit-jupiter-no-dependencies</artifactId>
-				<version>5.15.0</version>
+				<artifactId>mockserver-junit-jupiter</artifactId>
+				<version>${mockserver.version}</version>
+				<exclusions>
+					<exclusion>
+						<groupId>commons-logging</groupId>
+						<artifactId>commons-logging</artifactId>
+					</exclusion>
+				</exclusions>
 			</dependency>
 			<dependency>
 				<groupId>org.assertj</groupId>
 				<artifactId>assertj-core</artifactId>
-				<version>3.24.2</version>
+				<version>${assertj.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.hamcrest</groupId>
+				<artifactId>hamcrest-core</artifactId>
+				<version>${hamcrest.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.hamcrest</groupId>
+				<artifactId>hamcrest-library</artifactId>
+				<version>${hamcrest.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.hamcrest</groupId>
+				<artifactId>hamcrest</artifactId>
+				<version>${hamcrest.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.topbraid</groupId>
+				<artifactId>shacl</artifactId>
+				<version>${topbraid.shacl.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.testcontainers</groupId>
+				<artifactId>testcontainers</artifactId>
+				<version>${testcontainers.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.testcontainers</groupId>
+				<artifactId>junit-jupiter</artifactId>
+				<version>${testcontainers.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>net.logstash.logback</groupId>
+				<artifactId>logstash-logback-encoder</artifactId>
+				<version>${logstash.logback.encoder.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.santuario</groupId>
+				<artifactId>xmlsec</artifactId>
+				<version>${xmlsec.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>com.github.jsonld-java</groupId>
@@ -676,7 +775,7 @@
 				<artifactId>hasmac-json-ld</artifactId>
 				<version>0.10.2</version>
 			</dependency>
-			<!-- kerby is used by solr-->
+			<!-- kerby is used by transitive search dependencies -->
 			<dependency>
 				<groupId>org.apache.kerby</groupId>
 				<artifactId>kerb-core</artifactId>
@@ -789,28 +888,11 @@
 					<version>3.11.3</version>
 					<configuration>
 						<encoding>utf8</encoding>
-						<source>11</source>
+						<source>25</source>
 						<doclint>none</doclint>
 						<additionalOptions>
 							<additionalOption>-html5</additionalOption>
 						</additionalOptions>
-						<additionalDependencies>
-							<additionalDependency>
-								<groupId>org.elasticsearch</groupId>
-								<artifactId>elasticsearch</artifactId>
-								<version>${elasticsearch.version}</version>
-							</additionalDependency>
-							<additionalDependency>
-								<groupId>org.elasticsearch</groupId>
-								<artifactId>elasticsearch-x-content</artifactId>
-								<version>${elasticsearch.version}</version>
-							</additionalDependency>
-							<additionalDependency>
-								<groupId>org.elasticsearch.client</groupId>
-								<artifactId>transport</artifactId>
-								<version>${elasticsearch.version}</version>
-							</additionalDependency>
-						</additionalDependencies>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -846,7 +928,7 @@
 					<version>3.5.4</version>
 					<configuration>
 						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
-						<argLine>@{argLine} -Xmx4G</argLine>
+						<argLine>@{argLine} ${mockito.javaagent} -Xmx4G</argLine>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -857,7 +939,7 @@
 						<forkCount>1</forkCount>
 						<reuseForks>false</reuseForks>
 						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
-						<argLine>@{argLine} -Xmx4G</argLine>
+						<argLine>@{argLine} ${mockito.javaagent} -Xmx4G</argLine>
 						<includes>
 							<include>**/*IT.java</include>
 						</includes>
@@ -911,13 +993,13 @@
 					<artifactId>impsort-maven-plugin</artifactId>
 					<version>1.9.0</version>
 					<configuration>
-						<groups>java.,javax.,org.,com.</groups>
+						<groups>java.,javax.,jakarta.,org.,com.</groups>
 						<staticGroups>java,*</staticGroups>
 					</configuration>
 				</plugin>
 				<plugin>
-					<groupId>org.eclipse.jetty</groupId>
-					<artifactId>jetty-maven-plugin</artifactId>
+					<groupId>org.eclipse.jetty.ee11</groupId>
+					<artifactId>jetty-ee11-maven-plugin</artifactId>
 					<version>${jetty.version}</version>
 				</plugin>
 				<plugin>
@@ -1018,7 +1100,7 @@
 											<include>org.apache.logging.log4j:log4j-api</include>
 											<!-- elasticsearch-cluster-runner needs log4j-core -->
 											<include>org.apache.logging.log4j:log4j-core:*:*:test</include>
-											<!-- Solr embedded server apparently needs log4j-web -->
+											<!-- kept for transitive embedded search server test cases -->
 											<include>org.apache.logging.log4j:log4j-web</include>
 										</includes>
 									</bannedDependencies>
@@ -1037,13 +1119,6 @@
 										<excludes>
 											<exclude>javax*</exclude>
 										</excludes>
-										<includes>
-											<include>javax.servlet:javax.servlet-api:*:*:provided</include>
-											<include>javax.servlet.jsp:jsp-api:*:*:provided</include>
-											<include>javax.servlet:jstl:*:*:provided</include>
-											<!-- Allow test server dependencies -->
-											<include>javax.servlet:javax.servlet-api:*:*:test</include>
-										</includes>
 									</bannedDependencies>
 								</rules>
 								<fail>${enforce-javaee-provided.fail}</fail>
@@ -1058,11 +1133,11 @@
 								<rules>
 									<banDuplicateClasses>
 										<ignoreClasses>
-											<!-- mockserver-junit-jupiter-no-dependencies contains these classes -->
+											<!-- mockserver-junit-jupiter may include these classes -->
 											<ignoreClass>org.junit.*</ignoreClass>
-											<!-- mockserver-junit-jupiter-no-dependencies contains these classes -->
+											<!-- mockserver-junit-jupiter may include these classes -->
 											<ignoreClass>org.slf4j.*</ignoreClass>
-											<!-- mockserver-junit-jupiter-no-dependencies contains these classes -->
+											<!-- mockserver-junit-jupiter may include these classes -->
 											<ignoreClass>org.opentest4j.*</ignoreClass>
 										</ignoreClasses>
 										<ignoreWhenIdentical>true</ignoreWhenIdentical>

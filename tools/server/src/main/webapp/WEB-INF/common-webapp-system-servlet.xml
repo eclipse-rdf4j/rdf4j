@@ -27,6 +27,9 @@
 	<bean id="commonWebappSystemUrlMapping" class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping">
 		<property name="order" value="0" />
 		<property name="alwaysUseFullPath" value="true" />
+		<property name="patternParser">
+			<null />
+		</property>
 		<property name="mappings">
 			<props>
 				<prop key="/system/overview.view">commonWebappSystemOverviewController</prop>

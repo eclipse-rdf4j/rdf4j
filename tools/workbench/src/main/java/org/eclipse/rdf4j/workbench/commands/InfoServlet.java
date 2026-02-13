@@ -15,8 +15,6 @@ import static org.eclipse.rdf4j.query.parser.QueryParserRegistry.getInstance;
 import java.net.MalformedURLException;
 import java.net.URL;
 
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterFactory;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterRegistry;
@@ -30,6 +28,8 @@ import org.eclipse.rdf4j.rio.RDFWriterRegistry;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+
+import jakarta.servlet.http.HttpServletResponse;
 
 public class InfoServlet extends TransformationServlet {
 

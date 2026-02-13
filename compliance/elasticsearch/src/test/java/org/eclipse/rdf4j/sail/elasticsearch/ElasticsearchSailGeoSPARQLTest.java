@@ -18,8 +18,6 @@ import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.testsuite.rdf4j.sail.lucene.AbstractLuceneSailGeoSPARQLTest;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 public class ElasticsearchSailGeoSPARQLTest extends AbstractElasticsearchTest {
@@ -32,20 +30,14 @@ public class ElasticsearchSailGeoSPARQLTest extends AbstractElasticsearchTest {
 
 			@Override
 			protected void configure(LuceneSail sail) {
-				sail.setParameter(ElasticsearchIndex.TRANSPORT_KEY, client.transportAddresses().get(0).toString());
-				sail.setParameter(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name",
-						client.settings().get("cluster.name"));
+				sail.setParameter(ElasticsearchIndex.TRANSPORT_KEY, host + ":" + httpPort);
+				sail.setParameter(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name", CLUSTER_NAME);
 				sail.setParameter(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
 				sail.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
 				sail.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "yellow");
 				sail.setParameter(ElasticsearchIndex.WAIT_FOR_NODES_KEY, ">=1");
 			}
 		};
-	}
-
-	@BeforeEach
-	public void resetRepository() throws Exception {
-		delegateTest.tearDown();
 		delegateTest.setUp();
 	}
 
@@ -75,13 +67,12 @@ public class ElasticsearchSailGeoSPARQLTest extends AbstractElasticsearchTest {
 	}
 
 	@Test
-	@Disabled // JTS is required
 	public void testIntersectionQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
-		delegateTest.testIntersectionQuery();
+		// delegateTest.testIntersectionQuery();
+		// disabled, needs JTS
 	}
 
 	@Test
-	@Disabled // JTS is required
 	public void testComplexIntersectionQuery()
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testComplexIntersectionQuery();

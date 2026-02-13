@@ -10,10 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server.repository.transaction;
 
-import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
-import static javax.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
-import static javax.servlet.http.HttpServletResponse.SC_NOT_ACCEPTABLE;
-import static javax.servlet.http.HttpServletResponse.SC_SERVICE_UNAVAILABLE;
+import static jakarta.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
+import static jakarta.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
+import static jakarta.servlet.http.HttpServletResponse.SC_NOT_ACCEPTABLE;
+import static jakarta.servlet.http.HttpServletResponse.SC_SERVICE_UNAVAILABLE;
 import static org.eclipse.rdf4j.http.protocol.Protocol.BINDING_PREFIX;
 import static org.eclipse.rdf4j.http.protocol.Protocol.CONTEXT_PARAM_NAME;
 import static org.eclipse.rdf4j.http.protocol.Protocol.DEFAULT_GRAPH_PARAM_NAME;
@@ -40,9 +40,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.lang.FileFormat;
@@ -94,6 +91,9 @@ import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.View;
 import org.springframework.web.servlet.mvc.AbstractController;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
 /**
  * Handles requests for transaction creation on a repository.
  *
@@ -116,6 +116,10 @@ public class TransactionController extends AbstractController implements Disposa
 		UUID transactionId = getTransactionID(request);
 		logger.debug("transaction id: {}", transactionId);
 		logger.debug("request content type: {}", request.getContentType());
+		if (transactionId == null) {
+			throw new ClientHTTPException(SC_BAD_REQUEST,
+					"could not determine transaction id from path info " + request.getPathInfo());
+		}
 
 		Transaction transaction = ActiveTransactionRegistry.INSTANCE.getTransaction(transactionId);
 
@@ -209,14 +213,16 @@ public class TransactionController extends AbstractController implements Disposa
 		UUID txnID = null;
 
 		if (pathInfoStr != null && !pathInfoStr.equals("/")) {
-			String[] pathInfo = pathInfoStr.substring(1).split("/");
-			// should be of the form: /<Repository>/transactions/<txnID>
-			if (pathInfo.length == 3) {
+			String normalizedPath = pathInfoStr.startsWith("/") ? pathInfoStr.substring(1) : pathInfoStr;
+			String[] pathInfo = normalizedPath.split("/");
+			// expected to end with .../transactions/<txnID>
+			if (pathInfo.length >= 2 && "transactions".equals(pathInfo[pathInfo.length - 2])) {
 				try {
-					txnID = UUID.fromString(pathInfo[2]);
+					txnID = UUID.fromString(pathInfo[pathInfo.length - 1]);
 					logger.debug("txnID is '{}'", txnID);
 				} catch (IllegalArgumentException e) {
-					throw new ClientHTTPException(SC_BAD_REQUEST, "not a valid transaction id: " + pathInfo[2]);
+					throw new ClientHTTPException(SC_BAD_REQUEST,
+							"not a valid transaction id: " + pathInfo[pathInfo.length - 1]);
 				}
 			} else {
 				logger.warn("could not determine transaction id from path info {} ", pathInfoStr);

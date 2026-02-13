@@ -5,6 +5,10 @@
 			<pattern>%d %green([%thread]) %highlight(%level) %logger{50} - %msg%n</pattern>
 		</encoder>
 	</appender>
+	<logger name="org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor" level="debug" />
+	<logger name="org.eclipse.rdf4j.http.server.repository.handler.DefaultRepositoryRequestHandler" level="debug" />
+	<logger name="org.eclipse.rdf4j.tools.serverboot.ServerPrefixForwardFilter" level="debug" />
+	<logger name="org.springframework.web.servlet.DispatcherServlet" level="debug" />
 	<logger name="org.eclipse.rdf4j.sail.shacl" level="info" />
 	<root>
 		<level value="info" />
