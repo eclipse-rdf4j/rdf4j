@@ -23,11 +23,13 @@ import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -103,7 +105,9 @@ public class ThemeQueryBenchmark {
 		query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
 		expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
 		dataDir = Files.newTemporaryFolder();
-		repository = new SailRepository(new LmdbStore(dataDir, ConfigUtil.createConfig()));
+		LmdbStoreConfig config = ConfigUtil.createConfig();
+		config.setPageCardinalityEstimator(false );
+		repository = new SailRepository(new LmdbStore(dataDir, config));
 		loadData();
 	}
 
@@ -125,8 +129,10 @@ public class ThemeQueryBenchmark {
 	@Benchmark
 	public long executeQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			long count = connection
-					.prepareTupleQuery(query)
+			TupleQuery tupleQuery = connection
+					.prepareTupleQuery(query);
+			tupleQuery.setMaxExecutionTime(180);
+			long count = tupleQuery
 					.evaluate()
 					.stream()
 					.count();
