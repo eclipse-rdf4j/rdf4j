@@ -120,11 +120,23 @@ class ThemeQueryBenchmarkExplanationTest {
 		for (boolean pageEstimatorEnabled : new boolean[] { false, true }) {
 			TimingStats stats = runTimingScenario(pageEstimatorEnabled, query, expectedCount);
 			OptimizerCardinalityStats optimizerStats = runJoinOptimizerCardinalityScenario(pageEstimatorEnabled, query);
+			OptimizerCardinalityStats optimizerColdStats = runJoinOptimizerCardinalityColdScenario(
+					pageEstimatorEnabled, query);
 			StatementPatternCardinalityStats patternStats = runStatementPatternCardinalityScenario(pageEstimatorEnabled,
 					query);
 			timings.append("pageCardinalityEstimator=").append(pageEstimatorEnabled).append('\n');
 			timings.append(String.format(Locale.ROOT, "avgPrepareMillis=%.3f%n", stats.avgPrepareMillis()));
 			timings.append(String.format(Locale.ROOT, "avgEvaluateMillis=%.3f%n", stats.avgEvaluateMillis()));
+			timings.append(String.format(Locale.ROOT, "avgFreshConnectionPrepareEvaluateMillis=%.3f%n",
+					stats.avgFreshConnectionPrepareEvaluateMillis()));
+			timings.append(String.format(Locale.ROOT, "avgFreshConnectionPrepareEvaluateNoTimeoutMillis=%.3f%n",
+					stats.avgFreshConnectionPrepareEvaluateNoTimeoutMillis()));
+			timings.append(String.format(Locale.ROOT, "avgFreshConnectionOpenCloseMillis=%.3f%n",
+					stats.avgFreshConnectionOpenCloseMillis()));
+			timings.append(String.format(Locale.ROOT, "avgFreshConnectionQueryOnlyMillis=%.3f%n",
+					stats.avgFreshConnectionQueryOnlyMillis()));
+			timings.append(String.format(Locale.ROOT, "avgFreshConnectionQueryOnlyNoTimeoutMillis=%.3f%n",
+					stats.avgFreshConnectionQueryOnlyNoTimeoutMillis()));
 			timings.append(String.format(Locale.ROOT, "avgPreparedReuseEvaluateMillis=%.3f%n",
 					stats.avgPreparedReuseEvaluateMillis()));
 			timings.append(String.format(Locale.ROOT, "avgOptimizedExplainMillis=%.3f%n",
@@ -143,6 +155,20 @@ class ThemeQueryBenchmarkExplanationTest {
 					optimizerStats.avgOptimizerJoinCardinalityCalls()));
 			timings.append(String.format(Locale.ROOT, "optimizerCardinalityShare=%.3f%n",
 					optimizerStats.optimizerCardinalityShare()));
+			timings.append(String.format(Locale.ROOT, "avgJoinOptimizerColdMillis=%.3f%n",
+					optimizerColdStats.avgJoinOptimizerMillis()));
+			timings.append(String.format(Locale.ROOT, "avgOptimizerColdCardinalityMillis=%.3f%n",
+					optimizerColdStats.avgOptimizerCardinalityMillis()));
+			timings.append(String.format(Locale.ROOT, "avgOptimizerColdNonCardinalityMillis=%.3f%n",
+					optimizerColdStats.avgOptimizerNonCardinalityMillis()));
+			timings.append(String.format(Locale.ROOT, "avgOptimizerColdCardinalityCalls=%.1f%n",
+					optimizerColdStats.avgOptimizerCardinalityCalls()));
+			timings.append(String.format(Locale.ROOT, "avgOptimizerColdStatementPatternCardinalityCalls=%.1f%n",
+					optimizerColdStats.avgOptimizerStatementPatternCardinalityCalls()));
+			timings.append(String.format(Locale.ROOT, "avgOptimizerColdJoinCardinalityCalls=%.1f%n",
+					optimizerColdStats.avgOptimizerJoinCardinalityCalls()));
+			timings.append(String.format(Locale.ROOT, "optimizerColdCardinalityShare=%.3f%n",
+					optimizerColdStats.optimizerCardinalityShare()));
 			timings.append(patternStats.renderBlock());
 			timings.append("measuredRuns=").append(stats.measuredRuns).append("\n\n");
 		}
@@ -171,6 +197,9 @@ class ThemeQueryBenchmarkExplanationTest {
 
 			long prepareNanos = 0;
 			long evaluateNanos = 0;
+			long freshConnectionPrepareEvaluateNanos = 0;
+			long freshConnectionPrepareEvaluateNoTimeoutNanos = 0;
+			long freshConnectionOpenCloseNanos = 0;
 			long preparedReuseEvaluateNanos = 0;
 			long optimizedExplainNanos = 0;
 
@@ -191,6 +220,56 @@ class ThemeQueryBenchmarkExplanationTest {
 					prepareNanos += (evaluateStart - prepareStart);
 					evaluateNanos += (evaluateEnd - evaluateStart);
 				}
+			}
+
+			for (int i = 0; i < WARMUP_RUNS; i++) {
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					var warmupQuery = connection.prepareTupleQuery(query);
+					warmupQuery.setMaxExecutionTime(180);
+					long warmupCount = warmupQuery.evaluate().stream().count();
+					assertEquals(expectedCount, warmupCount, "Unexpected fresh-connection warmup count");
+				}
+			}
+			for (int i = 0; i < MEASURED_RUNS; i++) {
+				long start = System.nanoTime();
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					var measuredQuery = connection.prepareTupleQuery(query);
+					measuredQuery.setMaxExecutionTime(180);
+					long count = measuredQuery.evaluate().stream().count();
+					assertEquals(expectedCount, count, "Unexpected fresh-connection measured count");
+				}
+				long end = System.nanoTime();
+				freshConnectionPrepareEvaluateNanos += (end - start);
+			}
+
+			for (int i = 0; i < WARMUP_RUNS; i++) {
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					long warmupCount = connection.prepareTupleQuery(query).evaluate().stream().count();
+					assertEquals(expectedCount, warmupCount, "Unexpected fresh-connection no-timeout warmup count");
+				}
+			}
+			for (int i = 0; i < MEASURED_RUNS; i++) {
+				long start = System.nanoTime();
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					long count = connection.prepareTupleQuery(query).evaluate().stream().count();
+					assertEquals(expectedCount, count, "Unexpected fresh-connection no-timeout measured count");
+				}
+				long end = System.nanoTime();
+				freshConnectionPrepareEvaluateNoTimeoutNanos += (end - start);
+			}
+
+			for (int i = 0; i < WARMUP_RUNS; i++) {
+				try (SailRepositoryConnection ignoredConnection = repository.getConnection()) {
+					// warmup
+				}
+			}
+			for (int i = 0; i < MEASURED_RUNS; i++) {
+				long start = System.nanoTime();
+				try (SailRepositoryConnection ignoredConnection = repository.getConnection()) {
+					// measure pure connection overhead
+				}
+				long end = System.nanoTime();
+				freshConnectionOpenCloseNanos += (end - start);
 			}
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -226,8 +305,9 @@ class ThemeQueryBenchmarkExplanationTest {
 				}
 			}
 
-			return new TimingStats(prepareNanos, evaluateNanos, preparedReuseEvaluateNanos, optimizedExplainNanos,
-					MEASURED_RUNS);
+			return new TimingStats(prepareNanos, evaluateNanos, freshConnectionPrepareEvaluateNanos,
+					freshConnectionPrepareEvaluateNoTimeoutNanos, freshConnectionOpenCloseNanos,
+					preparedReuseEvaluateNanos, optimizedExplainNanos, MEASURED_RUNS);
 		} finally {
 			repository.shutDown();
 			FileUtils.deleteDirectory(dataDir);
@@ -258,6 +338,49 @@ class ThemeQueryBenchmarkExplanationTest {
 
 			for (int i = 0; i < MEASURED_RUNS; i++) {
 				measuringStatistics.reset();
+				long runStart = System.nanoTime();
+				runJoinOptimizerOnce(parsed, measuringStatistics);
+				long runEnd = System.nanoTime();
+				optimizerNanos += (runEnd - runStart);
+				cardinalityNanos += measuringStatistics.cardinalityNanos;
+				cardinalityCalls += measuringStatistics.cardinalityCalls;
+				statementPatternCardinalityCalls += measuringStatistics.statementPatternCardinalityCalls;
+				joinCardinalityCalls += measuringStatistics.joinCardinalityCalls;
+			}
+
+			return new OptimizerCardinalityStats(optimizerNanos, cardinalityNanos, cardinalityCalls,
+					statementPatternCardinalityCalls, joinCardinalityCalls, MEASURED_RUNS);
+		} finally {
+			repository.shutDown();
+			FileUtils.deleteDirectory(dataDir);
+		}
+	}
+
+	private static OptimizerCardinalityStats runJoinOptimizerCardinalityColdScenario(boolean pageEstimatorEnabled,
+			String query)
+			throws Exception {
+		File dataDir = Files.createTempDirectory("theme-query-optimizer-cold").toFile();
+		LmdbStoreConfig config = ConfigUtil.createConfig().setPageCardinalityEstimator(pageEstimatorEnabled);
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
+		try {
+			loadData(SOCIAL_MEDIA_THEME, repository);
+			ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+
+			for (int i = 0; i < WARMUP_RUNS; i++) {
+				EvaluationStatistics warmupDelegate = extractEvaluationStatistics(repository);
+				MeasuringEvaluationStatistics warmupStats = new MeasuringEvaluationStatistics(warmupDelegate);
+				runJoinOptimizerOnce(parsed, warmupStats);
+			}
+
+			long optimizerNanos = 0;
+			long cardinalityNanos = 0;
+			long cardinalityCalls = 0;
+			long statementPatternCardinalityCalls = 0;
+			long joinCardinalityCalls = 0;
+
+			for (int i = 0; i < MEASURED_RUNS; i++) {
+				EvaluationStatistics delegate = extractEvaluationStatistics(repository);
+				MeasuringEvaluationStatistics measuringStatistics = new MeasuringEvaluationStatistics(delegate);
 				long runStart = System.nanoTime();
 				runJoinOptimizerOnce(parsed, measuringStatistics);
 				long runEnd = System.nanoTime();
@@ -310,14 +433,21 @@ class ThemeQueryBenchmarkExplanationTest {
 	private static final class TimingStats {
 		private final long prepareNanos;
 		private final long evaluateNanos;
+		private final long freshConnectionPrepareEvaluateNanos;
+		private final long freshConnectionPrepareEvaluateNoTimeoutNanos;
+		private final long freshConnectionOpenCloseNanos;
 		private final long preparedReuseEvaluateNanos;
 		private final long optimizedExplainNanos;
 		private final int measuredRuns;
 
-		private TimingStats(long prepareNanos, long evaluateNanos, long preparedReuseEvaluateNanos,
-				long optimizedExplainNanos, int measuredRuns) {
+		private TimingStats(long prepareNanos, long evaluateNanos, long freshConnectionPrepareEvaluateNanos,
+				long freshConnectionPrepareEvaluateNoTimeoutNanos, long freshConnectionOpenCloseNanos,
+				long preparedReuseEvaluateNanos, long optimizedExplainNanos, int measuredRuns) {
 			this.prepareNanos = prepareNanos;
 			this.evaluateNanos = evaluateNanos;
+			this.freshConnectionPrepareEvaluateNanos = freshConnectionPrepareEvaluateNanos;
+			this.freshConnectionPrepareEvaluateNoTimeoutNanos = freshConnectionPrepareEvaluateNoTimeoutNanos;
+			this.freshConnectionOpenCloseNanos = freshConnectionOpenCloseNanos;
 			this.preparedReuseEvaluateNanos = preparedReuseEvaluateNanos;
 			this.optimizedExplainNanos = optimizedExplainNanos;
 			this.measuredRuns = measuredRuns;
@@ -329,6 +459,29 @@ class ThemeQueryBenchmarkExplanationTest {
 
 		private double avgEvaluateMillis() {
 			return nanosToMillis(evaluateNanos) / measuredRuns;
+		}
+
+		private double avgFreshConnectionPrepareEvaluateMillis() {
+			return nanosToMillis(freshConnectionPrepareEvaluateNanos) / measuredRuns;
+		}
+
+		private double avgFreshConnectionPrepareEvaluateNoTimeoutMillis() {
+			return nanosToMillis(freshConnectionPrepareEvaluateNoTimeoutNanos) / measuredRuns;
+		}
+
+		private double avgFreshConnectionOpenCloseMillis() {
+			return nanosToMillis(freshConnectionOpenCloseNanos) / measuredRuns;
+		}
+
+		private double avgFreshConnectionQueryOnlyMillis() {
+			long queryOnlyNanos = Math.max(0L, freshConnectionPrepareEvaluateNanos - freshConnectionOpenCloseNanos);
+			return nanosToMillis(queryOnlyNanos) / measuredRuns;
+		}
+
+		private double avgFreshConnectionQueryOnlyNoTimeoutMillis() {
+			long queryOnlyNanos = Math.max(0L,
+					freshConnectionPrepareEvaluateNoTimeoutNanos - freshConnectionOpenCloseNanos);
+			return nanosToMillis(queryOnlyNanos) / measuredRuns;
 		}
 
 		private double avgPreparedReuseEvaluateMillis() {

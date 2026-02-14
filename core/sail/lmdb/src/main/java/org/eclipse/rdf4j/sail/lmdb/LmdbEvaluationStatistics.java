@@ -118,7 +118,6 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 
 		return tripleStore.cardinality(subjID, predID, objID, contextID);
 
-
 //		CardinalityKey key = new CardinalityKey(subjID, predID, objID, contextID);
 //		Double cached = cardinalityCache.get(key);
 //		if (cached != null) {

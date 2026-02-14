@@ -100,6 +100,11 @@ public class ThemeQueryBenchmark {
 	})
 	public String themeName;
 
+	@Param({
+			"false",
+			"true"
+	})
+	public boolean pageCardinalityEstimator;
 	private SailRepository repository;
 	private LmdbStore store;
 	private LmdbStoreConfig storeConfig;
@@ -124,7 +129,7 @@ public class ThemeQueryBenchmark {
 			throw new IOException("Unable to create fixed LMDB benchmark directory: " + STORE_DIRECTORY);
 		}
 		storeConfig = ConfigUtil.createConfig();
-		storeConfig.setPageCardinalityEstimator(false);
+		storeConfig.setPageCardinalityEstimator(pageCardinalityEstimator);
 		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
 		repository = new SailRepository(store);
 		ensureDataLoadedAndValidated();
@@ -166,7 +171,7 @@ public class ThemeQueryBenchmark {
 		}
 
 		storeConfig = ConfigUtil.createConfig();
-		storeConfig.setPageCardinalityEstimator(false);
+		storeConfig.setPageCardinalityEstimator(pageCardinalityEstimator);
 		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
 		repository = new SailRepository(store);
 		loadData();
