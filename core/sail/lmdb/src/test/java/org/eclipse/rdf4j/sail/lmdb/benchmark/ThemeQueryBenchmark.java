@@ -85,6 +85,12 @@ public class ThemeQueryBenchmark {
 	})
 	public String themeName;
 
+	@Param({
+			"false",
+			"true"
+	})
+	public boolean pageCardinalityEstimator;
+
 	private File dataDir;
 	private SailRepository repository;
 	private Theme theme;
@@ -106,7 +112,7 @@ public class ThemeQueryBenchmark {
 		expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
 		dataDir = Files.newTemporaryFolder();
 		LmdbStoreConfig config = ConfigUtil.createConfig();
-		config.setPageCardinalityEstimator(false );
+		config.setPageCardinalityEstimator(pageCardinalityEstimator);
 		repository = new SailRepository(new LmdbStore(dataDir, config));
 		loadData();
 	}
