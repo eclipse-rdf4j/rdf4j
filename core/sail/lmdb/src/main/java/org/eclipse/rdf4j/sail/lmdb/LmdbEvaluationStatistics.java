@@ -116,17 +116,15 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 			}
 		}
 
-		return tripleStore.cardinality(subjID, predID, objID, contextID);
+		CardinalityKey key = new CardinalityKey(subjID, predID, objID, contextID);
+		Double cached = cardinalityCache.get(key);
+		if (cached != null) {
+			return cached;
+		}
 
-//		CardinalityKey key = new CardinalityKey(subjID, predID, objID, contextID);
-//		Double cached = cardinalityCache.get(key);
-//		if (cached != null) {
-//			return cached;
-//		}
-//
-//		double cardinality = tripleStore.cardinality(subjID, predID, objID, contextID);
-//		cardinalityCache.put(key, cardinality);
-//		return cardinality;
+		double cardinality = tripleStore.cardinality(subjID, predID, objID, contextID);
+		cardinalityCache.put(key, cardinality);
+		return cardinality;
 	}
 
 	private static final class CardinalityKey {
