@@ -1054,7 +1054,7 @@ public final class ThemeDataSetGenerator {
 	}
 
 	private static IRI entity(String namespace, String category, int id) {
-		return VF.createIRI(namespace, category + "/" + id);
+		return VF.createIRI(namespace + category + "/" + id);
 	}
 
 	private static Literal literal(String value) {
