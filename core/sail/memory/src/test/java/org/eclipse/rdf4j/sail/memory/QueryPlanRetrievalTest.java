@@ -19,6 +19,8 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
@@ -36,10 +38,21 @@ import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 
 public class QueryPlanRetrievalTest {
+
+	private static final String OPTIMIZER_MODE_PROPERTY = "rdf4j.optimizer.mode";
+	private static final String HYBRID_Q_ERROR_LIMIT_PROPERTY = "rdf4j.optimizer.hybrid.qerror.limit";
+	private static final String HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY = "rdf4j.optimizer.hybrid.qerror.log.limit";
 
 	public static final String MAIN_QUERY = String.join("\n", "",
 			"{",
@@ -1533,6 +1546,308 @@ public class QueryPlanRetrievalTest {
 		}
 		sailRepository.shutDown();
 
+	}
+
+	@Test
+	public void testDotSerializationIsDeterministicWithoutNormalization() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
+
+			String first = query.explain(Explanation.Level.Optimized).toDot();
+			String second = query.explain(Explanation.Level.Optimized).toDot();
+
+			assertThat(first).isEqualTo(second);
+		}
+		sailRepository.shutDown();
+	}
+
+	@Test
+	public void testHybridModeJsonIncludesResultSizeQError() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+		String previousMode = System.getProperty(OPTIMIZER_MODE_PROPERTY);
+		System.setProperty(OPTIMIZER_MODE_PROPERTY, "hybrid");
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
+			String actual = query.explain(Explanation.Level.Executed).toJson();
+			assertThat(actual).contains("\"resultSizeQError\"");
+		} finally {
+			if (previousMode == null) {
+				System.clearProperty(OPTIMIZER_MODE_PROPERTY);
+			} else {
+				System.setProperty(OPTIMIZER_MODE_PROPERTY, previousMode);
+			}
+			sailRepository.shutDown();
+		}
+	}
+
+	@Test
+	public void testHybridModeExplainLogsQErrorSummary() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+		String previousMode = System.getProperty(OPTIMIZER_MODE_PROPERTY);
+		System.setProperty(OPTIMIZER_MODE_PROPERTY, "hybrid");
+		Logger logger = (Logger) LoggerFactory.getLogger(SailSourceConnection.class);
+		Level previousLevel = logger.getLevel();
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		logger.addAppender(appender);
+		logger.setLevel(Level.DEBUG);
+		boolean previousAdditive = logger.isAdditive();
+		logger.setAdditive(false);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
+			query.explain(Explanation.Level.Executed).toJson();
+			List<String> logLines = appender.list.stream()
+					.map(ILoggingEvent::getFormattedMessage)
+					.collect(Collectors.toList());
+			assertThat(logLines).anySatisfy(line -> assertThat(line).contains("Hybrid q-error summary"));
+		} finally {
+			if (previousMode == null) {
+				System.clearProperty(OPTIMIZER_MODE_PROPERTY);
+			} else {
+				System.setProperty(OPTIMIZER_MODE_PROPERTY, previousMode);
+			}
+			logger.detachAppender(appender);
+			logger.setLevel(previousLevel);
+			logger.setAdditive(previousAdditive);
+			appender.stop();
+			sailRepository.shutDown();
+		}
+	}
+
+	@Test
+	public void testHybridModeExplainLogsQErrorSummaryHonorsConfiguredLimit() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+		String previousMode = System.getProperty(OPTIMIZER_MODE_PROPERTY);
+		String previousLimit = System.getProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY);
+		System.setProperty(OPTIMIZER_MODE_PROPERTY, "hybrid");
+		System.setProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY, "1");
+		Logger logger = (Logger) LoggerFactory.getLogger(SailSourceConnection.class);
+		Level previousLevel = logger.getLevel();
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		logger.addAppender(appender);
+		logger.setLevel(Level.DEBUG);
+		boolean previousAdditive = logger.isAdditive();
+		logger.setAdditive(false);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
+			query.explain(Explanation.Level.Executed).toJson();
+			List<String> logLines = appender.list.stream()
+					.map(ILoggingEvent::getFormattedMessage)
+					.collect(Collectors.toList());
+			assertThat(logLines).anySatisfy(line -> assertThat(line).contains("Hybrid q-error summary (top 1):"));
+		} finally {
+			if (previousMode == null) {
+				System.clearProperty(OPTIMIZER_MODE_PROPERTY);
+			} else {
+				System.setProperty(OPTIMIZER_MODE_PROPERTY, previousMode);
+			}
+			if (previousLimit == null) {
+				System.clearProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY);
+			} else {
+				System.setProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY, previousLimit);
+			}
+			logger.detachAppender(appender);
+			logger.setLevel(previousLevel);
+			logger.setAdditive(previousAdditive);
+			appender.stop();
+			sailRepository.shutDown();
+		}
+	}
+
+	@Test
+	public void testHybridModeJsonQErrorHonorsConfiguredLimit() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+		String previousMode = System.getProperty(OPTIMIZER_MODE_PROPERTY);
+		String previousLimit = System.getProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY);
+		System.setProperty(OPTIMIZER_MODE_PROPERTY, "hybrid");
+		System.setProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY, "1");
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
+			String actual = query.explain(Explanation.Level.Executed).toJson();
+			assertThat(actual).contains("\"resultSizeQError\"");
+			assertThat(actual.indexOf("\"resultSizeQError\"")).isEqualTo(actual.lastIndexOf("\"resultSizeQError\""));
+		} finally {
+			if (previousMode == null) {
+				System.clearProperty(OPTIMIZER_MODE_PROPERTY);
+			} else {
+				System.setProperty(OPTIMIZER_MODE_PROPERTY, previousMode);
+			}
+			if (previousLimit == null) {
+				System.clearProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY);
+			} else {
+				System.setProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY, previousLimit);
+			}
+			sailRepository.shutDown();
+		}
+	}
+
+	@Test
+	public void testHybridModeJsonQErrorDisabledWhenLimitZero() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+		String previousMode = System.getProperty(OPTIMIZER_MODE_PROPERTY);
+		String previousLimit = System.getProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY);
+		System.setProperty(OPTIMIZER_MODE_PROPERTY, "hybrid");
+		System.setProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY, "0");
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
+			String actual = query.explain(Explanation.Level.Executed).toJson();
+			assertThat(actual).doesNotContain("\"resultSizeQError\"");
+		} finally {
+			if (previousMode == null) {
+				System.clearProperty(OPTIMIZER_MODE_PROPERTY);
+			} else {
+				System.setProperty(OPTIMIZER_MODE_PROPERTY, previousMode);
+			}
+			if (previousLimit == null) {
+				System.clearProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY);
+			} else {
+				System.setProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY, previousLimit);
+			}
+			sailRepository.shutDown();
+		}
+	}
+
+	@Test
+	public void testHybridModeExplainSkipsQErrorSummaryWhenLimitZero() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+		String previousMode = System.getProperty(OPTIMIZER_MODE_PROPERTY);
+		String previousLimit = System.getProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY);
+		System.setProperty(OPTIMIZER_MODE_PROPERTY, "hybrid");
+		System.setProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY, "0");
+		Logger logger = (Logger) LoggerFactory.getLogger(SailSourceConnection.class);
+		Level previousLevel = logger.getLevel();
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		logger.addAppender(appender);
+		logger.setLevel(Level.DEBUG);
+		boolean previousAdditive = logger.isAdditive();
+		logger.setAdditive(false);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
+			query.explain(Explanation.Level.Executed).toJson();
+			List<String> logLines = appender.list.stream()
+					.map(ILoggingEvent::getFormattedMessage)
+					.collect(Collectors.toList());
+			assertThat(logLines).noneSatisfy(line -> assertThat(line).contains("Hybrid q-error summary"));
+		} finally {
+			if (previousMode == null) {
+				System.clearProperty(OPTIMIZER_MODE_PROPERTY);
+			} else {
+				System.setProperty(OPTIMIZER_MODE_PROPERTY, previousMode);
+			}
+			if (previousLimit == null) {
+				System.clearProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY);
+			} else {
+				System.setProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY, previousLimit);
+			}
+			logger.detachAppender(appender);
+			logger.setLevel(previousLevel);
+			logger.setAdditive(previousAdditive);
+			appender.stop();
+			sailRepository.shutDown();
+		}
+	}
+
+	@Test
+	public void testHybridModeJsonQErrorHonorsCanonicalConfiguredLimitProperty() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+		String previousMode = System.getProperty(OPTIMIZER_MODE_PROPERTY);
+		String previousLimit = System.getProperty(HYBRID_Q_ERROR_LIMIT_PROPERTY);
+		String previousLegacyLimit = System.getProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY);
+		System.setProperty(OPTIMIZER_MODE_PROPERTY, "hybrid");
+		System.setProperty(HYBRID_Q_ERROR_LIMIT_PROPERTY, "1");
+		System.clearProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
+			String actual = query.explain(Explanation.Level.Executed).toJson();
+			assertThat(actual).contains("\"resultSizeQError\"");
+			assertThat(actual.indexOf("\"resultSizeQError\"")).isEqualTo(actual.lastIndexOf("\"resultSizeQError\""));
+		} finally {
+			if (previousMode == null) {
+				System.clearProperty(OPTIMIZER_MODE_PROPERTY);
+			} else {
+				System.setProperty(OPTIMIZER_MODE_PROPERTY, previousMode);
+			}
+			if (previousLimit == null) {
+				System.clearProperty(HYBRID_Q_ERROR_LIMIT_PROPERTY);
+			} else {
+				System.setProperty(HYBRID_Q_ERROR_LIMIT_PROPERTY, previousLimit);
+			}
+			if (previousLegacyLimit == null) {
+				System.clearProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY);
+			} else {
+				System.setProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY, previousLegacyLimit);
+			}
+			sailRepository.shutDown();
+		}
+	}
+
+	@Test
+	public void testHybridModeExplainLogsQErrorSummaryHonorsCanonicalConfiguredLimitProperty() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+		String previousMode = System.getProperty(OPTIMIZER_MODE_PROPERTY);
+		String previousLimit = System.getProperty(HYBRID_Q_ERROR_LIMIT_PROPERTY);
+		String previousLegacyLimit = System.getProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY);
+		System.setProperty(OPTIMIZER_MODE_PROPERTY, "hybrid");
+		System.setProperty(HYBRID_Q_ERROR_LIMIT_PROPERTY, "1");
+		System.clearProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY);
+		Logger logger = (Logger) LoggerFactory.getLogger(SailSourceConnection.class);
+		Level previousLevel = logger.getLevel();
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		logger.addAppender(appender);
+		logger.setLevel(Level.DEBUG);
+		boolean previousAdditive = logger.isAdditive();
+		logger.setAdditive(false);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
+			query.explain(Explanation.Level.Executed).toJson();
+			List<String> logLines = appender.list.stream()
+					.map(ILoggingEvent::getFormattedMessage)
+					.collect(Collectors.toList());
+			assertThat(logLines).anySatisfy(line -> assertThat(line).contains("Hybrid q-error summary (top 1):"));
+		} finally {
+			if (previousMode == null) {
+				System.clearProperty(OPTIMIZER_MODE_PROPERTY);
+			} else {
+				System.setProperty(OPTIMIZER_MODE_PROPERTY, previousMode);
+			}
+			if (previousLimit == null) {
+				System.clearProperty(HYBRID_Q_ERROR_LIMIT_PROPERTY);
+			} else {
+				System.setProperty(HYBRID_Q_ERROR_LIMIT_PROPERTY, previousLimit);
+			}
+			if (previousLegacyLimit == null) {
+				System.clearProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY);
+			} else {
+				System.setProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY, previousLegacyLimit);
+			}
+			logger.detachAppender(appender);
+			logger.setLevel(previousLevel);
+			logger.setAdditive(previousAdditive);
+			appender.stop();
+			sailRepository.shutDown();
+		}
 	}
 
 	@Test
