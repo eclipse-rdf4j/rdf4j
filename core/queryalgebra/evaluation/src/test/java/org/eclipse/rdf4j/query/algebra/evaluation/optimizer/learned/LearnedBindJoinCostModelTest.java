@@ -22,6 +22,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -349,6 +350,39 @@ class LearnedBindJoinCostModelTest {
 		assertNotEquals(fallback, learned);
 		assertTrue(fanout >= learned);
 //		assertEquals(fallback, scan);
+	}
+
+	@Test
+	void probeCostUsesScanCostForBoundMask() {
+		EvaluationStatistics stats = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expr) {
+				if (expr instanceof StatementPattern) {
+					StatementPattern pattern = (StatementPattern) expr;
+					Var subject = pattern.getSubjectVar();
+					if (subject != null && subject.hasValue()) {
+						return 2.0d;
+					}
+					return 20.0d;
+				}
+				return super.getCardinality(expr);
+			}
+		};
+		JoinStatsProvider statsProvider = new MemoryJoinStats(MemoryJoinStats.InvalidationSettings.disabled());
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern typePattern = new StatementPattern(Var.of("x"), Var.of("type", RDF.TYPE),
+				Var.of("clazz", vf.createIRI("urn:class")));
+		StatementPattern probePattern = new StatementPattern(Var.of("x"), Var.of("p", vf.createIRI("urn:pred")),
+				Var.of("o"));
+		LearnedBindJoinCostModel costModel = new LearnedBindJoinCostModel(stats, statsProvider, List.of(),
+				List.of(typePattern), Set.of());
+
+		double fanout = costModel.estimateFanout(probePattern, Set.of("x"));
+		double scanCost = costModel.estimateScanCost(probePattern, Set.of("x"));
+		double probeCost = costModel.estimateProbeCost(probePattern, Set.of("x"));
+
+		assertNotEquals(fanout, scanCost);
+		assertEquals(scanCost, probeCost);
 	}
 
 	@Test

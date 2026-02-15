@@ -184,6 +184,19 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 	}
 
 	@Override
+	public double estimateProbeCost(TupleExpr expr, Set<String> boundVars) {
+		if (TupleExprs.isFilterExistsFunction(expr)) {
+			return estimateFilterExistsCardinality((Filter) expr, boundVars);
+		}
+		PatternContext context = unwrapPattern(expr);
+		if (context == null) {
+			return fallbackStats.getCardinality(expr);
+		}
+		Set<String> effectiveBoundVars = boundVars == null ? Set.of() : boundVars;
+		return estimateScanPatternCost(context, effectiveBoundVars);
+	}
+
+	@Override
 	public double estimateUncertainty(TupleExpr expr, Set<String> boundVars) {
 		PatternContext context = unwrapPattern(expr);
 		if (context == null) {

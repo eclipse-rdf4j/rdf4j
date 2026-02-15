@@ -726,7 +726,11 @@ class DpJoinOrderTimingHarnessTest {
 		}
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long planningStart = System.nanoTime();
-			connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+			TupleQuery planningQuery = connection.prepareTupleQuery(query);
+			if (PLAN_QUERY_TIMEOUT_SECONDS > 0) {
+				planningQuery.setMaxExecutionTime(PLAN_QUERY_TIMEOUT_SECONDS);
+			}
+			planningQuery.explain(Explanation.Level.Optimized);
 			planningTimeMs = TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - planningStart) / 1000.0d;
 		}
 

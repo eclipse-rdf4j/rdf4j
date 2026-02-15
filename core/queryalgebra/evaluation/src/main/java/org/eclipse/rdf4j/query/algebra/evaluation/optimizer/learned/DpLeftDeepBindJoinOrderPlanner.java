@@ -131,15 +131,18 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 				}
 				Set<String> fromBound = boundVars[fromMask];
 				double fanout = estimateFanoutWithConnectivity(operands.get(j), fromBound, initiallyBoundVars);
+				double probeCost = estimateProbeCostWithConnectivity(operands.get(j), fromBound, initiallyBoundVars);
 				if (debug) {
 					System.out.println("DP debug mask=" + maskBits(mask, size) + " from=" + maskBits(fromMask, size)
-							+ " add=" + debugLabels.get(j) + " fanout=" + format(fanout));
+							+ " add=" + debugLabels.get(j)
+							+ " fanout=" + format(fanout)
+							+ " probe=" + format(probeCost));
 				}
 				for (int entryIndex = 0; entryIndex < fromPlans.size(); entryIndex++) {
 					PlanEntry from = fromPlans.get(entryIndex);
 					double outer = from.cardinality;
 					double candidateCard = outer * fanout;
-					double candidateCost = from.cost + candidateCard;
+					double candidateCost = from.cost + (outer * probeCost);
 					if (!Double.isFinite(candidateCost) || !Double.isFinite(candidateCard)) {
 						continue;
 					}
@@ -225,6 +228,19 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 			return scan * DISCONNECTED_PENALTY;
 		}
 		return costModel.estimateFanout(expr, boundVars);
+	}
+
+	private double estimateProbeCostWithConnectivity(TupleExpr expr, Set<String> boundVars,
+			Set<String> initiallyBoundVars) {
+		Set<String> names = filteredBindingNames(expr);
+		if (names.isEmpty() || boundVars.isEmpty() || disjoint(names, boundVars)) {
+			double scan = costModel.estimateScanCardinality(expr, initiallyBoundVars);
+			if (scan <= 0.0d) {
+				scan = 1.0d;
+			}
+			return scan * DISCONNECTED_PENALTY;
+		}
+		return costModel.estimateProbeCost(expr, boundVars);
 	}
 
 	private Set<String> filteredBindingNames(TupleExpr expr) {
@@ -356,9 +372,11 @@ public class DpLeftDeepBindJoinOrderPlanner implements JoinOrderPlanner {
 				}
 				cumulativeCost = scanCost;
 			} else {
+				double outer = rows;
 				double fanout = estimateFanoutWithConnectivity(operand, bound, initiallyBoundVars);
-				rows = rows * fanout;
-				cumulativeCost += rows;
+				rows = outer * fanout;
+				double probeCost = estimateProbeCostWithConnectivity(operand, bound, initiallyBoundVars);
+				cumulativeCost += outer * probeCost;
 			}
 			bound.addAll(filteredBindingNames(operand));
 			int operandIndex = step < orderIndices.size() ? orderIndices.get(step) : -1;

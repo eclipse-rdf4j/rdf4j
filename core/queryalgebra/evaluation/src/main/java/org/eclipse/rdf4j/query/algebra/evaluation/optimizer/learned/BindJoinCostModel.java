@@ -28,6 +28,10 @@ public interface BindJoinCostModel {
 		return estimateScanCardinality(expr, initiallyBoundVars);
 	}
 
+	default double estimateProbeCost(TupleExpr expr, Set<String> boundVars) {
+		return estimateFanout(expr, boundVars);
+	}
+
 	default double estimateUncertainty(TupleExpr expr, Set<String> boundVars) {
 		return 0.0d;
 	}
