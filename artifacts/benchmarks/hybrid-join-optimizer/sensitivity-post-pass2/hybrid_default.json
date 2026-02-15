@@ -1,0 +1,63 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/25.0.1-zulu/zulu-25.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms32G",
+            "-Xmx32G",
+            "-Drdf4j.optimizer.mode=hybrid"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS",
+        "warmupIterations" : 0,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "pageCardinalityEstimator" : "true",
+            "themeName" : "SOCIAL_MEDIA",
+            "z_queryIndex" : "10"
+        },
+        "primaryMetric" : {
+            "score" : 9.049729743933675,
+            "scoreError" : 0.8118061272648441,
+            "scoreConfidence" : [
+                8.23792361666883,
+                9.86153587119852
+            ],
+            "scorePercentiles" : {
+                "0.0" : 8.79348152173913,
+                "50.0" : 9.100014261261261,
+                "90.0" : 9.295879963302752,
+                "95.0" : 9.295879963302752,
+                "99.0" : 9.295879963302752,
+                "99.9" : 9.295879963302752,
+                "99.99" : 9.295879963302752,
+                "99.999" : 9.295879963302752,
+                "99.9999" : 9.295879963302752,
+                "100.0" : 9.295879963302752
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    9.295879963302752,
+                    9.18487349090909,
+                    9.100014261261261,
+                    8.874399482456141,
+                    8.79348152173913
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

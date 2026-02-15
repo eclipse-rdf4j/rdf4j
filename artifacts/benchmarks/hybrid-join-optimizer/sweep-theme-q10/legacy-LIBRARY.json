@@ -1,0 +1,63 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/25.0.1-zulu/zulu-25.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms32G",
+            "-Xmx32G",
+            "-Drdf4j.optimizer.mode=legacy"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS",
+        "warmupIterations" : 0,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "pageCardinalityEstimator" : "true",
+            "themeName" : "LIBRARY",
+            "z_queryIndex" : "10"
+        },
+        "primaryMetric" : {
+            "score" : 290.23711790999994,
+            "scoreError" : 77.66918770412418,
+            "scoreConfidence" : [
+                212.56793020587577,
+                367.9063056141241
+            ],
+            "scorePercentiles" : {
+                "0.0" : 255.0302668,
+                "50.0" : 296.24053125,
+                "90.0" : 305.990552,
+                "95.0" : 305.990552,
+                "99.0" : 305.990552,
+                "99.9" : 305.990552,
+                "99.99" : 305.990552,
+                "99.999" : 305.990552,
+                "99.9999" : 305.990552,
+                "100.0" : 305.990552
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    305.990552,
+                    255.0302668,
+                    299.5313125,
+                    294.392927,
+                    296.24053125
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

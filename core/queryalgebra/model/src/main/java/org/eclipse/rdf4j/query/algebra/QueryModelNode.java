@@ -109,6 +109,46 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	}
 
 	@Experimental
+	default String getResultSizeEstimateSource() {
+		return null;
+	}
+
+	@Experimental
+	default void setResultSizeEstimateSource(String source) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default double getResultSizeEstimateConfidence() {
+		return -1;
+	}
+
+	@Experimental
+	default void setResultSizeEstimateConfidence(double confidence) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default double getResultSizeEstimateQError() {
+		return -1;
+	}
+
+	@Experimental
+	default void setResultSizeEstimateQError(double qError) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default long getResultSizeEstimateObservationCount() {
+		return -1;
+	}
+
+	@Experimental
+	default void setResultSizeEstimateObservationCount(long sampleCount) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
 	default long getResultSizeActual() {
 		return -1;
 	}

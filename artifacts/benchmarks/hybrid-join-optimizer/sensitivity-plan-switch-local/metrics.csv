@@ -1,0 +1,5 @@
+plan_switch_gain,hybrid_avg_ms_per_op,unit
+0.18,7.529227301,ms/op
+0.22,7.512182584,ms/op
+0.24,7.510334129,ms/op
+0.26,7.402498275,ms/op

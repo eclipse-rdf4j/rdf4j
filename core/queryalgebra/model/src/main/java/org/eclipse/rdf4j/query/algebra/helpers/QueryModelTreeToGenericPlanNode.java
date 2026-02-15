@@ -19,6 +19,7 @@ import java.util.List;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
@@ -35,12 +36,14 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	private static final String HYBRID_OPTIMIZER_MODE = "hybrid";
 	private static final String HYBRID_Q_ERROR_LIMIT_PROPERTY = "rdf4j.optimizer.hybrid.qerror.limit";
 	private static final String HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY = "rdf4j.optimizer.hybrid.qerror.log.limit";
+	private static final String EXPLAIN_EXTENDED_ESTIMATE_METADATA_ENABLED_PROPERTY = "rdf4j.optimizer.explain.extendedEstimateMetadata.enabled";
 	private static final int HYBRID_Q_ERROR_DEFAULT_LIMIT = 5;
 
 	GenericPlanNode top = null;
 	QueryModelNode topTupleExpr;
 	ArrayDeque<GenericPlanNode> planNodes = new ArrayDeque<>();
 	private final boolean includeResultSizeQError;
+	private final boolean includeExtendedEstimateMetadata;
 	private boolean qErrorLimitApplied;
 
 	public QueryModelTreeToGenericPlanNode(QueryModelNode topTupleExpr) {
@@ -49,7 +52,9 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		}
 		this.topTupleExpr = topTupleExpr;
 		this.includeResultSizeQError = HYBRID_OPTIMIZER_MODE
-				.equalsIgnoreCase(System.getProperty(OPTIMIZER_MODE_PROPERTY, ""));
+				.equalsIgnoreCase(System.getProperty(OPTIMIZER_MODE_PROPERTY, HYBRID_OPTIMIZER_MODE));
+		this.includeExtendedEstimateMetadata = includeResultSizeQError
+				&& isEnabled(EXPLAIN_EXTENDED_ESTIMATE_METADATA_ENABLED_PROPERTY, true);
 	}
 
 	public GenericPlanNode getGenericPlanNode() {
@@ -64,7 +69,19 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	protected void meetNode(QueryModelNode node) {
 		GenericPlanNode genericPlanNode = new GenericPlanNode(node.getSignature());
 		genericPlanNode.setCostEstimate(node.getCostEstimate());
-		genericPlanNode.setResultSizeEstimate(node.getResultSizeEstimate());
+		if (shouldIncludeResultSizeEstimate(node)) {
+			genericPlanNode.setResultSizeEstimate(node.getResultSizeEstimate());
+		}
+		if (includeExtendedEstimateMetadata) {
+			genericPlanNode.setResultSizeEstimateSource(node.getResultSizeEstimateSource());
+			genericPlanNode.setResultSizeEstimateConfidence(
+					node.getResultSizeEstimateConfidence() >= 0 ? node.getResultSizeEstimateConfidence() : null);
+			genericPlanNode.setResultSizeEstimateCalibrationQError(
+					node.getResultSizeEstimateQError() >= 0 ? node.getResultSizeEstimateQError() : null);
+			genericPlanNode.setResultSizeEstimateCalibrationSamples(
+					node.getResultSizeEstimateObservationCount() >= 0 ? node.getResultSizeEstimateObservationCount()
+							: null);
+		}
 		genericPlanNode.setResultSizeActual(node.getResultSizeActual());
 		if (includeResultSizeQError) {
 			Double resultSizeQError = getResultSizeQError(genericPlanNode);
@@ -97,6 +114,10 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		planNodes.addLast(genericPlanNode);
 		super.meetNode(node);
 		planNodes.removeLast();
+	}
+
+	private boolean shouldIncludeResultSizeEstimate(QueryModelNode node) {
+		return includeResultSizeQError || !(node instanceof Join);
 	}
 
 	private static Double getResultSizeQError(GenericPlanNode genericPlanNode) {
@@ -134,6 +155,10 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 			configuredLimit = System.getProperty(HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY);
 		}
 		return configuredLimit;
+	}
+
+	private static boolean isEnabled(String property, boolean defaultValue) {
+		return Boolean.parseBoolean(System.getProperty(property, Boolean.toString(defaultValue)));
 	}
 
 	private static void applyResultSizeQErrorLimit(GenericPlanNode root, int limit) {

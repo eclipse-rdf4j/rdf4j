@@ -1,0 +1,71 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/25.0.1-zulu/zulu-25.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms32G",
+            "-Xmx32G",
+            "-Xms32G",
+            "-Xmx32G",
+            "-Drdf4j.optimizer.mode=hybrid",
+            "-Drdf4j.optimizer.planSwitch.minRelativeGain=0.20"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS",
+        "warmupIterations" : 0,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "pageCardinalityEstimator" : "true",
+            "themeName" : "SOCIAL_MEDIA",
+            "z_queryIndex" : "10"
+        },
+        "primaryMetric" : {
+            "score" : 7.438650521785144,
+            "scoreError" : 1.5899249608728752,
+            "scoreConfidence" : [
+                5.848725560912269,
+                9.028575482658018
+            ],
+            "scorePercentiles" : {
+                "0.0" : 6.231540644171779,
+                "50.0" : 7.864051338649494,
+                "90.0" : 8.618973809038462,
+                "95.0" : 8.640903846153845,
+                "99.0" : 8.640903846153845,
+                "99.9" : 8.640903846153845,
+                "99.99" : 8.640903846153845,
+                "99.999" : 8.640903846153845,
+                "99.9999" : 8.640903846153845,
+                "100.0" : 8.640903846153845
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    8.250427170731708,
+                    8.640903846153845,
+                    8.421603475,
+                    8.305520314049586,
+                    8.188954975806451,
+                    7.539147701492538,
+                    6.2779039875776395,
+                    6.231540644171779,
+                    6.274585664596273,
+                    6.255917438271605
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

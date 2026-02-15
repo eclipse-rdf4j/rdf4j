@@ -39,6 +39,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
@@ -53,6 +55,8 @@ public class QueryPlanRetrievalTest {
 	private static final String OPTIMIZER_MODE_PROPERTY = "rdf4j.optimizer.mode";
 	private static final String HYBRID_Q_ERROR_LIMIT_PROPERTY = "rdf4j.optimizer.hybrid.qerror.limit";
 	private static final String HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY = "rdf4j.optimizer.hybrid.qerror.log.limit";
+
+	private String previousOptimizerMode;
 
 	public static final String MAIN_QUERY = String.join("\n", "",
 			"{",
@@ -173,6 +177,21 @@ public class QueryPlanRetrievalTest {
 	public static final String UNION_QUERY = "select ?a where {?a a ?type. {?a ?b ?c, ?c2. {?c2 a ?type1}UNION{?c2 a ?type2}} UNION {?type ?d ?c}}";
 
 	ValueFactory vf = SimpleValueFactory.getInstance();
+
+	@BeforeEach
+	void forceLegacyOptimizerModeForSnapshotPlans() {
+		previousOptimizerMode = System.getProperty(OPTIMIZER_MODE_PROPERTY);
+		System.setProperty(OPTIMIZER_MODE_PROPERTY, "legacy");
+	}
+
+	@AfterEach
+	void restoreOptimizerMode() {
+		if (previousOptimizerMode == null) {
+			System.clearProperty(OPTIMIZER_MODE_PROPERTY);
+		} else {
+			System.setProperty(OPTIMIZER_MODE_PROPERTY, previousOptimizerMode);
+		}
+	}
 
 	private void addData(SailRepository sailRepository) {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {

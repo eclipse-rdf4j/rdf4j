@@ -1,0 +1,3 @@
+runtime_sampling_enabled,hybrid_avg_ms_per_op,unit
+false,7.590508884,ms/op
+true,7.466982666,ms/op

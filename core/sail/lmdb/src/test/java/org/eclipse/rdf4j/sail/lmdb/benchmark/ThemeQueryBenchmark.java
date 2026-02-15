@@ -51,7 +51,7 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 30)
+@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 20)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms32G", "-Xmx32G" })
 @Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
@@ -87,7 +87,7 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 			"true",
-			"false"
+//			"false"
 	})
 	public boolean pageCardinalityEstimator;
 
@@ -100,7 +100,7 @@ public class ThemeQueryBenchmark {
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
 				.include("ThemeQueryBenchmark")
-				.forks(1)
+				.forks(0)
 				.build();
 		new Runner(opt).run();
 	}

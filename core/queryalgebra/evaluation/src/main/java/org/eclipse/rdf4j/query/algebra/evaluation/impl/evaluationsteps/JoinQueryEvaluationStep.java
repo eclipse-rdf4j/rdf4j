@@ -33,17 +33,21 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		// TODO maybe we can create a ServiceJoin node already in the parser?
 		QueryEvaluationStep leftPrepared = strategy.precompile(join.getLeftArg(), context);
 		QueryEvaluationStep rightPrepared = strategy.precompile(join.getRightArg(), context);
+		String preferredAlgorithm = join.getAlgorithmName();
+		boolean preferHashJoin = HashJoinIteration.class.getSimpleName().equals(preferredAlgorithm);
+		boolean preferMergeJoin = InnerMergeJoinIterator.class.getSimpleName().equals(preferredAlgorithm);
 		if (join.getRightArg() instanceof Service) {
 			eval = bindings -> new ServiceJoinIterator(leftPrepared.evaluate(bindings),
 					(Service) join.getRightArg(), bindings,
 					strategy);
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
-		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
+		} else if (preferHashJoin || isOutOfScopeForLeftArgBindings(join.getRightArg())) {
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
 			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
 					joinAttributes, context);
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
-		} else if (join.isMergeJoin() && context.getComparator() != null) {
+		} else if ((preferMergeJoin || join.isMergeJoin()) && join.getOrder() != null
+				&& context.getComparator() != null) {
 			eval = bindings -> InnerMergeJoinIterator.getInstance(leftPrepared, rightPrepared, bindings,
 					context.getComparator(), context.getValue(join.getOrder().getName()), context);
 			join.setAlgorithm(InnerMergeJoinIterator.class.getSimpleName());

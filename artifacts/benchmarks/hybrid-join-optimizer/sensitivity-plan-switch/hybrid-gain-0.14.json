@@ -1,0 +1,71 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/25.0.1-zulu/zulu-25.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms32G",
+            "-Xmx32G",
+            "-Xms32G",
+            "-Xmx32G",
+            "-Drdf4j.optimizer.mode=hybrid",
+            "-Drdf4j.optimizer.planSwitch.minRelativeGain=0.14"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS",
+        "warmupIterations" : 0,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 10,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "pageCardinalityEstimator" : "true",
+            "themeName" : "SOCIAL_MEDIA",
+            "z_queryIndex" : "10"
+        },
+        "primaryMetric" : {
+            "score" : 7.590067844145328,
+            "scoreError" : 1.6031586150358623,
+            "scoreConfidence" : [
+                5.986909229109466,
+                9.19322645918119
+            ],
+            "scorePercentiles" : {
+                "0.0" : 6.310150621118012,
+                "50.0" : 8.080381967981557,
+                "90.0" : 8.710143887030844,
+                "95.0" : 8.72388043478261,
+                "99.0" : 8.72388043478261,
+                "99.9" : 8.72388043478261,
+                "99.99" : 8.72388043478261,
+                "99.999" : 8.72388043478261,
+                "99.9999" : 8.72388043478261,
+                "100.0" : 8.72388043478261
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    8.72388043478261,
+                    8.499453075630251,
+                    8.586514957264956,
+                    8.380382917355371,
+                    8.305456967213114,
+                    7.85530696875,
+                    6.381666930379747,
+                    6.310150621118012,
+                    6.348917452830189,
+                    6.508948116129032
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

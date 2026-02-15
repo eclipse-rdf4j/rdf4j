@@ -1,0 +1,64 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/25.0.1-zulu/zulu-25.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms32G",
+            "-Xmx32G",
+            "-Drdf4j.optimizer.mode=hybrid",
+            "-Drdf4j.optimizer.runtimeSampling.enabled=false"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS",
+        "warmupIterations" : 0,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "pageCardinalityEstimator" : "true",
+            "themeName" : "SOCIAL_MEDIA",
+            "z_queryIndex" : "10"
+        },
+        "primaryMetric" : {
+            "score" : 9.044293792456205,
+            "scoreError" : 1.2642902498202377,
+            "scoreConfidence" : [
+                7.780003542635967,
+                10.308584042276443
+            ],
+            "scorePercentiles" : {
+                "0.0" : 8.67880998275862,
+                "50.0" : 9.014747392857142,
+                "90.0" : 9.477039698113208,
+                "95.0" : 9.477039698113208,
+                "99.0" : 9.477039698113208,
+                "99.9" : 9.477039698113208,
+                "99.99" : 9.477039698113208,
+                "99.999" : 9.477039698113208,
+                "99.9999" : 9.477039698113208,
+                "100.0" : 9.477039698113208
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    9.477039698113208,
+                    9.258648697247706,
+                    9.014747392857142,
+                    8.792223191304348,
+                    8.67880998275862
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

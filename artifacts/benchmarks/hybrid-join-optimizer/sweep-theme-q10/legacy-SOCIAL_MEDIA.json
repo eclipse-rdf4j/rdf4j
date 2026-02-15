@@ -1,0 +1,63 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/25.0.1-zulu/zulu-25.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms32G",
+            "-Xmx32G",
+            "-Drdf4j.optimizer.mode=legacy"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS",
+        "warmupIterations" : 0,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "pageCardinalityEstimator" : "true",
+            "themeName" : "SOCIAL_MEDIA",
+            "z_queryIndex" : "10"
+        },
+        "primaryMetric" : {
+            "score" : 8.432757445265503,
+            "scoreError" : 1.2558956517973292,
+            "scoreConfidence" : [
+                7.1768617934681735,
+                9.688653097062833
+            ],
+            "scorePercentiles" : {
+                "0.0" : 8.100832,
+                "50.0" : 8.437821075630252,
+                "90.0" : 8.88133954385965,
+                "95.0" : 8.88133954385965,
+                "99.0" : 8.88133954385965,
+                "99.9" : 8.88133954385965,
+                "99.99" : 8.88133954385965,
+                "99.999" : 8.88133954385965,
+                "99.9999" : 8.88133954385965,
+                "100.0" : 8.88133954385965
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    8.88133954385965,
+                    8.602837606837607,
+                    8.437821075630252,
+                    8.140957,
+                    8.100832
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

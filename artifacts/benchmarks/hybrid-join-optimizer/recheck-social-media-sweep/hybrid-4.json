@@ -1,0 +1,61 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/25.0.1-zulu/zulu-25.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms32G",
+            "-Xmx32G",
+            "-Drdf4j.optimizer.mode=hybrid"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS",
+        "warmupIterations" : 0,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 3,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "pageCardinalityEstimator" : "true",
+            "themeName" : "SOCIAL_MEDIA",
+            "z_queryIndex" : "4"
+        },
+        "primaryMetric" : {
+            "score" : 4.762809120815319,
+            "scoreError" : 0.9033718923265374,
+            "scoreConfidence" : [
+                3.859437228488782,
+                5.666181013141856
+            ],
+            "scorePercentiles" : {
+                "0.0" : 4.719124802816902,
+                "50.0" : 4.7527031990521325,
+                "90.0" : 4.816599360576923,
+                "95.0" : 4.816599360576923,
+                "99.0" : 4.816599360576923,
+                "99.9" : 4.816599360576923,
+                "99.99" : 4.816599360576923,
+                "99.999" : 4.816599360576923,
+                "99.9999" : 4.816599360576923,
+                "100.0" : 4.816599360576923
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    4.719124802816902,
+                    4.816599360576923,
+                    4.7527031990521325
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

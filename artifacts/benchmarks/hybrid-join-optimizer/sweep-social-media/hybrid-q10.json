@@ -1,0 +1,63 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/25.0.1-zulu/zulu-25.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms32G",
+            "-Xmx32G",
+            "-Drdf4j.optimizer.mode=hybrid"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS",
+        "warmupIterations" : 0,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "pageCardinalityEstimator" : "true",
+            "themeName" : "SOCIAL_MEDIA",
+            "z_queryIndex" : "10"
+        },
+        "primaryMetric" : {
+            "score" : 8.699990518190482,
+            "scoreError" : 1.220153461006028,
+            "scoreConfidence" : [
+                7.479837057184454,
+                9.92014397919651
+            ],
+            "scorePercentiles" : {
+                "0.0" : 8.376638541666667,
+                "50.0" : 8.689022435897435,
+                "90.0" : 9.120912118181819,
+                "95.0" : 9.120912118181819,
+                "99.0" : 9.120912118181819,
+                "99.9" : 9.120912118181819,
+                "99.99" : 9.120912118181819,
+                "99.999" : 9.120912118181819,
+                "99.9999" : 9.120912118181819,
+                "100.0" : 9.120912118181819
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    9.120912118181819,
+                    8.897547203539823,
+                    8.689022435897435,
+                    8.415832291666666,
+                    8.376638541666667
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

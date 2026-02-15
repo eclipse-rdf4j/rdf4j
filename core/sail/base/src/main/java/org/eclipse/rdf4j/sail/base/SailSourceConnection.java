@@ -384,7 +384,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	private static boolean isHybridOptimizerModeEnabled() {
-		return HYBRID_OPTIMIZER_MODE.equalsIgnoreCase(System.getProperty(OPTIMIZER_MODE_PROPERTY, ""));
+		return HYBRID_OPTIMIZER_MODE
+				.equalsIgnoreCase(System.getProperty(OPTIMIZER_MODE_PROPERTY, HYBRID_OPTIMIZER_MODE));
 	}
 
 	private static int getHybridQErrorLogLimit() {
