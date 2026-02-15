@@ -24,6 +24,8 @@ public class JoinCostModel {
 
 	private static final double CARTESIAN_PENALTY = 12.0;
 	private static final double MULTI_KEY_JOIN_BONUS = 0.9;
+	private static final double STEP_WORK_WEIGHT = 0.1;
+	private static final double MIN_ESTIMATE = 1e-6;
 	private static final double DEFAULT_HASH_JOIN_INPUT_THRESHOLD = 10_000_000_000.0;
 	private static final boolean DEFAULT_HASH_JOIN_ENABLED = true;
 	private static final boolean DEFAULT_MERGE_JOIN_ENABLED = true;
@@ -50,18 +52,42 @@ public class JoinCostModel {
 	 */
 	public double score(EvaluationStatistics.CardinalityEstimate estimate, boolean joinsBoundVar, int sharedVarCount,
 			double riskLambda) {
-		double expectedCost = Math.max(1.0, estimate.estimate);
+		double expectedCost = clampEstimate(estimate.estimate);
 		double uncertainty = Math.max(0.0, estimate.upperBound - estimate.lowerBound);
 		double confidencePenalty = (1.0 - estimate.confidence) * expectedCost;
 		double score = expectedCost + (Math.max(0.0, riskLambda) * (uncertainty + confidencePenalty));
 
+		return applyJoinShapePenalty(score, joinsBoundVar, sharedVarCount);
+	}
+
+	public double scoreJoinStep(EvaluationStatistics.CardinalityEstimate leftPlanEstimate,
+			EvaluationStatistics.CardinalityEstimate rightLeafEstimate,
+			EvaluationStatistics.CardinalityEstimate joinOutputEstimate,
+			boolean joinsBoundVar, int sharedVarCount, double riskLambda) {
+		double leftCost = clampEstimate(leftPlanEstimate.estimate);
+		double rightCost = clampEstimate(rightLeafEstimate.estimate);
+		double joinOutput = clampEstimate(joinOutputEstimate.estimate);
+
+		double uncertainty = Math.max(0.0, joinOutputEstimate.upperBound - joinOutputEstimate.lowerBound);
+		double confidencePenalty = (1.0 - joinOutputEstimate.confidence) * joinOutput;
+		double score = joinOutput + STEP_WORK_WEIGHT * (leftCost + rightCost)
+				+ (Math.max(0.0, riskLambda) * (uncertainty + confidencePenalty));
+
+		return applyJoinShapePenalty(score, joinsBoundVar, sharedVarCount);
+	}
+
+	private double applyJoinShapePenalty(double score, boolean joinsBoundVar, int sharedVarCount) {
 		if (!joinsBoundVar) {
-			score *= CARTESIAN_PENALTY;
+			return score * CARTESIAN_PENALTY;
 		} else if (sharedVarCount > 1) {
-			score *= MULTI_KEY_JOIN_BONUS;
+			return score * MULTI_KEY_JOIN_BONUS;
 		}
 
 		return score;
+	}
+
+	private static double clampEstimate(double value) {
+		return Math.max(MIN_ESTIMATE, value);
 	}
 
 	public JoinAlgorithm chooseJoinAlgorithm(EvaluationStatistics.CardinalityEstimate leftEstimate,

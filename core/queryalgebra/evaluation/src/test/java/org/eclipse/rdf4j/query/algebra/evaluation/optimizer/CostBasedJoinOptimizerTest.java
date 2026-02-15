@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -226,6 +227,31 @@ class CostBasedJoinOptimizerTest {
 							new TreeSet<>(sampledOrder.subList(0, 2)));
 					assertNotEquals(baselineOrder, sampledOrder);
 				})));
+	}
+
+	@Test
+	void keepsExistingJoinNodeWhenOrderIsUnchanged() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:test:left> ?join . "
+				+ "?o <urn:test:right> ?join . "
+				+ "}";
+		QueryRoot root = parse(query);
+
+		Join originalJoin = firstJoin(root.getArg());
+		assertNotNull(originalJoin);
+		originalJoin.setAlgorithm("legacy-hint");
+		originalJoin.setMergeJoin(true);
+
+		CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(Map.of(
+				"urn:test:left", estimate(10.0),
+				"urn:test:right", estimate(10.0))));
+		optimizer.optimize(root, null, null);
+
+		Join optimizedJoin = firstJoin(root.getArg());
+		assertNotNull(optimizedJoin);
+		assertSame(originalJoin, optimizedJoin);
+		assertEquals("legacy-hint", optimizedJoin.getAlgorithmName());
+		assertTrue(optimizedJoin.isMergeJoin());
 	}
 
 	private static QueryRoot parse(String query) {

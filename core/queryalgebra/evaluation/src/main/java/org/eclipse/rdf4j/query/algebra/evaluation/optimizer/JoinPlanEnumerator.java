@@ -19,6 +19,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 
@@ -67,33 +68,40 @@ public class JoinPlanEnumerator {
 	}
 
 	public List<TupleExpr> orderJoinArgs(List<TupleExpr> joinArgs) {
+		return orderJoinArgs(joinArgs, Set.of());
+	}
+
+	public List<TupleExpr> orderJoinArgs(List<TupleExpr> joinArgs, Set<String> initialBoundVars) {
 		if (joinArgs.size() <= 1) {
 			return new ArrayList<>(joinArgs);
 		}
 
 		List<TupleExpr> copy = new ArrayList<>(joinArgs);
+		Set<String> initialVars = initialBoundVars == null ? Set.of() : new HashSet<>(initialBoundVars);
 		if (dpEnabled && copy.size() <= dpMaxTerms && copy.size() < Integer.SIZE - 1) {
-			return orderWithDynamicProgramming(copy);
+			return orderWithDynamicProgramming(copy, initialVars);
 		}
 
 		if (!beamEnabled) {
 			return copy;
 		}
 
-		return orderWithBeamSearch(copy);
+		return orderWithBeamSearch(copy, initialVars);
 	}
 
-	private List<TupleExpr> orderWithDynamicProgramming(List<TupleExpr> joinArgs) {
+	private List<TupleExpr> orderWithDynamicProgramming(List<TupleExpr> joinArgs, Set<String> initialBoundVars) {
 		int size = joinArgs.size();
 		int maxMask = 1 << size;
 
 		@SuppressWarnings("unchecked")
 		Set<String>[] boundVarsByMask = new Set[maxMask];
-		boundVarsByMask[0] = Set.of();
+		boundVarsByMask[0] = new HashSet<>(initialBoundVars);
 
 		List<Set<String>> bindingNames = bindingNames(joinArgs);
 		int[] connectivity = connectivity(bindingNames);
 		List<EvaluationStatistics.CardinalityEstimate> estimates = estimates(joinArgs);
+		@SuppressWarnings("unchecked")
+		EvaluationStatistics.CardinalityEstimate[][] joinEstimateCache = new EvaluationStatistics.CardinalityEstimate[maxMask][size];
 
 		for (int mask = 1; mask < maxMask; mask++) {
 			int bit = Integer.numberOfTrailingZeros(mask);
@@ -106,6 +114,8 @@ public class JoinPlanEnumerator {
 		double[] bestScore = new double[maxMask];
 		Arrays.fill(bestScore, Double.POSITIVE_INFINITY);
 		bestScore[0] = 0.0;
+		EvaluationStatistics.CardinalityEstimate[] bestPlanEstimate = new EvaluationStatistics.CardinalityEstimate[maxMask];
+		TupleExpr[] bestPlanExpr = new TupleExpr[maxMask];
 
 		int[] predecessorMask = new int[maxMask];
 		Arrays.fill(predecessorMask, -1);
@@ -117,6 +127,8 @@ public class JoinPlanEnumerator {
 				continue;
 			}
 			Set<String> boundVars = boundVarsByMask[mask];
+			EvaluationStatistics.CardinalityEstimate leftPlanEstimate = bestPlanEstimate[mask];
+			TupleExpr leftPlanExpr = bestPlanExpr[mask];
 			for (int i = 0; i < size; i++) {
 				if ((mask & (1 << i)) != 0) {
 					continue;
@@ -124,14 +136,18 @@ public class JoinPlanEnumerator {
 
 				int nextMask = mask | (1 << i);
 				int remainingTerms = size - Integer.bitCount(mask) - 1;
-				double candidateScore = bestScore[mask]
-						+ stepScore(estimates.get(i), boundVars, bindingNames.get(i), connectivity[i], remainingTerms);
+				StepEvaluation step = evaluateStep(mask, i, boundVars, bindingNames.get(i), connectivity[i],
+						remainingTerms,
+						estimates, leftPlanEstimate, leftPlanExpr, joinArgs, joinEstimateCache);
+				double candidateScore = bestScore[mask] + step.score;
 				if (candidateScore < bestScore[nextMask] - 1e-9
 						|| (Math.abs(candidateScore - bestScore[nextMask]) <= 1e-9
 								&& (predecessorTerm[nextMask] < 0 || i < predecessorTerm[nextMask]))) {
 					bestScore[nextMask] = candidateScore;
 					predecessorMask[nextMask] = mask;
 					predecessorTerm[nextMask] = i;
+					bestPlanEstimate[nextMask] = step.nextPlanEstimate;
+					bestPlanExpr[nextMask] = step.nextPlanExpr;
 				}
 			}
 		}
@@ -147,16 +163,16 @@ public class JoinPlanEnumerator {
 		return mapOrder(joinArgs, order);
 	}
 
-	private List<TupleExpr> orderWithBeamSearch(List<TupleExpr> joinArgs) {
+	private List<TupleExpr> orderWithBeamSearch(List<TupleExpr> joinArgs, Set<String> initialBoundVars) {
 		List<Set<String>> bindingNames = bindingNames(joinArgs);
 		int[] connectivity = connectivity(bindingNames);
 		List<EvaluationStatistics.CardinalityEstimate> estimates = estimates(joinArgs);
-		List<PlanState> beam = List.of(new PlanState(new BitSet(joinArgs.size()), 0.0, new int[0]));
+		List<PlanState> beam = List.of(new PlanState(new BitSet(joinArgs.size()), 0.0, new int[0],
+				new HashSet<>(initialBoundVars), null, null));
 
 		for (int depth = 0; depth < joinArgs.size(); depth++) {
 			List<PlanState> nextBeam = new ArrayList<>();
 			for (PlanState state : beam) {
-				Set<String> boundVars = boundVars(state.order, bindingNames);
 				for (int candidate = 0; candidate < joinArgs.size(); candidate++) {
 					if (state.selected.get(candidate)) {
 						continue;
@@ -166,10 +182,13 @@ public class JoinPlanEnumerator {
 					int[] nextOrder = Arrays.copyOf(state.order, state.order.length + 1);
 					nextOrder[nextOrder.length - 1] = candidate;
 					int remainingTerms = joinArgs.size() - state.order.length - 1;
-					double score = state.score
-							+ stepScore(estimates.get(candidate), boundVars, bindingNames.get(candidate),
-									connectivity[candidate], remainingTerms);
-					nextBeam.add(new PlanState(nextSelected, score, nextOrder));
+					StepEvaluation step = evaluateStep(0, candidate, state.boundVars, bindingNames.get(candidate),
+							connectivity[candidate], remainingTerms, estimates, state.planEstimate, state.planExpr,
+							joinArgs, null);
+					Set<String> nextBoundVars = new HashSet<>(state.boundVars);
+					nextBoundVars.addAll(bindingNames.get(candidate));
+					nextBeam.add(new PlanState(nextSelected, state.score + step.score, nextOrder, nextBoundVars,
+							step.nextPlanEstimate, step.nextPlanExpr));
 				}
 			}
 
@@ -186,15 +205,68 @@ public class JoinPlanEnumerator {
 		return mapOrder(joinArgs, best.order);
 	}
 
-	private double stepScore(EvaluationStatistics.CardinalityEstimate estimate, Set<String> boundVars,
-			Set<String> candidateVars, int candidateConnectivity, int remainingTerms) {
+	private StepEvaluation evaluateStep(int mask, int candidate, Set<String> boundVars, Set<String> candidateVars,
+			int candidateConnectivity, int remainingTerms,
+			List<EvaluationStatistics.CardinalityEstimate> estimates,
+			EvaluationStatistics.CardinalityEstimate leftPlanEstimate, TupleExpr leftPlanExpr,
+			List<TupleExpr> joinArgs, EvaluationStatistics.CardinalityEstimate[][] joinEstimateCache) {
+		EvaluationStatistics.CardinalityEstimate candidateEstimate = estimates.get(candidate);
 		int sharedVarCount = sharedVarCount(boundVars, candidateVars);
 		boolean joinsBoundVars = boundVars.isEmpty() ? candidateConnectivity > 0 : sharedVarCount > 0;
-		double score = costModel.score(estimate, joinsBoundVars, sharedVarCount, riskLambda);
+		double score;
+		EvaluationStatistics.CardinalityEstimate nextPlanEstimate;
+		TupleExpr nextPlanExpr;
+
+		if (leftPlanEstimate == null || leftPlanExpr == null) {
+			score = costModel.score(candidateEstimate, joinsBoundVars, sharedVarCount, riskLambda);
+			nextPlanEstimate = candidateEstimate;
+			nextPlanExpr = joinArgs.get(candidate);
+		} else {
+			EvaluationStatistics.CardinalityEstimate joinOutputEstimate = estimateJoinOutput(mask, candidate,
+					leftPlanExpr,
+					leftPlanEstimate, joinArgs.get(candidate), candidateEstimate, joinEstimateCache);
+			score = costModel.scoreJoinStep(leftPlanEstimate, candidateEstimate, joinOutputEstimate, joinsBoundVars,
+					sharedVarCount, riskLambda);
+			nextPlanEstimate = joinOutputEstimate;
+			nextPlanExpr = new Join(leftPlanExpr.clone(), joinArgs.get(candidate).clone());
+		}
+
 		if (!joinsBoundVars && !boundVars.isEmpty()) {
 			score += EARLY_CARTESIAN_TIE_BREAK_WEIGHT * Math.max(0, remainingTerms);
 		}
-		return score;
+		return new StepEvaluation(score, nextPlanEstimate, nextPlanExpr);
+	}
+
+	private EvaluationStatistics.CardinalityEstimate estimateJoinOutput(int mask, int candidate, TupleExpr leftPlanExpr,
+			EvaluationStatistics.CardinalityEstimate leftPlanEstimate, TupleExpr candidateExpr,
+			EvaluationStatistics.CardinalityEstimate candidateEstimate,
+			EvaluationStatistics.CardinalityEstimate[][] joinEstimateCache) {
+		if (joinEstimateCache != null) {
+			EvaluationStatistics.CardinalityEstimate cached = joinEstimateCache[mask][candidate];
+			if (cached != null) {
+				return cached;
+			}
+		}
+
+		EvaluationStatistics.CardinalityEstimate estimate;
+		try {
+			estimate = statistics.getCardinalityEstimate(new Join(leftPlanExpr.clone(), candidateExpr.clone()));
+		} catch (RuntimeException ignored) {
+			double estimateValue = Math.max(1e-6, leftPlanEstimate.estimate)
+					* Math.max(1e-6, candidateEstimate.estimate);
+			double lowerBound = Math.max(1e-6, leftPlanEstimate.lowerBound)
+					* Math.max(1e-6, candidateEstimate.lowerBound);
+			double upperBound = Math.max(lowerBound,
+					Math.max(1e-6, leftPlanEstimate.upperBound) * Math.max(1e-6, candidateEstimate.upperBound));
+			double confidence = Math.min(leftPlanEstimate.confidence, candidateEstimate.confidence);
+			estimate = new EvaluationStatistics.CardinalityEstimate(estimateValue, lowerBound, upperBound, confidence,
+					"join-fallback");
+		}
+
+		if (joinEstimateCache != null) {
+			joinEstimateCache[mask][candidate] = estimate;
+		}
+		return estimate;
 	}
 
 	private static List<Set<String>> bindingNames(List<TupleExpr> joinArgs) {
@@ -211,14 +283,6 @@ public class JoinPlanEnumerator {
 			estimates.add(statistics.getCardinalityEstimate(joinArg));
 		}
 		return estimates;
-	}
-
-	private static Set<String> boundVars(int[] order, List<Set<String>> bindingNames) {
-		Set<String> vars = new HashSet<>();
-		for (int index : order) {
-			vars.addAll(bindingNames.get(index));
-		}
-		return vars;
 	}
 
 	private static int sharedVarCount(Set<String> boundVars, Set<String> candidateVars) {
@@ -322,11 +386,31 @@ public class JoinPlanEnumerator {
 		private final BitSet selected;
 		private final double score;
 		private final int[] order;
+		private final Set<String> boundVars;
+		private final EvaluationStatistics.CardinalityEstimate planEstimate;
+		private final TupleExpr planExpr;
 
-		private PlanState(BitSet selected, double score, int[] order) {
+		private PlanState(BitSet selected, double score, int[] order, Set<String> boundVars,
+				EvaluationStatistics.CardinalityEstimate planEstimate, TupleExpr planExpr) {
 			this.selected = selected;
 			this.score = score;
 			this.order = order;
+			this.boundVars = boundVars;
+			this.planEstimate = planEstimate;
+			this.planExpr = planExpr;
+		}
+	}
+
+	private static final class StepEvaluation {
+		private final double score;
+		private final EvaluationStatistics.CardinalityEstimate nextPlanEstimate;
+		private final TupleExpr nextPlanExpr;
+
+		private StepEvaluation(double score, EvaluationStatistics.CardinalityEstimate nextPlanEstimate,
+				TupleExpr nextPlanExpr) {
+			this.score = score;
+			this.nextPlanEstimate = nextPlanEstimate;
+			this.nextPlanExpr = nextPlanExpr;
 		}
 	}
 }

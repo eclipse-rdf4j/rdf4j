@@ -14,6 +14,9 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
@@ -31,12 +34,11 @@ class StandardQueryOptimizerPipelineTest {
 	}
 
 	@Test
-	void defaultsToCostBasedJoinOptimizer() {
+	void defaultsToHybridJoinOptimizerSequence() {
 		StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
 				mock(EvaluationStrategy.class), new EmptyTripleSource(), new EvaluationStatistics());
 
-		QueryOptimizer joinOptimizer = extractJoinOptimizer(pipeline);
-		assertThat(joinOptimizer).isExactlyInstanceOf(CostBasedJoinOptimizer.class);
+		assertJoinOptimizerSequence(pipeline, QueryJoinOptimizer.class, CostBasedJoinOptimizer.class);
 	}
 
 	@Test
@@ -46,19 +48,17 @@ class StandardQueryOptimizerPipelineTest {
 		StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
 				mock(EvaluationStrategy.class), new EmptyTripleSource(), new EvaluationStatistics());
 
-		QueryOptimizer joinOptimizer = extractJoinOptimizer(pipeline);
-		assertThat(joinOptimizer).isExactlyInstanceOf(QueryJoinOptimizer.class);
+		assertJoinOptimizerSequence(pipeline, QueryJoinOptimizer.class);
 	}
 
 	@Test
-	void usesCostBasedJoinOptimizerWhenHybridModeSet() {
+	void usesLegacyThenCostBasedWhenHybridModeSet() {
 		System.setProperty(OPTIMIZER_MODE_PROPERTY, "hybrid");
 
 		StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
 				mock(EvaluationStrategy.class), new EmptyTripleSource(), new EvaluationStatistics());
 
-		QueryOptimizer joinOptimizer = extractJoinOptimizer(pipeline);
-		assertThat(joinOptimizer).isInstanceOf(CostBasedJoinOptimizer.class);
+		assertJoinOptimizerSequence(pipeline, QueryJoinOptimizer.class, CostBasedJoinOptimizer.class);
 	}
 
 	@Test
@@ -68,17 +68,23 @@ class StandardQueryOptimizerPipelineTest {
 		StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
 				mock(EvaluationStrategy.class), new EmptyTripleSource(), new EvaluationStatistics());
 
-		QueryOptimizer joinOptimizer = extractJoinOptimizer(pipeline);
-		assertThat(joinOptimizer).isInstanceOf(CostBasedJoinOptimizer.class);
+		assertJoinOptimizerSequence(pipeline, CostBasedJoinOptimizer.class);
 	}
 
-	private QueryOptimizer extractJoinOptimizer(StandardQueryOptimizerPipeline pipeline) {
+	private void assertJoinOptimizerSequence(StandardQueryOptimizerPipeline pipeline,
+			Class<? extends QueryOptimizer>... expected) {
+		assertThat(extractJoinOptimizers(pipeline))
+				.extracting(Object::getClass)
+				.containsExactly(expected);
+	}
+
+	private List<QueryOptimizer> extractJoinOptimizers(StandardQueryOptimizerPipeline pipeline) {
+		List<QueryOptimizer> joinOptimizers = new ArrayList<>();
 		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
 			if (optimizer instanceof QueryJoinOptimizer || optimizer instanceof CostBasedJoinOptimizer) {
-				return optimizer;
+				joinOptimizers.add(optimizer);
 			}
 		}
-
-		throw new AssertionError("No join optimizer found in standard pipeline");
+		return joinOptimizers;
 	}
 }
