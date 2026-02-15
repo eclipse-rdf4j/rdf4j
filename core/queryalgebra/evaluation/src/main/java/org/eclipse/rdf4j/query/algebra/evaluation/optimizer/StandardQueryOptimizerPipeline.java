@@ -75,23 +75,22 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	 */
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
-		List<QueryOptimizer> optimizers = List.of(
-				BINDING_ASSIGNER,
-				BINDING_SET_ASSIGNMENT_INLINER,
-				new ConstantOptimizer(strategy),
-				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
-				COMPARE_OPTIMIZER,
-				CONJUNCTIVE_CONSTRAINT_SPLITTER,
-				DISJUNCTIVE_CONSTRAINT_OPTIMIZER,
-				SAME_TERM_FILTER_OPTIMIZER,
-				UNION_SCOPE_CHANGE_OPTIMIZER,
-				QUERY_MODEL_NORMALIZER,
-				PROJECTION_REMOVAL_OPTIMIZER, // Make sure this is after the UnionScopeChangeOptimizer
-				createJoinOptimizer(),
-				ITERATIVE_EVALUATION_OPTIMIZER,
-				FILTER_OPTIMIZER,
-				ORDER_LIMIT_OPTIMIZER
-		);
+		List<QueryOptimizer> optimizers = new ArrayList<>();
+		optimizers.add(BINDING_ASSIGNER);
+		optimizers.add(BINDING_SET_ASSIGNMENT_INLINER);
+		optimizers.add(new ConstantOptimizer(strategy));
+		optimizers.add(new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()));
+		optimizers.add(COMPARE_OPTIMIZER);
+		optimizers.add(CONJUNCTIVE_CONSTRAINT_SPLITTER);
+		optimizers.add(DISJUNCTIVE_CONSTRAINT_OPTIMIZER);
+		optimizers.add(SAME_TERM_FILTER_OPTIMIZER);
+		optimizers.add(UNION_SCOPE_CHANGE_OPTIMIZER);
+		optimizers.add(QUERY_MODEL_NORMALIZER);
+		optimizers.add(PROJECTION_REMOVAL_OPTIMIZER); // Make sure this is after the UnionScopeChangeOptimizer
+		optimizers.addAll(createJoinOptimizers());
+		optimizers.add(ITERATIVE_EVALUATION_OPTIMIZER);
+		optimizers.add(FILTER_OPTIMIZER);
+		optimizers.add(ORDER_LIMIT_OPTIMIZER);
 
 		if (assertsEnabled) {
 			List<QueryOptimizer> optimizersWithReferenceCleaner = new ArrayList<>();
@@ -106,16 +105,18 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		return optimizers;
 	}
 
-	private QueryOptimizer createJoinOptimizer() {
-		if (useCostBasedJoinOptimizer()) {
-			return new CostBasedJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource);
-		}
-		return new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource);
-	}
-
-	private boolean useCostBasedJoinOptimizer() {
+	private List<QueryOptimizer> createJoinOptimizers() {
 		String mode = System.getProperty(OPTIMIZER_MODE_PROPERTY, OPTIMIZER_MODE_HYBRID);
-		return OPTIMIZER_MODE_HYBRID.equalsIgnoreCase(mode) || OPTIMIZER_MODE_AGGRESSIVE.equalsIgnoreCase(mode);
+		if (OPTIMIZER_MODE_LEGACY.equalsIgnoreCase(mode)) {
+			return List.of(new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource));
+		}
+		if (OPTIMIZER_MODE_AGGRESSIVE.equalsIgnoreCase(mode)) {
+			return List
+					.of(new CostBasedJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource));
+		}
+		return List.of(
+				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource),
+				new CostBasedJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource));
 	}
 
 }

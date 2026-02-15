@@ -18,9 +18,11 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -127,6 +129,48 @@ class JoinPlanEnumeratorTest {
 		}));
 	}
 
+	@Test
+	void prefersSelectivePairEvenWhenLeafIsLarger() {
+		StatementPattern noisy = pattern("urn:test:noisy", "s1", "join");
+		StatementPattern selectiveLeft = pattern("urn:test:selectiveLeft", "s2", "join");
+		StatementPattern selectiveRight = pattern("urn:test:selectiveRight", "s3", "join");
+
+		JoinPlanEnumerator enumerator = new JoinPlanEnumerator(
+				new PairAwareStatistics(
+						Map.of(
+								"urn:test:noisy", estimate(90.0),
+								"urn:test:selectiveLeft", estimate(100.0),
+								"urn:test:selectiveRight", estimate(101.0)),
+						Map.of(
+								pairKey("urn:test:selectiveLeft", "urn:test:selectiveRight"), estimate(1.0),
+								pairKey("urn:test:noisy", "urn:test:selectiveLeft"), estimate(400.0),
+								pairKey("urn:test:noisy", "urn:test:selectiveRight"), estimate(450.0))),
+				new JoinCostModel(), 12, 8, 0.0);
+
+		List<TupleExpr> ordered = enumerator.orderJoinArgs(List.of(noisy, selectiveLeft, selectiveRight));
+
+		assertEquals("urn:test:selectiveLeft", predicate(ordered.get(0)));
+		assertEquals("urn:test:selectiveRight", predicate(ordered.get(1)));
+	}
+
+	@Test
+	void usesInitialBoundVarsForFirstStepScoring() {
+		StatementPattern bridge = pattern("urn:test:bridge", "mid", "end");
+		StatementPattern tail = pattern("urn:test:tail", "end", "tail");
+		StatementPattern seed = pattern("urn:test:seed", "seed", "mid");
+
+		JoinPlanEnumerator enumerator = new JoinPlanEnumerator(
+				new FixedStatistics(Map.of(
+						"urn:test:seed", estimate(10.0),
+						"urn:test:bridge", estimate(1.0),
+						"urn:test:tail", estimate(2.0))),
+				new JoinCostModel(), 12, 8, 0.25);
+
+		List<TupleExpr> ordered = enumerator.orderJoinArgs(List.of(bridge, tail, seed), Set.of("seed"));
+
+		assertEquals("urn:test:seed", predicate(ordered.get(0)));
+	}
+
 	private static StatementPattern pattern(String predicateIri, String subjectVarName, String objectVarName) {
 		Value predicateValue = SimpleValueFactory.getInstance().createIRI(predicateIri);
 		return new StatementPattern(new Var(subjectVarName), new Var("p", predicateValue), new Var(objectVarName));
@@ -134,6 +178,18 @@ class JoinPlanEnumeratorTest {
 
 	private static EvaluationStatistics.CardinalityEstimate estimate(double estimate) {
 		return new EvaluationStatistics.CardinalityEstimate(estimate, estimate * 0.8, estimate * 1.2, 0.8, "test");
+	}
+
+	private static String pairKey(String leftPredicate, String rightPredicate) {
+		if (leftPredicate.compareTo(rightPredicate) <= 0) {
+			return leftPredicate + "|" + rightPredicate;
+		}
+		return rightPredicate + "|" + leftPredicate;
+	}
+
+	private static String predicate(TupleExpr tupleExpr) {
+		StatementPattern statementPattern = (StatementPattern) tupleExpr;
+		return statementPattern.getPredicateVar().getValue().stringValue();
 	}
 
 	private static void withProperty(String property, String value, Runnable runnable) {
@@ -178,6 +234,58 @@ class JoinPlanEnumeratorTest {
 				}
 			}
 			return createCardinalityEstimate(100.0, 50.0, 200.0, 0.5, "fallback");
+		}
+	}
+
+	private static final class PairAwareStatistics extends EvaluationStatistics {
+		private final Map<String, CardinalityEstimate> perPredicate;
+		private final Map<String, CardinalityEstimate> perPair;
+
+		private PairAwareStatistics(Map<String, CardinalityEstimate> perPredicate,
+				Map<String, CardinalityEstimate> perPair) {
+			this.perPredicate = perPredicate;
+			this.perPair = perPair;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			return getCardinalityEstimate(expr).estimate;
+		}
+
+		@Override
+		public CardinalityEstimate getCardinalityEstimate(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				Value predicateValue = ((StatementPattern) expr).getPredicateVar().getValue();
+				if (predicateValue != null) {
+					CardinalityEstimate estimate = perPredicate.get(predicateValue.stringValue());
+					if (estimate != null) {
+						return estimate;
+					}
+				}
+			} else if (expr instanceof Join) {
+				Join join = (Join) expr;
+				String leftPredicate = firstPredicate(join.getLeftArg());
+				String rightPredicate = firstPredicate(join.getRightArg());
+				if (leftPredicate != null && rightPredicate != null) {
+					CardinalityEstimate estimate = perPair.get(pairKey(leftPredicate, rightPredicate));
+					if (estimate != null) {
+						return estimate;
+					}
+				}
+			}
+			return createCardinalityEstimate(100.0, 50.0, 200.0, 0.5, "fallback");
+		}
+
+		private String firstPredicate(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof StatementPattern) {
+				Value predicateValue = ((StatementPattern) tupleExpr).getPredicateVar().getValue();
+				return predicateValue != null ? predicateValue.stringValue() : null;
+			}
+			if (tupleExpr instanceof Join) {
+				Join join = (Join) tupleExpr;
+				return firstPredicate(join.getLeftArg());
+			}
+			return null;
 		}
 	}
 }

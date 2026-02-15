@@ -89,13 +89,16 @@ public class CostBasedJoinOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new CostBasedJoinVisitor());
+		Set<String> initialBoundVars = bindings == null ? Set.of() : new HashSet<>(bindings.getBindingNames());
+		tupleExpr.visit(new CostBasedJoinVisitor(initialBoundVars));
 	}
 
 	private final class CostBasedJoinVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+		private final Set<String> initialBoundVars;
 
-		private CostBasedJoinVisitor() {
+		private CostBasedJoinVisitor(Set<String> initialBoundVars) {
 			super(trackResultSize);
+			this.initialBoundVars = initialBoundVars;
 		}
 
 		@Override
@@ -119,13 +122,15 @@ public class CostBasedJoinOptimizer implements QueryOptimizer {
 			}
 
 			List<TupleExpr> baselineJoinArgs = new ArrayList<>(joinArgs);
-			List<TupleExpr> orderedJoinArgs = joinPlanEnumerator.orderJoinArgs(joinArgs);
+			List<TupleExpr> orderedJoinArgs = joinPlanEnumerator.orderJoinArgs(joinArgs, initialBoundVars);
 			orderedJoinArgs = maybeRerankWithRuntimeSampling(orderedJoinArgs);
-			orderedJoinArgs = keepBaselineWhenGainIsTooSmall(baselineJoinArgs, orderedJoinArgs);
-			TupleExpr reorderedJoin = buildRightRecursiveJoin(orderedJoinArgs);
-			if (reorderedJoin != join) {
-				join.replaceWith(reorderedJoin);
+			orderedJoinArgs = keepBaselineWhenGainIsTooSmall(baselineJoinArgs, orderedJoinArgs, initialBoundVars);
+			if (baselineJoinArgs.equals(orderedJoinArgs)) {
+				annotateEstimate(join);
+				return;
 			}
+			TupleExpr reorderedJoin = buildRightRecursiveJoin(orderedJoinArgs);
+			join.replaceWith(reorderedJoin);
 		}
 
 		private void collectJoinArgs(TupleExpr tupleExpr, List<TupleExpr> joinArgs) {
@@ -173,13 +178,17 @@ public class CostBasedJoinOptimizer implements QueryOptimizer {
 			return baseline;
 		}
 
-		private List<TupleExpr> keepBaselineWhenGainIsTooSmall(List<TupleExpr> baseline, List<TupleExpr> candidate) {
+		private List<TupleExpr> keepBaselineWhenGainIsTooSmall(List<TupleExpr> baseline, List<TupleExpr> candidate,
+				Set<String> initialBoundVars) {
 			if (baseline.equals(candidate) || planSwitchMinRelativeGain <= 0.0) {
 				return candidate;
 			}
+			if (!initialBoundVars.isEmpty()) {
+				return candidate;
+			}
 
-			double baselineScore = estimateJoinOrderScore(baseline);
-			double candidateScore = estimateJoinOrderScore(candidate);
+			double baselineScore = estimateJoinOrderScore(baseline, initialBoundVars);
+			double candidateScore = estimateJoinOrderScore(candidate, initialBoundVars);
 			if (!Double.isFinite(candidateScore)) {
 				return baseline;
 			}
@@ -194,14 +203,16 @@ public class CostBasedJoinOptimizer implements QueryOptimizer {
 			return relativeGain + 1e-12 >= planSwitchMinRelativeGain ? candidate : baseline;
 		}
 
-		private double estimateJoinOrderScore(List<TupleExpr> orderedJoinArgs) {
+		private double estimateJoinOrderScore(List<TupleExpr> orderedJoinArgs, Set<String> initialBoundVars) {
 			List<Set<String>> bindingNames = new ArrayList<>(orderedJoinArgs.size());
 			for (TupleExpr orderedJoinArg : orderedJoinArgs) {
 				bindingNames.add(new HashSet<>(orderedJoinArg.getBindingNames()));
 			}
 
 			int[] connectivity = connectivity(bindingNames);
-			Set<String> boundVars = new HashSet<>();
+			Set<String> boundVars = new HashSet<>(initialBoundVars);
+			EvaluationStatistics.CardinalityEstimate currentPlanEstimate = null;
+			TupleExpr currentPlanExpr = null;
 			double score = 0.0;
 			for (int i = 0; i < orderedJoinArgs.size(); i++) {
 				Set<String> candidateVars = bindingNames.get(i);
@@ -209,10 +220,40 @@ public class CostBasedJoinOptimizer implements QueryOptimizer {
 				boolean joinsBoundVars = boundVars.isEmpty() ? connectivity[i] > 0 : sharedVarCount > 0;
 				EvaluationStatistics.CardinalityEstimate estimate = statistics
 						.getCardinalityEstimate(orderedJoinArgs.get(i));
-				score += joinCostModel.score(estimate, joinsBoundVars, sharedVarCount, riskLambda);
+				if (currentPlanEstimate == null || currentPlanExpr == null) {
+					score += joinCostModel.score(estimate, joinsBoundVars, sharedVarCount, riskLambda);
+					currentPlanEstimate = estimate;
+					currentPlanExpr = orderedJoinArgs.get(i);
+				} else {
+					EvaluationStatistics.CardinalityEstimate joinOutputEstimate = estimateJoinOutput(currentPlanExpr,
+							currentPlanEstimate, orderedJoinArgs.get(i), estimate);
+					score += joinCostModel.scoreJoinStep(currentPlanEstimate, estimate, joinOutputEstimate,
+							joinsBoundVars,
+							sharedVarCount, riskLambda);
+					currentPlanEstimate = joinOutputEstimate;
+					currentPlanExpr = new Join(currentPlanExpr.clone(), orderedJoinArgs.get(i).clone());
+				}
 				boundVars.addAll(candidateVars);
 			}
 			return score;
+		}
+
+		private EvaluationStatistics.CardinalityEstimate estimateJoinOutput(TupleExpr leftPlanExpr,
+				EvaluationStatistics.CardinalityEstimate leftPlanEstimate, TupleExpr rightExpr,
+				EvaluationStatistics.CardinalityEstimate rightEstimate) {
+			try {
+				return statistics.getCardinalityEstimate(new Join(leftPlanExpr.clone(), rightExpr.clone()));
+			} catch (RuntimeException ignored) {
+				double estimateValue = Math.max(1e-6, leftPlanEstimate.estimate)
+						* Math.max(1e-6, rightEstimate.estimate);
+				double lowerBound = Math.max(1e-6, leftPlanEstimate.lowerBound)
+						* Math.max(1e-6, rightEstimate.lowerBound);
+				double upperBound = Math.max(lowerBound,
+						Math.max(1e-6, leftPlanEstimate.upperBound) * Math.max(1e-6, rightEstimate.upperBound));
+				double confidence = Math.min(leftPlanEstimate.confidence, rightEstimate.confidence);
+				return new EvaluationStatistics.CardinalityEstimate(estimateValue, lowerBound, upperBound, confidence,
+						"join-fallback");
+			}
 		}
 
 		private int[] connectivity(List<Set<String>> bindingNames) {
