@@ -1,0 +1,63 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/25.0.1-zulu/zulu-25.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms32G",
+            "-Xmx32G",
+            "-Drdf4j.optimizer.mode=legacy"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS",
+        "warmupIterations" : 0,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "pageCardinalityEstimator" : "true",
+            "themeName" : "SOCIAL_MEDIA",
+            "z_queryIndex" : "4"
+        },
+        "primaryMetric" : {
+            "score" : 4.840006263262778,
+            "scoreError" : 2.377038769515442,
+            "scoreConfidence" : [
+                2.462967493747336,
+                7.21704503277822
+            ],
+            "scorePercentiles" : {
+                "0.0" : 3.7482998444444444,
+                "50.0" : 5.052802611111111,
+                "90.0" : 5.240906518134715,
+                "95.0" : 5.240906518134715,
+                "99.0" : 5.240906518134715,
+                "99.9" : 5.240906518134715,
+                "99.99" : 5.240906518134715,
+                "99.999" : 5.240906518134715,
+                "99.9999" : 5.240906518134715,
+                "100.0" : 5.240906518134715
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    5.157148173469388,
+                    5.240906518134715,
+                    5.052802611111111,
+                    5.000874169154229,
+                    3.7482998444444444
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

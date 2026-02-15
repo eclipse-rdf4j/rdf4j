@@ -1,0 +1,13 @@
+mode,query_index,avg,unit
+legacy,0,4.745523866,ms/op
+hybrid,0,4.312599937,ms/op
+legacy,2,4.696349713,ms/op
+hybrid,2,4.278457621,ms/op
+legacy,4,4.840006263,ms/op
+hybrid,4,4.244185818,ms/op
+legacy,6,4.642642722,ms/op
+hybrid,6,4.186123854,ms/op
+legacy,8,832.077245900,ms/op
+hybrid,8,851.871829200,ms/op
+legacy,10,8.323161009,ms/op
+hybrid,10,8.699990518,ms/op

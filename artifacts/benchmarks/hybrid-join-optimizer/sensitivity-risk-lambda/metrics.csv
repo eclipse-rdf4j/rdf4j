@@ -1,0 +1,5 @@
+risk_lambda,hybrid_avg_ms_per_op,unit
+0.00,7.560104794,ms/op
+0.10,7.643912811,ms/op
+0.25,7.654090439,ms/op
+0.50,7.578565085,ms/op

@@ -1473,6 +1473,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 		CloseableIteration<BindingSet> iterator;
 		QueryModelNode queryModelNode;
+		private boolean observationRecorded;
 
 		public ResultSizeCountingIterator(CloseableIteration<BindingSet> iterator,
 				QueryModelNode queryModelNode) {
@@ -1490,6 +1491,21 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		public BindingSet next() throws QueryEvaluationException {
 			queryModelNode.setResultSizeActual(queryModelNode.getResultSizeActual() + 1);
 			return iterator.next();
+		}
+
+		@Override
+		protected void handleClose() throws QueryEvaluationException {
+			try {
+				if (!observationRecorded) {
+					observationRecorded = true;
+					EvaluationStatistics.recordGlobalCardinalityObservation(
+							queryModelNode.getResultSizeEstimateSource(),
+							queryModelNode.getResultSizeEstimate(),
+							queryModelNode.getResultSizeActual());
+				}
+			} finally {
+				super.handleClose();
+			}
 		}
 
 	}

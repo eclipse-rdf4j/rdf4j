@@ -1,0 +1,2741 @@
+Apache Maven 3.9.11 (3e54c93a704957b63ee3494413a2b544fd3d825b)
+Maven home: /opt/homebrew/Cellar/maven/3.9.11/libexec
+Java version: 25.0.1, vendor: Azul Systems, Inc., runtime: /Users/havardottestad/.sdkman/candidates/java/25.0.1-zulu/zulu-25.jdk/Contents/Home
+Default locale: en_US, platform encoding: UTF-8
+OS name: "mac os x", version: "26.1", arch: "aarch64", family: "mac"
+[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Build Order:
+[INFO] 
+[INFO] Eclipse RDF4J                                                      [pom]
+[INFO] RDF4J: Assembly Descriptors                                        [jar]
+[INFO] RDF4J: Core                                                        [pom]
+[INFO] RDF4J: common                                                      [pom]
+[INFO] RDF4J: common annotation                                           [jar]
+[INFO] RDF4J: Model API                                                   [jar]
+[INFO] RDF4J: common exception                                            [jar]
+[INFO] RDF4J: common IO                                                   [jar]
+[INFO] RDF4J: common order                                                [jar]
+[INFO] RDF4J: common iterators                                            [jar]
+[INFO] RDF4J: common text                                                 [jar]
+[INFO] RDF4J: RDF Vocabularies                                            [jar]
+[INFO] RDF4J: Model                                                       [jar]
+[INFO] RDF4J: common transaction                                          [jar]
+[INFO] RDF4J: common XML                                                  [jar]
+[INFO] RDF4J: Rio                                                         [pom]
+[INFO] RDF4J: Rio - API                                                   [jar]
+[INFO] RDF4J: Rio - Languages                                             [jar]
+[INFO] RDF4J: Rio - Datatypes                                             [jar]
+[INFO] RDF4J: Query                                                       [jar]
+[INFO] RDF4J: Rio - Binary                                                [jar]
+[INFO] RDF4J: Rio - N-Triples                                             [jar]
+[INFO] RDF4J: Rio - N-Quads                                               [jar]
+[INFO] RDF4J: Test Suites                                                 [pom]
+[INFO] RDF4J: benchmarks                                                  [jar]
+[INFO] RDF4J: Rio - JSON-LD                                               [jar]
+[INFO] RDF4J: Rio - Turtle                                                [jar]
+[INFO] RDF4J: Rio - TriG                                                  [jar]
+[INFO] RDF4J: Query algebra                                               [pom]
+[INFO] RDF4J: Query algebra - model                                       [jar]
+[INFO] RDF4J: Collection Factory that may be shared                       [pom]
+[INFO] RDF4J: Collection Factory - API                                    [jar]
+[INFO] RDF4J: Sail                                                        [pom]
+[INFO] RDF4J: Sail API                                                    [jar]
+[INFO] RDF4J: Query result IO                                             [pom]
+[INFO] RDF4J: Query result IO - API                                       [jar]
+[INFO] RDF4J: QueryResultIO testsuite                                     [jar]
+[INFO] RDF4J: Query result IO - binary                                    [jar]
+[INFO] RDF4J: Query result IO - SPARQL/JSON                               [jar]
+[INFO] RDF4J: Query result IO - SPARQL/XML                                [jar]
+[INFO] RDF4J: Repository                                                  [pom]
+[INFO] RDF4J: Repository - API                                            [jar]
+[INFO] RDF4J: HTTP                                                        [pom]
+[INFO] RDF4J: HTTP protocol                                               [jar]
+[INFO] RDF4J: HTTP client                                                 [jar]
+[INFO] RDF4J: Query parser                                                [pom]
+[INFO] RDF4J: Query parser - API                                          [jar]
+[INFO] RDF4J: Query parser - SPARQL                                       [jar]
+[INFO] RDF4J: SPARQL Repository                                           [jar]
+[INFO] RDF4J: Query algebra - evaluation                                  [jar]
+[INFO] RDF4J: Repository API testsuite                                    [jar]
+[INFO] RDF4J: SailRepository                                              [jar]
+[INFO] RDF4J: Repository - event (wrapper)                                [jar]
+[INFO] RDF4J: HTTPRepository                                              [jar]
+[INFO] RDF4J: Repository manager                                          [jar]
+[INFO] RDF4J: Sail base implementations                                   [jar]
+[INFO] RDF4J: Sail API testsuite                                          [jar]
+[INFO] RDF4J: Model API testsuite                                         [jar]
+[INFO] RDF4J: Collection Factory - Map DB v3 backed                       [jar]
+[INFO] RDF4J: LmdbStore                                                   [jar]
+[INFO] 
+[INFO] ----------------------< org.eclipse.rdf4j:rdf4j >-----------------------
+[INFO] Building Eclipse RDF4J 5.3.0-SNAPSHOT                             [1/60]
+[INFO]   from pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.version.RequireMavenVersion passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j ---
+[INFO] Spotless.Format is keeping 188 files clean - 0 were changed to be clean, 0 were already clean, 188 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] ------------< org.eclipse.rdf4j:rdf4j-assembly-descriptors >------------
+[INFO] Building RDF4J: Assembly Descriptors 5.3.0-SNAPSHOT               [2/60]
+[INFO]   from assembly-descriptors/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-assembly-descriptors ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-assembly-descriptors ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-assembly-descriptors ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-assembly-descriptors ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-assembly-descriptors ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-assembly-descriptors ---
+[INFO] Spotless.Format is keeping 2 files clean - 0 were changed to be clean, 0 were already clean, 2 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-assembly-descriptors ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-assembly-descriptors ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/assembly-descriptors/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-assembly-descriptors ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-assembly-descriptors ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-assembly-descriptors ---
+[INFO] 
+[INFO] --------------------< org.eclipse.rdf4j:rdf4j-core >--------------------
+[INFO] Building RDF4J: Core 5.3.0-SNAPSHOT                               [3/60]
+[INFO]   from core/pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-core ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-core ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-core ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-core ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-core ---
+[INFO] Spotless.Format is keeping 108 files clean - 0 were changed to be clean, 0 were already clean, 108 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-core ---
+[WARNING] Cannot include project artifact: org.eclipse.rdf4j:rdf4j-core:pom:5.3.0-SNAPSHOT; it doesn't have an associated file or directory.
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -------------------< org.eclipse.rdf4j:rdf4j-common >-------------------
+[INFO] Building RDF4J: common 5.3.0-SNAPSHOT                             [4/60]
+[INFO]   from core/common/pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-common ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-common ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-common ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-common ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-common ---
+[INFO] Spotless.Format is keeping 9 files clean - 0 were changed to be clean, 0 were already clean, 9 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-common ---
+[WARNING] Cannot include project artifact: org.eclipse.rdf4j:rdf4j-common:pom:5.3.0-SNAPSHOT; it doesn't have an associated file or directory.
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -------------< org.eclipse.rdf4j:rdf4j-common-annotation >--------------
+[INFO] Building RDF4J: common annotation 5.3.0-SNAPSHOT                  [5/60]
+[INFO]   from core/common/annotation/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-common-annotation ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-common-annotation ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-common-annotation ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-common-annotation ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-common-annotation ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/annotation/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-common-annotation ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 2 files clean - 0 were changed to be clean, 0 were already clean, 2 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-common-annotation ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-common-annotation ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/annotation/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-common-annotation ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-common-annotation ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-common-annotation ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-common-annotation ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/annotation/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -----------------< org.eclipse.rdf4j:rdf4j-model-api >------------------
+[INFO] Building RDF4J: Model API 5.3.0-SNAPSHOT                          [6/60]
+[INFO]   from core/model-api/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-model-api ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-model-api ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-model-api ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-model-api ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-model-api ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/model-api/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-model-api ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 41 files clean - 0 were changed to be clean, 0 were already clean, 41 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-model-api ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-model-api ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/model-api/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-model-api ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-model-api ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-model-api ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-model-api ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/model-api/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] --- jar:3.4.2:test-jar (default) @ rdf4j-model-api ---
+[INFO] 
+[INFO] --------------< org.eclipse.rdf4j:rdf4j-common-exception >--------------
+[INFO] Building RDF4J: common exception 5.3.0-SNAPSHOT                   [7/60]
+[INFO]   from core/common/exception/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-common-exception ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-common-exception ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-common-exception ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-common-exception ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-common-exception ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/exception/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-common-exception ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 4 files clean - 0 were changed to be clean, 0 were already clean, 4 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-common-exception ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-common-exception ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/exception/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-common-exception ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-common-exception ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-common-exception ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-common-exception ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/exception/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -----------------< org.eclipse.rdf4j:rdf4j-common-io >------------------
+[INFO] Building RDF4J: common IO 5.3.0-SNAPSHOT                          [8/60]
+[INFO]   from core/common/io/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-common-io ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-common-io ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-common-io ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-common-io ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-common-io ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/io/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-common-io ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 27 files clean - 0 were changed to be clean, 0 were already clean, 27 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-common-io ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-common-io ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/io/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-common-io ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-common-io ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-common-io ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-common-io ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/io/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ----------------< org.eclipse.rdf4j:rdf4j-common-order >----------------
+[INFO] Building RDF4J: common order 5.3.0-SNAPSHOT                       [9/60]
+[INFO]   from core/common/order/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-common-order ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-common-order ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-common-order ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-common-order ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-common-order ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/order/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-common-order ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 2 files clean - 0 were changed to be clean, 0 were already clean, 2 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-common-order ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-common-order ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/order/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-common-order ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-common-order ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-common-order ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-common-order ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/order/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] --------------< org.eclipse.rdf4j:rdf4j-common-iterator >---------------
+[INFO] Building RDF4J: common iterators 5.3.0-SNAPSHOT                  [10/60]
+[INFO]   from core/common/iterator/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-common-iterator ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-common-iterator ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-common-iterator ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-common-iterator ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-common-iterator ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/iterator/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-common-iterator ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 39 files clean - 0 were changed to be clean, 0 were already clean, 39 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-common-iterator ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-common-iterator ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/iterator/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-common-iterator ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-common-iterator ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-common-iterator ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-common-iterator ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/iterator/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ----------------< org.eclipse.rdf4j:rdf4j-common-text >-----------------
+[INFO] Building RDF4J: common text 5.3.0-SNAPSHOT                       [11/60]
+[INFO]   from core/common/text/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-common-text ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-common-text ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-common-text ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-common-text ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-common-text ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/text/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-common-text ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 3 files clean - 0 were changed to be clean, 0 were already clean, 3 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-common-text ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-common-text ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/text/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-common-text ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-common-text ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-common-text ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-common-text ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/text/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] --------------< org.eclipse.rdf4j:rdf4j-model-vocabulary >--------------
+[INFO] Building RDF4J: RDF Vocabularies 5.3.0-SNAPSHOT                  [12/60]
+[INFO]   from core/model-vocabulary/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-model-vocabulary ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-model-vocabulary ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-model-vocabulary ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-model-vocabulary ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-model-vocabulary ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/model-vocabulary/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-model-vocabulary ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 46 files clean - 0 were changed to be clean, 0 were already clean, 46 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-model-vocabulary ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-model-vocabulary ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/model-vocabulary/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-model-vocabulary ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-model-vocabulary ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-model-vocabulary ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-model-vocabulary ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/model-vocabulary/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -------------------< org.eclipse.rdf4j:rdf4j-model >--------------------
+[INFO] Building RDF4J: Model 5.3.0-SNAPSHOT                             [13/60]
+[INFO]   from core/model/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-model ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-model ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-model ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-model ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-model ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/model/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-model ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 81 files clean - 0 were changed to be clean, 0 were already clean, 81 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-model ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-model ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/model/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-model ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-model ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-model ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-model ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/model/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -------------< org.eclipse.rdf4j:rdf4j-common-transaction >-------------
+[INFO] Building RDF4J: common transaction 5.3.0-SNAPSHOT                [14/60]
+[INFO]   from core/common/transaction/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-common-transaction ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-common-transaction ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-common-transaction ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-common-transaction ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-common-transaction ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-common-transaction ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 9 files clean - 0 were changed to be clean, 0 were already clean, 9 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-common-transaction ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-common-transaction ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/transaction/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-common-transaction ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-common-transaction ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-common-transaction ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-common-transaction ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/transaction/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -----------------< org.eclipse.rdf4j:rdf4j-common-xml >-----------------
+[INFO] Building RDF4J: common XML 5.3.0-SNAPSHOT                        [15/60]
+[INFO]   from core/common/xml/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-common-xml ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-common-xml ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-common-xml ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-common-xml ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-common-xml ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/xml/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-common-xml ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 7 files clean - 0 were changed to be clean, 0 were already clean, 7 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-common-xml ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-common-xml ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/xml/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-common-xml ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-common-xml ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-common-xml ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-common-xml ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/common/xml/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] --------------------< org.eclipse.rdf4j:rdf4j-rio >---------------------
+[INFO] Building RDF4J: Rio 5.3.0-SNAPSHOT                               [16/60]
+[INFO]   from core/rio/pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-rio ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-rio ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-rio ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-rio ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-rio ---
+[INFO] Spotless.Format is keeping 18 files clean - 0 were changed to be clean, 0 were already clean, 18 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-rio ---
+[WARNING] Cannot include project artifact: org.eclipse.rdf4j:rdf4j-rio:pom:5.3.0-SNAPSHOT; it doesn't have an associated file or directory.
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/rio/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ------------------< org.eclipse.rdf4j:rdf4j-rio-api >-------------------
+[INFO] Building RDF4J: Rio - API 5.3.0-SNAPSHOT                         [17/60]
+[INFO]   from core/rio/api/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-rio-api ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-rio-api ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-rio-api ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-rio-api ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-rio-api ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-rio-api ---
+[INFO] Spotless.Format is keeping 2 files clean - 0 were changed to be clean, 0 were already clean, 2 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 87 files clean - 0 were changed to be clean, 0 were already clean, 87 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-rio-api ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-rio-api ---
+[INFO] Copying 1 resource from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-rio-api ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-rio-api ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-rio-api ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-rio-api ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/rio/api/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] --- jar:3.4.2:test-jar (default) @ rdf4j-rio-api ---
+[INFO] 
+[INFO] ---------------< org.eclipse.rdf4j:rdf4j-rio-languages >----------------
+[INFO] Building RDF4J: Rio - Languages 5.3.0-SNAPSHOT                   [18/60]
+[INFO]   from core/rio/languages/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-rio-languages ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-rio-languages ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-rio-languages ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-rio-languages ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-rio-languages ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-rio-languages ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 3 files clean - 0 were changed to be clean, 0 were already clean, 3 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-rio-languages ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-rio-languages ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/rio/languages/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-rio-languages ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-rio-languages ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-rio-languages ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-rio-languages ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/rio/languages/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ---------------< org.eclipse.rdf4j:rdf4j-rio-datatypes >----------------
+[INFO] Building RDF4J: Rio - Datatypes 5.3.0-SNAPSHOT                   [19/60]
+[INFO]   from core/rio/datatypes/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-rio-datatypes ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-rio-datatypes ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-rio-datatypes ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-rio-datatypes ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-rio-datatypes ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-rio-datatypes ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 11 files clean - 0 were changed to be clean, 0 were already clean, 11 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-rio-datatypes ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-rio-datatypes ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/rio/datatypes/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-rio-datatypes ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-rio-datatypes ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-rio-datatypes ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-rio-datatypes ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/rio/datatypes/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -------------------< org.eclipse.rdf4j:rdf4j-query >--------------------
+[INFO] Building RDF4J: Query 5.3.0-SNAPSHOT                             [20/60]
+[INFO]   from core/query/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-query ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-query ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-query ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-query ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-query ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/query/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-query ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 76 files clean - 0 were changed to be clean, 0 were already clean, 76 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-query ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-query ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/query/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-query ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-query ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-query ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-query ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/query/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -----------------< org.eclipse.rdf4j:rdf4j-rio-binary >-----------------
+[INFO] Building RDF4J: Rio - Binary 5.3.0-SNAPSHOT                      [21/60]
+[INFO]   from core/rio/binary/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-rio-binary ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-rio-binary ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-rio-binary ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-rio-binary ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-rio-binary ---
+[INFO] Copying 2 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-rio-binary ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 10 files clean - 0 were changed to be clean, 0 were already clean, 10 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-rio-binary ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-rio-binary ---
+[INFO] Copying 1 resource from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-rio-binary ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-rio-binary ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-rio-binary ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-rio-binary ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/rio/binary/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ----------------< org.eclipse.rdf4j:rdf4j-rio-ntriples >----------------
+[INFO] Building RDF4J: Rio - N-Triples 5.3.0-SNAPSHOT                   [22/60]
+[INFO]   from core/rio/ntriples/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-rio-ntriples ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-rio-ntriples ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-rio-ntriples ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-rio-ntriples ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-rio-ntriples ---
+[INFO] Copying 2 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-rio-ntriples ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 13 files clean - 0 were changed to be clean, 0 were already clean, 13 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-rio-ntriples ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-rio-ntriples ---
+[INFO] Copying 2 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-rio-ntriples ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-rio-ntriples ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-rio-ntriples ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-rio-ntriples ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/rio/ntriples/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -----------------< org.eclipse.rdf4j:rdf4j-rio-nquads >-----------------
+[INFO] Building RDF4J: Rio - N-Quads 5.3.0-SNAPSHOT                     [23/60]
+[INFO]   from core/rio/nquads/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-rio-nquads ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-rio-nquads ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-rio-nquads ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-rio-nquads ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-rio-nquads ---
+[INFO] Copying 2 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-rio-nquads ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 11 files clean - 0 were changed to be clean, 0 were already clean, 11 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-rio-nquads ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-rio-nquads ---
+[INFO] Copying 3 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-rio-nquads ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-rio-nquads ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-rio-nquads ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-rio-nquads ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/rio/nquads/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -----------------< org.eclipse.rdf4j:rdf4j-testsuites >-----------------
+[INFO] Building RDF4J: Test Suites 5.3.0-SNAPSHOT                       [24/60]
+[INFO]   from testsuites/pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-testsuites ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-testsuites ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-testsuites ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-testsuites ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-testsuites ---
+[INFO] Spotless.Format is keeping 11 files clean - 0 were changed to be clean, 0 were already clean, 11 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --------------< org.eclipse.rdf4j:rdf4j-benchmark-common >--------------
+[INFO] Building RDF4J: benchmarks 5.3.0-SNAPSHOT                        [25/60]
+[INFO]   from testsuites/benchmark-common/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-benchmark-common ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-benchmark-common ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-benchmark-common ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-benchmark-common ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-benchmark-common ---
+[INFO] Copying 50 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-benchmark-common ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 12 files clean - 0 were changed to be clean, 0 were already clean, 12 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-benchmark-common ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-benchmark-common ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/testsuites/benchmark-common/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-benchmark-common ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-benchmark-common ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-benchmark-common ---
+[INFO] 
+[INFO] --- shade:3.5.1:shade (default) @ rdf4j-benchmark-common ---
+[INFO] Including org.openjdk.jmh:jmh-core:jar:1.37 in the shaded jar.
+[INFO] Including net.sf.jopt-simple:jopt-simple:jar:5.0.4 in the shaded jar.
+[INFO] Including org.apache.commons:commons-math3:jar:3.6.1 in the shaded jar.
+[INFO] Including org.openjdk.jmh:jmh-generator-annprocess:jar:1.37 in the shaded jar.
+[INFO] Including org.eclipse.rdf4j:rdf4j-model:jar:5.3.0-SNAPSHOT in the shaded jar.
+[INFO] Including org.eclipse.rdf4j:rdf4j-model-api:jar:5.3.0-SNAPSHOT in the shaded jar.
+[INFO] Including org.eclipse.rdf4j:rdf4j-common-annotation:jar:5.3.0-SNAPSHOT in the shaded jar.
+[INFO] Including org.eclipse.rdf4j:rdf4j-common-exception:jar:5.3.0-SNAPSHOT in the shaded jar.
+[INFO] Including org.eclipse.rdf4j:rdf4j-common-text:jar:5.3.0-SNAPSHOT in the shaded jar.
+[INFO] Including org.slf4j:slf4j-api:jar:1.7.36 in the shaded jar.
+[INFO] Including org.eclipse.rdf4j:rdf4j-common-io:jar:5.3.0-SNAPSHOT in the shaded jar.
+[INFO] Including org.eclipse.rdf4j:rdf4j-common-iterator:jar:5.3.0-SNAPSHOT in the shaded jar.
+[INFO] Including org.eclipse.rdf4j:rdf4j-common-order:jar:5.3.0-SNAPSHOT in the shaded jar.
+[INFO] Including com.google.guava:guava:jar:32.1.3-jre in the shaded jar.
+[INFO] Including com.google.guava:failureaccess:jar:1.0.1 in the shaded jar.
+[INFO] Including com.google.guava:listenablefuture:jar:9999.0-empty-to-avoid-conflict-with-guava in the shaded jar.
+[INFO] Including org.eclipse.rdf4j:rdf4j-model-vocabulary:jar:5.3.0-SNAPSHOT in the shaded jar.
+[INFO] Including org.eclipse.rdf4j:rdf4j-rio-api:jar:5.3.0-SNAPSHOT in the shaded jar.
+[INFO] Including org.eclipse.rdf4j:rdf4j-common-xml:jar:5.3.0-SNAPSHOT in the shaded jar.
+[INFO] Including commons-codec:commons-codec:jar:1.15 in the shaded jar.
+[INFO] Including no.hasmac:hasmac-json-ld:jar:0.10.2 in the shaded jar.
+[INFO] Including com.github.jsonld-java:jsonld-java:jar:0.13.4 in the shaded jar.
+[INFO] Including com.fasterxml.jackson.core:jackson-annotations:jar:2.13.5 in the shaded jar.
+[INFO] Including com.fasterxml.jackson.core:jackson-core:jar:2.13.5 in the shaded jar.
+[INFO] Including com.fasterxml.jackson.core:jackson-databind:jar:2.13.5 in the shaded jar.
+[INFO] Including org.junit.jupiter:junit-jupiter-engine:jar:5.9.3 in the shaded jar.
+[INFO] Including org.junit.platform:junit-platform-engine:jar:1.9.3 in the shaded jar.
+[INFO] Including org.opentest4j:opentest4j:jar:1.2.0 in the shaded jar.
+[INFO] Including org.junit.platform:junit-platform-commons:jar:1.9.3 in the shaded jar.
+[INFO] Including org.junit.jupiter:junit-jupiter-api:jar:5.9.3 in the shaded jar.
+[INFO] Including org.apiguardian:apiguardian-api:jar:1.1.2 in the shaded jar.
+[INFO] Including org.assertj:assertj-core:jar:3.24.2 in the shaded jar.
+[INFO] Including net.bytebuddy:byte-buddy:jar:1.12.21 in the shaded jar.
+[INFO] Dependency-reduced POM written at: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/testsuites/benchmark-common/dependency-reduced-pom.xml
+[WARNING] Discovered module-info.class. Shading will break its strong encapsulation.
+[WARNING] Discovered module-info.class. Shading will break its strong encapsulation.
+[WARNING] Discovered module-info.class. Shading will break its strong encapsulation.
+[WARNING] Discovered module-info.class. Shading will break its strong encapsulation.
+[WARNING] Discovered module-info.class. Shading will break its strong encapsulation.
+[WARNING] Discovered module-info.class. Shading will break its strong encapsulation.
+[WARNING] Discovered module-info.class. Shading will break its strong encapsulation.
+[WARNING] assertj-core-3.24.2.jar, byte-buddy-1.12.21.jar, jackson-core-2.13.5.jar, jackson-databind-2.13.5.jar define 1 overlapping classes: 
+[WARNING]   - META-INF.versions.9.module-info
+[WARNING] junit-jupiter-api-5.9.3.jar, junit-jupiter-engine-5.9.3.jar, junit-platform-commons-1.9.3.jar, junit-platform-engine-1.9.3.jar define 2 overlapping resources: 
+[WARNING]   - META-INF/LICENSE-notice.md
+[WARNING]   - META-INF/LICENSE.md
+[WARNING] commons-codec-1.15.jar, commons-math3-3.6.1.jar define 2 overlapping resources: 
+[WARNING]   - META-INF/LICENSE.txt
+[WARNING]   - META-INF/NOTICE.txt
+[WARNING] byte-buddy-1.12.21.jar, jackson-core-2.13.5.jar, jackson-databind-2.13.5.jar define 1 overlapping resource: 
+[WARNING]   - META-INF/NOTICE
+[WARNING] jmh-core-1.37.jar, jmh-generator-annprocess-1.37.jar define 2 overlapping resources: 
+[WARNING]   - LICENSE
+[WARNING]   - THIRD-PARTY
+[WARNING] apiguardian-api-1.1.2.jar, assertj-core-3.24.2.jar, byte-buddy-1.12.21.jar, commons-codec-1.15.jar, commons-math3-3.6.1.jar, failureaccess-1.0.1.jar, guava-32.1.3-jre.jar, hasmac-json-ld-0.10.2.jar, jackson-annotations-2.13.5.jar, jackson-core-2.13.5.jar, jackson-databind-2.13.5.jar, jmh-core-1.37.jar, jmh-generator-annprocess-1.37.jar, jopt-simple-5.0.4.jar, jsonld-java-0.13.4.jar, junit-jupiter-api-5.9.3.jar, junit-jupiter-engine-5.9.3.jar, junit-platform-commons-1.9.3.jar, junit-platform-engine-1.9.3.jar, listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar, opentest4j-1.2.0.jar, rdf4j-benchmark-common-5.3.0-SNAPSHOT.jar, rdf4j-common-annotation-5.3.0-SNAPSHOT.jar, rdf4j-common-exception-5.3.0-SNAPSHOT.jar, rdf4j-common-io-5.3.0-SNAPSHOT.jar, rdf4j-common-iterator-5.3.0-SNAPSHOT.jar, rdf4j-common-order-5.3.0-SNAPSHOT.jar, rdf4j-common-text-5.3.0-SNAPSHOT.jar, rdf4j-common-xml-5.3.0-SNAPSHOT.jar, rdf4j-model-5.3.0-SNAPSHOT.jar, rdf4j-model-api-5.3.0-SNAPSHOT.jar, rdf4j-model-vocabulary-5.3.0-SNAPSHOT.jar, rdf4j-rio-api-5.3.0-SNAPSHOT.jar, slf4j-api-1.7.36.jar define 1 overlapping resource: 
+[WARNING]   - META-INF/MANIFEST.MF
+[WARNING] apiguardian-api-1.1.2.jar, byte-buddy-1.12.21.jar, guava-32.1.3-jre.jar, hasmac-json-ld-0.10.2.jar, jackson-annotations-2.13.5.jar, jackson-core-2.13.5.jar, jackson-databind-2.13.5.jar define 1 overlapping resource: 
+[WARNING]   - META-INF/LICENSE
+[WARNING] maven-shade-plugin has detected that some files are
+[WARNING] present in two or more JARs. When this happens, only one
+[WARNING] single version of the file is copied to the uber jar.
+[WARNING] Usually this is not harmful and you can skip these warnings,
+[WARNING] otherwise try to manually exclude artifacts based on
+[WARNING] mvn dependency:tree -Ddetail=true and the above output.
+[WARNING] See https://maven.apache.org/plugins/maven-shade-plugin/
+[INFO] Replacing /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/testsuites/benchmark-common/target/rdf4j-benchmark-sketch.jar with /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/testsuites/benchmark-common/target/rdf4j-benchmark-common-5.3.0-SNAPSHOT-shaded.jar
+[INFO] 
+[INFO] -----------------< org.eclipse.rdf4j:rdf4j-rio-jsonld >-----------------
+[INFO] Building RDF4J: Rio - JSON-LD 5.3.0-SNAPSHOT                     [26/60]
+[INFO]   from core/rio/jsonld/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-rio-jsonld ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-rio-jsonld ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-rio-jsonld ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-rio-jsonld ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-rio-jsonld ---
+[INFO] Copying 2 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-rio-jsonld ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 22 files clean - 0 were changed to be clean, 0 were already clean, 22 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-rio-jsonld ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-rio-jsonld ---
+[INFO] Copying 32 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-rio-jsonld ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-rio-jsonld ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-rio-jsonld ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-rio-jsonld ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/rio/jsonld/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -----------------< org.eclipse.rdf4j:rdf4j-rio-turtle >-----------------
+[INFO] Building RDF4J: Rio - Turtle 5.3.0-SNAPSHOT                      [27/60]
+[INFO]   from core/rio/turtle/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-rio-turtle ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-rio-turtle ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-rio-turtle ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-rio-turtle ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-rio-turtle ---
+[INFO] Copying 2 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-rio-turtle ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 27 files clean - 0 were changed to be clean, 0 were already clean, 27 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-rio-turtle ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-rio-turtle ---
+[INFO] Copying 9 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-rio-turtle ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-rio-turtle ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-rio-turtle ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-rio-turtle ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/rio/turtle/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ------------------< org.eclipse.rdf4j:rdf4j-rio-trig >------------------
+[INFO] Building RDF4J: Rio - TriG 5.3.0-SNAPSHOT                        [28/60]
+[INFO]   from core/rio/trig/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-rio-trig ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-rio-trig ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-rio-trig ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-rio-trig ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-rio-trig ---
+[INFO] Copying 2 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-rio-trig ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 21 files clean - 0 were changed to be clean, 0 were already clean, 21 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-rio-trig ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-rio-trig ---
+[INFO] Copying 3 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-rio-trig ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-rio-trig ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-rio-trig ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-rio-trig ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/rio/trig/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ----------------< org.eclipse.rdf4j:rdf4j-queryalgebra >----------------
+[INFO] Building RDF4J: Query algebra 5.3.0-SNAPSHOT                     [29/60]
+[INFO]   from core/queryalgebra/pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-queryalgebra ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-queryalgebra ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-queryalgebra ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-queryalgebra ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-queryalgebra ---
+[INFO] Spotless.Format is keeping 6 files clean - 0 were changed to be clean, 0 were already clean, 6 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-queryalgebra ---
+[WARNING] Cannot include project artifact: org.eclipse.rdf4j:rdf4j-queryalgebra:pom:5.3.0-SNAPSHOT; it doesn't have an associated file or directory.
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryalgebra/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -------------< org.eclipse.rdf4j:rdf4j-queryalgebra-model >-------------
+[INFO] Building RDF4J: Query algebra - model 5.3.0-SNAPSHOT             [30/60]
+[INFO]   from core/queryalgebra/model/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-queryalgebra-model ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-queryalgebra-model ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-queryalgebra-model ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-queryalgebra-model ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-queryalgebra-model ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryalgebra/model/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-queryalgebra-model ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 120 files clean - 0 were changed to be clean, 0 were already clean, 120 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-queryalgebra-model ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-queryalgebra-model ---
+[INFO] Copying 1 resource from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-queryalgebra-model ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-queryalgebra-model ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-queryalgebra-model ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-queryalgebra-model ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryalgebra/model/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -------------< org.eclipse.rdf4j:rdf4j-collection-factory >-------------
+[INFO] Building RDF4J: Collection Factory that may be shared 5.3.0-SNAPSHOT [31/60]
+[INFO]   from core/collection-factory/pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-collection-factory ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-collection-factory ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-collection-factory ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-collection-factory ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-collection-factory ---
+[INFO] Spotless.Format is keeping 4 files clean - 0 were changed to be clean, 0 were already clean, 4 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-collection-factory ---
+[WARNING] Cannot include project artifact: org.eclipse.rdf4j:rdf4j-collection-factory:pom:5.3.0-SNAPSHOT; it doesn't have an associated file or directory.
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/collection-factory/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -----------< org.eclipse.rdf4j:rdf4j-collection-factory-api >-----------
+[INFO] Building RDF4J: Collection Factory - API 5.3.0-SNAPSHOT          [32/60]
+[INFO]   from core/collection-factory/api/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-collection-factory-api ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-collection-factory-api ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-collection-factory-api ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-collection-factory-api ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-collection-factory-api ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/collection-factory/api/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-collection-factory-api ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 5 files clean - 0 were changed to be clean, 0 were already clean, 5 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-collection-factory-api ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-collection-factory-api ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/collection-factory/api/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-collection-factory-api ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-collection-factory-api ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-collection-factory-api ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-collection-factory-api ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/collection-factory/api/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] --------------------< org.eclipse.rdf4j:rdf4j-sail >--------------------
+[INFO] Building RDF4J: Sail 5.3.0-SNAPSHOT                              [33/60]
+[INFO]   from core/sail/pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-sail ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-sail ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-sail ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-sail ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-sail ---
+[INFO] Spotless.Format is keeping 25 files clean - 0 were changed to be clean, 0 were already clean, 25 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-sail ---
+[WARNING] Cannot include project artifact: org.eclipse.rdf4j:rdf4j-sail:pom:5.3.0-SNAPSHOT; it doesn't have an associated file or directory.
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/sail/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ------------------< org.eclipse.rdf4j:rdf4j-sail-api >------------------
+[INFO] Building RDF4J: Sail API 5.3.0-SNAPSHOT                          [34/60]
+[INFO]   from core/sail/api/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-sail-api ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-sail-api ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-sail-api ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-sail-api ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-sail-api ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/sail/api/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-sail-api ---
+[INFO] Spotless.Format is keeping 2 files clean - 0 were changed to be clean, 0 were already clean, 2 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 82 files clean - 0 were changed to be clean, 0 were already clean, 82 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-sail-api ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-sail-api ---
+[INFO] Copying 1 resource from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-sail-api ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-sail-api ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-sail-api ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-sail-api ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/sail/api/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ---------------< org.eclipse.rdf4j:rdf4j-queryresultio >----------------
+[INFO] Building RDF4J: Query result IO 5.3.0-SNAPSHOT                   [35/60]
+[INFO]   from core/queryresultio/pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-queryresultio ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-queryresultio ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-queryresultio ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-queryresultio ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-queryresultio ---
+[INFO] Spotless.Format is keeping 12 files clean - 0 were changed to be clean, 0 were already clean, 12 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-queryresultio ---
+[WARNING] Cannot include project artifact: org.eclipse.rdf4j:rdf4j-queryresultio:pom:5.3.0-SNAPSHOT; it doesn't have an associated file or directory.
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryresultio/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -------------< org.eclipse.rdf4j:rdf4j-queryresultio-api >--------------
+[INFO] Building RDF4J: Query result IO - API 5.3.0-SNAPSHOT             [36/60]
+[INFO]   from core/queryresultio/api/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-queryresultio-api ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-queryresultio-api ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-queryresultio-api ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-queryresultio-api ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-queryresultio-api ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryresultio/api/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-queryresultio-api ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 28 files clean - 0 were changed to be clean, 0 were already clean, 28 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-queryresultio-api ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-queryresultio-api ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryresultio/api/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-queryresultio-api ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-queryresultio-api ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-queryresultio-api ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-queryresultio-api ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryresultio/api/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ----------< org.eclipse.rdf4j:rdf4j-queryresultio-testsuite >-----------
+[INFO] Building RDF4J: QueryResultIO testsuite 5.3.0-SNAPSHOT           [37/60]
+[INFO]   from testsuites/queryresultio/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-queryresultio-testsuite ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-queryresultio-testsuite ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-queryresultio-testsuite ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-queryresultio-testsuite ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-queryresultio-testsuite ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/testsuites/queryresultio/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-queryresultio-testsuite ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 4 files clean - 0 were changed to be clean, 0 were already clean, 4 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-queryresultio-testsuite ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-queryresultio-testsuite ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/testsuites/queryresultio/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-queryresultio-testsuite ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-queryresultio-testsuite ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-queryresultio-testsuite ---
+[INFO] 
+[INFO] ------------< org.eclipse.rdf4j:rdf4j-queryresultio-binary >------------
+[INFO] Building RDF4J: Query result IO - binary 5.3.0-SNAPSHOT          [38/60]
+[INFO]   from core/queryresultio/binary/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-queryresultio-binary ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-queryresultio-binary ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-queryresultio-binary ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-queryresultio-binary ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-queryresultio-binary ---
+[INFO] Copying 2 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-queryresultio-binary ---
+[INFO] Spotless.Format is keeping 2 files clean - 0 were changed to be clean, 0 were already clean, 2 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 9 files clean - 0 were changed to be clean, 0 were already clean, 9 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-queryresultio-binary ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-queryresultio-binary ---
+[INFO] Copying 1 resource from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-queryresultio-binary ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-queryresultio-binary ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-queryresultio-binary ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-queryresultio-binary ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryresultio/binary/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ----------< org.eclipse.rdf4j:rdf4j-queryresultio-sparqljson >----------
+[INFO] Building RDF4J: Query result IO - SPARQL/JSON 5.3.0-SNAPSHOT     [39/60]
+[INFO]   from core/queryresultio/sparqljson/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-queryresultio-sparqljson ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-queryresultio-sparqljson ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-queryresultio-sparqljson ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-queryresultio-sparqljson ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-queryresultio-sparqljson ---
+[INFO] Copying 4 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-queryresultio-sparqljson ---
+[INFO] Spotless.Format is keeping 2 files clean - 0 were changed to be clean, 0 were already clean, 2 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 23 files clean - 0 were changed to be clean, 0 were already clean, 23 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-queryresultio-sparqljson ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-queryresultio-sparqljson ---
+[INFO] Copying 18 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-queryresultio-sparqljson ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-queryresultio-sparqljson ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-queryresultio-sparqljson ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-queryresultio-sparqljson ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryresultio/sparqljson/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ----------< org.eclipse.rdf4j:rdf4j-queryresultio-sparqlxml >-----------
+[INFO] Building RDF4J: Query result IO - SPARQL/XML 5.3.0-SNAPSHOT      [40/60]
+[INFO]   from core/queryresultio/sparqlxml/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-queryresultio-sparqlxml ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-queryresultio-sparqlxml ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-queryresultio-sparqlxml ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-queryresultio-sparqlxml ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-queryresultio-sparqlxml ---
+[INFO] Copying 4 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-queryresultio-sparqlxml ---
+[INFO] Spotless.Format is keeping 2 files clean - 0 were changed to be clean, 0 were already clean, 2 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 25 files clean - 0 were changed to be clean, 0 were already clean, 25 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-queryresultio-sparqlxml ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-queryresultio-sparqlxml ---
+[INFO] Copying 7 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-queryresultio-sparqlxml ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-queryresultio-sparqlxml ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-queryresultio-sparqlxml ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-queryresultio-sparqlxml ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryresultio/sparqlxml/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -----------------< org.eclipse.rdf4j:rdf4j-repository >-----------------
+[INFO] Building RDF4J: Repository 5.3.0-SNAPSHOT                        [41/60]
+[INFO]   from core/repository/pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-repository ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-repository ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-repository ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-repository ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-repository ---
+[INFO] Spotless.Format is keeping 12 files clean - 0 were changed to be clean, 0 were already clean, 12 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-repository ---
+[WARNING] Cannot include project artifact: org.eclipse.rdf4j:rdf4j-repository:pom:5.3.0-SNAPSHOT; it doesn't have an associated file or directory.
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/repository/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ---------------< org.eclipse.rdf4j:rdf4j-repository-api >---------------
+[INFO] Building RDF4J: Repository - API 5.3.0-SNAPSHOT                  [42/60]
+[INFO]   from core/repository/api/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-repository-api ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-repository-api ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-repository-api ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-repository-api ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-repository-api ---
+[INFO] Copying 18 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-repository-api ---
+[INFO] Spotless.Format is keeping 2 files clean - 0 were changed to be clean, 0 were already clean, 2 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 43 files clean - 0 were changed to be clean, 0 were already clean, 43 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-repository-api ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-repository-api ---
+[INFO] Copying 2 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-repository-api ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-repository-api ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-repository-api ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-repository-api ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/repository/api/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] --------------------< org.eclipse.rdf4j:rdf4j-http >--------------------
+[INFO] Building RDF4J: HTTP 5.3.0-SNAPSHOT                              [43/60]
+[INFO]   from core/http/pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-http ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-http ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-http ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-http ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-http ---
+[INFO] Spotless.Format is keeping 6 files clean - 0 were changed to be clean, 0 were already clean, 6 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-http ---
+[WARNING] Cannot include project artifact: org.eclipse.rdf4j:rdf4j-http:pom:5.3.0-SNAPSHOT; it doesn't have an associated file or directory.
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/http/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ---------------< org.eclipse.rdf4j:rdf4j-http-protocol >----------------
+[INFO] Building RDF4J: HTTP protocol 5.3.0-SNAPSHOT                     [44/60]
+[INFO]   from core/http/protocol/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-http-protocol ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-http-protocol ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-http-protocol ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-http-protocol ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-http-protocol ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/http/protocol/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-http-protocol ---
+[INFO] Spotless.Format is keeping 2 files clean - 0 were changed to be clean, 0 were already clean, 2 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 21 files clean - 0 were changed to be clean, 0 were already clean, 21 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-http-protocol ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-http-protocol ---
+[INFO] Copying 1 resource from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-http-protocol ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-http-protocol ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-http-protocol ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-http-protocol ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/http/protocol/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ----------------< org.eclipse.rdf4j:rdf4j-http-client >-----------------
+[INFO] Building RDF4J: HTTP client 5.3.0-SNAPSHOT                       [45/60]
+[INFO]   from core/http/client/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-http-client ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-http-client ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-http-client ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-http-client ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-http-client ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/http/client/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-http-client ---
+[INFO] Spotless.Format is keeping 3 files clean - 0 were changed to be clean, 0 were already clean, 3 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 17 files clean - 0 were changed to be clean, 0 were already clean, 17 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-http-client ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-http-client ---
+[INFO] Copying 3 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-http-client ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-http-client ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-http-client ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-http-client ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/http/client/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ----------------< org.eclipse.rdf4j:rdf4j-queryparser >-----------------
+[INFO] Building RDF4J: Query parser 5.3.0-SNAPSHOT                      [46/60]
+[INFO]   from core/queryparser/pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-queryparser ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-queryparser ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-queryparser ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-queryparser ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-queryparser ---
+[INFO] Spotless.Format is keeping 3 files clean - 0 were changed to be clean, 0 were already clean, 3 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-queryparser ---
+[WARNING] Cannot include project artifact: org.eclipse.rdf4j:rdf4j-queryparser:pom:5.3.0-SNAPSHOT; it doesn't have an associated file or directory.
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryparser/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] --------------< org.eclipse.rdf4j:rdf4j-queryparser-api >---------------
+[INFO] Building RDF4J: Query parser - API 5.3.0-SNAPSHOT                [47/60]
+[INFO]   from core/queryparser/api/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-queryparser-api ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-queryparser-api ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-queryparser-api ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-queryparser-api ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-queryparser-api ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryparser/api/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-queryparser-api ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 18 files clean - 0 were changed to be clean, 0 were already clean, 18 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-queryparser-api ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-queryparser-api ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryparser/api/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-queryparser-api ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-queryparser-api ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-queryparser-api ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-queryparser-api ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryparser/api/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -------------< org.eclipse.rdf4j:rdf4j-queryparser-sparql >-------------
+[INFO] Building RDF4J: Query parser - SPARQL 5.3.0-SNAPSHOT             [48/60]
+[INFO]   from core/queryparser/sparql/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-queryparser-sparql ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-queryparser-sparql ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-queryparser-sparql ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-queryparser-sparql ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-queryparser-sparql ---
+[INFO] Copying 2 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-queryparser-sparql ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 200 files clean - 0 were changed to be clean, 0 were already clean, 200 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-queryparser-sparql ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-queryparser-sparql ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryparser/sparql/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-queryparser-sparql ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-queryparser-sparql ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-queryparser-sparql ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-queryparser-sparql ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryparser/sparql/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -------------< org.eclipse.rdf4j:rdf4j-repository-sparql >--------------
+[INFO] Building RDF4J: SPARQL Repository 5.3.0-SNAPSHOT                 [49/60]
+[INFO]   from core/repository/sparql/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-repository-sparql ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-repository-sparql ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-repository-sparql ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-repository-sparql ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-repository-sparql ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-repository-sparql ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 28 files clean - 0 were changed to be clean, 0 were already clean, 28 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-repository-sparql ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-repository-sparql ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/repository/sparql/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-repository-sparql ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-repository-sparql ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-repository-sparql ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-repository-sparql ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/repository/sparql/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ----------< org.eclipse.rdf4j:rdf4j-queryalgebra-evaluation >-----------
+[INFO] Building RDF4J: Query algebra - evaluation 5.3.0-SNAPSHOT        [50/60]
+[INFO]   from core/queryalgebra/evaluation/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-queryalgebra-evaluation ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-queryalgebra-evaluation ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-queryalgebra-evaluation ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-queryalgebra-evaluation ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-queryalgebra-evaluation ---
+[INFO] Copying 2 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-queryalgebra-evaluation ---
+[INFO] Spotless.Format is keeping 2 files clean - 0 were changed to be clean, 0 were already clean, 2 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 295 files clean - 0 were changed to be clean, 0 were already clean, 295 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-queryalgebra-evaluation ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-queryalgebra-evaluation ---
+[INFO] Copying 1 resource from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-queryalgebra-evaluation ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-queryalgebra-evaluation ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-queryalgebra-evaluation ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-queryalgebra-evaluation ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryalgebra/evaluation/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ------------< org.eclipse.rdf4j:rdf4j-repository-testsuite >------------
+[INFO] Building RDF4J: Repository API testsuite 5.3.0-SNAPSHOT          [51/60]
+[INFO]   from testsuites/repository/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-repository-testsuite ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-repository-testsuite ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-repository-testsuite ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-repository-testsuite ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-repository-testsuite ---
+[INFO] Copying 11 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-repository-testsuite ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 22 files clean - 0 were changed to be clean, 0 were already clean, 22 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-repository-testsuite ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-repository-testsuite ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/testsuites/repository/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-repository-testsuite ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-repository-testsuite ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-repository-testsuite ---
+[INFO] 
+[INFO] --------------< org.eclipse.rdf4j:rdf4j-repository-sail >---------------
+[INFO] Building RDF4J: SailRepository 5.3.0-SNAPSHOT                    [52/60]
+[INFO]   from core/repository/sail/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-repository-sail ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-repository-sail ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-repository-sail ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-repository-sail ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-repository-sail ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-repository-sail ---
+[INFO] Spotless.Format is keeping 2 files clean - 0 were changed to be clean, 0 were already clean, 2 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 26 files clean - 0 were changed to be clean, 0 were already clean, 26 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-repository-sail ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-repository-sail ---
+[INFO] Copying 2 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-repository-sail ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-repository-sail ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-repository-sail ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-repository-sail ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/repository/sail/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] --------------< org.eclipse.rdf4j:rdf4j-repository-event >--------------
+[INFO] Building RDF4J: Repository - event (wrapper) 5.3.0-SNAPSHOT      [53/60]
+[INFO]   from core/repository/event/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-repository-event ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-repository-event ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-repository-event ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-repository-event ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-repository-event ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/repository/event/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-repository-event ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 19 files clean - 0 were changed to be clean, 0 were already clean, 19 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-repository-event ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-repository-event ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/repository/event/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-repository-event ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-repository-event ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-repository-event ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-repository-event ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/repository/event/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] --------------< org.eclipse.rdf4j:rdf4j-repository-http >---------------
+[INFO] Building RDF4J: HTTPRepository 5.3.0-SNAPSHOT                    [54/60]
+[INFO]   from core/repository/http/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-repository-http ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-repository-http ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-repository-http ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-repository-http ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-repository-http ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-repository-http ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 14 files clean - 0 were changed to be clean, 0 were already clean, 14 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-repository-http ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-repository-http ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/repository/http/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-repository-http ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-repository-http ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-repository-http ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-repository-http ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/repository/http/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -------------< org.eclipse.rdf4j:rdf4j-repository-manager >-------------
+[INFO] Building RDF4J: Repository manager 5.3.0-SNAPSHOT                [55/60]
+[INFO]   from core/repository/manager/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-repository-manager ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-repository-manager ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-repository-manager ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-repository-manager ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-repository-manager ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-repository-manager ---
+[INFO] Spotless.Format is keeping 2 files clean - 0 were changed to be clean, 0 were already clean, 2 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 12 files clean - 0 were changed to be clean, 0 were already clean, 12 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-repository-manager ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-repository-manager ---
+[INFO] Copying 2 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-repository-manager ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-repository-manager ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-repository-manager ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-repository-manager ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/repository/manager/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -----------------< org.eclipse.rdf4j:rdf4j-sail-base >------------------
+[INFO] Building RDF4J: Sail base implementations 5.3.0-SNAPSHOT         [56/60]
+[INFO]   from core/sail/base/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-sail-base ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-sail-base ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-sail-base ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-sail-base ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-sail-base ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/sail/base/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-sail-base ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 30 files clean - 0 were changed to be clean, 0 were already clean, 30 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-sail-base ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-sail-base ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/sail/base/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-sail-base ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-sail-base ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-sail-base ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-sail-base ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/sail/base/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] ---------------< org.eclipse.rdf4j:rdf4j-sail-testsuite >---------------
+[INFO] Building RDF4J: Sail API testsuite 5.3.0-SNAPSHOT                [57/60]
+[INFO]   from testsuites/sail/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-sail-testsuite ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-sail-testsuite ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-sail-testsuite ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-sail-testsuite ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-sail-testsuite ---
+[INFO] Copying 42 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-sail-testsuite ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 7 files clean - 0 were changed to be clean, 0 were already clean, 7 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-sail-testsuite ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-sail-testsuite ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/testsuites/sail/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-sail-testsuite ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-sail-testsuite ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-sail-testsuite ---
+[INFO] 
+[INFO] --------------< org.eclipse.rdf4j:rdf4j-model-testsuite >---------------
+[INFO] Building RDF4J: Model API testsuite 5.3.0-SNAPSHOT               [58/60]
+[INFO]   from testsuites/model/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-model-testsuite ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-model-testsuite ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-model-testsuite ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-model-testsuite ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-model-testsuite ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/testsuites/model/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-model-testsuite ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 3 files clean - 0 were changed to be clean, 0 were already clean, 3 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-model-testsuite ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-model-testsuite ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/testsuites/model/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-model-testsuite ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-model-testsuite ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-model-testsuite ---
+[INFO] 
+[INFO] ---------< org.eclipse.rdf4j:rdf4j-collection-factory-mapdb3 >----------
+[INFO] Building RDF4J: Collection Factory - Map DB v3 backed 5.3.0-SNAPSHOT [59/60]
+[INFO]   from core/collection-factory/mapdb3/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-collection-factory-mapdb3 ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-collection-factory-mapdb3 ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-collection-factory-mapdb3 ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-collection-factory-mapdb3 ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-collection-factory-mapdb3 ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/collection-factory/mapdb3/src/main/resources
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-collection-factory-mapdb3 ---
+[INFO] Spotless.Format is keeping 1 files clean - 0 were changed to be clean, 0 were already clean, 1 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 9 files clean - 0 were changed to be clean, 0 were already clean, 9 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-collection-factory-mapdb3 ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-collection-factory-mapdb3 ---
+[INFO] skip non existing resourceDirectory /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/collection-factory/mapdb3/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-collection-factory-mapdb3 ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-collection-factory-mapdb3 ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-collection-factory-mapdb3 ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-collection-factory-mapdb3 ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/collection-factory/mapdb3/target/jmh-benchmarks.jar
+[INFO] 
+[INFO] -----------------< org.eclipse.rdf4j:rdf4j-sail-lmdb >------------------
+[INFO] Building RDF4J: LmdbStore 5.3.0-SNAPSHOT                         [60/60]
+[INFO]   from core/sail/lmdb/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-maven-3) @ rdf4j-sail-lmdb ---
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-logging-dependencies) @ rdf4j-sail-lmdb ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-javaee-provided) @ rdf4j-sail-lmdb ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+[INFO] 
+[INFO] --- enforcer:3.4.1:enforce (enforce-ban-duplicate-classes) @ rdf4j-sail-lmdb ---
+[INFO] Adding ignore: module-info
+[INFO] Adding ignore: META-INF/versions/*/module-info
+[INFO] Adding ignore: org.junit.*
+[INFO] Adding ignore: org.slf4j.*
+[INFO] Adding ignore: org.opentest4j.*
+[INFO] Rule 0: org.apache.maven.plugins.enforcer.BanDuplicateClasses passed
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rdf4j-sail-lmdb ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- spotless:2.46.1:apply (spotless-apply) @ rdf4j-sail-lmdb ---
+[INFO] Spotless.Format is keeping 2 files clean - 0 were changed to be clean, 0 were already clean, 2 were skipped because caching determined they were already clean
+[INFO] Spotless.Java is keeping 108 files clean - 0 were changed to be clean, 0 were already clean, 108 were skipped because caching determined they were already clean
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ rdf4j-sail-lmdb ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rdf4j-sail-lmdb ---
+[INFO] Copying 3 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ rdf4j-sail-lmdb ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ rdf4j-sail-lmdb ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jar:3.4.2:jar (default-jar) @ rdf4j-sail-lmdb ---
+[INFO] 
+[INFO] --- assembly:3.7.1:single (benchmark-jar) @ rdf4j-sail-lmdb ---
+[INFO] Building jar: /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/sail/lmdb/target/jmh-benchmarks.jar
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for Eclipse RDF4J 5.3.0-SNAPSHOT:
+[INFO] 
+[INFO] Eclipse RDF4J ...................................... SUCCESS [  1.295 s]
+[INFO] RDF4J: Assembly Descriptors ........................ SUCCESS [  0.178 s]
+[INFO] RDF4J: Core ........................................ SUCCESS [  1.327 s]
+[INFO] RDF4J: common ...................................... SUCCESS [  0.680 s]
+[INFO] RDF4J: common annotation ........................... SUCCESS [  0.677 s]
+[INFO] RDF4J: Model API ................................... SUCCESS [  0.767 s]
+[INFO] RDF4J: common exception ............................ SUCCESS [  0.684 s]
+[INFO] RDF4J: common IO ................................... SUCCESS [  0.957 s]
+[INFO] RDF4J: common order ................................ SUCCESS [  0.671 s]
+[INFO] RDF4J: common iterators ............................ SUCCESS [  0.932 s]
+[INFO] RDF4J: common text ................................. SUCCESS [  0.921 s]
+[INFO] RDF4J: RDF Vocabularies ............................ SUCCESS [  0.720 s]
+[INFO] RDF4J: Model ....................................... SUCCESS [  1.495 s]
+[INFO] RDF4J: common transaction .......................... SUCCESS [  1.195 s]
+[INFO] RDF4J: common XML .................................. SUCCESS [  0.906 s]
+[INFO] RDF4J: Rio ......................................... SUCCESS [  0.681 s]
+[INFO] RDF4J: Rio - API ................................... SUCCESS [  1.577 s]
+[INFO] RDF4J: Rio - Languages ............................. SUCCESS [  1.440 s]
+[INFO] RDF4J: Rio - Datatypes ............................. SUCCESS [  1.478 s]
+[INFO] RDF4J: Query ....................................... SUCCESS [  1.650 s]
+[INFO] RDF4J: Rio - Binary ................................ SUCCESS [  1.557 s]
+[INFO] RDF4J: Rio - N-Triples ............................. SUCCESS [  1.629 s]
+[INFO] RDF4J: Rio - N-Quads ............................... SUCCESS [  1.611 s]
+[INFO] RDF4J: Test Suites ................................. SUCCESS [  0.181 s]
+[INFO] RDF4J: benchmarks .................................. SUCCESS [  1.779 s]
+[INFO] RDF4J: Rio - JSON-LD ............................... SUCCESS [  2.428 s]
+[INFO] RDF4J: Rio - Turtle ................................ SUCCESS [  1.620 s]
+[INFO] RDF4J: Rio - TriG .................................. SUCCESS [  1.621 s]
+[INFO] RDF4J: Query algebra ............................... SUCCESS [  0.673 s]
+[INFO] RDF4J: Query algebra - model ....................... SUCCESS [  1.597 s]
+[INFO] RDF4J: Collection Factory that may be shared ....... SUCCESS [  0.662 s]
+[INFO] RDF4J: Collection Factory - API .................... SUCCESS [  1.518 s]
+[INFO] RDF4J: Sail ........................................ SUCCESS [  0.931 s]
+[INFO] RDF4J: Sail API .................................... SUCCESS [  1.860 s]
+[INFO] RDF4J: Query result IO ............................. SUCCESS [  0.652 s]
+[INFO] RDF4J: Query result IO - API ....................... SUCCESS [  1.570 s]
+[INFO] RDF4J: QueryResultIO testsuite ..................... SUCCESS [  0.232 s]
+[INFO] RDF4J: Query result IO - binary .................... SUCCESS [  1.601 s]
+[INFO] RDF4J: Query result IO - SPARQL/JSON ............... SUCCESS [  1.593 s]
+[INFO] RDF4J: Query result IO - SPARQL/XML ................ SUCCESS [  1.582 s]
+[INFO] RDF4J: Repository .................................. SUCCESS [  0.648 s]
+[INFO] RDF4J: Repository - API ............................ SUCCESS [  5.023 s]
+[INFO] RDF4J: HTTP ........................................ SUCCESS [  0.641 s]
+[INFO] RDF4J: HTTP protocol ............................... SUCCESS [  1.680 s]
+[INFO] RDF4J: HTTP client ................................. SUCCESS [  5.171 s]
+[INFO] RDF4J: Query parser ................................ SUCCESS [  0.642 s]
+[INFO] RDF4J: Query parser - API .......................... SUCCESS [  1.550 s]
+[INFO] RDF4J: Query parser - SPARQL ....................... SUCCESS [  1.993 s]
+[INFO] RDF4J: SPARQL Repository ........................... SUCCESS [  1.817 s]
+[INFO] RDF4J: Query algebra - evaluation .................. SUCCESS [  2.776 s]
+[INFO] RDF4J: Repository API testsuite .................... SUCCESS [  0.260 s]
+[INFO] RDF4J: SailRepository .............................. SUCCESS [  2.141 s]
+[INFO] RDF4J: Repository - event (wrapper) ................ SUCCESS [  1.557 s]
+[INFO] RDF4J: HTTPRepository .............................. SUCCESS [  5.151 s]
+[INFO] RDF4J: Repository manager .......................... SUCCESS [  5.153 s]
+[INFO] RDF4J: Sail base implementations ................... SUCCESS [  2.065 s]
+[INFO] RDF4J: Sail API testsuite .......................... SUCCESS [  0.325 s]
+[INFO] RDF4J: Model API testsuite ......................... SUCCESS [  0.134 s]
+[INFO] RDF4J: Collection Factory - Map DB v3 backed ....... SUCCESS [  3.067 s]
+[INFO] RDF4J: LmdbStore ................................... SUCCESS [  4.367 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  01:33 min
+[INFO] Finished at: 2026-02-15T19:41:12+01:00
+[INFO] ------------------------------------------------------------------------
+Running benchmark with jar /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/sail/lmdb/target/jmh-benchmarks.jar
+# JMH version: 1.37
+# VM version: JDK 25.0.1, OpenJDK 64-Bit Server VM, 25.0.1+8-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25.0.1-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms32G -Xmx32G -Drdf4j.optimizer.mode=legacy
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: <none>
+# Measurement: 10 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (pageCardinalityEstimator = true, themeName = SOCIAL_MEDIA, z_queryIndex = 10)
+
+# Run progress: 0.00% complete, ETA 00:00:10
+# Fork: 1 of 1
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+Iteration   1: WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000000f80109f230 in an unnamed module (file:/Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+8.505 ms/op
+Iteration   2: 8.829 ms/op
+Iteration   3: 8.584 ms/op
+Iteration   4: 8.408 ms/op
+Iteration   5: 8.410 ms/op
+Iteration   6: 7.539 ms/op
+Iteration   7: 6.488 ms/op
+Iteration   8: 6.872 ms/op
+Iteration   9: 6.938 ms/op
+Iteration  10: 6.788 ms/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  7.736 ±(99.9%) 1.361 ms/op [Average]
+  (min, avg, max) = (6.488, 7.736, 8.829), stdev = 0.900
+  CI (99.9%): [6.376, 9.097] (assumes normal distribution)
+
+
+# Run complete. Total time: 00:00:25
+
+REMEMBER: The numbers below are just data. To gain reusable insights, you need to follow up on
+why the numbers are the way they are. Use profilers (see -prof, -lprof), design factorial
+experiments, perform baseline and negative tests that provide experimental control, make sure
+the benchmarking environment is safe on JVM/OS/HW level, ask for reviews from the domain experts.
+Do not assume the numbers tell you what you want them to tell.
+
+NOTE: Current JVM experimentally supports Compiler Blackholes, and they are in use. Please exercise
+extra caution when trusting the results, look into the generated code to check the benchmark still
+works, and factor in a small probability of new VM bugs. Additionally, while comparisons between
+different JVMs are already problematic, the performance difference caused by different Blackhole
+modes can be very significant. Please make sure you use the consistent Blackhole mode for comparisons.
+
+Benchmark                         (pageCardinalityEstimator)   (themeName)  (z_queryIndex)  Mode  Cnt  Score   Error  Units
+ThemeQueryBenchmark.executeQuery                        true  SOCIAL_MEDIA              10  avgt   10  7.736 ± 1.361  ms/op
+
+Benchmark result is saved to /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/artifacts/benchmarks/hybrid-join-optimizer/stability-20260215-pass2/legacy.json

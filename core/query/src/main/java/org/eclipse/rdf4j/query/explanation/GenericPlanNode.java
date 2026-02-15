@@ -61,6 +61,18 @@ public class GenericPlanNode {
 	// The number of results that this node was estimated to produce.
 	private Double resultSizeEstimate;
 
+	// The estimator source used for the result-size estimate (for example "legacy" or store-specific synopsis source).
+	private String resultSizeEstimateSource;
+
+	// Confidence value for result-size estimate in [0, 1].
+	private Double resultSizeEstimateConfidence;
+
+	// EWMA q-error from calibration feedback for this estimator source.
+	private Double resultSizeEstimateCalibrationQError;
+
+	// Number of observations in calibration feedback for this estimator source.
+	private Long resultSizeEstimateCalibrationSamples;
+
 	// The q-error between estimated and actual result size.
 	private Double resultSizeQError;
 
@@ -136,6 +148,45 @@ public class GenericPlanNode {
 	public void setResultSizeEstimate(Double resultSizeEstimate) {
 		if (resultSizeEstimate >= 0) {
 			this.resultSizeEstimate = resultSizeEstimate;
+		}
+	}
+
+	public String getResultSizeEstimateSource() {
+		return resultSizeEstimateSource;
+	}
+
+	public void setResultSizeEstimateSource(String resultSizeEstimateSource) {
+		this.resultSizeEstimateSource = resultSizeEstimateSource;
+	}
+
+	public Double getResultSizeEstimateConfidence() {
+		return resultSizeEstimateConfidence;
+	}
+
+	public void setResultSizeEstimateConfidence(Double resultSizeEstimateConfidence) {
+		if (resultSizeEstimateConfidence != null && resultSizeEstimateConfidence >= 0
+				&& resultSizeEstimateConfidence <= 1) {
+			this.resultSizeEstimateConfidence = resultSizeEstimateConfidence;
+		}
+	}
+
+	public Double getResultSizeEstimateCalibrationQError() {
+		return resultSizeEstimateCalibrationQError;
+	}
+
+	public void setResultSizeEstimateCalibrationQError(Double resultSizeEstimateCalibrationQError) {
+		if (resultSizeEstimateCalibrationQError == null || resultSizeEstimateCalibrationQError >= 0) {
+			this.resultSizeEstimateCalibrationQError = resultSizeEstimateCalibrationQError;
+		}
+	}
+
+	public Long getResultSizeEstimateCalibrationSamples() {
+		return resultSizeEstimateCalibrationSamples;
+	}
+
+	public void setResultSizeEstimateCalibrationSamples(Long resultSizeEstimateCalibrationSamples) {
+		if (resultSizeEstimateCalibrationSamples == null || resultSizeEstimateCalibrationSamples >= 0) {
+			this.resultSizeEstimateCalibrationSamples = resultSizeEstimateCalibrationSamples;
 		}
 	}
 
@@ -436,6 +487,13 @@ public class GenericPlanNode {
 		String costs = Stream.of(
 				"costEstimate=" + toHumanReadableNumber(getCostEstimate()),
 				"resultSizeEstimate=" + toHumanReadableNumber(getResultSizeEstimate()),
+				"resultSizeEstimateConfidence=" + toHumanReadableNumber(getResultSizeEstimateConfidence()),
+				"resultSizeEstimateSource="
+						+ (getResultSizeEstimateSource() != null ? getResultSizeEstimateSource() : UNKNOWN),
+				"resultSizeEstimateCalibrationQError="
+						+ toHumanReadableNumber(getResultSizeEstimateCalibrationQError()),
+				"resultSizeEstimateCalibrationSamples="
+						+ toHumanReadableNumber(getResultSizeEstimateCalibrationSamples()),
 				"resultSizeQError=" + toHumanReadableNumber(getResultSizeQError()),
 				"resultSizeActual=" + toHumanReadableNumber(getResultSizeActual()),
 				"totalTimeActual=" + toHumanReadableTime(getTotalTimeActual()),

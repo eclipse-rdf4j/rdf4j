@@ -1,0 +1,24 @@
+Apache Maven 3.9.11 (3e54c93a704957b63ee3494413a2b544fd3d825b)
+Maven home: /opt/homebrew/Cellar/maven/3.9.11/libexec
+Java version: 25.0.1, vendor: Azul Systems, Inc., runtime: /Users/havardottestad/.sdkman/candidates/java/25.0.1-zulu/zulu-25.jdk/Contents/Home
+Default locale: en_US, platform encoding: UTF-8
+OS name: "mac os x", version: "26.1", arch: "aarch64", family: "mac"
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:/opt/homebrew/Cellar/maven/3.9.11/libexec/lib/guice-5.1.0-classes.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner
+WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ----------< org.eclipse.rdf4j:rdf4j-queryalgebra-evaluation >-----------
+[INFO] Building RDF4J: Query algebra - evaluation 5.3.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- clean:3.5.0:clean (default-clean) @ rdf4j-queryalgebra-evaluation ---
+[INFO] Deleting /Users/havardottestad/Documents/Programming/rdf4j-shacl-inference/core/queryalgebra/evaluation/target
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  0.811 s
+[INFO] Finished at: 2026-02-15T12:55:11+01:00
+[INFO] ------------------------------------------------------------------------

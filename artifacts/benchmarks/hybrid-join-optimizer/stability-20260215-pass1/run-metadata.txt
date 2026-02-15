@@ -1,0 +1,12 @@
+timestamp=2026-02-15T18:36:59Z
+module=core/sail/lmdb
+class=org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark
+method=executeQuery
+queryIndex=10
+themeName=SOCIAL_MEDIA
+pageCardinalityEstimator=true
+warmupIterations=0
+measurementIterations=10
+warmupTime=1s
+measurementTime=1s
+forks=1

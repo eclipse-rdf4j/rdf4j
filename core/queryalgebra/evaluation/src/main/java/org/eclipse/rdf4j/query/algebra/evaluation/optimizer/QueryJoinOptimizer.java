@@ -133,7 +133,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(StatementPattern node) throws RuntimeException {
-			node.setResultSizeEstimate(Math.max(statistics.getCardinality(node), node.getResultSizeEstimate()));
+			annotateEstimate(node);
 		}
 
 		private void optimizePriorityJoin(Set<String> origBoundVars, TupleExpr join) {
@@ -196,9 +196,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 							continue;
 						}
 
-						double cardinality = statistics.getCardinality(tupleExpr);
-
-						tupleExpr.setResultSizeEstimate(Math.max(cardinality, tupleExpr.getResultSizeEstimate()));
+						double cardinality = annotateEstimate(tupleExpr);
 						if (!hasCachedCardinality(tupleExpr)) {
 							if (cardinalityMap.isEmpty()) {
 								cardinalityMap = new HashMap<>();
@@ -243,7 +241,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					priorityJoins = priorityArgs.get(0);
 
 					for (int i = 1; i < priorityArgs.size(); i++) {
-						priorityJoins = new Join(priorityJoins, priorityArgs.get(i));
+						Join priorityJoin = new Join(priorityJoins, priorityArgs.get(i));
+						annotateEstimate(priorityJoin);
+						priorityJoins = priorityJoin;
 					}
 				}
 
@@ -277,6 +277,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 							Join join = new Join(left, right);
 							join.setOrder((Var) supportedOrders.toArray()[0]);
 							join.setMergeJoin(true);
+							annotateEstimate(join);
 							orderedJoinArgs.addFirst(join);
 						}
 
@@ -297,6 +298,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						supportedOrders.retainAll(right.getSupportedOrders(tripleSource));
 
 						Join join = new Join(left, right);
+						annotateEstimate(join);
 
 						if (USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN) {
 							mergeJoinForCrossJoin(orderedJoinArgs, supportedOrders, left, right, join);
@@ -306,11 +308,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 					}
 					while (!orderedJoinArgs.isEmpty()) {
-						right = new Join(orderedJoinArgs.removeLast(), right);
+						Join join = new Join(orderedJoinArgs.removeLast(), right);
+						annotateEstimate(join);
+						right = join;
 					}
 
 					if (priorityJoins != null) {
-						right = new Join(priorityJoins, right);
+						Join join = new Join(priorityJoins, right);
+						annotateEstimate(join);
+						right = join;
 					}
 
 					// Replace old join hierarchy
@@ -468,6 +474,23 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			for (TupleExpr subSelect : subSelects) {
 				subSelect.visit(new JoinVisitor());
 			}
+		}
+
+		private double annotateEstimate(TupleExpr tupleExpr) {
+			EvaluationStatistics.CardinalityEstimate estimate = statistics.getCardinalityEstimate(tupleExpr);
+			tupleExpr.setResultSizeEstimate(Math.max(estimate.estimate, tupleExpr.getResultSizeEstimate()));
+			tupleExpr.setResultSizeEstimateSource(estimate.source);
+			tupleExpr.setResultSizeEstimateConfidence(estimate.confidence);
+			EvaluationStatistics.CalibrationSnapshot snapshot = EvaluationStatistics
+					.getCalibrationSnapshot(estimate.source);
+			if (snapshot != null) {
+				tupleExpr.setResultSizeEstimateQError(snapshot.ewmaQError);
+				tupleExpr.setResultSizeEstimateObservationCount(snapshot.sampleCount);
+			} else {
+				tupleExpr.setResultSizeEstimateQError(-1);
+				tupleExpr.setResultSizeEstimateObservationCount(-1);
+			}
+			return estimate.estimate;
 		}
 
 		private boolean joinSizeIsTooDifferent(double cardinality, double second) {

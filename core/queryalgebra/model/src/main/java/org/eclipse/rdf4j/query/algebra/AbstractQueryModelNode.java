@@ -38,6 +38,10 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	private boolean isVariableScopeChange;
 
 	private double resultSizeEstimate = -1;
+	private String resultSizeEstimateSource;
+	private double resultSizeEstimateConfidence = -1;
+	private double resultSizeEstimateQError = -1;
+	private long resultSizeEstimateObservationCount = -1;
 	private long resultSizeActual = -1;
 	private double costEstimate = -1;
 	private long totalTimeNanosActual = -1;
@@ -135,6 +139,54 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	@Override
 	public void setResultSizeEstimate(double resultSizeEstimate) {
 		this.resultSizeEstimate = resultSizeEstimate;
+	}
+
+	@Override
+	public String getResultSizeEstimateSource() {
+		return resultSizeEstimateSource;
+	}
+
+	@Override
+	public void setResultSizeEstimateSource(String resultSizeEstimateSource) {
+		this.resultSizeEstimateSource = resultSizeEstimateSource;
+	}
+
+	@Override
+	public double getResultSizeEstimateConfidence() {
+		return resultSizeEstimateConfidence;
+	}
+
+	@Override
+	public void setResultSizeEstimateConfidence(double resultSizeEstimateConfidence) {
+		if (Double.isNaN(resultSizeEstimateConfidence)) {
+			this.resultSizeEstimateConfidence = -1;
+			return;
+		}
+		this.resultSizeEstimateConfidence = Math.max(-1, Math.min(1, resultSizeEstimateConfidence));
+	}
+
+	@Override
+	public double getResultSizeEstimateQError() {
+		return resultSizeEstimateQError;
+	}
+
+	@Override
+	public void setResultSizeEstimateQError(double resultSizeEstimateQError) {
+		if (Double.isNaN(resultSizeEstimateQError)) {
+			this.resultSizeEstimateQError = -1;
+			return;
+		}
+		this.resultSizeEstimateQError = Math.max(-1, resultSizeEstimateQError);
+	}
+
+	@Override
+	public long getResultSizeEstimateObservationCount() {
+		return resultSizeEstimateObservationCount;
+	}
+
+	@Override
+	public void setResultSizeEstimateObservationCount(long resultSizeEstimateObservationCount) {
+		this.resultSizeEstimateObservationCount = Math.max(-1, resultSizeEstimateObservationCount);
 	}
 
 	@Override

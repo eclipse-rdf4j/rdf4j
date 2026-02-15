@@ -1,0 +1,63 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/25.0.1-zulu/zulu-25.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms32G",
+            "-Xmx32G",
+            "-Drdf4j.optimizer.mode=hybrid"
+        ],
+        "jdkVersion" : "25.0.1",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "25.0.1+8-LTS",
+        "warmupIterations" : 0,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "pageCardinalityEstimator" : "true",
+            "themeName" : "SOCIAL_MEDIA",
+            "z_queryIndex" : "6"
+        },
+        "primaryMetric" : {
+            "score" : 4.186123854343615,
+            "scoreError" : 2.3343012043604343,
+            "scoreConfidence" : [
+                1.8518226499831805,
+                6.520425058704049
+            ],
+            "scorePercentiles" : {
+                "0.0" : 3.123606049844237,
+                "50.0" : 4.3672844217391305,
+                "90.0" : 4.607094318181818,
+                "95.0" : 4.607094318181818,
+                "99.0" : 4.607094318181818,
+                "99.9" : 4.607094318181818,
+                "99.99" : 4.607094318181818,
+                "99.999" : 4.607094318181818,
+                "99.9999" : 4.607094318181818,
+                "100.0" : 4.607094318181818
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    4.607094318181818,
+                    4.528138205357143,
+                    4.3672844217391305,
+                    4.304496276595745,
+                    3.123606049844237
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+
