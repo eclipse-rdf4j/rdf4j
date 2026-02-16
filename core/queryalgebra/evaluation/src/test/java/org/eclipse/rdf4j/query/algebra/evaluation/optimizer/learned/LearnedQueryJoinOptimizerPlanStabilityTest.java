@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -43,15 +44,23 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 		Object visitor = newLearnedJoinVisitor(optimizer);
 		String templateHash = "plan-stability-switch-test";
 
-		int firstSelection = selectCandidateIndex(visitor, PlanForceMode.AUTO, templateHash,
+		SelectionResult firstSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
 				List.of(candidate("[0,1]", 100.0d, 1.0d), candidate("[1,0]", 130.0d, 1.0d)));
-		assertEquals(0, firstSelection);
+		assertEquals(0, firstSelection.selectedCandidateIndex);
+		assertEquals("cache-miss", firstSelection.stabilityDecision);
+		assertEquals("explore", firstSelection.stabilitySource);
+		assertTrue(Double.isNaN(firstSelection.stabilityImprovementRatio));
+		assertTrue(Double.isNaN(firstSelection.stabilityUncertaintyDelta));
 
-		int secondSelection = selectCandidateIndex(visitor, PlanForceMode.AUTO, templateHash,
+		SelectionResult secondSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
 				List.of(candidate("[0,1]", 100.0d, 1.0d), candidate("[1,0]", 60.0d, 1.0d)));
 
-		assertEquals(1, secondSelection,
+		assertEquals(1, secondSelection.selectedCandidateIndex,
 				"Expected adaptive plan stability to switch cached winner when improvement is substantial");
+		assertEquals("cache-hit-switch", secondSelection.stabilityDecision);
+		assertEquals("best-cost", secondSelection.stabilitySource);
+		assertEquals(0.4d, secondSelection.stabilityImprovementRatio, 0.0000001d);
+		assertEquals(0.0d, secondSelection.stabilityUncertaintyDelta, 0.0000001d);
 	}
 
 	@Test
@@ -62,15 +71,19 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 		Object visitor = newLearnedJoinVisitor(optimizer);
 		String templateHash = "plan-stability-hold-test";
 
-		int firstSelection = selectCandidateIndex(visitor, PlanForceMode.AUTO, templateHash,
+		SelectionResult firstSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
 				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 130.0d, 2.0d)));
-		assertEquals(0, firstSelection);
+		assertEquals(0, firstSelection.selectedCandidateIndex);
 
-		int secondSelection = selectCandidateIndex(visitor, PlanForceMode.AUTO, templateHash,
+		SelectionResult secondSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
 				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 95.0d, 2.0d)));
 
-		assertEquals(0, secondSelection,
+		assertEquals(0, secondSelection.selectedCandidateIndex,
 				"Expected plan stability guard to hold cached winner for small gains without confidence gain");
+		assertEquals("cache-hit-keep", secondSelection.stabilityDecision);
+		assertEquals("cache", secondSelection.stabilitySource);
+		assertEquals(0.0d, secondSelection.stabilityImprovementRatio, 0.0000001d);
+		assertEquals(0.0d, secondSelection.stabilityUncertaintyDelta, 0.0000001d);
 	}
 
 	@Test
@@ -81,15 +94,19 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 		Object visitor = newLearnedJoinVisitor(optimizer);
 		String templateHash = "plan-stability-confidence-switch-test";
 
-		int firstSelection = selectCandidateIndex(visitor, PlanForceMode.AUTO, templateHash,
+		SelectionResult firstSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
 				List.of(candidate("[0,1]", 100.0d, 10.0d), candidate("[1,0]", 130.0d, 1.0d)));
-		assertEquals(0, firstSelection);
+		assertEquals(0, firstSelection.selectedCandidateIndex);
 
-		int secondSelection = selectCandidateIndex(visitor, PlanForceMode.AUTO, templateHash,
+		SelectionResult secondSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
 				List.of(candidate("[0,1]", 100.0d, 10.0d), candidate("[1,0]", 99.0d, 1.0d)));
 
-		assertEquals(1, secondSelection,
+		assertEquals(1, secondSelection.selectedCandidateIndex,
 				"Expected confidence-aware switch when alternative lowers uncertainty and cost");
+		assertEquals("cache-hit-switch", secondSelection.stabilityDecision);
+		assertEquals("explore", secondSelection.stabilitySource);
+		assertEquals(0.01d, secondSelection.stabilityImprovementRatio, 0.0000001d);
+		assertEquals(9.0d, secondSelection.stabilityUncertaintyDelta, 0.0000001d);
 	}
 
 	private static JoinPlanCandidate candidate(String signature, double estimatedCost, double totalUncertainty) {
@@ -109,7 +126,7 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 		return constructor.newInstance(optimizer, null, EmptyBindingSet.getInstance());
 	}
 
-	private static int selectCandidateIndex(Object visitor, PlanForceMode forceMode, String templateHash,
+	private static SelectionResult selectCandidateDecision(Object visitor, PlanForceMode forceMode, String templateHash,
 			List<JoinPlanCandidate> candidates) throws Exception {
 		Method method = visitor.getClass()
 				.getDeclaredMethod("selectCandidateIndex", PlanForceMode.class,
@@ -117,11 +134,49 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 		method.setAccessible(true);
 		Object selection = method.invoke(visitor, forceMode, templateHash, candidates);
 		if (selection instanceof Integer) {
-			return (int) selection;
+			return new SelectionResult((int) selection, "not-applicable", "none", Double.NaN, Double.NaN);
 		}
-		Field indexField = selection.getClass().getDeclaredField("selectedCandidateIndex");
-		indexField.setAccessible(true);
-		return (int) indexField.get(selection);
+		return new SelectionResult(
+				readIntField(selection, "selectedCandidateIndex"),
+				readStringField(selection, "stabilityDecision"),
+				readStringField(selection, "stabilitySource"),
+				readDoubleField(selection, "stabilityImprovementRatio"),
+				readDoubleField(selection, "stabilityUncertaintyDelta"));
+	}
+
+	private static int readIntField(Object source, String fieldName) throws Exception {
+		Field field = source.getClass().getDeclaredField(fieldName);
+		field.setAccessible(true);
+		return (int) field.get(source);
+	}
+
+	private static String readStringField(Object source, String fieldName) throws Exception {
+		Field field = source.getClass().getDeclaredField(fieldName);
+		field.setAccessible(true);
+		return (String) field.get(source);
+	}
+
+	private static double readDoubleField(Object source, String fieldName) throws Exception {
+		Field field = source.getClass().getDeclaredField(fieldName);
+		field.setAccessible(true);
+		return (double) field.get(source);
+	}
+
+	private static final class SelectionResult {
+		private final int selectedCandidateIndex;
+		private final String stabilityDecision;
+		private final String stabilitySource;
+		private final double stabilityImprovementRatio;
+		private final double stabilityUncertaintyDelta;
+
+		private SelectionResult(int selectedCandidateIndex, String stabilityDecision, String stabilitySource,
+				double stabilityImprovementRatio, double stabilityUncertaintyDelta) {
+			this.selectedCandidateIndex = selectedCandidateIndex;
+			this.stabilityDecision = stabilityDecision;
+			this.stabilitySource = stabilitySource;
+			this.stabilityImprovementRatio = stabilityImprovementRatio;
+			this.stabilityUncertaintyDelta = stabilityUncertaintyDelta;
+		}
 	}
 
 	@SuppressWarnings("unchecked")
