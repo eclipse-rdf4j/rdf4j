@@ -21,22 +21,27 @@ public class JoinCostModel {
 	static final String HASH_JOIN_INPUT_THRESHOLD_PROPERTY = "rdf4j.optimizer.hashJoinInputThreshold";
 	static final String HASH_JOIN_ENABLED_PROPERTY = "rdf4j.optimizer.hashJoinEnabled";
 	static final String MERGE_JOIN_ENABLED_PROPERTY = "rdf4j.optimizer.mergeJoinEnabled";
+	static final String HASH_JOIN_MIN_OUTPUT_FRACTION_PROPERTY = "rdf4j.optimizer.hashJoinMinOutputFraction";
 
 	private static final double CARTESIAN_PENALTY = 12.0;
 	private static final double MULTI_KEY_JOIN_BONUS = 0.9;
 	private static final double STEP_WORK_WEIGHT = 0.1;
 	private static final double MIN_ESTIMATE = 1e-6;
-	private static final double DEFAULT_HASH_JOIN_INPUT_THRESHOLD = 10_000_000_000.0;
+	private static final double DEFAULT_HASH_JOIN_MIN_OUTPUT_FRACTION = 0.01;
+	private static final double DEFAULT_HASH_JOIN_INPUT_THRESHOLD = 100_000.0;
 	private static final boolean DEFAULT_HASH_JOIN_ENABLED = true;
 	private static final boolean DEFAULT_MERGE_JOIN_ENABLED = true;
 
 	private final double hashJoinInputThreshold;
+	private final double hashJoinMinOutputFraction;
 	private final boolean hashJoinEnabled;
 	private final boolean mergeJoinEnabled;
 
 	public JoinCostModel() {
 		this.hashJoinInputThreshold = readPositiveDoubleProperty(HASH_JOIN_INPUT_THRESHOLD_PROPERTY,
 				DEFAULT_HASH_JOIN_INPUT_THRESHOLD);
+		this.hashJoinMinOutputFraction = readPositiveDoubleProperty(HASH_JOIN_MIN_OUTPUT_FRACTION_PROPERTY,
+				DEFAULT_HASH_JOIN_MIN_OUTPUT_FRACTION);
 		this.hashJoinEnabled = readBooleanProperty(HASH_JOIN_ENABLED_PROPERTY, DEFAULT_HASH_JOIN_ENABLED);
 		this.mergeJoinEnabled = readBooleanProperty(MERGE_JOIN_ENABLED_PROPERTY, DEFAULT_MERGE_JOIN_ENABLED);
 	}
@@ -76,6 +81,33 @@ public class JoinCostModel {
 		return applyJoinShapePenalty(score, joinsBoundVar, sharedVarCount);
 	}
 
+	public EvaluationStatistics.CardinalityEstimate estimateJoinOutputHeuristic(
+			EvaluationStatistics.CardinalityEstimate leftEstimate,
+			EvaluationStatistics.CardinalityEstimate rightEstimate, int sharedVarCount) {
+		double left = clampEstimate(leftEstimate.estimate);
+		double right = clampEstimate(rightEstimate.estimate);
+		double minConfidence = Math.min(leftEstimate.confidence, rightEstimate.confidence);
+
+		double estimate;
+		double lowerBound;
+		double upperBound;
+		double confidence;
+		if (sharedVarCount <= 0) {
+			estimate = left * right;
+			lowerBound = Math.max(MIN_ESTIMATE, estimate * 0.5);
+			upperBound = Math.max(lowerBound, estimate * 2.0);
+			confidence = minConfidence * 0.4;
+		} else {
+			estimate = Math.max(MIN_ESTIMATE, Math.min(left, right) / (4.0 * sharedVarCount));
+			lowerBound = Math.max(MIN_ESTIMATE, estimate / 4.0);
+			upperBound = Math.max(lowerBound, Math.min(Math.max(left, right), estimate * 8.0));
+			confidence = minConfidence * 0.6;
+		}
+
+		return new EvaluationStatistics.CardinalityEstimate(estimate, lowerBound, upperBound, confidence,
+				"join-heuristic");
+	}
+
 	private double applyJoinShapePenalty(double score, boolean joinsBoundVar, int sharedVarCount) {
 		if (!joinsBoundVar) {
 			return score * CARTESIAN_PENALTY;
@@ -92,6 +124,13 @@ public class JoinCostModel {
 
 	public JoinAlgorithm chooseJoinAlgorithm(EvaluationStatistics.CardinalityEstimate leftEstimate,
 			EvaluationStatistics.CardinalityEstimate rightEstimate, int sharedVarCount, boolean mergeJoinPossible) {
+		return chooseJoinAlgorithm(leftEstimate, rightEstimate, null, sharedVarCount, mergeJoinPossible);
+	}
+
+	public JoinAlgorithm chooseJoinAlgorithm(EvaluationStatistics.CardinalityEstimate leftEstimate,
+			EvaluationStatistics.CardinalityEstimate rightEstimate,
+			EvaluationStatistics.CardinalityEstimate joinOutputEstimate, int sharedVarCount,
+			boolean mergeJoinPossible) {
 		if (sharedVarCount <= 0) {
 			return JoinAlgorithm.NESTED_LOOP;
 		}
@@ -104,11 +143,25 @@ public class JoinCostModel {
 			return JoinAlgorithm.MERGE;
 		}
 
-		if (hashJoinEnabled && Math.min(left, right) >= hashJoinInputThreshold) {
+		if (hashJoinEnabled && Math.min(left, right) >= hashJoinInputThreshold
+				&& !joinSizeIsTooDifferent(left, right)) {
+			if (isHighlySelective(joinOutputEstimate, left, right)) {
+				return JoinAlgorithm.NESTED_LOOP;
+			}
 			return JoinAlgorithm.HASH;
 		}
 
 		return JoinAlgorithm.NESTED_LOOP;
+	}
+
+	private boolean isHighlySelective(EvaluationStatistics.CardinalityEstimate joinOutputEstimate, double left,
+			double right) {
+		if (joinOutputEstimate == null) {
+			return false;
+		}
+		double joinOutput = clampEstimate(joinOutputEstimate.estimate);
+		double minimumInput = Math.max(MIN_ESTIMATE, Math.min(left, right));
+		return joinOutput <= minimumInput * hashJoinMinOutputFraction;
 	}
 
 	private boolean joinSizeIsTooDifferent(double left, double right) {

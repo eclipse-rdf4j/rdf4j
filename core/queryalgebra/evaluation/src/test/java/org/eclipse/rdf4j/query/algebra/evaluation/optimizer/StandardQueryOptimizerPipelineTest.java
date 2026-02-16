@@ -13,14 +13,22 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -71,6 +79,33 @@ class StandardQueryOptimizerPipelineTest {
 		assertJoinOptimizerSequence(pipeline, CostBasedJoinOptimizer.class);
 	}
 
+	@Test
+	void hybridModeKeepsLegacyJoinNodeWhenCostBasedIsNoop() {
+		withSystemProperty(OPTIMIZER_MODE_PROPERTY, "hybrid", () -> withSystemProperty(
+				CostBasedJoinOptimizer.PLAN_SWITCH_MIN_RELATIVE_GAIN_PROPERTY, "1.0", () -> {
+					EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+					when(strategy.isTrackResultSize()).thenReturn(false);
+					StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
+							strategy, new EmptyTripleSource(), new EvaluationStatistics());
+					List<QueryOptimizer> joinOptimizers = extractJoinOptimizers(pipeline);
+					assertThat(joinOptimizers).hasSize(2);
+
+					QueryRoot queryRoot = parse("SELECT * WHERE { "
+							+ "?s <urn:test:left> ?join . "
+							+ "?o <urn:test:right> ?join . "
+							+ "}");
+
+					joinOptimizers.get(0).optimize(queryRoot, null, new QueryBindingSet());
+					Join legacyJoin = firstJoin(queryRoot.getArg());
+					assertThat(legacyJoin).isNotNull();
+
+					joinOptimizers.get(1).optimize(queryRoot, null, new QueryBindingSet());
+					Join finalJoin = firstJoin(queryRoot.getArg());
+					assertThat(finalJoin).isSameAs(legacyJoin);
+				}));
+	}
+
+	@SafeVarargs
 	private void assertJoinOptimizerSequence(StandardQueryOptimizerPipeline pipeline,
 			Class<? extends QueryOptimizer>... expected) {
 		assertThat(extractJoinOptimizers(pipeline))
@@ -86,5 +121,38 @@ class StandardQueryOptimizerPipelineTest {
 			}
 		}
 		return joinOptimizers;
+	}
+
+	private static QueryRoot parse(String query) {
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		return new QueryRoot(parsed.getTupleExpr());
+	}
+
+	private static Join firstJoin(org.eclipse.rdf4j.query.algebra.TupleExpr tupleExpr) {
+		final Join[] result = new Join[1];
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join node) {
+				if (result[0] == null) {
+					result[0] = node;
+				}
+				super.meet(node);
+			}
+		});
+		return result[0];
+	}
+
+	private static void withSystemProperty(String key, String value, Runnable assertion) {
+		String previous = System.getProperty(key);
+		try {
+			System.setProperty(key, value);
+			assertion.run();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(key);
+			} else {
+				System.setProperty(key, previous);
+			}
+		}
 	}
 }

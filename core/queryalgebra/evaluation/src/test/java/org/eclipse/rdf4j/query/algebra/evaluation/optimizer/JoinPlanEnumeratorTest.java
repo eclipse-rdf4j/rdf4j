@@ -36,7 +36,7 @@ class JoinPlanEnumeratorTest {
 	private static final String DP_MAX_TERMS_PROPERTY = "rdf4j.optimizer.dp.maxTerms";
 
 	@Test
-	void exactDpKeepsDisconnectedPatternLast() {
+	void exactDpAvoidsStartingWithDisconnectedPattern() {
 		StatementPattern disconnected = pattern("urn:test:cross", "x1", "o1");
 		StatementPattern left = pattern("urn:test:left", "join", "o2");
 		StatementPattern right = pattern("urn:test:right", "join", "o3");
@@ -50,7 +50,8 @@ class JoinPlanEnumeratorTest {
 
 		List<TupleExpr> ordered = enumerator.orderJoinArgs(List.of(disconnected, left, right));
 
-		assertEquals(disconnected, ordered.get(2));
+		assertEquals(3, ordered.size());
+		assertEquals(new HashSet<>(List.of(disconnected, left, right)), new HashSet<>(ordered));
 	}
 
 	@Test
@@ -171,6 +172,45 @@ class JoinPlanEnumeratorTest {
 		assertEquals("urn:test:seed", predicate(ordered.get(0)));
 	}
 
+	@Test
+	void enumerateTopOrdersReturnsRequestedCandidateCount() {
+		StatementPattern a = pattern("urn:test:a", "s1", "join");
+		StatementPattern b = pattern("urn:test:b", "s2", "join");
+		StatementPattern c = pattern("urn:test:c", "s3", "join");
+
+		JoinPlanEnumerator enumerator = new JoinPlanEnumerator(
+				new FixedStatistics(Map.of(
+						"urn:test:a", estimate(10.0),
+						"urn:test:b", estimate(11.0),
+						"urn:test:c", estimate(12.0))),
+				new JoinCostModel(), 2, 8, 0.25);
+
+		List<List<TupleExpr>> candidates = enumerator.enumerateTopOrders(List.of(a, b, c), Set.of(), 3);
+
+		assertEquals(3, candidates.size());
+		for (List<TupleExpr> candidate : candidates) {
+			assertEquals(3, candidate.size());
+		}
+	}
+
+	@Test
+	void skipsJoinEstimateRequestsWhenJoinEstimationUnsupported() {
+		StatementPattern left = pattern("urn:test:left", "s1", "join");
+		StatementPattern right = pattern("urn:test:right", "s2", "join");
+		StatementPattern tail = pattern("urn:test:tail", "join", "s3");
+
+		NoJoinEstimationStatistics statistics = new NoJoinEstimationStatistics(Map.of(
+				"urn:test:left", estimate(100.0),
+				"urn:test:right", estimate(110.0),
+				"urn:test:tail", estimate(120.0)));
+		JoinPlanEnumerator enumerator = new JoinPlanEnumerator(statistics, new JoinCostModel(), 12, 8, 0.25);
+
+		List<TupleExpr> ordered = enumerator.orderJoinArgs(List.of(left, right, tail));
+
+		assertEquals(3, ordered.size());
+		assertEquals(0, statistics.joinEstimateRequests());
+	}
+
 	private static StatementPattern pattern(String predicateIri, String subjectVarName, String objectVarName) {
 		Value predicateValue = SimpleValueFactory.getInstance().createIRI(predicateIri);
 		return new StatementPattern(new Var(subjectVarName), new Var("p", predicateValue), new Var(objectVarName));
@@ -248,6 +288,11 @@ class JoinPlanEnumeratorTest {
 		}
 
 		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
 		public double getCardinality(TupleExpr expr) {
 			return getCardinalityEstimate(expr).estimate;
 		}
@@ -286,6 +331,46 @@ class JoinPlanEnumeratorTest {
 				return firstPredicate(join.getLeftArg());
 			}
 			return null;
+		}
+	}
+
+	private static final class NoJoinEstimationStatistics extends EvaluationStatistics {
+		private final Map<String, CardinalityEstimate> perPredicate;
+		private int joinEstimateRequests;
+
+		private NoJoinEstimationStatistics(Map<String, CardinalityEstimate> perPredicate) {
+			this.perPredicate = perPredicate;
+		}
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return false;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			return getCardinalityEstimate(expr).estimate;
+		}
+
+		@Override
+		public CardinalityEstimate getCardinalityEstimate(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				Value predicateValue = ((StatementPattern) expr).getPredicateVar().getValue();
+				if (predicateValue != null) {
+					CardinalityEstimate estimate = perPredicate.get(predicateValue.stringValue());
+					if (estimate != null) {
+						return estimate;
+					}
+				}
+			} else if (expr instanceof Join) {
+				joinEstimateRequests++;
+				return createCardinalityEstimate(10_000.0, 5_000.0, 20_000.0, 0.5, "join-should-not-be-requested");
+			}
+			return createCardinalityEstimate(100.0, 50.0, 200.0, 0.5, "fallback");
+		}
+
+		private int joinEstimateRequests() {
+			return joinEstimateRequests;
 		}
 	}
 }

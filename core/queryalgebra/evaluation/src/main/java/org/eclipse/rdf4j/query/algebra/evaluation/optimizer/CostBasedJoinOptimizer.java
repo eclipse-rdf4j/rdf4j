@@ -12,8 +12,12 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -25,6 +29,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -36,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /**
  * Cost-based join optimizer with exact DP enumeration for small join groups and beam fallback for larger groups.
@@ -45,8 +51,17 @@ public class CostBasedJoinOptimizer implements QueryOptimizer {
 	static final String RUNTIME_SAMPLING_ENABLED_PROPERTY = "rdf4j.optimizer.runtimeSampling.enabled";
 	static final String PLANNING_BUDGET_MS_PROPERTY = "rdf4j.optimizer.planningBudgetMs";
 	static final String RUNTIME_SAMPLING_CONFIDENCE_THRESHOLD_PROPERTY = "rdf4j.optimizer.runtimeSampling.confidenceThreshold";
+	static final String RUNTIME_SAMPLING_QERROR_THRESHOLD_PROPERTY = "rdf4j.optimizer.runtimeSampling.qErrorThreshold";
+	static final String RUNTIME_SAMPLING_TOP_K_PROPERTY = "rdf4j.optimizer.runtimeSampling.topK";
+	static final String RUNTIME_SAMPLING_PREFIX_TERMS_PROPERTY = "rdf4j.optimizer.runtimeSampling.prefixTerms";
 	static final String PLAN_SWITCH_MIN_RELATIVE_GAIN_PROPERTY = "rdf4j.optimizer.planSwitch.minRelativeGain";
+	static final String JOIN_CACHE_RIGHT_INPUT_MAX_PROPERTY = "rdf4j.optimizer.joinCache.rightInputMax";
+	static final String REWRITE_ON_NOOP_PROPERTY = "rdf4j.optimizer.costBased.rewriteOnNoop";
 	private static final double DEFAULT_PLAN_SWITCH_MIN_RELATIVE_GAIN = 0.20;
+	private static final double DEFAULT_JOIN_CACHE_RIGHT_INPUT_MAX = 50_000.0;
+	private static final double DEFAULT_RUNTIME_SAMPLING_QERROR_THRESHOLD = 5.0;
+	private static final int DEFAULT_RUNTIME_SAMPLING_TOP_K = 4;
+	private static final int DEFAULT_RUNTIME_SAMPLING_PREFIX_TERMS = 3;
 
 	private final boolean trackResultSize;
 	private final EvaluationStatistics statistics;
@@ -57,8 +72,13 @@ public class CostBasedJoinOptimizer implements QueryOptimizer {
 	private final boolean runtimeSamplingEnabled;
 	private final long planningBudgetMs;
 	private final double runtimeSamplingConfidenceThreshold;
+	private final double runtimeSamplingQErrorThreshold;
+	private final int runtimeSamplingTopK;
+	private final int runtimeSamplingPrefixTerms;
+	private final boolean rewriteOnNoop;
 	private final double planSwitchMinRelativeGain;
 	private final double riskLambda;
+	private final double joinCacheRightInputMax;
 
 	public CostBasedJoinOptimizer(EvaluationStatistics statistics) {
 		this(statistics, false, new NoOpTripleSource());
@@ -82,55 +102,96 @@ public class CostBasedJoinOptimizer implements QueryOptimizer {
 		this.planningBudgetMs = readNonNegativeLongProperty(PLANNING_BUDGET_MS_PROPERTY, 10L);
 		this.runtimeSamplingConfidenceThreshold = readBoundedDoubleProperty(
 				RUNTIME_SAMPLING_CONFIDENCE_THRESHOLD_PROPERTY, 0.55, 0.0, 1.0);
+		this.runtimeSamplingQErrorThreshold = readNonNegativeDoubleProperty(
+				RUNTIME_SAMPLING_QERROR_THRESHOLD_PROPERTY, DEFAULT_RUNTIME_SAMPLING_QERROR_THRESHOLD);
+		this.runtimeSamplingTopK = readPositiveIntProperty(RUNTIME_SAMPLING_TOP_K_PROPERTY,
+				DEFAULT_RUNTIME_SAMPLING_TOP_K);
+		this.runtimeSamplingPrefixTerms = readPositiveIntProperty(RUNTIME_SAMPLING_PREFIX_TERMS_PROPERTY,
+				DEFAULT_RUNTIME_SAMPLING_PREFIX_TERMS);
+		this.rewriteOnNoop = readBooleanProperty(REWRITE_ON_NOOP_PROPERTY, false);
 		this.planSwitchMinRelativeGain = readBoundedDoubleProperty(PLAN_SWITCH_MIN_RELATIVE_GAIN_PROPERTY,
 				DEFAULT_PLAN_SWITCH_MIN_RELATIVE_GAIN, 0.0, 1.0);
 		this.riskLambda = readNonNegativeDoubleProperty(JoinPlanEnumerator.RISK_LAMBDA_PROPERTY, 0.25);
+		this.joinCacheRightInputMax = readNonNegativeDoubleProperty(JOIN_CACHE_RIGHT_INPUT_MAX_PROPERTY,
+				DEFAULT_JOIN_CACHE_RIGHT_INPUT_MAX);
 	}
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		Set<String> initialBoundVars = bindings == null ? Set.of() : new HashSet<>(bindings.getBindingNames());
-		tupleExpr.visit(new CostBasedJoinVisitor(initialBoundVars));
+		tupleExpr.visit(new CostBasedJoinVisitor(initialBoundVars, !initialBoundVars.isEmpty()));
 	}
 
 	private final class CostBasedJoinVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
-		private final Set<String> initialBoundVars;
+		private Set<String> boundVars;
+		private final boolean hasExternalBindings;
 
-		private CostBasedJoinVisitor(Set<String> initialBoundVars) {
+		private CostBasedJoinVisitor(Set<String> initialBoundVars, boolean hasExternalBindings) {
 			super(trackResultSize);
-			this.initialBoundVars = initialBoundVars;
+			this.boundVars = new HashSet<>(initialBoundVars);
+			this.hasExternalBindings = hasExternalBindings;
 		}
 
 		@Override
 		public void meet(LeftJoin leftJoin) {
 			leftJoin.getLeftArg().visit(this);
-			leftJoin.getRightArg().visit(this);
+			Set<String> savedBoundVars = boundVars;
+			try {
+				boundVars = new HashSet<>(boundVars);
+				boundVars.addAll(leftJoin.getLeftArg().getBindingNames());
+				leftJoin.getRightArg().visit(this);
+			} finally {
+				boundVars = savedBoundVars;
+			}
 		}
 
 		@Override
 		public void meet(Join join) {
-			join.getLeftArg().visit(this);
-			join.getRightArg().visit(this);
+			Set<String> savedBoundVars = boundVars;
+			try {
+				boundVars = new HashSet<>(boundVars);
+				join.getLeftArg().visit(this);
+				join.getRightArg().visit(this);
 
-			List<TupleExpr> joinArgs = new ArrayList<>();
-			collectJoinArgs(join, joinArgs);
-			if (joinArgs.size() < 2) {
+				List<TupleExpr> joinArgs = new ArrayList<>();
+				collectJoinArgs(join, joinArgs);
+				if (joinArgs.size() < 2) {
+					return;
+				}
+				for (TupleExpr joinArg : joinArgs) {
+					annotateEstimate(joinArg);
+				}
+
+				Set<String> scopeBoundVars = new HashSet<>(boundVars);
+				List<TupleExpr> baselineJoinArgs = new ArrayList<>(joinArgs);
+				List<TupleExpr> orderedJoinArgs = joinPlanEnumerator.orderJoinArgs(joinArgs, scopeBoundVars);
+				orderedJoinArgs = maybeRerankWithRuntimeSampling(joinArgs, orderedJoinArgs, scopeBoundVars);
+				orderedJoinArgs = preserveLegacyPriorityArgSlots(baselineJoinArgs, orderedJoinArgs);
+				orderedJoinArgs = keepBaselineWhenGainIsTooSmall(baselineJoinArgs, orderedJoinArgs, scopeBoundVars);
+				if (baselineJoinArgs.equals(orderedJoinArgs) && !rewriteOnNoop) {
+					applyAlgorithmHintsInExistingTree(join);
+					annotateEstimate(join);
+					return;
+				}
+				JoinHintReuseCatalog joinHintReuseCatalog = new JoinHintReuseCatalog(baselineJoinArgs);
+				joinHintReuseCatalog.collectLeafIndexes(join);
+				TupleExpr reorderedJoin = buildRightRecursiveJoin(orderedJoinArgs, joinHintReuseCatalog);
+				join.replaceWith(reorderedJoin);
+			} finally {
+				boundVars = savedBoundVars;
+			}
+		}
+
+		private void applyAlgorithmHintsInExistingTree(TupleExpr tupleExpr) {
+			if (!(tupleExpr instanceof Join)) {
 				return;
 			}
-			for (TupleExpr joinArg : joinArgs) {
-				annotateEstimate(joinArg);
+			Join currentJoin = (Join) tupleExpr;
+			applyAlgorithmHintsInExistingTree(currentJoin.getLeftArg());
+			applyAlgorithmHintsInExistingTree(currentJoin.getRightArg());
+			if (currentJoin.getAlgorithmName() == null && !currentJoin.isMergeJoin()) {
+				applyAlgorithmHint(currentJoin, currentJoin.getLeftArg(), currentJoin.getRightArg());
 			}
-
-			List<TupleExpr> baselineJoinArgs = new ArrayList<>(joinArgs);
-			List<TupleExpr> orderedJoinArgs = joinPlanEnumerator.orderJoinArgs(joinArgs, initialBoundVars);
-			orderedJoinArgs = maybeRerankWithRuntimeSampling(orderedJoinArgs);
-			orderedJoinArgs = keepBaselineWhenGainIsTooSmall(baselineJoinArgs, orderedJoinArgs, initialBoundVars);
-			if (baselineJoinArgs.equals(orderedJoinArgs)) {
-				annotateEstimate(join);
-				return;
-			}
-			TupleExpr reorderedJoin = buildRightRecursiveJoin(orderedJoinArgs);
-			join.replaceWith(reorderedJoin);
 		}
 
 		private void collectJoinArgs(TupleExpr tupleExpr, List<TupleExpr> joinArgs) {
@@ -143,52 +204,121 @@ public class CostBasedJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
-		private TupleExpr buildRightRecursiveJoin(List<TupleExpr> joinArgs) {
+		private TupleExpr buildRightRecursiveJoin(List<TupleExpr> joinArgs, JoinHintReuseCatalog joinHintReuseCatalog) {
 			TupleExpr right = joinArgs.get(joinArgs.size() - 1);
 			for (int i = joinArgs.size() - 2; i >= 0; i--) {
-				right = createAnnotatedJoin(joinArgs.get(i), right);
+				right = createAnnotatedJoin(joinArgs.get(i), right, joinHintReuseCatalog);
 			}
 			return right;
 		}
 
-		private List<TupleExpr> maybeRerankWithRuntimeSampling(List<TupleExpr> orderedJoinArgs) {
+		private List<TupleExpr> maybeRerankWithRuntimeSampling(List<TupleExpr> joinArgs,
+				List<TupleExpr> orderedJoinArgs, Set<String> scopeBoundVars) {
 			if (!runtimeSamplingEnabled || orderedJoinArgs.size() < 3 || planningBudgetMs <= 0) {
 				return orderedJoinArgs;
 			}
 
-			if (!isLowConfidenceJoinGroup(orderedJoinArgs)) {
+			if (!isLowConfidenceJoinGroup(joinArgs)) {
 				return orderedJoinArgs;
 			}
 
 			long deadlineNanos = System.nanoTime() + planningBudgetMs * 1_000_000L;
 			List<TupleExpr> baseline = new ArrayList<>(orderedJoinArgs);
-			List<TupleExpr> sampledCandidate = promoteBestConnectedPair(orderedJoinArgs, deadlineNanos);
-			if (sampledCandidate == null || sampledCandidate.equals(baseline)) {
-				return baseline;
+			List<List<TupleExpr>> candidates = new ArrayList<>();
+			candidates.add(baseline);
+			if (runtimeSamplingTopK > 1) {
+				for (List<TupleExpr> candidate : joinPlanEnumerator.enumerateTopOrders(joinArgs, scopeBoundVars,
+						runtimeSamplingTopK)) {
+					if (!containsOrder(candidates, candidate)) {
+						candidates.add(candidate);
+					}
+				}
+			}
+			List<TupleExpr> promotedPair = promoteBestConnectedPair(orderedJoinArgs, deadlineNanos);
+			if (promotedPair != null && !containsOrder(candidates, promotedPair)) {
+				candidates.add(promotedPair);
 			}
 
-			double baselineScore = samplePrefixJoinScore(baseline, deadlineNanos);
-			double sampledScore = samplePrefixJoinScore(sampledCandidate, deadlineNanos);
-			if (!Double.isFinite(sampledScore)) {
-				return baseline;
+			List<TupleExpr> bestCandidate = baseline;
+			double bestScore = samplePrefixJoinScore(baseline, deadlineNanos);
+			for (int i = 1; i < candidates.size(); i++) {
+				if (System.nanoTime() >= deadlineNanos) {
+					break;
+				}
+				List<TupleExpr> candidate = candidates.get(i);
+				double sampledScore = samplePrefixJoinScore(candidate, deadlineNanos);
+				if (Double.isFinite(sampledScore)
+						&& (!Double.isFinite(bestScore) || sampledScore < bestScore - 1e-12)) {
+					bestScore = sampledScore;
+					bestCandidate = candidate;
+				}
 			}
-			if (!Double.isFinite(baselineScore) || sampledScore < baselineScore) {
-				return sampledCandidate;
+			return bestCandidate;
+		}
+
+		private boolean containsOrder(List<List<TupleExpr>> candidates, List<TupleExpr> candidate) {
+			for (List<TupleExpr> existing : candidates) {
+				if (existing.equals(candidate)) {
+					return true;
+				}
 			}
-			return baseline;
+			return false;
+		}
+
+		private List<TupleExpr> preserveLegacyPriorityArgSlots(List<TupleExpr> baseline, List<TupleExpr> candidate) {
+			if (baseline.size() != candidate.size()) {
+				return candidate;
+			}
+
+			List<TupleExpr> candidateNonPriorityArgs = new ArrayList<>(candidate.size());
+			List<TupleExpr> protectedBaselineArgs = new ArrayList<>();
+			for (TupleExpr baselineArg : baseline) {
+				if (isLegacyPriorityArg(baselineArg)) {
+					protectedBaselineArgs.add(baselineArg);
+				}
+			}
+			if (protectedBaselineArgs.isEmpty()) {
+				return candidate;
+			}
+
+			for (TupleExpr candidateArg : candidate) {
+				if (!protectedBaselineArgs.contains(candidateArg)) {
+					candidateNonPriorityArgs.add(candidateArg);
+				}
+			}
+
+			List<TupleExpr> constrainedOrder = new ArrayList<>(baseline.size());
+			int nonPriorityIndex = 0;
+			for (TupleExpr baselineArg : baseline) {
+				if (isLegacyPriorityArg(baselineArg)) {
+					constrainedOrder.add(baselineArg);
+				} else {
+					if (nonPriorityIndex >= candidateNonPriorityArgs.size()) {
+						return candidate;
+					}
+					constrainedOrder.add(candidateNonPriorityArgs.get(nonPriorityIndex++));
+				}
+			}
+
+			return nonPriorityIndex == candidateNonPriorityArgs.size() ? constrainedOrder : candidate;
+		}
+
+		private boolean isLegacyPriorityArg(TupleExpr tupleExpr) {
+			return tupleExpr instanceof BindingSetAssignment || TupleExprs.containsExtension(tupleExpr)
+					|| TupleExprs.containsSubquery(tupleExpr);
 		}
 
 		private List<TupleExpr> keepBaselineWhenGainIsTooSmall(List<TupleExpr> baseline, List<TupleExpr> candidate,
-				Set<String> initialBoundVars) {
+				Set<String> scopeBoundVars) {
 			if (baseline.equals(candidate) || planSwitchMinRelativeGain <= 0.0) {
 				return candidate;
 			}
-			if (!initialBoundVars.isEmpty()) {
+			if (hasExternalBindings) {
 				return candidate;
 			}
 
-			double baselineScore = estimateJoinOrderScore(baseline, initialBoundVars);
-			double candidateScore = estimateJoinOrderScore(candidate, initialBoundVars);
+			double baselineScore = estimateJoinOrderScore(baseline, scopeBoundVars);
+			double candidateScore = estimateJoinOrderScore(candidate, scopeBoundVars);
 			if (!Double.isFinite(candidateScore)) {
 				return baseline;
 			}
@@ -226,7 +356,7 @@ public class CostBasedJoinOptimizer implements QueryOptimizer {
 					currentPlanExpr = orderedJoinArgs.get(i);
 				} else {
 					EvaluationStatistics.CardinalityEstimate joinOutputEstimate = estimateJoinOutput(currentPlanExpr,
-							currentPlanEstimate, orderedJoinArgs.get(i), estimate);
+							currentPlanEstimate, orderedJoinArgs.get(i), estimate, sharedVarCount);
 					score += joinCostModel.scoreJoinStep(currentPlanEstimate, estimate, joinOutputEstimate,
 							joinsBoundVars,
 							sharedVarCount, riskLambda);
@@ -240,19 +370,15 @@ public class CostBasedJoinOptimizer implements QueryOptimizer {
 
 		private EvaluationStatistics.CardinalityEstimate estimateJoinOutput(TupleExpr leftPlanExpr,
 				EvaluationStatistics.CardinalityEstimate leftPlanEstimate, TupleExpr rightExpr,
-				EvaluationStatistics.CardinalityEstimate rightEstimate) {
+				EvaluationStatistics.CardinalityEstimate rightEstimate, int sharedVarCount) {
+			if (!statistics.supportsJoinEstimation()) {
+				return joinCostModel.estimateJoinOutputHeuristic(leftPlanEstimate, rightEstimate, sharedVarCount);
+			}
+
 			try {
 				return statistics.getCardinalityEstimate(new Join(leftPlanExpr.clone(), rightExpr.clone()));
 			} catch (RuntimeException ignored) {
-				double estimateValue = Math.max(1e-6, leftPlanEstimate.estimate)
-						* Math.max(1e-6, rightEstimate.estimate);
-				double lowerBound = Math.max(1e-6, leftPlanEstimate.lowerBound)
-						* Math.max(1e-6, rightEstimate.lowerBound);
-				double upperBound = Math.max(lowerBound,
-						Math.max(1e-6, leftPlanEstimate.upperBound) * Math.max(1e-6, rightEstimate.upperBound));
-				double confidence = Math.min(leftPlanEstimate.confidence, rightEstimate.confidence);
-				return new EvaluationStatistics.CardinalityEstimate(estimateValue, lowerBound, upperBound, confidence,
-						"join-fallback");
+				return joinCostModel.estimateJoinOutputHeuristic(leftPlanEstimate, rightEstimate, sharedVarCount);
 			}
 		}
 
@@ -288,6 +414,13 @@ public class CostBasedJoinOptimizer implements QueryOptimizer {
 			for (TupleExpr orderedJoinArg : orderedJoinArgs) {
 				EvaluationStatistics.CardinalityEstimate estimate = statistics.getCardinalityEstimate(orderedJoinArg);
 				minConfidence = Math.min(minConfidence, estimate.confidence);
+				if (runtimeSamplingQErrorThreshold > 0) {
+					EvaluationStatistics.CalibrationSnapshot snapshot = EvaluationStatistics
+							.getCalibrationSnapshot(estimate.source);
+					if (snapshot != null && snapshot.ewmaQError >= runtimeSamplingQErrorThreshold) {
+						return true;
+					}
+				}
 			}
 			return minConfidence < runtimeSamplingConfidenceThreshold;
 		}
@@ -337,25 +470,196 @@ public class CostBasedJoinOptimizer implements QueryOptimizer {
 			if (orderedJoinArgs.size() < 2 || System.nanoTime() >= deadlineNanos) {
 				return Double.POSITIVE_INFINITY;
 			}
-			double prefixScore = sampleJoinScore(orderedJoinArgs.get(0), orderedJoinArgs.get(1));
+			if (!statistics.supportsJoinEstimation()) {
+				return samplePrefixJoinScoreHeuristic(orderedJoinArgs, deadlineNanos);
+			}
+			int prefixTerms = Math.min(Math.max(2, runtimeSamplingPrefixTerms), orderedJoinArgs.size());
 			double headPenalty = statistics.getCardinalityEstimate(orderedJoinArgs.get(0)).estimate * 0.01;
-			return prefixScore + headPenalty;
+			double prefixScore = headPenalty;
+			TupleExpr prefixPlan = orderedJoinArgs.get(0);
+			for (int i = 1; i < prefixTerms; i++) {
+				if (System.nanoTime() >= deadlineNanos) {
+					return Double.POSITIVE_INFINITY;
+				}
+				double stepScore = sampleJoinScore(prefixPlan, orderedJoinArgs.get(i));
+				if (!Double.isFinite(stepScore)) {
+					return Double.POSITIVE_INFINITY;
+				}
+				prefixScore += stepScore;
+				prefixPlan = new Join(prefixPlan.clone(), orderedJoinArgs.get(i).clone());
+			}
+			return prefixScore;
+		}
+
+		private double samplePrefixJoinScoreHeuristic(List<TupleExpr> orderedJoinArgs, long deadlineNanos) {
+			int prefixTerms = Math.min(Math.max(2, runtimeSamplingPrefixTerms), orderedJoinArgs.size());
+			EvaluationStatistics.CardinalityEstimate planEstimate = statistics
+					.getCardinalityEstimate(orderedJoinArgs.get(0));
+			double prefixScore = planEstimate.estimate * 0.01;
+			Set<String> boundVars = new HashSet<>(orderedJoinArgs.get(0).getBindingNames());
+			for (int i = 1; i < prefixTerms; i++) {
+				if (System.nanoTime() >= deadlineNanos) {
+					return Double.POSITIVE_INFINITY;
+				}
+				TupleExpr right = orderedJoinArgs.get(i);
+				EvaluationStatistics.CardinalityEstimate rightEstimate = statistics.getCardinalityEstimate(right);
+				int sharedVarCount = sharedVarCount(boundVars, right.getBindingNames());
+				planEstimate = joinCostModel.estimateJoinOutputHeuristic(planEstimate, rightEstimate, sharedVarCount);
+				prefixScore += planEstimate.estimate;
+				boundVars.addAll(right.getBindingNames());
+			}
+			return prefixScore;
 		}
 
 		private double sampleJoinScore(TupleExpr left, TupleExpr right) {
+			if (!statistics.supportsJoinEstimation()) {
+				EvaluationStatistics.CardinalityEstimate leftEstimate = statistics.getCardinalityEstimate(left);
+				EvaluationStatistics.CardinalityEstimate rightEstimate = statistics.getCardinalityEstimate(right);
+				int sharedVarCount = sharedVarCount(left.getBindingNames(), right.getBindingNames());
+				return joinCostModel.estimateJoinOutputHeuristic(leftEstimate, rightEstimate, sharedVarCount).estimate;
+			}
+
 			try {
 				Join sampleJoin = new Join(left.clone(), right.clone());
 				return statistics.getCardinalityEstimate(sampleJoin).estimate;
 			} catch (RuntimeException ignored) {
-				return Double.POSITIVE_INFINITY;
+				EvaluationStatistics.CardinalityEstimate leftEstimate = statistics.getCardinalityEstimate(left);
+				EvaluationStatistics.CardinalityEstimate rightEstimate = statistics.getCardinalityEstimate(right);
+				int sharedVarCount = sharedVarCount(left.getBindingNames(), right.getBindingNames());
+				return joinCostModel.estimateJoinOutputHeuristic(leftEstimate, rightEstimate, sharedVarCount).estimate;
 			}
 		}
 
-		private Join createAnnotatedJoin(TupleExpr left, TupleExpr right) {
-			Join join = new Join(left, right);
-			applyAlgorithmHint(join, left, right);
+		private Join createAnnotatedJoin(TupleExpr left, TupleExpr right, JoinHintReuseCatalog joinHintReuseCatalog) {
+			Join join = joinHintReuseCatalog.cloneJoinIfPresent(left, right);
+			if (join == null) {
+				join = new Join(left, right);
+			}
+			if (join.getAlgorithmName() == null && !join.isMergeJoin()) {
+				applyAlgorithmHint(join, left, right);
+			}
 			annotateEstimate(join);
 			return join;
+		}
+
+		private final class JoinHintReuseCatalog {
+			private final IdentityHashMap<TupleExpr, Integer> leafIndexes = new IdentityHashMap<>();
+			private final IdentityHashMap<TupleExpr, BitSet> leavesByExpr = new IdentityHashMap<>();
+			private final Map<JoinSignature, Join> templatesBySignature = new HashMap<>();
+			private final Map<BitSet, Join> templatesByLeafSet = new HashMap<>();
+
+			private JoinHintReuseCatalog(List<TupleExpr> baselineJoinArgs) {
+				for (int i = 0; i < baselineJoinArgs.size(); i++) {
+					TupleExpr joinArg = baselineJoinArgs.get(i);
+					leafIndexes.put(joinArg, i);
+					BitSet leaf = new BitSet();
+					leaf.set(i);
+					leavesByExpr.put(joinArg, leaf);
+				}
+			}
+
+			private BitSet collectLeafIndexes(TupleExpr tupleExpr) {
+				BitSet cached = leavesByExpr.get(tupleExpr);
+				if (cached != null) {
+					return (BitSet) cached.clone();
+				}
+
+				BitSet leaves = new BitSet();
+				if (tupleExpr instanceof Join) {
+					Join join = (Join) tupleExpr;
+					BitSet leftLeaves = collectLeafIndexes(join.getLeftArg());
+					BitSet rightLeaves = collectLeafIndexes(join.getRightArg());
+					templatesBySignature.putIfAbsent(new JoinSignature(leftLeaves, rightLeaves), join);
+					leaves.or(leftLeaves);
+					leaves.or(rightLeaves);
+					templatesByLeafSet.putIfAbsent((BitSet) leaves.clone(), join);
+				} else {
+					Integer index = leafIndexes.get(tupleExpr);
+					if (index != null) {
+						leaves.set(index);
+					}
+				}
+
+				leavesByExpr.put(tupleExpr, (BitSet) leaves.clone());
+				return leaves;
+			}
+
+			private Join cloneJoinIfPresent(TupleExpr left, TupleExpr right) {
+				BitSet leftLeaves = collectLeafIndexes(left);
+				BitSet rightLeaves = collectLeafIndexes(right);
+				Join template = templatesBySignature.get(new JoinSignature(leftLeaves, rightLeaves));
+				if (template == null) {
+					template = templatesBySignature.get(new JoinSignature(rightLeaves, leftLeaves));
+				}
+				if (template == null) {
+					BitSet combinedLeaves = (BitSet) leftLeaves.clone();
+					combinedLeaves.or(rightLeaves);
+					template = templatesByLeafSet.get(combinedLeaves);
+				}
+				if (template == null) {
+					return null;
+				}
+
+				Join clone = template.clone();
+				clone.setLeftArg(left);
+				clone.setRightArg(right);
+				if (clone.isMergeJoin() && !reapplyMergeOrder(template, clone)) {
+					clearMergeJoinHint(clone);
+				}
+
+				BitSet combined = (BitSet) leftLeaves.clone();
+				combined.or(rightLeaves);
+				leavesByExpr.put(clone, combined);
+				return clone;
+			}
+
+			private boolean reapplyMergeOrder(Join template, Join clone) {
+				Var order;
+				try {
+					order = template.getOrder();
+				} catch (RuntimeException ignored) {
+					return false;
+				}
+				if (order == null) {
+					return false;
+				}
+				try {
+					clone.setOrder(order);
+					return true;
+				} catch (RuntimeException ignored) {
+					return false;
+				}
+			}
+
+			private void clearMergeJoinHint(Join join) {
+				join.setMergeJoin(false);
+				join.setAlgorithm((String) null);
+				join.setCacheable(false);
+			}
+		}
+
+		private final class JoinSignature {
+			private final BitSet leftLeaves;
+			private final BitSet rightLeaves;
+
+			private JoinSignature(BitSet leftLeaves, BitSet rightLeaves) {
+				this.leftLeaves = (BitSet) leftLeaves.clone();
+				this.rightLeaves = (BitSet) rightLeaves.clone();
+			}
+
+			@Override
+			public boolean equals(Object other) {
+				if (!(other instanceof JoinSignature)) {
+					return false;
+				}
+				JoinSignature that = (JoinSignature) other;
+				return leftLeaves.equals(that.leftLeaves) && rightLeaves.equals(that.rightLeaves);
+			}
+
+			@Override
+			public int hashCode() {
+				return 31 * leftLeaves.hashCode() + rightLeaves.hashCode();
+			}
 		}
 
 		private void applyAlgorithmHint(Join join, TupleExpr left, TupleExpr right) {
@@ -365,25 +669,30 @@ public class CostBasedJoinOptimizer implements QueryOptimizer {
 
 			EvaluationStatistics.CardinalityEstimate leftEstimate = statistics.getCardinalityEstimate(left);
 			EvaluationStatistics.CardinalityEstimate rightEstimate = statistics.getCardinalityEstimate(right);
+			EvaluationStatistics.CardinalityEstimate joinOutputEstimate = estimateJoinOutput(left, leftEstimate, right,
+					rightEstimate, sharedVarCount);
 
 			Set<Var> supportedOrders = new HashSet<>(left.getSupportedOrders(tripleSource));
 			supportedOrders.retainAll(right.getSupportedOrders(tripleSource));
 			boolean mergeJoinPossible = sharedVarCount == 1 && !supportedOrders.isEmpty();
 
 			JoinCostModel.JoinAlgorithm algorithm = joinCostModel.chooseJoinAlgorithm(leftEstimate, rightEstimate,
-					sharedVarCount, mergeJoinPossible);
+					joinOutputEstimate, sharedVarCount, mergeJoinPossible);
 			switch (algorithm) {
 			case MERGE:
 				join.setMergeJoin(true);
 				join.setOrder(supportedOrders.iterator().next());
 				join.setAlgorithm(InnerMergeJoinIterator.class.getSimpleName());
+				join.setCacheable(false);
 				break;
 			case HASH:
 				join.setAlgorithm(HashJoinIteration.class.getSimpleName());
+				join.setCacheable(false);
 				break;
 			case NESTED_LOOP:
 			default:
 				join.setAlgorithm(JoinIterator.class.getSimpleName());
+				join.setCacheable(rightEstimate.estimate <= joinCacheRightInputMax);
 				break;
 			}
 		}
@@ -416,6 +725,22 @@ public class CostBasedJoinOptimizer implements QueryOptimizer {
 				tupleExpr.setResultSizeEstimateQError(-1);
 				tupleExpr.setResultSizeEstimateObservationCount(-1);
 			}
+
+			double costEstimate;
+			if (tupleExpr instanceof Join) {
+				Join join = (Join) tupleExpr;
+				EvaluationStatistics.CardinalityEstimate leftEstimate = statistics
+						.getCardinalityEstimate(join.getLeftArg());
+				EvaluationStatistics.CardinalityEstimate rightEstimate = statistics
+						.getCardinalityEstimate(join.getRightArg());
+				int sharedVarCount = sharedVarCount(join.getLeftArg().getBindingNames(),
+						join.getRightArg().getBindingNames());
+				costEstimate = joinCostModel.scoreJoinStep(leftEstimate, rightEstimate, estimate, sharedVarCount > 0,
+						sharedVarCount, riskLambda);
+			} else {
+				costEstimate = joinCostModel.score(estimate, true, 1, riskLambda);
+			}
+			tupleExpr.setCostEstimate(costEstimate);
 			return estimate;
 		}
 	}
@@ -465,6 +790,20 @@ public class CostBasedJoinOptimizer implements QueryOptimizer {
 		try {
 			double parsed = Double.parseDouble(value.trim());
 			return Math.min(max, Math.max(min, parsed));
+		} catch (NumberFormatException ignored) {
+			return defaultValue;
+		}
+	}
+
+	private static int readPositiveIntProperty(String key, int defaultValue) {
+		String value = System.getProperty(key);
+		if (value == null || value.isBlank()) {
+			return defaultValue;
+		}
+
+		try {
+			int parsed = Integer.parseInt(value.trim());
+			return parsed > 0 ? parsed : defaultValue;
 		} catch (NumberFormatException ignored) {
 			return defaultValue;
 		}
