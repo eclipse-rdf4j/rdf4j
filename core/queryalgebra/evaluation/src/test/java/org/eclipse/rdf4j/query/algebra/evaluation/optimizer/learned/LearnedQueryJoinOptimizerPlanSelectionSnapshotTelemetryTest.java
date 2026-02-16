@@ -15,7 +15,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
@@ -36,6 +43,7 @@ class LearnedQueryJoinOptimizerPlanSelectionSnapshotTelemetryTest {
 			"  ?s ex:pA ?x .",
 			"  ?x ex:pB ?o .",
 			"}");
+	private static final String PLAN_TRACE_PATH_PROPERTY = "rdf4j.learned.planTrace.path";
 
 	@Test
 	void exposesPlannerAndRewriteTelemetryOnSnapshot() throws Exception {
@@ -56,6 +64,67 @@ class LearnedQueryJoinOptimizerPlanSelectionSnapshotTelemetryTest {
 		assertTrue(snapshot.getRepairBeforeLabels().isEmpty());
 		assertTrue(snapshot.getRepairAfterLabels().isEmpty());
 		assertTrue(snapshot.getUnsupportedTargets().isEmpty());
+	}
+
+	@Test
+	void exposesPlanStabilityTelemetryOnSnapshotAndTrace() throws Exception {
+		LearnedQueryJoinOptimizer.clearLastPlanSelectionSnapshot();
+		clearWinnerCache();
+		Path traceFile = Files.createTempFile("learned-plan-stability", ".jsonl");
+		Files.deleteIfExists(traceFile);
+		String previousTracePath = System.getProperty(PLAN_TRACE_PATH_PROPERTY);
+		System.setProperty(PLAN_TRACE_PATH_PROPERTY, traceFile.toString());
+		try {
+			LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(new EvaluationStatistics(),
+					new EmptyTripleSource(), new AlwaysObservedStatsProvider());
+			ParsedQuery first = new SPARQLParser().parseQuery(QUERY, null);
+			optimizer.optimize(first.getTupleExpr(), null, null);
+			PlanSelectionSnapshot snapshot = LearnedQueryJoinOptimizer.getLastPlanSelectionSnapshot();
+			assertNotNull(snapshot);
+			assertNotNull(stabilityDecision(snapshot));
+			assertNotNull(stabilitySource(snapshot));
+
+			ParsedQuery second = new SPARQLParser().parseQuery(QUERY, null);
+			optimizer.optimize(second.getTupleExpr(), null, null);
+
+			assertTrue(Files.exists(traceFile));
+			String traceContents = Files.readString(traceFile, StandardCharsets.UTF_8);
+			assertTrue(traceContents.contains("\"stabilityDecision\""));
+			assertTrue(traceContents.contains("\"stabilitySource\""));
+		} finally {
+			if (previousTracePath == null) {
+				System.clearProperty(PLAN_TRACE_PATH_PROPERTY);
+			} else {
+				System.setProperty(PLAN_TRACE_PATH_PROPERTY, previousTracePath);
+			}
+			clearWinnerCache();
+		}
+	}
+
+	private static String stabilityDecision(PlanSelectionSnapshot snapshot) {
+		return invokeStabilityGetter(snapshot, "getStabilityDecision");
+	}
+
+	private static String stabilitySource(PlanSelectionSnapshot snapshot) {
+		return invokeStabilityGetter(snapshot, "getStabilitySource");
+	}
+
+	private static String invokeStabilityGetter(PlanSelectionSnapshot snapshot, String methodName) {
+		try {
+			Method method = snapshot.getClass().getMethod(methodName);
+			return (String) method.invoke(snapshot);
+		} catch (ReflectiveOperationException exception) {
+			fail("Expected plan stability telemetry getter: " + methodName, exception);
+			return null;
+		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private static void clearWinnerCache() throws Exception {
+		Field field = LearnedQueryJoinOptimizer.class.getDeclaredField("EXPLORE_WINNER_CACHE");
+		field.setAccessible(true);
+		Map<String, ?> cache = (Map<String, ?>) field.get(null);
+		cache.clear();
 	}
 
 	private static final class AlwaysObservedStatsProvider implements JoinStatsProvider {
