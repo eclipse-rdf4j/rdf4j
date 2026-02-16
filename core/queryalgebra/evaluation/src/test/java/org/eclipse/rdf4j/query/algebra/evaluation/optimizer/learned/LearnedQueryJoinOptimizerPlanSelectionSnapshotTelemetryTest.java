@@ -86,11 +86,17 @@ class LearnedQueryJoinOptimizerPlanSelectionSnapshotTelemetryTest {
 
 			ParsedQuery second = new SPARQLParser().parseQuery(QUERY, null);
 			optimizer.optimize(second.getTupleExpr(), null, null);
+			PlanSelectionSnapshot secondSnapshot = LearnedQueryJoinOptimizer.getLastPlanSelectionSnapshot();
+			assertNotNull(secondSnapshot);
+			assertNotNull(stabilityImprovementRatio(secondSnapshot));
+			assertNotNull(stabilityUncertaintyDelta(secondSnapshot));
 
 			assertTrue(Files.exists(traceFile));
 			String traceContents = Files.readString(traceFile, StandardCharsets.UTF_8);
 			assertTrue(traceContents.contains("\"stabilityDecision\""));
 			assertTrue(traceContents.contains("\"stabilitySource\""));
+			assertTrue(traceContents.contains("\"stabilityImprovementRatio\""));
+			assertTrue(traceContents.contains("\"stabilityUncertaintyDelta\""));
 		} finally {
 			if (previousTracePath == null) {
 				System.clearProperty(PLAN_TRACE_PATH_PROPERTY);
@@ -109,10 +115,28 @@ class LearnedQueryJoinOptimizerPlanSelectionSnapshotTelemetryTest {
 		return invokeStabilityGetter(snapshot, "getStabilitySource");
 	}
 
+	private static Double stabilityImprovementRatio(PlanSelectionSnapshot snapshot) {
+		return invokeStabilityDoubleGetter(snapshot, "getStabilityImprovementRatio");
+	}
+
+	private static Double stabilityUncertaintyDelta(PlanSelectionSnapshot snapshot) {
+		return invokeStabilityDoubleGetter(snapshot, "getStabilityUncertaintyDelta");
+	}
+
 	private static String invokeStabilityGetter(PlanSelectionSnapshot snapshot, String methodName) {
 		try {
 			Method method = snapshot.getClass().getMethod(methodName);
 			return (String) method.invoke(snapshot);
+		} catch (ReflectiveOperationException exception) {
+			fail("Expected plan stability telemetry getter: " + methodName, exception);
+			return null;
+		}
+	}
+
+	private static Double invokeStabilityDoubleGetter(PlanSelectionSnapshot snapshot, String methodName) {
+		try {
+			Method method = snapshot.getClass().getMethod(methodName);
+			return ((Number) method.invoke(snapshot)).doubleValue();
 		} catch (ReflectiveOperationException exception) {
 			fail("Expected plan stability telemetry getter: " + methodName, exception);
 			return null;

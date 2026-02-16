@@ -212,13 +212,15 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		private final List<String> unsupportedTargets;
 		private final String stabilityDecision;
 		private final String stabilitySource;
+		private final double stabilityImprovementRatio;
+		private final double stabilityUncertaintyDelta;
 
 		private PlanSelectionSnapshot(String queryTemplateHash, int selectedCandidateIndex,
 				String selectedPlanSignature, List<JoinPlanCandidate> candidates, String reason, String plannerUsed,
 				List<String> rawOrderLabels, List<String> finalOrderLabels, List<PlanRewriteDiff> rebalanceDiffs,
 				boolean repairApplied, List<String> repairBeforeLabels, List<String> repairAfterLabels,
 				Set<String> initiallyBoundVars, Set<String> unsupportedTargets, String stabilityDecision,
-				String stabilitySource) {
+				String stabilitySource, double stabilityImprovementRatio, double stabilityUncertaintyDelta) {
 			this.queryTemplateHash = queryTemplateHash;
 			this.selectedCandidateIndex = selectedCandidateIndex;
 			this.selectedPlanSignature = selectedPlanSignature;
@@ -235,6 +237,10 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			this.unsupportedTargets = toSortedList(unsupportedTargets);
 			this.stabilityDecision = stabilityDecision == null ? "not-applicable" : stabilityDecision;
 			this.stabilitySource = stabilitySource == null ? "none" : stabilitySource;
+			this.stabilityImprovementRatio = Double.isFinite(stabilityImprovementRatio) ? stabilityImprovementRatio
+					: Double.NaN;
+			this.stabilityUncertaintyDelta = Double.isFinite(stabilityUncertaintyDelta) ? stabilityUncertaintyDelta
+					: Double.NaN;
 		}
 
 		public String getQueryTemplateHash() {
@@ -299,6 +305,14 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 
 		public String getStabilitySource() {
 			return stabilitySource;
+		}
+
+		public double getStabilityImprovementRatio() {
+			return stabilityImprovementRatio;
+		}
+
+		public double getStabilityUncertaintyDelta() {
+			return stabilityUncertaintyDelta;
 		}
 	}
 
@@ -406,6 +420,10 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		builder.append(",\"plannerUsed\":\"").append(escapeJson(snapshot.getPlannerUsed())).append('"');
 		builder.append(",\"stabilityDecision\":\"").append(escapeJson(snapshot.getStabilityDecision())).append('"');
 		builder.append(",\"stabilitySource\":\"").append(escapeJson(snapshot.getStabilitySource())).append('"');
+		builder.append(",\"stabilityImprovementRatio\":")
+				.append(formatNumber(snapshot.getStabilityImprovementRatio()));
+		builder.append(",\"stabilityUncertaintyDelta\":")
+				.append(formatNumber(snapshot.getStabilityUncertaintyDelta()));
 		builder.append(",\"rawOrderLabels\":");
 		appendStringArray(builder, snapshot.getRawOrderLabels());
 		builder.append(",\"finalOrderLabels\":");
@@ -572,11 +590,20 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			private final int selectedCandidateIndex;
 			private final String stabilityDecision;
 			private final String stabilitySource;
+			private final double stabilityImprovementRatio;
+			private final double stabilityUncertaintyDelta;
 
 			private SelectionDecision(int selectedCandidateIndex, String stabilityDecision, String stabilitySource) {
+				this(selectedCandidateIndex, stabilityDecision, stabilitySource, Double.NaN, Double.NaN);
+			}
+
+			private SelectionDecision(int selectedCandidateIndex, String stabilityDecision, String stabilitySource,
+					double stabilityImprovementRatio, double stabilityUncertaintyDelta) {
 				this.selectedCandidateIndex = selectedCandidateIndex;
 				this.stabilityDecision = stabilityDecision == null ? "not-applicable" : stabilityDecision;
 				this.stabilitySource = stabilitySource == null ? "none" : stabilitySource;
+				this.stabilityImprovementRatio = stabilityImprovementRatio;
+				this.stabilityUncertaintyDelta = stabilityUncertaintyDelta;
 			}
 		}
 
@@ -637,6 +664,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				String planSelectionReason = "planned";
 				String stabilityDecision = "not-applicable";
 				String stabilitySource = "none";
+				double stabilityImprovementRatio = Double.NaN;
+				double stabilityUncertaintyDelta = Double.NaN;
 				String queryTemplateHash = queryTemplateHash(joinArgs, filters);
 				boolean allowTypeAnchored = UNSUPPORTED_LITERAL_JOIN_FALLBACK_ALLOW_TYPE_ANCHORED
 						&& isTypeAnchoredUnsupportedTriplet(joinArgs, relevantUnsupportedTargets);
@@ -677,7 +706,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 								planCandidates, fallbackReason, plannerUsed, rawOrderLabels, finalOrderLabels,
 								rebalanceDiffs, repairApplied, repairBeforeLabels, repairAfterLabels,
 								initiallyBoundVars, relevantUnsupportedTargets, stabilityDecision,
-								stabilitySource);
+								stabilitySource, stabilityImprovementRatio, stabilityUncertaintyDelta);
 						super.meet(node);
 						return;
 					}
@@ -686,6 +715,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 					selectedCandidateIndex = selectionDecision.selectedCandidateIndex;
 					stabilityDecision = selectionDecision.stabilityDecision;
 					stabilitySource = selectionDecision.stabilitySource;
+					stabilityImprovementRatio = selectionDecision.stabilityImprovementRatio;
+					stabilityUncertaintyDelta = selectionDecision.stabilityUncertaintyDelta;
 					if (selectedCandidateIndex < 0 || selectedCandidateIndex >= planCandidates.size()) {
 						selectedCandidateIndex = 0;
 					}
@@ -700,7 +731,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 								planCandidates, fallbackReason, plannerUsed, rawOrderLabels, finalOrderLabels,
 								rebalanceDiffs, repairApplied, repairBeforeLabels, repairAfterLabels,
 								initiallyBoundVars, relevantUnsupportedTargets, stabilityDecision,
-								stabilitySource);
+								stabilitySource, stabilityImprovementRatio, stabilityUncertaintyDelta);
 						super.meet(node);
 						return;
 					}
@@ -767,7 +798,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 								planCandidates, planSelectionReason, plannerUsed, rawOrderLabels, finalOrderLabels,
 								rebalanceDiffs, repairApplied, repairBeforeLabels, repairAfterLabels,
 								initiallyBoundVars, relevantUnsupportedTargets, stabilityDecision,
-								stabilitySource);
+								stabilitySource, stabilityImprovementRatio, stabilityUncertaintyDelta);
 						if (DEBUG_PLAN) {
 							System.out.println("LEARNED-PLAN used joinArgs=" + joinArgs.size()
 									+ " bound=" + initiallyBoundVars
@@ -789,7 +820,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 					publishPlanSelection(queryTemplateHash, -1, selectedPlanSignature, planCandidates, fallbackReason,
 							plannerUsed, rawOrderLabels, finalOrderLabels, rebalanceDiffs, repairApplied,
 							repairBeforeLabels, repairAfterLabels, initiallyBoundVars, relevantUnsupportedTargets,
-							stabilityDecision, stabilitySource);
+							stabilityDecision, stabilitySource, stabilityImprovementRatio,
+							stabilityUncertaintyDelta);
 				}
 				if (DEBUG_PLAN && plannedOrder == null && !joinArgs.isEmpty()) {
 					System.out.println("LEARNED-PLAN fallback reason=" + fallbackReason
@@ -992,13 +1024,46 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			}
 			int adaptiveIndex = bestAdaptiveSelectionIndex(planCandidates, cachedIndex, winner);
 			cacheWinner(templateHash, planCandidates, adaptiveIndex);
+			double improvementRatio = stabilityImprovementRatio(planCandidates, cachedIndex, adaptiveIndex);
+			double uncertaintyDelta = stabilityUncertaintyDelta(planCandidates, cachedIndex, adaptiveIndex);
 			if (adaptiveIndex == cachedIndex) {
-				return new SelectionDecision(adaptiveIndex, "cache-hit-keep", "cache");
+				return new SelectionDecision(adaptiveIndex, "cache-hit-keep", "cache", improvementRatio,
+						uncertaintyDelta);
 			}
 			if (adaptiveIndex == winner) {
-				return new SelectionDecision(adaptiveIndex, "cache-hit-switch", "explore");
+				return new SelectionDecision(adaptiveIndex, "cache-hit-switch", "explore", improvementRatio,
+						uncertaintyDelta);
 			}
-			return new SelectionDecision(adaptiveIndex, "cache-hit-switch", "best-cost");
+			return new SelectionDecision(adaptiveIndex, "cache-hit-switch", "best-cost", improvementRatio,
+					uncertaintyDelta);
+		}
+
+		private double stabilityImprovementRatio(List<JoinPlanCandidate> planCandidates, int cachedIndex,
+				int selectedIndex) {
+			if (planCandidates == null || cachedIndex < 0 || selectedIndex < 0 || cachedIndex >= planCandidates.size()
+					|| selectedIndex >= planCandidates.size()) {
+				return Double.NaN;
+			}
+			JoinPlanCandidate cachedCandidate = planCandidates.get(cachedIndex);
+			JoinPlanCandidate selectedCandidate = planCandidates.get(selectedIndex);
+			return relativeImprovement(cachedCandidate.getEstimatedTotalCost(),
+					selectedCandidate.getEstimatedTotalCost());
+		}
+
+		private double stabilityUncertaintyDelta(List<JoinPlanCandidate> planCandidates, int cachedIndex,
+				int selectedIndex) {
+			if (planCandidates == null || cachedIndex < 0 || selectedIndex < 0 || cachedIndex >= planCandidates.size()
+					|| selectedIndex >= planCandidates.size()) {
+				return Double.NaN;
+			}
+			JoinPlanCandidate cachedCandidate = planCandidates.get(cachedIndex);
+			JoinPlanCandidate selectedCandidate = planCandidates.get(selectedIndex);
+			double cachedUncertainty = cachedCandidate.getTotalUncertainty();
+			double selectedUncertainty = selectedCandidate.getTotalUncertainty();
+			if (!Double.isFinite(cachedUncertainty) || !Double.isFinite(selectedUncertainty)) {
+				return Double.NaN;
+			}
+			return cachedUncertainty - selectedUncertainty;
 		}
 
 		private int exploreWinner(List<JoinPlanCandidate> planCandidates) {
@@ -1176,7 +1241,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				List<JoinPlanCandidate> candidates, String reason, String plannerUsed, List<String> rawOrderLabels,
 				List<String> finalOrderLabels, List<PlanRewriteDiff> rebalanceDiffs, boolean repairApplied,
 				List<String> repairBeforeLabels, List<String> repairAfterLabels, Set<String> initiallyBoundVars,
-				Set<String> unsupportedTargets, String stabilityDecision, String stabilitySource) {
+				Set<String> unsupportedTargets, String stabilityDecision, String stabilitySource,
+				double stabilityImprovementRatio, double stabilityUncertaintyDelta) {
 			String signature = selectedSignature;
 			if (signature == null && selectedCandidateIndex >= 0 && selectedCandidateIndex < candidates.size()) {
 				signature = candidates.get(selectedCandidateIndex).getPlanSignature();
@@ -1184,7 +1250,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			PlanSelectionSnapshot snapshot = new PlanSelectionSnapshot(templateHash, selectedCandidateIndex, signature,
 					candidates, reason == null ? "" : reason, plannerUsed, rawOrderLabels, finalOrderLabels,
 					rebalanceDiffs, repairApplied, repairBeforeLabels, repairAfterLabels, initiallyBoundVars,
-					unsupportedTargets, stabilityDecision, stabilitySource);
+					unsupportedTargets, stabilityDecision, stabilitySource, stabilityImprovementRatio,
+					stabilityUncertaintyDelta);
 			LAST_PLAN_SELECTION.set(snapshot);
 			writePlanTrace(snapshot);
 		}
