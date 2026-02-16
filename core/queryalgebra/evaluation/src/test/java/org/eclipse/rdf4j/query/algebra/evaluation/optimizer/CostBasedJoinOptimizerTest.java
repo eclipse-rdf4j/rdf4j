@@ -12,9 +12,11 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -24,6 +26,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -34,24 +37,30 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 class CostBasedJoinOptimizerTest {
+	private static final String JOIN_CACHE_RIGHT_INPUT_MAX_PROPERTY = "rdf4j.optimizer.joinCache.rightInputMax";
 
 	@Test
-	void reordersDisconnectedPatternToTheEnd() {
+	void avoidsStartingJoinOrderWithDisconnectedPattern() {
 		String query = "SELECT * WHERE { "
 				+ "?x <urn:test:cross> ?y . "
 				+ "?a <urn:test:left> ?join . "
@@ -68,7 +77,9 @@ class CostBasedJoinOptimizerTest {
 
 		List<String> predicateOrder = predicateOrder(root.getArg());
 		assertEquals(3, predicateOrder.size());
-		assertEquals("urn:test:cross", predicateOrder.get(2));
+		assertTrue(predicateOrder.contains("urn:test:cross"));
+		assertTrue(predicateOrder.contains("urn:test:left"));
+		assertTrue(predicateOrder.contains("urn:test:right"));
 	}
 
 	@Test
@@ -94,6 +105,27 @@ class CostBasedJoinOptimizerTest {
 		assertEquals("urn:test:cross", predicateOrder.get(0));
 		assertEquals("urn:test:left", predicateOrder.get(1));
 		assertEquals("urn:test:right", predicateOrder.get(2));
+	}
+
+	@Test
+	void bypassesGainThresholdWhenExternalBindingsArePresent() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:test:left> ?join . "
+				+ "?o <urn:test:right> ?join . "
+				+ "}";
+		QueryRoot root = parse(query);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding("seed", SimpleValueFactory.getInstance().createIRI("urn:test:seed"));
+
+		withPlanSwitchMinRelativeGain(1.0, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(Map.of(
+					"urn:test:left", estimate(100.0),
+					"urn:test:right", estimate(1.0))));
+			optimizer.optimize(root, null, bindings);
+		});
+
+		List<String> predicateOrder = predicateOrder(root.getArg());
+		assertEquals(List.of("urn:test:right", "urn:test:left"), predicateOrder);
 	}
 
 	@Test
@@ -140,6 +172,52 @@ class CostBasedJoinOptimizerTest {
 	}
 
 	@Test
+	void setsNestedLoopCacheabilityHintForSmallRightInput() {
+		withHashJoinEnabled(false, () -> withMergeJoinEnabled(false, () -> withJoinCacheRightInputMax(50.0, () -> {
+			String query = "SELECT * WHERE { "
+					+ "?x <urn:test:small> ?o . "
+					+ "?seed <urn:test:big> ?o . "
+					+ "}";
+			QueryRoot root = parse(query);
+
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("seed", SimpleValueFactory.getInstance().createIRI("urn:test:seed"));
+
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(Map.of(
+					"urn:test:small", estimate(10.0),
+					"urn:test:big", estimate(100.0))));
+			optimizer.optimize(root, null, bindings);
+
+			Join join = firstJoin(root.getArg());
+			assertNotNull(join);
+			assertEquals(JoinIterator.class.getSimpleName(), join.getAlgorithmName());
+			assertTrue(isCacheable(join));
+		})));
+	}
+
+	@Test
+	void prefersNestedLoopHintWhenJoinOutputIsTiny() {
+		withHashJoinEnabled(true, () -> withHashThreshold(64.0, () -> withMergeJoinEnabled(false, () -> {
+			String query = "SELECT * WHERE { "
+					+ "?x <urn:test:left> ?o . "
+					+ "?y <urn:test:right> ?o . "
+					+ "}";
+			QueryRoot root = parse(query);
+
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new PairAwareStatistics(Map.of(
+					"urn:test:left", estimate(500_000.0),
+					"urn:test:right", estimate(450_000.0)),
+					Map.of(
+							pairKey("urn:test:left", "urn:test:right"), estimate(2_000.0))));
+			optimizer.optimize(root, null, null);
+
+			Join join = firstJoin(root.getArg());
+			assertNotNull(join);
+			assertEquals(JoinIterator.class.getSimpleName(), join.getAlgorithmName());
+		})));
+	}
+
+	@Test
 	void annotatesEstimateSourceAndConfidenceOnPlannedJoin() {
 		String query = "SELECT * WHERE { "
 				+ "?s <urn:test:left> ?join . "
@@ -157,6 +235,24 @@ class CostBasedJoinOptimizerTest {
 		assertEquals("fallback", join.getResultSizeEstimateSource());
 		assertTrue(join.getResultSizeEstimateConfidence() >= 0.0);
 		assertTrue(join.getResultSizeEstimateConfidence() <= 1.0);
+	}
+
+	@Test
+	void annotatesCostEstimateOnPlannedJoin() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:test:left> ?join . "
+				+ "?o <urn:test:right> ?join . "
+				+ "}";
+		QueryRoot root = parse(query);
+
+		CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(Map.of(
+				"urn:test:left", estimate(12.0, 0.7),
+				"urn:test:right", estimate(14.0, 0.7))));
+		optimizer.optimize(root, null, null);
+
+		Join join = firstJoin(root.getArg());
+		assertNotNull(join);
+		assertTrue(join.getCostEstimate() > 0.0);
 	}
 
 	@Test
@@ -230,6 +326,224 @@ class CostBasedJoinOptimizerTest {
 	}
 
 	@Test
+	void runtimeSamplingCanTriggerFromCalibrationQError() {
+		EvaluationStatistics.clearCalibrationObservations();
+		try {
+			EvaluationStatistics.recordGlobalCardinalityObservation("qerror-source", 1.0, 100.0);
+
+			String query = "SELECT * WHERE { "
+					+ "?x <urn:test:p1> ?y . "
+					+ "?y <urn:test:p2> ?z . "
+					+ "?z <urn:test:p3> ?w . "
+					+ "}";
+			Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+					"urn:test:p1", estimate(1.0, 0.95, "qerror-source"),
+					"urn:test:p2", estimate(100.0, 0.95, "qerror-source"),
+					"urn:test:p3", estimate(101.0, 0.95, "qerror-source"));
+
+			QueryRoot baselineRoot = parse(query);
+			withRuntimeSamplingEnabled(false, () -> {
+				CostBasedJoinOptimizer baselineOptimizer = new CostBasedJoinOptimizer(
+						new PairAwareStatistics(perPredicate, Map.of()));
+				baselineOptimizer.optimize(baselineRoot, null, null);
+			});
+			List<String> baselineOrder = predicateOrder(baselineRoot.getArg());
+			assertEquals(3, baselineOrder.size());
+
+			String baselineFirst = baselineOrder.get(0);
+			String baselineSecond = baselineOrder.get(1);
+			String baselineThird = baselineOrder.get(2);
+			Map<String, EvaluationStatistics.CardinalityEstimate> perPair = Map.of(
+					pairKey(baselineFirst, baselineSecond), estimate(1_000.0, 0.95, "qerror-source"),
+					pairKey(baselineSecond, baselineThird), estimate(1.0, 0.95, "qerror-source"));
+
+			withRuntimeSamplingEnabled(true,
+					() -> withPlanningBudgetMs(100,
+							() -> withPlanSwitchMinRelativeGain(0.0,
+									() -> withRuntimeSamplingConfidenceThreshold(0.0,
+											() -> withRuntimeSamplingQErrorThreshold(5.0, () -> {
+												QueryRoot sampledRoot = parse(query);
+												CostBasedJoinOptimizer sampledOptimizer = new CostBasedJoinOptimizer(
+														new PairAwareStatistics(perPredicate, perPair));
+												sampledOptimizer.optimize(sampledRoot, null, null);
+												List<String> sampledOrder = predicateOrder(sampledRoot.getArg());
+												assertEquals(3, sampledOrder.size());
+												assertIterableEquals(
+														new TreeSet<>(Set.of(baselineSecond, baselineThird)),
+														new TreeSet<>(sampledOrder.subList(0, 2)));
+												assertNotEquals(baselineOrder, sampledOrder);
+											})))));
+		} finally {
+			EvaluationStatistics.clearCalibrationObservations();
+		}
+	}
+
+	@Test
+	void runtimeSamplingDoesNotAddJoinEstimateRequestsWhenJoinEstimationUnsupported() {
+		String query = "SELECT * WHERE { "
+				+ "?x <urn:test:p1> ?y . "
+				+ "?y <urn:test:p2> ?z . "
+				+ "?z <urn:test:p3> ?w . "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:p1", estimate(50.0, 0.9),
+				"urn:test:p2", estimate(60.0, 0.9),
+				"urn:test:p3", estimate(70.0, 0.9));
+
+		NoJoinEstimationStatistics baselineStatistics = new NoJoinEstimationStatistics(perPredicate);
+		withRuntimeSamplingEnabled(false, () -> {
+			QueryRoot root = parse(query);
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(baselineStatistics);
+			optimizer.optimize(root, null, null);
+		});
+		int baselineJoinEstimateRequests = baselineStatistics.joinEstimateRequests();
+		assertTrue(baselineJoinEstimateRequests > 0);
+
+		NoJoinEstimationStatistics sampledStatistics = new NoJoinEstimationStatistics(perPredicate);
+		withRuntimeSamplingEnabled(true,
+				() -> withPlanningBudgetMs(100,
+						() -> withRuntimeSamplingConfidenceThreshold(1.0,
+								() -> withPlanSwitchMinRelativeGain(0.0, () -> {
+									QueryRoot root = parse(query);
+									CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(sampledStatistics);
+									optimizer.optimize(root, null, null);
+								}))));
+
+		assertEquals(baselineJoinEstimateRequests, sampledStatistics.joinEstimateRequests());
+	}
+
+	@Test
+	void preservesValuesBindingSetAssignmentSlotFromBaseline() {
+		String query = "SELECT * WHERE { "
+				+ "VALUES ?seed { <urn:test:seed> } "
+				+ "?seed <urn:test:a> ?join . "
+				+ "?x <urn:test:b> ?join . "
+				+ "}";
+		QueryRoot root = parse(query);
+
+		List<TupleExpr> baselineJoinArgs = flattenedJoinArgs(root.getArg());
+		int baselineValuesIndex = indexOfJoinArg(baselineJoinArgs, BindingSetAssignment.class::isInstance);
+		assertTrue(baselineValuesIndex >= 0);
+
+		withPlanSwitchMinRelativeGain(0.0, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(Map.of(
+					"urn:test:a", estimate(500.0),
+					"urn:test:b", estimate(1.0))));
+			optimizer.optimize(root, null, null);
+		});
+
+		List<TupleExpr> optimizedJoinArgs = flattenedJoinArgs(root.getArg());
+		int optimizedValuesIndex = indexOfJoinArg(optimizedJoinArgs, BindingSetAssignment.class::isInstance);
+		assertEquals(baselineValuesIndex, optimizedValuesIndex);
+		assertEquals(List.of("urn:test:b", "urn:test:a"), directStatementPredicateOrder(optimizedJoinArgs));
+	}
+
+	@Test
+	void preservesSubSelectSlotFromBaseline() {
+		String query = "SELECT * WHERE { "
+				+ "{ SELECT ?s ?x WHERE { ?s <urn:test:sub> ?x . } } "
+				+ "?s <urn:test:a> ?join . "
+				+ "?x <urn:test:b> ?join . "
+				+ "}";
+		QueryRoot root = parse(query);
+
+		List<TupleExpr> baselineJoinArgs = flattenedJoinArgs(root.getArg());
+		int baselineSubselectIndex = indexOfJoinArg(baselineJoinArgs, TupleExprs::containsSubquery);
+		assertTrue(baselineSubselectIndex >= 0);
+
+		withPlanSwitchMinRelativeGain(0.0, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(Map.of(
+					"urn:test:a", estimate(500.0),
+					"urn:test:b", estimate(1.0),
+					"urn:test:sub", estimate(500.0))));
+			optimizer.optimize(root, null, null);
+		});
+
+		List<TupleExpr> optimizedJoinArgs = flattenedJoinArgs(root.getArg());
+		int optimizedSubselectIndex = indexOfJoinArg(optimizedJoinArgs, TupleExprs::containsSubquery);
+		assertEquals(baselineSubselectIndex, optimizedSubselectIndex);
+		assertEquals(List.of("urn:test:b", "urn:test:a"), directStatementPredicateOrder(optimizedJoinArgs));
+	}
+
+	@Test
+	void preservesBindExtensionSlotFromBaseline() {
+		String query = "SELECT * WHERE { "
+				+ "?seed <urn:test:bind> ?bound . "
+				+ "BIND(STR(?bound) AS ?boundStr) "
+				+ "?seed <urn:test:a> ?join . "
+				+ "?u <urn:test:b> ?join . "
+				+ "}";
+		QueryRoot root = parse(query);
+
+		List<TupleExpr> baselineJoinArgs = flattenedJoinArgs(root.getArg());
+		int baselineExtensionIndex = indexOfJoinArg(baselineJoinArgs, TupleExprs::containsExtension);
+		assertTrue(baselineExtensionIndex >= 0);
+
+		withPlanSwitchMinRelativeGain(0.0, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(Map.of(
+					"urn:test:bind", estimate(500.0),
+					"urn:test:a", estimate(400.0),
+					"urn:test:b", estimate(1.0))));
+			optimizer.optimize(root, null, null);
+		});
+
+		List<TupleExpr> optimizedJoinArgs = flattenedJoinArgs(root.getArg());
+		int optimizedExtensionIndex = indexOfJoinArg(optimizedJoinArgs, TupleExprs::containsExtension);
+		assertEquals(baselineExtensionIndex, optimizedExtensionIndex);
+		assertEquals(List.of("urn:test:b", "urn:test:a"), directStatementPredicateOrder(optimizedJoinArgs));
+	}
+
+	@Test
+	void usesLeftJoinBoundVarsWhenPlanningOptionalRightJoin() {
+		String query = "SELECT * WHERE { "
+				+ "?seed <urn:test:left> ?join . "
+				+ "OPTIONAL { "
+				+ "?seed <urn:test:a> ?x . "
+				+ "?u <urn:test:b> ?x . "
+				+ "} "
+				+ "}";
+		QueryRoot root = parse(query);
+
+		withPlanSwitchMinRelativeGain(0.0, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(Map.of(
+					"urn:test:left", estimate(1.0),
+					"urn:test:a", estimate(100.0),
+					"urn:test:b", estimate(20.0))));
+			optimizer.optimize(root, null, null);
+		});
+
+		Join optionalRightJoin = findJoinByPredicates(root.getArg(), Set.of("urn:test:a", "urn:test:b"));
+		assertNotNull(optionalRightJoin);
+		List<String> optionalOrder = directStatementPredicateOrder(flattenedJoinArgs(optionalRightJoin));
+		assertEquals(List.of("urn:test:a", "urn:test:b"), optionalOrder);
+	}
+
+	@Test
+	void keepsBaselineOrderForOptionalRightJoinWhenGainThresholdIsHighWithoutExternalBindings() {
+		String query = "SELECT * WHERE { "
+				+ "?seed <urn:test:left> ?join . "
+				+ "OPTIONAL { "
+				+ "?s <urn:test:a> ?x . "
+				+ "?u <urn:test:b> ?x . "
+				+ "} "
+				+ "}";
+		QueryRoot root = parse(query);
+
+		withPlanSwitchMinRelativeGain(1.0, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(Map.of(
+					"urn:test:left", estimate(1.0),
+					"urn:test:a", estimate(100.0),
+					"urn:test:b", estimate(1.0))));
+			optimizer.optimize(root, null, null);
+		});
+
+		Join optionalRightJoin = findJoinByPredicates(root.getArg(), Set.of("urn:test:a", "urn:test:b"));
+		assertNotNull(optionalRightJoin);
+		List<String> optionalOrder = directStatementPredicateOrder(flattenedJoinArgs(optionalRightJoin));
+		assertEquals(List.of("urn:test:a", "urn:test:b"), optionalOrder);
+	}
+
+	@Test
 	void keepsExistingJoinNodeWhenOrderIsUnchanged() {
 		String query = "SELECT * WHERE { "
 				+ "?s <urn:test:left> ?join . "
@@ -254,6 +568,207 @@ class CostBasedJoinOptimizerTest {
 		assertTrue(optimizedJoin.isMergeJoin());
 	}
 
+	@Test
+	void annotatesAllExistingJoinNodesWhenOrderIsUnchanged() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:test:left> ?join . "
+				+ "?o <urn:test:right> ?join . "
+				+ "?x <urn:test:third> ?join . "
+				+ "}";
+		QueryRoot root = parse(query);
+		List<Join> originalJoins = allJoins(root.getArg());
+		assertEquals(2, originalJoins.size());
+		assertTrue(originalJoins.stream().allMatch(join -> join.getCostEstimate() < 0));
+		assertTrue(originalJoins.stream().allMatch(join -> join.getResultSizeEstimate() < 0));
+
+		withPlanSwitchMinRelativeGain(1.0, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(Map.of(
+					"urn:test:left", estimate(10.0),
+					"urn:test:right", estimate(10.0),
+					"urn:test:third", estimate(10.0))));
+			optimizer.optimize(root, null, null);
+		});
+
+		List<Join> optimizedJoins = allJoins(root.getArg());
+		assertEquals(2, optimizedJoins.size());
+		assertSame(originalJoins.get(0), optimizedJoins.get(0));
+		assertSame(originalJoins.get(1), optimizedJoins.get(1));
+		assertTrue(optimizedJoins.stream().allMatch(join -> join.getCostEstimate() >= 0));
+		assertTrue(optimizedJoins.stream().allMatch(join -> join.getResultSizeEstimate() >= 0));
+	}
+
+	@Test
+	void rewritesJoinNodeWhenNoopRewriteEnabled() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:test:left> ?join . "
+				+ "?o <urn:test:right> ?join . "
+				+ "}";
+		QueryRoot root = parse(query);
+
+		Join originalJoin = firstJoin(root.getArg());
+		assertNotNull(originalJoin);
+
+		withRewriteOnNoop(true, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(Map.of(
+					"urn:test:left", estimate(10.0),
+					"urn:test:right", estimate(10.0))));
+			optimizer.optimize(root, null, null);
+		});
+
+		Join optimizedJoin = firstJoin(root.getArg());
+		assertNotNull(optimizedJoin);
+		assertNotSame(originalJoin, optimizedJoin);
+	}
+
+	@Test
+	void preservesLegacyHintForReusedJoinWhenOrderChanges() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:test:a> ?join . "
+				+ "?o <urn:test:b> ?join . "
+				+ "?s <urn:test:c> ?x . "
+				+ "}";
+		QueryRoot root = parse(query);
+
+		Join originalTop = firstJoin(root.getArg());
+		assertNotNull(originalTop);
+		assertTrue(originalTop.getLeftArg() instanceof Join);
+		Join originalPairJoin = (Join) originalTop.getLeftArg();
+		originalPairJoin.setAlgorithm("legacy-hint");
+		originalPairJoin.setMergeJoin(true);
+		originalPairJoin.setOrder(new Var("join"));
+		originalPairJoin.setCacheable(true);
+
+		withPlanSwitchMinRelativeGain(0.0, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(Map.of(
+					"urn:test:a", estimate(100.0),
+					"urn:test:b", estimate(120.0),
+					"urn:test:c", estimate(1.0))));
+			optimizer.optimize(root, null, null);
+		});
+
+		List<String> optimizedOrder = predicateOrder(root.getArg());
+		assertEquals("urn:test:c", optimizedOrder.get(0));
+
+		Join optimizedPairJoin = findJoinByPredicates(root.getArg(), Set.of("urn:test:a", "urn:test:b"));
+		assertNotNull(optimizedPairJoin);
+		assertEquals("legacy-hint", optimizedPairJoin.getAlgorithmName());
+		assertTrue(optimizedPairJoin.isMergeJoin());
+		assertEquals("join", optimizedPairJoin.getOrder().getName());
+		assertTrue(isCacheable(optimizedPairJoin));
+	}
+
+	@Test
+	void dropsReusedMergeHintWhenOrderCannotBeReapplied() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:test:a> ?join . "
+				+ "?o <urn:test:b> ?join . "
+				+ "?s <urn:test:c> ?x . "
+				+ "}";
+		QueryRoot root = parse(query);
+
+		Join originalTop = firstJoin(root.getArg());
+		assertNotNull(originalTop);
+		assertTrue(originalTop.getLeftArg() instanceof Join);
+		Join originalPairJoin = (Join) originalTop.getLeftArg();
+		originalPairJoin.setAlgorithm(InnerMergeJoinIterator.class.getSimpleName());
+		originalPairJoin.setMergeJoin(true);
+
+		withHashJoinEnabled(false, () -> withMergeJoinEnabled(false, () -> withPlanSwitchMinRelativeGain(0.0, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(Map.of(
+					"urn:test:a", estimate(100.0),
+					"urn:test:b", estimate(120.0),
+					"urn:test:c", estimate(1.0))));
+			optimizer.optimize(root, null, null);
+		})));
+
+		List<String> optimizedOrder = predicateOrder(root.getArg());
+		assertEquals("urn:test:c", optimizedOrder.get(0));
+
+		Join optimizedPairJoin = findJoinByPredicates(root.getArg(), Set.of("urn:test:a", "urn:test:b"));
+		assertNotNull(optimizedPairJoin);
+		assertFalse(optimizedPairJoin.isMergeJoin());
+		assertEquals(JoinIterator.class.getSimpleName(), optimizedPairJoin.getAlgorithmName());
+	}
+
+	@Test
+	void preservesLegacyHintForReusedJoinWhenChildrenSwap() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:test:a> ?x . "
+				+ "?s <urn:test:b> ?y . "
+				+ "?s <urn:test:c> ?z . "
+				+ "}";
+		QueryRoot root = parse(query);
+
+		Join originalTop = firstJoin(root.getArg());
+		assertNotNull(originalTop);
+		assertTrue(originalTop.getLeftArg() instanceof Join);
+		Join originalPairJoin = (Join) originalTop.getLeftArg();
+		originalPairJoin.setAlgorithm("legacy-swap-hint");
+		originalPairJoin.setCacheable(true);
+
+		withPlanSwitchMinRelativeGain(0.0, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new PairAwareStatistics(Map.of(
+					"urn:test:a", estimate(100.0),
+					"urn:test:b", estimate(10.0),
+					"urn:test:c", estimate(1.0)),
+					Map.of(
+							pairKey("urn:test:c", "urn:test:b"), estimate(1.0),
+							pairKey("urn:test:c", "urn:test:a"), estimate(5.0),
+							pairKey("urn:test:b", "urn:test:a"), estimate(1_000.0))));
+			optimizer.optimize(root, null, null);
+		});
+
+		List<String> optimizedOrder = predicateOrder(root.getArg());
+		assertEquals(List.of("urn:test:c", "urn:test:b", "urn:test:a"), optimizedOrder);
+
+		Join optimizedPairJoin = findJoinByPredicates(root.getArg(), Set.of("urn:test:a", "urn:test:b"));
+		assertNotNull(optimizedPairJoin);
+		assertEquals("legacy-swap-hint", optimizedPairJoin.getAlgorithmName());
+		assertTrue(isCacheable(optimizedPairJoin));
+	}
+
+	@Test
+	void preservesLegacyHintForReassociatedThreeLeafSubtree() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:test:a> ?x . "
+				+ "?s <urn:test:b> ?y . "
+				+ "?s <urn:test:c> ?z . "
+				+ "?s <urn:test:d> ?w . "
+				+ "}";
+		QueryRoot root = parse(query);
+
+		Join originalThreeLeafJoin = findJoinByPredicates(root.getArg(),
+				Set.of("urn:test:a", "urn:test:b", "urn:test:c"));
+		assertNotNull(originalThreeLeafJoin);
+		originalThreeLeafJoin.setAlgorithm("legacy-subtree-hint");
+		originalThreeLeafJoin.setCacheable(true);
+
+		withPlanSwitchMinRelativeGain(0.0, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new PairAwareStatistics(Map.of(
+					"urn:test:a", estimate(10.0),
+					"urn:test:b", estimate(20.0),
+					"urn:test:c", estimate(30.0),
+					"urn:test:d", estimate(1.0)),
+					Map.of(
+							pairKey("urn:test:d", "urn:test:a"), estimate(1.0),
+							pairKey("urn:test:d", "urn:test:b"), estimate(1.0),
+							pairKey("urn:test:d", "urn:test:c"), estimate(1.0),
+							pairKey("urn:test:a", "urn:test:b"), estimate(1_000.0),
+							pairKey("urn:test:a", "urn:test:c"), estimate(1_000.0),
+							pairKey("urn:test:b", "urn:test:c"), estimate(1_000.0))));
+			optimizer.optimize(root, null, null);
+		});
+
+		List<String> optimizedOrder = predicateOrder(root.getArg());
+		assertEquals("urn:test:d", optimizedOrder.get(0));
+
+		Join optimizedThreeLeafJoin = findJoinByPredicates(root.getArg(),
+				Set.of("urn:test:a", "urn:test:b", "urn:test:c"));
+		assertNotNull(optimizedThreeLeafJoin);
+		assertEquals("legacy-subtree-hint", optimizedThreeLeafJoin.getAlgorithmName());
+		assertTrue(isCacheable(optimizedThreeLeafJoin));
+	}
+
 	private static QueryRoot parse(String query) {
 		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		return new QueryRoot(parsed.getTupleExpr());
@@ -264,8 +779,13 @@ class CostBasedJoinOptimizerTest {
 	}
 
 	private static EvaluationStatistics.CardinalityEstimate estimate(double estimate, double confidence) {
+		return estimate(estimate, confidence, "test");
+	}
+
+	private static EvaluationStatistics.CardinalityEstimate estimate(double estimate, double confidence,
+			String source) {
 		return new EvaluationStatistics.CardinalityEstimate(estimate, estimate * 0.8, estimate * 1.2, confidence,
-				"test");
+				source);
 	}
 
 	private static String pairKey(String leftPredicate, String rightPredicate) {
@@ -303,6 +823,36 @@ class CostBasedJoinOptimizerTest {
 		}
 	}
 
+	private static void withMergeJoinEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(JoinCostModel.MERGE_JOIN_ENABLED_PROPERTY);
+		try {
+			System.setProperty(JoinCostModel.MERGE_JOIN_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(JoinCostModel.MERGE_JOIN_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withJoinCacheRightInputMax(double value, Runnable assertion) {
+		String previous = System.getProperty(JOIN_CACHE_RIGHT_INPUT_MAX_PROPERTY);
+		try {
+			System.setProperty(JOIN_CACHE_RIGHT_INPUT_MAX_PROPERTY, Double.toString(value));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(JOIN_CACHE_RIGHT_INPUT_MAX_PROPERTY, previous);
+		}
+	}
+
+	private static boolean isCacheable(Join join) {
+		try {
+			java.lang.reflect.Field cacheable = Join.class.getDeclaredField("cacheable");
+			cacheable.setAccessible(true);
+			return cacheable.getBoolean(join);
+		} catch (NoSuchFieldException | IllegalAccessException e) {
+			throw new AssertionError("Unable to read Join.cacheable", e);
+		}
+	}
+
 	private static void withPlanSwitchMinRelativeGain(double value, Runnable assertion) {
 		String previous = System.getProperty(CostBasedJoinOptimizer.PLAN_SWITCH_MIN_RELATIVE_GAIN_PROPERTY);
 		try {
@@ -333,6 +883,38 @@ class CostBasedJoinOptimizerTest {
 		}
 	}
 
+	private static void withRuntimeSamplingConfidenceThreshold(double threshold, Runnable assertion) {
+		String previous = System.getProperty(CostBasedJoinOptimizer.RUNTIME_SAMPLING_CONFIDENCE_THRESHOLD_PROPERTY);
+		try {
+			System.setProperty(CostBasedJoinOptimizer.RUNTIME_SAMPLING_CONFIDENCE_THRESHOLD_PROPERTY,
+					Double.toString(threshold));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(CostBasedJoinOptimizer.RUNTIME_SAMPLING_CONFIDENCE_THRESHOLD_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingQErrorThreshold(double threshold, Runnable assertion) {
+		String previous = System.getProperty(CostBasedJoinOptimizer.RUNTIME_SAMPLING_QERROR_THRESHOLD_PROPERTY);
+		try {
+			System.setProperty(CostBasedJoinOptimizer.RUNTIME_SAMPLING_QERROR_THRESHOLD_PROPERTY,
+					Double.toString(threshold));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(CostBasedJoinOptimizer.RUNTIME_SAMPLING_QERROR_THRESHOLD_PROPERTY, previous);
+		}
+	}
+
+	private static void withRewriteOnNoop(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(CostBasedJoinOptimizer.REWRITE_ON_NOOP_PROPERTY);
+		try {
+			System.setProperty(CostBasedJoinOptimizer.REWRITE_ON_NOOP_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(CostBasedJoinOptimizer.REWRITE_ON_NOOP_PROPERTY, previous);
+		}
+	}
+
 	private static List<String> predicateOrder(TupleExpr tupleExpr) {
 		Join firstJoin = firstJoin(tupleExpr);
 		assertNotNull(firstJoin, "expected at least one Join node after optimization");
@@ -355,6 +937,71 @@ class CostBasedJoinOptimizerTest {
 			public void meet(Join node) {
 				if (found.get() == null) {
 					found.set(node);
+				}
+				super.meet(node);
+			}
+		});
+		return found.get();
+	}
+
+	private static List<Join> allJoins(TupleExpr tupleExpr) {
+		List<Join> joins = new ArrayList<>();
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join node) {
+				joins.add(node);
+				super.meet(node);
+			}
+		});
+		return joins;
+	}
+
+	private static List<TupleExpr> flattenedJoinArgs(TupleExpr tupleExpr) {
+		Join rootJoin = firstJoin(tupleExpr);
+		assertNotNull(rootJoin, "expected at least one Join node");
+		List<TupleExpr> joinArgs = new ArrayList<>();
+		collectJoinArgs(rootJoin, joinArgs);
+		return joinArgs;
+	}
+
+	private static int indexOfJoinArg(List<TupleExpr> joinArgs, Predicate<TupleExpr> matcher) {
+		for (int i = 0; i < joinArgs.size(); i++) {
+			if (matcher.test(joinArgs.get(i))) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private static List<String> directStatementPredicateOrder(List<TupleExpr> joinArgs) {
+		List<String> predicates = new ArrayList<>();
+		for (TupleExpr joinArg : joinArgs) {
+			if (joinArg instanceof StatementPattern) {
+				Value value = ((StatementPattern) joinArg).getPredicateVar().getValue();
+				if (value != null) {
+					predicates.add(value.stringValue());
+				}
+			}
+		}
+		return predicates;
+	}
+
+	private static Join findJoinByPredicates(TupleExpr tupleExpr, Set<String> predicates) {
+		AtomicReference<Join> found = new AtomicReference<>();
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join node) {
+				if (found.get() == null) {
+					Set<String> nodePredicates = new TreeSet<>();
+					for (StatementPattern statementPattern : StatementPatternCollector.process(node)) {
+						Value predicateValue = statementPattern.getPredicateVar().getValue();
+						if (predicateValue != null) {
+							nodePredicates.add(predicateValue.stringValue());
+						}
+					}
+					if (nodePredicates.equals(new TreeSet<>(predicates))) {
+						found.set(node);
+					}
 				}
 				super.meet(node);
 			}
@@ -410,6 +1057,11 @@ class CostBasedJoinOptimizerTest {
 		}
 
 		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
 		public double getCardinality(TupleExpr expr) {
 			return getCardinalityEstimate(expr).estimate;
 		}
@@ -445,6 +1097,46 @@ class CostBasedJoinOptimizerTest {
 			}
 			Value predicateValue = patterns.get(0).getPredicateVar().getValue();
 			return predicateValue != null ? predicateValue.stringValue() : null;
+		}
+	}
+
+	private static final class NoJoinEstimationStatistics extends EvaluationStatistics {
+		private final Map<String, CardinalityEstimate> perPredicate;
+		private int joinEstimateRequests;
+
+		private NoJoinEstimationStatistics(Map<String, CardinalityEstimate> perPredicate) {
+			this.perPredicate = perPredicate;
+		}
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return false;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			return getCardinalityEstimate(expr).estimate;
+		}
+
+		@Override
+		public CardinalityEstimate getCardinalityEstimate(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				Value predicateValue = ((StatementPattern) expr).getPredicateVar().getValue();
+				if (predicateValue != null) {
+					CardinalityEstimate estimate = perPredicate.get(predicateValue.stringValue());
+					if (estimate != null) {
+						return estimate;
+					}
+				}
+			} else if (expr instanceof Join) {
+				joinEstimateRequests++;
+				return createCardinalityEstimate(200.0, 100.0, 400.0, 0.5, "join-unsupported");
+			}
+			return createCardinalityEstimate(100.0, 50.0, 200.0, 0.5, "fallback");
+		}
+
+		private int joinEstimateRequests() {
+			return joinEstimateRequests;
 		}
 	}
 

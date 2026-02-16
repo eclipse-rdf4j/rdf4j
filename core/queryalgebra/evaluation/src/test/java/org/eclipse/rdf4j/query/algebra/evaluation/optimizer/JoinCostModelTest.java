@@ -47,10 +47,10 @@ class JoinCostModelTest {
 	}
 
 	@Test
-	void defaultsToHashWhenBothInputsExceedConservativeThreshold() {
+	void defaultsToHashWhenBothInputsExceedThreshold() {
 		JoinCostModel model = new JoinCostModel();
-		EvaluationStatistics.CardinalityEstimate left = estimate(11_000_000_000.0);
-		EvaluationStatistics.CardinalityEstimate right = estimate(12_000_000_000.0);
+		EvaluationStatistics.CardinalityEstimate left = estimate(250_000.0);
+		EvaluationStatistics.CardinalityEstimate right = estimate(300_000.0);
 
 		JoinCostModel.JoinAlgorithm algorithm = model.chooseJoinAlgorithm(left, right, 1, false);
 
@@ -108,7 +108,7 @@ class JoinCostModelTest {
 	}
 
 	@Test
-	void avoidsMergeForHighlySkewedInputsEvenWhenMergePossible() {
+	void avoidsMergeAndHashForHighlySkewedInputsEvenWhenMergePossible() {
 		withHashJoinEnabled(true, () -> withHashThreshold(64.0, () -> {
 			JoinCostModel model = new JoinCostModel();
 			EvaluationStatistics.CardinalityEstimate left = estimate(10_000.0);
@@ -116,8 +116,49 @@ class JoinCostModelTest {
 
 			JoinCostModel.JoinAlgorithm algorithm = model.chooseJoinAlgorithm(left, right, 1, true);
 
-			assertEquals(JoinCostModel.JoinAlgorithm.HASH, algorithm);
+			assertEquals(JoinCostModel.JoinAlgorithm.NESTED_LOOP, algorithm);
 		}));
+	}
+
+	@Test
+	void avoidsHashForHighlySkewedInputsWithoutMerge() {
+		withHashJoinEnabled(true, () -> withHashThreshold(64.0, () -> {
+			JoinCostModel model = new JoinCostModel();
+			EvaluationStatistics.CardinalityEstimate left = estimate(10_000.0);
+			EvaluationStatistics.CardinalityEstimate right = estimate(100.0);
+
+			JoinCostModel.JoinAlgorithm algorithm = model.chooseJoinAlgorithm(left, right, 1, false);
+
+			assertEquals(JoinCostModel.JoinAlgorithm.NESTED_LOOP, algorithm);
+		}));
+	}
+
+	@Test
+	void avoidsHashWhenJoinOutputIsTinyComparedToInputs() {
+		withHashJoinEnabled(true, () -> withHashThreshold(64.0, () -> {
+			JoinCostModel model = new JoinCostModel();
+			EvaluationStatistics.CardinalityEstimate left = estimate(500_000.0);
+			EvaluationStatistics.CardinalityEstimate right = estimate(450_000.0);
+			EvaluationStatistics.CardinalityEstimate joinOutput = estimate(2_000.0);
+
+			JoinCostModel.JoinAlgorithm algorithm = model.chooseJoinAlgorithm(left, right, joinOutput, 1, false);
+
+			assertEquals(JoinCostModel.JoinAlgorithm.NESTED_LOOP, algorithm);
+		}));
+	}
+
+	@Test
+	void respectsConfiguredHashMinOutputFraction() {
+		withHashJoinEnabled(true, () -> withHashThreshold(64.0, () -> withHashMinOutputFraction(0.001, () -> {
+			JoinCostModel model = new JoinCostModel();
+			EvaluationStatistics.CardinalityEstimate left = estimate(500_000.0);
+			EvaluationStatistics.CardinalityEstimate right = estimate(450_000.0);
+			EvaluationStatistics.CardinalityEstimate joinOutput = estimate(2_000.0);
+
+			JoinCostModel.JoinAlgorithm algorithm = model.chooseJoinAlgorithm(left, right, joinOutput, 1, false);
+
+			assertEquals(JoinCostModel.JoinAlgorithm.HASH, algorithm);
+		})));
 	}
 
 	@Test
@@ -159,6 +200,21 @@ class JoinCostModelTest {
 				System.clearProperty(JoinCostModel.HASH_JOIN_ENABLED_PROPERTY);
 			} else {
 				System.setProperty(JoinCostModel.HASH_JOIN_ENABLED_PROPERTY, previous);
+			}
+		}
+	}
+
+	private static void withHashMinOutputFraction(double threshold, Runnable assertion) {
+		String key = JoinCostModel.HASH_JOIN_MIN_OUTPUT_FRACTION_PROPERTY;
+		String previous = System.getProperty(key);
+		try {
+			System.setProperty(key, Double.toString(threshold));
+			assertion.run();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(key);
+			} else {
+				System.setProperty(key, previous);
 			}
 		}
 	}
