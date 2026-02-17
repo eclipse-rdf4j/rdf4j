@@ -22,6 +22,9 @@ public class JoinCostModel {
 	static final String HASH_JOIN_ENABLED_PROPERTY = "rdf4j.optimizer.hashJoinEnabled";
 	static final String MERGE_JOIN_ENABLED_PROPERTY = "rdf4j.optimizer.mergeJoinEnabled";
 	static final String HASH_JOIN_MIN_OUTPUT_FRACTION_PROPERTY = "rdf4j.optimizer.hashJoinMinOutputFraction";
+	static final String JOIN_ALGORITHM_TUNING_ENABLED_PROPERTY = "rdf4j.optimizer.joinAlgorithmTuning.enabled";
+	static final String JOIN_ALGORITHM_TUNING_ALPHA_PROPERTY = "rdf4j.optimizer.joinAlgorithmTuning.alpha";
+	static final String JOIN_ALGORITHM_TUNING_MIN_SAMPLES_PROPERTY = "rdf4j.optimizer.joinAlgorithmTuning.minSamples";
 
 	private static final double CARTESIAN_PENALTY = 12.0;
 	private static final double MULTI_KEY_JOIN_BONUS = 0.9;
@@ -31,11 +34,19 @@ public class JoinCostModel {
 	private static final double DEFAULT_HASH_JOIN_INPUT_THRESHOLD = 100_000.0;
 	private static final boolean DEFAULT_HASH_JOIN_ENABLED = true;
 	private static final boolean DEFAULT_MERGE_JOIN_ENABLED = true;
+	private static final boolean DEFAULT_JOIN_ALGORITHM_TUNING_ENABLED = true;
+	private static final double DEFAULT_JOIN_ALGORITHM_TUNING_ALPHA = 0.2;
+	private static final int DEFAULT_JOIN_ALGORITHM_TUNING_MIN_SAMPLES = 32;
+	private static final double DEFAULT_JOIN_ALGORITHM_TUNING_MIN_THRESHOLD_MULTIPLIER = 0.25;
+	private static final double DEFAULT_JOIN_ALGORITHM_TUNING_MAX_THRESHOLD_MULTIPLIER = 4.0;
+	private static final AdaptiveJoinAlgorithmTuningState ADAPTIVE_JOIN_ALGORITHM_TUNING_STATE = new AdaptiveJoinAlgorithmTuningState();
 
 	private final double hashJoinInputThreshold;
 	private final double hashJoinMinOutputFraction;
 	private final boolean hashJoinEnabled;
 	private final boolean mergeJoinEnabled;
+	private final boolean joinAlgorithmTuningEnabled;
+	private final int joinAlgorithmTuningMinSamples;
 
 	public JoinCostModel() {
 		this.hashJoinInputThreshold = readPositiveDoubleProperty(HASH_JOIN_INPUT_THRESHOLD_PROPERTY,
@@ -44,6 +55,10 @@ public class JoinCostModel {
 				DEFAULT_HASH_JOIN_MIN_OUTPUT_FRACTION);
 		this.hashJoinEnabled = readBooleanProperty(HASH_JOIN_ENABLED_PROPERTY, DEFAULT_HASH_JOIN_ENABLED);
 		this.mergeJoinEnabled = readBooleanProperty(MERGE_JOIN_ENABLED_PROPERTY, DEFAULT_MERGE_JOIN_ENABLED);
+		this.joinAlgorithmTuningEnabled = readBooleanProperty(JOIN_ALGORITHM_TUNING_ENABLED_PROPERTY,
+				DEFAULT_JOIN_ALGORITHM_TUNING_ENABLED);
+		this.joinAlgorithmTuningMinSamples = readPositiveIntProperty(JOIN_ALGORITHM_TUNING_MIN_SAMPLES_PROPERTY,
+				DEFAULT_JOIN_ALGORITHM_TUNING_MIN_SAMPLES);
 	}
 
 	/**
@@ -137,15 +152,26 @@ public class JoinCostModel {
 
 		double left = Math.max(1.0, leftEstimate.estimate);
 		double right = Math.max(1.0, rightEstimate.estimate);
+		double effectiveHashJoinInputThreshold = hashJoinInputThreshold;
+		double effectiveHashJoinMinOutputFraction = hashJoinMinOutputFraction;
+		if (joinAlgorithmTuningEnabled) {
+			JoinAlgorithmTuningSnapshot tuningSnapshot = ADAPTIVE_JOIN_ALGORITHM_TUNING_STATE.snapshot();
+			if (tuningSnapshot.hasSufficientSamples(joinAlgorithmTuningMinSamples)) {
+				double multiplier = clampMultiplier(tuningSnapshot.hashThresholdMultiplier);
+				effectiveHashJoinInputThreshold = hashJoinInputThreshold * multiplier;
+				effectiveHashJoinMinOutputFraction = clampMinOutputFraction(
+						hashJoinMinOutputFraction * Math.sqrt(multiplier));
+			}
+		}
 
 		if (mergeJoinEnabled && mergeJoinPossible && sharedVarCount == 1
 				&& !joinSizeIsTooDifferent(left, right)) {
 			return JoinAlgorithm.MERGE;
 		}
 
-		if (hashJoinEnabled && Math.min(left, right) >= hashJoinInputThreshold
+		if (hashJoinEnabled && Math.min(left, right) >= effectiveHashJoinInputThreshold
 				&& !joinSizeIsTooDifferent(left, right)) {
-			if (isHighlySelective(joinOutputEstimate, left, right)) {
+			if (isHighlySelective(joinOutputEstimate, left, right, effectiveHashJoinMinOutputFraction)) {
 				return JoinAlgorithm.NESTED_LOOP;
 			}
 			return JoinAlgorithm.HASH;
@@ -155,18 +181,128 @@ public class JoinCostModel {
 	}
 
 	private boolean isHighlySelective(EvaluationStatistics.CardinalityEstimate joinOutputEstimate, double left,
-			double right) {
+			double right, double minOutputFraction) {
 		if (joinOutputEstimate == null) {
 			return false;
 		}
 		double joinOutput = clampEstimate(joinOutputEstimate.estimate);
 		double minimumInput = Math.max(MIN_ESTIMATE, Math.min(left, right));
-		return joinOutput <= minimumInput * hashJoinMinOutputFraction;
+		return joinOutput <= minimumInput * minOutputFraction;
 	}
 
 	private boolean joinSizeIsTooDifferent(double left, double right) {
 		double ratio = QueryJoinOptimizer.MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER;
 		return left > right ? left / ratio > right : right / ratio > left;
+	}
+
+	public static void recordRuntimeJoinCostObservation(JoinAlgorithm algorithm, double leftInputRows,
+			double outputRows, long elapsedNanos) {
+		if (algorithm == null || elapsedNanos <= 0L) {
+			return;
+		}
+		if (!readBooleanProperty(JOIN_ALGORITHM_TUNING_ENABLED_PROPERTY, DEFAULT_JOIN_ALGORITHM_TUNING_ENABLED)) {
+			return;
+		}
+
+		double alpha = readBoundedDoubleProperty(JOIN_ALGORITHM_TUNING_ALPHA_PROPERTY,
+				DEFAULT_JOIN_ALGORITHM_TUNING_ALPHA, 0.0, 1.0);
+		double smoothing = alpha > 0.0 ? alpha : DEFAULT_JOIN_ALGORITHM_TUNING_ALPHA;
+		double normalizedRows = Math.max(1.0, Math.max(leftInputRows, outputRows));
+		double nanosPerRow = elapsedNanos / normalizedRows;
+		if (!Double.isFinite(nanosPerRow) || nanosPerRow <= 0.0) {
+			return;
+		}
+
+		ADAPTIVE_JOIN_ALGORITHM_TUNING_STATE.record(algorithm, nanosPerRow, smoothing);
+	}
+
+	static void clearRuntimeJoinCostObservationsForTests() {
+		ADAPTIVE_JOIN_ALGORITHM_TUNING_STATE.clear();
+	}
+
+	private static double clampMultiplier(double multiplier) {
+		if (!Double.isFinite(multiplier) || multiplier <= 0.0) {
+			return 1.0;
+		}
+		double lowerBound = DEFAULT_JOIN_ALGORITHM_TUNING_MIN_THRESHOLD_MULTIPLIER;
+		double upperBound = DEFAULT_JOIN_ALGORITHM_TUNING_MAX_THRESHOLD_MULTIPLIER;
+		return Math.max(lowerBound, Math.min(upperBound, multiplier));
+	}
+
+	private static double clampMinOutputFraction(double value) {
+		if (!Double.isFinite(value)) {
+			return DEFAULT_HASH_JOIN_MIN_OUTPUT_FRACTION;
+		}
+		return Math.max(1e-6, Math.min(1.0, value));
+	}
+
+	private static final class AdaptiveJoinAlgorithmTuningState {
+		private static final double TUNING_MARGIN = 0.95;
+		private double hashNanosPerRowEwma = -1.0;
+		private double nestedLoopNanosPerRowEwma = -1.0;
+		private long hashSamples;
+		private long nestedLoopSamples;
+		private double hashThresholdMultiplier = 1.0;
+
+		private synchronized void record(JoinAlgorithm algorithm, double nanosPerRow, double alpha) {
+			switch (algorithm) {
+			case HASH:
+				hashNanosPerRowEwma = ewma(hashNanosPerRowEwma, nanosPerRow, alpha);
+				hashSamples++;
+				break;
+			case NESTED_LOOP:
+				nestedLoopNanosPerRowEwma = ewma(nestedLoopNanosPerRowEwma, nanosPerRow, alpha);
+				nestedLoopSamples++;
+				break;
+			default:
+				return;
+			}
+
+			if (hashNanosPerRowEwma <= 0.0 || nestedLoopNanosPerRowEwma <= 0.0) {
+				return;
+			}
+			double step = Math.max(0.01, alpha * 0.5);
+			if (hashNanosPerRowEwma < nestedLoopNanosPerRowEwma * TUNING_MARGIN) {
+				hashThresholdMultiplier *= (1.0 - step);
+			} else if (nestedLoopNanosPerRowEwma < hashNanosPerRowEwma * TUNING_MARGIN) {
+				hashThresholdMultiplier *= (1.0 + step);
+			}
+		}
+
+		private synchronized JoinAlgorithmTuningSnapshot snapshot() {
+			return new JoinAlgorithmTuningSnapshot(hashSamples, nestedLoopSamples, hashThresholdMultiplier);
+		}
+
+		private synchronized void clear() {
+			hashNanosPerRowEwma = -1.0;
+			nestedLoopNanosPerRowEwma = -1.0;
+			hashSamples = 0L;
+			nestedLoopSamples = 0L;
+			hashThresholdMultiplier = 1.0;
+		}
+
+		private double ewma(double current, double sample, double alpha) {
+			if (current < 0.0) {
+				return sample;
+			}
+			return alpha * sample + (1.0 - alpha) * current;
+		}
+	}
+
+	private static final class JoinAlgorithmTuningSnapshot {
+		private final long hashSamples;
+		private final long nestedLoopSamples;
+		private final double hashThresholdMultiplier;
+
+		private JoinAlgorithmTuningSnapshot(long hashSamples, long nestedLoopSamples, double hashThresholdMultiplier) {
+			this.hashSamples = hashSamples;
+			this.nestedLoopSamples = nestedLoopSamples;
+			this.hashThresholdMultiplier = hashThresholdMultiplier;
+		}
+
+		private boolean hasSufficientSamples(int minimumSamples) {
+			return hashSamples >= minimumSamples && nestedLoopSamples >= minimumSamples;
+		}
 	}
 
 	private static double readPositiveDoubleProperty(String key, double defaultValue) {
@@ -177,6 +313,36 @@ public class JoinCostModel {
 
 		try {
 			double parsed = Double.parseDouble(value.trim());
+			return parsed > 0 ? parsed : defaultValue;
+		} catch (NumberFormatException ignored) {
+			return defaultValue;
+		}
+	}
+
+	private static double readBoundedDoubleProperty(String key, double defaultValue, double minValue,
+			double maxValue) {
+		String value = System.getProperty(key);
+		if (value == null || value.isBlank()) {
+			return defaultValue;
+		}
+		try {
+			double parsed = Double.parseDouble(value.trim());
+			if (parsed >= minValue && parsed <= maxValue) {
+				return parsed;
+			}
+		} catch (NumberFormatException ignored) {
+			// fall through to default
+		}
+		return defaultValue;
+	}
+
+	private static int readPositiveIntProperty(String key, int defaultValue) {
+		String value = System.getProperty(key);
+		if (value == null || value.isBlank()) {
+			return defaultValue;
+		}
+		try {
+			int parsed = Integer.parseInt(value.trim());
 			return parsed > 0 ? parsed : defaultValue;
 		} catch (NumberFormatException ignored) {
 			return defaultValue;

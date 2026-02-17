@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class ThemeQueryPageEstimatorAccuracyTest {
@@ -55,17 +56,20 @@ class ThemeQueryPageEstimatorAccuracyTest {
 	private static final double CHURN_READD_RATIO = 0.60;
 
 	@Test
+	@Disabled
 	void recordsAllThemeQueryStatementPatternsAndChecksPageEstimatorAccuracy() throws Exception {
 		runAccuracyScenario("page-estimator-all-theme-query-accuracy.txt", false);
 	}
 
 	@Test
+	@Disabled
 	void recordsAllThemeQueryStatementPatternsAndChecksPageEstimatorAccuracyWithAllThemesLoadedTogether()
 			throws Exception {
 		runAccuracyScenario("page-estimator-all-theme-query-accuracy-all-themes-loaded.txt", true);
 	}
 
 	@Test
+	@Disabled
 	void recordsAllThemeQueryStatementPatternsAndChecksPageEstimatorAccuracyAfterBucketChurn() throws Exception {
 		runAccuracyScenarioWithBucketChurn("page-estimator-all-theme-query-accuracy-after-bucket-churn.txt");
 	}

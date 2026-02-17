@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -58,6 +59,48 @@ import org.junit.jupiter.api.Test;
 
 class CostBasedJoinOptimizerTest {
 	private static final String JOIN_CACHE_RIGHT_INPUT_MAX_PROPERTY = "rdf4j.optimizer.joinCache.rightInputMax";
+	private static final String BUSHY_ENABLED_PROPERTY = "rdf4j.optimizer.bushy.enabled";
+	private static final String RUNTIME_SAMPLING_TOP_K_PROPERTY = "rdf4j.optimizer.runtimeSampling.topK";
+	private static final String RUNTIME_SAMPLING_PREFIX_TERMS_PROPERTY = "rdf4j.optimizer.runtimeSampling.prefixTerms";
+	private static final String RUNTIME_SAMPLING_STAGE_BUDGETS_ENABLED_PROPERTY = "rdf4j.optimizer.runtimeSampling.stageBudgets.enabled";
+	private static final String RUNTIME_SAMPLING_CANDIDATE_GENERATION_BUDGET_MS_PROPERTY = "rdf4j.optimizer.runtimeSampling.candidateGenerationBudgetMs";
+	private static final String RUNTIME_SAMPLING_PREFIX_SAMPLING_BUDGET_MS_PROPERTY = "rdf4j.optimizer.runtimeSampling.prefixSamplingBudgetMs";
+	private static final String RUNTIME_SAMPLING_CANDIDATE_PRUNING_ENABLED_PROPERTY = "rdf4j.optimizer.runtimeSampling.candidatePruning.enabled";
+	private static final String RUNTIME_SAMPLING_CANDIDATE_PRUNING_MAX_CANDIDATES_PROPERTY = "rdf4j.optimizer.runtimeSampling.candidatePruning.maxCandidates";
+	private static final String RUNTIME_SAMPLING_CANDIDATE_DIVERSITY_ENABLED_PROPERTY = "rdf4j.optimizer.runtimeSampling.candidatePruning.diversity.enabled";
+	private static final String RUNTIME_SAMPLING_CANDIDATE_DIVERSITY_PREFIX_TERMS_PROPERTY = "rdf4j.optimizer.runtimeSampling.candidatePruning.diversityPrefixTerms";
+	private static final String RUNTIME_SAMPLING_ESTIMATE_CALL_CAP_ENABLED_PROPERTY = "rdf4j.optimizer.runtimeSampling.estimateCallCap.enabled";
+	private static final String RUNTIME_SAMPLING_ESTIMATE_CALL_CAP_MAX_CALLS_PROPERTY = "rdf4j.optimizer.runtimeSampling.estimateCallCap.maxCalls";
+	private static final String RUNTIME_SAMPLING_AUTO_THROTTLE_ENABLED_PROPERTY = "rdf4j.optimizer.runtimeSampling.autoThrottle.enabled";
+	private static final String RUNTIME_SAMPLING_AUTO_THROTTLE_QERROR_THRESHOLD_PROPERTY = "rdf4j.optimizer.runtimeSampling.autoThrottle.qErrorThreshold";
+	private static final String RUNTIME_SAMPLING_AUTO_THROTTLE_MIN_SAMPLES_PROPERTY = "rdf4j.optimizer.runtimeSampling.autoThrottle.minSamples";
+	private static final String RUNTIME_SAMPLING_MEMOIZATION_GUARD_ENABLED_PROPERTY = "rdf4j.optimizer.runtimeSampling.memoizationGuard.enabled";
+	private static final String RUNTIME_SAMPLING_MEMOIZATION_GUARD_HIT_RATE_THRESHOLD_PROPERTY = "rdf4j.optimizer.runtimeSampling.memoizationGuard.hitRateThreshold";
+	private static final String RUNTIME_SAMPLING_MEMOIZATION_GUARD_MIN_ESTIMATE_CALLS_PROPERTY = "rdf4j.optimizer.runtimeSampling.memoizationGuard.minEstimateCalls";
+	private static final String RUNTIME_SAMPLING_MEMOIZATION_GUARD_QERROR_WEIGHTING_ENABLED_PROPERTY = "rdf4j.optimizer.runtimeSampling.memoizationGuard.qErrorWeighting.enabled";
+	private static final String RUNTIME_SAMPLING_MEMOIZATION_GUARD_HYSTERESIS_ENABLED_PROPERTY = "rdf4j.optimizer.runtimeSampling.memoizationGuard.hysteresis.enabled";
+	private static final String RUNTIME_SAMPLING_MEMOIZATION_GUARD_HYSTERESIS_ENGAGE_HIT_RATE_THRESHOLD_PROPERTY = "rdf4j.optimizer.runtimeSampling.memoizationGuard.hysteresis.engageHitRateThreshold";
+	private static final String RUNTIME_SAMPLING_MEMOIZATION_GUARD_HYSTERESIS_DISENGAGE_HIT_RATE_THRESHOLD_PROPERTY = "rdf4j.optimizer.runtimeSampling.memoizationGuard.hysteresis.disengageHitRateThreshold";
+	private static final String ALGORITHM_HINT_ESTIMATE_REUSE_ENABLED_PROPERTY = "rdf4j.optimizer.algorithmHintEstimateReuse.enabled";
+	private static final String JOIN_ESTIMATE_MEMOIZATION_ENABLED_PROPERTY = "rdf4j.optimizer.joinEstimateMemoization.enabled";
+	private static final String JOIN_ESTIMATE_MEMOIZATION_MAX_ENTRIES_PROPERTY = "rdf4j.optimizer.joinEstimateMemoization.maxEntries";
+	private static final String JOIN_PLAN_REUSE_ENABLED_PROPERTY = "rdf4j.optimizer.joinPlanReuse.enabled";
+	private static final String JOIN_PLAN_WARM_CACHE_ENABLED_PROPERTY = "rdf4j.optimizer.joinPlanWarmCache.enabled";
+	private static final String JOIN_PLAN_WARM_CACHE_DRIFT_INVALIDATION_ENABLED_PROPERTY = "rdf4j.optimizer.joinPlanWarmCache.driftInvalidation.enabled";
+	private static final String JOIN_GROUP_PARTITIONING_ENABLED_PROPERTY = "rdf4j.optimizer.joinGroupPartitioning.enabled";
+	private static final String JOIN_GROUP_PARTITIONING_COMPONENT_ORDERING_ENABLED_PROPERTY = "rdf4j.optimizer.joinGroupPartitioning.componentOrdering.enabled";
+	private static final String JOIN_GROUP_PARTITIONING_COMPONENT_ORDERING_REUSE_ENABLED_PROPERTY = "rdf4j.optimizer.joinGroupPartitioning.componentOrderingReuse.enabled";
+	private static final String JOIN_GROUP_PARTITIONING_COMPONENT_ORDERING_REUSE_MAX_ENTRIES_PROPERTY = "rdf4j.optimizer.joinGroupPartitioning.componentOrderingReuse.maxEntries";
+	private static final String ADAPTIVE_PLANNING_BUDGET_ENABLED_PROPERTY = "rdf4j.optimizer.planningBudget.adaptive.enabled";
+	private static final String ADAPTIVE_PLANNING_BUDGET_MAX_MS_PROPERTY = "rdf4j.optimizer.planningBudget.adaptive.maxMs";
+	private static final String ADAPTIVE_PLANNING_BUDGET_WIDTH_STEP_MS_PROPERTY = "rdf4j.optimizer.planningBudget.adaptive.widthStepMs";
+	private static final String ADAPTIVE_PLANNING_BUDGET_LATENCY_PENALTY_FACTOR_PROPERTY = "rdf4j.optimizer.planningBudget.adaptive.latencyPenaltyFactor";
+	private static final String BUSHY_STRUCTURAL_MEMOIZATION_ENABLED_PROPERTY = "rdf4j.optimizer.bushy.structuralMemoization.enabled";
+	private static final String ADAPTIVE_BEAM_WIDTH_ENABLED_PROPERTY = "rdf4j.optimizer.beam.adaptive.enabled";
+	private static final String ADAPTIVE_BEAM_WIDTH_MIN_WIDTH_PROPERTY = "rdf4j.optimizer.beam.adaptive.minWidth";
+	private static final String ADAPTIVE_BEAM_WIDTH_MAX_WIDTH_PROPERTY = "rdf4j.optimizer.beam.adaptive.maxWidth";
+	private static final String ADAPTIVE_BEAM_WIDTH_QERROR_BOOST_PROPERTY = "rdf4j.optimizer.beam.adaptive.qErrorBoost";
+	private static final String ADAPTIVE_BEAM_WIDTH_LATENCY_THRESHOLD_MS_PROPERTY = "rdf4j.optimizer.beam.adaptive.latencyThresholdMs";
 
 	@Test
 	void avoidsStartingJoinOrderWithDisconnectedPattern() {
@@ -413,6 +456,1043 @@ class CostBasedJoinOptimizerTest {
 	}
 
 	@Test
+	void adaptivePlanningBudgetScalingIsEnabledByDefaultAndCanBeDisabled() {
+		String query = "SELECT * WHERE { "
+				+ "?a <urn:test:p1> ?b . "
+				+ "?b <urn:test:p2> ?c . "
+				+ "?c <urn:test:p3> ?d . "
+				+ "?d <urn:test:p4> ?e . "
+				+ "?e <urn:test:p5> ?f . "
+				+ "?f <urn:test:p6> ?g . "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:p1", estimate(10.0, 0.9),
+				"urn:test:p2", estimate(11.0, 0.9),
+				"urn:test:p3", estimate(12.0, 0.9),
+				"urn:test:p4", estimate(13.0, 0.9),
+				"urn:test:p5", estimate(14.0, 0.9),
+				"urn:test:p6", estimate(15.0, 0.9));
+
+		SlowCountingJoinEstimationStatistics adaptiveEnabledStatistics = new SlowCountingJoinEstimationStatistics(
+				perPredicate, 2L);
+		withPlanningBudgetMs(1L, () -> {
+			withRuntimeSamplingEnabled(true, () -> {
+				withPlanSwitchMinRelativeGain(0.0, () -> {
+					withRuntimeSamplingConfidenceThreshold(0.95, () -> {
+						withRuntimeSamplingTopK(1, () -> {
+							withRuntimeSamplingPrefixTerms(3, () -> {
+								withRuntimeSamplingCandidatePruningEnabled(false, () -> {
+									withRuntimeSamplingCandidateDiversityEnabled(false, () -> {
+										withJoinEstimateMemoizationEnabled(false, () -> {
+											withAdaptivePlanningBudgetMaxMs(25L, () -> {
+												withAdaptivePlanningBudgetWidthStepMs(8L, () -> {
+													withAdaptivePlanningBudgetLatencyPenaltyFactor(0.0, () -> {
+														QueryRoot root = parse(query);
+														CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+																adaptiveEnabledStatistics);
+														optimizer.optimize(root, null, null);
+													});
+												});
+											});
+										});
+									});
+								});
+							});
+						});
+					});
+				});
+			});
+		});
+
+		SlowCountingJoinEstimationStatistics adaptiveDisabledStatistics = new SlowCountingJoinEstimationStatistics(
+				perPredicate, 2L);
+		withPlanningBudgetMs(1L, () -> {
+			withRuntimeSamplingEnabled(true, () -> {
+				withPlanSwitchMinRelativeGain(0.0, () -> {
+					withRuntimeSamplingConfidenceThreshold(0.95, () -> {
+						withRuntimeSamplingTopK(1, () -> {
+							withRuntimeSamplingPrefixTerms(3, () -> {
+								withRuntimeSamplingCandidatePruningEnabled(false, () -> {
+									withRuntimeSamplingCandidateDiversityEnabled(false, () -> {
+										withJoinEstimateMemoizationEnabled(false, () -> {
+											withAdaptivePlanningBudgetEnabled(false, () -> {
+												withAdaptivePlanningBudgetMaxMs(25L, () -> {
+													withAdaptivePlanningBudgetWidthStepMs(8L, () -> {
+														withAdaptivePlanningBudgetLatencyPenaltyFactor(0.0, () -> {
+															QueryRoot root = parse(query);
+															CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+																	adaptiveDisabledStatistics);
+															optimizer.optimize(root, null, null);
+														});
+													});
+												});
+											});
+										});
+									});
+								});
+							});
+						});
+					});
+				});
+			});
+		});
+
+		int adaptiveEnabledRequests = adaptiveEnabledStatistics.joinEstimateRequests();
+		int adaptiveDisabledRequests = adaptiveDisabledStatistics.joinEstimateRequests();
+		assertTrue(adaptiveEnabledRequests > adaptiveDisabledRequests,
+				"default adaptive budget scaling should allow more runtime-sampling work on wide join groups: enabled="
+						+ adaptiveEnabledRequests + ", disabled=" + adaptiveDisabledRequests);
+	}
+
+	@Test
+	void adaptiveBeamWidthControlIsEnabledByDefaultAndCanBeDisabled() {
+		String source = "beam-adaptive-qerror";
+		EvaluationStatistics.recordGlobalCardinalityObservation(source, 1.0, 100.0);
+
+		String query = "SELECT * WHERE { "
+				+ "?a <urn:test:p1> ?b . "
+				+ "?b <urn:test:p2> ?c . "
+				+ "?c <urn:test:p3> ?d . "
+				+ "?d <urn:test:p4> ?e . "
+				+ "?e <urn:test:p5> ?f . "
+				+ "?f <urn:test:p6> ?g . "
+				+ "?g <urn:test:p7> ?h . "
+				+ "?h <urn:test:p8> ?i . "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:p1", estimate(10.0, 0.9, source),
+				"urn:test:p2", estimate(11.0, 0.9, source),
+				"urn:test:p3", estimate(12.0, 0.9, source),
+				"urn:test:p4", estimate(13.0, 0.9, source),
+				"urn:test:p5", estimate(14.0, 0.9, source),
+				"urn:test:p6", estimate(15.0, 0.9, source),
+				"urn:test:p7", estimate(16.0, 0.9, source),
+				"urn:test:p8", estimate(17.0, 0.9, source));
+
+		CountingJoinEstimationStatistics adaptiveEnabledStatistics = new CountingJoinEstimationStatistics(perPredicate);
+		withAdaptiveBeamWidthStressConfig(() -> {
+			QueryRoot root = parse(query);
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(adaptiveEnabledStatistics);
+			optimizer.optimize(root, null, null);
+		});
+
+		CountingJoinEstimationStatistics adaptiveDisabledStatistics = new CountingJoinEstimationStatistics(
+				perPredicate);
+		withAdaptiveBeamWidthStressConfig(() -> withAdaptiveBeamWidthEnabled(false, () -> {
+			QueryRoot root = parse(query);
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(adaptiveDisabledStatistics);
+			optimizer.optimize(root, null, null);
+		}));
+
+		assertTrue(adaptiveEnabledStatistics.joinEstimateRequests() > adaptiveDisabledStatistics.joinEstimateRequests(),
+				"default adaptive beam-width control should widen beam search under q-error pressure");
+	}
+
+	@Test
+	void runtimeSamplingCandidatePruningIsEnabledByDefaultAndCanBeDisabled() {
+		String query = "SELECT * WHERE { "
+				+ "?a <urn:test:p1> ?b . "
+				+ "?b <urn:test:p2> ?c . "
+				+ "?c <urn:test:p3> ?d . "
+				+ "?d <urn:test:p4> ?e . "
+				+ "?e <urn:test:p5> ?f . "
+				+ "?f <urn:test:p6> ?g . "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:p1", estimate(0.1, 0.9),
+				"urn:test:p2", estimate(50.0, 0.9),
+				"urn:test:p3", estimate(60.0, 0.9),
+				"urn:test:p4", estimate(70.0, 0.9),
+				"urn:test:p5", estimate(80.0, 0.9),
+				"urn:test:p6", estimate(90.0, 0.9));
+
+		CountingJoinEstimationStatistics defaultPrunedStatistics = new CountingJoinEstimationStatistics(perPredicate);
+		withRuntimeSamplingEnabled(true, () -> withPlanningBudgetMs(5000,
+				() -> withPlanSwitchMinRelativeGain(0.0,
+						() -> withRuntimeSamplingConfidenceThreshold(0.95,
+								() -> withRuntimeSamplingTopK(12,
+										() -> withRuntimeSamplingPrefixTerms(2,
+												() -> withRuntimeSamplingCandidatePruningMaxCandidates(2, () -> {
+													QueryRoot root = parse(query);
+													CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+															defaultPrunedStatistics);
+													optimizer.optimize(root, null, null);
+												})))))));
+
+		CountingJoinEstimationStatistics pruningDisabledStatistics = new CountingJoinEstimationStatistics(perPredicate);
+		withRuntimeSamplingEnabled(true, () -> withPlanningBudgetMs(5000,
+				() -> withPlanSwitchMinRelativeGain(0.0,
+						() -> withRuntimeSamplingConfidenceThreshold(0.95,
+								() -> withRuntimeSamplingTopK(12,
+										() -> withRuntimeSamplingPrefixTerms(2,
+												() -> withRuntimeSamplingCandidatePruningMaxCandidates(2,
+														() -> withRuntimeSamplingCandidatePruningEnabled(false, () -> {
+															QueryRoot root = parse(query);
+															CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+																	pruningDisabledStatistics);
+															optimizer.optimize(root, null, null);
+														}))))))));
+
+		assertTrue(defaultPrunedStatistics.joinEstimateRequests() < pruningDisabledStatistics.joinEstimateRequests(),
+				"default candidate pruning should reduce runtime-sampling candidate evaluation work");
+	}
+
+	@Test
+	void runtimeSamplingStageBudgetsAreEnabledByDefaultAndCanBeDisabled() {
+		String query = "SELECT * WHERE { "
+				+ "?a <urn:test:p1> ?b . "
+				+ "?b <urn:test:p2> ?c . "
+				+ "?c <urn:test:p3> ?d . "
+				+ "?d <urn:test:p4> ?e . "
+				+ "?e <urn:test:p5> ?f . "
+				+ "?f <urn:test:p6> ?g . "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:p1", estimate(10.0, 0.9),
+				"urn:test:p2", estimate(11.0, 0.9),
+				"urn:test:p3", estimate(12.0, 0.9),
+				"urn:test:p4", estimate(13.0, 0.9),
+				"urn:test:p5", estimate(14.0, 0.9),
+				"urn:test:p6", estimate(15.0, 0.9));
+
+		SlowCountingJoinEstimationStatistics stagedBudgetStatistics = new SlowCountingJoinEstimationStatistics(
+				perPredicate, 2L);
+		withRuntimeSamplingStressConfig(() -> withRuntimeSamplingCandidateGenerationBudgetMs(1L,
+				() -> withRuntimeSamplingPrefixSamplingBudgetMs(5000L, () -> {
+					QueryRoot root = parse(query);
+					CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(stagedBudgetStatistics);
+					optimizer.optimize(root, null, null);
+				})));
+
+		SlowCountingJoinEstimationStatistics stageBudgetsDisabledStatistics = new SlowCountingJoinEstimationStatistics(
+				perPredicate, 2L);
+		withRuntimeSamplingStressConfig(() -> withRuntimeSamplingCandidateGenerationBudgetMs(1L,
+				() -> withRuntimeSamplingPrefixSamplingBudgetMs(5000L,
+						() -> withRuntimeSamplingStageBudgetsEnabled(false, () -> {
+							QueryRoot root = parse(query);
+							CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+									stageBudgetsDisabledStatistics);
+							optimizer.optimize(root, null, null);
+						}))));
+
+		assertTrue(
+				stagedBudgetStatistics.joinEstimateRequests() < stageBudgetsDisabledStatistics.joinEstimateRequests(),
+				"default runtime-sampling stage budgets should constrain candidate generation work");
+	}
+
+	@Test
+	void runtimeSamplingCandidateDiversityPruningIsEnabledByDefaultAndCanBeDisabled() {
+		String query = "SELECT * WHERE { "
+				+ "?a <urn:test:p1> ?b . "
+				+ "?b <urn:test:p2> ?c . "
+				+ "?c <urn:test:p3> ?d . "
+				+ "?d <urn:test:p4> ?e . "
+				+ "?e <urn:test:p5> ?f . "
+				+ "?f <urn:test:p6> ?g . "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:p1", estimate(10.0, 0.9),
+				"urn:test:p2", estimate(11.0, 0.9),
+				"urn:test:p3", estimate(12.0, 0.9),
+				"urn:test:p4", estimate(13.0, 0.9),
+				"urn:test:p5", estimate(14.0, 0.9),
+				"urn:test:p6", estimate(15.0, 0.9));
+
+		CountingJoinEstimationStatistics defaultDiversityStatistics = new CountingJoinEstimationStatistics(
+				perPredicate);
+		withJoinEstimateMemoizationEnabled(false, () -> {
+			withRuntimeSamplingEnabled(true, () -> {
+				withPlanningBudgetMs(5000, () -> {
+					withPlanSwitchMinRelativeGain(0.0, () -> {
+						withRuntimeSamplingConfidenceThreshold(0.95, () -> {
+							withRuntimeSamplingTopK(12, () -> {
+								withRuntimeSamplingPrefixTerms(2, () -> {
+									withRuntimeSamplingCandidatePruningMaxCandidates(10, () -> {
+										withRuntimeSamplingCandidateDiversityPrefixTerms(1, () -> {
+											QueryRoot root = parse(query);
+											CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+													defaultDiversityStatistics);
+											optimizer.optimize(root, null, null);
+										});
+									});
+								});
+							});
+						});
+					});
+				});
+			});
+		});
+
+		CountingJoinEstimationStatistics diversityDisabledStatistics = new CountingJoinEstimationStatistics(
+				perPredicate);
+		withJoinEstimateMemoizationEnabled(false, () -> {
+			withRuntimeSamplingEnabled(true, () -> {
+				withPlanningBudgetMs(5000, () -> {
+					withPlanSwitchMinRelativeGain(0.0, () -> {
+						withRuntimeSamplingConfidenceThreshold(0.95, () -> {
+							withRuntimeSamplingTopK(12, () -> {
+								withRuntimeSamplingPrefixTerms(2, () -> {
+									withRuntimeSamplingCandidatePruningMaxCandidates(10, () -> {
+										withRuntimeSamplingCandidateDiversityPrefixTerms(1, () -> {
+											withRuntimeSamplingCandidateDiversityEnabled(false, () -> {
+												QueryRoot root = parse(query);
+												CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+														diversityDisabledStatistics);
+												optimizer.optimize(root, null, null);
+											});
+										});
+									});
+								});
+							});
+						});
+					});
+				});
+			});
+		});
+
+		assertTrue(
+				defaultDiversityStatistics.joinEstimateRequests() < diversityDisabledStatistics.joinEstimateRequests(),
+				"default diversity pruning should reduce near-duplicate runtime-sampling work");
+	}
+
+	@Test
+	void joinEstimateMemoizationIsEnabledByDefaultAndCanBeDisabled() {
+		String query = "SELECT * WHERE { "
+				+ "?a <urn:test:p1> ?b . "
+				+ "?b <urn:test:p2> ?c . "
+				+ "?c <urn:test:p3> ?d . "
+				+ "?d <urn:test:p4> ?e . "
+				+ "?e <urn:test:p5> ?f . "
+				+ "?f <urn:test:p6> ?g . "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:p1", estimate(10.0, 0.9),
+				"urn:test:p2", estimate(11.0, 0.9),
+				"urn:test:p3", estimate(12.0, 0.9),
+				"urn:test:p4", estimate(13.0, 0.9),
+				"urn:test:p5", estimate(14.0, 0.9),
+				"urn:test:p6", estimate(15.0, 0.9));
+
+		CountingJoinEstimationStatistics memoizedStatistics = new CountingJoinEstimationStatistics(perPredicate);
+		withRuntimeSamplingEnabled(true,
+				() -> withPlanningBudgetMs(5000,
+						() -> withPlanSwitchMinRelativeGain(0.0,
+								() -> withRuntimeSamplingConfidenceThreshold(0.95,
+										() -> withRuntimeSamplingTopK(12,
+												() -> withRuntimeSamplingPrefixTerms(3,
+														() -> withRuntimeSamplingCandidatePruningEnabled(false,
+																() -> withRuntimeSamplingCandidateDiversityEnabled(
+																		false, () -> {
+																			QueryRoot root = parse(query);
+																			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+																					memoizedStatistics);
+																			optimizer.optimize(root, null, null);
+																		}))))))));
+
+		CountingJoinEstimationStatistics memoizationDisabledStatistics = new CountingJoinEstimationStatistics(
+				perPredicate);
+		withRuntimeSamplingEnabled(true,
+				() -> withPlanningBudgetMs(5000,
+						() -> withPlanSwitchMinRelativeGain(0.0,
+								() -> withRuntimeSamplingConfidenceThreshold(0.95,
+										() -> withRuntimeSamplingTopK(12,
+												() -> withRuntimeSamplingPrefixTerms(3,
+														() -> withRuntimeSamplingCandidatePruningEnabled(false,
+																() -> withRuntimeSamplingCandidateDiversityEnabled(
+																		false,
+																		() -> withJoinEstimateMemoizationEnabled(false,
+																				() -> {
+																					QueryRoot root = parse(query);
+																					CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+																							memoizationDisabledStatistics);
+																					optimizer.optimize(root, null,
+																							null);
+																				})))))))));
+
+		assertTrue(memoizedStatistics.joinEstimateRequests() < memoizationDisabledStatistics.joinEstimateRequests(),
+				"default join-estimate memoization should reduce repeated join-estimation work");
+	}
+
+	@Test
+	void joinEstimateMemoizationCacheSizeIsBoundedAndDeterministic() {
+		String query = "SELECT * WHERE { "
+				+ "?a <urn:test:p1> ?b . "
+				+ "?b <urn:test:p2> ?c . "
+				+ "?c <urn:test:p3> ?d . "
+				+ "?d <urn:test:p4> ?e . "
+				+ "?e <urn:test:p5> ?f . "
+				+ "?f <urn:test:p6> ?g . "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:p1", estimate(10.0, 0.9),
+				"urn:test:p2", estimate(11.0, 0.9),
+				"urn:test:p3", estimate(12.0, 0.9),
+				"urn:test:p4", estimate(13.0, 0.9),
+				"urn:test:p5", estimate(14.0, 0.9),
+				"urn:test:p6", estimate(15.0, 0.9));
+
+		int boundedRunOne = joinEstimateRequestsForMemoizationCap(query, perPredicate, 1);
+		int boundedRunTwo = joinEstimateRequestsForMemoizationCap(query, perPredicate, 1);
+		int wideCacheRun = joinEstimateRequestsForMemoizationCap(query, perPredicate, 1_000);
+
+		assertEquals(boundedRunOne, boundedRunTwo, "bounded cache eviction should be deterministic");
+		assertTrue(boundedRunOne > wideCacheRun,
+				"smaller memoization cache should retain fewer join estimates and trigger more estimate requests");
+	}
+
+	@Test
+	void joinGroupPartitioningIsEnabledByDefaultAndCanBeDisabled() {
+		String query = "SELECT * WHERE { "
+				+ "?a <urn:test:c1p1> ?b . "
+				+ "?b <urn:test:c1p2> ?c . "
+				+ "?c <urn:test:c1p3> ?d . "
+				+ "?u <urn:test:c2p1> ?v . "
+				+ "?v <urn:test:c2p2> ?w . "
+				+ "?w <urn:test:c2p3> ?x . "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:c1p1", estimate(9.0, 0.9),
+				"urn:test:c1p2", estimate(10.0, 0.9),
+				"urn:test:c1p3", estimate(11.0, 0.9),
+				"urn:test:c2p1", estimate(12.0, 0.9),
+				"urn:test:c2p2", estimate(13.0, 0.9),
+				"urn:test:c2p3", estimate(14.0, 0.9));
+
+		CountingJoinEstimationStatistics partitionedStatistics = new CountingJoinEstimationStatistics(perPredicate);
+		withBushyEnabled(false, () -> withRuntimeSamplingEnabled(false, () -> withPlanSwitchMinRelativeGain(0.0, () -> {
+			QueryRoot root = parse(query);
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(partitionedStatistics);
+			optimizer.optimize(root, null, null);
+		})));
+
+		CountingJoinEstimationStatistics partitioningDisabledStatistics = new CountingJoinEstimationStatistics(
+				perPredicate);
+		withBushyEnabled(false, () -> withRuntimeSamplingEnabled(false, () -> withPlanSwitchMinRelativeGain(0.0,
+				() -> withJoinGroupPartitioningEnabled(false, () -> {
+					QueryRoot root = parse(query);
+					CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(partitioningDisabledStatistics);
+					optimizer.optimize(root, null, null);
+				}))));
+
+		assertTrue(partitionedStatistics.joinEstimateRequests() < partitioningDisabledStatistics.joinEstimateRequests(),
+				"default connected-component partitioning should reduce disconnected-group join-estimation work");
+	}
+
+	@Test
+	void joinGroupPartitionComponentOrderingIsEnabledByDefaultAndCanBeDisabled() {
+		String query = "SELECT * WHERE { "
+				+ "?a <urn:test:cold1> ?b . "
+				+ "?b <urn:test:cold2> ?c . "
+				+ "?seed <urn:test:hot1> ?x . "
+				+ "?x <urn:test:hot2> ?y . "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:cold1", estimate(3.0, 0.9),
+				"urn:test:cold2", estimate(4.0, 0.9),
+				"urn:test:hot1", estimate(30.0, 0.9),
+				"urn:test:hot2", estimate(40.0, 0.9));
+		QueryBindingSet initialBindings = new QueryBindingSet();
+		initialBindings.addBinding("seed", SimpleValueFactory.getInstance().createIRI("urn:test:seed"));
+
+		QueryRoot defaultRoot = parse(query);
+		withBushyEnabled(false, () -> withRuntimeSamplingEnabled(false, () -> withPlanSwitchMinRelativeGain(0.0, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(perPredicate));
+			optimizer.optimize(defaultRoot, null, initialBindings);
+		})));
+
+		List<String> defaultOrder = predicateOrder(defaultRoot.getArg());
+		assertTrue(Set.of("urn:test:hot1", "urn:test:hot2").contains(defaultOrder.get(0)),
+				"default component ordering should prioritize the component that joins initial bindings");
+
+		QueryRoot disabledRoot = parse(query);
+		withBushyEnabled(false, () -> withRuntimeSamplingEnabled(false, () -> withPlanSwitchMinRelativeGain(0.0,
+				() -> withJoinGroupPartitioningComponentOrderingEnabled(false, () -> {
+					CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(perPredicate));
+					optimizer.optimize(disabledRoot, null, initialBindings);
+				}))));
+
+		List<String> disabledOrder = predicateOrder(disabledRoot.getArg());
+		assertTrue(Set.of("urn:test:cold1", "urn:test:cold2").contains(disabledOrder.get(0)),
+				"disabling component-ordering heuristic should preserve baseline disconnected-component order");
+	}
+
+	@Test
+	void joinGroupPartitionComponentOrderingReuseIsEnabledByDefaultAndCanBeDisabled() {
+		String query = "SELECT * WHERE { "
+				+ "{ ?a <urn:test:cold1> ?b . ?b <urn:test:cold2> ?c . ?seed <urn:test:hot1> ?x . ?x <urn:test:hot2> ?y . } "
+				+ "UNION { ?m <urn:test:cold1> ?n . ?n <urn:test:cold2> ?o . ?seed <urn:test:hot1> ?p . ?p <urn:test:hot2> ?q . } "
+				+ "UNION { ?u <urn:test:cold1> ?v . ?v <urn:test:cold2> ?w . ?seed <urn:test:hot1> ?r . ?r <urn:test:hot2> ?s . } "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:cold1", estimate(9.0, 0.9),
+				"urn:test:cold2", estimate(10.0, 0.9),
+				"urn:test:hot1", estimate(30.0, 0.9),
+				"urn:test:hot2", estimate(40.0, 0.9));
+		QueryBindingSet initialBindings = new QueryBindingSet();
+		initialBindings.addBinding("seed", SimpleValueFactory.getInstance().createIRI("urn:test:seed"));
+
+		CountingJoinEstimationStatistics reuseEnabledStatistics = new CountingJoinEstimationStatistics(perPredicate);
+		withBushyEnabled(false,
+				() -> withRuntimeSamplingEnabled(false,
+						() -> withPlanSwitchMinRelativeGain(0.0,
+								() -> withJoinEstimateMemoizationEnabled(false,
+										() -> withJoinPlanReuseEnabled(false, () -> {
+											QueryRoot root = parse(query);
+											CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+													reuseEnabledStatistics);
+											optimizer.optimize(root, null, initialBindings);
+										})))));
+
+		CountingJoinEstimationStatistics reuseDisabledStatistics = new CountingJoinEstimationStatistics(perPredicate);
+		withBushyEnabled(false,
+				() -> withRuntimeSamplingEnabled(false,
+						() -> withPlanSwitchMinRelativeGain(0.0,
+								() -> withJoinEstimateMemoizationEnabled(false,
+										() -> withJoinPlanReuseEnabled(false,
+												() -> withJoinGroupPartitioningComponentOrderingReuseEnabled(false,
+														() -> {
+															QueryRoot root = parse(query);
+															CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+																	reuseDisabledStatistics);
+															optimizer.optimize(root, null, initialBindings);
+														}))))));
+
+		assertTrue(reuseEnabledStatistics.joinEstimateRequests() < reuseDisabledStatistics.joinEstimateRequests(),
+				"default component-ordering reuse should reduce repeated disconnected-component estimate work");
+	}
+
+	@Test
+	void joinGroupPartitionComponentOrderingReuseCacheSizeIsBoundedAndDeterministic() {
+		String query = "SELECT * WHERE { "
+				+ "{ ?a <urn:test:aCold1> ?b . ?b <urn:test:aCold2> ?c . ?seed <urn:test:aHot1> ?x . ?x <urn:test:aHot2> ?y . } "
+				+ "UNION { ?m <urn:test:bCold1> ?n . ?n <urn:test:bCold2> ?o . ?seed <urn:test:bHot1> ?p . ?p <urn:test:bHot2> ?q . } "
+				+ "UNION { ?u <urn:test:aCold1> ?v . ?v <urn:test:aCold2> ?w . ?seed <urn:test:aHot1> ?r . ?r <urn:test:aHot2> ?s . } "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:aCold1", estimate(9.0, 0.9),
+				"urn:test:aCold2", estimate(10.0, 0.9),
+				"urn:test:aHot1", estimate(30.0, 0.9),
+				"urn:test:aHot2", estimate(40.0, 0.9),
+				"urn:test:bCold1", estimate(11.0, 0.9),
+				"urn:test:bCold2", estimate(12.0, 0.9),
+				"urn:test:bHot1", estimate(32.0, 0.9),
+				"urn:test:bHot2", estimate(42.0, 0.9));
+		QueryBindingSet initialBindings = new QueryBindingSet();
+		initialBindings.addBinding("seed", SimpleValueFactory.getInstance().createIRI("urn:test:seed"));
+
+		int boundedRunOne = joinEstimateRequestsForComponentOrderingReuseCap(query, perPredicate, initialBindings, 1);
+		int boundedRunTwo = joinEstimateRequestsForComponentOrderingReuseCap(query, perPredicate, initialBindings, 1);
+		int widerCacheRun = joinEstimateRequestsForComponentOrderingReuseCap(query, perPredicate, initialBindings,
+				16);
+
+		assertEquals(boundedRunOne, boundedRunTwo, "bounded component-ordering reuse eviction should be deterministic");
+		assertTrue(boundedRunOne > widerCacheRun,
+				"smaller component-ordering reuse cache should trigger more disconnected-component estimate work");
+	}
+
+	@Test
+	void joinPlanReuseIsEnabledByDefaultAndCanBeDisabled() {
+		String query = "SELECT * WHERE { "
+				+ "{ ?a <urn:test:p1> ?b . ?b <urn:test:p2> ?c . ?c <urn:test:p3> ?d . ?d <urn:test:p4> ?e . } "
+				+ "UNION { ?x <urn:test:p1> ?y . ?y <urn:test:p2> ?z . ?z <urn:test:p3> ?w . ?w <urn:test:p4> ?q . } "
+				+ "UNION { ?m <urn:test:p1> ?n . ?n <urn:test:p2> ?o . ?o <urn:test:p3> ?r . ?r <urn:test:p4> ?s . } "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:p1", estimate(10.0, 0.9),
+				"urn:test:p2", estimate(11.0, 0.9),
+				"urn:test:p3", estimate(12.0, 0.9),
+				"urn:test:p4", estimate(13.0, 0.9));
+
+		CountingJoinEstimationStatistics reuseEnabledStatistics = new CountingJoinEstimationStatistics(perPredicate);
+		withPlanSwitchMinRelativeGain(0.0, () -> withRuntimeSamplingEnabled(false, () -> withBushyEnabled(false, () -> {
+			QueryRoot root = parse(query);
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(reuseEnabledStatistics);
+			optimizer.optimize(root, null, null);
+		})));
+
+		CountingJoinEstimationStatistics reuseDisabledStatistics = new CountingJoinEstimationStatistics(perPredicate);
+		withPlanSwitchMinRelativeGain(0.0,
+				() -> withRuntimeSamplingEnabled(false, () -> withBushyEnabled(false,
+						() -> withJoinPlanReuseEnabled(false, () -> {
+							QueryRoot root = parse(query);
+							CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(reuseDisabledStatistics);
+							optimizer.optimize(root, null, null);
+						}))));
+
+		assertTrue(reuseEnabledStatistics.joinEstimateRequests() < reuseDisabledStatistics.joinEstimateRequests(),
+				"default join-plan reuse should reduce repeated planning work across equivalent join groups");
+	}
+
+	@Test
+	void joinPlanWarmCacheIsEnabledByDefaultAndCanBeDisabled() {
+		String query = "SELECT * WHERE { "
+				+ "?a <urn:test:p1> ?b . "
+				+ "?b <urn:test:p2> ?c . "
+				+ "?c <urn:test:p3> ?d . "
+				+ "?d <urn:test:p4> ?e . "
+				+ "?e <urn:test:p5> ?f . "
+				+ "?f <urn:test:p6> ?g . "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:p1", estimate(10.0, 0.9),
+				"urn:test:p2", estimate(11.0, 0.9),
+				"urn:test:p3", estimate(12.0, 0.9),
+				"urn:test:p4", estimate(13.0, 0.9),
+				"urn:test:p5", estimate(14.0, 0.9),
+				"urn:test:p6", estimate(15.0, 0.9));
+
+		CountingJoinEstimationStatistics warmCacheEnabledStatistics = new CountingJoinEstimationStatistics(
+				perPredicate);
+		AtomicReference<Integer> enabledSecondRunDelta = new AtomicReference<>(0);
+		withWarmCacheExperimentConfig(() -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(warmCacheEnabledStatistics);
+			QueryRoot first = parse(query);
+			optimizer.optimize(first, null, null);
+			int firstRunCalls = warmCacheEnabledStatistics.joinEstimateRequests();
+			QueryRoot second = parse(query);
+			optimizer.optimize(second, null, null);
+			enabledSecondRunDelta.set(warmCacheEnabledStatistics.joinEstimateRequests() - firstRunCalls);
+		});
+
+		CountingJoinEstimationStatistics warmCacheDisabledStatistics = new CountingJoinEstimationStatistics(
+				perPredicate);
+		AtomicReference<Integer> disabledSecondRunDelta = new AtomicReference<>(0);
+		withWarmCacheExperimentConfig(() -> withJoinPlanWarmCacheEnabled(false, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(warmCacheDisabledStatistics);
+			QueryRoot first = parse(query);
+			optimizer.optimize(first, null, null);
+			int firstRunCalls = warmCacheDisabledStatistics.joinEstimateRequests();
+			QueryRoot second = parse(query);
+			optimizer.optimize(second, null, null);
+			disabledSecondRunDelta.set(warmCacheDisabledStatistics.joinEstimateRequests() - firstRunCalls);
+		}));
+
+		assertTrue(enabledSecondRunDelta.get() < disabledSecondRunDelta.get(),
+				"default warm plan cache should reduce repeated planning work across optimize invocations");
+	}
+
+	@Test
+	void joinPlanWarmCacheDriftInvalidationIsEnabledByDefaultAndCanBeDisabled() {
+		EvaluationStatistics.clearCalibrationObservations();
+		try {
+			for (int i = 0; i < 24; i++) {
+				EvaluationStatistics.recordGlobalCardinalityObservation("warm-cache-source", 100.0, 100.0);
+			}
+
+			String query = "SELECT * WHERE { "
+					+ "?a <urn:test:p1> ?b . "
+					+ "?b <urn:test:p2> ?c . "
+					+ "?c <urn:test:p3> ?d . "
+					+ "?d <urn:test:p4> ?e . "
+					+ "?e <urn:test:p5> ?f . "
+					+ "?f <urn:test:p6> ?g . "
+					+ "}";
+			Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+					"urn:test:p1", estimate(10.0, 0.9, "warm-cache-source"),
+					"urn:test:p2", estimate(11.0, 0.9, "warm-cache-source"),
+					"urn:test:p3", estimate(12.0, 0.9, "warm-cache-source"),
+					"urn:test:p4", estimate(13.0, 0.9, "warm-cache-source"),
+					"urn:test:p5", estimate(14.0, 0.9, "warm-cache-source"),
+					"urn:test:p6", estimate(15.0, 0.9, "warm-cache-source"));
+
+			CountingJoinEstimationStatistics invalidationEnabledStatistics = new CountingJoinEstimationStatistics(
+					perPredicate);
+			AtomicReference<Integer> enabledSecondRunDelta = new AtomicReference<>(0);
+			withWarmCacheExperimentConfig(() -> {
+				CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(invalidationEnabledStatistics);
+				QueryRoot first = parse(query);
+				optimizer.optimize(first, null, null);
+				int firstRunCalls = invalidationEnabledStatistics.joinEstimateRequests();
+				for (int i = 0; i < 24; i++) {
+					EvaluationStatistics.recordGlobalCardinalityObservation("warm-cache-source", 10_000.0, 1.0);
+				}
+				QueryRoot second = parse(query);
+				optimizer.optimize(second, null, null);
+				enabledSecondRunDelta.set(invalidationEnabledStatistics.joinEstimateRequests() - firstRunCalls);
+			});
+
+			EvaluationStatistics.clearCalibrationObservations();
+			for (int i = 0; i < 24; i++) {
+				EvaluationStatistics.recordGlobalCardinalityObservation("warm-cache-source", 100.0, 100.0);
+			}
+
+			CountingJoinEstimationStatistics invalidationDisabledStatistics = new CountingJoinEstimationStatistics(
+					perPredicate);
+			AtomicReference<Integer> disabledSecondRunDelta = new AtomicReference<>(0);
+			withWarmCacheExperimentConfig(
+					() -> withJoinPlanWarmCacheDriftInvalidationEnabled(false, () -> {
+						CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(invalidationDisabledStatistics);
+						QueryRoot first = parse(query);
+						optimizer.optimize(first, null, null);
+						int firstRunCalls = invalidationDisabledStatistics.joinEstimateRequests();
+						for (int i = 0; i < 24; i++) {
+							EvaluationStatistics.recordGlobalCardinalityObservation("warm-cache-source", 10_000.0,
+									1.0);
+						}
+						QueryRoot second = parse(query);
+						optimizer.optimize(second, null, null);
+						disabledSecondRunDelta
+								.set(invalidationDisabledStatistics.joinEstimateRequests() - firstRunCalls);
+					}));
+
+			assertTrue(enabledSecondRunDelta.get() > disabledSecondRunDelta.get(),
+					"default warm-cache drift invalidation should force replanning after calibration drift spikes");
+		} finally {
+			EvaluationStatistics.clearCalibrationObservations();
+		}
+	}
+
+	@Test
+	void bushyStructuralMemoizationIsEnabledByDefaultAndCanBeDisabled() {
+		String query = "SELECT * WHERE { "
+				+ "{ ?a <urn:test:p1> ?b . ?b <urn:test:p2> ?c . ?c <urn:test:p3> ?d . ?d <urn:test:p4> ?e . ?e <urn:test:p5> ?f . ?f <urn:test:p6> ?g . } "
+				+ "UNION { ?x <urn:test:p1> ?y . ?y <urn:test:p2> ?z . ?z <urn:test:p3> ?w . ?w <urn:test:p4> ?q . ?q <urn:test:p5> ?r . ?r <urn:test:p6> ?s . } "
+				+ "UNION { ?m <urn:test:p1> ?n . ?n <urn:test:p2> ?o . ?o <urn:test:p3> ?p . ?p <urn:test:p4> ?u . ?u <urn:test:p5> ?v . ?v <urn:test:p6> ?k . } "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:p1", estimate(10.0, 0.9),
+				"urn:test:p2", estimate(11.0, 0.9),
+				"urn:test:p3", estimate(12.0, 0.9),
+				"urn:test:p4", estimate(13.0, 0.9),
+				"urn:test:p5", estimate(14.0, 0.9),
+				"urn:test:p6", estimate(15.0, 0.9));
+
+		CountingJoinEstimationStatistics memoizationEnabledStatistics = new CountingJoinEstimationStatistics(
+				perPredicate);
+		withPlanSwitchMinRelativeGain(0.0,
+				() -> withRuntimeSamplingEnabled(false, () -> withJoinEstimateMemoizationEnabled(false, () -> {
+					QueryRoot root = parse(query);
+					CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(memoizationEnabledStatistics);
+					optimizer.optimize(root, null, null);
+				})));
+
+		CountingJoinEstimationStatistics memoizationDisabledStatistics = new CountingJoinEstimationStatistics(
+				perPredicate);
+		withPlanSwitchMinRelativeGain(0.0,
+				() -> withRuntimeSamplingEnabled(false,
+						() -> withJoinEstimateMemoizationEnabled(false,
+								() -> withBushyStructuralMemoizationEnabled(false, () -> {
+									QueryRoot root = parse(query);
+									CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+											memoizationDisabledStatistics);
+									optimizer.optimize(root, null, null);
+								}))));
+
+		assertTrue(memoizationEnabledStatistics.joinEstimateRequests() < memoizationDisabledStatistics
+				.joinEstimateRequests(),
+				"default bushy structural memoization should reduce repeated bushy join-estimation work");
+	}
+
+	@Test
+	void runtimeSamplingEstimateCallCapIsEnabledByDefaultAndCanBeDisabled() {
+		String query = "SELECT * WHERE { "
+				+ "?a <urn:test:p1> ?b . "
+				+ "?b <urn:test:p2> ?c . "
+				+ "?c <urn:test:p3> ?d . "
+				+ "?d <urn:test:p4> ?e . "
+				+ "?e <urn:test:p5> ?f . "
+				+ "?f <urn:test:p6> ?g . "
+				+ "?g <urn:test:p7> ?h . "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:p1", estimate(10.0, 0.9),
+				"urn:test:p2", estimate(11.0, 0.9),
+				"urn:test:p3", estimate(12.0, 0.9),
+				"urn:test:p4", estimate(13.0, 0.9),
+				"urn:test:p5", estimate(14.0, 0.9),
+				"urn:test:p6", estimate(15.0, 0.9),
+				"urn:test:p7", estimate(16.0, 0.9));
+
+		CountingJoinEstimationStatistics cappedStatistics = new CountingJoinEstimationStatistics(perPredicate);
+		withRuntimeSamplingStressConfig(() -> withRuntimeSamplingEstimateCallCapMaxCalls(8, () -> {
+			QueryRoot root = parse(query);
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(cappedStatistics);
+			optimizer.optimize(root, null, null);
+		}));
+
+		CountingJoinEstimationStatistics capDisabledStatistics = new CountingJoinEstimationStatistics(perPredicate);
+		withRuntimeSamplingStressConfig(() -> withRuntimeSamplingEstimateCallCapMaxCalls(8,
+				() -> withRuntimeSamplingEstimateCallCapEnabled(false, () -> {
+					QueryRoot root = parse(query);
+					CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(capDisabledStatistics);
+					optimizer.optimize(root, null, null);
+				})));
+
+		assertTrue(cappedStatistics.joinEstimateRequests() < capDisabledStatistics.joinEstimateRequests(),
+				"default runtime-sampling estimate-call cap should bound join-estimation work per join group");
+	}
+
+	@Test
+	void algorithmHintEstimateReuseIsEnabledByDefaultAndCanBeDisabled() {
+		String query = "SELECT * WHERE { "
+				+ "?a <urn:test:p1> ?b . "
+				+ "?b <urn:test:p2> ?c . "
+				+ "?c <urn:test:p3> ?d . "
+				+ "?d <urn:test:p4> ?e . "
+				+ "?e <urn:test:p5> ?f . "
+				+ "?f <urn:test:p6> ?g . "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:p1", estimate(10.0, 0.9),
+				"urn:test:p2", estimate(11.0, 0.9),
+				"urn:test:p3", estimate(12.0, 0.9),
+				"urn:test:p4", estimate(13.0, 0.9),
+				"urn:test:p5", estimate(14.0, 0.9),
+				"urn:test:p6", estimate(15.0, 0.9));
+
+		CountingJoinEstimationStatistics reuseEnabledStatistics = new CountingJoinEstimationStatistics(perPredicate);
+		withPlanSwitchMinRelativeGain(0.0,
+				() -> withRuntimeSamplingEnabled(false, () -> withJoinEstimateMemoizationEnabled(false, () -> {
+					QueryRoot root = parse(query);
+					CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(reuseEnabledStatistics);
+					optimizer.optimize(root, null, null);
+				})));
+
+		CountingJoinEstimationStatistics reuseDisabledStatistics = new CountingJoinEstimationStatistics(perPredicate);
+		withPlanSwitchMinRelativeGain(0.0,
+				() -> withRuntimeSamplingEnabled(false,
+						() -> withJoinEstimateMemoizationEnabled(false,
+								() -> withAlgorithmHintEstimateReuseEnabled(false, () -> {
+									QueryRoot root = parse(query);
+									CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+											reuseDisabledStatistics);
+									optimizer.optimize(root, null, null);
+								}))));
+
+		assertTrue(reuseEnabledStatistics.joinEstimateRequests() < reuseDisabledStatistics.joinEstimateRequests(),
+				"default algorithm-hint estimate reuse should reduce duplicate join-estimate requests");
+	}
+
+	@Test
+	void runtimeSamplingAutoThrottleIsEnabledByDefaultAndCanBeDisabled() {
+		EvaluationStatistics.clearCalibrationObservations();
+		try {
+			for (int i = 0; i < 16; i++) {
+				EvaluationStatistics.recordGlobalCardinalityObservation("stable-source", 100.0, 100.0);
+			}
+
+			String query = "SELECT * WHERE { "
+					+ "?a <urn:test:p1> ?b . "
+					+ "?b <urn:test:p2> ?c . "
+					+ "?c <urn:test:p3> ?d . "
+					+ "?d <urn:test:p4> ?e . "
+					+ "?e <urn:test:p5> ?f . "
+					+ "?f <urn:test:p6> ?g . "
+					+ "}";
+			Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+					"urn:test:p1", estimate(10.0, 0.1, "stable-source"),
+					"urn:test:p2", estimate(11.0, 0.1, "stable-source"),
+					"urn:test:p3", estimate(12.0, 0.1, "stable-source"),
+					"urn:test:p4", estimate(13.0, 0.1, "stable-source"),
+					"urn:test:p5", estimate(14.0, 0.1, "stable-source"),
+					"urn:test:p6", estimate(15.0, 0.1, "stable-source"));
+
+			CountingJoinEstimationStatistics autoThrottleEnabledStatistics = new CountingJoinEstimationStatistics(
+					perPredicate);
+			withRuntimeSamplingStressConfig(() -> withRuntimeSamplingAutoThrottleQErrorThreshold(1.1,
+					() -> withRuntimeSamplingAutoThrottleMinSamples(8, () -> {
+						QueryRoot root = parse(query);
+						CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(autoThrottleEnabledStatistics);
+						optimizer.optimize(root, null, null);
+					})));
+
+			CountingJoinEstimationStatistics autoThrottleDisabledStatistics = new CountingJoinEstimationStatistics(
+					perPredicate);
+			withRuntimeSamplingStressConfig(() -> withRuntimeSamplingAutoThrottleQErrorThreshold(1.1,
+					() -> withRuntimeSamplingAutoThrottleMinSamples(8,
+							() -> withRuntimeSamplingAutoThrottleEnabled(false, () -> {
+								QueryRoot root = parse(query);
+								CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+										autoThrottleDisabledStatistics);
+								optimizer.optimize(root, null, null);
+							}))));
+
+			assertTrue(autoThrottleEnabledStatistics.joinEstimateRequests() < autoThrottleDisabledStatistics
+					.joinEstimateRequests(),
+					"default runtime-sampling auto-throttle should reduce planning work when q-error is stably low");
+		} finally {
+			EvaluationStatistics.clearCalibrationObservations();
+		}
+	}
+
+	@Test
+	void runtimeSamplingMemoizationGuardIsEnabledByDefaultAndCanBeDisabled() {
+		String query = "SELECT * WHERE { "
+				+ "?a <urn:test:p1> ?b . "
+				+ "?b <urn:test:p2> ?c . "
+				+ "?c <urn:test:p3> ?d . "
+				+ "?d <urn:test:p4> ?e . "
+				+ "?e <urn:test:p5> ?f . "
+				+ "?f <urn:test:p6> ?g . "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:p1", estimate(10.0, 0.1),
+				"urn:test:p2", estimate(11.0, 0.1),
+				"urn:test:p3", estimate(12.0, 0.1),
+				"urn:test:p4", estimate(13.0, 0.1),
+				"urn:test:p5", estimate(14.0, 0.1),
+				"urn:test:p6", estimate(15.0, 0.1));
+
+		CountingJoinEstimationStatistics guardEnabledStatistics = new CountingJoinEstimationStatistics(perPredicate);
+		withRuntimeSamplingMemoizationGuardExperimentConfig(() -> {
+			QueryRoot root = parse(query);
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(guardEnabledStatistics);
+			optimizer.optimize(root, null, null);
+		});
+
+		CountingJoinEstimationStatistics guardDisabledStatistics = new CountingJoinEstimationStatistics(perPredicate);
+		withRuntimeSamplingMemoizationGuardExperimentConfig(
+				() -> withRuntimeSamplingMemoizationGuardEnabled(false, () -> {
+					QueryRoot root = parse(query);
+					CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(guardDisabledStatistics);
+					optimizer.optimize(root, null, null);
+				}));
+
+		assertTrue(guardEnabledStatistics.joinEstimateRequests() < guardDisabledStatistics.joinEstimateRequests(),
+				"default runtime-sampling memoization guard should skip low-value candidate generation work");
+	}
+
+	@Test
+	void runtimeSamplingMemoizationGuardYieldsForHighQError() {
+		EvaluationStatistics.clearCalibrationObservations();
+		try {
+			for (int i = 0; i < 16; i++) {
+				EvaluationStatistics.recordGlobalCardinalityObservation("stable-source", 100.0, 100.0);
+				EvaluationStatistics.recordGlobalCardinalityObservation("drift-source", 1.0, 100.0);
+			}
+
+			String query = "SELECT * WHERE { "
+					+ "?a <urn:test:p1> ?b . "
+					+ "?b <urn:test:p2> ?c . "
+					+ "?c <urn:test:p3> ?d . "
+					+ "?d <urn:test:p4> ?e . "
+					+ "?e <urn:test:p5> ?f . "
+					+ "?f <urn:test:p6> ?g . "
+					+ "}";
+			Map<String, EvaluationStatistics.CardinalityEstimate> stablePredicates = Map.of(
+					"urn:test:p1", estimate(10.0, 0.1, "stable-source"),
+					"urn:test:p2", estimate(11.0, 0.1, "stable-source"),
+					"urn:test:p3", estimate(12.0, 0.1, "stable-source"),
+					"urn:test:p4", estimate(13.0, 0.1, "stable-source"),
+					"urn:test:p5", estimate(14.0, 0.1, "stable-source"),
+					"urn:test:p6", estimate(15.0, 0.1, "stable-source"));
+			Map<String, EvaluationStatistics.CardinalityEstimate> driftPredicates = Map.of(
+					"urn:test:p1", estimate(10.0, 0.1, "drift-source"),
+					"urn:test:p2", estimate(11.0, 0.1, "drift-source"),
+					"urn:test:p3", estimate(12.0, 0.1, "drift-source"),
+					"urn:test:p4", estimate(13.0, 0.1, "drift-source"),
+					"urn:test:p5", estimate(14.0, 0.1, "drift-source"),
+					"urn:test:p6", estimate(15.0, 0.1, "drift-source"));
+
+			CountingJoinEstimationStatistics lowQErrorStatistics = new CountingJoinEstimationStatistics(
+					stablePredicates);
+			withRuntimeSamplingMemoizationGuardExperimentConfig(
+					() -> withRuntimeSamplingAutoThrottleEnabled(false,
+							() -> withRuntimeSamplingQErrorThreshold(2.0, () -> {
+								QueryRoot root = parse(query);
+								CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(lowQErrorStatistics);
+								optimizer.optimize(root, null, null);
+							})));
+
+			CountingJoinEstimationStatistics highQErrorStatistics = new CountingJoinEstimationStatistics(
+					driftPredicates);
+			withRuntimeSamplingMemoizationGuardExperimentConfig(
+					() -> withRuntimeSamplingAutoThrottleEnabled(false,
+							() -> withRuntimeSamplingQErrorThreshold(2.0, () -> {
+								QueryRoot root = parse(query);
+								CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(highQErrorStatistics);
+								optimizer.optimize(root, null, null);
+							})));
+
+			assertTrue(highQErrorStatistics.joinEstimateRequests() > lowQErrorStatistics.joinEstimateRequests(),
+					"high calibration q-error should override memoization guard and allow reranking work");
+		} finally {
+			EvaluationStatistics.clearCalibrationObservations();
+		}
+	}
+
+	@Test
+	void runtimeSamplingMemoizationGuardQErrorWeightingIsEnabledByDefaultAndCanBeDisabled() {
+		EvaluationStatistics.clearCalibrationObservations();
+		try {
+			for (int i = 0; i < 16; i++) {
+				EvaluationStatistics.recordGlobalCardinalityObservation("stable-source", 100.0, 100.0);
+				EvaluationStatistics.recordGlobalCardinalityObservation("drift-source", 100.0, 170.0);
+			}
+
+			String query = "SELECT * WHERE { "
+					+ "?a <urn:test:p1> ?b . "
+					+ "?b <urn:test:p2> ?c . "
+					+ "?c <urn:test:p3> ?d . "
+					+ "?d <urn:test:p4> ?e . "
+					+ "?e <urn:test:p5> ?f . "
+					+ "?f <urn:test:p6> ?g . "
+					+ "}";
+			Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+					"urn:test:p1", estimate(10.0, 0.1, "drift-source"),
+					"urn:test:p2", estimate(11.0, 0.1, "drift-source"),
+					"urn:test:p3", estimate(12.0, 0.1, "drift-source"),
+					"urn:test:p4", estimate(13.0, 0.1, "drift-source"),
+					"urn:test:p5", estimate(14.0, 0.1, "drift-source"),
+					"urn:test:p6", estimate(15.0, 0.1, "stable-source"));
+
+			CountingJoinEstimationStatistics weightingEnabledStatistics = new CountingJoinEstimationStatistics(
+					perPredicate);
+			withRuntimeSamplingMemoizationGuardExperimentConfig(
+					() -> withRuntimeSamplingAutoThrottleEnabled(false,
+							() -> withRuntimeSamplingQErrorThreshold(2.0, () -> {
+								QueryRoot root = parse(query);
+								CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+										weightingEnabledStatistics);
+								optimizer.optimize(root, null, null);
+							})));
+
+			CountingJoinEstimationStatistics weightingDisabledStatistics = new CountingJoinEstimationStatistics(
+					perPredicate);
+			withRuntimeSamplingMemoizationGuardExperimentConfig(
+					() -> withRuntimeSamplingAutoThrottleEnabled(false,
+							() -> withRuntimeSamplingQErrorThreshold(2.0,
+									() -> withRuntimeSamplingMemoizationGuardQErrorWeightingEnabled(false, () -> {
+										QueryRoot root = parse(query);
+										CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+												weightingDisabledStatistics);
+										optimizer.optimize(root, null, null);
+									}))));
+
+			assertTrue(weightingEnabledStatistics.joinEstimateRequests() > weightingDisabledStatistics
+					.joinEstimateRequests(),
+					"default q-error weighting should let dominant drift sources override memoization guard");
+		} finally {
+			EvaluationStatistics.clearCalibrationObservations();
+		}
+	}
+
+	@Test
+	void runtimeSamplingMemoizationGuardHysteresisIsEnabledByDefaultAndCanBeDisabled() {
+		String query = "SELECT * WHERE { "
+				+ "?a <urn:test:p1> ?b . "
+				+ "?b <urn:test:p2> ?c . "
+				+ "?c <urn:test:p3> ?d . "
+				+ "?d <urn:test:p4> ?e . "
+				+ "?e <urn:test:p5> ?f . "
+				+ "?f <urn:test:p6> ?g . "
+				+ "}";
+		Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate = Map.of(
+				"urn:test:p1", estimate(10.0, 0.1),
+				"urn:test:p2", estimate(11.0, 0.1),
+				"urn:test:p3", estimate(12.0, 0.1),
+				"urn:test:p4", estimate(13.0, 0.1),
+				"urn:test:p5", estimate(14.0, 0.1),
+				"urn:test:p6", estimate(15.0, 0.1));
+
+		int withHysteresis = joinEstimateRequestsForMemoizationGuardHysteresis(query, perPredicate, true);
+		int withoutHysteresis = joinEstimateRequestsForMemoizationGuardHysteresis(query, perPredicate, false);
+
+		assertTrue(withHysteresis > withoutHysteresis,
+				"default memoization-guard hysteresis should avoid aggressive rerank suppression near threshold boundaries");
+	}
+
+	@Test
 	void preservesValuesBindingSetAssignmentSlotFromBaseline() {
 		String query = "SELECT * WHERE { "
 				+ "VALUES ?seed { <urn:test:seed> } "
@@ -566,6 +1646,66 @@ class CostBasedJoinOptimizerTest {
 		assertSame(originalJoin, optimizedJoin);
 		assertEquals("legacy-hint", optimizedJoin.getAlgorithmName());
 		assertTrue(optimizedJoin.isMergeJoin());
+	}
+
+	@Test
+	void bushyPlanningBuildsNonRightRecursiveTreeWhenCheaper() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:test:a> ?x . "
+				+ "?x <urn:test:b> ?j . "
+				+ "?t <urn:test:c> ?y . "
+				+ "?y <urn:test:d> ?j . "
+				+ "}";
+		QueryRoot root = parse(query);
+
+		withPlanSwitchMinRelativeGain(0.0, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new PairAwareStatistics(
+					Map.of(
+							"urn:test:a", estimate(100.0),
+							"urn:test:b", estimate(100.0),
+							"urn:test:c", estimate(100.0),
+							"urn:test:d", estimate(100.0)),
+					Map.of(
+							pairKey("urn:test:a", "urn:test:b"), estimate(1.0),
+							pairKey("urn:test:c", "urn:test:d"), estimate(1.0),
+							pairKey("urn:test:b", "urn:test:c"), estimate(10_000.0),
+							pairKey("urn:test:a", "urn:test:c"), estimate(2.0))));
+			optimizer.optimize(root, null, null);
+		});
+
+		Join optimizedJoin = firstJoin(root.getArg());
+		assertNotNull(optimizedJoin);
+		assertFalse(isRightRecursive(optimizedJoin));
+	}
+
+	@Test
+	void bushyPlanningCanBeDisabled() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:test:a> ?x . "
+				+ "?x <urn:test:b> ?j . "
+				+ "?t <urn:test:c> ?y . "
+				+ "?y <urn:test:d> ?j . "
+				+ "}";
+		QueryRoot root = parse(query);
+
+		withBushyEnabled(false, () -> withPlanSwitchMinRelativeGain(0.0, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new PairAwareStatistics(
+					Map.of(
+							"urn:test:a", estimate(100.0),
+							"urn:test:b", estimate(100.0),
+							"urn:test:c", estimate(100.0),
+							"urn:test:d", estimate(100.0)),
+					Map.of(
+							pairKey("urn:test:a", "urn:test:b"), estimate(1.0),
+							pairKey("urn:test:c", "urn:test:d"), estimate(1.0),
+							pairKey("urn:test:b", "urn:test:c"), estimate(10_000.0),
+							pairKey("urn:test:a", "urn:test:c"), estimate(2.0))));
+			optimizer.optimize(root, null, null);
+		}));
+
+		Join optimizedJoin = firstJoin(root.getArg());
+		assertNotNull(optimizedJoin);
+		assertTrue(isRightRecursive(optimizedJoin));
 	}
 
 	@Test
@@ -769,6 +1909,61 @@ class CostBasedJoinOptimizerTest {
 		assertTrue(isCacheable(optimizedThreeLeafJoin));
 	}
 
+	@Test
+	void annotatesJoinDecisionDiagnosticsByDefault() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:test:left> ?join . "
+				+ "?o <urn:test:right> ?join . "
+				+ "}";
+		QueryRoot root = parse(query);
+
+		CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(Map.of(
+				"urn:test:left", estimate(10.0),
+				"urn:test:right", estimate(12.0))));
+		optimizer.optimize(root, null, null);
+
+		Join optimizedJoin = firstJoin(root.getArg());
+		assertNotNull(optimizedJoin);
+		assertNotNull(optimizedJoin.getPlanDecisionDetails());
+		String planDecisionDetails = optimizedJoin.getPlanDecisionDetails();
+		assertTrue(planDecisionDetails.contains("optimizer=cost-based"), planDecisionDetails);
+		assertTrue(planDecisionDetails.contains("plannerJoinEstimateCalls="), planDecisionDetails);
+		assertTrue(planDecisionDetails.contains("plannerJoinEstimateCallsOrdering="), planDecisionDetails);
+		assertTrue(planDecisionDetails.contains("plannerJoinEstimateCallsReranking="), planDecisionDetails);
+		assertTrue(planDecisionDetails.contains("plannerJoinEstimateCallsBushy="), planDecisionDetails);
+		assertTrue(planDecisionDetails.contains("plannerMemoizationHitRate="), planDecisionDetails);
+		assertTrue(planDecisionDetails.contains("memoizationGuardChecks="), planDecisionDetails);
+		assertTrue(planDecisionDetails.contains("memoizationGuardSkips="), planDecisionDetails);
+		assertTrue(planDecisionDetails.contains("memoizationGuardHitRateAtDecision="), planDecisionDetails);
+		assertTrue(planDecisionDetails.contains("runtimeSamplingCandidateSourceBaselineOnly="), planDecisionDetails);
+		assertTrue(planDecisionDetails.contains("runtimeSamplingCandidateSourceTopKEnumerated="), planDecisionDetails);
+		assertTrue(planDecisionDetails.contains("runtimeSamplingCandidateSourcePromotedPair="), planDecisionDetails);
+		assertTrue(planDecisionDetails.contains("runtimeSamplingCandidateSourceGuardSkipped="), planDecisionDetails);
+		assertTrue(planDecisionDetails.contains("componentOrderingReuseHits="), planDecisionDetails);
+		assertTrue(planDecisionDetails.contains("componentOrderingReuseMisses="), planDecisionDetails);
+		assertTrue(planDecisionDetails.contains("runtimeSamplingMs="), planDecisionDetails);
+	}
+
+	@Test
+	void canDisableJoinDecisionDiagnosticsAnnotation() {
+		String query = "SELECT * WHERE { "
+				+ "?s <urn:test:left> ?join . "
+				+ "?o <urn:test:right> ?join . "
+				+ "}";
+		QueryRoot root = parse(query);
+
+		withDecisionDiagnosticsEnabled(false, () -> {
+			CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(new FixedStatistics(Map.of(
+					"urn:test:left", estimate(10.0),
+					"urn:test:right", estimate(12.0))));
+			optimizer.optimize(root, null, null);
+		});
+
+		Join optimizedJoin = firstJoin(root.getArg());
+		assertNotNull(optimizedJoin);
+		assertNull(optimizedJoin.getPlanDecisionDetails());
+	}
+
 	private static QueryRoot parse(String query) {
 		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		return new QueryRoot(parsed.getTupleExpr());
@@ -843,6 +2038,16 @@ class CostBasedJoinOptimizerTest {
 		}
 	}
 
+	private static void withBushyEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(BUSHY_ENABLED_PROPERTY);
+		try {
+			System.setProperty(BUSHY_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(BUSHY_ENABLED_PROPERTY, previous);
+		}
+	}
+
 	private static boolean isCacheable(Join join) {
 		try {
 			java.lang.reflect.Field cacheable = Join.class.getDeclaredField("cacheable");
@@ -883,6 +2088,54 @@ class CostBasedJoinOptimizerTest {
 		}
 	}
 
+	private static void withRuntimeSamplingStressConfig(Runnable assertion) {
+		withRuntimeSamplingEnabled(true, () -> withPlanningBudgetMs(5000,
+				() -> withAdaptivePlanningBudgetEnabled(false,
+						() -> withPlanSwitchMinRelativeGain(0.0,
+								() -> withRuntimeSamplingConfidenceThreshold(0.95,
+										() -> withRuntimeSamplingTopK(12,
+												() -> withRuntimeSamplingPrefixTerms(3,
+														() -> withRuntimeSamplingCandidatePruningEnabled(false,
+																() -> withRuntimeSamplingCandidateDiversityEnabled(
+																		false,
+																		() -> withJoinEstimateMemoizationEnabled(false,
+																				assertion))))))))));
+	}
+
+	private static void withWarmCacheExperimentConfig(Runnable assertion) {
+		withPlanSwitchMinRelativeGain(0.0,
+				() -> withRuntimeSamplingEnabled(false,
+						() -> withBushyEnabled(false,
+								() -> withJoinEstimateMemoizationEnabled(false, assertion))));
+	}
+
+	private static void withAdaptiveBeamWidthStressConfig(Runnable assertion) {
+		withRuntimeSamplingEnabled(false, () -> withJoinEstimateMemoizationEnabled(false,
+				() -> withDpEnabled(false,
+						() -> withBeamWidth(2,
+								() -> withAdaptiveBeamWidthMinWidth(2,
+										() -> withAdaptiveBeamWidthMaxWidth(12,
+												() -> withAdaptiveBeamWidthQErrorBoost(6,
+														() -> withAdaptiveBeamWidthLatencyThresholdMs(10_000.0,
+																assertion))))))));
+	}
+
+	private static void withRuntimeSamplingMemoizationGuardExperimentConfig(Runnable assertion) {
+		withRuntimeSamplingEnabled(true, () -> withPlanningBudgetMs(5000,
+				() -> withAdaptivePlanningBudgetEnabled(false,
+						() -> withPlanSwitchMinRelativeGain(0.0,
+								() -> withRuntimeSamplingConfidenceThreshold(0.95,
+										() -> withRuntimeSamplingTopK(12,
+												() -> withRuntimeSamplingPrefixTerms(3,
+														() -> withRuntimeSamplingCandidatePruningEnabled(false,
+																() -> withRuntimeSamplingCandidateDiversityEnabled(
+																		false,
+																		() -> withRuntimeSamplingMemoizationGuardHitRateThreshold(
+																				0.0,
+																				() -> withRuntimeSamplingMemoizationGuardMinEstimateCalls(
+																						1, assertion)))))))))));
+	}
+
 	private static void withRuntimeSamplingConfidenceThreshold(double threshold, Runnable assertion) {
 		String previous = System.getProperty(CostBasedJoinOptimizer.RUNTIME_SAMPLING_CONFIDENCE_THRESHOLD_PROPERTY);
 		try {
@@ -905,6 +2158,522 @@ class CostBasedJoinOptimizerTest {
 		}
 	}
 
+	private static void withRuntimeSamplingTopK(int topK, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_TOP_K_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_TOP_K_PROPERTY, Integer.toString(topK));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_TOP_K_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingPrefixTerms(int prefixTerms, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_PREFIX_TERMS_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_PREFIX_TERMS_PROPERTY, Integer.toString(prefixTerms));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_PREFIX_TERMS_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingStageBudgetsEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_STAGE_BUDGETS_ENABLED_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_STAGE_BUDGETS_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_STAGE_BUDGETS_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingCandidateGenerationBudgetMs(long budgetMs, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_CANDIDATE_GENERATION_BUDGET_MS_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_CANDIDATE_GENERATION_BUDGET_MS_PROPERTY, Long.toString(budgetMs));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_CANDIDATE_GENERATION_BUDGET_MS_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingPrefixSamplingBudgetMs(long budgetMs, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_PREFIX_SAMPLING_BUDGET_MS_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_PREFIX_SAMPLING_BUDGET_MS_PROPERTY, Long.toString(budgetMs));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_PREFIX_SAMPLING_BUDGET_MS_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingCandidatePruningEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_CANDIDATE_PRUNING_ENABLED_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_CANDIDATE_PRUNING_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_CANDIDATE_PRUNING_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingCandidatePruningMaxCandidates(int maxCandidates, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_CANDIDATE_PRUNING_MAX_CANDIDATES_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_CANDIDATE_PRUNING_MAX_CANDIDATES_PROPERTY,
+					Integer.toString(maxCandidates));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_CANDIDATE_PRUNING_MAX_CANDIDATES_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingCandidateDiversityEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_CANDIDATE_DIVERSITY_ENABLED_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_CANDIDATE_DIVERSITY_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_CANDIDATE_DIVERSITY_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingCandidateDiversityPrefixTerms(int prefixTerms, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_CANDIDATE_DIVERSITY_PREFIX_TERMS_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_CANDIDATE_DIVERSITY_PREFIX_TERMS_PROPERTY,
+					Integer.toString(prefixTerms));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_CANDIDATE_DIVERSITY_PREFIX_TERMS_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingEstimateCallCapEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_ESTIMATE_CALL_CAP_ENABLED_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_ESTIMATE_CALL_CAP_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_ESTIMATE_CALL_CAP_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingEstimateCallCapMaxCalls(int maxCalls, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_ESTIMATE_CALL_CAP_MAX_CALLS_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_ESTIMATE_CALL_CAP_MAX_CALLS_PROPERTY, Integer.toString(maxCalls));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_ESTIMATE_CALL_CAP_MAX_CALLS_PROPERTY, previous);
+		}
+	}
+
+	private static void withAlgorithmHintEstimateReuseEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(ALGORITHM_HINT_ESTIMATE_REUSE_ENABLED_PROPERTY);
+		try {
+			System.setProperty(ALGORITHM_HINT_ESTIMATE_REUSE_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(ALGORITHM_HINT_ESTIMATE_REUSE_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingAutoThrottleEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_AUTO_THROTTLE_ENABLED_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_AUTO_THROTTLE_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_AUTO_THROTTLE_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingAutoThrottleQErrorThreshold(double threshold, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_AUTO_THROTTLE_QERROR_THRESHOLD_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_AUTO_THROTTLE_QERROR_THRESHOLD_PROPERTY, Double.toString(threshold));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_AUTO_THROTTLE_QERROR_THRESHOLD_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingAutoThrottleMinSamples(int minSamples, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_AUTO_THROTTLE_MIN_SAMPLES_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_AUTO_THROTTLE_MIN_SAMPLES_PROPERTY, Integer.toString(minSamples));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_AUTO_THROTTLE_MIN_SAMPLES_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingMemoizationGuardEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_ENABLED_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingMemoizationGuardHitRateThreshold(double hitRateThreshold,
+			Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_HIT_RATE_THRESHOLD_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_HIT_RATE_THRESHOLD_PROPERTY,
+					Double.toString(hitRateThreshold));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_HIT_RATE_THRESHOLD_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingMemoizationGuardMinEstimateCalls(int minEstimateCalls, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_MIN_ESTIMATE_CALLS_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_MIN_ESTIMATE_CALLS_PROPERTY,
+					Integer.toString(minEstimateCalls));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_MIN_ESTIMATE_CALLS_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingMemoizationGuardQErrorWeightingEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_QERROR_WEIGHTING_ENABLED_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_QERROR_WEIGHTING_ENABLED_PROPERTY,
+					Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_QERROR_WEIGHTING_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingMemoizationGuardHysteresisEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_HYSTERESIS_ENABLED_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_HYSTERESIS_ENABLED_PROPERTY,
+					Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_HYSTERESIS_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withRuntimeSamplingMemoizationGuardHysteresisEngageHitRateThreshold(
+			double hitRateThreshold, Runnable assertion) {
+		String previous = System
+				.getProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_HYSTERESIS_ENGAGE_HIT_RATE_THRESHOLD_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_HYSTERESIS_ENGAGE_HIT_RATE_THRESHOLD_PROPERTY,
+					Double.toString(hitRateThreshold));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_HYSTERESIS_ENGAGE_HIT_RATE_THRESHOLD_PROPERTY,
+					previous);
+		}
+	}
+
+	private static void withRuntimeSamplingMemoizationGuardHysteresisDisengageHitRateThreshold(
+			double hitRateThreshold, Runnable assertion) {
+		String previous = System
+				.getProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_HYSTERESIS_DISENGAGE_HIT_RATE_THRESHOLD_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_SAMPLING_MEMOIZATION_GUARD_HYSTERESIS_DISENGAGE_HIT_RATE_THRESHOLD_PROPERTY,
+					Double.toString(hitRateThreshold));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(
+					RUNTIME_SAMPLING_MEMOIZATION_GUARD_HYSTERESIS_DISENGAGE_HIT_RATE_THRESHOLD_PROPERTY,
+					previous);
+		}
+	}
+
+	private static void withJoinEstimateMemoizationEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(JOIN_ESTIMATE_MEMOIZATION_ENABLED_PROPERTY);
+		try {
+			System.setProperty(JOIN_ESTIMATE_MEMOIZATION_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(JOIN_ESTIMATE_MEMOIZATION_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withJoinEstimateMemoizationMaxEntries(int maxEntries, Runnable assertion) {
+		String previous = System.getProperty(JOIN_ESTIMATE_MEMOIZATION_MAX_ENTRIES_PROPERTY);
+		try {
+			System.setProperty(JOIN_ESTIMATE_MEMOIZATION_MAX_ENTRIES_PROPERTY, Integer.toString(maxEntries));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(JOIN_ESTIMATE_MEMOIZATION_MAX_ENTRIES_PROPERTY, previous);
+		}
+	}
+
+	private static void withJoinPlanReuseEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(JOIN_PLAN_REUSE_ENABLED_PROPERTY);
+		try {
+			System.setProperty(JOIN_PLAN_REUSE_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(JOIN_PLAN_REUSE_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withJoinPlanWarmCacheEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(JOIN_PLAN_WARM_CACHE_ENABLED_PROPERTY);
+		try {
+			System.setProperty(JOIN_PLAN_WARM_CACHE_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(JOIN_PLAN_WARM_CACHE_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withJoinPlanWarmCacheDriftInvalidationEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(JOIN_PLAN_WARM_CACHE_DRIFT_INVALIDATION_ENABLED_PROPERTY);
+		try {
+			System.setProperty(JOIN_PLAN_WARM_CACHE_DRIFT_INVALIDATION_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(JOIN_PLAN_WARM_CACHE_DRIFT_INVALIDATION_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withJoinGroupPartitioningEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(JOIN_GROUP_PARTITIONING_ENABLED_PROPERTY);
+		try {
+			System.setProperty(JOIN_GROUP_PARTITIONING_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(JOIN_GROUP_PARTITIONING_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withJoinGroupPartitioningComponentOrderingEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(JOIN_GROUP_PARTITIONING_COMPONENT_ORDERING_ENABLED_PROPERTY);
+		try {
+			System.setProperty(JOIN_GROUP_PARTITIONING_COMPONENT_ORDERING_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(JOIN_GROUP_PARTITIONING_COMPONENT_ORDERING_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withJoinGroupPartitioningComponentOrderingReuseEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(JOIN_GROUP_PARTITIONING_COMPONENT_ORDERING_REUSE_ENABLED_PROPERTY);
+		try {
+			System.setProperty(JOIN_GROUP_PARTITIONING_COMPONENT_ORDERING_REUSE_ENABLED_PROPERTY,
+					Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(JOIN_GROUP_PARTITIONING_COMPONENT_ORDERING_REUSE_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withJoinGroupPartitioningComponentOrderingReuseMaxEntries(int maxEntries, Runnable assertion) {
+		String previous = System.getProperty(JOIN_GROUP_PARTITIONING_COMPONENT_ORDERING_REUSE_MAX_ENTRIES_PROPERTY);
+		try {
+			System.setProperty(JOIN_GROUP_PARTITIONING_COMPONENT_ORDERING_REUSE_MAX_ENTRIES_PROPERTY,
+					Integer.toString(maxEntries));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(JOIN_GROUP_PARTITIONING_COMPONENT_ORDERING_REUSE_MAX_ENTRIES_PROPERTY, previous);
+		}
+	}
+
+	private static int joinEstimateRequestsForComponentOrderingReuseCap(String query,
+			Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate, QueryBindingSet initialBindings,
+			int maxEntries) {
+		CountingJoinEstimationStatistics statistics = new CountingJoinEstimationStatistics(perPredicate);
+		withBushyEnabled(false,
+				() -> withRuntimeSamplingEnabled(false,
+						() -> withPlanSwitchMinRelativeGain(0.0,
+								() -> withJoinEstimateMemoizationEnabled(false,
+										() -> withJoinPlanReuseEnabled(false,
+												() -> withJoinGroupPartitioningComponentOrderingReuseEnabled(true,
+														() -> withJoinGroupPartitioningComponentOrderingReuseMaxEntries(
+																maxEntries, () -> {
+																	QueryRoot root = parse(query);
+																	CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+																			statistics);
+																	optimizer.optimize(root, null, initialBindings);
+																})))))));
+		return statistics.joinEstimateRequests();
+	}
+
+	private static int joinEstimateRequestsForMemoizationCap(String query,
+			Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate, int maxEntries) {
+		CountingJoinEstimationStatistics statistics = new CountingJoinEstimationStatistics(perPredicate);
+		withBushyEnabled(false, () -> withRuntimeSamplingEnabled(true,
+				() -> withPlanningBudgetMs(5000,
+						() -> withAdaptivePlanningBudgetEnabled(false,
+								() -> withPlanSwitchMinRelativeGain(0.0,
+										() -> withRuntimeSamplingConfidenceThreshold(0.95,
+												() -> withRuntimeSamplingTopK(12,
+														() -> withRuntimeSamplingPrefixTerms(3,
+																() -> withRuntimeSamplingCandidatePruningEnabled(false,
+																		() -> withRuntimeSamplingCandidateDiversityEnabled(
+																				false,
+																				() -> withJoinEstimateMemoizationEnabled(
+																						true,
+																						() -> withJoinEstimateMemoizationMaxEntries(
+																								maxEntries,
+																								() -> {
+																									QueryRoot root = parse(
+																											query);
+																									CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+																											statistics);
+																									optimizer.optimize(
+																											root, null,
+																											null);
+																								}))))))))))));
+		return statistics.joinEstimateRequests();
+	}
+
+	private static int joinEstimateRequestsForMemoizationGuardHysteresis(String query,
+			Map<String, EvaluationStatistics.CardinalityEstimate> perPredicate, boolean hysteresisEnabled) {
+		CountingJoinEstimationStatistics statistics = new CountingJoinEstimationStatistics(perPredicate);
+		withRuntimeSamplingMemoizationGuardExperimentConfig(
+				() -> withRuntimeSamplingAutoThrottleEnabled(false,
+						() -> withRuntimeSamplingMemoizationGuardHitRateThreshold(0.0,
+								() -> withRuntimeSamplingMemoizationGuardHysteresisEngageHitRateThreshold(1.0,
+										() -> withRuntimeSamplingMemoizationGuardHysteresisDisengageHitRateThreshold(
+												0.0,
+												() -> withRuntimeSamplingMemoizationGuardHysteresisEnabled(
+														hysteresisEnabled, () -> {
+															QueryRoot root = parse(query);
+															CostBasedJoinOptimizer optimizer = new CostBasedJoinOptimizer(
+																	statistics);
+															optimizer.optimize(root, null, null);
+														}))))));
+		return statistics.joinEstimateRequests();
+	}
+
+	private static void withAdaptivePlanningBudgetEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(ADAPTIVE_PLANNING_BUDGET_ENABLED_PROPERTY);
+		try {
+			System.setProperty(ADAPTIVE_PLANNING_BUDGET_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(ADAPTIVE_PLANNING_BUDGET_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withAdaptivePlanningBudgetMaxMs(long maxMs, Runnable assertion) {
+		String previous = System.getProperty(ADAPTIVE_PLANNING_BUDGET_MAX_MS_PROPERTY);
+		try {
+			System.setProperty(ADAPTIVE_PLANNING_BUDGET_MAX_MS_PROPERTY, Long.toString(maxMs));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(ADAPTIVE_PLANNING_BUDGET_MAX_MS_PROPERTY, previous);
+		}
+	}
+
+	private static void withAdaptivePlanningBudgetWidthStepMs(long widthStepMs, Runnable assertion) {
+		String previous = System.getProperty(ADAPTIVE_PLANNING_BUDGET_WIDTH_STEP_MS_PROPERTY);
+		try {
+			System.setProperty(ADAPTIVE_PLANNING_BUDGET_WIDTH_STEP_MS_PROPERTY, Long.toString(widthStepMs));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(ADAPTIVE_PLANNING_BUDGET_WIDTH_STEP_MS_PROPERTY, previous);
+		}
+	}
+
+	private static void withAdaptivePlanningBudgetLatencyPenaltyFactor(double factor, Runnable assertion) {
+		String previous = System.getProperty(ADAPTIVE_PLANNING_BUDGET_LATENCY_PENALTY_FACTOR_PROPERTY);
+		try {
+			System.setProperty(ADAPTIVE_PLANNING_BUDGET_LATENCY_PENALTY_FACTOR_PROPERTY, Double.toString(factor));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(ADAPTIVE_PLANNING_BUDGET_LATENCY_PENALTY_FACTOR_PROPERTY, previous);
+		}
+	}
+
+	private static void withAdaptiveBeamWidthEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(ADAPTIVE_BEAM_WIDTH_ENABLED_PROPERTY);
+		try {
+			System.setProperty(ADAPTIVE_BEAM_WIDTH_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(ADAPTIVE_BEAM_WIDTH_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withBushyStructuralMemoizationEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(BUSHY_STRUCTURAL_MEMOIZATION_ENABLED_PROPERTY);
+		try {
+			System.setProperty(BUSHY_STRUCTURAL_MEMOIZATION_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(BUSHY_STRUCTURAL_MEMOIZATION_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withAdaptiveBeamWidthMinWidth(int width, Runnable assertion) {
+		String previous = System.getProperty(ADAPTIVE_BEAM_WIDTH_MIN_WIDTH_PROPERTY);
+		try {
+			System.setProperty(ADAPTIVE_BEAM_WIDTH_MIN_WIDTH_PROPERTY, Integer.toString(width));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(ADAPTIVE_BEAM_WIDTH_MIN_WIDTH_PROPERTY, previous);
+		}
+	}
+
+	private static void withAdaptiveBeamWidthMaxWidth(int width, Runnable assertion) {
+		String previous = System.getProperty(ADAPTIVE_BEAM_WIDTH_MAX_WIDTH_PROPERTY);
+		try {
+			System.setProperty(ADAPTIVE_BEAM_WIDTH_MAX_WIDTH_PROPERTY, Integer.toString(width));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(ADAPTIVE_BEAM_WIDTH_MAX_WIDTH_PROPERTY, previous);
+		}
+	}
+
+	private static void withAdaptiveBeamWidthQErrorBoost(int boost, Runnable assertion) {
+		String previous = System.getProperty(ADAPTIVE_BEAM_WIDTH_QERROR_BOOST_PROPERTY);
+		try {
+			System.setProperty(ADAPTIVE_BEAM_WIDTH_QERROR_BOOST_PROPERTY, Integer.toString(boost));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(ADAPTIVE_BEAM_WIDTH_QERROR_BOOST_PROPERTY, previous);
+		}
+	}
+
+	private static void withAdaptiveBeamWidthLatencyThresholdMs(double latencyThresholdMs, Runnable assertion) {
+		String previous = System.getProperty(ADAPTIVE_BEAM_WIDTH_LATENCY_THRESHOLD_MS_PROPERTY);
+		try {
+			System.setProperty(ADAPTIVE_BEAM_WIDTH_LATENCY_THRESHOLD_MS_PROPERTY, Double.toString(latencyThresholdMs));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(ADAPTIVE_BEAM_WIDTH_LATENCY_THRESHOLD_MS_PROPERTY, previous);
+		}
+	}
+
+	private static void withDpEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(JoinPlanEnumerator.DP_ENABLED_PROPERTY);
+		try {
+			System.setProperty(JoinPlanEnumerator.DP_ENABLED_PROPERTY, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(JoinPlanEnumerator.DP_ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private static void withBeamWidth(int width, Runnable assertion) {
+		String previous = System.getProperty(JoinPlanEnumerator.BEAM_WIDTH_PROPERTY);
+		try {
+			System.setProperty(JoinPlanEnumerator.BEAM_WIDTH_PROPERTY, Integer.toString(width));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(JoinPlanEnumerator.BEAM_WIDTH_PROPERTY, previous);
+		}
+	}
+
 	private static void withRewriteOnNoop(boolean enabled, Runnable assertion) {
 		String previous = System.getProperty(CostBasedJoinOptimizer.REWRITE_ON_NOOP_PROPERTY);
 		try {
@@ -912,6 +2681,17 @@ class CostBasedJoinOptimizerTest {
 			assertion.run();
 		} finally {
 			restoreSystemProperty(CostBasedJoinOptimizer.REWRITE_ON_NOOP_PROPERTY, previous);
+		}
+	}
+
+	private static void withDecisionDiagnosticsEnabled(boolean enabled, Runnable assertion) {
+		String previous = System.getProperty(CostBasedJoinOptimizer.EXPLAIN_DECISION_DIAGNOSTICS_ENABLED_PROPERTY);
+		try {
+			System.setProperty(CostBasedJoinOptimizer.EXPLAIN_DECISION_DIAGNOSTICS_ENABLED_PROPERTY,
+					Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			restoreSystemProperty(CostBasedJoinOptimizer.EXPLAIN_DECISION_DIAGNOSTICS_ENABLED_PROPERTY, previous);
 		}
 	}
 
@@ -1017,6 +2797,17 @@ class CostBasedJoinOptimizerTest {
 			return;
 		}
 		joinArgs.add(tupleExpr);
+	}
+
+	private static boolean isRightRecursive(TupleExpr tupleExpr) {
+		if (!(tupleExpr instanceof Join)) {
+			return true;
+		}
+		Join join = (Join) tupleExpr;
+		if (join.getLeftArg() instanceof Join) {
+			return false;
+		}
+		return isRightRecursive(join.getRightArg());
 	}
 
 	private static final class FixedStatistics extends EvaluationStatistics {
@@ -1132,6 +2923,104 @@ class CostBasedJoinOptimizerTest {
 				joinEstimateRequests++;
 				return createCardinalityEstimate(200.0, 100.0, 400.0, 0.5, "join-unsupported");
 			}
+			return createCardinalityEstimate(100.0, 50.0, 200.0, 0.5, "fallback");
+		}
+
+		private int joinEstimateRequests() {
+			return joinEstimateRequests;
+		}
+	}
+
+	private static final class CountingJoinEstimationStatistics extends EvaluationStatistics {
+		private final Map<String, CardinalityEstimate> perPredicate;
+		private int joinEstimateRequests;
+
+		private CountingJoinEstimationStatistics(Map<String, CardinalityEstimate> perPredicate) {
+			this.perPredicate = perPredicate;
+		}
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			return getCardinalityEstimate(expr).estimate;
+		}
+
+		@Override
+		public CardinalityEstimate getCardinalityEstimate(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				Value predicateValue = ((StatementPattern) expr).getPredicateVar().getValue();
+				if (predicateValue != null) {
+					CardinalityEstimate estimate = perPredicate.get(predicateValue.stringValue());
+					if (estimate != null) {
+						return estimate;
+					}
+				}
+			}
+
+			if (expr instanceof Join) {
+				joinEstimateRequests++;
+				double estimate = 100.0 + joinEstimateRequests;
+				return createCardinalityEstimate(estimate, estimate * 0.8, estimate * 1.2, 0.7, "counting-join");
+			}
+
+			return createCardinalityEstimate(100.0, 50.0, 200.0, 0.5, "fallback");
+		}
+
+		private int joinEstimateRequests() {
+			return joinEstimateRequests;
+		}
+	}
+
+	private static final class SlowCountingJoinEstimationStatistics extends EvaluationStatistics {
+		private final Map<String, CardinalityEstimate> perPredicate;
+		private final long joinEstimateDelayMs;
+		private int joinEstimateRequests;
+
+		private SlowCountingJoinEstimationStatistics(Map<String, CardinalityEstimate> perPredicate,
+				long joinEstimateDelayMs) {
+			this.perPredicate = perPredicate;
+			this.joinEstimateDelayMs = Math.max(0L, joinEstimateDelayMs);
+		}
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			return getCardinalityEstimate(expr).estimate;
+		}
+
+		@Override
+		public CardinalityEstimate getCardinalityEstimate(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				Value predicateValue = ((StatementPattern) expr).getPredicateVar().getValue();
+				if (predicateValue != null) {
+					CardinalityEstimate estimate = perPredicate.get(predicateValue.stringValue());
+					if (estimate != null) {
+						return estimate;
+					}
+				}
+			}
+
+			if (expr instanceof Join) {
+				joinEstimateRequests++;
+				if (joinEstimateDelayMs > 0L) {
+					try {
+						Thread.sleep(joinEstimateDelayMs);
+					} catch (InterruptedException interruptedException) {
+						Thread.currentThread().interrupt();
+					}
+				}
+				double estimate = 100.0 + joinEstimateRequests;
+				return createCardinalityEstimate(estimate, estimate * 0.8, estimate * 1.2, 0.7, "slow-counting-join");
+			}
+
 			return createCardinalityEstimate(100.0, 50.0, 200.0, 0.5, "fallback");
 		}
 

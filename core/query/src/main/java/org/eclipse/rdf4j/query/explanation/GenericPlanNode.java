@@ -90,6 +90,9 @@ public class GenericPlanNode {
 	// the name of the algorithm used as an annotation to the node type
 	private String algorithm;
 
+	// optimizer decision diagnostics for explain output
+	private String decisionDiagnostics;
+
 	// Child plans for this node
 	private List<GenericPlanNode> plans = new ArrayList<>();
 
@@ -304,6 +307,18 @@ public class GenericPlanNode {
 		this.algorithm = algorithm;
 	}
 
+	public String getDecisionDiagnostics() {
+		return decisionDiagnostics;
+	}
+
+	public void setDecisionDiagnostics(String decisionDiagnostics) {
+		if (decisionDiagnostics == null || decisionDiagnostics.isBlank()) {
+			this.decisionDiagnostics = null;
+		} else {
+			this.decisionDiagnostics = decisionDiagnostics;
+		}
+	}
+
 	private static final int prettyBoxDrawingType = 0;
 
 	/**
@@ -497,7 +512,8 @@ public class GenericPlanNode {
 				"resultSizeQError=" + toHumanReadableNumber(getResultSizeQError()),
 				"resultSizeActual=" + toHumanReadableNumber(getResultSizeActual()),
 				"totalTimeActual=" + toHumanReadableTime(getTotalTimeActual()),
-				"selfTimeActual=" + toHumanReadableTime(getSelfTimeActual()))
+				"selfTimeActual=" + toHumanReadableTime(getSelfTimeActual()),
+				"decisionDiagnostics=" + (getDecisionDiagnostics() != null ? getDecisionDiagnostics() : UNKNOWN))
 				.filter(s -> !s.endsWith(UNKNOWN)) // simple but hacky way of removing essentially null values
 				.reduce((a, b) -> a + ", " + b)
 				.orElse("");
@@ -563,6 +579,9 @@ public class GenericPlanNode {
 				"<tr><td COLSPAN=\"2\" BGCOLOR=\"" + totalTimeColor + "\"><U>" + StringEscapeUtils.escapeHtml4(type)
 						+ "</U></td></tr>",
 				"<tr><td>Algorithm</td><td>" + (algorithm != null ? algorithm : UNKNOWN) + "</td></tr>",
+				"<tr><td>Decision diagnostics</td><td>"
+						+ (decisionDiagnostics != null ? StringEscapeUtils.escapeHtml4(decisionDiagnostics) : UNKNOWN)
+						+ "</td></tr>",
 				"<tr><td><B>New scope</B></td><td>" + (newScope != null && newScope ? "<B>true</B>" : UNKNOWN)
 						+ "</td></tr>",
 				"<tr><td>Cost estimate</td><td>" + toHumanReadableNumber(getCostEstimate()) + "</td></tr>",

@@ -172,6 +172,37 @@ class JoinCostModelTest {
 		assertEquals(JoinCostModel.JoinAlgorithm.NESTED_LOOP, algorithm);
 	}
 
+	@Test
+	void onlineAlgorithmThresholdTuningIsEnabledByDefaultAndCanBeDisabled() {
+		JoinCostModel.clearRuntimeJoinCostObservationsForTests();
+		try {
+			withHashJoinEnabled(true, () -> withMergeJoinEnabled(false, () -> withHashThreshold(1_000.0,
+					() -> withJoinAlgorithmTuningMinSamples(1, () -> withJoinAlgorithmTuningAlpha(0.8, () -> {
+						for (int i = 0; i < 8; i++) {
+							JoinCostModel.recordRuntimeJoinCostObservation(JoinCostModel.JoinAlgorithm.NESTED_LOOP,
+									400.0, 400.0, 60_000_000L);
+							JoinCostModel.recordRuntimeJoinCostObservation(JoinCostModel.JoinAlgorithm.HASH, 400.0,
+									400.0, 2_000_000L);
+						}
+
+						EvaluationStatistics.CardinalityEstimate left = estimate(450.0);
+						EvaluationStatistics.CardinalityEstimate right = estimate(500.0);
+
+						JoinCostModel tunedModel = new JoinCostModel();
+						assertEquals(JoinCostModel.JoinAlgorithm.HASH,
+								tunedModel.chooseJoinAlgorithm(left, right, 1, false));
+
+						withJoinAlgorithmTuningEnabled(false, () -> {
+							JoinCostModel untunedModel = new JoinCostModel();
+							assertEquals(JoinCostModel.JoinAlgorithm.NESTED_LOOP,
+									untunedModel.chooseJoinAlgorithm(left, right, 1, false));
+						});
+					})))));
+		} finally {
+			JoinCostModel.clearRuntimeJoinCostObservationsForTests();
+		}
+	}
+
 	private static EvaluationStatistics.CardinalityEstimate estimate(double estimate) {
 		return new EvaluationStatistics.CardinalityEstimate(estimate, estimate * 0.8, estimate * 1.2, 0.8, "test");
 	}
@@ -224,6 +255,51 @@ class JoinCostModelTest {
 		String previous = System.getProperty(key);
 		try {
 			System.setProperty(key, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(key);
+			} else {
+				System.setProperty(key, previous);
+			}
+		}
+	}
+
+	private static void withJoinAlgorithmTuningEnabled(boolean enabled, Runnable assertion) {
+		String key = JoinCostModel.JOIN_ALGORITHM_TUNING_ENABLED_PROPERTY;
+		String previous = System.getProperty(key);
+		try {
+			System.setProperty(key, Boolean.toString(enabled));
+			assertion.run();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(key);
+			} else {
+				System.setProperty(key, previous);
+			}
+		}
+	}
+
+	private static void withJoinAlgorithmTuningAlpha(double alpha, Runnable assertion) {
+		String key = JoinCostModel.JOIN_ALGORITHM_TUNING_ALPHA_PROPERTY;
+		String previous = System.getProperty(key);
+		try {
+			System.setProperty(key, Double.toString(alpha));
+			assertion.run();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(key);
+			} else {
+				System.setProperty(key, previous);
+			}
+		}
+	}
+
+	private static void withJoinAlgorithmTuningMinSamples(int minSamples, Runnable assertion) {
+		String key = JoinCostModel.JOIN_ALGORITHM_TUNING_MIN_SAMPLES_PROPERTY;
+		String previous = System.getProperty(key);
+		try {
+			System.setProperty(key, Integer.toString(minSamples));
 			assertion.run();
 		} finally {
 			if (previous == null) {

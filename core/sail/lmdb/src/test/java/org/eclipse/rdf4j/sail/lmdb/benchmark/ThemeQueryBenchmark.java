@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -402,6 +403,37 @@ public class ThemeQueryBenchmark {
 					tearDown();
 				}
 			}
+		}
+	}
+
+	@Test
+	public void printSocialMediaQuery8OptimizedAndExecutedExplanation() throws IOException {
+		themeName = Theme.SOCIAL_MEDIA.name();
+		z_queryIndex = 8;
+		setup();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			String optimizedExplanation = connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.toString();
+			assertFalse(optimizedExplanation.isBlank(), "Missing optimized explanation");
+			System.out.println("Optimized Query Explanation for theme " + themeName + " and query index " + z_queryIndex
+					+ ":\n" + optimizedExplanation);
+
+			for (int i = 0; i < 100; i++) {
+				TupleQuery warmupQuery = connection.prepareTupleQuery(query);
+				warmupQuery.setMaxExecutionTime(180);
+				long count = warmupQuery.evaluate().stream().count();
+				assertEquals(expected, count, "Unexpected count during warmup run " + i);
+			}
+
+			String executedExplanation = connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Executed)
+					.toString();
+			assertFalse(executedExplanation.isBlank(), "Missing executed explanation");
+			System.out.println("Executed Query Explanation after 100 runs for theme " + themeName + " and query index "
+					+ z_queryIndex + ":\n" + executedExplanation);
+		} finally {
+			tearDown();
 		}
 	}
 
