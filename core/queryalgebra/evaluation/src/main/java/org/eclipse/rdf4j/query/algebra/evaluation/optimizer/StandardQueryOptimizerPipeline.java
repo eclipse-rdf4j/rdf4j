@@ -49,6 +49,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	public static final ProjectionRemovalOptimizer PROJECTION_REMOVAL_OPTIMIZER = new ProjectionRemovalOptimizer();
 	public static final IterativeEvaluationOptimizer ITERATIVE_EVALUATION_OPTIMIZER = new IterativeEvaluationOptimizer();
 	public static final FilterOptimizer FILTER_OPTIMIZER = new FilterOptimizer();
+	public static final FilterEqualityOptimizer FILTER_EQUALITY_OPTIMIZER = new FilterEqualityOptimizer();
 	public static final OrderLimitOptimizer ORDER_LIMIT_OPTIMIZER = new OrderLimitOptimizer();
 	public static final ParentReferenceCleaner PARENT_REFERENCE_CLEANER = new ParentReferenceCleaner();
 	private final EvaluationStatistics evaluationStatistics;
@@ -84,6 +85,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource),
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				FILTER_OPTIMIZER,
+				FILTER_EQUALITY_OPTIMIZER,
 				ORDER_LIMIT_OPTIMIZER
 		);
 

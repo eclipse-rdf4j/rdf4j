@@ -47,6 +47,11 @@ class NativeEvaluationStatistics extends EvaluationStatistics {
 	protected class NativeCardinalityCalculator extends CardinalityCalculator {
 
 		@Override
+		protected CardinalityCalculator newCalculator() {
+			return new NativeCardinalityCalculator();
+		}
+
+		@Override
 		protected double getCardinality(StatementPattern sp) {
 			try {
 				Value subj = getConstantValue(sp.getSubjectVar());
