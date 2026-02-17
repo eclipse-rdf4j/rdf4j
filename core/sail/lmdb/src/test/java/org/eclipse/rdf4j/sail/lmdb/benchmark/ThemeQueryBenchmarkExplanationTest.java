@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class ThemeQueryBenchmarkExplanationTest {
@@ -54,6 +55,7 @@ class ThemeQueryBenchmarkExplanationTest {
 	private static final int MEASURED_RUNS = 12;
 
 	@Test
+	@Disabled
 	void recordOptimizedQueryExplanationWithAndWithoutPageEstimator() throws IOException {
 		Theme[] themes = Theme.values();
 		File outputDir = new File("target/theme-query-explanations");
@@ -105,6 +107,7 @@ class ThemeQueryBenchmarkExplanationTest {
 	}
 
 	@Test
+	@Disabled
 	void measureSocialMediaQuery10PlanningAndExecutionWithAndWithoutPageEstimator() throws Exception {
 		File outputDir = new File("target/theme-query-explanations");
 		FileUtils.forceMkdir(outputDir);

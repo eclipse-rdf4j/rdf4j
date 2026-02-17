@@ -12,26 +12,43 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
 class JoinQueryEvaluationStepTest {
+	private static final String ADAPTIVE_RUNTIME_REOPT_ENABLED_PROPERTY = "rdf4j.optimizer.adaptiveRuntimeReopt.enabled";
+	private static final String ADAPTIVE_RUNTIME_REOPT_SAMPLE_SIZE_PROPERTY = "rdf4j.optimizer.adaptiveRuntimeReopt.sampleSize";
+	private static final String ADAPTIVE_RUNTIME_REOPT_HASH_SAMPLE_THRESHOLD_PROPERTY = "rdf4j.optimizer.adaptiveRuntimeReopt.hashSampleThreshold";
+	private static final String ADAPTIVE_RUNTIME_REOPT_NESTED_CACHE_ENABLED_PROPERTY = "rdf4j.optimizer.adaptiveRuntimeReopt.nestedCache.enabled";
+	private static final String ADAPTIVE_RUNTIME_REOPT_NESTED_CACHE_MAX_LEFT_SAMPLED_ROWS_PROPERTY = "rdf4j.optimizer.adaptiveRuntimeReopt.nestedCache.maxLeftSampledRows";
 
 	@Test
 	void honorsHashJoinHint() {
@@ -59,11 +76,157 @@ class JoinQueryEvaluationStepTest {
 		assertEquals(InnerMergeJoinIterator.class.getSimpleName(), join.getAlgorithmName());
 	}
 
+	@Test
+	void adaptiveRuntimeReoptimizationChoosesHashJoinForLargeLeftSample() {
+		withSystemProperty(ADAPTIVE_RUNTIME_REOPT_ENABLED_PROPERTY, "true", () -> withSystemProperty(
+				ADAPTIVE_RUNTIME_REOPT_SAMPLE_SIZE_PROPERTY, "8", () -> withSystemProperty(
+						ADAPTIVE_RUNTIME_REOPT_HASH_SAMPLE_THRESHOLD_PROPERTY, "6", () -> {
+							StatementPattern left = pattern("s", "urn:test:left", "join");
+							StatementPattern right = pattern("o", "urn:test:right", "join");
+							QueryEvaluationStep leftStep = fixedRows(20, "join");
+							QueryEvaluationStep rightStep = fixedRows(0, "join");
+
+							EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+							when(strategy.precompile(eq(left), any(QueryEvaluationContext.class))).thenReturn(leftStep);
+							when(strategy.precompile(eq(right), any(QueryEvaluationContext.class)))
+									.thenReturn(rightStep);
+
+							Join join = new Join(left, right);
+							JoinQueryEvaluationStep evaluationStep = new JoinQueryEvaluationStep(strategy, join,
+									new QueryEvaluationContext.Minimal(null));
+
+							drain(evaluationStep.evaluate(EmptyBindingSet.getInstance()));
+							assertEquals(HashJoinIteration.class.getSimpleName(), join.getAlgorithmName());
+						})));
+	}
+
+	@Test
+	void adaptiveRuntimeReoptimizationCanBeDisabled() {
+		withSystemProperty(ADAPTIVE_RUNTIME_REOPT_ENABLED_PROPERTY, "false", () -> withSystemProperty(
+				ADAPTIVE_RUNTIME_REOPT_SAMPLE_SIZE_PROPERTY, "8", () -> withSystemProperty(
+						ADAPTIVE_RUNTIME_REOPT_HASH_SAMPLE_THRESHOLD_PROPERTY, "6", () -> {
+							StatementPattern left = pattern("s", "urn:test:left", "join");
+							StatementPattern right = pattern("o", "urn:test:right", "join");
+							QueryEvaluationStep leftStep = fixedRows(20, "join");
+							QueryEvaluationStep rightStep = fixedRows(0, "join");
+
+							EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+							when(strategy.precompile(eq(left), any(QueryEvaluationContext.class))).thenReturn(leftStep);
+							when(strategy.precompile(eq(right), any(QueryEvaluationContext.class)))
+									.thenReturn(rightStep);
+
+							Join join = new Join(left, right);
+							JoinQueryEvaluationStep evaluationStep = new JoinQueryEvaluationStep(strategy, join,
+									new QueryEvaluationContext.Minimal(null));
+
+							drain(evaluationStep.evaluate(EmptyBindingSet.getInstance()));
+							assertEquals(JoinIterator.class.getSimpleName(), join.getAlgorithmName());
+						})));
+	}
+
+	@Test
+	void adaptiveRuntimeReoptimizationMarksNestedLoopAsCacheableByDefault() {
+		withSystemProperty(ADAPTIVE_RUNTIME_REOPT_ENABLED_PROPERTY, "true", () -> withSystemProperty(
+				ADAPTIVE_RUNTIME_REOPT_SAMPLE_SIZE_PROPERTY, "8", () -> withSystemProperty(
+						ADAPTIVE_RUNTIME_REOPT_HASH_SAMPLE_THRESHOLD_PROPERTY, "20", () -> {
+							StatementPattern left = pattern("s", "urn:test:left", "join");
+							StatementPattern right = pattern("o", "urn:test:right", "join");
+							QueryEvaluationStep leftStep = fixedRows(8, "join");
+							QueryEvaluationStep rightStep = fixedRows(0, "join");
+
+							EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+							when(strategy.precompile(eq(left), any(QueryEvaluationContext.class))).thenReturn(leftStep);
+							when(strategy.precompile(eq(right), any(QueryEvaluationContext.class)))
+									.thenReturn(rightStep);
+
+							Join join = new Join(left, right);
+							JoinQueryEvaluationStep evaluationStep = new JoinQueryEvaluationStep(strategy, join,
+									new QueryEvaluationContext.Minimal(null));
+
+							drain(evaluationStep.evaluate(EmptyBindingSet.getInstance()));
+							assertEquals(JoinIterator.class.getSimpleName(), join.getAlgorithmName());
+							assertTrue(isCacheable(join));
+						})));
+	}
+
+	@Test
+	void adaptiveRuntimeReoptimizationNestedLoopCacheHintCanBeDisabled() {
+		withSystemProperty(ADAPTIVE_RUNTIME_REOPT_ENABLED_PROPERTY, "true", () -> withSystemProperty(
+				ADAPTIVE_RUNTIME_REOPT_SAMPLE_SIZE_PROPERTY, "8", () -> withSystemProperty(
+						ADAPTIVE_RUNTIME_REOPT_HASH_SAMPLE_THRESHOLD_PROPERTY, "20", () -> withSystemProperty(
+								ADAPTIVE_RUNTIME_REOPT_NESTED_CACHE_ENABLED_PROPERTY, "false", () -> withSystemProperty(
+										ADAPTIVE_RUNTIME_REOPT_NESTED_CACHE_MAX_LEFT_SAMPLED_ROWS_PROPERTY, "32",
+										() -> {
+											StatementPattern left = pattern("s", "urn:test:left", "join");
+											StatementPattern right = pattern("o", "urn:test:right", "join");
+											QueryEvaluationStep leftStep = fixedRows(8, "join");
+											QueryEvaluationStep rightStep = fixedRows(0, "join");
+
+											EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+											when(strategy.precompile(eq(left), any(QueryEvaluationContext.class)))
+													.thenReturn(leftStep);
+											when(strategy.precompile(eq(right), any(QueryEvaluationContext.class)))
+													.thenReturn(rightStep);
+
+											Join join = new Join(left, right);
+											JoinQueryEvaluationStep evaluationStep = new JoinQueryEvaluationStep(
+													strategy, join,
+													new QueryEvaluationContext.Minimal(null));
+
+											drain(evaluationStep.evaluate(EmptyBindingSet.getInstance()));
+											assertEquals(JoinIterator.class.getSimpleName(), join.getAlgorithmName());
+											assertFalse(isCacheable(join));
+										})))));
+	}
+
 	private static EvaluationStrategy strategyWithNoOpPrecompile() {
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
 		when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class)))
 				.thenReturn(QueryEvaluationStep.empty());
 		return strategy;
+	}
+
+	private static QueryEvaluationStep fixedRows(int count, String varName) {
+		List<BindingSet> rows = new ArrayList<>(count);
+		for (int i = 0; i < count; i++) {
+			QueryBindingSet row = new QueryBindingSet();
+			IRI value = SimpleValueFactory.getInstance().createIRI("urn:test:value/" + i);
+			row.addBinding(varName, value);
+			rows.add(row);
+		}
+		return bs -> new CloseableIteratorIteration<>(rows.iterator());
+	}
+
+	private static void drain(CloseableIteration<BindingSet> iteration) {
+		try (CloseableIteration<BindingSet> iter = iteration) {
+			while (iter.hasNext()) {
+				iter.next();
+			}
+		}
+	}
+
+	private static void withSystemProperty(String key, String value, Runnable assertion) {
+		String previous = System.getProperty(key);
+		try {
+			System.setProperty(key, value);
+			assertion.run();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(key);
+			} else {
+				System.setProperty(key, previous);
+			}
+		}
+	}
+
+	private static boolean isCacheable(Join join) {
+		try {
+			java.lang.reflect.Field cacheable = Join.class.getDeclaredField("cacheable");
+			cacheable.setAccessible(true);
+			return cacheable.getBoolean(join);
+		} catch (NoSuchFieldException | IllegalAccessException e) {
+			throw new AssertionError("Unable to read Join.cacheable", e);
+		}
 	}
 
 	private static StatementPattern pattern(String subjectName, String predicateIri, String objectName) {

@@ -37,6 +37,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	private static final String HYBRID_Q_ERROR_LIMIT_PROPERTY = "rdf4j.optimizer.hybrid.qerror.limit";
 	private static final String HYBRID_Q_ERROR_LOG_LIMIT_PROPERTY = "rdf4j.optimizer.hybrid.qerror.log.limit";
 	private static final String EXPLAIN_EXTENDED_ESTIMATE_METADATA_ENABLED_PROPERTY = "rdf4j.optimizer.explain.extendedEstimateMetadata.enabled";
+	private static final String EXPLAIN_DECISION_DIAGNOSTICS_ENABLED_PROPERTY = "rdf4j.optimizer.explain.decisionDiagnostics.enabled";
 	private static final int HYBRID_Q_ERROR_DEFAULT_LIMIT = 5;
 
 	GenericPlanNode top = null;
@@ -44,6 +45,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	ArrayDeque<GenericPlanNode> planNodes = new ArrayDeque<>();
 	private final boolean includeResultSizeQError;
 	private final boolean includeExtendedEstimateMetadata;
+	private final boolean includeDecisionDiagnostics;
 	private boolean qErrorLimitApplied;
 
 	public QueryModelTreeToGenericPlanNode(QueryModelNode topTupleExpr) {
@@ -55,6 +57,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 				.equalsIgnoreCase(System.getProperty(OPTIMIZER_MODE_PROPERTY, HYBRID_OPTIMIZER_MODE));
 		this.includeExtendedEstimateMetadata = includeResultSizeQError
 				&& isEnabled(EXPLAIN_EXTENDED_ESTIMATE_METADATA_ENABLED_PROPERTY, true);
+		this.includeDecisionDiagnostics = isEnabled(EXPLAIN_DECISION_DIAGNOSTICS_ENABLED_PROPERTY, true);
 	}
 
 	public GenericPlanNode getGenericPlanNode() {
@@ -97,6 +100,9 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		if (node instanceof BinaryTupleOperator) {
 			String algorithmName = ((BinaryTupleOperator) node).getAlgorithmName();
 			genericPlanNode.setAlgorithm(algorithmName);
+		}
+		if (includeDecisionDiagnostics) {
+			genericPlanNode.setDecisionDiagnostics(node.getPlanDecisionDetails());
 		}
 
 		// convert from nanoseconds to milliseconds

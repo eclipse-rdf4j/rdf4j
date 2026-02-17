@@ -23,6 +23,7 @@ public class QueryModelTreeToGenericPlanNodeTest {
 
 	private static final String OPTIMIZER_MODE_PROPERTY = "rdf4j.optimizer.mode";
 	private static final String EXPLAIN_EXTENDED_ESTIMATE_METADATA_ENABLED_PROPERTY = "rdf4j.optimizer.explain.extendedEstimateMetadata.enabled";
+	private static final String EXPLAIN_DECISION_DIAGNOSTICS_ENABLED_PROPERTY = "rdf4j.optimizer.explain.decisionDiagnostics.enabled";
 
 	@Test
 	public void includesEstimateSourceAndConfidenceInGenericPlanNode() {
@@ -81,6 +82,40 @@ public class QueryModelTreeToGenericPlanNodeTest {
 
 			assertThat(genericPlanNode).isNotNull();
 			assertThat(genericPlanNode.toString()).doesNotContain("Join (resultSizeEstimate=");
+		});
+	}
+
+	@Test
+	public void includesDecisionDiagnosticsInGenericPlanNodeWhenEnabled() {
+		Join join = new Join(new StatementPattern(Var.of("s1"), Var.of("p1"), Var.of("o1")),
+				new StatementPattern(Var.of("s2"), Var.of("p2"), Var.of("o2")));
+		join.setPlanDecisionDetails("optimizer=cost-based; reordered=true");
+
+		withProperty(EXPLAIN_DECISION_DIAGNOSTICS_ENABLED_PROPERTY, "true", () -> {
+			QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join);
+			join.visit(converter);
+			GenericPlanNode genericPlanNode = converter.getGenericPlanNode();
+
+			assertThat(genericPlanNode).isNotNull();
+			assertThat(genericPlanNode.getDecisionDiagnostics()).isEqualTo("optimizer=cost-based; reordered=true");
+			assertThat(genericPlanNode.toString()).contains("decisionDiagnostics=optimizer=cost-based; reordered=true");
+		});
+	}
+
+	@Test
+	public void omitsDecisionDiagnosticsWhenDisabled() {
+		Join join = new Join(new StatementPattern(Var.of("s1"), Var.of("p1"), Var.of("o1")),
+				new StatementPattern(Var.of("s2"), Var.of("p2"), Var.of("o2")));
+		join.setPlanDecisionDetails("optimizer=cost-based; reordered=true");
+
+		withProperty(EXPLAIN_DECISION_DIAGNOSTICS_ENABLED_PROPERTY, "false", () -> {
+			QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join);
+			join.visit(converter);
+			GenericPlanNode genericPlanNode = converter.getGenericPlanNode();
+
+			assertThat(genericPlanNode).isNotNull();
+			assertThat(genericPlanNode.getDecisionDiagnostics()).isNull();
+			assertThat(genericPlanNode.toString()).doesNotContain("decisionDiagnostics=");
 		});
 	}
 

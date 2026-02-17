@@ -18,6 +18,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -34,6 +35,7 @@ public class JoinPlanEnumerator {
 	static final String BEAM_ENABLED_PROPERTY = "rdf4j.optimizer.beam.enabled";
 	static final String RISK_LAMBDA_PROPERTY = "rdf4j.optimizer.risk.lambda";
 	private static final double EARLY_CARTESIAN_TIE_BREAK_WEIGHT = 2.0;
+	private static final BooleanSupplier ALWAYS_ALLOW_JOIN_ESTIMATES = () -> true;
 
 	private final EvaluationStatistics statistics;
 	private final JoinCostModel costModel;
@@ -72,25 +74,42 @@ public class JoinPlanEnumerator {
 	}
 
 	public List<TupleExpr> orderJoinArgs(List<TupleExpr> joinArgs, Set<String> initialBoundVars) {
+		return orderJoinArgs(joinArgs, initialBoundVars, -1);
+	}
+
+	public List<TupleExpr> orderJoinArgs(List<TupleExpr> joinArgs, Set<String> initialBoundVars,
+			int beamWidthOverride) {
 		if (joinArgs.size() <= 1) {
 			return new ArrayList<>(joinArgs);
 		}
 
 		List<TupleExpr> copy = new ArrayList<>(joinArgs);
 		Set<String> initialVars = initialBoundVars == null ? Set.of() : new HashSet<>(initialBoundVars);
+		int effectiveBeamWidth = beamWidthOverride > 0 ? Math.max(2, beamWidthOverride) : beamWidth;
 		if (dpEnabled && copy.size() <= dpMaxTerms && copy.size() < Integer.SIZE - 1) {
-			return orderWithDynamicProgramming(copy, initialVars);
+			return orderWithDynamicProgramming(copy, initialVars, ALWAYS_ALLOW_JOIN_ESTIMATES);
 		}
 
 		if (!beamEnabled) {
 			return copy;
 		}
 
-		return orderWithBeamSearch(copy, initialVars);
+		return orderWithBeamSearch(copy, initialVars, effectiveBeamWidth, ALWAYS_ALLOW_JOIN_ESTIMATES);
 	}
 
 	public List<List<TupleExpr>> enumerateTopOrders(List<TupleExpr> joinArgs, Set<String> initialBoundVars,
 			int candidateCount) {
+		return enumerateTopOrders(joinArgs, initialBoundVars, candidateCount, -1);
+	}
+
+	public List<List<TupleExpr>> enumerateTopOrders(List<TupleExpr> joinArgs, Set<String> initialBoundVars,
+			int candidateCount, int beamWidthOverride) {
+		return enumerateTopOrders(joinArgs, initialBoundVars, candidateCount, beamWidthOverride,
+				ALWAYS_ALLOW_JOIN_ESTIMATES);
+	}
+
+	public List<List<TupleExpr>> enumerateTopOrders(List<TupleExpr> joinArgs, Set<String> initialBoundVars,
+			int candidateCount, int beamWidthOverride, BooleanSupplier joinEstimateBudgetAvailable) {
 		if (joinArgs.size() <= 1) {
 			return List.of(new ArrayList<>(joinArgs));
 		}
@@ -98,14 +117,21 @@ public class JoinPlanEnumerator {
 		int maxCandidates = Math.max(1, candidateCount);
 		Set<String> initialVars = initialBoundVars == null ? Set.of() : new HashSet<>(initialBoundVars);
 		List<TupleExpr> copy = new ArrayList<>(joinArgs);
+		int effectiveBeamWidth = beamWidthOverride > 0 ? Math.max(2, beamWidthOverride) : beamWidth;
+		BooleanSupplier budgetAvailable = joinEstimateBudgetAvailable == null ? ALWAYS_ALLOW_JOIN_ESTIMATES
+				: joinEstimateBudgetAvailable;
 		if (!beamEnabled) {
-			return List.of(orderJoinArgs(copy, initialVars));
+			if (dpEnabled && copy.size() <= dpMaxTerms && copy.size() < Integer.SIZE - 1) {
+				return List.of(orderWithDynamicProgramming(copy, initialVars, budgetAvailable));
+			}
+			return List.of(new ArrayList<>(copy));
 		}
 
-		return enumerateWithBeamSearch(copy, initialVars, maxCandidates);
+		return enumerateWithBeamSearch(copy, initialVars, maxCandidates, effectiveBeamWidth, budgetAvailable);
 	}
 
-	private List<TupleExpr> orderWithDynamicProgramming(List<TupleExpr> joinArgs, Set<String> initialBoundVars) {
+	private List<TupleExpr> orderWithDynamicProgramming(List<TupleExpr> joinArgs, Set<String> initialBoundVars,
+			BooleanSupplier joinEstimateBudgetAvailable) {
 		int size = joinArgs.size();
 		int maxMask = 1 << size;
 
@@ -154,7 +180,8 @@ public class JoinPlanEnumerator {
 				int remainingTerms = size - Integer.bitCount(mask) - 1;
 				StepEvaluation step = evaluateStep(mask, i, boundVars, bindingNames.get(i), connectivity[i],
 						remainingTerms,
-						estimates, leftPlanEstimate, leftPlanExpr, joinArgs, joinEstimateCache);
+						estimates, leftPlanEstimate, leftPlanExpr, joinArgs, joinEstimateCache,
+						joinEstimateBudgetAvailable);
 				double candidateScore = bestScore[mask] + step.score;
 				if (candidateScore < bestScore[nextMask] - 1e-9
 						|| (Math.abs(candidateScore - bestScore[nextMask]) <= 1e-9
@@ -179,18 +206,20 @@ public class JoinPlanEnumerator {
 		return mapOrder(joinArgs, order);
 	}
 
-	private List<TupleExpr> orderWithBeamSearch(List<TupleExpr> joinArgs, Set<String> initialBoundVars) {
-		return enumerateWithBeamSearch(joinArgs, initialBoundVars, 1).get(0);
+	private List<TupleExpr> orderWithBeamSearch(List<TupleExpr> joinArgs, Set<String> initialBoundVars,
+			int effectiveBeamWidth, BooleanSupplier joinEstimateBudgetAvailable) {
+		return enumerateWithBeamSearch(joinArgs, initialBoundVars, 1, effectiveBeamWidth, joinEstimateBudgetAvailable)
+				.get(0);
 	}
 
 	private List<List<TupleExpr>> enumerateWithBeamSearch(List<TupleExpr> joinArgs, Set<String> initialBoundVars,
-			int candidateCount) {
+			int candidateCount, int effectiveBeamWidth, BooleanSupplier joinEstimateBudgetAvailable) {
 		List<Set<String>> bindingNames = bindingNames(joinArgs);
 		int[] connectivity = connectivity(bindingNames);
 		List<EvaluationStatistics.CardinalityEstimate> estimates = estimates(joinArgs);
 		List<PlanState> beam = List.of(new PlanState(new BitSet(joinArgs.size()), 0.0, new int[0],
 				new HashSet<>(initialBoundVars), null, null));
-		int currentBeamWidth = Math.max(beamWidth, Math.max(1, candidateCount) * 2);
+		int currentBeamWidth = Math.max(Math.max(2, effectiveBeamWidth), Math.max(1, candidateCount) * 2);
 
 		for (int depth = 0; depth < joinArgs.size(); depth++) {
 			List<PlanState> nextBeam = new ArrayList<>();
@@ -206,7 +235,7 @@ public class JoinPlanEnumerator {
 					int remainingTerms = joinArgs.size() - state.order.length - 1;
 					StepEvaluation step = evaluateStep(0, candidate, state.boundVars, bindingNames.get(candidate),
 							connectivity[candidate], remainingTerms, estimates, state.planEstimate, state.planExpr,
-							joinArgs, null);
+							joinArgs, null, joinEstimateBudgetAvailable);
 					Set<String> nextBoundVars = new HashSet<>(state.boundVars);
 					nextBoundVars.addAll(bindingNames.get(candidate));
 					nextBeam.add(new PlanState(nextSelected, state.score + step.score, nextOrder, nextBoundVars,
@@ -231,11 +260,16 @@ public class JoinPlanEnumerator {
 		return results;
 	}
 
+	int configuredBeamWidth() {
+		return beamWidth;
+	}
+
 	private StepEvaluation evaluateStep(int mask, int candidate, Set<String> boundVars, Set<String> candidateVars,
 			int candidateConnectivity, int remainingTerms,
 			List<EvaluationStatistics.CardinalityEstimate> estimates,
 			EvaluationStatistics.CardinalityEstimate leftPlanEstimate, TupleExpr leftPlanExpr,
-			List<TupleExpr> joinArgs, EvaluationStatistics.CardinalityEstimate[][] joinEstimateCache) {
+			List<TupleExpr> joinArgs, EvaluationStatistics.CardinalityEstimate[][] joinEstimateCache,
+			BooleanSupplier joinEstimateBudgetAvailable) {
 		EvaluationStatistics.CardinalityEstimate candidateEstimate = estimates.get(candidate);
 		int sharedVarCount = sharedVarCount(boundVars, candidateVars);
 		boolean joinsBoundVars = boundVars.isEmpty() ? candidateConnectivity > 0 : sharedVarCount > 0;
@@ -250,7 +284,8 @@ public class JoinPlanEnumerator {
 		} else {
 			EvaluationStatistics.CardinalityEstimate joinOutputEstimate = estimateJoinOutput(mask, candidate,
 					leftPlanExpr,
-					leftPlanEstimate, joinArgs.get(candidate), candidateEstimate, sharedVarCount, joinEstimateCache);
+					leftPlanEstimate, joinArgs.get(candidate), candidateEstimate, sharedVarCount, joinEstimateCache,
+					joinEstimateBudgetAvailable);
 			score = costModel.scoreJoinStep(leftPlanEstimate, candidateEstimate, joinOutputEstimate, joinsBoundVars,
 					sharedVarCount, riskLambda);
 			nextPlanEstimate = joinOutputEstimate;
@@ -266,8 +301,12 @@ public class JoinPlanEnumerator {
 	private EvaluationStatistics.CardinalityEstimate estimateJoinOutput(int mask, int candidate, TupleExpr leftPlanExpr,
 			EvaluationStatistics.CardinalityEstimate leftPlanEstimate, TupleExpr candidateExpr,
 			EvaluationStatistics.CardinalityEstimate candidateEstimate, int sharedVarCount,
-			EvaluationStatistics.CardinalityEstimate[][] joinEstimateCache) {
+			EvaluationStatistics.CardinalityEstimate[][] joinEstimateCache,
+			BooleanSupplier joinEstimateBudgetAvailable) {
 		if (!statistics.supportsJoinEstimation()) {
+			return costModel.estimateJoinOutputHeuristic(leftPlanEstimate, candidateEstimate, sharedVarCount);
+		}
+		if (!joinEstimateBudgetAvailable.getAsBoolean()) {
 			return costModel.estimateJoinOutputHeuristic(leftPlanEstimate, candidateEstimate, sharedVarCount);
 		}
 

@@ -13,9 +13,17 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
+import java.util.Properties;
 
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -32,6 +40,15 @@ import org.junit.jupiter.api.Test;
 
 public class EvaluationStatisticsTest {
 	private static final String CALIBRATION_ENABLED_PROPERTY = "rdf4j.optimizer.calibration.enabled";
+	private static final String CALIBRATION_MAX_SOURCES_PROPERTY = "rdf4j.optimizer.calibration.maxSources";
+	private static final String CALIBRATION_PERSISTENCE_ENABLED_PROPERTY = "rdf4j.optimizer.calibration.persistence.enabled";
+	private static final String CALIBRATION_PERSISTENCE_FILE_PROPERTY = "rdf4j.optimizer.calibration.persistence.file";
+	private static final String CALIBRATION_PERSISTENCE_FLUSH_EVERY_OBSERVATIONS_PROPERTY = "rdf4j.optimizer.calibration.persistence.flushEveryObservations";
+	private static final String CALIBRATION_PERSISTENCE_FLUSH_INTERVAL_MS_PROPERTY = "rdf4j.optimizer.calibration.persistence.flushIntervalMs";
+	private static final String CALIBRATION_PERSISTENCE_VERSION_KEY = "rdf4j.optimizer.calibration.persistence.version";
+	private static final String CALIBRATION_PERSISTENCE_SOURCE_PREFIX = "source.";
+	private static final String CALIBRATION_PERSISTENCE_COUNT_SUFFIX = ".count";
+	private static final String CALIBRATION_PERSISTENCE_QERROR_SUFFIX = ".ewmaQError";
 
 	@Test
 	public void testGetCardinality_ParentReferences() {
@@ -148,6 +165,202 @@ public class EvaluationStatisticsTest {
 				System.setProperty(CALIBRATION_ENABLED_PROPERTY, previousValue);
 			}
 			EvaluationStatistics.clearCalibrationObservations();
+		}
+	}
+
+	@Test
+	public void testCalibrationPersistenceReloadsSnapshotFromFile() throws IOException {
+		Path tempFile = Files.createTempFile("rdf4j-calibration", ".properties");
+		Files.deleteIfExists(tempFile);
+		withProperty(CALIBRATION_PERSISTENCE_FILE_PROPERTY, tempFile.toString(), () -> {
+			withProperty(CALIBRATION_PERSISTENCE_ENABLED_PROPERTY, "true", () -> {
+				withProperty(CALIBRATION_PERSISTENCE_FLUSH_EVERY_OBSERVATIONS_PROPERTY, "1", () -> {
+					EvaluationStatistics.clearCalibrationObservations();
+					EvaluationStatistics.recordGlobalCardinalityObservation("persist-source", 10.0, 100.0);
+
+					EvaluationStatistics.CalibrationSnapshot beforeReload = EvaluationStatistics
+							.getCalibrationSnapshot("persist-source");
+					assertThat(beforeReload).isNotNull();
+					assertThat(beforeReload.sampleCount).isEqualTo(1L);
+					assertThat(Files.exists(tempFile)).isTrue();
+
+					EvaluationStatistics.reloadCalibrationObservationsFromPersistence();
+					EvaluationStatistics.CalibrationSnapshot afterReload = EvaluationStatistics
+							.getCalibrationSnapshot("persist-source");
+					assertThat(afterReload).isNotNull();
+					assertThat(afterReload.sampleCount).isEqualTo(beforeReload.sampleCount);
+					assertThat(afterReload.ewmaQError).isEqualTo(beforeReload.ewmaQError);
+				});
+			});
+		});
+		EvaluationStatistics.clearCalibrationObservations();
+		Files.deleteIfExists(tempFile);
+	}
+
+	@Test
+	public void testCalibrationPersistenceCanBeDisabled() throws IOException {
+		Path tempFile = Files.createTempFile("rdf4j-calibration", ".properties");
+		Files.deleteIfExists(tempFile);
+		withProperty(CALIBRATION_PERSISTENCE_FILE_PROPERTY, tempFile.toString(), () -> {
+			withProperty(CALIBRATION_PERSISTENCE_ENABLED_PROPERTY, "false", () -> {
+				EvaluationStatistics.clearCalibrationObservations();
+				EvaluationStatistics.recordGlobalCardinalityObservation("persist-source", 10.0, 100.0);
+				assertThat(EvaluationStatistics.getCalibrationSnapshot("persist-source")).isNotNull();
+				assertThat(Files.exists(tempFile)).isFalse();
+
+				EvaluationStatistics.reloadCalibrationObservationsFromPersistence();
+				assertThat(EvaluationStatistics.getCalibrationSnapshot("persist-source")).isNull();
+			});
+		});
+		EvaluationStatistics.clearCalibrationObservations();
+		Files.deleteIfExists(tempFile);
+	}
+
+	@Test
+	public void testCalibrationPersistenceCanBufferWritesUntilThreshold() throws IOException {
+		Path tempFile = Files.createTempFile("rdf4j-calibration", ".properties");
+		Files.deleteIfExists(tempFile);
+		withProperty(CALIBRATION_PERSISTENCE_FILE_PROPERTY, tempFile.toString(), () -> {
+			withProperty(CALIBRATION_PERSISTENCE_ENABLED_PROPERTY, "true", () -> {
+				withProperty(CALIBRATION_PERSISTENCE_FLUSH_EVERY_OBSERVATIONS_PROPERTY, "3", () -> {
+					withProperty(CALIBRATION_PERSISTENCE_FLUSH_INTERVAL_MS_PROPERTY, "600000", () -> {
+						EvaluationStatistics.clearCalibrationObservations();
+						try {
+							Files.deleteIfExists(tempFile);
+						} catch (IOException e) {
+							throw new RuntimeException(e);
+						}
+						EvaluationStatistics.recordGlobalCardinalityObservation("persist-source", 10.0, 100.0);
+						assertThat(Files.exists(tempFile)).isFalse();
+
+						EvaluationStatistics.recordGlobalCardinalityObservation("persist-source", 10.0, 120.0);
+						assertThat(Files.exists(tempFile)).isFalse();
+
+						EvaluationStatistics.recordGlobalCardinalityObservation("persist-source", 10.0, 80.0);
+						assertThat(Files.exists(tempFile)).isTrue();
+
+						EvaluationStatistics.reloadCalibrationObservationsFromPersistence();
+						EvaluationStatistics.CalibrationSnapshot afterReload = EvaluationStatistics
+								.getCalibrationSnapshot("persist-source");
+						assertThat(afterReload).isNotNull();
+						assertThat(afterReload.sampleCount).isEqualTo(3L);
+					});
+				});
+			});
+		});
+		EvaluationStatistics.clearCalibrationObservations();
+		Files.deleteIfExists(tempFile);
+	}
+
+	@Test
+	public void testCalibrationPersistenceFlushIntervalCanForceWrite() throws IOException {
+		Path tempFile = Files.createTempFile("rdf4j-calibration", ".properties");
+		Files.deleteIfExists(tempFile);
+		withProperty(CALIBRATION_PERSISTENCE_FILE_PROPERTY, tempFile.toString(), () -> {
+			withProperty(CALIBRATION_PERSISTENCE_ENABLED_PROPERTY, "true", () -> {
+				withProperty(CALIBRATION_PERSISTENCE_FLUSH_EVERY_OBSERVATIONS_PROPERTY, "1000", () -> {
+					withProperty(CALIBRATION_PERSISTENCE_FLUSH_INTERVAL_MS_PROPERTY, "0", () -> {
+						EvaluationStatistics.clearCalibrationObservations();
+						try {
+							Files.deleteIfExists(tempFile);
+						} catch (IOException e) {
+							throw new RuntimeException(e);
+						}
+						EvaluationStatistics.recordGlobalCardinalityObservation("persist-source", 10.0, 100.0);
+						assertThat(Files.exists(tempFile)).isTrue();
+					});
+				});
+			});
+		});
+		EvaluationStatistics.clearCalibrationObservations();
+		Files.deleteIfExists(tempFile);
+	}
+
+	@Test
+	public void testCalibrationPersistenceWritesFormatVersionMetadata() throws IOException {
+		Path tempFile = Files.createTempFile("rdf4j-calibration", ".properties");
+		Files.deleteIfExists(tempFile);
+		withProperty(CALIBRATION_PERSISTENCE_FILE_PROPERTY, tempFile.toString(), () -> {
+			withProperty(CALIBRATION_PERSISTENCE_ENABLED_PROPERTY, "true", () -> {
+				withProperty(CALIBRATION_PERSISTENCE_FLUSH_EVERY_OBSERVATIONS_PROPERTY, "1", () -> {
+					EvaluationStatistics.clearCalibrationObservations();
+					EvaluationStatistics.recordGlobalCardinalityObservation("persist-source", 10.0, 100.0);
+					assertThat(Files.exists(tempFile)).isTrue();
+
+					Properties persisted = new Properties();
+					try (InputStream inputStream = Files.newInputStream(tempFile)) {
+						persisted.load(inputStream);
+					} catch (IOException e) {
+						throw new RuntimeException(e);
+					}
+					assertThat(persisted.getProperty(CALIBRATION_PERSISTENCE_VERSION_KEY)).isNotBlank();
+				});
+			});
+		});
+		EvaluationStatistics.clearCalibrationObservations();
+		Files.deleteIfExists(tempFile);
+	}
+
+	@Test
+	public void testCalibrationPersistenceSkipsUnsupportedFormatVersion() throws IOException {
+		Path tempFile = Files.createTempFile("rdf4j-calibration", ".properties");
+		Files.deleteIfExists(tempFile);
+		withProperty(CALIBRATION_PERSISTENCE_ENABLED_PROPERTY, "false",
+				EvaluationStatistics::clearCalibrationObservations);
+		withProperty(CALIBRATION_PERSISTENCE_FILE_PROPERTY, tempFile.toString(), () -> {
+			withProperty(CALIBRATION_PERSISTENCE_ENABLED_PROPERTY, "true", () -> {
+				Properties persisted = new Properties();
+				persisted.setProperty(CALIBRATION_PERSISTENCE_VERSION_KEY, "9999");
+				String encodedSource = Base64.getUrlEncoder()
+						.withoutPadding()
+						.encodeToString("persist-source".getBytes(StandardCharsets.UTF_8));
+				String keyPrefix = CALIBRATION_PERSISTENCE_SOURCE_PREFIX + encodedSource;
+				persisted.setProperty(keyPrefix + CALIBRATION_PERSISTENCE_COUNT_SUFFIX, "3");
+				persisted.setProperty(keyPrefix + CALIBRATION_PERSISTENCE_QERROR_SUFFIX, "4.0");
+				try (OutputStream outputStream = Files.newOutputStream(tempFile)) {
+					persisted.store(outputStream, "test unsupported version");
+				} catch (IOException e) {
+					throw new RuntimeException(e);
+				}
+
+				new EvaluationStatistics();
+				assertThat(EvaluationStatistics.getCalibrationSnapshot("persist-source")).isNull();
+			});
+		});
+		EvaluationStatistics.clearCalibrationObservations();
+		Files.deleteIfExists(tempFile);
+	}
+
+	@Test
+	public void testCalibrationSourceCountCanBeBounded() {
+		EvaluationStatistics.clearCalibrationObservations();
+		withProperty(CALIBRATION_MAX_SOURCES_PROPERTY, "2", () -> {
+			EvaluationStatistics.recordGlobalCardinalityObservation("source-a", 10.0, 20.0);
+			EvaluationStatistics.recordGlobalCardinalityObservation("source-b", 10.0, 20.0);
+			EvaluationStatistics.recordGlobalCardinalityObservation("source-c", 10.0, 20.0);
+
+			assertThat(EvaluationStatistics.getCalibrationSnapshot("source-a")).isNull();
+			assertThat(EvaluationStatistics.getCalibrationSnapshot("source-b")).isNotNull();
+			assertThat(EvaluationStatistics.getCalibrationSnapshot("source-c")).isNotNull();
+		});
+		EvaluationStatistics.clearCalibrationObservations();
+	}
+
+	private static void withProperty(String property, String value, Runnable runnable) {
+		String previous = System.getProperty(property);
+		try {
+			if (value == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, value);
+			}
+			runnable.run();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
 		}
 	}
 
