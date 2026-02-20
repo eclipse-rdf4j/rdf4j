@@ -1,17 +1,17 @@
-Projection ()
+Projection
 ╠══ ProjectionElemList
 ║     ProjectionElem "count"
-╚══ Extension ()
-   ├── Group () ()
-   │  ╠══ Filter ()
+╚══ Extension
+   ├── Group
+   │  ╠══ Filter
    │  ║  ├── Exists
-   │  ║  │     StatementPattern ()
+   │  ║  │     StatementPattern
    │  ║  │        s: Var (name=enc)
    │  ║  │        p: Var (name=_const_6f00815a_uri, value=http://example.com/theme/medical/hasObservation, anonymous)
    │  ║  │        o: Var (name=obs)
-   │  ║  └── LeftJoin (LeftJoinIterator) ()
-   │  ║     ╠══ Join (JoinIterator) () [left]
-   │  ║     ║  ├── Filter () [left]
+   │  ║  └── LeftJoin
+   │  ║     ╠══ Join [left]
+   │  ║     ║  ├── Filter [left]
    │  ║     ║  │  ╠══ Or
    │  ║     ║  │  ║  ├── Compare (=)
    │  ║     ║  │  ║  │     Var (name=code)
@@ -19,20 +19,20 @@ Projection ()
    │  ║     ║  │  ║  └── Compare (=)
    │  ║     ║  │  ║        Var (name=code)
    │  ║     ║  │  ║        ValueConstant (value="DX-201")
-   │  ║     ║  │  ╚══ StatementPattern ()
+   │  ║     ║  │  ╚══ StatementPattern
    │  ║     ║  │        s: Var (name=cond)
    │  ║     ║  │        p: Var (name=_const_98e9815_uri, value=http://example.com/theme/medical/code, anonymous)
    │  ║     ║  │        o: Var (name=code)
-   │  ║     ║  └── Join (JoinIterator) () [right]
-   │  ║     ║     ╠══ StatementPattern () [left]
+   │  ║     ║  └── Join [right]
+   │  ║     ║     ╠══ StatementPattern [left]
    │  ║     ║     ║     s: Var (name=enc)
    │  ║     ║     ║     p: Var (name=_const_7e7389c9_uri, value=http://example.com/theme/medical/hasCondition, anonymous)
    │  ║     ║     ║     o: Var (name=cond)
-   │  ║     ║     ╚══ StatementPattern () [right]
+   │  ║     ║     ╚══ StatementPattern [right]
    │  ║     ║           s: Var (name=enc)
    │  ║     ║           p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
    │  ║     ║           o: Var (name=_const_5e8eb7eb_uri, value=http://example.com/theme/medical/Encounter, anonymous)
-   │  ║     ╚══ StatementPattern () [right]
+   │  ║     ╚══ StatementPattern [right]
    │  ║           s: Var (name=enc)
    │  ║           p: Var (name=_const_9016af8b_uri, value=http://example.com/theme/medical/handledBy, anonymous)
    │  ║           o: Var (name=practitioner)

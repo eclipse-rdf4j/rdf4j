@@ -28,26 +28,26 @@ Projection
    │  ║     ║  ├── Join
    │  ║     ║  │  ╠══ StatementPattern [left]
    │  ║     ║  │  ║     s: Var (name=patient)
-   │  ║     ║  │  ║     p: Var (name=_const_fe9f43e1_uri, value=http://example.com/theme/medical/hasMedication, anonymous)
-   │  ║     ║  │  ║     o: Var (name=med)
+   │  ║     ║  │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║  │  ║     o: Var (name=_const_24be87bd_uri, value=http://example.com/theme/medical/Patient, anonymous)
    │  ║     ║  │  ╚══ StatementPattern [right]
    │  ║     ║  │        s: Var (name=patient)
-   │  ║     ║  │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-   │  ║     ║  │        o: Var (name=_const_24be87bd_uri, value=http://example.com/theme/medical/Patient, anonymous)
+   │  ║     ║  │        p: Var (name=_const_fe9f43e1_uri, value=http://example.com/theme/medical/hasMedication, anonymous)
+   │  ║     ║  │        o: Var (name=med)
    │  ║     ║  └── Join
    │  ║     ║     ╠══ StatementPattern [left]
-   │  ║     ║     ║     s: Var (name=patient)
-   │  ║     ║     ║     p: Var (name=_const_ca285e1_uri, value=http://example.com/theme/medical/hasEncounter, anonymous)
-   │  ║     ║     ║     o: Var (name=enc)
+   │  ║     ║     ║     s: Var (name=enc)
+   │  ║     ║     ║     p: Var (name=_const_6f00815a_uri, value=http://example.com/theme/medical/hasObservation, anonymous)
+   │  ║     ║     ║     o: Var (name=obs)
    │  ║     ║     ╚══ Join [right]
    │  ║     ║        ├── StatementPattern [left]
    │  ║     ║        │     s: Var (name=patient)
-   │  ║     ║        │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-   │  ║     ║        │     o: Var (name=_const_24be87bd_uri, value=http://example.com/theme/medical/Patient, anonymous)
+   │  ║     ║        │     p: Var (name=_const_ca285e1_uri, value=http://example.com/theme/medical/hasEncounter, anonymous)
+   │  ║     ║        │     o: Var (name=enc)
    │  ║     ║        └── StatementPattern [right]
-   │  ║     ║              s: Var (name=enc)
-   │  ║     ║              p: Var (name=_const_6f00815a_uri, value=http://example.com/theme/medical/hasObservation, anonymous)
-   │  ║     ║              o: Var (name=obs)
+   │  ║     ║              s: Var (name=patient)
+   │  ║     ║              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║     ║              o: Var (name=_const_24be87bd_uri, value=http://example.com/theme/medical/Patient, anonymous)
    │  ║     ╚══ StatementPattern [right]
    │  ║           s: Var (name=patient)
    │  ║           p: Var (name=_const_99364b3_uri, value=http://example.com/theme/medical/name, anonymous)

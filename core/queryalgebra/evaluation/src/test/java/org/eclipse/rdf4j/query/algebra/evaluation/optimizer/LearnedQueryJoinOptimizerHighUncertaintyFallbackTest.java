@@ -40,8 +40,24 @@ class LearnedQueryJoinOptimizerHighUncertaintyFallbackTest {
 	}
 
 	@Test
-	void enablesLegacyFallbackForFullyUncertainDpPlan() {
-		assertTrue(LearnedQueryJoinOptimizer.shouldUseHighUncertaintyLegacyFallback("dp", 7, 7.0d, 200.0d));
+	void enablesLegacyFallbackForFullyUncertainHighCardinalityDpPlan() {
+		assertTrue(LearnedQueryJoinOptimizer.shouldUseHighUncertaintyLegacyFallback("dp", 7, 7.0d, 20000.0d));
+	}
+
+	@Test
+	void doesNotEnableLegacyFallbackForFullyUncertainLowCardinalityDpPlan() {
+		assertFalse(LearnedQueryJoinOptimizer.shouldUseHighUncertaintyLegacyFallback("dp", 7, 7.0d, 200.0d));
+	}
+
+	@Test
+	void doesNotEnableLegacyFallbackForInvalidCardinalitySignals() {
+		assertFalse(LearnedQueryJoinOptimizer.shouldUseHighUncertaintyLegacyFallback("dp", 7, 7.0d, Double.NaN));
+		assertFalse(
+				LearnedQueryJoinOptimizer.shouldUseHighUncertaintyLegacyFallback("dp", 7, 7.0d,
+						Double.POSITIVE_INFINITY));
+		assertFalse(
+				LearnedQueryJoinOptimizer.shouldUseHighUncertaintyLegacyFallback("dp", 7, 7.0d,
+						Double.NEGATIVE_INFINITY));
 	}
 
 	@Test

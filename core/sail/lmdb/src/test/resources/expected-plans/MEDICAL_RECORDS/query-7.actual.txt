@@ -1,21 +1,21 @@
-Projection ()
+Projection
 ╠══ ProjectionElemList
 ║     ProjectionElem "count"
-╚══ Extension ()
-   ├── Group () ()
-   │  ╠══ Difference ()
-   │  ║  ├── Filter ()
+╚══ Extension
+   ├── Group
+   │  ╠══ Difference
+   │  ║  ├── Filter
    │  ║  │  ╠══ Exists
-   │  ║  │  ║     StatementPattern ()
+   │  ║  │  ║     StatementPattern
    │  ║  │  ║        s: Var (name=patient)
    │  ║  │  ║        p: Var (name=_const_fe9f43e1_uri, value=http://example.com/theme/medical/hasMedication, anonymous)
    │  ║  │  ║        o: Var (name=med)
-   │  ║  │  ╚══ Join (JoinIterator) ()
-   │  ║  │     ├── StatementPattern () [left]
+   │  ║  │  ╚══ Join
+   │  ║  │     ├── StatementPattern [left]
    │  ║  │     │     s: Var (name=med)
    │  ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
    │  ║  │     │     o: Var (name=_const_ea395317_uri, value=http://example.com/theme/medical/Medication, anonymous)
-   │  ║  │     └── Filter () [right]
+   │  ║  │     └── Filter [right]
    │  ║  │        ╠══ Or
    │  ║  │        ║  ├── Compare (=)
    │  ║  │        ║  │     Var (name=code)
@@ -23,17 +23,17 @@ Projection ()
    │  ║  │        ║  └── Compare (=)
    │  ║  │        ║        Var (name=code)
    │  ║  │        ║        ValueConstant (value="MED-1001")
-   │  ║  │        ╚══ StatementPattern ()
+   │  ║  │        ╚══ StatementPattern
    │  ║  │              s: Var (name=med)
    │  ║  │              p: Var (name=_const_98e9815_uri, value=http://example.com/theme/medical/code, anonymous)
    │  ║  │              o: Var (name=code)
-   │  ║  └── Filter (new scope) ()
+   │  ║  └── Filter (new scope)
    │  ║     ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#contains)
    │  ║     ║  ├── FunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)
    │  ║     ║  │     Str
    │  ║     ║  │        Var (name=dose)
    │  ║     ║  └── ValueConstant (value="x")
-   │  ║     ╚══ StatementPattern ()
+   │  ║     ╚══ StatementPattern
    │  ║           s: Var (name=med)
    │  ║           p: Var (name=_const_e2048edf_uri, value=http://example.com/theme/medical/dosage, anonymous)
    │  ║           o: Var (name=dose)

@@ -49,6 +49,7 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 		assertEquals(0, firstSelection.selectedCandidateIndex);
 		assertEquals("cache-miss", firstSelection.stabilityDecision);
 		assertEquals("explore", firstSelection.stabilitySource);
+		assertEquals("cache-miss", firstSelection.stabilitySwitchTrigger);
 		assertTrue(Double.isNaN(firstSelection.stabilityImprovementRatio));
 		assertTrue(Double.isNaN(firstSelection.stabilityUncertaintyDelta));
 
@@ -59,6 +60,7 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 				"Expected adaptive plan stability to switch cached winner when improvement is substantial");
 		assertEquals("cache-hit-switch", secondSelection.stabilityDecision);
 		assertEquals("best-cost", secondSelection.stabilitySource);
+		assertEquals("improvement-threshold", secondSelection.stabilitySwitchTrigger);
 		assertEquals(0.4d, secondSelection.stabilityImprovementRatio, 0.0000001d);
 		assertEquals(0.0d, secondSelection.stabilityUncertaintyDelta, 0.0000001d);
 	}
@@ -82,6 +84,7 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 				"Expected plan stability guard to hold cached winner for small gains without confidence gain");
 		assertEquals("cache-hit-keep", secondSelection.stabilityDecision);
 		assertEquals("cache", secondSelection.stabilitySource);
+		assertEquals("keep-cached", secondSelection.stabilitySwitchTrigger);
 		assertEquals(0.0d, secondSelection.stabilityImprovementRatio, 0.0000001d);
 		assertEquals(0.0d, secondSelection.stabilityUncertaintyDelta, 0.0000001d);
 	}
@@ -89,6 +92,7 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 	@Test
 	void autoModeSwitchesCachedWinnerWhenUncertaintyDropsAndCostImproves() throws Exception {
 		clearExploreWinnerCache();
+		clearOnlineOutcomeStats();
 		LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(new EvaluationStatistics(),
 				new EmptyTripleSource(), new NoopStatsProvider());
 		Object visitor = newLearnedJoinVisitor(optimizer);
@@ -105,8 +109,242 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 				"Expected confidence-aware switch when alternative lowers uncertainty and cost");
 		assertEquals("cache-hit-switch", secondSelection.stabilityDecision);
 		assertEquals("explore", secondSelection.stabilitySource);
+		assertEquals("uncertainty-reduction", secondSelection.stabilitySwitchTrigger);
 		assertEquals(0.01d, secondSelection.stabilityImprovementRatio, 0.0000001d);
 		assertEquals(9.0d, secondSelection.stabilityUncertaintyDelta, 0.0000001d);
+	}
+
+	@Test
+	void autoModeSwitchesToRuntimePreferredCandidateWhenOutcomeLearningIsConfident() throws Exception {
+		clearExploreWinnerCache();
+		clearOnlineOutcomeStats();
+		LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource(), new NoopStatsProvider());
+		Object visitor = newLearnedJoinVisitor(optimizer);
+		String templateHash = "plan-stability-runtime-learning-switch-test";
+
+		SelectionResult firstSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 130.0d, 2.0d)));
+		assertEquals(0, firstSelection.selectedCandidateIndex);
+
+		recordPlanOutcome(templateHash, "[0,1]", 170.0d, true);
+		recordPlanOutcome(templateHash, "[0,1]", 165.0d, true);
+		recordPlanOutcome(templateHash, "[0,1]", 160.0d, true);
+		recordPlanOutcome(templateHash, "[1,0]", 100.0d, true);
+		recordPlanOutcome(templateHash, "[1,0]", 95.0d, true);
+		recordPlanOutcome(templateHash, "[1,0]", 90.0d, true);
+
+		SelectionResult secondSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 110.0d, 2.0d)));
+
+		assertEquals(1, secondSelection.selectedCandidateIndex);
+		assertEquals("runtime-learning-switch", secondSelection.stabilityDecision);
+		assertEquals("runtime", secondSelection.stabilitySource);
+		assertEquals("runtime-expected-improvement", secondSelection.stabilitySwitchTrigger);
+	}
+
+	@Test
+	void autoModeSkipsRuntimeSwitchWhenAlternativeFailureRateIsTooHigh() throws Exception {
+		clearExploreWinnerCache();
+		clearOnlineOutcomeStats();
+		LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource(), new NoopStatsProvider());
+		Object visitor = newLearnedJoinVisitor(optimizer);
+		String templateHash = "plan-stability-runtime-learning-failure-gate-test";
+
+		SelectionResult firstSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 130.0d, 2.0d)));
+		assertEquals(0, firstSelection.selectedCandidateIndex);
+
+		recordPlanOutcome(templateHash, "[0,1]", 170.0d, true);
+		recordPlanOutcome(templateHash, "[0,1]", 165.0d, true);
+		recordPlanOutcome(templateHash, "[0,1]", 160.0d, true);
+		recordPlanOutcome(templateHash, "[1,0]", 90.0d, false);
+		recordPlanOutcome(templateHash, "[1,0]", 85.0d, false);
+		recordPlanOutcome(templateHash, "[1,0]", 80.0d, true);
+
+		SelectionResult secondSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 106.0d, 2.0d)));
+
+		assertEquals(0, secondSelection.selectedCandidateIndex);
+		assertEquals("cache-hit-keep", secondSelection.stabilityDecision);
+		assertEquals("cache", secondSelection.stabilitySource);
+		assertEquals("keep-cached", secondSelection.stabilitySwitchTrigger);
+	}
+
+	@Test
+	void autoModeSkipsRuntimeSwitchWhenAlternativeSuccessStreakIsTooShort() throws Exception {
+		clearExploreWinnerCache();
+		clearOnlineOutcomeStats();
+		LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource(), new NoopStatsProvider());
+		Object visitor = newLearnedJoinVisitor(optimizer);
+		String templateHash = "plan-stability-runtime-learning-success-streak-gate-test";
+
+		SelectionResult firstSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 130.0d, 2.0d)));
+		assertEquals(0, firstSelection.selectedCandidateIndex);
+
+		recordPlanOutcome(templateHash, "[0,1]", 170.0d, true);
+		recordPlanOutcome(templateHash, "[0,1]", 165.0d, true);
+		recordPlanOutcome(templateHash, "[0,1]", 160.0d, true);
+		recordPlanOutcome(templateHash, "[1,0]", 90.0d, true);
+		recordPlanOutcome(templateHash, "[1,0]", 85.0d, false);
+		recordPlanOutcome(templateHash, "[1,0]", 80.0d, true);
+
+		SelectionResult secondSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 106.0d, 2.0d)));
+
+		assertEquals(0, secondSelection.selectedCandidateIndex);
+		assertEquals("cache-hit-keep", secondSelection.stabilityDecision);
+		assertEquals("cache", secondSelection.stabilitySource);
+		assertEquals("keep-cached", secondSelection.stabilitySwitchTrigger);
+	}
+
+	@Test
+	void autoModeSkipsRuntimeSwitchWhenAlternativeRuntimeVolatilityIsHigh() throws Exception {
+		clearExploreWinnerCache();
+		clearOnlineOutcomeStats();
+		LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource(), new NoopStatsProvider());
+		Object visitor = newLearnedJoinVisitor(optimizer);
+		String templateHash = "plan-stability-runtime-learning-volatility-gate-test";
+
+		SelectionResult firstSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 130.0d, 2.0d)));
+		assertEquals(0, firstSelection.selectedCandidateIndex);
+
+		recordPlanOutcome(templateHash, "[0,1]", 100.0d, true);
+		recordPlanOutcome(templateHash, "[0,1]", 99.0d, true);
+		recordPlanOutcome(templateHash, "[0,1]", 101.0d, true);
+		recordPlanOutcome(templateHash, "[1,0]", 40.0d, true);
+		recordPlanOutcome(templateHash, "[1,0]", 200.0d, true);
+		recordPlanOutcome(templateHash, "[1,0]", 35.0d, true);
+
+		SelectionResult secondSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 130.0d, 2.0d)));
+
+		assertEquals(0, secondSelection.selectedCandidateIndex);
+		assertEquals("cache-hit-keep", secondSelection.stabilityDecision);
+		assertEquals("cache", secondSelection.stabilitySource);
+		assertEquals("keep-cached", secondSelection.stabilitySwitchTrigger);
+	}
+
+	@Test
+	void autoModeRollsBackCachedCandidateWhenRuntimeRegressionIsSevere() throws Exception {
+		clearExploreWinnerCache();
+		clearOnlineOutcomeStats();
+		LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource(), new NoopStatsProvider());
+		Object visitor = newLearnedJoinVisitor(optimizer);
+		String templateHash = "plan-stability-runtime-rollback-test";
+
+		SelectionResult firstSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 130.0d, 2.0d)));
+		assertEquals(0, firstSelection.selectedCandidateIndex);
+
+		recordPlanOutcome(templateHash, "[0,1]", 280.0d, true);
+		recordPlanOutcome(templateHash, "[0,1]", 290.0d, true);
+		recordPlanOutcome(templateHash, "[0,1]", 300.0d, true);
+
+		SelectionResult secondSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 105.0d, 2.0d)));
+
+		assertEquals(1, secondSelection.selectedCandidateIndex);
+		assertEquals("runtime-rollback", secondSelection.stabilityDecision);
+		assertEquals("rollback", secondSelection.stabilitySource);
+		assertEquals("runtime-regression", secondSelection.stabilitySwitchTrigger);
+	}
+
+	@Test
+	void autoModeRollsBackCachedCandidateWhenRuntimeFailureRateIsSevere() throws Exception {
+		clearExploreWinnerCache();
+		clearOnlineOutcomeStats();
+		LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource(), new NoopStatsProvider());
+		Object visitor = newLearnedJoinVisitor(optimizer);
+		String templateHash = "plan-stability-runtime-failure-rollback-test";
+
+		SelectionResult firstSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 130.0d, 2.0d)));
+		assertEquals(0, firstSelection.selectedCandidateIndex);
+
+		recordPlanOutcome(templateHash, "[0,1]", 120.0d, false);
+		recordPlanOutcome(templateHash, "[0,1]", 125.0d, false);
+		recordPlanOutcome(templateHash, "[0,1]", 110.0d, false);
+		recordPlanOutcome(templateHash, "[1,0]", 105.0d, true);
+		recordPlanOutcome(templateHash, "[1,0]", 104.0d, true);
+		recordPlanOutcome(templateHash, "[1,0]", 103.0d, true);
+
+		SelectionResult secondSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 106.0d, 2.0d)));
+
+		assertEquals(1, secondSelection.selectedCandidateIndex);
+		assertEquals("runtime-rollback", secondSelection.stabilityDecision);
+		assertEquals("rollback", secondSelection.stabilitySource);
+		assertEquals("runtime-failure-rate", secondSelection.stabilitySwitchTrigger);
+	}
+
+	@Test
+	void autoModeKeepsRollbackWinnerDuringRuntimeQuarantineWindow() throws Exception {
+		clearExploreWinnerCache();
+		clearOnlineOutcomeStats();
+		LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource(), new NoopStatsProvider());
+		Object visitor = newLearnedJoinVisitor(optimizer);
+		String templateHash = "plan-stability-runtime-rollback-quarantine-test";
+
+		SelectionResult firstSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 130.0d, 2.0d)));
+		assertEquals(0, firstSelection.selectedCandidateIndex);
+
+		recordPlanOutcome(templateHash, "[0,1]", 280.0d, true);
+		recordPlanOutcome(templateHash, "[0,1]", 290.0d, true);
+		recordPlanOutcome(templateHash, "[0,1]", 300.0d, true);
+
+		SelectionResult rollbackSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 105.0d, 2.0d)));
+		assertEquals(1, rollbackSelection.selectedCandidateIndex);
+		assertEquals("runtime-rollback", rollbackSelection.stabilityDecision);
+		assertEquals("rollback", rollbackSelection.stabilitySource);
+		assertEquals("runtime-regression", rollbackSelection.stabilitySwitchTrigger);
+
+		SelectionResult quarantinedSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 60.0d, 1.0d), candidate("[1,0]", 105.0d, 2.0d)));
+
+		assertEquals(1, quarantinedSelection.selectedCandidateIndex);
+		assertEquals("cache-hit-keep", quarantinedSelection.stabilityDecision);
+		assertEquals("cache", quarantinedSelection.stabilitySource);
+		assertEquals("keep-cached", quarantinedSelection.stabilitySwitchTrigger);
+	}
+
+	@Test
+	void autoModeVetoesAdaptiveSwitchWhenBestCostCandidateHasPoorRuntimeHealth() throws Exception {
+		clearExploreWinnerCache();
+		clearOnlineOutcomeStats();
+		LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource(), new NoopStatsProvider());
+		Object visitor = newLearnedJoinVisitor(optimizer);
+		String templateHash = "plan-stability-adaptive-runtime-health-veto-test";
+
+		SelectionResult firstSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 130.0d, 2.0d)));
+		assertEquals(0, firstSelection.selectedCandidateIndex);
+
+		recordPlanOutcome(templateHash, "[0,1]", 100.0d, true);
+		recordPlanOutcome(templateHash, "[0,1]", 101.0d, true);
+		recordPlanOutcome(templateHash, "[0,1]", 99.0d, true);
+		recordPlanOutcome(templateHash, "[1,0]", 60.0d, false);
+		recordPlanOutcome(templateHash, "[1,0]", 58.0d, false);
+		recordPlanOutcome(templateHash, "[1,0]", 55.0d, true);
+
+		SelectionResult secondSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 2.0d), candidate("[1,0]", 60.0d, 1.0d)));
+
+		assertEquals(0, secondSelection.selectedCandidateIndex);
+		assertEquals("cache-hit-keep", secondSelection.stabilityDecision);
+		assertEquals("cache", secondSelection.stabilitySource);
+		assertEquals("runtime-health-veto", secondSelection.stabilitySwitchTrigger);
 	}
 
 	private static JoinPlanCandidate candidate(String signature, double estimatedCost, double totalUncertainty) {
@@ -134,12 +372,14 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 		method.setAccessible(true);
 		Object selection = method.invoke(visitor, forceMode, templateHash, candidates);
 		if (selection instanceof Integer) {
-			return new SelectionResult((int) selection, "not-applicable", "none", Double.NaN, Double.NaN);
+			return new SelectionResult((int) selection, "not-applicable", "none", "not-applicable", Double.NaN,
+					Double.NaN);
 		}
 		return new SelectionResult(
 				readIntField(selection, "selectedCandidateIndex"),
 				readStringField(selection, "stabilityDecision"),
 				readStringField(selection, "stabilitySource"),
+				readStringField(selection, "stabilitySwitchTrigger"),
 				readDoubleField(selection, "stabilityImprovementRatio"),
 				readDoubleField(selection, "stabilityUncertaintyDelta"));
 	}
@@ -166,14 +406,17 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 		private final int selectedCandidateIndex;
 		private final String stabilityDecision;
 		private final String stabilitySource;
+		private final String stabilitySwitchTrigger;
 		private final double stabilityImprovementRatio;
 		private final double stabilityUncertaintyDelta;
 
 		private SelectionResult(int selectedCandidateIndex, String stabilityDecision, String stabilitySource,
+				String stabilitySwitchTrigger,
 				double stabilityImprovementRatio, double stabilityUncertaintyDelta) {
 			this.selectedCandidateIndex = selectedCandidateIndex;
 			this.stabilityDecision = stabilityDecision;
 			this.stabilitySource = stabilitySource;
+			this.stabilitySwitchTrigger = stabilitySwitchTrigger;
 			this.stabilityImprovementRatio = stabilityImprovementRatio;
 			this.stabilityUncertaintyDelta = stabilityUncertaintyDelta;
 		}
@@ -185,6 +428,27 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 		field.setAccessible(true);
 		Map<String, ?> cache = (Map<String, ?>) field.get(null);
 		cache.clear();
+	}
+
+	private static void clearOnlineOutcomeStats() throws Exception {
+		try {
+			Method method = LearnedQueryJoinOptimizer.class.getMethod("clearPlanOutcomeStats");
+			method.invoke(null);
+		} catch (ReflectiveOperationException exception) {
+			throw new AssertionError("Expected plan outcome telemetry maintenance method clearPlanOutcomeStats",
+					exception);
+		}
+	}
+
+	private static void recordPlanOutcome(String templateHash, String signature, double observedCost,
+			boolean successful) throws Exception {
+		try {
+			Method method = LearnedQueryJoinOptimizer.class.getMethod("recordPlanOutcome", String.class, String.class,
+					double.class, boolean.class);
+			method.invoke(null, templateHash, signature, observedCost, successful);
+		} catch (ReflectiveOperationException exception) {
+			throw new AssertionError("Expected plan outcome telemetry recording method recordPlanOutcome", exception);
+		}
 	}
 
 	private static final class NoopStatsProvider implements JoinStatsProvider {

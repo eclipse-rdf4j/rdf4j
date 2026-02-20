@@ -105,6 +105,18 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 	private static final String PLAN_EXPLORE_MAX_EXTRA_MS_PROPERTY = "rdf4j.learned.planExplore.maxExtraMs";
 	private static final String PLAN_STABILITY_ENABLED_PROPERTY = "rdf4j.learned.planStability.enabled";
 	private static final String PLAN_STABILITY_MIN_IMPROVEMENT_PERCENT_PROPERTY = "rdf4j.learned.planStability.minImprovementPercent";
+	private static final String PLAN_OUTCOME_LEARNING_ENABLED_PROPERTY = "rdf4j.learned.planOutcome.enabled";
+	private static final String PLAN_OUTCOME_MIN_SAMPLES_PROPERTY = "rdf4j.learned.planOutcome.minSamples";
+	private static final String PLAN_OUTCOME_MIN_IMPROVEMENT_PERCENT_PROPERTY = "rdf4j.learned.planOutcome.minImprovementPercent";
+	private static final String PLAN_OUTCOME_ROLLBACK_REGRESSION_PERCENT_PROPERTY = "rdf4j.learned.planOutcome.rollbackRegressionPercent";
+	private static final String PLAN_OUTCOME_ROLLBACK_FAILURE_PERCENT_PROPERTY = "rdf4j.learned.planOutcome.rollbackFailurePercent";
+	private static final String PLAN_OUTCOME_ROLLBACK_QUARANTINE_SELECTIONS_PROPERTY = "rdf4j.learned.planOutcome.rollbackQuarantineSelections";
+	private static final String PLAN_OUTCOME_ROLLBACK_QUARANTINE_BACKOFF_MAX_MULTIPLIER_PROPERTY = "rdf4j.learned.planOutcome.rollbackQuarantineBackoffMaxMultiplier";
+	private static final String PLAN_OUTCOME_SWITCH_MAX_FAILURE_PERCENT_PROPERTY = "rdf4j.learned.planOutcome.switchMaxFailurePercent";
+	private static final String PLAN_OUTCOME_SWITCH_MAX_VOLATILITY_PERCENT_PROPERTY = "rdf4j.learned.planOutcome.switchMaxVolatilityPercent";
+	private static final String PLAN_OUTCOME_SWITCH_VOLATILITY_PENALTY_PERCENT_PROPERTY = "rdf4j.learned.planOutcome.switchVolatilityPenaltyPercent";
+	private static final String PLAN_OUTCOME_SWITCH_MIN_SUCCESS_STREAK_PROPERTY = "rdf4j.learned.planOutcome.switchMinSuccessStreak";
+	private static final String PLAN_OUTCOME_EWMA_ALPHA_PROPERTY = "rdf4j.learned.planOutcome.ewmaAlpha";
 	private static final String DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_ENABLED_PROPERTY = "rdf4j.optimizer.learned.dp.highUncertaintyGreedyFallback.enabled";
 	private static final String DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_MIN_UNCERTAINTY_PROPERTY = "rdf4j.optimizer.learned.dp.highUncertaintyGreedyFallback.minUncertainty";
 	private static final String DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_MIN_OPERANDS_PROPERTY = "rdf4j.optimizer.learned.dp.highUncertaintyGreedyFallback.minOperands";
@@ -122,6 +134,30 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			.parseBoolean(System.getProperty(PLAN_STABILITY_ENABLED_PROPERTY, "true"));
 	private static final double PLAN_STABILITY_MIN_IMPROVEMENT_RATIO = parsePercentageProperty(
 			PLAN_STABILITY_MIN_IMPROVEMENT_PERCENT_PROPERTY, 20.0d);
+	private static final boolean PLAN_OUTCOME_LEARNING_ENABLED = Boolean
+			.parseBoolean(System.getProperty(PLAN_OUTCOME_LEARNING_ENABLED_PROPERTY, "true"));
+	private static final int PLAN_OUTCOME_MIN_SAMPLES = Math.max(1,
+			Integer.getInteger(PLAN_OUTCOME_MIN_SAMPLES_PROPERTY, 3));
+	private static final double PLAN_OUTCOME_MIN_IMPROVEMENT_RATIO = parsePercentageProperty(
+			PLAN_OUTCOME_MIN_IMPROVEMENT_PERCENT_PROPERTY, 10.0d);
+	private static final double PLAN_OUTCOME_ROLLBACK_REGRESSION_RATIO = parsePercentageProperty(
+			PLAN_OUTCOME_ROLLBACK_REGRESSION_PERCENT_PROPERTY, 75.0d);
+	private static final double PLAN_OUTCOME_ROLLBACK_FAILURE_RATIO = parsePercentageProperty(
+			PLAN_OUTCOME_ROLLBACK_FAILURE_PERCENT_PROPERTY, 50.0d);
+	private static final int PLAN_OUTCOME_ROLLBACK_QUARANTINE_SELECTIONS = Math.max(0,
+			Integer.getInteger(PLAN_OUTCOME_ROLLBACK_QUARANTINE_SELECTIONS_PROPERTY, 2));
+	private static final int PLAN_OUTCOME_ROLLBACK_QUARANTINE_BACKOFF_MAX_MULTIPLIER = Math.max(1,
+			Integer.getInteger(PLAN_OUTCOME_ROLLBACK_QUARANTINE_BACKOFF_MAX_MULTIPLIER_PROPERTY, 4));
+	private static final double PLAN_OUTCOME_SWITCH_MAX_FAILURE_RATIO = parsePercentageProperty(
+			PLAN_OUTCOME_SWITCH_MAX_FAILURE_PERCENT_PROPERTY, 50.0d);
+	private static final double PLAN_OUTCOME_SWITCH_MAX_VOLATILITY_RATIO = parsePercentageProperty(
+			PLAN_OUTCOME_SWITCH_MAX_VOLATILITY_PERCENT_PROPERTY, 60.0d);
+	private static final double PLAN_OUTCOME_SWITCH_VOLATILITY_PENALTY_RATIO = parsePercentageProperty(
+			PLAN_OUTCOME_SWITCH_VOLATILITY_PENALTY_PERCENT_PROPERTY, 100.0d);
+	private static final int PLAN_OUTCOME_SWITCH_MIN_SUCCESS_STREAK = Math.max(1,
+			Integer.getInteger(PLAN_OUTCOME_SWITCH_MIN_SUCCESS_STREAK_PROPERTY, 2));
+	private static final double PLAN_OUTCOME_EWMA_ALPHA = parseUnitIntervalProperty(PLAN_OUTCOME_EWMA_ALPHA_PROPERTY,
+			0.35d);
 	private static final boolean DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_ENABLED = Boolean.parseBoolean(
 			System.getProperty(DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_ENABLED_PROPERTY, "true"));
 	private static final double DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_MIN_UNCERTAINTY = parseDoubleProperty(
@@ -139,6 +175,10 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 	private static final String DEBUG_PLAN_PROPERTY = "rdf4j.optimizer.learned.debugPlan";
 	private static final boolean DEBUG_PLAN = Boolean.getBoolean(DEBUG_PLAN_PROPERTY);
 	private static final Map<String, CachedPlanWinner> EXPLORE_WINNER_CACHE = new ConcurrentHashMap<>();
+	private static final Map<PlanOutcomeKey, PlanOutcomeStats> PLAN_OUTCOME_STATS = new ConcurrentHashMap<>();
+	private static final Map<PlanOutcomeKey, Long> PLAN_OUTCOME_QUARANTINE_UNTIL_EPOCH = new ConcurrentHashMap<>();
+	private static final Map<PlanOutcomeKey, Integer> PLAN_OUTCOME_QUARANTINE_BACKOFF_LEVEL = new ConcurrentHashMap<>();
+	private static final Map<String, Long> PLAN_SELECTION_EPOCH = new ConcurrentHashMap<>();
 	private static final Object PLAN_TRACE_LOCK = new Object();
 	private static final ThreadLocal<PlanSelectionSnapshot> LAST_PLAN_SELECTION = new ThreadLocal<>();
 
@@ -169,6 +209,103 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			this.signature = signature;
 			this.candidateIndex = candidateIndex;
 		}
+	}
+
+	private static final class PlanOutcomeKey {
+		private final String templateHash;
+		private final String planSignature;
+
+		private PlanOutcomeKey(String templateHash, String planSignature) {
+			this.templateHash = templateHash;
+			this.planSignature = planSignature;
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (this == obj) {
+				return true;
+			}
+			if (!(obj instanceof PlanOutcomeKey)) {
+				return false;
+			}
+			PlanOutcomeKey other = (PlanOutcomeKey) obj;
+			return Objects.equals(templateHash, other.templateHash)
+					&& Objects.equals(planSignature, other.planSignature);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(templateHash, planSignature);
+		}
+	}
+
+	private static final class PlanOutcomeStats {
+		private final double ewmaObservedCost;
+		private final double ewmaAbsoluteDeviation;
+		private final long samples;
+		private final long successes;
+		private final long failures;
+		private final long consecutiveSuccesses;
+		private final long consecutiveFailures;
+
+		private PlanOutcomeStats(double ewmaObservedCost, double ewmaAbsoluteDeviation, long samples, long successes,
+				long failures,
+				long consecutiveSuccesses, long consecutiveFailures) {
+			this.ewmaObservedCost = ewmaObservedCost;
+			this.ewmaAbsoluteDeviation = ewmaAbsoluteDeviation;
+			this.samples = samples;
+			this.successes = successes;
+			this.failures = failures;
+			this.consecutiveSuccesses = consecutiveSuccesses;
+			this.consecutiveFailures = consecutiveFailures;
+		}
+
+		private static PlanOutcomeStats seed(double observedCost, boolean successful) {
+			return new PlanOutcomeStats(observedCost, 0.0d, 1L, successful ? 1L : 0L, successful ? 0L : 1L,
+					successful ? 1L : 0L, successful ? 0L : 1L);
+		}
+
+		private PlanOutcomeStats update(double observedCost, boolean successful) {
+			double residual = Math.abs(observedCost - ewmaObservedCost);
+			double nextEwma = PLAN_OUTCOME_EWMA_ALPHA * observedCost
+					+ (1.0d - PLAN_OUTCOME_EWMA_ALPHA) * ewmaObservedCost;
+			double nextEwmaAbsoluteDeviation = PLAN_OUTCOME_EWMA_ALPHA * residual
+					+ (1.0d - PLAN_OUTCOME_EWMA_ALPHA) * ewmaAbsoluteDeviation;
+			return new PlanOutcomeStats(nextEwma, nextEwmaAbsoluteDeviation, samples + 1L,
+					successes + (successful ? 1L : 0L),
+					failures + (successful ? 0L : 1L), successful ? consecutiveSuccesses + 1L : 0L,
+					successful ? 0L : consecutiveFailures + 1L);
+		}
+	}
+
+	public static void recordPlanOutcome(String queryTemplateHash, String planSignature, double observedCost,
+			boolean successful) {
+		if (!PLAN_OUTCOME_LEARNING_ENABLED) {
+			return;
+		}
+		if (queryTemplateHash == null || queryTemplateHash.isBlank() || planSignature == null
+				|| planSignature.isBlank()) {
+			return;
+		}
+		if (!Double.isFinite(observedCost) || observedCost <= 0.0d) {
+			return;
+		}
+		PlanOutcomeKey key = new PlanOutcomeKey(queryTemplateHash, planSignature);
+		PLAN_OUTCOME_STATS.compute(key, (ignored, current) -> current == null ? PlanOutcomeStats.seed(observedCost,
+				successful) : current.update(observedCost, successful));
+		if (successful) {
+			PLAN_OUTCOME_QUARANTINE_BACKOFF_LEVEL.computeIfPresent(key,
+					(ignored, current) -> current != null && current.intValue() > 1
+							? Integer.valueOf(current.intValue() - 1)
+							: null);
+		}
+	}
+
+	public static void clearPlanOutcomeStats() {
+		PLAN_OUTCOME_STATS.clear();
+		PLAN_OUTCOME_QUARANTINE_UNTIL_EPOCH.clear();
+		PLAN_OUTCOME_QUARANTINE_BACKOFF_LEVEL.clear();
+		PLAN_SELECTION_EPOCH.clear();
 	}
 
 	public static final class PlanRewriteDiff {
@@ -202,6 +339,10 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		private final List<JoinPlanCandidate> candidates;
 		private final String reason;
 		private final String plannerUsed;
+		private final boolean dpEnabled;
+		private final int dpThreshold;
+		private final String planForceMode;
+		private final int planTraceTopK;
 		private final List<String> rawOrderLabels;
 		private final List<String> finalOrderLabels;
 		private final List<PlanRewriteDiff> rebalanceDiffs;
@@ -212,21 +353,45 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		private final List<String> unsupportedTargets;
 		private final String stabilityDecision;
 		private final String stabilitySource;
+		private final String stabilitySwitchTrigger;
 		private final double stabilityImprovementRatio;
 		private final double stabilityUncertaintyDelta;
+		private final int stabilityCachedCandidateIndex;
+		private final int stabilityExploreWinnerIndex;
+		private final int stabilityAdaptiveCandidateIndex;
+		private final long planSelectionEpoch;
+		private final long planOutcomeSelectedSamples;
+		private final long planOutcomeSelectedConsecutiveSuccesses;
+		private final long planOutcomeSelectedConsecutiveFailures;
+		private final double planOutcomeSelectedFailureRatio;
+		private final double planOutcomeSelectedVolatilityRatio;
+		private final double planOutcomeSelectedRuntimeCost;
+		private final int planOutcomeSelectedQuarantineBackoffLevel;
+		private final long planOutcomeSelectedQuarantineUntilEpoch;
 
 		private PlanSelectionSnapshot(String queryTemplateHash, int selectedCandidateIndex,
 				String selectedPlanSignature, List<JoinPlanCandidate> candidates, String reason, String plannerUsed,
+				boolean dpEnabled, int dpThreshold, String planForceMode, int planTraceTopK,
 				List<String> rawOrderLabels, List<String> finalOrderLabels, List<PlanRewriteDiff> rebalanceDiffs,
 				boolean repairApplied, List<String> repairBeforeLabels, List<String> repairAfterLabels,
 				Set<String> initiallyBoundVars, Set<String> unsupportedTargets, String stabilityDecision,
-				String stabilitySource, double stabilityImprovementRatio, double stabilityUncertaintyDelta) {
+				String stabilitySource, String stabilitySwitchTrigger, double stabilityImprovementRatio,
+				double stabilityUncertaintyDelta, int stabilityCachedCandidateIndex, int stabilityExploreWinnerIndex,
+				int stabilityAdaptiveCandidateIndex, long planSelectionEpoch, long planOutcomeSelectedSamples,
+				long planOutcomeSelectedConsecutiveSuccesses, long planOutcomeSelectedConsecutiveFailures,
+				double planOutcomeSelectedFailureRatio, double planOutcomeSelectedVolatilityRatio,
+				double planOutcomeSelectedRuntimeCost, int planOutcomeSelectedQuarantineBackoffLevel,
+				long planOutcomeSelectedQuarantineUntilEpoch) {
 			this.queryTemplateHash = queryTemplateHash;
 			this.selectedCandidateIndex = selectedCandidateIndex;
 			this.selectedPlanSignature = selectedPlanSignature;
 			this.candidates = List.copyOf(candidates);
 			this.reason = reason;
 			this.plannerUsed = plannerUsed == null ? "none" : plannerUsed;
+			this.dpEnabled = dpEnabled;
+			this.dpThreshold = dpThreshold;
+			this.planForceMode = planForceMode == null ? PlanForceMode.AUTO.name() : planForceMode;
+			this.planTraceTopK = Math.max(1, planTraceTopK);
 			this.rawOrderLabels = rawOrderLabels == null ? List.of() : List.copyOf(rawOrderLabels);
 			this.finalOrderLabels = finalOrderLabels == null ? List.of() : List.copyOf(finalOrderLabels);
 			this.rebalanceDiffs = rebalanceDiffs == null ? List.of() : List.copyOf(rebalanceDiffs);
@@ -237,10 +402,28 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			this.unsupportedTargets = toSortedList(unsupportedTargets);
 			this.stabilityDecision = stabilityDecision == null ? "not-applicable" : stabilityDecision;
 			this.stabilitySource = stabilitySource == null ? "none" : stabilitySource;
+			this.stabilitySwitchTrigger = stabilitySwitchTrigger == null ? "not-applicable" : stabilitySwitchTrigger;
 			this.stabilityImprovementRatio = Double.isFinite(stabilityImprovementRatio) ? stabilityImprovementRatio
 					: Double.NaN;
 			this.stabilityUncertaintyDelta = Double.isFinite(stabilityUncertaintyDelta) ? stabilityUncertaintyDelta
 					: Double.NaN;
+			this.stabilityCachedCandidateIndex = stabilityCachedCandidateIndex;
+			this.stabilityExploreWinnerIndex = stabilityExploreWinnerIndex;
+			this.stabilityAdaptiveCandidateIndex = stabilityAdaptiveCandidateIndex;
+			this.planSelectionEpoch = planSelectionEpoch;
+			this.planOutcomeSelectedSamples = Math.max(0L, planOutcomeSelectedSamples);
+			this.planOutcomeSelectedConsecutiveSuccesses = Math.max(0L, planOutcomeSelectedConsecutiveSuccesses);
+			this.planOutcomeSelectedConsecutiveFailures = Math.max(0L, planOutcomeSelectedConsecutiveFailures);
+			this.planOutcomeSelectedFailureRatio = Double.isFinite(planOutcomeSelectedFailureRatio)
+					? Math.max(0.0d, Math.min(1.0d, planOutcomeSelectedFailureRatio))
+					: Double.NaN;
+			this.planOutcomeSelectedVolatilityRatio = Double.isFinite(planOutcomeSelectedVolatilityRatio)
+					? Math.max(0.0d, planOutcomeSelectedVolatilityRatio)
+					: Double.NaN;
+			this.planOutcomeSelectedRuntimeCost = Double.isFinite(planOutcomeSelectedRuntimeCost)
+					&& planOutcomeSelectedRuntimeCost > 0.0d ? planOutcomeSelectedRuntimeCost : Double.NaN;
+			this.planOutcomeSelectedQuarantineBackoffLevel = Math.max(0, planOutcomeSelectedQuarantineBackoffLevel);
+			this.planOutcomeSelectedQuarantineUntilEpoch = planOutcomeSelectedQuarantineUntilEpoch;
 		}
 
 		public String getQueryTemplateHash() {
@@ -265,6 +448,22 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 
 		public String getPlannerUsed() {
 			return plannerUsed;
+		}
+
+		public boolean isDpEnabled() {
+			return dpEnabled;
+		}
+
+		public int getDpThreshold() {
+			return dpThreshold;
+		}
+
+		public String getPlanForceMode() {
+			return planForceMode;
+		}
+
+		public int getPlanTraceTopK() {
+			return planTraceTopK;
 		}
 
 		public List<String> getRawOrderLabels() {
@@ -314,6 +513,209 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		public double getStabilityUncertaintyDelta() {
 			return stabilityUncertaintyDelta;
 		}
+
+		public int getStabilityCachedCandidateIndex() {
+			return stabilityCachedCandidateIndex;
+		}
+
+		public int getStabilityExploreWinnerIndex() {
+			return stabilityExploreWinnerIndex;
+		}
+
+		public int getStabilityAdaptiveCandidateIndex() {
+			return stabilityAdaptiveCandidateIndex;
+		}
+
+		public double getStabilityCachedCandidateCost() {
+			return candidateEstimatedCost(stabilityCachedCandidateIndex);
+		}
+
+		public double getStabilityExploreWinnerCost() {
+			return candidateEstimatedCost(stabilityExploreWinnerIndex);
+		}
+
+		public double getStabilityAdaptiveCandidateCost() {
+			return candidateEstimatedCost(stabilityAdaptiveCandidateIndex);
+		}
+
+		public double getStabilityCachedCandidateUncertainty() {
+			return candidateUncertainty(stabilityCachedCandidateIndex);
+		}
+
+		public double getStabilityExploreWinnerUncertainty() {
+			return candidateUncertainty(stabilityExploreWinnerIndex);
+		}
+
+		public double getStabilityAdaptiveCandidateUncertainty() {
+			return candidateUncertainty(stabilityAdaptiveCandidateIndex);
+		}
+
+		public String getStabilityCachedCandidateSignature() {
+			return candidateSignature(stabilityCachedCandidateIndex);
+		}
+
+		public String getStabilityExploreWinnerSignature() {
+			return candidateSignature(stabilityExploreWinnerIndex);
+		}
+
+		public String getStabilityAdaptiveCandidateSignature() {
+			return candidateSignature(stabilityAdaptiveCandidateIndex);
+		}
+
+		public boolean isPlanStabilityEnabled() {
+			return PLAN_STABILITY_ENABLED;
+		}
+
+		public double getPlanStabilityMinImprovementRatio() {
+			return PLAN_STABILITY_MIN_IMPROVEMENT_RATIO;
+		}
+
+		public boolean isPlanExploreEnabled() {
+			return PLAN_EXPLORE_ENABLED;
+		}
+
+		public double getPlanExploreMaxExtraRatio() {
+			return PLAN_EXPLORE_MAX_EXTRA_RATIO;
+		}
+
+		public boolean isHighUncertaintyGreedyFallbackEnabled() {
+			return DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_ENABLED;
+		}
+
+		public double getHighUncertaintyGreedyFallbackMinUncertainty() {
+			return DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_MIN_UNCERTAINTY;
+		}
+
+		public int getHighUncertaintyGreedyFallbackMinOperands() {
+			return DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_MIN_OPERANDS;
+		}
+
+		public boolean isHighUncertaintyLegacyFallbackEnabled() {
+			return DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_ENABLED;
+		}
+
+		public int getHighUncertaintyLegacyFallbackMinOperands() {
+			return DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_OPERANDS;
+		}
+
+		public double getHighUncertaintyLegacyFallbackMinUncertaintyFraction() {
+			return DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_UNCERTAINTY_FRACTION;
+		}
+
+		public double getHighUncertaintyLegacyFallbackMinEstimatedCardinality() {
+			return DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_ESTIMATED_CARDINALITY;
+		}
+
+		public boolean isPlanOutcomeLearningEnabled() {
+			return PLAN_OUTCOME_LEARNING_ENABLED;
+		}
+
+		public int getPlanOutcomeMinSamples() {
+			return PLAN_OUTCOME_MIN_SAMPLES;
+		}
+
+		public double getPlanOutcomeMinImprovementRatio() {
+			return PLAN_OUTCOME_MIN_IMPROVEMENT_RATIO;
+		}
+
+		public double getPlanOutcomeRollbackRegressionRatio() {
+			return PLAN_OUTCOME_ROLLBACK_REGRESSION_RATIO;
+		}
+
+		public double getPlanOutcomeRollbackFailureRatio() {
+			return PLAN_OUTCOME_ROLLBACK_FAILURE_RATIO;
+		}
+
+		public int getPlanOutcomeRollbackQuarantineSelections() {
+			return PLAN_OUTCOME_ROLLBACK_QUARANTINE_SELECTIONS;
+		}
+
+		public int getPlanOutcomeRollbackQuarantineBackoffMaxMultiplier() {
+			return PLAN_OUTCOME_ROLLBACK_QUARANTINE_BACKOFF_MAX_MULTIPLIER;
+		}
+
+		public double getPlanOutcomeSwitchMaxFailureRatio() {
+			return PLAN_OUTCOME_SWITCH_MAX_FAILURE_RATIO;
+		}
+
+		public double getPlanOutcomeSwitchMaxVolatilityRatio() {
+			return PLAN_OUTCOME_SWITCH_MAX_VOLATILITY_RATIO;
+		}
+
+		public double getPlanOutcomeSwitchVolatilityPenaltyRatio() {
+			return PLAN_OUTCOME_SWITCH_VOLATILITY_PENALTY_RATIO;
+		}
+
+		public int getPlanOutcomeSwitchMinSuccessStreak() {
+			return PLAN_OUTCOME_SWITCH_MIN_SUCCESS_STREAK;
+		}
+
+		public double getPlanOutcomeEwmaAlpha() {
+			return PLAN_OUTCOME_EWMA_ALPHA;
+		}
+
+		public String getStabilitySwitchTrigger() {
+			return stabilitySwitchTrigger;
+		}
+
+		public long getPlanSelectionEpoch() {
+			return planSelectionEpoch;
+		}
+
+		public long getPlanOutcomeSelectedSamples() {
+			return planOutcomeSelectedSamples;
+		}
+
+		public long getPlanOutcomeSelectedConsecutiveSuccesses() {
+			return planOutcomeSelectedConsecutiveSuccesses;
+		}
+
+		public long getPlanOutcomeSelectedConsecutiveFailures() {
+			return planOutcomeSelectedConsecutiveFailures;
+		}
+
+		public double getPlanOutcomeSelectedFailureRatio() {
+			return planOutcomeSelectedFailureRatio;
+		}
+
+		public double getPlanOutcomeSelectedVolatilityRatio() {
+			return planOutcomeSelectedVolatilityRatio;
+		}
+
+		public double getPlanOutcomeSelectedRuntimeCost() {
+			return planOutcomeSelectedRuntimeCost;
+		}
+
+		public int getPlanOutcomeSelectedQuarantineBackoffLevel() {
+			return planOutcomeSelectedQuarantineBackoffLevel;
+		}
+
+		public long getPlanOutcomeSelectedQuarantineUntilEpoch() {
+			return planOutcomeSelectedQuarantineUntilEpoch;
+		}
+
+		private double candidateEstimatedCost(int candidateIndex) {
+			if (candidateIndex < 0 || candidateIndex >= candidates.size()) {
+				return Double.NaN;
+			}
+			return candidates.get(candidateIndex).getEstimatedTotalCost();
+		}
+
+		private double candidateUncertainty(int candidateIndex) {
+			if (candidateIndex < 0 || candidateIndex >= candidates.size()) {
+				return Double.NaN;
+			}
+			return candidates.get(candidateIndex).getTotalUncertainty();
+		}
+
+		private String candidateSignature(int candidateIndex) {
+			if (candidateIndex < 0 || candidateIndex >= candidates.size()) {
+				return "";
+			}
+			String signature = candidates.get(candidateIndex).getPlanSignature();
+			return signature == null ? "" : signature;
+		}
+
 	}
 
 	private static List<String> toSortedList(Set<String> values) {
@@ -357,6 +759,14 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		}
 	}
 
+	private static double parseUnitIntervalProperty(String property, double defaultValue) {
+		double parsed = parseDoubleProperty(property, defaultValue);
+		if (!Double.isFinite(parsed) || parsed <= 0.0d || parsed > 1.0d) {
+			return defaultValue;
+		}
+		return parsed;
+	}
+
 	static boolean shouldUseHighUncertaintyGreedyFallback(String plannerUsed, int operandCount, double uncertainty) {
 		if (!DP_HIGH_UNCERTAINTY_GREEDY_FALLBACK_ENABLED) {
 			return false;
@@ -376,6 +786,10 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			return false;
 		}
 		if (!Double.isFinite(uncertainty)) {
+			return false;
+		}
+		if (!Double.isFinite(estimatedCardinality)
+				|| estimatedCardinality < DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_ESTIMATED_CARDINALITY) {
 			return false;
 		}
 		double minUncertainty = operandCount * DP_HIGH_UNCERTAINTY_LEGACY_FALLBACK_MIN_UNCERTAINTY_FRACTION;
@@ -418,12 +832,103 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				.append('"');
 		builder.append(",\"reason\":\"").append(escapeJson(snapshot.getReason())).append('"');
 		builder.append(",\"plannerUsed\":\"").append(escapeJson(snapshot.getPlannerUsed())).append('"');
+		builder.append(",\"dpEnabled\":").append(snapshot.isDpEnabled());
+		builder.append(",\"dpThreshold\":").append(snapshot.getDpThreshold());
+		builder.append(",\"planForceMode\":\"").append(escapeJson(snapshot.getPlanForceMode())).append('"');
+		builder.append(",\"planTraceTopK\":").append(snapshot.getPlanTraceTopK());
 		builder.append(",\"stabilityDecision\":\"").append(escapeJson(snapshot.getStabilityDecision())).append('"');
 		builder.append(",\"stabilitySource\":\"").append(escapeJson(snapshot.getStabilitySource())).append('"');
+		builder.append(",\"planStabilityEnabled\":").append(snapshot.isPlanStabilityEnabled());
+		builder.append(",\"planStabilityMinImprovementRatio\":")
+				.append(formatNumber(snapshot.getPlanStabilityMinImprovementRatio()));
+		builder.append(",\"planExploreEnabled\":").append(snapshot.isPlanExploreEnabled());
+		builder.append(",\"planExploreMaxExtraRatio\":")
+				.append(formatNumber(snapshot.getPlanExploreMaxExtraRatio()));
+		builder.append(",\"highUncertaintyGreedyFallbackEnabled\":")
+				.append(snapshot.isHighUncertaintyGreedyFallbackEnabled());
+		builder.append(",\"highUncertaintyGreedyFallbackMinUncertainty\":")
+				.append(formatNumber(snapshot.getHighUncertaintyGreedyFallbackMinUncertainty()));
+		builder.append(",\"highUncertaintyGreedyFallbackMinOperands\":")
+				.append(snapshot.getHighUncertaintyGreedyFallbackMinOperands());
+		builder.append(",\"highUncertaintyLegacyFallbackEnabled\":")
+				.append(snapshot.isHighUncertaintyLegacyFallbackEnabled());
+		builder.append(",\"highUncertaintyLegacyFallbackMinOperands\":")
+				.append(snapshot.getHighUncertaintyLegacyFallbackMinOperands());
+		builder.append(",\"highUncertaintyLegacyFallbackMinUncertaintyFraction\":")
+				.append(formatNumber(snapshot.getHighUncertaintyLegacyFallbackMinUncertaintyFraction()));
+		builder.append(",\"highUncertaintyLegacyFallbackMinEstimatedCardinality\":")
+				.append(formatNumber(snapshot.getHighUncertaintyLegacyFallbackMinEstimatedCardinality()));
+		builder.append(",\"planOutcomeLearningEnabled\":")
+				.append(snapshot.isPlanOutcomeLearningEnabled());
+		builder.append(",\"planOutcomeMinSamples\":")
+				.append(snapshot.getPlanOutcomeMinSamples());
+		builder.append(",\"planOutcomeMinImprovementRatio\":")
+				.append(formatNumber(snapshot.getPlanOutcomeMinImprovementRatio()));
+		builder.append(",\"planOutcomeRollbackRegressionRatio\":")
+				.append(formatNumber(snapshot.getPlanOutcomeRollbackRegressionRatio()));
+		builder.append(",\"planOutcomeRollbackFailureRatio\":")
+				.append(formatNumber(snapshot.getPlanOutcomeRollbackFailureRatio()));
+		builder.append(",\"planOutcomeRollbackQuarantineSelections\":")
+				.append(snapshot.getPlanOutcomeRollbackQuarantineSelections());
+		builder.append(",\"planOutcomeRollbackQuarantineBackoffMaxMultiplier\":")
+				.append(snapshot.getPlanOutcomeRollbackQuarantineBackoffMaxMultiplier());
+		builder.append(",\"planOutcomeSwitchMaxFailureRatio\":")
+				.append(formatNumber(snapshot.getPlanOutcomeSwitchMaxFailureRatio()));
+		builder.append(",\"planOutcomeSwitchMaxVolatilityRatio\":")
+				.append(formatNumber(snapshot.getPlanOutcomeSwitchMaxVolatilityRatio()));
+		builder.append(",\"planOutcomeSwitchVolatilityPenaltyRatio\":")
+				.append(formatNumber(snapshot.getPlanOutcomeSwitchVolatilityPenaltyRatio()));
+		builder.append(",\"planOutcomeSwitchMinSuccessStreak\":")
+				.append(snapshot.getPlanOutcomeSwitchMinSuccessStreak());
+		builder.append(",\"planOutcomeEwmaAlpha\":")
+				.append(formatNumber(snapshot.getPlanOutcomeEwmaAlpha()));
+		builder.append(",\"planSelectionEpoch\":").append(snapshot.getPlanSelectionEpoch());
+		builder.append(",\"planOutcomeSelectedSamples\":").append(snapshot.getPlanOutcomeSelectedSamples());
+		builder.append(",\"planOutcomeSelectedConsecutiveSuccesses\":")
+				.append(snapshot.getPlanOutcomeSelectedConsecutiveSuccesses());
+		builder.append(",\"planOutcomeSelectedConsecutiveFailures\":")
+				.append(snapshot.getPlanOutcomeSelectedConsecutiveFailures());
+		builder.append(",\"planOutcomeSelectedFailureRatio\":")
+				.append(formatNumber(snapshot.getPlanOutcomeSelectedFailureRatio()));
+		builder.append(",\"planOutcomeSelectedVolatilityRatio\":")
+				.append(formatNumber(snapshot.getPlanOutcomeSelectedVolatilityRatio()));
+		builder.append(",\"planOutcomeSelectedRuntimeCost\":")
+				.append(formatNumber(snapshot.getPlanOutcomeSelectedRuntimeCost()));
+		builder.append(",\"planOutcomeSelectedQuarantineBackoffLevel\":")
+				.append(snapshot.getPlanOutcomeSelectedQuarantineBackoffLevel());
+		builder.append(",\"planOutcomeSelectedQuarantineUntilEpoch\":")
+				.append(snapshot.getPlanOutcomeSelectedQuarantineUntilEpoch());
+		builder.append(",\"stabilitySwitchTrigger\":\"")
+				.append(escapeJson(snapshot.getStabilitySwitchTrigger()))
+				.append('"');
 		builder.append(",\"stabilityImprovementRatio\":")
 				.append(formatNumber(snapshot.getStabilityImprovementRatio()));
 		builder.append(",\"stabilityUncertaintyDelta\":")
 				.append(formatNumber(snapshot.getStabilityUncertaintyDelta()));
+		builder.append(",\"stabilityCachedCandidateIndex\":").append(snapshot.getStabilityCachedCandidateIndex());
+		builder.append(",\"stabilityExploreWinnerIndex\":").append(snapshot.getStabilityExploreWinnerIndex());
+		builder.append(",\"stabilityAdaptiveCandidateIndex\":").append(snapshot.getStabilityAdaptiveCandidateIndex());
+		builder.append(",\"stabilityCachedCandidateSignature\":\"")
+				.append(escapeJson(snapshot.getStabilityCachedCandidateSignature()))
+				.append('"');
+		builder.append(",\"stabilityExploreWinnerSignature\":\"")
+				.append(escapeJson(snapshot.getStabilityExploreWinnerSignature()))
+				.append('"');
+		builder.append(",\"stabilityAdaptiveCandidateSignature\":\"")
+				.append(escapeJson(snapshot.getStabilityAdaptiveCandidateSignature()))
+				.append('"');
+		builder.append(",\"stabilityCachedCandidateCost\":")
+				.append(formatNumber(snapshot.getStabilityCachedCandidateCost()));
+		builder.append(",\"stabilityExploreWinnerCost\":")
+				.append(formatNumber(snapshot.getStabilityExploreWinnerCost()));
+		builder.append(",\"stabilityAdaptiveCandidateCost\":")
+				.append(formatNumber(snapshot.getStabilityAdaptiveCandidateCost()));
+		builder.append(",\"stabilityCachedCandidateUncertainty\":")
+				.append(formatNumber(snapshot.getStabilityCachedCandidateUncertainty()));
+		builder.append(",\"stabilityExploreWinnerUncertainty\":")
+				.append(formatNumber(snapshot.getStabilityExploreWinnerUncertainty()));
+		builder.append(",\"stabilityAdaptiveCandidateUncertainty\":")
+				.append(formatNumber(snapshot.getStabilityAdaptiveCandidateUncertainty()));
 		builder.append(",\"rawOrderLabels\":");
 		appendStringArray(builder, snapshot.getRawOrderLabels());
 		builder.append(",\"finalOrderLabels\":");
@@ -590,20 +1095,40 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			private final int selectedCandidateIndex;
 			private final String stabilityDecision;
 			private final String stabilitySource;
+			private final String stabilitySwitchTrigger;
 			private final double stabilityImprovementRatio;
 			private final double stabilityUncertaintyDelta;
+			private final int stabilityCachedCandidateIndex;
+			private final int stabilityExploreWinnerIndex;
+			private final int stabilityAdaptiveCandidateIndex;
 
 			private SelectionDecision(int selectedCandidateIndex, String stabilityDecision, String stabilitySource) {
-				this(selectedCandidateIndex, stabilityDecision, stabilitySource, Double.NaN, Double.NaN);
+				this(selectedCandidateIndex, stabilityDecision, stabilitySource, Double.NaN, Double.NaN, -1, -1,
+						selectedCandidateIndex, "not-applicable");
 			}
 
 			private SelectionDecision(int selectedCandidateIndex, String stabilityDecision, String stabilitySource,
 					double stabilityImprovementRatio, double stabilityUncertaintyDelta) {
+				this(selectedCandidateIndex, stabilityDecision, stabilitySource, stabilityImprovementRatio,
+						stabilityUncertaintyDelta, -1, selectedCandidateIndex, selectedCandidateIndex,
+						"not-applicable");
+			}
+
+			private SelectionDecision(int selectedCandidateIndex, String stabilityDecision, String stabilitySource,
+					double stabilityImprovementRatio, double stabilityUncertaintyDelta,
+					int stabilityCachedCandidateIndex,
+					int stabilityExploreWinnerIndex, int stabilityAdaptiveCandidateIndex,
+					String stabilitySwitchTrigger) {
 				this.selectedCandidateIndex = selectedCandidateIndex;
 				this.stabilityDecision = stabilityDecision == null ? "not-applicable" : stabilityDecision;
 				this.stabilitySource = stabilitySource == null ? "none" : stabilitySource;
+				this.stabilitySwitchTrigger = stabilitySwitchTrigger == null ? "not-applicable"
+						: stabilitySwitchTrigger;
 				this.stabilityImprovementRatio = stabilityImprovementRatio;
 				this.stabilityUncertaintyDelta = stabilityUncertaintyDelta;
+				this.stabilityCachedCandidateIndex = stabilityCachedCandidateIndex;
+				this.stabilityExploreWinnerIndex = stabilityExploreWinnerIndex;
+				this.stabilityAdaptiveCandidateIndex = stabilityAdaptiveCandidateIndex;
 			}
 		}
 
@@ -666,6 +1191,11 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				String stabilitySource = "none";
 				double stabilityImprovementRatio = Double.NaN;
 				double stabilityUncertaintyDelta = Double.NaN;
+				int stabilityCachedCandidateIndex = -1;
+				int stabilityExploreWinnerIndex = -1;
+				int stabilityAdaptiveCandidateIndex = -1;
+				long planSelectionEpoch = -1L;
+				String stabilitySwitchTrigger = "not-applicable";
 				String queryTemplateHash = queryTemplateHash(joinArgs, filters);
 				boolean allowTypeAnchored = UNSUPPORTED_LITERAL_JOIN_FALLBACK_ALLOW_TYPE_ANCHORED
 						&& isTypeAnchoredUnsupportedTriplet(joinArgs, relevantUnsupportedTargets);
@@ -706,7 +1236,10 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 								planCandidates, fallbackReason, plannerUsed, rawOrderLabels, finalOrderLabels,
 								rebalanceDiffs, repairApplied, repairBeforeLabels, repairAfterLabels,
 								initiallyBoundVars, relevantUnsupportedTargets, stabilityDecision,
-								stabilitySource, stabilityImprovementRatio, stabilityUncertaintyDelta);
+								stabilitySource, stabilitySwitchTrigger, stabilityImprovementRatio,
+								stabilityUncertaintyDelta,
+								stabilityCachedCandidateIndex, stabilityExploreWinnerIndex,
+								stabilityAdaptiveCandidateIndex, planSelectionEpoch);
 						super.meet(node);
 						return;
 					}
@@ -715,10 +1248,21 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 					selectedCandidateIndex = selectionDecision.selectedCandidateIndex;
 					stabilityDecision = selectionDecision.stabilityDecision;
 					stabilitySource = selectionDecision.stabilitySource;
+					stabilitySwitchTrigger = selectionDecision.stabilitySwitchTrigger;
 					stabilityImprovementRatio = selectionDecision.stabilityImprovementRatio;
 					stabilityUncertaintyDelta = selectionDecision.stabilityUncertaintyDelta;
+					stabilityCachedCandidateIndex = selectionDecision.stabilityCachedCandidateIndex;
+					stabilityExploreWinnerIndex = selectionDecision.stabilityExploreWinnerIndex;
+					stabilityAdaptiveCandidateIndex = selectionDecision.stabilityAdaptiveCandidateIndex;
+					if (forceMode == PlanForceMode.AUTO) {
+						planSelectionEpoch = currentPlanSelectionEpoch(queryTemplateHash);
+					}
 					if (selectedCandidateIndex < 0 || selectedCandidateIndex >= planCandidates.size()) {
 						selectedCandidateIndex = 0;
+					}
+					if (stabilityAdaptiveCandidateIndex < 0
+							|| stabilityAdaptiveCandidateIndex >= planCandidates.size()) {
+						stabilityAdaptiveCandidateIndex = selectedCandidateIndex;
 					}
 					JoinPlanCandidate selectedCandidate = planCandidates.get(selectedCandidateIndex);
 					selectedPlanSignature = selectedCandidate.getPlanSignature();
@@ -731,7 +1275,10 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 								planCandidates, fallbackReason, plannerUsed, rawOrderLabels, finalOrderLabels,
 								rebalanceDiffs, repairApplied, repairBeforeLabels, repairAfterLabels,
 								initiallyBoundVars, relevantUnsupportedTargets, stabilityDecision,
-								stabilitySource, stabilityImprovementRatio, stabilityUncertaintyDelta);
+								stabilitySource, stabilitySwitchTrigger, stabilityImprovementRatio,
+								stabilityUncertaintyDelta,
+								stabilityCachedCandidateIndex, stabilityExploreWinnerIndex,
+								stabilityAdaptiveCandidateIndex, planSelectionEpoch);
 						super.meet(node);
 						return;
 					}
@@ -744,6 +1291,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 						selectedCandidate = planCandidates.get(selectedCandidateIndex);
 						plannerUsed = "greedy";
 						planSelectionReason = "planned-high-uncertainty-greedy-fallback";
+						stabilityAdaptiveCandidateIndex = selectedCandidateIndex;
 					}
 					selectedPlanSignature = selectedCandidate.getPlanSignature();
 					List<TupleExpr> planned = new ArrayList<>(selectedCandidate.getOrder());
@@ -798,7 +1346,10 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 								planCandidates, planSelectionReason, plannerUsed, rawOrderLabels, finalOrderLabels,
 								rebalanceDiffs, repairApplied, repairBeforeLabels, repairAfterLabels,
 								initiallyBoundVars, relevantUnsupportedTargets, stabilityDecision,
-								stabilitySource, stabilityImprovementRatio, stabilityUncertaintyDelta);
+								stabilitySource, stabilitySwitchTrigger, stabilityImprovementRatio,
+								stabilityUncertaintyDelta,
+								stabilityCachedCandidateIndex, stabilityExploreWinnerIndex,
+								stabilityAdaptiveCandidateIndex, planSelectionEpoch);
 						if (DEBUG_PLAN) {
 							System.out.println("LEARNED-PLAN used joinArgs=" + joinArgs.size()
 									+ " bound=" + initiallyBoundVars
@@ -820,8 +1371,9 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 					publishPlanSelection(queryTemplateHash, -1, selectedPlanSignature, planCandidates, fallbackReason,
 							plannerUsed, rawOrderLabels, finalOrderLabels, rebalanceDiffs, repairApplied,
 							repairBeforeLabels, repairAfterLabels, initiallyBoundVars, relevantUnsupportedTargets,
-							stabilityDecision, stabilitySource, stabilityImprovementRatio,
-							stabilityUncertaintyDelta);
+							stabilityDecision, stabilitySource, stabilitySwitchTrigger, stabilityImprovementRatio,
+							stabilityUncertaintyDelta, stabilityCachedCandidateIndex,
+							stabilityExploreWinnerIndex, stabilityAdaptiveCandidateIndex, planSelectionEpoch);
 				}
 				if (DEBUG_PLAN && plannedOrder == null && !joinArgs.isEmpty()) {
 					System.out.println("LEARNED-PLAN fallback reason=" + fallbackReason
@@ -1007,35 +1559,75 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			default:
 				break;
 			}
+			long selectionEpoch = nextPlanSelectionEpoch(templateHash);
 			int winner = exploreWinner(planCandidates);
 			if (!PLAN_STABILITY_ENABLED) {
 				cacheWinner(templateHash, planCandidates, winner);
-				return new SelectionDecision(winner, "plan-stability-disabled", "explore");
+				return new SelectionDecision(winner, "plan-stability-disabled", "explore", Double.NaN, Double.NaN, -1,
+						winner, winner, "plan-stability-disabled");
 			}
 			CachedPlanWinner cachedWinner = EXPLORE_WINNER_CACHE.get(templateHash);
 			if (cachedWinner == null) {
 				cacheWinner(templateHash, planCandidates, winner);
-				return new SelectionDecision(winner, "cache-miss", "explore");
+				return new SelectionDecision(winner, "cache-miss", "explore", Double.NaN, Double.NaN, -1, winner,
+						winner, "cache-miss");
 			}
 			int cachedIndex = resolveCachedWinnerIndex(cachedWinner, planCandidates);
 			if (cachedIndex < 0) {
 				cacheWinner(templateHash, planCandidates, winner);
-				return new SelectionDecision(winner, "cache-invalid", "explore");
+				return new SelectionDecision(winner, "cache-invalid", "explore", Double.NaN, Double.NaN, -1, winner,
+						winner, "cache-invalid");
 			}
-			int adaptiveIndex = bestAdaptiveSelectionIndex(planCandidates, cachedIndex, winner);
+			int adaptiveIndex = bestAdaptiveSelectionIndex(planCandidates, cachedIndex, winner, templateHash,
+					selectionEpoch);
+			int runtimeHealthAdjustedAdaptiveIndex = runtimeHealthAdjustedAdaptiveIndex(templateHash, planCandidates,
+					cachedIndex, adaptiveIndex, selectionEpoch);
+			boolean runtimeHealthVetoApplied = runtimeHealthAdjustedAdaptiveIndex != adaptiveIndex;
+			adaptiveIndex = runtimeHealthAdjustedAdaptiveIndex;
+			int failureRollbackIndex = runtimeFailureRollbackIndex(templateHash, planCandidates, cachedIndex,
+					selectionEpoch);
+			if (failureRollbackIndex >= 0 && failureRollbackIndex != cachedIndex) {
+				quarantinePlanAfterRollback(templateHash, planCandidates, cachedIndex, selectionEpoch);
+				cacheWinner(templateHash, planCandidates, failureRollbackIndex);
+				double improvementRatio = stabilityImprovementRatio(planCandidates, cachedIndex, failureRollbackIndex);
+				double uncertaintyDelta = stabilityUncertaintyDelta(planCandidates, cachedIndex, failureRollbackIndex);
+				return new SelectionDecision(failureRollbackIndex, "runtime-rollback", "rollback", improvementRatio,
+						uncertaintyDelta, cachedIndex, winner, failureRollbackIndex, "runtime-failure-rate");
+			}
+			int rollbackIndex = runtimeRollbackIndex(templateHash, planCandidates, cachedIndex, selectionEpoch);
+			if (rollbackIndex >= 0 && rollbackIndex != cachedIndex) {
+				quarantinePlanAfterRollback(templateHash, planCandidates, cachedIndex, selectionEpoch);
+				cacheWinner(templateHash, planCandidates, rollbackIndex);
+				double improvementRatio = stabilityImprovementRatio(planCandidates, cachedIndex, rollbackIndex);
+				double uncertaintyDelta = stabilityUncertaintyDelta(planCandidates, cachedIndex, rollbackIndex);
+				return new SelectionDecision(rollbackIndex, "runtime-rollback", "rollback", improvementRatio,
+						uncertaintyDelta, cachedIndex, winner, rollbackIndex, "runtime-regression");
+			}
+			int runtimePreferredIndex = runtimePreferredIndex(templateHash, planCandidates, cachedIndex,
+					selectionEpoch);
+			if (runtimePreferredIndex >= 0 && runtimePreferredIndex != adaptiveIndex) {
+				cacheWinner(templateHash, planCandidates, runtimePreferredIndex);
+				double improvementRatio = stabilityImprovementRatio(planCandidates, cachedIndex, runtimePreferredIndex);
+				double uncertaintyDelta = stabilityUncertaintyDelta(planCandidates, cachedIndex, runtimePreferredIndex);
+				return new SelectionDecision(runtimePreferredIndex, "runtime-learning-switch", "runtime",
+						improvementRatio, uncertaintyDelta, cachedIndex, winner, runtimePreferredIndex,
+						"runtime-expected-improvement");
+			}
 			cacheWinner(templateHash, planCandidates, adaptiveIndex);
 			double improvementRatio = stabilityImprovementRatio(planCandidates, cachedIndex, adaptiveIndex);
 			double uncertaintyDelta = stabilityUncertaintyDelta(planCandidates, cachedIndex, adaptiveIndex);
+			String switchTrigger = runtimeHealthVetoApplied ? "runtime-health-veto"
+					: stabilitySwitchTrigger(planCandidates, cachedIndex, adaptiveIndex);
 			if (adaptiveIndex == cachedIndex) {
 				return new SelectionDecision(adaptiveIndex, "cache-hit-keep", "cache", improvementRatio,
-						uncertaintyDelta);
+						uncertaintyDelta, cachedIndex, winner, adaptiveIndex, switchTrigger);
 			}
 			if (adaptiveIndex == winner) {
 				return new SelectionDecision(adaptiveIndex, "cache-hit-switch", "explore", improvementRatio,
-						uncertaintyDelta);
+						uncertaintyDelta, cachedIndex, winner, adaptiveIndex, switchTrigger);
 			}
 			return new SelectionDecision(adaptiveIndex, "cache-hit-switch", "best-cost", improvementRatio,
-					uncertaintyDelta);
+					uncertaintyDelta, cachedIndex, winner, adaptiveIndex, switchTrigger);
 		}
 
 		private double stabilityImprovementRatio(List<JoinPlanCandidate> planCandidates, int cachedIndex,
@@ -1064,6 +1656,28 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				return Double.NaN;
 			}
 			return cachedUncertainty - selectedUncertainty;
+		}
+
+		private String stabilitySwitchTrigger(List<JoinPlanCandidate> planCandidates, int cachedIndex,
+				int selectedIndex) {
+			if (selectedIndex < 0) {
+				return "not-applicable";
+			}
+			if (cachedIndex < 0 || planCandidates == null || cachedIndex >= planCandidates.size()) {
+				return "cache-unavailable";
+			}
+			if (selectedIndex == cachedIndex) {
+				return "keep-cached";
+			}
+			double improvementRatio = stabilityImprovementRatio(planCandidates, cachedIndex, selectedIndex);
+			if (improvementRatio >= PLAN_STABILITY_MIN_IMPROVEMENT_RATIO) {
+				return "improvement-threshold";
+			}
+			double uncertaintyDelta = stabilityUncertaintyDelta(planCandidates, cachedIndex, selectedIndex);
+			if (Double.isFinite(uncertaintyDelta) && uncertaintyDelta > 0.0d) {
+				return "uncertainty-reduction";
+			}
+			return "switch";
 		}
 
 		private int exploreWinner(List<JoinPlanCandidate> planCandidates) {
@@ -1122,31 +1736,357 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		}
 
 		private int bestAdaptiveSelectionIndex(List<JoinPlanCandidate> planCandidates, int cachedIndex,
-				int winnerIndex) {
+				int winnerIndex, String templateHash, long selectionEpoch) {
 			if (planCandidates == null || planCandidates.isEmpty()) {
 				return -1;
 			}
 			if (cachedIndex < 0 || cachedIndex >= planCandidates.size()) {
 				return sanitizeIndex(winnerIndex, planCandidates.size());
 			}
-			int bestCostIndex = lowestCostCandidateIndex(planCandidates, cachedIndex);
+			int bestCostIndex = lowestCostCandidateIndex(planCandidates, cachedIndex, templateHash, selectionEpoch);
 			if (bestCostIndex >= 0 && bestCostIndex != cachedIndex
 					&& shouldSwitchCachedWinner(planCandidates.get(cachedIndex), planCandidates.get(bestCostIndex))) {
 				return bestCostIndex;
 			}
 			if (winnerIndex >= 0 && winnerIndex < planCandidates.size() && winnerIndex != cachedIndex
+					&& !isQuarantined(templateHash, planCandidates.get(winnerIndex).getPlanSignature(), selectionEpoch)
 					&& shouldSwitchCachedWinner(planCandidates.get(cachedIndex), planCandidates.get(winnerIndex))) {
 				return winnerIndex;
+			}
+			if (isQuarantined(templateHash, planCandidates.get(cachedIndex).getPlanSignature(), selectionEpoch)) {
+				int fallbackIndex = lowestCostAlternativeIndex(planCandidates, cachedIndex, templateHash,
+						selectionEpoch);
+				if (fallbackIndex >= 0) {
+					return fallbackIndex;
+				}
 			}
 			return cachedIndex;
 		}
 
-		private int lowestCostCandidateIndex(List<JoinPlanCandidate> candidates, int fallbackIndex) {
+		private int runtimeHealthAdjustedAdaptiveIndex(String templateHash, List<JoinPlanCandidate> candidates,
+				int cachedIndex, int adaptiveIndex, long selectionEpoch) {
+			if (!PLAN_OUTCOME_LEARNING_ENABLED || templateHash == null || templateHash.isBlank()
+					|| candidates == null || candidates.isEmpty()
+					|| cachedIndex < 0 || cachedIndex >= candidates.size()
+					|| adaptiveIndex < 0 || adaptiveIndex >= candidates.size() || adaptiveIndex == cachedIndex) {
+				return adaptiveIndex;
+			}
+			JoinPlanCandidate cachedCandidate = candidates.get(cachedIndex);
+			if (isQuarantined(templateHash, cachedCandidate.getPlanSignature(), selectionEpoch)) {
+				return adaptiveIndex;
+			}
+			JoinPlanCandidate adaptiveCandidate = candidates.get(adaptiveIndex);
+			if (isQuarantined(templateHash, adaptiveCandidate.getPlanSignature(), selectionEpoch)) {
+				return cachedIndex;
+			}
+			PlanOutcomeStats adaptiveStats = planOutcomeStats(templateHash, adaptiveCandidate.getPlanSignature());
+			if (isUsablePlanOutcomeStats(adaptiveStats)
+					&& !isRuntimeSwitchHealthy(adaptiveStats, adaptiveCandidate.getEstimatedTotalCost())) {
+				return cachedIndex;
+			}
+			return adaptiveIndex;
+		}
+
+		private int runtimePreferredIndex(String templateHash, List<JoinPlanCandidate> candidates, int cachedIndex,
+				long selectionEpoch) {
+			if (!PLAN_OUTCOME_LEARNING_ENABLED || templateHash == null || templateHash.isBlank() || candidates == null
+					|| candidates.isEmpty() || cachedIndex < 0 || cachedIndex >= candidates.size()) {
+				return -1;
+			}
+			PlanOutcomeStats cachedStats = planOutcomeStats(templateHash,
+					candidates.get(cachedIndex).getPlanSignature());
+			if (!isUsablePlanOutcomeStats(cachedStats)) {
+				return -1;
+			}
+			int bestIndex = cachedIndex;
+			double cachedRuntimeCost = runtimeSwitchCost(cachedStats);
+			if (!Double.isFinite(cachedRuntimeCost) || cachedRuntimeCost <= 0.0d) {
+				return -1;
+			}
+			double bestRuntimeCost = cachedRuntimeCost;
+			for (int i = 0; i < candidates.size(); i++) {
+				if (i == cachedIndex) {
+					continue;
+				}
+				JoinPlanCandidate candidate = candidates.get(i);
+				if (isQuarantined(templateHash, candidate.getPlanSignature(), selectionEpoch)) {
+					continue;
+				}
+				PlanOutcomeStats candidateStats = planOutcomeStats(templateHash, candidate.getPlanSignature());
+				if (!isRuntimeSwitchHealthy(candidateStats, candidate.getEstimatedTotalCost())) {
+					continue;
+				}
+				double candidateRuntimeCost = runtimeSwitchCost(candidateStats);
+				if (!Double.isFinite(candidateRuntimeCost) || candidateRuntimeCost <= 0.0d) {
+					continue;
+				}
+				if (candidateRuntimeCost < bestRuntimeCost) {
+					bestRuntimeCost = candidateRuntimeCost;
+					bestIndex = i;
+				}
+			}
+			if (bestIndex == cachedIndex) {
+				return -1;
+			}
+			double expectedImprovementRatio = relativeImprovement(cachedRuntimeCost, bestRuntimeCost);
+			if (!Double.isFinite(expectedImprovementRatio)
+					|| expectedImprovementRatio < PLAN_OUTCOME_MIN_IMPROVEMENT_RATIO) {
+				return -1;
+			}
+			return bestIndex;
+		}
+
+		private int runtimeRollbackIndex(String templateHash, List<JoinPlanCandidate> candidates, int cachedIndex,
+				long selectionEpoch) {
+			if (!PLAN_OUTCOME_LEARNING_ENABLED || templateHash == null || templateHash.isBlank() || candidates == null
+					|| candidates.size() < 2 || cachedIndex < 0 || cachedIndex >= candidates.size()) {
+				return -1;
+			}
+			JoinPlanCandidate cachedCandidate = candidates.get(cachedIndex);
+			double estimatedCost = cachedCandidate.getEstimatedTotalCost();
+			if (!Double.isFinite(estimatedCost) || estimatedCost <= 0.0d) {
+				return -1;
+			}
+			PlanOutcomeStats cachedStats = planOutcomeStats(templateHash, cachedCandidate.getPlanSignature());
+			if (!isUsablePlanOutcomeStats(cachedStats)) {
+				return -1;
+			}
+			double runtimeRegressionRatio = relativeExtraCost(estimatedCost, cachedStats.ewmaObservedCost);
+			if (!Double.isFinite(runtimeRegressionRatio)
+					|| runtimeRegressionRatio < PLAN_OUTCOME_ROLLBACK_REGRESSION_RATIO) {
+				return -1;
+			}
+			return rollbackAlternativeIndex(templateHash, candidates, cachedIndex, selectionEpoch);
+		}
+
+		private int runtimeFailureRollbackIndex(String templateHash, List<JoinPlanCandidate> candidates,
+				int cachedIndex, long selectionEpoch) {
+			if (!PLAN_OUTCOME_LEARNING_ENABLED || templateHash == null || templateHash.isBlank() || candidates == null
+					|| candidates.size() < 2 || cachedIndex < 0 || cachedIndex >= candidates.size()) {
+				return -1;
+			}
+			PlanOutcomeStats cachedStats = planOutcomeStats(templateHash,
+					candidates.get(cachedIndex).getPlanSignature());
+			if (!isUsablePlanOutcomeStats(cachedStats)) {
+				return -1;
+			}
+			double cachedFailureRatio = failureRatio(cachedStats);
+			if (!Double.isFinite(cachedFailureRatio) || cachedFailureRatio < PLAN_OUTCOME_ROLLBACK_FAILURE_RATIO) {
+				return -1;
+			}
+			return rollbackAlternativeIndex(templateHash, candidates, cachedIndex, selectionEpoch);
+		}
+
+		private PlanOutcomeStats planOutcomeStats(String templateHash, String planSignature) {
+			if (templateHash == null || templateHash.isBlank() || planSignature == null || planSignature.isBlank()) {
+				return null;
+			}
+			return PLAN_OUTCOME_STATS.get(new PlanOutcomeKey(templateHash, planSignature));
+		}
+
+		private boolean isUsablePlanOutcomeStats(PlanOutcomeStats stats) {
+			return stats != null && stats.samples >= PLAN_OUTCOME_MIN_SAMPLES
+					&& Double.isFinite(stats.ewmaObservedCost)
+					&& stats.ewmaObservedCost > 0.0d;
+		}
+
+		private boolean isRuntimeSwitchHealthy(PlanOutcomeStats stats, double estimatedCost) {
+			if (!isUsablePlanOutcomeStats(stats)) {
+				return false;
+			}
+			double candidateFailureRatio = failureRatio(stats);
+			if (!Double.isFinite(candidateFailureRatio)
+					|| candidateFailureRatio > PLAN_OUTCOME_SWITCH_MAX_FAILURE_RATIO) {
+				return false;
+			}
+			if (stats.consecutiveSuccesses < PLAN_OUTCOME_SWITCH_MIN_SUCCESS_STREAK) {
+				return false;
+			}
+			double volatilityRatio = runtimeVolatilityRatio(stats);
+			if (!Double.isFinite(volatilityRatio)
+					|| volatilityRatio > PLAN_OUTCOME_SWITCH_MAX_VOLATILITY_RATIO) {
+				return false;
+			}
+			if (!Double.isFinite(estimatedCost) || estimatedCost <= 0.0d) {
+				return true;
+			}
+			double runtimeAdjustedCost = runtimeSwitchCost(stats);
+			double runtimeRegressionRatio = relativeExtraCost(estimatedCost, runtimeAdjustedCost);
+			return !Double.isFinite(runtimeRegressionRatio)
+					|| runtimeRegressionRatio < PLAN_OUTCOME_ROLLBACK_REGRESSION_RATIO;
+		}
+
+		private double failureRatio(PlanOutcomeStats stats) {
+			if (stats == null || stats.samples <= 0L) {
+				return Double.NaN;
+			}
+			return Math.max(0.0d, Math.min(1.0d, (double) stats.failures / (double) stats.samples));
+		}
+
+		private double runtimeVolatilityRatio(PlanOutcomeStats stats) {
+			if (stats == null || !Double.isFinite(stats.ewmaObservedCost)
+					|| stats.ewmaObservedCost <= 0.0d
+					|| !Double.isFinite(stats.ewmaAbsoluteDeviation)
+					|| stats.ewmaAbsoluteDeviation < 0.0d) {
+				return Double.NaN;
+			}
+			return stats.ewmaAbsoluteDeviation / stats.ewmaObservedCost;
+		}
+
+		private double runtimeSwitchCost(PlanOutcomeStats stats) {
+			if (stats == null || !Double.isFinite(stats.ewmaObservedCost) || stats.ewmaObservedCost <= 0.0d
+					|| !Double.isFinite(stats.ewmaAbsoluteDeviation) || stats.ewmaAbsoluteDeviation < 0.0d) {
+				return Double.NaN;
+			}
+			return stats.ewmaObservedCost
+					+ PLAN_OUTCOME_SWITCH_VOLATILITY_PENALTY_RATIO * stats.ewmaAbsoluteDeviation;
+		}
+
+		private final class SelectedPlanOutcomeTelemetry {
+			private final long samples;
+			private final long consecutiveSuccesses;
+			private final long consecutiveFailures;
+			private final double failureRatio;
+			private final double volatilityRatio;
+			private final double runtimeCost;
+			private final int quarantineBackoffLevel;
+			private final long quarantineUntilEpoch;
+
+			private SelectedPlanOutcomeTelemetry(long samples, long consecutiveSuccesses, long consecutiveFailures,
+					double failureRatio, double volatilityRatio, double runtimeCost, int quarantineBackoffLevel,
+					long quarantineUntilEpoch) {
+				this.samples = samples;
+				this.consecutiveSuccesses = consecutiveSuccesses;
+				this.consecutiveFailures = consecutiveFailures;
+				this.failureRatio = failureRatio;
+				this.volatilityRatio = volatilityRatio;
+				this.runtimeCost = runtimeCost;
+				this.quarantineBackoffLevel = quarantineBackoffLevel;
+				this.quarantineUntilEpoch = quarantineUntilEpoch;
+			}
+		}
+
+		private long currentPlanSelectionEpoch(String templateHash) {
+			if (templateHash == null || templateHash.isBlank()) {
+				return -1L;
+			}
+			Long epoch = PLAN_SELECTION_EPOCH.get(templateHash);
+			return epoch == null ? -1L : epoch.longValue();
+		}
+
+		private SelectedPlanOutcomeTelemetry selectedPlanOutcomeTelemetry(String templateHash, String planSignature) {
+			if (templateHash == null || templateHash.isBlank() || planSignature == null || planSignature.isBlank()) {
+				return new SelectedPlanOutcomeTelemetry(0L, 0L, 0L, Double.NaN, Double.NaN, Double.NaN, 0, -1L);
+			}
+			PlanOutcomeStats stats = planOutcomeStats(templateHash, planSignature);
+			long samples = 0L;
+			long consecutiveSuccesses = 0L;
+			long consecutiveFailures = 0L;
+			double failureRatio = Double.NaN;
+			double volatilityRatio = Double.NaN;
+			double runtimeCost = Double.NaN;
+			if (stats != null) {
+				samples = stats.samples;
+				consecutiveSuccesses = stats.consecutiveSuccesses;
+				consecutiveFailures = stats.consecutiveFailures;
+				failureRatio = failureRatio(stats);
+				volatilityRatio = runtimeVolatilityRatio(stats);
+				runtimeCost = runtimeSwitchCost(stats);
+			}
+			PlanOutcomeKey key = new PlanOutcomeKey(templateHash, planSignature);
+			Integer backoffLevel = PLAN_OUTCOME_QUARANTINE_BACKOFF_LEVEL.get(key);
+			Long quarantineUntilEpoch = PLAN_OUTCOME_QUARANTINE_UNTIL_EPOCH.get(key);
+			return new SelectedPlanOutcomeTelemetry(samples, consecutiveSuccesses, consecutiveFailures, failureRatio,
+					volatilityRatio, runtimeCost, backoffLevel == null ? 0 : backoffLevel.intValue(),
+					quarantineUntilEpoch == null ? -1L : quarantineUntilEpoch.longValue());
+		}
+
+		private int rollbackAlternativeIndex(String templateHash, List<JoinPlanCandidate> candidates, int excludedIndex,
+				long selectionEpoch) {
+			int bestIndex = -1;
+			double bestRuntimeCost = Double.POSITIVE_INFINITY;
+			for (int i = 0; i < candidates.size(); i++) {
+				if (i == excludedIndex) {
+					continue;
+				}
+				JoinPlanCandidate candidate = candidates.get(i);
+				if (isQuarantined(templateHash, candidate.getPlanSignature(), selectionEpoch)) {
+					continue;
+				}
+				PlanOutcomeStats candidateStats = planOutcomeStats(templateHash, candidate.getPlanSignature());
+				if (!isRuntimeSwitchHealthy(candidateStats, candidate.getEstimatedTotalCost())) {
+					continue;
+				}
+				double candidateRuntimeCost = runtimeSwitchCost(candidateStats);
+				if (!Double.isFinite(candidateRuntimeCost) || candidateRuntimeCost <= 0.0d) {
+					continue;
+				}
+				if (candidateRuntimeCost < bestRuntimeCost) {
+					bestRuntimeCost = candidateRuntimeCost;
+					bestIndex = i;
+				}
+			}
+			if (bestIndex >= 0) {
+				return bestIndex;
+			}
+			return healthiestAlternativeIndex(templateHash, candidates, excludedIndex, selectionEpoch);
+		}
+
+		private int healthiestAlternativeIndex(String templateHash, List<JoinPlanCandidate> candidates,
+				int excludedIndex, long selectionEpoch) {
+			int bestIndex = -1;
+			double bestFailureRatio = Double.POSITIVE_INFINITY;
+			double bestCost = Double.POSITIVE_INFINITY;
+			double bestUncertainty = Double.POSITIVE_INFINITY;
+			for (int i = 0; i < candidates.size(); i++) {
+				if (i == excludedIndex) {
+					continue;
+				}
+				JoinPlanCandidate candidate = candidates.get(i);
+				if (isQuarantined(templateHash, candidate.getPlanSignature(), selectionEpoch)) {
+					continue;
+				}
+				PlanOutcomeStats stats = planOutcomeStats(templateHash, candidate.getPlanSignature());
+				if (!isUsablePlanOutcomeStats(stats)) {
+					continue;
+				}
+				double candidateFailureRatio = failureRatio(stats);
+				if (!Double.isFinite(candidateFailureRatio)) {
+					continue;
+				}
+				double candidateCost = candidate.getEstimatedTotalCost();
+				if (!Double.isFinite(candidateCost)) {
+					continue;
+				}
+				double candidateUncertainty = candidate.getTotalUncertainty();
+				boolean betterFailureRatio = candidateFailureRatio < bestFailureRatio;
+				boolean tieBreakByCost = candidateFailureRatio == bestFailureRatio && candidateCost < bestCost;
+				boolean tieBreakByUncertainty = candidateFailureRatio == bestFailureRatio
+						&& candidateCost == bestCost
+						&& candidateUncertainty < bestUncertainty;
+				if (bestIndex < 0 || betterFailureRatio || tieBreakByCost || tieBreakByUncertainty) {
+					bestIndex = i;
+					bestFailureRatio = candidateFailureRatio;
+					bestCost = candidateCost;
+					bestUncertainty = candidateUncertainty;
+				}
+			}
+			if (bestIndex >= 0) {
+				return bestIndex;
+			}
+			return lowestCostAlternativeIndex(candidates, excludedIndex, templateHash, selectionEpoch);
+		}
+
+		private int lowestCostCandidateIndex(List<JoinPlanCandidate> candidates, int fallbackIndex, String templateHash,
+				long selectionEpoch) {
 			int bestIndex = -1;
 			double bestCost = Double.POSITIVE_INFINITY;
 			double bestUncertainty = Double.POSITIVE_INFINITY;
 			for (int i = 0; i < candidates.size(); i++) {
 				JoinPlanCandidate candidate = candidates.get(i);
+				if (isQuarantined(templateHash, candidate.getPlanSignature(), selectionEpoch)) {
+					continue;
+				}
 				double candidateCost = candidate.getEstimatedTotalCost();
 				double candidateUncertainty = candidate.getTotalUncertainty();
 				if (!Double.isFinite(candidateCost)) {
@@ -1162,7 +2102,100 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			if (bestIndex >= 0) {
 				return bestIndex;
 			}
-			return sanitizeIndex(fallbackIndex, candidates.size());
+			int sanitizedFallback = sanitizeIndex(fallbackIndex, candidates.size());
+			if (candidates.isEmpty()) {
+				return sanitizedFallback;
+			}
+			JoinPlanCandidate fallbackCandidate = candidates.get(sanitizedFallback);
+			if (!isQuarantined(templateHash, fallbackCandidate.getPlanSignature(), selectionEpoch)) {
+				return sanitizedFallback;
+			}
+			for (int i = 0; i < candidates.size(); i++) {
+				JoinPlanCandidate candidate = candidates.get(i);
+				if (!isQuarantined(templateHash, candidate.getPlanSignature(), selectionEpoch)) {
+					return i;
+				}
+			}
+			return sanitizedFallback;
+		}
+
+		private int lowestCostAlternativeIndex(List<JoinPlanCandidate> candidates, int excludedIndex,
+				String templateHash,
+				long selectionEpoch) {
+			int bestIndex = -1;
+			double bestCost = Double.POSITIVE_INFINITY;
+			double bestUncertainty = Double.POSITIVE_INFINITY;
+			for (int i = 0; i < candidates.size(); i++) {
+				if (i == excludedIndex) {
+					continue;
+				}
+				JoinPlanCandidate candidate = candidates.get(i);
+				if (isQuarantined(templateHash, candidate.getPlanSignature(), selectionEpoch)) {
+					continue;
+				}
+				double candidateCost = candidate.getEstimatedTotalCost();
+				double candidateUncertainty = candidate.getTotalUncertainty();
+				if (!Double.isFinite(candidateCost)) {
+					continue;
+				}
+				if (bestIndex < 0 || candidateCost < bestCost
+						|| (candidateCost == bestCost && candidateUncertainty < bestUncertainty)) {
+					bestIndex = i;
+					bestCost = candidateCost;
+					bestUncertainty = candidateUncertainty;
+				}
+			}
+			return bestIndex;
+		}
+
+		private long nextPlanSelectionEpoch(String templateHash) {
+			if (templateHash == null || templateHash.isBlank()) {
+				return -1L;
+			}
+			return PLAN_SELECTION_EPOCH.merge(templateHash, 1L, Long::sum);
+		}
+
+		private void quarantinePlanAfterRollback(String templateHash, List<JoinPlanCandidate> planCandidates,
+				int rolledBackIndex, long selectionEpoch) {
+			if (!PLAN_OUTCOME_LEARNING_ENABLED || PLAN_OUTCOME_ROLLBACK_QUARANTINE_SELECTIONS <= 0
+					|| selectionEpoch < 0L
+					|| templateHash == null || templateHash.isBlank() || planCandidates == null
+					|| rolledBackIndex < 0 || rolledBackIndex >= planCandidates.size()) {
+				return;
+			}
+			String planSignature = planCandidates.get(rolledBackIndex).getPlanSignature();
+			if (planSignature == null || planSignature.isBlank()) {
+				return;
+			}
+			PlanOutcomeKey key = new PlanOutcomeKey(templateHash, planSignature);
+			int nextBackoffLevel = PLAN_OUTCOME_QUARANTINE_BACKOFF_LEVEL.compute(key, (ignored, current) -> {
+				int currentLevel = current == null ? 0 : current.intValue();
+				int incremented = currentLevel + 1;
+				return Integer.valueOf(Math.min(PLAN_OUTCOME_ROLLBACK_QUARANTINE_BACKOFF_MAX_MULTIPLIER, incremented));
+			}).intValue();
+			long quarantineSelections = (long) PLAN_OUTCOME_ROLLBACK_QUARANTINE_SELECTIONS
+					* (long) Math.max(1, nextBackoffLevel);
+			long quarantineUntilEpoch = selectionEpoch + quarantineSelections;
+			PLAN_OUTCOME_QUARANTINE_UNTIL_EPOCH.put(key, quarantineUntilEpoch);
+		}
+
+		private boolean isQuarantined(String templateHash, String planSignature, long selectionEpoch) {
+			if (!PLAN_OUTCOME_LEARNING_ENABLED || PLAN_OUTCOME_ROLLBACK_QUARANTINE_SELECTIONS <= 0
+					|| selectionEpoch < 0L
+					|| templateHash == null || templateHash.isBlank() || planSignature == null
+					|| planSignature.isBlank()) {
+				return false;
+			}
+			PlanOutcomeKey key = new PlanOutcomeKey(templateHash, planSignature);
+			Long quarantineUntilEpoch = PLAN_OUTCOME_QUARANTINE_UNTIL_EPOCH.get(key);
+			if (quarantineUntilEpoch == null) {
+				return false;
+			}
+			if (selectionEpoch <= quarantineUntilEpoch.longValue()) {
+				return true;
+			}
+			PLAN_OUTCOME_QUARANTINE_UNTIL_EPOCH.remove(key, quarantineUntilEpoch);
+			return false;
 		}
 
 		private int sanitizeIndex(int index, int size) {
@@ -1242,16 +2275,29 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				List<String> finalOrderLabels, List<PlanRewriteDiff> rebalanceDiffs, boolean repairApplied,
 				List<String> repairBeforeLabels, List<String> repairAfterLabels, Set<String> initiallyBoundVars,
 				Set<String> unsupportedTargets, String stabilityDecision, String stabilitySource,
-				double stabilityImprovementRatio, double stabilityUncertaintyDelta) {
+				String stabilitySwitchTrigger, double stabilityImprovementRatio, double stabilityUncertaintyDelta,
+				int stabilityCachedCandidateIndex,
+				int stabilityExploreWinnerIndex, int stabilityAdaptiveCandidateIndex, long planSelectionEpoch) {
 			String signature = selectedSignature;
 			if (signature == null && selectedCandidateIndex >= 0 && selectedCandidateIndex < candidates.size()) {
 				signature = candidates.get(selectedCandidateIndex).getPlanSignature();
 			}
+			SelectedPlanOutcomeTelemetry selectedPlanOutcomeTelemetry = selectedPlanOutcomeTelemetry(templateHash,
+					signature);
 			PlanSelectionSnapshot snapshot = new PlanSelectionSnapshot(templateHash, selectedCandidateIndex, signature,
-					candidates, reason == null ? "" : reason, plannerUsed, rawOrderLabels, finalOrderLabels,
+					candidates, reason == null ? "" : reason, plannerUsed, config.isEnableDp(), config.getDpThreshold(),
+					PlanForceMode.fromProperty(System.getProperty(PLAN_FORCE_MODE_PROPERTY)).name(), PLAN_TRACE_TOPK,
+					rawOrderLabels, finalOrderLabels,
 					rebalanceDiffs, repairApplied, repairBeforeLabels, repairAfterLabels, initiallyBoundVars,
-					unsupportedTargets, stabilityDecision, stabilitySource, stabilityImprovementRatio,
-					stabilityUncertaintyDelta);
+					unsupportedTargets, stabilityDecision, stabilitySource, stabilitySwitchTrigger,
+					stabilityImprovementRatio,
+					stabilityUncertaintyDelta, stabilityCachedCandidateIndex, stabilityExploreWinnerIndex,
+					stabilityAdaptiveCandidateIndex, planSelectionEpoch, selectedPlanOutcomeTelemetry.samples,
+					selectedPlanOutcomeTelemetry.consecutiveSuccesses,
+					selectedPlanOutcomeTelemetry.consecutiveFailures, selectedPlanOutcomeTelemetry.failureRatio,
+					selectedPlanOutcomeTelemetry.volatilityRatio, selectedPlanOutcomeTelemetry.runtimeCost,
+					selectedPlanOutcomeTelemetry.quarantineBackoffLevel,
+					selectedPlanOutcomeTelemetry.quarantineUntilEpoch);
 			LAST_PLAN_SELECTION.set(snapshot);
 			writePlanTrace(snapshot);
 		}

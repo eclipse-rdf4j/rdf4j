@@ -1,200 +1,852 @@
-[INFO] Tests are skipped.
-[INFO] 
-[INFO] --- failsafe:3.5.4:verify (verify) @ rdf4j-runtime-osgi ---
-[INFO] Tests are skipped.
-[INFO] 
-[INFO] --- japicmp:0.18.3:cmp (default) @ rdf4j-runtime-osgi ---
-[INFO] Skipping execution because parameter 'skip' was set to true.
-[INFO] 
-[INFO] --- spotless:2.46.1:check (spotless-check) @ rdf4j-runtime-osgi ---
-[INFO] Spotless check skipped
-[INFO] 
-[INFO] --- install:3.1.4:install (default-install) @ rdf4j-runtime-osgi ---
-[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/tools/runtime-osgi/dependency-reduced-pom.xml to /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/.m2_repo/org/eclipse/rdf4j/rdf4j-runtime-osgi/6.0.0-SNAPSHOT/rdf4j-runtime-osgi-6.0.0-SNAPSHOT.pom
-[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/tools/runtime-osgi/target/rdf4j-runtime-osgi-6.0.0-SNAPSHOT.jar to /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/.m2_repo/org/eclipse/rdf4j/rdf4j-runtime-osgi/6.0.0-SNAPSHOT/rdf4j-runtime-osgi-6.0.0-SNAPSHOT.jar
-[INFO] 
-[INFO] --- bundle:5.1.9:install (default-install) @ rdf4j-runtime-osgi ---
-[INFO] Replacing main artifact with repackaged archive
-[INFO] 
-[INFO] --- assembly:3.7.1:single (server-boot-distribution) @ rdf4j-server-boot ---
-[INFO] Installing org/eclipse/rdf4j/rdf4j-runtime-osgi/6.0.0-SNAPSHOT/rdf4j-runtime-osgi-6.0.0-SNAPSHOT.jar
-[INFO] Writing OBR metadata
-[INFO] Reading assembly descriptor: src/assembly/server-boot-distribution.xml
-[INFO] Building zip: /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/tools/server-boot/target/rdf4j-server-boot-6.0.0-SNAPSHOT-distribution.zip
-[INFO] Building war: /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/compliance/repository/target/rdf4j-repository-compliance-6.0.0-SNAPSHOT.war
-[INFO] Building war: /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/compliance/sparql/target/rdf4j-sparql-compliance-6.0.0-SNAPSHOT.war
-[INFO] 
-[INFO] --- failsafe:3.5.4:integration-test (integration-tests) @ rdf4j-repository-compliance ---
-[INFO] Tests are skipped.
-[INFO] 
-[INFO] --- failsafe:3.5.4:verify (verify) @ rdf4j-repository-compliance ---
-[INFO] Tests are skipped.
-[INFO] 
-[INFO] --- japicmp:0.18.3:cmp (default) @ rdf4j-repository-compliance ---
-[INFO] Skipping execution because parameter 'skip' was set to true.
-[INFO] 
-[INFO] --- spotless:2.46.1:check (spotless-check) @ rdf4j-repository-compliance ---
-[INFO] Spotless check skipped
-[INFO] 
-[INFO] --- install:3.1.4:install (default-install) @ rdf4j-repository-compliance ---
-[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/compliance/repository/pom.xml to /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/.m2_repo/org/eclipse/rdf4j/rdf4j-repository-compliance/6.0.0-SNAPSHOT/rdf4j-repository-compliance-6.0.0-SNAPSHOT.pom
-[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/compliance/repository/target/rdf4j-repository-compliance-6.0.0-SNAPSHOT.war to /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/.m2_repo/org/eclipse/rdf4j/rdf4j-repository-compliance/6.0.0-SNAPSHOT/rdf4j-repository-compliance-6.0.0-SNAPSHOT.war
-[INFO] 
-[INFO] --- failsafe:3.5.4:integration-test (integration-tests) @ rdf4j-sparql-compliance ---
-[INFO] Tests are skipped.
-[INFO] 
-[INFO] --- failsafe:3.5.4:verify (verify) @ rdf4j-sparql-compliance ---
-[INFO] Tests are skipped.
-[INFO] 
-[INFO] --- japicmp:0.18.3:cmp (default) @ rdf4j-sparql-compliance ---
-[INFO] Skipping execution because parameter 'skip' was set to true.
-[INFO] 
-[INFO] --- spotless:2.46.1:check (spotless-check) @ rdf4j-sparql-compliance ---
-[INFO] Spotless check skipped
-[INFO] 
-[INFO] --- install:3.1.4:install (default-install) @ rdf4j-sparql-compliance ---
-[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/compliance/sparql/pom.xml to /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/.m2_repo/org/eclipse/rdf4j/rdf4j-sparql-compliance/6.0.0-SNAPSHOT/rdf4j-sparql-compliance-6.0.0-SNAPSHOT.pom
-[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/compliance/sparql/target/rdf4j-sparql-compliance-6.0.0-SNAPSHOT.war to /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/.m2_repo/org/eclipse/rdf4j/rdf4j-sparql-compliance/6.0.0-SNAPSHOT/rdf4j-sparql-compliance-6.0.0-SNAPSHOT.war
-[INFO] 
-[INFO] --- failsafe:3.5.4:integration-test (integration-tests) @ rdf4j-server-boot ---
-[INFO] Tests are skipped.
-[INFO] 
-[INFO] --- failsafe:3.5.4:verify (verify) @ rdf4j-server-boot ---
-[INFO] Tests are skipped.
-[INFO] 
-[INFO] --- japicmp:0.18.3:cmp (default) @ rdf4j-server-boot ---
-[INFO] Skipping execution because parameter 'skip' was set to true.
-[INFO] 
-[INFO] --- spotless:2.46.1:check (spotless-check) @ rdf4j-server-boot ---
-[INFO] Spotless check skipped
-[INFO] 
-[INFO] --- install:3.1.4:install (default-install) @ rdf4j-server-boot ---
-[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/tools/server-boot/pom.xml to /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/.m2_repo/org/eclipse/rdf4j/rdf4j-server-boot/6.0.0-SNAPSHOT/rdf4j-server-boot-6.0.0-SNAPSHOT.pom
-[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/tools/server-boot/target/rdf4j-server-boot-6.0.0-SNAPSHOT.jar to /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/.m2_repo/org/eclipse/rdf4j/rdf4j-server-boot/6.0.0-SNAPSHOT/rdf4j-server-boot-6.0.0-SNAPSHOT.jar
-[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/tools/server-boot/target/rdf4j-server-boot-6.0.0-SNAPSHOT-distribution.zip to /Users/havardottestad/Documents/Programming/rdf4j-sketch-based-optimisation/.m2_repo/org/eclipse/rdf4j/rdf4j-server-boot/6.0.0-SNAPSHOT/rdf4j-server-boot-6.0.0-SNAPSHOT-distribution.zip
-[INFO] ------------------------------------------------------------------------
-[INFO] Reactor Summary for Eclipse RDF4J 6.0.0-SNAPSHOT:
-[INFO] 
-[INFO] Eclipse RDF4J ...................................... SUCCESS [  0.376 s]
-[INFO] RDF4J: Assembly Descriptors ........................ SUCCESS [  0.278 s]
-[INFO] RDF4J: Core ........................................ SUCCESS [  0.037 s]
-[INFO] RDF4J: common ...................................... SUCCESS [  0.079 s]
-[INFO] RDF4J: common annotation ........................... SUCCESS [  0.274 s]
-[INFO] RDF4J: Model API ................................... SUCCESS [  0.684 s]
-[INFO] RDF4J: common exception ............................ SUCCESS [  0.068 s]
-[INFO] RDF4J: common IO ................................... SUCCESS [  0.282 s]
-[INFO] RDF4J: common order ................................ SUCCESS [  0.073 s]
-[INFO] RDF4J: common iterators ............................ SUCCESS [  0.192 s]
-[INFO] RDF4J: common text ................................. SUCCESS [  0.070 s]
-[INFO] RDF4J: RDF Vocabularies ............................ SUCCESS [  0.217 s]
-[INFO] RDF4J: Model ....................................... SUCCESS [  0.541 s]
-[INFO] RDF4J: common transaction .......................... SUCCESS [  0.096 s]
-[INFO] RDF4J: common XML .................................. SUCCESS [  0.117 s]
-[INFO] RDF4J: SparqlBuilder ............................... SUCCESS [  0.421 s]
-[INFO] RDF4J: Rio ......................................... SUCCESS [  0.097 s]
-[INFO] RDF4J: Rio - API ................................... SUCCESS [  0.355 s]
-[INFO] RDF4J: Rio - Languages ............................. SUCCESS [  0.051 s]
-[INFO] RDF4J: Rio - Datatypes ............................. SUCCESS [  0.086 s]
-[INFO] RDF4J: Query ....................................... SUCCESS [  0.220 s]
-[INFO] RDF4J: Rio - Binary ................................ SUCCESS [  0.145 s]
-[INFO] RDF4J: Rio - N-Triples ............................. SUCCESS [  0.168 s]
-[INFO] RDF4J: Rio - HDT ................................... SUCCESS [  0.166 s]
-[INFO] RDF4J: Rio - JSON-LD 1.0 (legacy) .................. SUCCESS [  0.245 s]
-[INFO] RDF4J: Rio - N-Quads ............................... SUCCESS [  0.149 s]
-[INFO] RDF4J: Test Suites ................................. SUCCESS [  0.031 s]
-[INFO] RDF4J: benchmarks .................................. SUCCESS [  1.870 s]
-[INFO] RDF4J: Rio - JSON-LD ............................... SUCCESS [  0.156 s]
-[INFO] RDF4J: Rio - Turtle ................................ SUCCESS [  0.214 s]
-[INFO] RDF4J: Rio - N3 (writer-only) ...................... SUCCESS [  0.088 s]
-[INFO] RDF4J: Rio - RDF/JSON .............................. SUCCESS [  0.161 s]
-[INFO] RDF4J: Rio - RDF/XML ............................... SUCCESS [  0.203 s]
-[INFO] RDF4J: Rio - TriX .................................. SUCCESS [  0.102 s]
-[INFO] RDF4J: Rio - TriG .................................. SUCCESS [  0.110 s]
-[INFO] RDF4J: Query algebra ............................... SUCCESS [  0.035 s]
-[INFO] RDF4J: Query algebra - model ....................... SUCCESS [  0.522 s]
-[INFO] RDF4J: Collection Factory that may be shared ....... SUCCESS [  0.015 s]
-[INFO] RDF4J: Collection Factory - API .................... SUCCESS [  0.073 s]
-[INFO] RDF4J: Sail ........................................ SUCCESS [  0.044 s]
-[INFO] RDF4J: Sail API .................................... SUCCESS [  0.278 s]
-[INFO] RDF4J: Query result IO ............................. SUCCESS [  0.086 s]
-[INFO] RDF4J: Query result IO - API ....................... SUCCESS [  0.074 s]
-[INFO] RDF4J: QueryResultIO testsuite ..................... SUCCESS [  0.073 s]
-[INFO] RDF4J: Query result IO - binary .................... SUCCESS [  0.120 s]
-[INFO] RDF4J: Query result IO - SPARQL/JSON ............... SUCCESS [  0.248 s]
-[INFO] RDF4J: Query result IO - SPARQL/XML ................ SUCCESS [  0.147 s]
-[INFO] RDF4J: Query result IO - XSLX ...................... SUCCESS [  0.139 s]
-[INFO] RDF4J: Query result IO - ODS ....................... SUCCESS [  0.111 s]
-[INFO] RDF4J: Query result IO - plain text booleans ....... SUCCESS [  0.243 s]
-[INFO] RDF4J: Repository .................................. SUCCESS [  0.069 s]
-[INFO] RDF4J: Repository - API ............................ SUCCESS [  0.261 s]
-[INFO] RDF4J: HTTP ........................................ SUCCESS [  0.060 s]
-[INFO] RDF4J: HTTP protocol ............................... SUCCESS [  0.123 s]
-[INFO] RDF4J: HTTP client ................................. SUCCESS [  0.164 s]
-[INFO] RDF4J: Query parser ................................ SUCCESS [  0.052 s]
-[INFO] RDF4J: Query parser - API .......................... SUCCESS [  0.106 s]
-[INFO] RDF4J: Query parser - SPARQL ....................... SUCCESS [  1.172 s]
-[INFO] RDF4J: SPARQL Repository ........................... SUCCESS [  0.175 s]
-[INFO] RDF4J: Query algebra - evaluation .................. SUCCESS [  1.595 s]
-[INFO] RDF4J: Repository API testsuite .................... SUCCESS [  0.238 s]
-[INFO] RDF4J: SailRepository .............................. SUCCESS [  0.160 s]
-[INFO] RDF4J: Repository - event (wrapper) ................ SUCCESS [  0.120 s]
-[INFO] RDF4J: HTTPRepository .............................. SUCCESS [  0.152 s]
-[INFO] RDF4J: Repository manager .......................... SUCCESS [  0.152 s]
-[INFO] RDF4J: Sail base implementations ................... SUCCESS [  0.195 s]
-[INFO] RDF4J: Sail API testsuite .......................... SUCCESS [  0.131 s]
-[INFO] RDF4J: MemoryStore ................................. SUCCESS [  0.315 s]
-[INFO] RDF4J: Query algebra - GeoSPARQL ................... SUCCESS [  0.220 s]
-[INFO] RDF4J: Query Rendering ............................. SUCCESS [  0.943 s]
-[INFO] RDF4J: DatasetRepository (wrapper) ................. SUCCESS [  0.058 s]
-[INFO] RDF4J: Repository - context aware (wrapper) ........ SUCCESS [  0.115 s]
-[INFO] RDF4J: Model API testsuite ......................... SUCCESS [  0.082 s]
-[INFO] RDF4J: Sail Model .................................. SUCCESS [  0.108 s]
-[INFO] RDF4J: Collection Factory - Map DB v3 backed ....... SUCCESS [  0.255 s]
-[INFO] RDF4J: NativeStore ................................. SUCCESS [  0.670 s]
-[INFO] RDF4J: Inferencer Sails ............................ SUCCESS [  0.283 s]
-[INFO] RDF4J: LmdbStore ................................... SUCCESS [  1.260 s]
-[INFO] RDF4J: SHACL ....................................... SUCCESS [  3.469 s]
-[INFO] RDF4J: Lucene Sail API ............................. SUCCESS [  0.291 s]
-[INFO] RDF4J: Lucene Sail Index ........................... SUCCESS [  0.248 s]
-[INFO] RDF4J: Elastic Search Sail Index ................... SUCCESS [  0.176 s]
-[INFO] RDF4J: Extensible Store ............................ SUCCESS [  0.298 s]
-[INFO] RDF4J: Elasticsearch Store ......................... SUCCESS [  0.391 s]
-[INFO] RDF4J: SPIN ........................................ SUCCESS [  0.580 s]
-[INFO] RDF4J: Client Libraries ............................ SUCCESS [  0.014 s]
-[INFO] RDF4J: Storage Libraries ........................... SUCCESS [  0.013 s]
-[INFO] RDF4J: Collection Factory - Map DB backed .......... SUCCESS [  0.124 s]
-[INFO] RDF4J: Tools ....................................... SUCCESS [  0.036 s]
-[INFO] RDF4J: application configuration ................... SUCCESS [  0.152 s]
-[INFO] RDF4J: HTTP server - core .......................... SUCCESS [  0.342 s]
-[INFO] RDF4J: SPARQL compliance test suite ................ SUCCESS [  1.756 s]
-[INFO] RDF4J: Federation .................................. SUCCESS [  0.967 s]
-[INFO] RDF4J: Console ..................................... SUCCESS [  0.289 s]
-[INFO] RDF4J: HTTP server ................................. SUCCESS [  0.710 s]
-[INFO] RDF4J: Workbench ................................... SUCCESS [  0.798 s]
-[INFO] RDF4J: Server + Workbench Spring Boot runner ....... SUCCESS [  2.696 s]
-[INFO] RDF4J: Runtime ..................................... SUCCESS [  0.015 s]
-[INFO] RDF4J: Runtime - OSGi .............................. SUCCESS [  2.542 s]
-[INFO] RDF4J: Spring components ........................... SUCCESS [  0.043 s]
-[INFO] RDF4J: Spring boot component for a HTTP sparql server SUCCESS [  0.256 s]
-[INFO] RDF4J: Spring ...................................... SUCCESS [  0.486 s]
-[INFO] RDF4J: Spring Demo ................................. SUCCESS [  0.197 s]
-[INFO] RDF4J: Rio compliance test suite ................... SUCCESS [  1.218 s]
-[INFO] RDF4J: Lucene Sail Tests ........................... SUCCESS [  0.097 s]
-[INFO] RDF4J: GeoSPARQL compliance test suite ............. SUCCESS [  0.077 s]
-[INFO] RDF4J: benchmarks .................................. SUCCESS [  2.821 s]
-[INFO] RDF4J: Compliance tests ............................ SUCCESS [  0.036 s]
-[INFO] RDF4J: Repository compliance tests ................. SUCCESS [  1.789 s]
-[INFO] RDF4J: Rio compliance tests ........................ SUCCESS [  0.070 s]
-[INFO] RDF4J: Model compliance tests ...................... SUCCESS [  0.066 s]
-[INFO] RDF4J: SPARQL query parser compliance tests ........ SUCCESS [  1.814 s]
-[INFO] RDF4J: Lucene Sail Tests ........................... SUCCESS [  0.074 s]
-[INFO] RDF4J: Elasticsearch Sail Tests .................... SUCCESS [  0.138 s]
-[INFO] RDF4J: GeoSPARQL compliance tests .................. SUCCESS [  0.060 s]
-[INFO] RDF4J: Code examples ............................... SUCCESS [  0.117 s]
-[INFO] RDF4J: BOM ......................................... SUCCESS [  0.023 s]
-[INFO] ------------------------------------------------------------------------
-[INFO] BUILD SUCCESS
-[INFO] ------------------------------------------------------------------------
-[INFO] Total time:  18.175 s (Wall Clock)
-[INFO] Finished at: 2026-02-12T21:21:15+01:00
-[INFO] ------------------------------------------------------------------------
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union
+         StatementPattern
+            Var (name=s)
+            Var (name=_const_bc4761cb_uri, value=http://ex/p1, anonymous)
+            Var (name=o)
+         StatementPattern
+            Var (name=s)
+            Var (name=_const_bc4761cc_uri, value=http://ex/p2, anonymous)
+            Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union (new scope)
+         Union (new scope)
+            Union (new scope)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_const_bc4761cb_uri, value=http://ex/p1, anonymous)
+                  Var (name=o)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_const_bc4761cc_uri, value=http://ex/p2, anonymous)
+                  Var (name=o)
+            StatementPattern (new scope)
+               Var (name=s)
+               Var (name=_const_1ed90327_uri, value=http://ex/q, anonymous)
+               Var (name=o)
+         Union (new scope)
+            StatementPattern (new scope)
+               Var (name=s)
+               Var (name=_const_1ed90328_uri, value=http://ex/r, anonymous)
+               Var (name=o)
+            Union (new scope)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_const_1ed90317_uri, value=http://ex/a, anonymous)
+                  Var (name=o)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_const_1ed90318_uri, value=http://ex/b, anonymous)
+                  Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Join
+         Join
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90326_uri, value=http://ex/p, anonymous)
+               Var (name=_anon_path_668456de605cf44e44ae036cb9408b1027012345, anonymous)
+            Union
+               StatementPattern
+                  Var (name=_anon_path_668456de605cf44e44ae036cb9408b1027012345, anonymous)
+                  Var (name=_const_1ed90327_uri, value=http://ex/q, anonymous)
+                  Var (name=_anon_path_768456de605cf44e44ae036cb9408b10270123456, anonymous)
+               StatementPattern
+                  Var (name=_anon_path_668456de605cf44e44ae036cb9408b1027012345, anonymous)
+                  Var (name=_const_1ed90328_uri, value=http://ex/r, anonymous)
+                  Var (name=_anon_path_768456de605cf44e44ae036cb9408b10270123456, anonymous)
+         StatementPattern
+            Var (name=_anon_path_768456de605cf44e44ae036cb9408b10270123456, anonymous)
+            Var (name=_const_1ed90329_uri, value=http://ex/s, anonymous)
+            Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union
+         StatementPattern
+            Var (name=o)
+            Var (name=_const_bc4761cb_uri, value=http://ex/p1, anonymous)
+            Var (name=s)
+         StatementPattern
+            Var (name=o)
+            Var (name=_const_bc4761cc_uri, value=http://ex/p2, anonymous)
+            Var (name=s)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union (new scope)
+         Union (new scope)
+            Filter
+               Compare (!=)
+                  Var (name=_anon_path_46128456de605cf44e44ae036cb9408b10270123, anonymous)
+                  ValueConstant (value=http://ex/p1)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_anon_path_46128456de605cf44e44ae036cb9408b10270123, anonymous)
+                  Var (name=o)
+            Filter
+               Compare (!=)
+                  Var (name=_anon_path_46128456de605cf44e44ae036cb9408b10270123, anonymous)
+                  ValueConstant (value=http://ex/p2)
+               StatementPattern
+                  Var (name=o)
+                  Var (name=_anon_path_46128456de605cf44e44ae036cb9408b10270123, anonymous)
+                  Var (name=s)
+         StatementPattern (new scope)
+            Var (name=s)
+            Var (name=_const_1ed90327_uri, value=http://ex/q, anonymous)
+            Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Join
+         StatementPattern
+            Var (name=s)
+            Var (name=_const_1ed90326_uri, value=http://ex/p, anonymous)
+            Var (name=o)
+         Distinct
+            Projection
+               ProjectionElemList
+                  ProjectionElem "s"
+                  ProjectionElem "o"
+               Union
+                  ZeroLengthPath
+                     Var (name=s)
+                     Var (name=o)
+                  StatementPattern
+                     Var (name=s)
+                     Var (name=_const_1ed90326_uri, value=http://ex/p, anonymous)
+                     Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      ArbitraryLengthPath
+         Var (name=s)
+         StatementPattern
+            Var (name=s)
+            Var (name=_const_1ed90326_uri, value=http://ex/p, anonymous)
+            Var (name=o)
+         Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union
+         StatementPattern
+            Var (name=s)
+            Var (name=_const_1ed90317_uri, value=http://ex/a, anonymous)
+            Var (name=o)
+         Union
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90318_uri, value=http://ex/b, anonymous)
+               Var (name=o)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90319_uri, value=http://ex/c, anonymous)
+               Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union (new scope)
+         Union (new scope)
+            Filter
+               Compare (!=)
+                  Var (name=_anon_path_22328456de605cf44e44ae036cb9408b102701, anonymous)
+                  ValueConstant (value=http://ex/p1)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_anon_path_22328456de605cf44e44ae036cb9408b102701, anonymous)
+                  Var (name=o)
+            Filter
+               Compare (!=)
+                  Var (name=_anon_path_22328456de605cf44e44ae036cb9408b102701, anonymous)
+                  ValueConstant (value=http://ex/p2)
+               StatementPattern
+                  Var (name=o)
+                  Var (name=_anon_path_22328456de605cf44e44ae036cb9408b102701, anonymous)
+                  Var (name=s)
+         StatementPattern (new scope)
+            Var (name=s)
+            Var (name=_const_1ed90327_uri, value=http://ex/q, anonymous)
+            Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union
+         Filter
+            Compare (!=)
+               Var (name=_anon_path_00028456de605cf44e44ae036cb9408b1027, anonymous)
+               ValueConstant (value=http://ex/p1)
+            StatementPattern
+               Var (name=s)
+               Var (name=_anon_path_00028456de605cf44e44ae036cb9408b1027, anonymous)
+               Var (name=o)
+         Filter
+            Compare (!=)
+               Var (name=_anon_path_00028456de605cf44e44ae036cb9408b1027, anonymous)
+               ValueConstant (value=http://ex/p2)
+            StatementPattern
+               Var (name=o)
+               Var (name=_anon_path_00028456de605cf44e44ae036cb9408b1027, anonymous)
+               Var (name=s)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union (new scope)
+         Union (new scope)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_bc4761cb_uri, value=http://ex/p1, anonymous)
+               Var (name=o)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_bc4761cc_uri, value=http://ex/p2, anonymous)
+               Var (name=o)
+         StatementPattern (new scope)
+            Var (name=s)
+            Var (name=_const_1ed90327_uri, value=http://ex/q, anonymous)
+            Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Filter
+         Compare (!=)
+            Var (name=_anon_path_96618456de605cf44e44ae036cb9408b1027012345678, anonymous)
+            ValueConstant (value=http://ex/p)
+         StatementPattern
+            Var (name=s)
+            Var (name=_anon_path_96618456de605cf44e44ae036cb9408b1027012345678, anonymous)
+            Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Distinct
+         Projection
+            ProjectionElemList
+               ProjectionElem "s"
+               ProjectionElem "o"
+            Union
+               ZeroLengthPath
+                  Var (name=s)
+                  Var (name=o)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_const_1ed90326_uri, value=http://ex/p, anonymous)
+                  Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union
+         StatementPattern FROM NAMED CONTEXT
+            Var (name=s)
+            Var (name=_const_1ed90317_uri, value=http://ex/a, anonymous)
+            Var (name=o)
+            Var (name=_const_1ed9031d_uri, value=http://ex/g, anonymous)
+         StatementPattern FROM NAMED CONTEXT
+            Var (name=s)
+            Var (name=_const_1ed90318_uri, value=http://ex/b, anonymous)
+            Var (name=o)
+            Var (name=_const_1ed9031d_uri, value=http://ex/g, anonymous)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      StatementPattern
+         Var (name=s)
+         Var (name=_const_1ed90326_uri, value=http://ex/p, anonymous)
+         Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union (new scope)
+         Union (new scope)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90317_uri, value=http://ex/a, anonymous)
+               Var (name=o)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90318_uri, value=http://ex/b, anonymous)
+               Var (name=o)
+         Union (new scope)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90319_uri, value=http://ex/c, anonymous)
+               Var (name=o)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed9031a_uri, value=http://ex/d, anonymous)
+               Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union (new scope)
+         Union (new scope)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90317_uri, value=http://ex/a, anonymous)
+               Var (name=o)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90318_uri, value=http://ex/b, anonymous)
+               Var (name=o)
+         StatementPattern (new scope)
+            Var (name=s)
+            Var (name=_const_1ed90327_uri, value=http://ex/q, anonymous)
+            Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      LeftJoin
+         SingletonSet
+         Union
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90317_uri, value=http://ex/a, anonymous)
+               Var (name=o)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90318_uri, value=http://ex/b, anonymous)
+               Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union (new scope)
+         Union (new scope)
+            Union (new scope)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_const_bc4761cb_uri, value=http://ex/p1, anonymous)
+                  Var (name=o)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_const_bc4761cc_uri, value=http://ex/p2, anonymous)
+                  Var (name=o)
+            StatementPattern (new scope)
+               Var (name=s)
+               Var (name=_const_1ed90327_uri, value=http://ex/q, anonymous)
+               Var (name=o)
+         Union (new scope)
+            StatementPattern (new scope)
+               Var (name=s)
+               Var (name=_const_1ed90328_uri, value=http://ex/r, anonymous)
+               Var (name=o)
+            Union (new scope)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_const_1ed90317_uri, value=http://ex/a, anonymous)
+                  Var (name=o)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_const_1ed90318_uri, value=http://ex/b, anonymous)
+                  Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union
+         Filter
+            Compare (!=)
+               Var (name=_anon_path_71328456de605cf44e44ae036cb9408b10270123456, anonymous)
+               ValueConstant (value=http://ex/p1)
+            StatementPattern FROM NAMED CONTEXT
+               Var (name=s)
+               Var (name=_anon_path_71328456de605cf44e44ae036cb9408b10270123456, anonymous)
+               Var (name=o)
+               Var (name=_const_1ed9031d_uri, value=http://ex/g, anonymous)
+         Filter
+            Compare (!=)
+               Var (name=_anon_path_71328456de605cf44e44ae036cb9408b10270123456, anonymous)
+               ValueConstant (value=http://ex/p2)
+            StatementPattern FROM NAMED CONTEXT
+               Var (name=o)
+               Var (name=_anon_path_71328456de605cf44e44ae036cb9408b10270123456, anonymous)
+               Var (name=s)
+               Var (name=_const_1ed9031d_uri, value=http://ex/g, anonymous)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union (new scope)
+         Union (new scope)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_bc4761cb_uri, value=http://ex/p1, anonymous)
+               Var (name=o)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_bc4761cc_uri, value=http://ex/p2, anonymous)
+               Var (name=o)
+         Union (new scope)
+            Union (new scope)
+               Filter
+                  Compare (!=)
+                     Var (name=_anon_path_90128456de605cf44e44ae036cb9408b1027012345678, anonymous)
+                     ValueConstant (value=http://ex/p3)
+                  StatementPattern
+                     Var (name=s)
+                     Var (name=_anon_path_90128456de605cf44e44ae036cb9408b1027012345678, anonymous)
+                     Var (name=o)
+               Filter
+                  Compare (!=)
+                     Var (name=_anon_path_90128456de605cf44e44ae036cb9408b1027012345678, anonymous)
+                     ValueConstant (value=http://ex/p4)
+                  StatementPattern
+                     Var (name=o)
+                     Var (name=_anon_path_90128456de605cf44e44ae036cb9408b1027012345678, anonymous)
+                     Var (name=s)
+            StatementPattern (new scope)
+               Var (name=s)
+               Var (name=_const_1ed90327_uri, value=http://ex/q, anonymous)
+               Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union (new scope)
+         Service (new scope)
+            Var (name=_const_1edf5ee1_uri, value=http://svc/, anonymous)
+            Union (new scope)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_const_1ed90317_uri, value=http://ex/a, anonymous)
+                  Var (name=o)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_const_1ed90318_uri, value=http://ex/b, anonymous)
+                  Var (name=o)
+         StatementPattern (new scope)
+            Var (name=s)
+            Var (name=_const_1ed90327_uri, value=http://ex/q, anonymous)
+            Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union (new scope)
+         Union (new scope)
+            StatementPattern FROM NAMED CONTEXT
+               Var (name=s)
+               Var (name=_const_1ed90317_uri, value=http://ex/a, anonymous)
+               Var (name=o)
+               Var (name=_const_1ed9031d_uri, value=http://ex/g, anonymous)
+            StatementPattern FROM NAMED CONTEXT
+               Var (name=s)
+               Var (name=_const_1ed90318_uri, value=http://ex/b, anonymous)
+               Var (name=o)
+               Var (name=_const_1ed9031d_uri, value=http://ex/g, anonymous)
+         StatementPattern (new scope)
+            Var (name=s)
+            Var (name=_const_1ed90327_uri, value=http://ex/q, anonymous)
+            Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Service
+         Var (name=_const_1edf5ee1_uri, value=http://svc/, anonymous)
+         Union (new scope)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90317_uri, value=http://ex/a, anonymous)
+               Var (name=o)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90318_uri, value=http://ex/b, anonymous)
+               Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union
+         StatementPattern
+            Var (name=s)
+            Var (name=_const_bc4761cb_uri, value=http://ex/p1, anonymous)
+            Var (name=o)
+         StatementPattern
+            Var (name=s)
+            Var (name=_const_bc4761cc_uri, value=http://ex/p2, anonymous)
+            Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union (new scope)
+         Union (new scope)
+            Filter
+               Compare (!=)
+                  Var (name=_anon_path_62018456de605cf44e44ae036cb9408b1027012345, anonymous)
+                  ValueConstant (value=http://ex/p1)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_anon_path_62018456de605cf44e44ae036cb9408b1027012345, anonymous)
+                  Var (name=o)
+            Filter
+               Compare (!=)
+                  Var (name=_anon_path_62018456de605cf44e44ae036cb9408b1027012345, anonymous)
+                  ValueConstant (value=http://ex/p2)
+               StatementPattern
+                  Var (name=o)
+                  Var (name=_anon_path_62018456de605cf44e44ae036cb9408b1027012345, anonymous)
+                  Var (name=s)
+         Union (new scope)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90317_uri, value=http://ex/a, anonymous)
+               Var (name=o)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90318_uri, value=http://ex/b, anonymous)
+               Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union (new scope)
+         LeftJoin (new scope)
+            SingletonSet
+            Union
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_const_1ed90317_uri, value=http://ex/a, anonymous)
+                  Var (name=o)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_const_1ed90318_uri, value=http://ex/b, anonymous)
+                  Var (name=o)
+         StatementPattern (new scope)
+            Var (name=s)
+            Var (name=_const_1ed90327_uri, value=http://ex/q, anonymous)
+            Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union
+         Filter
+            And
+               Compare (!=)
+                  Var (name=_anon_path_318456de605cf44e44ae036cb9408b1027012, anonymous)
+                  ValueConstant (value=http://ex/p1)
+               Compare (!=)
+                  Var (name=_anon_path_318456de605cf44e44ae036cb9408b1027012, anonymous)
+                  ValueConstant (value=http://ex/p2)
+            StatementPattern
+               Var (name=s)
+               Var (name=_anon_path_318456de605cf44e44ae036cb9408b1027012, anonymous)
+               Var (name=o)
+         Filter
+            Compare (!=)
+               Var (name=_anon_path_318456de605cf44e44ae036cb9408b1027012, anonymous)
+               ValueConstant (value=http://ex/q)
+            StatementPattern
+               Var (name=o)
+               Var (name=_anon_path_318456de605cf44e44ae036cb9408b1027012, anonymous)
+               Var (name=s)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      ArbitraryLengthPath
+         Var (name=s)
+         StatementPattern
+            Var (name=s)
+            Var (name=_const_1ed90326_uri, value=http://ex/p, anonymous)
+            Var (name=o)
+         Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+      Union (new scope)
+         StatementPattern (new scope)
+            Var (name=s)
+            Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+            Var (name=o)
+         StatementPattern (new scope)
+            Var (name=s)
+            Var (name=_const_1ed90326_uri, value=http://ex/p, anonymous)
+            Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Union (new scope)
+         Union (new scope)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90317_uri, value=http://ex/a, anonymous)
+               Var (name=o)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90318_uri, value=http://ex/b, anonymous)
+               Var (name=o)
+         Union (new scope)
+            Filter
+               Compare (!=)
+                  Var (name=_anon_path_56428456de605cf44e44ae036cb9408b102701234, anonymous)
+                  ValueConstant (value=http://ex/p2)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_anon_path_56428456de605cf44e44ae036cb9408b102701234, anonymous)
+                  Var (name=o)
+            Filter
+               Compare (!=)
+                  Var (name=_anon_path_56428456de605cf44e44ae036cb9408b102701234, anonymous)
+                  ValueConstant (value=http://ex/p1)
+               StatementPattern
+                  Var (name=o)
+                  Var (name=_anon_path_56428456de605cf44e44ae036cb9408b102701234, anonymous)
+                  Var (name=s)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Service
+         Var (name=_const_1edf5ee1_uri, value=http://svc/, anonymous)
+         Union (new scope)
+            Filter
+               Compare (!=)
+                  Var (name=_anon_path_9818456de605cf44e44ae036cb9408b1027012345678, anonymous)
+                  ValueConstant (value=http://ex/p1)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_anon_path_9818456de605cf44e44ae036cb9408b1027012345678, anonymous)
+                  Var (name=o)
+            Filter
+               Compare (!=)
+                  Var (name=_anon_path_9818456de605cf44e44ae036cb9408b1027012345678, anonymous)
+                  ValueConstant (value=http://ex/p2)
+               StatementPattern
+                  Var (name=o)
+                  Var (name=_anon_path_9818456de605cf44e44ae036cb9408b1027012345678, anonymous)
+                  Var (name=s)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Distinct
+         Projection
+            ProjectionElemList
+               ProjectionElem "s"
+               ProjectionElem "o"
+            Union
+               ZeroLengthPath
+                  Var (name=s)
+                  Var (name=o)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_const_bc4761cb_uri, value=http://ex/p1, anonymous)
+                  Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      Join
+         Union
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90317_uri, value=http://ex/a, anonymous)
+               Var (name=_anon_path_97918456de605cf44e44ae036cb9408b1027012345678, anonymous)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90318_uri, value=http://ex/b, anonymous)
+               Var (name=_anon_path_97918456de605cf44e44ae036cb9408b1027012345678, anonymous)
+         Union
+            StatementPattern
+               Var (name=_anon_path_97918456de605cf44e44ae036cb9408b1027012345678, anonymous)
+               Var (name=_const_1ed90319_uri, value=http://ex/c, anonymous)
+               Var (name=o)
+            StatementPattern
+               Var (name=_anon_path_97918456de605cf44e44ae036cb9408b1027012345678, anonymous)
+               Var (name=_const_1ed9031a_uri, value=http://ex/d, anonymous)
+               Var (name=o)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+      LeftJoin
+         SingletonSet
+         Union
+            Filter
+               Compare (!=)
+                  Var (name=_anon_path_63318456de605cf44e44ae036cb9408b1027012345, anonymous)
+                  ValueConstant (value=http://ex/p1)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_anon_path_63318456de605cf44e44ae036cb9408b1027012345, anonymous)
+                  Var (name=o)
+            Filter
+               Compare (!=)
+                  Var (name=_anon_path_63318456de605cf44e44ae036cb9408b1027012345, anonymous)
+                  ValueConstant (value=http://ex/p2)
+               StatementPattern
+                  Var (name=o)
+                  Var (name=_anon_path_63318456de605cf44e44ae036cb9408b1027012345, anonymous)
+                  Var (name=s)
+QueryRoot
+   Projection
+      ProjectionElemList
+         ProjectionElem "s"
+         ProjectionElem "o"
+         ProjectionElem "x"
+      Union (new scope)
+         Join (new scope)
+            Union
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_const_1ed90317_uri, value=http://ex/a, anonymous)
+                  Var (name=o)
+               StatementPattern
+                  Var (name=s)
+                  Var (name=_const_1ed90318_uri, value=http://ex/b, anonymous)
+                  Var (name=o)
+            StatementPattern
+               Var (name=s)
+               Var (name=_const_1ed90327_uri, value=http://ex/q, anonymous)
+               Var (name=x)
+         StatementPattern (new scope)
+            Var (name=s)
+            Var (name=_const_1ed90328_uri, value=http://ex/r, anonymous)
+            Var (name=o)
+-------------------------------------------------------------------------------
+Test set: org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedQueryJoinOptimizerPlanStabilityTest
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.076 s <<< FAILURE! -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedQueryJoinOptimizerPlanStabilityTest
+org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedQueryJoinOptimizerPlanStabilityTest.autoModeSkipsRuntimeSwitchWhenAlternativeFailureRateIsTooHigh -- Time elapsed: 0.060 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <0> but was: <1>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+	at org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:197)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:150)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:145)
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:528)
+	at org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedQueryJoinOptimizerPlanStabilityTest.autoModeSkipsRuntimeSwitchWhenAlternativeFailureRateIsTooHigh(LearnedQueryJoinOptimizerPlanStabilityTest.java:169)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.junit.platform.commons.util.ReflectionUtils.invokeMethod(ReflectionUtils.java:727)
+	at org.junit.jupiter.engine.execution.MethodInvocation.proceed(MethodInvocation.java:60)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed(InvocationInterceptorChain.java:131)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.intercept(TimeoutExtension.java:156)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod(TimeoutExtension.java:147)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestMethod(TimeoutExtension.java:86)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$ReflectiveInterceptorCall.lambda$ofVoidMethod$0(InterceptingExecutableInvoker.java:103)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.lambda$invoke$0(InterceptingExecutableInvoker.java:93)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$InterceptedInvocation.proceed(InvocationInterceptorChain.java:106)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.proceed(InvocationInterceptorChain.java:64)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.chainAndInvoke(InvocationInterceptorChain.java:45)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.invoke(InvocationInterceptorChain.java:37)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:92)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:86)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.lambda$invokeTestMethod$7(TestMethodTestDescriptor.java:217)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.invokeTestMethod(TestMethodTestDescriptor.java:213)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:138)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:68)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:151)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:155)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:155)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.submit(SameThreadHierarchicalTestExecutorService.java:35)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestExecutor.execute(HierarchicalTestExecutor.java:57)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestEngine.execute(HierarchicalTestEngine.java:54)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:147)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:127)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:90)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.lambda$execute$0(EngineExecutionOrchestrator.java:55)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.withInterceptedStreams(EngineExecutionOrchestrator.java:102)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:54)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:114)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:86)
+	at org.junit.platform.launcher.core.DefaultLauncherSession$DelegatingLauncher.execute(DefaultLauncherSession.java:86)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.executeWithoutCancellationToken(LauncherAdapter.java:60)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.execute(LauncherAdapter.java:52)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.execute(JUnitPlatformProvider.java:203)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invokeAllTests(JUnitPlatformProvider.java:168)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:136)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+
