@@ -317,6 +317,23 @@ public class GroupIteratorTest {
 	}
 
 	@Test
+	public void testCustomNAryAggregateFunction_SingleArg_Nonempty() throws QueryEvaluationException {
+		AggregateNAryFunctionFactory nAryFactory = new SingleArgAggregateNAryFunctionFactory();
+		CustomAggregateNAryFunctionRegistry.getInstance().add(nAryFactory);
+		try {
+			Group group = new Group(NONEMPTY_ASSIGNMENT);
+			group.addGroupElement(new GroupElem("narySingleArgSum",
+					new AggregateFunctionCall(List.of(Var.of("a")), nAryFactory.getIri(), false)));
+			try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+				assertThat(gi.next().getBinding("narySingleArgSum").getValue())
+						.isEqualTo(VF.createLiteral("45", XSD.INTEGER));
+			}
+		} finally {
+			CustomAggregateNAryFunctionRegistry.getInstance().remove(nAryFactory);
+		}
+	}
+
+	@Test
 	public void testCustomNAryAggregateFunction_Empty_DistinctTuplePredicateInvoked() throws QueryEvaluationException {
 		AggregateNAryFunctionFactory nAryFactory = new DistinctTupleTouchingAggregateNAryFunctionFactory();
 		CustomAggregateNAryFunctionRegistry.getInstance().add(nAryFactory);
@@ -512,6 +529,59 @@ public class GroupIteratorTest {
 					tuple.add(evaluate(0, bindingSet));
 					tuple.add(evaluate(1, bindingSet));
 					distinctValue.test(tuple);
+				}
+			};
+		}
+
+		@Override
+		public SumCollector getCollector() {
+			return new SumCollector();
+		}
+	}
+
+	private static final class SingleArgAggregateNAryFunctionFactory implements AggregateNAryFunctionFactory {
+		@Override
+		public String getIri() {
+			return "https://www.rdf4j.org/aggregate#nary-single-arg";
+		}
+
+		@Override
+		public int getMinNumberOfArguments() {
+			return 1;
+		}
+
+		@Override
+		public int getMaxNumberOfArguments() {
+			return 1;
+		}
+
+		@Override
+		public AggregateNAryFunction<SumCollector, Value> buildFunction(
+				BiFunction<Integer, BindingSet, Value> evaluationStepByIndex) {
+			return new AggregateNAryFunction<>(evaluationStepByIndex) {
+				private ValueExprEvaluationException typeError = null;
+
+				@Override
+				public void processAggregate(BindingSet bindingSet, Predicate<List<Value>> distinctValue,
+						SumCollector sum)
+						throws QueryEvaluationException {
+					if (typeError != null) {
+						return;
+					}
+					Value v = evaluate(0, bindingSet);
+					if (v instanceof Literal) {
+						if (distinctValue.test(List.of(v))) {
+							Literal nextLiteral = (Literal) v;
+							if (nextLiteral.getDatatype() != null
+									&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
+								sum.value = MathUtil.compute(sum.value, nextLiteral, MathExpr.MathOp.PLUS);
+							} else {
+								typeError = new ValueExprEvaluationException("not a number: " + v);
+							}
+						} else {
+							typeError = new ValueExprEvaluationException("not a number: " + v);
+						}
+					}
 				}
 			};
 		}

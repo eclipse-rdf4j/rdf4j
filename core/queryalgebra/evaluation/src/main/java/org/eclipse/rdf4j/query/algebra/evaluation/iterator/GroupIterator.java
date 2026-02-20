@@ -67,6 +67,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunctionFactory;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateNAryFunctionFactory;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRegistry;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateNAryFunctionRegistry;
@@ -465,29 +467,22 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 					ge.getName());
 		} else if (operator instanceof AggregateFunctionCall) {
 			var aggOperator = (AggregateFunctionCall) operator;
+			int argumentCount = aggOperator.getArguments().size();
+			var nAryFactory = CustomAggregateNAryFunctionRegistry.getInstance().get(aggOperator.getIRI());
+			var unaryFactory = CustomAggregateFunctionRegistry.getInstance().get(aggOperator.getIRI());
 
-			if (aggOperator.getArguments().size() > 1) {
-				Supplier<Predicate<List<Value>>> predicate = createDistinctTupleValueTest(operator);
-				var factory = CustomAggregateNAryFunctionRegistry.getInstance().get(aggOperator.getIRI());
-
-				var function = factory.orElseThrow(
-						() -> new QueryEvaluationException(
-								"Unknown n-ary aggregate function '" + aggOperator.getIRI() + "'"))
-						.buildFunction(precompileNAryArg(aggOperator));
-				return new AggregatePredicateCollectorSupplier<>(function, predicate,
-						() -> factory.get().getCollector(),
-						ge.getName());
-			} else {
-				Supplier<Predicate<Value>> predicate = createDistinctSingleValueTest(operator);
-				var factory = CustomAggregateFunctionRegistry.getInstance().get(aggOperator.getIRI());
-
-				var function = factory.orElseThrow(
-						() -> new QueryEvaluationException("Unknown aggregate function '" + aggOperator.getIRI() + "'"))
-						.buildFunction(precompileNAryArg(aggOperator).asUnaryEvaluator(0));
-				return new AggregatePredicateCollectorSupplier<>(function, predicate,
-						() -> factory.get().getCollector(),
-						ge.getName());
+			if (argumentCount == 1 && unaryFactory.isPresent()) {
+				return createUnaryCustomAggregate(ge, operator, aggOperator, unaryFactory.get());
 			}
+			if (nAryFactory.isPresent()) {
+				validateNAryAggregateArity(aggOperator, nAryFactory.get(), argumentCount);
+				return createNAryCustomAggregate(ge, operator, aggOperator, nAryFactory.get());
+			}
+			if (unaryFactory.isPresent()) {
+				return createUnaryCustomAggregate(ge, operator, aggOperator, unaryFactory.get());
+			}
+
+			throw new QueryEvaluationException("Unknown aggregate function '" + aggOperator.getIRI() + "'");
 		}
 
 		return null;
@@ -515,6 +510,43 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 	 */
 	private Supplier<Predicate<List<Value>>> createDistinctTupleValueTest(AggregateOperator operator) {
 		return operator.isDistinct() ? DistinctTupleValues::new : ALWAYS_TRUE_TUPLE_VALUE_SUPPLIER;
+	}
+
+	private AggregatePredicateCollectorSupplier<?, ?> createUnaryCustomAggregate(GroupElem ge,
+			AggregateOperator operator,
+			AggregateFunctionCall aggOperator, AggregateFunctionFactory factory) {
+		Supplier<Predicate<Value>> predicate = createDistinctSingleValueTest(operator);
+		AggregateFunction function = factory.buildFunction(precompileNAryArg(aggOperator).asUnaryEvaluator(0));
+		return new AggregatePredicateCollectorSupplier<>(function, predicate, factory::getCollector, ge.getName());
+	}
+
+	private AggregatePredicateCollectorSupplier<?, ?> createNAryCustomAggregate(GroupElem ge,
+			AggregateOperator operator,
+			AggregateFunctionCall aggOperator, AggregateNAryFunctionFactory factory) {
+		Supplier<Predicate<List<Value>>> predicate = createDistinctTupleValueTest(operator);
+		var function = factory.buildFunction(precompileNAryArg(aggOperator));
+		return new AggregatePredicateCollectorSupplier<>(function, predicate, factory::getCollector, ge.getName());
+	}
+
+	private void validateNAryAggregateArity(AggregateFunctionCall aggregateOperator,
+			AggregateNAryFunctionFactory factory,
+			int argumentCount) {
+		int minimum = factory.getMinNumberOfArguments();
+		int maximum = factory.getMaxNumberOfArguments();
+		if (minimum < 0 || maximum < minimum) {
+			throw new QueryEvaluationException("Custom n-ary aggregate function '" + aggregateOperator.getIRI()
+					+ "' has invalid arity declaration");
+		}
+		if (argumentCount < minimum) {
+			throw new QueryEvaluationException(
+					"Custom n-ary aggregate function '" + aggregateOperator.getIRI() + "' expects at least " + minimum
+							+ " arguments, got " + argumentCount);
+		}
+		if (argumentCount > maximum) {
+			throw new QueryEvaluationException(
+					"Custom n-ary aggregate function '" + aggregateOperator.getIRI() + "' expects at most " + maximum
+							+ " arguments, got " + argumentCount);
+		}
 	}
 
 	private QueryStepEvaluator precompileUnaryArg(AggregateOperator operator) {
