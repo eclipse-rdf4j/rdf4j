@@ -19,6 +19,7 @@
 		<module>model</module>
 		<module>shacl</module>
 		<module>lmdb</module>
+		<module>s3</module>
 		<module>lucene-api</module>
 		<module>lucene</module>
 		<module>elasticsearch</module>
