@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryRuntimeTelemetryRegistry;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -69,6 +70,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	public static boolean USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN = true;
 
 	private static final int FULL_PAIRWISE_START_LIMIT = 6;
+	private static final int CARDINALITY_START_CANDIDATE_COUNT = 3;
+	private static final int RUNTIME_URGENCY_START_CANDIDATE_COUNT = 3;
+	private static final double MIN_RUNTIME_COST_MULTIPLIER = 0.05;
+	private static final double MAX_RUNTIME_COST_MULTIPLIER = 4.0;
 
 	protected final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
@@ -110,6 +115,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		private Set<String> boundVars = new HashSet<>();
 		private double currentHighestCost = 1;
+		private final Map<TupleExpr, RuntimeTelemetryAggregate> descendantTelemetryCache = new HashMap<>();
+		private final RuntimeTelemetryAggregate emptyRuntimeTelemetry = new RuntimeTelemetryAggregate(-1, -1, -1, -1,
+				-1,
+				-1);
 
 		protected JoinVisitor() {
 			super(trackResultSize);
@@ -355,9 +364,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				if (cached != null) {
 					return cached;
 				}
-				double c = statistics.getCardinality(new Join(a, b));
+				double c = statistics.getCardinality(new Join(a, b)) * pairRuntimeCostMultiplier(a, b);
 				inner.put(b, c);
-				cardCache.computeIfAbsent(b, k -> new HashMap<>()).put(a, c);
 				return c;
 			};
 
@@ -386,15 +394,25 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 
 					// compute the minimum join‐cost between cand and anything in ret
+					double candidateBestCost = Double.MAX_VALUE;
 					for (TupleExpr prev : ret) {
 						if (!statementPatternWithMinimumOneConstant(prev)) {
 							continue;
 						}
 						double cost = getCard.apply(prev, cand);
-						if (cost < bestCost) {
-							bestCost = cost;
-							bestCandidate = cand;
-						}
+						candidateBestCost = Math.min(candidateBestCost, cost);
+					}
+
+					if (candidateBestCost == Double.MAX_VALUE) {
+						continue;
+					}
+
+					// If runtime telemetry shows this candidate is expensive as a repeatedly re-scanned right side,
+					// prioritize moving it earlier to the left.
+					double adjustedCandidateCost = candidateBestCost / reorderLeftUrgencyMultiplier(cand);
+					if (adjustedCandidateCost < bestCost) {
+						bestCost = adjustedCandidateCost;
+						bestCandidate = cand;
 					}
 				}
 
@@ -431,8 +449,23 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			List<TupleExpr> primary = new ArrayList<>(candidates);
 			if (primary.size() > FULL_PAIRWISE_START_LIMIT) {
-				primary.sort(Comparator.comparingDouble(singleCard::get));
-				primary = new ArrayList<>(primary.subList(0, Math.min(3, primary.size())));
+				List<TupleExpr> byCardinality = new ArrayList<>(candidates);
+				byCardinality.sort(Comparator.comparingDouble(singleCard::get));
+
+				primary = new ArrayList<>(
+						byCardinality.subList(0, Math.min(CARDINALITY_START_CANDIDATE_COUNT, byCardinality.size())));
+
+				List<TupleExpr> byRuntimeUrgency = new ArrayList<>(candidates);
+				byRuntimeUrgency.sort(Comparator.comparingDouble(this::reorderLeftUrgencyMultiplier).reversed());
+				int maxPrimarySize = CARDINALITY_START_CANDIDATE_COUNT + RUNTIME_URGENCY_START_CANDIDATE_COUNT;
+				for (TupleExpr runtimeUrgentCandidate : byRuntimeUrgency) {
+					if (primary.size() >= maxPrimarySize) {
+						break;
+					}
+					if (!primary.contains(runtimeUrgentCandidate)) {
+						primary.add(runtimeUrgentCandidate);
+					}
+				}
 			}
 
 			TupleExpr bestA = null;
@@ -446,8 +479,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 
 					double cost = getCard.apply(a, b);
-					if (cost < bestCost) {
-						bestCost = cost;
+					double adjustedCost = cost / reorderLeftUrgencyMultiplier(a);
+					if (adjustedCost < bestCost) {
+						bestCost = adjustedCost;
 						bestA = a;
 						bestB = b;
 					}
@@ -458,8 +492,22 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return null;
 			}
 
+			double forwardCost = getCard.apply(bestA, bestB);
+			double reverseCost = getCard.apply(bestB, bestA);
+			double forwardAdjusted = forwardCost / reorderLeftUrgencyMultiplier(bestA);
+			double reverseAdjusted = reverseCost / reorderLeftUrgencyMultiplier(bestB);
+			if (Double.compare(forwardAdjusted, reverseAdjusted) != 0) {
+				return forwardAdjusted < reverseAdjusted ? bestA : bestB;
+			}
+
 			double cardA = singleCard.get(bestA);
 			double cardB = singleCard.get(bestB);
+
+			if (Double.compare(cardA, cardB) == 0) {
+				double runtimeA = runtimeCostMultiplier(bestA);
+				double runtimeB = runtimeCostMultiplier(bestB);
+				return runtimeA <= runtimeB ? bestA : bestB;
+			}
 
 			return cardA <= cardB ? bestA : bestB;
 		}
@@ -831,7 +879,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 			}
 
-			return cost;
+			return cost * tupleExprRuntimeOrderingMultiplier(tupleExpr);
 		}
 
 		private int countConstantVars(List<Var> vars) {
@@ -926,6 +974,557 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						join.setCacheable(true);
 					}
 				}
+			}
+		}
+
+		private double pairRuntimeCostMultiplier(TupleExpr left, TupleExpr right) {
+			double leftFactor = runtimeCostMultiplier(left);
+			double rightFactor = runtimeCostMultiplier(right);
+			double directionalFactor = directionalPairRuntimeCostMultiplier(left, right);
+			return Math.sqrt(leftFactor * rightFactor) * directionalFactor;
+		}
+
+		private double reorderLeftUrgencyMultiplier(TupleExpr tupleExpr) {
+			double rightSideRescan = rightSideRescanMultiplier(tupleExpr);
+			// Apply a stronger non-linear boost so sparse/high-churn right probes are moved left sooner.
+			double urgency = rightSideRescan * rightSideRescan;
+			return clamp(urgency, 1.0, MAX_RUNTIME_COST_MULTIPLIER * MAX_RUNTIME_COST_MULTIPLIER);
+		}
+
+		private double tupleExprRuntimeOrderingMultiplier(TupleExpr tupleExpr) {
+			double sourceFactor = sourceSelectivityMultiplier(tupleExpr);
+			double rightRescanOrderingFactor = rightSideRescanOrderingMultiplier(tupleExpr);
+			return clamp(sourceFactor * rightRescanOrderingFactor, MIN_RUNTIME_COST_MULTIPLIER, 1.0);
+		}
+
+		private double directionalPairRuntimeCostMultiplier(TupleExpr left, TupleExpr right) {
+			if (!hasRuntimeTelemetry(right)) {
+				return 1.0;
+			}
+
+			double leftCardinality = Math.max(1.0, statistics.getCardinality(left));
+			double leftPressure = Math.log1p(leftCardinality);
+			double rightRescanMultiplier = rightSideRescanMultiplier(right);
+			double factor = 1.0 + ((rightRescanMultiplier - 1.0) * leftPressure * 0.25);
+			return clamp(factor, 1.0, MAX_RUNTIME_COST_MULTIPLIER);
+		}
+
+		private double rightSideRescanMultiplier(TupleExpr tupleExpr) {
+			long scanned = sourceRowsScannedActual(tupleExpr);
+			long leftBindingsConsumed = joinLeftBindingsConsumedActual(tupleExpr);
+			long rightBindingsConsumed = joinRightBindingsConsumedActual(tupleExpr);
+			long rightIteratorsCreated = joinRightIteratorsCreatedActual(tupleExpr);
+
+			double scanPressure = (sourceScanAbsolutePressure(scanned) * 0.3)
+					+ (sourceScanPerLeftPressure(scanned, leftBindingsConsumed) * 0.45)
+					+ (sourceScanPerIteratorPressure(scanned, rightIteratorsCreated) * 0.25);
+			double iteratorPressure = 0.0;
+			double fanoutPressure = 0.0;
+			double rightRowsPerIteratorPressure = rightRowsPerIteratorPressure(rightBindingsConsumed,
+					rightIteratorsCreated);
+			double denseFanoutRelief = denseRightFanoutPressureRelief(leftBindingsConsumed, rightBindingsConsumed,
+					rightIteratorsCreated);
+
+			if (leftBindingsConsumed > 0 && rightIteratorsCreated >= 0) {
+				double iteratorsPerLeft = rightIteratorsCreated / (double) Math.max(1L, leftBindingsConsumed);
+				iteratorPressure = Math.log1p(iteratorsPerLeft);
+			}
+			if (leftBindingsConsumed > 0 && rightBindingsConsumed >= 0) {
+				double rightPerLeft = rightBindingsConsumed / (double) Math.max(1L, leftBindingsConsumed);
+				fanoutPressure = Math.log1p(rightPerLeft);
+			}
+			double iteratorWastePressure = iteratorWastePressure(rightBindingsConsumed, rightIteratorsCreated);
+			double factor = 1.0
+					+ (scanPressure * 0.2)
+					+ (iteratorPressure * 0.35)
+					+ (fanoutPressure * 0.45)
+					+ (iteratorWastePressure * 0.4)
+					+ (rightRowsPerIteratorPressure * 0.25)
+					- (denseFanoutRelief * 0.5);
+			double telemetryConfidenceWeight = leftTelemetryConfidenceWeight(leftBindingsConsumed);
+			if (telemetryConfidenceWeight < 1.0) {
+				factor = 1.0 + ((factor - 1.0) * telemetryConfidenceWeight);
+			}
+			return clamp(factor, 1.0, MAX_RUNTIME_COST_MULTIPLIER);
+		}
+
+		private double rightSideRescanOrderingMultiplier(TupleExpr tupleExpr) {
+			long scanned = sourceRowsScannedActual(tupleExpr);
+			long leftBindingsConsumed = joinLeftBindingsConsumedActual(tupleExpr);
+			long rightBindingsConsumed = joinRightBindingsConsumedActual(tupleExpr);
+			long rightIteratorsCreated = joinRightIteratorsCreatedActual(tupleExpr);
+
+			if (leftBindingsConsumed <= 0 || (rightBindingsConsumed < 0 && rightIteratorsCreated < 0)) {
+				return 1.0;
+			}
+
+			double rightPerLeft = rightBindingsConsumed >= 0
+					? rightBindingsConsumed / (double) Math.max(1L, leftBindingsConsumed)
+					: 0.0;
+			double iteratorsPerLeft = rightIteratorsCreated >= 0
+					? rightIteratorsCreated / (double) Math.max(1L, leftBindingsConsumed)
+					: 0.0;
+			double scanIntensityPressure = sourceScanPerLeftPressure(scanned, leftBindingsConsumed) * 0.35;
+			double absoluteChurnPressure = absoluteRightChurnPressure(leftBindingsConsumed, rightBindingsConsumed,
+					rightIteratorsCreated);
+			double sparseRightMatchPressure = sparseRightMatchPressure(leftBindingsConsumed, rightBindingsConsumed,
+					rightIteratorsCreated);
+			double sparseRightProbePressure = sparseRightProbePressure(leftBindingsConsumed, rightBindingsConsumed,
+					rightIteratorsCreated);
+			double rightRowsPerIteratorPressure = rightRowsPerIteratorPressure(rightBindingsConsumed,
+					rightIteratorsCreated);
+			double denseFanoutRelief = denseRightFanoutPressureRelief(leftBindingsConsumed, rightBindingsConsumed,
+					rightIteratorsCreated);
+			double balancedProbeYieldScore = balancedProbeYieldScore(leftBindingsConsumed, rightBindingsConsumed,
+					rightIteratorsCreated);
+			double adjustedScanIntensityPressure = scanIntensityPressure * (1.0 - (balancedProbeYieldScore * 0.75));
+			double telemetryConfidenceWeight = leftTelemetryConfidenceWeight(leftBindingsConsumed);
+			double pressure = (Math.log1p(rightPerLeft) * 0.55) + (Math.log1p(iteratorsPerLeft) * 0.2)
+					+ (iteratorWastePressure(rightBindingsConsumed, rightIteratorsCreated) * 0.45)
+					+ adjustedScanIntensityPressure
+					+ (absoluteChurnPressure * 0.02)
+					+ (sparseRightMatchPressure * 0.35)
+					+ sparseRightProbePressure
+					+ (rightRowsPerIteratorPressure * 0.35);
+			pressure = Math.max(0.0, pressure - denseFanoutRelief);
+			double balancedProbeYieldPressureScale = clamp(1.0 - (balancedProbeYieldScore * 0.7), 0.3, 1.0);
+			pressure *= balancedProbeYieldPressureScale;
+			pressure *= telemetryConfidenceWeight;
+			double factor = 1.0 / (1.0 + pressure);
+			return clamp(factor, MIN_RUNTIME_COST_MULTIPLIER, 1.0);
+		}
+
+		private double balancedProbeYieldScore(long leftBindingsConsumed, long rightBindingsConsumed,
+				long rightIteratorsCreated) {
+			if (leftBindingsConsumed <= 0 || rightBindingsConsumed <= 0 || rightIteratorsCreated <= 0) {
+				return 0.0;
+			}
+
+			double rightPerLeft = rightBindingsConsumed / (double) Math.max(1L, leftBindingsConsumed);
+			double iteratorsPerLeft = rightIteratorsCreated / (double) Math.max(1L, leftBindingsConsumed);
+			double rightRowsPerIterator = rightBindingsConsumed / (double) Math.max(1L, rightIteratorsCreated);
+			double fanoutBalance = unityRatioScore(rightPerLeft);
+			double iteratorCoverageBalance = unityRatioScore(iteratorsPerLeft);
+			double yieldBalance = rightRowsPerIteratorProductivityScore(rightRowsPerIterator);
+			return fanoutBalance * iteratorCoverageBalance * yieldBalance;
+		}
+
+		private double rightRowsPerIteratorProductivityScore(double rightRowsPerIterator) {
+			if (rightRowsPerIterator <= 0.0) {
+				return 0.0;
+			}
+			return clamp(rightRowsPerIterator / 2.0, 0.0, 1.0);
+		}
+
+		private double unityRatioScore(double ratio) {
+			if (ratio <= 0.0) {
+				return 0.0;
+			}
+			double distanceFromUnity = Math.abs(Math.log(ratio));
+			double tolerance = Math.log(2.0);
+			if (distanceFromUnity >= tolerance) {
+				return 0.0;
+			}
+			return 1.0 - (distanceFromUnity / tolerance);
+		}
+
+		private double denseRightFanoutPressureRelief(long leftBindingsConsumed, long rightBindingsConsumed,
+				long rightIteratorsCreated) {
+			if (leftBindingsConsumed <= 0 || rightBindingsConsumed <= 0 || rightIteratorsCreated <= 0) {
+				return 0.0;
+			}
+
+			double rightPerLeft = rightBindingsConsumed / (double) Math.max(1L, leftBindingsConsumed);
+			if (rightPerLeft <= 2.0 || rightPerLeft >= 100.0) {
+				return 0.0;
+			}
+
+			double iteratorsPerLeft = rightIteratorsCreated / (double) Math.max(1L, leftBindingsConsumed);
+			if (iteratorsPerLeft < 0.5) {
+				return 0.0;
+			}
+
+			double rightRowsPerIterator = rightBindingsConsumed / (double) Math.max(1L, rightIteratorsCreated);
+			if (rightRowsPerIterator <= 2.0) {
+				return 0.0;
+			}
+
+			double iteratorWaste = iteratorWastePressure(rightBindingsConsumed, rightIteratorsCreated);
+			if (iteratorWaste >= 0.5) {
+				return 0.0;
+			}
+
+			double fanoutRelief = Math.log1p(rightPerLeft - 1.0) * 0.7;
+			double rowsPerIteratorRelief = Math.log1p(rightRowsPerIterator - 2.0) * 0.7;
+			return fanoutRelief + rowsPerIteratorRelief;
+		}
+
+		private double sparseRightProbePressure(long leftBindingsConsumed, long rightBindingsConsumed,
+				long rightIteratorsCreated) {
+			if (leftBindingsConsumed <= 0 || rightBindingsConsumed <= 0) {
+				return 0.0;
+			}
+			double rightPerLeft = rightBindingsConsumed / (double) Math.max(1L, leftBindingsConsumed);
+			// If historical right probes rarely return rows, bias this expression to the left side.
+			if (rightPerLeft >= 0.2) {
+				return 0.0;
+			}
+			double leftPerRight = leftBindingsConsumed / (double) Math.max(1L, rightBindingsConsumed);
+			if (rightIteratorsCreated < 0) {
+				return Math.log1p(leftPerRight);
+			}
+			double iteratorsPerLeft = rightIteratorsCreated / (double) Math.max(1L, leftBindingsConsumed);
+			// Sparse right probes should only be treated as urgent churn when the right iterator is recreated
+			// frequently enough to indicate per-left probe work.
+			double iteratorCoverage = clamp(iteratorsPerLeft / 0.5, 0.0, 1.0);
+			return Math.log1p(leftPerRight) * iteratorCoverage;
+		}
+
+		private double absoluteRightChurnPressure(long leftBindingsConsumed, long rightBindingsConsumed,
+				long rightIteratorsCreated) {
+			double pressure = 0.0;
+			if (leftBindingsConsumed > 0) {
+				pressure += Math.log1p(leftBindingsConsumed) * 0.2;
+			}
+			if (rightBindingsConsumed > 0) {
+				pressure += Math.log1p(rightBindingsConsumed) * 0.5;
+			}
+			if (rightIteratorsCreated > 0) {
+				pressure += Math.log1p(rightIteratorsCreated) * 0.3;
+			}
+			return pressure;
+		}
+
+		private double sparseRightMatchPressure(long leftBindingsConsumed, long rightBindingsConsumed,
+				long rightIteratorsCreated) {
+			if (leftBindingsConsumed <= 0 || rightBindingsConsumed <= 0 || rightIteratorsCreated >= 0) {
+				return 0.0;
+			}
+			double leftPerRight = leftBindingsConsumed / (double) Math.max(1L, rightBindingsConsumed);
+			return Math.log1p(leftPerRight);
+		}
+
+		private double iteratorWastePressure(long rightBindingsConsumed, long rightIteratorsCreated) {
+			if (rightBindingsConsumed < 0 || rightIteratorsCreated < 0) {
+				return 0.0;
+			}
+			double iteratorsPerRight = rightIteratorsCreated / (double) Math.max(1L, rightBindingsConsumed);
+			if (iteratorsPerRight <= 0.5) {
+				return 0.0;
+			}
+			if (iteratorsPerRight <= 1.0) {
+				double normalized = (iteratorsPerRight - 0.5) * 2.0;
+				return Math.log1p(normalized) * 0.25;
+			}
+			return Math.log1p(iteratorsPerRight - 1.0);
+		}
+
+		private double rightRowsPerIteratorPressure(long rightBindingsConsumed, long rightIteratorsCreated) {
+			if (rightBindingsConsumed <= 0 || rightIteratorsCreated <= 0) {
+				return 0.0;
+			}
+			double rightRowsPerIterator = rightBindingsConsumed / (double) Math.max(1L, rightIteratorsCreated);
+			// Only boost when each iterator returns many rows; sparse probes are handled by iterator-waste/sparse
+			// signals.
+			if (rightRowsPerIterator <= 2.0) {
+				return 0.0;
+			}
+			return Math.log1p(rightRowsPerIterator - 2.0);
+		}
+
+		private double sourceScanAbsolutePressure(long scanned) {
+			if (scanned <= 0) {
+				return 0.0;
+			}
+			return Math.log1p(scanned) / 10.0;
+		}
+
+		private double sourceScanPerLeftPressure(long scanned, long leftBindingsConsumed) {
+			if (scanned <= 0 || leftBindingsConsumed <= 0) {
+				return 0.0;
+			}
+			double scannedPerLeft = scanned / (double) Math.max(1L, leftBindingsConsumed);
+			double boundedScannedPerLeft = Math.min(scannedPerLeft, 32.0);
+			return Math.log1p(boundedScannedPerLeft);
+		}
+
+		private double sourceScanPerIteratorPressure(long scanned, long rightIteratorsCreated) {
+			if (scanned <= 0 || rightIteratorsCreated <= 0) {
+				return 0.0;
+			}
+			double scannedPerIterator = scanned / (double) Math.max(1L, rightIteratorsCreated);
+			return Math.log1p(scannedPerIterator);
+		}
+
+		private double leftTelemetryConfidenceWeight(long leftBindingsConsumed) {
+			if (leftBindingsConsumed <= 0) {
+				return 1.0;
+			}
+			double normalized = Math.log1p(leftBindingsConsumed) / Math.log1p(1_000.0);
+			double confidence = clamp(normalized, 0.0, 1.0);
+			return confidence * confidence;
+		}
+
+		private boolean hasRuntimeTelemetry(TupleExpr tupleExpr) {
+			return sourceRowsScannedActual(tupleExpr) >= 0
+					|| sourceRowsMatchedActual(tupleExpr) >= 0
+					|| sourceRowsFilteredActual(tupleExpr) >= 0
+					|| joinLeftBindingsConsumedActual(tupleExpr) >= 0
+					|| joinRightBindingsConsumedActual(tupleExpr) >= 0
+					|| joinRightIteratorsCreatedActual(tupleExpr) >= 0;
+		}
+
+		private double runtimeCostMultiplier(TupleExpr tupleExpr) {
+			double sourceFactor = sourceSelectivityMultiplier(tupleExpr);
+			double joinFactor = joinFanoutMultiplier(tupleExpr);
+			return clamp(sourceFactor * joinFactor, MIN_RUNTIME_COST_MULTIPLIER, MAX_RUNTIME_COST_MULTIPLIER);
+		}
+
+		private double sourceSelectivityMultiplier(TupleExpr tupleExpr) {
+			long scanned = sourceRowsScannedActual(tupleExpr);
+			long matched = sourceRowsMatchedActual(tupleExpr);
+			long filtered = sourceRowsFilteredActual(tupleExpr);
+
+			if (scanned <= 0 || matched < 0) {
+				return 1.0;
+			}
+
+			double scannedWithSmoothing = scanned + 1.0;
+			double matchedRatio = (matched + 1.0) / scannedWithSmoothing;
+			double filteredRatio = filtered >= 0 ? (filtered + 1.0) / scannedWithSmoothing : 1.0 - matchedRatio;
+
+			// Highly selective scans (small matched ratio, high filtered ratio) should be evaluated earlier.
+			double factor = matchedRatio / Math.max(filteredRatio, MIN_RUNTIME_COST_MULTIPLIER);
+			return clamp(factor, MIN_RUNTIME_COST_MULTIPLIER, 1.0);
+		}
+
+		private double joinFanoutMultiplier(TupleExpr tupleExpr) {
+			long leftBindingsConsumed = joinLeftBindingsConsumedActual(tupleExpr);
+			long rightBindingsConsumed = joinRightBindingsConsumedActual(tupleExpr);
+			long rightIteratorsCreated = joinRightIteratorsCreatedActual(tupleExpr);
+
+			if (leftBindingsConsumed <= 0 || rightBindingsConsumed < 0 || rightIteratorsCreated < 0) {
+				return 1.0;
+			}
+
+			double rightPerLeft = rightBindingsConsumed / (double) Math.max(1L, leftBindingsConsumed);
+			double iteratorsPerLeft = rightIteratorsCreated / (double) Math.max(1L, leftBindingsConsumed);
+			double factor = 1.0 + (Math.log1p(rightPerLeft) * 0.5) + (Math.log1p(iteratorsPerLeft) * 0.25);
+			return clamp(factor, 1.0, MAX_RUNTIME_COST_MULTIPLIER);
+		}
+
+		private double clamp(double value, double minimum, double maximum) {
+			return Math.max(minimum, Math.min(maximum, value));
+		}
+
+		private long sourceRowsScannedActual(TupleExpr tupleExpr) {
+			return metricOrHistorical(tupleExpr,
+					TupleExpr::getSourceRowsScannedActual,
+					QueryRuntimeTelemetryRegistry.TelemetrySnapshot::sourceRowsScannedActual,
+					RuntimeTelemetryAggregate::sourceRowsScannedActual);
+		}
+
+		private long sourceRowsMatchedActual(TupleExpr tupleExpr) {
+			return metricOrHistorical(tupleExpr,
+					TupleExpr::getSourceRowsMatchedActual,
+					QueryRuntimeTelemetryRegistry.TelemetrySnapshot::sourceRowsMatchedActual,
+					RuntimeTelemetryAggregate::sourceRowsMatchedActual);
+		}
+
+		private long sourceRowsFilteredActual(TupleExpr tupleExpr) {
+			return metricOrHistorical(tupleExpr,
+					TupleExpr::getSourceRowsFilteredActual,
+					QueryRuntimeTelemetryRegistry.TelemetrySnapshot::sourceRowsFilteredActual,
+					RuntimeTelemetryAggregate::sourceRowsFilteredActual);
+		}
+
+		private long joinRightIteratorsCreatedActual(TupleExpr tupleExpr) {
+			return metricOrHistorical(tupleExpr,
+					TupleExpr::getJoinRightIteratorsCreatedActual,
+					QueryRuntimeTelemetryRegistry.TelemetrySnapshot::joinRightIteratorsCreatedActual,
+					RuntimeTelemetryAggregate::joinRightIteratorsCreatedActual);
+		}
+
+		private long joinLeftBindingsConsumedActual(TupleExpr tupleExpr) {
+			return metricOrHistorical(tupleExpr,
+					TupleExpr::getJoinLeftBindingsConsumedActual,
+					QueryRuntimeTelemetryRegistry.TelemetrySnapshot::joinLeftBindingsConsumedActual,
+					RuntimeTelemetryAggregate::joinLeftBindingsConsumedActual);
+		}
+
+		private long joinRightBindingsConsumedActual(TupleExpr tupleExpr) {
+			return metricOrHistorical(tupleExpr,
+					TupleExpr::getJoinRightBindingsConsumedActual,
+					QueryRuntimeTelemetryRegistry.TelemetrySnapshot::joinRightBindingsConsumedActual,
+					RuntimeTelemetryAggregate::joinRightBindingsConsumedActual);
+		}
+
+		private long metricOrHistorical(TupleExpr tupleExpr,
+				java.util.function.ToLongFunction<TupleExpr> currentMetric,
+				java.util.function.ToLongFunction<QueryRuntimeTelemetryRegistry.TelemetrySnapshot> historicalMetric,
+				java.util.function.ToLongFunction<RuntimeTelemetryAggregate> descendantMetric) {
+			long directValue = metricOrHistoricalWithoutDescendants(tupleExpr, currentMetric, historicalMetric);
+			if (directValue >= 0) {
+				return directValue;
+			}
+			return descendantMetric.applyAsLong(descendantRuntimeTelemetry(tupleExpr));
+		}
+
+		private long metricOrHistoricalWithoutDescendants(TupleExpr tupleExpr,
+				java.util.function.ToLongFunction<TupleExpr> currentMetric,
+				java.util.function.ToLongFunction<QueryRuntimeTelemetryRegistry.TelemetrySnapshot> historicalMetric) {
+			long currentValue = currentMetric.applyAsLong(tupleExpr);
+			if (currentValue >= 0) {
+				return currentValue;
+			}
+			QueryRuntimeTelemetryRegistry.TelemetrySnapshot snapshot = QueryRuntimeTelemetryRegistry
+					.snapshotFor(tupleExpr);
+			if (snapshot == null) {
+				return -1;
+			}
+			return historicalMetric.applyAsLong(snapshot);
+		}
+
+		private RuntimeTelemetryAggregate descendantRuntimeTelemetry(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof StatementPattern) {
+				return emptyRuntimeTelemetry;
+			}
+			return descendantTelemetryCache.computeIfAbsent(tupleExpr, this::collectDescendantRuntimeTelemetry);
+		}
+
+		private RuntimeTelemetryAggregate collectDescendantRuntimeTelemetry(TupleExpr tupleExpr) {
+			DescendantTelemetryCollector collector = new DescendantTelemetryCollector();
+			try {
+				tupleExpr.visit(collector);
+			} catch (Exception e) {
+				if (e instanceof InterruptedException) {
+					Thread.currentThread().interrupt();
+				}
+				throw new IllegalStateException(e);
+			}
+			return collector.toAggregate();
+		}
+
+		private final class DescendantTelemetryCollector extends StatementPatternVisitor {
+
+			private long sourceRowsScannedSum;
+			private long sourceRowsMatchedSum;
+			private long sourceRowsFilteredSum;
+			private long joinRightIteratorsCreatedSum;
+			private long joinLeftBindingsConsumedSum;
+			private long joinRightBindingsConsumedSum;
+
+			private boolean sourceRowsScannedSeen;
+			private boolean sourceRowsMatchedSeen;
+			private boolean sourceRowsFilteredSeen;
+			private boolean joinRightIteratorsCreatedSeen;
+			private boolean joinLeftBindingsConsumedSeen;
+			private boolean joinRightBindingsConsumedSeen;
+
+			@Override
+			protected void accept(StatementPattern node) {
+				sourceRowsScannedSeen = addMetric(
+						metricOrHistoricalWithoutDescendants(node,
+								TupleExpr::getSourceRowsScannedActual,
+								QueryRuntimeTelemetryRegistry.TelemetrySnapshot::sourceRowsScannedActual),
+						sourceRowsScannedSeen,
+						value -> sourceRowsScannedSum += value);
+				sourceRowsMatchedSeen = addMetric(
+						metricOrHistoricalWithoutDescendants(node,
+								TupleExpr::getSourceRowsMatchedActual,
+								QueryRuntimeTelemetryRegistry.TelemetrySnapshot::sourceRowsMatchedActual),
+						sourceRowsMatchedSeen,
+						value -> sourceRowsMatchedSum += value);
+				sourceRowsFilteredSeen = addMetric(
+						metricOrHistoricalWithoutDescendants(node,
+								TupleExpr::getSourceRowsFilteredActual,
+								QueryRuntimeTelemetryRegistry.TelemetrySnapshot::sourceRowsFilteredActual),
+						sourceRowsFilteredSeen,
+						value -> sourceRowsFilteredSum += value);
+				joinRightIteratorsCreatedSeen = addMetric(
+						metricOrHistoricalWithoutDescendants(node,
+								TupleExpr::getJoinRightIteratorsCreatedActual,
+								QueryRuntimeTelemetryRegistry.TelemetrySnapshot::joinRightIteratorsCreatedActual),
+						joinRightIteratorsCreatedSeen,
+						value -> joinRightIteratorsCreatedSum += value);
+				joinLeftBindingsConsumedSeen = addMetric(
+						metricOrHistoricalWithoutDescendants(node,
+								TupleExpr::getJoinLeftBindingsConsumedActual,
+								QueryRuntimeTelemetryRegistry.TelemetrySnapshot::joinLeftBindingsConsumedActual),
+						joinLeftBindingsConsumedSeen,
+						value -> joinLeftBindingsConsumedSum += value);
+				joinRightBindingsConsumedSeen = addMetric(
+						metricOrHistoricalWithoutDescendants(node,
+								TupleExpr::getJoinRightBindingsConsumedActual,
+								QueryRuntimeTelemetryRegistry.TelemetrySnapshot::joinRightBindingsConsumedActual),
+						joinRightBindingsConsumedSeen,
+						value -> joinRightBindingsConsumedSum += value);
+			}
+
+			private boolean addMetric(long value, boolean seen, java.util.function.LongConsumer accumulator) {
+				if (value < 0) {
+					return seen;
+				}
+				accumulator.accept(value);
+				return true;
+			}
+
+			private RuntimeTelemetryAggregate toAggregate() {
+				return new RuntimeTelemetryAggregate(
+						finalMetric(sourceRowsScannedSeen, sourceRowsScannedSum),
+						finalMetric(sourceRowsMatchedSeen, sourceRowsMatchedSum),
+						finalMetric(sourceRowsFilteredSeen, sourceRowsFilteredSum),
+						finalMetric(joinRightIteratorsCreatedSeen, joinRightIteratorsCreatedSum),
+						finalMetric(joinLeftBindingsConsumedSeen, joinLeftBindingsConsumedSum),
+						finalMetric(joinRightBindingsConsumedSeen, joinRightBindingsConsumedSum));
+			}
+
+			private long finalMetric(boolean seen, long sum) {
+				return seen ? Math.max(0L, sum) : -1L;
+			}
+		}
+
+		private final class RuntimeTelemetryAggregate {
+			private final long sourceRowsScannedActual;
+			private final long sourceRowsMatchedActual;
+			private final long sourceRowsFilteredActual;
+			private final long joinRightIteratorsCreatedActual;
+			private final long joinLeftBindingsConsumedActual;
+			private final long joinRightBindingsConsumedActual;
+
+			private RuntimeTelemetryAggregate(long sourceRowsScannedActual, long sourceRowsMatchedActual,
+					long sourceRowsFilteredActual, long joinRightIteratorsCreatedActual,
+					long joinLeftBindingsConsumedActual, long joinRightBindingsConsumedActual) {
+				this.sourceRowsScannedActual = sourceRowsScannedActual;
+				this.sourceRowsMatchedActual = sourceRowsMatchedActual;
+				this.sourceRowsFilteredActual = sourceRowsFilteredActual;
+				this.joinRightIteratorsCreatedActual = joinRightIteratorsCreatedActual;
+				this.joinLeftBindingsConsumedActual = joinLeftBindingsConsumedActual;
+				this.joinRightBindingsConsumedActual = joinRightBindingsConsumedActual;
+			}
+
+			private long sourceRowsScannedActual() {
+				return sourceRowsScannedActual;
+			}
+
+			private long sourceRowsMatchedActual() {
+				return sourceRowsMatchedActual;
+			}
+
+			private long sourceRowsFilteredActual() {
+				return sourceRowsFilteredActual;
+			}
+
+			private long joinRightIteratorsCreatedActual() {
+				return joinRightIteratorsCreatedActual;
+			}
+
+			private long joinLeftBindingsConsumedActual() {
+				return joinLeftBindingsConsumedActual;
+			}
+
+			private long joinRightBindingsConsumedActual() {
+				return joinRightBindingsConsumedActual;
 			}
 		}
 
