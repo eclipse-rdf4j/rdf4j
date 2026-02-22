@@ -126,4 +126,27 @@ class GenericPlanNodeTest {
 		assertTrue(actual.contains("sourceRowsMatchedActual=8"), actual);
 		assertTrue(actual.contains("sourceRowsFilteredActual=4"), actual);
 	}
+
+	@Test
+	void toStringDerivesEstimateStabilityStatsFromChildPlans() {
+		GenericPlanNode node = new GenericPlanNode("Join");
+		node.setCostEstimate(1.0);
+
+		GenericPlanNode childOne = new GenericPlanNode("StatementPattern");
+		childOne.setResultSizeEstimate(10.0);
+		childOne.setResultSizeActual(20L);
+
+		GenericPlanNode childTwo = new GenericPlanNode("StatementPattern");
+		childTwo.setResultSizeEstimate(8.0);
+		childTwo.setResultSizeActual(8L);
+
+		node.addPlans(childOne, childTwo);
+
+		String actual = node.toString();
+
+		assertTrue(actual.contains("sampleCountActual=2"), actual);
+		assertTrue(actual.contains("varianceActual="), actual);
+		assertTrue(actual.contains("stddevActual="), actual);
+		assertTrue(actual.contains("confidenceScoreActual="), actual);
+	}
 }

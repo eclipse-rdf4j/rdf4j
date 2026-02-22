@@ -11,6 +11,8 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import java.io.Serializable;
+import java.util.Collections;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
@@ -245,6 +247,51 @@ public interface QueryModelNode extends Cloneable, Serializable {
 
 	@Experimental
 	default void setSourceRowsFilteredActual(long sourceRowsFilteredActual) {
+		// no-op
+	}
+
+	@Experimental
+	default Map<String, Long> getLongMetricsActual() {
+		return Collections.emptyMap();
+	}
+
+	@Experimental
+	default long getLongMetricActual(String metricName) {
+		return -1;
+	}
+
+	@Experimental
+	default void setLongMetricActual(String metricName, long metricValue) {
+		// no-op
+	}
+
+	@Experimental
+	default Map<String, Double> getDoubleMetricsActual() {
+		return Collections.emptyMap();
+	}
+
+	@Experimental
+	default double getDoubleMetricActual(String metricName) {
+		return -1;
+	}
+
+	@Experimental
+	default void setDoubleMetricActual(String metricName, double metricValue) {
+		// no-op
+	}
+
+	@Experimental
+	default Map<String, String> getStringMetricsActual() {
+		return Collections.emptyMap();
+	}
+
+	@Experimental
+	default String getStringMetricActual(String metricName) {
+		return null;
+	}
+
+	@Experimental
+	default void setStringMetricActual(String metricName, String metricValue) {
 		// no-op
 	}
 

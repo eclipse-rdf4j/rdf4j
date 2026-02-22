@@ -179,11 +179,13 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		} else if (canEvaluateConditionBasedOnLeftHandSide(join)) {
 			return new PreFilterQueryEvaluationStep(
 					prepareRightArg,
-					new ScopedQueryValueEvaluationStep(join.getAssuredBindingNames(), joinCondition));
+					new ScopedQueryValueEvaluationStep(join.getAssuredBindingNames(), joinCondition),
+					join);
 		} else {
 			return new PostFilterQueryEvaluationStep(
 					prepareRightArg,
-					new ScopedQueryValueEvaluationStep(scopeBindingNames, joinCondition));
+					new ScopedQueryValueEvaluationStep(scopeBindingNames, joinCondition),
+					join);
 		}
 	}
 

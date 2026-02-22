@@ -13,10 +13,15 @@ package org.eclipse.rdf4j.query.explanation;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import org.apache.commons.text.StringEscapeUtils;
@@ -43,6 +48,59 @@ public class GenericPlanNode {
 	private static final String spoc[] = { "s", "p", "o", "c" };
 
 	private final static String newLine = System.getProperty("line.separator");
+	private static final Pattern OFFSET_PATTERN = Pattern.compile("offset=([0-9]+)");
+	private static final Pattern LIMIT_PATTERN = Pattern.compile("limit=([0-9]+)");
+	private static final Set<String> JOIN_ONLY_METRICS = Set.of(
+			TelemetryMetricNames.LEFT_ROWS_PROBED_ACTUAL,
+			TelemetryMetricNames.RIGHT_ROWS_SCANNED_ACTUAL,
+			TelemetryMetricNames.AVG_RIGHT_ROWS_PER_LEFT_ACTUAL,
+			TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL,
+			TelemetryMetricNames.MAX_RIGHT_ROWS_PER_LEFT_ACTUAL,
+			TelemetryMetricNames.JOIN_MATCH_RATE_ACTUAL,
+			TelemetryMetricNames.JOIN_OUTPUT_PER_LEFT_ACTUAL,
+			TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL,
+			TelemetryMetricNames.LEFT_JOIN_NULL_EXTENDED_ROWS_ACTUAL,
+			TelemetryMetricNames.LEFT_JOIN_CONDITION_REJECTED_ROWS_ACTUAL);
+	private static final Set<String> FILTER_ONLY_METRICS = Set.of(
+			TelemetryMetricNames.FILTER_REJECT_RATE_ACTUAL,
+			TelemetryMetricNames.PREDICATE_ERROR_COUNT_ACTUAL,
+			TelemetryMetricNames.PREDICATE_NULL_COUNT_ACTUAL);
+	private static final Set<String> ORDER_ONLY_METRICS = Set.of(
+			TelemetryMetricNames.ROWS_SORTED_ACTUAL,
+			TelemetryMetricNames.SPILL_COUNT_ACTUAL,
+			TelemetryMetricNames.SPILL_BYTES_ACTUAL,
+			TelemetryMetricNames.SORT_COMPARISONS_ACTUAL);
+	private static final Set<String> GROUP_ONLY_METRICS = Set.of(
+			TelemetryMetricNames.GROUPS_CREATED_ACTUAL,
+			TelemetryMetricNames.AVG_GROUP_SIZE_ACTUAL,
+			TelemetryMetricNames.MAX_GROUP_SIZE_ACTUAL,
+			TelemetryMetricNames.AGGREGATE_EVAL_COUNT_ACTUAL);
+	private static final Set<String> SLICE_ONLY_METRICS = Set.of(
+			TelemetryMetricNames.ROWS_SKIPPED_BY_OFFSET_ACTUAL,
+			TelemetryMetricNames.ROWS_DROPPED_BY_LIMIT_ACTUAL);
+	private static final Set<String> SERVICE_ONLY_METRICS = Set.of(
+			TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL,
+			TelemetryMetricNames.REMOTE_ASK_REQUEST_COUNT_ACTUAL,
+			TelemetryMetricNames.REMOTE_SELECT_REQUEST_COUNT_ACTUAL,
+			TelemetryMetricNames.REMOTE_EVALUATE_REQUEST_COUNT_ACTUAL,
+			TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
+			TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL,
+			TelemetryMetricNames.REMOTE_RETRY_COUNT_ACTUAL,
+			TelemetryMetricNames.REMOTE_TIMEOUT_COUNT_ACTUAL,
+			TelemetryMetricNames.REMOTE_ERROR_COUNT_ACTUAL,
+			TelemetryMetricNames.REMOTE_LATENCY_TOTAL_NANOS_ACTUAL,
+			TelemetryMetricNames.REMOTE_LATENCY_P50_NANOS_ACTUAL,
+			TelemetryMetricNames.REMOTE_LATENCY_P95_NANOS_ACTUAL);
+	private static final Set<String> SET_OPERATOR_ONLY_METRICS = Set.of(
+			TelemetryMetricNames.LEFT_ROWS_CONSUMED_ACTUAL,
+			TelemetryMetricNames.RIGHT_ROWS_CONSUMED_ACTUAL,
+			TelemetryMetricNames.LEFT_ROWS_OUTPUT_CONTRIBUTION_ACTUAL,
+			TelemetryMetricNames.RIGHT_ROWS_OUTPUT_CONTRIBUTION_ACTUAL,
+			TelemetryMetricNames.OVERLAP_ROWS_ACTUAL);
+	private static final Set<String> ACCESS_ONLY_METRICS = Set.of(
+			TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL,
+			TelemetryMetricNames.INDEX_HIT_RATE_ACTUAL,
+			TelemetryMetricNames.INDEX_NAME);
 
 	private final String id = "UUID_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
 
@@ -79,6 +137,9 @@ public class GenericPlanNode {
 	private Long sourceRowsScannedActual;
 	private Long sourceRowsMatchedActual;
 	private Long sourceRowsFilteredActual;
+	private Map<String, Long> longMetricsActual = new LinkedHashMap<>();
+	private Map<String, Double> doubleMetricsActual = new LinkedHashMap<>();
+	private Map<String, String> stringMetricsActual = new LinkedHashMap<>();
 
 	// true if this node introduces a new scope
 	private Boolean newScope;
@@ -298,6 +359,66 @@ public class GenericPlanNode {
 		if (sourceRowsFilteredActual != null && sourceRowsFilteredActual >= 0) {
 			this.sourceRowsFilteredActual = sourceRowsFilteredActual;
 		}
+	}
+
+	public Map<String, Long> getLongMetricsActual() {
+		return longMetricsActual.isEmpty() ? null : longMetricsActual;
+	}
+
+	public void setLongMetricsActual(Map<String, Long> longMetricsActual) {
+		this.longMetricsActual = longMetricsActual == null ? new LinkedHashMap<>()
+				: new LinkedHashMap<>(longMetricsActual);
+	}
+
+	public Long getLongMetricActual(String metricName) {
+		return longMetricsActual.get(metricName);
+	}
+
+	public void setLongMetricActual(String metricName, Long metricValue) {
+		if (metricName == null || metricValue == null || metricValue < 0) {
+			return;
+		}
+		longMetricsActual.put(metricName, metricValue);
+	}
+
+	public Map<String, Double> getDoubleMetricsActual() {
+		return doubleMetricsActual.isEmpty() ? null : doubleMetricsActual;
+	}
+
+	public void setDoubleMetricsActual(Map<String, Double> doubleMetricsActual) {
+		this.doubleMetricsActual = doubleMetricsActual == null ? new LinkedHashMap<>()
+				: new LinkedHashMap<>(doubleMetricsActual);
+	}
+
+	public Double getDoubleMetricActual(String metricName) {
+		return doubleMetricsActual.get(metricName);
+	}
+
+	public void setDoubleMetricActual(String metricName, Double metricValue) {
+		if (metricName == null || metricValue == null || metricValue < 0) {
+			return;
+		}
+		doubleMetricsActual.put(metricName, metricValue);
+	}
+
+	public Map<String, String> getStringMetricsActual() {
+		return stringMetricsActual.isEmpty() ? null : stringMetricsActual;
+	}
+
+	public void setStringMetricsActual(Map<String, String> stringMetricsActual) {
+		this.stringMetricsActual = stringMetricsActual == null ? new LinkedHashMap<>()
+				: new LinkedHashMap<>(stringMetricsActual);
+	}
+
+	public String getStringMetricActual(String metricName) {
+		return stringMetricsActual.get(metricName);
+	}
+
+	public void setStringMetricActual(String metricName, String metricValue) {
+		if (metricName == null || metricValue == null || metricValue.isEmpty()) {
+			return;
+		}
+		stringMetricsActual.put(metricName, metricValue);
 	}
 
 	public void setTimedOut(Boolean timedOut) {
@@ -546,35 +667,45 @@ public class GenericPlanNode {
 		Long sourceRowsScanned = sourceRowsScannedForDisplay();
 		Long sourceRowsMatched = sourceRowsMatchedForDisplay();
 		Long sourceRowsFiltered = sourceRowsFilteredForDisplay();
+		Map<String, String> metrics = new LinkedHashMap<>();
 
-		String costs = Stream.of(
-				"costEstimate=" + toHumanReadableNumber(getCostEstimate()),
-				"resultSizeEstimate=" + toHumanReadableNumber(getResultSizeEstimate()),
-				"resultSizeActual=" + toHumanReadableNumber(getResultSizeActual()),
-				"totalTimeActual=" + toHumanReadableTime(getTotalTimeActual()),
-				"selfTimeActual=" + toHumanReadableTime(getSelfTimeActual()),
-				"hasNextCallCountActual=" + toHumanReadableNonZeroNumber(getHasNextCallCountActual()),
-				"hasNextTrueCountActual=" + toHumanReadableNonZeroNumber(getHasNextTrueCountActual()),
-				"hasNextTimeNanosActual=" + toHumanReadableNonZeroNumber(getHasNextTimeNanosActual()),
-				"nextCallCountActual=" + toHumanReadableNonZeroNumber(getNextCallCountActual()),
-				"nextTimeNanosActual=" + toHumanReadableNonZeroNumber(getNextTimeNanosActual()),
-				"joinRightIteratorsCreatedActual="
-						+ (isJoinNode() ? toHumanReadableNonZeroNumber(getJoinRightIteratorsCreatedActual()) : UNKNOWN),
-				"joinLeftBindingsConsumedActual="
-						+ (isJoinNode() ? toHumanReadableNonZeroNumber(getJoinLeftBindingsConsumedActual()) : UNKNOWN),
-				"joinRightBindingsConsumedActual="
-						+ (isJoinNode() ? toHumanReadableNonZeroNumber(getJoinRightBindingsConsumedActual()) : UNKNOWN),
-				"sourceRowsScannedActual=" + toHumanReadableNonZeroNumber(sourceRowsScanned),
-				"sourceRowsMatchedActual=" + toHumanReadableNonZeroNumber(sourceRowsMatched),
-				"sourceRowsFilteredActual="
-						+ (isFilterNode() ? toHumanReadableNumber(sourceRowsFiltered)
-								: toHumanReadableNonZeroNumber(sourceRowsFiltered)))
-				.filter(s -> !s.endsWith(UNKNOWN)) // simple but hacky way of removing essentially null values
-				.reduce((a, b) -> a + ", " + b)
-				.orElse("");
+		putIfKnown(metrics, "costEstimate", toHumanReadableNumber(getCostEstimate()));
+		putIfKnown(metrics, "resultSizeEstimate", toHumanReadableNumber(getResultSizeEstimate()));
+		putIfKnown(metrics, "resultSizeActual", toHumanReadableNumber(getResultSizeActual()));
+		putIfKnown(metrics, "totalTimeActual", toHumanReadableTime(getTotalTimeActual()));
+		putIfKnown(metrics, "selfTimeActual", toHumanReadableTime(getSelfTimeActual()));
+		putIfKnown(metrics, "hasNextCallCountActual", toHumanReadableNonZeroNumber(getHasNextCallCountActual()));
+		putIfKnown(metrics, "hasNextTrueCountActual", toHumanReadableNonZeroNumber(getHasNextTrueCountActual()));
+		putIfKnown(metrics, "hasNextTimeNanosActual", toHumanReadableNonZeroNumber(getHasNextTimeNanosActual()));
+		putIfKnown(metrics, "nextCallCountActual", toHumanReadableNonZeroNumber(getNextCallCountActual()));
+		putIfKnown(metrics, "nextTimeNanosActual", toHumanReadableNonZeroNumber(getNextTimeNanosActual()));
 
-		if (!costs.isEmpty()) {
-			sb.append(" (").append(costs).append(")");
+		if (isJoinNode()) {
+			putIfKnown(metrics, "joinRightIteratorsCreatedActual",
+					toHumanReadableNonZeroNumber(getJoinRightIteratorsCreatedActual()));
+			putIfKnown(metrics, "joinLeftBindingsConsumedActual",
+					toHumanReadableNonZeroNumber(getJoinLeftBindingsConsumedActual()));
+			putIfKnown(metrics, "joinRightBindingsConsumedActual",
+					toHumanReadableNonZeroNumber(getJoinRightBindingsConsumedActual()));
+		}
+
+		putIfKnown(metrics, "sourceRowsScannedActual", toHumanReadableNonZeroNumber(sourceRowsScanned));
+		putIfKnown(metrics, "sourceRowsMatchedActual", toHumanReadableNonZeroNumber(sourceRowsMatched));
+		putIfKnown(metrics, "sourceRowsFilteredActual",
+				isFilterNode() ? toHumanReadableNumber(sourceRowsFiltered)
+						: toHumanReadableNonZeroNumber(sourceRowsFiltered));
+
+		appendMapTelemetry(metrics);
+		appendDerivedTelemetry(metrics, sourceRowsScanned, sourceRowsMatched, sourceRowsFiltered);
+
+		if (!metrics.isEmpty()) {
+			sb.append(" (")
+					.append(metrics.entrySet()
+							.stream()
+							.map(e -> e.getKey() + "=" + e.getValue())
+							.reduce((a, b) -> a + ", " + b)
+							.orElse(""))
+					.append(")");
 		}
 	}
 
@@ -582,8 +713,47 @@ public class GenericPlanNode {
 		return type != null && (type.startsWith("Join") || type.startsWith("LeftJoin"));
 	}
 
+	private boolean isLeftJoinNode() {
+		return type != null && type.startsWith("LeftJoin");
+	}
+
 	private boolean isFilterNode() {
 		return type != null && type.startsWith("Filter");
+	}
+
+	private boolean isOrderNode() {
+		return type != null && type.startsWith("Order");
+	}
+
+	private boolean isGroupNode() {
+		return type != null && type.startsWith("Group");
+	}
+
+	private boolean isSliceNode() {
+		return type != null && type.startsWith("Slice");
+	}
+
+	private boolean isServiceNode() {
+		return type != null && type.startsWith("Service");
+	}
+
+	private boolean isDistinctLikeNode() {
+		return type != null && (type.startsWith("Distinct") || type.startsWith("Reduced"));
+	}
+
+	private boolean isSetOperatorNode() {
+		return type != null
+				&& (type.startsWith("Union") || type.startsWith("Intersection") || type.startsWith("Difference"));
+	}
+
+	private boolean isAccessNode() {
+		return type != null
+				&& (type.startsWith("StatementPattern")
+						|| type.startsWith("TripleRef")
+						|| type.startsWith("ZeroLengthPath")
+						|| type.startsWith("ArbitraryLengthPath")
+						|| type.startsWith("Service")
+						|| type.startsWith("TupleFunctionCall"));
 	}
 
 	private Long sourceRowsScannedForDisplay() {
@@ -623,6 +793,323 @@ public class GenericPlanNode {
 			return null;
 		}
 		return Math.max(0L, scanned - matched);
+	}
+
+	private void appendMapTelemetry(Map<String, String> metrics) {
+		for (Map.Entry<String, Long> entry : longMetricsActual.entrySet()) {
+			String metricName = entry.getKey();
+			Long metricValue = entry.getValue();
+			if (metricValue == null || metricValue <= 0) {
+				continue;
+			}
+			if (!isMetricApplicableToNode(metricName) || metrics.containsKey(metricName)) {
+				continue;
+			}
+			putIfKnown(metrics, metricName, toHumanReadableNumber(metricValue));
+		}
+
+		for (Map.Entry<String, Double> entry : doubleMetricsActual.entrySet()) {
+			String metricName = entry.getKey();
+			Double metricValue = entry.getValue();
+			if (metricValue == null || metricValue <= 0) {
+				continue;
+			}
+			if (!isMetricApplicableToNode(metricName) || metrics.containsKey(metricName)) {
+				continue;
+			}
+			putIfKnown(metrics, metricName, toHumanReadableNumber(metricValue));
+		}
+
+		for (Map.Entry<String, String> entry : stringMetricsActual.entrySet()) {
+			String metricName = entry.getKey();
+			String metricValue = entry.getValue();
+			if (metricValue == null || metricValue.isEmpty()) {
+				continue;
+			}
+			if (!isMetricApplicableToNode(metricName) || metrics.containsKey(metricName)) {
+				continue;
+			}
+			metrics.put(metricName, metricValue);
+		}
+	}
+
+	private void appendDerivedTelemetry(Map<String, String> metrics, Long sourceRowsScanned, Long sourceRowsMatched,
+			Long sourceRowsFiltered) {
+		Long inputRows = totalInputRowsFromChildren();
+		Long outputRows = getResultSizeActual();
+
+		putIfKnownIfAbsent(metrics, TelemetryMetricNames.INPUT_ROWS_ACTUAL, toHumanReadableNumber(inputRows));
+		putIfKnownIfAbsent(metrics, TelemetryMetricNames.OUTPUT_ROWS_ACTUAL, toHumanReadableNumber(outputRows));
+		if (inputRows != null && outputRows != null) {
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.ROWS_DROPPED_ACTUAL,
+					toHumanReadableNumber(Math.max(0L, inputRows - outputRows)));
+			Double selectivity = ratio(outputRows, inputRows);
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.SELECTIVITY_ACTUAL, toHumanReadableNumber(selectivity));
+			Double expansion = ratio(outputRows, Math.max(1L, inputRows));
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.EXPANSION_FACTOR_ACTUAL, toHumanReadableNumber(expansion));
+		}
+
+		if (outputRows != null && getTotalTimeActual() != null && getTotalTimeActual() > 0) {
+			double throughput = outputRows * 1000.0 / getTotalTimeActual();
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.THROUGHPUT_ROWS_PER_SEC_ACTUAL,
+					toHumanReadableNumber(throughput));
+		}
+
+		if (getResultSizeEstimate() != null && getResultSizeEstimate() > 0 && outputRows != null && outputRows > 0) {
+			double estimate = getResultSizeEstimate();
+			double actual = outputRows.doubleValue();
+			double qError = Math.max(estimate / actual, actual / estimate);
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.ESTIMATE_ERROR_Q, toHumanReadableNumber(qError));
+		}
+
+		List<Double> childQErrors = new ArrayList<>();
+		for (GenericPlanNode child : plans) {
+			if (child.getResultSizeEstimate() == null || child.getResultSizeEstimate() <= 0
+					|| child.getResultSizeActual() == null || child.getResultSizeActual() <= 0) {
+				continue;
+			}
+			double estimate = child.getResultSizeEstimate();
+			double actual = child.getResultSizeActual().doubleValue();
+			childQErrors.add(Math.max(estimate / actual, actual / estimate));
+		}
+		if (!childQErrors.isEmpty()) {
+			long sampleCount = childQErrors.size();
+			double mean = childQErrors.stream().mapToDouble(Double::doubleValue).average().orElse(0D);
+			double variance = childQErrors.stream()
+					.mapToDouble(value -> {
+						double delta = value - mean;
+						return delta * delta;
+					})
+					.average()
+					.orElse(0D);
+			double stddev = Math.sqrt(variance);
+			double confidence = Math.min(1D, sampleCount / (sampleCount + stddev + 1D));
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.SAMPLE_COUNT_ACTUAL, toHumanReadableNumber(sampleCount));
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.VARIANCE_ACTUAL, toHumanReadableNumber(variance));
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.STDDEV_ACTUAL, toHumanReadableNumber(stddev));
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.CONFIDENCE_SCORE_ACTUAL,
+					toHumanReadableNumber(confidence));
+		}
+
+		if (getCostEstimate() != null && getCostEstimate() > 0 && getTotalTimeActual() != null
+				&& getTotalTimeActual() > 0) {
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.COST_ERROR_RATIO,
+					toHumanReadableNumber(getTotalTimeActual() / getCostEstimate()));
+		}
+
+		if (getHasNextCallCountActual() != null && getHasNextTrueCountActual() != null) {
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.HAS_NEXT_FALSE_COUNT_ACTUAL,
+					toHumanReadableNumber(Math.max(0L, getHasNextCallCountActual() - getHasNextTrueCountActual())));
+		}
+		if (getHasNextCallCountActual() != null && getHasNextCallCountActual() > 0
+				&& getNextCallCountActual() != null) {
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.NEXT_PER_HAS_NEXT_RATIO_ACTUAL,
+					toHumanReadableNumber(getNextCallCountActual().doubleValue() / getHasNextCallCountActual()));
+		}
+		if (getHasNextCallCountActual() != null && getHasNextCallCountActual() > 0
+				&& getHasNextTimeNanosActual() != null) {
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.AVG_HAS_NEXT_NANOS_ACTUAL,
+					toHumanReadableNumber(getHasNextTimeNanosActual().doubleValue() / getHasNextCallCountActual()));
+		}
+		if (getNextCallCountActual() != null && getNextCallCountActual() > 0 && getNextTimeNanosActual() != null) {
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.AVG_NEXT_NANOS_ACTUAL,
+					toHumanReadableNumber(getNextTimeNanosActual().doubleValue() / getNextCallCountActual()));
+		}
+
+		if (isJoinNode()) {
+			Long leftRows = getJoinLeftBindingsConsumedActual();
+			Long rightRows = getJoinRightBindingsConsumedActual();
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.LEFT_ROWS_PROBED_ACTUAL, toHumanReadableNumber(leftRows));
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.RIGHT_ROWS_SCANNED_ACTUAL,
+					toHumanReadableNumber(rightRows));
+
+			if (leftRows != null && leftRows > 0 && rightRows != null) {
+				putIfKnownIfAbsent(metrics, TelemetryMetricNames.AVG_RIGHT_ROWS_PER_LEFT_ACTUAL,
+						toHumanReadableNumber(rightRows.doubleValue() / leftRows));
+			}
+
+			Long leftRowsWithMatch = longMetricsActual.get(TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL);
+			if (leftRowsWithMatch == null) {
+				Long iteratorsCreated = getJoinRightIteratorsCreatedActual();
+				Long emptyProbes = longMetricsActual.get(TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL);
+				if (iteratorsCreated != null && emptyProbes != null) {
+					leftRowsWithMatch = Math.max(0L, iteratorsCreated - emptyProbes);
+				}
+			}
+
+			if (leftRows != null && leftRows > 0 && leftRowsWithMatch != null) {
+				putIfKnownIfAbsent(metrics, TelemetryMetricNames.JOIN_MATCH_RATE_ACTUAL,
+						toHumanReadableNumber(leftRowsWithMatch.doubleValue() / leftRows));
+			}
+
+			if (leftRows != null && leftRows > 0 && outputRows != null) {
+				putIfKnownIfAbsent(metrics, TelemetryMetricNames.JOIN_OUTPUT_PER_LEFT_ACTUAL,
+						toHumanReadableNumber(outputRows.doubleValue() / leftRows));
+			}
+
+			if (isLeftJoinNode() && getJoinRightIteratorsCreatedActual() != null && leftRowsWithMatch != null) {
+				putIfKnownIfAbsent(metrics, TelemetryMetricNames.LEFT_JOIN_NULL_EXTENDED_ROWS_ACTUAL,
+						toHumanReadableNumber(Math.max(0L, getJoinRightIteratorsCreatedActual() - leftRowsWithMatch)));
+			}
+		}
+
+		if (isFilterNode() && sourceRowsScanned != null && sourceRowsScanned > 0 && sourceRowsFiltered != null) {
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.FILTER_REJECT_RATE_ACTUAL,
+					toHumanReadableNumber(sourceRowsFiltered.doubleValue() / sourceRowsScanned));
+		}
+
+		if (isServiceNode()) {
+			Long totalRequests = longMetricsActual.get(TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL);
+			if (totalRequests != null && totalRequests > 0) {
+				long typedRequests = 0L;
+				typedRequests += Math.max(0L, longMetricsActual.getOrDefault(
+						TelemetryMetricNames.REMOTE_ASK_REQUEST_COUNT_ACTUAL, 0L));
+				typedRequests += Math.max(0L, longMetricsActual.getOrDefault(
+						TelemetryMetricNames.REMOTE_SELECT_REQUEST_COUNT_ACTUAL, 0L));
+				typedRequests += Math.max(0L, longMetricsActual.getOrDefault(
+						TelemetryMetricNames.REMOTE_EVALUATE_REQUEST_COUNT_ACTUAL, 0L));
+				long derivedRetries = Math.max(0L, totalRequests - typedRequests);
+				if (derivedRetries > 0) {
+					putIfKnownIfAbsent(metrics, TelemetryMetricNames.REMOTE_RETRY_COUNT_ACTUAL,
+							toHumanReadableNumber(derivedRetries));
+				}
+			}
+		}
+
+		if (isSetOperatorNode() && plans.size() >= 2) {
+			Long left = plans.get(0).getResultSizeActual();
+			Long right = plans.get(1).getResultSizeActual();
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.LEFT_ROWS_CONSUMED_ACTUAL, toHumanReadableNumber(left));
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.RIGHT_ROWS_CONSUMED_ACTUAL, toHumanReadableNumber(right));
+
+			if (type.startsWith("Union")) {
+				putIfKnownIfAbsent(metrics, TelemetryMetricNames.LEFT_ROWS_OUTPUT_CONTRIBUTION_ACTUAL,
+						toHumanReadableNumber(left));
+				putIfKnownIfAbsent(metrics, TelemetryMetricNames.RIGHT_ROWS_OUTPUT_CONTRIBUTION_ACTUAL,
+						toHumanReadableNumber(right));
+			} else if (type.startsWith("Intersection")) {
+				putIfKnownIfAbsent(metrics, TelemetryMetricNames.OVERLAP_ROWS_ACTUAL,
+						toHumanReadableNumber(outputRows));
+			} else if (type.startsWith("Difference") && left != null && outputRows != null) {
+				putIfKnownIfAbsent(metrics, TelemetryMetricNames.OVERLAP_ROWS_ACTUAL,
+						toHumanReadableNumber(Math.max(0L, left - outputRows)));
+			}
+		}
+
+		if (isDistinctLikeNode() && inputRows != null && outputRows != null && inputRows > 0) {
+			long duplicatesRemoved = Math.max(0L, inputRows - outputRows);
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.DUPLICATES_REMOVED_ACTUAL,
+					toHumanReadableNumber(duplicatesRemoved));
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.DEDUP_RATE_ACTUAL,
+					toHumanReadableNumber(duplicatesRemoved / (double) inputRows));
+		}
+
+		if (isSliceNode() && !plans.isEmpty() && plans.get(0).getResultSizeActual() != null && outputRows != null) {
+			Long childRows = plans.get(0).getResultSizeActual();
+			long offset = sliceOffsetFromType();
+			long skipped = Math.min(offset, childRows);
+			long droppedByLimit = Math.max(0L, childRows - skipped - outputRows);
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.ROWS_SKIPPED_BY_OFFSET_ACTUAL,
+					toHumanReadableNumber(skipped));
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.ROWS_DROPPED_BY_LIMIT_ACTUAL,
+					toHumanReadableNumber(droppedByLimit));
+		}
+
+		if (isGroupNode()) {
+			Long groups = longMetricsActual.get(TelemetryMetricNames.GROUPS_CREATED_ACTUAL);
+			if (groups == null) {
+				groups = outputRows;
+			}
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.GROUPS_CREATED_ACTUAL, toHumanReadableNumber(groups));
+			if (inputRows != null && groups != null && groups > 0) {
+				putIfKnownIfAbsent(metrics, TelemetryMetricNames.AVG_GROUP_SIZE_ACTUAL,
+						toHumanReadableNumber(inputRows.doubleValue() / groups));
+			}
+		}
+
+		if (isAccessNode() && sourceRowsScanned != null && sourceRowsScanned > 0 && sourceRowsMatched != null) {
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.INDEX_HIT_RATE_ACTUAL,
+					toHumanReadableNumber(sourceRowsMatched.doubleValue() / sourceRowsScanned));
+		}
+	}
+
+	private boolean isMetricApplicableToNode(String metricName) {
+		if (JOIN_ONLY_METRICS.contains(metricName)) {
+			return isJoinNode();
+		}
+		if (FILTER_ONLY_METRICS.contains(metricName)) {
+			return isFilterNode();
+		}
+		if (ORDER_ONLY_METRICS.contains(metricName)) {
+			return isOrderNode();
+		}
+		if (GROUP_ONLY_METRICS.contains(metricName)) {
+			return isGroupNode();
+		}
+		if (SLICE_ONLY_METRICS.contains(metricName)) {
+			return isSliceNode();
+		}
+		if (SERVICE_ONLY_METRICS.contains(metricName)) {
+			return isServiceNode();
+		}
+		if (SET_OPERATOR_ONLY_METRICS.contains(metricName)) {
+			return isSetOperatorNode();
+		}
+		if (ACCESS_ONLY_METRICS.contains(metricName)) {
+			return isAccessNode();
+		}
+		return true;
+	}
+
+	private Long totalInputRowsFromChildren() {
+		if (plans.isEmpty()) {
+			return null;
+		}
+		long sum = 0;
+		boolean found = false;
+		for (GenericPlanNode plan : plans) {
+			Long childRows = plan.getResultSizeActual();
+			if (childRows != null && childRows >= 0) {
+				sum += childRows;
+				found = true;
+			}
+		}
+		return found ? sum : null;
+	}
+
+	private long sliceOffsetFromType() {
+		return parseSliceLong(OFFSET_PATTERN);
+	}
+
+	private long parseSliceLong(Pattern pattern) {
+		if (type == null) {
+			return 0L;
+		}
+		Matcher matcher = pattern.matcher(type);
+		if (!matcher.find()) {
+			return 0L;
+		}
+		return Long.parseLong(matcher.group(1));
+	}
+
+	private static Double ratio(Long numerator, Long denominator) {
+		if (numerator == null || denominator == null || denominator <= 0) {
+			return null;
+		}
+		return numerator.doubleValue() / denominator.doubleValue();
+	}
+
+	private static void putIfKnown(Map<String, String> target, String metricName, String metricValue) {
+		if (metricValue != null && !UNKNOWN.equals(metricValue)) {
+			target.put(metricName, metricValue);
+		}
+	}
+
+	private static void putIfKnownIfAbsent(Map<String, String> target, String metricName, String metricValue) {
+		if (target.containsKey(metricName)) {
+			return;
+		}
+		putIfKnown(target, metricName, metricValue);
 	}
 
 	public String toDot() {

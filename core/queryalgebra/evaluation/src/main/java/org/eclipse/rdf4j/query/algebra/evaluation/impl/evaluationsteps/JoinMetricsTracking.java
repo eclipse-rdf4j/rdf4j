@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 final class JoinMetricsTracking {
 
@@ -84,6 +85,15 @@ final class JoinMetricsTracking {
 						return;
 					}
 					flushed = true;
+					if (rightSide) {
+						if (consumedBindings <= 0) {
+							incrementLongMetric(joinNode, TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL);
+						} else {
+							incrementLongMetric(joinNode, TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL);
+							setLongMetricMax(joinNode, TelemetryMetricNames.MAX_RIGHT_ROWS_PER_LEFT_ACTUAL,
+									consumedBindings);
+						}
+					}
 					if (consumedBindings <= 0) {
 						return;
 					}
@@ -126,5 +136,27 @@ final class JoinMetricsTracking {
 				|| node.getTotalTimeNanosActual() >= 0
 				|| node.getHasNextCallCountActual() >= 0
 				|| node.getNextCallCountActual() >= 0;
+	}
+
+	private static long longMetric(QueryModelNode queryModelNode, String metricName) {
+		return Math.max(0L, queryModelNode.getLongMetricActual(metricName));
+	}
+
+	private static void incrementLongMetric(QueryModelNode queryModelNode, String metricName) {
+		addLongMetric(queryModelNode, metricName, 1L);
+	}
+
+	private static void addLongMetric(QueryModelNode queryModelNode, String metricName, long delta) {
+		if (queryModelNode == null || delta <= 0) {
+			return;
+		}
+		queryModelNode.setLongMetricActual(metricName, longMetric(queryModelNode, metricName) + delta);
+	}
+
+	private static void setLongMetricMax(QueryModelNode queryModelNode, String metricName, long value) {
+		if (queryModelNode == null || value < 0) {
+			return;
+		}
+		queryModelNode.setLongMetricActual(metricName, Math.max(longMetric(queryModelNode, metricName), value));
 	}
 }

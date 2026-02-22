@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
  * Evaluate the StatementPattern - taking care of graph/datasets - avoiding redoing work every call of evaluate if
@@ -53,6 +54,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private static final Function<Value, Resource[]> RETURN_NULL_VALUE_RESOURCE_ARRAY = v -> null;
 
 	private final StatementPattern statementPattern;
+	private final StatementPattern statementPatternForMetrics;
 	private final TripleSource tripleSource;
 	private final boolean emptyGraph;
 	private final Function<Value, Resource[]> contextSup;
@@ -78,6 +80,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	public StatementPatternQueryEvaluationStep(StatementPattern statementPattern, QueryEvaluationContext context,
 			TripleSource tripleSource) {
 		super();
+		this.statementPatternForMetrics = statementPattern;
 		this.order = statementPattern.getStatementOrder();
 		this.context = context;
 		this.tripleSource = tripleSource;
@@ -327,6 +330,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
+			incrementIndexLookupCount();
 			if (order != null) {
 				iteration = tripleSource.getStatements(order, (Resource) subject, (IRI) predicate, object, contexts);
 
@@ -335,7 +339,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 
 			if (iteration instanceof IndexReportingIterator) {
-				statementPattern.setIndexName(((IndexReportingIterator) iteration).getIndexName());
+				String indexName = ((IndexReportingIterator) iteration).getIndexName();
+				statementPattern.setIndexName(indexName);
+				statementPatternForMetrics.setIndexName(indexName);
 			}
 
 			if (iteration instanceof EmptyIteration) {
@@ -382,13 +388,16 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
+			incrementIndexLookupCount();
 			if (order != null) {
 				iteration = tripleSource.getStatements(order, (Resource) subject, (IRI) predicate, object, contexts);
 			} else {
 				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
 			}
 			if (iteration instanceof IndexReportingIterator) {
-				statementPattern.setIndexName(((IndexReportingIterator) iteration).getIndexName());
+				String indexName = ((IndexReportingIterator) iteration).getIndexName();
+				statementPattern.setIndexName(indexName);
+				statementPatternForMetrics.setIndexName(indexName);
 			}
 
 			if (iteration instanceof EmptyIteration) {
@@ -602,6 +611,13 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			contexts[i++] = context;
 		}
 		return contexts;
+	}
+
+	private void incrementIndexLookupCount() {
+		long next = Math.max(0L,
+				statementPatternForMetrics.getLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL)) + 1L;
+		statementPatternForMetrics.setLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL, next);
+		statementPattern.setLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL, next);
 	}
 
 	/**

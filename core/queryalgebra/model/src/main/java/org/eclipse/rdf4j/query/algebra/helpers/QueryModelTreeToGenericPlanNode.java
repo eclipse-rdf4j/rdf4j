@@ -11,14 +11,21 @@
 package org.eclipse.rdf4j.query.algebra.helpers;
 
 import java.util.ArrayDeque;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
  * Convert TupleExpr (QueryModelNode) to GenericPlanNode for the Query.explain(...) feature.
@@ -64,6 +71,16 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		genericPlanNode.setSourceRowsScannedActual(runtimeTelemetryMetric(node.getSourceRowsScannedActual()));
 		genericPlanNode.setSourceRowsMatchedActual(runtimeTelemetryMetric(node.getSourceRowsMatchedActual()));
 		genericPlanNode.setSourceRowsFilteredActual(runtimeTelemetryMetric(node.getSourceRowsFilteredActual()));
+		genericPlanNode.setLongMetricsActual(new LinkedHashMap<>(node.getLongMetricsActual()));
+		genericPlanNode.setDoubleMetricsActual(new LinkedHashMap<>(node.getDoubleMetricsActual()));
+		genericPlanNode.setStringMetricsActual(new LinkedHashMap<>(node.getStringMetricsActual()));
+		applyVariableShapeMetrics(node, genericPlanNode);
+		if (node instanceof StatementPattern) {
+			String indexName = ((StatementPattern) node).getIndexName();
+			if (indexName != null && !indexName.isEmpty()) {
+				genericPlanNode.setStringMetricActual(TelemetryMetricNames.INDEX_NAME, indexName);
+			}
+		}
 		if (node instanceof VariableScopeChange) {
 			boolean newScope = ((VariableScopeChange) node).isVariableScopeChange();
 			genericPlanNode.setNewScope(newScope);
@@ -104,6 +121,53 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 						|| node.getTotalTimeNanosActual() >= 0
 						|| node.getHasNextCallCountActual() >= 0
 						|| node.getNextCallCountActual() >= 0);
+	}
+
+	private static void applyVariableShapeMetrics(QueryModelNode node, GenericPlanNode genericPlanNode) {
+		if (!(node instanceof TupleExpr)) {
+			return;
+		}
+
+		TupleExpr tupleExpr = (TupleExpr) node;
+		Set<String> outputBindings = new LinkedHashSet<>(tupleExpr.getBindingNames());
+		Set<String> inputBindings = inputBindingNames(tupleExpr);
+		if (inputBindings.isEmpty() && outputBindings.isEmpty()) {
+			return;
+		}
+
+		long varsAdded = outputBindings.stream()
+				.filter(binding -> !inputBindings.contains(binding))
+				.count();
+		long varsDropped = inputBindings.stream()
+				.filter(binding -> !outputBindings.contains(binding))
+				.count();
+
+		if (varsAdded > 0) {
+			genericPlanNode.setLongMetricActual(TelemetryMetricNames.VARS_ADDED_ACTUAL, varsAdded);
+			genericPlanNode.setStringMetricActual(
+					TelemetryMetricNames.METRIC_ORIGIN + "." + TelemetryMetricNames.VARS_ADDED_ACTUAL,
+					"derived");
+		}
+		if (varsDropped > 0) {
+			genericPlanNode.setLongMetricActual(TelemetryMetricNames.VARS_DROPPED_ACTUAL, varsDropped);
+			genericPlanNode.setStringMetricActual(
+					TelemetryMetricNames.METRIC_ORIGIN + "." + TelemetryMetricNames.VARS_DROPPED_ACTUAL,
+					"derived");
+		}
+	}
+
+	private static Set<String> inputBindingNames(TupleExpr tupleExpr) {
+		Set<String> inputBindings = new LinkedHashSet<>();
+		if (tupleExpr instanceof UnaryTupleOperator) {
+			inputBindings.addAll(((UnaryTupleOperator) tupleExpr).getArg().getBindingNames());
+			return inputBindings;
+		}
+		if (tupleExpr instanceof BinaryTupleOperator) {
+			BinaryTupleOperator binary = (BinaryTupleOperator) tupleExpr;
+			inputBindings.addAll(binary.getLeftArg().getBindingNames());
+			inputBindings.addAll(binary.getRightArg().getBindingNames());
+		}
+		return inputBindings;
 	}
 
 }

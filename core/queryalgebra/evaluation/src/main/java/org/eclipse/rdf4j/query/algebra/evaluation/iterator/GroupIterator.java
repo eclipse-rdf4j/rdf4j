@@ -61,6 +61,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
@@ -269,8 +270,12 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		// store the arguments' iterator so it can be closed while building entries
 		this.argumentsIter = arguments.evaluate(parentBindings);
 		try (var iter = argumentsIter) {
+			long inputRows = 0;
+			long aggregateEvalCount = 0;
 			if (!iter.hasNext()) {
-				return emptySolutionSpecialCase(aggregates);
+				Collection<Entry> emptyEntries = emptySolutionSpecialCase(aggregates);
+				recordGroupMetrics(0, emptyEntries, aggregateEvalCount);
+				return emptyEntries;
 			}
 
 			List<Function<BindingSet, Value>> getValues = group.getGroupBindingNames()
@@ -287,6 +292,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			ToIntFunction<BindingSet> hashMaker = cf.hashOfBindingSetFuntion(getValues);
 			while (!isClosed() && iter.hasNext()) {
 				BindingSet sol = iter.next();
+				inputRows++;
 				// The binding set key will be constant
 				BindingSetKey key = cf.createBindingSetKey(sol, getValues, hashMaker);
 				Entry entry = entries.get(key);
@@ -302,10 +308,25 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 				}
 
 				entry.addSolution(sol, aggregates);
+				aggregateEvalCount += aggregates.size();
 			}
-			return entries.values();
+			Collection<Entry> values = entries.values();
+			recordGroupMetrics(inputRows, values, aggregateEvalCount);
+			return values;
 		} finally {
 			this.argumentsIter = null;
+		}
+	}
+
+	private void recordGroupMetrics(long inputRows, Collection<Entry> entries, long aggregateEvalCount) {
+		long groupsCreated = entries == null ? 0 : entries.size();
+		long maxGroupSize = entries == null ? 0 : entries.stream().mapToLong(Entry::getSize).max().orElse(0);
+
+		group.setLongMetricActual(TelemetryMetricNames.GROUPS_CREATED_ACTUAL, groupsCreated);
+		group.setLongMetricActual(TelemetryMetricNames.MAX_GROUP_SIZE_ACTUAL, maxGroupSize);
+		group.setLongMetricActual(TelemetryMetricNames.AGGREGATE_EVAL_COUNT_ACTUAL, aggregateEvalCount);
+		if (groupsCreated > 0) {
+			group.setDoubleMetricActual(TelemetryMetricNames.AVG_GROUP_SIZE_ACTUAL, inputRows / (double) groupsCreated);
 		}
 	}
 
@@ -354,6 +375,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		private final BindingSet prototype;
 		private final List<AggregateCollector> collectors;
 		private final List<Predicate<?>> predicates;
+		private long size;
 
 		public Entry(BindingSet prototype, List<AggregateCollector> collectors, List<Predicate<?>> predicates)
 				throws QueryEvaluationException {
@@ -363,6 +385,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		}
 
 		public void addSolution(BindingSet bs, List<AggregatePredicateCollectorSupplier<?, ?>> operators) {
+			size++;
 			for (int i = 0; i < operators.size(); i++) {
 				AggregatePredicateCollectorSupplier<?, ?> aggregatePredicateCollectorSupplier = operators.get(i);
 				aggregatePredicateCollectorSupplier.operate(bs, predicates.get(i), collectors.get(i));
@@ -371,6 +394,10 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 		public BindingSet getPrototype() {
 			return prototype;
+		}
+
+		public long getSize() {
+			return size;
 		}
 	}
 

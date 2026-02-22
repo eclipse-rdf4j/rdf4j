@@ -13,20 +13,29 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 public final class IfValueEvaluationStep implements QueryValueEvaluationStep {
 	private final QueryValueEvaluationStep result;
 	private final QueryValueEvaluationStep condition;
 	private final QueryValueEvaluationStep alternative;
+	private final QueryModelNode metricTarget;
 
 	public IfValueEvaluationStep(QueryValueEvaluationStep result, QueryValueEvaluationStep condition,
 			QueryValueEvaluationStep alternative) {
+		this(result, condition, alternative, null);
+	}
+
+	public IfValueEvaluationStep(QueryValueEvaluationStep result, QueryValueEvaluationStep condition,
+			QueryValueEvaluationStep alternative, QueryModelNode metricTarget) {
 		this.result = result;
 		this.condition = condition;
 		this.alternative = alternative;
+		this.metricTarget = metricTarget;
 	}
 
 	@Override
@@ -43,9 +52,19 @@ public final class IfValueEvaluationStep implements QueryValueEvaluationStep {
 		}
 
 		if (conditionIsTrue) {
+			incrementShortCircuitCount();
 			return result.evaluate(bindings);
 		} else {
+			incrementShortCircuitCount();
 			return alternative.evaluate(bindings);
 		}
+	}
+
+	private void incrementShortCircuitCount() {
+		if (metricTarget == null) {
+			return;
+		}
+		metricTarget.setLongMetricActual(TelemetryMetricNames.SHORT_CIRCUIT_COUNT_ACTUAL,
+				Math.max(0L, metricTarget.getLongMetricActual(TelemetryMetricNames.SHORT_CIRCUIT_COUNT_ACTUAL)) + 1L);
 	}
 }

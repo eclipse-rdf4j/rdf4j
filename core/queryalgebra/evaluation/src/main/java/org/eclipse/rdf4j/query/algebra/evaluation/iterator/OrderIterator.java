@@ -95,6 +95,9 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 	protected CloseableIteration<BindingSet> createIteration() throws QueryEvaluationException {
 		BindingSet threshold = null;
 		List<BindingSet> list = new LinkedList<>();
+		long inputRowsRead = 0;
+		long spillCount = 0;
+		long spillBytes = 0;
 		int limit2 = limit >= Integer.MAX_VALUE / 2 ? Integer.MAX_VALUE : (int) limit * 2;
 		int syncThreshold = (int) Math.min(iterationSyncThreshold, Integer.MAX_VALUE);
 		try {
@@ -103,6 +106,10 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 					SerializedQueue<BindingSet> queue = new SerializedQueue<>("orderiter");
 					sort(list).forEach(queue::add);
 					serialized.add(queue);
+					spillCount++;
+					long bytes = queue.estimatedBytes();
+					spillBytes += bytes;
+					onSpillToDisk(queue.size(), bytes);
 					decrement(list.size() - queue.size());
 					list = new ArrayList<>(list.size());
 					if (threshold == null && serialized.stream().mapToLong(SerializedQueue::size).sum() >= limit) {
@@ -119,6 +126,8 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 					}
 				}
 				BindingSet next = iter.next();
+				inputRowsRead++;
+				onInputRowRead(next);
 				if (threshold == null || comparator.compare(next, threshold) < 0) {
 					list.add(next);
 					increment();
@@ -139,12 +148,25 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 		iterators.add(sort(list).iterator());
 
 		SortedIterators<BindingSet> iterator = new SortedIterators<>(comparator, distinct, iterators);
+		onSortCompleted(inputRowsRead, spillCount, spillBytes);
 
 		return new LimitIteration<>(new CloseableIteratorIteration<>(iterator), limit);
 	}
 
 	protected void increment() throws QueryEvaluationException {
 		// give subclasses a chance to stop query evaluation
+	}
+
+	protected void onInputRowRead(BindingSet next) throws QueryEvaluationException {
+		// give subclasses a chance to track consumed input rows
+	}
+
+	protected void onSpillToDisk(int spilledRows, long spilledBytes) throws QueryEvaluationException {
+		// give subclasses a chance to track spill behavior
+	}
+
+	protected void onSortCompleted(long inputRows, long spillCount, long spillBytes) {
+		// give subclasses a chance to track final sort statistics
 	}
 
 	protected void decrement(int amount) throws QueryEvaluationException {
@@ -297,6 +319,15 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 				input.close();
 			}
 			file.delete();
+		}
+
+		public long estimatedBytes() {
+			try {
+				output.flush();
+				return file.length();
+			} catch (IOException e) {
+				return 0L;
+			}
 		}
 
 	}

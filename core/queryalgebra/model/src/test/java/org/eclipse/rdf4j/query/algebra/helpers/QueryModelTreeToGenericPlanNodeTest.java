@@ -15,12 +15,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
 
 public class QueryModelTreeToGenericPlanNodeTest {
@@ -45,6 +51,10 @@ public class QueryModelTreeToGenericPlanNodeTest {
 				node.setSourceRowsScannedActual(19);
 				node.setSourceRowsMatchedActual(23);
 				node.setSourceRowsFilteredActual(31);
+				node.setLongMetricActual(TelemetryMetricNames.OPEN_COUNT_ACTUAL, 2);
+				node.setDoubleMetricActual(TelemetryMetricNames.SELECTIVITY_ACTUAL, 0.25);
+				node.setStringMetricActual(TelemetryMetricNames.METRIC_ORIGIN + "."
+						+ TelemetryMetricNames.SELECTIVITY_ACTUAL, "derived");
 				super.meetNode(node);
 			}
 		});
@@ -71,6 +81,36 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertUnsetTelemetryRecursively(root);
 	}
 
+	@Test
+	public void derivesVariableShapeMetricsFromTupleExprBindingNames() {
+		StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Extension extension = new Extension(statementPattern, new ExtensionElem(Var.of("o"), "derivedVar"));
+		Projection projection = new Projection(extension,
+				new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("derivedVar")));
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(projection);
+		projection.visit(converter);
+		GenericPlanNode root = converter.getGenericPlanNode();
+
+		assertThat(root).isNotNull();
+		assertThat(root.getLongMetricsActual())
+				.containsEntry(TelemetryMetricNames.VARS_DROPPED_ACTUAL, 2L);
+		assertThat(root.getStringMetricsActual())
+				.containsEntry(TelemetryMetricNames.METRIC_ORIGIN + "." + TelemetryMetricNames.VARS_DROPPED_ACTUAL,
+						"derived");
+
+		GenericPlanNode extensionPlan = root.getPlans()
+				.stream()
+				.filter(plan -> plan.getType().startsWith("Extension"))
+				.findFirst()
+				.orElseThrow();
+		assertThat(extensionPlan.getLongMetricsActual())
+				.containsEntry(TelemetryMetricNames.VARS_ADDED_ACTUAL, 1L);
+		assertThat(extensionPlan.getStringMetricsActual())
+				.containsEntry(TelemetryMetricNames.METRIC_ORIGIN + "." + TelemetryMetricNames.VARS_ADDED_ACTUAL,
+						"derived");
+	}
+
 	private static void assertTelemetryRecursively(GenericPlanNode node) {
 		assertThat(node.getHasNextCallCountActual()).isEqualTo(11);
 		assertThat(node.getHasNextTrueCountActual()).isEqualTo(7);
@@ -83,6 +123,11 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertThat(node.getSourceRowsScannedActual()).isEqualTo(19);
 		assertThat(node.getSourceRowsMatchedActual()).isEqualTo(23);
 		assertThat(node.getSourceRowsFilteredActual()).isEqualTo(31);
+		assertThat(node.getLongMetricsActual()).containsEntry(TelemetryMetricNames.OPEN_COUNT_ACTUAL, 2L);
+		assertThat(node.getDoubleMetricsActual()).containsEntry(TelemetryMetricNames.SELECTIVITY_ACTUAL, 0.25);
+		assertThat(node.getStringMetricsActual())
+				.containsEntry(TelemetryMetricNames.METRIC_ORIGIN + "." + TelemetryMetricNames.SELECTIVITY_ACTUAL,
+						"derived");
 
 		List<GenericPlanNode> children = node.getPlans();
 		if (children != null) {
@@ -104,6 +149,19 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertThat(node.getSourceRowsScannedActual()).isNull();
 		assertThat(node.getSourceRowsMatchedActual()).isNull();
 		assertThat(node.getSourceRowsFilteredActual()).isNull();
+		if (node.getLongMetricsActual() != null) {
+			assertThat(node.getLongMetricsActual().keySet())
+					.allMatch(metricName -> TelemetryMetricNames.VARS_ADDED_ACTUAL.equals(metricName)
+							|| TelemetryMetricNames.VARS_DROPPED_ACTUAL.equals(metricName));
+		}
+		assertThat(node.getDoubleMetricsActual()).isNull();
+		if (node.getStringMetricsActual() != null) {
+			assertThat(node.getStringMetricsActual().keySet())
+					.allMatch(metricName -> metricName.equals(TelemetryMetricNames.METRIC_ORIGIN + "."
+							+ TelemetryMetricNames.VARS_ADDED_ACTUAL)
+							|| metricName.equals(TelemetryMetricNames.METRIC_ORIGIN + "."
+									+ TelemetryMetricNames.VARS_DROPPED_ACTUAL));
+		}
 
 		List<GenericPlanNode> children = node.getPlans();
 		if (children != null) {

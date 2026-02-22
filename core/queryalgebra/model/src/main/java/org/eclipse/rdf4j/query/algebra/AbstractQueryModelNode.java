@@ -10,8 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Map;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -52,6 +55,9 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	private long sourceRowsScannedActual = -1;
 	private long sourceRowsMatchedActual = -1;
 	private long sourceRowsFilteredActual = -1;
+	private Map<String, Long> longMetricsActual = Collections.emptyMap();
+	private Map<String, Double> doubleMetricsActual = Collections.emptyMap();
+	private Map<String, String> stringMetricsActual = Collections.emptyMap();
 
 	private double cardinality = CARDINALITY_NOT_SET;
 
@@ -114,6 +120,12 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 			clone.setVariableScopeChange(this.isVariableScopeChange());
 			clone.cardinality = CARDINALITY_NOT_SET;
 			clone.parent = null;
+			clone.longMetricsActual = longMetricsActual.isEmpty() ? Collections.emptyMap()
+					: new HashMap<>(longMetricsActual);
+			clone.doubleMetricsActual = doubleMetricsActual.isEmpty() ? Collections.emptyMap()
+					: new HashMap<>(doubleMetricsActual);
+			clone.stringMetricsActual = stringMetricsActual.isEmpty() ? Collections.emptyMap()
+					: new HashMap<>(stringMetricsActual);
 			return clone;
 		} catch (CloneNotSupportedException e) {
 			throw new RuntimeException("Query model nodes are required to be cloneable", e);
@@ -286,6 +298,69 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	@Override
 	public void setSourceRowsFilteredActual(long sourceRowsFilteredActual) {
 		this.sourceRowsFilteredActual = sourceRowsFilteredActual;
+	}
+
+	@Override
+	public Map<String, Long> getLongMetricsActual() {
+		return longMetricsActual;
+	}
+
+	@Override
+	public long getLongMetricActual(String metricName) {
+		return longMetricsActual.getOrDefault(metricName, -1L);
+	}
+
+	@Override
+	public void setLongMetricActual(String metricName, long metricValue) {
+		if (metricName == null) {
+			return;
+		}
+		if (longMetricsActual.isEmpty()) {
+			longMetricsActual = new HashMap<>();
+		}
+		longMetricsActual.put(metricName, metricValue);
+	}
+
+	@Override
+	public Map<String, Double> getDoubleMetricsActual() {
+		return doubleMetricsActual;
+	}
+
+	@Override
+	public double getDoubleMetricActual(String metricName) {
+		return doubleMetricsActual.getOrDefault(metricName, -1D);
+	}
+
+	@Override
+	public void setDoubleMetricActual(String metricName, double metricValue) {
+		if (metricName == null) {
+			return;
+		}
+		if (doubleMetricsActual.isEmpty()) {
+			doubleMetricsActual = new HashMap<>();
+		}
+		doubleMetricsActual.put(metricName, metricValue);
+	}
+
+	@Override
+	public Map<String, String> getStringMetricsActual() {
+		return stringMetricsActual;
+	}
+
+	@Override
+	public String getStringMetricActual(String metricName) {
+		return stringMetricsActual.get(metricName);
+	}
+
+	@Override
+	public void setStringMetricActual(String metricName, String metricValue) {
+		if (metricName == null) {
+			return;
+		}
+		if (stringMetricsActual.isEmpty()) {
+			stringMetricsActual = new HashMap<>();
+		}
+		stringMetricsActual.put(metricName, metricValue);
 	}
 
 	/**
