@@ -13,13 +13,21 @@ package org.eclipse.rdf4j.benchmark.common.plan;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -29,15 +37,22 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
@@ -58,6 +73,27 @@ public final class QueryPlanCapture {
 	private static final DateTimeFormatter FILE_TIMESTAMP_FORMATTER = DateTimeFormatter
 			.ofPattern("yyyyMMdd-HHmmssSSS")
 			.withZone(ZoneOffset.UTC);
+	private static final ObjectMapper JSON_MAPPER = new ObjectMapper()
+			.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+	private static final Pattern ANONYMOUS_VARIABLE_NAME_PATTERN = Pattern
+			.compile("(_anon_[A-Za-z]+_)[A-Za-z0-9]+");
+	private static final Pattern ANONYMOUS_VARIABLE_TOKEN_PATTERN = Pattern
+			.compile("_anon_[A-Za-z]+_[A-Za-z0-9]+");
+	private static final int OPERATOR_WORK_TOP_CONTRIBUTOR_LIMIT = 8;
+	private static final double MODELED_WORK_SCAN_PER_ROW = 1.0d;
+	private static final double MODELED_WORK_FILTER_PER_INPUT_ROW = 0.3d;
+	private static final double MODELED_WORK_PROJECTION_PER_INPUT_ROW = 0.05d;
+	private static final double MODELED_WORK_EXTENSION_PER_INPUT_ROW = 0.2d;
+	private static final double MODELED_WORK_UNION_PER_OUTPUT_ROW = 0.1d;
+	private static final double MODELED_WORK_JOIN_BIND_FACTOR = 1.0d;
+	private static final double MODELED_WORK_JOIN_HASH_FACTOR = 1.3d;
+	private static final double MODELED_WORK_JOIN_MERGE_FACTOR = 1.1d;
+	private static final double MODELED_WORK_ORDER_FACTOR = 0.8d;
+	private static final double MODELED_WORK_DISTINCT_FACTOR = 0.8d;
+	private static final double MODELED_WORK_GROUP_FACTOR = 0.7d;
+	private static final double MODELED_WORK_SERVICE_FACTOR = 5.0d;
+	private static final double MODELED_WORK_PATH_FACTOR = 2.0d;
+	private static final double MODELED_WORK_UNKNOWN_PER_ROW = 0.2d;
 
 	private final ObjectMapper snapshotMapper = new ObjectMapper()
 			.configure(SerializationFeature.INDENT_OUTPUT, true)
@@ -115,6 +151,12 @@ public final class QueryPlanCapture {
 		if (context.getBenchmark() != null && !context.getBenchmark().isBlank()) {
 			metadata.putIfAbsent("benchmark", context.getBenchmark());
 		}
+		if (context.getQueryString() != null && !context.getQueryString().isBlank()) {
+			metadata.putIfAbsent("queryString.sha256", sha256Hex(context.getQueryString()));
+			metadata.putIfAbsent("queryString.normalizedWhitespaceSha256",
+					sha256Hex(normalizeWhitespace(context.getQueryString())));
+		}
+		copyUnoptimizedInputShapeMetadata(explanations, metadata);
 		metadata.putIfAbsent("gitCommit", resolveGitCommit());
 		metadata.putIfAbsent("gitBranch", resolveGitBranch());
 		metadata.putIfAbsent("javaVersion", System.getProperty("java.version", FeatureFlagCollector.NULL_VALUE));
@@ -136,6 +178,31 @@ public final class QueryPlanCapture {
 		snapshot.setExplanations(explanations);
 
 		return snapshot;
+	}
+
+	private static void copyUnoptimizedInputShapeMetadata(Map<String, QueryPlanExplanation> explanations,
+			Map<String, String> metadata) {
+		QueryPlanExplanation unoptimized = explanations.get(levelKey(Explanation.Level.Unoptimized));
+		if (unoptimized == null || unoptimized.getDebugMetrics() == null) {
+			return;
+		}
+		Map<String, String> metrics = unoptimized.getDebugMetrics();
+		copyMetric(metrics, "structureSignatureRawSha256", metadata, "optimizerInput.unoptimizedStructureRawSha256");
+		copyMetric(metrics, "structureSignatureNormalizedSha256", metadata,
+				"optimizerInput.unoptimizedStructureNormalizedSha256");
+		copyMetric(metrics, "anonymousTypeTokenCount", metadata, "optimizerInput.unoptimizedAnonymousTypeTokenCount");
+	}
+
+	private static void copyMetric(Map<String, String> source, String sourceKey, Map<String, String> target,
+			String targetKey) {
+		String value = source.get(sourceKey);
+		if (value != null && !value.isBlank()) {
+			target.putIfAbsent(targetKey, value);
+		}
+	}
+
+	private static String normalizeWhitespace(String value) {
+		return value.trim().replaceAll("\\s+", " ");
 	}
 
 	public Path captureAndWrite(QueryPlanCaptureContext context, Supplier<? extends TupleQuery> tupleQuerySupplier)
@@ -191,10 +258,12 @@ public final class QueryPlanCapture {
 		captured.setLevel(level.name());
 		captured.setExplanationText(explanation.toString());
 		captured.setExplanationJson(explanation.toJson());
+		captured.setDebugMetrics(extractDebugMetrics(captured.getExplanationJson()));
 
 		Object tupleExprObject = explanation.tupleExpr();
 		if (tupleExprObject instanceof TupleExpr) {
 			TupleExpr tupleExpr = ((TupleExpr) tupleExprObject).clone();
+			appendIteratorTelemetry(tupleExpr, captured.getDebugMetrics());
 			captured.setTupleExprTree(tupleExpr.toString());
 			captured.setTupleExprJson(tupleExprJsonCodec.toJson(tupleExpr));
 			if (irRenderedLevels.contains(level)) {
@@ -203,6 +272,831 @@ public final class QueryPlanCapture {
 		}
 
 		return captured;
+	}
+
+	public static Map<String, String> extractDebugMetrics(String explanationJson) {
+		LinkedHashMap<String, String> metrics = new LinkedHashMap<>();
+		if (explanationJson == null || explanationJson.isBlank()) {
+			return metrics;
+		}
+
+		JsonNode root;
+		try {
+			root = JSON_MAPPER.readTree(explanationJson);
+		} catch (Exception e) {
+			metrics.put("metricsError", e.getClass().getSimpleName());
+			return metrics;
+		}
+
+		DebugMetricAccumulator accumulator = new DebugMetricAccumulator();
+		appendDebugSignatures(root, 1, accumulator);
+
+		String rootType = readText(root, "type");
+		String rootTypeNormalized = canonicalizeType(rootType);
+		metrics.put("rootType", rootType);
+		metrics.put("rootTypeNormalized", rootTypeNormalized);
+		metrics.put("rootAlgorithm", readText(root, "algorithm"));
+		metrics.put("rootCostEstimate", readNumberToken(root, "costEstimate"));
+		metrics.put("rootResultSizeEstimate", readNumberToken(root, "resultSizeEstimate"));
+		metrics.put("rootResultSizeActual", readNumberToken(root, "resultSizeActual"));
+		metrics.put("rootTotalTimeActual", readNumberToken(root, "totalTimeActual"));
+		metrics.put("rootSelfTimeActual", readNumberToken(root, "selfTimeActual"));
+		metrics.put("planNodeCount", Integer.toString(accumulator.planNodeCount));
+		metrics.put("maxDepth", Integer.toString(accumulator.maxDepth));
+		metrics.put("leafNodeCount", Integer.toString(accumulator.leafNodeCount));
+		metrics.put("maxBranchingFactor", Integer.toString(accumulator.maxBranchingFactor));
+		metrics.put("joinNodeCount", Integer.toString(accumulator.joinNodeCount));
+		metrics.put("filterNodeCount", Integer.toString(accumulator.filterNodeCount));
+		metrics.put("statementPatternCount", Integer.toString(accumulator.statementPatternCount));
+		metrics.put("anonymousTypeTokenCount", Integer.toString(accumulator.anonymousTypeTokenCount));
+		metrics.put("joinAlgorithmCounts", formatJoinAlgorithmCounts(accumulator.joinAlgorithmCounts));
+		metrics.put("structureSignatureRawSha256", sha256Hex(accumulator.structureRawSignature.toString()));
+		metrics.put("structureSignatureNormalizedSha256",
+				sha256Hex(accumulator.structureNormalizedSignature.toString()));
+		metrics.put("joinAlgorithmSignatureSha256", sha256Hex(accumulator.joinSignature.toString()));
+		metrics.put("actualResultSizesSignatureSha256", sha256Hex(accumulator.actualSignature.toString()));
+		metrics.put("estimatesSignatureSha256", sha256Hex(accumulator.estimatesSignature.toString()));
+		metrics.put("joinAlgorithmMultisetSignatureSha256",
+				multisetSignatureSha256(accumulator.joinAlgorithmMultisetTokens));
+		metrics.put("actualResultSizesMultisetSignatureSha256",
+				multisetSignatureSha256(accumulator.actualResultMultisetTokens));
+		metrics.put("estimatesMultisetSignatureSha256",
+				multisetSignatureSha256(accumulator.estimatesMultisetTokens));
+		metrics.put("statementPatternEstimatesMultisetSignatureSha256",
+				multisetSignatureSha256(accumulator.statementPatternEstimatesMultisetTokens));
+		metrics.put("statementPatternEstimateTokenCount",
+				Integer.toString(accumulator.statementPatternEstimatesMultisetTokens.size()));
+		metrics.put("modeledWorkUnits", toPlainString(accumulator.modeledWorkUnits));
+		metrics.put("modeledInputRowsSum", toPlainString(accumulator.modeledInputRowsSum));
+		metrics.put("modeledOutputRowsSum", toPlainString(accumulator.modeledOutputRowsSum));
+		metrics.put("modeledJoinInputRowsSum", toPlainString(accumulator.modeledJoinInputRowsSum));
+		metrics.put("modeledJoinOutputRowsSum", toPlainString(accumulator.modeledJoinOutputRowsSum));
+		metrics.put("modeledSelfTimeActualSum", toPlainString(accumulator.modeledSelfTimeActualSum));
+		metrics.put("modeledTotalTimeActualSum", toPlainString(accumulator.modeledTotalTimeActualSum));
+		metrics.put("modeledBarrierCount", Integer.toString(accumulator.modeledBarrierCount));
+		String modeledWorkByCategory = formatModeledWorkByCategory(accumulator.modeledWorkByCategory);
+		metrics.put("modeledWorkByCategory", modeledWorkByCategory);
+		String modeledOperatorCountByCategory = formatIntegerMap(accumulator.modeledOperatorCountByCategory);
+		metrics.put("modeledOperatorCountByCategory", modeledOperatorCountByCategory);
+		metrics.put("modeledOperatorCountByCategorySignatureSha256", sha256Hex(modeledOperatorCountByCategory));
+		String modeledInputRowsByCategory = formatModeledWorkByCategory(accumulator.modeledInputRowsByCategory);
+		metrics.put("modeledInputRowsByCategory", modeledInputRowsByCategory);
+		metrics.put("modeledInputRowsByCategorySignatureSha256", sha256Hex(modeledInputRowsByCategory));
+		String modeledOutputRowsByCategory = formatModeledWorkByCategory(accumulator.modeledOutputRowsByCategory);
+		metrics.put("modeledOutputRowsByCategory", modeledOutputRowsByCategory);
+		metrics.put("modeledOutputRowsByCategorySignatureSha256", sha256Hex(modeledOutputRowsByCategory));
+		BigDecimal modeledFilterInputRowsSum = accumulator.modeledInputRowsByCategory
+				.getOrDefault("filter", BigDecimal.ZERO);
+		BigDecimal modeledFilterOutputRowsSum = accumulator.modeledOutputRowsByCategory
+				.getOrDefault("filter", BigDecimal.ZERO);
+		metrics.put("modeledFilterInputRowsSum", toPlainString(modeledFilterInputRowsSum));
+		metrics.put("modeledFilterOutputRowsSum", toPlainString(modeledFilterOutputRowsSum));
+		if (modeledFilterInputRowsSum.signum() > 0) {
+			BigDecimal passRatio = modeledFilterOutputRowsSum
+					.divide(modeledFilterInputRowsSum, 6, RoundingMode.HALF_UP);
+			BigDecimal rejectRatio = BigDecimal.ONE.subtract(passRatio).max(BigDecimal.ZERO);
+			metrics.put("modeledFilterPassRatio", toPlainString(passRatio));
+			metrics.put("modeledFilterRejectRatio", toPlainString(rejectRatio));
+		} else {
+			metrics.put("modeledFilterPassRatio", "0");
+			metrics.put("modeledFilterRejectRatio", "0");
+		}
+		String modeledJoinWorkByAlgorithm = formatModeledWorkByCategory(accumulator.modeledJoinWorkByAlgorithm);
+		metrics.put("modeledJoinWorkByAlgorithm", modeledJoinWorkByAlgorithm);
+		metrics.put("modeledJoinWorkByAlgorithmSignatureSha256", sha256Hex(modeledJoinWorkByAlgorithm));
+		String modeledWorkVector = formatModeledWorkVector(accumulator, modeledWorkByCategory,
+				modeledOperatorCountByCategory, modeledJoinWorkByAlgorithm);
+		metrics.put("modeledWorkVector", modeledWorkVector);
+		metrics.put("modeledWorkVectorSignatureSha256", sha256Hex(modeledWorkVector));
+		String operatorWorkByTypeAlgorithm = formatOperatorWorkByTypeAlgorithm(accumulator.operatorWorkByTypeAlgorithm);
+		metrics.put("operatorWorkByTypeAlgorithm", operatorWorkByTypeAlgorithm);
+		metrics.put("operatorWorkBreakdownSignatureSha256", sha256Hex(operatorWorkByTypeAlgorithm));
+		metrics.put("operatorWorkTopContributors",
+				formatTopOperatorWorkContributors(accumulator.operatorWorkByTypeAlgorithm));
+		metrics.put("estimateActualComparableNodeCount",
+				Integer.toString(accumulator.estimateActualComparableNodeCount));
+		metrics.put("estimateActualAbsErrorSum", toPlainString(accumulator.estimateActualAbsErrorSum));
+		metrics.put("estimateActualRelativeErrorMean",
+				toPlainString(safeMean(accumulator.estimateActualRelativeErrorSum,
+						accumulator.estimateActualComparableNodeCount)));
+		metrics.put("estimateActualQErrorP50", toPlainString(quantile(accumulator.estimateActualQErrorSamples, 0.50d)));
+		metrics.put("estimateActualQErrorP95", toPlainString(quantile(accumulator.estimateActualQErrorSamples, 0.95d)));
+		metrics.put("estimateActualQErrorMax", toPlainString(maxValue(accumulator.estimateActualQErrorSamples)));
+		metrics.put("joinEstimateActualComparableNodeCount",
+				Integer.toString(accumulator.joinEstimateActualComparableNodeCount));
+		metrics.put("joinEstimateActualQErrorP50",
+				toPlainString(quantile(accumulator.joinEstimateActualQErrorSamples, 0.50d)));
+		metrics.put("joinEstimateActualQErrorP95",
+				toPlainString(quantile(accumulator.joinEstimateActualQErrorSamples, 0.95d)));
+		metrics.put("joinEstimateActualQErrorMax",
+				toPlainString(maxValue(accumulator.joinEstimateActualQErrorSamples)));
+
+		if (accumulator.costEstimateCount > 0) {
+			metrics.put("costEstimateSum", toPlainString(accumulator.costEstimateSum));
+			metrics.put("costEstimateMax", toPlainString(accumulator.costEstimateMax));
+		}
+		if (accumulator.resultSizeEstimateCount > 0) {
+			metrics.put("resultSizeEstimateSum", toPlainString(accumulator.resultSizeEstimateSum));
+			metrics.put("resultSizeEstimateMax", toPlainString(accumulator.resultSizeEstimateMax));
+		}
+		if (accumulator.resultSizeActualCount > 0) {
+			metrics.put("resultSizeActualSum", toPlainString(accumulator.resultSizeActualSum));
+			metrics.put("resultSizeActualMax", toPlainString(accumulator.resultSizeActualMax));
+		}
+
+		return metrics;
+	}
+
+	private static void appendIteratorTelemetry(TupleExpr tupleExpr, Map<String, String> metrics) {
+		if (tupleExpr == null || metrics == null) {
+			return;
+		}
+
+		IteratorTelemetryAccumulator accumulator = new IteratorTelemetryAccumulator();
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) throws RuntimeException {
+				accumulator.nodeCount++;
+				if (node instanceof Join || node instanceof LeftJoin) {
+					accumulator.joinNodeCount++;
+				}
+				accumulator.hasNextCallCountSum += positiveLong(node.getHasNextCallCountActual());
+				accumulator.hasNextTrueCountSum += positiveLong(node.getHasNextTrueCountActual());
+				accumulator.hasNextTimeNanosSum += positiveLong(node.getHasNextTimeNanosActual());
+				accumulator.nextCallCountSum += positiveLong(node.getNextCallCountActual());
+				accumulator.nextTimeNanosSum += positiveLong(node.getNextTimeNanosActual());
+				accumulator.joinRightIteratorsCreatedCountSum += positiveLong(
+						node.getJoinRightIteratorsCreatedActual());
+				accumulator.joinLeftBindingsConsumedCountSum += positiveLong(node.getJoinLeftBindingsConsumedActual());
+				accumulator.joinRightBindingsConsumedCountSum += positiveLong(
+						node.getJoinRightBindingsConsumedActual());
+				accumulator.sourceRowsScannedCountSum += positiveLong(node.getSourceRowsScannedActual());
+				accumulator.sourceRowsMatchedCountSum += positiveLong(node.getSourceRowsMatchedActual());
+				accumulator.sourceRowsFilteredCountSum += positiveLong(node.getSourceRowsFilteredActual());
+				super.meetNode(node);
+			}
+		});
+
+		metrics.put("modeledHasNextCallCountSum", Long.toString(accumulator.hasNextCallCountSum));
+		metrics.put("modeledHasNextTrueCountSum", Long.toString(accumulator.hasNextTrueCountSum));
+		metrics.put("modeledHasNextTimeNanosSum", Long.toString(accumulator.hasNextTimeNanosSum));
+		metrics.put("modeledNextCallCountSum", Long.toString(accumulator.nextCallCountSum));
+		metrics.put("modeledNextTimeNanosSum", Long.toString(accumulator.nextTimeNanosSum));
+		metrics.put("modeledJoinRightIteratorCreateCountSum",
+				Long.toString(accumulator.joinRightIteratorsCreatedCountSum));
+		metrics.put("modeledJoinLeftBindingSetConsumedCountSum",
+				Long.toString(accumulator.joinLeftBindingsConsumedCountSum));
+		metrics.put("modeledJoinRightBindingSetConsumedCountSum",
+				Long.toString(accumulator.joinRightBindingsConsumedCountSum));
+		metrics.put("modeledJoinTelemetryNodeCount", Integer.toString(accumulator.joinNodeCount));
+		if (accumulator.joinLeftBindingsConsumedCountSum > 0L) {
+			metrics.put("modeledJoinRightBindingsPerLeftRatio",
+					toPlainString(BigDecimal.valueOf(accumulator.joinRightBindingsConsumedCountSum)
+							.divide(BigDecimal.valueOf(accumulator.joinLeftBindingsConsumedCountSum), 6,
+									RoundingMode.HALF_UP)));
+		} else {
+			metrics.put("modeledJoinRightBindingsPerLeftRatio", "0");
+		}
+		if (accumulator.joinRightIteratorsCreatedCountSum > 0L) {
+			metrics.put("modeledJoinRightBindingSetConsumedPerRightIteratorAverage",
+					toPlainString(BigDecimal.valueOf(accumulator.joinRightBindingsConsumedCountSum)
+							.divide(BigDecimal.valueOf(accumulator.joinRightIteratorsCreatedCountSum), 6,
+									RoundingMode.HALF_UP)));
+		} else {
+			metrics.put("modeledJoinRightBindingSetConsumedPerRightIteratorAverage", "0");
+		}
+		if (accumulator.joinNodeCount > 0) {
+			metrics.put("modeledJoinRightIteratorCreatePerJoinNodeAverage",
+					toPlainString(BigDecimal.valueOf(accumulator.joinRightIteratorsCreatedCountSum)
+							.divide(BigDecimal.valueOf(accumulator.joinNodeCount), 6, RoundingMode.HALF_UP)));
+			metrics.put("modeledJoinLeftBindingSetConsumedPerJoinNodeAverage",
+					toPlainString(BigDecimal.valueOf(accumulator.joinLeftBindingsConsumedCountSum)
+							.divide(BigDecimal.valueOf(accumulator.joinNodeCount), 6, RoundingMode.HALF_UP)));
+			metrics.put("modeledJoinRightBindingSetConsumedPerJoinNodeAverage",
+					toPlainString(BigDecimal.valueOf(accumulator.joinRightBindingsConsumedCountSum)
+							.divide(BigDecimal.valueOf(accumulator.joinNodeCount), 6, RoundingMode.HALF_UP)));
+		} else {
+			metrics.put("modeledJoinRightIteratorCreatePerJoinNodeAverage", "0");
+			metrics.put("modeledJoinLeftBindingSetConsumedPerJoinNodeAverage", "0");
+			metrics.put("modeledJoinRightBindingSetConsumedPerJoinNodeAverage", "0");
+		}
+		metrics.put("modeledSourceRowsScannedSum", Long.toString(accumulator.sourceRowsScannedCountSum));
+		metrics.put("modeledSourceRowsMatchedSum", Long.toString(accumulator.sourceRowsMatchedCountSum));
+		metrics.put("modeledSourceRowsFilteredSum", Long.toString(accumulator.sourceRowsFilteredCountSum));
+		if (accumulator.sourceRowsScannedCountSum > 0L) {
+			metrics.put("modeledSourceFilterOutRatio",
+					toPlainString(BigDecimal.valueOf(accumulator.sourceRowsFilteredCountSum)
+							.divide(BigDecimal.valueOf(accumulator.sourceRowsScannedCountSum), 6,
+									RoundingMode.HALF_UP)));
+		} else {
+			metrics.put("modeledSourceFilterOutRatio", "0");
+		}
+		metrics.put("modeledIteratorTelemetryNodeCount", Integer.toString(accumulator.nodeCount));
+		metrics.put("modeledHasNextTimeMillisSum",
+				toPlainString(BigDecimal.valueOf(accumulator.hasNextTimeNanosSum)
+						.divide(BigDecimal.valueOf(1_000_000L), 6, RoundingMode.HALF_UP)));
+		metrics.put("modeledNextTimeMillisSum",
+				toPlainString(BigDecimal.valueOf(accumulator.nextTimeNanosSum)
+						.divide(BigDecimal.valueOf(1_000_000L), 6, RoundingMode.HALF_UP)));
+
+		if (accumulator.nextCallCountSum > 0L) {
+			metrics.put("modeledHasNextPerNextRatio",
+					toPlainString(BigDecimal.valueOf(accumulator.hasNextCallCountSum)
+							.divide(BigDecimal.valueOf(accumulator.nextCallCountSum), 6, RoundingMode.HALF_UP)));
+			metrics.put("modeledHasNextTruePerNextRatio",
+					toPlainString(BigDecimal.valueOf(accumulator.hasNextTrueCountSum)
+							.divide(BigDecimal.valueOf(accumulator.nextCallCountSum), 6, RoundingMode.HALF_UP)));
+		}
+	}
+
+	private static void appendDebugSignatures(JsonNode node, int depth, DebugMetricAccumulator accumulator) {
+		if (node == null || node.isNull()) {
+			appendAllNullTokens(accumulator);
+			return;
+		}
+
+		String rawType = readText(node, "type");
+		String normalizedType = canonicalizeType(rawType);
+		List<JsonNode> children = readChildren(node);
+		int childCount = children.size();
+
+		accumulator.planNodeCount++;
+		accumulator.maxDepth = Math.max(accumulator.maxDepth, depth);
+		accumulator.maxBranchingFactor = Math.max(accumulator.maxBranchingFactor, childCount);
+		accumulator.anonymousTypeTokenCount += countAnonymousTokens(rawType);
+		if (childCount == 0) {
+			accumulator.leafNodeCount++;
+		}
+		if (normalizedType.contains("Join")) {
+			accumulator.joinNodeCount++;
+		}
+		if (normalizedType.startsWith("Filter")) {
+			accumulator.filterNodeCount++;
+		}
+		if (normalizedType.startsWith("StatementPattern")) {
+			accumulator.statementPatternCount++;
+		}
+
+		String algorithm = readText(node, "algorithm");
+		BigDecimal outputRows = modeledRows(node);
+		BigDecimal unaryInputRows = modeledUnaryInputRows(outputRows, children);
+		BigDecimal leftRows = modeledJoinInputRows(children, 0, outputRows);
+		BigDecimal rightRows = modeledJoinInputRows(children, 1, BigDecimal.ZERO);
+		double modeledSelfWork = modeledSelfWork(normalizedType, algorithm, outputRows.doubleValue(),
+				unaryInputRows.doubleValue(), leftRows.doubleValue(), rightRows.doubleValue());
+		BigDecimal modeledSelfWorkDecimal = BigDecimal.valueOf(modeledSelfWork);
+		accumulator.modeledWorkUnits = accumulator.modeledWorkUnits.add(modeledSelfWorkDecimal);
+		accumulator.modeledInputRowsSum = accumulator.modeledInputRowsSum.add(unaryInputRows);
+		accumulator.modeledOutputRowsSum = accumulator.modeledOutputRowsSum.add(outputRows);
+		String modeledWorkCategory = modeledWorkCategory(normalizedType);
+		accumulator.modeledWorkByCategory.merge(modeledWorkCategory, modeledSelfWorkDecimal, BigDecimal::add);
+		accumulator.modeledOperatorCountByCategory.merge(modeledWorkCategory, 1, Integer::sum);
+		accumulator.modeledInputRowsByCategory.merge(modeledWorkCategory, unaryInputRows, BigDecimal::add);
+		accumulator.modeledOutputRowsByCategory.merge(modeledWorkCategory, outputRows, BigDecimal::add);
+		if (isJoinType(normalizedType)) {
+			accumulator.modeledJoinInputRowsSum = accumulator.modeledJoinInputRowsSum.add(leftRows).add(rightRows);
+			accumulator.modeledJoinOutputRowsSum = accumulator.modeledJoinOutputRowsSum.add(outputRows);
+			accumulator.modeledJoinWorkByAlgorithm.merge(canonicalAlgorithmForWork(algorithm), modeledSelfWorkDecimal,
+					BigDecimal::add);
+		}
+		if (isBarrierType(normalizedType)) {
+			accumulator.modeledBarrierCount++;
+		}
+		BigDecimal resultSizeEstimateValue = parseDecimalToken(node, "resultSizeEstimate");
+		BigDecimal resultSizeActualValue = parseDecimalToken(node, "resultSizeActual");
+		recordEstimateAccuracy(accumulator, resultSizeEstimateValue, resultSizeActualValue, isJoinType(normalizedType));
+		BigDecimal selfTimeActual = parseDecimalToken(node, "selfTimeActual");
+		if (selfTimeActual != null) {
+			accumulator.modeledSelfTimeActualSum = accumulator.modeledSelfTimeActualSum.add(selfTimeActual);
+		}
+		BigDecimal totalTimeActual = parseDecimalToken(node, "totalTimeActual");
+		if (totalTimeActual != null) {
+			accumulator.modeledTotalTimeActualSum = accumulator.modeledTotalTimeActualSum.add(totalTimeActual);
+		}
+
+		String operatorWorkKey = normalizedType + "[" + canonicalAlgorithmForWork(algorithm) + "]";
+		OperatorWorkAccumulator operatorWorkAccumulator = accumulator.operatorWorkByTypeAlgorithm
+				.computeIfAbsent(operatorWorkKey, key -> new OperatorWorkAccumulator());
+		operatorWorkAccumulator.nodeCount++;
+		operatorWorkAccumulator.workUnits = operatorWorkAccumulator.workUnits.add(modeledSelfWorkDecimal);
+		operatorWorkAccumulator.inputRows = operatorWorkAccumulator.inputRows.add(unaryInputRows);
+		operatorWorkAccumulator.outputRows = operatorWorkAccumulator.outputRows.add(outputRows);
+		if (selfTimeActual != null) {
+			operatorWorkAccumulator.selfTimeActual = operatorWorkAccumulator.selfTimeActual.add(selfTimeActual);
+		}
+		if (totalTimeActual != null) {
+			operatorWorkAccumulator.totalTimeActual = operatorWorkAccumulator.totalTimeActual.add(totalTimeActual);
+		}
+
+		accumulator.structureRawSignature.append('(').append(rawType);
+		accumulator.structureNormalizedSignature.append('(').append(normalizedType);
+
+		accumulator.joinSignature.append('(').append(normalizedType);
+		if (normalizedType.contains("Join")) {
+			accumulator.joinSignature.append("|algorithm=").append(algorithm);
+			accumulator.joinAlgorithmCounts.merge(algorithm, 1, Integer::sum);
+			accumulator.joinAlgorithmMultisetTokens.add(normalizedType + "|algorithm=" + algorithm);
+		}
+
+		String actual = readNumberToken(node, "resultSizeActual");
+		accumulator.actualSignature.append('(')
+				.append(normalizedType)
+				.append("|resultSizeActual=")
+				.append(actual);
+		accumulator.actualResultMultisetTokens.add(normalizedType + "|resultSizeActual=" + actual);
+		updateAggregate(actual, AggregateKind.ACTUAL_RESULT_SIZE, accumulator);
+
+		String cost = readNumberToken(node, "costEstimate");
+		String estimate = readNumberToken(node, "resultSizeEstimate");
+		accumulator.estimatesSignature.append('(')
+				.append(normalizedType)
+				.append("|costEstimate=")
+				.append(cost)
+				.append("|resultSizeEstimate=")
+				.append(estimate);
+		accumulator.estimatesMultisetTokens
+				.add(normalizedType + "|costEstimate=" + cost + "|resultSizeEstimate=" + estimate);
+		if (normalizedType.startsWith("StatementPattern")) {
+			accumulator.statementPatternEstimatesMultisetTokens
+					.add("costEstimate=" + cost + "|resultSizeEstimate=" + estimate);
+		}
+		updateAggregate(cost, AggregateKind.COST_ESTIMATE, accumulator);
+		updateAggregate(estimate, AggregateKind.RESULT_SIZE_ESTIMATE, accumulator);
+
+		for (JsonNode child : children) {
+			appendDebugSignatures(child, depth + 1, accumulator);
+		}
+
+		accumulator.structureRawSignature.append(')');
+		accumulator.structureNormalizedSignature.append(')');
+		accumulator.joinSignature.append(')');
+		accumulator.actualSignature.append(')');
+		accumulator.estimatesSignature.append(')');
+	}
+
+	private static void appendAllNullTokens(DebugMetricAccumulator accumulator) {
+		accumulator.structureRawSignature.append("null");
+		accumulator.structureNormalizedSignature.append("null");
+		accumulator.joinSignature.append("null");
+		accumulator.actualSignature.append("null");
+		accumulator.estimatesSignature.append("null");
+	}
+
+	private static void updateAggregate(String token, AggregateKind kind, DebugMetricAccumulator accumulator) {
+		if (token == null || token.isBlank() || "<null>".equals(token)) {
+			return;
+		}
+		BigDecimal value;
+		try {
+			value = new BigDecimal(token);
+		} catch (NumberFormatException ignored) {
+			return;
+		}
+
+		switch (kind) {
+		case COST_ESTIMATE:
+			accumulator.costEstimateCount++;
+			accumulator.costEstimateSum = accumulator.costEstimateSum.add(value);
+			accumulator.costEstimateMax = accumulator.costEstimateMax == null
+					? value
+					: accumulator.costEstimateMax.max(value);
+			break;
+		case RESULT_SIZE_ESTIMATE:
+			accumulator.resultSizeEstimateCount++;
+			accumulator.resultSizeEstimateSum = accumulator.resultSizeEstimateSum.add(value);
+			accumulator.resultSizeEstimateMax = accumulator.resultSizeEstimateMax == null
+					? value
+					: accumulator.resultSizeEstimateMax.max(value);
+			break;
+		case ACTUAL_RESULT_SIZE:
+			accumulator.resultSizeActualCount++;
+			accumulator.resultSizeActualSum = accumulator.resultSizeActualSum.add(value);
+			accumulator.resultSizeActualMax = accumulator.resultSizeActualMax == null
+					? value
+					: accumulator.resultSizeActualMax.max(value);
+			break;
+		default:
+			throw new IllegalStateException("Unhandled aggregate kind: " + kind);
+		}
+	}
+
+	private static String formatJoinAlgorithmCounts(Map<String, Integer> joinAlgorithmCounts) {
+		if (joinAlgorithmCounts.isEmpty()) {
+			return "<none>";
+		}
+		StringBuilder value = new StringBuilder();
+		boolean first = true;
+		for (Map.Entry<String, Integer> entry : joinAlgorithmCounts.entrySet()) {
+			if (!first) {
+				value.append(',');
+			}
+			value.append(entry.getKey()).append('=').append(entry.getValue());
+			first = false;
+		}
+		return value.toString();
+	}
+
+	private static List<JsonNode> readChildren(JsonNode node) {
+		JsonNode plans = node.get("plans");
+		if (plans == null || !plans.isArray()) {
+			return List.of();
+		}
+		ArrayList<JsonNode> children = new ArrayList<>(plans.size());
+		for (JsonNode child : plans) {
+			children.add(child);
+		}
+		return children;
+	}
+
+	private static BigDecimal modeledRows(JsonNode node) {
+		BigDecimal actualRows = parseDecimalToken(node, "resultSizeActual");
+		if (actualRows != null) {
+			return actualRows.max(BigDecimal.ZERO);
+		}
+		BigDecimal estimatedRows = parseDecimalToken(node, "resultSizeEstimate");
+		if (estimatedRows != null) {
+			return estimatedRows.max(BigDecimal.ZERO);
+		}
+		return BigDecimal.ZERO;
+	}
+
+	private static BigDecimal modeledUnaryInputRows(BigDecimal fallbackOutputRows, List<JsonNode> children) {
+		for (int i = children.size() - 1; i >= 0; i--) {
+			JsonNode child = children.get(i);
+			if (isTupleChild(child)) {
+				return modeledRows(child);
+			}
+		}
+		return fallbackOutputRows;
+	}
+
+	private static BigDecimal modeledJoinInputRows(List<JsonNode> children, int tupleChildIndex,
+			BigDecimal fallbackRows) {
+		int seenTupleChildren = 0;
+		for (JsonNode child : children) {
+			if (!isTupleChild(child)) {
+				continue;
+			}
+			if (seenTupleChildren == tupleChildIndex) {
+				return modeledRows(child);
+			}
+			seenTupleChildren++;
+		}
+		return fallbackRows;
+	}
+
+	private static boolean isTupleChild(JsonNode node) {
+		return parseDecimalToken(node, "resultSizeActual") != null
+				|| parseDecimalToken(node, "resultSizeEstimate") != null
+				|| parseDecimalToken(node, "costEstimate") != null
+				|| parseDecimalToken(node, "totalTimeActual") != null;
+	}
+
+	private static double modeledSelfWork(String normalizedType, String algorithm, double outputRows,
+			double unaryInputRows, double leftRows, double rightRows) {
+		if (outputRows <= 0.0d) {
+			return 0.0d;
+		}
+		String lowerType = lowerTypeToken(normalizedType);
+		if (lowerType.contains("statementpattern")) {
+			return MODELED_WORK_SCAN_PER_ROW * outputRows;
+		}
+		if (lowerType.contains("filter")) {
+			return MODELED_WORK_FILTER_PER_INPUT_ROW * unaryInputRows;
+		}
+		if (lowerType.contains("projection")) {
+			return MODELED_WORK_PROJECTION_PER_INPUT_ROW * unaryInputRows;
+		}
+		if (lowerType.contains("extension") || lowerType.contains("bind")) {
+			return MODELED_WORK_EXTENSION_PER_INPUT_ROW * unaryInputRows;
+		}
+		if (lowerType.contains("union")) {
+			return MODELED_WORK_UNION_PER_OUTPUT_ROW * outputRows;
+		}
+		if (lowerType.contains("service")) {
+			return MODELED_WORK_SERVICE_FACTOR * outputRows;
+		}
+		if (lowerType.contains("arbitrarylengthpath") || lowerType.contains("path")) {
+			return MODELED_WORK_PATH_FACTOR * outputRows;
+		}
+		if (lowerType.contains("order") || lowerType.contains("sort")) {
+			return MODELED_WORK_ORDER_FACTOR * modeledNLogN(unaryInputRows);
+		}
+		if (lowerType.contains("distinct") || lowerType.contains("reduced")) {
+			return MODELED_WORK_DISTINCT_FACTOR * modeledNLogN(unaryInputRows);
+		}
+		if (lowerType.contains("group") || lowerType.contains("aggregate")) {
+			return MODELED_WORK_GROUP_FACTOR * unaryInputRows;
+		}
+		if (lowerType.contains("join")) {
+			return modeledJoinFactor(algorithm) * (leftRows + rightRows + outputRows);
+		}
+		return MODELED_WORK_UNKNOWN_PER_ROW * outputRows;
+	}
+
+	private static String modeledWorkCategory(String normalizedType) {
+		String lowerType = lowerTypeToken(normalizedType);
+		if (lowerType.contains("statementpattern")) {
+			return "scan";
+		}
+		if (lowerType.contains("filter")) {
+			return "filter";
+		}
+		if (lowerType.contains("projection")) {
+			return "projection";
+		}
+		if (lowerType.contains("extension") || lowerType.contains("bind")) {
+			return "extension";
+		}
+		if (lowerType.contains("union")) {
+			return "union";
+		}
+		if (lowerType.contains("service")) {
+			return "service";
+		}
+		if (lowerType.contains("arbitrarylengthpath") || lowerType.contains("path")) {
+			return "path";
+		}
+		if (lowerType.contains("order") || lowerType.contains("sort")) {
+			return "sort";
+		}
+		if (lowerType.contains("distinct") || lowerType.contains("reduced")) {
+			return "distinct";
+		}
+		if (lowerType.contains("group") || lowerType.contains("aggregate")) {
+			return "group";
+		}
+		if (lowerType.contains("join")) {
+			return "join";
+		}
+		return "unknown";
+	}
+
+	private static boolean isJoinType(String normalizedType) {
+		return lowerTypeToken(normalizedType).contains("join");
+	}
+
+	private static boolean isBarrierType(String normalizedType) {
+		String lowerType = lowerTypeToken(normalizedType);
+		return lowerType.contains("order")
+				|| lowerType.contains("sort")
+				|| lowerType.contains("distinct")
+				|| lowerType.contains("reduced")
+				|| lowerType.contains("group")
+				|| lowerType.contains("aggregate")
+				|| lowerType.contains("materialize")
+				|| lowerType.contains("spool")
+				|| lowerType.contains("exchange");
+	}
+
+	private static String lowerTypeToken(String normalizedType) {
+		return normalizedType == null ? "" : normalizedType.toLowerCase(Locale.ROOT);
+	}
+
+	private static double modeledJoinFactor(String algorithm) {
+		if (algorithm == null) {
+			return MODELED_WORK_JOIN_BIND_FACTOR;
+		}
+		String lowerAlgorithm = algorithm.toLowerCase(Locale.ROOT);
+		if (lowerAlgorithm.contains("hash")) {
+			return MODELED_WORK_JOIN_HASH_FACTOR;
+		}
+		if (lowerAlgorithm.contains("merge")) {
+			return MODELED_WORK_JOIN_MERGE_FACTOR;
+		}
+		return MODELED_WORK_JOIN_BIND_FACTOR;
+	}
+
+	private static double modeledNLogN(double value) {
+		if (value <= 1.0d) {
+			return value;
+		}
+		return value * (Math.log(value) / Math.log(2.0d));
+	}
+
+	private static BigDecimal parseDecimalToken(JsonNode node, String field) {
+		JsonNode value = node.get(field);
+		if (value == null || value.isNull()) {
+			return null;
+		}
+		try {
+			return new BigDecimal(value.asText());
+		} catch (NumberFormatException ignored) {
+			return null;
+		}
+	}
+
+	private static long positiveLong(long value) {
+		return Math.max(0L, value);
+	}
+
+	private static String formatOperatorWorkByTypeAlgorithm(Map<String, OperatorWorkAccumulator> operatorWorkByType) {
+		if (operatorWorkByType.isEmpty()) {
+			return "<none>";
+		}
+		ArrayList<String> tokens = new ArrayList<>();
+		for (Map.Entry<String, OperatorWorkAccumulator> entry : operatorWorkByType.entrySet()) {
+			OperatorWorkAccumulator value = entry.getValue();
+			tokens.add(entry.getKey()
+					+ "|nodes=" + value.nodeCount
+					+ "|workUnits=" + toPlainString(value.workUnits)
+					+ "|inputRows=" + toPlainString(value.inputRows)
+					+ "|outputRows=" + toPlainString(value.outputRows)
+					+ "|selfTimeActual=" + toPlainString(value.selfTimeActual)
+					+ "|totalTimeActual=" + toPlainString(value.totalTimeActual));
+		}
+		Collections.sort(tokens);
+		return String.join(";", tokens);
+	}
+
+	private static String formatModeledWorkByCategory(Map<String, BigDecimal> modeledWorkByCategory) {
+		if (modeledWorkByCategory.isEmpty()) {
+			return "<none>";
+		}
+		ArrayList<String> tokens = new ArrayList<>();
+		for (Map.Entry<String, BigDecimal> entry : modeledWorkByCategory.entrySet()) {
+			tokens.add(entry.getKey() + "=" + toPlainString(entry.getValue()));
+		}
+		Collections.sort(tokens);
+		return String.join(";", tokens);
+	}
+
+	private static String formatIntegerMap(Map<String, Integer> values) {
+		if (values.isEmpty()) {
+			return "<none>";
+		}
+		ArrayList<String> tokens = new ArrayList<>();
+		for (Map.Entry<String, Integer> entry : values.entrySet()) {
+			tokens.add(entry.getKey() + "=" + entry.getValue());
+		}
+		Collections.sort(tokens);
+		return String.join(";", tokens);
+	}
+
+	private static String formatModeledWorkVector(DebugMetricAccumulator accumulator, String modeledWorkByCategory,
+			String modeledOperatorCountByCategory, String modeledJoinWorkByAlgorithm) {
+		return "workUnits=" + toPlainString(accumulator.modeledWorkUnits)
+				+ "|barrierCount=" + accumulator.modeledBarrierCount
+				+ "|joinInputRowsSum=" + toPlainString(accumulator.modeledJoinInputRowsSum)
+				+ "|joinOutputRowsSum=" + toPlainString(accumulator.modeledJoinOutputRowsSum)
+				+ "|operatorCountByCategory=" + modeledOperatorCountByCategory
+				+ "|joinWorkByAlgorithm=" + modeledJoinWorkByAlgorithm
+				+ "|categories=" + modeledWorkByCategory;
+	}
+
+	private static void recordEstimateAccuracy(DebugMetricAccumulator accumulator, BigDecimal resultSizeEstimateValue,
+			BigDecimal resultSizeActualValue, boolean joinType) {
+		if (resultSizeEstimateValue == null || resultSizeActualValue == null) {
+			return;
+		}
+
+		BigDecimal estimate = resultSizeEstimateValue.abs();
+		BigDecimal actual = resultSizeActualValue.abs();
+		BigDecimal absError = estimate.subtract(actual).abs();
+		BigDecimal denominator = actual.max(BigDecimal.ONE);
+		BigDecimal relativeError = absError.divide(denominator, 12, RoundingMode.HALF_UP);
+		BigDecimal qError = qError(estimate, actual);
+		accumulator.estimateActualComparableNodeCount++;
+		accumulator.estimateActualAbsErrorSum = accumulator.estimateActualAbsErrorSum.add(absError);
+		accumulator.estimateActualRelativeErrorSum = accumulator.estimateActualRelativeErrorSum.add(relativeError);
+		accumulator.estimateActualQErrorSamples.add(qError);
+		if (joinType) {
+			accumulator.joinEstimateActualComparableNodeCount++;
+			accumulator.joinEstimateActualQErrorSamples.add(qError);
+		}
+	}
+
+	private static BigDecimal qError(BigDecimal estimate, BigDecimal actual) {
+		BigDecimal estimateSafe = estimate.max(BigDecimal.ONE);
+		BigDecimal actualSafe = actual.max(BigDecimal.ONE);
+		BigDecimal forward = estimateSafe.divide(actualSafe, 12, RoundingMode.HALF_UP);
+		BigDecimal reverse = actualSafe.divide(estimateSafe, 12, RoundingMode.HALF_UP);
+		return forward.max(reverse);
+	}
+
+	private static BigDecimal safeMean(BigDecimal sum, int count) {
+		if (count <= 0) {
+			return BigDecimal.ZERO;
+		}
+		return sum.divide(BigDecimal.valueOf(count), 12, RoundingMode.HALF_UP);
+	}
+
+	private static BigDecimal quantile(List<BigDecimal> values, double quantile) {
+		if (values.isEmpty()) {
+			return BigDecimal.ZERO;
+		}
+		ArrayList<BigDecimal> sorted = new ArrayList<>(values);
+		Collections.sort(sorted);
+		int index = (int) Math.ceil(quantile * sorted.size()) - 1;
+		if (index < 0) {
+			index = 0;
+		}
+		if (index >= sorted.size()) {
+			index = sorted.size() - 1;
+		}
+		return sorted.get(index);
+	}
+
+	private static BigDecimal maxValue(List<BigDecimal> values) {
+		if (values.isEmpty()) {
+			return BigDecimal.ZERO;
+		}
+		BigDecimal max = values.get(0);
+		for (int i = 1; i < values.size(); i++) {
+			max = max.max(values.get(i));
+		}
+		return max;
+	}
+
+	private static String formatTopOperatorWorkContributors(Map<String, OperatorWorkAccumulator> operatorWorkByType) {
+		if (operatorWorkByType.isEmpty()) {
+			return "<none>";
+		}
+		ArrayList<Map.Entry<String, OperatorWorkAccumulator>> entries = new ArrayList<>(operatorWorkByType.entrySet());
+		entries.sort(Comparator.<Map.Entry<String, OperatorWorkAccumulator>, BigDecimal>comparing(
+				entry -> entry.getValue().workUnits)
+				.reversed()
+				.thenComparing(Map.Entry::getKey));
+		ArrayList<String> topContributors = new ArrayList<>();
+		for (int i = 0; i < Math.min(OPERATOR_WORK_TOP_CONTRIBUTOR_LIMIT, entries.size()); i++) {
+			Map.Entry<String, OperatorWorkAccumulator> entry = entries.get(i);
+			topContributors.add(entry.getKey() + ":" + toPlainString(entry.getValue().workUnits));
+		}
+		return String.join(";", topContributors);
+	}
+
+	private static String canonicalAlgorithmForWork(String algorithm) {
+		if (algorithm == null || algorithm.isBlank() || "<null>".equals(algorithm)) {
+			return "UNKNOWN";
+		}
+		return algorithm;
+	}
+
+	private static int countAnonymousTokens(String value) {
+		if (value == null || value.isBlank()) {
+			return 0;
+		}
+		int count = 0;
+		Matcher matcher = ANONYMOUS_VARIABLE_TOKEN_PATTERN.matcher(value);
+		while (matcher.find()) {
+			count++;
+		}
+		return count;
+	}
+
+	private static String canonicalizeType(String type) {
+		if (type == null || type.isBlank()) {
+			return "<null>";
+		}
+		return ANONYMOUS_VARIABLE_NAME_PATTERN.matcher(type).replaceAll("$1<normalized>");
+	}
+
+	private static String readText(JsonNode node, String field) {
+		JsonNode value = node.get(field);
+		if (value == null || value.isNull()) {
+			return "<null>";
+		}
+		return value.asText();
+	}
+
+	private static String readNumberToken(JsonNode node, String field) {
+		JsonNode value = node.get(field);
+		if (value == null || value.isNull()) {
+			return "<null>";
+		}
+		String asText = value.asText();
+		try {
+			return new BigDecimal(asText).stripTrailingZeros().toPlainString();
+		} catch (NumberFormatException ignored) {
+			return asText;
+		}
+	}
+
+	private static String toPlainString(BigDecimal value) {
+		return value.stripTrailingZeros().toPlainString();
+	}
+
+	private static String multisetSignatureSha256(List<String> tokens) {
+		if (tokens.isEmpty()) {
+			return sha256Hex("<none>");
+		}
+		ArrayList<String> sorted = new ArrayList<>(tokens);
+		Collections.sort(sorted);
+		return sha256Hex(String.join("|", sorted));
+	}
+
+	private static String sha256Hex(String input) {
+		try {
+			MessageDigest digest = MessageDigest.getInstance("SHA-256");
+			byte[] bytes = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+			StringBuilder hex = new StringBuilder(bytes.length * 2);
+			for (byte value : bytes) {
+				hex.append(String.format("%02x", value));
+			}
+			return hex.toString();
+		} catch (NoSuchAlgorithmException e) {
+			throw new IllegalStateException("SHA-256 unavailable", e);
+		}
 	}
 
 	private void renderWithIr(TupleExpr tupleExpr, Function<TupleExpr, String> tupleExprRenderer,
@@ -292,5 +1186,86 @@ public final class QueryPlanCapture {
 				process.destroyForcibly();
 			}
 		}
+	}
+
+	private enum AggregateKind {
+		COST_ESTIMATE,
+		RESULT_SIZE_ESTIMATE,
+		ACTUAL_RESULT_SIZE
+	}
+
+	private static final class OperatorWorkAccumulator {
+		private int nodeCount;
+		private BigDecimal workUnits = BigDecimal.ZERO;
+		private BigDecimal inputRows = BigDecimal.ZERO;
+		private BigDecimal outputRows = BigDecimal.ZERO;
+		private BigDecimal selfTimeActual = BigDecimal.ZERO;
+		private BigDecimal totalTimeActual = BigDecimal.ZERO;
+	}
+
+	private static final class DebugMetricAccumulator {
+		private int planNodeCount;
+		private int maxDepth;
+		private int leafNodeCount;
+		private int maxBranchingFactor;
+		private int joinNodeCount;
+		private int filterNodeCount;
+		private int statementPatternCount;
+		private int anonymousTypeTokenCount;
+		private final StringBuilder structureRawSignature = new StringBuilder();
+		private final StringBuilder structureNormalizedSignature = new StringBuilder();
+		private final StringBuilder joinSignature = new StringBuilder();
+		private final StringBuilder actualSignature = new StringBuilder();
+		private final StringBuilder estimatesSignature = new StringBuilder();
+		private final LinkedHashMap<String, Integer> joinAlgorithmCounts = new LinkedHashMap<>();
+		private final ArrayList<String> joinAlgorithmMultisetTokens = new ArrayList<>();
+		private final ArrayList<String> actualResultMultisetTokens = new ArrayList<>();
+		private final ArrayList<String> estimatesMultisetTokens = new ArrayList<>();
+		private final ArrayList<String> statementPatternEstimatesMultisetTokens = new ArrayList<>();
+		private BigDecimal modeledWorkUnits = BigDecimal.ZERO;
+		private BigDecimal modeledInputRowsSum = BigDecimal.ZERO;
+		private BigDecimal modeledOutputRowsSum = BigDecimal.ZERO;
+		private BigDecimal modeledJoinInputRowsSum = BigDecimal.ZERO;
+		private BigDecimal modeledJoinOutputRowsSum = BigDecimal.ZERO;
+		private BigDecimal modeledSelfTimeActualSum = BigDecimal.ZERO;
+		private BigDecimal modeledTotalTimeActualSum = BigDecimal.ZERO;
+		private int modeledBarrierCount;
+		private final LinkedHashMap<String, BigDecimal> modeledWorkByCategory = new LinkedHashMap<>();
+		private final LinkedHashMap<String, Integer> modeledOperatorCountByCategory = new LinkedHashMap<>();
+		private final LinkedHashMap<String, BigDecimal> modeledInputRowsByCategory = new LinkedHashMap<>();
+		private final LinkedHashMap<String, BigDecimal> modeledOutputRowsByCategory = new LinkedHashMap<>();
+		private final LinkedHashMap<String, BigDecimal> modeledJoinWorkByAlgorithm = new LinkedHashMap<>();
+		private final LinkedHashMap<String, OperatorWorkAccumulator> operatorWorkByTypeAlgorithm = new LinkedHashMap<>();
+		private int estimateActualComparableNodeCount;
+		private BigDecimal estimateActualAbsErrorSum = BigDecimal.ZERO;
+		private BigDecimal estimateActualRelativeErrorSum = BigDecimal.ZERO;
+		private final ArrayList<BigDecimal> estimateActualQErrorSamples = new ArrayList<>();
+		private int joinEstimateActualComparableNodeCount;
+		private final ArrayList<BigDecimal> joinEstimateActualQErrorSamples = new ArrayList<>();
+		private BigDecimal costEstimateSum = BigDecimal.ZERO;
+		private BigDecimal costEstimateMax;
+		private int costEstimateCount;
+		private BigDecimal resultSizeEstimateSum = BigDecimal.ZERO;
+		private BigDecimal resultSizeEstimateMax;
+		private int resultSizeEstimateCount;
+		private BigDecimal resultSizeActualSum = BigDecimal.ZERO;
+		private BigDecimal resultSizeActualMax;
+		private int resultSizeActualCount;
+	}
+
+	private static final class IteratorTelemetryAccumulator {
+		private int nodeCount;
+		private int joinNodeCount;
+		private long hasNextCallCountSum;
+		private long hasNextTrueCountSum;
+		private long hasNextTimeNanosSum;
+		private long nextCallCountSum;
+		private long nextTimeNanosSum;
+		private long joinRightIteratorsCreatedCountSum;
+		private long joinLeftBindingsConsumedCountSum;
+		private long joinRightBindingsConsumedCountSum;
+		private long sourceRowsScannedCountSum;
+		private long sourceRowsMatchedCountSum;
+		private long sourceRowsFilteredCountSum;
 	}
 }

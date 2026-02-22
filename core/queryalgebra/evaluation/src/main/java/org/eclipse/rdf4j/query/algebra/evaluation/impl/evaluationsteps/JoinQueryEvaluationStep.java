@@ -31,8 +31,13 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	public JoinQueryEvaluationStep(EvaluationStrategy strategy, Join join, QueryEvaluationContext context) {
 		// efficient computation of a SERVICE join using vectored evaluation
 		// TODO maybe we can create a ServiceJoin node already in the parser?
-		QueryEvaluationStep leftPrepared = strategy.precompile(join.getLeftArg(), context);
-		QueryEvaluationStep rightPrepared = strategy.precompile(join.getRightArg(), context);
+		boolean runtimeTelemetryTrackingActive = strategy.isTrackResultSize() || strategy.isTrackTime();
+		QueryEvaluationStep leftPrepared = JoinMetricsTracking
+				.wrapLeftInput(strategy.precompile(join.getLeftArg(), context), join, join.getLeftArg(),
+						runtimeTelemetryTrackingActive);
+		QueryEvaluationStep rightPrepared = JoinMetricsTracking
+				.wrapRightInput(strategy.precompile(join.getRightArg(), context), join, join.getRightArg(),
+						runtimeTelemetryTrackingActive);
 		if (join.getRightArg() instanceof Service) {
 			eval = bindings -> new ServiceJoinIterator(leftPrepared.evaluate(bindings),
 					(Service) join.getRightArg(), bindings,

@@ -38,6 +38,7 @@ final class QueryPlanSnapshotCliOptions {
 	boolean persist = true;
 	DiffMode diffMode = DiffMode.STRUCTURE;
 	ComparisonPair compareIndices;
+	RunNamePair compareRunNames;
 	String comparisonFingerprint;
 	int argumentCount;
 	StoreType store;
@@ -48,8 +49,12 @@ final class QueryPlanSnapshotCliOptions {
 	Path outputDirectory;
 	String queryId;
 	String runName;
+	Path emitCsv;
 	Path lmdbDataDirectory;
 	Integer queryTimeoutSeconds;
+	Integer executionRepeatMinRuns;
+	Integer executionRepeatMaxRuns;
+	Long executionRepeatSoftLimitMillis;
 	final LinkedHashMap<String, String> systemProperties = new LinkedHashMap<>();
 	final LinkedHashMap<String, String> metadata = new LinkedHashMap<>();
 
@@ -69,6 +74,7 @@ final class QueryPlanSnapshotCliOptions {
 		copy.persist = persist;
 		copy.diffMode = diffMode;
 		copy.compareIndices = compareIndices;
+		copy.compareRunNames = compareRunNames;
 		copy.comparisonFingerprint = comparisonFingerprint;
 		copy.argumentCount = argumentCount;
 		copy.store = store;
@@ -79,8 +85,12 @@ final class QueryPlanSnapshotCliOptions {
 		copy.outputDirectory = outputDirectory;
 		copy.queryId = queryId;
 		copy.runName = runName;
+		copy.emitCsv = emitCsv;
 		copy.lmdbDataDirectory = lmdbDataDirectory;
 		copy.queryTimeoutSeconds = queryTimeoutSeconds;
+		copy.executionRepeatMinRuns = executionRepeatMinRuns;
+		copy.executionRepeatMaxRuns = executionRepeatMaxRuns;
+		copy.executionRepeatSoftLimitMillis = executionRepeatSoftLimitMillis;
 		copy.systemProperties.putAll(systemProperties);
 		copy.metadata.putAll(metadata);
 		return copy;
@@ -93,7 +103,8 @@ final class QueryPlanSnapshotCliOptions {
 	boolean hasComparisonFilter() {
 		return (queryId != null && !queryId.isBlank())
 				|| (comparisonFingerprint != null && !comparisonFingerprint.isBlank())
-				|| (runName != null && !runName.isBlank());
+				|| (runName != null && !runName.isBlank())
+				|| compareRunNames != null;
 	}
 
 	boolean isRunMode() {
@@ -143,8 +154,15 @@ final class QueryPlanSnapshotCliOptions {
 			case "--compare-indices":
 				options.compareIndices = parseComparisonPair(requireValue(args, ++i, arg), arg);
 				break;
+			case "--compare-run-names":
+				options.compareRunNames = parseRunNamePair(requireValue(args, ++i, arg), arg);
+				options.compareExisting = true;
+				break;
 			case "--fingerprint":
 				options.comparisonFingerprint = requireValue(args, ++i, arg);
+				break;
+			case "--emit-csv":
+				options.emitCsv = Path.of(requireValue(args, ++i, arg));
 				break;
 			case "--persist":
 				options.persist = parseBoolean(requireValue(args, ++i, arg), arg);
@@ -185,6 +203,15 @@ final class QueryPlanSnapshotCliOptions {
 			case "--query-timeout-seconds":
 				options.queryTimeoutSeconds = parseNonNegativeInteger(requireValue(args, ++i, arg), arg);
 				break;
+			case "--execution-repeat-min-runs":
+				options.executionRepeatMinRuns = parsePositiveInteger(requireValue(args, ++i, arg), arg);
+				break;
+			case "--execution-repeat-max-runs":
+				options.executionRepeatMaxRuns = parsePositiveInteger(requireValue(args, ++i, arg), arg);
+				break;
+			case "--execution-repeat-soft-limit-millis":
+				options.executionRepeatSoftLimitMillis = parsePositiveLong(requireValue(args, ++i, arg), arg);
+				break;
 			case "--property": {
 				Assignment assignment = parseAssignment(requireValue(args, ++i, arg), arg);
 				options.systemProperties.put(assignment.key, assignment.value);
@@ -221,17 +248,33 @@ final class QueryPlanSnapshotCliOptions {
 			if (options.runAllThemeQueries) {
 				throw new IllegalArgumentException("--all-theme-queries is only supported in run mode.");
 			}
+			if (options.compareRunNames != null) {
+				if (options.runName != null && !options.runName.isBlank()) {
+					throw new IllegalArgumentException("--compare-run-names cannot be combined with --run-name.");
+				}
+				if (options.comparisonFingerprint != null && !options.comparisonFingerprint.isBlank()) {
+					throw new IllegalArgumentException("--compare-run-names cannot be combined with --fingerprint.");
+				}
+				if (options.compareIndices != null) {
+					throw new IllegalArgumentException(
+							"--compare-run-names cannot be combined with --compare-indices.");
+				}
+			}
 			if (options.noInteractive && !options.hasComparisonFilter()) {
 				throw new IllegalArgumentException(
 						"--compare-existing with --no-interactive requires --query-id, --run-name, or --fingerprint.");
 			}
+			if (options.emitCsv != null && options.compareRunNames == null) {
+				throw new IllegalArgumentException("--emit-csv requires --compare-run-names.");
+			}
 			return;
 		}
 
+		if (options.emitCsv != null) {
+			throw new IllegalArgumentException("--emit-csv is only supported in --compare-existing mode.");
+		}
+
 		if (options.runAllThemeQueries) {
-			if (options.theme != null) {
-				throw new IllegalArgumentException("Do not combine --all-theme-queries with --theme.");
-			}
 			if (options.hasQueryInput()) {
 				throw new IllegalArgumentException(
 						"Do not combine --all-theme-queries with --query, --query-file, --query-index or --theme-query.");
@@ -257,6 +300,11 @@ final class QueryPlanSnapshotCliOptions {
 		if (options.noInteractive && missingRequiredRunOptions(options)) {
 			throw new IllegalArgumentException(
 					"--no-interactive requires --store, --theme and query input in run mode.");
+		}
+		if (options.executionRepeatMinRuns != null && options.executionRepeatMaxRuns != null
+				&& options.executionRepeatMinRuns > options.executionRepeatMaxRuns) {
+			throw new IllegalArgumentException(
+					"--execution-repeat-min-runs must be <= --execution-repeat-max-runs.");
 		}
 	}
 
@@ -324,6 +372,21 @@ final class QueryPlanSnapshotCliOptions {
 		}
 	}
 
+	private static RunNamePair parseRunNamePair(String value, String optionName) {
+		int separator = value.indexOf(',');
+		if (separator <= 0 || separator == value.length() - 1) {
+			throw new IllegalArgumentException(
+					"Invalid " + optionName + " value '" + value + "'. Expected leftRunName,rightRunName.");
+		}
+		String left = value.substring(0, separator).trim();
+		String right = value.substring(separator + 1).trim();
+		if (left.isEmpty() || right.isEmpty()) {
+			throw new IllegalArgumentException(
+					"Invalid " + optionName + " value '" + value + "'. Run names must be non-empty.");
+		}
+		return new RunNamePair(left, right);
+	}
+
 	private static int parseQueryIndex(String value) {
 		int parsed;
 		try {
@@ -359,6 +422,28 @@ final class QueryPlanSnapshotCliOptions {
 		}
 		if (parsed < 0) {
 			throw new IllegalArgumentException("Invalid " + optionName + " value '" + value + "'. Must be >= 0.");
+		}
+		return parsed;
+	}
+
+	private static int parsePositiveInteger(String value, String optionName) {
+		int parsed = parseNonNegativeInteger(value, optionName);
+		if (parsed < 1) {
+			throw new IllegalArgumentException("Invalid " + optionName + " value '" + value + "'. Must be >= 1.");
+		}
+		return parsed;
+	}
+
+	private static long parsePositiveLong(String value, String optionName) {
+		long parsed;
+		try {
+			parsed = Long.parseLong(value.trim());
+		} catch (NumberFormatException e) {
+			throw new IllegalArgumentException("Invalid " + optionName + " value '" + value + "'. Use a whole number.",
+					e);
+		}
+		if (parsed < 1L) {
+			throw new IllegalArgumentException("Invalid " + optionName + " value '" + value + "'. Must be >= 1.");
 		}
 		return parsed;
 	}
@@ -445,10 +530,15 @@ final class QueryPlanSnapshotCliOptions {
 		output.println("  --theme <THEME>");
 		output.println("  --query-index <0-10>                 themed query selection");
 		output.println("  --theme-query <THEME:INDEX>          shortcut for themed query");
-		output.println("  --all-theme-queries                  run all themed queries across all themes");
+		output.println(
+				"  --all-theme-queries                  run all queries (all themes, or only --theme if supplied)");
 		output.println("  --query <SPARQL>                     direct query text");
 		output.println("  --query-file <path>                  load query text from file");
 		output.println("  --query-timeout-seconds <int>=0      per-query max execution time (0 disables timeout)");
+		output.println("  --execution-repeat-min-runs <int>=1  minimum repeated verification runs");
+		output.println("  --execution-repeat-max-runs <int>=1  maximum repeated verification runs");
+		output.println("  --execution-repeat-soft-limit-millis <long>=1");
+		output.println("                                       soft time budget before verification stops");
 		output.println("  --persist <true|false> | --no-persist");
 		output.println("  --compare-latest                     compare current run with latest prior run");
 		output.println();
@@ -456,6 +546,8 @@ final class QueryPlanSnapshotCliOptions {
 		output.println("  --compare-existing");
 		output.println("  --query-id <id> or --run-name <name> or --fingerprint <hash>");
 		output.println("  --compare-indices <i,j>              optional, else interactive/latest-two");
+		output.println("  --compare-run-names <left,right>     batch compare run names by query id");
+		output.println("  --emit-csv <path>                    write batch comparison CSV (run-name mode)");
 		output.println("  --diff-mode <structure|structure+estimates>");
 		output.println("  interactive UI supports run browsing/view and comparison");
 		output.println();
@@ -525,6 +617,16 @@ final class QueryPlanSnapshotCliOptions {
 		ComparisonPair(int leftIndex, int rightIndex) {
 			this.leftIndex = leftIndex;
 			this.rightIndex = rightIndex;
+		}
+	}
+
+	static final class RunNamePair {
+		final String leftRunName;
+		final String rightRunName;
+
+		RunNamePair(String leftRunName, String rightRunName) {
+			this.leftRunName = leftRunName;
+			this.rightRunName = rightRunName;
 		}
 	}
 

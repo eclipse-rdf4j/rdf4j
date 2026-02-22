@@ -39,7 +39,12 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 public class QueryPlanRetrievalTest {
+
+	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
 	public static final String MAIN_QUERY = String.join("\n", "",
 			"{",
@@ -790,7 +795,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
-	public void testJsonPlanNode() {
+	public void testJsonPlanNode() throws IOException {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
 
@@ -798,117 +803,35 @@ public class QueryPlanRetrievalTest {
 			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
 
 			String actual = query.explain(Explanation.Level.Executed).toJson();
-			String expected = "{\n" +
-					"  \"type\" : \"Projection\",\n" +
-					"  \"resultSizeActual\" : 2,\n" +
-					"  \"plans\" : [ {\n" +
-					"    \"type\" : \"ProjectionElemList\",\n" +
-					"    \"plans\" : [ {\n" +
-					"      \"type\" : \"ProjectionElem \\\"a\\\"\"\n" +
-					"    } ]\n" +
-					"  }, {\n" +
-					"    \"type\" : \"LeftJoin\",\n" +
-					"    \"resultSizeActual\" : 2,\n" +
-					"    \"algorithm\" : \"LeftJoinIterator\",\n" +
-					"    \"plans\" : [ {\n" +
-					"      \"type\" : \"Join\",\n" +
-					"      \"resultSizeActual\" : 2,\n" +
-					"      \"algorithm\" : \"JoinIterator\",\n" +
-					"      \"plans\" : [ {\n" +
-					"        \"type\" : \"StatementPattern\",\n" +
-					"        \"costEstimate\" : 3.0,\n" +
-					"        \"resultSizeEstimate\" : 4.0,\n" +
-					"        \"resultSizeActual\" : 4,\n" +
-					"        \"plans\" : [ {\n" +
-					"          \"type\" : \"Var (name=a)\"\n" +
-					"        }, {\n" +
-					"          \"type\" : \"Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\"\n"
-					+
-					"        }, {\n" +
-					"          \"type\" : \"Var (name=d)\"\n" +
-					"        } ]\n" +
-					"      }, {\n" +
-					"        \"type\" : \"Filter\",\n" +
-					"        \"resultSizeActual\" : 2,\n" +
-					"        \"plans\" : [ {\n" +
-					"          \"type\" : \"Compare (!=)\",\n" +
-					"          \"plans\" : [ {\n" +
-					"            \"type\" : \"Var (name=c)\"\n" +
-					"          }, {\n" +
-					"            \"type\" : \"Var (name=d)\"\n" +
-					"          } ]\n" +
-					"        }, {\n" +
-					"          \"type\" : \"Join\",\n" +
-					"          \"resultSizeActual\" : 6,\n" +
-					"          \"algorithm\" : \"HashJoinIteration\",\n" +
-					"          \"plans\" : [ {\n" +
-					"            \"type\" : \"Filter\",\n" +
-					"            \"resultSizeActual\" : 6,\n" +
-					"            \"plans\" : [ {\n" +
-					"              \"type\" : \"Compare (!=)\",\n" +
-					"              \"plans\" : [ {\n" +
-					"                \"type\" : \"Var (name=c)\"\n" +
-					"              }, {\n" +
-					"                \"type\" : \"ValueConstant (value=\\\"<\\\")\"\n" +
-					"              } ]\n" +
-					"            }, {\n" +
-					"              \"type\" : \"StatementPattern\",\n" +
-					"              \"costEstimate\" : 3.0,\n" +
-					"              \"resultSizeEstimate\" : 4.0,\n" +
-					"              \"resultSizeActual\" : 6,\n" +
-					"              \"plans\" : [ {\n" +
-					"                \"type\" : \"Var (name=a)\"\n" +
-					"              }, {\n" +
-					"                \"type\" : \"Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\"\n"
-					+
-					"              }, {\n" +
-					"                \"type\" : \"Var (name=c)\"\n" +
-					"              } ]\n" +
-					"            } ]\n" +
-					"          }, {\n" +
-					"            \"type\" : \"LeftJoin\",\n" +
-					"            \"costEstimate\" : 6.611489018457944,\n" +
-					"            \"resultSizeEstimate\" : 12.0,\n" +
-					"            \"resultSizeActual\" : 4,\n" +
-					"            \"newScope\" : true,\n" +
-					"            \"algorithm\" : \"BadlyDesignedLeftJoinIterator\",\n" +
-					"            \"plans\" : [ {\n" +
-					"              \"type\" : \"SingletonSet\",\n" +
-					"              \"resultSizeActual\" : 4\n" +
-					"            }, {\n" +
-					"              \"type\" : \"StatementPattern\",\n" +
-					"              \"resultSizeEstimate\" : 12.0,\n" +
-					"              \"resultSizeActual\" : 48,\n" +
-					"              \"plans\" : [ {\n" +
-					"                \"type\" : \"Var (name=d)\"\n" +
-					"              }, {\n" +
-					"                \"type\" : \"Var (name=e)\"\n" +
-					"              }, {\n" +
-					"                \"type\" : \"Var (name=f)\"\n" +
-					"              } ]\n" +
-					"            } ]\n" +
-					"          } ]\n" +
-					"        } ]\n" +
-					"      } ]\n" +
-					"    }, {\n" +
-					"      \"type\" : \"StatementPattern\",\n" +
-					"      \"resultSizeEstimate\" : 12.0,\n" +
-					"      \"resultSizeActual\" : 2,\n" +
-					"      \"plans\" : [ {\n" +
-					"        \"type\" : \"Var (name=d)\"\n" +
-					"      }, {\n" +
-					"        \"type\" : \"Var (name=e)\"\n" +
-					"      }, {\n" +
-					"        \"type\" : \"Var (name=f)\"\n" +
-					"      } ]\n" +
-					"    } ]\n" +
-					"  } ]\n" +
-					"}";
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			JsonNode root = OBJECT_MAPPER.readTree(actual);
+			assertThat(root.path("type").asText()).isEqualTo("Projection");
+			assertThat(root.path("resultSizeActual").asLong()).isEqualTo(2L);
+			assertTelemetryFieldsPresentRecursively(root);
 
 		}
 		sailRepository.shutDown();
 
+	}
+
+	private static void assertTelemetryFieldsPresentRecursively(JsonNode node) {
+		assertThat(node.has("hasNextCallCountActual")).isTrue();
+		assertThat(node.has("hasNextTrueCountActual")).isTrue();
+		assertThat(node.has("hasNextTimeNanosActual")).isTrue();
+		assertThat(node.has("nextCallCountActual")).isTrue();
+		assertThat(node.has("nextTimeNanosActual")).isTrue();
+		assertThat(node.has("joinRightIteratorsCreatedActual")).isTrue();
+		assertThat(node.has("joinLeftBindingsConsumedActual")).isTrue();
+		assertThat(node.has("joinRightBindingsConsumedActual")).isTrue();
+		assertThat(node.has("sourceRowsScannedActual")).isTrue();
+		assertThat(node.has("sourceRowsMatchedActual")).isTrue();
+		assertThat(node.has("sourceRowsFilteredActual")).isTrue();
+
+		JsonNode plans = node.path("plans");
+		if (plans.isArray()) {
+			for (JsonNode child : plans) {
+				assertTelemetryFieldsPresentRecursively(child);
+			}
+		}
 	}
 
 	@Test

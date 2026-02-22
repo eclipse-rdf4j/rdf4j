@@ -138,4 +138,114 @@ public interface QueryModelNode extends Cloneable, Serializable {
 		// no-op
 	}
 
+	@Experimental
+	default long getHasNextCallCountActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setHasNextCallCountActual(long hasNextCallCountActual) {
+		// no-op
+	}
+
+	@Experimental
+	default long getHasNextTrueCountActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setHasNextTrueCountActual(long hasNextTrueCountActual) {
+		// no-op
+	}
+
+	@Experimental
+	default long getHasNextTimeNanosActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setHasNextTimeNanosActual(long hasNextTimeNanosActual) {
+		// no-op
+	}
+
+	@Experimental
+	default long getNextCallCountActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setNextCallCountActual(long nextCallCountActual) {
+		// no-op
+	}
+
+	@Experimental
+	default long getNextTimeNanosActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setNextTimeNanosActual(long nextTimeNanosActual) {
+		// no-op
+	}
+
+	@Experimental
+	default long getJoinRightIteratorsCreatedActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setJoinRightIteratorsCreatedActual(long joinRightIteratorsCreatedActual) {
+		// no-op
+	}
+
+	@Experimental
+	default long getJoinLeftBindingsConsumedActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setJoinLeftBindingsConsumedActual(long joinLeftBindingsConsumedActual) {
+		// no-op
+	}
+
+	@Experimental
+	default long getJoinRightBindingsConsumedActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setJoinRightBindingsConsumedActual(long joinRightBindingsConsumedActual) {
+		// no-op
+	}
+
+	@Experimental
+	default long getSourceRowsScannedActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setSourceRowsScannedActual(long sourceRowsScannedActual) {
+		// no-op
+	}
+
+	@Experimental
+	default long getSourceRowsMatchedActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setSourceRowsMatchedActual(long sourceRowsMatchedActual) {
+		// no-op
+	}
+
+	@Experimental
+	default long getSourceRowsFilteredActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setSourceRowsFilteredActual(long sourceRowsFilteredActual) {
+		// no-op
+	}
+
 }

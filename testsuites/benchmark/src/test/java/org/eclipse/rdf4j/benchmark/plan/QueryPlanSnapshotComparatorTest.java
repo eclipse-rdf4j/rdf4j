@@ -17,6 +17,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
+import java.util.Map;
 
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanExplanation;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanSnapshot;
@@ -54,6 +55,36 @@ class QueryPlanSnapshotComparatorTest {
 	}
 
 	@Test
+	void semanticDiffIgnoresAnonymousHavingVariableNameDrift() {
+		QueryPlanSnapshot left = snapshotWithOptimizedJson(explanationJsonWithAnonymousHavingName(
+				"_anon_having_394440ef6ac92f1f44af483210db23bce3403012"));
+		QueryPlanSnapshot right = snapshotWithOptimizedJson(explanationJsonWithAnonymousHavingName(
+				"_anon_having_8644416ef2aaea93e425996586130076565d001234567"));
+
+		ByteArrayOutputStream capture = new ByteArrayOutputStream();
+		QueryPlanSnapshotComparator.printComparison(new PrintStream(capture), run(left), run(right));
+
+		String output = capture.toString(StandardCharsets.UTF_8);
+		assertTrue(output.contains("structure=same"), output);
+		assertTrue(output.contains("joinAlgorithms=same"), output);
+	}
+
+	@Test
+	void semanticDiffIgnoresAnonymousPathVariableNameDrift() {
+		QueryPlanSnapshot left = snapshotWithOptimizedJson(explanationJsonWithAnonymousPathName(
+				"_anon_path_00660ef6ac92f1f44af483210db23bce3403"));
+		QueryPlanSnapshot right = snapshotWithOptimizedJson(explanationJsonWithAnonymousPathName(
+				"_anon_path_006616ef2aaea93e425996586130076565d0"));
+
+		ByteArrayOutputStream capture = new ByteArrayOutputStream();
+		QueryPlanSnapshotComparator.printComparison(new PrintStream(capture), run(left), run(right));
+
+		String output = capture.toString(StandardCharsets.UTF_8);
+		assertTrue(output.contains("structure=same"), output);
+		assertTrue(output.contains("joinAlgorithms=same"), output);
+	}
+
+	@Test
 	void printRunDetailsIncludesFullExplanationText() {
 		QueryPlanExplanation explanation = new QueryPlanExplanation();
 		explanation.setLevel("optimized");
@@ -83,6 +114,113 @@ class QueryPlanSnapshotComparatorTest {
 		assertTrue(output.contains("line-20-tail-marker"), output);
 	}
 
+	@Test
+	void printComparisonIncludesExecutedModeledWorkVerdict() {
+		QueryPlanSnapshot left = snapshotWithOptimizedJsonAndExecutedDebugMetrics(explanationJson(1.0, 2.0, 7),
+				Map.ofEntries(
+						Map.entry("modeledWorkUnits", "100"),
+						Map.entry("modeledSelfTimeActualSum", "40"),
+						Map.entry("modeledInputRowsSum", "500"),
+						Map.entry("modeledOutputRowsSum", "140"),
+						Map.entry("modeledJoinInputRowsSum", "200"),
+						Map.entry("modeledJoinOutputRowsSum", "80"),
+						Map.entry("modeledBarrierCount", "3"),
+						Map.entry("estimateActualQErrorP95", "2.5"),
+						Map.entry("joinEstimateActualQErrorP95", "3.0"),
+						Map.entry("modeledWorkByCategory", "join=100;scan=25"),
+						Map.entry("operatorWorkByTypeAlgorithm",
+								"Join[JoinIterator]|nodes=1|workUnits=100|inputRows=200|outputRows=80|selfTimeActual=11|totalTimeActual=21;"
+										+ "StatementPattern[UNKNOWN]|nodes=2|workUnits=25|inputRows=25|outputRows=25|selfTimeActual=2|totalTimeActual=4")));
+		QueryPlanSnapshot right = snapshotWithOptimizedJsonAndExecutedDebugMetrics(explanationJson(1.0, 2.0, 7),
+				Map.ofEntries(
+						Map.entry("modeledWorkUnits", "125"),
+						Map.entry("modeledSelfTimeActualSum", "65"),
+						Map.entry("modeledInputRowsSum", "820"),
+						Map.entry("modeledOutputRowsSum", "230"),
+						Map.entry("modeledJoinInputRowsSum", "260"),
+						Map.entry("modeledJoinOutputRowsSum", "95"),
+						Map.entry("modeledBarrierCount", "5"),
+						Map.entry("estimateActualQErrorP95", "4.0"),
+						Map.entry("joinEstimateActualQErrorP95", "5.5"),
+						Map.entry("modeledWorkByCategory", "join=125;scan=30"),
+						Map.entry("operatorWorkByTypeAlgorithm",
+								"Join[JoinIterator]|nodes=1|workUnits=125|inputRows=260|outputRows=95|selfTimeActual=13|totalTimeActual=25;"
+										+ "StatementPattern[UNKNOWN]|nodes=2|workUnits=30|inputRows=30|outputRows=30|selfTimeActual=3|totalTimeActual=5")));
+
+		ByteArrayOutputStream capture = new ByteArrayOutputStream();
+		QueryPlanSnapshotComparator.printComparison(new PrintStream(capture), run(left), run(right));
+
+		String output = capture.toString(StandardCharsets.UTF_8);
+		assertTrue(output.contains("executedWorkModel:"), output);
+		assertTrue(output.contains("winner=left"), output);
+		assertTrue(output.contains("topCategoryDeltas=join:+25"), output);
+		assertTrue(output.contains("topOperatorDeltas=Join[JoinIterator]:+25"), output);
+		assertTrue(output.contains("topVectorDeltas="), output);
+		assertTrue(output.contains("modeledInputRowsSum:+320"), output);
+		assertTrue(output.contains("dominantResourceLeft="), output);
+		assertTrue(output.contains("dominantResourceRight="), output);
+		assertTrue(output.contains("topResourceDeltas="), output);
+	}
+
+	@Test
+	void printComparisonIncludesPlanDifferenceDiagnosis() {
+		QueryPlanSnapshot left = snapshotWithOptimizedJsonAndExecutedDebugMetrics(explanationJson(1.0, 2.0, 7),
+				Map.of(),
+				Map.of(
+						"planDeterminism.inputFingerprintSha256", "input-same",
+						"planDeterminism.environmentFingerprintSha256", "env-same",
+						"featureFlags.sha256", "flags-left",
+						"optimizerInput.unoptimizedStructureNormalizedSha256", "structure-same"));
+		QueryPlanSnapshot right = snapshotWithOptimizedJsonAndExecutedDebugMetrics(explanationJson(1.0, 2.0, 7),
+				Map.of(),
+				Map.of(
+						"planDeterminism.inputFingerprintSha256", "input-same",
+						"planDeterminism.environmentFingerprintSha256", "env-same",
+						"featureFlags.sha256", "flags-right",
+						"optimizerInput.unoptimizedStructureNormalizedSha256", "structure-same"));
+
+		ByteArrayOutputStream capture = new ByteArrayOutputStream();
+		QueryPlanSnapshotComparator.printComparison(new PrintStream(capture), run(left), run(right));
+
+		String output = capture.toString(StandardCharsets.UTF_8);
+		assertTrue(output.contains("planDifferenceDiagnosis:"), output);
+		assertTrue(output.contains("likelyCause=different-feature-flags"), output);
+		assertTrue(output.contains("featureFlags=diff"), output);
+	}
+
+	@Test
+	void printComparisonDiagnosesOptimizerStructureDriftWithStableEstimates() {
+		Map<String, String> sharedMetadata = Map.of(
+				"planDeterminism.inputFingerprintSha256", "input-same",
+				"planDeterminism.environmentFingerprintSha256", "env-same",
+				"featureFlags.sha256", "flags-same",
+				"optimizerInput.unoptimizedStructureNormalizedSha256", "structure-same");
+		QueryPlanSnapshot left = snapshotWithOptimizedJsonAndExecutedDebugMetrics(explanationJson(1.0, 2.0, 7),
+				Map.of(),
+				sharedMetadata,
+				Map.of(
+						"structureSignatureNormalizedSha256", "optimized-structure-left",
+						"estimatesMultisetSignatureSha256", "optimized-estimates-same",
+						"statementPatternEstimatesMultisetSignatureSha256", "optimized-sp-estimates-same",
+						"joinAlgorithmMultisetSignatureSha256", "optimized-joins-same"),
+				Map.of());
+		QueryPlanSnapshot right = snapshotWithOptimizedJsonAndExecutedDebugMetrics(explanationJson(1.0, 2.0, 7),
+				Map.of(),
+				sharedMetadata,
+				Map.of(
+						"structureSignatureNormalizedSha256", "optimized-structure-right",
+						"estimatesMultisetSignatureSha256", "optimized-estimates-same",
+						"statementPatternEstimatesMultisetSignatureSha256", "optimized-sp-estimates-same",
+						"joinAlgorithmMultisetSignatureSha256", "optimized-joins-same"),
+				Map.of());
+
+		ByteArrayOutputStream capture = new ByteArrayOutputStream();
+		QueryPlanSnapshotComparator.printComparison(new PrintStream(capture), run(left), run(right));
+
+		String output = capture.toString(StandardCharsets.UTF_8);
+		assertTrue(output.contains("likelyCause=optimizer-structure-drift-with-stable-estimates"), output);
+	}
+
 	private static QueryPlanSnapshotComparator.SnapshotRun run(QueryPlanSnapshot snapshot) {
 		return QueryPlanSnapshotComparator.inMemoryRun(snapshot);
 	}
@@ -105,6 +243,52 @@ class QueryPlanSnapshotComparatorTest {
 		return snapshot;
 	}
 
+	private static QueryPlanSnapshot snapshotWithOptimizedJsonAndExecutedDebugMetrics(String explanationJson,
+			Map<String, String> executedDebugMetrics) {
+		return snapshotWithOptimizedJsonAndExecutedDebugMetrics(explanationJson, executedDebugMetrics, Map.of(),
+				Map.of(), Map.of());
+	}
+
+	private static QueryPlanSnapshot snapshotWithOptimizedJsonAndExecutedDebugMetrics(String explanationJson,
+			Map<String, String> executedDebugMetrics, Map<String, String> metadata) {
+		return snapshotWithOptimizedJsonAndExecutedDebugMetrics(explanationJson, executedDebugMetrics, metadata,
+				Map.of(), Map.of());
+	}
+
+	private static QueryPlanSnapshot snapshotWithOptimizedJsonAndExecutedDebugMetrics(String explanationJson,
+			Map<String, String> executedDebugMetrics, Map<String, String> metadata,
+			Map<String, String> optimizedDebugMetrics, Map<String, String> unoptimizedDebugMetrics) {
+		QueryPlanExplanation optimized = new QueryPlanExplanation();
+		optimized.setLevel("optimized");
+		optimized.setExplanationJson(explanationJson);
+		optimized.setTupleExprJson("tuple-expr");
+		optimized.setIrRenderedQuery("SELECT * WHERE { ?s ?p ?o }");
+		optimized.setDebugMetrics(new LinkedHashMap<>(optimizedDebugMetrics));
+
+		QueryPlanExplanation unoptimized = new QueryPlanExplanation();
+		unoptimized.setLevel("unoptimized");
+		unoptimized.setExplanationText("unoptimized-plan");
+		unoptimized.setDebugMetrics(new LinkedHashMap<>(unoptimizedDebugMetrics));
+
+		QueryPlanExplanation executed = new QueryPlanExplanation();
+		executed.setLevel("executed");
+		executed.setExplanationText("executed-plan");
+		executed.setDebugMetrics(new LinkedHashMap<>(executedDebugMetrics));
+
+		QueryPlanSnapshot snapshot = new QueryPlanSnapshot();
+		snapshot.setCapturedAt("2026-02-17T10:00:00Z");
+		snapshot.setQueryId("q0");
+		snapshot.setQueryString("SELECT * WHERE { ?s ?p ?o }");
+		snapshot.setUnoptimizedFingerprint("abc123");
+		snapshot.setMetadata(new LinkedHashMap<>(metadata));
+		LinkedHashMap<String, QueryPlanExplanation> explanations = new LinkedHashMap<>();
+		explanations.put("unoptimized", unoptimized);
+		explanations.put("optimized", optimized);
+		explanations.put("executed", executed);
+		snapshot.setExplanations(explanations);
+		return snapshot;
+	}
+
 	private static String explanationJson(double costEstimate, double resultSizeEstimate, int resultSizeActual) {
 		return "{\n"
 				+ "  \"type\": \"Join\",\n"
@@ -115,6 +299,40 @@ class QueryPlanSnapshotComparatorTest {
 				+ "  \"plans\": [\n"
 				+ "    {\"type\": \"StatementPattern\", \"resultSizeActual\": 3},\n"
 				+ "    {\"type\": \"StatementPattern\", \"resultSizeActual\": 4}\n"
+				+ "  ]\n"
+				+ "}";
+	}
+
+	private static String explanationJsonWithAnonymousHavingName(String anonymousHavingName) {
+		return "{\n"
+				+ "  \"type\": \"Projection\",\n"
+				+ "  \"plans\": [\n"
+				+ "    {\n"
+				+ "      \"type\": \"GroupElem (" + anonymousHavingName + ")\",\n"
+				+ "      \"plans\": [\n"
+				+ "        {\"type\": \"Var (name=" + anonymousHavingName + ", anonymous)\"}\n"
+				+ "      ]\n"
+				+ "    },\n"
+				+ "    {\n"
+				+ "      \"type\": \"ExtensionElem (" + anonymousHavingName + ")\",\n"
+				+ "      \"plans\": [\n"
+				+ "        {\"type\": \"Var (name=" + anonymousHavingName + ", anonymous)\"}\n"
+				+ "      ]\n"
+				+ "    }\n"
+				+ "  ]\n"
+				+ "}";
+	}
+
+	private static String explanationJsonWithAnonymousPathName(String anonymousPathName) {
+		return "{\n"
+				+ "  \"type\": \"Projection\",\n"
+				+ "  \"plans\": [\n"
+				+ "    {\n"
+				+ "      \"type\": \"ExtensionElem (" + anonymousPathName + ")\",\n"
+				+ "      \"plans\": [\n"
+				+ "        {\"type\": \"Var (name=" + anonymousPathName + ", anonymous)\"}\n"
+				+ "      ]\n"
+				+ "    }\n"
 				+ "  ]\n"
 				+ "}";
 	}

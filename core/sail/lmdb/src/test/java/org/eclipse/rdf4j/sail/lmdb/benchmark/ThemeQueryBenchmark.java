@@ -72,7 +72,19 @@ public class ThemeQueryBenchmark {
 	private static final long EXPECTED_TRIPLES_DATA_SIZE_BYTES = 1500921856L;
 	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
 
-	@Param({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" })
+	@Param({
+			"0",
+			"1",
+			"2",
+			"3",
+			"4",
+			"5",
+			"6",
+			"7",
+			"8",
+			"9",
+			"10"
+	})
 	public int z_queryIndex;
 
 	@Param({
@@ -86,6 +98,12 @@ public class ThemeQueryBenchmark {
 			"PHARMA"
 	})
 	public String themeName;
+
+	@Param({
+			"true",
+//			"false"
+	})
+	public boolean pageCardinalityEstimator;
 
 	private SailRepository repository;
 	private LmdbStore store;
@@ -111,6 +129,7 @@ public class ThemeQueryBenchmark {
 			throw new IOException("Unable to create fixed LMDB benchmark directory: " + STORE_DIRECTORY);
 		}
 		storeConfig = ConfigUtil.createConfig();
+		storeConfig.setPageCardinalityEstimator(pageCardinalityEstimator);
 		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
 		repository = new SailRepository(store);
 		ensureDataLoadedAndValidated();
@@ -152,6 +171,7 @@ public class ThemeQueryBenchmark {
 		}
 
 		storeConfig = ConfigUtil.createConfig();
+		storeConfig.setPageCardinalityEstimator(pageCardinalityEstimator);
 		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
 		repository = new SailRepository(store);
 		loadData();
@@ -242,6 +262,7 @@ public class ThemeQueryBenchmark {
 				.addReflectiveGetter("lmdbStore.writable", store, "isWritable")
 				.addReflectiveGetter("lmdbConfig.tripleIndexes", storeConfig, "getTripleIndexes")
 				.addReflectiveGetter("lmdbConfig.forceSync", storeConfig, "getForceSync")
+				.addReflectiveGetter("lmdbConfig.pageCardinalityEstimator", storeConfig, "getPageCardinalityEstimator")
 				.addReflectiveField("lmdbConfig.autoGrow", storeConfig, "autoGrow")
 				.addReflectiveGetter("lmdbConfig.valueDbSize", storeConfig, "getValueDBSize")
 				.addReflectiveGetter("lmdbConfig.tripleDbSize", storeConfig, "getTripleDBSize");
@@ -288,8 +309,10 @@ public class ThemeQueryBenchmark {
 	@Benchmark
 	public long executeQuery() {
 		try (var connection = repository.getConnection()) {
+			var tupleQuery = connection.prepareTupleQuery(query);
+			tupleQuery.setMaxExecutionTime(180);
 			long count;
-			try (var evaluate = connection.prepareTupleQuery(query).evaluate()) {
+			try (var evaluate = tupleQuery.evaluate()) {
 				count = evaluate
 						.stream()
 						.count();
@@ -360,6 +383,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	@Test
+	@Disabled
 	public void testQueryExplanation() throws IOException {
 		var queryIndexes = paramValues("z_queryIndex");
 		var themeNames = paramValues("themeName");

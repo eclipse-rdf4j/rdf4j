@@ -37,8 +37,13 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context) {
-		QueryEvaluationStep left = strategy.precompile(leftJoin.getLeftArg(), context);
-		QueryEvaluationStep right = strategy.precompile(leftJoin.getRightArg(), context);
+		boolean runtimeTelemetryTrackingActive = strategy.isTrackResultSize() || strategy.isTrackTime();
+		QueryEvaluationStep left = JoinMetricsTracking
+				.wrapLeftInput(strategy.precompile(leftJoin.getLeftArg(), context), leftJoin, leftJoin.getLeftArg(),
+						runtimeTelemetryTrackingActive);
+		QueryEvaluationStep right = JoinMetricsTracking
+				.wrapRightInput(strategy.precompile(leftJoin.getRightArg(), context), leftJoin, leftJoin.getRightArg(),
+						runtimeTelemetryTrackingActive);
 		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
 			Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
 			Set<String> rightBindingNames = leftJoin.getRightArg().getBindingNames();
