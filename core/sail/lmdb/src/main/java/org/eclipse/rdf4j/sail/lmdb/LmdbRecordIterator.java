@@ -84,6 +84,10 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final Thread ownerThread = Thread.currentThread();
 
+	private long sourceRowsScannedActual;
+	private long sourceRowsMatchedActual;
+	private long sourceRowsFilteredActual;
+
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
 		this.subj = subj;
@@ -194,15 +198,19 @@ class LmdbRecordIterator implements RecordIterator {
 			}
 
 			while (lastResult == MDB_SUCCESS) {
+				sourceRowsScannedActual++;
 				// if (maxKey != null && TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) > 0) {
 				if (maxKey != null && mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
+					sourceRowsFilteredActual++;
 					lastResult = MDB_NOTFOUND;
 				} else if (matches()) {
+					sourceRowsFilteredActual++;
 					// value doesn't match search key/mask, fetch next value
 					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 				} else {
 					// Matching value found
 					index.keyToQuad(keyData.mv_data(), originalQuad, quad);
+					sourceRowsMatchedActual++;
 					// fetch next value
 					fetchNext = true;
 					return quad;
@@ -264,5 +272,25 @@ class LmdbRecordIterator implements RecordIterator {
 	@Override
 	public void close() {
 		closeInternal(true);
+	}
+
+	@Override
+	public String getIndexName() {
+		return index.toString();
+	}
+
+	@Override
+	public long getSourceRowsScannedActual() {
+		return sourceRowsScannedActual;
+	}
+
+	@Override
+	public long getSourceRowsMatchedActual() {
+		return sourceRowsMatchedActual;
+	}
+
+	@Override
+	public long getSourceRowsFilteredActual() {
+		return sourceRowsFilteredActual;
 	}
 }

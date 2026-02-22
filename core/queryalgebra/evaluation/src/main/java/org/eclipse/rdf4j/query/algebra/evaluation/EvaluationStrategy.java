@@ -148,6 +148,14 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 		// no-op for backwards compatibility
 	}
 
+	/**
+	 * Enable or disable time tracking for the query plan.
+	 */
+	@Experimental
+	default boolean isTrackTime() {
+		return false;
+	}
+
 	QueryEvaluationMode getQueryEvaluationMode();
 
 	void setQueryEvaluationMode(QueryEvaluationMode queryEvaluationMode);

@@ -448,18 +448,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		if (filter != null) {
 			// Only if there is filter code to execute do we make this filter iteration.
-			return new FilterIteration<Statement>(iteration) {
-
-				@Override
-				protected boolean accept(Statement object) throws QueryEvaluationException {
-					return filter.test(object);
-				}
-
-				@Override
-				protected void handleClose() {
-
-				}
-			};
+			return new MetricsReportingFilterIteration(iteration, filter);
 		} else {
 			return iteration;
 		}
@@ -623,7 +612,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	 * it of course is an unneeded expense.
 	 */
 	private static final class ConvertStatementToBindingSetIterator
-			implements CloseableIteration<BindingSet> {
+			implements CloseableIteration<BindingSet>, IndexReportingIterator {
 
 		private final BiConsumer<MutableBindingSet, Statement> converter;
 		private final QueryEvaluationContext context;
@@ -667,10 +656,38 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				iteration.close();
 			}
 		}
+
+		@Override
+		public String getIndexName() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? "" : metrics.getIndexName();
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsScannedActual();
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsMatchedActual();
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsFilteredActual();
+		}
+
+		private IndexReportingIterator indexReporter() {
+			return iteration instanceof IndexReportingIterator ? (IndexReportingIterator) iteration : null;
+		}
 	}
 
 	private static final class JoinStatementWithBindingSetIterator
-			implements CloseableIteration<BindingSet> {
+			implements CloseableIteration<BindingSet>, IndexReportingIterator {
 
 		private final BiConsumer<MutableBindingSet, Statement> converter;
 		private final QueryEvaluationContext context;
@@ -718,6 +735,86 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				closed = true;
 				iteration.close();
 			}
+		}
+
+		@Override
+		public String getIndexName() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? "" : metrics.getIndexName();
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsScannedActual();
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsMatchedActual();
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsFilteredActual();
+		}
+
+		private IndexReportingIterator indexReporter() {
+			return iteration instanceof IndexReportingIterator ? (IndexReportingIterator) iteration : null;
+		}
+	}
+
+	private static final class MetricsReportingFilterIteration extends FilterIteration<Statement>
+			implements IndexReportingIterator {
+
+		private final CloseableIteration<? extends Statement> iteration;
+		private final Predicate<Statement> filter;
+
+		private MetricsReportingFilterIteration(CloseableIteration<? extends Statement> iteration,
+				Predicate<Statement> filter) {
+			super(iteration);
+			this.iteration = iteration;
+			this.filter = filter;
+		}
+
+		@Override
+		protected boolean accept(Statement object) throws QueryEvaluationException {
+			return filter.test(object);
+		}
+
+		@Override
+		protected void handleClose() {
+			// no-op
+		}
+
+		@Override
+		public String getIndexName() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? "" : metrics.getIndexName();
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsScannedActual();
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsMatchedActual();
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsFilteredActual();
+		}
+
+		private IndexReportingIterator indexReporter() {
+			return iteration instanceof IndexReportingIterator ? (IndexReportingIterator) iteration : null;
 		}
 	}
 

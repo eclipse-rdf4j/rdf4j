@@ -166,8 +166,12 @@ Every CLI run also prints:
 
 - `=== Execution Verification ===`
 - `runs`, `totalMillis`, `averageMillis`, `resultCount`
+- `verificationStatus` and, when applicable, failure diagnostics (`failureClass`, `failureMessage`, root-cause fields)
+- plan-stability diagnostics (`optimizedPlanHashTransitionCount`, `optimizedPlanHashSequence`)
 - `softLimitMillis` (currently `60000`)
 - whether stopping hit the soft-limit projection or max repeat-run cap
+
+Verification failures during repeated execution are persisted as snapshot metadata so plan capture/comparison can proceed.
 
 ### 8) Configure query timeout
 
@@ -177,7 +181,7 @@ Set a per-query timeout in seconds (`0` disables timeout):
 ... -Dexec.args="--store memory --theme MEDICAL_RECORDS --query-index 0 --query-timeout-seconds 30"
 ```
 
-### 7) Run all themed queries across all themes for one store
+### 7) Run all themed queries for one store (all themes or one theme)
 
 Memory store:
 
@@ -189,6 +193,12 @@ LMDB store:
 
 ```bash
 ... -Dexec.args="--store lmdb --all-theme-queries"
+```
+
+Scope run-all to one theme:
+
+```bash
+... -Dexec.args="--store lmdb --all-theme-queries --theme HIGHLY_CONNECTED"
 ```
 
 With in-memory-only capture:
@@ -205,8 +215,12 @@ With compare-latest per query run:
 
 Notes:
 - `--all-theme-queries` is run mode only (not compare mode).
-- Do not combine `--all-theme-queries` with single-query selectors (`--theme`, `--theme-query`, `--query-index`, `--query`, `--query-file`).
+- You may combine `--all-theme-queries` with `--theme` to run all 11 queries for that theme only.
+- Do not combine `--all-theme-queries` with `--theme-query`, `--query-index`, `--query`, or `--query-file`.
 - In interactive mode this is available via query source `all-themed`.
+- Batch runs print historical ETA at startup and emit ETA updates every 10 seconds while queries are running.
+- Batch run CSV output now also includes determinism/perf-debug fields (`execution.verificationStatus`, failure details,
+  plan-hash transition/sequence, `planDeterminism.*` fingerprints, and runtime metadata fields).
 
 ## Smart Diff Modes
 
@@ -400,6 +414,7 @@ This path stores themed benchmark artifacts without CLI wrapper.
 - `--compare-latest`
 - `--compare-existing`
 - `--all-theme-queries`
+  - optional with `--theme` to scope to one theme
 - `--query-id <id>`
 - `--fingerprint <hash>`
 - `--compare-indices <i,j>`

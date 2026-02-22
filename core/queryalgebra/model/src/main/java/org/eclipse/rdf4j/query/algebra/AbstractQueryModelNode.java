@@ -41,6 +41,17 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	private long resultSizeActual = -1;
 	private double costEstimate = -1;
 	private long totalTimeNanosActual = -1;
+	private long hasNextCallCountActual = -1;
+	private long hasNextTrueCountActual = -1;
+	private long hasNextTimeNanosActual = -1;
+	private long nextCallCountActual = -1;
+	private long nextTimeNanosActual = -1;
+	private long joinRightIteratorsCreatedActual = -1;
+	private long joinLeftBindingsConsumedActual = -1;
+	private long joinRightBindingsConsumedActual = -1;
+	private long sourceRowsScannedActual = -1;
+	private long sourceRowsMatchedActual = -1;
+	private long sourceRowsFilteredActual = -1;
 
 	private double cardinality = CARDINALITY_NOT_SET;
 
@@ -165,6 +176,116 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	@Override
 	public void setTotalTimeNanosActual(long totalTimeNanosActual) {
 		this.totalTimeNanosActual = totalTimeNanosActual;
+	}
+
+	@Override
+	public long getHasNextCallCountActual() {
+		return hasNextCallCountActual;
+	}
+
+	@Override
+	public void setHasNextCallCountActual(long hasNextCallCountActual) {
+		this.hasNextCallCountActual = hasNextCallCountActual;
+	}
+
+	@Override
+	public long getHasNextTrueCountActual() {
+		return hasNextTrueCountActual;
+	}
+
+	@Override
+	public void setHasNextTrueCountActual(long hasNextTrueCountActual) {
+		this.hasNextTrueCountActual = hasNextTrueCountActual;
+	}
+
+	@Override
+	public long getHasNextTimeNanosActual() {
+		return hasNextTimeNanosActual;
+	}
+
+	@Override
+	public void setHasNextTimeNanosActual(long hasNextTimeNanosActual) {
+		this.hasNextTimeNanosActual = hasNextTimeNanosActual;
+	}
+
+	@Override
+	public long getNextCallCountActual() {
+		return nextCallCountActual;
+	}
+
+	@Override
+	public void setNextCallCountActual(long nextCallCountActual) {
+		this.nextCallCountActual = nextCallCountActual;
+	}
+
+	@Override
+	public long getNextTimeNanosActual() {
+		return nextTimeNanosActual;
+	}
+
+	@Override
+	public void setNextTimeNanosActual(long nextTimeNanosActual) {
+		this.nextTimeNanosActual = nextTimeNanosActual;
+	}
+
+	@Override
+	public long getJoinRightIteratorsCreatedActual() {
+		return joinRightIteratorsCreatedActual;
+	}
+
+	@Override
+	public void setJoinRightIteratorsCreatedActual(long joinRightIteratorsCreatedActual) {
+		this.joinRightIteratorsCreatedActual = joinRightIteratorsCreatedActual;
+	}
+
+	@Override
+	public long getJoinLeftBindingsConsumedActual() {
+		return joinLeftBindingsConsumedActual;
+	}
+
+	@Override
+	public void setJoinLeftBindingsConsumedActual(long joinLeftBindingsConsumedActual) {
+		this.joinLeftBindingsConsumedActual = joinLeftBindingsConsumedActual;
+	}
+
+	@Override
+	public long getJoinRightBindingsConsumedActual() {
+		return joinRightBindingsConsumedActual;
+	}
+
+	@Override
+	public void setJoinRightBindingsConsumedActual(long joinRightBindingsConsumedActual) {
+		this.joinRightBindingsConsumedActual = joinRightBindingsConsumedActual;
+	}
+
+	@Override
+	public long getSourceRowsScannedActual() {
+		return sourceRowsScannedActual;
+	}
+
+	@Override
+	public void setSourceRowsScannedActual(long sourceRowsScannedActual) {
+		this.sourceRowsScannedActual = sourceRowsScannedActual;
+	}
+
+	@Override
+	public long getSourceRowsMatchedActual() {
+		return sourceRowsMatchedActual;
+	}
+
+	@Override
+	public void setSourceRowsMatchedActual(long sourceRowsMatchedActual) {
+		this.sourceRowsMatchedActual = sourceRowsMatchedActual;
+	}
+
+	@Override
+	public long getSourceRowsFilteredActual() {
+		return sourceRowsFilteredActual;
+	}
+
+	@Override
+	public void setSourceRowsFilteredActual(long sourceRowsFilteredActual) {
+		this.sourceRowsFilteredActual = sourceRowsFilteredActual;
 	}
 
 	/**

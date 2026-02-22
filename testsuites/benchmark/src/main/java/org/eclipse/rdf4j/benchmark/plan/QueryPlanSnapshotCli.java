@@ -12,21 +12,29 @@
 package org.eclipse.rdf4j.benchmark.plan;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.benchmark.common.BenchmarkQuery;
@@ -41,6 +49,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 
@@ -72,12 +81,31 @@ public final class QueryPlanSnapshotCli {
 	private static final long DEFAULT_EXECUTION_REPEAT_SOFT_LIMIT_NANOS = TimeUnit.SECONDS.toNanos(60);
 	private static final int DEFAULT_EXECUTION_REPEAT_MIN_RUNS = 2;
 	private static final int DEFAULT_EXECUTION_REPEAT_MAX_RUNS = 128;
+	private static final long DEFAULT_BATCH_ETA_UPDATE_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(10);
+	private static final List<String> PLAN_INPUT_FEATURE_FLAG_PREFIXES = List.of(
+			"cli.",
+			"systemProperty.",
+			"memoryStore.",
+			"lmdbStore.",
+			"lmdbConfig.",
+			"lmdbData.");
 
 	public static void main(String[] args) throws Exception {
 		QueryPlanSnapshotCliOptions options = parseArgs(args);
 		try (BufferedReader input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
-			new QueryPlanSnapshotCli(input, System.out, true).run(options);
+			createCli(input, System.out, true, options).run(options);
 		}
+	}
+
+	private static QueryPlanSnapshotCli createCli(BufferedReader input, PrintStream output,
+			boolean useTerminalChoiceMenu,
+			QueryPlanSnapshotCliOptions options) {
+		Objects.requireNonNull(options, "options");
+		return new QueryPlanSnapshotCli(input, output, useTerminalChoiceMenu,
+				resolveExecutionRepeatMinRuns(options),
+				resolveExecutionRepeatMaxRuns(options),
+				resolveExecutionRepeatSoftLimitNanos(options),
+				DEFAULT_BATCH_ETA_UPDATE_INTERVAL_NANOS);
 	}
 
 	private final BufferedReader input;
@@ -86,6 +114,7 @@ public final class QueryPlanSnapshotCli {
 	private final int executionRepeatMinRuns;
 	private final int executionRepeatMaxRuns;
 	private final long executionRepeatSoftLimitNanos;
+	private final long batchEtaUpdateIntervalNanos;
 
 	QueryPlanSnapshotCli(BufferedReader input, PrintStream output) {
 		this(input, output, false);
@@ -93,11 +122,19 @@ public final class QueryPlanSnapshotCli {
 
 	QueryPlanSnapshotCli(BufferedReader input, PrintStream output, boolean useTerminalChoiceMenu) {
 		this(input, output, useTerminalChoiceMenu, DEFAULT_EXECUTION_REPEAT_MIN_RUNS,
-				DEFAULT_EXECUTION_REPEAT_MAX_RUNS, DEFAULT_EXECUTION_REPEAT_SOFT_LIMIT_NANOS);
+				DEFAULT_EXECUTION_REPEAT_MAX_RUNS, DEFAULT_EXECUTION_REPEAT_SOFT_LIMIT_NANOS,
+				DEFAULT_BATCH_ETA_UPDATE_INTERVAL_NANOS);
 	}
 
 	QueryPlanSnapshotCli(BufferedReader input, PrintStream output, boolean useTerminalChoiceMenu,
 			int executionRepeatMinRuns, int executionRepeatMaxRuns, long executionRepeatSoftLimitNanos) {
+		this(input, output, useTerminalChoiceMenu, executionRepeatMinRuns, executionRepeatMaxRuns,
+				executionRepeatSoftLimitNanos, DEFAULT_BATCH_ETA_UPDATE_INTERVAL_NANOS);
+	}
+
+	QueryPlanSnapshotCli(BufferedReader input, PrintStream output, boolean useTerminalChoiceMenu,
+			int executionRepeatMinRuns, int executionRepeatMaxRuns, long executionRepeatSoftLimitNanos,
+			long batchEtaUpdateIntervalNanos) {
 		this.input = Objects.requireNonNull(input, "input");
 		this.output = Objects.requireNonNull(output, "output");
 		this.jLineChoiceMenu = useTerminalChoiceMenu ? JLineChoiceMenu.tryCreate(output) : null;
@@ -107,6 +144,7 @@ public final class QueryPlanSnapshotCli {
 			throw new IllegalArgumentException("executionRepeatMinRuns must be <= executionRepeatMaxRuns.");
 		}
 		this.executionRepeatSoftLimitNanos = validateExecutionRepeatSoftLimitNanos(executionRepeatSoftLimitNanos);
+		this.batchEtaUpdateIntervalNanos = validateBatchEtaUpdateIntervalNanos(batchEtaUpdateIntervalNanos);
 	}
 
 	void run(QueryPlanSnapshotCliOptions options) throws Exception {
@@ -233,7 +271,12 @@ public final class QueryPlanSnapshotCli {
 						() -> prepareTupleQuery(connection, queryText, options.queryTimeoutSeconds));
 				output.println("Snapshot captured in-memory only (--persist=false).");
 			}
+			applySnapshotPlanDebugMetadata(currentSnapshot);
 			executionVerification = verifyRepeatedExecution(connection, queryText, options.queryTimeoutSeconds);
+		}
+		applyExecutionVerificationMetadata(currentSnapshot, executionVerification);
+		if (options.persist && snapshotPath != null) {
+			capture.writeSnapshot(snapshotPath, currentSnapshot);
 		}
 
 		printResultsSection(options, queryId, queryText);
@@ -254,20 +297,23 @@ public final class QueryPlanSnapshotCli {
 				.ensureThemeDataLoaded(storeRuntime);
 		printThemeDataLoadStatus(themeDataLoadStatus);
 		QueryPlanCapture capture = new QueryPlanCapture();
-		Theme[] allThemes = Theme.values();
-		int total = allThemes.length * ThemeQueryCatalog.QUERY_COUNT;
+		Theme[] selectedThemes = selectedBatchThemes(options);
+		List<BatchQueryTarget> batchTargets = buildBatchQueryTargets(options, selectedThemes);
+		int total = batchTargets.size();
+		BatchRunEtaReporter etaReporter = createBatchRunEtaReporter(outputDirectory, batchTargets);
 		int current = 0;
-
-		for (Theme theme : allThemes) {
-			for (int queryIndex = 0; queryIndex < ThemeQueryCatalog.QUERY_COUNT; queryIndex++) {
+		etaReporter.start();
+		try {
+			for (BatchQueryTarget target : batchTargets) {
 				current++;
-				BenchmarkQuery benchmarkQuery = ThemeQueryCatalog.benchmarkQueryFor(theme, queryIndex);
-				String queryText = benchmarkQuery.getQuery();
+				long startedNanos = System.nanoTime();
 				QueryPlanSnapshotCliOptions perQueryOptions = options.copy();
-				perQueryOptions.theme = theme;
-				perQueryOptions.queryIndex = queryIndex;
+				perQueryOptions.theme = target.theme;
+				perQueryOptions.queryIndex = target.queryIndex;
 				String querySource = "theme-index";
-				String queryId = defaultQueryId(perQueryOptions, benchmarkQuery);
+				String queryId = target.queryId;
+				String queryText = target.queryText;
+				BenchmarkQuery benchmarkQuery = target.benchmarkQuery;
 
 				FeatureFlagCollector featureFlags = createFeatureFlagCollector(perQueryOptions, storeRuntime,
 						querySource, themeDataLoadStatus);
@@ -288,14 +334,21 @@ public final class QueryPlanSnapshotCli {
 								() -> prepareTupleQuery(connection, queryText, perQueryOptions.queryTimeoutSeconds));
 						output.println("Snapshot captured in-memory only (--persist=false).");
 					}
+					applySnapshotPlanDebugMetadata(currentSnapshot);
 					executionVerification = verifyRepeatedExecution(connection, queryText,
 							perQueryOptions.queryTimeoutSeconds);
 				}
+				applyExecutionVerificationMetadata(currentSnapshot, executionVerification);
+				if (options.persist && snapshotPath != null) {
+					capture.writeSnapshot(snapshotPath, currentSnapshot);
+				}
+				long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(Math.max(1L, System.nanoTime() - startedNanos));
+				etaReporter.markCompleted(queryId, elapsedMillis);
 
 				output.println();
 				output.println("=== Batch Query " + current + "/" + total + " ===");
-				output.println(
-						"Theme=" + theme + ", QueryIndex=" + queryIndex + ", QueryName=" + benchmarkQuery.getName());
+				output.println("Theme=" + target.theme + ", QueryIndex=" + target.queryIndex + ", QueryName="
+						+ benchmarkQuery.getName());
 				printResultsSection(perQueryOptions, queryId, queryText);
 				printPrettyExplanations(currentSnapshot);
 				printExecutionVerification(executionVerification);
@@ -305,10 +358,132 @@ public final class QueryPlanSnapshotCli {
 							options.diffMode);
 				}
 			}
+		} finally {
+			etaReporter.stop();
 		}
 
 		output.println();
-		output.println("Completed run-all mode: " + total + " queries across " + allThemes.length + " themes.");
+		output.println("Completed run-all mode: " + total + " queries across " + selectedThemes.length + " theme"
+				+ (selectedThemes.length == 1 ? "" : "s") + ".");
+	}
+
+	private Theme[] selectedBatchThemes(QueryPlanSnapshotCliOptions options) {
+		if (options.theme != null) {
+			return new Theme[] { options.theme };
+		}
+		return Theme.values();
+	}
+
+	private List<BatchQueryTarget> buildBatchQueryTargets(QueryPlanSnapshotCliOptions options, Theme[] selectedThemes) {
+		List<BatchQueryTarget> targets = new ArrayList<>(selectedThemes.length * ThemeQueryCatalog.QUERY_COUNT);
+		for (Theme theme : selectedThemes) {
+			for (int queryIndex = 0; queryIndex < ThemeQueryCatalog.QUERY_COUNT; queryIndex++) {
+				QueryPlanSnapshotCliOptions perQueryOptions = options.copy();
+				perQueryOptions.theme = theme;
+				perQueryOptions.queryIndex = queryIndex;
+				BenchmarkQuery benchmarkQuery = ThemeQueryCatalog.benchmarkQueryFor(theme, queryIndex);
+				String queryId = defaultQueryId(perQueryOptions, benchmarkQuery);
+				targets.add(
+						new BatchQueryTarget(theme, queryIndex, benchmarkQuery, queryId, benchmarkQuery.getQuery()));
+			}
+		}
+		return targets;
+	}
+
+	private BatchRunEtaReporter createBatchRunEtaReporter(Path outputDirectory, List<BatchQueryTarget> batchTargets)
+			throws IOException {
+		Map<String, Long> historicalByQueryId = loadLatestExecutionMillisByQueryId(outputDirectory);
+		long historicalAverageMillis = averagePositiveMillis(historicalByQueryId);
+		List<String> queryIds = new ArrayList<>(batchTargets.size());
+		for (BatchQueryTarget target : batchTargets) {
+			queryIds.add(target.queryId);
+		}
+		return new BatchRunEtaReporter(output, queryIds, historicalByQueryId, historicalAverageMillis,
+				batchEtaUpdateIntervalNanos);
+	}
+
+	private static Map<String, Long> loadLatestExecutionMillisByQueryId(Path outputDirectory) throws IOException {
+		QueryPlanCapture capture = new QueryPlanCapture();
+		List<QueryPlanSnapshotComparator.SnapshotRun> allRuns = QueryPlanSnapshotComparator.loadRuns(outputDirectory,
+				capture);
+		Map<String, HistoricalQueryTiming> latestByQueryId = new HashMap<>();
+		for (QueryPlanSnapshotComparator.SnapshotRun run : allRuns) {
+			QueryPlanSnapshot snapshot = run.snapshot();
+			String queryId = normalizedOrNull(snapshot.getQueryId());
+			if (queryId == null) {
+				continue;
+			}
+
+			long executionMillis = parseExecutionMillis(snapshot);
+			if (executionMillis <= 0) {
+				continue;
+			}
+
+			long capturedAtEpochMillis = toEpochMillis(snapshot.getCapturedAt());
+			HistoricalQueryTiming existing = latestByQueryId.get(queryId);
+			if (existing == null || capturedAtEpochMillis >= existing.capturedAtEpochMillis) {
+				latestByQueryId.put(queryId, new HistoricalQueryTiming(executionMillis, capturedAtEpochMillis));
+			}
+		}
+
+		Map<String, Long> executionMillisByQueryId = new HashMap<>();
+		latestByQueryId.forEach((queryId, timing) -> executionMillisByQueryId.put(queryId, timing.executionMillis));
+		return executionMillisByQueryId;
+	}
+
+	private static long parseExecutionMillis(QueryPlanSnapshot snapshot) {
+		if (snapshot == null || snapshot.getMetadata() == null) {
+			return 0L;
+		}
+		Map<String, String> metadata = snapshot.getMetadata();
+		long totalMillis = parsePositiveLong(metadata.get("execution.totalMillis"));
+		if (totalMillis > 0L) {
+			return totalMillis;
+		}
+
+		long averageMillis = parsePositiveLong(metadata.get("execution.averageMillis"));
+		long runs = parsePositiveLong(metadata.get("execution.runs"));
+		if (averageMillis <= 0L || runs <= 0L) {
+			return 0L;
+		}
+		try {
+			return Math.multiplyExact(averageMillis, runs);
+		} catch (ArithmeticException overflow) {
+			return Long.MAX_VALUE;
+		}
+	}
+
+	private static long parsePositiveLong(String raw) {
+		if (raw == null || raw.isBlank()) {
+			return 0L;
+		}
+		try {
+			long parsed = Long.parseLong(raw.trim());
+			return parsed > 0L ? parsed : 0L;
+		} catch (NumberFormatException ignored) {
+			try {
+				double parsed = Double.parseDouble(raw.trim());
+				return parsed > 0.0d ? Math.max(1L, Math.round(parsed)) : 0L;
+			} catch (NumberFormatException ignoredAgain) {
+				return 0L;
+			}
+		}
+	}
+
+	private static long averagePositiveMillis(Map<String, Long> values) {
+		long total = 0L;
+		int count = 0;
+		for (Long value : values.values()) {
+			if (value == null || value <= 0L) {
+				continue;
+			}
+			total += value;
+			count++;
+		}
+		if (count == 0) {
+			return 0L;
+		}
+		return Math.max(1L, total / count);
 	}
 
 	private void runCompareExisting(QueryPlanSnapshotCliOptions options) throws Exception {
@@ -320,6 +495,10 @@ public final class QueryPlanSnapshotCli {
 
 		java.util.List<QueryPlanSnapshotComparator.SnapshotRun> allRuns = QueryPlanSnapshotComparator
 				.loadRuns(outputDirectory, capture);
+		if (resolved.compareRunNames != null) {
+			runCompareRunNamePairBatch(resolved, allRuns);
+			return;
+		}
 		java.util.List<QueryPlanSnapshotComparator.SnapshotRun> matchingRuns = QueryPlanSnapshotComparator
 				.filterRuns(allRuns, normalizedOrNull(resolved.queryId),
 						normalizedOrNull(resolved.comparisonFingerprint), normalizedOrNull(resolved.runName));
@@ -345,6 +524,659 @@ public final class QueryPlanSnapshotCli {
 		}
 
 		runInteractiveRunBrowser(matchingRuns, resolved.diffMode);
+	}
+
+	private void runCompareRunNamePairBatch(QueryPlanSnapshotCliOptions options,
+			List<QueryPlanSnapshotComparator.SnapshotRun> allRuns) throws IOException {
+		QueryPlanSnapshotCliOptions.RunNamePair runNames = options.compareRunNames;
+		String leftRunName = normalizedOrNull(runNames.leftRunName);
+		String rightRunName = normalizedOrNull(runNames.rightRunName);
+		String queryIdFilter = normalizedOrNull(options.queryId);
+
+		if (Objects.equals(leftRunName, rightRunName)) {
+			throw new IllegalArgumentException("--compare-run-names requires two distinct run names.");
+		}
+
+		LinkedHashMap<String, QueryPlanSnapshotComparator.SnapshotRun> leftRuns = latestRunsByQueryId(allRuns,
+				leftRunName, queryIdFilter);
+		LinkedHashMap<String, QueryPlanSnapshotComparator.SnapshotRun> rightRuns = latestRunsByQueryId(allRuns,
+				rightRunName, queryIdFilter);
+
+		List<String> sharedQueryIds = new ArrayList<>();
+		for (String queryId : leftRuns.keySet()) {
+			if (rightRuns.containsKey(queryId)) {
+				sharedQueryIds.add(queryId);
+			}
+		}
+		sharedQueryIds.sort(String::compareTo);
+
+		if (sharedQueryIds.isEmpty()) {
+			output.println("No shared query ids found for run names '" + leftRunName + "' and '" + rightRunName + "'.");
+			return;
+		}
+
+		output.println("Run-name batch comparison:");
+		output.println("  left run name : " + leftRunName + " (" + leftRuns.size() + " query ids)");
+		output.println("  right run name: " + rightRunName + " (" + rightRuns.size() + " query ids)");
+		output.println("  shared query ids: " + sharedQueryIds.size());
+
+		if (options.emitCsv == null) {
+			return;
+		}
+
+		Path csvPath = options.emitCsv;
+		Path parent = csvPath.getParent();
+		if (parent != null) {
+			Files.createDirectories(parent);
+		}
+		try (BufferedWriter writer = Files.newBufferedWriter(csvPath, StandardCharsets.UTF_8)) {
+			writer.write(String.join(",",
+					"queryId",
+					"leftRunName",
+					"rightRunName",
+					"leftCapturedAt",
+					"rightCapturedAt",
+					"leftAverageMillis",
+					"rightAverageMillis",
+					"deltaPct",
+					"unoptimizedFingerprint",
+					"queryString",
+					"optimizedStructure",
+					"optimizedJoinAlgorithms",
+					"optimizedActualResultSizes",
+					"optimizedEstimates",
+					"executedStructure",
+					"executedJoinAlgorithms",
+					"executedActualResultSizes",
+					"executedEstimates",
+					"optimizedPlanNodeCountLeft",
+					"optimizedPlanNodeCountRight",
+					"optimizedJoinNodeCountLeft",
+					"optimizedJoinNodeCountRight",
+					"optimizedAnonymousTypeTokenCountLeft",
+					"optimizedAnonymousTypeTokenCountRight",
+					"optimizedStructureSignatureRawLeft",
+					"optimizedStructureSignatureRawRight",
+					"optimizedStructureSignatureNormalizedLeft",
+					"optimizedStructureSignatureNormalizedRight",
+					"optimizedEstimatesMultisetSignatureLeft",
+					"optimizedEstimatesMultisetSignatureRight",
+					"optimizedStatementPatternEstimatesMultisetSignatureLeft",
+					"optimizedStatementPatternEstimatesMultisetSignatureRight",
+					"queryStringSha256Left",
+					"queryStringSha256Right",
+					"queryStringNormalizedWhitespaceSha256Left",
+					"queryStringNormalizedWhitespaceSha256Right",
+					"optimizerInputUnoptimizedStructureNormalizedLeft",
+					"optimizerInputUnoptimizedStructureNormalizedRight",
+					"executionStdDevMillisLeft",
+					"executionStdDevMillisRight",
+					"executionCoefficientOfVariationPctLeft",
+					"executionCoefficientOfVariationPctRight",
+					"executionOptimizedPlanHashCountLeft",
+					"executionOptimizedPlanHashCountRight",
+					"executionOptimizedPlanHashStableLeft",
+					"executionOptimizedPlanHashStableRight",
+					"executionVerificationStatusLeft",
+					"executionVerificationStatusRight",
+					"executionFailureClassLeft",
+					"executionFailureClassRight",
+					"executionFailureMessageLeft",
+					"executionFailureMessageRight",
+					"executionFailureCauseClassLeft",
+					"executionFailureCauseClassRight",
+					"executionFailureCauseMessageLeft",
+					"executionFailureCauseMessageRight",
+					"executionFailureRunLeft",
+					"executionFailureRunRight",
+					"executionFailurePlanHashLeft",
+					"executionFailurePlanHashRight",
+					"executionOptimizedPlanHashTransitionCountLeft",
+					"executionOptimizedPlanHashTransitionCountRight",
+					"executionOptimizedPlanHashSequenceLeft",
+					"executionOptimizedPlanHashSequenceRight",
+					"planDeterminismInputFingerprintSha256Left",
+					"planDeterminismInputFingerprintSha256Right",
+					"planDeterminismEnvironmentFingerprintSha256Left",
+					"planDeterminismEnvironmentFingerprintSha256Right",
+					"featureFlagsSha256Left",
+					"featureFlagsSha256Right",
+					"planDeterminismInputFingerprintMatches",
+					"planDeterminismEnvironmentFingerprintMatches",
+					"featureFlagsFingerprintMatches",
+					"optimizerInputStructureFingerprintMatches",
+					"optimizerOutputStructureFingerprintMatches",
+					"executionPlanStructureFingerprintMatches",
+					"planDifferenceLikelyCause",
+					"planDifferenceEvidence",
+					"optimizerInputUnoptimizedRootTypeNormalizedLeft",
+					"optimizerInputUnoptimizedRootTypeNormalizedRight",
+					"optimizerInputUnoptimizedPlanNodeCountLeft",
+					"optimizerInputUnoptimizedPlanNodeCountRight",
+					"optimizerOutputOptimizedRootTypeNormalizedLeft",
+					"optimizerOutputOptimizedRootTypeNormalizedRight",
+					"optimizerOutputOptimizedJoinAlgorithmCountsLeft",
+					"optimizerOutputOptimizedJoinAlgorithmCountsRight",
+					"optimizerOutputOptimizedPlanNodeCountLeft",
+					"optimizerOutputOptimizedPlanNodeCountRight",
+					"executionPlanExecutedRootTypeNormalizedLeft",
+					"executionPlanExecutedRootTypeNormalizedRight",
+					"executionPlanExecutedPlanNodeCountLeft",
+					"executionPlanExecutedPlanNodeCountRight",
+					"executedModeledWorkUnitsLeft",
+					"executedModeledWorkUnitsRight",
+					"executedModeledWorkDeltaPct",
+					"executedModeledScoreLeft",
+					"executedModeledScoreRight",
+					"executedModeledScoreDeltaPct",
+					"executedModeledWinner",
+					"executedModeledDecisionBasis",
+					"executedModeledInputRowsSumLeft",
+					"executedModeledInputRowsSumRight",
+					"executedModeledOutputRowsSumLeft",
+					"executedModeledOutputRowsSumRight",
+					"executedModeledSelfTimeActualSumLeft",
+					"executedModeledSelfTimeActualSumRight",
+					"executedModeledTotalTimeActualSumLeft",
+					"executedModeledTotalTimeActualSumRight",
+					"executedModeledBarrierCountLeft",
+					"executedModeledBarrierCountRight",
+					"executedModeledJoinInputRowsSumLeft",
+					"executedModeledJoinInputRowsSumRight",
+					"executedModeledJoinOutputRowsSumLeft",
+					"executedModeledJoinOutputRowsSumRight",
+					"executedModeledFilterInputRowsSumLeft",
+					"executedModeledFilterInputRowsSumRight",
+					"executedModeledFilterOutputRowsSumLeft",
+					"executedModeledFilterOutputRowsSumRight",
+					"executedModeledFilterPassRatioLeft",
+					"executedModeledFilterPassRatioRight",
+					"executedModeledFilterRejectRatioLeft",
+					"executedModeledFilterRejectRatioRight",
+					"executedJoinRightIteratorCreateCountSumLeft",
+					"executedJoinRightIteratorCreateCountSumRight",
+					"executedJoinLeftBindingSetConsumedCountSumLeft",
+					"executedJoinLeftBindingSetConsumedCountSumRight",
+					"executedJoinRightBindingSetConsumedCountSumLeft",
+					"executedJoinRightBindingSetConsumedCountSumRight",
+					"executedJoinRightBindingsPerLeftRatioLeft",
+					"executedJoinRightBindingsPerLeftRatioRight",
+					"executedJoinTelemetryNodeCountLeft",
+					"executedJoinTelemetryNodeCountRight",
+					"executedJoinRightBindingSetConsumedPerRightIteratorAverageLeft",
+					"executedJoinRightBindingSetConsumedPerRightIteratorAverageRight",
+					"executedJoinRightIteratorCreatePerJoinNodeAverageLeft",
+					"executedJoinRightIteratorCreatePerJoinNodeAverageRight",
+					"executedJoinLeftBindingSetConsumedPerJoinNodeAverageLeft",
+					"executedJoinLeftBindingSetConsumedPerJoinNodeAverageRight",
+					"executedJoinRightBindingSetConsumedPerJoinNodeAverageLeft",
+					"executedJoinRightBindingSetConsumedPerJoinNodeAverageRight",
+					"executedSourceRowsScannedSumLeft",
+					"executedSourceRowsScannedSumRight",
+					"executedSourceRowsMatchedSumLeft",
+					"executedSourceRowsMatchedSumRight",
+					"executedSourceRowsFilteredSumLeft",
+					"executedSourceRowsFilteredSumRight",
+					"executedSourceFilterOutRatioLeft",
+					"executedSourceFilterOutRatioRight",
+					"executedModeledWorkByCategoryLeft",
+					"executedModeledWorkByCategoryRight",
+					"executedModeledWorkVectorSignatureLeft",
+					"executedModeledWorkVectorSignatureRight",
+					"executedModeledOperatorCountByCategoryLeft",
+					"executedModeledOperatorCountByCategoryRight",
+					"executedModeledJoinWorkByAlgorithmLeft",
+					"executedModeledJoinWorkByAlgorithmRight",
+					"executedOperatorWorkBreakdownSignatureLeft",
+					"executedOperatorWorkBreakdownSignatureRight",
+					"executedOperatorWorkTopContributorsLeft",
+					"executedOperatorWorkTopContributorsRight",
+					"executedEstimateActualQErrorP95Left",
+					"executedEstimateActualQErrorP95Right",
+					"executedEstimateActualQErrorMaxLeft",
+					"executedEstimateActualQErrorMaxRight",
+					"executedJoinEstimateActualQErrorP95Left",
+					"executedJoinEstimateActualQErrorP95Right",
+					"executedModeledTopCategoryDeltas",
+					"executedModeledTopOperatorDeltas",
+					"executedModeledTopVectorDeltas",
+					"executedModeledDominantResourceLeft",
+					"executedModeledDominantResourceRight",
+					"executedModeledTopResourceDeltas",
+					"runtimeJavaVendorLeft",
+					"runtimeJavaVendorRight",
+					"runtimeOsNameLeft",
+					"runtimeOsNameRight",
+					"runtimeOsArchLeft",
+					"runtimeOsArchRight"));
+			writer.newLine();
+
+			for (String queryId : sharedQueryIds) {
+				QueryPlanSnapshotComparator.SnapshotRun left = leftRuns.get(queryId);
+				QueryPlanSnapshotComparator.SnapshotRun right = rightRuns.get(queryId);
+				QueryPlanSnapshotComparator.ComparisonSummary summary = QueryPlanSnapshotComparator.compareRuns(left,
+						right, options.diffMode);
+				QueryPlanSnapshotComparator.LevelDiff optimizedDiff = summary.explanationDiffs().get("optimized");
+				QueryPlanSnapshotComparator.LevelDiff executedDiff = summary.explanationDiffs().get("executed");
+
+				String leftAverageMillis = metadataValue(left.snapshot(), "execution.averageMillis");
+				String rightAverageMillis = metadataValue(right.snapshot(), "execution.averageMillis");
+				String deltaPct = calculateDeltaPercent(leftAverageMillis, rightAverageMillis);
+				String leftExecutedModeledWorkUnits = explanationDebugMetric(left.snapshot(), "executed",
+						"modeledWorkUnits");
+				String rightExecutedModeledWorkUnits = explanationDebugMetric(right.snapshot(), "executed",
+						"modeledWorkUnits");
+				String executedModeledWorkDeltaPct = calculateDeltaPercent(leftExecutedModeledWorkUnits,
+						rightExecutedModeledWorkUnits);
+				QueryPlanExecutedWorkComparator.ExecutedWorkComparison executedWorkComparison = summary
+						.executedWorkComparison();
+				QueryPlanSnapshotComparator.PlanDifferenceDiagnosis planDifferenceDiagnosis = summary
+						.planDifferenceDiagnosis();
+				String inputFingerprintMatches = equalsIndicator(
+						metadataValue(left.snapshot(), "planDeterminism.inputFingerprintSha256"),
+						metadataValue(right.snapshot(), "planDeterminism.inputFingerprintSha256"));
+				String environmentFingerprintMatches = equalsIndicator(
+						metadataValue(left.snapshot(), "planDeterminism.environmentFingerprintSha256"),
+						metadataValue(right.snapshot(), "planDeterminism.environmentFingerprintSha256"));
+				String featureFlagsFingerprintMatches = equalsIndicator(
+						metadataValue(left.snapshot(), "featureFlags.sha256"),
+						metadataValue(right.snapshot(), "featureFlags.sha256"));
+				String optimizerInputStructureFingerprintMatches = equalsIndicator(
+						metadataValue(left.snapshot(), "optimizerInput.unoptimizedStructureNormalizedSha256"),
+						metadataValue(right.snapshot(), "optimizerInput.unoptimizedStructureNormalizedSha256"));
+				String optimizerOutputStructureFingerprintMatches = equalsIndicator(
+						explanationDebugMetric(left.snapshot(), "optimized", "structureSignatureNormalizedSha256"),
+						explanationDebugMetric(right.snapshot(), "optimized", "structureSignatureNormalizedSha256"));
+				String executionPlanStructureFingerprintMatches = equalsIndicator(
+						explanationDebugMetric(left.snapshot(), "executed", "structureSignatureNormalizedSha256"),
+						explanationDebugMetric(right.snapshot(), "executed", "structureSignatureNormalizedSha256"));
+
+				writer.write(String.join(",",
+						csvValue(queryId),
+						csvValue(leftRunName),
+						csvValue(rightRunName),
+						csvValue(left.snapshot().getCapturedAt()),
+						csvValue(right.snapshot().getCapturedAt()),
+						csvValue(leftAverageMillis),
+						csvValue(rightAverageMillis),
+						csvValue(deltaPct),
+						csvValue(summary.unoptimizedFingerprint()),
+						csvValue(summary.queryString()),
+						csvValue(levelValue(optimizedDiff, FieldKind.STRUCTURE)),
+						csvValue(levelValue(optimizedDiff, FieldKind.JOIN_ALGORITHMS)),
+						csvValue(levelValue(optimizedDiff, FieldKind.ACTUAL_RESULT_SIZES)),
+						csvValue(levelValue(optimizedDiff, FieldKind.ESTIMATES)),
+						csvValue(levelValue(executedDiff, FieldKind.STRUCTURE)),
+						csvValue(levelValue(executedDiff, FieldKind.JOIN_ALGORITHMS)),
+						csvValue(levelValue(executedDiff, FieldKind.ACTUAL_RESULT_SIZES)),
+						csvValue(levelValue(executedDiff, FieldKind.ESTIMATES)),
+						csvValue(explanationDebugMetric(left.snapshot(), "optimized", "planNodeCount")),
+						csvValue(explanationDebugMetric(right.snapshot(), "optimized", "planNodeCount")),
+						csvValue(explanationDebugMetric(left.snapshot(), "optimized", "joinNodeCount")),
+						csvValue(explanationDebugMetric(right.snapshot(), "optimized", "joinNodeCount")),
+						csvValue(explanationDebugMetric(left.snapshot(), "optimized", "anonymousTypeTokenCount")),
+						csvValue(explanationDebugMetric(right.snapshot(), "optimized", "anonymousTypeTokenCount")),
+						csvValue(explanationDebugMetric(left.snapshot(), "optimized", "structureSignatureRawSha256")),
+						csvValue(explanationDebugMetric(right.snapshot(), "optimized", "structureSignatureRawSha256")),
+						csvValue(explanationDebugMetric(left.snapshot(), "optimized",
+								"structureSignatureNormalizedSha256")),
+						csvValue(explanationDebugMetric(right.snapshot(), "optimized",
+								"structureSignatureNormalizedSha256")),
+						csvValue(explanationDebugMetric(left.snapshot(), "optimized",
+								"estimatesMultisetSignatureSha256")),
+						csvValue(explanationDebugMetric(right.snapshot(), "optimized",
+								"estimatesMultisetSignatureSha256")),
+						csvValue(explanationDebugMetric(left.snapshot(), "optimized",
+								"statementPatternEstimatesMultisetSignatureSha256")),
+						csvValue(explanationDebugMetric(right.snapshot(), "optimized",
+								"statementPatternEstimatesMultisetSignatureSha256")),
+						csvValue(metadataValue(left.snapshot(), "queryString.sha256")),
+						csvValue(metadataValue(right.snapshot(), "queryString.sha256")),
+						csvValue(metadataValue(left.snapshot(), "queryString.normalizedWhitespaceSha256")),
+						csvValue(metadataValue(right.snapshot(), "queryString.normalizedWhitespaceSha256")),
+						csvValue(metadataValue(left.snapshot(), "optimizerInput.unoptimizedStructureNormalizedSha256")),
+						csvValue(
+								metadataValue(right.snapshot(), "optimizerInput.unoptimizedStructureNormalizedSha256")),
+						csvValue(metadataValue(left.snapshot(), "execution.stdDevMillis")),
+						csvValue(metadataValue(right.snapshot(), "execution.stdDevMillis")),
+						csvValue(metadataValue(left.snapshot(), "execution.coefficientOfVariationPct")),
+						csvValue(metadataValue(right.snapshot(), "execution.coefficientOfVariationPct")),
+						csvValue(metadataValue(left.snapshot(), "execution.optimizedPlanHashCount")),
+						csvValue(metadataValue(right.snapshot(), "execution.optimizedPlanHashCount")),
+						csvValue(metadataValue(left.snapshot(), "execution.optimizedPlanHashStable")),
+						csvValue(metadataValue(right.snapshot(), "execution.optimizedPlanHashStable")),
+						csvValue(metadataValue(left.snapshot(), "execution.verificationStatus")),
+						csvValue(metadataValue(right.snapshot(), "execution.verificationStatus")),
+						csvValue(metadataValue(left.snapshot(), "execution.failureClass")),
+						csvValue(metadataValue(right.snapshot(), "execution.failureClass")),
+						csvValue(metadataValue(left.snapshot(), "execution.failureMessage")),
+						csvValue(metadataValue(right.snapshot(), "execution.failureMessage")),
+						csvValue(metadataValue(left.snapshot(), "execution.failureCauseClass")),
+						csvValue(metadataValue(right.snapshot(), "execution.failureCauseClass")),
+						csvValue(metadataValue(left.snapshot(), "execution.failureCauseMessage")),
+						csvValue(metadataValue(right.snapshot(), "execution.failureCauseMessage")),
+						csvValue(metadataValue(left.snapshot(), "execution.failureRun")),
+						csvValue(metadataValue(right.snapshot(), "execution.failureRun")),
+						csvValue(metadataValue(left.snapshot(), "execution.failurePlanHash")),
+						csvValue(metadataValue(right.snapshot(), "execution.failurePlanHash")),
+						csvValue(metadataValue(left.snapshot(), "execution.optimizedPlanHashTransitionCount")),
+						csvValue(metadataValue(right.snapshot(), "execution.optimizedPlanHashTransitionCount")),
+						csvValue(metadataValue(left.snapshot(), "execution.optimizedPlanHashSequence")),
+						csvValue(metadataValue(right.snapshot(), "execution.optimizedPlanHashSequence")),
+						csvValue(metadataValue(left.snapshot(), "planDeterminism.inputFingerprintSha256")),
+						csvValue(metadataValue(right.snapshot(), "planDeterminism.inputFingerprintSha256")),
+						csvValue(metadataValue(left.snapshot(), "planDeterminism.environmentFingerprintSha256")),
+						csvValue(metadataValue(right.snapshot(), "planDeterminism.environmentFingerprintSha256")),
+						csvValue(metadataValue(left.snapshot(), "featureFlags.sha256")),
+						csvValue(metadataValue(right.snapshot(), "featureFlags.sha256")),
+						csvValue(inputFingerprintMatches),
+						csvValue(environmentFingerprintMatches),
+						csvValue(featureFlagsFingerprintMatches),
+						csvValue(optimizerInputStructureFingerprintMatches),
+						csvValue(optimizerOutputStructureFingerprintMatches),
+						csvValue(executionPlanStructureFingerprintMatches),
+						csvValue(planDifferenceDiagnosis == null ? "" : planDifferenceDiagnosis.likelyCause()),
+						csvValue(planDifferenceDiagnosis == null ? "" : planDifferenceDiagnosis.evidence()),
+						csvValue(metadataValue(left.snapshot(), "optimizerInput.unoptimizedRootTypeNormalized")),
+						csvValue(metadataValue(right.snapshot(), "optimizerInput.unoptimizedRootTypeNormalized")),
+						csvValue(metadataValue(left.snapshot(), "optimizerInput.unoptimizedPlanNodeCount")),
+						csvValue(metadataValue(right.snapshot(), "optimizerInput.unoptimizedPlanNodeCount")),
+						csvValue(metadataValue(left.snapshot(), "optimizerOutput.optimizedRootTypeNormalized")),
+						csvValue(metadataValue(right.snapshot(), "optimizerOutput.optimizedRootTypeNormalized")),
+						csvValue(metadataValue(left.snapshot(), "optimizerOutput.optimizedJoinAlgorithmCounts")),
+						csvValue(metadataValue(right.snapshot(), "optimizerOutput.optimizedJoinAlgorithmCounts")),
+						csvValue(metadataValue(left.snapshot(), "optimizerOutput.optimizedPlanNodeCount")),
+						csvValue(metadataValue(right.snapshot(), "optimizerOutput.optimizedPlanNodeCount")),
+						csvValue(metadataValue(left.snapshot(), "executionPlan.executedRootTypeNormalized")),
+						csvValue(metadataValue(right.snapshot(), "executionPlan.executedRootTypeNormalized")),
+						csvValue(metadataValue(left.snapshot(), "executionPlan.executedPlanNodeCount")),
+						csvValue(metadataValue(right.snapshot(), "executionPlan.executedPlanNodeCount")),
+						csvValue(leftExecutedModeledWorkUnits),
+						csvValue(rightExecutedModeledWorkUnits),
+						csvValue(executedModeledWorkDeltaPct),
+						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.leftScore()),
+						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.rightScore()),
+						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.scoreDeltaPct()),
+						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.winner()),
+						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.decisionBasis()),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledInputRowsSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledInputRowsSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledOutputRowsSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledOutputRowsSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledSelfTimeActualSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledSelfTimeActualSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledTotalTimeActualSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledTotalTimeActualSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledBarrierCount")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledBarrierCount")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledJoinInputRowsSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledJoinInputRowsSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledJoinOutputRowsSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledJoinOutputRowsSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledFilterInputRowsSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledFilterInputRowsSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledFilterOutputRowsSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledFilterOutputRowsSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledFilterPassRatio")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledFilterPassRatio")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledFilterRejectRatio")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledFilterRejectRatio")),
+						csvValue(
+								explanationDebugMetric(left.snapshot(), "executed",
+										"modeledJoinRightIteratorCreateCountSum")),
+						csvValue(
+								explanationDebugMetric(right.snapshot(), "executed",
+										"modeledJoinRightIteratorCreateCountSum")),
+						csvValue(
+								explanationDebugMetric(left.snapshot(), "executed",
+										"modeledJoinLeftBindingSetConsumedCountSum")),
+						csvValue(
+								explanationDebugMetric(right.snapshot(), "executed",
+										"modeledJoinLeftBindingSetConsumedCountSum")),
+						csvValue(
+								explanationDebugMetric(left.snapshot(), "executed",
+										"modeledJoinRightBindingSetConsumedCountSum")),
+						csvValue(
+								explanationDebugMetric(right.snapshot(), "executed",
+										"modeledJoinRightBindingSetConsumedCountSum")),
+						csvValue(
+								explanationDebugMetric(left.snapshot(), "executed",
+										"modeledJoinRightBindingsPerLeftRatio")),
+						csvValue(
+								explanationDebugMetric(right.snapshot(), "executed",
+										"modeledJoinRightBindingsPerLeftRatio")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledJoinTelemetryNodeCount")),
+						csvValue(
+								explanationDebugMetric(right.snapshot(), "executed", "modeledJoinTelemetryNodeCount")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed",
+								"modeledJoinRightBindingSetConsumedPerRightIteratorAverage")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed",
+								"modeledJoinRightBindingSetConsumedPerRightIteratorAverage")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed",
+								"modeledJoinRightIteratorCreatePerJoinNodeAverage")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed",
+								"modeledJoinRightIteratorCreatePerJoinNodeAverage")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed",
+								"modeledJoinLeftBindingSetConsumedPerJoinNodeAverage")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed",
+								"modeledJoinLeftBindingSetConsumedPerJoinNodeAverage")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed",
+								"modeledJoinRightBindingSetConsumedPerJoinNodeAverage")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed",
+								"modeledJoinRightBindingSetConsumedPerJoinNodeAverage")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledSourceRowsScannedSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledSourceRowsScannedSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledSourceRowsMatchedSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledSourceRowsMatchedSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledSourceRowsFilteredSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledSourceRowsFilteredSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledSourceFilterOutRatio")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledSourceFilterOutRatio")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledWorkByCategory")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledWorkByCategory")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed",
+								"modeledWorkVectorSignatureSha256")),
+						csvValue(
+								explanationDebugMetric(right.snapshot(), "executed",
+										"modeledWorkVectorSignatureSha256")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledOperatorCountByCategory")),
+						csvValue(
+								explanationDebugMetric(right.snapshot(), "executed", "modeledOperatorCountByCategory")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledJoinWorkByAlgorithm")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledJoinWorkByAlgorithm")),
+						csvValue(
+								explanationDebugMetric(left.snapshot(), "executed",
+										"operatorWorkBreakdownSignatureSha256")),
+						csvValue(
+								explanationDebugMetric(right.snapshot(), "executed",
+										"operatorWorkBreakdownSignatureSha256")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "operatorWorkTopContributors")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "operatorWorkTopContributors")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "estimateActualQErrorP95")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "estimateActualQErrorP95")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "estimateActualQErrorMax")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "estimateActualQErrorMax")),
+						csvValue(explanationDebugMetric(left.snapshot(), "executed", "joinEstimateActualQErrorP95")),
+						csvValue(explanationDebugMetric(right.snapshot(), "executed", "joinEstimateActualQErrorP95")),
+						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.topCategoryDeltas()),
+						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.topOperatorDeltas()),
+						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.topVectorDeltas()),
+						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.dominantResourceLeft()),
+						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.dominantResourceRight()),
+						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.topResourceDeltas()),
+						csvValue(metadataValue(left.snapshot(), "runtime.javaVendor")),
+						csvValue(metadataValue(right.snapshot(), "runtime.javaVendor")),
+						csvValue(metadataValue(left.snapshot(), "runtime.osName")),
+						csvValue(metadataValue(right.snapshot(), "runtime.osName")),
+						csvValue(metadataValue(left.snapshot(), "runtime.osArch")),
+						csvValue(metadataValue(right.snapshot(), "runtime.osArch"))));
+				writer.newLine();
+			}
+		}
+		output.println("Batch CSV written: " + csvPath.toAbsolutePath());
+	}
+
+	private static LinkedHashMap<String, QueryPlanSnapshotComparator.SnapshotRun> latestRunsByQueryId(
+			List<QueryPlanSnapshotComparator.SnapshotRun> allRuns, String runName, String queryIdFilter) {
+		LinkedHashMap<String, QueryPlanSnapshotComparator.SnapshotRun> latestRuns = new LinkedHashMap<>();
+		for (QueryPlanSnapshotComparator.SnapshotRun run : allRuns) {
+			QueryPlanSnapshot snapshot = run.snapshot();
+			Map<String, String> metadata = snapshot.getMetadata();
+			String snapshotRunName = metadata == null ? null : normalizedOrNull(metadata.get("runName"));
+			if (!Objects.equals(snapshotRunName, runName)) {
+				continue;
+			}
+
+			String queryId = normalizedOrNull(snapshot.getQueryId());
+			if (queryId == null) {
+				continue;
+			}
+			if (queryIdFilter != null && !queryIdFilter.equals(queryId)) {
+				continue;
+			}
+			QueryPlanSnapshotComparator.SnapshotRun existing = latestRuns.get(queryId);
+			if (existing == null || prefersForRunNameBatchComparison(run, existing)) {
+				latestRuns.put(queryId, run);
+			}
+		}
+		return latestRuns;
+	}
+
+	private static boolean prefersForRunNameBatchComparison(QueryPlanSnapshotComparator.SnapshotRun candidate,
+			QueryPlanSnapshotComparator.SnapshotRun existing) {
+		int candidateRank = runNameBatchSelectionRank(candidate.snapshot());
+		int existingRank = runNameBatchSelectionRank(existing.snapshot());
+		if (candidateRank != existingRank) {
+			return candidateRank > existingRank;
+		}
+		long candidateEpochMillis = toEpochMillis(candidate.snapshot().getCapturedAt());
+		long existingEpochMillis = toEpochMillis(existing.snapshot().getCapturedAt());
+		return candidateEpochMillis > existingEpochMillis;
+	}
+
+	private static int runNameBatchSelectionRank(QueryPlanSnapshot snapshot) {
+		Map<String, String> metadata = snapshot == null ? null : snapshot.getMetadata();
+		if (metadata == null || metadata.isEmpty()) {
+			return 0;
+		}
+		String verificationStatus = normalizedOrNull(metadata.get("execution.verificationStatus"));
+		long averageMillis = parseNonNegativeLong(metadata.get("execution.averageMillis"));
+		long executionRuns = parseNonNegativeLong(metadata.get("execution.runs"));
+		boolean hasExecutionFailure = normalizedOrNull(metadata.get("execution.failureClass")) != null
+				|| normalizedOrNull(metadata.get("execution.failureCauseClass")) != null;
+
+		if (("max-runs-reached".equals(verificationStatus) || "soft-limit-reached".equals(verificationStatus))
+				&& averageMillis > 0L) {
+			return 4;
+		}
+		if (averageMillis > 0L || executionRuns > 0L) {
+			return 3;
+		}
+		if (verificationStatus != null && !verificationStatus.isBlank()) {
+			return 2;
+		}
+		if (hasExecutionFailure) {
+			return 1;
+		}
+		return 0;
+	}
+
+	private static long parseNonNegativeLong(String value) {
+		if (value == null || value.isBlank()) {
+			return -1L;
+		}
+		try {
+			long parsed = Long.parseLong(value);
+			return Math.max(-1L, parsed);
+		} catch (NumberFormatException ignored) {
+			return -1L;
+		}
+	}
+
+	private static String metadataValue(QueryPlanSnapshot snapshot, String key) {
+		if (snapshot == null || snapshot.getMetadata() == null) {
+			return "";
+		}
+		String value = snapshot.getMetadata().get(key);
+		return value == null ? "" : value;
+	}
+
+	private static String explanationDebugMetric(QueryPlanSnapshot snapshot, String level, String key) {
+		if (snapshot == null || snapshot.getExplanations() == null) {
+			return "";
+		}
+		QueryPlanExplanation explanation = snapshot.getExplanations().get(level);
+		if (explanation == null || explanation.getDebugMetrics() == null) {
+			return "";
+		}
+		String value = explanation.getDebugMetrics().get(key);
+		return value == null ? "" : value;
+	}
+
+	private static String equalsIndicator(String left, String right) {
+		String normalizedLeft = normalizedOrNull(left);
+		String normalizedRight = normalizedOrNull(right);
+		if (normalizedLeft == null || normalizedRight == null) {
+			return "";
+		}
+		return Boolean.toString(normalizedLeft.equals(normalizedRight));
+	}
+
+	private static String levelValue(QueryPlanSnapshotComparator.LevelDiff levelDiff, FieldKind fieldKind) {
+		if (levelDiff == null) {
+			return "missing";
+		}
+		switch (fieldKind) {
+		case STRUCTURE:
+			return levelDiff.structure();
+		case JOIN_ALGORITHMS:
+			return levelDiff.joinAlgorithms();
+		case ACTUAL_RESULT_SIZES:
+			return levelDiff.actualResultSizes();
+		case ESTIMATES:
+			return levelDiff.estimates();
+		default:
+			throw new IllegalStateException("Unhandled field kind: " + fieldKind);
+		}
+	}
+
+	private static String calculateDeltaPercent(String baselineMillis, String candidateMillis) {
+		if (baselineMillis == null || baselineMillis.isBlank() || candidateMillis == null
+				|| candidateMillis.isBlank()) {
+			return "";
+		}
+		double left;
+		double right;
+		try {
+			left = Double.parseDouble(baselineMillis);
+			right = Double.parseDouble(candidateMillis);
+		} catch (NumberFormatException ignored) {
+			return "";
+		}
+		if (left == 0.0d) {
+			return "";
+		}
+		double deltaPercent = ((right - left) / left) * 100.0d;
+		return Double.toString(deltaPercent);
+	}
+
+	private static String csvValue(String value) {
+		if (value == null) {
+			return "";
+		}
+		boolean requiresQuotes = value.contains(",") || value.contains("\"") || value.contains("\n")
+				|| value.contains("\r");
+		if (!requiresQuotes) {
+			return value;
+		}
+		return "\"" + value.replace("\"", "\"\"") + "\"";
+	}
+
+	private enum FieldKind {
+		STRUCTURE,
+		JOIN_ALGORITHMS,
+		ACTUAL_RESULT_SIZES,
+		ESTIMATES
 	}
 
 	private void runRenameRunsByCommit(QueryPlanSnapshotCliOptions options) throws Exception {
@@ -693,7 +1525,6 @@ public final class QueryPlanSnapshotCli {
 				List.of("themed", "manual", "file", "all-themed"));
 		if ("all-themed".equals(mode)) {
 			options.runAllThemeQueries = true;
-			options.theme = null;
 			options.queryIndex = null;
 			options.query = null;
 			options.queryFile = null;
@@ -1063,7 +1894,11 @@ public final class QueryPlanSnapshotCli {
 				.addValue("cli.persist", Boolean.toString(options.persist))
 				.addValue("cli.runName",
 						options.runName == null || options.runName.isBlank() ? "<none>" : options.runName)
-				.addValue("cli.queryTimeoutSeconds", formatQueryTimeoutSeconds(options.queryTimeoutSeconds));
+				.addValue("cli.queryTimeoutSeconds", formatQueryTimeoutSeconds(options.queryTimeoutSeconds))
+				.addValue("cli.executionRepeatMinRuns", Integer.toString(resolveExecutionRepeatMinRuns(options)))
+				.addValue("cli.executionRepeatMaxRuns", Integer.toString(resolveExecutionRepeatMaxRuns(options)))
+				.addValue("cli.executionRepeatSoftLimitMillis",
+						Long.toString(TimeUnit.NANOSECONDS.toMillis(resolveExecutionRepeatSoftLimitNanos(options))));
 		if (options.queryIndex != null) {
 			featureFlags.addValue("cli.queryIndex", options.queryIndex.toString());
 		}
@@ -1080,6 +1915,8 @@ public final class QueryPlanSnapshotCli {
 			featureFlags.addReflectiveGetter("lmdbStore.writable", storeRuntime.lmdbStore, "isWritable")
 					.addReflectiveGetter("lmdbConfig.tripleIndexes", storeRuntime.lmdbStoreConfig, "getTripleIndexes")
 					.addReflectiveGetter("lmdbConfig.forceSync", storeRuntime.lmdbStoreConfig, "getForceSync")
+					.addReflectiveGetter("lmdbConfig.pageCardinalityEstimator", storeRuntime.lmdbStoreConfig,
+							"getPageCardinalityEstimator")
 					.addReflectiveField("lmdbConfig.autoGrow", storeRuntime.lmdbStoreConfig, "autoGrow")
 					.addReflectiveGetter("lmdbConfig.valueDbSize", storeRuntime.lmdbStoreConfig, "getValueDBSize")
 					.addReflectiveGetter("lmdbConfig.tripleDbSize", storeRuntime.lmdbStoreConfig, "getTripleDBSize");
@@ -1159,6 +1996,24 @@ public final class QueryPlanSnapshotCli {
 		}
 	}
 
+	private static String formatLocalTime(long epochMillis) {
+		if (epochMillis <= 0L) {
+			return UNKNOWN_VALUE;
+		}
+		return LOCAL_TIME_FORMATTER.format(Instant.ofEpochMilli(epochMillis).atZone(LOCAL_ZONE));
+	}
+
+	private static String formatDurationMillis(long durationMillis) {
+		if (durationMillis < 0L) {
+			return UNKNOWN_VALUE;
+		}
+		long totalSeconds = TimeUnit.MILLISECONDS.toSeconds(durationMillis);
+		long hours = totalSeconds / 3600L;
+		long minutes = (totalSeconds % 3600L) / 60L;
+		long seconds = totalSeconds % 60L;
+		return String.format(Locale.ROOT, "%02d:%02d:%02d", hours, minutes, seconds);
+	}
+
 	private static long toEpochMillis(String capturedAt) {
 		if (capturedAt == null || capturedAt.isBlank()) {
 			return Long.MIN_VALUE;
@@ -1175,6 +2030,303 @@ public final class QueryPlanSnapshotCli {
 			return "<none>";
 		}
 		return queryTimeoutSeconds.toString();
+	}
+
+	private static void applySnapshotPlanDebugMetadata(QueryPlanSnapshot snapshot) {
+		if (snapshot == null) {
+			return;
+		}
+		LinkedHashMap<String, String> metadata = new LinkedHashMap<>();
+		if (snapshot.getMetadata() != null) {
+			metadata.putAll(snapshot.getMetadata());
+		}
+
+		String queryString = snapshot.getQueryString();
+		if (queryString != null) {
+			metadata.putIfAbsent("queryString.charCount", Integer.toString(queryString.length()));
+			metadata.putIfAbsent("queryString.lineCount", Integer.toString(countLines(queryString)));
+		}
+		metadata.putIfAbsent("runtime.javaVendor", System.getProperty("java.vendor", UNKNOWN_VALUE));
+		metadata.putIfAbsent("runtime.javaVmName", System.getProperty("java.vm.name", UNKNOWN_VALUE));
+		metadata.putIfAbsent("runtime.osName", System.getProperty("os.name", UNKNOWN_VALUE));
+		metadata.putIfAbsent("runtime.osVersion", System.getProperty("os.version", UNKNOWN_VALUE));
+		metadata.putIfAbsent("runtime.osArch", System.getProperty("os.arch", UNKNOWN_VALUE));
+		metadata.putIfAbsent("runtime.availableProcessors",
+				Integer.toString(Runtime.getRuntime().availableProcessors()));
+		metadata.putIfAbsent("runtime.maxMemoryBytes", Long.toString(Runtime.getRuntime().maxMemory()));
+		metadata.putIfAbsent("runtime.timeZone", ZoneId.systemDefault().getId());
+
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "unoptimized", "rootTypeNormalized",
+				"optimizerInput.unoptimizedRootTypeNormalized");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "unoptimized", "planNodeCount",
+				"optimizerInput.unoptimizedPlanNodeCount");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "unoptimized", "joinNodeCount",
+				"optimizerInput.unoptimizedJoinNodeCount");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "unoptimized", "filterNodeCount",
+				"optimizerInput.unoptimizedFilterNodeCount");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "unoptimized", "statementPatternCount",
+				"optimizerInput.unoptimizedStatementPatternCount");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "unoptimized", "joinAlgorithmCounts",
+				"optimizerInput.unoptimizedJoinAlgorithmCounts");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "unoptimized", "structureSignatureNormalizedSha256",
+				"optimizerInput.unoptimizedStructureNormalizedSha256");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "unoptimized", "estimatesMultisetSignatureSha256",
+				"optimizerInput.unoptimizedEstimatesMultisetSignatureSha256");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "unoptimized",
+				"statementPatternEstimatesMultisetSignatureSha256",
+				"optimizerInput.unoptimizedStatementPatternEstimatesMultisetSignatureSha256");
+
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "optimized", "rootTypeNormalized",
+				"optimizerOutput.optimizedRootTypeNormalized");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "optimized", "planNodeCount",
+				"optimizerOutput.optimizedPlanNodeCount");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "optimized", "joinNodeCount",
+				"optimizerOutput.optimizedJoinNodeCount");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "optimized", "filterNodeCount",
+				"optimizerOutput.optimizedFilterNodeCount");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "optimized", "statementPatternCount",
+				"optimizerOutput.optimizedStatementPatternCount");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "optimized", "joinAlgorithmCounts",
+				"optimizerOutput.optimizedJoinAlgorithmCounts");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "optimized", "structureSignatureNormalizedSha256",
+				"optimizerOutput.optimizedStructureNormalizedSha256");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "optimized", "estimatesMultisetSignatureSha256",
+				"optimizerOutput.optimizedEstimatesMultisetSignatureSha256");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "optimized",
+				"statementPatternEstimatesMultisetSignatureSha256",
+				"optimizerOutput.optimizedStatementPatternEstimatesMultisetSignatureSha256");
+
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "rootTypeNormalized",
+				"executionPlan.executedRootTypeNormalized");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "planNodeCount",
+				"executionPlan.executedPlanNodeCount");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "joinNodeCount",
+				"executionPlan.executedJoinNodeCount");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "filterNodeCount",
+				"executionPlan.executedFilterNodeCount");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "statementPatternCount",
+				"executionPlan.executedStatementPatternCount");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "joinAlgorithmCounts",
+				"executionPlan.executedJoinAlgorithmCounts");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "structureSignatureNormalizedSha256",
+				"executionPlan.executedStructureNormalizedSha256");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "estimatesMultisetSignatureSha256",
+				"executionPlan.executedEstimatesMultisetSignatureSha256");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed",
+				"statementPatternEstimatesMultisetSignatureSha256",
+				"executionPlan.executedStatementPatternEstimatesMultisetSignatureSha256");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledWorkUnits",
+				"executionPlan.executedModeledWorkUnits");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledInputRowsSum",
+				"executionPlan.executedModeledInputRowsSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledOutputRowsSum",
+				"executionPlan.executedModeledOutputRowsSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledSelfTimeActualSum",
+				"executionPlan.executedModeledSelfTimeActualSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledTotalTimeActualSum",
+				"executionPlan.executedModeledTotalTimeActualSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledBarrierCount",
+				"executionPlan.executedModeledBarrierCount");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledJoinInputRowsSum",
+				"executionPlan.executedModeledJoinInputRowsSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledJoinOutputRowsSum",
+				"executionPlan.executedModeledJoinOutputRowsSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledFilterInputRowsSum",
+				"executionPlan.executedModeledFilterInputRowsSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledFilterOutputRowsSum",
+				"executionPlan.executedModeledFilterOutputRowsSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledFilterPassRatio",
+				"executionPlan.executedModeledFilterPassRatio");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledFilterRejectRatio",
+				"executionPlan.executedModeledFilterRejectRatio");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledWorkByCategory",
+				"executionPlan.executedModeledWorkByCategory");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledOperatorCountByCategory",
+				"executionPlan.executedModeledOperatorCountByCategory");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledInputRowsByCategory",
+				"executionPlan.executedModeledInputRowsByCategory");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledOutputRowsByCategory",
+				"executionPlan.executedModeledOutputRowsByCategory");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledJoinWorkByAlgorithm",
+				"executionPlan.executedModeledJoinWorkByAlgorithm");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledWorkVector",
+				"executionPlan.executedModeledWorkVector");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledWorkVectorSignatureSha256",
+				"executionPlan.executedModeledWorkVectorSignatureSha256");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "operatorWorkBreakdownSignatureSha256",
+				"executionPlan.executedOperatorWorkBreakdownSignatureSha256");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "operatorWorkTopContributors",
+				"executionPlan.executedOperatorWorkTopContributors");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "estimateActualComparableNodeCount",
+				"executionPlan.executedEstimateActualComparableNodeCount");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledHasNextCallCountSum",
+				"executionPlan.executedHasNextCallCountSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledHasNextTrueCountSum",
+				"executionPlan.executedHasNextTrueCountSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledHasNextTimeNanosSum",
+				"executionPlan.executedHasNextTimeNanosSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledNextCallCountSum",
+				"executionPlan.executedNextCallCountSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledNextTimeNanosSum",
+				"executionPlan.executedNextTimeNanosSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledJoinRightIteratorCreateCountSum",
+				"executionPlan.executedJoinRightIteratorCreateCountSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledJoinLeftBindingSetConsumedCountSum",
+				"executionPlan.executedJoinLeftBindingSetConsumedCountSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledJoinRightBindingSetConsumedCountSum",
+				"executionPlan.executedJoinRightBindingSetConsumedCountSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledJoinRightBindingsPerLeftRatio",
+				"executionPlan.executedJoinRightBindingsPerLeftRatio");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledJoinTelemetryNodeCount",
+				"executionPlan.executedJoinTelemetryNodeCount");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed",
+				"modeledJoinRightBindingSetConsumedPerRightIteratorAverage",
+				"executionPlan.executedJoinRightBindingSetConsumedPerRightIteratorAverage");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed",
+				"modeledJoinRightIteratorCreatePerJoinNodeAverage",
+				"executionPlan.executedJoinRightIteratorCreatePerJoinNodeAverage");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed",
+				"modeledJoinLeftBindingSetConsumedPerJoinNodeAverage",
+				"executionPlan.executedJoinLeftBindingSetConsumedPerJoinNodeAverage");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed",
+				"modeledJoinRightBindingSetConsumedPerJoinNodeAverage",
+				"executionPlan.executedJoinRightBindingSetConsumedPerJoinNodeAverage");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledSourceRowsScannedSum",
+				"executionPlan.executedSourceRowsScannedSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledSourceRowsMatchedSum",
+				"executionPlan.executedSourceRowsMatchedSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledSourceRowsFilteredSum",
+				"executionPlan.executedSourceRowsFilteredSum");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledSourceFilterOutRatio",
+				"executionPlan.executedSourceFilterOutRatio");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledHasNextPerNextRatio",
+				"executionPlan.executedHasNextPerNextRatio");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledHasNextTruePerNextRatio",
+				"executionPlan.executedHasNextTruePerNextRatio");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "estimateActualQErrorP95",
+				"executionPlan.executedEstimateActualQErrorP95");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "estimateActualQErrorMax",
+				"executionPlan.executedEstimateActualQErrorMax");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "joinEstimateActualComparableNodeCount",
+				"executionPlan.executedJoinEstimateActualComparableNodeCount");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "joinEstimateActualQErrorP95",
+				"executionPlan.executedJoinEstimateActualQErrorP95");
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "joinEstimateActualQErrorMax",
+				"executionPlan.executedJoinEstimateActualQErrorMax");
+
+		Map<String, String> featureFlags = snapshot.getFeatureFlags();
+		String featureFlagsFingerprint = mapFingerprintSha256(featureFlags, null);
+		metadata.put("featureFlags.sha256", featureFlagsFingerprint);
+		metadata.put("planDeterminism.inputFingerprintSha256", buildPlanInputFingerprint(metadata, featureFlags));
+		metadata.put("planDeterminism.environmentFingerprintSha256",
+				buildEnvironmentFingerprint(metadata, featureFlagsFingerprint));
+
+		snapshot.setMetadata(metadata);
+	}
+
+	private static int countLines(String value) {
+		if (value == null || value.isEmpty()) {
+			return 0;
+		}
+		int lines = 1;
+		for (int i = 0; i < value.length(); i++) {
+			if (value.charAt(i) == '\n') {
+				lines++;
+			}
+		}
+		return lines;
+	}
+
+	private static void copyLevelDebugMetricToMetadata(QueryPlanSnapshot snapshot, Map<String, String> metadata,
+			String level, String debugMetricKey, String metadataKey) {
+		String value = explanationDebugMetric(snapshot, level, debugMetricKey);
+		if (value == null || value.isBlank()) {
+			return;
+		}
+		metadata.putIfAbsent(metadataKey, value);
+	}
+
+	private static String buildPlanInputFingerprint(Map<String, String> metadata, Map<String, String> featureFlags) {
+		StringBuilder fingerprint = new StringBuilder();
+		appendFingerprintField(fingerprint, "queryString.normalizedWhitespaceSha256",
+				metadata.get("queryString.normalizedWhitespaceSha256"));
+		appendFingerprintField(fingerprint, "optimizerInput.unoptimizedStructureNormalizedSha256",
+				metadata.get("optimizerInput.unoptimizedStructureNormalizedSha256"));
+		appendFingerprintField(fingerprint, "store", metadata.get("store"));
+		appendFingerprintField(fingerprint, "theme", metadata.get("theme"));
+		appendFingerprintField(fingerprint, "querySource", metadata.get("querySource"));
+		appendFingerprintField(fingerprint, "queryTimeoutSeconds", metadata.get("queryTimeoutSeconds"));
+		appendFingerprintField(fingerprint, "featureFlags.optimizerInputSubsetSha256",
+				mapFingerprintSha256(featureFlags, PLAN_INPUT_FEATURE_FLAG_PREFIXES));
+		return sha256Hex(fingerprint.toString());
+	}
+
+	private static String buildEnvironmentFingerprint(Map<String, String> metadata, String featureFlagsFingerprint) {
+		StringBuilder fingerprint = new StringBuilder();
+		appendFingerprintField(fingerprint, "gitCommit", metadata.get("gitCommit"));
+		appendFingerprintField(fingerprint, "gitBranch", metadata.get("gitBranch"));
+		appendFingerprintField(fingerprint, "javaVersion", metadata.get("javaVersion"));
+		appendFingerprintField(fingerprint, "runtime.javaVendor", metadata.get("runtime.javaVendor"));
+		appendFingerprintField(fingerprint, "runtime.javaVmName", metadata.get("runtime.javaVmName"));
+		appendFingerprintField(fingerprint, "runtime.osName", metadata.get("runtime.osName"));
+		appendFingerprintField(fingerprint, "runtime.osVersion", metadata.get("runtime.osVersion"));
+		appendFingerprintField(fingerprint, "runtime.osArch", metadata.get("runtime.osArch"));
+		appendFingerprintField(fingerprint, "runtime.availableProcessors",
+				metadata.get("runtime.availableProcessors"));
+		appendFingerprintField(fingerprint, "runtime.maxMemoryBytes", metadata.get("runtime.maxMemoryBytes"));
+		appendFingerprintField(fingerprint, "runtime.timeZone", metadata.get("runtime.timeZone"));
+		appendFingerprintField(fingerprint, "featureFlags.sha256", featureFlagsFingerprint);
+		return sha256Hex(fingerprint.toString());
+	}
+
+	private static void appendFingerprintField(StringBuilder fingerprint, String key, String value) {
+		if (fingerprint.length() > 0) {
+			fingerprint.append('\n');
+		}
+		fingerprint.append(key).append('=').append(value == null ? "<null>" : value);
+	}
+
+	private static String mapFingerprintSha256(Map<String, String> values, List<String> includePrefixes) {
+		if (values == null || values.isEmpty()) {
+			return sha256Hex("<empty>");
+		}
+		ArrayList<String> entries = new ArrayList<>();
+		for (Map.Entry<String, String> entry : values.entrySet()) {
+			String key = entry.getKey() == null ? "<null>" : entry.getKey();
+			if (includePrefixes != null && !includePrefixes.isEmpty() && !matchesAnyPrefix(key, includePrefixes)) {
+				continue;
+			}
+			String value = entry.getValue() == null ? "<null>" : entry.getValue();
+			entries.add(key + "=" + value);
+		}
+		if (entries.isEmpty()) {
+			return sha256Hex("<empty>");
+		}
+		Collections.sort(entries);
+		return sha256Hex(String.join("\n", entries));
+	}
+
+	private static boolean matchesAnyPrefix(String key, List<String> prefixes) {
+		for (String prefix : prefixes) {
+			if (key.startsWith(prefix)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static String sha256Hex(String input) {
+		try {
+			MessageDigest digest = MessageDigest.getInstance("SHA-256");
+			byte[] bytes = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+			StringBuilder hex = new StringBuilder(bytes.length * 2);
+			for (byte value : bytes) {
+				hex.append(String.format("%02x", value));
+			}
+			return hex.toString();
+		} catch (NoSuchAlgorithmException e) {
+			throw new IllegalStateException("SHA-256 unavailable", e);
+		}
 	}
 
 	private static int validateExecutionRepeatMinRuns(int minRuns) {
@@ -1196,6 +2348,31 @@ public final class QueryPlanSnapshotCli {
 			throw new IllegalArgumentException("executionRepeatSoftLimitNanos must be >= 1.");
 		}
 		return softLimitNanos;
+	}
+
+	private static int resolveExecutionRepeatMinRuns(QueryPlanSnapshotCliOptions options) {
+		return options.executionRepeatMinRuns == null
+				? DEFAULT_EXECUTION_REPEAT_MIN_RUNS
+				: options.executionRepeatMinRuns;
+	}
+
+	private static int resolveExecutionRepeatMaxRuns(QueryPlanSnapshotCliOptions options) {
+		return options.executionRepeatMaxRuns == null
+				? DEFAULT_EXECUTION_REPEAT_MAX_RUNS
+				: options.executionRepeatMaxRuns;
+	}
+
+	private static long resolveExecutionRepeatSoftLimitNanos(QueryPlanSnapshotCliOptions options) {
+		return options.executionRepeatSoftLimitMillis == null
+				? DEFAULT_EXECUTION_REPEAT_SOFT_LIMIT_NANOS
+				: TimeUnit.MILLISECONDS.toNanos(options.executionRepeatSoftLimitMillis);
+	}
+
+	private static long validateBatchEtaUpdateIntervalNanos(long batchEtaUpdateIntervalNanos) {
+		if (batchEtaUpdateIntervalNanos < 1L) {
+			throw new IllegalArgumentException("batchEtaUpdateIntervalNanos must be >= 1.");
+		}
+		return batchEtaUpdateIntervalNanos;
 	}
 
 	private static TupleQuery prepareTupleQuery(SailRepositoryConnection connection, String queryText,
@@ -1271,6 +2448,12 @@ public final class QueryPlanSnapshotCli {
 		long stableResultCount = Long.MIN_VALUE;
 		int runs = 0;
 		boolean softLimitReached = false;
+		long minRunNanos = Long.MAX_VALUE;
+		long maxRunNanos = Long.MIN_VALUE;
+		ArrayList<Long> runDurationsNanos = new ArrayList<>();
+		ArrayList<String> optimizedPlanSignatureSequence = new ArrayList<>();
+		LinkedHashSet<String> optimizedPlanSignatures = new LinkedHashSet<>();
+		VerificationFailure failure = null;
 
 		while (runs < executionRepeatMaxRuns) {
 			if (runs >= executionRepeatMinRuns) {
@@ -1284,37 +2467,77 @@ public final class QueryPlanSnapshotCli {
 				break;
 			}
 
+			TupleQuery tupleQuery = prepareTupleQuery(connection, queryText, queryTimeoutSeconds);
+			String optimizedPlanSignature = optimizedPlanSignature(tupleQuery);
+			optimizedPlanSignatureSequence.add(optimizedPlanSignature);
+			optimizedPlanSignatures.add(optimizedPlanSignature);
 			long startedAt = System.nanoTime();
 			long currentResultCount;
 			try {
-				try (TupleQueryResult result = prepareTupleQuery(connection, queryText, queryTimeoutSeconds)
-						.evaluate()) {
+				try (TupleQueryResult result = tupleQuery.evaluate()) {
 					currentResultCount = result.stream().count();
 				}
 			} catch (QueryInterruptedException interrupted) {
 				softLimitReached = true;
+				failure = VerificationFailure.interrupted(runs + 1, optimizedPlanSignature, interrupted);
+				break;
+			} catch (Exception evaluationError) {
+				failure = VerificationFailure.error(runs + 1, optimizedPlanSignature, evaluationError);
 				break;
 			}
 
 			long runNanos = Math.max(1L, System.nanoTime() - startedAt);
 			elapsedNanos += runNanos;
 			runs++;
+			minRunNanos = Math.min(minRunNanos, runNanos);
+			maxRunNanos = Math.max(maxRunNanos, runNanos);
+			runDurationsNanos.add(runNanos);
 
 			if (stableResultCount == Long.MIN_VALUE) {
 				stableResultCount = currentResultCount;
 			} else if (stableResultCount != currentResultCount) {
-				throw new IllegalStateException("Result count changed between repeated runs: expected "
-						+ stableResultCount + " but got " + currentResultCount + " on run " + runs);
+				failure = VerificationFailure.resultCountChanged(runs, stableResultCount, currentResultCount,
+						optimizedPlanSignature);
+				break;
 			}
 		}
 
 		boolean maxRunsReached = runs >= executionRepeatMaxRuns;
 		if (runs == 0) {
-			return new QueryExecutionVerification(0, 0, 0, softLimitReached, maxRunsReached);
+			return new QueryExecutionVerification(0, 0, 0, softLimitReached, maxRunsReached, 0, 0, List.of(),
+					List.copyOf(optimizedPlanSignatures), List.copyOf(optimizedPlanSignatureSequence), failure);
 		}
 
 		return new QueryExecutionVerification(runs, elapsedNanos, stableResultCount, softLimitReached,
-				maxRunsReached);
+				maxRunsReached, minRunNanos, maxRunNanos, List.copyOf(runDurationsNanos),
+				List.copyOf(optimizedPlanSignatures), List.copyOf(optimizedPlanSignatureSequence), failure);
+	}
+
+	private static String optimizedPlanSignature(TupleQuery tupleQuery) {
+		try {
+			Explanation explanation = tupleQuery.explain(Explanation.Level.Optimized);
+			if (explanation == null) {
+				return "missing-explanation";
+			}
+			Map<String, String> metrics = QueryPlanCapture.extractDebugMetrics(explanation.toJson());
+			String structure = metricOrMissing(metrics, "structureSignatureNormalizedSha256");
+			String estimates = metricOrMissing(metrics, "estimatesMultisetSignatureSha256");
+			String statementPatterns = metricOrMissing(metrics, "statementPatternEstimatesMultisetSignatureSha256");
+			return structure + "|" + estimates + "|" + statementPatterns;
+		} catch (Exception e) {
+			return "error:" + e.getClass().getSimpleName();
+		}
+	}
+
+	private static String metricOrMissing(Map<String, String> metrics, String key) {
+		if (metrics == null) {
+			return "missing-metrics";
+		}
+		String value = metrics.get(key);
+		if (value == null || value.isBlank()) {
+			return "missing-" + key;
+		}
+		return value;
 	}
 
 	private void printExecutionVerification(QueryExecutionVerification executionVerification) {
@@ -1328,13 +2551,338 @@ public final class QueryPlanSnapshotCli {
 		long totalMillis = TimeUnit.NANOSECONDS.toMillis(executionVerification.elapsedNanos);
 		long averageMillis = TimeUnit.NANOSECONDS.toMillis(
 				executionVerification.elapsedNanos / executionVerification.runs);
+		long minMillis = TimeUnit.NANOSECONDS.toMillis(executionVerification.minRunNanos);
+		long maxMillis = TimeUnit.NANOSECONDS.toMillis(executionVerification.maxRunNanos);
 		output.println("runs=" + executionVerification.runs
 				+ ", totalMillis=" + totalMillis
 				+ ", averageMillis=" + averageMillis
+				+ ", minMillis=" + minMillis
+				+ ", maxMillis=" + maxMillis
+				+ ", verificationStatus=" + executionVerification.verificationStatus()
+				+ ", stdDevMillis=" + executionVerification.stdDevMillis()
+				+ ", coefficientOfVariationPct=" + executionVerification.coefficientOfVariationPct()
 				+ ", resultCount=" + executionVerification.resultCount
+				+ ", sampleMillis=" + executionVerification.sampleMillis()
+				+ ", optimizedPlanHashCount=" + executionVerification.optimizedPlanHashCount()
+				+ ", optimizedPlanHashStable=" + executionVerification.optimizedPlanHashStable()
+				+ ", optimizedPlanHashTransitionCount=" + executionVerification.optimizedPlanHashTransitionCount()
 				+ ", softLimitMillis=" + TimeUnit.NANOSECONDS.toMillis(executionRepeatSoftLimitNanos)
 				+ ", softLimitReached=" + executionVerification.softLimitReached
 				+ ", maxRunsReached=" + executionVerification.maxRunsReached);
+		if (executionVerification.hasFailure()) {
+			output.println("failure: run=" + executionVerification.failureRun()
+					+ ", class=" + executionVerification.failureClass()
+					+ ", message=" + executionVerification.failureMessage()
+					+ ", causeClass=" + executionVerification.failureCauseClass()
+					+ ", causeMessage=" + executionVerification.failureCauseMessage()
+					+ ", planHash=" + executionVerification.failurePlanHash());
+		}
+	}
+
+	private static void applyExecutionVerificationMetadata(QueryPlanSnapshot snapshot,
+			QueryExecutionVerification executionVerification) {
+		if (snapshot == null || executionVerification == null) {
+			return;
+		}
+		LinkedHashMap<String, String> metadata = new LinkedHashMap<>();
+		if (snapshot.getMetadata() != null) {
+			metadata.putAll(snapshot.getMetadata());
+		}
+
+		metadata.put("execution.runs", Integer.toString(executionVerification.runs));
+		metadata.put("execution.resultCount", Long.toString(executionVerification.resultCount));
+		metadata.put("execution.totalMillis",
+				Long.toString(TimeUnit.NANOSECONDS.toMillis(executionVerification.elapsedNanos)));
+		metadata.put("execution.averageMillis", Long.toString(executionVerification.averageMillis()));
+		metadata.put("execution.minMillis", Long.toString(executionVerification.minMillis()));
+		metadata.put("execution.maxMillis", Long.toString(executionVerification.maxMillis()));
+		metadata.put("execution.stdDevMillis", Long.toString(executionVerification.stdDevMillis()));
+		metadata.put("execution.coefficientOfVariationPct", executionVerification.coefficientOfVariationPct());
+		metadata.put("execution.sampleMillis", executionVerification.sampleMillis());
+		metadata.put("execution.verificationStatus", executionVerification.verificationStatus());
+		metadata.put("execution.optimizedPlanHashCount",
+				Integer.toString(executionVerification.optimizedPlanHashCount()));
+		metadata.put("execution.optimizedPlanHashStable",
+				Boolean.toString(executionVerification.optimizedPlanHashStable()));
+		metadata.put("execution.optimizedPlanHashes", executionVerification.optimizedPlanHashes());
+		metadata.put("execution.optimizedPlanHashTransitionCount",
+				Integer.toString(executionVerification.optimizedPlanHashTransitionCount()));
+		metadata.put("execution.optimizedPlanHashSequence", executionVerification.optimizedPlanHashSequence());
+		metadata.put("execution.failureRun", executionVerification.failureRun());
+		metadata.put("execution.failureClass", executionVerification.failureClass());
+		metadata.put("execution.failureMessage", executionVerification.failureMessage());
+		metadata.put("execution.failureCauseClass", executionVerification.failureCauseClass());
+		metadata.put("execution.failureCauseMessage", executionVerification.failureCauseMessage());
+		metadata.put("execution.failurePlanHash", executionVerification.failurePlanHash());
+		metadata.put("execution.softLimitReached", Boolean.toString(executionVerification.softLimitReached));
+		metadata.put("execution.maxRunsReached", Boolean.toString(executionVerification.maxRunsReached));
+		snapshot.setMetadata(metadata);
+	}
+
+	private static final class BatchQueryTarget {
+		private final Theme theme;
+		private final int queryIndex;
+		private final BenchmarkQuery benchmarkQuery;
+		private final String queryId;
+		private final String queryText;
+
+		private BatchQueryTarget(Theme theme, int queryIndex, BenchmarkQuery benchmarkQuery, String queryId,
+				String queryText) {
+			this.theme = theme;
+			this.queryIndex = queryIndex;
+			this.benchmarkQuery = benchmarkQuery;
+			this.queryId = queryId;
+			this.queryText = queryText;
+		}
+	}
+
+	private static final class HistoricalQueryTiming {
+		private final long executionMillis;
+		private final long capturedAtEpochMillis;
+
+		private HistoricalQueryTiming(long executionMillis, long capturedAtEpochMillis) {
+			this.executionMillis = executionMillis;
+			this.capturedAtEpochMillis = capturedAtEpochMillis;
+		}
+	}
+
+	private static final class BatchRunEtaReporter {
+		private final PrintStream output;
+		private final LinkedHashMap<String, Long> plannedEstimateMillisByQueryId = new LinkedHashMap<>();
+		private final LinkedHashSet<String> completedQueryIds = new LinkedHashSet<>();
+		private final long startedAtNanos = System.nanoTime();
+		private final long startedAtEpochMillis = System.currentTimeMillis();
+		private final long updateIntervalNanos;
+		private final long fallbackEstimateMillis;
+		private final int totalQueries;
+		private final int directHistoryQueryCount;
+		private final ScheduledExecutorService scheduler;
+		private long completedActualMillis;
+		private boolean stopped;
+
+		private BatchRunEtaReporter(PrintStream output, List<String> queryIds, Map<String, Long> historicalByQueryId,
+				long fallbackEstimateMillis, long updateIntervalNanos) {
+			this.output = Objects.requireNonNull(output, "output");
+			this.updateIntervalNanos = updateIntervalNanos;
+			this.fallbackEstimateMillis = Math.max(0L, fallbackEstimateMillis);
+			this.totalQueries = queryIds.size();
+			this.scheduler = Executors.newSingleThreadScheduledExecutor(task -> {
+				Thread thread = new Thread(task, "query-plan-snapshot-cli-eta");
+				thread.setDaemon(true);
+				return thread;
+			});
+
+			int directCount = 0;
+			for (String queryId : queryIds) {
+				long directEstimate = Math.max(0L, historicalByQueryId.getOrDefault(queryId, 0L));
+				if (directEstimate > 0L) {
+					directCount++;
+				}
+				long estimatedMillis = directEstimate > 0L ? directEstimate : this.fallbackEstimateMillis;
+				plannedEstimateMillisByQueryId.put(queryId, estimatedMillis);
+			}
+			this.directHistoryQueryCount = directCount;
+		}
+
+		void start() {
+			printStart();
+			if (totalQueries == 0) {
+				return;
+			}
+			scheduler.scheduleAtFixedRate(() -> {
+				try {
+					printUpdate();
+				} catch (RuntimeException ignored) {
+					// Ignore transient logging errors in periodic ETA updates.
+				}
+			}, updateIntervalNanos, updateIntervalNanos, TimeUnit.NANOSECONDS);
+		}
+
+		void markCompleted(String queryId, long actualElapsedMillis) {
+			synchronized (this) {
+				if (completedQueryIds.add(queryId)) {
+					completedActualMillis += Math.max(1L, actualElapsedMillis);
+				}
+			}
+		}
+
+		void stop() {
+			synchronized (this) {
+				stopped = true;
+			}
+			scheduler.shutdownNow();
+		}
+
+		private void printStart() {
+			long estimatedTotalMillis;
+			synchronized (this) {
+				estimatedTotalMillis = estimateTotalMillisLocked();
+			}
+
+			String estimatedTotal = estimatedTotalMillis > 0L ? formatDurationMillis(estimatedTotalMillis)
+					: UNKNOWN_VALUE;
+			String eta = estimatedTotalMillis > 0L ? formatLocalTime(startedAtEpochMillis + estimatedTotalMillis)
+					: UNKNOWN_VALUE;
+			printLine("ETA start: totalQueries=" + totalQueries
+					+ ", directHistory=" + directHistoryQueryCount + "/" + totalQueries
+					+ ", estimatedTotal=" + estimatedTotal
+					+ ", eta=" + eta);
+		}
+
+		private void printUpdate() {
+			int completed;
+			long elapsedMillis;
+			RemainingEstimate remainingEstimate;
+			synchronized (this) {
+				if (stopped) {
+					return;
+				}
+				completed = completedQueryIds.size();
+				if (completed >= totalQueries) {
+					return;
+				}
+				elapsedMillis = TimeUnit.NANOSECONDS.toMillis(Math.max(1L, System.nanoTime() - startedAtNanos));
+				remainingEstimate = estimateRemainingLocked();
+			}
+
+			String remainingText = remainingEstimate.unknown ? UNKNOWN_VALUE
+					: formatDurationMillis(remainingEstimate.millis);
+			String etaText = remainingEstimate.unknown ? UNKNOWN_VALUE
+					: formatLocalTime(System.currentTimeMillis() + remainingEstimate.millis);
+			printLine("ETA update: completed=" + completed + "/" + totalQueries
+					+ ", elapsed=" + formatDurationMillis(elapsedMillis)
+					+ ", remainingEstimate=" + remainingText
+					+ ", eta=" + etaText);
+		}
+
+		private synchronized long estimateTotalMillisLocked() {
+			long total = 0L;
+			boolean anyEstimate = false;
+			for (long estimateMillis : plannedEstimateMillisByQueryId.values()) {
+				if (estimateMillis <= 0L) {
+					continue;
+				}
+				total += estimateMillis;
+				anyEstimate = true;
+			}
+			if (anyEstimate) {
+				return total;
+			}
+			long dynamicFallback = dynamicFallbackMillisLocked();
+			if (dynamicFallback <= 0L) {
+				return 0L;
+			}
+			return dynamicFallback * totalQueries;
+		}
+
+		private synchronized RemainingEstimate estimateRemainingLocked() {
+			long remaining = 0L;
+			boolean unknown = false;
+			long dynamicFallback = dynamicFallbackMillisLocked();
+			for (Map.Entry<String, Long> entry : plannedEstimateMillisByQueryId.entrySet()) {
+				if (completedQueryIds.contains(entry.getKey())) {
+					continue;
+				}
+				long estimate = entry.getValue();
+				if (estimate <= 0L) {
+					estimate = dynamicFallback;
+				}
+				if (estimate <= 0L) {
+					unknown = true;
+					continue;
+				}
+				remaining += estimate;
+			}
+			if (remaining <= 0L) {
+				return new RemainingEstimate(0L, true);
+			}
+			return new RemainingEstimate(remaining, unknown);
+		}
+
+		private synchronized long dynamicFallbackMillisLocked() {
+			if (!completedQueryIds.isEmpty()) {
+				return Math.max(1L, completedActualMillis / completedQueryIds.size());
+			}
+			return fallbackEstimateMillis;
+		}
+
+		private void printLine(String line) {
+			synchronized (output) {
+				output.println(line);
+				output.flush();
+			}
+		}
+
+		private static final class RemainingEstimate {
+			private final long millis;
+			private final boolean unknown;
+
+			private RemainingEstimate(long millis, boolean unknown) {
+				this.millis = millis;
+				this.unknown = unknown;
+			}
+		}
+	}
+
+	private static final class VerificationFailure {
+		private final String status;
+		private final int runNumber;
+		private final String planHash;
+		private final String errorClass;
+		private final String errorMessage;
+		private final String causeClass;
+		private final String causeMessage;
+
+		private VerificationFailure(String status, int runNumber, String planHash, String errorClass,
+				String errorMessage, String causeClass, String causeMessage) {
+			this.status = status;
+			this.runNumber = runNumber;
+			this.planHash = planHash;
+			this.errorClass = errorClass;
+			this.errorMessage = errorMessage;
+			this.causeClass = causeClass;
+			this.causeMessage = causeMessage;
+		}
+
+		private static VerificationFailure interrupted(int runNumber, String planHash, Throwable throwable) {
+			return fromThrowable("interrupted", runNumber, planHash, throwable);
+		}
+
+		private static VerificationFailure error(int runNumber, String planHash, Throwable throwable) {
+			return fromThrowable("evaluation-error", runNumber, planHash, throwable);
+		}
+
+		private static VerificationFailure resultCountChanged(int runNumber, long expected, long actual,
+				String planHash) {
+			String message = "Result count changed between repeated runs: expected " + expected + " but got "
+					+ actual + " on run " + runNumber;
+			return new VerificationFailure("result-count-changed", runNumber, planHash, "ResultCountChanged", message,
+					"", "");
+		}
+
+		private static VerificationFailure fromThrowable(String status, int runNumber, String planHash,
+				Throwable throwable) {
+			Throwable rootCause = rootCause(throwable);
+			String errorClass = throwable == null ? "UnknownError" : throwable.getClass().getSimpleName();
+			String errorMessage = throwable == null || throwable.getMessage() == null ? "" : throwable.getMessage();
+			String causeClass = rootCause == null || rootCause == throwable ? ""
+					: rootCause.getClass().getSimpleName();
+			String causeMessage = rootCause == null || rootCause == throwable || rootCause.getMessage() == null ? ""
+					: rootCause.getMessage();
+			return new VerificationFailure(status, runNumber, planHash, errorClass, errorMessage, causeClass,
+					causeMessage);
+		}
+
+		private static Throwable rootCause(Throwable throwable) {
+			if (throwable == null) {
+				return null;
+			}
+			Throwable current = throwable;
+			while (current.getCause() != null && current.getCause() != current) {
+				current = current.getCause();
+			}
+			return current;
+		}
 	}
 
 	private static final class QueryExecutionVerification {
@@ -1343,14 +2891,175 @@ public final class QueryPlanSnapshotCli {
 		private final long resultCount;
 		private final boolean softLimitReached;
 		private final boolean maxRunsReached;
+		private final long minRunNanos;
+		private final long maxRunNanos;
+		private final List<Long> runDurationsNanos;
+		private final List<String> optimizedPlanSignatures;
+		private final List<String> optimizedPlanSignatureSequence;
+		private final VerificationFailure failure;
 
 		private QueryExecutionVerification(int runs, long elapsedNanos, long resultCount, boolean softLimitReached,
-				boolean maxRunsReached) {
+				boolean maxRunsReached, long minRunNanos, long maxRunNanos, List<Long> runDurationsNanos,
+				List<String> optimizedPlanSignatures, List<String> optimizedPlanSignatureSequence,
+				VerificationFailure failure) {
 			this.runs = runs;
 			this.elapsedNanos = elapsedNanos;
 			this.resultCount = resultCount;
 			this.softLimitReached = softLimitReached;
 			this.maxRunsReached = maxRunsReached;
+			this.minRunNanos = minRunNanos;
+			this.maxRunNanos = maxRunNanos;
+			this.runDurationsNanos = runDurationsNanos;
+			this.optimizedPlanSignatures = optimizedPlanSignatures;
+			this.optimizedPlanSignatureSequence = optimizedPlanSignatureSequence;
+			this.failure = failure;
+		}
+
+		private boolean hasFailure() {
+			return failure != null;
+		}
+
+		private String verificationStatus() {
+			if (failure != null) {
+				return failure.status;
+			}
+			if (runs == 0) {
+				return softLimitReached ? "soft-limit-reached-no-runs" : "no-runs";
+			}
+			if (maxRunsReached) {
+				return "max-runs-reached";
+			}
+			if (softLimitReached) {
+				return "soft-limit-reached";
+			}
+			return "completed";
+		}
+
+		private long averageMillis() {
+			if (runs == 0) {
+				return 0;
+			}
+			return TimeUnit.NANOSECONDS.toMillis(elapsedNanos / runs);
+		}
+
+		private long minMillis() {
+			return TimeUnit.NANOSECONDS.toMillis(minRunNanos);
+		}
+
+		private long maxMillis() {
+			return TimeUnit.NANOSECONDS.toMillis(maxRunNanos);
+		}
+
+		private long stdDevMillis() {
+			if (runs == 0 || runDurationsNanos.isEmpty()) {
+				return 0L;
+			}
+			double meanNanos = elapsedNanos / (double) runs;
+			double squaredDiffSum = 0.0d;
+			for (long duration : runDurationsNanos) {
+				double diff = duration - meanNanos;
+				squaredDiffSum += diff * diff;
+			}
+			double variance = squaredDiffSum / runDurationsNanos.size();
+			return TimeUnit.NANOSECONDS.toMillis(Math.max(0L, Math.round(Math.sqrt(variance))));
+		}
+
+		private String coefficientOfVariationPct() {
+			if (runs == 0 || runDurationsNanos.isEmpty()) {
+				return "0.0";
+			}
+			double meanNanos = elapsedNanos / (double) runs;
+			if (meanNanos <= 0.0d) {
+				return "0.0";
+			}
+			double squaredDiffSum = 0.0d;
+			for (long duration : runDurationsNanos) {
+				double diff = duration - meanNanos;
+				squaredDiffSum += diff * diff;
+			}
+			double variance = squaredDiffSum / runDurationsNanos.size();
+			double stdDev = Math.sqrt(variance);
+			double coefficientPct = (stdDev / meanNanos) * 100.0d;
+			return String.format(Locale.ROOT, "%.4f", coefficientPct);
+		}
+
+		private String sampleMillis() {
+			if (runDurationsNanos.isEmpty()) {
+				return "";
+			}
+			StringBuilder values = new StringBuilder();
+			for (int i = 0; i < runDurationsNanos.size(); i++) {
+				if (i > 0) {
+					values.append(',');
+				}
+				values.append(TimeUnit.NANOSECONDS.toMillis(runDurationsNanos.get(i)));
+			}
+			return values.toString();
+		}
+
+		private int optimizedPlanHashCount() {
+			return optimizedPlanSignatures.size();
+		}
+
+		private boolean optimizedPlanHashStable() {
+			return optimizedPlanSignatures.size() <= 1;
+		}
+
+		private int optimizedPlanHashTransitionCount() {
+			if (optimizedPlanSignatureSequence.size() <= 1) {
+				return 0;
+			}
+			int transitions = 0;
+			String previous = optimizedPlanSignatureSequence.get(0);
+			for (int i = 1; i < optimizedPlanSignatureSequence.size(); i++) {
+				String current = optimizedPlanSignatureSequence.get(i);
+				if (!Objects.equals(previous, current)) {
+					transitions++;
+				}
+				previous = current;
+			}
+			return transitions;
+		}
+
+		private String optimizedPlanHashes() {
+			if (optimizedPlanSignatures.isEmpty()) {
+				return "";
+			}
+			return String.join(";", optimizedPlanSignatures);
+		}
+
+		private String optimizedPlanHashSequence() {
+			if (optimizedPlanSignatureSequence.isEmpty()) {
+				return "";
+			}
+			return String.join(";", optimizedPlanSignatureSequence);
+		}
+
+		private String failureRun() {
+			if (failure == null || failure.runNumber <= 0) {
+				return "";
+			}
+			return Integer.toString(failure.runNumber);
+		}
+
+		private String failureClass() {
+			return failure == null ? "" : failure.errorClass;
+		}
+
+		private String failureMessage() {
+			return failure == null ? "" : failure.errorMessage;
+		}
+
+		private String failureCauseClass() {
+			return failure == null ? "" : failure.causeClass;
+		}
+
+		private String failureCauseMessage() {
+			return failure == null ? "" : failure.causeMessage;
+		}
+
+		private String failurePlanHash() {
+			return failure == null ? "" : failure.planHash;
 		}
 	}
 

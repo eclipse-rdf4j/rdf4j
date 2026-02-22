@@ -66,6 +66,19 @@ public class GenericPlanNode {
 	// plans[0..n].totalTimeActual)
 	private Double totalTimeActual;
 
+	// Telemetry counters captured while iterating this node during executed/timed explanations.
+	private Long hasNextCallCountActual;
+	private Long hasNextTrueCountActual;
+	private Long hasNextTimeNanosActual;
+	private Long nextCallCountActual;
+	private Long nextTimeNanosActual;
+	private Long joinRightIteratorsCreatedActual;
+	private Long joinLeftBindingsConsumedActual;
+	private Long joinRightBindingsConsumedActual;
+	private Long sourceRowsScannedActual;
+	private Long sourceRowsMatchedActual;
+	private Long sourceRowsFilteredActual;
+
 	// true if this node introduces a new scope
 	private Boolean newScope;
 
@@ -173,6 +186,116 @@ public class GenericPlanNode {
 	public void setTotalTimeActual(Double totalTimeActual) {
 		if (totalTimeActual >= 0) {
 			this.totalTimeActual = totalTimeActual;
+		}
+	}
+
+	public Long getHasNextCallCountActual() {
+		return hasNextCallCountActual;
+	}
+
+	public void setHasNextCallCountActual(Long hasNextCallCountActual) {
+		if (hasNextCallCountActual != null && hasNextCallCountActual >= 0) {
+			this.hasNextCallCountActual = hasNextCallCountActual;
+		}
+	}
+
+	public Long getHasNextTrueCountActual() {
+		return hasNextTrueCountActual;
+	}
+
+	public void setHasNextTrueCountActual(Long hasNextTrueCountActual) {
+		if (hasNextTrueCountActual != null && hasNextTrueCountActual >= 0) {
+			this.hasNextTrueCountActual = hasNextTrueCountActual;
+		}
+	}
+
+	public Long getHasNextTimeNanosActual() {
+		return hasNextTimeNanosActual;
+	}
+
+	public void setHasNextTimeNanosActual(Long hasNextTimeNanosActual) {
+		if (hasNextTimeNanosActual != null && hasNextTimeNanosActual >= 0) {
+			this.hasNextTimeNanosActual = hasNextTimeNanosActual;
+		}
+	}
+
+	public Long getNextCallCountActual() {
+		return nextCallCountActual;
+	}
+
+	public void setNextCallCountActual(Long nextCallCountActual) {
+		if (nextCallCountActual != null && nextCallCountActual >= 0) {
+			this.nextCallCountActual = nextCallCountActual;
+		}
+	}
+
+	public Long getNextTimeNanosActual() {
+		return nextTimeNanosActual;
+	}
+
+	public void setNextTimeNanosActual(Long nextTimeNanosActual) {
+		if (nextTimeNanosActual != null && nextTimeNanosActual >= 0) {
+			this.nextTimeNanosActual = nextTimeNanosActual;
+		}
+	}
+
+	public Long getJoinRightIteratorsCreatedActual() {
+		return joinRightIteratorsCreatedActual;
+	}
+
+	public void setJoinRightIteratorsCreatedActual(Long joinRightIteratorsCreatedActual) {
+		if (joinRightIteratorsCreatedActual != null && joinRightIteratorsCreatedActual >= 0) {
+			this.joinRightIteratorsCreatedActual = joinRightIteratorsCreatedActual;
+		}
+	}
+
+	public Long getJoinLeftBindingsConsumedActual() {
+		return joinLeftBindingsConsumedActual;
+	}
+
+	public void setJoinLeftBindingsConsumedActual(Long joinLeftBindingsConsumedActual) {
+		if (joinLeftBindingsConsumedActual != null && joinLeftBindingsConsumedActual >= 0) {
+			this.joinLeftBindingsConsumedActual = joinLeftBindingsConsumedActual;
+		}
+	}
+
+	public Long getJoinRightBindingsConsumedActual() {
+		return joinRightBindingsConsumedActual;
+	}
+
+	public void setJoinRightBindingsConsumedActual(Long joinRightBindingsConsumedActual) {
+		if (joinRightBindingsConsumedActual != null && joinRightBindingsConsumedActual >= 0) {
+			this.joinRightBindingsConsumedActual = joinRightBindingsConsumedActual;
+		}
+	}
+
+	public Long getSourceRowsScannedActual() {
+		return sourceRowsScannedActual;
+	}
+
+	public void setSourceRowsScannedActual(Long sourceRowsScannedActual) {
+		if (sourceRowsScannedActual != null && sourceRowsScannedActual >= 0) {
+			this.sourceRowsScannedActual = sourceRowsScannedActual;
+		}
+	}
+
+	public Long getSourceRowsMatchedActual() {
+		return sourceRowsMatchedActual;
+	}
+
+	public void setSourceRowsMatchedActual(Long sourceRowsMatchedActual) {
+		if (sourceRowsMatchedActual != null && sourceRowsMatchedActual >= 0) {
+			this.sourceRowsMatchedActual = sourceRowsMatchedActual;
+		}
+	}
+
+	public Long getSourceRowsFilteredActual() {
+		return sourceRowsFilteredActual;
+	}
+
+	public void setSourceRowsFilteredActual(Long sourceRowsFilteredActual) {
+		if (sourceRowsFilteredActual != null && sourceRowsFilteredActual >= 0) {
+			this.sourceRowsFilteredActual = sourceRowsFilteredActual;
 		}
 	}
 

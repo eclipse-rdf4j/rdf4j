@@ -24,6 +24,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCapture;
@@ -36,6 +37,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 final class QueryPlanSnapshotComparator {
 
 	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
+	private static final Pattern ANONYMOUS_VARIABLE_NAME_PATTERN = Pattern
+			.compile("(_anon_[A-Za-z]+_)[A-Za-z0-9]+");
 
 	private QueryPlanSnapshotComparator() {
 	}
@@ -165,17 +168,66 @@ final class QueryPlanSnapshotComparator {
 
 	static void printComparison(PrintStream out, SnapshotRun left, SnapshotRun right,
 			QueryPlanSnapshotCliOptions.DiffMode diffMode) {
+		ComparisonSummary summary = compareRuns(left, right, diffMode);
 		out.println("Compare:");
 		out.println("  left : " + describeRun(left));
 		out.println("  right: " + describeRun(right));
 		out.println("  diffMode: " + diffMode.id);
-		out.println("  unoptimizedFingerprint: " + sameOrDiff(
-				left.snapshot.getUnoptimizedFingerprint(), right.snapshot.getUnoptimizedFingerprint()));
-		out.println("  queryString: " + sameOrDiff(left.snapshot.getQueryString(), right.snapshot.getQueryString()));
+		out.println("  unoptimizedFingerprint: " + summary.unoptimizedFingerprint);
+		out.println("  queryString: " + summary.queryString);
 
-		printExplanationDiff(out, left.snapshot.getExplanations(), right.snapshot.getExplanations(), diffMode);
+		printExplanationDiff(out, summary.explanationDiffs);
+		printExecutedWorkComparison(out, summary.executedWorkComparison);
+		printPlanDifferenceDiagnosis(out, summary.planDifferenceDiagnosis);
 		printMapDiff(out, "metadata", left.snapshot.getMetadata(), right.snapshot.getMetadata());
 		printMapDiff(out, "featureFlags", left.snapshot.getFeatureFlags(), right.snapshot.getFeatureFlags());
+	}
+
+	static ComparisonSummary compareRuns(SnapshotRun left, SnapshotRun right,
+			QueryPlanSnapshotCliOptions.DiffMode diffMode) {
+		Objects.requireNonNull(left, "left");
+		Objects.requireNonNull(right, "right");
+		Objects.requireNonNull(diffMode, "diffMode");
+
+		String unoptimizedFingerprint = sameOrDiff(left.snapshot.getUnoptimizedFingerprint(),
+				right.snapshot.getUnoptimizedFingerprint());
+		String queryString = sameOrDiff(left.snapshot.getQueryString(), right.snapshot.getQueryString());
+
+		TreeSet<String> levels = new TreeSet<>();
+		Map<String, QueryPlanExplanation> leftExplanations = left.snapshot.getExplanations();
+		Map<String, QueryPlanExplanation> rightExplanations = right.snapshot.getExplanations();
+		if (leftExplanations != null) {
+			levels.addAll(leftExplanations.keySet());
+		}
+		if (rightExplanations != null) {
+			levels.addAll(rightExplanations.keySet());
+		}
+
+		java.util.LinkedHashMap<String, LevelDiff> explanationDiffs = new java.util.LinkedHashMap<>();
+		for (String level : levels) {
+			QueryPlanExplanation leftExplanation = leftExplanations == null ? null : leftExplanations.get(level);
+			QueryPlanExplanation rightExplanation = rightExplanations == null ? null : rightExplanations.get(level);
+			if (leftExplanation == null || rightExplanation == null) {
+				String missingStatus = leftExplanation == null ? "missing-left" : "missing-right";
+				explanationDiffs.put(level, LevelDiff.missing(missingStatus));
+				continue;
+			}
+
+			String tupleExprStatus = sameOrDiff(leftExplanation.getTupleExprJson(),
+					rightExplanation.getTupleExprJson());
+			String irStatus = sameOrDiff(leftExplanation.getIrRenderedQuery(), rightExplanation.getIrRenderedQuery());
+			SemanticDiff semanticDiff = semanticDiff(leftExplanation.getExplanationJson(),
+					rightExplanation.getExplanationJson(), diffMode);
+			explanationDiffs.put(level, new LevelDiff(tupleExprStatus, irStatus, semanticDiff.structure,
+					semanticDiff.joinAlgorithms, semanticDiff.actualResultSizes, semanticDiff.estimates));
+		}
+
+		QueryPlanExecutedWorkComparator.ExecutedWorkComparison executedWorkComparison = QueryPlanExecutedWorkComparator
+				.compare(left.snapshot, right.snapshot);
+		PlanDifferenceDiagnosis planDifferenceDiagnosis = diagnosePlanDifference(left.snapshot, right.snapshot,
+				explanationDiffs);
+		return new ComparisonSummary(unoptimizedFingerprint, queryString, explanationDiffs, executedWorkComparison,
+				planDifferenceDiagnosis);
 	}
 
 	static SnapshotRun inMemoryRun(QueryPlanSnapshot snapshot) {
@@ -190,35 +242,47 @@ final class QueryPlanSnapshotComparator {
 		return runs.get(index);
 	}
 
-	private static void printExplanationDiff(PrintStream out, Map<String, QueryPlanExplanation> left,
-			Map<String, QueryPlanExplanation> right, QueryPlanSnapshotCliOptions.DiffMode diffMode) {
-		TreeSet<String> levels = new TreeSet<>();
-		if (left != null) {
-			levels.addAll(left.keySet());
-		}
-		if (right != null) {
-			levels.addAll(right.keySet());
-		}
+	private static void printExplanationDiff(PrintStream out, Map<String, LevelDiff> explanationDiffs) {
 		out.println("  explanationDiff:");
-		for (String level : levels) {
-			QueryPlanExplanation leftExplanation = left == null ? null : left.get(level);
-			QueryPlanExplanation rightExplanation = right == null ? null : right.get(level);
-			if (leftExplanation == null || rightExplanation == null) {
-				out.println("    " + level + ": " + (leftExplanation == null ? "missing-left" : "missing-right"));
-				continue;
-			}
-			String tupleExprStatus = sameOrDiff(leftExplanation.getTupleExprJson(),
-					rightExplanation.getTupleExprJson());
-			String irStatus = sameOrDiff(leftExplanation.getIrRenderedQuery(), rightExplanation.getIrRenderedQuery());
-			SemanticDiff semanticDiff = semanticDiff(leftExplanation.getExplanationJson(),
-					rightExplanation.getExplanationJson(), diffMode);
-			out.println("    " + level + ": tupleExprJson=" + tupleExprStatus
-					+ ", irRenderedQuery=" + irStatus
-					+ ", structure=" + semanticDiff.structure
-					+ ", joinAlgorithms=" + semanticDiff.joinAlgorithms
-					+ ", actualResultSizes=" + semanticDiff.actualResultSizes
-					+ ", estimates=" + semanticDiff.estimates);
+		for (Map.Entry<String, LevelDiff> entry : explanationDiffs.entrySet()) {
+			LevelDiff levelDiff = entry.getValue();
+			out.println("    " + entry.getKey() + ": tupleExprJson=" + levelDiff.tupleExprJson
+					+ ", irRenderedQuery=" + levelDiff.irRenderedQuery
+					+ ", structure=" + levelDiff.structure
+					+ ", joinAlgorithms=" + levelDiff.joinAlgorithms
+					+ ", actualResultSizes=" + levelDiff.actualResultSizes
+					+ ", estimates=" + levelDiff.estimates);
 		}
+	}
+
+	private static void printExecutedWorkComparison(PrintStream out,
+			QueryPlanExecutedWorkComparator.ExecutedWorkComparison comparison) {
+		out.println("  executedWorkModel:");
+		if (comparison == null || !comparison.available()) {
+			String unavailableReason = comparison == null ? "missing" : comparison.unavailableReason();
+			out.println("    unavailable: " + normalize(unavailableReason));
+			return;
+		}
+		out.println("    winner=" + comparison.winner() + ", decisionBasis=" + comparison.decisionBasis());
+		out.println("    leftScore=" + comparison.leftScore() + ", rightScore=" + comparison.rightScore()
+				+ ", scoreDeltaPct=" + comparison.scoreDeltaPct());
+		out.println("    topCategoryDeltas=" + comparison.topCategoryDeltas());
+		out.println("    topOperatorDeltas=" + comparison.topOperatorDeltas());
+		out.println("    topVectorDeltas=" + comparison.topVectorDeltas());
+		out.println("    dominantResourceLeft=" + comparison.dominantResourceLeft() + ", dominantResourceRight="
+				+ comparison.dominantResourceRight());
+		out.println("    topResourceDeltas=" + comparison.topResourceDeltas());
+	}
+
+	private static void printPlanDifferenceDiagnosis(PrintStream out, PlanDifferenceDiagnosis diagnosis) {
+		out.println("  planDifferenceDiagnosis:");
+		if (diagnosis == null) {
+			out.println("    likelyCause=unknown");
+			out.println("    evidence=<none>");
+			return;
+		}
+		out.println("    likelyCause=" + diagnosis.likelyCause);
+		out.println("    evidence=" + diagnosis.evidence);
 	}
 
 	private static void printMapDiff(PrintStream out, String title, Map<String, String> left,
@@ -255,6 +319,49 @@ final class QueryPlanSnapshotComparator {
 
 	private static String sameOrDiff(String left, String right) {
 		return Objects.equals(left, right) ? "same" : "diff";
+	}
+
+	private static String equalsIndicator(String left, String right) {
+		if (left == null || right == null) {
+			return "unknown";
+		}
+		return Objects.equals(left, right) ? "same" : "diff";
+	}
+
+	private static String metadataValue(QueryPlanSnapshot snapshot, String key) {
+		if (snapshot == null || snapshot.getMetadata() == null || key == null) {
+			return null;
+		}
+		return snapshot.getMetadata().get(key);
+	}
+
+	private static String explanationDebugMetric(QueryPlanSnapshot snapshot, String level, String key) {
+		if (snapshot == null || snapshot.getExplanations() == null || key == null || level == null) {
+			return null;
+		}
+
+		QueryPlanExplanation explanation = snapshot.getExplanations().get(level);
+		if (explanation != null && explanation.getDebugMetrics() != null) {
+			String value = explanation.getDebugMetrics().get(key);
+			if (isPresent(value)) {
+				return value;
+			}
+		}
+
+		for (QueryPlanExplanation candidate : snapshot.getExplanations().values()) {
+			if (candidate == null) {
+				continue;
+			}
+			if (!level.equalsIgnoreCase(candidate.getLevel()) || candidate.getDebugMetrics() == null) {
+				continue;
+			}
+			String value = candidate.getDebugMetrics().get(key);
+			if (isPresent(value)) {
+				return value;
+			}
+		}
+
+		return null;
 	}
 
 	private static String normalize(String value) {
@@ -301,6 +408,81 @@ final class QueryPlanSnapshotComparator {
 		return value != null && !value.isBlank();
 	}
 
+	private static PlanDifferenceDiagnosis diagnosePlanDifference(QueryPlanSnapshot left, QueryPlanSnapshot right,
+			Map<String, LevelDiff> explanationDiffs) {
+		String inputFingerprint = equalsIndicator(
+				metadataValue(left, "planDeterminism.inputFingerprintSha256"),
+				metadataValue(right, "planDeterminism.inputFingerprintSha256"));
+		String environmentFingerprint = equalsIndicator(
+				metadataValue(left, "planDeterminism.environmentFingerprintSha256"),
+				metadataValue(right, "planDeterminism.environmentFingerprintSha256"));
+		String featureFlags = equalsIndicator(
+				metadataValue(left, "featureFlags.sha256"),
+				metadataValue(right, "featureFlags.sha256"));
+		String optimizerInputStructure = equalsIndicator(
+				metadataValue(left, "optimizerInput.unoptimizedStructureNormalizedSha256"),
+				metadataValue(right, "optimizerInput.unoptimizedStructureNormalizedSha256"));
+		String optimizedStructureSignature = equalsIndicator(
+				explanationDebugMetric(left, "optimized", "structureSignatureNormalizedSha256"),
+				explanationDebugMetric(right, "optimized", "structureSignatureNormalizedSha256"));
+		String optimizedEstimatesSignature = equalsIndicator(
+				explanationDebugMetric(left, "optimized", "estimatesMultisetSignatureSha256"),
+				explanationDebugMetric(right, "optimized", "estimatesMultisetSignatureSha256"));
+		String optimizedStatementPatternEstimatesSignature = equalsIndicator(
+				explanationDebugMetric(left, "optimized", "statementPatternEstimatesMultisetSignatureSha256"),
+				explanationDebugMetric(right, "optimized", "statementPatternEstimatesMultisetSignatureSha256"));
+		String optimizedJoinAlgorithmSignature = equalsIndicator(
+				explanationDebugMetric(left, "optimized", "joinAlgorithmMultisetSignatureSha256"),
+				explanationDebugMetric(right, "optimized", "joinAlgorithmMultisetSignatureSha256"));
+
+		LevelDiff optimizedDiff = explanationDiffs.get("optimized");
+		LevelDiff executedDiff = explanationDiffs.get("executed");
+		String optimizedStructure = optimizedDiff == null ? "unknown" : optimizedDiff.structure;
+		String optimizedEstimates = optimizedDiff == null ? "unknown" : optimizedDiff.estimates;
+		String executedStructure = executedDiff == null ? "unknown" : executedDiff.structure;
+
+		String likelyCause;
+		if (!"same".equals(inputFingerprint)) {
+			likelyCause = "different-optimizer-input";
+		} else if (!"same".equals(featureFlags)) {
+			likelyCause = "different-feature-flags";
+		} else if (!"same".equals(environmentFingerprint)) {
+			likelyCause = "different-environment";
+		} else if ("diff".equals(optimizedStructureSignature)
+				&& ("diff".equals(optimizedEstimatesSignature)
+						|| "diff".equals(optimizedStatementPatternEstimatesSignature))) {
+			likelyCause = "estimate-driven-optimizer-reorder";
+		} else if ("diff".equals(optimizedStructureSignature) && "diff".equals(optimizedJoinAlgorithmSignature)) {
+			likelyCause = "join-algorithm-selection-drift";
+		} else if ("diff".equals(optimizedStructureSignature) && "same".equals(optimizedEstimatesSignature)
+				&& "same".equals(optimizedStatementPatternEstimatesSignature)) {
+			likelyCause = "optimizer-structure-drift-with-stable-estimates";
+		} else if ("diff".equals(optimizedEstimatesSignature)
+				|| "diff".equals(optimizedStatementPatternEstimatesSignature)
+				|| "diff".equals(optimizedEstimates)) {
+			likelyCause = "estimate-drift";
+		} else if ("same".equals(optimizedStructure) && "diff".equals(executedStructure)) {
+			likelyCause = "runtime-plan-drift";
+		} else if ("same".equals(optimizedStructure) && "same".equals(executedStructure)) {
+			likelyCause = "no-plan-difference";
+		} else {
+			likelyCause = "unknown";
+		}
+
+		String evidence = "inputFingerprint=" + inputFingerprint
+				+ ";featureFlags=" + featureFlags
+				+ ";environmentFingerprint=" + environmentFingerprint
+				+ ";optimizerInputStructure=" + optimizerInputStructure
+				+ ";optimizedStructure=" + optimizedStructure
+				+ ";optimizedEstimates=" + optimizedEstimates
+				+ ";optimizedStructureSignature=" + optimizedStructureSignature
+				+ ";optimizedEstimatesSignature=" + optimizedEstimatesSignature
+				+ ";optimizedStatementPatternEstimatesSignature=" + optimizedStatementPatternEstimatesSignature
+				+ ";optimizedJoinAlgorithmSignature=" + optimizedJoinAlgorithmSignature
+				+ ";executedStructure=" + executedStructure;
+		return new PlanDifferenceDiagnosis(likelyCause, evidence);
+	}
+
 	private static SemanticDiff semanticDiff(String leftJson, String rightJson,
 			QueryPlanSnapshotCliOptions.DiffMode mode) {
 		JsonNode leftNode;
@@ -342,7 +524,7 @@ final class QueryPlanSnapshotComparator {
 			return;
 		}
 
-		String type = readText(node, "type");
+		String type = canonicalizeType(readText(node, "type"));
 		signature.append('(').append(type);
 		switch (aspect) {
 		case JOIN_ALGORITHMS:
@@ -404,6 +586,13 @@ final class QueryPlanSnapshotComparator {
 		return type != null && type.contains("Join");
 	}
 
+	private static String canonicalizeType(String type) {
+		if (type == null || type.isBlank()) {
+			return type;
+		}
+		return ANONYMOUS_VARIABLE_NAME_PATTERN.matcher(type).replaceAll("$1<normalized>");
+	}
+
 	private static boolean isJsonFile(Path path) {
 		return path.getFileName().toString().endsWith(".json");
 	}
@@ -451,6 +640,111 @@ final class QueryPlanSnapshotComparator {
 		private static SemanticDiff unavailable(String reason) {
 			String unavailable = "unavailable(" + reason + ")";
 			return new SemanticDiff(unavailable, unavailable, unavailable, unavailable);
+		}
+	}
+
+	static final class PlanDifferenceDiagnosis {
+		private final String likelyCause;
+		private final String evidence;
+
+		private PlanDifferenceDiagnosis(String likelyCause, String evidence) {
+			this.likelyCause = likelyCause;
+			this.evidence = evidence;
+		}
+
+		String likelyCause() {
+			return likelyCause;
+		}
+
+		String evidence() {
+			return evidence;
+		}
+	}
+
+	static final class ComparisonSummary {
+		private final String unoptimizedFingerprint;
+		private final String queryString;
+		private final Map<String, LevelDiff> explanationDiffs;
+		private final QueryPlanExecutedWorkComparator.ExecutedWorkComparison executedWorkComparison;
+		private final PlanDifferenceDiagnosis planDifferenceDiagnosis;
+
+		private ComparisonSummary(String unoptimizedFingerprint, String queryString,
+				Map<String, LevelDiff> explanationDiffs,
+				QueryPlanExecutedWorkComparator.ExecutedWorkComparison executedWorkComparison,
+				PlanDifferenceDiagnosis planDifferenceDiagnosis) {
+			this.unoptimizedFingerprint = unoptimizedFingerprint;
+			this.queryString = queryString;
+			this.explanationDiffs = explanationDiffs;
+			this.executedWorkComparison = executedWorkComparison;
+			this.planDifferenceDiagnosis = planDifferenceDiagnosis;
+		}
+
+		String unoptimizedFingerprint() {
+			return unoptimizedFingerprint;
+		}
+
+		String queryString() {
+			return queryString;
+		}
+
+		Map<String, LevelDiff> explanationDiffs() {
+			return explanationDiffs;
+		}
+
+		QueryPlanExecutedWorkComparator.ExecutedWorkComparison executedWorkComparison() {
+			return executedWorkComparison;
+		}
+
+		PlanDifferenceDiagnosis planDifferenceDiagnosis() {
+			return planDifferenceDiagnosis;
+		}
+	}
+
+	static final class LevelDiff {
+		private final String tupleExprJson;
+		private final String irRenderedQuery;
+		private final String structure;
+		private final String joinAlgorithms;
+		private final String actualResultSizes;
+		private final String estimates;
+
+		private LevelDiff(String tupleExprJson, String irRenderedQuery, String structure, String joinAlgorithms,
+				String actualResultSizes, String estimates) {
+			this.tupleExprJson = tupleExprJson;
+			this.irRenderedQuery = irRenderedQuery;
+			this.structure = structure;
+			this.joinAlgorithms = joinAlgorithms;
+			this.actualResultSizes = actualResultSizes;
+			this.estimates = estimates;
+		}
+
+		private static LevelDiff missing(String missingStatus) {
+			return new LevelDiff(missingStatus, missingStatus, missingStatus, missingStatus, missingStatus,
+					missingStatus);
+		}
+
+		String tupleExprJson() {
+			return tupleExprJson;
+		}
+
+		String irRenderedQuery() {
+			return irRenderedQuery;
+		}
+
+		String structure() {
+			return structure;
+		}
+
+		String joinAlgorithms() {
+			return joinAlgorithms;
+		}
+
+		String actualResultSizes() {
+			return actualResultSizes;
+		}
+
+		String estimates() {
+			return estimates;
 		}
 	}
 

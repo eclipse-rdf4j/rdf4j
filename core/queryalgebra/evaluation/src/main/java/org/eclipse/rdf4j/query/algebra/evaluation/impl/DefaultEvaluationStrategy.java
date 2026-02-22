@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -24,6 +23,7 @@ import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iteration.ReducedIteration;
@@ -165,8 +165,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
-
-import com.google.common.base.Stopwatch;
 
 /**
  * Default SPARQL 1.1 Query Evaluation strategy, to evaluate one {@link TupleExpr} on the given {@link TripleSource},
@@ -414,8 +412,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			}
 
 			if (trackTime) {
-				// set resultsSizeActual to at least be 0 so we can track iterations that don't procude anything
-				expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));
+				initializeTimeTelemetry(expr);
 				result = new TimedIterator(result, expr);
 			}
 
@@ -489,17 +486,35 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes) {
-		return QueryEvaluationStep.wrap(qes, iter -> {
+		return bindings -> {
 			expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
-			return new ResultSizeCountingIterator(iter, expr);
-		});
+			return new ResultSizeCountingIterator(qes.evaluate(bindings), expr);
+		};
 	}
 
 	private QueryEvaluationStep trackTime(TupleExpr expr, QueryEvaluationStep qes) {
-		return QueryEvaluationStep.wrap(qes, iter -> {
-			expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));
-			return new TimedIterator(iter, expr);
-		});
+		return bindings -> {
+			initializeTimeTelemetry(expr);
+			return new TimedIterator(qes.evaluate(bindings), expr);
+		};
+	}
+
+	private static void initializeTimeTelemetry(QueryModelNode queryModelNode) {
+		queryModelNode.setTotalTimeNanosActual(Math.max(0, queryModelNode.getTotalTimeNanosActual()));
+		queryModelNode.setHasNextCallCountActual(Math.max(0, queryModelNode.getHasNextCallCountActual()));
+		queryModelNode.setHasNextTrueCountActual(Math.max(0, queryModelNode.getHasNextTrueCountActual()));
+		queryModelNode.setHasNextTimeNanosActual(Math.max(0, queryModelNode.getHasNextTimeNanosActual()));
+		queryModelNode.setNextCallCountActual(Math.max(0, queryModelNode.getNextCallCountActual()));
+		queryModelNode.setNextTimeNanosActual(Math.max(0, queryModelNode.getNextTimeNanosActual()));
+		queryModelNode
+				.setJoinRightIteratorsCreatedActual(Math.max(0, queryModelNode.getJoinRightIteratorsCreatedActual()));
+		queryModelNode
+				.setJoinLeftBindingsConsumedActual(Math.max(0, queryModelNode.getJoinLeftBindingsConsumedActual()));
+		queryModelNode
+				.setJoinRightBindingsConsumedActual(Math.max(0, queryModelNode.getJoinRightBindingsConsumedActual()));
+		queryModelNode.setSourceRowsScannedActual(Math.max(0, queryModelNode.getSourceRowsScannedActual()));
+		queryModelNode.setSourceRowsMatchedActual(Math.max(0, queryModelNode.getSourceRowsMatchedActual()));
+		queryModelNode.setSourceRowsFilteredActual(Math.max(0, queryModelNode.getSourceRowsFilteredActual()));
 	}
 
 	protected QueryEvaluationStep prepare(ArbitraryLengthPath alp, QueryEvaluationContext context)
@@ -1469,7 +1484,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 * This class wraps an iterator and increments the "resultSizeActual" of the query model node that the iterator
 	 * represents. This means we can track the number of tuples that have been retrieved from this node.
 	 */
-	private static class ResultSizeCountingIterator extends IterationWrapper<BindingSet> {
+	private static class ResultSizeCountingIterator extends IterationWrapper<BindingSet>
+			implements IndexReportingIterator {
 
 		CloseableIteration<BindingSet> iterator;
 		QueryModelNode queryModelNode;
@@ -1492,6 +1508,66 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			return iterator.next();
 		}
 
+		@Override
+		protected void handleClose() throws QueryEvaluationException {
+			try {
+				if (iterator instanceof IndexReportingIterator) {
+					IndexReportingIterator sourceMetrics = (IndexReportingIterator) iterator;
+					queryModelNode.setSourceRowsScannedActual(Math.max(0, queryModelNode.getSourceRowsScannedActual()));
+					queryModelNode.setSourceRowsMatchedActual(Math.max(0, queryModelNode.getSourceRowsMatchedActual()));
+					queryModelNode
+							.setSourceRowsFilteredActual(Math.max(0, queryModelNode.getSourceRowsFilteredActual()));
+
+					long sourceRowsScanned = sourceMetrics.getSourceRowsScannedActual();
+					if (sourceRowsScanned >= 0) {
+						queryModelNode.setSourceRowsScannedActual(
+								queryModelNode.getSourceRowsScannedActual() + sourceRowsScanned);
+					}
+					long sourceRowsMatched = sourceMetrics.getSourceRowsMatchedActual();
+					if (sourceRowsMatched >= 0) {
+						queryModelNode.setSourceRowsMatchedActual(
+								queryModelNode.getSourceRowsMatchedActual() + sourceRowsMatched);
+					}
+					long sourceRowsFiltered = sourceMetrics.getSourceRowsFilteredActual();
+					if (sourceRowsFiltered >= 0) {
+						queryModelNode.setSourceRowsFilteredActual(
+								queryModelNode.getSourceRowsFilteredActual() + sourceRowsFiltered);
+					}
+				}
+				QueryRuntimeTelemetryRegistry.record(queryModelNode);
+			} finally {
+				super.handleClose();
+			}
+		}
+
+		@Override
+		public String getIndexName() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? "" : metrics.getIndexName();
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsScannedActual();
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsMatchedActual();
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsFilteredActual();
+		}
+
+		private IndexReportingIterator indexReporter() {
+			return iterator instanceof IndexReportingIterator ? (IndexReportingIterator) iterator : null;
+		}
+
 	}
 
 	/**
@@ -1501,38 +1577,69 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 		CloseableIteration<BindingSet> iterator;
 		QueryModelNode queryModelNode;
-		Stopwatch stopwatch = Stopwatch.createStarted();
+		long elapsedNanos;
 
 		public TimedIterator(CloseableIteration<BindingSet> iterator,
 				QueryModelNode queryModelNode) {
 			super(iterator);
 			this.iterator = iterator;
 			this.queryModelNode = queryModelNode;
-			stopwatch.stop();
 		}
 
 		@Override
 		public BindingSet next() throws QueryEvaluationException {
-			stopwatch.start();
-			BindingSet next = iterator.next();
-			stopwatch.stop();
-			return next;
+			long started = System.nanoTime();
+			try {
+				return iterator.next();
+			} finally {
+				long elapsed = System.nanoTime() - started;
+				elapsedNanos += elapsed;
+				queryModelNode.setNextCallCountActual(queryModelNode.getNextCallCountActual() + 1);
+				queryModelNode.setNextTimeNanosActual(queryModelNode.getNextTimeNanosActual() + elapsed);
+			}
 		}
 
 		@Override
 		public boolean hasNext() throws QueryEvaluationException {
-			stopwatch.start();
-			boolean hasNext = super.hasNext();
-			stopwatch.stop();
-			return hasNext;
+			boolean hasNext = false;
+			long started = System.nanoTime();
+			try {
+				hasNext = super.hasNext();
+				return hasNext;
+			} finally {
+				long elapsed = System.nanoTime() - started;
+				elapsedNanos += elapsed;
+				queryModelNode.setHasNextCallCountActual(queryModelNode.getHasNextCallCountActual() + 1);
+				queryModelNode.setHasNextTimeNanosActual(queryModelNode.getHasNextTimeNanosActual() + elapsed);
+				if (hasNext) {
+					queryModelNode.setHasNextTrueCountActual(queryModelNode.getHasNextTrueCountActual() + 1);
+				}
+			}
 		}
 
 		@Override
 		protected void handleClose() throws QueryEvaluationException {
 			try {
 				long totalTimeNanosActual = queryModelNode.getTotalTimeNanosActual();
-				queryModelNode
-						.setTotalTimeNanosActual((totalTimeNanosActual + stopwatch.elapsed(TimeUnit.NANOSECONDS)));
+				queryModelNode.setTotalTimeNanosActual(totalTimeNanosActual + elapsedNanos);
+				if (iterator instanceof IndexReportingIterator) {
+					IndexReportingIterator sourceMetrics = (IndexReportingIterator) iterator;
+					long sourceRowsScanned = sourceMetrics.getSourceRowsScannedActual();
+					if (sourceRowsScanned >= 0) {
+						queryModelNode.setSourceRowsScannedActual(
+								queryModelNode.getSourceRowsScannedActual() + sourceRowsScanned);
+					}
+					long sourceRowsMatched = sourceMetrics.getSourceRowsMatchedActual();
+					if (sourceRowsMatched >= 0) {
+						queryModelNode.setSourceRowsMatchedActual(
+								queryModelNode.getSourceRowsMatchedActual() + sourceRowsMatched);
+					}
+					long sourceRowsFiltered = sourceMetrics.getSourceRowsFilteredActual();
+					if (sourceRowsFiltered >= 0) {
+						queryModelNode.setSourceRowsFilteredActual(
+								queryModelNode.getSourceRowsFilteredActual() + sourceRowsFiltered);
+					}
+				}
 			} finally {
 				super.handleClose();
 
@@ -1546,8 +1653,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	@Override
+	public boolean isTrackResultSize() {
+		return trackResultSize;
+	}
+
+	@Override
 	public void setTrackTime(boolean trackTime) {
 		this.trackTime = trackTime;
+	}
+
+	@Override
+	public boolean isTrackTime() {
+		return trackTime;
 	}
 
 	/**
