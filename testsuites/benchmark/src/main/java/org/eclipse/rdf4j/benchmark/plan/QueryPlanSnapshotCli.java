@@ -80,7 +80,7 @@ public final class QueryPlanSnapshotCli {
 	private static final ZoneId LOCAL_ZONE = ZoneId.systemDefault();
 	private static final DateTimeFormatter LOCAL_TIME_FORMATTER = DateTimeFormatter
 			.ofPattern("yyyy-MM-dd HH:mm:ss z");
-	private static final long DEFAULT_EXECUTION_REPEAT_SOFT_LIMIT_NANOS = TimeUnit.SECONDS.toNanos(60);
+	private static final long DEFAULT_EXECUTION_REPEAT_SOFT_LIMIT_NANOS = TimeUnit.SECONDS.toNanos(30);
 	private static final int DEFAULT_EXECUTION_REPEAT_MIN_RUNS = 2;
 	private static final int DEFAULT_EXECUTION_REPEAT_MAX_RUNS = 128;
 	private static final long DEFAULT_BATCH_ETA_UPDATE_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(10);
@@ -2664,7 +2664,6 @@ public final class QueryPlanSnapshotCli {
 		private final int totalQueries;
 		private final int directHistoryQueryCount;
 		private final ScheduledExecutorService scheduler;
-		private long completedActualMillis;
 		private boolean stopped;
 
 		private BatchRunEtaReporter(PrintStream output, List<String> queryIds, Map<String, Long> historicalByQueryId,
@@ -2685,8 +2684,7 @@ public final class QueryPlanSnapshotCli {
 				if (directEstimate > 0L) {
 					directCount++;
 				}
-				long estimatedMillis = directEstimate > 0L ? directEstimate : this.fallbackEstimateMillis;
-				plannedEstimateMillisByQueryId.put(queryId, estimatedMillis);
+				plannedEstimateMillisByQueryId.put(queryId, directEstimate);
 			}
 			this.directHistoryQueryCount = directCount;
 		}
@@ -2707,9 +2705,7 @@ public final class QueryPlanSnapshotCli {
 
 		void markCompleted(String queryId, long actualElapsedMillis) {
 			synchronized (this) {
-				if (completedQueryIds.add(queryId)) {
-					completedActualMillis += Math.max(1L, actualElapsedMillis);
-				}
+				completedQueryIds.add(queryId);
 			}
 		}
 
@@ -2765,7 +2761,11 @@ public final class QueryPlanSnapshotCli {
 		private synchronized long estimateTotalMillisLocked() {
 			long total = 0L;
 			boolean anyEstimate = false;
+			long fallback = fallbackEstimateForRemainingQueriesLocked();
 			for (long estimateMillis : plannedEstimateMillisByQueryId.values()) {
+				if (estimateMillis <= 0L) {
+					estimateMillis = fallback;
+				}
 				if (estimateMillis <= 0L) {
 					continue;
 				}
@@ -2775,24 +2775,20 @@ public final class QueryPlanSnapshotCli {
 			if (anyEstimate) {
 				return total;
 			}
-			long dynamicFallback = dynamicFallbackMillisLocked();
-			if (dynamicFallback <= 0L) {
-				return 0L;
-			}
-			return dynamicFallback * totalQueries;
+			return 0L;
 		}
 
 		private synchronized RemainingEstimate estimateRemainingLocked() {
 			long remaining = 0L;
 			boolean unknown = false;
-			long dynamicFallback = dynamicFallbackMillisLocked();
+			long fallback = fallbackEstimateForRemainingQueriesLocked();
 			for (Map.Entry<String, Long> entry : plannedEstimateMillisByQueryId.entrySet()) {
 				if (completedQueryIds.contains(entry.getKey())) {
 					continue;
 				}
 				long estimate = entry.getValue();
 				if (estimate <= 0L) {
-					estimate = dynamicFallback;
+					estimate = fallback;
 				}
 				if (estimate <= 0L) {
 					unknown = true;
@@ -2806,9 +2802,22 @@ public final class QueryPlanSnapshotCli {
 			return new RemainingEstimate(remaining, unknown);
 		}
 
-		private synchronized long dynamicFallbackMillisLocked() {
-			if (!completedQueryIds.isEmpty()) {
-				return Math.max(1L, completedActualMillis / completedQueryIds.size());
+		private synchronized long fallbackEstimateForRemainingQueriesLocked() {
+			long directTotal = 0L;
+			int directCount = 0;
+			for (Map.Entry<String, Long> entry : plannedEstimateMillisByQueryId.entrySet()) {
+				if (completedQueryIds.contains(entry.getKey())) {
+					continue;
+				}
+				long directEstimate = entry.getValue();
+				if (directEstimate <= 0L) {
+					continue;
+				}
+				directTotal += directEstimate;
+				directCount++;
+			}
+			if (directCount > 0) {
+				return Math.max(1L, directTotal / directCount);
 			}
 			return fallbackEstimateMillis;
 		}

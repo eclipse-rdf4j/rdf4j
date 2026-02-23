@@ -21,10 +21,14 @@ import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.io.StringReader;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -354,6 +358,16 @@ class QueryPlanSnapshotCliTest {
 		String printed = outputBuffer.toString(StandardCharsets.UTF_8);
 		assertTrue(printed.contains("ETA start:"), printed);
 		assertTrue(printed.contains("ETA update:"), printed);
+	}
+
+	@Test
+	void batchEtaRemainingEstimateUsesRemainingQueryHistoryForUnknownQueries() throws Exception {
+		Object reporter = newBatchRunEtaReporter(List.of("q1", "q2", "q3"), Map.of("q1", 900L, "q2", 100L), 10000L);
+		invokeReporterMethod(reporter, "markCompleted", new Class<?>[] { String.class, long.class }, "q1", 900L);
+
+		Object remainingEstimate = invokeReporterMethod(reporter, "estimateRemainingLocked", new Class<?>[0]);
+		assertEquals(200L, readLongField(remainingEstimate, "millis"));
+		assertFalse(readBooleanField(remainingEstimate, "unknown"));
 	}
 
 	@Test
@@ -1015,6 +1029,35 @@ class QueryPlanSnapshotCliTest {
 		return new QueryPlanSnapshotCli(new BufferedReader(new StringReader(inputText)),
 				new PrintStream(outputBuffer, true, StandardCharsets.UTF_8.name()), false,
 				TEST_EXECUTION_REPEAT_MIN_RUNS, TEST_EXECUTION_REPEAT_MAX_RUNS, TEST_EXECUTION_REPEAT_SOFT_LIMIT_NANOS);
+	}
+
+	private static Object newBatchRunEtaReporter(List<String> queryIds, Map<String, Long> historicalByQueryId,
+			long fallbackEstimateMillis) throws Exception {
+		Class<?> reporterClass = Class.forName(QueryPlanSnapshotCli.class.getName() + "$BatchRunEtaReporter");
+		Constructor<?> constructor = reporterClass.getDeclaredConstructor(PrintStream.class, List.class, Map.class,
+				long.class, long.class);
+		constructor.setAccessible(true);
+		return constructor.newInstance(new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8),
+				queryIds, historicalByQueryId, fallbackEstimateMillis, TimeUnit.MINUTES.toNanos(1));
+	}
+
+	private static Object invokeReporterMethod(Object reporter, String methodName, Class<?>[] parameterTypes,
+			Object... args) throws Exception {
+		Method method = reporter.getClass().getDeclaredMethod(methodName, parameterTypes);
+		method.setAccessible(true);
+		return method.invoke(reporter, args);
+	}
+
+	private static long readLongField(Object value, String fieldName) throws Exception {
+		Field field = value.getClass().getDeclaredField(fieldName);
+		field.setAccessible(true);
+		return field.getLong(value);
+	}
+
+	private static boolean readBooleanField(Object value, String fieldName) throws Exception {
+		Field field = value.getClass().getDeclaredField(fieldName);
+		field.setAccessible(true);
+		return field.getBoolean(value);
 	}
 
 	private static int countOccurrences(String value, String token) {
