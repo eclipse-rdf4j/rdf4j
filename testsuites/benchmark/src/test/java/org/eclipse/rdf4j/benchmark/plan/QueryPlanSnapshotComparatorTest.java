@@ -271,7 +271,7 @@ class QueryPlanSnapshotComparatorTest {
 		unoptimized.setDebugMetrics(new LinkedHashMap<>(unoptimizedDebugMetrics));
 
 		QueryPlanExplanation executed = new QueryPlanExplanation();
-		executed.setLevel("executed");
+		executed.setLevel("telemetry");
 		executed.setExplanationText("executed-plan");
 		executed.setDebugMetrics(new LinkedHashMap<>(executedDebugMetrics));
 
@@ -284,7 +284,7 @@ class QueryPlanSnapshotComparatorTest {
 		LinkedHashMap<String, QueryPlanExplanation> explanations = new LinkedHashMap<>();
 		explanations.put("unoptimized", unoptimized);
 		explanations.put("optimized", optimized);
-		explanations.put("executed", executed);
+		explanations.put("telemetry", executed);
 		snapshot.setExplanations(explanations);
 		return snapshot;
 	}

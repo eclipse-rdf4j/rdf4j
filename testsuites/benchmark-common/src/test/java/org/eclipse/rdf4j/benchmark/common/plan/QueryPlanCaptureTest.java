@@ -22,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumMap;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -96,15 +97,15 @@ class QueryPlanCaptureTest {
 
 		QueryPlanExplanation unoptimized = snapshot.getExplanations().get("unoptimized");
 		QueryPlanExplanation optimized = snapshot.getExplanations().get("optimized");
-		QueryPlanExplanation executed = snapshot.getExplanations().get("executed");
+		QueryPlanExplanation telemetry = snapshot.getExplanations().get("telemetry");
 		assertNotNull(unoptimized, "Expected unoptimized explanation");
 		assertNotNull(optimized, "Expected optimized explanation");
-		assertNotNull(executed, "Expected executed explanation");
+		assertNotNull(telemetry, "Expected telemetry explanation");
 		assertFalse(unoptimized.getTupleExprJson().isBlank(), "Expected tuple expression JSON payload");
 		assertTrue(optimized.getIrRenderedQuery().contains("SELECT"),
 				"Expected optimized IR-rendered SPARQL");
-		assertTrue(executed.getIrRenderedQuery().contains("SELECT"),
-				"Expected executed IR-rendered SPARQL");
+		assertTrue(telemetry.getIrRenderedQuery().contains("SELECT"),
+				"Expected telemetry IR-rendered SPARQL");
 
 		TupleExprJsonCodec codec = new TupleExprJsonCodec();
 		assertNotNull(codec.fromJson(unoptimized.getTupleExprJson()),
@@ -198,6 +199,57 @@ class QueryPlanCaptureTest {
 		assertTrue(snapshot.getMetadata().containsKey("optimizerInput.unoptimizedStructureRawSha256"));
 		assertTrue(snapshot.getMetadata().containsKey("optimizerInput.unoptimizedStructureNormalizedSha256"));
 		assertTrue(snapshot.getMetadata().containsKey("optimizerInput.unoptimizedAnonymousTypeTokenCount"));
+	}
+
+	@Test
+	void capturesTelemetryLevelIntoTelemetrySnapshotSlot() {
+		QueryPlanCapture capture = new QueryPlanCapture();
+		String query = "SELECT ?s WHERE { ?s ?p ?o }";
+		AtomicInteger telemetryExplainCalls = new AtomicInteger();
+		AtomicInteger executedExplainCalls = new AtomicInteger();
+
+		EnumMap<Explanation.Level, Explanation> explanations = new EnumMap<>(Explanation.Level.class);
+		for (Explanation.Level level : Explanation.Level.values()) {
+			TupleExpr tupleExpr = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			explanations.put(level, toExplanation(tupleExpr));
+		}
+
+		TupleQuery tupleQuery = (TupleQuery) Proxy.newProxyInstance(
+				QueryPlanCaptureTest.class.getClassLoader(),
+				new Class<?>[] { TupleQuery.class },
+				(proxy, method, args) -> {
+					if ("explain".equals(method.getName())) {
+						Explanation.Level level = (Explanation.Level) args[0];
+						if (level == Explanation.Level.Telemetry) {
+							telemetryExplainCalls.incrementAndGet();
+						}
+						if (level == Explanation.Level.Executed) {
+							executedExplainCalls.incrementAndGet();
+						}
+						return explanations.get(level);
+					}
+					if ("toString".equals(method.getName())) {
+						return "TelemetryAwareStubTupleQuery";
+					}
+					if (method.getReturnType().isPrimitive()) {
+						return primitiveDefault(method.getReturnType());
+					}
+					return null;
+				});
+
+		QueryPlanCaptureContext context = QueryPlanCaptureContext.builder()
+				.outputDirectory(tempDir)
+				.queryId("telemetry-level")
+				.queryString(query)
+				.benchmark("QueryPlanCaptureTest")
+				.build();
+
+		QueryPlanSnapshot snapshot = capture.capture(context, () -> tupleQuery);
+
+		assertTrue(telemetryExplainCalls.get() > 0, "Expected telemetry explanation to be captured");
+		assertEquals(0, executedExplainCalls.get(), "Executed explanation should not be captured directly");
+		assertNotNull(snapshot.getExplanations().get("telemetry"),
+				"Expected telemetry capture under telemetry snapshot key");
 	}
 
 	@Test

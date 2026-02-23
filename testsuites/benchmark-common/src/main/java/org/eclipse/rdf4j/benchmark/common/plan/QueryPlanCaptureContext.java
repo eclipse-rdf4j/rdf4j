@@ -116,10 +116,10 @@ public final class QueryPlanCaptureContext {
 		private final List<Explanation.Level> levels = new ArrayList<>(List.of(
 				Explanation.Level.Unoptimized,
 				Explanation.Level.Optimized,
-				Explanation.Level.Executed));
+				Explanation.Level.Telemetry));
 		private final EnumSet<Explanation.Level> irRenderedLevels = EnumSet.of(
 				Explanation.Level.Optimized,
-				Explanation.Level.Executed);
+				Explanation.Level.Telemetry);
 
 		private Builder() {
 		}

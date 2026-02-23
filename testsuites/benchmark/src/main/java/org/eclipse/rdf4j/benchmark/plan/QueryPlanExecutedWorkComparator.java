@@ -141,14 +141,14 @@ final class QueryPlanExecutedWorkComparator {
 			return Collections.emptyMap();
 		}
 
-		QueryPlanExplanation executed = snapshot.getExplanations().get("executed");
+		QueryPlanExplanation executed = snapshot.getExplanations().get("telemetry");
 		if (executed != null && executed.getDebugMetrics() != null) {
 			return executed.getDebugMetrics();
 		}
 
 		for (QueryPlanExplanation candidate : snapshot.getExplanations().values()) {
 			String level = candidate == null ? null : candidate.getLevel();
-			if (level != null && "executed".equalsIgnoreCase(level) && candidate.getDebugMetrics() != null) {
+			if (level != null && "telemetry".equalsIgnoreCase(level) && candidate.getDebugMetrics() != null) {
 				return candidate.getDebugMetrics();
 			}
 		}

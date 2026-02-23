@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -68,10 +69,11 @@ public final class QueryPlanSnapshotCli {
 			"list themes",
 			"list queries",
 			"help");
+	private static final String EXPLANATION_LEVEL_TELEMETRY = "telemetry";
 	private static final java.util.List<String> EXPLANATION_LEVEL_ORDER = java.util.List.of(
 			"unoptimized",
 			"optimized",
-			"executed");
+			EXPLANATION_LEVEL_TELEMETRY);
 	private static final String MANUAL_QUERY_ID_ENTRY = "<manual entry>";
 	private static final String MANUAL_RUN_NAME_ENTRY = "<manual entry>";
 	private static final String UNKNOWN_VALUE = "<unknown>";
@@ -757,14 +759,14 @@ public final class QueryPlanSnapshotCli {
 				QueryPlanSnapshotComparator.ComparisonSummary summary = QueryPlanSnapshotComparator.compareRuns(left,
 						right, options.diffMode);
 				QueryPlanSnapshotComparator.LevelDiff optimizedDiff = summary.explanationDiffs().get("optimized");
-				QueryPlanSnapshotComparator.LevelDiff executedDiff = summary.explanationDiffs().get("executed");
+				QueryPlanSnapshotComparator.LevelDiff executedDiff = summary.explanationDiffs().get("telemetry");
 
 				String leftAverageMillis = metadataValue(left.snapshot(), "execution.averageMillis");
 				String rightAverageMillis = metadataValue(right.snapshot(), "execution.averageMillis");
 				String deltaPct = calculateDeltaPercent(leftAverageMillis, rightAverageMillis);
-				String leftExecutedModeledWorkUnits = explanationDebugMetric(left.snapshot(), "executed",
+				String leftExecutedModeledWorkUnits = explanationDebugMetric(left.snapshot(), "telemetry",
 						"modeledWorkUnits");
-				String rightExecutedModeledWorkUnits = explanationDebugMetric(right.snapshot(), "executed",
+				String rightExecutedModeledWorkUnits = explanationDebugMetric(right.snapshot(), "telemetry",
 						"modeledWorkUnits");
 				String executedModeledWorkDeltaPct = calculateDeltaPercent(leftExecutedModeledWorkUnits,
 						rightExecutedModeledWorkUnits);
@@ -788,8 +790,8 @@ public final class QueryPlanSnapshotCli {
 						explanationDebugMetric(left.snapshot(), "optimized", "structureSignatureNormalizedSha256"),
 						explanationDebugMetric(right.snapshot(), "optimized", "structureSignatureNormalizedSha256"));
 				String executionPlanStructureFingerprintMatches = equalsIndicator(
-						explanationDebugMetric(left.snapshot(), "executed", "structureSignatureNormalizedSha256"),
-						explanationDebugMetric(right.snapshot(), "executed", "structureSignatureNormalizedSha256"));
+						explanationDebugMetric(left.snapshot(), "telemetry", "structureSignatureNormalizedSha256"),
+						explanationDebugMetric(right.snapshot(), "telemetry", "structureSignatureNormalizedSha256"));
 
 				writer.write(String.join(",",
 						csvValue(queryId),
@@ -899,105 +901,107 @@ public final class QueryPlanSnapshotCli {
 						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.scoreDeltaPct()),
 						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.winner()),
 						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.decisionBasis()),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledInputRowsSum")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledInputRowsSum")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledOutputRowsSum")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledOutputRowsSum")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledSelfTimeActualSum")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledSelfTimeActualSum")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledTotalTimeActualSum")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledTotalTimeActualSum")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledBarrierCount")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledBarrierCount")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledJoinInputRowsSum")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledJoinInputRowsSum")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledJoinOutputRowsSum")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledJoinOutputRowsSum")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledFilterInputRowsSum")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledFilterInputRowsSum")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledFilterOutputRowsSum")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledFilterOutputRowsSum")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledFilterPassRatio")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledFilterPassRatio")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledFilterRejectRatio")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledFilterRejectRatio")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledInputRowsSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledInputRowsSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledOutputRowsSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledOutputRowsSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledSelfTimeActualSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledSelfTimeActualSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledTotalTimeActualSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledTotalTimeActualSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledBarrierCount")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledBarrierCount")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledJoinInputRowsSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledJoinInputRowsSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledJoinOutputRowsSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledJoinOutputRowsSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledFilterInputRowsSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledFilterInputRowsSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledFilterOutputRowsSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledFilterOutputRowsSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledFilterPassRatio")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledFilterPassRatio")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledFilterRejectRatio")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledFilterRejectRatio")),
 						csvValue(
-								explanationDebugMetric(left.snapshot(), "executed",
+								explanationDebugMetric(left.snapshot(), "telemetry",
 										"modeledJoinRightIteratorCreateCountSum")),
 						csvValue(
-								explanationDebugMetric(right.snapshot(), "executed",
+								explanationDebugMetric(right.snapshot(), "telemetry",
 										"modeledJoinRightIteratorCreateCountSum")),
 						csvValue(
-								explanationDebugMetric(left.snapshot(), "executed",
+								explanationDebugMetric(left.snapshot(), "telemetry",
 										"modeledJoinLeftBindingSetConsumedCountSum")),
 						csvValue(
-								explanationDebugMetric(right.snapshot(), "executed",
+								explanationDebugMetric(right.snapshot(), "telemetry",
 										"modeledJoinLeftBindingSetConsumedCountSum")),
 						csvValue(
-								explanationDebugMetric(left.snapshot(), "executed",
+								explanationDebugMetric(left.snapshot(), "telemetry",
 										"modeledJoinRightBindingSetConsumedCountSum")),
 						csvValue(
-								explanationDebugMetric(right.snapshot(), "executed",
+								explanationDebugMetric(right.snapshot(), "telemetry",
 										"modeledJoinRightBindingSetConsumedCountSum")),
 						csvValue(
-								explanationDebugMetric(left.snapshot(), "executed",
+								explanationDebugMetric(left.snapshot(), "telemetry",
 										"modeledJoinRightBindingsPerLeftRatio")),
 						csvValue(
-								explanationDebugMetric(right.snapshot(), "executed",
+								explanationDebugMetric(right.snapshot(), "telemetry",
 										"modeledJoinRightBindingsPerLeftRatio")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledJoinTelemetryNodeCount")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledJoinTelemetryNodeCount")),
 						csvValue(
-								explanationDebugMetric(right.snapshot(), "executed", "modeledJoinTelemetryNodeCount")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed",
+								explanationDebugMetric(right.snapshot(), "telemetry", "modeledJoinTelemetryNodeCount")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry",
 								"modeledJoinRightBindingSetConsumedPerRightIteratorAverage")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed",
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry",
 								"modeledJoinRightBindingSetConsumedPerRightIteratorAverage")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed",
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry",
 								"modeledJoinRightIteratorCreatePerJoinNodeAverage")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed",
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry",
 								"modeledJoinRightIteratorCreatePerJoinNodeAverage")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed",
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry",
 								"modeledJoinLeftBindingSetConsumedPerJoinNodeAverage")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed",
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry",
 								"modeledJoinLeftBindingSetConsumedPerJoinNodeAverage")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed",
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry",
 								"modeledJoinRightBindingSetConsumedPerJoinNodeAverage")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed",
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry",
 								"modeledJoinRightBindingSetConsumedPerJoinNodeAverage")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledSourceRowsScannedSum")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledSourceRowsScannedSum")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledSourceRowsMatchedSum")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledSourceRowsMatchedSum")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledSourceRowsFilteredSum")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledSourceRowsFilteredSum")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledSourceFilterOutRatio")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledSourceFilterOutRatio")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledWorkByCategory")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledWorkByCategory")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed",
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledSourceRowsScannedSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledSourceRowsScannedSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledSourceRowsMatchedSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledSourceRowsMatchedSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledSourceRowsFilteredSum")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledSourceRowsFilteredSum")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledSourceFilterOutRatio")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledSourceFilterOutRatio")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledWorkByCategory")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledWorkByCategory")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry",
 								"modeledWorkVectorSignatureSha256")),
 						csvValue(
-								explanationDebugMetric(right.snapshot(), "executed",
+								explanationDebugMetric(right.snapshot(), "telemetry",
 										"modeledWorkVectorSignatureSha256")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledOperatorCountByCategory")),
 						csvValue(
-								explanationDebugMetric(right.snapshot(), "executed", "modeledOperatorCountByCategory")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "modeledJoinWorkByAlgorithm")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "modeledJoinWorkByAlgorithm")),
+								explanationDebugMetric(left.snapshot(), "telemetry", "modeledOperatorCountByCategory")),
 						csvValue(
-								explanationDebugMetric(left.snapshot(), "executed",
+								explanationDebugMetric(right.snapshot(), "telemetry",
+										"modeledOperatorCountByCategory")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "modeledJoinWorkByAlgorithm")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "modeledJoinWorkByAlgorithm")),
+						csvValue(
+								explanationDebugMetric(left.snapshot(), "telemetry",
 										"operatorWorkBreakdownSignatureSha256")),
 						csvValue(
-								explanationDebugMetric(right.snapshot(), "executed",
+								explanationDebugMetric(right.snapshot(), "telemetry",
 										"operatorWorkBreakdownSignatureSha256")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "operatorWorkTopContributors")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "operatorWorkTopContributors")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "estimateActualQErrorP95")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "estimateActualQErrorP95")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "estimateActualQErrorMax")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "estimateActualQErrorMax")),
-						csvValue(explanationDebugMetric(left.snapshot(), "executed", "joinEstimateActualQErrorP95")),
-						csvValue(explanationDebugMetric(right.snapshot(), "executed", "joinEstimateActualQErrorP95")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "operatorWorkTopContributors")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "operatorWorkTopContributors")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "estimateActualQErrorP95")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "estimateActualQErrorP95")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "estimateActualQErrorMax")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "estimateActualQErrorMax")),
+						csvValue(explanationDebugMetric(left.snapshot(), "telemetry", "joinEstimateActualQErrorP95")),
+						csvValue(explanationDebugMetric(right.snapshot(), "telemetry", "joinEstimateActualQErrorP95")),
 						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.topCategoryDeltas()),
 						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.topOperatorDeltas()),
 						csvValue(executedWorkComparison == null ? "" : executedWorkComparison.topVectorDeltas()),
@@ -1861,6 +1865,9 @@ public final class QueryPlanSnapshotCli {
 				.queryId(queryId)
 				.queryString(queryText)
 				.benchmark("QueryPlanSnapshotCli")
+				.levels(List.of(Explanation.Level.Unoptimized, Explanation.Level.Optimized,
+						Explanation.Level.Telemetry))
+				.irRenderedLevels(Set.of(Explanation.Level.Optimized, Explanation.Level.Telemetry))
 				.addMetadata("store", options.store.id)
 				.addMetadata("theme", options.theme.name())
 				.addMetadata("querySource", querySource)
@@ -2096,122 +2103,122 @@ public final class QueryPlanSnapshotCli {
 				"statementPatternEstimatesMultisetSignatureSha256",
 				"optimizerOutput.optimizedStatementPatternEstimatesMultisetSignatureSha256");
 
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "rootTypeNormalized",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "rootTypeNormalized",
 				"executionPlan.executedRootTypeNormalized");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "planNodeCount",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "planNodeCount",
 				"executionPlan.executedPlanNodeCount");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "joinNodeCount",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "joinNodeCount",
 				"executionPlan.executedJoinNodeCount");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "filterNodeCount",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "filterNodeCount",
 				"executionPlan.executedFilterNodeCount");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "statementPatternCount",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "statementPatternCount",
 				"executionPlan.executedStatementPatternCount");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "joinAlgorithmCounts",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "joinAlgorithmCounts",
 				"executionPlan.executedJoinAlgorithmCounts");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "structureSignatureNormalizedSha256",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "structureSignatureNormalizedSha256",
 				"executionPlan.executedStructureNormalizedSha256");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "estimatesMultisetSignatureSha256",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "estimatesMultisetSignatureSha256",
 				"executionPlan.executedEstimatesMultisetSignatureSha256");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry",
 				"statementPatternEstimatesMultisetSignatureSha256",
 				"executionPlan.executedStatementPatternEstimatesMultisetSignatureSha256");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledWorkUnits",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledWorkUnits",
 				"executionPlan.executedModeledWorkUnits");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledInputRowsSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledInputRowsSum",
 				"executionPlan.executedModeledInputRowsSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledOutputRowsSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledOutputRowsSum",
 				"executionPlan.executedModeledOutputRowsSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledSelfTimeActualSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledSelfTimeActualSum",
 				"executionPlan.executedModeledSelfTimeActualSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledTotalTimeActualSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledTotalTimeActualSum",
 				"executionPlan.executedModeledTotalTimeActualSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledBarrierCount",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledBarrierCount",
 				"executionPlan.executedModeledBarrierCount");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledJoinInputRowsSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledJoinInputRowsSum",
 				"executionPlan.executedModeledJoinInputRowsSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledJoinOutputRowsSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledJoinOutputRowsSum",
 				"executionPlan.executedModeledJoinOutputRowsSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledFilterInputRowsSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledFilterInputRowsSum",
 				"executionPlan.executedModeledFilterInputRowsSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledFilterOutputRowsSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledFilterOutputRowsSum",
 				"executionPlan.executedModeledFilterOutputRowsSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledFilterPassRatio",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledFilterPassRatio",
 				"executionPlan.executedModeledFilterPassRatio");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledFilterRejectRatio",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledFilterRejectRatio",
 				"executionPlan.executedModeledFilterRejectRatio");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledWorkByCategory",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledWorkByCategory",
 				"executionPlan.executedModeledWorkByCategory");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledOperatorCountByCategory",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledOperatorCountByCategory",
 				"executionPlan.executedModeledOperatorCountByCategory");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledInputRowsByCategory",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledInputRowsByCategory",
 				"executionPlan.executedModeledInputRowsByCategory");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledOutputRowsByCategory",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledOutputRowsByCategory",
 				"executionPlan.executedModeledOutputRowsByCategory");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledJoinWorkByAlgorithm",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledJoinWorkByAlgorithm",
 				"executionPlan.executedModeledJoinWorkByAlgorithm");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledWorkVector",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledWorkVector",
 				"executionPlan.executedModeledWorkVector");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledWorkVectorSignatureSha256",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledWorkVectorSignatureSha256",
 				"executionPlan.executedModeledWorkVectorSignatureSha256");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "operatorWorkBreakdownSignatureSha256",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "operatorWorkBreakdownSignatureSha256",
 				"executionPlan.executedOperatorWorkBreakdownSignatureSha256");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "operatorWorkTopContributors",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "operatorWorkTopContributors",
 				"executionPlan.executedOperatorWorkTopContributors");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "estimateActualComparableNodeCount",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "estimateActualComparableNodeCount",
 				"executionPlan.executedEstimateActualComparableNodeCount");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledHasNextCallCountSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledHasNextCallCountSum",
 				"executionPlan.executedHasNextCallCountSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledHasNextTrueCountSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledHasNextTrueCountSum",
 				"executionPlan.executedHasNextTrueCountSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledHasNextTimeNanosSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledHasNextTimeNanosSum",
 				"executionPlan.executedHasNextTimeNanosSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledNextCallCountSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledNextCallCountSum",
 				"executionPlan.executedNextCallCountSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledNextTimeNanosSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledNextTimeNanosSum",
 				"executionPlan.executedNextTimeNanosSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledJoinRightIteratorCreateCountSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledJoinRightIteratorCreateCountSum",
 				"executionPlan.executedJoinRightIteratorCreateCountSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledJoinLeftBindingSetConsumedCountSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledJoinLeftBindingSetConsumedCountSum",
 				"executionPlan.executedJoinLeftBindingSetConsumedCountSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledJoinRightBindingSetConsumedCountSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledJoinRightBindingSetConsumedCountSum",
 				"executionPlan.executedJoinRightBindingSetConsumedCountSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledJoinRightBindingsPerLeftRatio",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledJoinRightBindingsPerLeftRatio",
 				"executionPlan.executedJoinRightBindingsPerLeftRatio");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledJoinTelemetryNodeCount",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledJoinTelemetryNodeCount",
 				"executionPlan.executedJoinTelemetryNodeCount");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry",
 				"modeledJoinRightBindingSetConsumedPerRightIteratorAverage",
 				"executionPlan.executedJoinRightBindingSetConsumedPerRightIteratorAverage");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry",
 				"modeledJoinRightIteratorCreatePerJoinNodeAverage",
 				"executionPlan.executedJoinRightIteratorCreatePerJoinNodeAverage");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry",
 				"modeledJoinLeftBindingSetConsumedPerJoinNodeAverage",
 				"executionPlan.executedJoinLeftBindingSetConsumedPerJoinNodeAverage");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry",
 				"modeledJoinRightBindingSetConsumedPerJoinNodeAverage",
 				"executionPlan.executedJoinRightBindingSetConsumedPerJoinNodeAverage");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledSourceRowsScannedSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledSourceRowsScannedSum",
 				"executionPlan.executedSourceRowsScannedSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledSourceRowsMatchedSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledSourceRowsMatchedSum",
 				"executionPlan.executedSourceRowsMatchedSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledSourceRowsFilteredSum",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledSourceRowsFilteredSum",
 				"executionPlan.executedSourceRowsFilteredSum");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledSourceFilterOutRatio",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledSourceFilterOutRatio",
 				"executionPlan.executedSourceFilterOutRatio");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledHasNextPerNextRatio",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledHasNextPerNextRatio",
 				"executionPlan.executedHasNextPerNextRatio");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "modeledHasNextTruePerNextRatio",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "modeledHasNextTruePerNextRatio",
 				"executionPlan.executedHasNextTruePerNextRatio");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "estimateActualQErrorP95",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "estimateActualQErrorP95",
 				"executionPlan.executedEstimateActualQErrorP95");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "estimateActualQErrorMax",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "estimateActualQErrorMax",
 				"executionPlan.executedEstimateActualQErrorMax");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "joinEstimateActualComparableNodeCount",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "joinEstimateActualComparableNodeCount",
 				"executionPlan.executedJoinEstimateActualComparableNodeCount");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "joinEstimateActualQErrorP95",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "joinEstimateActualQErrorP95",
 				"executionPlan.executedJoinEstimateActualQErrorP95");
-		copyLevelDebugMetricToMetadata(snapshot, metadata, "executed", "joinEstimateActualQErrorMax",
+		copyLevelDebugMetricToMetadata(snapshot, metadata, "telemetry", "joinEstimateActualQErrorMax",
 				"executionPlan.executedJoinEstimateActualQErrorMax");
 
 		Map<String, String> featureFlags = snapshot.getFeatureFlags();

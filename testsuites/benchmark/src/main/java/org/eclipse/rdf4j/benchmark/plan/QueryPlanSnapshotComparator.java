@@ -125,7 +125,7 @@ final class QueryPlanSnapshotComparator {
 			return;
 		}
 
-		LinkedHashSet<String> orderedLevels = new LinkedHashSet<>(List.of("unoptimized", "optimized", "executed"));
+		LinkedHashSet<String> orderedLevels = new LinkedHashSet<>(List.of("unoptimized", "optimized", "telemetry"));
 		orderedLevels.addAll(explanations.keySet());
 		for (String levelKey : orderedLevels) {
 			QueryPlanExplanation explanation = explanations.get(levelKey);
@@ -436,7 +436,7 @@ final class QueryPlanSnapshotComparator {
 				explanationDebugMetric(right, "optimized", "joinAlgorithmMultisetSignatureSha256"));
 
 		LevelDiff optimizedDiff = explanationDiffs.get("optimized");
-		LevelDiff executedDiff = explanationDiffs.get("executed");
+		LevelDiff executedDiff = explanationDiffs.get("telemetry");
 		String optimizedStructure = optimizedDiff == null ? "unknown" : optimizedDiff.structure;
 		String optimizedEstimates = optimizedDiff == null ? "unknown" : optimizedDiff.estimates;
 		String executedStructure = executedDiff == null ? "unknown" : executedDiff.structure;

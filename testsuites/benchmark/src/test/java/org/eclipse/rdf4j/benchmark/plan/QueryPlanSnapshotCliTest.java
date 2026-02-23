@@ -282,7 +282,7 @@ class QueryPlanSnapshotCliTest {
 		String printed = outputBuffer.toString(StandardCharsets.UTF_8);
 		int unoptimizedIndex = printed.indexOf("=== Unoptimized Explanation ===");
 		int optimizedIndex = printed.indexOf("=== Optimized Explanation ===");
-		int executedIndex = printed.indexOf("=== Executed Explanation ===");
+		int executedIndex = printed.indexOf("=== Telemetry Explanation ===");
 		assertTrue(unoptimizedIndex >= 0);
 		assertTrue(optimizedIndex > unoptimizedIndex);
 		assertTrue(executedIndex > optimizedIndex);
@@ -1060,13 +1060,13 @@ class QueryPlanSnapshotCliTest {
 		optimizedExplanation.setExplanationText("Optimized plan text");
 		optimizedExplanation.setDebugMetrics(new LinkedHashMap<>(optimizedDebugMetrics));
 		QueryPlanExplanation executedExplanation = new QueryPlanExplanation();
-		executedExplanation.setLevel("EXECUTED");
+		executedExplanation.setLevel("TELEMETRY");
 		executedExplanation.setExplanationText("Executed plan text");
 		executedExplanation.setDebugMetrics(new LinkedHashMap<>(executedDebugMetrics));
 		LinkedHashMap<String, QueryPlanExplanation> explanations = new LinkedHashMap<>();
 		explanations.put("unoptimized", explanation);
 		explanations.put("optimized", optimizedExplanation);
-		explanations.put("executed", executedExplanation);
+		explanations.put("telemetry", executedExplanation);
 		snapshot.setExplanations(explanations);
 		capture.writeSnapshot(outputDir.resolve(queryId + "-" + capturedAt.replace(":", "-") + ".json"), snapshot);
 	}
