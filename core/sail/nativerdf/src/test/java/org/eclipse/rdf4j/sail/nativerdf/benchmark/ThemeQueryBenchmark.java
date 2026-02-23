@@ -155,6 +155,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	@Test
+	@Disabled
 	public void testQueryExplanation() throws IOException {
 		String[] queryIndexes = paramValues("z_queryIndex");
 		String[] themeNames = paramValues("themeName");

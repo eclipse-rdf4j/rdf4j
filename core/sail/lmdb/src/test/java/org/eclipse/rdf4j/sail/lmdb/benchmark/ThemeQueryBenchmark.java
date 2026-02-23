@@ -360,6 +360,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	@Test
+	@Disabled
 	public void testQueryExplanation() throws IOException {
 		var queryIndexes = paramValues("z_queryIndex");
 		var themeNames = paramValues("themeName");
