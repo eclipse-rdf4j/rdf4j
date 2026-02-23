@@ -806,7 +806,28 @@ public class QueryPlanRetrievalTest {
 			JsonNode root = OBJECT_MAPPER.readTree(actual);
 			assertThat(root.path("type").asText()).isEqualTo("Projection");
 			assertThat(root.path("resultSizeActual").asLong()).isEqualTo(2L);
+			assertTelemetryFieldsAbsentRecursively(root);
+			assertThat(root.path("longMetricsActual").has("outputRowsActual")).isFalse();
+		}
+		sailRepository.shutDown();
+
+	}
+
+	@Test
+	public void testJsonPlanNodeTelemetry() throws IOException {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
+
+			String actual = query.explain(Explanation.Level.Telemetry).toJson();
+			JsonNode root = OBJECT_MAPPER.readTree(actual);
+			assertThat(root.path("type").asText()).isEqualTo("Projection");
+			assertThat(root.path("resultSizeActual").asLong()).isEqualTo(2L);
 			assertTelemetryFieldsPresentRecursively(root);
+			assertThat(root.path("nextCallCountActual").asLong()).isGreaterThan(0L);
+			assertThat(root.path("longMetricsActual").path("outputRowsActual").asLong()).isEqualTo(2L);
 
 		}
 		sailRepository.shutDown();
@@ -830,6 +851,27 @@ public class QueryPlanRetrievalTest {
 		if (plans.isArray()) {
 			for (JsonNode child : plans) {
 				assertTelemetryFieldsPresentRecursively(child);
+			}
+		}
+	}
+
+	private static void assertTelemetryFieldsAbsentRecursively(JsonNode node) {
+		assertThat(node.has("hasNextCallCountActual")).isFalse();
+		assertThat(node.has("hasNextTrueCountActual")).isFalse();
+		assertThat(node.has("hasNextTimeNanosActual")).isFalse();
+		assertThat(node.has("nextCallCountActual")).isFalse();
+		assertThat(node.has("nextTimeNanosActual")).isFalse();
+		assertThat(node.has("joinRightIteratorsCreatedActual")).isFalse();
+		assertThat(node.has("joinLeftBindingsConsumedActual")).isFalse();
+		assertThat(node.has("joinRightBindingsConsumedActual")).isFalse();
+		assertThat(node.has("sourceRowsScannedActual")).isFalse();
+		assertThat(node.has("sourceRowsMatchedActual")).isFalse();
+		assertThat(node.has("sourceRowsFilteredActual")).isFalse();
+
+		JsonNode plans = node.path("plans");
+		if (plans.isArray()) {
+			for (JsonNode child : plans) {
+				assertTelemetryFieldsAbsentRecursively(child);
 			}
 		}
 	}

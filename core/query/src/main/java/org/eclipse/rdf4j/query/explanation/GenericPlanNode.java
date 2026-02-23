@@ -125,7 +125,7 @@ public class GenericPlanNode {
 	// plans[0..n].totalTimeActual)
 	private Double totalTimeActual;
 
-	// Telemetry counters captured while iterating this node during executed/timed explanations.
+	// Telemetry counters captured while iterating this node during telemetry-level explanations.
 	private Long hasNextCallCountActual;
 	private Long hasNextTrueCountActual;
 	private Long hasNextTimeNanosActual;
@@ -137,6 +137,7 @@ public class GenericPlanNode {
 	private Long sourceRowsScannedActual;
 	private Long sourceRowsMatchedActual;
 	private Long sourceRowsFilteredActual;
+	private boolean runtimeTelemetryEnabled = true;
 	private Map<String, Long> longMetricsActual = new LinkedHashMap<>();
 	private Map<String, Double> doubleMetricsActual = new LinkedHashMap<>();
 	private Map<String, String> stringMetricsActual = new LinkedHashMap<>();
@@ -359,6 +360,10 @@ public class GenericPlanNode {
 		if (sourceRowsFilteredActual != null && sourceRowsFilteredActual >= 0) {
 			this.sourceRowsFilteredActual = sourceRowsFilteredActual;
 		}
+	}
+
+	public void setRuntimeTelemetryEnabled(boolean runtimeTelemetryEnabled) {
+		this.runtimeTelemetryEnabled = runtimeTelemetryEnabled;
 	}
 
 	public Map<String, Long> getLongMetricsActual() {
@@ -696,7 +701,9 @@ public class GenericPlanNode {
 						: toHumanReadableNonZeroNumber(sourceRowsFiltered));
 
 		appendMapTelemetry(metrics);
-		appendDerivedTelemetry(metrics, sourceRowsScanned, sourceRowsMatched, sourceRowsFiltered);
+		if (runtimeTelemetryEnabled) {
+			appendDerivedTelemetry(metrics, sourceRowsScanned, sourceRowsMatched, sourceRowsFiltered);
+		}
 
 		if (!metrics.isEmpty()) {
 			sb.append(" (")
@@ -757,6 +764,9 @@ public class GenericPlanNode {
 	}
 
 	private Long sourceRowsScannedForDisplay() {
+		if (!runtimeTelemetryEnabled) {
+			return null;
+		}
 		if (!isFilterNode()) {
 			return getSourceRowsScannedActual();
 		}
@@ -770,6 +780,9 @@ public class GenericPlanNode {
 	}
 
 	private Long sourceRowsMatchedForDisplay() {
+		if (!runtimeTelemetryEnabled) {
+			return null;
+		}
 		if (!isFilterNode()) {
 			return getSourceRowsMatchedActual();
 		}
@@ -780,6 +793,9 @@ public class GenericPlanNode {
 	}
 
 	private Long sourceRowsFilteredForDisplay() {
+		if (!runtimeTelemetryEnabled) {
+			return null;
+		}
 		if (!isFilterNode()) {
 			return getSourceRowsFilteredActual();
 		}

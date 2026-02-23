@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
@@ -42,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
@@ -284,10 +286,19 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
 			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
 		boolean queryTimedOut = false;
+		setRuntimeTelemetryEnabled(tupleExpr, false);
 
 		try {
 
 			switch (level) {
+			case Telemetry:
+				setRuntimeTelemetryEnabled(tupleExpr, true);
+				this.trackResultSize = true;
+				this.cloneTupleExpression = false;
+
+				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
+				break;
+
 			case Timed:
 				this.trackTime = true;
 				this.trackResultSize = true;
@@ -384,6 +395,19 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			Thread.interrupted();
 		}
 
+	}
+
+	private static void setRuntimeTelemetryEnabled(TupleExpr tupleExpr, boolean enabled) {
+		if (tupleExpr == null) {
+			return;
+		}
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				node.setRuntimeTelemetryEnabled(enabled);
+				super.meetNode(node);
+			}
+		});
 	}
 
 	@Override

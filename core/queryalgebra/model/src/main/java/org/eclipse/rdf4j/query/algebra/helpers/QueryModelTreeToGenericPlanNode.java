@@ -71,10 +71,13 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		genericPlanNode.setSourceRowsScannedActual(runtimeTelemetryMetric(node.getSourceRowsScannedActual()));
 		genericPlanNode.setSourceRowsMatchedActual(runtimeTelemetryMetric(node.getSourceRowsMatchedActual()));
 		genericPlanNode.setSourceRowsFilteredActual(runtimeTelemetryMetric(node.getSourceRowsFilteredActual()));
-		genericPlanNode.setLongMetricsActual(new LinkedHashMap<>(node.getLongMetricsActual()));
-		genericPlanNode.setDoubleMetricsActual(new LinkedHashMap<>(node.getDoubleMetricsActual()));
-		genericPlanNode.setStringMetricsActual(new LinkedHashMap<>(node.getStringMetricsActual()));
-		applyVariableShapeMetrics(node, genericPlanNode);
+		genericPlanNode.setRuntimeTelemetryEnabled(includeDefaultRuntimeTelemetry);
+		if (includeDefaultRuntimeTelemetry) {
+			genericPlanNode.setLongMetricsActual(new LinkedHashMap<>(node.getLongMetricsActual()));
+			genericPlanNode.setDoubleMetricsActual(new LinkedHashMap<>(node.getDoubleMetricsActual()));
+			genericPlanNode.setStringMetricsActual(new LinkedHashMap<>(node.getStringMetricsActual()));
+			applyVariableShapeMetrics(node, genericPlanNode);
+		}
 		if (node instanceof StatementPattern) {
 			String indexName = ((StatementPattern) node).getIndexName();
 			if (indexName != null && !indexName.isEmpty()) {
@@ -112,15 +115,11 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		if (includeDefaultRuntimeTelemetry) {
 			return Math.max(0, value);
 		}
-		return value;
+		return -1;
 	}
 
 	private static boolean includeDefaultRuntimeTelemetry(QueryModelNode node) {
-		return node != null
-				&& (node.getResultSizeActual() >= 0
-						|| node.getTotalTimeNanosActual() >= 0
-						|| node.getHasNextCallCountActual() >= 0
-						|| node.getNextCallCountActual() >= 0);
+		return node != null && node.isRuntimeTelemetryEnabled();
 	}
 
 	private static void applyVariableShapeMetrics(QueryModelNode node, GenericPlanNode genericPlanNode) {

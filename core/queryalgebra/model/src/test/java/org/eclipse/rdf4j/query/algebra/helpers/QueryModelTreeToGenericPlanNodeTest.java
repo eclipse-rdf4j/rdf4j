@@ -40,6 +40,7 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode node) throws RuntimeException {
+				node.setRuntimeTelemetryEnabled(true);
 				node.setHasNextCallCountActual(11);
 				node.setHasNextTrueCountActual(7);
 				node.setHasNextTimeNanosActual(1000);
@@ -87,6 +88,13 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		Extension extension = new Extension(statementPattern, new ExtensionElem(Var.of("o"), "derivedVar"));
 		Projection projection = new Projection(extension,
 				new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("derivedVar")));
+		projection.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) throws RuntimeException {
+				node.setRuntimeTelemetryEnabled(true);
+				super.meetNode(node);
+			}
+		});
 
 		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(projection);
 		projection.visit(converter);
@@ -149,19 +157,9 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertThat(node.getSourceRowsScannedActual()).isNull();
 		assertThat(node.getSourceRowsMatchedActual()).isNull();
 		assertThat(node.getSourceRowsFilteredActual()).isNull();
-		if (node.getLongMetricsActual() != null) {
-			assertThat(node.getLongMetricsActual().keySet())
-					.allMatch(metricName -> TelemetryMetricNames.VARS_ADDED_ACTUAL.equals(metricName)
-							|| TelemetryMetricNames.VARS_DROPPED_ACTUAL.equals(metricName));
-		}
+		assertThat(node.getLongMetricsActual()).isNull();
 		assertThat(node.getDoubleMetricsActual()).isNull();
-		if (node.getStringMetricsActual() != null) {
-			assertThat(node.getStringMetricsActual().keySet())
-					.allMatch(metricName -> metricName.equals(TelemetryMetricNames.METRIC_ORIGIN + "."
-							+ TelemetryMetricNames.VARS_ADDED_ACTUAL)
-							|| metricName.equals(TelemetryMetricNames.METRIC_ORIGIN + "."
-									+ TelemetryMetricNames.VARS_DROPPED_ACTUAL));
-		}
+		assertThat(node.getStringMetricsActual()).isNull();
 
 		List<GenericPlanNode> children = node.getPlans();
 		if (children != null) {

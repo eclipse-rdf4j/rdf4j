@@ -295,4 +295,14 @@ public interface QueryModelNode extends Cloneable, Serializable {
 		// no-op
 	}
 
+	@Experimental
+	default boolean isRuntimeTelemetryEnabled() {
+		return false;
+	}
+
+	@Experimental
+	default void setRuntimeTelemetryEnabled(boolean runtimeTelemetryEnabled) {
+		// no-op
+	}
+
 }

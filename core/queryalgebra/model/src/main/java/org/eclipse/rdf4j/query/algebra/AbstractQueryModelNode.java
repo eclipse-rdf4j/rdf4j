@@ -55,6 +55,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	private long sourceRowsScannedActual = -1;
 	private long sourceRowsMatchedActual = -1;
 	private long sourceRowsFilteredActual = -1;
+	private boolean runtimeTelemetryEnabled;
 	private Map<String, Long> longMetricsActual = Collections.emptyMap();
 	private Map<String, Double> doubleMetricsActual = Collections.emptyMap();
 	private Map<String, String> stringMetricsActual = Collections.emptyMap();
@@ -312,7 +313,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	@Override
 	public void setLongMetricActual(String metricName, long metricValue) {
-		if (metricName == null) {
+		if (metricName == null || !runtimeTelemetryEnabled) {
 			return;
 		}
 		if (longMetricsActual.isEmpty()) {
@@ -333,7 +334,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	@Override
 	public void setDoubleMetricActual(String metricName, double metricValue) {
-		if (metricName == null) {
+		if (metricName == null || !runtimeTelemetryEnabled) {
 			return;
 		}
 		if (doubleMetricsActual.isEmpty()) {
@@ -354,13 +355,23 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	@Override
 	public void setStringMetricActual(String metricName, String metricValue) {
-		if (metricName == null) {
+		if (metricName == null || !runtimeTelemetryEnabled) {
 			return;
 		}
 		if (stringMetricsActual.isEmpty()) {
 			stringMetricsActual = new HashMap<>();
 		}
 		stringMetricsActual.put(metricName, metricValue);
+	}
+
+	@Override
+	public boolean isRuntimeTelemetryEnabled() {
+		return runtimeTelemetryEnabled;
+	}
+
+	@Override
+	public void setRuntimeTelemetryEnabled(boolean runtimeTelemetryEnabled) {
+		this.runtimeTelemetryEnabled = runtimeTelemetryEnabled;
 	}
 
 	/**

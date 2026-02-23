@@ -664,18 +664,19 @@ In RDF4J 3.2.0, queries have a new method `explain(...)` that returns an `Explan
 }
 ```
 
-There are 4 explanation levels to choose between:
+There are 5 explanation levels to choose between:
 
-|             | Parsed | Optimized | Cost and Estimates | Fully evaluated | Real result sizes | Performance timing |
-|-------------|--------|-----------|--------------------|-----------------|-------------------|--------------------|
-| Unoptimized | ✓      |           |                    |                 |                   |                    |
-| Optimized   | ✓      | ✓         | ✓                  |                 |                   |                    |
-| Executed    | ✓      | ✓         | ✓                  | ✓               | ✓                 |                    |
-| Timed       | ✓      | ✓         | ✓                  | ✓               | ✓                 | ✓                  |
+|             | Parsed | Optimized | Cost and Estimates | Fully evaluated | Real result sizes | Runtime telemetry | Performance timing |
+|-------------|--------|-----------|--------------------|-----------------|-------------------|-------------------|--------------------|
+| Unoptimized | ✓      |           |                    |                 |                   |                   |                    |
+| Optimized   | ✓      | ✓         | ✓                  |                 |                   |                   |                    |
+| Executed    | ✓      | ✓         | ✓                  | ✓               | ✓                 |                   |                    |
+| Telemetry   | ✓      | ✓         | ✓                  | ✓               | ✓                 | ✓                 |                    |
+| Timed       | ✓      | ✓         | ✓                  | ✓               | ✓                 |                   | ✓                  |
 
 
-First try to use the `Timed` level, since this is the richest and gives the clearest understanding about
-which part of the query is the slowest. `Timed` and `Executed` both fully evaluate the query and iterate
+Use the `Telemetry` level to inspect runtime telemetry metrics per plan node. Use `Timed` when you need
+time-per-node diagnostics. `Timed`, `Telemetry`, and `Executed` all fully evaluate the query and iterate
 over all the result sets. Seeing as how this can be very time-consuming there is a default best-effort
 timeout of 60 seconds. A different timeout can be set by changing the timeout for the query.
 

@@ -489,6 +489,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes) {
 		return bindings -> {
 			expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
+			if (expr.isRuntimeTelemetryEnabled()) {
+				initializeRuntimeTelemetry(expr);
+			}
 			return new ResultSizeCountingIterator(qes.evaluate(bindings), expr);
 		};
 	}
@@ -502,6 +505,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	private static void initializeTimeTelemetry(QueryModelNode queryModelNode) {
 		queryModelNode.setTotalTimeNanosActual(Math.max(0, queryModelNode.getTotalTimeNanosActual()));
+		initializeRuntimeTelemetry(queryModelNode);
+	}
+
+	private static void initializeRuntimeTelemetry(QueryModelNode queryModelNode) {
 		queryModelNode.setHasNextCallCountActual(Math.max(0, queryModelNode.getHasNextCallCountActual()));
 		queryModelNode.setHasNextTrueCountActual(Math.max(0, queryModelNode.getHasNextTrueCountActual()));
 		queryModelNode.setHasNextTimeNanosActual(Math.max(0, queryModelNode.getHasNextTimeNanosActual()));
@@ -549,10 +556,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	private static boolean telemetryActive(QueryModelNode node) {
-		return node != null && (node.getResultSizeActual() >= 0
-				|| node.getTotalTimeNanosActual() >= 0
-				|| node.getHasNextCallCountActual() >= 0
-				|| node.getNextCallCountActual() >= 0);
+		return node != null && node.isRuntimeTelemetryEnabled();
 	}
 
 	protected QueryEvaluationStep prepare(ArbitraryLengthPath alp, QueryEvaluationContext context)
@@ -984,7 +988,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	private QueryValueEvaluationStep wrapValueExprTelemetry(ValueExpr expr, QueryValueEvaluationStep prepared) {
-		if (prepared == null || (!trackResultSize && !trackTime)) {
+		if (prepared == null || !expr.isRuntimeTelemetryEnabled()) {
 			return prepared;
 		}
 		return bindings -> {
@@ -1558,31 +1562,67 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 		CloseableIteration<BindingSet> iterator;
 		QueryModelNode queryModelNode;
+		boolean telemetryEnabled;
+		long openedAtNanos;
+		boolean firstRowSeen;
 
 		public ResultSizeCountingIterator(CloseableIteration<BindingSet> iterator,
 				QueryModelNode queryModelNode) {
 			super(iterator);
 			this.iterator = iterator;
 			this.queryModelNode = queryModelNode;
+			this.telemetryEnabled = telemetryActive(queryModelNode);
+			this.openedAtNanos = System.nanoTime();
+			if (telemetryEnabled) {
+				incrementLongMetric(queryModelNode, TelemetryMetricNames.OPEN_COUNT_ACTUAL);
+			}
 		}
 
 		@Override
 		public boolean hasNext() throws QueryEvaluationException {
-			return iterator.hasNext();
+			boolean hasNext = false;
+			long started = System.nanoTime();
+			try {
+				hasNext = iterator.hasNext();
+				return hasNext;
+			} finally {
+				if (telemetryEnabled) {
+					long elapsed = System.nanoTime() - started;
+					queryModelNode.setHasNextCallCountActual(queryModelNode.getHasNextCallCountActual() + 1);
+					queryModelNode.setHasNextTimeNanosActual(queryModelNode.getHasNextTimeNanosActual() + elapsed);
+					if (hasNext) {
+						queryModelNode.setHasNextTrueCountActual(queryModelNode.getHasNextTrueCountActual() + 1);
+					}
+				}
+			}
 		}
 
 		@Override
 		public BindingSet next() throws QueryEvaluationException {
+			long started = System.nanoTime();
 			queryModelNode.setResultSizeActual(queryModelNode.getResultSizeActual() + 1);
-			queryModelNode.setLongMetricActual(TelemetryMetricNames.OUTPUT_ROWS_ACTUAL,
-					Math.max(0, queryModelNode.getResultSizeActual()));
-			return iterator.next();
+			try {
+				return iterator.next();
+			} finally {
+				if (telemetryEnabled) {
+					long elapsed = System.nanoTime() - started;
+					queryModelNode.setNextCallCountActual(queryModelNode.getNextCallCountActual() + 1);
+					queryModelNode.setNextTimeNanosActual(queryModelNode.getNextTimeNanosActual() + elapsed);
+					queryModelNode.setLongMetricActual(TelemetryMetricNames.OUTPUT_ROWS_ACTUAL,
+							Math.max(0, queryModelNode.getResultSizeActual()));
+					if (!firstRowSeen) {
+						firstRowSeen = true;
+						queryModelNode.setLongMetricActual(TelemetryMetricNames.FIRST_ROW_TIME_NANOS_ACTUAL,
+								Math.max(0L, System.nanoTime() - openedAtNanos));
+					}
+				}
+			}
 		}
 
 		@Override
 		protected void handleClose() throws QueryEvaluationException {
 			try {
-				if (iterator instanceof IndexReportingIterator) {
+				if (telemetryEnabled && iterator instanceof IndexReportingIterator) {
 					IndexReportingIterator sourceMetrics = (IndexReportingIterator) iterator;
 					queryModelNode.setSourceRowsScannedActual(Math.max(0, queryModelNode.getSourceRowsScannedActual()));
 					queryModelNode.setSourceRowsMatchedActual(Math.max(0, queryModelNode.getSourceRowsMatchedActual()));
@@ -1605,7 +1645,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 								queryModelNode.getSourceRowsFilteredActual() + sourceRowsFiltered);
 					}
 				}
-				QueryRuntimeTelemetryRegistry.record(queryModelNode);
+				if (telemetryEnabled) {
+					incrementLongMetric(queryModelNode, TelemetryMetricNames.CLOSE_COUNT_ACTUAL);
+					queryModelNode.setLongMetricActual(TelemetryMetricNames.LAST_ROW_TIME_NANOS_ACTUAL,
+							Math.max(0L, System.nanoTime() - openedAtNanos));
+					QueryRuntimeTelemetryRegistry.record(queryModelNode);
+				}
 			} finally {
 				super.handleClose();
 			}
