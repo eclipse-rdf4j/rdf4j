@@ -177,6 +177,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return evalStratFactory;
 	}
 
+	public boolean getPageCardinalityEstimator() {
+		return config.getPageCardinalityEstimator();
+	}
+
 	/**
 	 * Sets the {@link EvaluationStrategy} to use.
 	 */

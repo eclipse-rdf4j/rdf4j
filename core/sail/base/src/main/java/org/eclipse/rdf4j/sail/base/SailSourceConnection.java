@@ -330,6 +330,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			}
 
 		} finally {
+			setRuntimeTelemetryEnabled(tupleExpr, false);
 			this.cloneTupleExpression = true;
 			this.trackResultSize = false;
 			this.trackTime = false;

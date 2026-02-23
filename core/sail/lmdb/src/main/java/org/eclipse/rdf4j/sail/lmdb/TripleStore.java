@@ -166,6 +166,7 @@ class TripleStore implements Closeable {
 	private final int contextsDbi;
 	private int pageSize;
 	private final boolean autoGrow;
+	private final boolean pageCardinalityEstimator;
 	private long mapSize;
 	private long writeTxn;
 	private final TxnManager txnManager;
@@ -197,6 +198,7 @@ class TripleStore implements Closeable {
 		this.dir = dir;
 		boolean forceSync = config.getForceSync();
 		this.autoGrow = config.getAutoGrow();
+		this.pageCardinalityEstimator = config.getPageCardinalityEstimator();
 		this.valueStore = valueStore;
 
 		// create directory if it not exists
@@ -673,6 +675,10 @@ class TripleStore implements Closeable {
 	}
 
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
+		if (!pageCardinalityEstimator) {
+			return exactCardinality(subj, pred, obj, context);
+		}
+
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 
 		int relevantParts = index.getPatternScore(subj, pred, obj, context);
@@ -835,6 +841,21 @@ class TripleStore implements Closeable {
 			} finally {
 				pool.free(s);
 			}
+		});
+	}
+
+	private double exactCardinality(long subj, long pred, long obj, long context) throws IOException {
+		return txnManager.doWith((stack, txn) -> {
+			double cardinality = 0.0;
+			TxnManager.Txn txnRef = txnManager.createTxn(txn);
+			for (boolean explicit : new boolean[] { true, false }) {
+				try (RecordIterator triples = getTriples(txnRef, subj, pred, obj, context, explicit)) {
+					while (triples.next() != null) {
+						cardinality++;
+					}
+				}
+			}
+			return cardinality;
 		});
 	}
 

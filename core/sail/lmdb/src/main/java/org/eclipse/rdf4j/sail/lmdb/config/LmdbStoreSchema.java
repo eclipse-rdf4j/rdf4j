@@ -72,6 +72,11 @@ public class LmdbStoreSchema {
 	public final static IRI AUTO_GROW;
 
 	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#pageCardinalityEstimator</tt>
+	 */
+	public final static IRI PAGE_CARDINALITY_ESTIMATOR;
+
+	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#valueEvictionInterval</tt>
 	 */
 	public final static IRI VALUE_EVICTION_INTERVAL;
@@ -87,6 +92,7 @@ public class LmdbStoreSchema {
 		NAMESPACE_CACHE_SIZE = factory.createIRI(NAMESPACE, "namespaceCacheSize");
 		NAMESPACE_ID_CACHE_SIZE = factory.createIRI(NAMESPACE, "namespaceIDCacheSize");
 		AUTO_GROW = factory.createIRI(NAMESPACE, "autoGrow");
+		PAGE_CARDINALITY_ESTIMATOR = factory.createIRI(NAMESPACE, "pageCardinalityEstimator");
 		VALUE_EVICTION_INTERVAL = factory.createIRI(NAMESPACE, "valueEvictionInterval");
 	}
 }

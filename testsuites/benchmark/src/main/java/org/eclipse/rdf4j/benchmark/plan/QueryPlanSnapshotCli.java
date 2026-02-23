@@ -2664,6 +2664,8 @@ public final class QueryPlanSnapshotCli {
 		private final int totalQueries;
 		private final int directHistoryQueryCount;
 		private final ScheduledExecutorService scheduler;
+		private long observedElapsedMillisTotal;
+		private int observedElapsedCount;
 		private boolean stopped;
 
 		private BatchRunEtaReporter(PrintStream output, List<String> queryIds, Map<String, Long> historicalByQueryId,
@@ -2705,7 +2707,14 @@ public final class QueryPlanSnapshotCli {
 
 		void markCompleted(String queryId, long actualElapsedMillis) {
 			synchronized (this) {
-				completedQueryIds.add(queryId);
+				if (!completedQueryIds.add(queryId)) {
+					return;
+				}
+				long sanitizedElapsed = Math.max(0L, actualElapsedMillis);
+				if (sanitizedElapsed > 0L) {
+					observedElapsedMillisTotal += sanitizedElapsed;
+					observedElapsedCount++;
+				}
 			}
 		}
 
@@ -2818,6 +2827,9 @@ public final class QueryPlanSnapshotCli {
 			}
 			if (directCount > 0) {
 				return Math.max(1L, directTotal / directCount);
+			}
+			if (observedElapsedCount > 0) {
+				return Math.max(1L, observedElapsedMillisTotal / observedElapsedCount);
 			}
 			return fallbackEstimateMillis;
 		}

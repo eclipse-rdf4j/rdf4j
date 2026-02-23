@@ -371,6 +371,16 @@ class QueryPlanSnapshotCliTest {
 	}
 
 	@Test
+	void batchEtaRemainingEstimateUsesObservedRuntimeWhenHistoryIsMissing() throws Exception {
+		Object reporter = newBatchRunEtaReporter(List.of("q1", "q2"), Map.of(), 0L);
+		invokeReporterMethod(reporter, "markCompleted", new Class<?>[] { String.class, long.class }, "q1", 750L);
+
+		Object remainingEstimate = invokeReporterMethod(reporter, "estimateRemainingLocked", new Class<?>[0]);
+		assertEquals(750L, readLongField(remainingEstimate, "millis"));
+		assertFalse(readBooleanField(remainingEstimate, "unknown"));
+	}
+
+	@Test
 	void lmdbRunRecordsLoadedSizeAndSkipsReloadWhenSizeMatches() throws Exception {
 		Path lmdbDataDirectory = Files.createTempDirectory("rdf4j-cli-lmdb-reuse-");
 		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {

@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
+
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -26,8 +28,13 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -117,6 +124,20 @@ public class SnapshotSailStoreTest {
 		} finally {
 			c.close();
 			// shutting down the SAIL should not result in an exception
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainTelemetryRestoresRuntimeTelemetryFlag() {
+		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink());
+		Sail sail = createSail(sailStore);
+
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			connection.explain(Explanation.Level.Telemetry, tupleExpr, null, EmptyBindingSet.getInstance(), true, 0);
+			assertFalse(tupleExpr.isRuntimeTelemetryEnabled());
+		} finally {
 			sail.shutDown();
 		}
 	}

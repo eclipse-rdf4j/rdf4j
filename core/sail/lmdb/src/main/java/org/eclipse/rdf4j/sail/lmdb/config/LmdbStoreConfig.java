@@ -73,6 +73,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private boolean autoGrow = true;
 
+	private boolean pageCardinalityEstimator = true;
+
 	private long valueEvictionInterval = Duration.ofSeconds(60).toMillis();
 
 	/*--------------*
@@ -190,6 +192,15 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public boolean getPageCardinalityEstimator() {
+		return pageCardinalityEstimator;
+	}
+
+	public LmdbStoreConfig setPageCardinalityEstimator(boolean pageCardinalityEstimator) {
+		this.pageCardinalityEstimator = pageCardinalityEstimator;
+		return this;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -222,6 +233,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		}
 		if (!autoGrow) {
 			m.add(implNode, LmdbStoreSchema.AUTO_GROW, vf.createLiteral(false));
+		}
+		if (!pageCardinalityEstimator) {
+			m.add(implNode, LmdbStoreSchema.PAGE_CARDINALITY_ESTIMATOR, vf.createLiteral(false));
 		}
 		if (valueEvictionInterval != Duration.ofSeconds(60).toMillis()) {
 			m.add(implNode, LmdbStoreSchema.VALUE_EVICTION_INTERVAL, vf.createLiteral(valueEvictionInterval));
@@ -319,6 +333,17 @@ public class LmdbStoreConfig extends BaseSailConfig {
 							"Boolean value required for " + LmdbStoreSchema.AUTO_GROW + " property, found " + lit);
 				}
 			});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.PAGE_CARDINALITY_ESTIMATOR, null))
+					.ifPresent(lit -> {
+						try {
+							setPageCardinalityEstimator(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for " + LmdbStoreSchema.PAGE_CARDINALITY_ESTIMATOR
+											+ " property, found " + lit);
+						}
+					});
 
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.VALUE_EVICTION_INTERVAL, null))
 					.ifPresent(lit -> {

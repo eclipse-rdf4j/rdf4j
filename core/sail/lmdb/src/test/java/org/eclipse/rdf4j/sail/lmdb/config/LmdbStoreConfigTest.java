@@ -29,6 +29,23 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbStoreConfigTest {
 
+	@Test
+	void pageCardinalityEstimatorDefaultsToEnabled() {
+		assertThat(new LmdbStoreConfig().getPageCardinalityEstimator()).isTrue();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void testThatLmdbStoreConfigParseAndExportPageCardinalityEstimator(final boolean pageCardinalityEstimator) {
+		testParseAndExport(
+				LmdbStoreSchema.PAGE_CARDINALITY_ESTIMATOR,
+				Values.literal(pageCardinalityEstimator),
+				LmdbStoreConfig::getPageCardinalityEstimator,
+				pageCardinalityEstimator,
+				!pageCardinalityEstimator
+		);
+	}
+
 	@ParameterizedTest
 	@ValueSource(longs = { 1, 205454, 0, -1231 })
 	void testThatLmdbStoreConfigParseAndExportValueEvictionInterval(final long valueEvictionInterval) {
@@ -76,6 +93,16 @@ class LmdbStoreConfigTest {
 		final LmdbStore store = new LmdbStore(config);
 
 		assertThat(store.getIterationCacheSyncThreshold()).isEqualTo(threshold);
+	}
+
+	@Test
+	void setPageCardinalityEstimatorShouldApplyToCreatedStore() {
+		final LmdbStoreConfig config = new LmdbStoreConfig();
+		config.setPageCardinalityEstimator(false);
+
+		final LmdbStore store = new LmdbStore(config);
+
+		assertThat(store.getPageCardinalityEstimator()).isFalse();
 	}
 
 	/**

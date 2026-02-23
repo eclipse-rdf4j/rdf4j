@@ -221,6 +221,22 @@ class QueryPlanSnapshotComparatorTest {
 		assertTrue(output.contains("likelyCause=optimizer-structure-drift-with-stable-estimates"), output);
 	}
 
+	@Test
+	void printComparisonDoesNotBlameOptimizerInputWhenFingerprintIsUnknown() {
+		QueryPlanSnapshot left = snapshotWithOptimizedJsonAndExecutedDebugMetrics(explanationJson(1.0, 2.0, 7),
+				Map.of());
+		QueryPlanSnapshot right = snapshotWithOptimizedJsonAndExecutedDebugMetrics(
+				"{\"type\":\"Projection\",\"plans\":[]}",
+				Map.of());
+
+		ByteArrayOutputStream capture = new ByteArrayOutputStream();
+		QueryPlanSnapshotComparator.printComparison(new PrintStream(capture), run(left), run(right));
+
+		String output = capture.toString(StandardCharsets.UTF_8);
+		assertTrue(output.contains("inputFingerprint=unknown"), output);
+		assertTrue(output.contains("likelyCause=unknown"), output);
+	}
+
 	private static QueryPlanSnapshotComparator.SnapshotRun run(QueryPlanSnapshot snapshot) {
 		return QueryPlanSnapshotComparator.inMemoryRun(snapshot);
 	}

@@ -442,11 +442,11 @@ final class QueryPlanSnapshotComparator {
 		String executedStructure = executedDiff == null ? "unknown" : executedDiff.structure;
 
 		String likelyCause;
-		if (!"same".equals(inputFingerprint)) {
+		if ("diff".equals(inputFingerprint) || "diff".equals(optimizerInputStructure)) {
 			likelyCause = "different-optimizer-input";
-		} else if (!"same".equals(featureFlags)) {
+		} else if ("diff".equals(featureFlags)) {
 			likelyCause = "different-feature-flags";
-		} else if (!"same".equals(environmentFingerprint)) {
+		} else if ("diff".equals(environmentFingerprint)) {
 			likelyCause = "different-environment";
 		} else if ("diff".equals(optimizedStructureSignature)
 				&& ("diff".equals(optimizedEstimatesSignature)
