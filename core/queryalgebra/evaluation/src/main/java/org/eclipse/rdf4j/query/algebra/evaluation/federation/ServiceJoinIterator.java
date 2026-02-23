@@ -53,8 +53,10 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 	@Override
 	protected void handleBindings() throws Exception {
 		boolean runtimeTelemetryEnabled = isRuntimeTelemetryEnabled(service);
+		boolean fallbackEvaluation = false;
 		try {
 			Var serviceRef = service.getServiceRef();
+			fallbackEvaluation = !serviceRef.hasValue();
 
 			String serviceUri;
 			if (serviceRef.hasValue()) {
@@ -66,24 +68,10 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 				while (!isClosed() && leftIter.hasNext()) {
 					BindingSet leftBindings = leftIter.next();
 					if (runtimeTelemetryEnabled) {
-						incrementLongMetric(service, TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL);
 						incrementLongMetric(service, TelemetryMetricNames.REMOTE_EVALUATE_REQUEST_COUNT_ACTUAL);
-						addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
-								estimateRequestBytes(service, leftBindings));
 					}
-					long started = runtimeTelemetryEnabled ? System.nanoTime() : 0L;
-					try {
-						CloseableIteration<BindingSet> result = strategy.evaluate(service, leftBindings);
-						if (runtimeTelemetryEnabled) {
-							addResult(trackResponseBytes(service, result));
-						} else {
-							addResult(result);
-						}
-					} finally {
-						if (runtimeTelemetryEnabled) {
-							recordRequestLatency(service, started);
-						}
-					}
+					CloseableIteration<BindingSet> result = strategy.evaluate(service, leftBindings);
+					addResult(result);
 				}
 				return;
 			}
@@ -110,7 +98,7 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 				}
 			}
 		} catch (Exception e) {
-			if (runtimeTelemetryEnabled) {
+			if (runtimeTelemetryEnabled && !fallbackEvaluation) {
 				incrementLongMetric(service, TelemetryMetricNames.REMOTE_ERROR_COUNT_ACTUAL);
 				if (isTimeoutException(e)) {
 					incrementLongMetric(service, TelemetryMetricNames.REMOTE_TIMEOUT_COUNT_ACTUAL);

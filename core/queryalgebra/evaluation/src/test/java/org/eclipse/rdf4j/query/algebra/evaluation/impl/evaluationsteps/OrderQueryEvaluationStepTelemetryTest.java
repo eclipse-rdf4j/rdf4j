@@ -33,6 +33,13 @@ import org.junit.jupiter.api.Test;
 class OrderQueryEvaluationStepTelemetryTest {
 
 	@Test
+	void retainsLegacyConstructorForBinaryCompatibility() throws Exception {
+		assertThat(OrderQueryEvaluationStep.class
+				.getConstructor(Comparator.class, long.class, boolean.class, QueryEvaluationStep.class, long.class))
+				.isNotNull();
+	}
+
+	@Test
 	void usesBaseComparatorWhenRuntimeTelemetryDisabled() throws Exception {
 		Order order = new Order(new SingletonSet());
 		order.setRuntimeTelemetryEnabled(false);

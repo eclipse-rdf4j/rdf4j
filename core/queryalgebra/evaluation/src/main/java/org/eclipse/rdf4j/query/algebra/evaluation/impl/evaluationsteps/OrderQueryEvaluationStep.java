@@ -40,6 +40,16 @@ public class OrderQueryEvaluationStep implements QueryEvaluationStep {
 		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
 	}
 
+	/**
+	 * @deprecated for binary compatibility with versions that did not pass the {@link Order} node. Prefer
+	 *             {@link #OrderQueryEvaluationStep(Order, Comparator, long, boolean, QueryEvaluationStep, long)}.
+	 */
+	@Deprecated(forRemoval = false)
+	public OrderQueryEvaluationStep(Comparator<BindingSet> cmp, long limit, boolean reduced,
+			QueryEvaluationStep preparedArg, long iterationCacheSyncThreshold) {
+		this(null, cmp, limit, reduced, preparedArg, iterationCacheSyncThreshold);
+	}
+
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bs) {
 		if (orderNode == null || !orderNode.isRuntimeTelemetryEnabled()) {

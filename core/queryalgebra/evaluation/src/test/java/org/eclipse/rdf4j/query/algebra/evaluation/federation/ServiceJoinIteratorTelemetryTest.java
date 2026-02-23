@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ServiceQueryEvaluationStep;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -48,13 +49,22 @@ class ServiceJoinIteratorTelemetryTest {
 				false);
 		service.setRuntimeTelemetryEnabled(true);
 
-		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
-		when(strategy.evaluate(eq(service), any(BindingSet.class)))
+		FederatedService federatedService = mock(FederatedService.class);
+		when(federatedService.ask(eq(service), any(BindingSet.class), eq(service.getBaseURI())))
 				.thenAnswer(invocation -> {
 					LockSupport.parkNanos(1_000_000L);
-					BindingSet leftBindings = invocation.getArgument(1);
-					return new SingletonIteration<>(leftBindings);
+					return true;
 				});
+
+		FederatedServiceResolver resolver = mock(FederatedServiceResolver.class);
+		when(resolver.getService("http://example.com/service-1")).thenReturn(federatedService);
+		when(resolver.getService("http://example.com/service-2")).thenReturn(federatedService);
+
+		ServiceQueryEvaluationStep serviceStep = new ServiceQueryEvaluationStep(service, service.getServiceRef(),
+				resolver);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.evaluate(eq(service), any(BindingSet.class)))
+				.thenAnswer(invocation -> serviceStep.evaluate(invocation.getArgument(1)));
 
 		BindingSet first = singleBindingSet("serviceRef", "http://example.com/service-1");
 		BindingSet second = singleBindingSet("serviceRef", "http://example.com/service-2");
@@ -77,6 +87,47 @@ class ServiceJoinIteratorTelemetryTest {
 				.isGreaterThan(0D);
 		assertThat(service.getDoubleMetricActual(TelemetryMetricNames.REMOTE_LATENCY_P95_NANOS_ACTUAL))
 				.isGreaterThan(0D);
+	}
+
+	@Test
+	void avoidsDoubleCountingRemoteRequestTelemetryInFallbackMode() throws Exception {
+		Service service = new Service(
+				Var.of("serviceRef"),
+				new SingletonSet(),
+				"{ VALUES ?x { 1 } }",
+				Collections.emptyMap(),
+				null,
+				false);
+		service.setRuntimeTelemetryEnabled(true);
+
+		FederatedService federatedService = mock(FederatedService.class);
+		when(federatedService.ask(eq(service), any(BindingSet.class), eq(service.getBaseURI()))).thenReturn(true);
+
+		FederatedServiceResolver resolver = mock(FederatedServiceResolver.class);
+		when(resolver.getService("http://example.com/service")).thenReturn(federatedService);
+
+		ServiceQueryEvaluationStep serviceStep = new ServiceQueryEvaluationStep(service, service.getServiceRef(),
+				resolver);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.evaluate(eq(service), any(BindingSet.class)))
+				.thenAnswer(invocation -> serviceStep.evaluate(invocation.getArgument(1)));
+
+		BindingSet leftBindings = singleBindingSet("serviceRef", "http://example.com/service");
+		try (ServiceJoinIterator iterator = new ServiceJoinIterator(
+				new CloseableIteratorIteration<>(List.of(leftBindings).iterator()),
+				service,
+				EmptyBindingSet.getInstance(),
+				strategy)) {
+			assertThat(iterator.hasNext()).isTrue();
+			iterator.next();
+			assertThat(iterator.hasNext()).isFalse();
+		}
+
+		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL)).isEqualTo(1L);
+		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_EVALUATE_REQUEST_COUNT_ACTUAL))
+				.isEqualTo(1L);
+		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_ASK_REQUEST_COUNT_ACTUAL)).isEqualTo(1L);
+		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL)).isEqualTo(4L);
 	}
 
 	@Test
