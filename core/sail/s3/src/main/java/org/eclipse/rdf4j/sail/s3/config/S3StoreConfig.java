@@ -75,6 +75,20 @@ public class S3StoreConfig extends BaseSailConfig {
 
 	private int valueIdCacheSize = -1;
 
+	private String s3Bucket;
+
+	private String s3Endpoint;
+
+	private String s3Region;
+
+	private String s3Prefix;
+
+	private String s3AccessKey;
+
+	private String s3SecretKey;
+
+	private boolean s3ForcePathStyle = true;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -164,6 +178,73 @@ public class S3StoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public String getS3Bucket() {
+		return s3Bucket;
+	}
+
+	public S3StoreConfig setS3Bucket(String s3Bucket) {
+		this.s3Bucket = s3Bucket;
+		return this;
+	}
+
+	public String getS3Endpoint() {
+		return s3Endpoint;
+	}
+
+	public S3StoreConfig setS3Endpoint(String s3Endpoint) {
+		this.s3Endpoint = s3Endpoint;
+		return this;
+	}
+
+	public String getS3Region() {
+		return s3Region != null ? s3Region : "us-east-1";
+	}
+
+	public S3StoreConfig setS3Region(String s3Region) {
+		this.s3Region = s3Region;
+		return this;
+	}
+
+	public String getS3Prefix() {
+		return s3Prefix != null ? s3Prefix : "";
+	}
+
+	public S3StoreConfig setS3Prefix(String s3Prefix) {
+		this.s3Prefix = s3Prefix;
+		return this;
+	}
+
+	public String getS3AccessKey() {
+		return s3AccessKey;
+	}
+
+	public S3StoreConfig setS3AccessKey(String s3AccessKey) {
+		this.s3AccessKey = s3AccessKey;
+		return this;
+	}
+
+	public String getS3SecretKey() {
+		return s3SecretKey;
+	}
+
+	public S3StoreConfig setS3SecretKey(String s3SecretKey) {
+		this.s3SecretKey = s3SecretKey;
+		return this;
+	}
+
+	public boolean isS3ForcePathStyle() {
+		return s3ForcePathStyle;
+	}
+
+	public S3StoreConfig setS3ForcePathStyle(boolean s3ForcePathStyle) {
+		this.s3ForcePathStyle = s3ForcePathStyle;
+		return this;
+	}
+
+	public boolean isS3Configured() {
+		return s3Bucket != null && !s3Bucket.isEmpty();
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -194,6 +275,25 @@ public class S3StoreConfig extends BaseSailConfig {
 		if (valueIdCacheSize >= 0) {
 			m.add(implNode, S3StoreSchema.VALUE_ID_CACHE_SIZE, vf.createLiteral(valueIdCacheSize));
 		}
+		if (s3Bucket != null) {
+			m.add(implNode, S3StoreSchema.S3_BUCKET, vf.createLiteral(s3Bucket));
+		}
+		if (s3Endpoint != null) {
+			m.add(implNode, S3StoreSchema.S3_ENDPOINT, vf.createLiteral(s3Endpoint));
+		}
+		if (s3Region != null) {
+			m.add(implNode, S3StoreSchema.S3_REGION, vf.createLiteral(s3Region));
+		}
+		if (s3Prefix != null) {
+			m.add(implNode, S3StoreSchema.S3_PREFIX, vf.createLiteral(s3Prefix));
+		}
+		if (s3AccessKey != null) {
+			m.add(implNode, S3StoreSchema.S3_ACCESS_KEY, vf.createLiteral(s3AccessKey));
+		}
+		if (s3SecretKey != null) {
+			m.add(implNode, S3StoreSchema.S3_SECRET_KEY, vf.createLiteral(s3SecretKey));
+		}
+		m.add(implNode, S3StoreSchema.S3_FORCE_PATH_STYLE, vf.createLiteral(s3ForcePathStyle));
 		return implNode;
 	}
 
@@ -273,6 +373,26 @@ public class S3StoreConfig extends BaseSailConfig {
 											+ " property, found " + lit);
 						}
 					});
+			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.S3_BUCKET, null))
+					.ifPresent(lit -> setS3Bucket(lit.getLabel()));
+
+			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.S3_ENDPOINT, null))
+					.ifPresent(lit -> setS3Endpoint(lit.getLabel()));
+
+			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.S3_REGION, null))
+					.ifPresent(lit -> setS3Region(lit.getLabel()));
+
+			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.S3_PREFIX, null))
+					.ifPresent(lit -> setS3Prefix(lit.getLabel()));
+
+			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.S3_ACCESS_KEY, null))
+					.ifPresent(lit -> setS3AccessKey(lit.getLabel()));
+
+			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.S3_SECRET_KEY, null))
+					.ifPresent(lit -> setS3SecretKey(lit.getLabel()));
+
+			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.S3_FORCE_PATH_STYLE, null))
+					.ifPresent(lit -> setS3ForcePathStyle(lit.booleanValue()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}

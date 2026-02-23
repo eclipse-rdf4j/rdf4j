@@ -35,9 +35,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class MemTable {
 
-	static final byte FLAG_TOMBSTONE = 0x00;
-	static final byte FLAG_EXPLICIT = 0x01;
-	static final byte FLAG_INFERRED = 0x02;
+	public static final byte FLAG_TOMBSTONE = 0x00;
+	public static final byte FLAG_EXPLICIT = 0x01;
+	public static final byte FLAG_INFERRED = 0x02;
 
 	private static final byte[] VALUE_EXPLICIT = new byte[] { FLAG_EXPLICIT };
 	private static final byte[] VALUE_INFERRED = new byte[] { FLAG_INFERRED };
@@ -135,7 +135,7 @@ public class MemTable {
 
 		ConcurrentNavigableMap<byte[], byte[]> range = data.subMap(minKey, true, maxKey, true);
 
-		return new ScanIterator(range, index, expectedFlag);
+		return new ScanIterator(range, index, expectedFlag, s, p, o, c);
 	}
 
 	/**
@@ -200,6 +200,53 @@ public class MemTable {
 		return Collections.unmodifiableMap(data);
 	}
 
+	/**
+	 * Returns a {@link RawEntrySource} over the given key range. Includes tombstones (no flag filtering). Used by
+	 * {@link MergeIterator}.
+	 */
+	public RawEntrySource asRawSource(long s, long p, long o, long c) {
+		byte[] minKey = index.getMinKeyBytes(s, p, o, c);
+		byte[] maxKey = index.getMaxKeyBytes(s, p, o, c);
+		ConcurrentNavigableMap<byte[], byte[]> range = data.subMap(minKey, true, maxKey, true);
+		return new RawSourceImpl(range);
+	}
+
+	private static class RawSourceImpl implements RawEntrySource {
+		private final Iterator<Map.Entry<byte[], byte[]>> delegate;
+		private Map.Entry<byte[], byte[]> current;
+
+		RawSourceImpl(ConcurrentNavigableMap<byte[], byte[]> range) {
+			this.delegate = range.entrySet().iterator();
+			if (delegate.hasNext()) {
+				current = delegate.next();
+			}
+		}
+
+		@Override
+		public boolean hasNext() {
+			return current != null;
+		}
+
+		@Override
+		public byte[] peekKey() {
+			return current.getKey();
+		}
+
+		@Override
+		public byte peekFlag() {
+			return current.getValue()[0];
+		}
+
+		@Override
+		public void advance() {
+			if (delegate.hasNext()) {
+				current = delegate.next();
+			} else {
+				current = null;
+			}
+		}
+	}
+
 	private void checkNotFrozen() {
 		if (frozen.get()) {
 			throw new IllegalStateException("MemTable is frozen and cannot accept writes");
@@ -207,18 +254,25 @@ public class MemTable {
 	}
 
 	/**
-	 * Iterator that filters range scan results by flag value and skips tombstones. Returns quads in SPOC order.
+	 * Iterator that filters range scan results by flag value and pattern match. Skips tombstones and entries where
+	 * bound components don't match the query pattern. Returns quads in SPOC order.
 	 */
 	private static class ScanIterator implements Iterator<long[]> {
 		private final Iterator<Map.Entry<byte[], byte[]>> delegate;
 		private final QuadIndex quadIndex;
 		private final byte expectedFlag;
+		private final long patternS, patternP, patternO, patternC;
 		private long[] next;
 
-		ScanIterator(ConcurrentNavigableMap<byte[], byte[]> range, QuadIndex quadIndex, byte expectedFlag) {
+		ScanIterator(ConcurrentNavigableMap<byte[], byte[]> range, QuadIndex quadIndex, byte expectedFlag,
+				long s, long p, long o, long c) {
 			this.delegate = range.entrySet().iterator();
 			this.quadIndex = quadIndex;
 			this.expectedFlag = expectedFlag;
+			this.patternS = s;
+			this.patternP = p;
+			this.patternO = o;
+			this.patternC = c;
 			advance();
 		}
 
@@ -227,11 +281,19 @@ public class MemTable {
 			while (delegate.hasNext()) {
 				Map.Entry<byte[], byte[]> entry = delegate.next();
 				byte flag = entry.getValue()[0];
-				if (flag == expectedFlag) {
-					next = new long[4];
-					quadIndex.keyToQuad(entry.getKey(), next);
-					return;
+				if (flag != expectedFlag) {
+					continue;
 				}
+				long[] quad = new long[4];
+				quadIndex.keyToQuad(entry.getKey(), quad);
+				if ((patternS >= 0 && quad[QuadIndex.SUBJ_IDX] != patternS)
+						|| (patternP >= 0 && quad[QuadIndex.PRED_IDX] != patternP)
+						|| (patternO >= 0 && quad[QuadIndex.OBJ_IDX] != patternO)
+						|| (patternC >= 0 && quad[QuadIndex.CONTEXT_IDX] != patternC)) {
+					continue;
+				}
+				next = quad;
+				return;
 			}
 		}
 

@@ -10,12 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.s3;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -40,18 +42,23 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.s3.config.S3StoreConfig;
+import org.eclipse.rdf4j.sail.s3.storage.Manifest;
 import org.eclipse.rdf4j.sail.s3.storage.MemTable;
+import org.eclipse.rdf4j.sail.s3.storage.MergeIterator;
+import org.eclipse.rdf4j.sail.s3.storage.ObjectStore;
 import org.eclipse.rdf4j.sail.s3.storage.QuadIndex;
+import org.eclipse.rdf4j.sail.s3.storage.RawEntrySource;
+import org.eclipse.rdf4j.sail.s3.storage.S3ObjectStore;
+import org.eclipse.rdf4j.sail.s3.storage.SSTable;
+import org.eclipse.rdf4j.sail.s3.storage.SSTableWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 /**
- * In-memory {@link SailStore} implementation that stores RDF quads in {@link MemTable}s. Each configured index
- * permutation gets its own MemTable for efficient query patterns.
- *
- * <p>
- * This is the Phase 1b in-memory-only implementation. Later phases will add SSTable persistence and S3 integration.
- * </p>
+ * {@link SailStore} implementation that stores RDF quads in {@link MemTable}s with optional persistence to
+ * S3-compatible object storage via SSTables. When S3 is not configured, operates in pure in-memory mode.
  */
 class S3SailStore implements SailStore {
 
@@ -60,8 +67,16 @@ class S3SailStore implements SailStore {
 	private final S3ValueStore valueStore;
 	private final S3NamespaceStore namespaceStore;
 	private final List<QuadIndex> indexes;
-	private final List<MemTable> memTables;
+	private List<MemTable> memTables;
 	private volatile boolean mayHaveInferred;
+
+	// Persistence fields (null when S3 is not configured)
+	private final ObjectStore objectStore;
+	private final ObjectMapper jsonMapper;
+	private Manifest manifest;
+	private final List<List<SSTable>> sstablesByIndex; // per-index list, newest first
+	private final AtomicLong epochCounter;
+	private final long memTableFlushSize;
 
 	/**
 	 * A lock to control concurrent access by {@link S3SailSink} to the stores.
@@ -69,8 +84,21 @@ class S3SailStore implements SailStore {
 	private final ReentrantLock sinkStoreAccessLock = new ReentrantLock();
 
 	S3SailStore(S3StoreConfig config) {
+		this(config, config.isS3Configured()
+				? new S3ObjectStore(config.getS3Bucket(), config.getS3Endpoint(), config.getS3Region(),
+						config.getS3Prefix(), config.getS3AccessKey(), config.getS3SecretKey(),
+						config.isS3ForcePathStyle())
+				: null);
+	}
+
+	/**
+	 * Package-private constructor for testing with a custom ObjectStore.
+	 */
+	S3SailStore(S3StoreConfig config, ObjectStore objectStore) {
 		this.valueStore = new S3ValueStore();
 		this.namespaceStore = new S3NamespaceStore();
+		this.objectStore = objectStore;
+		this.memTableFlushSize = config.getMemTableSize();
 
 		// Parse index specifications from config
 		String indexSpec = config.getQuadIndexes();
@@ -84,11 +112,63 @@ class S3SailStore implements SailStore {
 		}
 
 		if (indexes.isEmpty()) {
-			// Fallback: always ensure at least one index
 			QuadIndex defaultIndex = new QuadIndex("spoc");
 			indexes.add(defaultIndex);
 			memTables.add(new MemTable(defaultIndex));
 		}
+
+		// Initialize persistence
+		if (objectStore != null) {
+			this.jsonMapper = new ObjectMapper();
+			this.manifest = Manifest.load(objectStore, jsonMapper);
+			this.epochCounter = new AtomicLong(computeMaxEpoch(manifest) + 1);
+			this.sstablesByIndex = new ArrayList<>(indexes.size());
+			for (int i = 0; i < indexes.size(); i++) {
+				sstablesByIndex.add(new ArrayList<>());
+			}
+
+			// Deserialize value store and namespaces
+			if (manifest.getNextValueId() > 0) {
+				valueStore.deserialize(objectStore, manifest.getNextValueId());
+			}
+			namespaceStore.deserialize(objectStore, jsonMapper);
+
+			// Load existing SSTables from manifest
+			for (Manifest.SSTableInfo info : manifest.getSstables()) {
+				int idxPos = findIndexByName(info.getIndexName());
+				if (idxPos >= 0) {
+					byte[] sstData = objectStore.get(info.getS3Key());
+					if (sstData != null) {
+						SSTable sst = new SSTable(sstData, indexes.get(idxPos));
+						sstablesByIndex.get(idxPos).add(sst);
+					}
+				}
+			}
+		} else {
+			this.jsonMapper = null;
+			this.manifest = null;
+			this.epochCounter = null;
+			this.sstablesByIndex = null;
+		}
+	}
+
+	private static long computeMaxEpoch(Manifest manifest) {
+		long max = 0;
+		for (Manifest.SSTableInfo info : manifest.getSstables()) {
+			if (info.getEpoch() > max) {
+				max = info.getEpoch();
+			}
+		}
+		return max;
+	}
+
+	private int findIndexByName(String indexName) {
+		for (int i = 0; i < indexes.size(); i++) {
+			if (indexes.get(i).getFieldSeqString().equals(indexName)) {
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	@Override
@@ -113,6 +193,14 @@ class S3SailStore implements SailStore {
 
 	@Override
 	public void close() throws SailException {
+		try {
+			if (objectStore != null) {
+				flushToObjectStore();
+				objectStore.close();
+			}
+		} catch (IOException e) {
+			throw new SailException(e);
+		}
 		valueStore.close();
 		for (MemTable mt : memTables) {
 			mt.clear();
@@ -133,6 +221,79 @@ class S3SailStore implements SailStore {
 			}
 		}
 		return bestIdx;
+	}
+
+	/**
+	 * Flushes active MemTables to SSTables on the object store.
+	 */
+	private void flushToObjectStore() {
+		if (objectStore == null) {
+			return;
+		}
+
+		// Check if any MemTable has data
+		boolean hasMemTableData = false;
+		for (MemTable mt : memTables) {
+			if (mt.size() > 0) {
+				hasMemTableData = true;
+				break;
+			}
+		}
+
+		long epoch = epochCounter.getAndIncrement();
+
+		List<Manifest.SSTableInfo> newInfos = new ArrayList<>();
+
+		if (hasMemTableData) {
+			// Freeze active MemTables and swap in fresh ones
+			List<MemTable> frozenTables = memTables;
+			List<MemTable> newTables = new ArrayList<>(indexes.size());
+			for (int i = 0; i < indexes.size(); i++) {
+				frozenTables.get(i).freeze();
+				newTables.add(new MemTable(indexes.get(i)));
+			}
+			memTables = newTables;
+
+			// Write each frozen MemTable as an SSTable
+			for (int i = 0; i < indexes.size(); i++) {
+				MemTable frozen = frozenTables.get(i);
+				if (frozen.size() == 0) {
+					continue;
+				}
+				String indexName = indexes.get(i).getFieldSeqString();
+				String s3Key = "sstables/L0-" + epoch + "-" + indexName + ".sst";
+
+				byte[] sstData = SSTableWriter.write(frozen);
+				objectStore.put(s3Key, sstData);
+
+				SSTable sst = new SSTable(sstData, indexes.get(i));
+				sstablesByIndex.get(i).add(0, sst); // prepend (newest first)
+
+				newInfos.add(new Manifest.SSTableInfo(
+						s3Key, 0, indexName,
+						bytesToHex(sst.getMinKey()), bytesToHex(sst.getMaxKey()),
+						sst.getEntryCount(), epoch));
+			}
+		}
+
+		// Always persist value store and namespaces
+		valueStore.serialize(objectStore);
+		namespaceStore.serialize(objectStore, jsonMapper);
+
+		// Update and save manifest
+		List<Manifest.SSTableInfo> allInfos = new ArrayList<>(newInfos);
+		allInfos.addAll(manifest.getSstables());
+		manifest.setSstables(allInfos);
+		manifest.setNextValueId(valueStore.getNextId());
+		manifest.save(objectStore, jsonMapper, epoch);
+	}
+
+	private static String bytesToHex(byte[] bytes) {
+		StringBuilder sb = new StringBuilder(bytes.length * 2);
+		for (byte b : bytes) {
+			sb.append(String.format("%02x", b & 0xFF));
+		}
+		return sb.toString();
 	}
 
 	/**
@@ -191,12 +352,26 @@ class S3SailStore implements SailStore {
 
 		int bestIdx = getBestIndex(subjID, predID, objID,
 				contextIDList.size() == 1 ? contextIDList.get(0) : S3ValueStore.UNKNOWN_ID);
-		MemTable bestTable = memTables.get(bestIdx);
+
+		boolean hasSSTables = sstablesByIndex != null && !sstablesByIndex.get(bestIdx).isEmpty();
 
 		ArrayList<CloseableIteration<? extends Statement>> perContextIterList = new ArrayList<>(contextIDList.size());
 
 		for (long contextID : contextIDList) {
-			Iterator<long[]> quads = bestTable.scan(subjID, predID, objID, contextID, explicit);
+			Iterator<long[]> quads;
+			if (hasSSTables) {
+				// Build merged source: MemTable (newest) + SSTables (newest first)
+				List<RawEntrySource> sources = new ArrayList<>();
+				sources.add(memTables.get(bestIdx).asRawSource(subjID, predID, objID, contextID));
+				for (SSTable sst : sstablesByIndex.get(bestIdx)) {
+					sources.add(sst.asRawSource(subjID, predID, objID, contextID));
+				}
+				byte expectedFlag = explicit ? MemTable.FLAG_EXPLICIT : MemTable.FLAG_INFERRED;
+				quads = new MergeIterator(sources, indexes.get(bestIdx), expectedFlag,
+						subjID, predID, objID, contextID);
+			} else {
+				quads = memTables.get(bestIdx).scan(subjID, predID, objID, contextID, explicit);
+			}
 			perContextIterList.add(new QuadToStatementIteration(quads, valueStore));
 		}
 
@@ -257,8 +432,7 @@ class S3SailStore implements SailStore {
 		public void flush() throws SailException {
 			sinkStoreAccessLock.lock();
 			try {
-				// In-memory only: nothing to persist yet.
-				// In later phases this will flush MemTable to SSTable and upload to S3.
+				flushToObjectStore();
 			} finally {
 				sinkStoreAccessLock.unlock();
 			}
@@ -330,6 +504,17 @@ class S3SailStore implements SailStore {
 
 					for (MemTable mt : memTables) {
 						mt.put(s, p, o, c, explicit);
+					}
+				}
+
+				// Size-triggered flush
+				if (objectStore != null) {
+					long totalSize = 0;
+					for (MemTable mt : memTables) {
+						totalSize += mt.approximateSizeInBytes();
+					}
+					if (totalSize >= memTableFlushSize) {
+						flushToObjectStore();
 					}
 				}
 			} finally {
@@ -425,14 +610,28 @@ class S3SailStore implements SailStore {
 					}
 				}
 
-				// Use the first MemTable as the source of truth for scanning, then remove from all
 				int bestIdx = getBestIndex(subjID, predID, objID,
 						contextIds.length == 1 ? contextIds[0] : S3ValueStore.UNKNOWN_ID);
 				MemTable scanTable = memTables.get(bestIdx);
 
 				long removeCount = 0;
 				for (long contextId : contextIds) {
-					Iterator<long[]> iter = scanTable.scan(subjID, predID, objID, contextId, explicit);
+					// When SSTables exist, use merged iterator for remove scan
+					Iterator<long[]> iter;
+					boolean hasSSTables = sstablesByIndex != null && !sstablesByIndex.get(bestIdx).isEmpty();
+					if (hasSSTables) {
+						List<RawEntrySource> sources = new ArrayList<>();
+						sources.add(scanTable.asRawSource(subjID, predID, objID, contextId));
+						for (SSTable sst : sstablesByIndex.get(bestIdx)) {
+							sources.add(sst.asRawSource(subjID, predID, objID, contextId));
+						}
+						byte expectedFlag = explicit ? MemTable.FLAG_EXPLICIT : MemTable.FLAG_INFERRED;
+						iter = new MergeIterator(sources, indexes.get(bestIdx), expectedFlag,
+								subjID, predID, objID, contextId);
+					} else {
+						iter = scanTable.scan(subjID, predID, objID, contextId, explicit);
+					}
+
 					List<long[]> toRemove = new ArrayList<>();
 					while (iter.hasNext()) {
 						toRemove.add(iter.next());
@@ -462,7 +661,7 @@ class S3SailStore implements SailStore {
 
 		@Override
 		public void close() {
-			// no-op for in-memory implementation
+			// no-op
 		}
 
 		@Override
@@ -478,8 +677,22 @@ class S3SailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
 			// Scan all quads and collect distinct non-null contexts
-			MemTable table = memTables.get(0);
-			Iterator<long[]> allQuads = table.scan(-1, -1, -1, -1, explicit);
+			// Use the merged read path (createStatementIterator covers this)
+			int bestIdx = 0; // use first index for full scan
+			boolean hasSSTables = sstablesByIndex != null && !sstablesByIndex.get(bestIdx).isEmpty();
+
+			Iterator<long[]> allQuads;
+			if (hasSSTables) {
+				List<RawEntrySource> sources = new ArrayList<>();
+				sources.add(memTables.get(bestIdx).asRawSource(-1, -1, -1, -1));
+				for (SSTable sst : sstablesByIndex.get(bestIdx)) {
+					sources.add(sst.asRawSource(-1, -1, -1, -1));
+				}
+				byte expectedFlag = explicit ? MemTable.FLAG_EXPLICIT : MemTable.FLAG_INFERRED;
+				allQuads = new MergeIterator(sources, indexes.get(bestIdx), expectedFlag, -1, -1, -1, -1);
+			} else {
+				allQuads = memTables.get(bestIdx).scan(-1, -1, -1, -1, explicit);
+			}
 
 			return new FilterIteration<Resource>(
 					new ConvertingIteration<long[], Resource>(
@@ -531,9 +744,9 @@ class S3SailStore implements SailStore {
 	}
 
 	/**
-	 * Converts quad ID arrays from MemTable iteration into Statement objects by resolving IDs through the ValueStore.
+	 * Converts quad ID arrays from iteration into Statement objects by resolving IDs through the ValueStore.
 	 */
-	private static final class QuadToStatementIteration implements CloseableIteration<Statement> {
+	static final class QuadToStatementIteration implements CloseableIteration<Statement> {
 
 		private final Iterator<long[]> quads;
 		private final S3ValueStore valueStore;
@@ -560,7 +773,7 @@ class S3SailStore implements SailStore {
 
 		@Override
 		public void close() {
-			// no-op: MemTable iterators don't hold resources
+			// no-op
 		}
 	}
 }

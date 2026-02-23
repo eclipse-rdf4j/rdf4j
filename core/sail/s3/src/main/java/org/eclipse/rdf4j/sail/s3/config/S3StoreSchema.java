@@ -64,6 +64,20 @@ public class S3StoreSchema {
 	 */
 	public final static IRI VALUE_ID_CACHE_SIZE;
 
+	public final static IRI S3_BUCKET;
+
+	public final static IRI S3_ENDPOINT;
+
+	public final static IRI S3_REGION;
+
+	public final static IRI S3_PREFIX;
+
+	public final static IRI S3_ACCESS_KEY;
+
+	public final static IRI S3_SECRET_KEY;
+
+	public final static IRI S3_FORCE_PATH_STYLE;
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 		QUAD_INDEXES = factory.createIRI(NAMESPACE, "quadIndexes");
@@ -74,5 +88,12 @@ public class S3StoreSchema {
 		DISK_CACHE_PATH = factory.createIRI(NAMESPACE, "diskCachePath");
 		VALUE_CACHE_SIZE = factory.createIRI(NAMESPACE, "valueCacheSize");
 		VALUE_ID_CACHE_SIZE = factory.createIRI(NAMESPACE, "valueIdCacheSize");
+		S3_BUCKET = factory.createIRI(NAMESPACE, "s3Bucket");
+		S3_ENDPOINT = factory.createIRI(NAMESPACE, "s3Endpoint");
+		S3_REGION = factory.createIRI(NAMESPACE, "s3Region");
+		S3_PREFIX = factory.createIRI(NAMESPACE, "s3Prefix");
+		S3_ACCESS_KEY = factory.createIRI(NAMESPACE, "s3AccessKey");
+		S3_SECRET_KEY = factory.createIRI(NAMESPACE, "s3SecretKey");
+		S3_FORCE_PATH_STYLE = factory.createIRI(NAMESPACE, "s3ForcePathStyle");
 	}
 }
