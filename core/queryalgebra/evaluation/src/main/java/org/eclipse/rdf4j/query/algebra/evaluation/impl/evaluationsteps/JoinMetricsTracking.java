@@ -57,6 +57,7 @@ final class JoinMetricsTracking {
 
 			CloseableIteration<BindingSet> base = delegate.evaluate(bindings);
 			if (base == QueryEvaluationStep.EMPTY_ITERATION) {
+				recordProbeTelemetry(joinNode, sideNode, rightSide, 0L);
 				return base;
 			}
 
@@ -85,36 +86,39 @@ final class JoinMetricsTracking {
 						return;
 					}
 					flushed = true;
-					if (rightSide) {
-						if (consumedBindings <= 0) {
-							incrementLongMetric(joinNode, TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL);
-						} else {
-							incrementLongMetric(joinNode, TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL);
-							setLongMetricMax(joinNode, TelemetryMetricNames.MAX_RIGHT_ROWS_PER_LEFT_ACTUAL,
-									consumedBindings);
-						}
-					}
-					if (consumedBindings <= 0) {
-						return;
-					}
-					if (rightSide) {
-						joinNode.setJoinRightBindingsConsumedActual(
-								joinNode.getJoinRightBindingsConsumedActual() + consumedBindings);
-						if (sideNode != null) {
-							sideNode.setJoinRightBindingsConsumedActual(
-									sideNode.getJoinRightBindingsConsumedActual() + consumedBindings);
-						}
-					} else {
-						joinNode.setJoinLeftBindingsConsumedActual(
-								joinNode.getJoinLeftBindingsConsumedActual() + consumedBindings);
-						if (sideNode != null) {
-							sideNode.setJoinLeftBindingsConsumedActual(
-									sideNode.getJoinLeftBindingsConsumedActual() + consumedBindings);
-						}
-					}
+					recordProbeTelemetry(joinNode, sideNode, rightSide, consumedBindings);
 				}
 			};
 		};
+	}
+
+	private static void recordProbeTelemetry(QueryModelNode joinNode, QueryModelNode sideNode, boolean rightSide,
+			long consumedBindings) {
+		if (rightSide) {
+			if (consumedBindings <= 0) {
+				incrementLongMetric(joinNode, TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL);
+			} else {
+				incrementLongMetric(joinNode, TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL);
+				setLongMetricMax(joinNode, TelemetryMetricNames.MAX_RIGHT_ROWS_PER_LEFT_ACTUAL, consumedBindings);
+			}
+		}
+		if (consumedBindings <= 0) {
+			return;
+		}
+		if (rightSide) {
+			joinNode.setJoinRightBindingsConsumedActual(
+					joinNode.getJoinRightBindingsConsumedActual() + consumedBindings);
+			if (sideNode != null) {
+				sideNode.setJoinRightBindingsConsumedActual(
+						sideNode.getJoinRightBindingsConsumedActual() + consumedBindings);
+			}
+		} else {
+			joinNode.setJoinLeftBindingsConsumedActual(joinNode.getJoinLeftBindingsConsumedActual() + consumedBindings);
+			if (sideNode != null) {
+				sideNode.setJoinLeftBindingsConsumedActual(
+						sideNode.getJoinLeftBindingsConsumedActual() + consumedBindings);
+			}
+		}
 	}
 
 	private static void initializeJoinMetrics(QueryModelNode joinNode) {

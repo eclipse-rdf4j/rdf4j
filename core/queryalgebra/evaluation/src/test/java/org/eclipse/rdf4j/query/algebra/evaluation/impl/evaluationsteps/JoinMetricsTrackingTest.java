@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -89,6 +90,28 @@ class JoinMetricsTrackingTest {
 		assertThat(rightNode.getJoinRightIteratorsCreatedActual()).isEqualTo(1);
 		assertThat(rightNode.getJoinLeftBindingsConsumedActual()).isEqualTo(1);
 		assertThat(rightNode.getJoinRightBindingsConsumedActual()).isEqualTo(3);
+	}
+
+	@Test
+	void recordsEmptyRightProbeTelemetryWhenRightSideReturnsEmptyIteration() {
+		Join joinNode = new Join(new SingletonSet(), new SingletonSet());
+		joinNode.setResultSizeActual(0);
+		joinNode.setRuntimeTelemetryEnabled(true);
+		StatementPattern rightNode = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		QueryEvaluationStep wrapped = JoinMetricsTracking.wrapRightInput(
+				bindings -> QueryEvaluationStep.EMPTY_ITERATION,
+				joinNode, rightNode, true);
+
+		try (CloseableIteration<BindingSet> iteration = wrapped.evaluate(EmptyBindingSet.getInstance())) {
+			consume(iteration);
+		}
+
+		assertThat(joinNode.getJoinRightIteratorsCreatedActual()).isEqualTo(1);
+		assertThat(joinNode.getJoinRightBindingsConsumedActual()).isEqualTo(0);
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL)).isEqualTo(1);
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL)).isLessThan(1);
+		assertThat(rightNode.getJoinLeftBindingsConsumedActual()).isEqualTo(1);
+		assertThat(rightNode.getJoinRightBindingsConsumedActual()).isEqualTo(0);
 	}
 
 	private static QueryEvaluationStep delegateProducing(int rowCount) {
