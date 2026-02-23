@@ -24,6 +24,7 @@ import java.util.concurrent.locks.LockSupport;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -48,6 +49,7 @@ class ServiceQueryEvaluationStepTelemetryTest {
 				Collections.emptyMap(),
 				null,
 				false);
+		service.setRuntimeTelemetryEnabled(true);
 
 		FederatedService federatedService = mock(FederatedService.class);
 		when(federatedService.ask(eq(service), any(BindingSet.class), eq(service.getBaseURI())))
@@ -90,6 +92,7 @@ class ServiceQueryEvaluationStepTelemetryTest {
 				Collections.emptyMap(),
 				null,
 				false);
+		service.setRuntimeTelemetryEnabled(true);
 
 		FederatedService federatedService = mock(FederatedService.class);
 		when(federatedService.select(eq(service), anySet(), any(BindingSet.class),
@@ -118,6 +121,44 @@ class ServiceQueryEvaluationStepTelemetryTest {
 				.isGreaterThan(0D);
 		assertThat(service.getDoubleMetricActual(TelemetryMetricNames.REMOTE_LATENCY_P95_NANOS_ACTUAL))
 				.isGreaterThan(0D);
+	}
+
+	@Test
+	void skipsRequestAndResponseByteAccountingWhenRuntimeTelemetryDisabled() {
+		Service service = new Service(
+				new Var("serviceRef", SimpleValueFactory.getInstance().createIRI("http://example.com/service")),
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				"{ ?s ?p ?o }",
+				Collections.emptyMap(),
+				null,
+				false);
+		service.setRuntimeTelemetryEnabled(false);
+
+		FederatedService federatedService = mock(FederatedService.class);
+		BindingSet responseRow = mock(BindingSet.class);
+		when(responseRow.toString()).thenThrow(new AssertionError("response byte accounting should be disabled"));
+		when(federatedService.select(eq(service), anySet(), any(BindingSet.class),
+				eq(service.getBaseURI())))
+				.thenReturn(new CloseableIteratorIteration<>(List.of(responseRow).iterator()));
+
+		FederatedServiceResolver resolver = mock(FederatedServiceResolver.class);
+		when(resolver.getService("http://example.com/service")).thenReturn(federatedService);
+
+		Value requestValue = mock(Value.class);
+		when(requestValue.stringValue()).thenReturn("request-value");
+		when(requestValue.toString()).thenThrow(new AssertionError("request byte accounting should be disabled"));
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("input", requestValue);
+
+		ServiceQueryEvaluationStep step = new ServiceQueryEvaluationStep(service, service.getServiceRef(), resolver);
+		try (CloseableIteration<BindingSet> result = step.evaluate(bindings)) {
+			assertThat(result.hasNext()).isTrue();
+			assertThat(result.next()).isSameAs(responseRow);
+			assertThat(result.hasNext()).isFalse();
+		}
+
+		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL)).isEqualTo(-1L);
+		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL)).isEqualTo(-1L);
 	}
 
 	private static BindingSet singleBindingSet(String name, String value) {

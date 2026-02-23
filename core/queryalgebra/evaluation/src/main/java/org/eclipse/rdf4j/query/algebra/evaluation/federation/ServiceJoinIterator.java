@@ -52,6 +52,7 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 
 	@Override
 	protected void handleBindings() throws Exception {
+		boolean runtimeTelemetryEnabled = isRuntimeTelemetryEnabled(service);
 		try {
 			Var serviceRef = service.getServiceRef();
 
@@ -64,36 +65,56 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 				// exceptions occurring here must NOT be silenced!
 				while (!isClosed() && leftIter.hasNext()) {
 					BindingSet leftBindings = leftIter.next();
-					incrementLongMetric(service, TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL);
-					incrementLongMetric(service, TelemetryMetricNames.REMOTE_EVALUATE_REQUEST_COUNT_ACTUAL);
-					addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
-							estimateRequestBytes(service, leftBindings));
-					long started = System.nanoTime();
+					if (runtimeTelemetryEnabled) {
+						incrementLongMetric(service, TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL);
+						incrementLongMetric(service, TelemetryMetricNames.REMOTE_EVALUATE_REQUEST_COUNT_ACTUAL);
+						addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
+								estimateRequestBytes(service, leftBindings));
+					}
+					long started = runtimeTelemetryEnabled ? System.nanoTime() : 0L;
 					try {
-						addResult(trackResponseBytes(service, strategy.evaluate(service, leftBindings)));
+						CloseableIteration<BindingSet> result = strategy.evaluate(service, leftBindings);
+						if (runtimeTelemetryEnabled) {
+							addResult(trackResponseBytes(service, result));
+						} else {
+							addResult(result);
+						}
 					} finally {
-						recordRequestLatency(service, started);
+						if (runtimeTelemetryEnabled) {
+							recordRequestLatency(service, started);
+						}
 					}
 				}
 				return;
 			}
 
 			// use vectored evaluation
-			incrementLongMetric(service, TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL);
-			incrementLongMetric(service, TelemetryMetricNames.REMOTE_EVALUATE_REQUEST_COUNT_ACTUAL);
-			addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
-					estimateUtf8Bytes(service.getServiceExpressionString()));
+			if (runtimeTelemetryEnabled) {
+				incrementLongMetric(service, TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL);
+				incrementLongMetric(service, TelemetryMetricNames.REMOTE_EVALUATE_REQUEST_COUNT_ACTUAL);
+				addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
+						estimateUtf8Bytes(service.getServiceExpressionString()));
+			}
 			FederatedService fs = strategy.getService(serviceUri);
-			long started = System.nanoTime();
+			long started = runtimeTelemetryEnabled ? System.nanoTime() : 0L;
 			try {
-				addResult(trackResponseBytes(service, fs.evaluate(service, leftIter, service.getBaseURI())));
+				CloseableIteration<BindingSet> result = fs.evaluate(service, leftIter, service.getBaseURI());
+				if (runtimeTelemetryEnabled) {
+					addResult(trackResponseBytes(service, result));
+				} else {
+					addResult(result);
+				}
 			} finally {
-				recordRequestLatency(service, started);
+				if (runtimeTelemetryEnabled) {
+					recordRequestLatency(service, started);
+				}
 			}
 		} catch (Exception e) {
-			incrementLongMetric(service, TelemetryMetricNames.REMOTE_ERROR_COUNT_ACTUAL);
-			if (isTimeoutException(e)) {
-				incrementLongMetric(service, TelemetryMetricNames.REMOTE_TIMEOUT_COUNT_ACTUAL);
+			if (runtimeTelemetryEnabled) {
+				incrementLongMetric(service, TelemetryMetricNames.REMOTE_ERROR_COUNT_ACTUAL);
+				if (isTimeoutException(e)) {
+					incrementLongMetric(service, TelemetryMetricNames.REMOTE_TIMEOUT_COUNT_ACTUAL);
+				}
 			}
 			throw e;
 		}
@@ -104,7 +125,7 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 	}
 
 	private static void addLongMetric(Service service, String metricName, long delta) {
-		if (delta <= 0) {
+		if (!isRuntimeTelemetryEnabled(service) || delta <= 0) {
 			return;
 		}
 		service.setLongMetricActual(metricName, Math.max(0L, service.getLongMetricActual(metricName)) + delta);
@@ -161,6 +182,10 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 			return 0L;
 		}
 		return value.getBytes(StandardCharsets.UTF_8).length;
+	}
+
+	private static boolean isRuntimeTelemetryEnabled(Service service) {
+		return service != null && service.isRuntimeTelemetryEnabled();
 	}
 
 	private static boolean isTimeoutException(Throwable throwable) {

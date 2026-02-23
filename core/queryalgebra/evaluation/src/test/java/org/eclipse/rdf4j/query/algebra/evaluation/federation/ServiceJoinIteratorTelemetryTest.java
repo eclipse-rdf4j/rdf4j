@@ -23,6 +23,7 @@ import java.util.concurrent.locks.LockSupport;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -45,6 +46,7 @@ class ServiceJoinIteratorTelemetryTest {
 				Collections.emptyMap(),
 				null,
 				false);
+		service.setRuntimeTelemetryEnabled(true);
 
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
 		when(strategy.evaluate(eq(service), any(BindingSet.class)))
@@ -75,6 +77,42 @@ class ServiceJoinIteratorTelemetryTest {
 				.isGreaterThan(0D);
 		assertThat(service.getDoubleMetricActual(TelemetryMetricNames.REMOTE_LATENCY_P95_NANOS_ACTUAL))
 				.isGreaterThan(0D);
+	}
+
+	@Test
+	void skipsRequestAndResponseByteAccountingWhenRuntimeTelemetryDisabled() throws Exception {
+		Service service = new Service(
+				Var.of("serviceRef"),
+				new SingletonSet(),
+				"{ VALUES ?x { 1 } }",
+				Collections.emptyMap(),
+				null,
+				false);
+		service.setRuntimeTelemetryEnabled(false);
+
+		BindingSet responseRow = mock(BindingSet.class);
+		when(responseRow.toString()).thenThrow(new AssertionError("response byte accounting should be disabled"));
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.evaluate(eq(service), any(BindingSet.class))).thenReturn(new SingletonIteration<>(responseRow));
+
+		Value serviceRefValue = mock(Value.class);
+		when(serviceRefValue.stringValue()).thenReturn("http://example.com/service");
+		when(serviceRefValue.toString()).thenThrow(new AssertionError("request byte accounting should be disabled"));
+		MapBindingSet leftBindings = new MapBindingSet();
+		leftBindings.addBinding("serviceRef", serviceRefValue);
+
+		try (ServiceJoinIterator iterator = new ServiceJoinIterator(
+				new CloseableIteratorIteration<>(List.of(leftBindings).iterator()),
+				service,
+				EmptyBindingSet.getInstance(),
+				strategy)) {
+			assertThat(iterator.hasNext()).isTrue();
+			assertThat(iterator.next()).isSameAs(responseRow);
+			assertThat(iterator.hasNext()).isFalse();
+		}
+
+		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL)).isEqualTo(-1L);
+		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL)).isEqualTo(-1L);
 	}
 
 	private static BindingSet singleBindingSet(String name, String value) {

@@ -30,6 +30,7 @@ class ShortCircuitTelemetryValueEvaluationStepTest {
 	@Test
 	void andRecordsShortCircuitWhenLeftArgFalse() {
 		And andNode = new And();
+		andNode.setRuntimeTelemetryEnabled(true);
 		AtomicInteger rightEvaluations = new AtomicInteger();
 
 		QueryValueEvaluationStep step = AndValueEvaluationStep.supply(
@@ -48,6 +49,7 @@ class ShortCircuitTelemetryValueEvaluationStepTest {
 	@Test
 	void orRecordsShortCircuitWhenLeftArgTrue() {
 		Or orNode = new Or();
+		orNode.setRuntimeTelemetryEnabled(true);
 		AtomicInteger rightEvaluations = new AtomicInteger();
 
 		OrValueEvaluationStep step = new OrValueEvaluationStep(
@@ -66,6 +68,7 @@ class ShortCircuitTelemetryValueEvaluationStepTest {
 	@Test
 	void ifRecordsShortCircuitWhenSkippingBranch() {
 		If ifNode = new If();
+		ifNode.setRuntimeTelemetryEnabled(true);
 		AtomicBoolean condition = new AtomicBoolean(true);
 		AtomicInteger resultEvaluations = new AtomicInteger();
 		AtomicInteger alternativeEvaluations = new AtomicInteger();

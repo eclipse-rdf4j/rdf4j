@@ -42,6 +42,10 @@ public class OrderQueryEvaluationStep implements QueryEvaluationStep {
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bs) {
+		if (orderNode == null || !orderNode.isRuntimeTelemetryEnabled()) {
+			return new OrderIterator(preparedArg.evaluate(bs), cmp, limit, reduced, iterationCacheSyncThreshold);
+		}
+
 		AtomicLong sortComparisons = new AtomicLong();
 		Comparator<BindingSet> countingComparator = (left, right) -> {
 			sortComparisons.incrementAndGet();

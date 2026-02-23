@@ -42,6 +42,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		boolean runtimeTelemetryEnabled = isRuntimeTelemetryEnabled(service);
 		String serviceUri;
 		if (serviceRef.hasValue()) {
 			serviceUri = serviceRef.getValue().stringValue();
@@ -53,8 +54,10 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			}
 		}
 
-		long started = System.nanoTime();
-		incrementLongMetric(service, TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL);
+		long started = runtimeTelemetryEnabled ? System.nanoTime() : 0L;
+		if (runtimeTelemetryEnabled) {
+			incrementLongMetric(service, TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL);
+		}
 		try {
 			FederatedService fs = serviceResolver.getService(serviceUri);
 
@@ -75,16 +78,22 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 				allBindings.setBinding(boundVar.getName(), boundVar.getValue());
 			}
 			bindings = allBindings;
-			addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
-					estimateRequestBytes(service, bindings, freeVars));
+			if (runtimeTelemetryEnabled) {
+				addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
+						estimateRequestBytes(service, bindings, freeVars));
+			}
 
 			String baseUri = service.getBaseURI();
 
 			// special case: no free variables => perform ASK query
 			if (freeVars.isEmpty()) {
-				incrementLongMetric(service, TelemetryMetricNames.REMOTE_ASK_REQUEST_COUNT_ACTUAL);
+				if (runtimeTelemetryEnabled) {
+					incrementLongMetric(service, TelemetryMetricNames.REMOTE_ASK_REQUEST_COUNT_ACTUAL);
+				}
 				boolean exists = fs.ask(service, bindings, baseUri);
-				addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL, exists ? 4 : 5);
+				if (runtimeTelemetryEnabled) {
+					addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL, exists ? 4 : 5);
+				}
 
 				// check if triples are available (with inserted bindings)
 				if (exists) {
@@ -96,13 +105,21 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			}
 
 			// otherwise: perform a SELECT query
-			incrementLongMetric(service, TelemetryMetricNames.REMOTE_SELECT_REQUEST_COUNT_ACTUAL);
-			return trackResponseBytes(service, fs.select(service, freeVars, bindings, baseUri));
+			if (runtimeTelemetryEnabled) {
+				incrementLongMetric(service, TelemetryMetricNames.REMOTE_SELECT_REQUEST_COUNT_ACTUAL);
+			}
+			CloseableIteration<BindingSet> results = fs.select(service, freeVars, bindings, baseUri);
+			if (!runtimeTelemetryEnabled) {
+				return results;
+			}
+			return trackResponseBytes(service, results);
 
 		} catch (RuntimeException e) {
-			incrementLongMetric(service, TelemetryMetricNames.REMOTE_ERROR_COUNT_ACTUAL);
-			if (isTimeoutException(e)) {
-				incrementLongMetric(service, TelemetryMetricNames.REMOTE_TIMEOUT_COUNT_ACTUAL);
+			if (runtimeTelemetryEnabled) {
+				incrementLongMetric(service, TelemetryMetricNames.REMOTE_ERROR_COUNT_ACTUAL);
+				if (isTimeoutException(e)) {
+					incrementLongMetric(service, TelemetryMetricNames.REMOTE_TIMEOUT_COUNT_ACTUAL);
+				}
 			}
 			// suppress exceptions if silent
 			if (service.isSilent()) {
@@ -111,7 +128,9 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 				throw e;
 			}
 		} finally {
-			recordRequestLatency(service, started);
+			if (runtimeTelemetryEnabled) {
+				recordRequestLatency(service, started);
+			}
 		}
 	}
 
@@ -142,7 +161,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private static void addLongMetric(Service service, String metricName, long delta) {
-		if (delta <= 0) {
+		if (!isRuntimeTelemetryEnabled(service) || delta <= 0) {
 			return;
 		}
 		service.setLongMetricActual(metricName, Math.max(0L, service.getLongMetricActual(metricName)) + delta);
@@ -205,6 +224,10 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			return 0L;
 		}
 		return value.getBytes(StandardCharsets.UTF_8).length;
+	}
+
+	private static boolean isRuntimeTelemetryEnabled(Service service) {
+		return service != null && service.isRuntimeTelemetryEnabled();
 	}
 
 	private static boolean isTimeoutException(Throwable throwable) {

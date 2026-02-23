@@ -40,6 +40,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private final EvaluationStrategy strategy;
 	private final Function<BindingSet, BindingSet> retain;
 	private final Filter filterNode;
+	private final boolean runtimeTelemetryEnabled;
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
 	private long sourceRowsFilteredActual;
@@ -78,6 +79,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			EvaluationStrategy strategy) throws QueryEvaluationException {
 		super(iter);
 		this.filterNode = filter;
+		this.runtimeTelemetryEnabled = filter != null && filter.isRuntimeTelemetryEnabled();
 		this.condition = condition;
 		this.strategy = strategy;
 		if (!isPartOfSubQuery(filter)) {
@@ -96,6 +98,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			throws QueryEvaluationException {
 		super(iter);
 		this.filterNode = filterNode;
+		this.runtimeTelemetryEnabled = filterNode != null && filterNode.isRuntimeTelemetryEnabled();
 		this.condition = condition;
 		this.strategy = strategy;
 		// FIXME Jeen Boekstra scopeBindingNames should include bindings from superquery
@@ -134,6 +137,15 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 	@Override
 	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
+		if (!runtimeTelemetryEnabled) {
+			try {
+				BindingSet scopeBindings = this.retain.apply(bindings);
+				return strategy.isTrue(condition, scopeBindings);
+			} catch (ValueExprEvaluationException e) {
+				return false;
+			}
+		}
+
 		sourceRowsScannedActual++;
 		exprEvalCountActual++;
 		long started = System.nanoTime();
@@ -175,7 +187,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 	@Override
 	protected void handleClose() {
-		if (filterNode != null) {
+		if (filterNode != null && runtimeTelemetryEnabled) {
 			filterNode.setLongMetricActual(TelemetryMetricNames.PREDICATE_ERROR_COUNT_ACTUAL,
 					Math.max(0L, filterNode.getLongMetricActual(TelemetryMetricNames.PREDICATE_ERROR_COUNT_ACTUAL))
 							+ predicateErrorCountActual);
