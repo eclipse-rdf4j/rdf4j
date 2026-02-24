@@ -132,14 +132,7 @@ final class JoinMetricsTracking {
 	}
 
 	private static boolean runtimeTelemetryEnabled(QueryModelNode node) {
-		if (node == null) {
-			return false;
-		}
-
-		return node.getResultSizeActual() >= 0
-				|| node.getTotalTimeNanosActual() >= 0
-				|| node.getHasNextCallCountActual() >= 0
-				|| node.getNextCallCountActual() >= 0;
+		return node != null && node.isRuntimeTelemetryEnabled();
 	}
 
 	private static long longMetric(QueryModelNode queryModelNode, String metricName) {

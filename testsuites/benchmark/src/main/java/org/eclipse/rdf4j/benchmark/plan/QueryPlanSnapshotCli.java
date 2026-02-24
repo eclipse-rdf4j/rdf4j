@@ -1106,15 +1106,45 @@ public final class QueryPlanSnapshotCli {
 	}
 
 	private static String explanationDebugMetric(QueryPlanSnapshot snapshot, String level, String key) {
-		if (snapshot == null || snapshot.getExplanations() == null) {
+		if (snapshot == null || snapshot.getExplanations() == null || key == null || level == null) {
 			return "";
 		}
+
+		String value = explanationDebugMetricForLevel(snapshot, level, key);
+		if (!value.isEmpty()) {
+			return value;
+		}
+
+		if (EXPLANATION_LEVEL_TELEMETRY.equalsIgnoreCase(level)) {
+			return explanationDebugMetricForLevel(snapshot, "executed", key);
+		}
+
+		return "";
+	}
+
+	private static String explanationDebugMetricForLevel(QueryPlanSnapshot snapshot, String level, String key) {
 		QueryPlanExplanation explanation = snapshot.getExplanations().get(level);
-		if (explanation == null || explanation.getDebugMetrics() == null) {
-			return "";
+		if (explanation != null && explanation.getDebugMetrics() != null) {
+			String value = explanation.getDebugMetrics().get(key);
+			if (value != null && !value.isBlank()) {
+				return value;
+			}
 		}
-		String value = explanation.getDebugMetrics().get(key);
-		return value == null ? "" : value;
+
+		for (QueryPlanExplanation candidate : snapshot.getExplanations().values()) {
+			if (candidate == null || candidate.getDebugMetrics() == null) {
+				continue;
+			}
+			if (!level.equalsIgnoreCase(candidate.getLevel())) {
+				continue;
+			}
+			String value = candidate.getDebugMetrics().get(key);
+			if (value != null && !value.isBlank()) {
+				return value;
+			}
+		}
+
+		return "";
 	}
 
 	private static String equalsIndicator(String left, String right) {

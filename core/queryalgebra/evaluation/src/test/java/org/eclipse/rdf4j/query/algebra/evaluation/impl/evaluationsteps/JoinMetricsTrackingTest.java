@@ -73,10 +73,37 @@ class JoinMetricsTrackingTest {
 	}
 
 	@Test
+	void doesNotCollectTelemetryWhenRuntimeTelemetryFlagIsDisabledOnNodes() {
+		Join joinNode = new Join(new SingletonSet(), new SingletonSet());
+		joinNode.setRuntimeTelemetryEnabled(false);
+		joinNode.setResultSizeActual(0);
+		joinNode.setTotalTimeNanosActual(0);
+		StatementPattern rightNode = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		rightNode.setRuntimeTelemetryEnabled(false);
+		rightNode.setResultSizeActual(0);
+		rightNode.setHasNextCallCountActual(0);
+		QueryEvaluationStep wrapped = JoinMetricsTracking.wrapRightInput(delegateProducing(3), joinNode, rightNode,
+				true);
+
+		try (CloseableIteration<BindingSet> iteration = wrapped.evaluate(EmptyBindingSet.getInstance())) {
+			consume(iteration);
+		}
+
+		assertThat(joinNode.getJoinRightIteratorsCreatedActual()).isEqualTo(-1);
+		assertThat(joinNode.getJoinLeftBindingsConsumedActual()).isEqualTo(-1);
+		assertThat(joinNode.getJoinRightBindingsConsumedActual()).isEqualTo(-1);
+		assertThat(rightNode.getJoinRightIteratorsCreatedActual()).isEqualTo(-1);
+		assertThat(rightNode.getJoinLeftBindingsConsumedActual()).isEqualTo(-1);
+		assertThat(rightNode.getJoinRightBindingsConsumedActual()).isEqualTo(-1);
+	}
+
+	@Test
 	void collectsTelemetryWhenRuntimeTrackingIsEnabled() {
 		Join joinNode = new Join(new SingletonSet(), new SingletonSet());
 		joinNode.setResultSizeActual(0);
+		joinNode.setRuntimeTelemetryEnabled(true);
 		StatementPattern rightNode = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		rightNode.setRuntimeTelemetryEnabled(true);
 		QueryEvaluationStep wrapped = JoinMetricsTracking.wrapRightInput(delegateProducing(3), joinNode, rightNode,
 				true);
 

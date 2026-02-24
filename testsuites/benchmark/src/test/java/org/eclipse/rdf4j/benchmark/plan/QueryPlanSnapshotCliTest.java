@@ -987,6 +987,49 @@ class QueryPlanSnapshotCliTest {
 	}
 
 	@Test
+	void compareExistingBatchCsvFallsBackToLegacyExecutedExplanationMetrics() throws Exception {
+		Path outputDir = Files.createTempDirectory("rdf4j-cli-run-name-pair-legacy-executed-");
+		Path csvOutput = outputDir.resolve("run-name-pair-legacy-executed.csv");
+
+		Map<String, String> baselineMetadata = new LinkedHashMap<>();
+		baselineMetadata.put("store", "memory");
+		baselineMetadata.put("runName", "baseline");
+
+		Map<String, String> candidateMetadata = new LinkedHashMap<>();
+		candidateMetadata.put("store", "memory");
+		candidateMetadata.put("runName", "candidate");
+
+		Map<String, String> baselineExecutedMetrics = new LinkedHashMap<>();
+		baselineExecutedMetrics.put("modeledWorkUnits", "100");
+		Map<String, String> candidateExecutedMetrics = new LinkedHashMap<>();
+		candidateExecutedMetrics.put("modeledWorkUnits", "125");
+
+		writeLegacyExecutedSnapshotWithDebugMetrics(outputDir, "q-alpha", "fingerprint-a", "2026-02-17T10:00:00Z",
+				baselineMetadata, Map.of(), baselineExecutedMetrics);
+		writeLegacyExecutedSnapshotWithDebugMetrics(outputDir, "q-alpha", "fingerprint-a", "2026-02-17T10:05:00Z",
+				candidateMetadata, Map.of(), candidateExecutedMetrics);
+
+		ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
+		QueryPlanSnapshotCli cli = newCli("", outputBuffer);
+		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--compare-existing",
+				"--no-interactive",
+				"--output-dir", outputDir.toString(),
+				"--compare-run-names", "baseline,candidate",
+				"--emit-csv", csvOutput.toString()
+		});
+
+		cli.run(options);
+
+		String csv = Files.readString(csvOutput, StandardCharsets.UTF_8);
+		assertTrue(csv.contains(
+				"executedModeledWorkUnitsLeft,executedModeledWorkUnitsRight,executedModeledWorkDeltaPct"), csv);
+		assertEquals("100", firstCsvRowColumnValue(csv, "executedModeledWorkUnitsLeft"), csv);
+		assertEquals("125", firstCsvRowColumnValue(csv, "executedModeledWorkUnitsRight"), csv);
+		assertEquals("25.0", firstCsvRowColumnValue(csv, "executedModeledWorkDeltaPct"), csv);
+	}
+
+	@Test
 	void compareExistingRunNamePairPrefersLatestSuccessfulExecutionPerQuery() throws Exception {
 		Path outputDir = Files.createTempDirectory("rdf4j-cli-run-name-pair-ranking-");
 		Path csvOutput = outputDir.resolve("run-name-pair-ranking.csv");
@@ -1083,6 +1126,43 @@ class QueryPlanSnapshotCliTest {
 		}
 	}
 
+	private static String firstCsvRowColumnValue(String csv, String columnName) {
+		String[] lines = csv.split("\\R", -1);
+		assertTrue(lines.length >= 2, csv);
+		List<String> header = parseCsvLine(lines[0]);
+		List<String> row = parseCsvLine(lines[1]);
+		int columnIndex = header.indexOf(columnName);
+		assertTrue(columnIndex >= 0, csv);
+		assertTrue(columnIndex < row.size(), csv);
+		return row.get(columnIndex);
+	}
+
+	private static List<String> parseCsvLine(String line) {
+		List<String> values = new java.util.ArrayList<>();
+		StringBuilder current = new StringBuilder();
+		boolean inQuotes = false;
+		for (int i = 0; i < line.length(); i++) {
+			char ch = line.charAt(i);
+			if (ch == '"') {
+				if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+					current.append('"');
+					i++;
+				} else {
+					inQuotes = !inQuotes;
+				}
+				continue;
+			}
+			if (ch == ',' && !inQuotes) {
+				values.add(current.toString());
+				current.setLength(0);
+				continue;
+			}
+			current.append(ch);
+		}
+		values.add(current.toString());
+		return values;
+	}
+
 	private static void writeSnapshot(Path outputDir, String queryId, String fingerprint, String capturedAt)
 			throws Exception {
 		writeSnapshot(outputDir, queryId, fingerprint, capturedAt, Map.of("store", "memory"));
@@ -1120,6 +1200,37 @@ class QueryPlanSnapshotCliTest {
 		explanations.put("unoptimized", explanation);
 		explanations.put("optimized", optimizedExplanation);
 		explanations.put("telemetry", executedExplanation);
+		snapshot.setExplanations(explanations);
+		capture.writeSnapshot(outputDir.resolve(queryId + "-" + capturedAt.replace(":", "-") + ".json"), snapshot);
+	}
+
+	private static void writeLegacyExecutedSnapshotWithDebugMetrics(Path outputDir, String queryId, String fingerprint,
+			String capturedAt, Map<String, String> metadata, Map<String, String> optimizedDebugMetrics,
+			Map<String, String> executedDebugMetrics) throws Exception {
+		QueryPlanCapture capture = new QueryPlanCapture();
+		QueryPlanSnapshot snapshot = new QueryPlanSnapshot();
+		snapshot.setFormatVersion("1");
+		snapshot.setCapturedAt(capturedAt);
+		snapshot.setQueryId(queryId);
+		snapshot.setQueryString("SELECT * WHERE { ?s ?p ?o }");
+		snapshot.setUnoptimizedFingerprint(fingerprint);
+		snapshot.setMetadata(metadata);
+		snapshot.setFeatureFlags(Map.of("flagA", "true"));
+		QueryPlanExplanation explanation = new QueryPlanExplanation();
+		explanation.setLevel("UNOPTIMIZED");
+		explanation.setExplanationText("Plan text");
+		QueryPlanExplanation optimizedExplanation = new QueryPlanExplanation();
+		optimizedExplanation.setLevel("OPTIMIZED");
+		optimizedExplanation.setExplanationText("Optimized plan text");
+		optimizedExplanation.setDebugMetrics(new LinkedHashMap<>(optimizedDebugMetrics));
+		QueryPlanExplanation executedExplanation = new QueryPlanExplanation();
+		executedExplanation.setLevel("EXECUTED");
+		executedExplanation.setExplanationText("Executed plan text");
+		executedExplanation.setDebugMetrics(new LinkedHashMap<>(executedDebugMetrics));
+		LinkedHashMap<String, QueryPlanExplanation> explanations = new LinkedHashMap<>();
+		explanations.put("unoptimized", explanation);
+		explanations.put("optimized", optimizedExplanation);
+		explanations.put("executed", executedExplanation);
 		snapshot.setExplanations(explanations);
 		capture.writeSnapshot(outputDir.resolve(queryId + "-" + capturedAt.replace(":", "-") + ".json"), snapshot);
 	}
