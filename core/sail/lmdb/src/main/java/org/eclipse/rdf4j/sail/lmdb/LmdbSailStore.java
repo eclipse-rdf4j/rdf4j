@@ -35,7 +35,6 @@ import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
-import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -454,10 +453,11 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public LmdbSailDataset dataset(IsolationLevel level) throws SailException {
-			// Background refresh uses SERIALIZABLE and should not be reset by write commits to
-			// avoid invalidating long-running read cursors. Keep other datasets tracked so they
-			// continue to sync with commits.
-			boolean trackActive = level != IsolationLevels.SERIALIZABLE;
+			boolean isEstimatorRefresh = SketchBasedJoinEstimator.REFRESH_THREAD_NAME
+					.equals(Thread.currentThread().getName());
+			// Refresh reader transactions can remain open across write commits and must not
+			// participate in the active txn reset/renew cycle.
+			boolean trackActive = !isEstimatorRefresh;
 			return new LmdbSailDataset(explicit, trackActive);
 		}
 
@@ -1010,7 +1010,7 @@ class LmdbSailStore implements SailStore {
 			try {
 				TxnManager txnManager = tripleStore.getTxnManager();
 				this.txn = trackActiveTxn ? txnManager.createReadTxn()
-						: txnManager.createTxn(txnManager.createReadTxnInternal());
+						: txnManager.createReadTxnUntracked();
 			} catch (IOException e) {
 				throw new SailException(e);
 			}

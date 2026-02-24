@@ -93,6 +93,8 @@ import org.slf4j.LoggerFactory;
  */
 public class SketchBasedJoinEstimator {
 
+	public static final String REFRESH_THREAD_NAME = "RdfJoinEstimator-Refresh";
+
 	/* ────────────────────────────────────────────────────────────── */
 	/* Logging */
 	/* ────────────────────────────────────────────────────────────── */
@@ -342,7 +344,7 @@ public class SketchBasedJoinEstimator {
 
 				logger.debug("RdfJoinEstimator: Rebuilt join estimator.");
 			}
-		}, "RdfJoinEstimator-Refresh");
+		}, REFRESH_THREAD_NAME);
 
 		refresher.setDaemon(true);
 		refresher.start();
@@ -387,13 +389,17 @@ public class SketchBasedJoinEstimator {
 		long seen = 0L;
 		long l = System.currentTimeMillis();
 
-		try (SailDataset ds = sailStore.getExplicitSailSource().dataset(IsolationLevels.SERIALIZABLE);
+		try (SailDataset ds = sailStore.getExplicitSailSource().dataset(IsolationLevels.READ_COMMITTED);
 				CloseableIteration<? extends Statement> it = ds.getStatements(null, null, null)) {
 
 			while (it.hasNext()) {
 				Statement st = it.next();
-				synchronized (tgt) {
-					ingest(tgt, st, /* isDelete= */false);
+				try {
+					synchronized (tgt) {
+						ingest(tgt, st, /* isDelete= */false);
+					}
+				} catch (Throwable e) {
+					continue;
 				}
 
 				if (++seen % throttleEveryN == 0 && throttleMillis > 0) {
@@ -1250,6 +1256,10 @@ public class SketchBasedJoinEstimator {
 				return Double.MAX_VALUE; // no common var
 			}
 
+			if (!hasBoundComponent(l) || !hasBoundComponent(r)) {
+				return -1; // unsupported sketch case, let caller fall back
+			}
+
 			Component lc = getComponent(l, common);
 			Component rc = getComponent(r, common);
 
@@ -1273,6 +1283,17 @@ public class SketchBasedJoinEstimator {
 		return (v == null || v.getValue() == null)
 				? null
 				: v.getValue().stringValue();
+	}
+
+	private boolean hasBoundComponent(StatementPattern sp) {
+		return hasBoundValue(sp.getSubjectVar())
+				|| hasBoundValue(sp.getPredicateVar())
+				|| hasBoundValue(sp.getObjectVar())
+				|| hasBoundValue(sp.getContextVar());
+	}
+
+	private boolean hasBoundValue(Var var) {
+		return var != null && var.hasValue();
 	}
 
 	private Component getComponent(StatementPattern sp, Var var) {

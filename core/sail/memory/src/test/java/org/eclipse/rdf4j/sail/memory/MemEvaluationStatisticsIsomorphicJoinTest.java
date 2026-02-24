@@ -36,15 +36,9 @@ import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class MemEvaluationStatisticsIsomorphicJoinTest {
-
-	@BeforeEach
-	void clearCache() {
-		MemEvaluationStatistics.cache.invalidateAll();
-	}
 
 	@Test
 	void isomorphicJoinsShareCacheEntry() {
@@ -79,6 +73,28 @@ class MemEvaluationStatisticsIsomorphicJoinTest {
 		stats.getCardinality(join2);
 
 		assertEquals(1, calls.get(), "Isomorphic joins should share cached estimate");
+	}
+
+	@Test
+	void cacheEntryDoesNotLeakAcrossStatisticsInstances() {
+		AtomicInteger callsA = new AtomicInteger();
+		AtomicInteger callsB = new AtomicInteger();
+
+		MemEvaluationStatistics statsA = new MemEvaluationStatistics(new MemValueFactory(), new MemStatementList(),
+				new CountingEstimator(callsA, 11.0));
+		MemEvaluationStatistics statsB = new MemEvaluationStatistics(new MemValueFactory(), new MemStatementList(),
+				new CountingEstimator(callsB, 29.0));
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		Join join = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p", vf.createIRI("urn:p")), Var.of("o")),
+				new StatementPattern(Var.of("o"), Var.of("q", vf.createIRI("urn:q")), Var.of("x")));
+
+		assertEquals(11.0, statsA.getCardinality(join));
+		assertEquals(29.0, statsB.getCardinality(join),
+				"Join estimate cache should be scoped to a single MemEvaluationStatistics instance");
+		assertEquals(1, callsA.get(), "First estimator should be called once");
+		assertEquals(1, callsB.get(), "Second estimator should be called once");
 	}
 
 	@Test
@@ -440,10 +456,16 @@ class MemEvaluationStatisticsIsomorphicJoinTest {
 
 	private static final class CountingEstimator extends SketchBasedJoinEstimator {
 		private final AtomicInteger calls;
+		private final double estimate;
 
 		CountingEstimator(AtomicInteger calls) {
+			this(calls, 42.0);
+		}
+
+		CountingEstimator(AtomicInteger calls, double estimate) {
 			super(new StubSailStore(), 16, 1, 0);
 			this.calls = calls;
+			this.estimate = estimate;
 		}
 
 		@Override
@@ -454,7 +476,7 @@ class MemEvaluationStatisticsIsomorphicJoinTest {
 		@Override
 		public double cardinality(Join node) {
 			calls.incrementAndGet();
-			return 42.0;
+			return estimate;
 		}
 	}
 

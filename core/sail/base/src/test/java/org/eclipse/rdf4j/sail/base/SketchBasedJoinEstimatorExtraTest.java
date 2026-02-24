@@ -184,4 +184,21 @@ public class SketchBasedJoinEstimatorExtraTest {
 
 		assertEquals(Double.MAX_VALUE, card, "Estimator should return sentinel when no common var exists");
 	}
+
+	@Test
+	void cardinalityJoinNodeFallsBackWhenJoinSideHasNoBoundComponents() {
+		sailStore.addAll(List.of(
+				stmt(s1, p1, o1),
+				stmt(s1, p2, o2),
+				stmt(s2, p1, o1)));
+		fullRebuild();
+
+		StatementPattern left = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		StatementPattern right = new StatementPattern(Var.of("s"), Var.of("p1", p1), Var.of("o1", o1));
+
+		double card = est.cardinality(new Join(left, right));
+
+		assertEquals(-1.0, card,
+				"Estimator should return fallback sentinel when a join side has no bound components");
+	}
 }

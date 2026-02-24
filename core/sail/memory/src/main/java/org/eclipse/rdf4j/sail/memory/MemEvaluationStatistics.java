@@ -46,6 +46,10 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 	private final MemValueFactory valueFactory;
 	private final MemStatementList memStatementList;
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
+	private final Cache<IsomorphicJoin, Double> joinEstimateCache = CacheBuilder.newBuilder()
+			.maximumSize(10000)
+			.expireAfterAccess(100, TimeUnit.MILLISECONDS)
+			.build();
 
 	MemEvaluationStatistics(MemValueFactory valueFactory, MemStatementList memStatementList,
 			SketchBasedJoinEstimator sketchBasedJoinEstimator) {
@@ -64,11 +68,6 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 		return sketchBasedJoinEstimator.isReady();
 //		return false;
 	}
-
-	static Cache<IsomorphicJoin, Double> cache = CacheBuilder.newBuilder()
-			.maximumSize(10000)
-			.expireAfterAccess(100, TimeUnit.MILLISECONDS)
-			.build();
 
 	/**
 	 * Cache key for join estimation that ignores variable names and blank node identifiers, but preserves the
@@ -231,7 +230,7 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 
 					double estimatedCardinality = 0;
 					try {
-						estimatedCardinality = cache.get(new IsomorphicJoin(node),
+						estimatedCardinality = joinEstimateCache.get(new IsomorphicJoin(node),
 								() -> sketchBasedJoinEstimator.cardinality(node));
 					} catch (ExecutionException e) {
 						throw new RuntimeException(e);
