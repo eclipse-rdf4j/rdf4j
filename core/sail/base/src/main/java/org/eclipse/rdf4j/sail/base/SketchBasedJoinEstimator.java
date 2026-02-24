@@ -411,8 +411,7 @@ public class SketchBasedJoinEstimator {
 				}
 
 				if (seen % 100000 == 0) {
-					System.out.println("RdfJoinEstimator: Rebuilding " + (rebuildIntoA ? "bufA" : "bufB") + ", seen "
-							+ seen + " triples so far. Elapsed: " + (System.currentTimeMillis() - l) / 1000 + " s.");
+					logger.info("RdfJoinEstimator: Rebuilding {}, seen {} triples so far. Elapsed: {} s.", rebuildIntoA ? "bufA" : "bufB", seen, (System.currentTimeMillis() - l) / 1000);
 				}
 			}
 		}
