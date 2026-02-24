@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.function.Function;
 
@@ -129,13 +130,15 @@ public class SnapshotSailStoreTest {
 	}
 
 	@Test
-	public void testExplainTelemetryRestoresRuntimeTelemetryFlag() {
+	public void testExplainTelemetryIncludesMetricsAndRestoresRuntimeTelemetryFlag() {
 		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink());
 		Sail sail = createSail(sailStore);
 
 		try (SailConnection connection = sail.getConnection()) {
 			TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
-			connection.explain(Explanation.Level.Telemetry, tupleExpr, null, EmptyBindingSet.getInstance(), true, 0);
+			Explanation explanation = connection.explain(Explanation.Level.Telemetry, tupleExpr, null,
+					EmptyBindingSet.getInstance(), true, 0);
+			assertTrue(explanation.toJson().contains("\"hasNextCallCountActual\""));
 			assertFalse(tupleExpr.isRuntimeTelemetryEnabled());
 		} finally {
 			sail.shutDown();

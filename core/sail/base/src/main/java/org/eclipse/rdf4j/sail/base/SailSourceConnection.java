@@ -329,18 +329,17 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 			}
 
+			QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr);
+			tupleExpr.visit(converter);
+
+			return new ExplanationImpl(converter.getGenericPlanNode(), queryTimedOut, tupleExpr);
+
 		} finally {
 			setRuntimeTelemetryEnabled(tupleExpr, false);
 			this.cloneTupleExpression = true;
 			this.trackResultSize = false;
 			this.trackTime = false;
 		}
-
-		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr);
-		tupleExpr.visit(converter);
-
-		return new ExplanationImpl(converter.getGenericPlanNode(), queryTimedOut, tupleExpr);
-
 	}
 
 	private boolean runQueryForExplain(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
