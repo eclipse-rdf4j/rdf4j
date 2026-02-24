@@ -18,6 +18,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanExplanation;
@@ -41,9 +42,42 @@ final class QueryPlanExecutedWorkComparator {
 	private static final BigDecimal SOURCE_ROWS_FILTERED_WEIGHT = new BigDecimal("0.001");
 	private static final BigDecimal SOURCE_FILTER_RATIO_WEIGHT = new BigDecimal("5");
 	private static final BigDecimal FILTER_REJECT_RATIO_WEIGHT = new BigDecimal("5");
+	private static final BigDecimal ADDITIONAL_TELEMETRY_SIGNAL_WEIGHT = new BigDecimal("0.1");
 	private static final BigDecimal NANOS_PER_MILLI = new BigDecimal("1000000");
 	private static final int TOP_DELTA_LIMIT = 3;
 	private static final String[] EXECUTED_LEVEL_ALIASES = { "telemetry", "executed" };
+	private static final Set<String> CORE_EXECUTED_METRIC_KEYS = Set.of(
+			"modeledWorkUnits",
+			"modeledJoinInputRowsSum",
+			"modeledJoinOutputRowsSum",
+			"modeledInputRowsSum",
+			"modeledOutputRowsSum",
+			"modeledSelfTimeActualSum",
+			"estimateActualQErrorP95",
+			"joinEstimateActualQErrorP95",
+			"modeledFilterRejectRatio",
+			"modeledHasNextCallCountSum",
+			"modeledHasNextTrueCountSum",
+			"modeledHasNextTimeNanosSum",
+			"modeledNextCallCountSum",
+			"modeledNextTimeNanosSum",
+			"modeledJoinRightIteratorCreateCountSum",
+			"modeledJoinLeftBindingSetConsumedCountSum",
+			"modeledJoinRightBindingSetConsumedCountSum",
+			"modeledJoinRightBindingsPerLeftRatio",
+			"modeledJoinTelemetryNodeCount",
+			"modeledJoinRightBindingSetConsumedPerRightIteratorAverage",
+			"modeledJoinRightIteratorCreatePerJoinNodeAverage",
+			"modeledJoinLeftBindingSetConsumedPerJoinNodeAverage",
+			"modeledJoinRightBindingSetConsumedPerJoinNodeAverage",
+			"modeledSourceRowsScannedSum",
+			"modeledSourceRowsMatchedSum",
+			"modeledSourceRowsFilteredSum",
+			"modeledSourceFilterOutRatio",
+			"modeledBarrierCount",
+			"modeledWorkByCategory",
+			"operatorWorkByTypeAlgorithm",
+			"operatorWorkTopContributors");
 
 	private QueryPlanExecutedWorkComparator() {
 	}
@@ -123,6 +157,7 @@ final class QueryPlanExecutedWorkComparator {
 				operatorWorkUnits = parseSimpleNumberMap(metrics.get("operatorWorkTopContributors"), ':');
 			}
 		}
+		Map<String, BigDecimal> additionalTelemetryScalars = parseAdditionalTelemetryScalars(metrics);
 		return PlanVector.available(modeledWorkUnits, modeledInputRowsSum, modeledOutputRowsSum, joinInputRows,
 				joinOutputRows, modeledSelfTimeActualSum, estimateActualQErrorP95, joinEstimateActualQErrorP95,
 				filterRejectRatio,
@@ -137,7 +172,8 @@ final class QueryPlanExecutedWorkComparator {
 				sourceRowsScannedSum, sourceRowsMatchedSum, sourceRowsFilteredSum,
 				sourceFilterOutRatio,
 				modeledWorkByCategory,
-				operatorWorkUnits);
+				operatorWorkUnits,
+				additionalTelemetryScalars);
 	}
 
 	private static Map<String, String> executedDebugMetrics(QueryPlanSnapshot snapshot) {
@@ -229,6 +265,13 @@ final class QueryPlanExecutedWorkComparator {
 					"tie-breaker-joinEstimateActualQErrorP95");
 		}
 
+		int compareAdditionalTelemetry = additionalTelemetrySignalTotal(leftVector)
+				.compareTo(additionalTelemetrySignalTotal(rightVector));
+		if (compareAdditionalTelemetry != 0) {
+			return new Decision(compareAdditionalTelemetry < 0 ? "left" : "right",
+					"tie-breaker-additionalTelemetry");
+		}
+
 		return new Decision("tie", "tie");
 	}
 
@@ -269,6 +312,7 @@ final class QueryPlanExecutedWorkComparator {
 		dimensions.put("modeledBarrierCount", BigDecimal.valueOf(vector.barrierCount));
 		dimensions.put("estimateActualQErrorP95", vector.estimateActualQErrorP95);
 		dimensions.put("joinEstimateActualQErrorP95", vector.joinEstimateActualQErrorP95);
+		dimensions.putAll(vector.additionalTelemetryScalars);
 		return dimensions;
 	}
 
@@ -310,6 +354,12 @@ final class QueryPlanExecutedWorkComparator {
 		components.put("sourceRowsFilteredPenalty", sourceRowsFilteredPenalty);
 		components.put("filterRejectPenalty", filterRejectPenalty);
 		components.put("selfTimePenalty", vector.modeledSelfTimeActualSum);
+		for (Map.Entry<String, BigDecimal> additional : vector.additionalTelemetryScalars.entrySet()) {
+			BigDecimal signal = additionalTelemetrySignal(additional.getKey(), additional.getValue());
+			if (signal.signum() != 0) {
+				components.put("telemetry." + additional.getKey(), signal);
+			}
+		}
 		return components;
 	}
 
@@ -332,6 +382,35 @@ final class QueryPlanExecutedWorkComparator {
 	private static BigDecimal nanosToMillis(long nanos) {
 		return BigDecimal.valueOf(Math.max(0L, nanos))
 				.divide(NANOS_PER_MILLI, 6, RoundingMode.HALF_UP);
+	}
+
+	private static BigDecimal nanosToMillis(BigDecimal nanos) {
+		if (nanos == null || nanos.signum() <= 0) {
+			return BigDecimal.ZERO;
+		}
+		return nanos.divide(NANOS_PER_MILLI, 6, RoundingMode.HALF_UP);
+	}
+
+	private static BigDecimal additionalTelemetrySignalTotal(PlanVector vector) {
+		BigDecimal total = BigDecimal.ZERO;
+		for (Map.Entry<String, BigDecimal> entry : vector.additionalTelemetryScalars.entrySet()) {
+			total = total.add(additionalTelemetrySignal(entry.getKey(), entry.getValue()));
+		}
+		return total;
+	}
+
+	private static BigDecimal additionalTelemetrySignal(String key, BigDecimal value) {
+		if (value == null || value.signum() <= 0) {
+			return BigDecimal.ZERO;
+		}
+		BigDecimal normalized = key != null && (key.endsWith("Nanos") || key.endsWith("NanosSum"))
+				? nanosToMillis(value)
+				: value;
+		double compressed = Math.log1p(normalized.doubleValue());
+		if (!Double.isFinite(compressed) || compressed <= 0) {
+			return BigDecimal.ZERO;
+		}
+		return BigDecimal.valueOf(compressed).multiply(ADDITIONAL_TELEMETRY_SIGNAL_WEIGHT);
 	}
 
 	private static String formatTopDeltas(Map<String, BigDecimal> leftValues, Map<String, BigDecimal> rightValues) {
@@ -422,6 +501,24 @@ final class QueryPlanExecutedWorkComparator {
 			}
 		}
 		return parsed;
+	}
+
+	private static Map<String, BigDecimal> parseAdditionalTelemetryScalars(Map<String, String> metrics) {
+		if (metrics == null || metrics.isEmpty()) {
+			return Collections.emptyMap();
+		}
+		LinkedHashMap<String, BigDecimal> additional = new LinkedHashMap<>();
+		for (Map.Entry<String, String> metric : metrics.entrySet()) {
+			if (metric.getKey() == null || CORE_EXECUTED_METRIC_KEYS.contains(metric.getKey())) {
+				continue;
+			}
+			BigDecimal parsed = parseDecimal(metric.getValue());
+			if (parsed == null || parsed.signum() < 0) {
+				continue;
+			}
+			additional.put(metric.getKey(), parsed);
+		}
+		return additional;
 	}
 
 	private static BigDecimal parseDecimalOrZero(String value) {
@@ -523,6 +620,7 @@ final class QueryPlanExecutedWorkComparator {
 		private final BigDecimal sourceFilterOutRatio;
 		private final Map<String, BigDecimal> modeledWorkByCategory;
 		private final Map<String, BigDecimal> operatorWorkUnits;
+		private final Map<String, BigDecimal> additionalTelemetryScalars;
 
 		private PlanVector(boolean available, String unavailableReason, BigDecimal modeledWorkUnits,
 				BigDecimal modeledInputRowsSum, BigDecimal modeledOutputRowsSum, BigDecimal joinInputRows,
@@ -540,7 +638,8 @@ final class QueryPlanExecutedWorkComparator {
 				long sourceRowsScannedSum, long sourceRowsMatchedSum, long sourceRowsFilteredSum,
 				BigDecimal sourceFilterOutRatio,
 				Map<String, BigDecimal> modeledWorkByCategory,
-				Map<String, BigDecimal> operatorWorkUnits) {
+				Map<String, BigDecimal> operatorWorkUnits,
+				Map<String, BigDecimal> additionalTelemetryScalars) {
 			this.available = available;
 			this.unavailableReason = unavailableReason;
 			this.modeledWorkUnits = modeledWorkUnits;
@@ -573,6 +672,7 @@ final class QueryPlanExecutedWorkComparator {
 			this.sourceFilterOutRatio = sourceFilterOutRatio;
 			this.modeledWorkByCategory = modeledWorkByCategory;
 			this.operatorWorkUnits = operatorWorkUnits;
+			this.additionalTelemetryScalars = additionalTelemetryScalars;
 		}
 
 		private static PlanVector unavailable(String reason) {
@@ -581,7 +681,7 @@ final class QueryPlanExecutedWorkComparator {
 					0L, 0L,
 					0L, 0L, 0L, BigDecimal.ZERO, 0L, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
 					0L, 0L, 0L, BigDecimal.ZERO,
-					Collections.emptyMap(), Collections.emptyMap());
+					Collections.emptyMap(), Collections.emptyMap(), Collections.emptyMap());
 		}
 
 		private static PlanVector available(BigDecimal modeledWorkUnits, BigDecimal modeledInputRowsSum,
@@ -600,7 +700,8 @@ final class QueryPlanExecutedWorkComparator {
 				long sourceRowsScannedSum, long sourceRowsMatchedSum, long sourceRowsFilteredSum,
 				BigDecimal sourceFilterOutRatio,
 				Map<String, BigDecimal> modeledWorkByCategory,
-				Map<String, BigDecimal> operatorWorkUnits) {
+				Map<String, BigDecimal> operatorWorkUnits,
+				Map<String, BigDecimal> additionalTelemetryScalars) {
 			return new PlanVector(true, null, modeledWorkUnits, modeledInputRowsSum, modeledOutputRowsSum,
 					joinInputRows, joinOutputRows, modeledSelfTimeActualSum, estimateActualQErrorP95,
 					joinEstimateActualQErrorP95, filterRejectRatio, barrierCount, hasNextCallCountSum,
@@ -611,7 +712,8 @@ final class QueryPlanExecutedWorkComparator {
 					joinLeftBindingSetConsumedPerJoinNodeAverage, joinRightBindingSetConsumedPerJoinNodeAverage,
 					sourceRowsScannedSum, sourceRowsMatchedSum, sourceRowsFilteredSum, sourceFilterOutRatio,
 					modeledWorkByCategory,
-					operatorWorkUnits);
+					operatorWorkUnits,
+					additionalTelemetryScalars);
 		}
 	}
 

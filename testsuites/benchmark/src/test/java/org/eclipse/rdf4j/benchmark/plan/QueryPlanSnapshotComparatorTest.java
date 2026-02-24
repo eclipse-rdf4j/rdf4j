@@ -252,6 +252,33 @@ class QueryPlanSnapshotComparatorTest {
 	}
 
 	@Test
+	void printComparisonUsesAdditionalTelemetryScalarsWhenPresent() {
+		QueryPlanSnapshot left = snapshotWithOptimizedJsonAndExecutedDebugMetrics(explanationJson(1.0, 2.0, 7),
+				Map.ofEntries(
+						Map.entry("modeledWorkUnits", "100"),
+						Map.entry("modeledInputRowsSum", "500"),
+						Map.entry("modeledOutputRowsSum", "140"),
+						Map.entry("modeledJoinInputRowsSum", "200"),
+						Map.entry("modeledJoinOutputRowsSum", "80"),
+						Map.entry("modeledTotalTimeActualSum", "20")));
+		QueryPlanSnapshot right = snapshotWithOptimizedJsonAndExecutedDebugMetrics(explanationJson(1.0, 2.0, 7),
+				Map.ofEntries(
+						Map.entry("modeledWorkUnits", "100"),
+						Map.entry("modeledInputRowsSum", "500"),
+						Map.entry("modeledOutputRowsSum", "140"),
+						Map.entry("modeledJoinInputRowsSum", "200"),
+						Map.entry("modeledJoinOutputRowsSum", "80"),
+						Map.entry("modeledTotalTimeActualSum", "620")));
+
+		ByteArrayOutputStream capture = new ByteArrayOutputStream();
+		QueryPlanSnapshotComparator.printComparison(new PrintStream(capture), run(left), run(right));
+
+		String output = capture.toString(StandardCharsets.UTF_8);
+		assertTrue(output.contains("winner=left"), output);
+		assertTrue(output.contains("modeledTotalTimeActualSum:+600"), output);
+	}
+
+	@Test
 	void printComparisonIncludesPlanDifferenceDiagnosis() {
 		QueryPlanSnapshot left = snapshotWithOptimizedJsonAndExecutedDebugMetrics(explanationJson(1.0, 2.0, 7),
 				Map.of(),
