@@ -378,7 +378,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					continue;
 				}
 
-				if(tupleExprs.size() == 1) {
+				if (tupleExprs.size() == 1) {
 					ret.add(tupleExprs.remove(0));
 					continue;
 				}
