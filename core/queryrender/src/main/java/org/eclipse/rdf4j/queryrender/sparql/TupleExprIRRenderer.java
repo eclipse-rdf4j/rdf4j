@@ -14,23 +14,12 @@ package org.eclipse.rdf4j.queryrender.sparql;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryLanguage;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.parser.ParsedQuery;
-import org.eclipse.rdf4j.query.parser.QueryParserUtil;
-import org.eclipse.rdf4j.queryrender.VarNameNormalizer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IRTextPrinter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
@@ -42,8 +31,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrDebug;
 import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
 import org.eclipse.rdf4j.queryrender.sparql.util.TermRenderer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * TupleExprIRRenderer: user-facing façade to convert RDF4J algebra back into SPARQL text.
@@ -99,7 +86,6 @@ import org.slf4j.LoggerFactory;
  */
 @Experimental
 public class TupleExprIRRenderer {
-	private static final Logger log = LoggerFactory.getLogger(TupleExprIRRenderer.class);
 
 	// ---------------- Public API helpers ----------------
 
@@ -108,11 +94,6 @@ public class TupleExprIRRenderer {
 
 	private final Config cfg;
 	private final PrefixIndex prefixIndex;
-	private final Map<String, String> userBnodeLabels = new LinkedHashMap<>();
-	private final Map<String, String> anonBnodeLabels = new LinkedHashMap<>();
-	private int bnodeCounter = 1;
-	private static final String USER_BNODE_PREFIX = "_anon_user_bnode_";
-	private static final String ANON_BNODE_PREFIX = "_anon_bnode_";
 
 	public TupleExprIRRenderer() {
 		this(new Config());
@@ -121,12 +102,6 @@ public class TupleExprIRRenderer {
 	public TupleExprIRRenderer(final Config cfg) {
 		this.cfg = cfg == null ? new Config() : cfg;
 		this.prefixIndex = new PrefixIndex(this.cfg.prefixes);
-	}
-
-	public void reset() {
-		userBnodeLabels.clear();
-		anonBnodeLabels.clear();
-		bnodeCounter = 1;
 	}
 
 	// ---------------- Experimental textual IR API ----------------
@@ -252,8 +227,6 @@ public class TupleExprIRRenderer {
 	/** ASK query (top-level). */
 	public String renderAsk(final TupleExpr tupleExpr, final DatasetView dataset) {
 		// Build IR (including transforms) and then print only the WHERE block using the IR printer.
-		reset();
-		BNodeValidator.validate(tupleExpr, cfg);
 		final StringBuilder out = new StringBuilder(256);
 		final IrSelect ir = toIRSelect(tupleExpr);
 		// Prologue
@@ -262,146 +235,15 @@ public class TupleExprIRRenderer {
 		// WHERE (from IR)
 		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
 		new IRTextPrinter(out, this::convertVarToString, cfg).printWhere(ir.getWhere());
-		String rendered = out.toString().trim();
-		verifyRoundTrip(tupleExpr, rendered);
-		return rendered;
+		return out.toString().trim();
 	}
 
 	private String renderSelectInternal(final TupleExpr tupleExpr,
 			final RenderMode mode,
 			final DatasetView dataset) {
-		reset();
-		BNodeValidator.validate(tupleExpr, cfg);
 		final IrSelect ir = toIRSelect(tupleExpr);
-		final boolean asSub = mode == RenderMode.SUBSELECT;
-		String rendered = render(ir, dataset, asSub);
-//		verifyRoundTrip(tupleExpr, rendered);
-		return rendered;
-	}
-
-	private void verifyRoundTrip(final TupleExpr original, final String rendered) {
-		if (!cfg.verifyRoundTrip || original == null || rendered == null || rendered.isEmpty()) {
-			return;
-		}
-
-		try {
-			ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, rendered, null);
-			String expected = VarNameNormalizer.normalizeVars(original.toString());
-			String actual = VarNameNormalizer.normalizeVars(parsed.getTupleExpr().toString());
-			if (!expected.equals(actual)) {
-				String message = "Rendered SPARQL does not round-trip to the original TupleExpr."
-						+ "\n# Rendered query\n" + rendered
-						+ "\n# Original TupleExpr (normalized)\n" + expected
-						+ "\n# Round-tripped TupleExpr (normalized)\n" + actual
-						+ "\n# Diff (original -> round-tripped)\n" + diffText(expected, actual);
-				throw new IllegalStateException(message);
-			}
-		} catch (IllegalStateException e) {
-			throw e;
-		} catch (Exception e) {
-			log.error("Unexpected error while round-tripping TupleExpr. original={}, rendered={}",
-					original, rendered, e);
-			throw new IllegalStateException("Failed to verify rendered SPARQL against the original TupleExpr", e);
-		}
-	}
-
-	// diff the two strings to help debugging
-	private String diffText(String expected, String actual) {
-		List<String> expLines = List.of(expected.split("\\R", -1));
-		List<String> actLines = List.of(actual.split("\\R", -1));
-
-		int max = Math.max(expLines.size(), actLines.size());
-		StringBuilder sb = new StringBuilder(256);
-		for (int i = 0; i < max; i++) {
-			String el = i < expLines.size() ? expLines.get(i) : "<missing>";
-			String al = i < actLines.size() ? actLines.get(i) : "<missing>";
-			if (!el.trim().equals(al.trim())) {
-				sb.append("line ").append(i + 1).append(":\n");
-				sb.append("- ").append(el).append('\n');
-				sb.append("+ ").append(al).append('\n');
-				int common = commonPrefixLength(el, al);
-				if (common < Math.min(el.length(), al.length())) {
-					sb.append("  ").append(" ".repeat(common)).append("^\n");
-				}
-			}
-			if (sb.length() > 1024) {
-				sb.append("... diff truncated ...");
-				break;
-			}
-		}
-		return sb.length() == 0 ? "<no visible diff>" : sb.toString();
-	}
-
-	private int commonPrefixLength(String a, String b) {
-		int limit = Math.min(a.length(), b.length());
-		int i = 0;
-		while (i < limit && a.charAt(i) == b.charAt(i)) {
-			i++;
-		}
-		return i;
-	}
-
-	// ---- Validation: reject illegal blank node placements before rendering ----
-	private static final class BNodeValidator extends AbstractQueryModelVisitor<RuntimeException> {
-		private final Config cfg;
-
-		private BNodeValidator(Config cfg) {
-			this.cfg = cfg == null ? new Config() : cfg;
-		}
-
-		static void validate(TupleExpr expr, Config cfg) {
-			if (expr == null || cfg == null || !cfg.failOnIllegalBNodes) {
-				return;
-			}
-			expr.visit(new BNodeValidator(cfg));
-		}
-
-		@Override
-		public void meet(BindingSetAssignment node) {
-			if (cfg.allowBNodesInValues) {
-				return;
-			}
-			for (BindingSet bs : node.getBindingSets()) {
-				for (String name : bs.getBindingNames()) {
-					Value v = bs.getValue(name);
-					if (v instanceof BNode) {
-						throw new IllegalArgumentException("Blank nodes in VALUES are not supported: binding '" + name
-								+ "' -> " + v);
-					}
-				}
-			}
-		}
-
-		@Override
-		public void meet(StatementPattern sp) {
-			// StatementPattern positions allow anonymous bnodes (subject/object). Predicate bnodes are illegal but
-			// should not occur after parsing; keep tolerant to avoid overblocking.
-		}
-
-		@Override
-		public void meet(Var var) {
-			if (!var.isAnonymous()) {
-				return;
-			}
-			String name = var.getName();
-			if (name == null) {
-				return;
-			}
-
-			assert !name.startsWith("anon_");
-
-			if (name.startsWith("_anon_bnode_") || name.startsWith("_anon_user_bnode_")) {
-				throw new IllegalArgumentException("Anonymous blank node used in expression context: " + name);
-			}
-		}
-
-		@Override
-		public void meet(ValueConstant node) {
-			if (node.getValue() instanceof BNode) {
-				throw new IllegalArgumentException("Blank node literal in expression context is not supported: "
-						+ node.getValue());
-			}
-		}
+		final boolean asSub = (mode == RenderMode.SUBSELECT);
+		return render(ir, dataset, asSub);
 	}
 
 	private void printPrologueAndDataset(final StringBuilder out, final DatasetView dataset) {
@@ -426,36 +268,7 @@ public class TupleExprIRRenderer {
 		if (v.hasValue()) {
 			return convertValueToString(v.getValue());
 		}
-
-		// Anonymous blank node placeholder variables originating from [] should render as [].
-		if (v.isAnonymous() && v.getName() != null && v.getName().startsWith(ANON_BNODE_PREFIX)) {
-
-			if (cfg.preserveAnonBNodeIdentity) {
-				return "_:" + anonBnodeLabels.computeIfAbsent(v.getName(),
-						TupleExprIRRenderer::deriveStableLabelFromName);
-			}
-			return "[]";
-		}
-		// User-specified blank nodes (_:bnode1) are encoded with the _anon_user_bnode_ prefix; restore the label.
-		if (v.isAnonymous() && v.getName() != null && v.getName().startsWith(USER_BNODE_PREFIX)) {
-
-			String existing = userBnodeLabels.get(v.getName());
-			if (existing == null) {
-				if (cfg.preserveUserBNodeLabels || cfg.deterministicBNodeLabels) {
-					existing = deriveStableLabelFromName(v.getName());
-				} else {
-					existing = "bnode" + bnodeCounter++;
-				}
-				userBnodeLabels.put(v.getName(), existing);
-			}
-			return "_:" + existing;
-		}
-		// Path bridge variables (_anon_path_*) must render as regular variables so they can be
-		// shared across UNION branches without violating blank-node scoping rules during parsing.
-		if (v.isAnonymous() && v.getName() != null && v.getName().startsWith("_anon_path_")) {
-			return "?" + v.getName();
-		}
-
+		// Anonymous blank-node placeholder variables are rendered as "[]"
 		if (v.isAnonymous() && !v.isConstant()) {
 			return "_:" + v.getName();
 		}
@@ -464,31 +277,6 @@ public class TupleExprIRRenderer {
 
 	public String convertValueToString(final Value val) {
 		return TermRenderer.convertValueToString(val, prefixIndex, cfg.usePrefixCompaction);
-	}
-
-	private static String deriveStableLabelFromName(String name) {
-		if (name == null) {
-			return "bnode";
-		}
-		String trimmed = name;
-
-		assert !trimmed.startsWith("anon_");
-
-		if (trimmed.startsWith(USER_BNODE_PREFIX)) {
-			trimmed = trimmed.substring(USER_BNODE_PREFIX.length());
-		} else if (trimmed.startsWith(ANON_BNODE_PREFIX)) {
-			trimmed = trimmed.substring(ANON_BNODE_PREFIX.length());
-		}
-
-		if (trimmed.isEmpty()) {
-			return "bnode";
-		}
-
-		if (trimmed.matches("[A-Za-z0-9_-]+")) {
-			return trimmed.startsWith("bnode") ? trimmed : "bnode" + trimmed;
-		}
-
-		return "bnode" + Integer.toHexString(trimmed.hashCode());
 	}
 
 	// ---- Aggregates ----
@@ -541,7 +329,6 @@ public class TupleExprIRRenderer {
 		public final boolean printPrefixes = true;
 		public final boolean usePrefixCompaction = true;
 		public final boolean canonicalWhitespace = true;
-		public boolean verifyRoundTrip = true; // parse rendered SPARQL and compare to original TupleExpr
 		public final LinkedHashMap<String, String> prefixes = new LinkedHashMap<>();
 		// Flags
 		// Optional dataset (top-level only) if you never pass a DatasetView at render().
@@ -550,11 +337,6 @@ public class TupleExprIRRenderer {
 		public final List<IRI> namedGraphs = new ArrayList<>();
 		public boolean debugIR = false; // print IR before and after transforms
 		public boolean valuesPreserveOrder = false; // keep VALUES column order as given by BSA iteration
-		public boolean preserveUserBNodeLabels = false; // derive stable labels from parser placeholder
-		public boolean deterministicBNodeLabels = false; // stable mapping independent of traversal order
-		public boolean preserveAnonBNodeIdentity = false; // render repeated [] as the same _:label
-		public boolean failOnIllegalBNodes = true; // reject bnodes in VALUES or expression contexts
-		public boolean allowBNodesInValues = false; // override to allow (non-standard) bnodes in VALUES
 	}
 
 }

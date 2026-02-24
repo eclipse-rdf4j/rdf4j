@@ -97,8 +97,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	 */
 
 	/**
-	 * @deprecated since 5.1.5, use {@link #of(String, Value, boolean, boolean)} instead. Constructor will be made
-	 *             protected, subclasses may still use this method to instantiate themselves.
+	 * @deprecated since 5.1.5, use {@link #of(String, Value, boolean, boolean)} instead.
 	 * @param name
 	 * @param value
 	 * @param anonymous
@@ -167,9 +166,8 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	 *
 	 * <p>
 	 * <strong>Important:</strong> Implementations must not call {@code Var.of(...)} from within
-	 * {@link #newVar(String, Value, boolean, boolean)} or {@link #cloneVar(Var)} to avoid infinite recursion. Call a
-	 * constructor directly (e.g., {@code return new CustomVar(...); }). Returned instances from both methods must
-	 * remain consistent with {@link Var#equals(Object)} and {@link Var#hashCode()}.
+	 * {@link #newVar(String, Value, boolean, boolean)} to avoid infinite recursion. Call a constructor directly (e.g.,
+	 * {@code return new CustomVar(...); }).
 	 * </p>
 	 */
 	@FunctionalInterface
@@ -178,19 +176,6 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 		 * Mirror of the primary 4-argument {@link Var} constructor.
 		 */
 		Var newVar(String name, Value value, boolean anonymous, boolean constant);
-
-		/**
-		 * Creates a copy of the supplied {@link Var}. Implementations should ensure the clone is consistent with
-		 * {@link #equals(Object)} and {@link #hashCode()} for the concrete {@code Var} subtype they produce.
-		 * <p>
-		 * <strong>Important:</strong> Implementations must not call {@code Var.of(...)} from within this method to
-		 * avoid infinite recursion. Call a constructor or factory that does not delegate back to
-		 * {@link Var#of(String)}.
-		 * </p>
-		 */
-		default Var cloneVar(Var original) {
-			return newVar(original.getName(), original.getValue(), original.isAnonymous(), original.isConstant());
-		}
 	}
 
 	public boolean isAnonymous() {
@@ -278,31 +263,9 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 	@Override
 	public Var clone() {
-		Var var = Holder.PROVIDER.cloneVar(this);
+		Var var = Var.of(name, value, anonymous, constant);
 		var.setVariableScopeChange(this.isVariableScopeChange());
 		return var;
-	}
-
-	/**
-	 * Extension hook for subclasses to participate in {@link #equals(Object)} while preserving symmetry with other
-	 * {@link Var} instances.
-	 */
-	protected boolean spiEquals(Var other) {
-		return anonymous == other.anonymous
-				&& !(name == null && other.name != null || value == null && other.value != null)
-				&& Objects.equals(name, other.name) && Objects.equals(value, other.value);
-	}
-
-	/**
-	 * Extension hook for subclasses to contribute additional state to {@link #hashCode()} while reusing the cached hash
-	 * storage in {@link Var}.
-	 */
-	protected int spiHashCode() {
-		int result = 1;
-		result = 31 * result + (name == null ? 0 : name.hashCode());
-		result = 31 * result + (value == null ? 0 : value.hashCode());
-		result = 31 * result + Boolean.hashCode(anonymous);
-		return result;
 	}
 
 	/**

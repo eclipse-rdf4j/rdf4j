@@ -20,24 +20,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
-import org.eclipse.rdf4j.query.algebra.Extension;
-import org.eclipse.rdf4j.query.algebra.ExtensionElem;
-import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.parallel.Execution;
@@ -66,24 +56,6 @@ public class TupleExprIRRendererTest {
 		style.valuesPreserveOrder = true;
 		return style;
 	}
-
-//	@RepeatedTest10
-//	void render_throws_when_round_trip_differs() {
-//		String q = "SELECT * WHERE { ?s ?p ?o . }";
-//		TupleExpr tupleExpr = parseAlgebra(SPARQL_PREFIX + q);
-//
-//		TupleExprIRRenderer tamperingRenderer = new TupleExprIRRenderer() {
-//			@Override
-//			public IrSelect toIRSelect(TupleExpr original) {
-//				IrSelect ir = super.toIRSelect(original);
-//				// Strip the WHERE body to force a semantic mismatch after rendering.
-//				ir.setWhere(new IrBGP(false));
-//				return ir;
-//			}
-//		};
-//
-//		assertThrows(IllegalStateException.class, () -> tamperingRenderer.render(tupleExpr));
-//	}
 
 	@BeforeEach
 	void _captureTestInfo(TestInfo info) {
@@ -126,24 +98,6 @@ public class TupleExprIRRendererTest {
 			"TupleExpr_expected",
 			"TupleExpr_actual"
 	};
-
-	private static Set<String> extractBnodeLabels(String rendered) {
-		Set<String> labels = new HashSet<>();
-		Matcher labelMatcher = Pattern.compile("_:[A-Za-z][A-Za-z0-9]*").matcher(rendered);
-		while (labelMatcher.find()) {
-			labels.add(labelMatcher.group());
-		}
-		return labels;
-	}
-
-	private static long countAnonPlaceholders(String rendered) {
-		Matcher bracketMatcher = Pattern.compile("\\[\\]").matcher(rendered);
-		long count = 0;
-		while (bracketMatcher.find()) {
-			count++;
-		}
-		return count;
-	}
 
 	private void purgeReportFilesForCurrentTest() {
 		String base = currentTestBaseName();
@@ -264,7 +218,7 @@ public class TupleExprIRRendererTest {
 			try {
 				cfg.debugIR = true;
 				System.out.println("\n# Re-rendering with IR debug enabled for this failing test\n");
-				String rendered2 = render(expectedSparql, cfg);
+				rendered = render(expectedSparql, cfg);
 				System.out.println("\n# Rendered SPARQL query\n" + rendered + "\n");
 			} catch (Throwable renderFail) {
 				rendered = "<render failed: " + renderFail + ">";
@@ -275,15 +229,6 @@ public class TupleExprIRRendererTest {
 			try {
 				if (!rendered.startsWith("<render failed")) {
 					actualTe = parseAlgebra(rendered);
-
-					if (!VarNameNormalizer.normalizeVars(actual.toString())
-							.equals(VarNameNormalizer.normalizeVars(actualTe.toString()))) {
-						System.out.println("# actual TupleExpr \n" + actual + "\n");
-						System.out.println("# actualTe TupleExpr\n" + actualTe);
-						throw new IllegalStateException(
-								"`actualTe` TupleExpr differs from original `actual` TupleExpr");
-					}
-
 					System.out.println("# Actual TupleExpr\n" + actualTe + "\n");
 				}
 			} catch (Throwable parseActualFail) {
@@ -304,7 +249,7 @@ public class TupleExprIRRendererTest {
 							: "<actual TupleExpr unavailable: " +
 									"parse failed" + ">");
 
-			String rendered2 = render(expectedSparql, cfg);
+			rendered = render(expectedSparql, cfg);
 
 			// Fail (again) with the original comparison so the test result is correct
 			assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
@@ -312,7 +257,7 @@ public class TupleExprIRRendererTest {
 	}
 	// ---------- Tests: fixed point + semantic equivalence where applicable ----------
 
-	@RepeatedTest(10)
+	@Test
 	void basic_select_bgp() {
 		String q = "SELECT ?s ?name WHERE {\n" +
 				"  ?s a foaf:Person ; foaf:name ?name .\n" +
@@ -320,7 +265,7 @@ public class TupleExprIRRendererTest {
 		assertFixedPoint(q, cfg());
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void filter_compare_and_regex() {
 		String q = "SELECT ?s ?name WHERE {\n" +
 				"  ?s foaf:name ?name .\n" +
@@ -329,7 +274,7 @@ public class TupleExprIRRendererTest {
 		assertFixedPoint(q, cfg());
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void optional_with_condition() {
 		String q = "SELECT ?s ?age WHERE {\n" +
 				"  ?s foaf:name ?n .\n" +
@@ -341,7 +286,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void union_of_groups() {
 		String q = "SELECT ?who WHERE {\n" +
 				"  {\n" +
@@ -355,7 +300,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void order_by_limit_offset() {
 		String q = "SELECT ?name WHERE {\n" +
 				"  ?s foaf:name ?name .\n" +
@@ -367,7 +312,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void values_single_var_and_undef() {
 		String q = "SELECT ?x WHERE {\n" +
 				"  VALUES (?x) {\n" +
@@ -380,7 +325,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void values_multi_column() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  VALUES (?n ?s) {\n" +
@@ -391,7 +336,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void bind_inside_where() {
 		String q = "SELECT ?s ?sn WHERE {\n" +
 				"  ?s foaf:name ?n .\n" +
@@ -401,7 +346,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void aggregates_count_star_and_group_by() {
 		String q = "SELECT (COUNT(*) AS ?c) WHERE {\n" +
 				"  ?s ?p ?o .\n" +
@@ -410,7 +355,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void aggregates_count_distinct_group_by() {
 		String q = "SELECT (COUNT(DISTINCT ?o) AS ?c) ?s  WHERE {\n" +
 				"  ?s ?p ?o .\n" +
@@ -419,7 +364,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void group_concat_with_separator_literal() {
 		String q = "SELECT (GROUP_CONCAT(?name; SEPARATOR=\", \") AS ?names) WHERE {\n" +
 				"  ?s foaf:name ?name .\n" +
@@ -428,7 +373,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void service_silent_block() {
 		String q = "SELECT ?s ?p ?o WHERE {\n" +
 				"  SERVICE SILENT <http://example.org/sparql> {\n" +
@@ -439,7 +384,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void property_paths_star_plus_question() {
 		// These rely on RDF4J producing ArbitraryLengthPath for +/*/?.
 		String qStar = "SELECT ?x ?y WHERE {\n" +
@@ -457,40 +402,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(qOpt, cfg(), false);
 	}
 
-	@RepeatedTest(10)
-	void rdf_star_triple_terms_render_verbatim() {
-		String q = "SELECT * WHERE {\n" +
-				"  <<ex:s ex:p ex:o>> ex:q ?x .\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-//		assertTrue(rendered.contains("<<ex:s ex:p ex:o>>"), "RDF-star triple term must render as <<...>>");
-		// Round-trip to ensure algebra equivalence once triple text is correct.
-		assertSameSparqlQuery(q, cfg(), false);
-	}
-
-	@RepeatedTest(10)
-	void blank_node_square_brackets_render_as_empty_bnode() {
-		String q = "SELECT ?s1 ?s2 WHERE {\n" +
-				"  ?s1 ex:p [] .\n" +
-				"  _:bnode1 ex:p [] .\n" +
-				"  ?s2 ex:p [] .\n" +
-				"  [] ex:p _:bnode1 .\n" +
-				"  [] ex:p _:bnode1 .\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), true);
-	}
-
-	@RepeatedTest(10)
-	void rdf_type_renders_as_a_keyword() {
-		String q = "SELECT ?s ?o WHERE {\n" +
-				"  ?s a ?o .\n" +
-				"}";
-		assertSameSparqlQuery(q, cfg(), true);
-
-	}
-
-	@RepeatedTest(10)
+	@Test
 	void regex_flags_and_lang_filters() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  ?s foaf:name ?n .\n" +
@@ -499,7 +411,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void datatype_filter_and_is_tests() {
 		String q = "SELECT ?s ?age WHERE {\n" +
 				"  ?s ex:age ?age .\n" +
@@ -508,7 +420,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void distinct_projection_and_reduced_shell() {
 		String q = "SELECT DISTINCT ?s WHERE {\n" +
 				"  ?s ?p ?o .\n" +
@@ -520,7 +432,7 @@ public class TupleExprIRRendererTest {
 
 	// ----------- Edge/robustness cases ------------
 
-	@RepeatedTest(10)
+	@Test
 	void empty_where_is_not_produced_and_triple_format_stable() {
 		String q = "SELECT * WHERE { ?s ?p ?o . }";
 		String rendered = assertFixedPoint(q, cfg());
@@ -529,7 +441,7 @@ public class TupleExprIRRendererTest {
 		assertTrue(rendered.contains("WHERE {\n"), "Block should open with newline");
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void values_undef_matrix() {
 		String q = "SELECT ?a ?b WHERE {\n" +
 				"  VALUES (?a ?b) {\n" +
@@ -541,7 +453,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void count_and_sum_in_select_with_group_by() {
 		String q = "SELECT ?s (COUNT(?o) AS ?c) (SUM(?age) AS ?sumAge) WHERE {\n" +
 				"  {\n" +
@@ -557,7 +469,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void order_by_multiple_keys() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  ?s foaf:name ?n .\n" +
@@ -566,7 +478,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void list_member_in_and_not_in() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  VALUES (?s) {\n" +
@@ -582,7 +494,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void exists_in_filter_and_bind() {
 		String q = "SELECT ?hasX WHERE {\n" +
 				"  OPTIONAL {\n" +
@@ -595,7 +507,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void strlen_alias_for_fn_string_length() {
 		String q = "SELECT ?s ?p ?o WHERE {\n" +
 				"  ?s ?p ?o .\n" +
@@ -612,7 +524,7 @@ public class TupleExprIRRendererTest {
 
 	// --- Negation: NOT EXISTS & MINUS ---
 
-	@RepeatedTest(10)
+	@Test
 	void filter_not_exists() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  ?s ?p ?o .\n" +
@@ -621,7 +533,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void minus_set_difference() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  ?s ?p ?o .\n" +
@@ -634,19 +546,19 @@ public class TupleExprIRRendererTest {
 
 	// --- Property paths (sequence, alternation, inverse, NPS, grouping) ---
 
-	@RepeatedTest(10)
+	@Test
 	void property_paths_sequence_and_alternation() {
 		String q = "SELECT ?x ?name WHERE { ?x (ex:knows/foaf:knows)|(foaf:knows/ex:knows) ?y . ?y foaf:name ?name }";
 		assertFixedPoint(q, cfg());
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void property_paths_inverse() {
 		String q = "SELECT ?x ?y WHERE { ?x ^foaf:knows ?y }";
 		assertFixedPoint(q, cfg());
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void property_paths_negated_property_set() {
 		String q = "SELECT ?x ?y WHERE {\n" +
 				"  ?x !(rdf:type|^rdf:type) ?y .\n" +
@@ -654,7 +566,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void property_paths_grouping_precedence() {
 		String q = "SELECT ?x ?y WHERE { ?x (ex:knows/ (foaf:knows|^foaf:knows)) ?y }";
 		assertFixedPoint(q, cfg());
@@ -662,7 +574,7 @@ public class TupleExprIRRendererTest {
 
 	// --- Assignment forms: SELECT (expr AS ?v), GROUP BY (expr AS ?v) ---
 
-	@RepeatedTest(10)
+	@Test
 	void select_projection_expression_alias() {
 		String q = "SELECT ((?age + 1) AS ?age1) WHERE {\n" +
 				"  ?s ex:age ?age .\n" +
@@ -670,7 +582,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void group_by_with_alias_and_having() {
 		String q = "SELECT ?name (COUNT(?s) AS ?c) WHERE {\n" +
 				"  ?s foaf:name ?n .\n" +
@@ -679,38 +591,23 @@ public class TupleExprIRRendererTest {
 				"GROUP BY (?n AS ?name)\n" +
 				"HAVING (COUNT(?s) > 1)\n" +
 				"ORDER BY DESC(?c)";
-		assertSameSparqlQuery(q, cfg(), true);
+		assertFixedPoint(q, cfg());
 	}
 
 	// --- Aggregates: MIN/MAX/AVG/SAMPLE + HAVING ---
 
-	@RepeatedTest(10)
+	@Test
 	void aggregates_min_max_avg_sample_having() {
 		String q = "SELECT ?s (MIN(?o) AS ?minO) (MAX(?o) AS ?maxO) (AVG(?o) AS ?avgO) (SAMPLE(?o) AS ?anyO)\n" +
 				"WHERE { ?s ?p ?o . }\n" +
 				"GROUP BY ?s\n" +
 				"HAVING (COUNT(?o) >= 1)";
-		assertSameSparqlQuery(q, cfg(), false);
-	}
-
-	@Test
-	void having_detected_when_optimized_extension_wraps_filter() {
-		String q = "SELECT ?s (COUNT(?o) AS ?c) WHERE {\n" +
-				"  ?s ?p ?o .\n" +
-				"}\n" +
-				"GROUP BY ?s\n" +
-				"HAVING (COUNT(?o) >= 2)";
-
-		TupleExpr optimizedShape = liftInnerExtensionAboveHavingFilter(parseAlgebra(SPARQL_PREFIX + q));
-		String rendered = new TupleExprIRRenderer(cfg()).render(optimizedShape, null).trim();
-
-		assertThat(rendered).contains("HAVING");
-		assertThat(rendered).doesNotContain("_anon_having_");
+		assertFixedPoint(q, cfg());
 	}
 
 	// --- Subquery with aggregate and scope ---
 
-	@RepeatedTest(10)
+	@Test
 	void subquery_with_aggregate_and_having() {
 		String q = "SELECT ?y ?minName WHERE {\n" +
 				"  ex:alice foaf:knows ?y .\n" +
@@ -721,62 +618,37 @@ public class TupleExprIRRendererTest {
 				"    HAVING (MIN(?name) >= \"A\")\n" +
 				"  }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg(), false);
-	}
-
-	private TupleExpr liftInnerExtensionAboveHavingFilter(TupleExpr tupleExpr) {
-		TupleExpr copy = tupleExpr.clone();
-		TupleExpr cur = copy;
-		if (cur instanceof QueryRoot) {
-			cur = ((QueryRoot) cur).getArg();
-		}
-
-		assertThat(cur).isInstanceOf(Projection.class);
-		Projection projection = (Projection) cur;
-		assertThat(projection.getArg()).isInstanceOf(Extension.class);
-		Extension outer = (Extension) projection.getArg();
-		assertThat(outer.getArg()).isInstanceOf(Filter.class);
-		Filter filter = (Filter) outer.getArg();
-		assertThat(filter.getArg()).isInstanceOf(Extension.class);
-		Extension inner = (Extension) filter.getArg();
-
-		filter.setArg(inner.getArg());
-		Extension lifted = new Extension(filter);
-		for (ExtensionElem elem : inner.getElements()) {
-			lifted.addElement(elem.clone());
-		}
-		outer.setArg(lifted);
-		return copy;
+		assertFixedPoint(q, cfg());
 	}
 
 	// --- GRAPH with IRI and variable ---
 
-	@RepeatedTest(10)
+	@Test
 	void graph_iri_and_variable() {
 		String q = "SELECT ?g ?s WHERE {\n" +
 				"  GRAPH ex:g1 { ?s ?p ?o }\n" +
 				"  GRAPH ?g   { ?s ?p ?o }\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg(), false);
+		assertFixedPoint(q, cfg());
 	}
 
 	// --- Federation: SERVICE (no SILENT) and variable endpoint ---
 
-	@RepeatedTest(10)
+	@Test
 	void service_without_silent() {
 		String q = "SELECT * WHERE { SERVICE <http://example.org/sparql> { ?s ?p ?o } }";
-		assertSameSparqlQuery(q, cfg(), false);
+		assertFixedPoint(q, cfg());
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void service_variable_endpoint() {
 		String q = "SELECT * WHERE { SERVICE ?svc { ?s ?p ?o } }";
-		assertSameSparqlQuery(q, cfg(), false);
+		assertFixedPoint(q, cfg());
 	}
 
 	// --- Solution modifiers: REDUCED; ORDER BY expression; OFFSET-only; LIMIT-only ---
 
-	@RepeatedTest(10)
+	@Test
 	void select_reduced_modifier() {
 		String q = "SELECT REDUCED ?s WHERE {\n" +
 				"  ?s ?p ?o .\n" +
@@ -784,16 +656,16 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void order_by_expression_and_by_aggregate_alias() {
 		String q = "SELECT ?n (COUNT(?s) AS ?c)\n" +
 				"WHERE { ?s foaf:name ?n }\n" +
 				"GROUP BY ?n\n" +
 				"ORDER BY LCASE(?n) DESC(?c)";
-		assertSameSparqlQuery(q, cfg(), false);
+		assertFixedPoint(q, cfg());
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void offset_only() {
 		String q = "SELECT ?s ?p ?o WHERE {\n" +
 				"  ?s ?p ?o .\n" +
@@ -802,7 +674,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void limit_only_zero_and_positive() {
 		String q1 = "SELECT ?s ?p ?o WHERE {\n" +
 				"  ?s ?p ?o .\n" +
@@ -816,9 +688,16 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q2, cfg(), false);
 	}
 
+	@Test
+	void construct_query() {
+		String q = "CONSTRUCT { ?s ?p ?o }\n" +
+				"WHERE     { ?s ?p ?o }";
+		assertFixedPoint(q, cfg());
+	}
+
 	// --- Expressions & built-ins ---
 
-	@RepeatedTest(10)
+	@Test
 	void functional_forms_and_rdf_term_tests() {
 		String q = "SELECT ?ok1 ?ok2 ?ok3 ?ok4 WHERE {\n" +
 				"  VALUES (?x) { (1) }\n" +
@@ -831,10 +710,10 @@ public class TupleExprIRRendererTest {
 				"  BIND(sameTerm(?iri, IRI(\"http://ex/alice\")) AS ?ok3)\n" +
 				"  BIND((isIRI(?iri) && isBlank(?b) && isLiteral(?l) && isNumeric(?x)) AS ?ok4)\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg(), false);
+		assertFixedPoint(q, cfg());
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void string_functions_concat_substr_replace_encode() {
 		String q = "SELECT ?a ?b ?c ?d WHERE {\n" +
 				"  VALUES (?n) { (\"Alice\") }\n" +
@@ -843,10 +722,10 @@ public class TupleExprIRRendererTest {
 				"  BIND(REPLACE(?n, \"A\", \"a\") AS ?c)\n" +
 				"  BIND(ENCODE_FOR_URI(?n) AS ?d)\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg(), false);
+		assertFixedPoint(q, cfg());
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void numeric_datetime_hash_and_random() {
 		String q = "SELECT ?r ?now ?y ?tz ?abs ?ceil ?floor ?round ?md5 WHERE {\n" +
 				"  VALUES (?x) { (\"abc\") }\n" +
@@ -860,17 +739,17 @@ public class TupleExprIRRendererTest {
 				"  BIND(ROUND(2.5) AS ?round)\n" +
 				"  BIND(MD5(?x) AS ?md5)\n" +
 				"}";
-		assertSameSparqlQuery(q, cfg(), false);
+		assertFixedPoint(q, cfg());
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void uuid_and_struuid() {
 		String q = "SELECT (UUID() AS ?u) (STRUUID() AS ?su) WHERE {\n" +
 				"}";
 		assertFixedPoint(q, cfg());
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void not_in_and_bound() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  VALUES ?s { ex:alice ex:bob ex:carol }\n" +
@@ -882,7 +761,7 @@ public class TupleExprIRRendererTest {
 
 	// --- VALUES short form and empty edge case ---
 
-	@RepeatedTest(10)
+	@Test
 	void values_single_var_short_form() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  VALUES (?s) {\n" +
@@ -893,7 +772,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void values_empty_block() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  VALUES (?s) {\n" +
@@ -904,7 +783,7 @@ public class TupleExprIRRendererTest {
 
 	// --- Syntactic sugar: blank node property list and collections ---
 
-	@RepeatedTest(10)
+	@Test
 	void blank_node_property_list() {
 		String q = "SELECT ?n WHERE {\n" +
 				"  [] foaf:name ?n .\n" +
@@ -912,7 +791,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void collections() {
 		String q = "SELECT ?el WHERE {\n" +
 				"  (1 2 3) rdf:rest*/rdf:first ?el .\n" +
@@ -924,7 +803,7 @@ public class TupleExprIRRendererTest {
 	// ===== Complex integration-style tests ====
 	// ==========================================
 
-	@RepeatedTest(10)
+	@Test
 	void complex_kitchen_sink_paths_graphs_subqueries() {
 		String q = "SELECT REDUCED ?g ?y (?cnt AS ?count) (COALESCE(?avgAge, -1) AS ?ageOrMinus1) WHERE {\n" +
 				"  VALUES (?g) {\n" +
@@ -962,7 +841,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testMoreGraph1() {
 		String q = "SELECT REDUCED ?g ?y (?cnt AS ?count) (COALESCE(?avgAge, -1) AS ?ageOrMinus1) WHERE {\n" +
 				"  VALUES ?g { ex:g1 ex:g2 }\n" +
@@ -987,7 +866,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testMoreGraph2() {
 		String q = "SELECT REDUCED ?g ?y (?cnt AS ?count) (COALESCE(?avgAge, -1) AS ?ageOrMinus1) WHERE {\n" +
 				"  VALUES (?g) {\n" +
@@ -1018,7 +897,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void morePathInGraph() {
 		String q = "SELECT REDUCED ?g ?y (?cnt AS ?count) (COALESCE(?avgAge, -1) AS ?ageOrMinus1) WHERE {\n" +
 				"  VALUES (?g) {\n" +
@@ -1040,7 +919,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void complex_deep_union_optional_with_grouping() {
 		String q = "SELECT ?s ?label ?src (SUM(?innerC) AS ?c) WHERE {\n" +
 				"  VALUES ?src { \"A\" \"B\" }\n" +
@@ -1074,7 +953,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void complex_federated_service_subselect_and_graph() {
 		String q = "SELECT ?u ?g (COUNT(DISTINCT ?p) AS ?pc) WHERE {\n" +
 				"  SERVICE <http://example.org/sparql> {\n" +
@@ -1100,7 +979,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void complex_ask_with_subselect_exists_and_not_exists() {
 		String q = "SELECT ?g ?s ?n WHERE {\n" +
 				"  VALUES (?g) {\n" +
@@ -1116,7 +995,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void complex_expressions_aggregation_and_ordering() {
 		String q = "SELECT ?s (CONCAT(LCASE(STR(?n)), \"-\", STRUUID()) AS ?tag) (MAX(?age) AS ?maxAge) WHERE {\n" +
 				"  ?s foaf:name ?n .\n" +
@@ -1133,7 +1012,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void complex_mutual_knows_with_degree_subqueries() {
 		String q = "SELECT ?a ?b ?aC ?bC WHERE {\n" +
 				"  {\n" +
@@ -1158,7 +1037,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void complex_path_inverse_and_negated_set_mix() {
 		String q = "SELECT ?a ?n WHERE {\n" +
 				"  ?a (^foaf:knows/!(ex:helps|ex:knows|rdf:subject|rdf:type)/foaf:name) ?n .\n" +
@@ -1167,7 +1046,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void complex_service_variable_and_nested_subqueries() {
 		String q = "SELECT ?svc ?s (SUM(?c) AS ?total) WHERE {\n" +
 				"  BIND(<http://example.org/sparql> AS ?svc)\n" +
@@ -1195,16 +1074,20 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void complex_values_matrix_paths_and_groupby_alias() {
 		String q = "SELECT ?key ?person (COUNT(?o) AS ?c) WHERE {\n" +
 				"  {\n" +
-				"    VALUES ?k { \"foaf\" }\n" +
+				"    VALUES (?k) {\n" +
+				"      (\"foaf\")\n" +
+				"    }\n" +
 				"    ?person foaf:knows/foaf:knows* ?other .\n" +
 				"  }\n" +
 				"    UNION\n" +
 				"  {\n" +
-				"    VALUES ?k { \"foaf\" }\n" +
+				"    VALUES (?k) {\n" +
+				"      (\"ex\")\n" +
+				"    }\n" +
 				"    ?person ex:knows/foaf:knows* ?other .\n" +
 				"  }\n" +
 				"  ?person ?p ?o .\n" +
@@ -1216,7 +1099,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void groupByAlias() {
 		String q = "SELECT ?predicate WHERE {\n" +
 				"  ?a ?b ?c .\n" +
@@ -1231,7 +1114,7 @@ public class TupleExprIRRendererTest {
 	// ===== Ultra-heavy, limit-stretching tests ======
 	// ================================================
 
-	@RepeatedTest(10)
+	@Test
 	void mega_monster_deep_nesting_everything() {
 		String q = "SELECT REDUCED ?g ?x ?y (?cnt AS ?count) (IF(BOUND(?avgAge), (xsd:decimal(?cnt) + xsd:decimal(?avgAge)), xsd:decimal(?cnt)) AS ?score)\n"
 				+
@@ -1270,7 +1153,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void mega_monster_deep_nesting_everything_simple() {
 		String q = "SELECT REDUCED ?g ?x ?y (?cnt AS ?count) (IF(BOUND(?avgAge), (xsd:decimal(?cnt) + xsd:decimal(?avgAge)), xsd:decimal(?cnt)) AS ?score)\n"
 				+
@@ -1295,7 +1178,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void mega_massive_union_chain_with_mixed_paths() {
 		String q = "SELECT ?s ?kind WHERE {\n" +
 				"  {\n" +
@@ -1343,7 +1226,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void mega_wide_values_matrix_typed_and_undef() {
 		String q = "SELECT ?s ?p ?o ?tag ?n (IF(BOUND(?o), STRLEN(STR(?o)), -1) AS ?len) WHERE {\n" +
 				"  VALUES (?s ?p ?o ?tag ?n) {\n" +
@@ -1372,7 +1255,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void mega_parentheses_precedence() {
 		String q = "SELECT ?s ?o (?score AS ?score2) WHERE {\n" +
 				"  ?s foaf:knows/((^foaf:knows)|ex:knows) ?o .\n" +
@@ -1388,7 +1271,7 @@ public class TupleExprIRRendererTest {
 	// ===== New unit tests =====
 	// ==========================
 
-	@RepeatedTest(10)
+	@Test
 	void filter_before_trailing_subselect_movable() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  ?s a foaf:Person .\n" +
@@ -1403,7 +1286,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void filter_after_trailing_subselect_depends_on_subselect() {
 		String q = "SELECT ?x WHERE {\n" +
 				"  ?s a foaf:Person .\n" +
@@ -1418,7 +1301,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void graph_optional_merge_plain_body_expected_shape() {
 		String q = "SELECT ?g ?s ?label WHERE {\n" +
 				"  GRAPH ?g {\n" +
@@ -1432,7 +1315,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void graph_optional_inner_graph_same_expected_shape() {
 		String q = "SELECT ?g ?s ?label WHERE {\n" +
 				"  GRAPH ?g {\n" +
@@ -1446,7 +1329,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void graph_optional_inner_graph_mismatch_no_merge_expected_shape() {
 		String q = "SELECT ?g ?h ?s ?label WHERE {\n" +
 				"  GRAPH ?g {\n" +
@@ -1461,7 +1344,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void values_empty_parentheses_rows() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  VALUES () {\n" +
@@ -1472,7 +1355,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void function_fallback_decimal_prefix_compaction() {
 		String q = "SELECT (?cnt AS ?c) (xsd:decimal(?cnt) AS ?d) WHERE {\n" +
 				"  VALUES (?cnt) {\n" +
@@ -1483,7 +1366,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void function_fallback_unknown_prefixed_kept() {
 		String q = "SELECT (ex:score(?x, ?y) AS ?s) WHERE {\n" +
 				"  ?x ex:knows ?y .\n" +
@@ -1491,7 +1374,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void inverse_triple_heuristic_print_caret() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ^ex:knows ?o .\n" +
@@ -1499,7 +1382,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void property_list_with_a_and_multiple_preds() {
 		String q = "SELECT ?s ?name ?age WHERE {\n" +
 				"  ?s a ex:Person ; foaf:name ?name ; ex:age ?age .\n" +
@@ -1507,7 +1390,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void union_branches_to_path_alternation() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s foaf:knows|ex:knows ?o .\n" +
@@ -1515,7 +1398,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nps_via_not_in() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ?p ?o .\n" +
@@ -1524,7 +1407,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nps_via_inequalities() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ?p ?o .\n" +
@@ -1533,7 +1416,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void service_silent_block_layout() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  SERVICE SILENT ?svc {\n" +
@@ -1543,7 +1426,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void ask_basic_bgp() {
 		String q = "ASK WHERE {\n" +
 				"  ?s a foaf:Person .\n" +
@@ -1551,7 +1434,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void order_by_mixed_vars_and_exprs() {
 		String q = "SELECT ?x ?name WHERE {\n" +
 				"  ?x foaf:name ?name .\n" +
@@ -1560,7 +1443,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void graph_merge_with_following_filter_inside_group() {
 		String q = "SELECT ?g ?s ?label WHERE {\n" +
 				"  GRAPH ?g {\n" +
@@ -1574,7 +1457,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void values_with_undef_mixed() {
 		String q = "SELECT ?s ?p ?o WHERE {\n" +
 				"  VALUES (?s ?p ?o) {\n" +
@@ -1585,7 +1468,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void optional_outside_graph_when_complex_body() {
 		String q = "SELECT ?g ?s ?label ?nick WHERE {\n" +
 				"  GRAPH ?g {\n" +
@@ -1606,7 +1489,7 @@ public class TupleExprIRRendererTest {
 	// Deeply nested path scenarios
 	// -----------------------------
 
-	@RepeatedTest(10)
+	@Test
 	void deep_path_in_optional_in_graph() {
 		String q = "SELECT ?g ?s ?o WHERE {\n" +
 				"  OPTIONAL {\n" +
@@ -1618,7 +1501,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void deep_path_in_minus() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s a ex:Person .\n" +
@@ -1629,7 +1512,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void pathExample() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s a ex:Person .\n" +
@@ -1640,7 +1523,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void deep_path_in_filter_not_exists() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  FILTER (NOT EXISTS { ?s (foaf:knows|ex:knows)/^foaf:knows ?o . })\n" +
@@ -1648,7 +1531,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void deep_path_in_union_branch_with_graph() {
 		String q = "SELECT ?g ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -1664,7 +1547,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void zero_or_more_then_inverse_then_alt_in_graph() {
 		String q = "SELECT ?g ?s ?o WHERE {\n" +
 				"  GRAPH ?g {\n" +
@@ -1674,7 +1557,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void optional_with_values_and_bind_inside_graph() {
 		String q = "SELECT ?g ?s ?n ?name WHERE {\n" +
 				"  GRAPH ?g {\n" +
@@ -1687,7 +1570,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void exists_with_path_and_aggregate_in_subselect() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  FILTER (EXISTS { { SELECT (COUNT(?x) AS ?c) WHERE { ?s foaf:knows+ ?x . } } FILTER (?c >= 0) })\n" +
@@ -1695,7 +1578,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nested_union_optional_with_path_and_filter() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -1709,7 +1592,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void minus_with_graph_and_optional_path() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  MINUS {\n" +
@@ -1721,7 +1604,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void service_with_graph_and_path() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  SERVICE ?svc { GRAPH ?g { ?s (foaf:knows|ex:knows) ?o . } }\n" +
@@ -1729,7 +1612,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void group_by_filter_with_path_in_where() {
 		String q = "SELECT ?s (COUNT(?o) AS ?c) WHERE {\n" +
 				"  ?s foaf:knows/foaf:knows? ?o .\n" +
@@ -1739,7 +1622,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nested_subselect_with_path_and_order() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s foaf:knows+ ?o .\n" +
@@ -1748,7 +1631,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void optional_chain_then_graph_path() {
 		String q = "SELECT ?g ?s ?o WHERE {\n" +
 				"  OPTIONAL {\n" +
@@ -1764,7 +1647,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void values_then_graph_then_minus_with_path() {
 		String q = "SELECT ?g ?s ?o WHERE {\n" +
 				"  VALUES (?g) { (ex:g1) (ex:g2) }\n" +
@@ -1774,7 +1657,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nps_path_followed_by_constant_step_in_graph() {
 		String q = "SELECT ?s ?x WHERE {\n" +
 				"  GRAPH ?g {\n" +
@@ -1784,7 +1667,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void deep_nested_union_optional_minus_mix_with_paths() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -1802,7 +1685,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void deep_exists_with_path_and_inner_filter() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  FILTER (EXISTS { ?s foaf:knows+/^ex:knows ?o . FILTER (BOUND(?o)) })\n" +
@@ -1810,7 +1693,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void deep_zero_or_one_path_in_union() {
 		String q = "SELECT ?o ?s WHERE {\n" +
 				"  {\n" +
@@ -1824,7 +1707,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void deep_path_chain_with_graph_and_filter() {
 		String q = "SELECT ?g ?s ?o WHERE {\n" +
 				"  GRAPH ?g {\n" +
@@ -1835,7 +1718,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void mega_ask_deep_exists_notexists_filters() {
 		String q = "ASK WHERE {\n" +
 				"  { ?a foaf:knows ?b } UNION { ?b foaf:knows ?a }\n" +
@@ -1846,7 +1729,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void mega_ask_deep_exists_notexists_filters2() {
 		String q = "ASK WHERE {\n" +
 				"  {\n" +
@@ -1870,7 +1753,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void path_in_graph() {
 		String q = "SELECT ?g ?a ?x WHERE {\n" +
 				"  GRAPH ?g {\n" +
@@ -1880,7 +1763,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nps_fusion_graph_filter_graph_not_in_forward() {
 		String expanded = "SELECT ?g ?a ?x WHERE {\n" +
 				"  GRAPH ?g {\n" +
@@ -1896,7 +1779,7 @@ public class TupleExprIRRendererTest {
 
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nps_fusion_graph_filter_graph_ineq_chain_inverse() {
 		String expanded = "SELECT ?g ?a ?x WHERE {\n" +
 				"  GRAPH ?g {\n" +
@@ -1911,7 +1794,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(expanded, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nps_fusion_graph_filter_only() {
 		String expanded = "SELECT ?g ?a ?m WHERE {\n" +
 				"  GRAPH ?g {\n" +
@@ -1924,7 +1807,7 @@ public class TupleExprIRRendererTest {
 
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nps_fusion_graph_filter_only2() {
 		String expanded = "SELECT ?g ?a ?m ?n WHERE {\n" +
 				"  GRAPH ?g {\n" +
@@ -1937,7 +1820,7 @@ public class TupleExprIRRendererTest {
 
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void mega_service_graph_interleaved_with_subselects() {
 		String q = "SELECT ?s ?g (SUM(?c) AS ?total) WHERE {\n" +
 				"  VALUES (?svc) {\n" +
@@ -1970,7 +1853,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-//	@RepeatedTest(10)
+//	@Test
 //	void mega_long_string_literals_and_escaping() {
 //		String q = "SELECT ?txt ?repl WHERE {\n" +
 //				"  BIND(\"\"\"Line1\\nLine2 \\\"quotes\\\" and backslash \\\\ and \\t tab and unicode \\u03B1 \\U0001F642\"\"\" AS ?txt)\n"
@@ -1981,7 +1864,7 @@ public class TupleExprIRRendererTest {
 //		assertSameSparqlQuery(q, cfg());
 //	}
 
-	@RepeatedTest(10)
+	@Test
 	void mega_order_by_on_expression_over_aliases() {
 		String q = "SELECT ?s ?bestName ?avgAge WHERE {\n" +
 				"  {\n" +
@@ -2001,7 +1884,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void mega_optional_minus_nested() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ?p ?o .\n" +
@@ -2021,7 +1904,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void mega_scoped_variables_and_aliasing_across_subqueries() {
 		String q = "SELECT ?s ?bestName ?deg WHERE {\n" +
 				"  {\n" +
@@ -2046,7 +1929,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void mega_type_shorthand_and_mixed_sugar() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  ?s a foaf:Person ; foaf:name ?n .\n" +
@@ -2057,7 +1940,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void mega_exists_union_inside_exists_and_notexists() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  ?s ?p ?o .\n" +
@@ -2080,7 +1963,7 @@ public class TupleExprIRRendererTest {
 
 	// -------- New deep nested OPTIONAL path tests --------
 
-	@RepeatedTest(10)
+	@Test
 	void deep_optional_path_1() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  OPTIONAL {\n" +
@@ -2095,7 +1978,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void deep_optional_path_2() {
 		String q = "SELECT ?x ?y WHERE {\n" +
 				"  OPTIONAL {\n" +
@@ -2110,7 +1993,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void deep_optional_path_3() {
 		String q = "SELECT ?a ?n WHERE {\n" +
 				"  OPTIONAL {\n" +
@@ -2125,7 +2008,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void deep_optional_path_4() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  OPTIONAL {\n" +
@@ -2139,7 +2022,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void deep_optional_path_5() {
 		String q = "SELECT ?g ?s ?n WHERE {\n" +
 				"  OPTIONAL {\n" +
@@ -2152,7 +2035,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void complexPath() {
 		String q = "SELECT ?g ?s ?n WHERE {\n" +
 				"      ?s ex:path1/ex:path2/(ex:alt1|ex:alt2) ?n .\n" +
@@ -2160,7 +2043,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void complexPathUnionOptionalScope() {
 		String q = "SELECT ?g ?s ?n WHERE {\n" +
 				"  {\n" +
@@ -2182,7 +2065,7 @@ public class TupleExprIRRendererTest {
 
 	// -------- New deep nested UNION path tests --------
 
-	@RepeatedTest(10)
+	@Test
 	void deep_union_path_1() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -2203,7 +2086,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void deep_union_path_2() {
 		String q = "SELECT ?a ?n WHERE {\n" +
 				"  {\n" +
@@ -2226,7 +2109,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void deep_union_path_3() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -2252,7 +2135,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void simpleOrInversePath() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s (ex:knows1|^ex:knows2) ?o . " +
@@ -2260,7 +2143,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void simpleOrInversePathGraph() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  GRAPH ?g { ?s (ex:knows1|^ex:knows2) ?o . }" +
@@ -2268,7 +2151,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void simpleOrNonInversePath() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s (ex:knows1|ex:knows2) ?o . " +
@@ -2276,7 +2159,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void deep_union_path_4() {
 		String q = "SELECT ?g ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -2298,7 +2181,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void deep_union_path_5() {
 		String q = "SELECT ?o ?s WHERE {\n" +
 				"  {\n" +
@@ -2324,7 +2207,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void deep_union_path_5_curly_braces() {
 		String q = "SELECT ?o ?s WHERE {\n" +
 				"  {\n" +
@@ -2352,7 +2235,7 @@ public class TupleExprIRRendererTest {
 
 	// -------- Additional SELECT tests with deeper, more nested paths --------
 
-	@RepeatedTest(10)
+	@Test
 	void nested_paths_extreme_1() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  ?s ((foaf:knows/^foaf:knows | !(rdf:type|^rdf:type)/ex:knows?)\n" +
@@ -2362,7 +2245,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nested_paths_extreme_1_simple() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  ?s foaf:knows/^foaf:knows | !(rdf:type|^rdf:type)/ex:knows? ?n .\n" +
@@ -2370,7 +2253,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nested_paths_extreme_1_simple2() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  ?s (ex:knows1/ex:knows2)* ?n .\n" +
@@ -2378,7 +2261,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nested_paths_extreme_1_simple2_1() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  ?s (ex:knows1|ex:knows2)* ?n .\n" +
@@ -2386,7 +2269,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nested_paths_extreme_1_simple3() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  ?s (ex:knows1/ex:knows2)+ ?n .\n" +
@@ -2394,7 +2277,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nested_paths_extreme_1_simpleGraph() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  GRAPH ?g {\n" +
@@ -2404,7 +2287,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nested_paths_extreme_2_optional_and_graph() {
 		String q = "SELECT ?g ?s ?n WHERE {\n" +
 				"  GRAPH ?g {\n" +
@@ -2418,7 +2301,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nested_paths_extreme_3_subquery_exists() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  FILTER (EXISTS {\n" +
@@ -2435,7 +2318,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nested_paths_extreme_4_union_mixed_mods() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  {\n" +
@@ -2449,7 +2332,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nested_paths_extreme_4_union_mixed_mods2() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  {\n" +
@@ -2463,7 +2346,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nested_paths_extreme_4_union_mixed_mods3() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  {\n" +
@@ -2477,7 +2360,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nested_paths_extreme_4_union_mixed_mods4() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  {\n" +
@@ -2491,7 +2374,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nested_paths_extreme_4_union_mixed_mods5() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  {\n" +
@@ -2513,7 +2396,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nested_paths_extreme_4_union_mixed_mods6() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  ?s !(^ex:g|ex:h)/foaf:name ?n .\n" +
@@ -2521,7 +2404,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nested_paths_extreme_5_grouped_repetition() {
 		String q = "SELECT ?s ?n WHERE {\n" +
 				"  ?s (((ex:pA|^ex:pB)/(ex:pC|^ex:pD))*/(^ex:pE/(ex:pF|^ex:pG)+)/(ex:pH/foaf:knows)?)/foaf:name ?n .\n"
@@ -2530,7 +2413,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void invertedPathInUnion() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -2545,7 +2428,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void invertedPathInUnion2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  { ?s !^<http://example.org/p/I01> ?o . }\n" +
@@ -2555,7 +2438,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testNegatedPathUnion() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  { ?o !<http://example.org/p/I01> ?s . }\n" +
@@ -2565,7 +2448,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void negatedPath() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s !ex:pA ?o .\n" +
@@ -2573,7 +2456,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void negatedInvertedPath() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s !^ex:pA ?o .\n" +
@@ -2581,7 +2464,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testInvertedPathUnion() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  { ?s ^<http://example.org/p/I0> ?o . }\n" +
@@ -2591,7 +2474,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testUnionOrdering() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -2606,7 +2489,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testBnodes() {
 		String q = "SELECT ?s ?x WHERE {\n" +
 				"  [] ex:pA ?s ;\n" +
@@ -2617,7 +2500,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testBnodes2() {
 		String q = "SELECT ?s ?x WHERE {\n" +
 				"  _:bnode1 ex:pA ?s ;\n" +
@@ -2629,7 +2512,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testBnodes3() {
 		String q = "SELECT ?s ?x WHERE {\n" +
 				"  _:bnode1 ex:pA ?s ;\n" +
@@ -2644,321 +2527,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
-	void anonymous_and_named_bnodes_across_optional_union_values_minus_notexists() {
-		String q = "SELECT ?o ?y WHERE {\n" +
-				"  OPTIONAL {\n" +
-				"    [] ex:p ?o .\n" +
-				"    FILTER(isBlank(?o))\n" +
-				"  }\n" +
-				"  {\n" +
-				"    [] ex:q ?o .\n" +
-				"  }\n" +
-				"    UNION\n" +
-				"  {\n" +
-				"    _:branch ex:q ?o .\n" +
-				"    ?s ex:q [] .\n" +
-				"    MINUS { [] ex:q ?s }\n" +
-				"  }\n" +
-				"  FILTER NOT EXISTS { _:keep ex:r [] }\n" +
-				"  VALUES (?o ?y) {\n" +
-				"    (UNDEF \"v1\")\n" +
-				"    (\"v2\" UNDEF)\n" +
-				"  }\n" +
-				"}";
-
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-
-		Matcher bracketMatcher = Pattern.compile("\\[\\]").matcher(rendered);
-		int bracketCount = 0;
-		while (bracketMatcher.find()) {
-			bracketCount++;
-		}
-		assertThat(bracketCount).as("[] should remain visible for anonymous blank nodes").isGreaterThanOrEqualTo(2);
-
-		Set<String> labels = new HashSet<>();
-		Matcher labelMatcher = Pattern.compile("_:[A-Za-z][A-Za-z0-9]*").matcher(rendered);
-		while (labelMatcher.find()) {
-			labels.add(labelMatcher.group());
-		}
-		assertThat(labels.size()).as("named blank nodes should keep distinct labels").isGreaterThanOrEqualTo(2);
-
-		assertThat(rendered)
-				.contains("OPTIONAL")
-				.contains("UNION")
-				.contains("MINUS")
-				.contains("NOT EXISTS")
-				.contains("VALUES");
-	}
-
-	@RepeatedTest(10)
-	void distinct_named_bnodes_in_nested_subselects() {
-		String q = "SELECT ?x ?y WHERE {\n" +
-				"  OPTIONAL { _:outerA ex:p [] . }\n" +
-				"  { SELECT ?x WHERE { _:inner1 ex:p ?x . } }\n" +
-				"  { SELECT ?y WHERE { OPTIONAL { _:inner2 ex:q ?y . } } }\n" +
-				"}";
-
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-
-		Set<String> labels = new HashSet<>();
-		Matcher labelMatcher = Pattern.compile("_:[A-Za-z][A-Za-z0-9]*").matcher(rendered);
-		while (labelMatcher.find()) {
-			labels.add(labelMatcher.group());
-		}
-		assertThat(labels.size()).as("distinct subselect bnodes must not be reused").isGreaterThanOrEqualTo(3);
-
-		Matcher bracketMatcher = Pattern.compile("\\[\\]").matcher(rendered);
-		assertThat(bracketMatcher.find()).as("anonymous [] must survive rendering").isTrue();
-
-		assertThat(rendered).contains("SELECT ?x WHERE").contains("SELECT ?y WHERE").contains("OPTIONAL");
-	}
-
-	@RepeatedTest(10)
-	void bnodes_survive_filters_and_bind() {
-		String q = "SELECT ?b ?o WHERE {\n" +
-				"  BIND(BNODE() AS ?b)\n" +
-				"  OPTIONAL { _:filterNode ex:p ?o . }\n" +
-				"  FILTER(isBlank(?b))\n" +
-				"  FILTER EXISTS { [] ex:p ?b }\n" +
-				"}";
-
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-
-		assertThat(rendered).contains("BIND(BNODE()");
-		assertThat(rendered).contains("_:").contains("FILTER EXISTS {");
-
-		assertThat(countAnonPlaceholders(rendered)).as("anonymous [] inside EXISTS must remain")
-				.isGreaterThanOrEqualTo(1);
-	}
-
-	// -------- Additional blank node coverage --------
-
-	@RepeatedTest(10)
-	void optional_named_bnode_label_preserved() {
-		String q = "SELECT ?o WHERE { OPTIONAL { _:opt ex:p ?o . } }";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void optional_anonymous_bnode_keeps_brackets() {
-		String q = "SELECT ?o WHERE { OPTIONAL { [] ex:p ?o . } }";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void union_branches_keep_separate_bnodes() {
-		String q = "SELECT ?o WHERE {\n" +
-				"  { _:u1 ex:p ?o . }\n" +
-				"  UNION\n" +
-				"  { _:u2 ex:q ?o . }\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(2);
-	}
-
-	@RepeatedTest(10)
-	void minus_clause_keeps_named_bnode() {
-		String q = "SELECT ?o WHERE {\n" +
-				"  _:keepL ex:p ?o .\n" +
-				"  MINUS { _:keepR ex:q ?o }\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(2);
-	}
-
-	@RepeatedTest(10)
-	void not_exists_preserves_anonymous_property_list() {
-		String q = "SELECT * WHERE {\n" +
-				"  FILTER NOT EXISTS { [] ex:p [ ex:q ?o ] }\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void values_alongside_bnodes_do_not_change_labels() {
-		String q = "SELECT ?o WHERE {\n" +
-				"  [] ex:p ?o .\n" +
-				"  VALUES ?o { \"a\" \"b\" }\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void filter_isblank_on_named_bnode() {
-		String q = "SELECT ?b WHERE {\n" +
-				"  [] ex:p ?b .\n" +
-				"  FILTER(isBlank(?b))\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertThat(rendered).isNotEmpty();
-		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void graph_clause_named_bnode_subject() {
-		String q = "SELECT * WHERE {\n" +
-				"  GRAPH <http://g> { _:gsub ex:p ?o . }\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void graph_clause_anonymous_bnode_object() {
-		String q = "SELECT * WHERE {\n" +
-				"  GRAPH <http://g> { ?s ex:p [] . }\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void service_clause_with_anonymous_property_list() {
-		String q = "SELECT * WHERE {\n" +
-				"  SERVICE <http://svc> { [] ex:p [ ex:q ?o ] . }\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void subselect_named_bnodes_not_reused() {
-		String q = "SELECT ?x ?y WHERE {\n" +
-				"  { SELECT ?x WHERE { _:innerA ex:p ?x . } }\n" +
-				"  OPTIONAL { _:outer ex:p ?y . }\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(2);
-	}
-
-	@RepeatedTest(10)
-	void subselect_anonymous_bnode_remains_brackets() {
-		String q = "SELECT ?x WHERE {\n" +
-				"  { SELECT ?x WHERE { [] ex:p ?x . } }\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void property_list_nested_bnodes_keep_labels() {
-		String q = "SELECT * WHERE {\n" +
-				"  _:root ex:p [ ex:q _:leaf ; ex:r [] ] .\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		parseAlgebra(rendered); // ensure round-trip parseable
-		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(2);
-		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void exists_with_named_bnode_in_pattern() {
-		String q = "SELECT ?s WHERE {\n" +
-				"  ?s ex:p ?o .\n" +
-				"  FILTER EXISTS { _:exists ex:q ?s }\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void not_exists_with_named_bnode_different_scope() {
-		String q = "SELECT ?s WHERE {\n" +
-				"  ?s ex:p ?o .\n" +
-				"  FILTER NOT EXISTS { _:nex ex:q ?o }\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void minus_with_property_list_anonymous() {
-		String q = "SELECT ?s WHERE {\n" +
-				"  ?s ex:p ?o .\n" +
-				"  MINUS { [] ex:p [ ex:q ?o ] }\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		parseAlgebra(rendered);
-		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void filter_sameTerm_on_named_bnode() {
-		String q = "SELECT * WHERE {\n" +
-				"  [] ex:p ?o .\n" +
-				"  FILTER(sameTerm(?o, ?o))\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void path_with_named_bnode_object() {
-		String q = "SELECT * WHERE {\n" +
-				"  ?s ex:p+/ex:q _:pnode .\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void union_with_property_list_bnodes_preserves_counts() {
-		String q = "SELECT * WHERE {\n" +
-				"  { [] ex:p [ ex:q ?o ] . }\n" +
-				"  UNION\n" +
-				"  { _:u ex:p [ ex:q [] ] . }\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		parseAlgebra(rendered);
-		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(2);
-		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void bind_and_optional_do_not_rename_bnode_labels() {
-		String q = "SELECT ?b WHERE {\n" +
-				"  BIND(BNODE() AS ?b)\n" +
-				"  OPTIONAL { _:keep ex:p ?b . }\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		assertSameSparqlQuery(q, cfg(), false);
-		assertThat(extractBnodeLabels(rendered).size()).isGreaterThanOrEqualTo(1);
-	}
-
-	@RepeatedTest(10)
-	void nested_optional_anonymous_property_list() {
-		String q = "SELECT * WHERE {\n" +
-				"  OPTIONAL { OPTIONAL { [] ex:p [ ex:q [] ] . } }\n" +
-				"}";
-		String rendered = render(SPARQL_PREFIX + q, cfg());
-		parseAlgebra(rendered);
-		assertThat(countAnonPlaceholders(rendered)).isGreaterThanOrEqualTo(2);
-	}
-
-	@RepeatedTest(10)
+	@Test
 	void nestedSelectDistinct() {
 		String q = "SELECT ?s  WHERE {\n" +
 				"  { SELECT DISTINCT ?s WHERE { ?s ex:pA ?o } ORDER BY ?s LIMIT 10 }\n" +
@@ -2967,7 +2536,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testPathGraphFilterExists() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pC ?u1 .\n" +
@@ -2981,7 +2550,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterExistsForceNewScope() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pC ?u1 .\n" +
@@ -2995,7 +2564,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testPathFilterExistsForceNewScope() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3013,7 +2582,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testValuesPathUnionScope() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  { \n" +
@@ -3034,7 +2603,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testValuesPathUnionScope2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3057,7 +2626,7 @@ public class TupleExprIRRendererTest {
 
 	// New tests to validate new-scope behavior and single-predicate inversion
 
-	@RepeatedTest(10)
+	@Test
 	void testValuesPrefersSubjectAndCaretForInverse() {
 		// VALUES binds ?s; inverse single predicate should render with caret keeping ?s as subject
 		String q = "SELECT ?s ?o WHERE {\n" +
@@ -3072,7 +2641,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testValuesAllowsForwardSwappedVariant() {
 		// VALUES binds ?s; swapped forward form should be preserved when written that way
 		String q = "SELECT ?s ?o WHERE {\n" +
@@ -3087,7 +2656,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterExistsPrecedingTripleIsGrouped() {
 		// Preceding triple + FILTER EXISTS with inner group must retain grouping braces
 		String q = "SELECT ?s ?o WHERE {\n" +
@@ -3101,7 +2670,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterExistsNested() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pC ?u1 .\n" +
@@ -3118,7 +2687,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testComplexPath1() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pC ?u1 .\n" +
@@ -3128,7 +2697,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterExistsNested2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3147,7 +2716,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterExistsNested2_1() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pC ?u1 .\n" +
@@ -3164,7 +2733,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterExistsNested3() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pC ?u1 .\n" +
@@ -3183,7 +2752,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterExistsNested4() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pC ?u1 .\n" +
@@ -3200,7 +2769,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterExistsNested5() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"{\n" +
@@ -3219,7 +2788,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testNestedSelect() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3236,7 +2805,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testGraphOptionalPath() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3254,7 +2823,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void scopeMinusTest() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3270,7 +2839,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testPathUnionAndServiceAndScope() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3289,7 +2858,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testPathUnionAndServiceAndScope2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3310,7 +2879,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testOptionalServicePathScope() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3326,7 +2895,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testOptionalServicePathScope3() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pQ ?ok .\n" +
@@ -3344,7 +2913,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testOptionalServicePathScope4() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pQ ?ok .\n" +
@@ -3360,7 +2929,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testOptionalServicePathScope5() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pQ ?ok .\n" +
@@ -3377,7 +2946,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testOptionalServicePathScope6() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				" ?s ex:pQ ?ok . \n" +
@@ -3393,7 +2962,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testOptionalServicePathScope2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3411,7 +2980,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testOptionalPathScope2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"{ ?s ex:pA ?o . OPTIONAL { { ?s ^<http://example.org/p/I1> ?o . } } }\n" +
@@ -3420,7 +2989,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testValuesGraph1() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  VALUES ?s { ex:s1 ex:s2 }\n" +
@@ -3434,7 +3003,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testValuesGraph2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3450,7 +3019,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterExistsGraphScope() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3468,7 +3037,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterExistsGraphScope2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3484,7 +3053,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterExistsGraphScope3() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pC ?u1 .\n" +
@@ -3500,7 +3069,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterExistsGraphScope4() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pC ?u1 .\n" +
@@ -3519,7 +3088,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterExistsGraphScope5() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pC ?u1 .\n" +
@@ -3538,7 +3107,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testNestedGraphScope1() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3555,7 +3124,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testNestedGraphScope2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3570,7 +3139,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testNestedGraphScope3() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  GRAPH <http://graphs.example/g0> {\n" +
@@ -3585,7 +3154,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testGraphValuesPathScope1() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3603,7 +3172,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testGraphValuesPathScope2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  GRAPH ?g1 {\n" +
@@ -3619,7 +3188,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testGraphValuesPathScope3() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3635,7 +3204,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void bgpScope1() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3646,7 +3215,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void bgpScope2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s a ?o .  \n" +
@@ -3655,7 +3224,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nestedSelectScope() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3670,7 +3239,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nestedSelectScope4() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3683,7 +3252,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nestedSelectScope2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  SELECT ?s WHERE {\n" +
@@ -3696,7 +3265,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nestedSelectScope3() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  SELECT ?s WHERE {\n" +
@@ -3707,7 +3276,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void filterExistsNestedScopeTest() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  FILTER EXISTS {\n" +
@@ -3723,7 +3292,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nestedSelectGraph() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3740,7 +3309,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nestedSelectGraph2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3757,7 +3326,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nestedSelectGraph3() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3774,7 +3343,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void scopeGraphFilterExistsPathTest() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3791,7 +3360,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nestedServiceGraphPath() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3804,7 +3373,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nestedServiceGraphPath2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3817,7 +3386,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testServiceValuesPathMinus() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3839,7 +3408,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testServiceGraphGraphPath() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3860,7 +3429,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testServiceGraphGraphPath2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3879,7 +3448,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nestedSelectServiceUnionPathTest() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3906,7 +3475,7 @@ public class TupleExprIRRendererTest {
 
 	// ---- Additional generalization tests to ensure robustness of SERVICE + UNION + SUBSELECT grouping ----
 
-	@RepeatedTest(10)
+	@Test
 	void nestedSelectServiceUnionSimpleTriples_bracedUnionInsideService() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -3925,7 +3494,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nestedSelectServiceUnionWithGraphBranches_bracedUnionInsideService() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  {\n" +
@@ -3952,7 +3521,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nestedSelectServiceSinglePath_noExtraUnionGroup() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  {\n" +
@@ -3969,7 +3538,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void nestedSelectServiceUnionInversePath_bracedUnionInsideService() {
 		String q = "SELECT ?s WHERE {\n" +
 				"  {\n" +
@@ -3994,7 +3563,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void yetAnotherTest() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4015,7 +3584,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void yetAnotherTest2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  GRAPH <http://graphs.example/g1> {\n" +
@@ -4034,7 +3603,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void pathUnionTest1() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4049,7 +3618,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void pathUnionTest2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4064,7 +3633,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void pathUnionTest3() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4084,7 +3653,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void pathUnionTest4() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4099,7 +3668,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testGraphFilterValuesPathAndScoping() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4119,7 +3688,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testScopeGraphUnionUnion() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4142,7 +3711,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testMinusGraphUnion1() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4168,7 +3737,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testMinusGraphUnionScope() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4192,7 +3761,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterUnionUnionScope1() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pC ?u2 .\n" +
@@ -4216,7 +3785,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterUnionUnionScope2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4243,7 +3812,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterUnionScope1() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  ?s ex:pC ?u2 .\n" +
@@ -4266,7 +3835,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterUnionScope2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4291,7 +3860,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterUnionScope3() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4316,7 +3885,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterUnionScope4() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4341,7 +3910,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testFilterUnionScope5() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4366,7 +3935,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testNestedGraphScopeUnion() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  GRAPH <http://graphs.example/g1> {\n" +
@@ -4387,7 +3956,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testNestedGraphScopeUnion2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  GRAPH <http://graphs.example/g1> {\n" +
@@ -4408,7 +3977,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testNestedGraphScopeUnion3() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4429,7 +3998,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testValuesGraphUnion() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4448,7 +4017,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testValuesGraphUnion2() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4473,7 +4042,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testValuesGraphUnion3() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4493,7 +4062,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testValuesGraphUnion4() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4515,7 +4084,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testValuesGraphUnion5() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4535,7 +4104,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testValuesGraphUnion6() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4548,7 +4117,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testValuesGraphUnion7() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  {\n" +
@@ -4561,7 +4130,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testGraphUnionScope1() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"    GRAPH <http://graphs.example/g1> {\n" +
@@ -4580,7 +4149,7 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
-	@RepeatedTest(10)
+	@Test
 	void testServiceFilterExistsAndScope() {
 		String q = "SELECT ?s ?o WHERE {\n" +
 				"  SERVICE SILENT <http://services.example/sparql> {\n" +

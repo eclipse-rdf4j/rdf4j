@@ -13,9 +13,11 @@ package org.eclipse.rdf4j.sail.memory;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
@@ -33,10 +35,13 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 
 	private final MemValueFactory valueFactory;
 	private final MemStatementList memStatementList;
+	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
 
-	MemEvaluationStatistics(MemValueFactory valueFactory, MemStatementList memStatementList) {
+	MemEvaluationStatistics(MemValueFactory valueFactory, MemStatementList memStatementList,
+			SketchBasedJoinEstimator sketchBasedJoinEstimator) {
 		this.valueFactory = valueFactory;
 		this.memStatementList = memStatementList;
+		this.sketchBasedJoinEstimator = sketchBasedJoinEstimator;
 	}
 
 	@Override
@@ -44,7 +49,26 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 		return new MemCardinalityCalculator();
 	}
 
+	@Override
+	public boolean supportsJoinEstimation() {
+		return sketchBasedJoinEstimator.isReady();
+//		return false;
+	}
+
 	protected class MemCardinalityCalculator extends CardinalityCalculator {
+
+		@Override
+		public void meet(Join node) {
+			if (supportsJoinEstimation()) {
+				double estimatedCardinality = sketchBasedJoinEstimator.cardinality(node);
+				if (estimatedCardinality >= 0) {
+					this.cardinality = estimatedCardinality;
+					return;
+				}
+			}
+
+			super.meet(node);
+		}
 
 		@Override
 		public double getCardinality(StatementPattern sp) {

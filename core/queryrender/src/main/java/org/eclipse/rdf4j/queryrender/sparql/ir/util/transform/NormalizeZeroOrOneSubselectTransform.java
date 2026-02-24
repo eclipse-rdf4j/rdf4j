@@ -723,10 +723,7 @@ public final class NormalizeZeroOrOneSubselectTransform extends BaseTransform {
 		if (name == null) {
 			return null;
 		}
-
-		// TODO: We should really have some way of passing in whether this is an anonymous variable or not instead of
-		// using name.contains("_anon_").
-		return Var.of(name, name.contains("_anon_"));
+		return new Var(name);
 	}
 
 	/** Parse sameTerm(?s,?o) from a plain FILTER condition text (no leading "FILTER"). */

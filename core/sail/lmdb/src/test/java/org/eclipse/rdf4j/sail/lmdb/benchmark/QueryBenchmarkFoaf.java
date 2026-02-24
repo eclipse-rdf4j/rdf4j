@@ -40,10 +40,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmarks query performance with extended FOAF data.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 5)
+@Warmup(iterations = 3)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-Xmn1G", "-XX:+UseSerialGC" })
-@Measurement(iterations = 5)
+@Fork(value = 1, jvmArgs = { "-Xms4G", "-Xmx4G", "-Xmn1G", "-XX:+UseSerialGC" })
+@Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class QueryBenchmarkFoaf extends BenchmarkBaseFoaf {
 	private static final String query1, query2, query3;

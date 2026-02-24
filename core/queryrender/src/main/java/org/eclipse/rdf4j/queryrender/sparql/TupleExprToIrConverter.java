@@ -85,7 +85,6 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.Sum;
-import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -100,7 +99,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrExists;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGroupByElem;
-import org.eclipse.rdf4j.queryrender.sparql.ir.IrInlineTriple;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNot;
@@ -717,49 +715,6 @@ public class TupleExprToIrConverter {
 			}
 		}
 
-		// Re-insert non-aggregate BIND assignments after transforms so they are not optimized away.
-		if (!n.extensionAssignments.isEmpty() && ir.getWhere() != null) {
-			IrBGP whereBgp = ir.getWhere();
-
-			// Skip BINDs that correspond exactly to GROUP BY (expr AS ?var) aliases; those aliases are already rendered
-			// in the GROUP BY clause and should not surface as separate BINDs in the WHERE.
-			Map<String, ValueExpr> groupAliasExprByVar = new LinkedHashMap<>();
-			for (GroupByTerm t : n.groupByTerms) {
-				if (t.expr != null) {
-					groupAliasExprByVar.put(t.var, t.expr);
-				}
-			}
-
-			List<IrNode> prefixConst = new ArrayList<>();
-			List<IrNode> suffixDependent = new ArrayList<>();
-			for (Entry<String, ValueExpr> e : n.extensionAssignments.entrySet()) {
-				ValueExpr expr = e.getValue();
-				if (expr instanceof AggregateOperator) {
-					continue;
-				}
-				if (groupAliasExprByVar.containsKey(e.getKey())
-						&& groupAliasExprByVar.get(e.getKey()).equals(expr)) {
-					continue;
-				}
-				Set<String> deps = freeVars(expr);
-				IrBind bind = new IrBind(conv.renderExpr(expr), e.getKey(), false);
-				if (deps.isEmpty()) {
-					prefixConst.add(bind); // constant bindings first (e.g., SERVICE endpoint)
-				} else {
-					suffixDependent.add(bind); // bindings that depend on other vars go after the patterns
-				}
-			}
-			if (!prefixConst.isEmpty() || !suffixDependent.isEmpty()) {
-				IrBGP combined = new IrBGP(whereBgp.isNewScope());
-				combined.getLines().addAll(prefixConst);
-				if (whereBgp.getLines() != null) {
-					combined.getLines().addAll(whereBgp.getLines());
-				}
-				combined.getLines().addAll(suffixDependent);
-				ir.setWhere(combined);
-			}
-		}
-
 		for (GroupByTerm t : n.groupByTerms) {
 			ir.getGroupBy().add(new IrGroupByElem(t.expr == null ? null : conv.renderExpr(t.expr), t.var));
 		}
@@ -869,8 +824,6 @@ public class TupleExprToIrConverter {
 							if (n.groupByVarNames.contains(ee.getName())) {
 								groupAliases.put(ee.getName(), ee.getExpr());
 							}
-							n.extensionAssignments.putIfAbsent(ee.getName(), ee.getExpr());
-							n.extensionOutputNames.add(ee.getName());
 						}
 						afterGroup = ext.getArg();
 					}
@@ -920,18 +873,11 @@ public class TupleExprToIrConverter {
 				continue;
 			}
 
-			// Keep BIND chains inside WHERE: stop peeling when we hit the first nested Extension, otherwise peel and
-			// remember bindings for reinsertion later.
+			// SELECT-level assignments
 			if (cur instanceof Extension) {
-				if (((Extension) cur).getArg() instanceof Extension
-						&& !extensionChainLeadsToHavingFilter((Extension) cur)) {
-					break;
-				}
 				final Extension ext = (Extension) cur;
 				for (final ExtensionElem ee : ext.getElements()) {
 					n.selectAssignments.put(ee.getName(), ee.getExpr());
-					n.extensionOutputNames.add(ee.getName());
-					n.extensionAssignments.putIfAbsent(ee.getName(), ee.getExpr());
 				}
 				cur = ext.getArg();
 				changed = true;
@@ -954,8 +900,6 @@ public class TupleExprToIrConverter {
 						if (n.groupByVarNames.contains(ee.getName())) {
 							groupAliases.put(ee.getName(), ee.getExpr());
 						}
-						n.extensionAssignments.putIfAbsent(ee.getName(), ee.getExpr());
-						n.extensionOutputNames.add(ee.getName());
 					}
 					afterGroup = ext.getArg();
 				}
@@ -992,63 +936,6 @@ public class TupleExprToIrConverter {
 			}
 		}
 		return true;
-	}
-
-	private static boolean containsExtension(TupleExpr e) {
-		if (e == null) {
-			return false;
-		}
-		class Flag extends AbstractQueryModelVisitor<RuntimeException> {
-			boolean found = false;
-
-			@Override
-			public void meet(Extension node) {
-				found = true;
-			}
-
-			@Override
-			protected void meetNode(QueryModelNode node) {
-				if (!found) {
-					super.meetNode(node);
-				}
-			}
-		}
-		Flag f = new Flag();
-		e.visit(f);
-		return f.found;
-	}
-
-	/**
-	 * Detect Extension nodes only in the current WHERE scope, ignoring nested subselects (Projection nodes) to avoid
-	 * suppressing projection expressions due to bindings inside subqueries.
-	 */
-	private static boolean containsExtensionShallow(TupleExpr e) {
-		if (e == null) {
-			return false;
-		}
-		class Flag extends AbstractQueryModelVisitor<RuntimeException> {
-			boolean found = false;
-
-			@Override
-			public void meet(Extension node) {
-				found = true;
-			}
-
-			@Override
-			public void meet(Projection node) {
-				// Do not descend into subselects; they are rendered separately.
-			}
-
-			@Override
-			protected void meetNode(QueryModelNode node) {
-				if (!found) {
-					super.meetNode(node);
-				}
-			}
-		}
-		Flag f = new Flag();
-		e.visit(f);
-		return f.found;
 	}
 
 	private static void applyAggregateHoisting(final Normalized n) {
@@ -1461,22 +1348,6 @@ public class TupleExprToIrConverter {
 		return name != null && name.startsWith("_anon_having_");
 	}
 
-	private static boolean extensionChainLeadsToHavingFilter(Extension ext) {
-		TupleExpr cur = ext;
-		while (cur instanceof Extension) {
-			cur = ((Extension) cur).getArg();
-		}
-		if (!(cur instanceof Filter)) {
-			return false;
-		}
-		for (String name : freeVars(((Filter) cur).getCondition())) {
-			if (isAnonHavingName(name)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
 	// Render expressions for HAVING with substitution of _anon_having_* variables
 	private String renderExprForHaving(final ValueExpr e, final Normalized n) {
 		return renderExprWithSubstitution(e, n == null ? null : n.selectAssignments);
@@ -1613,7 +1484,6 @@ public class TupleExprToIrConverter {
 	public IrSelect toIRSelect(final TupleExpr tupleExpr) {
 		final Normalized n = normalize(tupleExpr, false);
 		applyAggregateHoisting(n);
-		final boolean whereHasExtensions = containsExtensionShallow(n.where);
 
 		final IrSelect ir = new IrSelect(false);
 		// Canonicalize DISTINCT/REDUCED: if DISTINCT is set, REDUCED is a no-op and removed
@@ -1627,10 +1497,12 @@ public class TupleExprToIrConverter {
 				&& !n.projection.getProjectionElemList().getElements().isEmpty()) {
 			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
 				final String alias = pe.getProjectionAlias().orElse(pe.getName());
-				ExtensionElem src = pe.getSourceExpression();
-				ValueExpr expr = src != null ? src.getExpr() : n.selectAssignments.get(alias);
-				boolean renderExprText = expr != null;
-				ir.getProjection().add(new IrProjectionItem(renderExprText ? renderExpr(expr) : null, alias));
+				final ValueExpr expr = n.selectAssignments.get(alias);
+				if (expr != null) {
+					ir.getProjection().add(new IrProjectionItem(renderExpr(expr), alias));
+				} else {
+					ir.getProjection().add(new IrProjectionItem(null, alias));
+				}
 			}
 		} else if (!n.selectAssignments.isEmpty()) {
 			if (!n.groupByTerms.isEmpty()) {
@@ -1650,60 +1522,6 @@ public class TupleExprToIrConverter {
 		// WHERE as textual-IR (raw)
 		final IRBuilder builder = new IRBuilder();
 		ir.setWhere(builder.build(n.where));
-
-		// Re-insert non-aggregate BIND assignments that were peeled during normalization so they remain visible in
-		// the WHERE clause. Constant bindings go first; bindings that depend on other variables are appended at the
-		// end.
-		// Skip aliases that are already rendered in SELECT or already expressed via GROUP BY (expr AS ?var).
-		if (!n.extensionAssignments.isEmpty() && ir.getWhere() != null) {
-			Set<String> alreadyRendered = new LinkedHashSet<>();
-			ir.getProjection().forEach(p -> {
-				if (p.getExprText() != null && p.getVarName() != null) {
-					alreadyRendered.add(p.getVarName());
-				}
-			});
-
-			Map<String, ValueExpr> groupAliasExprByVar = new LinkedHashMap<>();
-			for (GroupByTerm t : n.groupByTerms) {
-				if (t.expr != null) {
-					groupAliasExprByVar.put(t.var, t.expr);
-				}
-			}
-
-			List<IrNode> prefixConst = new ArrayList<>();
-			List<IrNode> suffixDependent = new ArrayList<>();
-			for (Entry<String, ValueExpr> e : n.extensionAssignments.entrySet()) {
-				ValueExpr expr = e.getValue();
-				if (expr instanceof AggregateOperator) {
-					continue;
-				}
-				if (alreadyRendered.contains(e.getKey())) {
-					continue; // already captured via SELECT expression
-				}
-				if (groupAliasExprByVar.containsKey(e.getKey())
-						&& groupAliasExprByVar.get(e.getKey()).equals(expr)) {
-					continue; // already represented as GROUP BY (expr AS ?var)
-				}
-
-				Set<String> deps = freeVars(expr);
-				IrBind bind = new IrBind(renderExpr(expr), e.getKey(), false);
-				if (deps.isEmpty()) {
-					prefixConst.add(bind);
-				} else {
-					suffixDependent.add(bind);
-				}
-			}
-			if (!prefixConst.isEmpty() || !suffixDependent.isEmpty()) {
-				IrBGP whereBgp = ir.getWhere();
-				IrBGP combined = new IrBGP(whereBgp.isNewScope());
-				combined.getLines().addAll(prefixConst);
-				if (whereBgp.getLines() != null) {
-					combined.getLines().addAll(whereBgp.getLines());
-				}
-				combined.getLines().addAll(suffixDependent);
-				ir.setWhere(combined);
-			}
-		}
 
 		// GROUP BY
 		for (GroupByTerm t : n.groupByTerms) {
@@ -2229,15 +2047,6 @@ public class TupleExprToIrConverter {
 
 	final class IRBuilder extends AbstractQueryModelVisitor<RuntimeException> {
 		private final IrBGP where = new IrBGP(false);
-		private final Map<String, IrInlineTriple> inlineTriples;
-
-		IRBuilder() {
-			this.inlineTriples = new LinkedHashMap<>();
-		}
-
-		IRBuilder(Map<String, IrInlineTriple> shared) {
-			this.inlineTriples = shared;
-		}
 
 		IrBGP build(final TupleExpr t) {
 			if (t == null) {
@@ -2247,10 +2056,6 @@ public class TupleExprToIrConverter {
 			return where;
 		}
 
-		private IRBuilder childBuilder() {
-			return new IRBuilder(inlineTriples);
-		}
-
 		private IrFilter buildFilterFromCondition(final ValueExpr condExpr) {
 			if (condExpr == null) {
 				return new IrFilter((String) null, false);
@@ -2258,7 +2063,7 @@ public class TupleExprToIrConverter {
 			// NOT EXISTS {...}
 			if (condExpr instanceof Not && ((Not) condExpr).getArg() instanceof Exists) {
 				final Exists ex = (Exists) ((Not) condExpr).getArg();
-				IRBuilder inner = childBuilder();
+				IRBuilder inner = new IRBuilder();
 				IrBGP bgp = inner.build(ex.getSubQuery());
 				return new IrFilter(new IrNot(new IrExists(bgp, ex.isVariableScopeChange()), false), false);
 			}
@@ -2266,7 +2071,7 @@ public class TupleExprToIrConverter {
 			if (condExpr instanceof Exists) {
 				final Exists ex = (Exists) condExpr;
 				final TupleExpr sub = ex.getSubQuery();
-				IRBuilder inner = childBuilder();
+				IRBuilder inner = new IRBuilder();
 				IrBGP bgp = inner.build(sub);
 				// If the root of the EXISTS subquery encodes an explicit variable-scope change in the
 				// algebra (e.g., StatementPattern/Join/Filter with "(new scope)"), mark the inner BGP
@@ -2286,18 +2091,6 @@ public class TupleExprToIrConverter {
 			final Var ctx = getContextVarSafe(sp);
 			final IrStatementPattern node = new IrStatementPattern(sp.getSubjectVar(), sp.getPredicateVar(),
 					sp.getObjectVar(), false);
-			if (sp.getSubjectVar() != null) {
-				IrInlineTriple inline = inlineTriples.get(sp.getSubjectVar().getName());
-				if (inline != null) {
-					node.setSubjectOverride(inline);
-				}
-			}
-			if (sp.getObjectVar() != null) {
-				IrInlineTriple inline = inlineTriples.get(sp.getObjectVar().getName());
-				if (inline != null) {
-					node.setObjectOverride(inline);
-				}
-			}
 			if (ctx != null && (ctx.hasValue() || (ctx.getName() != null && !ctx.getName().isEmpty()))) {
 				IrBGP inner = new IrBGP(false);
 				inner.add(node);
@@ -2308,22 +2101,12 @@ public class TupleExprToIrConverter {
 		}
 
 		@Override
-		public void meet(final TripleRef tr) {
-			Var exprVar = tr.getExprVar();
-			if (exprVar != null && exprVar.getName() != null) {
-				inlineTriples.put(exprVar.getName(),
-						new IrInlineTriple(tr.getSubjectVar(), tr.getPredicateVar(), tr.getObjectVar()));
-			}
-			// Do not emit a line; TripleRef only defines an inline RDF-star triple term.
-		}
-
-		@Override
 		public void meet(final Join join) {
 			// Build left/right in isolation so we can respect explicit variable-scope changes
 			// on either side by wrapping that side in its own GroupGraphPattern when needed.
-			IRBuilder left = childBuilder();
+			IRBuilder left = new IRBuilder();
 			IrBGP wl = left.build(join.getLeftArg());
-			IRBuilder right = childBuilder();
+			IRBuilder right = new IRBuilder();
 			IrBGP wr = right.build(join.getRightArg());
 
 			boolean wrapLeft = rootHasExplicitScope(join.getLeftArg());
@@ -2388,9 +2171,9 @@ public class TupleExprToIrConverter {
 		@Override
 		public void meet(final LeftJoin lj) {
 			if (lj.isVariableScopeChange()) {
-				IRBuilder left = childBuilder();
+				IRBuilder left = new IRBuilder();
 				IrBGP wl = left.build(lj.getLeftArg());
-				IRBuilder rightBuilder = childBuilder();
+				IRBuilder rightBuilder = new IRBuilder();
 				IrBGP wr = rightBuilder.build(lj.getRightArg());
 				if (lj.getCondition() != null) {
 					wr.add(buildFilterFromCondition(lj.getCondition()));
@@ -2413,7 +2196,7 @@ public class TupleExprToIrConverter {
 				return;
 			}
 			lj.getLeftArg().visit(this);
-			final IRBuilder rightBuilder = childBuilder();
+			final IRBuilder rightBuilder = new IRBuilder();
 			final IrBGP right = rightBuilder.build(lj.getRightArg());
 			if (lj.getCondition() != null) {
 				right.add(buildFilterFromCondition(lj.getCondition()));
@@ -2471,7 +2254,7 @@ public class TupleExprToIrConverter {
 			// the algebra. This ensures shapes like "FILTER EXISTS { { ... } }" are rendered
 			// with the inner braces as expected when a nested filter introduces a new scope.
 			if (f.isVariableScopeChange()) {
-				IRBuilder inner = childBuilder();
+				IRBuilder inner = new IRBuilder();
 				IrBGP innerWhere = inner.build(arg);
 				IrFilter irF = buildFilterFromCondition(f.getCondition());
 				innerWhere.add(irF);
@@ -2497,7 +2280,7 @@ public class TupleExprToIrConverter {
 			if (leftIsU && rightIsU) {
 				final IrUnion irU = new IrUnion(u.isVariableScopeChange());
 				irU.setNewScope(u.isVariableScopeChange());
-				IRBuilder left = childBuilder();
+				IRBuilder left = new IRBuilder();
 				IrBGP wl = left.build(u.getLeftArg());
 				if (rootHasExplicitScope(u.getLeftArg()) && !wl.getLines().isEmpty()) {
 					IrBGP sub = new IrBGP(true);
@@ -2508,7 +2291,7 @@ public class TupleExprToIrConverter {
 				} else {
 					irU.addBranch(wl);
 				}
-				IRBuilder right = childBuilder();
+				IRBuilder right = new IRBuilder();
 				IrBGP wr = right.build(u.getRightArg());
 				if (rootHasExplicitScope(u.getRightArg()) && !wr.getLines().isEmpty()) {
 					IrBGP sub = new IrBGP(false);
@@ -2530,7 +2313,7 @@ public class TupleExprToIrConverter {
 			final IrUnion irU = new IrUnion(u.isVariableScopeChange());
 			irU.setNewScope(u.isVariableScopeChange());
 			for (TupleExpr b : branches) {
-				IRBuilder bld = childBuilder();
+				IRBuilder bld = new IRBuilder();
 				IrBGP wb = bld.build(b);
 				if (rootHasExplicitScope(b) && !wb.getLines().isEmpty()) {
 					IrBGP sub = new IrBGP(true);
@@ -2550,7 +2333,7 @@ public class TupleExprToIrConverter {
 
 		@Override
 		public void meet(final Service svc) {
-			IRBuilder inner = childBuilder();
+			IRBuilder inner = new IRBuilder();
 			IrBGP w = inner.build(svc.getArg());
 			// No conversion-time fusion; rely on pipeline transforms to normalize SERVICE bodies
 			IrService irSvc = new IrService(renderVarOrValue(svc.getServiceRef()), svc.isSilent(), w, false);
@@ -2633,9 +2416,9 @@ public class TupleExprToIrConverter {
 		public void meet(final Difference diff) {
 			// Build left and right in isolation so we can respect variable-scope changes by
 			// grouping them as a unit when required.
-			IRBuilder left = childBuilder();
+			IRBuilder left = new IRBuilder();
 			IrBGP leftWhere = left.build(diff.getLeftArg());
-			IRBuilder right = childBuilder();
+			IRBuilder right = new IRBuilder();
 			IrBGP rightWhere = right.build(diff.getRightArg());
 			if (diff.isVariableScopeChange()) {
 				IrBGP group = new IrBGP(false);
@@ -2730,8 +2513,6 @@ public class TupleExprToIrConverter {
 	private static final class Normalized {
 		final List<OrderElem> orderBy = new ArrayList<>();
 		final LinkedHashMap<String, ValueExpr> selectAssignments = new LinkedHashMap<>(); // alias -> expr
-		final LinkedHashMap<String, ValueExpr> extensionAssignments = new LinkedHashMap<>(); // alias -> expr from BIND
-		final Set<String> extensionOutputNames = new LinkedHashSet<>(); // vars bound via Extension/BIND in WHERE
 		final List<GroupByTerm> groupByTerms = new ArrayList<>(); // explicit terms (var or (expr AS ?var))
 		final List<String> syntheticProjectVars = new ArrayList<>(); // synthesized bare SELECT vars
 		final List<ValueExpr> havingConditions = new ArrayList<>();

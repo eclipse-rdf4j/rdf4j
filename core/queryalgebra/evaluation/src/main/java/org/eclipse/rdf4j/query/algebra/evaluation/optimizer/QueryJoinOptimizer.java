@@ -237,6 +237,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					orderedJoinArgs = reorderJoinArgs(orderedJoinArgs);
 				}
 
+//				if (!priorityArgs.isEmpty()) {
+//					priorityArgs = new ArrayList<>(reorderJoinArgs(new ArrayDeque<>(priorityArgs)));
+//				}
+
 				// Build new join hierarchy
 				TupleExpr priorityJoins = null;
 				if (!priorityArgs.isEmpty()) {
@@ -332,12 +336,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
-		/**
-		 * This can be used by the upcoming sketch based estimator to reorder joins based on estimated join cost.
-		 *
-		 * @param orderedJoinArgs
-		 * @return
-		 */
 		private Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs) {
 			// Copy input into a mutable list
 			List<TupleExpr> tupleExprs = new ArrayList<>(orderedJoinArgs);
@@ -362,15 +360,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			};
 
 			while (!tupleExprs.isEmpty()) {
-				if (ret.isEmpty()) {
-					TupleExpr bestStart = selectBestStartingExpr(tupleExprs, getCard);
-					if (bestStart != null) {
-						tupleExprs.remove(bestStart);
-						ret.addLast(bestStart);
-						continue;
-					}
-				}
-
 				// If ret is empty or next isn’t a StatementPattern, just drain in original order
 				if (ret.isEmpty() || !(tupleExprs.get(0) instanceof StatementPattern)) {
 					ret.addLast(tupleExprs.remove(0));
@@ -410,59 +399,46 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return ret;
 		}
 
-		private TupleExpr selectBestStartingExpr(List<TupleExpr> tupleExprs,
-				BiFunction<TupleExpr, TupleExpr, Double> getCard) {
-			List<TupleExpr> candidates = new ArrayList<>();
-			for (TupleExpr tupleExpr : tupleExprs) {
-				if (statementPatternWithMinimumOneConstant(tupleExpr)) {
-					candidates.add(tupleExpr);
-				}
-			}
-
-			if (candidates.size() < 2) {
-				// we don't have multiple candidates, so there is nothing to compare against
-				return null;
-			}
-
-			Map<TupleExpr, Double> singleCard = new HashMap<>(candidates.size());
-			for (TupleExpr candidate : candidates) {
-				singleCard.put(candidate, statistics.getCardinality(candidate));
-			}
-
-			List<TupleExpr> primary = new ArrayList<>(candidates);
-			if (primary.size() > FULL_PAIRWISE_START_LIMIT) {
-				primary.sort(Comparator.comparingDouble(singleCard::get));
-				primary = new ArrayList<>(primary.subList(0, Math.min(3, primary.size())));
-			}
-
-			TupleExpr bestA = null;
-			TupleExpr bestB = null;
-			double bestCost = Double.MAX_VALUE;
-
-			for (TupleExpr a : primary) {
-				for (TupleExpr b : candidates) {
-					if (a == b) {
-						continue;
-					}
-
-					double cost = getCard.apply(a, b);
-					if (cost < bestCost) {
-						bestCost = cost;
-						bestA = a;
-						bestB = b;
-					}
-				}
-			}
-
-			if (bestA == null) {
-				return null;
-			}
-
-			double cardA = singleCard.get(bestA);
-			double cardB = singleCard.get(bestB);
-
-			return cardA <= cardB ? bestA : bestB;
-		}
+//		private Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs) {
+//			ArrayList<TupleExpr> tupleExprs = new ArrayList<>(orderedJoinArgs);
+//			Deque<TupleExpr> ret = new ArrayDeque<>();
+//
+//			while (!tupleExprs.isEmpty()) {
+//				if (ret.isEmpty()) {
+//					ret.addLast(tupleExprs.remove(0));
+//					continue;
+//				}
+//
+//				if (!(tupleExprs.get(0) instanceof StatementPattern)) {
+//					ret.addLast(tupleExprs.remove(0));
+//					continue;
+//				}
+//
+//				int index = 0;
+//				double currentMin = Double.MAX_VALUE;
+//
+//				for (int i = 0; i < tupleExprs.size(); i++) {
+//					TupleExpr tupleExpr = tupleExprs.get(i);
+//					if (!(tupleExpr instanceof StatementPattern)) {
+//						continue;
+//					}
+//					for (TupleExpr expr : ret) {
+//						if (!(expr instanceof StatementPattern)) {
+//							continue;
+//						}
+//						double cardinality = statistics.getCardinality(new Join(expr, tupleExpr));
+//						if (cardinality < currentMin) {
+//							currentMin = cardinality;
+//							index = i;
+//						}
+//					}
+//				}
+//
+//				ret.addLast(tupleExprs.remove(index));
+//			}
+//
+//			return ret;
+//		}
 
 		private void optimizeInNewScope(List<TupleExpr> subSelects) {
 			for (TupleExpr subSelect : subSelects) {

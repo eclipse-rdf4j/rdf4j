@@ -113,8 +113,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		objVar = replaceValueWithNewValue(objVar, tripleSource.getValueFactory());
 		conVar = replaceValueWithNewValue(conVar, tripleSource.getValueFactory());
 
-		this.statementPattern = new StatementPattern(statementPattern.getScope(), subjVar, predVar, objVar, conVar);
-		this.statementPattern.setVariableScopeChange(statementPattern.isVariableScopeChange());
+		this.statementPattern = new StatementPattern(subjVar, predVar, objVar, conVar);
 
 		// First create the getters before removing duplicate vars since we need the getters when creating
 		// JoinStatementWithBindingSetIterator. If there are duplicate vars, for instance ?v1 as both subject and

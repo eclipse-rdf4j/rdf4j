@@ -731,12 +731,14 @@ public class BaseTransform {
 		Set<String> aNames = new HashSet<>();
 		Set<String> bNames = new HashSet<>();
 		for (Var v : aVars) {
-			if (isAnonPathVar(v) || isAnonPathInverseVar(v)) {
+			if (v != null && !v.hasValue() && v.getName() != null
+					&& (v.getName().startsWith(ANON_PATH_PREFIX) || v.getName().startsWith(ANON_PATH_INVERSE_PREFIX))) {
 				aNames.add(v.getName());
 			}
 		}
 		for (Var v : bVars) {
-			if (isAnonPathVar(v) || isAnonPathInverseVar(v)) {
+			if (v != null && !v.hasValue() && v.getName() != null
+					&& (v.getName().startsWith(ANON_PATH_PREFIX) || v.getName().startsWith(ANON_PATH_INVERSE_PREFIX))) {
 				bNames.add(v.getName());
 			}
 		}
