@@ -43,6 +43,7 @@ final class QueryPlanExecutedWorkComparator {
 	private static final BigDecimal FILTER_REJECT_RATIO_WEIGHT = new BigDecimal("5");
 	private static final BigDecimal NANOS_PER_MILLI = new BigDecimal("1000000");
 	private static final int TOP_DELTA_LIMIT = 3;
+	private static final String[] EXECUTED_LEVEL_ALIASES = { "telemetry", "executed" };
 
 	private QueryPlanExecutedWorkComparator() {
 	}
@@ -118,6 +119,9 @@ final class QueryPlanExecutedWorkComparator {
 		Map<String, BigDecimal> operatorWorkUnits = parseOperatorWorkUnits(metrics.get("operatorWorkByTypeAlgorithm"));
 		if (operatorWorkUnits.isEmpty()) {
 			operatorWorkUnits = parseSimpleNumberMap(metrics.get("operatorWorkTopContributors"));
+			if (operatorWorkUnits.isEmpty()) {
+				operatorWorkUnits = parseSimpleNumberMap(metrics.get("operatorWorkTopContributors"), ':');
+			}
 		}
 		return PlanVector.available(modeledWorkUnits, modeledInputRowsSum, modeledOutputRowsSum, joinInputRows,
 				joinOutputRows, modeledSelfTimeActualSum, estimateActualQErrorP95, joinEstimateActualQErrorP95,
@@ -141,15 +145,23 @@ final class QueryPlanExecutedWorkComparator {
 			return Collections.emptyMap();
 		}
 
-		QueryPlanExplanation executed = snapshot.getExplanations().get("telemetry");
-		if (executed != null && executed.getDebugMetrics() != null) {
-			return executed.getDebugMetrics();
+		for (String levelAlias : EXECUTED_LEVEL_ALIASES) {
+			QueryPlanExplanation explanation = snapshot.getExplanations().get(levelAlias);
+			if (explanation != null && explanation.getDebugMetrics() != null
+					&& !explanation.getDebugMetrics().isEmpty()) {
+				return explanation.getDebugMetrics();
+			}
 		}
 
 		for (QueryPlanExplanation candidate : snapshot.getExplanations().values()) {
 			String level = candidate == null ? null : candidate.getLevel();
-			if (level != null && "telemetry".equalsIgnoreCase(level) && candidate.getDebugMetrics() != null) {
-				return candidate.getDebugMetrics();
+			if (level == null || candidate.getDebugMetrics() == null || candidate.getDebugMetrics().isEmpty()) {
+				continue;
+			}
+			for (String levelAlias : EXECUTED_LEVEL_ALIASES) {
+				if (levelAlias.equalsIgnoreCase(level)) {
+					return candidate.getDebugMetrics();
+				}
 			}
 		}
 
@@ -353,6 +365,10 @@ final class QueryPlanExecutedWorkComparator {
 	}
 
 	private static Map<String, BigDecimal> parseSimpleNumberMap(String raw) {
+		return parseSimpleNumberMap(raw, '=');
+	}
+
+	private static Map<String, BigDecimal> parseSimpleNumberMap(String raw, char delimiter) {
 		if (raw == null || raw.isBlank() || "<none>".equals(raw)) {
 			return Collections.emptyMap();
 		}
@@ -363,12 +379,12 @@ final class QueryPlanExecutedWorkComparator {
 			if (trimmed.isEmpty()) {
 				continue;
 			}
-			int equalsIndex = trimmed.indexOf('=');
-			if (equalsIndex <= 0 || equalsIndex == trimmed.length() - 1) {
+			int delimiterIndex = trimmed.indexOf(delimiter);
+			if (delimiterIndex <= 0 || delimiterIndex == trimmed.length() - 1) {
 				continue;
 			}
-			String key = trimmed.substring(0, equalsIndex);
-			BigDecimal value = parseDecimal(trimmed.substring(equalsIndex + 1));
+			String key = trimmed.substring(0, delimiterIndex);
+			BigDecimal value = parseDecimal(trimmed.substring(delimiterIndex + 1));
 			if (value != null) {
 				parsed.put(key, value);
 			}

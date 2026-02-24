@@ -435,8 +435,8 @@ final class QueryPlanSnapshotComparator {
 				explanationDebugMetric(left, "optimized", "joinAlgorithmMultisetSignatureSha256"),
 				explanationDebugMetric(right, "optimized", "joinAlgorithmMultisetSignatureSha256"));
 
-		LevelDiff optimizedDiff = explanationDiffs.get("optimized");
-		LevelDiff executedDiff = explanationDiffs.get("telemetry");
+		LevelDiff optimizedDiff = levelDiff(explanationDiffs, "optimized");
+		LevelDiff executedDiff = firstLevelDiff(explanationDiffs, "telemetry", "executed");
 		String optimizedStructure = optimizedDiff == null ? "unknown" : optimizedDiff.structure;
 		String optimizedEstimates = optimizedDiff == null ? "unknown" : optimizedDiff.estimates;
 		String executedStructure = executedDiff == null ? "unknown" : executedDiff.structure;
@@ -481,6 +481,34 @@ final class QueryPlanSnapshotComparator {
 				+ ";optimizedJoinAlgorithmSignature=" + optimizedJoinAlgorithmSignature
 				+ ";executedStructure=" + executedStructure;
 		return new PlanDifferenceDiagnosis(likelyCause, evidence);
+	}
+
+	private static LevelDiff firstLevelDiff(Map<String, LevelDiff> explanationDiffs, String... levels) {
+		for (String level : levels) {
+			LevelDiff diff = levelDiff(explanationDiffs, level);
+			if (diff != null) {
+				return diff;
+			}
+		}
+		return null;
+	}
+
+	private static LevelDiff levelDiff(Map<String, LevelDiff> explanationDiffs, String level) {
+		if (explanationDiffs == null || level == null) {
+			return null;
+		}
+
+		LevelDiff directMatch = explanationDiffs.get(level);
+		if (directMatch != null) {
+			return directMatch;
+		}
+
+		for (Map.Entry<String, LevelDiff> entry : explanationDiffs.entrySet()) {
+			if (level.equalsIgnoreCase(entry.getKey())) {
+				return entry.getValue();
+			}
+		}
+		return null;
 	}
 
 	private static SemanticDiff semanticDiff(String leftJson, String rightJson,
