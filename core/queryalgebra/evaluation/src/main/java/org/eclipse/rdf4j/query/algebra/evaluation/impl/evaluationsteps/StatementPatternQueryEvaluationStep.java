@@ -787,6 +787,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		private final CloseableIteration<? extends Statement> iteration;
 		private final Predicate<Statement> filter;
+		private long locallyMatchedRows;
+		private long locallyFilteredRows;
 
 		private MetricsReportingFilterIteration(CloseableIteration<? extends Statement> iteration,
 				Predicate<Statement> filter) {
@@ -797,7 +799,13 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		@Override
 		protected boolean accept(Statement object) throws QueryEvaluationException {
-			return filter.test(object);
+			boolean accepted = filter.test(object);
+			if (accepted) {
+				locallyMatchedRows++;
+			} else {
+				locallyFilteredRows++;
+			}
+			return accepted;
 		}
 
 		@Override
@@ -814,19 +822,40 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		@Override
 		public long getSourceRowsScannedActual() {
 			IndexReportingIterator metrics = indexReporter();
-			return metrics == null ? -1 : metrics.getSourceRowsScannedActual();
+			if (metrics != null) {
+				long sourceRowsScannedActual = metrics.getSourceRowsScannedActual();
+				if (sourceRowsScannedActual >= 0) {
+					return sourceRowsScannedActual;
+				}
+			}
+			long locallySeenRows = locallyMatchedRows + locallyFilteredRows;
+			return locallySeenRows > 0 ? locallySeenRows : -1;
 		}
 
 		@Override
 		public long getSourceRowsMatchedActual() {
 			IndexReportingIterator metrics = indexReporter();
-			return metrics == null ? -1 : metrics.getSourceRowsMatchedActual();
+			if (metrics != null) {
+				long sourceRowsMatchedActual = metrics.getSourceRowsMatchedActual();
+				if (sourceRowsMatchedActual >= 0) {
+					return Math.max(0L, sourceRowsMatchedActual - locallyFilteredRows);
+				}
+			}
+			long locallySeenRows = locallyMatchedRows + locallyFilteredRows;
+			return locallySeenRows > 0 ? locallyMatchedRows : -1;
 		}
 
 		@Override
 		public long getSourceRowsFilteredActual() {
 			IndexReportingIterator metrics = indexReporter();
-			return metrics == null ? -1 : metrics.getSourceRowsFilteredActual();
+			if (metrics != null) {
+				long sourceRowsFilteredActual = metrics.getSourceRowsFilteredActual();
+				if (sourceRowsFilteredActual >= 0) {
+					return sourceRowsFilteredActual + locallyFilteredRows;
+				}
+			}
+			long locallySeenRows = locallyMatchedRows + locallyFilteredRows;
+			return locallySeenRows > 0 ? locallyFilteredRows : -1;
 		}
 
 		private IndexReportingIterator indexReporter() {

@@ -92,6 +92,30 @@ class StatementPatternQueryEvaluationStepTest {
 		}
 	}
 
+	@Test
+	void wrappedFilterIterationReportsLocalFilterTelemetry() {
+		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
+		FilterIndexReportingTripleSource tripleSource = new FilterIndexReportingTripleSource();
+		StatementPattern statementPattern = new StatementPattern(new Var("v"), new Var("p"), new Var("v"));
+		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
+				statementPattern,
+				context,
+				tripleSource);
+
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(context.createBindingSet())) {
+			assertThat(iteration).isInstanceOf(IndexReportingIterator.class);
+			assertThat(iteration.hasNext()).isTrue();
+			BindingSet converted = iteration.next();
+			assertThat(converted.getValue("v")).isEqualTo(tripleSource.acceptedValue);
+			assertThat(iteration.hasNext()).isFalse();
+
+			IndexReportingIterator metrics = (IndexReportingIterator) iteration;
+			assertThat(metrics.getSourceRowsScannedActual()).isEqualTo(2);
+			assertThat(metrics.getSourceRowsMatchedActual()).isEqualTo(1);
+			assertThat(metrics.getSourceRowsFilteredActual()).isEqualTo(1);
+		}
+	}
+
 	private static final class InstrumentedQueryEvaluationContext implements QueryEvaluationContext {
 
 		private final AtomicInteger bindingChecks = new AtomicInteger();
@@ -177,6 +201,33 @@ class StatementPatternQueryEvaluationStepTest {
 			return new UnionIteration<>(
 					new TestIndexReportingStatementIteration(List.of(firstStatement), "spoc", 6, 4, 2),
 					new TestIndexReportingStatementIteration(List.of(secondStatement), "spoc", 4, 3, 1));
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return valueFactory;
+		}
+	}
+
+	private static final class FilterIndexReportingTripleSource implements TripleSource {
+
+		private final ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		private final IRI acceptedValue = valueFactory.createIRI("urn:subject-object-equal");
+		private final Statement acceptedStatement = valueFactory.createStatement(
+				acceptedValue,
+				valueFactory.createIRI("urn:pred"),
+				acceptedValue);
+		private final Statement rejectedStatement = valueFactory.createStatement(
+				valueFactory.createIRI("urn:rejected-subj"),
+				valueFactory.createIRI("urn:pred"),
+				valueFactory.createIRI("urn:rejected-obj"));
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) throws QueryEvaluationException {
+			return new TestIndexReportingStatementIteration(
+					List.of(acceptedStatement, rejectedStatement),
+					"spoc", 2, 2, 0);
 		}
 
 		@Override

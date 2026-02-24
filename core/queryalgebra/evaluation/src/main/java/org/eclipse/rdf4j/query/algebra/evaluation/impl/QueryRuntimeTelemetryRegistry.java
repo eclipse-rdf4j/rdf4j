@@ -34,6 +34,8 @@ public final class QueryRuntimeTelemetryRegistry {
 	private static final int MAX_PATTERN_KEYS = 1024;
 	private static final int EVICTION_CHECK_INTERVAL = 512;
 	private static final ConcurrentHashMap<String, TelemetryAggregate> BY_PATTERN_KEY = new ConcurrentHashMap<>();
+	// Intentionally best-effort. MAX_PATTERN_KEYS is a soft ceiling, so occasional delayed checks are acceptable.
+	// Keeping this as a plain counter avoids adding extra contention to every telemetry record() call.
 	private static int EVICTION_CHECK_COUNTER = 0;
 	private static final AtomicBoolean EVICTION_IN_PROGRESS = new AtomicBoolean();
 
@@ -189,6 +191,7 @@ public final class QueryRuntimeTelemetryRegistry {
 	}
 
 	private static boolean shouldRunEvictionCheck() {
+		// Non-atomic increment is intentional: checks are sampling-based and eviction remains eventual.
 		return ++EVICTION_CHECK_COUNTER > EVICTION_CHECK_INTERVAL;
 	}
 
