@@ -72,18 +72,6 @@ class LmdbStoreConfigTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(booleans = { true, false })
-	void testThatLmdbStoreConfigParseAndExportPageCardinalityEstimator(final boolean pageCardinalityEstimator) {
-		testParseAndExport(
-				LmdbStoreSchema.PAGE_CARDINALITY_ESTIMATOR,
-				Values.literal(pageCardinalityEstimator),
-				LmdbStoreConfig::getPageCardinalityEstimator,
-				pageCardinalityEstimator,
-				!pageCardinalityEstimator
-		);
-	}
-
-	@ParameterizedTest
 	@ValueSource(ints = { 1, 205454, 0, -1231 })
 	void testThatLmdbStoreConfigParseAndExportValueCacheSize(final int valueCacheSize) {
 		testParseAndExport(

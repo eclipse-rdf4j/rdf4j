@@ -77,7 +77,6 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private boolean pageCardinalityEstimator = true;
 
 	private long valueEvictionInterval = Duration.ofSeconds(60).toMillis();
-	private boolean pageCardinalityEstimator = true;
 
 	/*--------------*
 	 * Constructors *
