@@ -991,27 +991,36 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		if (prepared == null || !expr.isRuntimeTelemetryEnabled()) {
 			return prepared;
 		}
-		return bindings -> {
-			long started = System.nanoTime();
-			incrementLongMetric(expr, TelemetryMetricNames.EXPR_EVAL_COUNT_ACTUAL);
-			try {
-				Value value = prepared.evaluate(bindings);
-				if (value == null) {
-					incrementLongMetric(expr, TelemetryMetricNames.EXPR_NULL_COUNT_ACTUAL);
-				} else {
-					QueryEvaluationUtility.Result ebv = QueryEvaluationUtility.getEffectiveBooleanValue(value);
-					if (ebv == QueryEvaluationUtility.Result._true) {
-						incrementLongMetric(expr, TelemetryMetricNames.EXPR_TRUE_COUNT_ACTUAL);
-					} else if (ebv == QueryEvaluationUtility.Result._false) {
-						incrementLongMetric(expr, TelemetryMetricNames.EXPR_FALSE_COUNT_ACTUAL);
+		return new QueryValueEvaluationStep() {
+			@Override
+			public Value evaluate(BindingSet bindings) {
+				long started = System.nanoTime();
+				incrementLongMetric(expr, TelemetryMetricNames.EXPR_EVAL_COUNT_ACTUAL);
+				try {
+					Value value = prepared.evaluate(bindings);
+					if (value == null) {
+						incrementLongMetric(expr, TelemetryMetricNames.EXPR_NULL_COUNT_ACTUAL);
+					} else {
+						QueryEvaluationUtility.Result ebv = QueryEvaluationUtility.getEffectiveBooleanValue(value);
+						if (ebv == QueryEvaluationUtility.Result._true) {
+							incrementLongMetric(expr, TelemetryMetricNames.EXPR_TRUE_COUNT_ACTUAL);
+						} else if (ebv == QueryEvaluationUtility.Result._false) {
+							incrementLongMetric(expr, TelemetryMetricNames.EXPR_FALSE_COUNT_ACTUAL);
+						}
 					}
+					return value;
+				} catch (RuntimeException e) {
+					incrementLongMetric(expr, TelemetryMetricNames.EXPR_ERROR_COUNT_ACTUAL);
+					throw e;
+				} finally {
+					addDoubleMetric(expr, TelemetryMetricNames.EXPR_EVAL_TIME_NANOS_ACTUAL,
+							System.nanoTime() - started);
 				}
-				return value;
-			} catch (RuntimeException e) {
-				incrementLongMetric(expr, TelemetryMetricNames.EXPR_ERROR_COUNT_ACTUAL);
-				throw e;
-			} finally {
-				addDoubleMetric(expr, TelemetryMetricNames.EXPR_EVAL_TIME_NANOS_ACTUAL, System.nanoTime() - started);
+			}
+
+			@Override
+			public boolean isConstant() {
+				return prepared.isConstant();
 			}
 		};
 	}
