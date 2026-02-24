@@ -378,6 +378,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					continue;
 				}
 
+				if(tupleExprs.size() == 1) {
+					ret.add(tupleExprs.remove(0));
+					continue;
+				}
+
 				// Find the tupleExpr in tupleExprs whose join with any in ret has minimal cardinality
 				TupleExpr bestCandidate = null;
 				double bestCost = Double.MAX_VALUE;
