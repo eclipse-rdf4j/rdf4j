@@ -96,4 +96,21 @@ class SketchBasedJoinEstimatorConfigTest {
 		// No churn observed, so estimator should not be considered stale
 		assertFalse(est.isStale(0.01));
 	}
+
+	@Test
+	void sketchKMultiplierControlsDerivedK() throws Exception {
+		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, SketchBasedJoinEstimator.Config.defaults()
+				.withNominalEntries(20)
+				.withoutDoubleArrayBuckets()
+				.withSketchK(-1)
+				.withSketchKMultiplier(3));
+
+		var field = est.getClass().getDeclaredField("bufA");
+		field.setAccessible(true);
+		Object bufA = field.get(est);
+		var kField = bufA.getClass().getDeclaredField("k");
+		kField.setAccessible(true);
+
+		assertEquals(60, kField.getInt(bufA));
+	}
 }

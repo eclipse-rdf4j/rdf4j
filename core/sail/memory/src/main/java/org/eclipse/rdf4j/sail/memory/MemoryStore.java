@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.memory;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -61,6 +62,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	protected static final String DATA_FILE_NAME = "memorystore.data";
 
 	protected static final String SYNC_FILE_NAME = "memorystore.sync";
+	protected static final String JOIN_ESTIMATOR_FILE_NAME = "join-estimator.rjes";
 
 	/*-----------*
 	 * Variables *
@@ -258,13 +260,17 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	protected void initializeInternal() throws SailException {
 		logger.debug("Initializing MemoryStore...");
 
-		this.store = new MemorySailStore(debugEnabled());
+		this.store = new MemorySailStore(debugEnabled(), 3);
 
 		if (persist) {
 			File dataDir = getDataDir();
 			DirectoryLockManager locker = new DirectoryLockManager(dataDir);
 			dataFile = new File(dataDir, DATA_FILE_NAME);
 			syncFile = new File(dataDir, SYNC_FILE_NAME);
+			File estimatorFile = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME);
+			Path estimatorPath = estimatorFile.toPath();
+			((MemorySailStore) store).getSketchBasedJoinEstimator()
+					.configurePersistence(estimatorPath, estimatorFile.exists());
 
 			if (dataFile.exists()) {
 				logger.debug("Reading data from {}...", dataFile);
@@ -287,12 +293,14 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 					SailSink explicit = store.getExplicitSailSource().sink(IsolationLevels.NONE);
 					SailSink inferred = store.getInferredSailSource().sink(IsolationLevels.NONE);
 					try {
+						((MemorySailStore) store).setSketchEstimatorUpdatesEnabled(!estimatorFile.exists());
 						new FileIO((MemValueFactory) store.getValueFactory()).read(dataFile, explicit, inferred);
 						logger.debug("Data file read successfully");
 					} catch (IOException e) {
 						logger.error("Failed to read data file", e);
 						throw new SailException(e);
 					} finally {
+						((MemorySailStore) store).setSketchEstimatorUpdatesEnabled(true);
 						explicit.prepare();
 						explicit.flush();
 						explicit.close();
@@ -457,6 +465,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 						new FileIO((MemValueFactory) store.getValueFactory()).write(explicit, inferred, syncFile,
 								dataFile);
 					}
+					((MemorySailStore) store).getSketchBasedJoinEstimator().persistIfDirty();
 					contentsChanged = false;
 					logger.debug("Data synced to file");
 				} catch (IOException e) {

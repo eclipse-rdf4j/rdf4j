@@ -141,6 +141,20 @@ class SketchBasedJoinEstimatorSysPropsTest {
 		assertEquals(42, getInt(bufA, "buckets"));
 	}
 
+	@Test
+	void sketchKMultiplierAppliedWhenSketchKNotSet() throws Exception {
+		setProp("nominalEntries", "20");
+		setProp("doubleArrayBuckets", "true");
+		setProp("sketchKMultiplier", "5");
+
+		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store,
+				SketchBasedJoinEstimator.Config.defaults().withNominalEntries(10).withSketchK(-1));
+
+		Object bufA = getField(est, "bufA");
+		assertEquals(40, getInt(bufA, "buckets"));
+		assertEquals(200, getInt(bufA, "k"));
+	}
+
 	// --- helpers ---
 	private void setProp(String shortName, String value) {
 		String k = PREFIX + shortName;

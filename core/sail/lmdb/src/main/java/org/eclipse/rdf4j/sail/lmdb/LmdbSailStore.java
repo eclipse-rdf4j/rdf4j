@@ -15,6 +15,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -22,6 +24,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
@@ -62,6 +66,11 @@ import org.slf4j.LoggerFactory;
 class LmdbSailStore implements SailStore {
 
 	final Logger logger = LoggerFactory.getLogger(LmdbSailStore.class);
+	private static final String JOIN_ESTIMATOR_FILE_NAME = "join-estimator.rjes";
+	private static final Runtime RUNTIME = Runtime.getRuntime();
+	private static final long MAX_MEMORY = RUNTIME.maxMemory();
+	private static final long LOW_MEM_ABS = 64L * 1024L * 1024L;
+	private static final double LOW_MEM_RATIO = 1.0 / 8.0;
 
 	private final TripleStore tripleStore;
 
@@ -83,6 +92,14 @@ class LmdbSailStore implements SailStore {
 
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator = new SketchBasedJoinEstimator(this,
 			SketchBasedJoinEstimator.suggestNominalEntries(), Integer.MAX_VALUE, 2);
+	private final ScheduledExecutorService estimatorPersistExec = Executors.newSingleThreadScheduledExecutor(r -> {
+		Thread t = new Thread(r, "LmdbJoinEstimator-Persist");
+		t.setDaemon(true);
+		return t;
+	});
+	private final AtomicBoolean persistScheduled = new AtomicBoolean(false);
+	private volatile ScheduledFuture<?> persistFuture;
+	private volatile long estimatorPersistDelayMillis = 1000L;
 
 	/**
 	 * A fast non-blocking circular buffer backed by an array.
@@ -213,7 +230,12 @@ class LmdbSailStore implements SailStore {
 			tripleStore = new TripleStore(new File(dataDir, "triples"), config, valueStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
 			initialized = true;
-			sketchBasedJoinEstimator.rebuildOnceSlow();
+			Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
+			boolean snapshotExists = Files.exists(estimatorPath);
+			sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
+			if (!snapshotExists) {
+				sketchBasedJoinEstimator.rebuildOnceSlow();
+			}
 			sketchBasedJoinEstimator.startBackgroundRefresh(3);
 		} finally {
 			if (!initialized) {
@@ -225,6 +247,18 @@ class LmdbSailStore implements SailStore {
 	@Override
 	public ValueFactory getValueFactory() {
 		return valueStore;
+	}
+
+	SketchBasedJoinEstimator getSketchBasedJoinEstimator() {
+		return sketchBasedJoinEstimator;
+	}
+
+	private static boolean isLowMemory() {
+		long total = RUNTIME.totalMemory();
+		long free = RUNTIME.freeMemory();
+		long used = total - free;
+		long freeToAllocate = MAX_MEMORY - used;
+		return freeToAllocate < LOW_MEM_ABS || (freeToAllocate + 0.0) / (MAX_MEMORY + 0.0) < LOW_MEM_RATIO;
 	}
 
 	void rollback() throws SailException {
@@ -258,6 +292,10 @@ class LmdbSailStore implements SailStore {
 	public void close() throws SailException {
 		try {
 			try {
+				if (persistFuture != null) {
+					persistFuture.cancel(false);
+				}
+				sketchBasedJoinEstimator.persistIfDirty();
 				sketchBasedJoinEstimator.stop();
 			} finally {
 				try {
@@ -284,6 +322,7 @@ class LmdbSailStore implements SailStore {
 										throw new InterruptedSailException(e);
 									}
 								} finally {
+									estimatorPersistExec.shutdownNow();
 									tripleStore.close();
 								}
 							}
@@ -511,6 +550,18 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		private void scheduleEstimatorPersist() {
+			if (persistScheduled.compareAndSet(false, true)) {
+				persistFuture = estimatorPersistExec.schedule(() -> {
+					try {
+						sketchBasedJoinEstimator.persistIfDirty();
+					} finally {
+						persistScheduled.set(false);
+					}
+				}, estimatorPersistDelayMillis, TimeUnit.MILLISECONDS);
+			}
+		}
+
 		@Override
 		public void close() {
 			// do nothing
@@ -578,6 +629,10 @@ class LmdbSailStore implements SailStore {
 						handleRemovedIdsInValueStore();
 						valueStore.commit();
 						applyEstimatorUpdates();
+						scheduleEstimatorPersist();
+						if (isLowMemory()) {
+							sketchBasedJoinEstimator.unload();
+						}
 						// do not set flag to false until _after_ commit is successfully completed.
 						storeTxnStarted.set(false);
 					}

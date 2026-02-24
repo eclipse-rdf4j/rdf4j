@@ -108,6 +108,7 @@ class MemorySailStore implements SailStore {
 	private final MemStatementList statements = new MemStatementList(256);
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator = new SketchBasedJoinEstimator(this,
 			SketchBasedJoinEstimator.suggestNominalEntries(), 10000, 1);
+	private volatile boolean sketchEstimatorUpdatesEnabled = true;
 
 	/**
 	 * This gets set to `true` when we add our first inferred statement. If the value is `false` we guarantee that there
@@ -159,10 +160,19 @@ class MemorySailStore implements SailStore {
 
 	public MemorySailStore(boolean debug, int stalenessThresholdOfSketchBasedJoinEstimator) {
 		snapshotMonitor = new SnapshotMonitor(debug);
+		sketchBasedJoinEstimator.setLowMemorySupplier(() -> memoryIsLow(getFreeToAllocateMemory()));
 		if (stalenessThresholdOfSketchBasedJoinEstimator >= 0) {
 			sketchBasedJoinEstimator.rebuildOnceSlow();
 			sketchBasedJoinEstimator.startBackgroundRefresh(stalenessThresholdOfSketchBasedJoinEstimator);
 		}
+	}
+
+	SketchBasedJoinEstimator getSketchBasedJoinEstimator() {
+		return sketchBasedJoinEstimator;
+	}
+
+	void setSketchEstimatorUpdatesEnabled(boolean enabled) {
+		this.sketchEstimatorUpdatesEnabled = enabled;
 	}
 
 	@Override
@@ -495,6 +505,7 @@ class MemorySailStore implements SailStore {
 			long freeToAllocateMemory = getFreeToAllocateMemory();
 
 			if (memoryIsLow(freeToAllocateMemory)) {
+				sketchBasedJoinEstimator.unload();
 				logger.debug(
 						"Low free memory ({} MB)! Prioritising cleaning of removed statements from the MemoryStore.",
 						freeToAllocateMemory / 1024 / 1024);
@@ -809,7 +820,9 @@ class MemorySailStore implements SailStore {
 				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
 						&& toDeprecate.isExplicit() == explicit) {
 					toDeprecate.setTillSnapshot(nextSnapshot);
-					sketchBasedJoinEstimator.deleteStatement(toDeprecate);
+					if (sketchEstimatorUpdatesEnabled) {
+						sketchBasedJoinEstimator.deleteStatement(toDeprecate);
+					}
 				}
 			} else if (statement instanceof LinkedHashModel.ModelStatement
 					&& ((LinkedHashModel.ModelStatement) statement).getStatement() instanceof MemStatement) {
@@ -819,7 +832,9 @@ class MemorySailStore implements SailStore {
 				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
 						&& toDeprecate.isExplicit() == explicit) {
 					toDeprecate.setTillSnapshot(nextSnapshot);
-					sketchBasedJoinEstimator.deleteStatement(toDeprecate);
+					if (sketchEstimatorUpdatesEnabled) {
+						sketchBasedJoinEstimator.deleteStatement(toDeprecate);
+					}
 				}
 			} else {
 				try (CloseableIteration<MemStatement> iter = createStatementIterator(
@@ -827,7 +842,9 @@ class MemorySailStore implements SailStore {
 						statement.getContext())) {
 					while (iter.hasNext()) {
 						MemStatement st = iter.next();
-						sketchBasedJoinEstimator.deleteStatement(st);
+						if (sketchEstimatorUpdatesEnabled) {
+							sketchBasedJoinEstimator.deleteStatement(st);
+						}
 						st.setTillSnapshot(nextSnapshot);
 					}
 				} catch (InterruptedException e) {
@@ -879,7 +896,9 @@ class MemorySailStore implements SailStore {
 			statements.add(st);
 			st.addToComponentLists();
 			invalidateCache();
-			sketchBasedJoinEstimator.addStatement(st);
+			if (sketchEstimatorUpdatesEnabled) {
+				sketchBasedJoinEstimator.addStatement(st);
+			}
 			return st;
 		}
 
@@ -943,7 +962,9 @@ class MemorySailStore implements SailStore {
 				while (iter.hasNext()) {
 					deprecated = true;
 					MemStatement st = iter.next();
-					sketchBasedJoinEstimator.deleteStatement(st);
+					if (sketchEstimatorUpdatesEnabled) {
+						sketchBasedJoinEstimator.deleteStatement(st);
+					}
 
 					st.setTillSnapshot(nextSnapshot);
 				}
