@@ -243,7 +243,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					priorityJoins = priorityArgs.get(0);
 
 					for (int i = 1; i < priorityArgs.size(); i++) {
-						priorityJoins = new Join(priorityJoins, priorityArgs.get(i));
+						Join join = new Join(priorityJoins, priorityArgs.get(i));
+						applyJoinEstimates(join);
+						priorityJoins = join;
 					}
 				}
 
@@ -277,6 +279,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 							Join join = new Join(left, right);
 							join.setOrder((Var) supportedOrders.toArray()[0]);
 							join.setMergeJoin(true);
+							applyJoinEstimates(join);
 							orderedJoinArgs.addFirst(join);
 						}
 
@@ -302,15 +305,20 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 							mergeJoinForCrossJoin(orderedJoinArgs, supportedOrders, left, right, join);
 						}
 
+						applyJoinEstimates(join);
 						right = join;
 
 					}
 					while (!orderedJoinArgs.isEmpty()) {
-						right = new Join(orderedJoinArgs.removeLast(), right);
+						Join join = new Join(orderedJoinArgs.removeLast(), right);
+						applyJoinEstimates(join);
+						right = join;
 					}
 
 					if (priorityJoins != null) {
-						right = new Join(priorityJoins, right);
+						Join join = new Join(priorityJoins, right);
+						applyJoinEstimates(join);
+						right = join;
 					}
 
 					// Replace old join hierarchy
@@ -482,6 +490,20 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			} else {
 				return second > cardinality && second / MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER > cardinality;
 			}
+		}
+
+		private void applyJoinEstimates(Join join) {
+			if (!statistics.supportsJoinEstimation()) {
+				return;
+			}
+
+			double estimate = statistics.getCardinality(join);
+			if (!Double.isFinite(estimate) || estimate < 0) {
+				return;
+			}
+
+			join.setResultSizeEstimate(Math.max(estimate, join.getResultSizeEstimate()));
+			join.setCostEstimate(Math.max(estimate, join.getCostEstimate()));
 		}
 
 		private boolean joinOnMultipleVars(TupleExpr first, TupleExpr second) {

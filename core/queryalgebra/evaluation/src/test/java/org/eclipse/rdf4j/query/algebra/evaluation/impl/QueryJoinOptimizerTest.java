@@ -264,6 +264,24 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		assertThat(predicateOrder.get(2)).isEqualTo("ex:pA");
 	}
 
+	@Test
+	public void optimizerExposesJoinEstimatesWhenJoinEstimationSupported() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		StatementPattern left = new StatementPattern(new Var("s"), new Var("pA", vf.createIRI("ex:pA")),
+				new Var("shared"));
+		StatementPattern right = new StatementPattern(new Var("shared"), new Var("pB", vf.createIRI("ex:pB")),
+				new Var("o"));
+		QueryRoot root = new QueryRoot(new Join(left, right));
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatistics(), new EmptyTripleSource());
+		optimizer.optimize(root, null, null);
+
+		Join optimizedJoin = (Join) root.getArg();
+		assertEquals(100.0, optimizedJoin.getResultSizeEstimate(), 0.0);
+		assertEquals(100.0, optimizedJoin.getCostEstimate(), 0.0);
+	}
+
 	@Override
 	public QueryJoinOptimizer getOptimizer() {
 		return new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
