@@ -10,9 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.s3.storage;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentNavigableMap;
@@ -244,6 +247,132 @@ public class MemTable {
 			} else {
 				current = null;
 			}
+		}
+	}
+
+	/**
+	 * Returns a {@link RawEntrySource} over MemTable entries matching the given predicate, encoded as 3-varint keys in
+	 * the specified partition sort order. Used by {@link PartitionMergeIterator} to merge MemTable entries with Parquet
+	 * partition files.
+	 *
+	 * @param predId    the predicate ID to filter by
+	 * @param subj      subject filter, or -1 for wildcard
+	 * @param obj       object filter, or -1 for wildcard
+	 * @param ctx       context filter, or -1 for wildcard
+	 * @param sortOrder the partition sort order ("soc", "osc", or "cso")
+	 * @return a RawEntrySource with 3-varint keys in the specified sort order
+	 */
+	public RawEntrySource asPartitionRawSource(long predId, long subj, long obj, long ctx, String sortOrder) {
+		// Scan the SPOC MemTable for entries matching the given predicate
+		byte[] minKey = index.getMinKeyBytes(subj <= 0 ? 0 : subj, predId, obj <= 0 ? 0 : obj,
+				ctx < 0 ? 0 : ctx);
+		byte[] maxKey = index.getMaxKeyBytes(subj <= 0 ? Long.MAX_VALUE : subj, predId,
+				obj <= 0 ? Long.MAX_VALUE : obj, ctx < 0 ? Long.MAX_VALUE : ctx);
+		ConcurrentNavigableMap<byte[], byte[]> range = data.subMap(minKey, true, maxKey, true);
+
+		// Collect matching entries, re-encode as 3-varint partition keys
+		List<PartitionEntry> entries = new ArrayList<>();
+		long[] quad = new long[4];
+		for (Map.Entry<byte[], byte[]> entry : range.entrySet()) {
+			index.keyToQuad(entry.getKey(), quad);
+			// Verify predicate matches (range scan may include adjacent predicates)
+			if (quad[QuadIndex.PRED_IDX] != predId) {
+				continue;
+			}
+			// Apply additional filters
+			if (subj >= 0 && quad[QuadIndex.SUBJ_IDX] != subj) {
+				continue;
+			}
+			if (obj >= 0 && quad[QuadIndex.OBJ_IDX] != obj) {
+				continue;
+			}
+			if (ctx >= 0 && quad[QuadIndex.CONTEXT_IDX] != ctx) {
+				continue;
+			}
+			byte[] partitionKey = ParquetQuadSource.encodeKey(sortOrder,
+					quad[QuadIndex.SUBJ_IDX], quad[QuadIndex.OBJ_IDX], quad[QuadIndex.CONTEXT_IDX]);
+			entries.add(new PartitionEntry(partitionKey, entry.getValue()[0]));
+		}
+
+		// Sort by partition key (entries may not be in partition sort order)
+		entries.sort((a, b) -> java.util.Arrays.compareUnsigned(a.key, b.key));
+
+		return new PartitionRawSourceImpl(entries);
+	}
+
+	private static class PartitionEntry {
+		final byte[] key;
+		final byte flag;
+
+		PartitionEntry(byte[] key, byte flag) {
+			this.key = key;
+			this.flag = flag;
+		}
+	}
+
+	private static class PartitionRawSourceImpl implements RawEntrySource {
+		private final List<PartitionEntry> entries;
+		private int pos;
+
+		PartitionRawSourceImpl(List<PartitionEntry> entries) {
+			this.entries = entries;
+			this.pos = 0;
+		}
+
+		@Override
+		public boolean hasNext() {
+			return pos < entries.size();
+		}
+
+		@Override
+		public byte[] peekKey() {
+			return entries.get(pos).key;
+		}
+
+		@Override
+		public byte peekFlag() {
+			return entries.get(pos).flag;
+		}
+
+		@Override
+		public void advance() {
+			pos++;
+		}
+	}
+
+	/**
+	 * Partitions entries by predicate ID. Returns a map from predicate ID to a list of {@link QuadEntry} records
+	 * containing (subject, object, context, flag). Used during Parquet flush to write per-predicate partition files.
+	 *
+	 * @return map from predicate ID to list of quad entries (without predicate column)
+	 */
+	public Map<Long, List<QuadEntry>> partitionByPredicate() {
+		Map<Long, List<QuadEntry>> result = new LinkedHashMap<>();
+		long[] quad = new long[4];
+		for (Map.Entry<byte[], byte[]> entry : data.entrySet()) {
+			index.keyToQuad(entry.getKey(), quad);
+			long predId = quad[QuadIndex.PRED_IDX];
+			result.computeIfAbsent(predId, k -> new ArrayList<>())
+					.add(new QuadEntry(quad[QuadIndex.SUBJ_IDX], quad[QuadIndex.OBJ_IDX],
+							quad[QuadIndex.CONTEXT_IDX], entry.getValue()[0]));
+		}
+		return result;
+	}
+
+	/**
+	 * A quad entry with predicate removed (implicit in partition). Used for Parquet file writing.
+	 */
+	public static class QuadEntry {
+		public final long subject;
+		public final long object;
+		public final long context;
+		public final byte flag;
+
+		public QuadEntry(long subject, long object, long context, byte flag) {
+			this.subject = subject;
+			this.object = object;
+			this.context = context;
+			this.flag = flag;
 		}
 	}
 

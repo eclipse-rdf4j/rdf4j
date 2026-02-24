@@ -126,20 +126,18 @@ class MergeIteratorTest {
 	}
 
 	@Test
-	void mergeMemTableWithSSTable() {
-		// MemTable (newer) + SSTable (older)
+	void mergeMemTableWithOlderSource() {
+		// MemTable (newer) + older MemTable source
 		MemTable memTable = new MemTable(spoc);
 		memTable.put(1, 2, 3, 0, true);
 
 		MemTable olderData = new MemTable(spoc);
 		olderData.put(2, 3, 4, 0, true);
 		olderData.put(4, 5, 6, 0, true);
-		byte[] sstData = SSTableWriter.write(olderData);
-		SSTable sst = new SSTable(sstData, spoc);
 
 		List<RawEntrySource> sources = Arrays.asList(
 				memTable.asRawSource(-1, -1, -1, -1),
-				sst.asRawSource(-1, -1, -1, -1));
+				olderData.asRawSource(-1, -1, -1, -1));
 
 		MergeIterator iter = new MergeIterator(sources, spoc, MemTable.FLAG_EXPLICIT, -1, -1, -1, -1);
 		List<long[]> results = toList(iter);
@@ -147,20 +145,18 @@ class MergeIteratorTest {
 	}
 
 	@Test
-	void tombstoneInMemTableShadowsSSTable() {
-		// SSTable has a value, MemTable deletes it
+	void tombstoneInNewerShadowsOlder() {
+		// Older source has a value, newer MemTable deletes it
 		MemTable olderData = new MemTable(spoc);
 		olderData.put(1, 2, 3, 0, true);
 		olderData.put(4, 5, 6, 0, true);
-		byte[] sstData = SSTableWriter.write(olderData);
-		SSTable sst = new SSTable(sstData, spoc);
 
 		MemTable memTable = new MemTable(spoc);
-		memTable.remove(1, 2, 3, 0, true); // tombstone shadows SSTable entry
+		memTable.remove(1, 2, 3, 0, true); // tombstone shadows older entry
 
 		List<RawEntrySource> sources = Arrays.asList(
 				memTable.asRawSource(-1, -1, -1, -1),
-				sst.asRawSource(-1, -1, -1, -1));
+				olderData.asRawSource(-1, -1, -1, -1));
 
 		MergeIterator iter = new MergeIterator(sources, spoc, MemTable.FLAG_EXPLICIT, -1, -1, -1, -1);
 		List<long[]> results = toList(iter);

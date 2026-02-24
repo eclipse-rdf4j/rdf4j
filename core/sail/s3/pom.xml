@@ -53,6 +53,26 @@
 			<artifactId>jackson-databind</artifactId>
 		</dependency>
 		<dependency>
+			<groupId>org.apache.parquet</groupId>
+			<artifactId>parquet-hadoop</artifactId>
+			<version>1.15.2</version>
+			<exclusions>
+				<exclusion>
+					<groupId>javax.annotation</groupId>
+					<artifactId>javax.annotation-api</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+		<!-- No Hadoop jars needed. Parquet-hadoop references a few Hadoop classes
+		     in method signatures and superclass declarations, but we bypass all
+		     Hadoop runtime paths via PlainParquetConfiguration + SimpleCodecFactory.
+		     Minimal stub classes in org.apache.hadoop.* satisfy JVM class loading. -->
+		<dependency>
+			<groupId>com.github.ben-manes.caffeine</groupId>
+			<artifactId>caffeine</artifactId>
+			<version>3.1.8</version>
+		</dependency>
+		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-sail-testsuite</artifactId>
 			<version>${project.version}</version>

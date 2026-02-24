@@ -11,7 +11,7 @@
 package org.eclipse.rdf4j.sail.s3.storage;
 
 /**
- * A source of raw key/flag entries for the {@link MergeIterator}. Both {@link MemTable} and {@link SSTable} expose this
+ * A source of raw key/flag entries for merge iterators. {@link MemTable} and {@link ParquetQuadSource} expose this
  * interface over a key range.
  */
 public interface RawEntrySource {

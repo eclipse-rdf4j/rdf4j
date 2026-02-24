@@ -11,10 +11,12 @@
 package org.eclipse.rdf4j.sail.s3;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
@@ -41,42 +43,66 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.s3.cache.TieredCache;
 import org.eclipse.rdf4j.sail.s3.config.S3StoreConfig;
-import org.eclipse.rdf4j.sail.s3.storage.Manifest;
+import org.eclipse.rdf4j.sail.s3.storage.Catalog;
+import org.eclipse.rdf4j.sail.s3.storage.CompactionPolicy;
+import org.eclipse.rdf4j.sail.s3.storage.Compactor;
 import org.eclipse.rdf4j.sail.s3.storage.MemTable;
-import org.eclipse.rdf4j.sail.s3.storage.MergeIterator;
 import org.eclipse.rdf4j.sail.s3.storage.ObjectStore;
+import org.eclipse.rdf4j.sail.s3.storage.ParquetFileBuilder;
+import org.eclipse.rdf4j.sail.s3.storage.ParquetQuadSource;
+import org.eclipse.rdf4j.sail.s3.storage.ParquetSchemas;
+import org.eclipse.rdf4j.sail.s3.storage.PartitionIndexSelector;
+import org.eclipse.rdf4j.sail.s3.storage.PartitionMergeIterator;
 import org.eclipse.rdf4j.sail.s3.storage.QuadIndex;
 import org.eclipse.rdf4j.sail.s3.storage.RawEntrySource;
 import org.eclipse.rdf4j.sail.s3.storage.S3ObjectStore;
-import org.eclipse.rdf4j.sail.s3.storage.SSTable;
-import org.eclipse.rdf4j.sail.s3.storage.SSTableWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * {@link SailStore} implementation that stores RDF quads in {@link MemTable}s with optional persistence to
- * S3-compatible object storage via SSTables. When S3 is not configured, operates in pure in-memory mode.
+ * {@link SailStore} implementation that stores RDF quads using Parquet files on S3-compatible object storage with
+ * predicate-based vertical partitioning.
+ *
+ * <p>
+ * Architecture: single in-memory {@link MemTable} in SPOC order → on flush, partition by predicate and write 3 Parquet
+ * files per partition (SOC, OSC, CSO sort orders) → multi-tier cache (Caffeine heap + disk) → compaction.
+ * </p>
+ *
+ * <p>
+ * When S3 is not configured, operates in pure in-memory mode.
+ * </p>
  */
 class S3SailStore implements SailStore {
 
 	final Logger logger = LoggerFactory.getLogger(S3SailStore.class);
 
+	private static final String[] SORT_ORDERS = { "soc", "osc", "cso" };
+	private static final int DEFAULT_ROW_GROUP_SIZE = 8 * 1024 * 1024; // 8 MiB
+	private static final int DEFAULT_PAGE_SIZE = 64 * 1024; // 64 KiB
+
 	private final S3ValueStore valueStore;
 	private final S3NamespaceStore namespaceStore;
-	private final List<QuadIndex> indexes;
-	private List<MemTable> memTables;
+
+	// Single MemTable in SPOC order (new design: 1x memory, partition on flush)
+	private final QuadIndex spocIndex;
+	private volatile MemTable memTable;
 	private volatile boolean mayHaveInferred;
 
 	// Persistence fields (null when S3 is not configured)
 	private final ObjectStore objectStore;
 	private final ObjectMapper jsonMapper;
-	private Manifest manifest;
-	private final List<List<SSTable>> sstablesByIndex; // per-index list, newest first
+	private Catalog catalog;
 	private final AtomicLong epochCounter;
 	private final long memTableFlushSize;
+	private final TieredCache cache;
+	private final CompactionPolicy compactionPolicy;
+	private final Compactor compactor;
+	private final int rowGroupSize;
+	private final int pageSize;
 
 	/**
 	 * A lock to control concurrent access by {@link S3SailSink} to the stores.
@@ -99,76 +125,39 @@ class S3SailStore implements SailStore {
 		this.namespaceStore = new S3NamespaceStore();
 		this.objectStore = objectStore;
 		this.memTableFlushSize = config.getMemTableSize();
+		this.rowGroupSize = DEFAULT_ROW_GROUP_SIZE;
+		this.pageSize = DEFAULT_PAGE_SIZE;
 
-		// Parse index specifications from config
-		String indexSpec = config.getQuadIndexes();
-		Set<String> indexSpecs = QuadIndex.parseIndexSpecList(indexSpec);
-		this.indexes = new ArrayList<>(indexSpecs.size());
-		this.memTables = new ArrayList<>(indexSpecs.size());
-		for (String spec : indexSpecs) {
-			QuadIndex qi = new QuadIndex(spec);
-			indexes.add(qi);
-			memTables.add(new MemTable(qi));
-		}
-
-		if (indexes.isEmpty()) {
-			QuadIndex defaultIndex = new QuadIndex("spoc");
-			indexes.add(defaultIndex);
-			memTables.add(new MemTable(defaultIndex));
-		}
+		// Single SPOC index for the MemTable
+		this.spocIndex = new QuadIndex("spoc");
+		this.memTable = new MemTable(spocIndex);
 
 		// Initialize persistence
 		if (objectStore != null) {
 			this.jsonMapper = new ObjectMapper();
-			this.manifest = Manifest.load(objectStore, jsonMapper);
-			this.epochCounter = new AtomicLong(computeMaxEpoch(manifest) + 1);
-			this.sstablesByIndex = new ArrayList<>(indexes.size());
-			for (int i = 0; i < indexes.size(); i++) {
-				sstablesByIndex.add(new ArrayList<>());
-			}
+			this.catalog = Catalog.load(objectStore, jsonMapper);
+			this.epochCounter = new AtomicLong(catalog.getEpoch() + 1);
+
+			// Initialize cache
+			Path diskCachePath = config.getDiskCachePath() != null ? Path.of(config.getDiskCachePath()) : null;
+			this.cache = new TieredCache(config.getMemoryCacheSize(), diskCachePath,
+					config.getDiskCacheSize(), objectStore);
+
+			this.compactionPolicy = new CompactionPolicy();
+			this.compactor = new Compactor(objectStore, cache, rowGroupSize, pageSize);
 
 			// Deserialize value store and namespaces
-			if (manifest.getNextValueId() > 0) {
-				valueStore.deserialize(objectStore, manifest.getNextValueId());
+			if (catalog.getNextValueId() > 0) {
+				valueStore.deserialize(objectStore, catalog.getNextValueId());
 			}
 			namespaceStore.deserialize(objectStore, jsonMapper);
-
-			// Load existing SSTables from manifest
-			for (Manifest.SSTableInfo info : manifest.getSstables()) {
-				int idxPos = findIndexByName(info.getIndexName());
-				if (idxPos >= 0) {
-					byte[] sstData = objectStore.get(info.getS3Key());
-					if (sstData != null) {
-						SSTable sst = new SSTable(sstData, indexes.get(idxPos));
-						sstablesByIndex.get(idxPos).add(sst);
-					}
-				}
-			}
 		} else {
 			this.jsonMapper = null;
-			this.manifest = null;
 			this.epochCounter = null;
-			this.sstablesByIndex = null;
+			this.cache = null;
+			this.compactionPolicy = null;
+			this.compactor = null;
 		}
-	}
-
-	private static long computeMaxEpoch(Manifest manifest) {
-		long max = 0;
-		for (Manifest.SSTableInfo info : manifest.getSstables()) {
-			if (info.getEpoch() > max) {
-				max = info.getEpoch();
-			}
-		}
-		return max;
-	}
-
-	private int findIndexByName(String indexName) {
-		for (int i = 0; i < indexes.size(); i++) {
-			if (indexes.get(i).getFieldSeqString().equals(indexName)) {
-				return i;
-			}
-		}
-		return -1;
 	}
 
 	@Override
@@ -196,108 +185,178 @@ class S3SailStore implements SailStore {
 		try {
 			if (objectStore != null) {
 				flushToObjectStore();
+				if (cache != null) {
+					cache.close();
+				}
 				objectStore.close();
 			}
 		} catch (IOException e) {
 			throw new SailException(e);
 		}
 		valueStore.close();
-		for (MemTable mt : memTables) {
-			mt.clear();
-		}
+		memTable.clear();
 	}
 
 	/**
-	 * Selects the best MemTable for the given query pattern.
-	 */
-	private int getBestIndex(long subj, long pred, long obj, long context) {
-		int bestScore = -1;
-		int bestIdx = 0;
-		for (int i = 0; i < indexes.size(); i++) {
-			int score = indexes.get(i).getPatternScore(subj, pred, obj, context);
-			if (score > bestScore) {
-				bestScore = score;
-				bestIdx = i;
-			}
-		}
-		return bestIdx;
-	}
-
-	/**
-	 * Flushes active MemTables to SSTables on the object store.
+	 * Flushes active MemTable to Parquet files on the object store, partitioned by predicate.
 	 */
 	private void flushToObjectStore() {
 		if (objectStore == null) {
 			return;
 		}
 
-		// Check if any MemTable has data
-		boolean hasMemTableData = false;
-		for (MemTable mt : memTables) {
-			if (mt.size() > 0) {
-				hasMemTableData = true;
-				break;
-			}
+		if (memTable.size() == 0) {
+			// Still persist value store and namespaces
+			long epoch = epochCounter.getAndIncrement();
+			valueStore.serialize(objectStore);
+			namespaceStore.serialize(objectStore, jsonMapper);
+			catalog.setNextValueId(valueStore.getNextId());
+			catalog.setEpoch(epoch);
+			catalog.save(objectStore, jsonMapper, epoch);
+			return;
 		}
 
 		long epoch = epochCounter.getAndIncrement();
 
-		List<Manifest.SSTableInfo> newInfos = new ArrayList<>();
+		// Freeze active MemTable and swap in fresh one
+		MemTable frozen = memTable;
+		frozen.freeze();
+		memTable = new MemTable(spocIndex);
 
-		if (hasMemTableData) {
-			// Freeze active MemTables and swap in fresh ones
-			List<MemTable> frozenTables = memTables;
-			List<MemTable> newTables = new ArrayList<>(indexes.size());
-			for (int i = 0; i < indexes.size(); i++) {
-				frozenTables.get(i).freeze();
-				newTables.add(new MemTable(indexes.get(i)));
+		// Partition by predicate
+		Map<Long, List<MemTable.QuadEntry>> partitions = frozen.partitionByPredicate();
+
+		// For each predicate partition, write 3 Parquet files (all sort orders)
+		for (Map.Entry<Long, List<MemTable.QuadEntry>> partEntry : partitions.entrySet()) {
+			long predId = partEntry.getKey();
+			List<MemTable.QuadEntry> entries = partEntry.getValue();
+
+			// Set predicate label for debugging
+			Value predValue = valueStore.getValue(predId);
+			if (predValue != null) {
+				catalog.getPredicateLabels().put(String.valueOf(predId), predValue.stringValue());
 			}
-			memTables = newTables;
 
-			// Write each frozen MemTable as an SSTable
-			for (int i = 0; i < indexes.size(); i++) {
-				MemTable frozen = frozenTables.get(i);
-				if (frozen.size() == 0) {
-					continue;
+			for (String sortOrder : SORT_ORDERS) {
+				// Sort entries according to sort order
+				List<MemTable.QuadEntry> sorted = sortEntries(entries, sortOrder);
+
+				// Build Parquet file
+				List<ParquetFileBuilder.QuadEntry> pqEntries = new ArrayList<>(sorted.size());
+				for (MemTable.QuadEntry e : sorted) {
+					pqEntries.add(new ParquetFileBuilder.QuadEntry(e.subject, e.object, e.context, e.flag));
 				}
-				String indexName = indexes.get(i).getFieldSeqString();
-				String s3Key = "sstables/L0-" + epoch + "-" + indexName + ".sst";
 
-				byte[] sstData = SSTableWriter.write(frozen);
-				objectStore.put(s3Key, sstData);
+				byte[] parquetData = ParquetFileBuilder.build(pqEntries, ParquetSchemas.PARTITIONED_SCHEMA,
+						ParquetSchemas.SortOrder.fromSuffix(sortOrder), predId, rowGroupSize, pageSize);
 
-				SSTable sst = new SSTable(sstData, indexes.get(i));
-				sstablesByIndex.get(i).add(0, sst); // prepend (newest first)
+				String s3Key = "data/predicates/" + predId + "/L0-"
+						+ String.format("%05d", epoch) + "-" + sortOrder + ".parquet";
 
-				newInfos.add(new Manifest.SSTableInfo(
-						s3Key, 0, indexName,
-						bytesToHex(sst.getMinKey()), bytesToHex(sst.getMaxKey()),
-						sst.getEntryCount(), epoch));
+				objectStore.put(s3Key, parquetData);
+
+				// Write-through to cache
+				if (cache != null) {
+					cache.writeThrough(s3Key, parquetData);
+				}
+
+				// Compute stats
+				long minSubject = Long.MAX_VALUE, maxSubject = Long.MIN_VALUE;
+				long minObject = Long.MAX_VALUE, maxObject = Long.MIN_VALUE;
+				long minContext = Long.MAX_VALUE, maxContext = Long.MIN_VALUE;
+				for (MemTable.QuadEntry e : sorted) {
+					minSubject = Math.min(minSubject, e.subject);
+					maxSubject = Math.max(maxSubject, e.subject);
+					minObject = Math.min(minObject, e.object);
+					maxObject = Math.max(maxObject, e.object);
+					minContext = Math.min(minContext, e.context);
+					maxContext = Math.max(maxContext, e.context);
+				}
+
+				catalog.addFile(predId, new Catalog.ParquetFileInfo(
+						s3Key, 0, sortOrder, sorted.size(), epoch, parquetData.length,
+						minSubject, maxSubject, minObject, maxObject, minContext, maxContext));
 			}
 		}
 
-		// Always persist value store and namespaces
+		// Persist value store and namespaces
 		valueStore.serialize(objectStore);
 		namespaceStore.serialize(objectStore, jsonMapper);
 
-		// Update and save manifest
-		List<Manifest.SSTableInfo> allInfos = new ArrayList<>(newInfos);
-		allInfos.addAll(manifest.getSstables());
-		manifest.setSstables(allInfos);
-		manifest.setNextValueId(valueStore.getNextId());
-		manifest.save(objectStore, jsonMapper, epoch);
-	}
+		// Atomic catalog update
+		catalog.setNextValueId(valueStore.getNextId());
+		catalog.setEpoch(epoch);
+		catalog.save(objectStore, jsonMapper, epoch);
 
-	private static String bytesToHex(byte[] bytes) {
-		StringBuilder sb = new StringBuilder(bytes.length * 2);
-		for (byte b : bytes) {
-			sb.append(String.format("%02x", b & 0xFF));
-		}
-		return sb.toString();
+		// Check compaction triggers
+		runCompactionIfNeeded();
 	}
 
 	/**
-	 * Creates a statement iterator for the given pattern.
+	 * Sorts entries according to the given sort order.
+	 */
+	private static List<MemTable.QuadEntry> sortEntries(List<MemTable.QuadEntry> entries, String sortOrder) {
+		List<MemTable.QuadEntry> sorted = new ArrayList<>(entries);
+		Comparator<MemTable.QuadEntry> cmp;
+		switch (sortOrder) {
+		case "osc":
+			cmp = Comparator.comparingLong((MemTable.QuadEntry e) -> e.object)
+					.thenComparingLong(e -> e.subject)
+					.thenComparingLong(e -> e.context);
+			break;
+		case "cso":
+			cmp = Comparator.comparingLong((MemTable.QuadEntry e) -> e.context)
+					.thenComparingLong(e -> e.subject)
+					.thenComparingLong(e -> e.object);
+			break;
+		case "soc":
+		default:
+			cmp = Comparator.comparingLong((MemTable.QuadEntry e) -> e.subject)
+					.thenComparingLong(e -> e.object)
+					.thenComparingLong(e -> e.context);
+			break;
+		}
+		sorted.sort(cmp);
+		return sorted;
+	}
+
+	/**
+	 * Checks compaction triggers and runs compaction if needed.
+	 */
+	private void runCompactionIfNeeded() {
+		if (compactionPolicy == null || compactor == null) {
+			return;
+		}
+
+		for (long predId : catalog.getPredicateIds()) {
+			List<Catalog.ParquetFileInfo> files = catalog.getFilesForPredicate(predId);
+
+			// L0→L1 compaction
+			if (compactionPolicy.shouldCompactL0(files)) {
+				List<Catalog.ParquetFileInfo> l0Files = CompactionPolicy.filesAtLevel(files, 0);
+				long compactEpoch = epochCounter.getAndIncrement();
+				compactor.compact(predId, l0Files, 0, 1, compactEpoch, catalog);
+
+				// Re-fetch files after compaction and check L1→L2
+				files = catalog.getFilesForPredicate(predId);
+			}
+
+			// L1→L2 compaction
+			if (compactionPolicy.shouldCompactL1(files)) {
+				List<Catalog.ParquetFileInfo> l1Files = CompactionPolicy.filesAtLevel(files, 1);
+				long compactEpoch = epochCounter.getAndIncrement();
+				compactor.compact(predId, l1Files, 1, 2, compactEpoch, catalog);
+			}
+		}
+
+		// Save catalog after compaction
+		long epoch = epochCounter.getAndIncrement();
+		catalog.setEpoch(epoch);
+		catalog.save(objectStore, jsonMapper, epoch);
+	}
+
+	/**
+	 * Creates a statement iterator for the given pattern using predicate partitioning.
 	 */
 	CloseableIteration<? extends Statement> createStatementIterator(
 			Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) {
@@ -350,27 +409,16 @@ class S3SailStore implements SailStore {
 			return new EmptyIteration<>();
 		}
 
-		int bestIdx = getBestIndex(subjID, predID, objID,
-				contextIDList.size() == 1 ? contextIDList.get(0) : S3ValueStore.UNKNOWN_ID);
-
-		boolean hasSSTables = sstablesByIndex != null && !sstablesByIndex.get(bestIdx).isEmpty();
+		boolean hasPersistence = objectStore != null && catalog != null;
 
 		ArrayList<CloseableIteration<? extends Statement>> perContextIterList = new ArrayList<>(contextIDList.size());
 
 		for (long contextID : contextIDList) {
 			Iterator<long[]> quads;
-			if (hasSSTables) {
-				// Build merged source: MemTable (newest) + SSTables (newest first)
-				List<RawEntrySource> sources = new ArrayList<>();
-				sources.add(memTables.get(bestIdx).asRawSource(subjID, predID, objID, contextID));
-				for (SSTable sst : sstablesByIndex.get(bestIdx)) {
-					sources.add(sst.asRawSource(subjID, predID, objID, contextID));
-				}
-				byte expectedFlag = explicit ? MemTable.FLAG_EXPLICIT : MemTable.FLAG_INFERRED;
-				quads = new MergeIterator(sources, indexes.get(bestIdx), expectedFlag,
-						subjID, predID, objID, contextID);
+			if (hasPersistence) {
+				quads = createMergedIterator(subjID, predID, objID, contextID, explicit);
 			} else {
-				quads = memTables.get(bestIdx).scan(subjID, predID, objID, contextID, explicit);
+				quads = memTable.scan(subjID, predID, objID, contextID, explicit);
 			}
 			perContextIterList.add(new QuadToStatementIteration(quads, valueStore));
 		}
@@ -380,6 +428,88 @@ class S3SailStore implements SailStore {
 		} else {
 			return new UnionIteration<>(perContextIterList);
 		}
+	}
+
+	/**
+	 * Creates a merged iterator across MemTable and Parquet files for a given pattern.
+	 */
+	private Iterator<long[]> createMergedIterator(long subjID, long predID, long objID, long contextID,
+			boolean explicit) {
+
+		boolean subjectBound = subjID >= 0;
+		boolean objectBound = objID >= 0;
+		boolean contextBound = contextID >= 0;
+
+		// Select best sort order for within-partition queries
+		String bestSortOrder = PartitionIndexSelector.selectSortOrder(subjectBound, objectBound, contextBound);
+
+		if (predID >= 0) {
+			// Predicate bound → single partition
+			return createPartitionIterator(predID, subjID, objID, contextID, bestSortOrder, explicit);
+		} else {
+			// Predicate unbound → fan out to all partitions
+			Set<Long> predIds = catalog.getPredicateIds();
+			if (predIds.isEmpty()) {
+				// Only MemTable data
+				return memTable.scan(subjID, predID, objID, contextID, explicit);
+			}
+
+			List<Iterator<long[]>> partitionIters = new ArrayList<>();
+			for (long pid : predIds) {
+				partitionIters.add(createPartitionIterator(pid, subjID, objID, contextID, bestSortOrder, explicit));
+			}
+
+			// Union all partitions (each partition's iterator handles dedup internally)
+			return new UnionIterator(partitionIters);
+		}
+	}
+
+	/**
+	 * Creates a merged iterator for a single predicate partition. All sources produce 3-varint keys in the partition
+	 * sort order (predicate is implicit in the partition).
+	 */
+	private Iterator<long[]> createPartitionIterator(long predId, long subjID, long objID, long contextID,
+			String sortOrder, boolean explicit) {
+
+		byte expectedFlag = explicit ? MemTable.FLAG_EXPLICIT : MemTable.FLAG_INFERRED;
+
+		// Build sources: MemTable (newest) + Parquet files (newest epoch first)
+		// All sources produce 3-varint keys in the same partition sort order
+		List<RawEntrySource> sources = new ArrayList<>();
+
+		// MemTable source (always newest) — re-encoded as 3-varint partition keys
+		sources.add(memTable.asPartitionRawSource(predId, subjID, objID, contextID, sortOrder));
+
+		// Parquet files for this predicate partition and sort order
+		List<Catalog.ParquetFileInfo> files = catalog.getFilesForPredicate(predId);
+		List<Catalog.ParquetFileInfo> sortOrderFiles = files.stream()
+				.filter(f -> sortOrder.equals(f.getSortOrder()))
+				.sorted(Comparator.comparingLong(Catalog.ParquetFileInfo::getEpoch).reversed())
+				.toList();
+
+		for (Catalog.ParquetFileInfo fileInfo : sortOrderFiles) {
+			// Catalog-level pruning using per-file stats
+			if (subjID >= 0 && (subjID < fileInfo.getMinSubject() || subjID > fileInfo.getMaxSubject())) {
+				continue;
+			}
+			if (objID >= 0 && (objID < fileInfo.getMinObject() || objID > fileInfo.getMaxObject())) {
+				continue;
+			}
+			if (contextID >= 0 && (contextID < fileInfo.getMinContext() || contextID > fileInfo.getMaxContext())) {
+				continue;
+			}
+
+			byte[] fileData = cache != null ? cache.get(fileInfo.getS3Key()) : objectStore.get(fileInfo.getS3Key());
+			if (fileData == null) {
+				logger.warn("Missing Parquet file: {}", fileInfo.getS3Key());
+				continue;
+			}
+
+			sources.add(new ParquetQuadSource(fileData, sortOrder, subjID, objID, contextID));
+		}
+
+		// Use PartitionMergeIterator: all sources produce 3-varint keys, predicate injected on decode
+		return new PartitionMergeIterator(sources, predId, sortOrder, expectedFlag, subjID, objID, contextID);
 	}
 
 	// =========================================================================
@@ -502,20 +632,12 @@ class S3SailStore implements SailStore {
 						mayHaveInferred = true;
 					}
 
-					for (MemTable mt : memTables) {
-						mt.put(s, p, o, c, explicit);
-					}
+					memTable.put(s, p, o, c, explicit);
 				}
 
 				// Size-triggered flush
-				if (objectStore != null) {
-					long totalSize = 0;
-					for (MemTable mt : memTables) {
-						totalSize += mt.approximateSizeInBytes();
-					}
-					if (totalSize >= memTableFlushSize) {
-						flushToObjectStore();
-					}
+				if (objectStore != null && memTable.approximateSizeInBytes() >= memTableFlushSize) {
+					flushToObjectStore();
 				}
 			} finally {
 				sinkStoreAccessLock.unlock();
@@ -550,9 +672,7 @@ class S3SailStore implements SailStore {
 					mayHaveInferred = true;
 				}
 
-				for (MemTable mt : memTables) {
-					mt.put(s, p, o, c, explicit);
-				}
+				memTable.put(s, p, o, c, explicit);
 			} finally {
 				sinkStoreAccessLock.unlock();
 			}
@@ -610,26 +730,15 @@ class S3SailStore implements SailStore {
 					}
 				}
 
-				int bestIdx = getBestIndex(subjID, predID, objID,
-						contextIds.length == 1 ? contextIds[0] : S3ValueStore.UNKNOWN_ID);
-				MemTable scanTable = memTables.get(bestIdx);
-
 				long removeCount = 0;
 				for (long contextId : contextIds) {
-					// When SSTables exist, use merged iterator for remove scan
+					boolean hasPersistence = objectStore != null && catalog != null;
+
 					Iterator<long[]> iter;
-					boolean hasSSTables = sstablesByIndex != null && !sstablesByIndex.get(bestIdx).isEmpty();
-					if (hasSSTables) {
-						List<RawEntrySource> sources = new ArrayList<>();
-						sources.add(scanTable.asRawSource(subjID, predID, objID, contextId));
-						for (SSTable sst : sstablesByIndex.get(bestIdx)) {
-							sources.add(sst.asRawSource(subjID, predID, objID, contextId));
-						}
-						byte expectedFlag = explicit ? MemTable.FLAG_EXPLICIT : MemTable.FLAG_INFERRED;
-						iter = new MergeIterator(sources, indexes.get(bestIdx), expectedFlag,
-								subjID, predID, objID, contextId);
+					if (hasPersistence) {
+						iter = createMergedIterator(subjID, predID, objID, contextId, explicit);
 					} else {
-						iter = scanTable.scan(subjID, predID, objID, contextId, explicit);
+						iter = memTable.scan(subjID, predID, objID, contextId, explicit);
 					}
 
 					List<long[]> toRemove = new ArrayList<>();
@@ -637,9 +746,7 @@ class S3SailStore implements SailStore {
 						toRemove.add(iter.next());
 					}
 					for (long[] quad : toRemove) {
-						for (MemTable mt : memTables) {
-							mt.remove(quad[0], quad[1], quad[2], quad[3], explicit);
-						}
+						memTable.remove(quad[0], quad[1], quad[2], quad[3], explicit);
 						removeCount++;
 					}
 				}
@@ -677,21 +784,13 @@ class S3SailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
 			// Scan all quads and collect distinct non-null contexts
-			// Use the merged read path (createStatementIterator covers this)
-			int bestIdx = 0; // use first index for full scan
-			boolean hasSSTables = sstablesByIndex != null && !sstablesByIndex.get(bestIdx).isEmpty();
+			boolean hasPersistence = objectStore != null && catalog != null;
 
 			Iterator<long[]> allQuads;
-			if (hasSSTables) {
-				List<RawEntrySource> sources = new ArrayList<>();
-				sources.add(memTables.get(bestIdx).asRawSource(-1, -1, -1, -1));
-				for (SSTable sst : sstablesByIndex.get(bestIdx)) {
-					sources.add(sst.asRawSource(-1, -1, -1, -1));
-				}
-				byte expectedFlag = explicit ? MemTable.FLAG_EXPLICIT : MemTable.FLAG_INFERRED;
-				allQuads = new MergeIterator(sources, indexes.get(bestIdx), expectedFlag, -1, -1, -1, -1);
+			if (hasPersistence) {
+				allQuads = createMergedIterator(-1, -1, -1, -1, explicit);
 			} else {
-				allQuads = memTables.get(bestIdx).scan(-1, -1, -1, -1, explicit);
+				allQuads = memTable.scan(-1, -1, -1, -1, explicit);
 			}
 
 			return new FilterIteration<Resource>(
@@ -774,6 +873,41 @@ class S3SailStore implements SailStore {
 		@Override
 		public void close() {
 			// no-op
+		}
+	}
+
+	/**
+	 * Simple union iterator that concatenates multiple iterators. Used for fan-out across predicate partitions.
+	 */
+	private static class UnionIterator implements Iterator<long[]> {
+		private final List<Iterator<long[]>> iterators;
+		private int currentIdx;
+
+		UnionIterator(List<Iterator<long[]>> iterators) {
+			this.iterators = iterators;
+			this.currentIdx = 0;
+			advanceToNonEmpty();
+		}
+
+		private void advanceToNonEmpty() {
+			while (currentIdx < iterators.size() && !iterators.get(currentIdx).hasNext()) {
+				currentIdx++;
+			}
+		}
+
+		@Override
+		public boolean hasNext() {
+			return currentIdx < iterators.size();
+		}
+
+		@Override
+		public long[] next() {
+			long[] result = iterators.get(currentIdx).next();
+			if (!iterators.get(currentIdx).hasNext()) {
+				currentIdx++;
+				advanceToNonEmpty();
+			}
+			return result;
 		}
 	}
 }
