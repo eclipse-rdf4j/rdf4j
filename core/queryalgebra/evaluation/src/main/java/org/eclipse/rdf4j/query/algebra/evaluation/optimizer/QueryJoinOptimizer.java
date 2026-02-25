@@ -240,106 +240,124 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 
 				// Build new join hierarchy
-				TupleExpr priorityJoins = null;
-				if (!priorityArgs.isEmpty()) {
-					priorityJoins = priorityArgs.get(0);
+				TupleExpr priorityJoins = buildJoinHierarchy(priorityArgs);
 
-					for (int i = 1; i < priorityArgs.size(); i++) {
-						Join join = new Join(priorityJoins, priorityArgs.get(i));
-						applyJoinEstimates(join);
-						priorityJoins = join;
-					}
-				}
-
-				if (priorityJoins == null && !orderedJoinArgs.isEmpty()) {
-
-					double cardinality = 0;
-
-					while (orderedJoinArgs.size() > 1) {
-
-						Set<Var> supportedOrders = orderedJoinArgs.peekFirst().getSupportedOrders(tripleSource);
-						if (supportedOrders.isEmpty()) {
-							break;
-						}
-
-						TupleExpr left = orderedJoinArgs.removeFirst();
-						TupleExpr right = orderedJoinArgs.removeFirst();
-
-						supportedOrders = new HashSet<>(supportedOrders);
-						supportedOrders.retainAll(right.getSupportedOrders(tripleSource));
-
-						if (supportedOrders.isEmpty() || joinOnMultipleVars(left, right) || joinSizeIsTooDifferent(
-								Math.max(cardinality, left.getResultSizeEstimate()), right.getResultSizeEstimate())) {
-
-							orderedJoinArgs.addFirst(right);
-							orderedJoinArgs.addFirst(left);
-							break;
-
-						} else {
-							cardinality = Math.max(cardinality, left.getResultSizeEstimate());
-							cardinality = Math.max(cardinality, right.getResultSizeEstimate());
-							Join join = new Join(left, right);
-							join.setOrder((Var) supportedOrders.toArray()[0]);
-							join.setMergeJoin(true);
-							applyJoinEstimates(join);
-							orderedJoinArgs.addFirst(join);
-						}
-
-					}
-
-				}
-
-				if (!orderedJoinArgs.isEmpty()) {
-					// Note: generated hierarchy is right-recursive to help the
-					// IterativeEvaluationOptimizer to factor out the left-most join
-					// argument
-					int i = orderedJoinArgs.size() - 1;
-					TupleExpr right = orderedJoinArgs.removeLast();
-					if (!orderedJoinArgs.isEmpty()) {
-						TupleExpr left = orderedJoinArgs.removeLast();
-
-						Set<Var> supportedOrders = new HashSet<>(left.getSupportedOrders(tripleSource));
-						supportedOrders.retainAll(right.getSupportedOrders(tripleSource));
-
-						Join join = new Join(left, right);
-
-						if (USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN) {
-							mergeJoinForCrossJoin(orderedJoinArgs, supportedOrders, left, right, join);
-						}
-
-						applyJoinEstimates(join);
-						right = join;
-
-					}
-					while (!orderedJoinArgs.isEmpty()) {
-						Join join = new Join(orderedJoinArgs.removeLast(), right);
-						applyJoinEstimates(join);
-						right = join;
-					}
-
-					if (priorityJoins != null) {
-						Join join = new Join(priorityJoins, right);
-						applyJoinEstimates(join);
-						right = join;
-					}
-
-					// Replace old join hierarchy
-					node.replaceWith(right);
-
-					// we optimize after the right call above in case the optimize call below
-					// recurses back into this function and we need all the node's parent/child pointers
-					// set up correctly for right to work on subsequent calls
-					if (priorityJoins != null) {
-						optimizePriorityJoin(origBoundVars, priorityJoins);
-					}
-
-				} else {
-					// only subselect/priority joins involved in this query.
-					node.replaceWith(priorityJoins);
-				}
+				buildFullJoinHierarchy(node, priorityJoins, orderedJoinArgs, origBoundVars);
 			} finally {
 				boundVars = origBoundVars;
 			}
+		}
+
+		private void buildFullJoinHierarchy(Join node, TupleExpr priorityJoins, Deque<TupleExpr> orderedJoinArgs, Set<String> origBoundVars) {
+			initialMergeJoinOptimization(priorityJoins, orderedJoinArgs);
+
+			if (!orderedJoinArgs.isEmpty()) {
+				TupleExpr right = buildRightJoinTree(orderedJoinArgs);
+
+				if (priorityJoins != null) {
+					Join join = new Join(priorityJoins, right);
+					applyJoinEstimates(join);
+					right = join;
+				}
+
+				// Replace old join hierarchy
+				node.replaceWith(right);
+
+				// we optimize after the right call above in case the optimize call below
+				// recurses back into this function and we need all the node's parent/child pointers
+				// set up correctly for right to work on subsequent calls
+				if (priorityJoins != null) {
+					optimizePriorityJoin(origBoundVars, priorityJoins);
+				}
+
+			} else {
+				// only subselect/priority joins involved in this query.
+				node.replaceWith(priorityJoins);
+			}
+		}
+
+		private TupleExpr buildRightJoinTree(Deque<TupleExpr> orderedJoinArgs) {
+			// Note: generated hierarchy is right-recursive to help the
+			// IterativeEvaluationOptimizer to factor out the left-most join
+			// argument
+			int i = orderedJoinArgs.size() - 1;
+			TupleExpr right = orderedJoinArgs.removeLast();
+			if (!orderedJoinArgs.isEmpty()) {
+				TupleExpr left = orderedJoinArgs.removeLast();
+
+				Set<Var> supportedOrders = new HashSet<>(left.getSupportedOrders(tripleSource));
+				supportedOrders.retainAll(right.getSupportedOrders(tripleSource));
+
+				Join join = new Join(left, right);
+
+				if (USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN) {
+					mergeJoinForCrossJoin(orderedJoinArgs, supportedOrders, left, right, join);
+				}
+
+				applyJoinEstimates(join);
+				right = join;
+
+			}
+			while (!orderedJoinArgs.isEmpty()) {
+				Join join = new Join(orderedJoinArgs.removeLast(), right);
+				applyJoinEstimates(join);
+				right = join;
+			}
+			return right;
+		}
+
+		private void initialMergeJoinOptimization(TupleExpr priorityJoins, Deque<TupleExpr> orderedJoinArgs) {
+			if (priorityJoins == null && !orderedJoinArgs.isEmpty()) {
+
+				double cardinality = 0;
+
+				while (orderedJoinArgs.size() > 1) {
+
+					Set<Var> supportedOrders = orderedJoinArgs.peekFirst().getSupportedOrders(tripleSource);
+					if (supportedOrders.isEmpty()) {
+						break;
+					}
+
+					TupleExpr left = orderedJoinArgs.removeFirst();
+					TupleExpr right = orderedJoinArgs.removeFirst();
+
+					supportedOrders = new HashSet<>(supportedOrders);
+					supportedOrders.retainAll(right.getSupportedOrders(tripleSource));
+
+					if (supportedOrders.isEmpty() || joinOnMultipleVars(left, right) || joinSizeIsTooDifferent(
+							Math.max(cardinality, left.getResultSizeEstimate()), right.getResultSizeEstimate())) {
+
+						orderedJoinArgs.addFirst(right);
+						orderedJoinArgs.addFirst(left);
+						break;
+
+					} else {
+						cardinality = Math.max(cardinality, left.getResultSizeEstimate());
+						cardinality = Math.max(cardinality, right.getResultSizeEstimate());
+						Join join = new Join(left, right);
+						join.setOrder((Var) supportedOrders.toArray()[0]);
+						join.setMergeJoin(true);
+						applyJoinEstimates(join);
+						orderedJoinArgs.addFirst(join);
+					}
+
+				}
+
+			}
+		}
+
+		private TupleExpr buildJoinHierarchy(List<TupleExpr> args) {
+			TupleExpr joins = null;
+			if (!args.isEmpty()) {
+				joins = args.getFirst();
+
+				for (int i = 1; i < args.size(); i++) {
+					Join join = new Join(joins, args.get(i));
+					applyJoinEstimates(join);
+					joins = join;
+				}
+			}
+			return joins;
 		}
 
 		/**
@@ -351,7 +369,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs) {
 			// Copy input into a mutable list
 			List<TupleExpr> tupleExprs = new ArrayList<>(orderedJoinArgs);
-			Deque<TupleExpr> ret = new ArrayDeque<>();
+			Deque<TupleExpr> retPrefix = new ArrayDeque<>();
+			List<TupleExpr> deferredPair = new ArrayList<>(2);
 
 			// Memo table: for each (a, b), stores statistics.getCardinality(new Join(a,b))
 			Map<TupleExpr, Map<TupleExpr, Double>> cardCache = new HashMap<>();
@@ -372,24 +391,23 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			};
 
 			while (!tupleExprs.isEmpty()) {
-				if (ret.isEmpty()) {
+				if (retPrefix.isEmpty() && deferredPair.isEmpty()) {
 					TupleExpr bestStart = selectBestStartingExpr(tupleExprs, getCard);
 					if (bestStart != null) {
 						tupleExprs.remove(bestStart);
-						ret.addLast(bestStart);
+						deferredPair.add(bestStart);
 						continue;
 					}
 				}
 
-				// If ret is empty or next isn't a statement-pattern-compatible tuple expression, drain in original
-				// order
-				if (ret.isEmpty() || !statementPatternCompatible(tupleExprs.get(0))) {
-					ret.add(tupleExprs.remove(0));
+				// If ret is empty or next cannot participate in pairwise join-cost comparison, drain in original order.
+				if ((retPrefix.isEmpty() && deferredPair.isEmpty()) || !pairwiseJoinCostCandidate(tupleExprs.get(0))) {
+					retPrefix.add(tupleExprs.remove(0));
 					continue;
 				}
 
 				if (tupleExprs.size() == 1) {
-					ret.add(tupleExprs.remove(0));
+					retPrefix.add(tupleExprs.remove(0));
 					continue;
 				}
 
@@ -397,13 +415,23 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				TupleExpr bestCandidate = null;
 				double bestCost = Double.MAX_VALUE;
 				for (TupleExpr cand : tupleExprs) {
-					if (!statementPatternWithMinimumOneConstant(cand)) {
+					if (!pairwiseJoinCostCandidate(cand)) {
 						continue;
 					}
 
 					// compute the minimum join‐cost between cand and anything in ret
-					for (TupleExpr prev : ret) {
-						if (!statementPatternWithMinimumOneConstant(prev)) {
+					for (TupleExpr prev : retPrefix) {
+						if (!pairwiseJoinCostCandidate(prev)) {
+							continue;
+						}
+						double cost = getCard.apply(prev, cand);
+						if (cost < bestCost) {
+							bestCost = cost;
+							bestCandidate = cand;
+						}
+					}
+					for (TupleExpr prev : deferredPair) {
+						if (!pairwiseJoinCostCandidate(prev)) {
 							continue;
 						}
 						double cost = getCard.apply(prev, cand);
@@ -417,20 +445,27 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				// If we found a cheap StatementPattern, pick it; otherwise just take the head
 				if (bestCandidate != null) {
 					tupleExprs.remove(bestCandidate);
-					ret.addLast(bestCandidate);
+					if (deferredPair.size() < 2) {
+						deferredPair.add(bestCandidate);
+					} else {
+						retPrefix.addLast(bestCandidate);
+					}
 				} else {
-					ret.addLast(tupleExprs.remove(0));
+					retPrefix.addLast(tupleExprs.removeFirst());
 				}
 			}
 
-			return ret;
+			if (!deferredPair.isEmpty()) {
+				retPrefix.addAll(deferredPair);
+			}
+			return retPrefix;
 		}
 
 		private TupleExpr selectBestStartingExpr(List<TupleExpr> tupleExprs,
 				BiFunction<TupleExpr, TupleExpr, Double> getCard) {
 			List<TupleExpr> candidates = new ArrayList<>();
 			for (TupleExpr tupleExpr : tupleExprs) {
-				if (statementPatternWithMinimumOneConstant(tupleExpr)) {
+				if (pairwiseJoinCostCandidate(tupleExpr)) {
 					candidates.add(tupleExpr);
 				}
 			}
@@ -998,8 +1033,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 	}
 
-	private static boolean statementPatternCompatible(TupleExpr cand) {
-		return extractStatementPattern(cand) != null;
+	private static boolean pairwiseJoinCostCandidate(TupleExpr tupleExpr) {
+		return statementPatternWithMinimumOneConstant(tupleExpr)
+				|| !tupleExpr.getBindingNames().isEmpty()
+				|| !tupleExpr.getAssuredBindingNames().isEmpty();
 	}
 
 	private static boolean statementPatternWithMinimumOneConstant(TupleExpr cand) {

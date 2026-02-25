@@ -23,15 +23,18 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -44,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
@@ -230,8 +234,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				.map(QueryJoinOptimizerTest::getPredicateValue)
 				.collect(Collectors.toList());
 		assertThat(predicateOrder).containsExactlyInAnyOrder("ex:pCheap", "ex:pMedium", "ex:pExpensive");
-		assertThat(predicateOrder.subList(0, 2)).containsExactlyInAnyOrder("ex:pCheap", "ex:pMedium");
-		assertThat(predicateOrder.get(2)).isEqualTo("ex:pExpensive");
+		assertThat(predicateOrder.get(0)).isEqualTo("ex:pExpensive");
+		assertThat(predicateOrder.subList(1, 3)).containsExactlyInAnyOrder("ex:pCheap", "ex:pMedium");
 	}
 
 	@Test
@@ -262,8 +266,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				.map(QueryJoinOptimizerTest::getPredicateValue)
 				.collect(Collectors.toList());
 		assertThat(predicateOrder).containsExactlyInAnyOrder("ex:pA", "ex:pB", "ex:pC");
-		assertThat(predicateOrder.subList(0, 2)).containsExactlyInAnyOrder("ex:pB", "ex:pC");
-		assertThat(predicateOrder.get(2)).isEqualTo("ex:pA");
+		assertThat(predicateOrder.get(0)).isEqualTo("ex:pA");
+		assertThat(predicateOrder.subList(1, 3)).containsExactlyInAnyOrder("ex:pB", "ex:pC");
 	}
 
 	@Test
@@ -291,8 +295,93 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				.map(QueryJoinOptimizerTest::getPredicateValue)
 				.collect(Collectors.toList());
 		assertThat(predicateOrder).containsExactlyInAnyOrder("ex:pA", "ex:pB", "ex:pC");
-		assertThat(predicateOrder.subList(0, 2)).containsExactlyInAnyOrder("ex:pB", "ex:pC");
-		assertThat(predicateOrder.get(2)).isEqualTo("ex:pA");
+		assertThat(predicateOrder.get(0)).isEqualTo("ex:pA");
+		assertThat(predicateOrder.subList(1, 3)).containsExactlyInAnyOrder("ex:pB", "ex:pC");
+	}
+
+	@Test
+	public void optimizeJoinTreeBuildsCheapestPairAsInnermostJoin() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		StatementPattern a = new StatementPattern(new Var("sa"), new Var("pa", vf.createIRI("ex:pA")),
+				new Var("oa"));
+		StatementPattern b = new StatementPattern(new Var("sb"), new Var("pb", vf.createIRI("ex:pB")),
+				new Var("ob"));
+		StatementPattern c = new StatementPattern(new Var("sc"), new Var("pc", vf.createIRI("ex:pC")),
+				new Var("oc"));
+		QueryRoot root = new QueryRoot(new Join(a, new Join(b, c)));
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatistics(), new EmptyTripleSource());
+		optimizer.optimize(root, null, null);
+
+		assertThat(root.getArg()).isInstanceOf(Join.class);
+		Join optimizedRoot = (Join) root.getArg();
+		assertThat(optimizedRoot.getRightArg()).isInstanceOf(Join.class);
+		Join innerJoin = (Join) optimizedRoot.getRightArg();
+
+		List<String> innerJoinPredicates = List.of(
+				getPredicateValue(innerJoin.getLeftArg()),
+				getPredicateValue(innerJoin.getRightArg()));
+		assertThat(innerJoinPredicates).containsExactlyInAnyOrder("ex:pB", "ex:pC");
+	}
+
+	@Test
+	public void reorderJoinArgsChoosesCheapestInitialJoinCombinationForBindingSetAssignment() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		BindingSetAssignment values = bindingSetAssignment("shared",
+				vf.createLiteral("shared-1"),
+				vf.createLiteral("shared-2"));
+		StatementPattern other = new StatementPattern(new Var("otherS"),
+				new Var("otherP", vf.createIRI("ex:pOther")),
+				new Var("otherO"));
+		StatementPattern usesValues = new StatementPattern(new Var("usesS"),
+				new Var("usesP", vf.createIRI("ex:pUses")),
+				new Var("shared"));
+
+		Deque<TupleExpr> ordered = new ArrayDeque<>();
+		ordered.add(values);
+		ordered.add(other);
+		ordered.add(usesValues);
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatisticsWithAlternativeBindings(),
+				new EmptyTripleSource());
+		Object joinVisitor = buildJoinVisitor(optimizer);
+		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class);
+		reorderJoinArgs.setAccessible(true);
+
+		@SuppressWarnings("unchecked")
+		Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered);
+		List<TupleExpr> reorderedList = new ArrayList<>(reordered);
+
+		assertThat(reorderedList.get(0)).isSameAs(other);
+		assertThat(reorderedList.subList(1, 3)).containsExactlyInAnyOrder(values, usesValues);
+	}
+
+	@Test
+	public void reorderJoinArgsChoosesCheapestInitialJoinCombinationForValueConstrainedFilterPatterns()
+			throws Exception {
+		Filter a = valueConstrainedPattern("aS", "aP", "shared", "ex:pA");
+		Filter c = valueConstrainedPattern("cS", "cP", "cO", "ex:pC");
+		Filter b = valueConstrainedPattern("shared", "bP", "bO", "ex:pB");
+
+		Deque<TupleExpr> ordered = new ArrayDeque<>();
+		ordered.add(a);
+		ordered.add(c);
+		ordered.add(b);
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatisticsWithAlternativeBindings(),
+				new EmptyTripleSource());
+		Object joinVisitor = buildJoinVisitor(optimizer);
+		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class);
+		reorderJoinArgs.setAccessible(true);
+
+		@SuppressWarnings("unchecked")
+		Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered);
+		List<TupleExpr> reorderedList = new ArrayList<>(reordered);
+
+		assertThat(reorderedList.get(0)).isSameAs(c);
+		assertThat(reorderedList.subList(1, 3)).containsExactlyInAnyOrder(a, b);
 	}
 
 	@Test
@@ -416,6 +505,33 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				org.eclipse.rdf4j.query.algebra.Compare.CompareOp.EQ));
 	}
 
+	private static Filter valueConstrainedPattern(String subjectName, String predicateVarName, String objectName,
+			String predicateIri) {
+		StatementPattern pattern = new StatementPattern(
+				Var.of(subjectName),
+				Var.of(predicateVarName),
+				Var.of(objectName));
+		return new Filter(pattern, new org.eclipse.rdf4j.query.algebra.Compare(
+				Var.of(predicateVarName),
+				new org.eclipse.rdf4j.query.algebra.ValueConstant(
+						SimpleValueFactory.getInstance().createIRI(predicateIri)),
+				org.eclipse.rdf4j.query.algebra.Compare.CompareOp.EQ));
+	}
+
+	private static BindingSetAssignment bindingSetAssignment(String bindingName, Value... values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of(bindingName));
+
+		List<org.eclipse.rdf4j.query.BindingSet> bindingSets = new ArrayList<>(values.length);
+		for (Value value : values) {
+			MapBindingSet bindingSet = new MapBindingSet();
+			bindingSet.addBinding(bindingName, value);
+			bindingSets.add(bindingSet);
+		}
+		assignment.setBindingSets(bindingSets);
+		return assignment;
+	}
+
 	private static final class PairwiseJoinStatistics extends EvaluationStatistics {
 		@Override
 		public boolean supportsJoinEstimation() {
@@ -518,6 +634,112 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 			}
 
 			return 100;
+		}
+	}
+
+	private static final class PairwiseJoinStatisticsWithAlternativeBindings extends EvaluationStatistics {
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof BindingSetAssignment) {
+				return 2;
+			}
+
+			if (expr instanceof StatementPattern || expr instanceof Filter) {
+				String label = tupleExprLabel(expr);
+				if ("ex:pUses".equals(label)) {
+					return 60;
+				}
+				if ("ex:pOther".equals(label)) {
+					return 40;
+				}
+				if ("ex:pA".equals(label)) {
+					return 80;
+				}
+				if ("ex:pB".equals(label)) {
+					return 70;
+				}
+				if ("ex:pC".equals(label)) {
+					return 90;
+				}
+			}
+
+			if (expr instanceof Join) {
+				return getJoinCardinality((Join) expr);
+			}
+
+			return super.getCardinality(expr);
+		}
+
+		private double getJoinCardinality(Join join) {
+			String left = tupleExprLabel(join.getLeftArg());
+			String right = tupleExprLabel(join.getRightArg());
+			if (left == null || right == null) {
+				return super.getCardinality(join);
+			}
+
+			if (pair(left, right, "values:shared", "ex:pUses")) {
+				return 1;
+			}
+			if (pair(left, right, "values:shared", "ex:pOther")) {
+				return 1000;
+			}
+			if (pair(left, right, "ex:pUses", "ex:pOther")) {
+				return 400;
+			}
+			if (pair(left, right, "ex:pA", "ex:pB")) {
+				return 2;
+			}
+			if (pair(left, right, "ex:pA", "ex:pC")) {
+				return 700;
+			}
+			if (pair(left, right, "ex:pB", "ex:pC")) {
+				return 900;
+			}
+
+			return super.getCardinality(join);
+		}
+
+		private boolean pair(String left, String right, String a, String b) {
+			return (a.equals(left) && b.equals(right)) || (b.equals(left) && a.equals(right));
+		}
+
+		private String tupleExprLabel(TupleExpr expr) {
+			if (expr instanceof BindingSetAssignment) {
+				BindingSetAssignment assignment = (BindingSetAssignment) expr;
+				String bindingName = assignment.getBindingNames().stream().findFirst().orElse("unknown");
+				return "values:" + bindingName;
+			}
+
+			StatementPattern statementPattern = extractStatementPattern(expr);
+			if (statementPattern != null) {
+				Var predicateVar = statementPattern.getPredicateVar();
+				if (predicateVar != null && predicateVar.hasValue()) {
+					return predicateVar.getValue().stringValue();
+				}
+			}
+
+			if (expr instanceof Filter) {
+				Filter filter = (Filter) expr;
+				if (filter.getCondition() instanceof org.eclipse.rdf4j.query.algebra.Compare) {
+					org.eclipse.rdf4j.query.algebra.Compare compare = (org.eclipse.rdf4j.query.algebra.Compare) filter
+							.getCondition();
+					if (compare.getRightArg() instanceof org.eclipse.rdf4j.query.algebra.ValueConstant) {
+						Value value = ((org.eclipse.rdf4j.query.algebra.ValueConstant) compare.getRightArg())
+								.getValue();
+						if (value instanceof org.eclipse.rdf4j.model.IRI) {
+							return value.stringValue();
+						}
+					}
+				}
+			}
+
+			return null;
 		}
 	}
 

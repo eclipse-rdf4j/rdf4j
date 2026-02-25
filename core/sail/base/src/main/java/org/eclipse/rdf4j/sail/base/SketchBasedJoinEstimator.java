@@ -869,7 +869,7 @@ public class SketchBasedJoinEstimator {
 				double newSize = interDistinct * leftAvg * rightAvg;
 
 				/* round to nearest whole solution count if enabled */
-				this.resultSize = roundJoinEstimates ? Math.round(newSize) : newSize;
+				this.resultSize = roundJoinEstimate(newSize);
 
 				/* carry forward */
 				this.bindings = inter;
@@ -1460,6 +1460,9 @@ public class SketchBasedJoinEstimator {
 		StatementPattern l = asSketchCompatiblePattern(leftArg);
 		StatementPattern r = asSketchCompatiblePattern(rightArg);
 		if (l != null && r != null) {
+			if (!hasBoundComponent(l) || !hasBoundComponent(r)) {
+				return -1; // unsupported sketch case, let caller fall back
+			}
 
 			/* find first common unbound variable */
 			Var common = null;
@@ -1471,11 +1474,10 @@ public class SketchBasedJoinEstimator {
 				}
 			}
 			if (common == null) {
-				return Double.MAX_VALUE; // no common var
-			}
-
-			if (!hasBoundComponent(l) || !hasBoundComponent(r)) {
-				return -1; // unsupported sketch case, let caller fall back
+				double leftRows = estimatePatternRows(l);
+				double rightRows = estimatePatternRows(r);
+				double crossRows = estimateDisconnectedJoinRows(leftRows, rightRows);
+				return leftJoin ? Math.max(leftRows, crossRows) : crossRows;
 			}
 
 			Component lc = getComponent(l, common);
@@ -1498,6 +1500,46 @@ public class SketchBasedJoinEstimator {
 			return leftJoin ? Math.max(leftRows, joinRows) : joinRows;
 		}
 		return -1;
+	}
+
+	private double estimatePatternRows(StatementPattern pattern) {
+		return estimate(resolveJoinComponent(pattern),
+				getValueOrNull(pattern.getSubjectVar()),
+				getValueOrNull(pattern.getPredicateVar()),
+				getValueOrNull(pattern.getObjectVar()),
+				getValueOrNull(pattern.getContextVar()))
+				.estimate();
+	}
+
+	private Component resolveJoinComponent(StatementPattern pattern) {
+		if (!hasBoundValue(pattern.getSubjectVar())) {
+			return Component.S;
+		}
+		if (!hasBoundValue(pattern.getPredicateVar())) {
+			return Component.P;
+		}
+		if (!hasBoundValue(pattern.getObjectVar())) {
+			return Component.O;
+		}
+		if (!hasBoundValue(pattern.getContextVar())) {
+			return Component.C;
+		}
+		return Component.S;
+	}
+
+	private double estimateDisconnectedJoinRows(double leftRows, double rightRows) {
+		double estimate = leftRows + rightRows;
+		if (!Double.isFinite(estimate)) {
+			return Double.MAX_VALUE;
+		}
+		return roundJoinEstimate(estimate);
+	}
+
+	private double roundJoinEstimate(double value) {
+		if (!roundJoinEstimates || !Double.isFinite(value) || value >= Long.MAX_VALUE) {
+			return value;
+		}
+		return Math.round(value);
 	}
 
 	private StatementPattern asSketchCompatiblePattern(TupleExpr tupleExpr) {
