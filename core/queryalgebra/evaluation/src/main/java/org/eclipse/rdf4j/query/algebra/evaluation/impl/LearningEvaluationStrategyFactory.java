@@ -19,10 +19,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearningQueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearnedQueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearningRdfStarTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearningTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.MemoryJoinStats;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedJoinConfig;
 
 /**
@@ -103,9 +104,10 @@ public class LearningEvaluationStrategyFactory extends DefaultEvaluationStrategy
 		EvaluationStatistics optimizerStatistics = optimizerStatisticsOverride != null
 				? optimizerStatisticsOverride
 				: evaluationStatistics;
-		strategy.setOptimizerPipeline(
-				new LearningQueryOptimizerPipeline(strategy, learningTripleSource, optimizerStatistics,
-						statsProvider, joinConfig));
+		LearnedQueryJoinOptimizer learnedJoinOptimizer = new LearnedQueryJoinOptimizer(optimizerStatistics,
+				strategy.isTrackResultSize(), learningTripleSource, statsProvider, joinConfig);
+		strategy.setOptimizerPipeline(new SparqlUoQueryOptimizerPipeline(strategy, learningTripleSource,
+				optimizerStatistics, learnedJoinOptimizer));
 		return strategy;
 	}
 }
