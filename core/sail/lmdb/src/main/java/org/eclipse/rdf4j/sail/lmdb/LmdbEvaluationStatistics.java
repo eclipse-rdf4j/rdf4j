@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -70,6 +71,19 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 				double estimatedCardinality = sketchBasedJoinEstimator.cardinality(node);
 				if (estimatedCardinality >= 0) {
 //					System.out.println("HERE: "+estimatedCardinality);
+					this.cardinality = estimatedCardinality;
+					return;
+				}
+			}
+
+			super.meet(node);
+		}
+
+		@Override
+		public void meet(LeftJoin node) {
+			if (supportsJoinEstimation()) {
+				double estimatedCardinality = sketchBasedJoinEstimator.cardinality(node);
+				if (estimatedCardinality >= 0) {
 					this.cardinality = estimatedCardinality;
 					return;
 				}

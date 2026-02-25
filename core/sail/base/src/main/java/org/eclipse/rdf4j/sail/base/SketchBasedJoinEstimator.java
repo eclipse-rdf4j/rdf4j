@@ -49,9 +49,16 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -1435,9 +1442,24 @@ public class SketchBasedJoinEstimator {
 		TupleExpr leftArg = node.getLeftArg();
 		TupleExpr rightArg = node.getRightArg();
 
-		if (leftArg instanceof StatementPattern && rightArg instanceof StatementPattern) {
-			StatementPattern l = (StatementPattern) leftArg;
-			StatementPattern r = (StatementPattern) rightArg;
+		return estimateJoinCardinality(leftArg, rightArg, false);
+	}
+
+	public double cardinality(LeftJoin node) {
+		if (!isReady() || node.hasCondition()) {
+			return -1;
+		}
+
+		TupleExpr leftArg = node.getLeftArg();
+		TupleExpr rightArg = node.getRightArg();
+
+		return estimateJoinCardinality(leftArg, rightArg, true);
+	}
+
+	private double estimateJoinCardinality(TupleExpr leftArg, TupleExpr rightArg, boolean leftJoin) {
+		StatementPattern l = asSketchCompatiblePattern(leftArg);
+		StatementPattern r = asSketchCompatiblePattern(rightArg);
+		if (l != null && r != null) {
 
 			/* find first common unbound variable */
 			Var common = null;
@@ -1459,20 +1481,113 @@ public class SketchBasedJoinEstimator {
 			Component lc = getComponent(l, common);
 			Component rc = getComponent(r, common);
 
-			return this
+			JoinEstimate leftEstimate = this
 					.estimate(lc,
 							getValueOrNull(l.getSubjectVar()),
 							getValueOrNull(l.getPredicateVar()),
 							getValueOrNull(l.getObjectVar()),
-							getValueOrNull(l.getContextVar()))
+							getValueOrNull(l.getContextVar()));
+			double leftRows = leftEstimate.estimate();
+			double joinRows = leftEstimate
 					.join(rc,
 							getValueOrNull(r.getSubjectVar()),
 							getValueOrNull(r.getPredicateVar()),
 							getValueOrNull(r.getObjectVar()),
 							getValueOrNull(r.getContextVar()))
 					.estimate();
+			return leftJoin ? Math.max(leftRows, joinRows) : joinRows;
 		}
 		return -1;
+	}
+
+	private StatementPattern asSketchCompatiblePattern(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof StatementPattern) {
+			return (StatementPattern) tupleExpr;
+		}
+		if (tupleExpr instanceof Filter) {
+			return asSketchCompatiblePattern((Filter) tupleExpr);
+		}
+		return null;
+	}
+
+	private StatementPattern asSketchCompatiblePattern(Filter filter) {
+		StatementPattern pattern;
+		if (filter.getArg() instanceof StatementPattern) {
+			pattern = ((StatementPattern) filter.getArg()).clone();
+		} else if (filter.getArg() instanceof Filter) {
+			pattern = asSketchCompatiblePattern((Filter) filter.getArg());
+		} else {
+			return null;
+		}
+
+		if (pattern == null) {
+			return null;
+		}
+
+		return bindSimpleFilterCondition(pattern, filter.getCondition()) ? pattern : null;
+	}
+
+	private boolean bindSimpleFilterCondition(StatementPattern pattern, ValueExpr condition) {
+		if (condition instanceof And) {
+			And and = (And) condition;
+			return bindSimpleFilterCondition(pattern, and.getLeftArg())
+					&& bindSimpleFilterCondition(pattern, and.getRightArg());
+		}
+
+		if (condition instanceof Compare) {
+			Compare compare = (Compare) condition;
+			if (compare.getOperator() != Compare.CompareOp.EQ) {
+				return false;
+			}
+
+			return bindVarToConstant(pattern, compare.getLeftArg(), compare.getRightArg())
+					|| bindVarToConstant(pattern, compare.getRightArg(), compare.getLeftArg());
+		}
+
+		if (condition instanceof SameTerm) {
+			SameTerm sameTerm = (SameTerm) condition;
+			return bindVarToConstant(pattern, sameTerm.getLeftArg(), sameTerm.getRightArg())
+					|| bindVarToConstant(pattern, sameTerm.getRightArg(), sameTerm.getLeftArg());
+		}
+
+		return false;
+	}
+
+	private boolean bindVarToConstant(StatementPattern pattern, ValueExpr maybeVarExpr, ValueExpr maybeValueExpr) {
+		if (!(maybeVarExpr instanceof Var) || !(maybeValueExpr instanceof ValueConstant)) {
+			return false;
+		}
+
+		Var filterVar = (Var) maybeVarExpr;
+		ValueConstant constant = (ValueConstant) maybeValueExpr;
+		if (filterVar.getName() == null || constant.getValue() == null) {
+			return false;
+		}
+
+		return bindPatternVars(pattern, filterVar.getName(), constant.getValue());
+	}
+
+	private boolean bindPatternVars(StatementPattern pattern, String varName, Value value) {
+		boolean found = false;
+		for (Var patternVar : new Var[] {
+				pattern.getSubjectVar(),
+				pattern.getPredicateVar(),
+				pattern.getObjectVar(),
+				pattern.getContextVar() }) {
+			if (patternVar == null || !varName.equals(patternVar.getName())) {
+				continue;
+			}
+
+			found = true;
+			if (patternVar.hasValue() && !Objects.equals(patternVar.getValue(), value)) {
+				return false;
+			}
+			if (!patternVar.hasValue()) {
+				pattern.replaceChildNode(patternVar,
+						Var.of(patternVar.getName(), value, patternVar.isAnonymous(), patternVar.isConstant()));
+			}
+		}
+		return found;
 	}
 
 	private String getValueOrNull(Var v) {

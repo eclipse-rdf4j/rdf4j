@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -26,8 +27,15 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -63,6 +71,85 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		}
 	}
 
+	@Test
+	void usesSketchEstimatorForLeftJoinCardinalityWhenReady() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-leftjoin").toFile();
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
+		try {
+			loadData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().setLowMemorySupplier(() -> false);
+			backingStore.getSketchBasedJoinEstimator().rebuildOnceSlow();
+
+			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
+			assertTrue(statistics.supportsJoinEstimation(), "Expected sketch join estimator to be available");
+
+			LeftJoin leftJoin = leftJoin(
+					"SELECT * WHERE { ?s <urn:test:follows> ?o . OPTIONAL { ?s <urn:test:name> ?name . } }");
+			StatementPattern leftPattern = (StatementPattern) leftJoin.getLeftArg();
+			StatementPattern rightPattern = (StatementPattern) leftJoin.getRightArg();
+
+			double leftCardinality = statistics.getCardinality(leftPattern);
+			double rightCardinality = statistics.getCardinality(rightPattern);
+			double fallbackProduct = leftCardinality * rightCardinality;
+			double leftJoinCardinality = statistics.getCardinality(leftJoin);
+
+			assertTrue(leftJoinCardinality < fallbackProduct,
+					"Expected LEFT JOIN cardinality to avoid multiplicative fallback when sketch estimator is ready");
+		} finally {
+			repository.shutDown();
+			FileUtils.deleteDirectory(dataDir);
+		}
+	}
+
+	@Test
+	void usesSketchEstimatorForFilterWrappedStatementPatternsWhenReady() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-filter-wrapped-join").toFile();
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
+		try {
+			loadData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().setLowMemorySupplier(() -> false);
+			backingStore.getSketchBasedJoinEstimator().rebuildOnceSlow();
+
+			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
+			assertTrue(statistics.supportsJoinEstimation(), "Expected sketch join estimator to be available");
+
+			Filter leftFilter = filterWrappedPattern(
+					"s",
+					"urn:test:follows",
+					"o",
+					"o",
+					SimpleValueFactory.getInstance().createIRI("urn:test:user:1"));
+			Filter rightFilter = filterWrappedPattern(
+					"s",
+					"urn:test:name",
+					"name",
+					"name",
+					SimpleValueFactory.getInstance().createLiteral("u0"));
+
+			double leftCardinality = statistics.getCardinality(leftFilter);
+			double rightCardinality = statistics.getCardinality(rightFilter);
+			double fallbackProduct = leftCardinality * rightCardinality;
+
+			double joinCardinality = statistics.getCardinality(new Join(leftFilter.clone(), rightFilter.clone()));
+			assertTrue(joinCardinality < fallbackProduct,
+					"Expected JOIN cardinality to avoid multiplicative fallback for simple filter-wrapped patterns");
+
+			double leftJoinCardinality = statistics
+					.getCardinality(new LeftJoin(leftFilter.clone(), rightFilter.clone()));
+			assertTrue(leftJoinCardinality < fallbackProduct,
+					"Expected LEFT JOIN cardinality to avoid multiplicative fallback for simple filter-wrapped patterns");
+		} finally {
+			repository.shutDown();
+			FileUtils.deleteDirectory(dataDir);
+		}
+	}
+
 	private static void loadData(SailRepository repository) {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		IRI follows = vf.createIRI("urn:test:follows");
@@ -91,6 +178,33 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		List<StatementPattern> patterns = StatementPatternCollector.process(parsed.getTupleExpr());
 		return patterns.get(0);
+	}
+
+	private static Filter filterWrappedPattern(String subjectVarName, String predicateIri, String objectVarName,
+			String filterVarName, org.eclipse.rdf4j.model.Value filterValue) {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern pattern = new StatementPattern(
+				Var.of(subjectVarName),
+				Var.of("p", vf.createIRI(predicateIri)),
+				Var.of(objectVarName));
+		Compare condition = new Compare(Var.of(filterVarName), new ValueConstant(filterValue), Compare.CompareOp.EQ);
+		return new Filter(pattern, condition);
+	}
+
+	private static LeftJoin leftJoin(String query) {
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		final LeftJoin[] found = new LeftJoin[1];
+		parsed.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(LeftJoin node) {
+				if (found[0] == null) {
+					found[0] = node;
+				}
+				super.meet(node);
+			}
+		});
+		assertNotNull(found[0], "Expected query to contain a LEFT JOIN");
+		return found[0];
 	}
 
 	private static Map<?, ?> cardinalityCache(EvaluationStatistics statistics) throws Exception {
