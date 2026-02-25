@@ -248,7 +248,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
-		private void buildFullJoinHierarchy(Join node, TupleExpr priorityJoins, Deque<TupleExpr> orderedJoinArgs, Set<String> origBoundVars) {
+		private void buildFullJoinHierarchy(Join node, TupleExpr priorityJoins, Deque<TupleExpr> orderedJoinArgs,
+				Set<String> origBoundVars) {
 			initialMergeJoinOptimization(priorityJoins, orderedJoinArgs);
 
 			if (!orderedJoinArgs.isEmpty()) {
