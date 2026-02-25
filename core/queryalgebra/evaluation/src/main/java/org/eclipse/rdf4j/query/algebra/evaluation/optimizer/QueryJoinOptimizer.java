@@ -237,7 +237,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
-		private void orderAllJoinArgs(List<TupleExpr> joinArgs, Map<TupleExpr, Double> cardinalityMap, Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Deque<TupleExpr> orderedJoinArgs) {
+		private void orderAllJoinArgs(List<TupleExpr> joinArgs, Map<TupleExpr, Double> cardinalityMap,
+				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Deque<TupleExpr> orderedJoinArgs) {
 			while (!joinArgs.isEmpty()) {
 				TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap, varFreqMap);
 				this.currentHighestCost = Math.max(currentHighestCost, tupleExpr.getCostEstimate());
@@ -374,8 +375,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs) {
 			// Copy input into a mutable list
 			List<TupleExpr> tupleExprs = new ArrayList<>(orderedJoinArgs);
-			Deque<TupleExpr> retPrefix = new ArrayDeque<>();
-			List<TupleExpr> deferredPair = new ArrayList<>(2);
+			Deque<TupleExpr> ret = new ArrayDeque<>();
 
 			// Memo table: for each (a, b), stores statistics.getCardinality(new Join(a,b))
 			Map<TupleExpr, Map<TupleExpr, Double>> cardCache = new HashMap<>();
@@ -395,28 +395,16 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return c;
 			};
 
+			TupleExpr[] bestPair = selectBestStartingPair(tupleExprs, getCard);
+			if (bestPair != null) {
+				tupleExprs.remove(bestPair[0]);
+				tupleExprs.remove(bestPair[1]);
+				ret.addLast(bestPair[0]);
+				ret.addLast(bestPair[1]);
+			}
+
 			while (!tupleExprs.isEmpty()) {
-				if (retPrefix.isEmpty() && deferredPair.isEmpty()) {
-					TupleExpr bestStart = selectBestStartingExpr(tupleExprs, getCard);
-					if (bestStart != null) {
-						tupleExprs.remove(bestStart);
-						deferredPair.add(bestStart);
-						continue;
-					}
-				}
-
-				// If ret is empty or next cannot participate in pairwise join-cost comparison, drain in original order.
-				if ((retPrefix.isEmpty() && deferredPair.isEmpty()) || !pairwiseJoinCostCandidate(tupleExprs.getFirst())) {
-					retPrefix.add(tupleExprs.removeFirst());
-					continue;
-				}
-
-				if (tupleExprs.size() == 1) {
-					retPrefix.add(tupleExprs.removeFirst());
-					continue;
-				}
-
-				// Find the tupleExpr in tupleExprs whose join with any in ret has minimal cardinality
+				// Build from the inside out: keep the current cheapest core in the tail and prepend cheaper connectors.
 				TupleExpr bestCandidate = null;
 				double bestCost = Double.MAX_VALUE;
 				for (TupleExpr cand : tupleExprs) {
@@ -424,18 +412,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						continue;
 					}
 
-					// compute the minimum join‐cost between cand and anything in ret
-					for (TupleExpr prev : retPrefix) {
-						if (!pairwiseJoinCostCandidate(prev)) {
-							continue;
-						}
-						double cost = getCard.apply(prev, cand);
-						if (cost < bestCost) {
-							bestCost = cost;
-							bestCandidate = cand;
-						}
-					}
-					for (TupleExpr prev : deferredPair) {
+					// compute the minimum join-cost between cand and anything already selected
+					for (TupleExpr prev : ret) {
 						if (!pairwiseJoinCostCandidate(prev)) {
 							continue;
 						}
@@ -447,26 +425,19 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 				}
 
-				// If we found a cheap StatementPattern, pick it; otherwise just take the head
 				if (bestCandidate != null) {
 					tupleExprs.remove(bestCandidate);
-					if (deferredPair.size() < 2) {
-						deferredPair.add(bestCandidate);
-					} else {
-						retPrefix.addLast(bestCandidate);
-					}
+					ret.addFirst(bestCandidate);
 				} else {
-					retPrefix.addLast(tupleExprs.removeFirst());
+					// No pairwise comparison possible: preserve remaining original order before the selected core.
+					ret.addFirst(tupleExprs.removeLast());
 				}
 			}
 
-			if (!deferredPair.isEmpty()) {
-				retPrefix.addAll(deferredPair);
-			}
-			return retPrefix;
+			return ret;
 		}
 
-		private TupleExpr selectBestStartingExpr(List<TupleExpr> tupleExprs,
+		private TupleExpr[] selectBestStartingPair(List<TupleExpr> tupleExprs,
 				BiFunction<TupleExpr, TupleExpr, Double> getCard) {
 			List<TupleExpr> candidates = new ArrayList<>();
 			for (TupleExpr tupleExpr : tupleExprs) {
@@ -516,8 +487,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			double cardA = singleCard.get(bestA);
 			double cardB = singleCard.get(bestB);
-
-			return cardA <= cardB ? bestA : bestB;
+			return cardA <= cardB
+					? new TupleExpr[] { bestA, bestB }
+					: new TupleExpr[] { bestB, bestA };
 		}
 
 		private void optimizeInNewScope(List<TupleExpr> subSelects) {

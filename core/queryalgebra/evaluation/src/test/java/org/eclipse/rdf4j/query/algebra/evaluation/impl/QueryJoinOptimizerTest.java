@@ -388,7 +388,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		@SuppressWarnings("unchecked")
 		Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, orderedJoinArgs);
 
-		List<String> expectedOrder = List.of("ex:p4", "ex:p5", "ex:p6", "ex:p7", "ex:p8", "ex:p9", "ex:p0", "ex:p1",
+		List<String> expectedOrder = List.of("ex:p1", "ex:p0", "ex:p9", "ex:p8", "ex:p7", "ex:p6", "ex:p5", "ex:p4",
 				"ex:p2", "ex:p3");
 		List<String> actualOrder = reordered.stream()
 				.map(QueryJoinOptimizerTest::getPredicateValue)
