@@ -229,6 +229,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			filtered = applyNewScopeStartPenalty(pattern, effectiveBoundVars, filtered);
 			return applyFilterFallbackCap(filtered, context);
 		}
+		filterApplication = applyLearnedFilterRatio(context, pattern, filterApplication);
 		double adjusted = learnedEstimate.estimate;
 		adjusted = stabilizePredicateOnlyScanEstimate(key, defaultEstimate, adjusted);
 		adjusted = stabilizeTypeScanEstimate(pattern, key, defaultEstimate, adjusted);
@@ -264,6 +265,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			filtered = applyNewScopeStartPenalty(pattern, effectiveBoundVars, filtered);
 			return applyFilterFallbackCap(filtered, context);
 		}
+		filterApplication = applyLearnedFilterRatio(context, pattern, filterApplication);
 		double adjusted = learnedEstimate.estimate;
 		adjusted = stabilizePredicateOnlyScanEstimate(key, defaultEstimate, adjusted);
 		adjusted = stabilizeTypeScanEstimate(pattern, key, defaultEstimate, adjusted);
@@ -398,6 +400,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			estimate = applyNewScopeStartPenalty(pattern, effectiveBoundVars, estimate);
 			return applyFilterFallbackCap(estimate, context);
 		}
+		filterApplication = applyLearnedFilterRatio(context, pattern, filterApplication);
 		double adjusted = learnedEstimate.estimate;
 		double filtered = applyFilterMultiplier(adjusted, filterApplication, pattern);
 		filtered = applyUnsupportedLiteralFanoutMultiplier(pattern, effectiveBoundVars, filtered);
@@ -800,18 +803,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		}
 		double capped = estimate;
 		for (Filter filter : context.filters) {
-			Set<String> filterVars = VarNameCollector.process(filter.getCondition());
-			if (filterVars.isEmpty()) {
-				continue;
-			}
-			boolean intersects = false;
-			for (String name : filterVars) {
-				if (patternNames.contains(name)) {
-					intersects = true;
-					break;
-				}
-			}
-			if (!intersects) {
+			if (!filterIntersectsPattern(filter, patternNames)) {
 				continue;
 			}
 			double filterEstimate = fallbackStats.getCardinality(filter);
@@ -820,6 +812,65 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			}
 		}
 		return capped;
+	}
+
+	private FilterApplication applyLearnedFilterRatio(PatternContext context, StatementPattern pattern,
+			FilterApplication filterApplication) {
+		double ratio = estimateFilterToPatternRatio(context, pattern);
+		if (!(ratio > 0.0d)) {
+			return filterApplication;
+		}
+		return new FilterApplication(filterApplication.boundVars, ratio, filterApplication.filterBoundNames);
+	}
+
+	private double estimateFilterToPatternRatio(PatternContext context, StatementPattern pattern) {
+		if (context.filters.isEmpty()) {
+			return -1.0d;
+		}
+		Set<String> patternNames = pattern.getBindingNames();
+		if (patternNames.isEmpty()) {
+			return -1.0d;
+		}
+		double patternEstimate = fallbackStats.getCardinality(pattern);
+		if (!(patternEstimate > 0.0d)) {
+			return -1.0d;
+		}
+		double ratio = 1.0d;
+		boolean ratioFound = false;
+		for (Filter filter : context.filters) {
+			if (!filterIntersectsPattern(filter, patternNames)) {
+				continue;
+			}
+			double filterEstimate = fallbackStats.getCardinality(filter);
+			if (!(filterEstimate > 0.0d) || !Double.isFinite(filterEstimate)) {
+				continue;
+			}
+			double candidateRatio = filterEstimate / patternEstimate;
+			if (!Double.isFinite(candidateRatio) || candidateRatio <= 0.0d || candidateRatio >= 1.0d) {
+				continue;
+			}
+			ratioFound = true;
+			if (candidateRatio < ratio) {
+				ratio = candidateRatio;
+			}
+		}
+		if (!ratioFound) {
+			return -1.0d;
+		}
+		return Math.max(MIN_FILTER_MULTIPLIER, Math.min(1.0d, ratio));
+	}
+
+	private boolean filterIntersectsPattern(Filter filter, Set<String> patternNames) {
+		Set<String> filterVars = VarNameCollector.process(filter.getCondition());
+		if (filterVars.isEmpty()) {
+			return false;
+		}
+		for (String name : filterVars) {
+			if (patternNames.contains(name)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private PatternKey buildKey(StatementPattern node, Set<String> boundVars) {

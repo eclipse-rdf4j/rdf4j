@@ -1456,6 +1456,19 @@ public class SketchBasedJoinEstimator {
 		return estimateJoinCardinality(leftArg, rightArg, true);
 	}
 
+	public double cardinality(Filter node) {
+		if (!isReady()) {
+			return -1;
+		}
+
+		StatementPattern pattern = asSketchCompatiblePattern(node);
+		if (pattern == null || !hasBoundComponent(pattern)) {
+			return -1;
+		}
+
+		return estimatePatternRows(pattern);
+	}
+
 	private double estimateJoinCardinality(TupleExpr leftArg, TupleExpr rightArg, boolean leftJoin) {
 		StatementPattern l = asSketchCompatiblePattern(leftArg);
 		StatementPattern r = asSketchCompatiblePattern(rightArg);

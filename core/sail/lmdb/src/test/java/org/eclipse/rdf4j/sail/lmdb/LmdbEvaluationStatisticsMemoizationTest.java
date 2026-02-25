@@ -132,9 +132,9 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					"name",
 					SimpleValueFactory.getInstance().createLiteral("u0"));
 
-			double leftCardinality = statistics.getCardinality(leftFilter);
-			double rightCardinality = statistics.getCardinality(rightFilter);
-			double fallbackProduct = leftCardinality * rightCardinality;
+			double leftPatternCardinality = statistics.getCardinality((StatementPattern) leftFilter.getArg());
+			double rightPatternCardinality = statistics.getCardinality((StatementPattern) rightFilter.getArg());
+			double fallbackProduct = leftPatternCardinality * rightPatternCardinality;
 
 			double joinCardinality = statistics.getCardinality(new Join(leftFilter.clone(), rightFilter.clone()));
 			assertTrue(joinCardinality < fallbackProduct,
@@ -144,6 +144,38 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					.getCardinality(new LeftJoin(leftFilter.clone(), rightFilter.clone()));
 			assertTrue(leftJoinCardinality < fallbackProduct,
 					"Expected LEFT JOIN cardinality to avoid multiplicative fallback for simple filter-wrapped patterns");
+		} finally {
+			repository.shutDown();
+			FileUtils.deleteDirectory(dataDir);
+		}
+	}
+
+	@Test
+	void usesSketchEstimatorForFilterCardinalityWhenReady() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-filter-cardinality").toFile();
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
+		try {
+			loadData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().setLowMemorySupplier(() -> false);
+			backingStore.getSketchBasedJoinEstimator().rebuildOnceSlow();
+
+			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
+			assertTrue(statistics.supportsJoinEstimation(), "Expected sketch join estimator to be available");
+
+			SimpleValueFactory vf = SimpleValueFactory.getInstance();
+			StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", vf.createIRI("urn:test:name")),
+					Var.of("name"));
+			Filter filter = new Filter(pattern.clone(),
+					new Compare(Var.of("name"), new ValueConstant(vf.createLiteral("u0")), Compare.CompareOp.EQ));
+
+			double patternCardinality = statistics.getCardinality(pattern);
+			double filterCardinality = statistics.getCardinality(filter);
+
+			assertTrue(filterCardinality < patternCardinality,
+					"Expected filter cardinality to use sketch selectivity instead of raw statement pattern cardinality");
 		} finally {
 			repository.shutDown();
 			FileUtils.deleteDirectory(dataDir);

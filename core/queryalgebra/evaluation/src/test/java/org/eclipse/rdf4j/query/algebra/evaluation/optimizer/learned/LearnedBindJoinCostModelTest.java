@@ -416,6 +416,75 @@ class LearnedBindJoinCostModelTest {
 	}
 
 	@Test
+	void learnedEstimateUsesFallbackFilterRatioForPatternEstimate() {
+		EvaluationStatistics stats = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expr) {
+				if (expr instanceof Filter) {
+					return 20.0d;
+				}
+				if (expr instanceof StatementPattern) {
+					return 200.0d;
+				}
+				return super.getCardinality(expr);
+			}
+		};
+
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:pred");
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("o"));
+		Filter filter = new Filter(pattern, new Compare(Var.of("o"),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral("target")), CompareOp.EQ));
+		PatternKey expectedKey = new PatternKey(predicate, PatternKey.PREDICATE_BOUND);
+		JoinStatsProvider statsProvider = new JoinStatsProvider() {
+			@Override
+			public void reset() {
+			}
+
+			@Override
+			public void recordCall(PatternKey key) {
+			}
+
+			@Override
+			public void recordResults(PatternKey key, long resultCount) {
+			}
+
+			@Override
+			public void seedIfAbsent(PatternKey key, double defaultCardinality, long priorCalls) {
+			}
+
+			@Override
+			public double getAverageResults(PatternKey key) {
+				return 1000.0d;
+			}
+
+			@Override
+			public double getMaxResults(PatternKey key) {
+				return 1000.0d;
+			}
+
+			@Override
+			public boolean hasStats(PatternKey key) {
+				return expectedKey.equals(key);
+			}
+
+			@Override
+			public long getCalls(PatternKey key) {
+				return 128L;
+			}
+
+			@Override
+			public long getTotalCalls() {
+				return 128L;
+			}
+		};
+
+		LearnedBindJoinCostModel costModel = new LearnedBindJoinCostModel(stats, statsProvider);
+		double estimate = costModel.estimateFanout(filter, Set.of());
+
+		assertEquals(20.0d, estimate);
+	}
+
+	@Test
 	void collectsExternalConstraintsPastUnsupportedFilters() {
 		EvaluationStatistics stats = new EvaluationStatistics() {
 			@Override
