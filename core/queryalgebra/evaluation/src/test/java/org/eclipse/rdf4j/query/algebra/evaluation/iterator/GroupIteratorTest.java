@@ -275,6 +275,29 @@ public class GroupIteratorTest {
 	}
 
 	@Test
+	public void testCustomAggregateFunction_MultipleArgsRejected() throws QueryEvaluationException {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		var list = new ArrayList<BindingSet>();
+		for (int i = 1; i < 10; i++) {
+			var bindings = new QueryBindingSet();
+			bindings.addBinding("a", VF.createLiteral(i));
+			bindings.addBinding("b", VF.createLiteral(i * 2));
+			list.add(bindings);
+		}
+		assignment.setBindingSets(Collections.unmodifiableList(list));
+
+		Group group = new Group(assignment);
+		group.addGroupElement(new GroupElem("customSum",
+				new AggregateFunctionCall(List.of(Var.of("a"), Var.of("b")), AGGREGATE_FUNCTION_FACTORY.getIri(),
+						false)));
+		try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+			assertThatExceptionOfType(QueryEvaluationException.class)
+					.isThrownBy(() -> gi.next().getBinding("customSum").getValue())
+					.withMessageContaining("expects exactly 1 argument");
+		}
+	}
+
+	@Test
 	public void testCustomNAryAggregateFunction_Nonempty() throws QueryEvaluationException {
 		AggregateNAryFunctionFactory nAryFactory = new FakeAggregateNAryFunctionFactory();
 		CustomAggregateNAryFunctionRegistry.getInstance().add(nAryFactory);

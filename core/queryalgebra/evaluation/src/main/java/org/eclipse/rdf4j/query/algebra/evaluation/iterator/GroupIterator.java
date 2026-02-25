@@ -479,6 +479,10 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 				return createNAryCustomAggregate(ge, operator, aggOperator, nAryFactory.get());
 			}
 			if (unaryFactory.isPresent()) {
+				if (argumentCount != 1) {
+					throw new QueryEvaluationException("Custom unary aggregate function '" + aggOperator.getIRI()
+							+ "' expects exactly 1 argument, got " + argumentCount);
+				}
 				return createUnaryCustomAggregate(ge, operator, aggOperator, unaryFactory.get());
 			}
 
