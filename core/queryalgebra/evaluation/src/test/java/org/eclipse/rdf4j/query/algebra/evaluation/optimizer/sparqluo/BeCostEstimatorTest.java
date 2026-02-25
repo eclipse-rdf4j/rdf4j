@@ -13,7 +13,10 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -22,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.junit.jupiter.api.Test;
 
 class BeCostEstimatorTest {
@@ -112,5 +116,85 @@ class BeCostEstimatorTest {
 
 		double resultSize = estimator.estimateGroupResultSize(group);
 		assertThat(resultSize).isGreaterThanOrEqualTo(100.0);
+	}
+
+	@Test
+	void estimateGroupResultSizeUsesJoinEstimationWhenSupported() {
+		AtomicInteger joinCardinalityCalls = new AtomicInteger();
+		EvaluationStatistics statistics = new EvaluationStatistics() {
+			@Override
+			public boolean supportsJoinEstimation() {
+				return true;
+			}
+
+			@Override
+			public double getCardinality(TupleExpr expr) {
+				if (expr instanceof StatementPattern) {
+					StatementPattern pattern = (StatementPattern) expr;
+					Var predicate = pattern.getPredicateVar();
+					if (predicate != null && predicate.hasValue()) {
+						String iri = predicate.getValue().stringValue();
+						if (iri.endsWith("p1")) {
+							return 200.0;
+						}
+						if (iri.endsWith("p2")) {
+							return 180.0;
+						}
+						if (iri.endsWith("p3")) {
+							return 170.0;
+						}
+					}
+				}
+				if (expr instanceof Join) {
+					joinCardinalityCalls.incrementAndGet();
+					String signature = predicateSignature(expr);
+					if ("urn:p1|urn:p2".equals(signature)) {
+						return 3.0;
+					}
+					if ("urn:p1|urn:p3".equals(signature)) {
+						return 500.0;
+					}
+					if ("urn:p2|urn:p3".equals(signature)) {
+						return 400.0;
+					}
+					if ("urn:p1|urn:p2|urn:p3".equals(signature)) {
+						return 2.0;
+					}
+				}
+				return super.getCardinality(expr);
+			}
+		};
+
+		BeCostEstimator estimator = new BeCostEstimator(statistics);
+		BeGroupNode group = new BeGroupNode();
+		group.addChild(new BeBgpNode(List.of(statementPattern("urn:p1"))));
+		group.addChild(new BeBgpNode(List.of(statementPattern("urn:p2"))));
+		group.addChild(new BeBgpNode(List.of(statementPattern("urn:p3"))));
+
+		double resultSize = estimator.estimateGroupResultSize(group);
+		assertThat(resultSize).isEqualTo(2.0);
+		assertThat(joinCardinalityCalls.get()).isGreaterThan(0);
+	}
+
+	private StatementPattern statementPattern(String predicateIri) {
+		return new StatementPattern(
+				new Var("s"),
+				new Var("p", SimpleValueFactory.getInstance().createIRI(predicateIri)),
+				new Var("o" + predicateIri.substring(predicateIri.length() - 2)));
+	}
+
+	private String predicateSignature(TupleExpr expr) {
+		List<String> predicates = new ArrayList<>();
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				Var predicate = node.getPredicateVar();
+				if (predicate != null && predicate.hasValue()) {
+					predicates.add(predicate.getValue().stringValue());
+				}
+			}
+		});
+		Collections.sort(predicates);
+		return String.join("|", predicates);
 	}
 }

@@ -90,11 +90,47 @@ public class BeCostEstimator {
 			return estimateJoinSegmentInOrder(segment, seedInfo, seedSize);
 		}
 
-		List<BeNode> remaining = new ArrayList<>(segment);
 		Map<BeNode, NodeEstimate> estimates = new IdentityHashMap<>();
 		for (BeNode node : segment) {
 			estimates.put(node, estimateNode(node));
 		}
+		if (evaluationStatistics.supportsJoinEstimation()) {
+			return estimateJoinSegmentWithJoinEstimation(segment, estimates, seedInfo, seedSize);
+		}
+
+		return estimateJoinSegmentHeuristically(segment, estimates, seedInfo, seedSize);
+	}
+
+	private SegmentEstimate estimateJoinSegmentInOrder(List<BeNode> segment, BindingInfo seedInfo, double seedSize) {
+		double cost = 0.0;
+		double currentSize = seedSize;
+		BindingInfo currentInfo = seedInfo;
+		TupleExpr currentExpr = null;
+		Map<BeNode, TupleExpr> tupleExprMap = evaluationStatistics.supportsJoinEstimation()
+				? new IdentityHashMap<>()
+				: null;
+
+		for (BeNode node : segment) {
+			NodeEstimate estimate = estimateNode(node);
+			TupleExpr candidateExpr = tupleExprMap != null
+					? tupleExprMap.computeIfAbsent(node, serializer::serialize)
+					: null;
+			currentSize = estimateJoinedSize(currentSize, currentInfo, estimate, currentExpr, candidateExpr);
+			cost += estimate.cost + currentSize;
+			currentInfo = BindingInfo.join(currentInfo, estimate.info);
+			if (candidateExpr != null) {
+				currentExpr = currentExpr == null
+						? candidateExpr.clone()
+						: new Join(currentExpr, candidateExpr.clone());
+			}
+		}
+
+		return new SegmentEstimate(cost, currentSize, currentInfo);
+	}
+
+	private SegmentEstimate estimateJoinSegmentHeuristically(List<BeNode> segment, Map<BeNode, NodeEstimate> estimates,
+			BindingInfo seedInfo, double seedSize) {
+		List<BeNode> remaining = new ArrayList<>(segment);
 		double cost = 0.0;
 		double currentSize = seedSize;
 		BindingInfo currentInfo = seedInfo;
@@ -129,20 +165,127 @@ public class BeCostEstimator {
 		return new SegmentEstimate(cost, currentSize, currentInfo);
 	}
 
-	private SegmentEstimate estimateJoinSegmentInOrder(List<BeNode> segment, BindingInfo seedInfo, double seedSize) {
+	private SegmentEstimate estimateJoinSegmentWithJoinEstimation(List<BeNode> segment,
+			Map<BeNode, NodeEstimate> estimates,
+			BindingInfo seedInfo, double seedSize) {
+		List<BeNode> remaining = new ArrayList<>(segment);
+		Map<BeNode, TupleExpr> tupleExprMap = new IdentityHashMap<>();
+		for (BeNode node : segment) {
+			tupleExprMap.put(node, serializer.serialize(node));
+		}
+		BeNode[] preferredStartingPair = selectBestStartingPair(remaining, tupleExprMap, estimates, seedInfo, seedSize);
+		int preferredIndex = 0;
+
 		double cost = 0.0;
 		double currentSize = seedSize;
 		BindingInfo currentInfo = seedInfo;
+		TupleExpr currentExpr = null;
 
-		for (BeNode node : segment) {
-			NodeEstimate estimate = estimateNode(node);
-			int sharedVars = sharedAssuredCount(currentInfo, estimate.info);
-			currentSize = fAnd(currentSize, estimate.resultSize, sharedVars);
-			cost += estimate.cost + currentSize;
-			currentInfo = BindingInfo.join(currentInfo, estimate.info);
+		while (!remaining.isEmpty()) {
+			BeNode best = null;
+			NodeEstimate bestEstimate = null;
+			double bestScore = Double.POSITIVE_INFINITY;
+
+			if (preferredStartingPair != null
+					&& preferredIndex < preferredStartingPair.length
+					&& remaining.contains(preferredStartingPair[preferredIndex])) {
+				best = preferredStartingPair[preferredIndex];
+				bestEstimate = estimates.get(best);
+				preferredIndex++;
+			} else {
+				for (BeNode candidate : remaining) {
+					NodeEstimate estimate = estimates.get(candidate);
+					double joinedSize = estimateJoinedSize(currentSize, currentInfo, estimate, currentExpr,
+							tupleExprMap.get(candidate));
+					double score = estimate.cost + joinedSize;
+					if (score < bestScore) {
+						bestScore = score;
+						best = candidate;
+						bestEstimate = estimate;
+					}
+				}
+			}
+
+			if (best == null || bestEstimate == null) {
+				break;
+			}
+
+			TupleExpr candidateExpr = tupleExprMap.get(best);
+			currentSize = estimateJoinedSize(currentSize, currentInfo, bestEstimate, currentExpr, candidateExpr);
+			cost += bestEstimate.cost + currentSize;
+			currentInfo = BindingInfo.join(currentInfo, bestEstimate.info);
+			currentExpr = currentExpr == null
+					? candidateExpr.clone()
+					: new Join(currentExpr, candidateExpr.clone());
+			remaining.remove(best);
 		}
 
 		return new SegmentEstimate(cost, currentSize, currentInfo);
+	}
+
+	private BeNode[] selectBestStartingPair(List<BeNode> candidates, Map<BeNode, TupleExpr> tupleExprMap,
+			Map<BeNode, NodeEstimate> estimates, BindingInfo seedInfo, double seedSize) {
+		if (candidates.size() < 2) {
+			return null;
+		}
+
+		BeNode bestA = null;
+		BeNode bestB = null;
+		double bestJoinSize = Double.POSITIVE_INFINITY;
+
+		for (int i = 0; i < candidates.size(); i++) {
+			BeNode left = candidates.get(i);
+			for (int j = i + 1; j < candidates.size(); j++) {
+				BeNode right = candidates.get(j);
+				double joinSize = estimateJoinCardinality(tupleExprMap.get(left), tupleExprMap.get(right));
+				if (joinSize < 0.0) {
+					continue;
+				}
+				if (joinSize < bestJoinSize) {
+					bestJoinSize = joinSize;
+					bestA = left;
+					bestB = right;
+				}
+			}
+		}
+
+		if (bestA == null || bestB == null) {
+			return null;
+		}
+
+		NodeEstimate firstEstimate = estimates.get(bestA);
+		NodeEstimate secondEstimate = estimates.get(bestB);
+		double firstStartScore = initialJoinScore(seedSize, seedInfo, firstEstimate);
+		double secondStartScore = initialJoinScore(seedSize, seedInfo, secondEstimate);
+		return firstStartScore <= secondStartScore
+				? new BeNode[] { bestA, bestB }
+				: new BeNode[] { bestB, bestA };
+	}
+
+	private double initialJoinScore(double seedSize, BindingInfo seedInfo, NodeEstimate estimate) {
+		int sharedVars = sharedAssuredCount(seedInfo, estimate.info);
+		double joinedSize = fAnd(seedSize, estimate.resultSize, sharedVars);
+		return estimate.cost + joinedSize;
+	}
+
+	private double estimateJoinedSize(double currentSize, BindingInfo currentInfo, NodeEstimate estimate,
+			TupleExpr currentExpr, TupleExpr candidateExpr) {
+		if (currentExpr != null && candidateExpr != null) {
+			double joinSize = estimateJoinCardinality(currentExpr, candidateExpr);
+			if (joinSize >= 0.0) {
+				return joinSize;
+			}
+		}
+		int sharedVars = sharedAssuredCount(currentInfo, estimate.info);
+		return fAnd(currentSize, estimate.resultSize, sharedVars);
+	}
+
+	private double estimateJoinCardinality(TupleExpr left, TupleExpr right) {
+		double estimate = evaluationStatistics.getCardinality(new Join(left.clone(), right.clone()));
+		if (!Double.isFinite(estimate) || estimate < 0.0) {
+			return -1.0;
+		}
+		return estimate;
 	}
 
 	private NodeEstimate estimateNode(BeNode node) {
