@@ -16,13 +16,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -210,12 +215,12 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	public void reorderJoinArgsUsesEstimatorForFirstPattern() throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
-		StatementPattern expensive = new StatementPattern(new Var("s1"),
-				new Var("p1", vf.createIRI("ex:pExpensive")), new Var("o1"));
-		StatementPattern medium = new StatementPattern(new Var("s2"),
-				new Var("p2", vf.createIRI("ex:pMedium")), new Var("o2"));
-		StatementPattern cheap = new StatementPattern(new Var("s3"),
-				new Var("p3", vf.createIRI("ex:pCheap")), new Var("o3"));
+		StatementPattern expensive = new StatementPattern(Var.of("s1"),
+				Var.of("p1", vf.createIRI("ex:pExpensive")), Var.of("o1"));
+		StatementPattern medium = new StatementPattern(Var.of("s2"),
+				Var.of("p2", vf.createIRI("ex:pMedium")), Var.of("o2"));
+		StatementPattern cheap = new StatementPattern(Var.of("s3"),
+				Var.of("p3", vf.createIRI("ex:pCheap")), Var.of("o3"));
 
 		Deque<TupleExpr> ordered = new ArrayDeque<>();
 		ordered.add(expensive);
@@ -242,12 +247,12 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	public void reorderJoinArgsChoosesCheapestInitialJoinCombination() throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
-		StatementPattern a = new StatementPattern(new Var("sa"), new Var("pa", vf.createIRI("ex:pA")),
-				new Var("oa"));
-		StatementPattern b = new StatementPattern(new Var("sb"), new Var("pb", vf.createIRI("ex:pB")),
-				new Var("ob"));
-		StatementPattern c = new StatementPattern(new Var("sc"), new Var("pc", vf.createIRI("ex:pC")),
-				new Var("oc"));
+		StatementPattern a = new StatementPattern(Var.of("sa"), Var.of("pa", vf.createIRI("ex:pA")),
+				Var.of("oa"));
+		StatementPattern b = new StatementPattern(Var.of("sb"), Var.of("pb", vf.createIRI("ex:pB")),
+				Var.of("ob"));
+		StatementPattern c = new StatementPattern(Var.of("sc"), Var.of("pc", vf.createIRI("ex:pC")),
+				Var.of("oc"));
 
 		Deque<TupleExpr> ordered = new ArrayDeque<>();
 		ordered.add(a);
@@ -303,12 +308,12 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	public void optimizeJoinTreeBuildsCheapestPairAsInnermostJoin() {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
-		StatementPattern a = new StatementPattern(new Var("sa"), new Var("pa", vf.createIRI("ex:pA")),
-				new Var("oa"));
-		StatementPattern b = new StatementPattern(new Var("sb"), new Var("pb", vf.createIRI("ex:pB")),
-				new Var("ob"));
-		StatementPattern c = new StatementPattern(new Var("sc"), new Var("pc", vf.createIRI("ex:pC")),
-				new Var("oc"));
+		StatementPattern a = new StatementPattern(Var.of("sa"), Var.of("pa", vf.createIRI("ex:pA")),
+				Var.of("oa"));
+		StatementPattern b = new StatementPattern(Var.of("sb"), Var.of("pb", vf.createIRI("ex:pB")),
+				Var.of("ob"));
+		StatementPattern c = new StatementPattern(Var.of("sc"), Var.of("pc", vf.createIRI("ex:pC")),
+				Var.of("oc"));
 		QueryRoot root = new QueryRoot(new Join(a, new Join(b, c)));
 
 		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatistics(), new EmptyTripleSource());
@@ -326,18 +331,96 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void reorderJoinArgsWithTenPatternsBuildRightJoinTreeProducesOptimalRightDeepPlan() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		Map<String, StatementPattern> patternsByPredicate = new HashMap<>();
+		for (int i = 0; i < 10; i++) {
+			String predicate = "ex:p" + i;
+			patternsByPredicate.put(predicate, new StatementPattern(
+					Var.of("s" + i),
+					Var.of("p" + i, vf.createIRI(predicate)),
+					Var.of("o" + i)));
+		}
+
+		Deque<TupleExpr> orderedJoinArgs = new ArrayDeque<>();
+		List<String> randomInputOrder = List.of("ex:p7", "ex:p2", "ex:p9", "ex:p1", "ex:p5",
+				"ex:p0", "ex:p8", "ex:p3", "ex:p6", "ex:p4");
+		randomInputOrder.stream()
+				.map(patternsByPredicate::get)
+				.forEach(orderedJoinArgs::addLast);
+
+		Map<String, Double> singleCardinality = Map.of(
+				"ex:p0", 100.0,
+				"ex:p1", 90.0,
+				"ex:p2", 1.0,
+				"ex:p3", 2.0,
+				"ex:p4", 3.0,
+				"ex:p5", 80.0,
+				"ex:p6", 70.0,
+				"ex:p7", 60.0,
+				"ex:p8", 50.0,
+				"ex:p9", 40.0);
+
+		Map<String, Double> pairCardinality = new HashMap<>();
+		putPairCost(pairCardinality, "ex:p2", "ex:p3", 1.0);
+		putPairCost(pairCardinality, "ex:p3", "ex:p4", 2.0);
+		putPairCost(pairCardinality, "ex:p4", "ex:p5", 3.0);
+		putPairCost(pairCardinality, "ex:p5", "ex:p6", 4.0);
+		putPairCost(pairCardinality, "ex:p6", "ex:p7", 5.0);
+		putPairCost(pairCardinality, "ex:p7", "ex:p8", 6.0);
+		putPairCost(pairCardinality, "ex:p8", "ex:p9", 7.0);
+		putPairCost(pairCardinality, "ex:p9", "ex:p0", 8.0);
+		putPairCost(pairCardinality, "ex:p0", "ex:p1", 9.0);
+
+		EvaluationStatistics sketchBasedEstimator = mock(EvaluationStatistics.class);
+		when(sketchBasedEstimator.supportsJoinEstimation()).thenReturn(true);
+		when(sketchBasedEstimator.getCardinality(any(TupleExpr.class)))
+				.thenAnswer(invocation -> getMockSketchCardinality(invocation.getArgument(0), singleCardinality,
+						pairCardinality));
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(sketchBasedEstimator, new EmptyTripleSource());
+		Object joinVisitor = buildJoinVisitor(optimizer);
+
+		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class);
+		reorderJoinArgs.setAccessible(true);
+
+		@SuppressWarnings("unchecked")
+		Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, orderedJoinArgs);
+
+		List<String> expectedOrder = List.of("ex:p4", "ex:p5", "ex:p6", "ex:p7", "ex:p8", "ex:p9", "ex:p0", "ex:p1",
+				"ex:p2", "ex:p3");
+		List<String> actualOrder = reordered.stream()
+				.map(QueryJoinOptimizerTest::getPredicateValue)
+				.collect(
+						Collectors.toList());
+		assertThat(actualOrder).containsExactlyElementsOf(expectedOrder);
+
+		Method buildRightJoinTree = joinVisitor.getClass().getDeclaredMethod("buildRightJoinTree", Deque.class);
+		buildRightJoinTree.setAccessible(true);
+
+		TupleExpr joinTree = (TupleExpr) buildRightJoinTree.invoke(joinVisitor, new ArrayDeque<>(reordered));
+		assertRightDeepTreeLeafOrder(joinTree, expectedOrder);
+
+		Join innermostJoin = getInnermostJoin(joinTree);
+		assertThat(getPredicateValue(innermostJoin.getLeftArg())).isEqualTo("ex:p2");
+		assertThat(getPredicateValue(innermostJoin.getRightArg())).isEqualTo("ex:p3");
+		assertThat(getMockSketchCardinality(innermostJoin, singleCardinality, pairCardinality)).isEqualTo(1.0);
+	}
+
+	@Test
 	public void reorderJoinArgsChoosesCheapestInitialJoinCombinationForBindingSetAssignment() throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
 		BindingSetAssignment values = bindingSetAssignment("shared",
 				vf.createLiteral("shared-1"),
 				vf.createLiteral("shared-2"));
-		StatementPattern other = new StatementPattern(new Var("otherS"),
-				new Var("otherP", vf.createIRI("ex:pOther")),
-				new Var("otherO"));
-		StatementPattern usesValues = new StatementPattern(new Var("usesS"),
-				new Var("usesP", vf.createIRI("ex:pUses")),
-				new Var("shared"));
+		StatementPattern other = new StatementPattern(Var.of("otherS"),
+				Var.of("otherP", vf.createIRI("ex:pOther")),
+				Var.of("otherO"));
+		StatementPattern usesValues = new StatementPattern(Var.of("usesS"),
+				Var.of("usesP", vf.createIRI("ex:pUses")),
+				Var.of("shared"));
 
 		Deque<TupleExpr> ordered = new ArrayDeque<>();
 		ordered.add(values);
@@ -388,10 +471,10 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	public void optimizerExposesJoinEstimatesWhenJoinEstimationSupported() {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
-		StatementPattern left = new StatementPattern(new Var("s"), new Var("pA", vf.createIRI("ex:pA")),
-				new Var("shared"));
-		StatementPattern right = new StatementPattern(new Var("shared"), new Var("pB", vf.createIRI("ex:pB")),
-				new Var("o"));
+		StatementPattern left = new StatementPattern(Var.of("s"), Var.of("pA", vf.createIRI("ex:pA")),
+				Var.of("shared"));
+		StatementPattern right = new StatementPattern(Var.of("shared"), Var.of("pB", vf.createIRI("ex:pB")),
+				Var.of("o"));
 		QueryRoot root = new QueryRoot(new Join(left, right));
 
 		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatistics(), new EmptyTripleSource());
@@ -530,6 +613,71 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		}
 		assignment.setBindingSets(bindingSets);
 		return assignment;
+	}
+
+	private static void putPairCost(Map<String, Double> pairCardinality, String leftPredicate, String rightPredicate,
+			double cardinality) {
+		pairCardinality.put(pairKey(leftPredicate, rightPredicate), cardinality);
+	}
+
+	private static double getMockSketchCardinality(TupleExpr expr, Map<String, Double> singleCardinality,
+			Map<String, Double> pairCardinality) {
+		if (expr instanceof Join) {
+			Join join = (Join) expr;
+			String left = tupleExprPredicateLabel(join.getLeftArg());
+			String right = tupleExprPredicateLabel(join.getRightArg());
+			if (left != null && right != null) {
+				return pairCardinality.getOrDefault(pairKey(left, right), 10_000.0);
+			}
+			return 10_000.0;
+		}
+
+		String predicate = tupleExprPredicateLabel(expr);
+		if (predicate != null) {
+			return singleCardinality.getOrDefault(predicate, 10_000.0);
+		}
+
+		return 10_000.0;
+	}
+
+	private static String pairKey(String leftPredicate, String rightPredicate) {
+		if (leftPredicate.compareTo(rightPredicate) <= 0) {
+			return leftPredicate + "|" + rightPredicate;
+		}
+		return rightPredicate + "|" + leftPredicate;
+	}
+
+	private static String tupleExprPredicateLabel(TupleExpr expr) {
+		StatementPattern statementPattern = extractStatementPattern(expr);
+		if (statementPattern == null) {
+			return null;
+		}
+		Var predicateVar = statementPattern.getPredicateVar();
+		if (predicateVar == null || !predicateVar.hasValue()) {
+			return null;
+		}
+		return predicateVar.getValue().stringValue();
+	}
+
+	private static void assertRightDeepTreeLeafOrder(TupleExpr joinTree, List<String> expectedPredicateOrder) {
+		assertThat(joinTree).isInstanceOf(Join.class);
+		TupleExpr cursor = joinTree;
+		for (int i = 0; i < expectedPredicateOrder.size() - 1; i++) {
+			assertThat(cursor).isInstanceOf(Join.class);
+			Join join = (Join) cursor;
+			assertThat(getPredicateValue(join.getLeftArg())).isEqualTo(expectedPredicateOrder.get(i));
+			cursor = join.getRightArg();
+		}
+		assertThat(getPredicateValue(cursor)).isEqualTo(expectedPredicateOrder.get(expectedPredicateOrder.size() - 1));
+	}
+
+	private static Join getInnermostJoin(TupleExpr joinTree) {
+		assertThat(joinTree).isInstanceOf(Join.class);
+		Join cursor = (Join) joinTree;
+		while (cursor.getRightArg() instanceof Join) {
+			cursor = (Join) cursor.getRightArg();
+		}
+		return cursor;
 	}
 
 	private static final class PairwiseJoinStatistics extends EvaluationStatistics {

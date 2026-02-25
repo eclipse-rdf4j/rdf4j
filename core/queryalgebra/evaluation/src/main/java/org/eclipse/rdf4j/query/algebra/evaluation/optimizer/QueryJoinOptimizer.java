@@ -221,18 +221,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 
 					// order all other join arguments based on available statistics
-					while (!joinArgs.isEmpty()) {
-						TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap, varFreqMap);
-						this.currentHighestCost = Math.max(currentHighestCost, tupleExpr.getCostEstimate());
-
-						joinArgs.remove(tupleExpr);
-						orderedJoinArgs.addLast(tupleExpr);
-
-						// Recursively optimize join arguments
-						tupleExpr.visit(this);
-
-						boundVars.addAll(tupleExpr.getBindingNames());
-					}
+					orderAllJoinArgs(joinArgs, cardinalityMap, varsMap, varFreqMap, orderedJoinArgs);
 				}
 
 				if (statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2) {
@@ -245,6 +234,21 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				buildFullJoinHierarchy(node, priorityJoins, orderedJoinArgs, origBoundVars);
 			} finally {
 				boundVars = origBoundVars;
+			}
+		}
+
+		private void orderAllJoinArgs(List<TupleExpr> joinArgs, Map<TupleExpr, Double> cardinalityMap, Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Deque<TupleExpr> orderedJoinArgs) {
+			while (!joinArgs.isEmpty()) {
+				TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap, varFreqMap);
+				this.currentHighestCost = Math.max(currentHighestCost, tupleExpr.getCostEstimate());
+
+				joinArgs.remove(tupleExpr);
+				orderedJoinArgs.addLast(tupleExpr);
+
+				// Recursively optimize join arguments
+				tupleExpr.visit(this);
+
+				boundVars.addAll(tupleExpr.getBindingNames());
 			}
 		}
 
@@ -402,13 +406,13 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 
 				// If ret is empty or next cannot participate in pairwise join-cost comparison, drain in original order.
-				if ((retPrefix.isEmpty() && deferredPair.isEmpty()) || !pairwiseJoinCostCandidate(tupleExprs.get(0))) {
-					retPrefix.add(tupleExprs.remove(0));
+				if ((retPrefix.isEmpty() && deferredPair.isEmpty()) || !pairwiseJoinCostCandidate(tupleExprs.getFirst())) {
+					retPrefix.add(tupleExprs.removeFirst());
 					continue;
 				}
 
 				if (tupleExprs.size() == 1) {
-					retPrefix.add(tupleExprs.remove(0));
+					retPrefix.add(tupleExprs.removeFirst());
 					continue;
 				}
 
@@ -802,7 +806,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions, Map<TupleExpr, Double> cardinalityMap,
 				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
 			if (expressions.size() == 1) {
-				TupleExpr tupleExpr = expressions.get(0);
+				TupleExpr tupleExpr = expressions.getFirst();
 				if (tupleExpr.getCostEstimate() < 0) {
 					tupleExpr.setCostEstimate(getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap));
 				}
@@ -918,7 +922,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return List.of();
 			}
 			if (size == 1) {
-				Var var = vars.get(0);
+				Var var = vars.getFirst();
 				if (!var.hasValue() && var.getName() != null && !boundVars.contains(var.getName())) {
 					return List.of(var);
 				} else {
@@ -949,7 +953,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return 0;
 			}
 			if (ownUnboundVars.size() == 1) {
-				return varFreqMap.get(ownUnboundVars.get(0)) - 1;
+				return varFreqMap.get(ownUnboundVars.getFirst()) - 1;
 			} else {
 				int result = -ownUnboundVars.size();
 				for (Var var : new HashSet<>(ownUnboundVars)) {
