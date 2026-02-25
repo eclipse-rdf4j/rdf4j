@@ -53,7 +53,7 @@ From repo root.
 Run interactive mode:
 
 ```bash
-mvn -o -Dmaven.repo.local=.m2_repo -pl testsuites/benchmark -DskipTests exec:java@query-plan-snapshot
+mvn -o -Dmaven.repo.local=.m2_repo install -Pquick && mvn -o -Dmaven.repo.local=.m2_repo -pl testsuites/benchmark -DskipTests exec:java@query-plan-snapshot
 ```
 
 Interactive menu behavior:
