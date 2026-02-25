@@ -158,6 +158,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearnedQueryJoinOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearnedQueryJoinOptimizer.PlanSelectionSnapshot;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -422,6 +424,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
 				result = new ResultSizeCountingIterator(result, expr);
 			}
+			result = trackLearnedPlanOutcome(expr, result);
 			return result;
 		} catch (Throwable t) {
 			if (result != null) {
@@ -501,6 +504,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			initializeTimeTelemetry(expr);
 			return new TimedIterator(qes.evaluate(bindings), expr);
 		};
+	}
+
+	private CloseableIteration<BindingSet> trackLearnedPlanOutcome(TupleExpr expr,
+			CloseableIteration<BindingSet> iteration) {
+		if (!(expr instanceof QueryRoot) || iteration == null) {
+			return iteration;
+		}
+		PlanSelectionSnapshot snapshot = LearnedQueryJoinOptimizer.getLastPlanSelectionSnapshot();
+		if (snapshot == null) {
+			return iteration;
+		}
+		return new LearnedPlanOutcomeIterator(iteration, snapshot);
 	}
 
 	private static void initializeTimeTelemetry(QueryModelNode queryModelNode) {
@@ -1785,6 +1800,61 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			} finally {
 				super.handleClose();
 
+			}
+		}
+	}
+
+	private static class LearnedPlanOutcomeIterator extends IterationWrapper<BindingSet> {
+
+		private final PlanSelectionSnapshot snapshot;
+		private final long startedAtNanos = System.nanoTime();
+		private boolean recorded;
+
+		private LearnedPlanOutcomeIterator(CloseableIteration<BindingSet> iterator, PlanSelectionSnapshot snapshot) {
+			super(iterator);
+			this.snapshot = snapshot;
+		}
+
+		@Override
+		public boolean hasNext() throws QueryEvaluationException {
+			try {
+				return super.hasNext();
+			} catch (RuntimeException exception) {
+				recordOutcome(false);
+				throw exception;
+			}
+		}
+
+		@Override
+		public BindingSet next() throws QueryEvaluationException {
+			try {
+				return super.next();
+			} catch (RuntimeException exception) {
+				recordOutcome(false);
+				throw exception;
+			}
+		}
+
+		@Override
+		protected void handleClose() throws QueryEvaluationException {
+			try {
+				recordOutcome(true);
+			} finally {
+				super.handleClose();
+			}
+		}
+
+		private void recordOutcome(boolean successful) {
+			if (recorded) {
+				return;
+			}
+			recorded = true;
+			double observedCost = Math.max(1.0d, (System.nanoTime() - startedAtNanos) / 1_000_000.0d);
+			try {
+				LearnedQueryJoinOptimizer.recordPlanOutcome(snapshot.getQueryTemplateHash(),
+						snapshot.getSelectedPlanSignature(), observedCost, successful);
+			} finally {
+				LearnedQueryJoinOptimizer.clearLastPlanSelectionSnapshot();
 			}
 		}
 	}
