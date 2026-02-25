@@ -176,6 +176,61 @@ class BeCostEstimatorTest {
 		assertThat(joinCardinalityCalls.get()).isGreaterThan(0);
 	}
 
+	@Test
+	void estimateGroupResultSizeFallsBackWhenJoinEstimateIsPathologicallyInflated() {
+		EvaluationStatistics statistics = new EvaluationStatistics() {
+			@Override
+			public boolean supportsJoinEstimation() {
+				return true;
+			}
+
+			@Override
+			public double getCardinality(TupleExpr expr) {
+				if (expr instanceof StatementPattern) {
+					StatementPattern pattern = (StatementPattern) expr;
+					Var predicate = pattern.getPredicateVar();
+					if (predicate != null && predicate.hasValue()) {
+						String iri = predicate.getValue().stringValue();
+						if (iri.endsWith("type")) {
+							return 25_000.0;
+						}
+						if (iri.endsWith("hasCondition")) {
+							return 49_800.0;
+						}
+						if (iri.endsWith("code")) {
+							return 66_500.0;
+						}
+					}
+				}
+				if (expr instanceof Join) {
+					String signature = predicateSignature(expr);
+					if ("urn:code|urn:hasCondition".equals(signature)) {
+						return 48_900.0;
+					}
+					if ("urn:hasCondition|urn:type".equals(signature)) {
+						return 80_000.0;
+					}
+					if ("urn:code|urn:type".equals(signature)) {
+						return 90_000.0;
+					}
+					if ("urn:code|urn:hasCondition|urn:type".equals(signature)) {
+						return 1_222_300_000.0;
+					}
+				}
+				return super.getCardinality(expr);
+			}
+		};
+
+		BeCostEstimator estimator = new BeCostEstimator(statistics);
+		BeGroupNode group = new BeGroupNode();
+		group.addChild(new BeBgpNode(List.of(statementPattern("urn:type"))));
+		group.addChild(new BeBgpNode(List.of(statementPattern("urn:hasCondition"))));
+		group.addChild(new BeBgpNode(List.of(statementPattern("urn:code"))));
+
+		double resultSize = estimator.estimateGroupResultSize(group);
+		assertThat(resultSize).isLessThan(100_000_000.0);
+	}
+
 	private StatementPattern statementPattern(String predicateIri) {
 		return new StatementPattern(
 				new Var("s"),

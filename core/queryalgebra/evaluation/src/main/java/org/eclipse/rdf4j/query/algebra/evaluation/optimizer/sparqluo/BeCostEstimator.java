@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 
 public class BeCostEstimator {
+	private static final double MAX_SHARED_VAR_JOIN_ESTIMATE_INFLATION = 64.0;
 	private final EvaluationStatistics evaluationStatistics;
 	private final SparqlUoConfig config;
 	private final BeTreeSerializer serializer = new BeTreeSerializer();
@@ -270,14 +271,19 @@ public class BeCostEstimator {
 
 	private double estimateJoinedSize(double currentSize, BindingInfo currentInfo, NodeEstimate estimate,
 			TupleExpr currentExpr, TupleExpr candidateExpr) {
+		int sharedVars = sharedAssuredCount(currentInfo, estimate.info);
+		double heuristicSize = fAnd(currentSize, estimate.resultSize, sharedVars);
 		if (currentExpr != null && candidateExpr != null) {
 			double joinSize = estimateJoinCardinality(currentExpr, candidateExpr);
 			if (joinSize >= 0.0) {
+				if (sharedVars > 0 && heuristicSize > 0.0
+						&& joinSize > heuristicSize * MAX_SHARED_VAR_JOIN_ESTIMATE_INFLATION) {
+					return heuristicSize;
+				}
 				return joinSize;
 			}
 		}
-		int sharedVars = sharedAssuredCount(currentInfo, estimate.info);
-		return fAnd(currentSize, estimate.resultSize, sharedVars);
+		return heuristicSize;
 	}
 
 	private double estimateJoinCardinality(TupleExpr left, TupleExpr right) {
