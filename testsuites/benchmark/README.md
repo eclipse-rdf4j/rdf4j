@@ -5,7 +5,7 @@ Complete guide for query-plan capture, persistence, and comparison.
 Scope:
 - Any tuple query (not only themed query benchmark).
 - MemoryStore and LMDB Store.
-- Unoptimized, optimized, executed explanations.
+- Unoptimized, optimized, telemetry explanations.
 - TupleExpr JSON dump + load-back.
 - Metadata + feature-flag state for reproducibility.
 - Smart semantic diff modes.
@@ -20,11 +20,11 @@ Each snapshot stores:
 - Three explanation levels:
   - `unoptimized`
   - `optimized`
-  - `executed`
+  - `telemetry`
 - For each level:
   - explanation JSON
   - tuple expression JSON
-  - IR-rendered query (optimized/executed by default)
+  - IR-rendered query (optimized/telemetry by default)
 - Metadata (git commit, benchmark/store/theme context, custom keys).
 - Feature flags (system properties, direct values, reflection probes).
 - Execution verification summary printed by CLI:
@@ -242,7 +242,7 @@ Examples:
 ... -Dexec.args="--compare-existing --query-id my-q0 --compare-indices 0,1 --diff-mode structure+estimates --no-interactive"
 ```
 
-Diff output per level (`unoptimized`, `optimized`, `executed`) includes:
+Diff output per level (`unoptimized`, `optimized`, `telemetry`) includes:
 - `structure`
 - `joinAlgorithms`
 - `actualResultSizes`
@@ -351,7 +351,7 @@ Top-level keys:
 `explanations` map keys:
 - `unoptimized`
 - `optimized`
-- `executed`
+- `telemetry`
 
 Per explanation:
 - `level`
