@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearnedQueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.JoinEngineConfig;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
@@ -108,7 +109,7 @@ class LearnedQueryJoinOptimizerPriorityParityTest {
 		QueryRoot baselineRoot = new QueryRoot(new Join(values, new Join(other, usesValues)));
 		QueryRoot learnedRoot = baselineRoot.clone();
 
-		QueryJoinOptimizer defaultOptimizer = new QueryJoinOptimizer(statistics, new EmptyTripleSource());
+		QueryJoinOptimizer defaultOptimizer = newLegacyQueryJoinOptimizer(statistics);
 		defaultOptimizer.optimize(baselineRoot, null, null);
 		LearnedQueryJoinOptimizer learnedOptimizer = new LearnedQueryJoinOptimizer(statistics, new EmptyTripleSource(),
 				new EmptyJoinStatsProvider());
@@ -176,7 +177,7 @@ class LearnedQueryJoinOptimizerPriorityParityTest {
 			throws Exception {
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery parsedQuery = parser.parseQuery(query, null);
-		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(statistics, new EmptyTripleSource());
+		QueryJoinOptimizer optimizer = newLegacyQueryJoinOptimizer(statistics);
 		optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
 		return collectOrderedLabels(parsedQuery.getTupleExpr(), targetLabels);
 	}
@@ -189,6 +190,16 @@ class LearnedQueryJoinOptimizerPriorityParityTest {
 				new EmptyJoinStatsProvider());
 		optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
 		return collectOrderedLabels(parsedQuery.getTupleExpr(), targetLabels);
+	}
+
+	private QueryJoinOptimizer newLegacyQueryJoinOptimizer(EvaluationStatistics statistics) {
+		JoinEngineConfig defaults = JoinEngineConfig.defaults();
+		JoinEngineConfig disabledConfig = new JoinEngineConfig(false, defaults.getRiskPenaltyWeight(),
+				defaults.getDpThreshold(), defaults.getPortfolioSize(), defaults.isEnableDp(),
+				defaults.isAdaptiveFallbackEnabled(), defaults.getAdaptiveFallbackRiskThreshold(),
+				defaults.getAdaptiveFallbackMinGainRatio(), defaults.isRuntimeFeedbackEnabled());
+		return new QueryJoinOptimizer(statistics, false, new EmptyTripleSource(), true, disabledConfig, null, null,
+				null, null, null);
 	}
 
 	private List<String> collectOrderedLabels(TupleExpr tupleExpr, Set<String> targetLabels) {

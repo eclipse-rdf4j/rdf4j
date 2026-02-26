@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.JoinEngineConfig;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,13 @@ public class QueryCostEstimatesTest {
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(query, null);
-		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
+		JoinEngineConfig defaults = JoinEngineConfig.defaults();
+		JoinEngineConfig disabledConfig = new JoinEngineConfig(false, defaults.getRiskPenaltyWeight(),
+				defaults.getDpThreshold(), defaults.getPortfolioSize(), defaults.isEnableDp(),
+				defaults.isAdaptiveFallbackEnabled(), defaults.getAdaptiveFallbackRiskThreshold(),
+				defaults.getAdaptiveFallbackMinGainRatio(), defaults.isRuntimeFeedbackEnabled());
+		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics(), false, new EmptyTripleSource(),
+				true, disabledConfig, null, null, null, null, null);
 		opt.optimize(q.getTupleExpr(), null, null);
 
 		String actual = q.getTupleExpr().toString();

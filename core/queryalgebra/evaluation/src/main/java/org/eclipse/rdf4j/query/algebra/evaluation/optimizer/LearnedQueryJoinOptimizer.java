@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.JoinEngineConfig;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.BindJoinCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.DpLeftDeepBindJoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.GreedyBindJoinOrderPlanner;
@@ -1058,7 +1059,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 	public LearnedQueryJoinOptimizer(OptimizationContext optimizationContext, boolean trackResultSize,
 			TripleSource tripleSource, LearnedJoinConfig config) {
 		super(Objects.requireNonNull(optimizationContext, "optimizationContext").getEvaluationStatistics(),
-				trackResultSize, tripleSource);
+				trackResultSize, tripleSource, true, legacyJoinEngineConfig(), null, null, null, null,
+				optimizationContext.getTraceSink());
 		this.optimizationContext = optimizationContext;
 		this.statsProvider = optimizationContext.getJoinStatsProvider();
 		this.cardinalityEstimator = optimizationContext.getCardinalityEstimator();
@@ -1070,6 +1072,14 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		JoinOrderPlanner dp = new DpLeftDeepBindJoinOrderPlanner(costModel);
 		this.defaultGreedyPlanner = greedy;
 		this.joinPlanner = new HybridBindJoinOrderPlanner(config, greedy, dp);
+	}
+
+	private static JoinEngineConfig legacyJoinEngineConfig() {
+		JoinEngineConfig defaults = JoinEngineConfig.defaults();
+		return new JoinEngineConfig(false, defaults.getRiskPenaltyWeight(), defaults.getDpThreshold(),
+				defaults.getPortfolioSize(), defaults.isEnableDp(), defaults.isAdaptiveFallbackEnabled(),
+				defaults.getAdaptiveFallbackRiskThreshold(), defaults.getAdaptiveFallbackMinGainRatio(),
+				defaults.isRuntimeFeedbackEnabled());
 	}
 
 	public static PlanSelectionSnapshot getLastPlanSelectionSnapshot() {

@@ -115,6 +115,7 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 		double chosenScore = chosen.getCost().getScore();
 		double baselineScore = findPlannerScore(ranked, "legacy-greedy");
 		double reward = reward(chosenScore, baselineScore);
+		boolean runtimeFeedbackEnabled = ctx.getConfig().isRuntimeFeedbackEnabled();
 		for (int i = 1; i < ranked.size(); i++) {
 			JoinPlan pruned = ranked.get(i);
 			if (pruned == chosen) {
@@ -125,7 +126,12 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 							"signature", pruned.getDescriptor().getOrderSignature(), "reason", "dominated",
 							"score", doubleString(pruned.getCost().getScore())));
 		}
-		ctx.getBandit().reportOutcome(region.getFingerprint(), chosen.getCandidate().getPlanner(), reward);
+		if (runtimeFeedbackEnabled) {
+			JoinEngineRuntimeFeedback.registerSelection(ctx.getBandit(), region.getFingerprint(),
+					chosen.getCandidate().getPlanner(), reward);
+		} else {
+			ctx.getBandit().reportOutcome(region.getFingerprint(), chosen.getCandidate().getPlanner(), reward);
+		}
 
 		emit(ctx, stepCounter, "CHOOSE", OptimizationTraceEvent.EventType.PLAN_SELECTED,
 				mapOf("planner", chosen.getCandidate().getPlanner(),
@@ -133,7 +139,8 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 						chosen.getDescriptor().getId(),
 						"score", doubleString(chosenScore), "risk", doubleString(chosen.getCost().getRisk()),
 						"baselineLegacyScore", doubleString(baselineScore), "reward", doubleString(reward),
-						"adaptiveFallback", String.valueOf(adaptiveFallback)));
+						"adaptiveFallback", String.valueOf(adaptiveFallback), "rewardMode",
+						runtimeFeedbackEnabled ? "runtime-callback" : "optimizer-score"));
 		emit(ctx, stepCounter, "CHOOSE", OptimizationTraceEvent.EventType.PLAN_CHOSEN,
 				mapOf("planId", chosen.getDescriptor().getId(), "planner", chosen.getCandidate().getPlanner()));
 

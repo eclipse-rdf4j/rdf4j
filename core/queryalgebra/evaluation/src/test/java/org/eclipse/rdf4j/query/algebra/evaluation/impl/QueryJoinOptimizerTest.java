@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.JoinEngineConfig;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -123,7 +124,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(qb.toString(), null);
-		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
+		QueryJoinOptimizer opt = newLegacyJoinOptimizer(new EvaluationStatistics());
 		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 		TupleExpr leaf = findLeaf(optRoot);
@@ -137,7 +138,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(query, null);
-		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
+		QueryJoinOptimizer opt = newLegacyJoinOptimizer(new EvaluationStatistics());
 		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 
@@ -193,7 +194,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(query, null);
-		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
+		QueryJoinOptimizer opt = newLegacyJoinOptimizer(new EvaluationStatistics());
 		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 
@@ -227,7 +228,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		ordered.add(medium);
 		ordered.add(cheap);
 
-		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new JoinEstimatingStatistics(), new EmptyTripleSource());
+		QueryJoinOptimizer optimizer = newLegacyJoinOptimizer(new JoinEstimatingStatistics());
 		Object joinVisitor = buildJoinVisitor(optimizer);
 		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class);
 		reorderJoinArgs.setAccessible(true);
@@ -259,7 +260,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		ordered.add(b);
 		ordered.add(c);
 
-		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatistics(), new EmptyTripleSource());
+		QueryJoinOptimizer optimizer = newLegacyJoinOptimizer(new PairwiseJoinStatistics());
 		Object joinVisitor = buildJoinVisitor(optimizer);
 		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class);
 		reorderJoinArgs.setAccessible(true);
@@ -288,7 +289,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		ordered.add(b);
 		ordered.add(c);
 
-		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatistics(), new EmptyTripleSource());
+		QueryJoinOptimizer optimizer = newLegacyJoinOptimizer(new PairwiseJoinStatistics());
 		Object joinVisitor = buildJoinVisitor(optimizer);
 		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class);
 		reorderJoinArgs.setAccessible(true);
@@ -320,7 +321,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				Var.of("oc"));
 		QueryRoot root = new QueryRoot(new Join(a, new Join(b, c)));
 
-		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatistics(), new EmptyTripleSource());
+		QueryJoinOptimizer optimizer = newLegacyJoinOptimizer(new PairwiseJoinStatistics());
 		optimizer.optimize(root, null, null);
 
 		assertThat(root.getArg()).isInstanceOf(Join.class);
@@ -383,7 +384,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				.thenAnswer(invocation -> getMockSketchCardinality(invocation.getArgument(0), singleCardinality,
 						pairCardinality));
 
-		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(sketchBasedEstimator, new EmptyTripleSource());
+		QueryJoinOptimizer optimizer = newLegacyJoinOptimizer(sketchBasedEstimator);
 		Object joinVisitor = buildJoinVisitor(optimizer);
 
 		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class);
@@ -431,8 +432,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		ordered.add(other);
 		ordered.add(usesValues);
 
-		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatisticsWithAlternativeBindings(),
-				new EmptyTripleSource());
+		QueryJoinOptimizer optimizer = newLegacyJoinOptimizer(new PairwiseJoinStatisticsWithAlternativeBindings());
 		Object joinVisitor = buildJoinVisitor(optimizer);
 		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class);
 		reorderJoinArgs.setAccessible(true);
@@ -464,8 +464,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		ordered.add(other);
 		ordered.add(usesValues);
 
-		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatisticsPrefersNonFirstPair(),
-				new EmptyTripleSource());
+		QueryJoinOptimizer optimizer = newLegacyJoinOptimizer(new PairwiseJoinStatisticsPrefersNonFirstPair());
 		Object joinVisitor = buildJoinVisitor(optimizer);
 		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class);
 		reorderJoinArgs.setAccessible(true);
@@ -493,8 +492,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		ordered.add(c);
 		ordered.add(b);
 
-		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatisticsWithAlternativeBindings(),
-				new EmptyTripleSource());
+		QueryJoinOptimizer optimizer = newLegacyJoinOptimizer(new PairwiseJoinStatisticsWithAlternativeBindings());
 		Object joinVisitor = buildJoinVisitor(optimizer);
 		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class);
 		reorderJoinArgs.setAccessible(true);
@@ -523,7 +521,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				Var.of("o"));
 		QueryRoot root = new QueryRoot(new Join(left, right));
 
-		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatistics(), new EmptyTripleSource());
+		QueryJoinOptimizer optimizer = newLegacyJoinOptimizer(new PairwiseJoinStatistics());
 		optimizer.optimize(root, null, null);
 
 		Join optimizedJoin = (Join) root.getArg();
@@ -533,7 +531,17 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 	@Override
 	public QueryJoinOptimizer getOptimizer() {
-		return new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
+		return newLegacyJoinOptimizer(new EvaluationStatistics());
+	}
+
+	private QueryJoinOptimizer newLegacyJoinOptimizer(EvaluationStatistics statistics) {
+		JoinEngineConfig defaults = JoinEngineConfig.defaults();
+		JoinEngineConfig disabledConfig = new JoinEngineConfig(false, defaults.getRiskPenaltyWeight(),
+				defaults.getDpThreshold(), defaults.getPortfolioSize(), defaults.isEnableDp(),
+				defaults.isAdaptiveFallbackEnabled(), defaults.getAdaptiveFallbackRiskThreshold(),
+				defaults.getAdaptiveFallbackMinGainRatio(), defaults.isRuntimeFeedbackEnabled());
+		return new QueryJoinOptimizer(statistics, false, new EmptyTripleSource(), true, disabledConfig, null, null,
+				null, null, null);
 	}
 
 	private TupleExpr findLeaf(TupleExpr expr) {

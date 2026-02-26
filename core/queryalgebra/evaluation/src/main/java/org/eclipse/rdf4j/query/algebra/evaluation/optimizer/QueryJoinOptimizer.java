@@ -302,7 +302,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						bindings,
 						origBoundVars, joinEngineConfig, trace, bandit, estimator, costModel);
 				OptimizationResult result = joinEngine.optimizeJoin(node, region, context);
-				node.replaceWith(result.getOptimized());
+				// Engine memo exploration can reuse atom instances across alternatives. Clone the selected
+				// subtree before replacement so parent pointers are fully consistent for downstream optimizers.
+				node.replaceWith(result.getOptimized().clone());
 			} finally {
 				boundVars = origBoundVars;
 			}

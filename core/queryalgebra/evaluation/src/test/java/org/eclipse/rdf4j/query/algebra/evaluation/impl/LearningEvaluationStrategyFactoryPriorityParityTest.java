@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoQueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.JoinEngineConfig;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedJoinConfig;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -101,9 +102,7 @@ class LearningEvaluationStrategyFactoryPriorityParityTest {
 		ParsedQuery parsedQuery = parser.parseQuery(query, null);
 		EmptyTripleSource tripleSource = new EmptyTripleSource();
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, null, null, 0L, statistics);
-		QueryJoinOptimizer joinOptimizer = new QueryJoinOptimizer(statistics, strategy.isTrackResultSize(),
-				tripleSource,
-				false);
+		QueryJoinOptimizer joinOptimizer = newLegacyJoinOptimizer(statistics, strategy, tripleSource);
 		strategy.setOptimizerPipeline(
 				new SparqlUoQueryOptimizerPipeline(strategy, tripleSource, statistics, joinOptimizer));
 		strategy.optimize(parsedQuery.getTupleExpr(), statistics, EmptyBindingSet.getInstance());
@@ -189,6 +188,17 @@ class LearningEvaluationStrategyFactoryPriorityParityTest {
 		}
 
 		return null;
+	}
+
+	private QueryJoinOptimizer newLegacyJoinOptimizer(EvaluationStatistics statistics,
+			DefaultEvaluationStrategy strategy, EmptyTripleSource tripleSource) {
+		JoinEngineConfig defaults = JoinEngineConfig.defaults();
+		JoinEngineConfig disabledConfig = new JoinEngineConfig(false, defaults.getRiskPenaltyWeight(),
+				defaults.getDpThreshold(), defaults.getPortfolioSize(), defaults.isEnableDp(),
+				defaults.isAdaptiveFallbackEnabled(), defaults.getAdaptiveFallbackRiskThreshold(),
+				defaults.getAdaptiveFallbackMinGainRatio(), defaults.isRuntimeFeedbackEnabled());
+		return new QueryJoinOptimizer(statistics, strategy.isTrackResultSize(), tripleSource, false, disabledConfig,
+				null, null, null, null, null);
 	}
 
 	private StatementPattern extractStatementPattern(TupleExpr expr) {
