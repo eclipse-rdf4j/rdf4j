@@ -171,6 +171,59 @@ class QueryJoinOptimizerJoinEngineTraceTest {
 		}
 	}
 
+	@Test
+	void mergeJoinRuleRejectReasonIsSpecific() throws Exception {
+		SPARQLParser parser = new SPARQLParser();
+		ParsedQuery parsedQuery = parser.parseQuery(QUERY, null);
+
+		EvaluationStatistics statistics = new EvaluationStatistics();
+		List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+		OptimizationContext context = new OptimizationContext(statistics,
+				new EvaluationStatisticsCardinalityEstimator(statistics), new MemoryJoinStats(), events::add);
+		JoinEngineConfig defaults = JoinEngineConfig.defaults();
+		JoinEngineConfig enabledConfig = new JoinEngineConfig(true, defaults.getRiskPenaltyWeight(),
+				defaults.getDpThreshold(), Math.max(4, defaults.getPortfolioSize()), defaults.isEnableDp());
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(context.getEvaluationStatistics(), false,
+				new EmptyTripleSource(), true, enabledConfig, new DefaultJoinOptimizationEngine(),
+				new DefaultUncertaintyAwareEstimator(), new DefaultCostModel(), new InMemoryBanditPolicy(),
+				context.getTraceSink());
+		optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+		boolean foundSpecificReason = events.stream()
+				.filter(event -> event.getEventType() == OptimizationTraceEvent.EventType.RULE_REJECTED)
+				.filter(event -> "MergeJoinRule".equals(event.getAttributes().get("rule")))
+				.anyMatch(event -> "no_supported_order".equals(event.getAttributes().get("reason")));
+		assertTrue(foundSpecificReason, "Expected MergeJoinRule reject reason no_supported_order");
+	}
+
+	@Test
+	void crossJoinCacheRuleRejectReasonIsSpecific() throws Exception {
+		SPARQLParser parser = new SPARQLParser();
+		ParsedQuery parsedQuery = parser.parseQuery(QUERY, null);
+
+		EvaluationStatistics statistics = new EvaluationStatistics();
+		List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+		OptimizationContext context = new OptimizationContext(statistics,
+				new EvaluationStatisticsCardinalityEstimator(statistics), new MemoryJoinStats(), events::add);
+		JoinEngineConfig defaults = JoinEngineConfig.defaults();
+		JoinEngineConfig enabledConfig = new JoinEngineConfig(true, defaults.getRiskPenaltyWeight(),
+				defaults.getDpThreshold(), Math.max(4, defaults.getPortfolioSize()), defaults.isEnableDp());
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(context.getEvaluationStatistics(), false,
+				new EmptyTripleSource(), true, enabledConfig, new DefaultJoinOptimizationEngine(),
+				new DefaultUncertaintyAwareEstimator(), new DefaultCostModel(), new InMemoryBanditPolicy(),
+				context.getTraceSink());
+		optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+		boolean foundSpecificReason = events.stream()
+				.filter(event -> event.getEventType() == OptimizationTraceEvent.EventType.RULE_REJECTED)
+				.filter(event -> "CrossJoinMergeJoinCacheableRule".equals(event.getAttributes().get("rule")))
+				.anyMatch(event -> "not_merge_statement_pair".equals(event.getAttributes().get("reason")));
+		assertTrue(foundSpecificReason,
+				"Expected CrossJoinMergeJoinCacheableRule reject reason not_merge_statement_pair");
+	}
+
 	private static final class RecordingBanditPolicy implements BanditPolicy {
 
 		private final List<ReportedOutcome> reports = new CopyOnWriteArrayList<>();

@@ -13,18 +13,13 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 
 /**
- * Builds join trees from ordered operands while preserving merge-join heuristics.
+ * Builds right-deep join trees from ordered operands.
  */
 public final class JoinTreeBuilder {
 
@@ -34,7 +29,6 @@ public final class JoinTreeBuilder {
 	public static TupleExpr build(JoinRegion region, JoinOrderCandidate candidate, JoinOptimizationContext ctx) {
 		TupleExpr priorityJoins = buildJoinHierarchy(region.getFixedPrefix(), ctx);
 		Deque<TupleExpr> orderedJoinArgs = new ArrayDeque<>(candidate.getOrder());
-		initialMergeJoinOptimization(priorityJoins, orderedJoinArgs, ctx);
 		TupleExpr right = buildRightJoinTree(orderedJoinArgs, ctx);
 		if (priorityJoins == null) {
 			return right;
@@ -66,13 +60,7 @@ public final class JoinTreeBuilder {
 		}
 		TupleExpr right = orderedJoinArgs.removeLast();
 		if (!orderedJoinArgs.isEmpty()) {
-			TupleExpr left = orderedJoinArgs.removeLast();
-			Set<Var> supportedOrders = new HashSet<>(left.getSupportedOrders(ctx.getTripleSource()));
-			supportedOrders.retainAll(right.getSupportedOrders(ctx.getTripleSource()));
-			Join join = new Join(left, right);
-			if (QueryJoinOptimizer.USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN) {
-				mergeJoinForCrossJoin(orderedJoinArgs, supportedOrders, left, right, join, ctx);
-			}
+			Join join = new Join(orderedJoinArgs.removeLast(), right);
 			applyJoinEstimates(join, ctx);
 			right = join;
 		}
@@ -82,101 +70,6 @@ public final class JoinTreeBuilder {
 			right = join;
 		}
 		return right;
-	}
-
-	private static void initialMergeJoinOptimization(TupleExpr priorityJoins, Deque<TupleExpr> orderedJoinArgs,
-			JoinOptimizationContext ctx) {
-		if (priorityJoins != null || orderedJoinArgs.isEmpty()) {
-			return;
-		}
-
-		double cardinality = 0;
-		while (orderedJoinArgs.size() > 1) {
-			Set<Var> supportedOrders = orderedJoinArgs.peekFirst().getSupportedOrders(ctx.getTripleSource());
-			if (supportedOrders.isEmpty()) {
-				break;
-			}
-			TupleExpr left = orderedJoinArgs.removeFirst();
-			TupleExpr right = orderedJoinArgs.removeFirst();
-			supportedOrders = new HashSet<>(supportedOrders);
-			supportedOrders.retainAll(right.getSupportedOrders(ctx.getTripleSource()));
-			if (supportedOrders.isEmpty() || joinOnMultipleVars(left, right)
-					|| joinSizeIsTooDifferent(Math.max(cardinality, left.getResultSizeEstimate()),
-							right.getResultSizeEstimate())) {
-				orderedJoinArgs.addFirst(right);
-				orderedJoinArgs.addFirst(left);
-				break;
-			}
-			cardinality = Math.max(cardinality, left.getResultSizeEstimate());
-			cardinality = Math.max(cardinality, right.getResultSizeEstimate());
-			Join join = new Join(left, right);
-			join.setOrder(supportedOrders.iterator().next());
-			join.setMergeJoin(true);
-			applyJoinEstimates(join, ctx);
-			orderedJoinArgs.addFirst(join);
-		}
-	}
-
-	private static void mergeJoinForCrossJoin(Deque<TupleExpr> orderedJoinArgs, Set<Var> supportedOrders,
-			TupleExpr left, TupleExpr right,
-			Join join, JoinOptimizationContext ctx) {
-		if (orderedJoinArgs.isEmpty() || supportedOrders.isEmpty() || joinOnMultipleVars(left, right)
-				|| joinSizeIsTooDifferent(left.getResultSizeEstimate(), right.getResultSizeEstimate())
-				|| !(left instanceof StatementPattern) || !(right instanceof StatementPattern)) {
-			return;
-		}
-
-		HashSet<String> allBindingNamesAbove = new HashSet<>();
-		for (TupleExpr orderedJoinArg : orderedJoinArgs) {
-			allBindingNamesAbove.addAll(orderedJoinArg.getBindingNames());
-		}
-		if (allBindingNamesAbove.isEmpty()) {
-			return;
-		}
-
-		Set<String> joinBindingNames = join.getBindingNames();
-		boolean crossJoin = true;
-		for (String leftBindingName : joinBindingNames) {
-			if (!leftBindingName.startsWith("_const_") && allBindingNamesAbove.contains(leftBindingName)) {
-				crossJoin = false;
-				break;
-			}
-		}
-		if (crossJoin) {
-			join.setOrder(supportedOrders.iterator().next());
-			join.setMergeJoin(true);
-			join.setCacheable(true);
-		}
-	}
-
-	private static boolean joinOnMultipleVars(TupleExpr first, TupleExpr second) {
-		Set<String> firstBindingNames = first.getBindingNames();
-		if (firstBindingNames.size() == 1) {
-			return false;
-		}
-		Set<String> secondBindingNames = second.getBindingNames();
-		if (secondBindingNames.size() == 1) {
-			return false;
-		}
-		int overlap = 0;
-		for (String firstBindingName : firstBindingNames) {
-			if (!firstBindingName.startsWith("_const_") && secondBindingNames.contains(firstBindingName)) {
-				overlap++;
-			}
-			if (overlap > 1) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private static boolean joinSizeIsTooDifferent(double cardinality, double second) {
-		double left = Math.max(1.0d, cardinality);
-		double right = Math.max(1.0d, second);
-		if (left > right && left / QueryJoinOptimizer.MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER > right) {
-			return true;
-		}
-		return right > left && right / QueryJoinOptimizer.MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER > left;
 	}
 
 	private static void applyJoinEstimates(Join join, JoinOptimizationContext ctx) {

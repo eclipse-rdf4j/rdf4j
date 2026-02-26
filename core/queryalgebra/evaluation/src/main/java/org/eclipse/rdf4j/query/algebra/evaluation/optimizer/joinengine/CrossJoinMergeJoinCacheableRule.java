@@ -32,6 +32,9 @@ public final class CrossJoinMergeJoinCacheableRule implements JoinRule {
 	public boolean apply(TupleExpr plan, JoinOptimizationContext ctx, Map<String, String> diagnostics) {
 		RuleVisitor visitor = new RuleVisitor(diagnostics);
 		plan.visit(visitor);
+		if (!visitor.sawJoin) {
+			diagnostics.putIfAbsent("reason", "no_join_nodes");
+		}
 		return visitor.modified;
 	}
 
@@ -39,6 +42,7 @@ public final class CrossJoinMergeJoinCacheableRule implements JoinRule {
 
 		private final Map<String, String> diagnostics;
 		private boolean modified;
+		private boolean sawJoin;
 
 		private RuleVisitor(Map<String, String> diagnostics) {
 			super(true);
@@ -47,12 +51,22 @@ public final class CrossJoinMergeJoinCacheableRule implements JoinRule {
 
 		@Override
 		public void meet(Join node) {
-			if (node.isMergeJoin() && node.getLeftArg() instanceof StatementPattern
-					&& node.getRightArg() instanceof StatementPattern && !sharesExternalVars(node)) {
-				node.setCacheable(true);
-				modified = true;
-				diagnostics.put("cacheableJoin", "true");
+			sawJoin = true;
+			if (!node.isMergeJoin() || !(node.getLeftArg() instanceof StatementPattern)
+					|| !(node.getRightArg() instanceof StatementPattern)) {
+				diagnostics.putIfAbsent("reason", "not_merge_statement_pair");
+				super.meet(node);
+				return;
 			}
+			if (sharesExternalVars(node)) {
+				diagnostics.putIfAbsent("reason", "shares_external_vars");
+				super.meet(node);
+				return;
+			}
+			node.setCacheable(true);
+			modified = true;
+			diagnostics.put("cacheableJoin", "true");
+			diagnostics.put("reason", "cacheable_selected");
 			super.meet(node);
 		}
 

@@ -31,18 +31,12 @@ public final class MergeJoinRule implements JoinRule {
 		return "MergeJoinRule";
 	}
 
-	@Override
-	public boolean apply(TupleExpr plan, JoinOptimizationContext ctx, Map<String, String> diagnostics) {
-		RuleVisitor visitor = new RuleVisitor(ctx, diagnostics);
-		plan.visit(visitor);
-		return visitor.modified;
-	}
-
 	private static final class RuleVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		private final JoinOptimizationContext ctx;
 		private final Map<String, String> diagnostics;
 		private boolean modified;
+		private boolean sawJoin;
 
 		private RuleVisitor(JoinOptimizationContext ctx, Map<String, String> diagnostics) {
 			super(true);
@@ -52,19 +46,38 @@ public final class MergeJoinRule implements JoinRule {
 
 		@Override
 		public void meet(Join node) {
-			if (!node.isMergeJoin()) {
-				TupleExpr left = node.getLeftArg();
-				TupleExpr right = node.getRightArg();
-				Set<Var> supportedOrders = new HashSet<>(left.getSupportedOrders(ctx.getTripleSource()));
-				supportedOrders.retainAll(right.getSupportedOrders(ctx.getTripleSource()));
-				if (!supportedOrders.isEmpty() && !joinOnMultipleVars(left, right)
-						&& !joinSizeIsTooDifferent(left.getResultSizeEstimate(), right.getResultSizeEstimate())) {
-					node.setOrder(supportedOrders.iterator().next());
-					node.setMergeJoin(true);
-					modified = true;
-					diagnostics.put("mergeJoinOrderVar", node.getOrder().getName());
-				}
+			sawJoin = true;
+			if (node.isMergeJoin()) {
+				diagnostics.putIfAbsent("reason", "already_merge_join");
+				super.meet(node);
+				return;
 			}
+
+			TupleExpr left = node.getLeftArg();
+			TupleExpr right = node.getRightArg();
+			Set<Var> supportedOrders = new HashSet<>(left.getSupportedOrders(ctx.getTripleSource()));
+			supportedOrders.retainAll(right.getSupportedOrders(ctx.getTripleSource()));
+			if (supportedOrders.isEmpty()) {
+				diagnostics.putIfAbsent("reason", "no_supported_order");
+				super.meet(node);
+				return;
+			}
+			if (joinOnMultipleVars(left, right)) {
+				diagnostics.putIfAbsent("reason", "multiple_join_vars");
+				super.meet(node);
+				return;
+			}
+			if (joinSizeIsTooDifferent(left.getResultSizeEstimate(), right.getResultSizeEstimate())) {
+				diagnostics.putIfAbsent("reason", "cardinality_skew");
+				super.meet(node);
+				return;
+			}
+
+			node.setOrder(supportedOrders.iterator().next());
+			node.setMergeJoin(true);
+			modified = true;
+			diagnostics.put("mergeJoinOrderVar", node.getOrder().getName());
+			diagnostics.put("reason", "merge_join_selected");
 			super.meet(node);
 		}
 
@@ -97,5 +110,15 @@ public final class MergeJoinRule implements JoinRule {
 			}
 			return false;
 		}
+	}
+
+	@Override
+	public boolean apply(TupleExpr plan, JoinOptimizationContext ctx, Map<String, String> diagnostics) {
+		RuleVisitor visitor = new RuleVisitor(ctx, diagnostics);
+		plan.visit(visitor);
+		if (!visitor.sawJoin) {
+			diagnostics.putIfAbsent("reason", "no_join_nodes");
+		}
+		return visitor.modified;
 	}
 }

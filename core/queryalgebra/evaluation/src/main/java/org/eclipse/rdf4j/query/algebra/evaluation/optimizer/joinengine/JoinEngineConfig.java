@@ -21,20 +21,35 @@ public final class JoinEngineConfig {
 	private static final String DP_THRESHOLD_PROPERTY = "rdf4j.optimizer.joinengine.dpThreshold";
 	private static final String PORTFOLIO_SIZE_PROPERTY = "rdf4j.optimizer.joinengine.portfolioSize";
 	private static final String ENABLE_DP_PROPERTY = "rdf4j.optimizer.joinengine.enableDp";
+	private static final String ADAPTIVE_FALLBACK_ENABLED_PROPERTY = "rdf4j.optimizer.joinengine.adaptiveFallback.enabled";
+	private static final String ADAPTIVE_FALLBACK_RISK_PROPERTY = "rdf4j.optimizer.joinengine.adaptiveFallback.riskThreshold";
+	private static final String ADAPTIVE_FALLBACK_MIN_GAIN_PROPERTY = "rdf4j.optimizer.joinengine.adaptiveFallback.minGainRatio";
 
 	private final boolean enabled;
 	private final double riskPenaltyWeight;
 	private final int dpThreshold;
 	private final int portfolioSize;
 	private final boolean enableDp;
+	private final boolean adaptiveFallbackEnabled;
+	private final double adaptiveFallbackRiskThreshold;
+	private final double adaptiveFallbackMinGainRatio;
 
 	public JoinEngineConfig(boolean enabled, double riskPenaltyWeight, int dpThreshold, int portfolioSize,
 			boolean enableDp) {
+		this(enabled, riskPenaltyWeight, dpThreshold, portfolioSize, enableDp, true, 0.85d, 0.10d);
+	}
+
+	public JoinEngineConfig(boolean enabled, double riskPenaltyWeight, int dpThreshold, int portfolioSize,
+			boolean enableDp, boolean adaptiveFallbackEnabled, double adaptiveFallbackRiskThreshold,
+			double adaptiveFallbackMinGainRatio) {
 		this.enabled = enabled;
 		this.riskPenaltyWeight = Math.max(0.0d, riskPenaltyWeight);
 		this.dpThreshold = Math.max(2, dpThreshold);
 		this.portfolioSize = Math.max(1, portfolioSize);
 		this.enableDp = enableDp;
+		this.adaptiveFallbackEnabled = adaptiveFallbackEnabled;
+		this.adaptiveFallbackRiskThreshold = clamp01(adaptiveFallbackRiskThreshold);
+		this.adaptiveFallbackMinGainRatio = Math.max(0.0d, adaptiveFallbackMinGainRatio);
 	}
 
 	public static JoinEngineConfig defaults() {
@@ -43,7 +58,19 @@ public final class JoinEngineConfig {
 		int dpThreshold = parseInt(DP_THRESHOLD_PROPERTY, 8);
 		int portfolioSize = parseInt(PORTFOLIO_SIZE_PROPERTY, 3);
 		boolean enableDp = Boolean.parseBoolean(System.getProperty(ENABLE_DP_PROPERTY, "true"));
-		return new JoinEngineConfig(enabled, riskPenalty, dpThreshold, portfolioSize, enableDp);
+		boolean adaptiveFallbackEnabled = Boolean
+				.parseBoolean(System.getProperty(ADAPTIVE_FALLBACK_ENABLED_PROPERTY, "true"));
+		double adaptiveFallbackRiskThreshold = parseDouble(ADAPTIVE_FALLBACK_RISK_PROPERTY, 0.85d);
+		double adaptiveFallbackMinGainRatio = parseDouble(ADAPTIVE_FALLBACK_MIN_GAIN_PROPERTY, 0.10d);
+		return new JoinEngineConfig(enabled, riskPenalty, dpThreshold, portfolioSize, enableDp,
+				adaptiveFallbackEnabled, adaptiveFallbackRiskThreshold, adaptiveFallbackMinGainRatio);
+	}
+
+	private static double clamp01(double value) {
+		if (!Double.isFinite(value)) {
+			return 0.0d;
+		}
+		return Math.max(0.0d, Math.min(1.0d, value));
 	}
 
 	private static int parseInt(String property, int fallback) {
@@ -80,5 +107,17 @@ public final class JoinEngineConfig {
 
 	public boolean isEnableDp() {
 		return enableDp;
+	}
+
+	public boolean isAdaptiveFallbackEnabled() {
+		return adaptiveFallbackEnabled;
+	}
+
+	public double getAdaptiveFallbackRiskThreshold() {
+		return adaptiveFallbackRiskThreshold;
+	}
+
+	public double getAdaptiveFallbackMinGainRatio() {
+		return adaptiveFallbackMinGainRatio;
 	}
 }

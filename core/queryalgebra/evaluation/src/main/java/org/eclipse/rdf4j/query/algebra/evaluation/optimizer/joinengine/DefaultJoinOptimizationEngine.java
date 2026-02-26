@@ -89,36 +89,51 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 
 		JoinMemo memo = new JoinMemo();
 		for (JoinOrderCandidate candidate : uniqueCandidates.values()) {
-			TupleExpr expr = JoinTreeBuilder.build(region, candidate, ctx);
-			applyRules(expr, candidate, ctx, stepCounter);
-			Cost cost = ctx.getCostModel().cost(expr, ctx);
-			PlanDescriptor descriptor = PlanDescriptor.from(region.getFingerprint(), candidate);
-			memo.add(new JoinPlan(expr, candidate, descriptor, cost));
-			emit(ctx, stepCounter, "COST", OptimizationTraceEvent.EventType.COSTED,
-					mapOf("planner", candidate.getPlanner(), "signature", candidate.getSignature(),
-							"rows", doubleString(cost.getRows()), "risk", doubleString(cost.getRisk()),
-							"score", doubleString(cost.getScore())));
+			TupleExpr baseline = JoinTreeBuilder.build(region, candidate, ctx);
+			addPlan(memo, baseline, candidate, region, ctx, stepCounter, "baseline");
+
+			TupleExpr rewritten = baseline.clone();
+			boolean rewrote = applyRules(rewritten, candidate, ctx, stepCounter, "rules");
+			if (rewrote) {
+				addPlan(memo, rewritten, candidate, region, ctx, stepCounter, "rules");
+			}
 		}
 
 		List<JoinPlan> ranked = memo.ranked();
 		JoinPlan chosen = ranked.get(0);
+		JoinPlan bestLegacy = findBestPlannerPlan(ranked, "legacy-greedy");
+		boolean adaptiveFallback = shouldAdaptiveFallback(chosen, bestLegacy, ctx);
+		if (adaptiveFallback && bestLegacy != null) {
+			emit(ctx, stepCounter, "CHOOSE", OptimizationTraceEvent.EventType.PRUNED,
+					mapOf("planner", chosen.getCandidate().getPlanner(),
+							"signature", chosen.getDescriptor().getOrderSignature(), "reason", "adaptive_fallback",
+							"fallbackPlanner", bestLegacy.getCandidate().getPlanner(),
+							"fallbackSignature", bestLegacy.getDescriptor().getOrderSignature()));
+			chosen = bestLegacy;
+		}
+
 		double chosenScore = chosen.getCost().getScore();
 		double baselineScore = findPlannerScore(ranked, "legacy-greedy");
 		double reward = reward(chosenScore, baselineScore);
 		for (int i = 1; i < ranked.size(); i++) {
 			JoinPlan pruned = ranked.get(i);
+			if (pruned == chosen) {
+				continue;
+			}
 			emit(ctx, stepCounter, "MEMO", OptimizationTraceEvent.EventType.PRUNED,
 					mapOf("planner", pruned.getCandidate().getPlanner(),
-							"signature", pruned.getCandidate().getSignature(), "reason", "dominated",
+							"signature", pruned.getDescriptor().getOrderSignature(), "reason", "dominated",
 							"score", doubleString(pruned.getCost().getScore())));
 		}
 		ctx.getBandit().reportOutcome(region.getFingerprint(), chosen.getCandidate().getPlanner(), reward);
 
 		emit(ctx, stepCounter, "CHOOSE", OptimizationTraceEvent.EventType.PLAN_SELECTED,
 				mapOf("planner", chosen.getCandidate().getPlanner(),
-						"signature", chosen.getCandidate().getSignature(), "planId", chosen.getDescriptor().getId(),
+						"signature", chosen.getDescriptor().getOrderSignature(), "planId",
+						chosen.getDescriptor().getId(),
 						"score", doubleString(chosenScore), "risk", doubleString(chosen.getCost().getRisk()),
-						"baselineLegacyScore", doubleString(baselineScore), "reward", doubleString(reward)));
+						"baselineLegacyScore", doubleString(baselineScore), "reward", doubleString(reward),
+						"adaptiveFallback", String.valueOf(adaptiveFallback)));
 		emit(ctx, stepCounter, "CHOOSE", OptimizationTraceEvent.EventType.PLAN_CHOSEN,
 				mapOf("planId", chosen.getDescriptor().getId(), "planner", chosen.getCandidate().getPlanner()));
 
@@ -126,15 +141,35 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 				UncertaintySummary.from(chosen.getCost()));
 	}
 
-	private void applyRules(TupleExpr expr, JoinOrderCandidate candidate, JoinOptimizationContext ctx,
-			long[] stepCounter) {
+	private void addPlan(JoinMemo memo, TupleExpr expr, JoinOrderCandidate candidate, JoinRegion region,
+			JoinOptimizationContext ctx, long[] stepCounter, String variant) {
+		Cost cost = ctx.getCostModel().cost(expr, ctx);
+		Estimate rootEstimate = ctx.getEstimator().estimateRows(expr, ctx);
+		String variantSignature = "baseline".equals(variant)
+				? candidate.getSignature()
+				: candidate.getSignature() + "+" + variant;
+		PlanDescriptor descriptor = new PlanDescriptor(
+				Integer.toHexString(Objects.hash(region.getFingerprint(), candidate.getPlanner(), variantSignature)),
+				candidate.getPlanner(), variantSignature);
+		memo.add(new JoinPlan(expr, candidate, descriptor, cost));
+		emit(ctx, stepCounter, "COST", OptimizationTraceEvent.EventType.COSTED,
+				mapOf("planner", candidate.getPlanner(), "signature", variantSignature, "variant", variant,
+						"rows", doubleString(cost.getRows()), "risk", doubleString(cost.getRisk()),
+						"score", doubleString(cost.getScore()), "estimateSource", rootEstimate.getSource()));
+	}
+
+	private boolean applyRules(TupleExpr expr, JoinOrderCandidate candidate, JoinOptimizationContext ctx,
+			long[] stepCounter, String variant) {
+		boolean anyApplied = false;
 		for (JoinRule rule : rules) {
 			Map<String, String> diagnostics = new LinkedHashMap<>();
 			boolean applied = rule.apply(expr, ctx, diagnostics);
+			anyApplied = anyApplied || applied;
 			Map<String, String> data = new LinkedHashMap<>();
 			data.put("rule", rule.name());
 			data.put("planner", candidate.getPlanner());
 			data.put("signature", candidate.getSignature());
+			data.put("variant", variant);
 			data.putAll(diagnostics);
 			if (!applied && !data.containsKey("reason")) {
 				data.put("reason", "preconditions_not_met");
@@ -147,6 +182,7 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 							: OptimizationTraceEvent.EventType.RULE_REJECTED,
 					data);
 		}
+		return anyApplied;
 	}
 
 	private void emit(JoinOptimizationContext ctx, long[] stepCounter, String phase,
@@ -172,6 +208,33 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 			}
 		}
 		return Double.NaN;
+	}
+
+	private static JoinPlan findBestPlannerPlan(List<JoinPlan> ranked, String planner) {
+		for (JoinPlan plan : ranked) {
+			if (planner.equals(plan.getCandidate().getPlanner())) {
+				return plan;
+			}
+		}
+		return null;
+	}
+
+	private static boolean shouldAdaptiveFallback(JoinPlan chosen, JoinPlan bestLegacy, JoinOptimizationContext ctx) {
+		if (!ctx.getConfig().isAdaptiveFallbackEnabled() || chosen == null || bestLegacy == null
+				|| chosen == bestLegacy) {
+			return false;
+		}
+		double chosenRisk = chosen.getCost().getRisk();
+		if (!Double.isFinite(chosenRisk) || chosenRisk < ctx.getConfig().getAdaptiveFallbackRiskThreshold()) {
+			return false;
+		}
+		double chosenScore = chosen.getCost().getScore();
+		double legacyScore = bestLegacy.getCost().getScore();
+		if (!Double.isFinite(chosenScore) || !Double.isFinite(legacyScore) || legacyScore <= 0.0d) {
+			return false;
+		}
+		double relativeGain = (legacyScore - chosenScore) / legacyScore;
+		return relativeGain < ctx.getConfig().getAdaptiveFallbackMinGainRatio();
 	}
 
 	private static double reward(double chosenScore, double baselineScore) {
