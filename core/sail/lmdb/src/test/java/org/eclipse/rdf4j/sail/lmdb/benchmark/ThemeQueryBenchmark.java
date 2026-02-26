@@ -74,7 +74,9 @@ public class ThemeQueryBenchmark {
 	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
 
 	@Param({
-			"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"
+			"0", "1", "2", "3", "4", "5", "6", "7", "8",
+			"9"
+			, "10"
 	})
 	public int z_queryIndex;
 

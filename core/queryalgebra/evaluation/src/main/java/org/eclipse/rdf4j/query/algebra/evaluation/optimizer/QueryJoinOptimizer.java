@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -407,13 +408,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return c;
 			};
 
-			TupleExpr[] bestPair = selectBestStartingPair(tupleExprs, getCard);
-			if (bestPair != null) {
-				tupleExprs.remove(bestPair[0]);
-				tupleExprs.remove(bestPair[1]);
-				ret.addLast(bestPair[0]);
-				ret.addLast(bestPair[1]);
-			}
+			ret.addLast(tupleExprs.removeFirst());
+
+//			TupleExpr[] bestPair = selectBestStartingPair(tupleExprs, getCard);
+//			if (bestPair != null) {
+//				tupleExprs.remove(bestPair[0]);
+//				tupleExprs.remove(bestPair[1]);
+//				ret.addLast(bestPair[0]);
+//				ret.addLast(bestPair[1]);
+//			}
 
 			while (!tupleExprs.isEmpty()) {
 				// Build from the inside out: keep the current cheapest core in the tail and prepend cheaper connectors.
@@ -439,10 +442,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 				if (bestCandidate != null) {
 					tupleExprs.remove(bestCandidate);
-					ret.addFirst(bestCandidate);
+					ret.addLast(bestCandidate);
 				} else {
 					// No pairwise comparison possible: preserve remaining original order before the selected core.
-					ret.addFirst(tupleExprs.removeLast());
+					ret.addLast(tupleExprs.removeFirst());
 				}
 			}
 
@@ -461,6 +464,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			if (candidates.size() < 2) {
 				// we don't have multiple candidates, so there is nothing to compare against
 				return null;
+			}
+
+			TupleExpr[] preferredFirstPair = selectPreferredFirstStartingPair(tupleExprs, candidates, getCard);
+			if (preferredFirstPair != null) {
+				return preferredFirstPair;
 			}
 
 			Map<TupleExpr, Double> singleCard = new HashMap<>(candidates.size());
@@ -502,6 +510,42 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return cardA <= cardB
 					? new TupleExpr[] { bestA, bestB }
 					: new TupleExpr[] { bestB, bestA };
+		}
+
+		private TupleExpr[] selectPreferredFirstStartingPair(List<TupleExpr> tupleExprs, List<TupleExpr> candidates,
+				BiFunction<TupleExpr, TupleExpr, Double> getCard) {
+			if (tupleExprs.isEmpty()) {
+				return null;
+			}
+
+			TupleExpr first = tupleExprs.getFirst();
+			if (!candidates.contains(first)) {
+				return null;
+			}
+			if (!(first instanceof BindingSetAssignment) && !containsValueConstant(first)) {
+				return null;
+			}
+
+			TupleExpr bestPartner = null;
+			double bestCost = Double.MAX_VALUE;
+			for (TupleExpr candidate : candidates) {
+				if (candidate == first) {
+					continue;
+				}
+
+				double cost = getCard.apply(first, candidate);
+				if (cost < bestCost) {
+					bestCost = cost;
+					bestPartner = candidate;
+				}
+			}
+
+			if (bestPartner == null) {
+				return null;
+			}
+
+			// Keep the preferred first tuple expression on the left side of the innermost join.
+			return new TupleExpr[] { first, bestPartner };
 		}
 
 		private void optimizeInNewScope(List<TupleExpr> subSelects) {
@@ -1150,6 +1194,23 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 	}
 
+	private static final class ValueConstantFinder extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+		private boolean hasValueConstant;
+
+		private ValueConstantFinder() {
+			super(true);
+		}
+
+		@Override
+		public void meet(ValueConstant node) {
+			hasValueConstant = true;
+		}
+
+		private boolean hasValueConstant() {
+			return hasValueConstant;
+		}
+	}
+
 	private static boolean pairwiseJoinCostCandidate(TupleExpr tupleExpr) {
 		return statementPatternWithMinimumOneConstant(tupleExpr)
 				|| !tupleExpr.getBindingNames().isEmpty()
@@ -1166,6 +1227,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						&& statementPattern.getObjectVar().hasValue())
 				|| (statementPattern.getContextVar() != null
 						&& statementPattern.getContextVar().hasValue()));
+	}
+
+	private static boolean containsValueConstant(TupleExpr tupleExpr) {
+		ValueConstantFinder finder = new ValueConstantFinder();
+		tupleExpr.visit(finder);
+		return finder.hasValueConstant();
 	}
 
 	private static StatementPattern extractStatementPattern(TupleExpr tupleExpr) {

@@ -108,8 +108,13 @@ public class LearningEvaluationStrategyFactory extends DefaultEvaluationStrategy
 		OptimizationContext optimizationContext = OptimizationContext.from(optimizerStatistics, statsProvider);
 		LearnedQueryJoinOptimizer learnedJoinOptimizer = new LearnedQueryJoinOptimizer(optimizationContext,
 				strategy.isTrackResultSize(), learningTripleSource, joinConfig);
+
 		strategy.setOptimizerPipeline(new SparqlUoQueryOptimizerPipeline(strategy, learningTripleSource,
 				optimizerStatistics, learnedJoinOptimizer));
+
+//		strategy.setOptimizerPipeline(new SparqlUoQueryOptimizerPipeline(strategy, learningTripleSource,
+//				optimizerStatistics, new QueryJoinOptimizer(optimizerStatistics)));
+
 		return strategy;
 	}
 }

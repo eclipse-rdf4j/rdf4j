@@ -366,6 +366,47 @@ class LearnedQueryJoinOptimizerPlanSelectionSnapshotTelemetryTest {
 		}
 	}
 
+	@Test
+	void recordsRuntimeOutcomeAfterEvaluationFromPrecompiledStep() throws Exception {
+		LearnedQueryJoinOptimizer.clearLastPlanSelectionSnapshot();
+		LearnedQueryJoinOptimizer.clearPlanOutcomeStats();
+		clearWinnerCache();
+		try {
+			ParsedQuery parsed = new SPARQLParser().parseQuery(QUERY, null);
+			LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(new EvaluationStatistics(),
+					new EmptyTripleSource(), new AlwaysObservedStatsProvider());
+			optimizer.optimize(parsed.getTupleExpr(), null, null);
+
+			PlanSelectionSnapshot snapshot = LearnedQueryJoinOptimizer.getLastPlanSelectionSnapshot();
+			assertNotNull(snapshot);
+			assertNotNull(snapshot.getQueryTemplateHash());
+			assertNotNull(snapshot.getSelectedPlanSignature());
+			assertTrue(findPlanOutcomeStatsEntry(snapshot.getQueryTemplateHash(),
+					snapshot.getSelectedPlanSignature()) == null,
+					"No runtime outcome should be recorded before execution");
+
+			DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+			try (CloseableIteration<BindingSet> ignored = strategy.precompile(parsed.getTupleExpr())
+					.evaluate(EmptyBindingSet.getInstance())) {
+				while (ignored.hasNext()) {
+					ignored.next();
+				}
+			}
+
+			Object stats = findPlanOutcomeStatsEntry(snapshot.getQueryTemplateHash(),
+					snapshot.getSelectedPlanSignature());
+			assertNotNull(stats, "Expected runtime outcome sample after precompiled query evaluation");
+			assertTrue(readLongField(stats, "samples") >= 1L);
+			assertTrue(readDoubleField(stats, "ewmaObservedCost") > 0.0d);
+			assertNull(LearnedQueryJoinOptimizer.getLastPlanSelectionSnapshot(),
+					"Snapshot should be cleared after recording runtime outcome");
+		} finally {
+			LearnedQueryJoinOptimizer.clearLastPlanSelectionSnapshot();
+			LearnedQueryJoinOptimizer.clearPlanOutcomeStats();
+			clearWinnerCache();
+		}
+	}
+
 	private static String stabilityDecision(PlanSelectionSnapshot snapshot) {
 		return invokeStabilityGetter(snapshot, "getStabilityDecision");
 	}

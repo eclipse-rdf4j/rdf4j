@@ -483,6 +483,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			if (trackResultSize) {
 				ret = trackResultSize(expr, ret);
 			}
+			ret = trackLearnedPlanOutcome(expr, ret);
 			return ret;
 		} else {
 			return QueryEvaluationStep.minimal(this, expr);
@@ -504,6 +505,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			initializeTimeTelemetry(expr);
 			return new TimedIterator(qes.evaluate(bindings), expr);
 		};
+	}
+
+	private QueryEvaluationStep trackLearnedPlanOutcome(TupleExpr expr, QueryEvaluationStep qes) {
+		return bindings -> trackLearnedPlanOutcome(expr, qes.evaluate(bindings));
 	}
 
 	private CloseableIteration<BindingSet> trackLearnedPlanOutcome(TupleExpr expr,

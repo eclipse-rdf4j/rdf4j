@@ -295,13 +295,17 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		@SuppressWarnings("unchecked")
 		Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered);
+		Method buildRightJoinTree = joinVisitor.getClass().getDeclaredMethod("buildRightJoinTree", Deque.class);
+		buildRightJoinTree.setAccessible(true);
+		TupleExpr joinTree = (TupleExpr) buildRightJoinTree.invoke(joinVisitor, new ArrayDeque<>(reordered));
+		Join innermostJoin = getInnermostJoin(joinTree);
 
 		List<String> predicateOrder = reordered.stream()
 				.map(QueryJoinOptimizerTest::getPredicateValue)
 				.collect(Collectors.toList());
 		assertThat(predicateOrder).containsExactlyInAnyOrder("ex:pA", "ex:pB", "ex:pC");
-		assertThat(predicateOrder.get(0)).isEqualTo("ex:pA");
-		assertThat(predicateOrder.subList(1, 3)).containsExactlyInAnyOrder("ex:pB", "ex:pC");
+		assertThat(innermostJoin.getLeftArg()).isSameAs(a);
+		assertThat(innermostJoin.getRightArg()).isSameAs(c);
 	}
 
 	@Test
@@ -442,6 +446,42 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void reorderJoinArgsAlwaysSelectsFirstBindingSetAssignmentAsInitialLeftJoinArg() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		BindingSetAssignment values = bindingSetAssignment("shared",
+				vf.createLiteral("shared-1"),
+				vf.createLiteral("shared-2"));
+		StatementPattern other = new StatementPattern(Var.of("otherS"),
+				Var.of("otherP", vf.createIRI("ex:pOther")),
+				Var.of("otherO"));
+		StatementPattern usesValues = new StatementPattern(Var.of("usesS"),
+				Var.of("usesP", vf.createIRI("ex:pUses")),
+				Var.of("shared"));
+
+		Deque<TupleExpr> ordered = new ArrayDeque<>();
+		ordered.add(values);
+		ordered.add(other);
+		ordered.add(usesValues);
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatisticsPrefersNonFirstPair(),
+				new EmptyTripleSource());
+		Object joinVisitor = buildJoinVisitor(optimizer);
+		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class);
+		reorderJoinArgs.setAccessible(true);
+		Method buildRightJoinTree = joinVisitor.getClass().getDeclaredMethod("buildRightJoinTree", Deque.class);
+		buildRightJoinTree.setAccessible(true);
+
+		@SuppressWarnings("unchecked")
+		Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered);
+		TupleExpr joinTree = (TupleExpr) buildRightJoinTree.invoke(joinVisitor, new ArrayDeque<>(reordered));
+		Join innermostJoin = getInnermostJoin(joinTree);
+
+		assertThat(innermostJoin.getLeftArg()).isSameAs(values);
+		assertThat(innermostJoin.getRightArg()).isSameAs(usesValues);
+	}
+
+	@Test
 	public void reorderJoinArgsChoosesCheapestInitialJoinCombinationForValueConstrainedFilterPatterns()
 			throws Exception {
 		Filter a = valueConstrainedPattern("aS", "aP", "shared", "ex:pA");
@@ -462,9 +502,15 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		@SuppressWarnings("unchecked")
 		Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered);
 		List<TupleExpr> reorderedList = new ArrayList<>(reordered);
+		Method buildRightJoinTree = joinVisitor.getClass().getDeclaredMethod("buildRightJoinTree", Deque.class);
+		buildRightJoinTree.setAccessible(true);
+		TupleExpr joinTree = (TupleExpr) buildRightJoinTree.invoke(joinVisitor, new ArrayDeque<>(reordered));
+		Join innermostJoin = getInnermostJoin(joinTree);
 
 		assertThat(reorderedList.get(0)).isSameAs(c);
 		assertThat(reorderedList.subList(1, 3)).containsExactlyInAnyOrder(a, b);
+		assertThat(innermostJoin.getLeftArg()).isSameAs(a);
+		assertThat(innermostJoin.getRightArg()).isSameAs(b);
 	}
 
 	@Test
@@ -884,6 +930,79 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 							return value.stringValue();
 						}
 					}
+				}
+			}
+
+			return null;
+		}
+	}
+
+	private static final class PairwiseJoinStatisticsPrefersNonFirstPair extends EvaluationStatistics {
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof BindingSetAssignment) {
+				return 200;
+			}
+
+			if (expr instanceof StatementPattern) {
+				String label = tupleExprLabel(expr);
+				if ("ex:pUses".equals(label)) {
+					return 20;
+				}
+				if ("ex:pOther".equals(label)) {
+					return 10;
+				}
+			}
+
+			if (expr instanceof Join) {
+				return getJoinCardinality((Join) expr);
+			}
+
+			return super.getCardinality(expr);
+		}
+
+		private double getJoinCardinality(Join join) {
+			String left = tupleExprLabel(join.getLeftArg());
+			String right = tupleExprLabel(join.getRightArg());
+			if (left == null || right == null) {
+				return super.getCardinality(join);
+			}
+
+			if (pair(left, right, "values:shared", "ex:pUses")) {
+				return 50;
+			}
+			if (pair(left, right, "values:shared", "ex:pOther")) {
+				return 70;
+			}
+			if (pair(left, right, "ex:pUses", "ex:pOther")) {
+				return 1;
+			}
+
+			return super.getCardinality(join);
+		}
+
+		private boolean pair(String left, String right, String a, String b) {
+			return (a.equals(left) && b.equals(right)) || (b.equals(left) && a.equals(right));
+		}
+
+		private String tupleExprLabel(TupleExpr expr) {
+			if (expr instanceof BindingSetAssignment) {
+				BindingSetAssignment assignment = (BindingSetAssignment) expr;
+				String bindingName = assignment.getBindingNames().stream().findFirst().orElse("unknown");
+				return "values:" + bindingName;
+			}
+
+			StatementPattern statementPattern = extractStatementPattern(expr);
+			if (statementPattern != null) {
+				Var predicateVar = statementPattern.getPredicateVar();
+				if (predicateVar != null && predicateVar.hasValue()) {
+					return predicateVar.getValue().stringValue();
 				}
 			}
 
