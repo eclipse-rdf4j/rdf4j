@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -24,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.JoinEstimationDiagnosticsProvider;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
@@ -32,7 +34,7 @@ import org.slf4j.LoggerFactory;
 /**
  *
  */
-class LmdbEvaluationStatistics extends EvaluationStatistics {
+class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinEstimationDiagnosticsProvider {
 
 	private static final Logger log = LoggerFactory.getLogger(LmdbEvaluationStatistics.class);
 	private static final int SHARED_CACHE_MAX_ENTRIES = 262_144;
@@ -57,6 +59,27 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 	public boolean supportsJoinEstimation() {
 		return sketchBasedJoinEstimator.isReady();
 //		return false;
+	}
+
+	@Override
+	public boolean isJoinEstimationReady() {
+		return sketchBasedJoinEstimator.isReady();
+	}
+
+	@Override
+	public Object joinEstimationDiagnostics() {
+		SketchBasedJoinEstimator.Staleness staleness = sketchBasedJoinEstimator.staleness();
+		Map<String, Object> diagnostics = new LinkedHashMap<>();
+		diagnostics.put("estimator", "SketchBasedJoinEstimator");
+		diagnostics.put("ready", sketchBasedJoinEstimator.isReady());
+		diagnostics.put("stalenessScore", staleness.stalenessScore);
+		diagnostics.put("ageMillis", staleness.ageMillis);
+		diagnostics.put("sampledAdds", staleness.sampledAdds);
+		diagnostics.put("sampledRemoved", staleness.sampledRemoved);
+		diagnostics.put("sampledReadded", staleness.sampledReadded);
+		diagnostics.put("sampledRemovalRatio", staleness.sampledRemovalRatio);
+		diagnostics.put("sampledReaddRatio", staleness.sampledReaddRatio);
+		return diagnostics;
 	}
 
 	@Override

@@ -29,6 +29,7 @@ public class QueryPlanExplanation {
 	private String tupleExprJson;
 	private String irRenderedQuery;
 	private String irRenderingError;
+	private String uoeTrace;
 	private Map<String, String> debugMetrics = new LinkedHashMap<>();
 
 	public String getLevel() {
@@ -85,6 +86,14 @@ public class QueryPlanExplanation {
 
 	public void setIrRenderingError(String irRenderingError) {
 		this.irRenderingError = irRenderingError;
+	}
+
+	public String getUoeTrace() {
+		return uoeTrace;
+	}
+
+	public void setUoeTrace(String uoeTrace) {
+		this.uoeTrace = uoeTrace;
 	}
 
 	public Map<String, String> getDebugMetrics() {

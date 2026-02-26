@@ -11,6 +11,8 @@
 package org.eclipse.rdf4j.sail.memory;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -24,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.JoinEstimationDiagnosticsProvider;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
@@ -41,7 +44,7 @@ import com.google.common.cache.CacheBuilder;
  * @author Arjohn Kampman
  * @author James Leigh
  */
-class MemEvaluationStatistics extends EvaluationStatistics {
+class MemEvaluationStatistics extends EvaluationStatistics implements JoinEstimationDiagnosticsProvider {
 
 	private final MemValueFactory valueFactory;
 	private final MemStatementList memStatementList;
@@ -67,6 +70,27 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 	public boolean supportsJoinEstimation() {
 		return sketchBasedJoinEstimator.isReady();
 //		return false;
+	}
+
+	@Override
+	public boolean isJoinEstimationReady() {
+		return sketchBasedJoinEstimator.isReady();
+	}
+
+	@Override
+	public Object joinEstimationDiagnostics() {
+		SketchBasedJoinEstimator.Staleness staleness = sketchBasedJoinEstimator.staleness();
+		Map<String, Object> diagnostics = new LinkedHashMap<>();
+		diagnostics.put("estimator", "SketchBasedJoinEstimator");
+		diagnostics.put("ready", sketchBasedJoinEstimator.isReady());
+		diagnostics.put("stalenessScore", staleness.stalenessScore);
+		diagnostics.put("ageMillis", staleness.ageMillis);
+		diagnostics.put("sampledAdds", staleness.sampledAdds);
+		diagnostics.put("sampledRemoved", staleness.sampledRemoved);
+		diagnostics.put("sampledReadded", staleness.sampledReadded);
+		diagnostics.put("sampledRemovalRatio", staleness.sampledRemovalRatio);
+		diagnostics.put("sampledReaddRatio", staleness.sampledReaddRatio);
+		return diagnostics;
 	}
 
 	/**
