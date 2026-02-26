@@ -41,6 +41,9 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CardinalityEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CardinalityEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.EvaluationStatisticsCardinalityEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKeys;
@@ -102,6 +105,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 	}
 
 	private final EvaluationStatistics fallbackStats;
+	private final CardinalityEstimator cardinalityEstimator;
 	private final JoinStatsProvider learnedStats;
 	private final List<ValueExpr> externalFilters;
 	private final FilterConstraints externalConstraints;
@@ -120,23 +124,49 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 	}
 
 	public LearnedBindJoinCostModel(EvaluationStatistics fallbackStats, JoinStatsProvider learnedStats) {
-		this(fallbackStats, learnedStats, List.of(), List.of(), Set.of());
+		this(fallbackStats, new EvaluationStatisticsCardinalityEstimator(fallbackStats), learnedStats, List.of(),
+				List.of(), Set.of());
+	}
+
+	public LearnedBindJoinCostModel(EvaluationStatistics fallbackStats, CardinalityEstimator cardinalityEstimator,
+			JoinStatsProvider learnedStats) {
+		this(fallbackStats, cardinalityEstimator, learnedStats, List.of(), List.of(), Set.of());
 	}
 
 	public LearnedBindJoinCostModel(EvaluationStatistics fallbackStats, JoinStatsProvider learnedStats,
 			List<ValueExpr> externalFilters) {
-		this(fallbackStats, learnedStats, externalFilters, List.of(), Set.of());
+		this(fallbackStats, new EvaluationStatisticsCardinalityEstimator(fallbackStats), learnedStats, externalFilters,
+				List.of(), Set.of());
+	}
+
+	public LearnedBindJoinCostModel(EvaluationStatistics fallbackStats, CardinalityEstimator cardinalityEstimator,
+			JoinStatsProvider learnedStats, List<ValueExpr> externalFilters) {
+		this(fallbackStats, cardinalityEstimator, learnedStats, externalFilters, List.of(), Set.of());
 	}
 
 	public LearnedBindJoinCostModel(EvaluationStatistics fallbackStats, JoinStatsProvider learnedStats,
 			List<ValueExpr> externalFilters, List<StatementPattern> contextPatterns) {
-		this(fallbackStats, learnedStats, externalFilters, contextPatterns, Set.of());
+		this(fallbackStats, new EvaluationStatisticsCardinalityEstimator(fallbackStats), learnedStats, externalFilters,
+				contextPatterns, Set.of());
+	}
+
+	public LearnedBindJoinCostModel(EvaluationStatistics fallbackStats, CardinalityEstimator cardinalityEstimator,
+			JoinStatsProvider learnedStats, List<ValueExpr> externalFilters, List<StatementPattern> contextPatterns) {
+		this(fallbackStats, cardinalityEstimator, learnedStats, externalFilters, contextPatterns, Set.of());
 	}
 
 	public LearnedBindJoinCostModel(EvaluationStatistics fallbackStats, JoinStatsProvider learnedStats,
 			List<ValueExpr> externalFilters, List<StatementPattern> contextPatterns,
 			Set<String> unsupportedLiteralTargets) {
+		this(fallbackStats, new EvaluationStatisticsCardinalityEstimator(fallbackStats), learnedStats, externalFilters,
+				contextPatterns, unsupportedLiteralTargets);
+	}
+
+	public LearnedBindJoinCostModel(EvaluationStatistics fallbackStats, CardinalityEstimator cardinalityEstimator,
+			JoinStatsProvider learnedStats, List<ValueExpr> externalFilters, List<StatementPattern> contextPatterns,
+			Set<String> unsupportedLiteralTargets) {
 		this.fallbackStats = Objects.requireNonNull(fallbackStats, "fallbackStats");
+		this.cardinalityEstimator = Objects.requireNonNull(cardinalityEstimator, "cardinalityEstimator");
 		this.learnedStats = Objects.requireNonNull(learnedStats, "learnedStats");
 		this.externalFilters = externalFilters == null ? List.of() : List.copyOf(externalFilters);
 		this.typeSubjectNames = collectTypeSubjects(contextPatterns);
@@ -147,6 +177,17 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		this.unsupportedLiteralTargets = sanitizeUnsupportedTargets(unsupportedLiteralTargets);
 	}
 
+	private double estimateFallbackCardinality(TupleExpr expr) {
+		CardinalityEstimate estimate = cardinalityEstimator.estimate(expr);
+		if (estimate != null) {
+			double cardinality = estimate.getEstimate();
+			if (Double.isFinite(cardinality) && cardinality >= 0.0d) {
+				return cardinality;
+			}
+		}
+		return fallbackStats.getCardinality(expr);
+	}
+
 	@Override
 	public double estimateFanout(TupleExpr expr, Set<String> boundVars) {
 		if (TupleExprs.isFilterExistsFunction(expr)) {
@@ -154,7 +195,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		}
 		PatternContext context = unwrapPattern(expr);
 		if (context == null) {
-			return fallbackStats.getCardinality(expr);
+			return estimateFallbackCardinality(expr);
 		}
 		return estimatePattern(context, boundVars);
 	}
@@ -166,7 +207,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		}
 		PatternContext context = unwrapPattern(expr);
 		if (context == null) {
-			return fallbackStats.getCardinality(expr);
+			return estimateFallbackCardinality(expr);
 		}
 		return estimateScanPattern(context, initiallyBoundVars);
 	}
@@ -178,7 +219,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		}
 		PatternContext context = unwrapPattern(expr);
 		if (context == null) {
-			return fallbackStats.getCardinality(expr);
+			return estimateFallbackCardinality(expr);
 		}
 		return estimateScanPatternCost(context, initiallyBoundVars);
 	}
@@ -190,7 +231,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		}
 		PatternContext context = unwrapPattern(expr);
 		if (context == null) {
-			return fallbackStats.getCardinality(expr);
+			return estimateFallbackCardinality(expr);
 		}
 		Set<String> effectiveBoundVars = boundVars == null ? Set.of() : boundVars;
 		return estimateScanPatternCost(context, effectiveBoundVars);
@@ -200,11 +241,24 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 	public double estimateUncertainty(TupleExpr expr, Set<String> boundVars) {
 		PatternContext context = unwrapPattern(expr);
 		if (context == null) {
-			return 0.0d;
+			return estimateFallbackUncertainty(expr);
 		}
 		Set<String> effectiveBoundVars = boundVars == null ? Set.of() : boundVars;
 		PatternKey key = buildKey(context.pattern, effectiveBoundVars);
 		return resolveUncertainty(context.pattern, key);
+	}
+
+	private double estimateFallbackUncertainty(TupleExpr expr) {
+		CardinalityEstimate estimate = cardinalityEstimator.estimate(expr);
+		if (estimate == null) {
+			return 0.0d;
+		}
+		double confidence = estimate.getConfidence();
+		if (!Double.isFinite(confidence)) {
+			return 1.0d;
+		}
+		double boundedConfidence = Math.max(0.0d, Math.min(1.0d, confidence));
+		return 1.0d - boundedConfidence;
 	}
 
 	private double estimateScanPattern(PatternContext context, Set<String> boundVars) {
@@ -212,7 +266,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		StatementPattern pattern = context.pattern;
 		Set<String> effectiveBoundVars = filterApplication.boundVars;
 		StatementPattern boundPattern = applyBoundVars(pattern, effectiveBoundVars);
-		double defaultEstimate = fallbackStats.getCardinality(boundPattern);
+		double defaultEstimate = estimateFallbackCardinality(boundPattern);
 		if (usesPlaceholder(boundPattern)) {
 			defaultEstimate = fallbackEstimateForBoundPlaceholder(pattern, boundPattern, defaultEstimate);
 		}
@@ -245,7 +299,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		StatementPattern pattern = context.pattern;
 		Set<String> effectiveBoundVars = filterApplication.boundVars;
 		StatementPattern boundPattern = applyBoundVars(pattern, effectiveBoundVars);
-		double defaultEstimate = fallbackStats.getCardinality(boundPattern);
+		double defaultEstimate = estimateFallbackCardinality(boundPattern);
 		if (usesPlaceholder(boundPattern)) {
 			defaultEstimate = fallbackEstimateForBoundPlaceholder(pattern, boundPattern, defaultEstimate);
 		}
@@ -387,7 +441,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		Set<String> effectiveBoundVars = filterApplication.boundVars;
 		PatternKey key = buildKey(pattern, effectiveBoundVars);
 		StatementPattern boundPattern = applyBoundVars(pattern, effectiveBoundVars);
-		double defaultEstimate = fallbackStats.getCardinality(boundPattern);
+		double defaultEstimate = estimateFallbackCardinality(boundPattern);
 		if (usesPlaceholder(boundPattern)) {
 			defaultEstimate = fallbackEstimateForBoundPlaceholder(pattern, boundPattern, defaultEstimate);
 		}
@@ -511,7 +565,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 	}
 
 	private double estimateFilterExistsCardinality(Filter filter, Set<String> boundVars) {
-		double estimate = fallbackStats.getCardinality(filter);
+		double estimate = estimateFallbackCardinality(filter);
 		if (estimate <= 0.0d) {
 			estimate = 1.0d;
 		}
@@ -532,7 +586,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			return estimate;
 		}
 		StatementPattern boundPattern = applyBoundVars(pattern, combinedBound);
-		double boundEstimate = fallbackStats.getCardinality(boundPattern);
+		double boundEstimate = estimateFallbackCardinality(boundPattern);
 		if (usesPlaceholder(boundPattern)) {
 			boundEstimate = fallbackEstimateForBoundPlaceholder(pattern, boundPattern, boundEstimate);
 		}
@@ -658,7 +712,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		if (unboundPredicate == pattern) {
 			return estimate;
 		}
-		double unboundEstimate = fallbackStats.getCardinality(unboundPredicate);
+		double unboundEstimate = estimateFallbackCardinality(unboundPredicate);
 		if (unboundEstimate <= 0.0d || unboundEstimate <= estimate) {
 			return estimate;
 		}
@@ -703,7 +757,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 
 	private double fallbackEstimateForBoundPlaceholder(StatementPattern pattern, StatementPattern boundPattern,
 			double fallbackEstimate) {
-		double unboundEstimate = fallbackStats.getCardinality(pattern);
+		double unboundEstimate = estimateFallbackCardinality(pattern);
 		double genericUnbound = GENERIC_STATS.getCardinality(pattern);
 		double genericBound = GENERIC_STATS.getCardinality(boundPattern);
 		double candidate = fallbackEstimate;
@@ -806,7 +860,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			if (!filterIntersectsPattern(filter, patternNames)) {
 				continue;
 			}
-			double filterEstimate = fallbackStats.getCardinality(filter);
+			double filterEstimate = estimateFallbackCardinality(filter);
 			if (filterEstimate > 0.0d && filterEstimate < capped) {
 				capped = filterEstimate;
 			}
@@ -831,7 +885,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		if (patternNames.isEmpty()) {
 			return -1.0d;
 		}
-		double patternEstimate = fallbackStats.getCardinality(pattern);
+		double patternEstimate = estimateFallbackCardinality(pattern);
 		if (!(patternEstimate > 0.0d)) {
 			return -1.0d;
 		}
@@ -841,7 +895,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 			if (!filterIntersectsPattern(filter, patternNames)) {
 				continue;
 			}
-			double filterEstimate = fallbackStats.getCardinality(filter);
+			double filterEstimate = estimateFallbackCardinality(filter);
 			if (!(filterEstimate > 0.0d) || !Double.isFinite(filterEstimate)) {
 				continue;
 			}
@@ -1435,7 +1489,7 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 		if (filterApplication.multiplier < 1.0d) {
 			return Math.max(1.0d, adjusted);
 		}
-		double unfiltered = fallbackStats.getCardinality(pattern);
+		double unfiltered = estimateFallbackCardinality(pattern);
 		if (unfiltered > 0.0d && adjusted > unfiltered) {
 			return unfiltered;
 		}

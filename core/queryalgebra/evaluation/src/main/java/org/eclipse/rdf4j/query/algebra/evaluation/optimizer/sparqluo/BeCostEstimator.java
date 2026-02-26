@@ -388,8 +388,22 @@ public class BeCostEstimator {
 	private BindingInfo bindingInfo(BeNode node) {
 		return bindingInfoCache.computeIfAbsent(node, key -> {
 			TupleExpr expr = serializer.serialize(node);
-			return new BindingInfo(expr.getBindingNames(), expr.getAssuredBindingNames());
+			return new BindingInfo(filteredBindingNames(expr.getBindingNames()),
+					filteredBindingNames(expr.getAssuredBindingNames()));
 		});
+	}
+
+	private Set<String> filteredBindingNames(Set<String> names) {
+		if (names == null || names.isEmpty()) {
+			return Set.of();
+		}
+		Set<String> filtered = new HashSet<>(names);
+		filtered.removeIf(this::isSyntheticConstantName);
+		return filtered;
+	}
+
+	private boolean isSyntheticConstantName(String name) {
+		return name != null && name.startsWith("_const_");
 	}
 
 	private int sharedAssuredCount(BindingInfo left, BindingInfo right) {

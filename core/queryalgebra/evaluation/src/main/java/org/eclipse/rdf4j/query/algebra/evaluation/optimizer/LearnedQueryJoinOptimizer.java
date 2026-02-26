@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -1028,6 +1029,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 	}
 
 	private final JoinStatsProvider statsProvider;
+	private final OptimizationContext optimizationContext;
+	private final CardinalityEstimator cardinalityEstimator;
 	private final JoinOrderPlanner joinPlanner;
 	private final JoinOrderPlanner defaultGreedyPlanner;
 	private final LearnedJoinConfig config;
@@ -1049,11 +1052,20 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 
 	public LearnedQueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize,
 			TripleSource tripleSource, JoinStatsProvider statsProvider, LearnedJoinConfig config) {
-		super(statistics, trackResultSize, tripleSource);
-		this.statsProvider = Objects.requireNonNull(statsProvider, "statsProvider");
+		this(OptimizationContext.from(statistics, statsProvider), trackResultSize, tripleSource, config);
+	}
+
+	public LearnedQueryJoinOptimizer(OptimizationContext optimizationContext, boolean trackResultSize,
+			TripleSource tripleSource, LearnedJoinConfig config) {
+		super(Objects.requireNonNull(optimizationContext, "optimizationContext").getEvaluationStatistics(),
+				trackResultSize, tripleSource);
+		this.optimizationContext = optimizationContext;
+		this.statsProvider = optimizationContext.getJoinStatsProvider();
+		this.cardinalityEstimator = optimizationContext.getCardinalityEstimator();
 		this.config = Objects.requireNonNull(config, "config");
 		Objects.requireNonNull(tripleSource, "tripleSource");
-		BindJoinCostModel costModel = new LearnedBindJoinCostModel(statistics, statsProvider);
+		BindJoinCostModel costModel = new LearnedBindJoinCostModel(optimizationContext.getEvaluationStatistics(),
+				cardinalityEstimator, statsProvider);
 		JoinOrderPlanner greedy = new GreedyBindJoinOrderPlanner(costModel);
 		JoinOrderPlanner dp = new DpLeftDeepBindJoinOrderPlanner(costModel);
 		this.defaultGreedyPlanner = greedy;
@@ -1326,13 +1338,15 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 							rebalanceTypeAfterDetachedPredecessor(planned), rebalanceDiffs);
 					planned = captureRewrite("rebalanceLargeDualTypeHub", planned,
 							rebalanceLargeDualTypeHub(planned, joinArgs), rebalanceDiffs);
-					if (!isConnectedPlan(planned, initiallyBoundVars)) {
+					boolean fullyConnectable = canFullyConnectPlan(planned, initiallyBoundVars);
+					if (fullyConnectable && !isConnectedPlan(planned, initiallyBoundVars)) {
 						repairApplied = true;
 						repairBeforeLabels = labels(planned);
 						planned = repairDisconnectedPlan(planned, initiallyBoundVars);
 						repairAfterLabels = labels(planned);
 					}
-					if (isConnectedPlan(planned, initiallyBoundVars)) {
+					boolean connectedPlan = isConnectedPlan(planned, initiallyBoundVars);
+					if (connectedPlan || !fullyConnectable) {
 						finalOrderLabels = labels(planned);
 						if (bindingAssignments.isEmpty()) {
 							plannedOrder = new ArrayDeque<>(planned);
@@ -1341,6 +1355,9 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 							combined.addAll(bindingAssignments);
 							combined.addAll(planned);
 							plannedOrder = new ArrayDeque<>(combined);
+						}
+						if (!connectedPlan) {
+							planSelectionReason = "planned-unavoidable-disconnected";
 						}
 						publishPlanSelection(queryTemplateHash, selectedCandidateIndex, selectedPlanSignature,
 								planCandidates, planSelectionReason, plannerUsed, rawOrderLabels, finalOrderLabels,
@@ -1465,8 +1482,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			if (filters.isEmpty() && contextPatterns.isEmpty()) {
 				return joinPlanner;
 			}
-			BindJoinCostModel costModel = new LearnedBindJoinCostModel(statistics, statsProvider, filters,
-					contextPatterns, unsupportedTargets);
+			BindJoinCostModel costModel = new LearnedBindJoinCostModel(statistics, cardinalityEstimator, statsProvider,
+					filters, contextPatterns, unsupportedTargets);
 			JoinOrderPlanner greedy = new GreedyBindJoinOrderPlanner(costModel);
 			JoinOrderPlanner dp = new DpLeftDeepBindJoinOrderPlanner(costModel);
 			return new HybridBindJoinOrderPlanner(config, greedy, dp);
@@ -1481,8 +1498,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			if (filters.isEmpty() && contextPatterns.isEmpty()) {
 				return defaultGreedyPlanner;
 			}
-			BindJoinCostModel costModel = new LearnedBindJoinCostModel(statistics, statsProvider, filters,
-					contextPatterns, unsupportedTargets);
+			BindJoinCostModel costModel = new LearnedBindJoinCostModel(statistics, cardinalityEstimator, statsProvider,
+					filters, contextPatterns, unsupportedTargets);
 			return new GreedyBindJoinOrderPlanner(costModel);
 		}
 
@@ -2300,6 +2317,68 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 					selectedPlanOutcomeTelemetry.quarantineUntilEpoch);
 			LAST_PLAN_SELECTION.set(snapshot);
 			writePlanTrace(snapshot);
+			emitPlanSelectionTraceEvent(templateHash, selectedCandidateIndex, signature, candidates, reason,
+					plannerUsed,
+					planSelectionEpoch);
+		}
+
+		private void emitPlanSelectionTraceEvent(String templateHash, int selectedCandidateIndex, String signature,
+				List<JoinPlanCandidate> candidates, String reason, String plannerUsed, long planSelectionEpoch) {
+			OptimizationTraceSink traceSink = optimizationContext.getTraceSink();
+			if (traceSink == null) {
+				return;
+			}
+			Map<String, String> attributes = new LinkedHashMap<>();
+			attributes.put("queryTemplateHash", templateHash == null ? "" : templateHash);
+			attributes.put("selectedCandidateIndex", Integer.toString(selectedCandidateIndex));
+			attributes.put("selectedPlanSignature", signature == null ? "" : signature);
+			attributes.put("candidateCount", Integer.toString(candidates == null ? 0 : candidates.size()));
+			attributes.put("reason", reason == null ? "" : reason);
+			attributes.put("plannerUsed", plannerUsed == null ? "" : plannerUsed);
+			attributes.put("selectionEpoch", Long.toString(planSelectionEpoch));
+			appendCandidateTraceAttributes(attributes, candidates);
+			traceSink.onEvent(OptimizationTraceEvent.planSelected(attributes));
+			emitPlanCandidateTraceEvents(traceSink, templateHash, candidates, selectedCandidateIndex, plannerUsed,
+					planSelectionEpoch);
+		}
+
+		private void appendCandidateTraceAttributes(Map<String, String> attributes,
+				List<JoinPlanCandidate> candidates) {
+			if (candidates == null || candidates.isEmpty()) {
+				return;
+			}
+			for (int i = 0; i < candidates.size(); i++) {
+				JoinPlanCandidate candidate = candidates.get(i);
+				String prefix = "candidate." + i + ".";
+				attributes.put(prefix + "signature", candidate.getPlanSignature());
+				attributes.put(prefix + "totalCost", Double.toString(candidate.getEstimatedTotalCost()));
+				attributes.put(prefix + "cardinality", Double.toString(candidate.getEstimatedCardinality()));
+				attributes.put(prefix + "totalUncertainty", Double.toString(candidate.getTotalUncertainty()));
+			}
+		}
+
+		private void emitPlanCandidateTraceEvents(OptimizationTraceSink traceSink, String templateHash,
+				List<JoinPlanCandidate> candidates, int selectedCandidateIndex, String plannerUsed,
+				long planSelectionEpoch) {
+			if (candidates == null || candidates.isEmpty()) {
+				return;
+			}
+			for (int i = 0; i < candidates.size(); i++) {
+				JoinPlanCandidate candidate = candidates.get(i);
+				Map<String, String> attributes = new LinkedHashMap<>();
+				attributes.put("queryTemplateHash", templateHash == null ? "" : templateHash);
+				attributes.put("candidateCount", Integer.toString(candidates.size()));
+				attributes.put("candidateIndex", Integer.toString(i));
+				attributes.put("selectedCandidateIndex", Integer.toString(selectedCandidateIndex));
+				attributes.put("selected", Boolean.toString(i == selectedCandidateIndex));
+				attributes.put("plannerUsed", plannerUsed == null ? "" : plannerUsed);
+				attributes.put("selectionEpoch", Long.toString(planSelectionEpoch));
+				attributes.put("signature", candidate.getPlanSignature());
+				attributes.put("totalCost", Double.toString(candidate.getEstimatedTotalCost()));
+				attributes.put("cardinality", Double.toString(candidate.getEstimatedCardinality()));
+				attributes.put("totalUncertainty", Double.toString(candidate.getTotalUncertainty()));
+				traceSink.onEvent(OptimizationTraceEvent.planCandidate(attributes));
+			}
 		}
 
 		private boolean hasOuterUnsupportedTarget(Set<String> unsupportedTargets) {
@@ -2530,6 +2609,36 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			return true;
 		}
 
+		private boolean canFullyConnectPlan(List<TupleExpr> plan, Set<String> initiallyBoundVars) {
+			if (plan.isEmpty()) {
+				return true;
+			}
+			Set<String> reachable = initiallyBoundVars == null ? new HashSet<>() : new HashSet<>(initiallyBoundVars);
+			if (!reachable.isEmpty()) {
+				Set<String> relevant = new HashSet<>();
+				for (TupleExpr expr : plan) {
+					relevant.addAll(filteredBindingNames(expr));
+				}
+				reachable.retainAll(relevant);
+			}
+			List<TupleExpr> remaining = new ArrayList<>(plan);
+			boolean progressed;
+			do {
+				progressed = false;
+				for (int i = 0; i < remaining.size();) {
+					Set<String> names = filteredBindingNames(remaining.get(i));
+					if (reachable.isEmpty() || !disjoint(reachable, names)) {
+						reachable.addAll(names);
+						remaining.remove(i);
+						progressed = true;
+						continue;
+					}
+					i++;
+				}
+			} while (progressed);
+			return remaining.isEmpty();
+		}
+
 		private List<TupleExpr> repairDisconnectedPlan(List<TupleExpr> plan, Set<String> initiallyBoundVars) {
 			if (plan == null || plan.size() < 2) {
 				return plan;
@@ -2546,7 +2655,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			}
 			while (!remaining.isEmpty()) {
 				int nextIndex = -1;
-				if (reordered.isEmpty() || bound.isEmpty()) {
+				if (bound.isEmpty()) {
 					nextIndex = 0;
 				} else {
 					for (int i = 0; i < remaining.size(); i++) {
@@ -2554,6 +2663,9 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 							nextIndex = i;
 							break;
 						}
+					}
+					if (nextIndex < 0 && reordered.isEmpty()) {
+						nextIndex = 0;
 					}
 				}
 				if (nextIndex < 0) {
@@ -2899,8 +3011,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			for (TupleExpr expr : planned) {
 				contextPatterns.addAll(StatementPatternCollector.process(expr));
 			}
-			BindJoinCostModel model = new LearnedBindJoinCostModel(statistics, statsProvider, filters, contextPatterns,
-					unsupportedTargets == null ? Set.of() : unsupportedTargets);
+			BindJoinCostModel model = new LearnedBindJoinCostModel(statistics, cardinalityEstimator, statsProvider,
+					filters, contextPatterns, unsupportedTargets == null ? Set.of() : unsupportedTargets);
 			return model.estimateScanCardinality(pattern, Set.of());
 		}
 

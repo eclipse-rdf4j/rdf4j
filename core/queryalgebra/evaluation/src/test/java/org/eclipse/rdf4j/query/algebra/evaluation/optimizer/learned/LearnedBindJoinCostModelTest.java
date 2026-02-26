@@ -27,12 +27,15 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CardinalityEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CardinalityEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.MemoryJoinStats;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
@@ -550,6 +553,20 @@ class LearnedBindJoinCostModelTest {
 		double estimate = costModel.estimateFanout(pattern, Set.of());
 
 		assertEquals(5.0d, estimate);
+	}
+
+	@Test
+	void estimateUncertaintyUsesFallbackEstimatorConfidenceWhenNoPatternContext() {
+		EvaluationStatistics stats = new EvaluationStatistics();
+		JoinStatsProvider statsProvider = new MemoryJoinStats(MemoryJoinStats.InvalidationSettings.disabled());
+		CardinalityEstimator estimator = tupleExpr -> CardinalityEstimate.scalar(12.0d, 0.25d,
+				new CardinalityEstimate.Source(CardinalityEstimate.SourceType.FALLBACK_HEURISTIC, "test", 1.0d, 1.0d));
+
+		LearnedBindJoinCostModel costModel = new LearnedBindJoinCostModel(stats, estimator, statsProvider);
+
+		double uncertainty = costModel.estimateUncertainty(new SingletonSet(), Set.of());
+
+		assertEquals(0.75d, uncertainty);
 	}
 
 	private static final class FixedStatsProvider implements JoinStatsProvider {
