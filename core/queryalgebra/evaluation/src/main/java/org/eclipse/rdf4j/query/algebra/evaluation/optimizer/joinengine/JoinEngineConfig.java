@@ -25,6 +25,26 @@ public final class JoinEngineConfig {
 	private static final String ADAPTIVE_FALLBACK_RISK_PROPERTY = "rdf4j.optimizer.joinengine.adaptiveFallback.riskThreshold";
 	private static final String ADAPTIVE_FALLBACK_MIN_GAIN_PROPERTY = "rdf4j.optimizer.joinengine.adaptiveFallback.minGainRatio";
 	private static final String RUNTIME_FEEDBACK_ENABLED_PROPERTY = "rdf4j.optimizer.joinengine.runtimeFeedback.enabled";
+	private static final String BANDIT_POLICY_PROPERTY = "rdf4j.optimizer.joinengine.bandit.policy";
+	private static final String BANDIT_PERSISTENCE_ENABLED_PROPERTY = "rdf4j.optimizer.joinengine.bandit.persistence.enabled";
+	private static final String BANDIT_PERSISTENCE_PATH_PROPERTY = "rdf4j.optimizer.joinengine.bandit.persistence.path";
+
+	public enum BanditPolicyType {
+		THOMPSON,
+		UCB,
+		NONE;
+
+		private static BanditPolicyType parse(String raw, BanditPolicyType fallback) {
+			if (raw == null || raw.isBlank()) {
+				return fallback;
+			}
+			try {
+				return BanditPolicyType.valueOf(raw.trim().toUpperCase());
+			} catch (RuntimeException ignored) {
+				return fallback;
+			}
+		}
+	}
 
 	private final boolean enabled;
 	private final double riskPenaltyWeight;
@@ -35,22 +55,36 @@ public final class JoinEngineConfig {
 	private final double adaptiveFallbackRiskThreshold;
 	private final double adaptiveFallbackMinGainRatio;
 	private final boolean runtimeFeedbackEnabled;
+	private final BanditPolicyType banditPolicyType;
+	private final boolean banditPersistenceEnabled;
+	private final String banditPersistencePath;
 
 	public JoinEngineConfig(boolean enabled, double riskPenaltyWeight, int dpThreshold, int portfolioSize,
 			boolean enableDp) {
-		this(enabled, riskPenaltyWeight, dpThreshold, portfolioSize, enableDp, true, 0.85d, 0.10d, false);
+		this(enabled, riskPenaltyWeight, dpThreshold, portfolioSize, enableDp, true, 0.85d, 0.10d, false,
+				BanditPolicyType.THOMPSON, true, defaultBanditPersistencePath());
 	}
 
 	public JoinEngineConfig(boolean enabled, double riskPenaltyWeight, int dpThreshold, int portfolioSize,
 			boolean enableDp, boolean adaptiveFallbackEnabled, double adaptiveFallbackRiskThreshold,
 			double adaptiveFallbackMinGainRatio) {
 		this(enabled, riskPenaltyWeight, dpThreshold, portfolioSize, enableDp, adaptiveFallbackEnabled,
-				adaptiveFallbackRiskThreshold, adaptiveFallbackMinGainRatio, false);
+				adaptiveFallbackRiskThreshold, adaptiveFallbackMinGainRatio, false, BanditPolicyType.THOMPSON, true,
+				defaultBanditPersistencePath());
 	}
 
 	public JoinEngineConfig(boolean enabled, double riskPenaltyWeight, int dpThreshold, int portfolioSize,
 			boolean enableDp, boolean adaptiveFallbackEnabled, double adaptiveFallbackRiskThreshold,
 			double adaptiveFallbackMinGainRatio, boolean runtimeFeedbackEnabled) {
+		this(enabled, riskPenaltyWeight, dpThreshold, portfolioSize, enableDp, adaptiveFallbackEnabled,
+				adaptiveFallbackRiskThreshold, adaptiveFallbackMinGainRatio, runtimeFeedbackEnabled,
+				BanditPolicyType.THOMPSON, true, defaultBanditPersistencePath());
+	}
+
+	public JoinEngineConfig(boolean enabled, double riskPenaltyWeight, int dpThreshold, int portfolioSize,
+			boolean enableDp, boolean adaptiveFallbackEnabled, double adaptiveFallbackRiskThreshold,
+			double adaptiveFallbackMinGainRatio, boolean runtimeFeedbackEnabled, BanditPolicyType banditPolicyType,
+			boolean banditPersistenceEnabled, String banditPersistencePath) {
 		this.enabled = enabled;
 		this.riskPenaltyWeight = Math.max(0.0d, riskPenaltyWeight);
 		this.dpThreshold = Math.max(2, dpThreshold);
@@ -60,6 +94,9 @@ public final class JoinEngineConfig {
 		this.adaptiveFallbackRiskThreshold = clamp01(adaptiveFallbackRiskThreshold);
 		this.adaptiveFallbackMinGainRatio = Math.max(0.0d, adaptiveFallbackMinGainRatio);
 		this.runtimeFeedbackEnabled = runtimeFeedbackEnabled;
+		this.banditPolicyType = banditPolicyType == null ? BanditPolicyType.THOMPSON : banditPolicyType;
+		this.banditPersistenceEnabled = banditPersistenceEnabled;
+		this.banditPersistencePath = sanitizePath(banditPersistencePath);
 	}
 
 	public static JoinEngineConfig defaults() {
@@ -74,9 +111,16 @@ public final class JoinEngineConfig {
 		double adaptiveFallbackMinGainRatio = parseDouble(ADAPTIVE_FALLBACK_MIN_GAIN_PROPERTY, 0.10d);
 		boolean runtimeFeedbackEnabled = Boolean
 				.parseBoolean(System.getProperty(RUNTIME_FEEDBACK_ENABLED_PROPERTY, "true"));
+		BanditPolicyType banditPolicyType = BanditPolicyType
+				.parse(System.getProperty(BANDIT_POLICY_PROPERTY, BanditPolicyType.THOMPSON.name()),
+						BanditPolicyType.THOMPSON);
+		boolean banditPersistenceEnabled = Boolean
+				.parseBoolean(System.getProperty(BANDIT_PERSISTENCE_ENABLED_PROPERTY, "true"));
+		String banditPersistencePath = System.getProperty(BANDIT_PERSISTENCE_PATH_PROPERTY,
+				defaultBanditPersistencePath());
 		return new JoinEngineConfig(enabled, riskPenalty, dpThreshold, portfolioSize, enableDp,
 				adaptiveFallbackEnabled, adaptiveFallbackRiskThreshold, adaptiveFallbackMinGainRatio,
-				runtimeFeedbackEnabled);
+				runtimeFeedbackEnabled, banditPolicyType, banditPersistenceEnabled, banditPersistencePath);
 	}
 
 	private static double clamp01(double value) {
@@ -100,6 +144,17 @@ public final class JoinEngineConfig {
 		} catch (RuntimeException ignored) {
 			return fallback;
 		}
+	}
+
+	private static String sanitizePath(String path) {
+		if (path == null || path.isBlank()) {
+			return defaultBanditPersistencePath();
+		}
+		return path.trim();
+	}
+
+	private static String defaultBanditPersistencePath() {
+		return System.getProperty("java.io.tmpdir", ".") + "/rdf4j-joinengine-bandit.tsv";
 	}
 
 	public boolean isEnabled() {
@@ -136,5 +191,17 @@ public final class JoinEngineConfig {
 
 	public boolean isRuntimeFeedbackEnabled() {
 		return runtimeFeedbackEnabled;
+	}
+
+	public BanditPolicyType getBanditPolicyType() {
+		return banditPolicyType;
+	}
+
+	public boolean isBanditPersistenceEnabled() {
+		return banditPersistenceEnabled;
+	}
+
+	public String getBanditPersistencePath() {
+		return banditPersistencePath;
 	}
 }

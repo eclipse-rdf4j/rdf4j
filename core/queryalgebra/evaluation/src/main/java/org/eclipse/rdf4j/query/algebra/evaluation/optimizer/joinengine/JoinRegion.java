@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,7 +34,7 @@ public final class JoinRegion {
 			String fingerprint) {
 		this.atoms = List.copyOf(Objects.requireNonNull(atoms, "atoms"));
 		this.fixedPrefix = fixedPrefix == null ? List.of() : List.copyOf(fixedPrefix);
-		this.outerBoundVars = outerBoundVars == null ? Set.of() : Collections.unmodifiableSet(outerBoundVars);
+		this.outerBoundVars = outerBoundVars == null ? Set.of() : Set.copyOf(outerBoundVars);
 		this.fingerprint = Objects.requireNonNullElseGet(fingerprint,
 				() -> fingerprint(this.atoms, this.fixedPrefix, this.outerBoundVars));
 	}

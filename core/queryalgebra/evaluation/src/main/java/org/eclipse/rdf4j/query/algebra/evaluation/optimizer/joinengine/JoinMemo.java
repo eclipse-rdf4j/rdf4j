@@ -73,6 +73,7 @@ public final class JoinMemo {
 
 		int limitedTopK = Math.max(1, topK);
 		Map<Long, List<SubsetPlan>> bestBySubset = new HashMap<>();
+		Map<String, Estimate> estimateCache = new HashMap<>();
 		for (int i = 0; i < size; i++) {
 			long mask = 1L << i;
 			TupleExpr atom = atoms.get(i);
@@ -97,7 +98,7 @@ public final class JoinMemo {
 				List<SubsetPlan> prevPlans = bestBySubset.get(prevMask);
 				if (prevPlans != null) {
 					for (SubsetPlan prev : prevPlans) {
-						SubsetPlan candidate = appendAtom(prev, nextIndex, atoms, ctx);
+						SubsetPlan candidate = appendAtom(prev, nextIndex, atoms, ctx, estimateCache);
 						addTopK(bestForSubset, candidate, limitedTopK);
 					}
 				}
@@ -115,21 +116,23 @@ public final class JoinMemo {
 
 		List<JoinOrderCandidate> candidates = new ArrayList<>(fullPlans.size());
 		for (SubsetPlan subsetPlan : fullPlans) {
-			List<TupleExpr> ordered = new ArrayList<>(subsetPlan.order.size());
-			for (Integer index : subsetPlan.order) {
-				ordered.add(atoms.get(index));
-			}
-			candidates.add(JoinOrderCandidate.of(SUBSET_PLANNER, ordered, atoms));
+			candidates.add(JoinOrderCandidate.fromIndices(SUBSET_PLANNER, subsetPlan.order, atoms));
 		}
 		return candidates;
 	}
 
-	private SubsetPlan appendAtom(SubsetPlan prev, int nextIndex, List<TupleExpr> atoms, JoinOptimizationContext ctx) {
+	private SubsetPlan appendAtom(SubsetPlan prev, int nextIndex, List<TupleExpr> atoms, JoinOptimizationContext ctx,
+			Map<String, Estimate> estimateCache) {
 		List<Integer> order = new ArrayList<>(prev.order.size() + 1);
 		order.addAll(prev.order);
 		order.add(nextIndex);
-		TupleExpr joinTree = buildLeftDeepJoin(order, atoms);
-		Estimate estimate = ctx.getEstimator().estimateRows(joinTree, ctx);
+		String orderSignature = signature(order);
+		Estimate estimate = estimateCache.get(orderSignature);
+		if (estimate == null) {
+			TupleExpr joinTree = buildRightDeepJoin(order, atoms);
+			estimate = ctx.getEstimator().estimateRows(joinTree, ctx);
+			estimateCache.put(orderSignature, estimate);
+		}
 		double rows = sanitizeRows(estimate.getRows());
 		double risk = aggregateRisk(prev.risk, estimate.getRisk());
 		double expectedWork = prev.expectedWork + rows;
@@ -137,10 +140,10 @@ public final class JoinMemo {
 		return new SubsetPlan(order, score, risk, expectedWork, rows);
 	}
 
-	private TupleExpr buildLeftDeepJoin(List<Integer> order, List<TupleExpr> atoms) {
-		TupleExpr current = atoms.get(order.get(0)).clone();
-		for (int i = 1; i < order.size(); i++) {
-			current = new Join(current, atoms.get(order.get(i)).clone());
+	private TupleExpr buildRightDeepJoin(List<Integer> order, List<TupleExpr> atoms) {
+		TupleExpr current = atoms.get(order.get(order.size() - 1)).clone();
+		for (int i = order.size() - 2; i >= 0; i--) {
+			current = new Join(atoms.get(order.get(i)).clone(), current);
 		}
 		return current;
 	}

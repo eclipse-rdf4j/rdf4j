@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -31,6 +32,32 @@ import org.junit.jupiter.api.Test;
 class JoinMemoDeterminismTest {
 
 	@Test
+	void joinRegionSnapshotsOuterBoundVars() {
+		Set<String> outerBoundVars = new HashSet<>();
+		outerBoundVars.add("seed");
+		JoinRegion region = new JoinRegion(List.of(statement("a", "urn:pA")), List.of(), outerBoundVars, null);
+
+		outerBoundVars.add("late");
+
+		assertThat(region.getOuterBoundVars()).containsExactly("seed");
+	}
+
+	@Test
+	void joinOptimizationContextSnapshotsOuterBoundVars() {
+		Set<String> outerBoundVars = new HashSet<>();
+		outerBoundVars.add("seed");
+		JoinOptimizationContext context = new JoinOptimizationContext(new EvaluationStatistics(),
+				new EmptyTripleSource(),
+				null, EmptyBindingSet.getInstance(), outerBoundVars, JoinEngineConfig.defaults(),
+				OptimizationTraceSink.NOOP, BanditPolicy.noop(), new DefaultUncertaintyAwareEstimator(),
+				new DefaultCostModel());
+
+		outerBoundVars.add("late");
+
+		assertThat(context.getOuterBoundVars()).containsExactly("seed");
+	}
+
+	@Test
 	void subsetDpBreaksEqualScoresWithLowerRisk() {
 		StatementPattern a = statement("a", "urn:pA");
 		StatementPattern b = statement("b", "urn:pB");
@@ -44,6 +71,22 @@ class JoinMemoDeterminismTest {
 		assertThat(candidates.getFirst().getSignature())
 				.as("Expected lower-risk order to win when scores tie")
 				.startsWith("[2,");
+	}
+
+	@Test
+	void subsetDpUsesRightDeepThreeWayJoinShape() {
+		StatementPattern a = statement("a", "urn:pA");
+		StatementPattern b = statement("b", "urn:pB");
+		StatementPattern c = statement("c", "urn:pC");
+		JoinRegion region = new JoinRegion(List.of(a, b, c), List.of(), Set.of(), null);
+		ShapeTrackingEstimator estimator = new ShapeTrackingEstimator();
+		JoinOptimizationContext context = context(0.0d, estimator);
+
+		new JoinMemo().expandSubsetDpCandidates(region, context, 3);
+
+		assertThat(estimator.seenThreeWayJoin).isTrue();
+		assertThat(estimator.seenRightDeepThreeWay).isTrue();
+		assertThat(estimator.seenLeftDeepThreeWay).isFalse();
 	}
 
 	private StatementPattern statement(String suffix, String predicateIri) {
@@ -91,6 +134,38 @@ class JoinMemoDeterminismTest {
 				}
 			}
 			return "unknown";
+		}
+	}
+
+	private static final class ShapeTrackingEstimator implements UncertaintyAwareEstimator {
+
+		private boolean seenThreeWayJoin;
+		private boolean seenRightDeepThreeWay;
+		private boolean seenLeftDeepThreeWay;
+
+		@Override
+		public Estimate estimateRows(TupleExpr expr, JoinOptimizationContext ctx) {
+			if (expr instanceof Join && countLeaves(expr) == 3) {
+				seenThreeWayJoin = true;
+				Join join = (Join) expr;
+				boolean leftIsJoin = join.getLeftArg() instanceof Join;
+				boolean rightIsJoin = join.getRightArg() instanceof Join;
+				if (!leftIsJoin && rightIsJoin) {
+					seenRightDeepThreeWay = true;
+				}
+				if (leftIsJoin && !rightIsJoin) {
+					seenLeftDeepThreeWay = true;
+				}
+			}
+			return new Estimate(10.0d, 0.20d, "TEST", Map.of());
+		}
+
+		private int countLeaves(TupleExpr expr) {
+			if (!(expr instanceof Join)) {
+				return 1;
+			}
+			Join join = (Join) expr;
+			return countLeaves(join.getLeftArg()) + countLeaves(join.getRightArg());
 		}
 	}
 }

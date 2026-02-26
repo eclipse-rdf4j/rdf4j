@@ -52,6 +52,20 @@ public final class JoinOrderCandidate {
 		return new JoinOrderCandidate(planner, order, signature(indexes));
 	}
 
+	public static JoinOrderCandidate fromIndices(String planner, List<Integer> orderIndices,
+			List<TupleExpr> baseOrder) {
+		Objects.requireNonNull(orderIndices, "orderIndices");
+		Objects.requireNonNull(baseOrder, "baseOrder");
+		List<TupleExpr> order = new ArrayList<>(orderIndices.size());
+		for (Integer index : orderIndices) {
+			if (index == null || index < 0 || index >= baseOrder.size()) {
+				throw new IllegalArgumentException("Invalid order index: " + index);
+			}
+			order.add(baseOrder.get(index));
+		}
+		return new JoinOrderCandidate(planner, order, signature(orderIndices));
+	}
+
 	public static String signature(List<Integer> orderIndices) {
 		if (orderIndices == null || orderIndices.isEmpty()) {
 			return "[]";

@@ -44,9 +44,9 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 	@Override
 	public OptimizationResult optimizeJoin(Join joinNode, JoinRegion region, JoinOptimizationContext ctx) {
 		Objects.requireNonNull(region, "region");
+		String fingerprint = region.getFingerprint();
 		long[] stepCounter = new long[] { 0L };
-		emit(ctx, stepCounter, "REGION", OptimizationTraceEvent.EventType.REGION_BUILT, mapOf(
-				"fingerprint", region.getFingerprint(),
+		emit(ctx, stepCounter, "REGION", OptimizationTraceEvent.EventType.REGION_BUILT, fingerprint, mapOf(
 				"atoms", String.valueOf(region.getAtoms().size()),
 				"fixedPrefix", String.valueOf(region.getFixedPrefix().size()),
 				"outerBoundVars", String.valueOf(region.getOuterBoundVars().size())));
@@ -58,7 +58,7 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 		if (!selected.contains("legacy-greedy") && available.contains("legacy-greedy")) {
 			selected.add(0, "legacy-greedy");
 		}
-		emit(ctx, stepCounter, "PORTFOLIO", OptimizationTraceEvent.EventType.PORTFOLIO_SELECTED,
+		emit(ctx, stepCounter, "PORTFOLIO", OptimizationTraceEvent.EventType.PORTFOLIO_SELECTED, fingerprint,
 				mapOf("selectedPlanners", String.join(",", selected)));
 
 		Map<String, JoinOrderCandidate> uniqueCandidates = new LinkedHashMap<>();
@@ -69,17 +69,10 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 			List<JoinOrderCandidate> generated = planner.generatePlans(region, ctx);
 			for (JoinOrderCandidate candidate : generated) {
 				uniqueCandidates.putIfAbsent(candidate.getPlanner() + "|" + candidate.getSignature(), candidate);
-				emit(ctx, stepCounter, "PORTFOLIO", OptimizationTraceEvent.EventType.CANDIDATE_GENERATED,
+				emit(ctx, stepCounter, candidate.getPlanner().equals("memo-dp") ? "MEMO" : "PORTFOLIO",
+						OptimizationTraceEvent.EventType.CANDIDATE_GENERATED, fingerprint,
 						mapOf("planner", candidate.getPlanner(), "signature", candidate.getSignature()));
 			}
-		}
-
-		List<JoinOrderCandidate> memoCandidates = new JoinMemo()
-				.expandSubsetDpCandidates(region, ctx, ctx.getConfig().getPortfolioSize());
-		for (JoinOrderCandidate candidate : memoCandidates) {
-			uniqueCandidates.putIfAbsent(candidate.getPlanner() + "|" + candidate.getSignature(), candidate);
-			emit(ctx, stepCounter, "MEMO", OptimizationTraceEvent.EventType.CANDIDATE_GENERATED,
-					mapOf("planner", candidate.getPlanner(), "signature", candidate.getSignature()));
 		}
 
 		if (uniqueCandidates.isEmpty()) {
@@ -90,12 +83,12 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 		JoinMemo memo = new JoinMemo();
 		for (JoinOrderCandidate candidate : uniqueCandidates.values()) {
 			TupleExpr baseline = JoinTreeBuilder.build(region, candidate, ctx);
-			addPlan(memo, baseline, candidate, region, ctx, stepCounter, "baseline");
+			addPlan(memo, baseline, candidate, region, ctx, stepCounter, "baseline", fingerprint);
 
 			TupleExpr rewritten = baseline.clone();
-			boolean rewrote = applyRules(rewritten, candidate, ctx, stepCounter, "rules");
+			boolean rewrote = applyRules(rewritten, candidate, ctx, stepCounter, "rules", fingerprint);
 			if (rewrote) {
-				addPlan(memo, rewritten, candidate, region, ctx, stepCounter, "rules");
+				addPlan(memo, rewritten, candidate, region, ctx, stepCounter, "rules", fingerprint);
 			}
 		}
 
@@ -104,7 +97,7 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 		JoinPlan bestLegacy = findBestPlannerPlan(ranked, "legacy-greedy");
 		boolean adaptiveFallback = shouldAdaptiveFallback(chosen, bestLegacy, ctx);
 		if (adaptiveFallback && bestLegacy != null) {
-			emit(ctx, stepCounter, "CHOOSE", OptimizationTraceEvent.EventType.PRUNED,
+			emit(ctx, stepCounter, "CHOOSE", OptimizationTraceEvent.EventType.PRUNED, fingerprint,
 					mapOf("planner", chosen.getCandidate().getPlanner(),
 							"signature", chosen.getDescriptor().getOrderSignature(), "reason", "adaptive_fallback",
 							"fallbackPlanner", bestLegacy.getCandidate().getPlanner(),
@@ -124,7 +117,7 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 			if (pruned == chosen) {
 				continue;
 			}
-			emit(ctx, stepCounter, "MEMO", OptimizationTraceEvent.EventType.PRUNED,
+			emit(ctx, stepCounter, "MEMO", OptimizationTraceEvent.EventType.PRUNED, fingerprint,
 					mapOf("planner", pruned.getCandidate().getPlanner(),
 							"signature", pruned.getDescriptor().getOrderSignature(), "reason", "dominated",
 							"score", doubleString(pruned.getCost().getScore())));
@@ -148,8 +141,8 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 		selectedData.put("runnerUpPlanner", runnerUp == null ? "NONE" : runnerUp.getCandidate().getPlanner());
 		selectedData.put("runnerUpSignature",
 				runnerUp == null ? "NONE" : runnerUp.getDescriptor().getOrderSignature());
-		emit(ctx, stepCounter, "CHOOSE", OptimizationTraceEvent.EventType.PLAN_SELECTED, selectedData);
-		emit(ctx, stepCounter, "CHOOSE", OptimizationTraceEvent.EventType.PLAN_CHOSEN,
+		emit(ctx, stepCounter, "CHOOSE", OptimizationTraceEvent.EventType.PLAN_SELECTED, fingerprint, selectedData);
+		emit(ctx, stepCounter, "CHOOSE", OptimizationTraceEvent.EventType.PLAN_CHOSEN, fingerprint,
 				mapOf("planId", chosen.getDescriptor().getId(), "planner", chosen.getCandidate().getPlanner()));
 
 		return new OptimizationResult(chosen.getExpr(), chosen.getDescriptor(),
@@ -157,7 +150,7 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 	}
 
 	private void addPlan(JoinMemo memo, TupleExpr expr, JoinOrderCandidate candidate, JoinRegion region,
-			JoinOptimizationContext ctx, long[] stepCounter, String variant) {
+			JoinOptimizationContext ctx, long[] stepCounter, String variant, String fingerprint) {
 		Cost cost = ctx.getCostModel().cost(expr, ctx);
 		Estimate rootEstimate = ctx.getEstimator().estimateRows(expr, ctx);
 		String variantSignature = "baseline".equals(variant)
@@ -167,7 +160,7 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 				Integer.toHexString(Objects.hash(region.getFingerprint(), candidate.getPlanner(), variantSignature)),
 				candidate.getPlanner(), variantSignature);
 		memo.add(new JoinPlan(expr, candidate, descriptor, cost));
-		emit(ctx, stepCounter, "COST", OptimizationTraceEvent.EventType.COSTED,
+		emit(ctx, stepCounter, "COST", OptimizationTraceEvent.EventType.COSTED, fingerprint,
 				mapOf("planner", candidate.getPlanner(), "signature", variantSignature, "variant", variant,
 						"planId", descriptor.getId(), "rows", doubleString(cost.getRows()),
 						"risk", doubleString(cost.getRisk()),
@@ -175,7 +168,7 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 	}
 
 	private boolean applyRules(TupleExpr expr, JoinOrderCandidate candidate, JoinOptimizationContext ctx,
-			long[] stepCounter, String variant) {
+			long[] stepCounter, String variant, String fingerprint) {
 		boolean anyApplied = false;
 		for (JoinRule rule : rules) {
 			Map<String, String> diagnostics = new LinkedHashMap<>();
@@ -196,17 +189,18 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 			emit(ctx, stepCounter, "REWRITE",
 					applied ? OptimizationTraceEvent.EventType.RULE_APPLIED
 							: OptimizationTraceEvent.EventType.RULE_REJECTED,
-					data);
+					fingerprint, data);
 		}
 		return anyApplied;
 	}
 
 	private void emit(JoinOptimizationContext ctx, long[] stepCounter, String phase,
-			OptimizationTraceEvent.EventType eventType, Map<String, String> attributes) {
+			OptimizationTraceEvent.EventType eventType, String fingerprint, Map<String, String> attributes) {
 		long step = stepCounter[0]++;
 		Map<String, String> eventAttributes = new LinkedHashMap<>(attributes == null ? Map.of() : attributes);
 		eventAttributes.putIfAbsent("phase", phase);
 		eventAttributes.putIfAbsent("step", Long.toString(step));
+		eventAttributes.putIfAbsent("fingerprint", fingerprint == null ? "unknown" : fingerprint);
 		ctx.getTraceSink()
 				.onEvent(
 						new OptimizationTraceEvent(eventType, System.currentTimeMillis(), eventAttributes, phase,

@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -34,12 +35,16 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OptimizationTraceSink;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -105,7 +110,6 @@ class JoinRuleHarnessTest {
 	void crossJoinCacheRulePreservesResultsRandomized() {
 		MergeJoinRule mergeJoinRule = new MergeJoinRule();
 		CrossJoinMergeJoinCacheableRule cacheableRule = new CrossJoinMergeJoinCacheableRule();
-		int modified = 0;
 
 		for (int seed = 1; seed <= 20; seed++) {
 			OrderedListTripleSource tripleSource = new OrderedListTripleSource(generateRandomStatements(seed));
@@ -120,16 +124,82 @@ class JoinRuleHarnessTest {
 			Map<String, String> mergeDiagnostics = new HashMap<>();
 			mergeJoinRule.apply(rewritten, context, mergeDiagnostics);
 			Map<String, String> cacheableDiagnostics = new HashMap<>();
-			if (cacheableRule.apply(rewritten, context, cacheableDiagnostics)) {
-				modified++;
-			}
+			cacheableRule.apply(rewritten, context, cacheableDiagnostics);
 
 			List<BindingSet> baseline = evaluate(original, tripleSource, statistics);
 			List<BindingSet> candidate = evaluate(rewritten, tripleSource, statistics);
 			assertThat(asCounts(candidate)).as("seed=%s query=%s", seed, query).isEqualTo(asCounts(baseline));
 		}
+	}
 
-		assertThat(modified).isGreaterThan(0);
+	@Test
+	void crossJoinCacheRuleMarksIsolatedMergeStatementPairCacheable() {
+		OrderedListTripleSource tripleSource = new OrderedListTripleSource(generateRandomStatements(10));
+		JoinOptimizationContext context = context(tripleSource, new EvaluationStatistics());
+		TupleExpr plan = parseQuery("SELECT * WHERE { ?s <urn:p0> ?o0 . ?s <urn:p1> ?o1 . }");
+		Join join = firstJoin(plan);
+		join.setMergeJoin(true);
+
+		Map<String, String> diagnostics = new HashMap<>();
+		boolean changed = new CrossJoinMergeJoinCacheableRule().apply(plan, context, diagnostics);
+
+		assertThat(changed).isTrue();
+		assertThat(diagnostics).containsEntry("reason", "cacheable_selected");
+		assertThat(diagnostics).containsEntry("cacheableJoin", "true");
+	}
+
+	@Test
+	void mergeJoinRuleUsesEstimatorRowsInsteadOfResultSizeEstimate() {
+		OrderedListTripleSource tripleSource = new OrderedListTripleSource(generateRandomStatements(7));
+		JoinOptimizationContext context = context(tripleSource, new EvaluationStatistics(),
+				new PredicateRowsEstimator(Map.of("urn:p0", 1000.0d, "urn:p1", 1.0d)));
+		TupleExpr plan = parseQuery("SELECT * WHERE { ?s <urn:p0> ?o0 . ?s <urn:p1> ?o1 . }");
+		Join join = firstJoin(plan);
+		join.getLeftArg().setResultSizeEstimate(1.0d);
+		join.getRightArg().setResultSizeEstimate(1.0d);
+
+		Map<String, String> diagnostics = new HashMap<>();
+		boolean changed = new MergeJoinRule().apply(plan, context, diagnostics);
+
+		assertThat(changed).isFalse();
+		assertThat(diagnostics).containsEntry("reason", "cardinality_skew");
+		assertThat(diagnostics).containsKeys("leftRows", "rightRows");
+	}
+
+	@Test
+	void mergeJoinRuleClampsUnknownEstimatorRows() {
+		OrderedListTripleSource tripleSource = new OrderedListTripleSource(generateRandomStatements(8));
+		JoinOptimizationContext context = context(tripleSource, new EvaluationStatistics(),
+				new PredicateRowsEstimator(Map.of("urn:p0", Double.NaN, "urn:p1", Double.NEGATIVE_INFINITY)));
+		TupleExpr plan = parseQuery("SELECT * WHERE { ?s <urn:p0> ?o0 . ?s <urn:p1> ?o1 . }");
+		Join join = firstJoin(plan);
+		join.getLeftArg().setResultSizeEstimate(1000000.0d);
+		join.getRightArg().setResultSizeEstimate(1.0d);
+
+		Map<String, String> diagnostics = new HashMap<>();
+		boolean changed = new MergeJoinRule().apply(plan, context, diagnostics);
+
+		assertThat(changed).isTrue();
+		assertThat(diagnostics).containsEntry("reason", "merge_join_selected");
+		assertThat(diagnostics).containsEntry("leftRows", "1.0");
+		assertThat(diagnostics).containsEntry("rightRows", "1.0");
+	}
+
+	@Test
+	void crossJoinCacheRuleRejectsVarsReferencedOutsideJoinPair() {
+		OrderedListTripleSource tripleSource = new OrderedListTripleSource(generateRandomStatements(9));
+		JoinOptimizationContext context = context(tripleSource, new EvaluationStatistics());
+		TupleExpr plan = parseQuery("SELECT * WHERE { ?s <urn:p0> ?a . ?s <urn:p1> ?b . ?a <urn:p2> ?x . }");
+		Join statementPairJoin = firstStatementPairJoin(plan);
+		statementPairJoin.setMergeJoin(true);
+
+		Map<String, String> diagnostics = new HashMap<>();
+		boolean changed = new CrossJoinMergeJoinCacheableRule().apply(plan, context, diagnostics);
+
+		assertThat(changed).isFalse();
+		assertThat(diagnostics.get("reason")).isIn("shares_external_vars", "not_merge_statement_pair");
+		assertThat(diagnostics).doesNotContainEntry("reason", "cacheable_selected");
+		assertThat(diagnostics).doesNotContainKey("cacheableJoin");
 	}
 
 	private TupleExpr parseQuery(String query) {
@@ -138,12 +208,51 @@ class JoinRuleHarnessTest {
 	}
 
 	private JoinOptimizationContext context(OrderedListTripleSource tripleSource, EvaluationStatistics statistics) {
+		return context(tripleSource, statistics, new DefaultUncertaintyAwareEstimator());
+	}
+
+	private JoinOptimizationContext context(OrderedListTripleSource tripleSource, EvaluationStatistics statistics,
+			UncertaintyAwareEstimator estimator) {
 		JoinEngineConfig defaults = JoinEngineConfig.defaults();
 		JoinEngineConfig config = new JoinEngineConfig(true, defaults.getRiskPenaltyWeight(), defaults.getDpThreshold(),
 				Math.max(3, defaults.getPortfolioSize()), defaults.isEnableDp());
 		return new JoinOptimizationContext(statistics, tripleSource, null, EmptyBindingSet.getInstance(), Set.of(),
-				config, OptimizationTraceSink.NOOP, BanditPolicy.noop(), new DefaultUncertaintyAwareEstimator(),
-				new DefaultCostModel());
+				config, OptimizationTraceSink.NOOP, BanditPolicy.noop(), estimator, new DefaultCostModel());
+	}
+
+	private Join firstJoin(TupleExpr expr) {
+		AtomicReference<Join> found = new AtomicReference<>();
+		expr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Join node) {
+				found.compareAndSet(null, node);
+				super.meet(node);
+			}
+		});
+		Join join = found.get();
+		if (join == null) {
+			throw new IllegalStateException("Expected at least one join: " + expr.getSignature());
+		}
+		return join;
+	}
+
+	private Join firstStatementPairJoin(TupleExpr expr) {
+		AtomicReference<Join> found = new AtomicReference<>();
+		expr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Join node) {
+				if (found.get() == null && node.getLeftArg() instanceof StatementPattern
+						&& node.getRightArg() instanceof StatementPattern) {
+					found.set(node);
+				}
+				super.meet(node);
+			}
+		});
+		Join join = found.get();
+		if (join == null) {
+			throw new IllegalStateException("Expected statement-pattern join: " + expr.getSignature());
+		}
+		return join;
 	}
 
 	private List<BindingSet> evaluate(TupleExpr expr, TripleSource tripleSource, EvaluationStatistics statistics) {
@@ -283,6 +392,28 @@ class JoinRuleHarnessTest {
 				}
 			}
 			return false;
+		}
+	}
+
+	private static final class PredicateRowsEstimator implements UncertaintyAwareEstimator {
+
+		private final Map<String, Double> rowsByPredicate;
+
+		private PredicateRowsEstimator(Map<String, Double> rowsByPredicate) {
+			this.rowsByPredicate = rowsByPredicate;
+		}
+
+		@Override
+		public Estimate estimateRows(TupleExpr expr, JoinOptimizationContext ctx) {
+			if (expr instanceof StatementPattern) {
+				StatementPattern pattern = (StatementPattern) expr;
+				Var predicate = pattern.getPredicateVar();
+				if (predicate != null && predicate.hasValue()) {
+					double rows = rowsByPredicate.getOrDefault(predicate.getValue().stringValue(), 1.0d);
+					return new Estimate(rows, 0.25d, "TEST", Map.of());
+				}
+			}
+			return new Estimate(1.0d, 0.25d, "TEST", Map.of());
 		}
 	}
 }

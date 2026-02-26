@@ -67,7 +67,13 @@ public final class MergeJoinRule implements JoinRule {
 				super.meet(node);
 				return;
 			}
-			if (joinSizeIsTooDifferent(left.getResultSizeEstimate(), right.getResultSizeEstimate())) {
+			Estimate leftEstimate = ctx.getEstimator().estimateRows(left, ctx);
+			Estimate rightEstimate = ctx.getEstimator().estimateRows(right, ctx);
+			double leftRows = safeRows(leftEstimate == null ? Double.NaN : leftEstimate.getRows());
+			double rightRows = safeRows(rightEstimate == null ? Double.NaN : rightEstimate.getRows());
+			diagnostics.put("leftRows", doubleString(leftRows));
+			diagnostics.put("rightRows", doubleString(rightRows));
+			if (joinSizeIsTooDifferent(leftRows, rightRows)) {
 				diagnostics.putIfAbsent("reason", "cardinality_skew");
 				super.meet(node);
 				return;
@@ -88,6 +94,17 @@ public final class MergeJoinRule implements JoinRule {
 				return true;
 			}
 			return right > left && right / QueryJoinOptimizer.MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER > left;
+		}
+
+		private double safeRows(double rows) {
+			if (!Double.isFinite(rows) || rows < 0.0d) {
+				return 1.0d;
+			}
+			return Math.max(1.0d, rows);
+		}
+
+		private String doubleString(double value) {
+			return Double.isFinite(value) ? Double.toString(value) : "NaN";
 		}
 
 		private boolean joinOnMultipleVars(TupleExpr first, TupleExpr second) {
