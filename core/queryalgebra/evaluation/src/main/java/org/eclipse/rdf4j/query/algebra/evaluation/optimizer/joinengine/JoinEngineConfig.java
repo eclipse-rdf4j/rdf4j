@@ -73,7 +73,7 @@ public final class JoinEngineConfig {
 		double adaptiveFallbackRiskThreshold = parseDouble(ADAPTIVE_FALLBACK_RISK_PROPERTY, 0.85d);
 		double adaptiveFallbackMinGainRatio = parseDouble(ADAPTIVE_FALLBACK_MIN_GAIN_PROPERTY, 0.10d);
 		boolean runtimeFeedbackEnabled = Boolean
-				.parseBoolean(System.getProperty(RUNTIME_FEEDBACK_ENABLED_PROPERTY, "false"));
+				.parseBoolean(System.getProperty(RUNTIME_FEEDBACK_ENABLED_PROPERTY, "true"));
 		return new JoinEngineConfig(enabled, riskPenalty, dpThreshold, portfolioSize, enableDp,
 				adaptiveFallbackEnabled, adaptiveFallbackRiskThreshold, adaptiveFallbackMinGainRatio,
 				runtimeFeedbackEnabled);

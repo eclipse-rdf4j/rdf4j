@@ -163,6 +163,35 @@ class QueryJoinOptimizerJoinEngineTraceTest {
 	}
 
 	@Test
+	void costedEventsExposePlanId() throws Exception {
+		SPARQLParser parser = new SPARQLParser();
+		ParsedQuery parsedQuery = parser.parseQuery(QUERY, null);
+
+		EvaluationStatistics statistics = new EvaluationStatistics();
+		List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+		OptimizationContext context = new OptimizationContext(statistics,
+				new EvaluationStatisticsCardinalityEstimator(statistics), new MemoryJoinStats(), events::add);
+		JoinEngineConfig defaults = JoinEngineConfig.defaults();
+		JoinEngineConfig enabledConfig = new JoinEngineConfig(true, defaults.getRiskPenaltyWeight(),
+				defaults.getDpThreshold(), Math.max(4, defaults.getPortfolioSize()), defaults.isEnableDp());
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(context.getEvaluationStatistics(), false,
+				new EmptyTripleSource(), true, enabledConfig, new DefaultJoinOptimizationEngine(),
+				new DefaultUncertaintyAwareEstimator(), new DefaultCostModel(), new InMemoryBanditPolicy(),
+				context.getTraceSink());
+		optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+		List<OptimizationTraceEvent> costed = events.stream()
+				.filter(event -> event.getEventType() == OptimizationTraceEvent.EventType.COSTED)
+				.toList();
+		assertTrue(!costed.isEmpty(), "Expected COSTED events");
+		for (OptimizationTraceEvent event : costed) {
+			String planId = event.getAttributes().get("planId");
+			assertTrue(planId != null && !planId.isBlank(), "Expected COSTED event to include planId");
+		}
+	}
+
+	@Test
 	void reportsBanditOutcomeForChosenPlanner() throws Exception {
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery parsedQuery = parser.parseQuery(QUERY, null);

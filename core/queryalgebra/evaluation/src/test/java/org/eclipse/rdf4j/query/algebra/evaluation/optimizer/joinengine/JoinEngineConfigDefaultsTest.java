@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 class JoinEngineConfigDefaultsTest {
 
 	private static final String ENABLED_PROPERTY = "rdf4j.optimizer.joinengine.enabled";
+	private static final String RUNTIME_FEEDBACK_ENABLED_PROPERTY = "rdf4j.optimizer.joinengine.runtimeFeedback.enabled";
 
 	@Test
 	void defaultsEnableEngineWhenPropertyUnset() {
@@ -44,11 +45,45 @@ class JoinEngineConfigDefaultsTest {
 		}
 	}
 
+	@Test
+	void defaultsEnableRuntimeFeedbackWhenPropertyUnset() {
+		String previous = System.getProperty(RUNTIME_FEEDBACK_ENABLED_PROPERTY);
+		try {
+			System.clearProperty(RUNTIME_FEEDBACK_ENABLED_PROPERTY);
+			JoinEngineConfig defaults = JoinEngineConfig.defaults();
+			assertTrue(defaults.isRuntimeFeedbackEnabled(),
+					"Expected runtime feedback mode to be enabled by default");
+		} finally {
+			restoreRuntimeFeedbackProperty(previous);
+		}
+	}
+
+	@Test
+	void defaultsRespectExplicitRuntimeFeedbackDisableProperty() {
+		String previous = System.getProperty(RUNTIME_FEEDBACK_ENABLED_PROPERTY);
+		try {
+			System.setProperty(RUNTIME_FEEDBACK_ENABLED_PROPERTY, "false");
+			JoinEngineConfig defaults = JoinEngineConfig.defaults();
+			assertFalse(defaults.isRuntimeFeedbackEnabled(),
+					"Expected explicit runtime feedback disable to be honored");
+		} finally {
+			restoreRuntimeFeedbackProperty(previous);
+		}
+	}
+
 	private void restoreProperty(String previous) {
 		if (previous == null) {
 			System.clearProperty(ENABLED_PROPERTY);
 		} else {
 			System.setProperty(ENABLED_PROPERTY, previous);
+		}
+	}
+
+	private void restoreRuntimeFeedbackProperty(String previous) {
+		if (previous == null) {
+			System.clearProperty(RUNTIME_FEEDBACK_ENABLED_PROPERTY);
+		} else {
+			System.setProperty(RUNTIME_FEEDBACK_ENABLED_PROPERTY, previous);
 		}
 	}
 }

@@ -161,7 +161,8 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 		memo.add(new JoinPlan(expr, candidate, descriptor, cost));
 		emit(ctx, stepCounter, "COST", OptimizationTraceEvent.EventType.COSTED,
 				mapOf("planner", candidate.getPlanner(), "signature", variantSignature, "variant", variant,
-						"rows", doubleString(cost.getRows()), "risk", doubleString(cost.getRisk()),
+						"planId", descriptor.getId(), "rows", doubleString(cost.getRows()),
+						"risk", doubleString(cost.getRisk()),
 						"score", doubleString(cost.getScore()), "estimateSource", rootEstimate.getSource()));
 	}
 
