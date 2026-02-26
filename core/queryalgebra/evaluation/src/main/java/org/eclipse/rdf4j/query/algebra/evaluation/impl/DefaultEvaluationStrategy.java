@@ -160,6 +160,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterat
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearnedQueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearnedQueryJoinOptimizer.PlanSelectionSnapshot;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.JoinEngineRuntimeFeedback;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -518,7 +519,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		}
 		PlanSelectionSnapshot snapshot = LearnedQueryJoinOptimizer.getLastPlanSelectionSnapshot();
 		if (snapshot == null) {
-			return iteration;
+			return new JoinEnginePlanOutcomeIterator(iteration);
 		}
 		return new LearnedPlanOutcomeIterator(iteration, snapshot);
 	}
@@ -1856,11 +1857,60 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			recorded = true;
 			double observedCost = Math.max(1.0d, (System.nanoTime() - startedAtNanos) / 1_000_000.0d);
 			try {
+				JoinEngineRuntimeFeedback.reportSelectedPlanElapsedMillis(observedCost);
 				LearnedQueryJoinOptimizer.recordPlanOutcome(snapshot.getQueryTemplateHash(),
 						snapshot.getSelectedPlanSignature(), observedCost, successful);
 			} finally {
 				LearnedQueryJoinOptimizer.clearLastPlanSelectionSnapshot();
 			}
+		}
+	}
+
+	private static final class JoinEnginePlanOutcomeIterator extends IterationWrapper<BindingSet> {
+
+		private final long startedAtNanos = System.nanoTime();
+		private boolean recorded;
+
+		private JoinEnginePlanOutcomeIterator(CloseableIteration<BindingSet> iterator) {
+			super(iterator);
+		}
+
+		@Override
+		public boolean hasNext() throws QueryEvaluationException {
+			try {
+				return super.hasNext();
+			} catch (RuntimeException exception) {
+				recordOutcome();
+				throw exception;
+			}
+		}
+
+		@Override
+		public BindingSet next() throws QueryEvaluationException {
+			try {
+				return super.next();
+			} catch (RuntimeException exception) {
+				recordOutcome();
+				throw exception;
+			}
+		}
+
+		@Override
+		protected void handleClose() throws QueryEvaluationException {
+			try {
+				recordOutcome();
+			} finally {
+				super.handleClose();
+			}
+		}
+
+		private void recordOutcome() {
+			if (recorded) {
+				return;
+			}
+			recorded = true;
+			double observedCost = Math.max(1.0d, (System.nanoTime() - startedAtNanos) / 1_000_000.0d);
+			JoinEngineRuntimeFeedback.reportSelectedPlanElapsedMillis(observedCost);
 		}
 	}
 

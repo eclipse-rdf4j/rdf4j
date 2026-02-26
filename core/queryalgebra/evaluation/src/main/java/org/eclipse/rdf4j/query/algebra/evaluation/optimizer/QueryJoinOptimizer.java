@@ -245,6 +245,18 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					priorityArgs.addAll(orderedSubselects);
 				}
 
+				if (joinEngineConfig.isEnabled()) {
+					optimizeJoinArgsRecursively(joinArgs);
+					JoinRegion region = new JoinRegion(new ArrayList<>(joinArgs), priorityArgs, origBoundVars, null);
+					JoinOptimizationContext context = new JoinOptimizationContext(statistics, tripleSource, dataset,
+							bindings, origBoundVars, joinEngineConfig, trace, bandit, estimator, costModel);
+					OptimizationResult result = joinEngine.optimizeJoin(node, region, context);
+					// Engine memo exploration can reuse atom instances across alternatives. Clone the selected
+					// subtree before replacement so parent pointers are fully consistent for downstream optimizers.
+					node.replaceWith(result.getOptimized().clone());
+					return;
+				}
+
 				// Reorder the (recursive) join arguments to a more optimal sequence
 				Deque<TupleExpr> orderedJoinArgs = new ArrayDeque<>(joinArgs.size());
 
@@ -288,25 +300,19 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					orderAllJoinArgs(joinArgs, cardinalityMap, varsMap, varFreqMap, orderedJoinArgs);
 				}
 
-				if (!joinEngineConfig.isEnabled()) {
-					if (statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2) {
-						orderedJoinArgs = reorderJoinArgs(orderedJoinArgs);
-					}
-					TupleExpr priorityJoins = buildJoinHierarchy(priorityArgs);
-					buildFullJoinHierarchy(node, priorityJoins, orderedJoinArgs, origBoundVars);
-					return;
+				if (statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2) {
+					orderedJoinArgs = reorderJoinArgs(orderedJoinArgs);
 				}
-
-				JoinRegion region = new JoinRegion(new ArrayList<>(orderedJoinArgs), priorityArgs, origBoundVars, null);
-				JoinOptimizationContext context = new JoinOptimizationContext(statistics, tripleSource, dataset,
-						bindings,
-						origBoundVars, joinEngineConfig, trace, bandit, estimator, costModel);
-				OptimizationResult result = joinEngine.optimizeJoin(node, region, context);
-				// Engine memo exploration can reuse atom instances across alternatives. Clone the selected
-				// subtree before replacement so parent pointers are fully consistent for downstream optimizers.
-				node.replaceWith(result.getOptimized().clone());
+				TupleExpr priorityJoins = buildJoinHierarchy(priorityArgs);
+				buildFullJoinHierarchy(node, priorityJoins, orderedJoinArgs, origBoundVars);
 			} finally {
 				boundVars = origBoundVars;
+			}
+		}
+
+		private void optimizeJoinArgsRecursively(List<TupleExpr> joinArgs) {
+			for (TupleExpr tupleExpr : joinArgs) {
+				tupleExpr.visit(this);
 			}
 		}
 
