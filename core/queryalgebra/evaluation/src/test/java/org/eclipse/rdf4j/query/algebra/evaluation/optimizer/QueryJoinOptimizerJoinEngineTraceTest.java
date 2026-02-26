@@ -192,6 +192,38 @@ class QueryJoinOptimizerJoinEngineTraceTest {
 	}
 
 	@Test
+	void selectedPlanCarriesTopKAndRunnerUpDelta() throws Exception {
+		SPARQLParser parser = new SPARQLParser();
+		ParsedQuery parsedQuery = parser.parseQuery(QUERY, null);
+
+		EvaluationStatistics statistics = new EvaluationStatistics();
+		List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+		OptimizationContext context = new OptimizationContext(statistics,
+				new EvaluationStatisticsCardinalityEstimator(statistics), new MemoryJoinStats(), events::add);
+		JoinEngineConfig defaults = JoinEngineConfig.defaults();
+		JoinEngineConfig enabledConfig = new JoinEngineConfig(true, defaults.getRiskPenaltyWeight(),
+				defaults.getDpThreshold(), Math.max(4, defaults.getPortfolioSize()), defaults.isEnableDp());
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(context.getEvaluationStatistics(), false,
+				new EmptyTripleSource(), true, enabledConfig, new DefaultJoinOptimizationEngine(),
+				new DefaultUncertaintyAwareEstimator(), new DefaultCostModel(), new InMemoryBanditPolicy(),
+				context.getTraceSink());
+		optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+		OptimizationTraceEvent selected = events.stream()
+				.filter(event -> event.getEventType() == OptimizationTraceEvent.EventType.PLAN_SELECTED)
+				.findFirst()
+				.orElseThrow();
+		String topK = selected.getAttributes().get("topK");
+		String runnerUpDelta = selected.getAttributes().get("winnerVsRunnerUpScoreDelta");
+		assertTrue(topK != null && !topK.isBlank(), "Expected PLAN_SELECTED topK summary");
+		assertTrue(runnerUpDelta != null && !runnerUpDelta.isBlank(),
+				"Expected PLAN_SELECTED winner-vs-runner-up delta");
+		assertTrue(Double.parseDouble(runnerUpDelta) >= 0.0d,
+				"Expected non-negative winner-vs-runner-up delta");
+	}
+
+	@Test
 	void reportsBanditOutcomeForChosenPlanner() throws Exception {
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery parsedQuery = parser.parseQuery(QUERY, null);

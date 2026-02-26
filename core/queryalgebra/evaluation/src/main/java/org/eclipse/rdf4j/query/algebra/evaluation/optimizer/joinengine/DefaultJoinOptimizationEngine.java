@@ -115,6 +115,9 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 		double chosenScore = chosen.getCost().getScore();
 		double baselineScore = findPlannerScore(ranked, "legacy-greedy");
 		double reward = reward(chosenScore, baselineScore);
+		JoinPlan runnerUp = findBestAlternative(ranked, chosen);
+		double winnerVsRunnerUpDelta = scoreDelta(chosenScore, runnerUp);
+		String topK = topKSummary(ranked, 5);
 		boolean runtimeFeedbackEnabled = ctx.getConfig().isRuntimeFeedbackEnabled();
 		for (int i = 1; i < ranked.size(); i++) {
 			JoinPlan pruned = ranked.get(i);
@@ -133,14 +136,19 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 			ctx.getBandit().reportOutcome(region.getFingerprint(), chosen.getCandidate().getPlanner(), reward);
 		}
 
-		emit(ctx, stepCounter, "CHOOSE", OptimizationTraceEvent.EventType.PLAN_SELECTED,
-				mapOf("planner", chosen.getCandidate().getPlanner(),
-						"signature", chosen.getDescriptor().getOrderSignature(), "planId",
-						chosen.getDescriptor().getId(),
-						"score", doubleString(chosenScore), "risk", doubleString(chosen.getCost().getRisk()),
-						"baselineLegacyScore", doubleString(baselineScore), "reward", doubleString(reward),
-						"adaptiveFallback", String.valueOf(adaptiveFallback), "rewardMode",
-						runtimeFeedbackEnabled ? "runtime-callback" : "optimizer-score"));
+		Map<String, String> selectedData = mapOf("planner", chosen.getCandidate().getPlanner(),
+				"signature", chosen.getDescriptor().getOrderSignature(), "planId",
+				chosen.getDescriptor().getId(),
+				"score", doubleString(chosenScore), "risk", doubleString(chosen.getCost().getRisk()),
+				"baselineLegacyScore", doubleString(baselineScore), "reward", doubleString(reward),
+				"adaptiveFallback", String.valueOf(adaptiveFallback), "rewardMode",
+				runtimeFeedbackEnabled ? "runtime-callback" : "optimizer-score");
+		selectedData.put("topK", topK);
+		selectedData.put("winnerVsRunnerUpScoreDelta", doubleString(winnerVsRunnerUpDelta));
+		selectedData.put("runnerUpPlanner", runnerUp == null ? "NONE" : runnerUp.getCandidate().getPlanner());
+		selectedData.put("runnerUpSignature",
+				runnerUp == null ? "NONE" : runnerUp.getDescriptor().getOrderSignature());
+		emit(ctx, stepCounter, "CHOOSE", OptimizationTraceEvent.EventType.PLAN_SELECTED, selectedData);
 		emit(ctx, stepCounter, "CHOOSE", OptimizationTraceEvent.EventType.PLAN_CHOSEN,
 				mapOf("planId", chosen.getDescriptor().getId(), "planner", chosen.getCandidate().getPlanner()));
 
@@ -216,6 +224,46 @@ public final class DefaultJoinOptimizationEngine implements JoinOptimizationEngi
 			}
 		}
 		return Double.NaN;
+	}
+
+	private static JoinPlan findBestAlternative(List<JoinPlan> ranked, JoinPlan chosen) {
+		for (JoinPlan plan : ranked) {
+			if (plan != chosen) {
+				return plan;
+			}
+		}
+		return null;
+	}
+
+	private static double scoreDelta(double chosenScore, JoinPlan runnerUp) {
+		if (runnerUp == null || !Double.isFinite(chosenScore)) {
+			return Double.NaN;
+		}
+		double runnerUpScore = runnerUp.getCost().getScore();
+		if (!Double.isFinite(runnerUpScore)) {
+			return Double.NaN;
+		}
+		return Math.abs(runnerUpScore - chosenScore);
+	}
+
+	private static String topKSummary(List<JoinPlan> ranked, int limit) {
+		if (ranked == null || ranked.isEmpty()) {
+			return "";
+		}
+		int top = Math.max(1, Math.min(limit, ranked.size()));
+		StringBuilder summary = new StringBuilder();
+		for (int i = 0; i < top; i++) {
+			JoinPlan plan = ranked.get(i);
+			if (i > 0) {
+				summary.append(';');
+			}
+			summary.append(plan.getCandidate().getPlanner())
+					.append('|')
+					.append(plan.getDescriptor().getOrderSignature())
+					.append('|')
+					.append(doubleString(plan.getCost().getScore()));
+		}
+		return summary.toString();
 	}
 
 	private static JoinPlan findBestPlannerPlan(List<JoinPlan> ranked, String planner) {

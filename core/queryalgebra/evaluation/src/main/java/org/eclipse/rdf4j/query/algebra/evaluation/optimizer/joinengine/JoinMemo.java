@@ -33,11 +33,15 @@ public final class JoinMemo {
 	private static final class SubsetPlan {
 		private final List<Integer> order;
 		private final double score;
+		private final double risk;
+		private final double expectedWork;
 		private final double rows;
 
-		private SubsetPlan(List<Integer> order, double score, double rows) {
+		private SubsetPlan(List<Integer> order, double score, double risk, double expectedWork, double rows) {
 			this.order = order;
 			this.score = score;
+			this.risk = risk;
+			this.expectedWork = expectedWork;
 			this.rows = rows;
 		}
 	}
@@ -74,7 +78,8 @@ public final class JoinMemo {
 			TupleExpr atom = atoms.get(i);
 			Estimate estimate = ctx.getEstimator().estimateRows(atom, ctx);
 			double rows = sanitizeRows(estimate.getRows());
-			SubsetPlan singleton = new SubsetPlan(List.of(i), scoreFor(rows, estimate.getRisk(), ctx), rows);
+			double risk = sanitizeRisk(estimate.getRisk());
+			SubsetPlan singleton = new SubsetPlan(List.of(i), scoreFor(rows, risk, ctx), risk, rows, rows);
 			bestBySubset.put(mask, List.of(singleton));
 		}
 
@@ -126,8 +131,10 @@ public final class JoinMemo {
 		TupleExpr joinTree = buildLeftDeepJoin(order, atoms);
 		Estimate estimate = ctx.getEstimator().estimateRows(joinTree, ctx);
 		double rows = sanitizeRows(estimate.getRows());
+		double risk = aggregateRisk(prev.risk, estimate.getRisk());
+		double expectedWork = prev.expectedWork + rows;
 		double score = prev.score + scoreFor(rows, estimate.getRisk(), ctx);
-		return new SubsetPlan(order, score, rows);
+		return new SubsetPlan(order, score, risk, expectedWork, rows);
 	}
 
 	private TupleExpr buildLeftDeepJoin(List<Integer> order, List<TupleExpr> atoms) {
@@ -150,10 +157,24 @@ public final class JoinMemo {
 		return Math.max(1.0d, rows);
 	}
 
+	private double sanitizeRisk(double risk) {
+		if (!Double.isFinite(risk)) {
+			return 1.0d;
+		}
+		return Math.max(0.0d, Math.min(1.0d, risk));
+	}
+
+	private double aggregateRisk(double currentRisk, double nextRisk) {
+		double boundedCurrent = sanitizeRisk(currentRisk);
+		double boundedNext = sanitizeRisk(nextRisk);
+		return 1.0d - ((1.0d - boundedCurrent) * (1.0d - boundedNext));
+	}
+
 	private void addTopK(List<SubsetPlan> current, SubsetPlan candidate, int topK) {
 		current.add(candidate);
 		current.sort(Comparator.comparingDouble((SubsetPlan plan) -> plan.score)
-				.thenComparingDouble(plan -> plan.rows)
+				.thenComparingDouble(plan -> plan.risk)
+				.thenComparingDouble(plan -> plan.expectedWork)
 				.thenComparing(plan -> signature(plan.order)));
 		if (current.size() > topK) {
 			current.remove(current.size() - 1);
