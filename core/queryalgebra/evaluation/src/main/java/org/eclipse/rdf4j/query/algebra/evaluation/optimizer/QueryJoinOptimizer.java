@@ -52,6 +52,18 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.BanditPolicy;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.CostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.DefaultCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.DefaultJoinOptimizationEngine;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.DefaultUncertaintyAwareEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.InMemoryBanditPolicy;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.JoinEngineConfig;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.JoinOptimizationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.JoinOptimizationEngine;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.JoinRegion;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.OptimizationResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.UncertaintyAwareEstimator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -82,6 +94,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	private final boolean trackResultSize;
 	private final TripleSource tripleSource;
 	private final boolean prioritizeExtensions;
+	private final JoinEngineConfig joinEngineConfig;
+	private final JoinOptimizationEngine joinEngine;
+	private final UncertaintyAwareEstimator estimator;
+	private final CostModel costModel;
+	private final BanditPolicy banditPolicy;
+	private final OptimizationTraceSink traceSink;
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics) {
 		this(statistics, false, new EmptyTripleSource(), true);
@@ -101,10 +119,32 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource,
 			boolean prioritizeExtensions) {
+		this(statistics, trackResultSize, tripleSource, prioritizeExtensions, JoinEngineConfig.defaults(),
+				new DefaultJoinOptimizationEngine(), new DefaultUncertaintyAwareEstimator(), new DefaultCostModel(),
+				new InMemoryBanditPolicy(), OptimizationTraceSink.NOOP);
+	}
+
+	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource,
+			boolean prioritizeExtensions, JoinEngineConfig joinEngineConfig, JoinOptimizationEngine joinEngine,
+			UncertaintyAwareEstimator estimator, CostModel costModel, BanditPolicy banditPolicy,
+			OptimizationTraceSink traceSink) {
 		this.statistics = statistics;
 		this.trackResultSize = trackResultSize;
 		this.tripleSource = tripleSource;
 		this.prioritizeExtensions = prioritizeExtensions;
+		this.joinEngineConfig = joinEngineConfig == null ? JoinEngineConfig.defaults() : joinEngineConfig;
+		this.joinEngine = joinEngine == null ? new DefaultJoinOptimizationEngine() : joinEngine;
+		this.estimator = estimator == null ? new DefaultUncertaintyAwareEstimator() : estimator;
+		this.costModel = costModel == null ? new DefaultCostModel() : costModel;
+		this.banditPolicy = banditPolicy == null ? BanditPolicy.noop() : banditPolicy;
+		this.traceSink = traceSink == null ? OptimizationTraceSink.NOOP : traceSink;
+	}
+
+	public QueryJoinOptimizer(OptimizationContext optimizationContext, boolean trackResultSize,
+			TripleSource tripleSource,
+			boolean prioritizeExtensions) {
+		this(optimizationContext.getEvaluationStatistics(), trackResultSize, tripleSource, prioritizeExtensions,
+				JoinEngineConfig.defaults(), null, null, null, null, optimizationContext.getTraceSink());
 	}
 
 	/**
@@ -114,7 +154,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new JoinVisitor());
+		tupleExpr.visit(new JoinVisitor(dataset, bindings, traceSink, banditPolicy));
 	}
 
 	/**
@@ -125,10 +165,21 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		private Set<String> boundVars = new HashSet<>();
 		private double currentHighestCost = 1;
+		private final Dataset dataset;
+		private final BindingSet bindings;
+		private final OptimizationTraceSink trace;
+		private final BanditPolicy bandit;
 
 		protected JoinVisitor() {
-			super(trackResultSize);
+			this(null, null, traceSink, banditPolicy);
+		}
 
+		protected JoinVisitor(Dataset dataset, BindingSet bindings, OptimizationTraceSink trace, BanditPolicy bandit) {
+			super(trackResultSize);
+			this.dataset = dataset;
+			this.bindings = bindings;
+			this.trace = trace == null ? OptimizationTraceSink.NOOP : trace;
+			this.bandit = bandit == null ? BanditPolicy.noop() : bandit;
 		}
 
 		@Override
@@ -237,14 +288,21 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					orderAllJoinArgs(joinArgs, cardinalityMap, varsMap, varFreqMap, orderedJoinArgs);
 				}
 
-				if (statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2) {
-					orderedJoinArgs = reorderJoinArgs(orderedJoinArgs);
+				if (!joinEngineConfig.isEnabled()) {
+					if (statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2) {
+						orderedJoinArgs = reorderJoinArgs(orderedJoinArgs);
+					}
+					TupleExpr priorityJoins = buildJoinHierarchy(priorityArgs);
+					buildFullJoinHierarchy(node, priorityJoins, orderedJoinArgs, origBoundVars);
+					return;
 				}
 
-				// Build new join hierarchy
-				TupleExpr priorityJoins = buildJoinHierarchy(priorityArgs);
-
-				buildFullJoinHierarchy(node, priorityJoins, orderedJoinArgs, origBoundVars);
+				JoinRegion region = new JoinRegion(new ArrayList<>(orderedJoinArgs), priorityArgs, origBoundVars, null);
+				JoinOptimizationContext context = new JoinOptimizationContext(statistics, tripleSource, dataset,
+						bindings,
+						origBoundVars, joinEngineConfig, trace, bandit, estimator, costModel);
+				OptimizationResult result = joinEngine.optimizeJoin(node, region, context);
+				node.replaceWith(result.getOptimized());
 			} finally {
 				boundVars = origBoundVars;
 			}
@@ -408,15 +466,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return c;
 			};
 
-			ret.addLast(tupleExprs.removeFirst());
-
-//			TupleExpr[] bestPair = selectBestStartingPair(tupleExprs, getCard);
-//			if (bestPair != null) {
-//				tupleExprs.remove(bestPair[0]);
-//				tupleExprs.remove(bestPair[1]);
-//				ret.addLast(bestPair[0]);
-//				ret.addLast(bestPair[1]);
-//			}
+			TupleExpr[] bestPair = selectBestStartingPair(tupleExprs, getCard);
+			if (bestPair != null) {
+				tupleExprs.remove(bestPair[0]);
+				tupleExprs.remove(bestPair[1]);
+				ret.addLast(bestPair[0]);
+				ret.addLast(bestPair[1]);
+			} else {
+				ret.addLast(tupleExprs.removeFirst());
+			}
 
 			while (!tupleExprs.isEmpty()) {
 				// Build from the inside out: keep the current cheapest core in the tail and prepend cheaper connectors.
@@ -442,10 +500,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 				if (bestCandidate != null) {
 					tupleExprs.remove(bestCandidate);
-					ret.addLast(bestCandidate);
+					ret.addFirst(bestCandidate);
 				} else {
 					// No pairwise comparison possible: preserve remaining original order before the selected core.
-					ret.addLast(tupleExprs.removeFirst());
+					ret.addFirst(tupleExprs.removeFirst());
 				}
 			}
 

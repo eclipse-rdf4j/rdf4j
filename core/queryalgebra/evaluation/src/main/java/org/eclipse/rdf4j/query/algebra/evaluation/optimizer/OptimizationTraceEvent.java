@@ -21,17 +21,34 @@ public final class OptimizationTraceEvent {
 
 	public enum EventType {
 		PLAN_SELECTED,
-		PLAN_CANDIDATE
+		PLAN_CANDIDATE,
+		REGION_BUILT,
+		PORTFOLIO_SELECTED,
+		CANDIDATE_GENERATED,
+		RULE_APPLIED,
+		RULE_REJECTED,
+		COSTED,
+		PRUNED,
+		PLAN_CHOSEN
 	}
 
 	private final EventType eventType;
 	private final long timestampEpochMillis;
 	private final Map<String, String> attributes;
+	private final String phase;
+	private final long step;
 
 	public OptimizationTraceEvent(EventType eventType, long timestampEpochMillis, Map<String, String> attributes) {
+		this(eventType, timestampEpochMillis, attributes, "UNSPECIFIED", -1L);
+	}
+
+	public OptimizationTraceEvent(EventType eventType, long timestampEpochMillis, Map<String, String> attributes,
+			String phase, long step) {
 		this.eventType = Objects.requireNonNull(eventType, "eventType");
 		this.timestampEpochMillis = timestampEpochMillis;
 		this.attributes = attributes == null ? Map.of() : Map.copyOf(attributes);
+		this.phase = phase == null || phase.isBlank() ? "UNSPECIFIED" : phase;
+		this.step = step;
 	}
 
 	public static OptimizationTraceEvent planSelected(Map<String, String> attributes) {
@@ -52,5 +69,13 @@ public final class OptimizationTraceEvent {
 
 	public Map<String, String> getAttributes() {
 		return attributes;
+	}
+
+	public String getPhase() {
+		return phase;
+	}
+
+	public long getStep() {
+		return step;
 	}
 }
