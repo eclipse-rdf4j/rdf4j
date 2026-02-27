@@ -60,6 +60,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -133,6 +136,7 @@ public class SketchBasedJoinEstimator {
 	private static final long MIX64_C1 = 0xbf58476d1ce4e5b9L;
 	private static final long MIX64_C2 = 0x94d049bb133111ebL;
 	private static final long QUAD_SEED = 0x9e3779b97f4a7c15L;
+	private static final double MIN_FILTER_MULTIPLIER = 0.05d;
 
 	/* ────────────────────────────────────────────────────────────── */
 	/* Public enums */
@@ -192,6 +196,7 @@ public class SketchBasedJoinEstimator {
 
 	private volatile boolean running;
 	private Thread refresher;
+	private volatile JoinStatsProvider learnedStatsProvider;
 
 	private long seenTriples = 0L;
 
@@ -418,6 +423,10 @@ public class SketchBasedJoinEstimator {
 	 */
 	public void setLowMemorySupplier(BooleanSupplier supplier) {
 		this.lowMemorySupplier = supplier;
+	}
+
+	public void setLearnedStatsProvider(JoinStatsProvider learnedStatsProvider) {
+		this.learnedStatsProvider = learnedStatsProvider;
 	}
 
 	public void startBackgroundRefresh(int stalenessThreshold) {
@@ -1461,18 +1470,20 @@ public class SketchBasedJoinEstimator {
 			return -1;
 		}
 
-		StatementPattern pattern = asSketchCompatiblePattern(node);
-		if (pattern == null || !hasBoundComponent(pattern)) {
+		PatternEstimateInput input = asSketchCompatibleInput(node);
+		if (input == null || !hasBoundComponent(input.pattern)) {
 			return -1;
 		}
 
-		return estimatePatternRows(pattern);
+		return applyFilterMultiplier(estimatePatternRows(input.pattern), input.filterMultiplier);
 	}
 
 	private double estimateJoinCardinality(TupleExpr leftArg, TupleExpr rightArg, boolean leftJoin) {
-		StatementPattern l = asSketchCompatiblePattern(leftArg);
-		StatementPattern r = asSketchCompatiblePattern(rightArg);
-		if (l != null && r != null) {
+		PatternEstimateInput leftInput = asSketchCompatibleInput(leftArg);
+		PatternEstimateInput rightInput = asSketchCompatibleInput(rightArg);
+		if (leftInput != null && rightInput != null) {
+			StatementPattern l = leftInput.pattern;
+			StatementPattern r = rightInput.pattern;
 			if (!hasBoundComponent(l) || !hasBoundComponent(r)) {
 				return -1; // unsupported sketch case, let caller fall back
 			}
@@ -1487,8 +1498,8 @@ public class SketchBasedJoinEstimator {
 				}
 			}
 			if (common == null) {
-				double leftRows = estimatePatternRows(l);
-				double rightRows = estimatePatternRows(r);
+				double leftRows = applyFilterMultiplier(estimatePatternRows(l), leftInput.filterMultiplier);
+				double rightRows = applyFilterMultiplier(estimatePatternRows(r), rightInput.filterMultiplier);
 				double crossRows = estimateDisconnectedJoinRows(leftRows, rightRows);
 				return leftJoin ? Math.max(leftRows, crossRows) : crossRows;
 			}
@@ -1502,14 +1513,14 @@ public class SketchBasedJoinEstimator {
 							getValueOrNull(l.getPredicateVar()),
 							getValueOrNull(l.getObjectVar()),
 							getValueOrNull(l.getContextVar()));
-			double leftRows = leftEstimate.estimate();
-			double joinRows = leftEstimate
+			double leftRows = applyFilterMultiplier(leftEstimate.estimate(), leftInput.filterMultiplier);
+			double joinRows = applyFilterMultiplier(leftEstimate
 					.join(rc,
 							getValueOrNull(r.getSubjectVar()),
 							getValueOrNull(r.getPredicateVar()),
 							getValueOrNull(r.getObjectVar()),
 							getValueOrNull(r.getContextVar()))
-					.estimate();
+					.estimate(), leftInput.filterMultiplier * rightInput.filterMultiplier);
 			return leftJoin ? Math.max(leftRows, joinRows) : joinRows;
 		}
 		return estimateJoinCardinalityWithNestedSide(leftArg, rightArg, leftJoin);
@@ -1563,10 +1574,11 @@ public class SketchBasedJoinEstimator {
 		}
 
 		Join nested = (Join) (leftNested ? leftArg : rightArg);
-		StatementPattern flat = asSketchCompatiblePattern(leftNested ? rightArg : leftArg);
-		if (flat == null || !hasBoundComponent(flat)) {
+		PatternEstimateInput flatInput = asSketchCompatibleInput(leftNested ? rightArg : leftArg);
+		if (flatInput == null || !hasBoundComponent(flatInput.pattern)) {
 			return -1;
 		}
+		StatementPattern flat = flatInput.pattern;
 
 		java.util.Set<String> nestedBindingNames = nested.getBindingNames();
 		for (Var var : flat.getVarList()) {
@@ -1579,7 +1591,7 @@ public class SketchBasedJoinEstimator {
 				continue;
 			}
 
-			TupleSketchStats flatStats = estimatePatternForJoinVar(flat, var.getName());
+			TupleSketchStats flatStats = estimatePatternForJoinVar(flat, var.getName(), flatInput.filterMultiplier);
 			if (flatStats == null) {
 				continue;
 			}
@@ -1594,7 +1606,7 @@ public class SketchBasedJoinEstimator {
 		if (nestedRows < 0.0) {
 			return -1;
 		}
-		double flatRows = estimatePatternRows(flat);
+		double flatRows = applyFilterMultiplier(estimatePatternRows(flat), flatInput.filterMultiplier);
 		double crossRows = estimateDisconnectedJoinRows(leftNested ? nestedRows : flatRows,
 				leftNested ? flatRows : nestedRows);
 		if (leftJoin) {
@@ -1605,9 +1617,11 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private double estimateTupleExprRows(TupleExpr tupleExpr) {
-		StatementPattern pattern = asSketchCompatiblePattern(tupleExpr);
-		if (pattern != null) {
-			return hasBoundComponent(pattern) ? estimatePatternRows(pattern) : -1;
+		PatternEstimateInput patternInput = asSketchCompatibleInput(tupleExpr);
+		if (patternInput != null) {
+			return hasBoundComponent(patternInput.pattern)
+					? applyFilterMultiplier(estimatePatternRows(patternInput.pattern), patternInput.filterMultiplier)
+					: -1;
 		}
 
 		if (tupleExpr instanceof Join) {
@@ -1627,9 +1641,9 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private TupleSketchStats estimateTupleExprForJoinVar(TupleExpr tupleExpr, String joinVarName) {
-		StatementPattern pattern = asSketchCompatiblePattern(tupleExpr);
-		if (pattern != null) {
-			return estimatePatternForJoinVar(pattern, joinVarName);
+		PatternEstimateInput patternInput = asSketchCompatibleInput(tupleExpr);
+		if (patternInput != null) {
+			return estimatePatternForJoinVar(patternInput.pattern, joinVarName, patternInput.filterMultiplier);
 		}
 
 		if (tupleExpr instanceof Join) {
@@ -1645,7 +1659,8 @@ public class SketchBasedJoinEstimator {
 		return null;
 	}
 
-	private TupleSketchStats estimatePatternForJoinVar(StatementPattern pattern, String joinVarName) {
+	private TupleSketchStats estimatePatternForJoinVar(StatementPattern pattern, String joinVarName,
+			double filterMultiplier) {
 		if (!hasBoundComponent(pattern)) {
 			return null;
 		}
@@ -1660,7 +1675,8 @@ public class SketchBasedJoinEstimator {
 				getValueOrNull(pattern.getPredicateVar()),
 				getValueOrNull(pattern.getObjectVar()),
 				getValueOrNull(pattern.getContextVar()));
-		return new TupleSketchStats(estimate.bindings, estimate.distinct, estimate.resultSize);
+		return new TupleSketchStats(estimate.bindings, estimate.distinct,
+				applyFilterMultiplier(estimate.resultSize, filterMultiplier));
 	}
 
 	private TupleSketchStats mergeTupleSketchStats(TupleSketchStats leftStats, TupleSketchStats rightStats) {
@@ -1701,32 +1717,114 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
-	private StatementPattern asSketchCompatiblePattern(TupleExpr tupleExpr) {
+	private static final class PatternEstimateInput {
+		private final StatementPattern pattern;
+		private final double filterMultiplier;
+
+		private PatternEstimateInput(StatementPattern pattern, double filterMultiplier) {
+			this.pattern = pattern;
+			this.filterMultiplier = filterMultiplier;
+		}
+	}
+
+	private PatternEstimateInput asSketchCompatibleInput(TupleExpr tupleExpr) {
 		if (tupleExpr instanceof StatementPattern) {
-			return (StatementPattern) tupleExpr;
+			return new PatternEstimateInput((StatementPattern) tupleExpr, 1.0d);
 		}
 		if (tupleExpr instanceof Filter) {
-			return asSketchCompatiblePattern((Filter) tupleExpr);
+			return asSketchCompatibleInput((Filter) tupleExpr);
 		}
 		return null;
 	}
 
-	private StatementPattern asSketchCompatiblePattern(Filter filter) {
-		StatementPattern pattern;
-		if (filter.getArg() instanceof StatementPattern) {
-			pattern = ((StatementPattern) filter.getArg()).clone();
-		} else if (filter.getArg() instanceof Filter) {
-			pattern = asSketchCompatiblePattern((Filter) filter.getArg());
-		} else {
+	private PatternEstimateInput asSketchCompatibleInput(Filter filter) {
+		PatternEstimateInput input = asSketchCompatibleInput(filter.getArg());
+		if (input == null) {
 			return null;
 		}
+		double filterMultiplier = resolveFilterMultiplier(filter, input.pattern);
+		double combinedMultiplier = normalizeFilterMultiplier(input.filterMultiplier * filterMultiplier);
+		return new PatternEstimateInput(input.pattern, combinedMultiplier);
+	}
 
-		if (pattern == null) {
-			return null;
+	private double resolveFilterMultiplier(Filter filter, StatementPattern pattern) {
+		if (!FilterSelectivityKeys.conditionIntersectsPattern(filter.getCondition(), pattern)) {
+			return 1.0d;
 		}
+		double learnedMultiplier = resolveLearnedFilterMultiplier(filter, pattern);
+		if (learnedMultiplier > 0.0d) {
+			return learnedMultiplier;
+		}
+		double heuristicMultiplier = estimateHeuristicFilterMultiplier(filter, pattern);
+		if (heuristicMultiplier > 0.0d) {
+			return heuristicMultiplier;
+		}
+		return 1.0d;
+	}
 
-//		return bindSimpleFilterCondition(pattern, filter.getCondition()) ? pattern : null;
-		return pattern;
+	private double resolveLearnedFilterMultiplier(Filter filter, StatementPattern pattern) {
+		JoinStatsProvider statsProvider = learnedStatsProvider;
+		if (statsProvider == null || filter.getCondition() == null) {
+			return -1.0d;
+		}
+		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(pattern);
+		if (patternKey == null || !statsProvider.hasStats(patternKey)) {
+			return -1.0d;
+		}
+		String filterKey = FilterSelectivityKeys.filterKeyFor(filter.getCondition());
+		double ratio = statsProvider.getFilterPassRatio(patternKey, filterKey);
+		if (isValidFilterMultiplier(ratio)) {
+			return normalizeFilterMultiplier(ratio);
+		}
+		ratio = statsProvider.getPatternPassRatio(patternKey);
+		if (isValidFilterMultiplier(ratio)) {
+			return normalizeFilterMultiplier(ratio);
+		}
+		return -1.0d;
+	}
+
+	private double estimateHeuristicFilterMultiplier(Filter filter, StatementPattern pattern) {
+		if (filter.getCondition() == null) {
+			return -1.0d;
+		}
+		double baseRows = estimatePatternRows(pattern);
+		if (!(baseRows > 0.0d) || !Double.isFinite(baseRows)) {
+			return -1.0d;
+		}
+		StatementPattern narrowedPattern = pattern.clone();
+		if (!bindSimpleFilterCondition(narrowedPattern, filter.getCondition())) {
+			return -1.0d;
+		}
+		double narrowedRows = estimatePatternRows(narrowedPattern);
+		if (narrowedRows < 0.0d || !Double.isFinite(narrowedRows)) {
+			return -1.0d;
+		}
+		double ratio = narrowedRows / baseRows;
+		if (!Double.isFinite(ratio) || ratio < 0.0d) {
+			return -1.0d;
+		}
+		return normalizeFilterMultiplier(ratio);
+	}
+
+	private boolean isValidFilterMultiplier(double value) {
+		return Double.isFinite(value) && value > 0.0d && value <= 1.0d;
+	}
+
+	private double normalizeFilterMultiplier(double value) {
+		if (!Double.isFinite(value) || value <= 0.0d) {
+			return 1.0d;
+		}
+		return Math.max(MIN_FILTER_MULTIPLIER, Math.min(1.0d, value));
+	}
+
+	private double applyFilterMultiplier(double rows, double multiplier) {
+		if (!Double.isFinite(rows)) {
+			return rows;
+		}
+		if (!(multiplier > 0.0d) || multiplier >= 1.0d) {
+			return rows;
+		}
+		return rows * normalizeFilterMultiplier(multiplier);
 	}
 
 	private boolean bindSimpleFilterCondition(StatementPattern pattern, ValueExpr condition) {

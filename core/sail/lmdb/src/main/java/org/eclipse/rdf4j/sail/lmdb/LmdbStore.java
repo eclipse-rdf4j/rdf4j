@@ -354,8 +354,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	protected NotifyingSailConnection getConnectionInternal() throws SailException {
 		LmdbStoreConnection connection = new LmdbStoreConnection(this);
 		EvaluationStrategyFactory factory = getEvaluationStrategyFactory();
+		backingStore.getSketchBasedJoinEstimator().setLearnedStatsProvider(null);
 		if (factory instanceof LearningEvaluationStrategyFactory) {
 			JoinStatsProvider statsProvider = ((LearningEvaluationStrategyFactory) factory).getStatsProvider();
+			backingStore.getSketchBasedJoinEstimator().setLearnedStatsProvider(statsProvider);
 			connection.addConnectionListener(new SailConnectionListener() {
 				@Override
 				public void statementAdded(Statement statement) {

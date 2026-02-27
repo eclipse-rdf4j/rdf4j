@@ -82,6 +82,9 @@ public class MemoryJoinStats implements JoinStatsProvider {
 		private final LongAdder calls = new LongAdder();
 		private final LongAdder results = new LongAdder();
 		private final java.util.concurrent.atomic.AtomicLong maxResults = new java.util.concurrent.atomic.AtomicLong();
+		private final LongAdder filterPassed = new LongAdder();
+		private final LongAdder filterFiltered = new LongAdder();
+		private final Map<String, FilterCounts> filterCountsByKey = new ConcurrentHashMap<>();
 		private final long priorCalls;
 		private final double priorResults;
 		private final double baselineCardinality;
@@ -118,12 +121,71 @@ public class MemoryJoinStats implements JoinStatsProvider {
 			updated.calls.add(calls.sum());
 			updated.results.add(results.sum());
 			updated.maxResults.set(maxResults.get());
+			updated.filterPassed.add(filterPassed.sum());
+			updated.filterFiltered.add(filterFiltered.sum());
+			for (Map.Entry<String, FilterCounts> entry : filterCountsByKey.entrySet()) {
+				updated.filterCountsByKey.put(entry.getKey(), entry.getValue().copy());
+			}
 			return updated;
 		}
 
 		private void recordResults(long resultCount) {
 			results.add(resultCount);
 			maxResults.accumulateAndGet(resultCount, Math::max);
+		}
+
+		private void recordFilterOutcome(String filterKey, long passedCount, long filteredCount) {
+			if (passedCount <= 0L && filteredCount <= 0L) {
+				return;
+			}
+			if (passedCount > 0L) {
+				filterPassed.add(passedCount);
+			}
+			if (filteredCount > 0L) {
+				filterFiltered.add(filteredCount);
+			}
+			filterCountsByKey.computeIfAbsent(filterKey, ignored -> new FilterCounts())
+					.record(passedCount, filteredCount);
+		}
+
+		private double filterPassRatio(String filterKey) {
+			FilterCounts filterCounts = filterCountsByKey.get(filterKey);
+			if (filterCounts == null) {
+				return -1.0d;
+			}
+			return ratio(filterCounts.passed(), filterCounts.filtered());
+		}
+
+		private double patternPassRatio() {
+			return ratio(filterPassed.sum(), filterFiltered.sum());
+		}
+	}
+
+	private static final class FilterCounts {
+		private final LongAdder passed = new LongAdder();
+		private final LongAdder filtered = new LongAdder();
+
+		private void record(long passedCount, long filteredCount) {
+			if (passedCount > 0L) {
+				passed.add(passedCount);
+			}
+			if (filteredCount > 0L) {
+				filtered.add(filteredCount);
+			}
+		}
+
+		private long passed() {
+			return passed.sum();
+		}
+
+		private long filtered() {
+			return filtered.sum();
+		}
+
+		private FilterCounts copy() {
+			FilterCounts copy = new FilterCounts();
+			copy.record(passed(), filtered());
+			return copy;
 		}
 	}
 
@@ -166,6 +228,37 @@ public class MemoryJoinStats implements JoinStatsProvider {
 			resultCount = 0;
 		}
 		statsFor(key).recordResults(resultCount);
+	}
+
+	@Override
+	public void recordFilterOutcome(PatternKey key, String filterKey, long passedCount, long filteredCount) {
+		if (passedCount < 0L) {
+			passedCount = 0L;
+		}
+		if (filteredCount < 0L) {
+			filteredCount = 0L;
+		}
+		if (passedCount <= 0L && filteredCount <= 0L) {
+			return;
+		}
+		String normalizedFilterKey = filterKey == null ? "<null>" : filterKey;
+		statsFor(key).recordFilterOutcome(normalizedFilterKey, passedCount, filteredCount);
+	}
+
+	@Override
+	public double getFilterPassRatio(PatternKey key, String filterKey) {
+		Stats entry = stats.get(key);
+		if (entry == null) {
+			return -1.0d;
+		}
+		String normalizedFilterKey = filterKey == null ? "<null>" : filterKey;
+		return entry.filterPassRatio(normalizedFilterKey);
+	}
+
+	@Override
+	public double getPatternPassRatio(PatternKey key) {
+		Stats entry = stats.get(key);
+		return entry == null ? -1.0d : entry.patternPassRatio();
 	}
 
 	private Stats statsFor(PatternKey key) {
@@ -243,6 +336,21 @@ public class MemoryJoinStats implements JoinStatsProvider {
 			total += entry.actualCalls();
 		}
 		return total;
+	}
+
+	private static double ratio(long passedCount, long filteredCount) {
+		long total = passedCount + filteredCount;
+		if (total <= 0L) {
+			return -1.0d;
+		}
+		double value = (double) passedCount / (double) total;
+		if (!Double.isFinite(value)) {
+			return -1.0d;
+		}
+		if (value < 0.0d) {
+			return 0.0d;
+		}
+		return Math.min(1.0d, value);
 	}
 
 	@Override

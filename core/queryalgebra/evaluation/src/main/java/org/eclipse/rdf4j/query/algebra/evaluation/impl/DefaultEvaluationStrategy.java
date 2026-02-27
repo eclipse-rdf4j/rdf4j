@@ -304,6 +304,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return serviceResolver;
 	}
 
+	public TripleSource getTripleSource() {
+		return tripleSource;
+	}
+
 	@Override
 	public FederatedService getService(String serviceUrl) throws QueryEvaluationException {
 		return serviceResolver.getService(serviceUrl);

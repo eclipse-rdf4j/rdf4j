@@ -17,16 +17,35 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearningTripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.MemoryJoinStats;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -58,9 +77,76 @@ class FilterIteratorTelemetryTest {
 		assertThat(iterator.getSourceRowsFilteredActual()).isZero();
 	}
 
+	@Test
+	void recordsLearnedFilterOutcomesWhenRuntimeTelemetryDisabled() throws Exception {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Filter filter = new Filter(statementPattern,
+				new Compare(Var.of("o"), new ValueConstant(vf.createLiteral("keep")), Compare.CompareOp.EQ));
+		filter.setRuntimeTelemetryEnabled(false);
+
+		QueryValueEvaluationStep condition = mock(QueryValueEvaluationStep.class);
+		when(condition.evaluate(any(BindingSet.class))).thenReturn(vf.createLiteral(true), vf.createLiteral(false));
+
+		MemoryJoinStats statsProvider = new MemoryJoinStats(MemoryJoinStats.InvalidationSettings.disabled());
+		TripleSource learningSource = new LearningTripleSource(new EmptyTripleSource(), statsProvider);
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(learningSource, null);
+
+		BindingSet firstRow = singleBindingSet("o", "keep");
+		BindingSet secondRow = singleBindingSet("o", "drop");
+		FilterIterator iterator = new FilterIterator(filter,
+				new CloseableIteratorIteration<>(List.of(firstRow, secondRow).iterator()),
+				condition,
+				strategy);
+		try (iterator) {
+			assertThat(iterator.hasNext()).isTrue();
+			assertThat(iterator.next()).isSameAs(firstRow);
+			assertThat(iterator.hasNext()).isFalse();
+		}
+
+		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(statementPattern);
+		String filterKey = FilterSelectivityKeys.filterKeyFor(filter.getCondition());
+		assertThat(statsProvider.getFilterPassRatio(patternKey, filterKey)).isEqualTo(0.5d);
+		assertThat(statsProvider.getPatternPassRatio(patternKey)).isEqualTo(0.5d);
+		assertThat(iterator.getSourceRowsScannedActual()).isZero();
+		assertThat(iterator.getSourceRowsMatchedActual()).isZero();
+		assertThat(iterator.getSourceRowsFilteredActual()).isZero();
+	}
+
 	private static BindingSet singleBindingSet(String name, String value) {
 		MapBindingSet bindingSet = new MapBindingSet();
 		bindingSet.addBinding(name, SimpleValueFactory.getInstance().createLiteral(value));
 		return bindingSet;
+	}
+
+	private static final class EmptyTripleSource implements TripleSource {
+		private final ValueFactory valueFactory = SimpleValueFactory.getInstance();
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) throws QueryEvaluationException {
+			return new CloseableIteratorIteration<>(List.<Statement>of().iterator());
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subj, IRI pred,
+				Value obj, Resource... contexts) throws QueryEvaluationException {
+			return getStatements(subj, pred, obj, contexts);
+		}
+
+		@Override
+		public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+			return Set.of();
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return valueFactory;
+		}
+
+		@Override
+		public Comparator<Value> getComparator() {
+			return Comparator.comparing(Value::stringValue);
+		}
 	}
 }

@@ -64,6 +64,10 @@ public class LearningTripleSource implements TripleSource {
 		this.statsProvider = Objects.requireNonNull(statsProvider, "statsProvider");
 	}
 
+	public JoinStatsProvider getStatsProvider() {
+		return statsProvider;
+	}
+
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) {

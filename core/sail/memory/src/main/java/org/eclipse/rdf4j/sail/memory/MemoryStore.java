@@ -378,8 +378,10 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	protected NotifyingSailConnection getConnectionInternal() throws SailException {
 		MemoryStoreConnection connection = new MemoryStoreConnection(this);
 		EvaluationStrategyFactory factory = getEvaluationStrategyFactory();
+		((MemorySailStore) store).getSketchBasedJoinEstimator().setLearnedStatsProvider(null);
 		if (factory instanceof LearningEvaluationStrategyFactory) {
 			JoinStatsProvider statsProvider = ((LearningEvaluationStrategyFactory) factory).getStatsProvider();
+			((MemorySailStore) store).getSketchBasedJoinEstimator().setLearnedStatsProvider(statsProvider);
 			connection.addConnectionListener(new SailConnectionListener() {
 				@Override
 				public void statementAdded(Statement statement) {

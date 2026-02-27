@@ -23,6 +23,34 @@ public interface JoinStatsProvider {
 	void recordResults(PatternKey key, long resultCount);
 
 	/**
+	 * Records observed filter outcomes for a statement-pattern key and condition key.
+	 *
+	 * @param key           statement-pattern key associated with the filter
+	 * @param filterKey     normalized filter-condition key
+	 * @param passedCount   number of rows accepted by the filter
+	 * @param filteredCount number of rows rejected by the filter
+	 */
+	default void recordFilterOutcome(PatternKey key, String filterKey, long passedCount, long filteredCount) {
+		// no-op by default
+	}
+
+	/**
+	 * Returns the observed pass ratio for a specific filter condition and pattern key, or a negative value when
+	 * unavailable.
+	 */
+	default double getFilterPassRatio(PatternKey key, String filterKey) {
+		return -1.0d;
+	}
+
+	/**
+	 * Returns the observed aggregate pass ratio for all filters seen on a pattern key, or a negative value when
+	 * unavailable.
+	 */
+	default double getPatternPassRatio(PatternKey key) {
+		return -1.0d;
+	}
+
+	/**
 	 * Seeds statistics for the given key. Implementations may also invalidate or refresh existing entries if the
 	 * supplied default cardinality has drifted significantly from the stored baseline.
 	 */
