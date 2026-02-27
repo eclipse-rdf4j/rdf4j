@@ -27,8 +27,12 @@ public final class JoinTreeBuilder {
 	}
 
 	public static TupleExpr build(JoinRegion region, JoinOrderCandidate candidate, JoinOptimizationContext ctx) {
+		// Alternative plans must remain detached from the live query model tree.
 		TupleExpr priorityJoins = buildJoinHierarchy(region.getFixedPrefix(), ctx);
-		Deque<TupleExpr> orderedJoinArgs = new ArrayDeque<>(candidate.getOrder());
+		Deque<TupleExpr> orderedJoinArgs = new ArrayDeque<>(candidate.getOrder().size());
+		for (TupleExpr expr : candidate.getOrder()) {
+			orderedJoinArgs.addLast(expr.clone());
+		}
 		TupleExpr right = buildRightJoinTree(orderedJoinArgs, ctx);
 		if (priorityJoins == null) {
 			return right;
@@ -45,9 +49,9 @@ public final class JoinTreeBuilder {
 		if (args == null || args.isEmpty()) {
 			return null;
 		}
-		TupleExpr joins = args.get(0);
+		TupleExpr joins = args.get(0).clone();
 		for (int i = 1; i < args.size(); i++) {
-			Join join = new Join(joins, args.get(i));
+			Join join = new Join(joins, args.get(i).clone());
 			applyJoinEstimates(join, ctx);
 			joins = join;
 		}

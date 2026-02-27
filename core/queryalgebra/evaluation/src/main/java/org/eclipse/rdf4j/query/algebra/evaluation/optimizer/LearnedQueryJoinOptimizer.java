@@ -72,6 +72,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollec
  */
 public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 
+	private static final RuleMetadata LEARNED_QUERY_JOIN_RULE_METADATA = RuleRegistry.LEARNED_QUERY_JOIN_RULE_METADATA;
 	private static final long DEFAULT_PRIOR_CALLS = 2;
 	private static final String UNSUPPORTED_LITERAL_MODE_PROPERTY = "rdf4j.optimizer.learned.unsupportedLiteral.mode";
 	private static final String UNSUPPORTED_LITERAL_MODE_ALL = "all";
@@ -1092,7 +1093,29 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		SemanticEquivalenceGuard semanticGuard = SemanticEquivalenceGuard.fromSystemProperties();
+		OptimizationTraceSink traceSink = traceSinkOrNoop();
+		String selectionRejectionReason = RuleRegistry.rejectionReasonForLearnedQueryJoinRule(semanticGuard);
+		if (selectionRejectionReason != null) {
+			traceSink.onEvent(createRuleRejectedEvent(LEARNED_QUERY_JOIN_RULE_METADATA, selectionRejectionReason));
+			return;
+		}
+		SemanticEquivalenceGuard.BlockingDecision blockingDecision = semanticGuard
+				.blockingDecision(LEARNED_QUERY_JOIN_RULE_METADATA, tupleExpr);
+		if (blockingDecision != null) {
+			traceSink.onEvent(createStrictRuleRejectedEvent(LEARNED_QUERY_JOIN_RULE_METADATA, blockingDecision));
+			return;
+		}
 		tupleExpr.visit(new LearnedJoinVisitor(dataset, bindings));
+	}
+
+	private OptimizationTraceSink configuredTraceSink() {
+		return optimizationContext.getTraceSink();
+	}
+
+	private OptimizationTraceSink traceSinkOrNoop() {
+		OptimizationTraceSink traceSink = configuredTraceSink();
+		return OptimizationTraceSink.orNoop(traceSink);
 	}
 
 	protected class LearnedJoinVisitor extends JoinVisitor {
@@ -2334,7 +2357,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 
 		private void emitPlanSelectionTraceEvent(String templateHash, int selectedCandidateIndex, String signature,
 				List<JoinPlanCandidate> candidates, String reason, String plannerUsed, long planSelectionEpoch) {
-			OptimizationTraceSink traceSink = optimizationContext.getTraceSink();
+			OptimizationTraceSink traceSink = configuredTraceSink();
 			if (traceSink == null) {
 				return;
 			}

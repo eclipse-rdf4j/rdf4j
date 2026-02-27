@@ -12,17 +12,10 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 /**
- * Sink for structured optimizer trace events.
+ * Rule safety class for semantic guard policy.
  */
-@FunctionalInterface
-public interface OptimizationTraceSink {
-
-	OptimizationTraceSink NOOP = event -> {
-	};
-
-	void onEvent(OptimizationTraceEvent event);
-
-	static OptimizationTraceSink orNoop(OptimizationTraceSink traceSink) {
-		return traceSink == null ? NOOP : traceSink;
-	}
+public enum OptimizerRiskClass {
+	SAFE,
+	GUARDED,
+	EXPERIMENTAL
 }

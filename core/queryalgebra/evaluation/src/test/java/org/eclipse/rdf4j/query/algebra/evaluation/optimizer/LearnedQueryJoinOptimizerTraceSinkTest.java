@@ -33,6 +33,22 @@ class LearnedQueryJoinOptimizerTraceSinkTest {
 			"  ?o ex:p2 ?x .",
 			"  ?x ex:p3 ?y .",
 			"}");
+	private static final String OPTIONAL_QUERY = String.join("\n",
+			"PREFIX ex: <http://example.com/>",
+			"SELECT * WHERE {",
+			"  ?s ex:p1 ?o .",
+			"  OPTIONAL {",
+			"    ?o ex:p2 ?x .",
+			"    ?x ex:p3 ?y .",
+			"  }",
+			"}");
+	private static final String ORDERED_QUERY = String.join("\n",
+			"PREFIX ex: <http://example.com/>",
+			"SELECT * WHERE {",
+			"  ?s ex:p1 ?o .",
+			"  ?o ex:p2 ?x .",
+			"  ?x ex:p3 ?y .",
+			"} ORDER BY ?s");
 
 	@Test
 	void emitsPlanSelectionEvent() throws Exception {
@@ -65,5 +81,237 @@ class LearnedQueryJoinOptimizerTraceSinkTest {
 				.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.PLAN_CANDIDATE
 						&& event.getAttributes().containsKey("candidateIndex")),
 				"Expected dedicated candidate trace events in addition to selected-plan summary");
+	}
+
+	@Test
+	void skipsLearnedJoinOptimizationWhenLearnedRuleNotEnabled() throws Exception {
+		System.setProperty(RuleRegistry.RULES_ENABLED_PROPERTY, RuleRegistry.RULE_ID_FILTER);
+		try {
+			SPARQLParser parser = new SPARQLParser();
+			ParsedQuery parsedQuery = parser.parseQuery(QUERY, null);
+
+			EvaluationStatistics statistics = new EvaluationStatistics();
+			MemoryJoinStats statsProvider = new MemoryJoinStats();
+			List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+			OptimizationTraceSink traceSink = events::add;
+			OptimizationContext context = new OptimizationContext(statistics,
+					new EvaluationStatisticsCardinalityEstimator(statistics), statsProvider, traceSink);
+
+			LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(context, false, new EmptyTripleSource(),
+					new LearnedJoinConfig());
+			optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+			assertTrue(events.stream()
+					.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.RULE_REJECTED
+							&& RuleRegistry.RULE_ID_LEARNED_QUERY_JOIN.equals(event.getAttributes().get("ruleId"))
+							&& RuleRegistry.REJECTION_REASON_DISABLED_BY_RULES_ENABLED
+									.equals(event.getAttributes().get("reason"))),
+					"Expected learned rule rejection when rules.enabled excludes all join rules");
+			assertTrue(events.stream()
+					.noneMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.PLAN_SELECTED),
+					"Expected no learned plan selection when learned rule is not enabled");
+		} finally {
+			System.clearProperty(RuleRegistry.RULES_ENABLED_PROPERTY);
+		}
+	}
+
+	@Test
+	void strictSemanticGuardSkipsLearnedJoinOptimizationForHighRiskQueryShape() throws Exception {
+		System.setProperty(SemanticEquivalenceGuard.STRICT_PROPERTY, "true");
+		try {
+			SPARQLParser parser = new SPARQLParser();
+			ParsedQuery parsedQuery = parser.parseQuery(OPTIONAL_QUERY, null);
+
+			EvaluationStatistics statistics = new EvaluationStatistics();
+			MemoryJoinStats statsProvider = new MemoryJoinStats();
+			List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+			OptimizationTraceSink traceSink = events::add;
+			OptimizationContext context = new OptimizationContext(statistics,
+					new EvaluationStatisticsCardinalityEstimator(statistics), statsProvider, traceSink);
+
+			LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(context, false, new EmptyTripleSource(),
+					new LearnedJoinConfig());
+			optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+			assertTrue(events.stream()
+					.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.RULE_REJECTED
+							&& RuleRegistry.RULE_ID_LEARNED_QUERY_JOIN.equals(event.getAttributes().get("ruleId"))
+							&& "LEFT_JOIN".equals(event.getAttributes().get("blockedConstruct"))
+							&& SemanticEquivalenceGuard.POLICY_SOURCE_BUILT_IN_RULE_POLICY
+									.equals(event.getAttributes().get("blockedConstructPolicy"))
+							&& RuleRegistry.REJECTION_REASON_STRICT_SEMANTIC_GUARD_HIGH_RISK_QUERY_SHAPE
+									.equals(event.getAttributes().get("reason"))),
+					"Expected strict semantic guard rejection event for learned join optimizer");
+			assertTrue(events.stream()
+					.noneMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.PLAN_SELECTED),
+					"Expected no learned plan selection when strict semantic guard rejects");
+		} finally {
+			System.clearProperty(SemanticEquivalenceGuard.STRICT_PROPERTY);
+		}
+	}
+
+	@Test
+	void strictSemanticGuardAllowsLearnedJoinOptimizationForOrderedBgp() throws Exception {
+		System.setProperty(SemanticEquivalenceGuard.STRICT_PROPERTY, "true");
+		try {
+			SPARQLParser parser = new SPARQLParser();
+			ParsedQuery parsedQuery = parser.parseQuery(ORDERED_QUERY, null);
+
+			EvaluationStatistics statistics = new EvaluationStatistics();
+			MemoryJoinStats statsProvider = new MemoryJoinStats();
+			List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+			OptimizationTraceSink traceSink = events::add;
+			OptimizationContext context = new OptimizationContext(statistics,
+					new EvaluationStatisticsCardinalityEstimator(statistics), statsProvider, traceSink);
+
+			LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(context, false, new EmptyTripleSource(),
+					new LearnedJoinConfig());
+			optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+			assertTrue(events.stream()
+					.noneMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.RULE_REJECTED
+							&& RuleRegistry.RULE_ID_LEARNED_QUERY_JOIN.equals(event.getAttributes().get("ruleId"))),
+					"Expected no strict semantic guard rejection for ordered BGP in learned join optimizer");
+			assertTrue(events.stream()
+					.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.PLAN_SELECTED),
+					"Expected learned plan selection for ordered BGP under strict mode");
+		} finally {
+			System.clearProperty(SemanticEquivalenceGuard.STRICT_PROPERTY);
+		}
+	}
+
+	@Test
+	void strictSemanticGuardHonorsLearnedRuleSpecificBlockedConstructOverride() throws Exception {
+		System.setProperty(SemanticEquivalenceGuard.STRICT_PROPERTY, "true");
+		System.setProperty(
+				SemanticEquivalenceGuard
+						.guardedRuleBlockedConstructsProperty(RuleRegistry.RULE_ID_LEARNED_QUERY_JOIN),
+				"ORDER");
+		try {
+			SPARQLParser parser = new SPARQLParser();
+			ParsedQuery parsedQuery = parser.parseQuery(ORDERED_QUERY, null);
+
+			EvaluationStatistics statistics = new EvaluationStatistics();
+			MemoryJoinStats statsProvider = new MemoryJoinStats();
+			List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+			OptimizationTraceSink traceSink = events::add;
+			OptimizationContext context = new OptimizationContext(statistics,
+					new EvaluationStatisticsCardinalityEstimator(statistics), statsProvider, traceSink);
+
+			LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(context, false, new EmptyTripleSource(),
+					new LearnedJoinConfig());
+			optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+			assertTrue(events.stream()
+					.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.RULE_REJECTED
+							&& RuleRegistry.RULE_ID_LEARNED_QUERY_JOIN.equals(event.getAttributes().get("ruleId"))
+							&& "ORDER".equals(event.getAttributes().get("blockedConstruct"))
+							&& SemanticEquivalenceGuard.POLICY_SOURCE_RULE_OVERRIDE
+									.equals(event.getAttributes().get("blockedConstructPolicy"))),
+					"Expected learned strict rejection when rule-specific ORDER override is configured");
+			assertTrue(events.stream()
+					.noneMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.PLAN_SELECTED),
+					"Expected no learned plan selection when rule-specific ORDER override rejects");
+		} finally {
+			System.clearProperty(SemanticEquivalenceGuard.STRICT_PROPERTY);
+			System.clearProperty(
+					SemanticEquivalenceGuard
+							.guardedRuleBlockedConstructsProperty(RuleRegistry.RULE_ID_LEARNED_QUERY_JOIN));
+		}
+	}
+
+	@Test
+	void strictSemanticGuardHonorsLearnedGlobalDefaultBlockedConstructOverride() throws Exception {
+		System.setProperty(SemanticEquivalenceGuard.STRICT_PROPERTY, "true");
+		System.setProperty(SemanticEquivalenceGuard.defaultGuardedRuleBlockedConstructsProperty(), "ORDER");
+		try {
+			SPARQLParser parser = new SPARQLParser();
+			ParsedQuery parsedQuery = parser.parseQuery(ORDERED_QUERY, null);
+
+			EvaluationStatistics statistics = new EvaluationStatistics();
+			MemoryJoinStats statsProvider = new MemoryJoinStats();
+			List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+			OptimizationTraceSink traceSink = events::add;
+			OptimizationContext context = new OptimizationContext(statistics,
+					new EvaluationStatisticsCardinalityEstimator(statistics), statsProvider, traceSink);
+
+			LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(context, false, new EmptyTripleSource(),
+					new LearnedJoinConfig());
+			optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+			assertTrue(events.stream()
+					.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.RULE_REJECTED
+							&& RuleRegistry.RULE_ID_LEARNED_QUERY_JOIN.equals(event.getAttributes().get("ruleId"))
+							&& "ORDER".equals(event.getAttributes().get("blockedConstruct"))
+							&& SemanticEquivalenceGuard.POLICY_SOURCE_DEFAULT_OVERRIDE
+									.equals(event.getAttributes().get("blockedConstructPolicy"))),
+					"Expected learned strict rejection when global default ORDER override is configured");
+		} finally {
+			System.clearProperty(SemanticEquivalenceGuard.STRICT_PROPERTY);
+			System.clearProperty(SemanticEquivalenceGuard.defaultGuardedRuleBlockedConstructsProperty());
+		}
+	}
+
+	@Test
+	void strictSemanticGuardHonorsLearnedRuleSpecificBlockedConstructOverrideToNone() throws Exception {
+		System.setProperty(SemanticEquivalenceGuard.STRICT_PROPERTY, "true");
+		System.setProperty(
+				SemanticEquivalenceGuard
+						.guardedRuleBlockedConstructsProperty(RuleRegistry.RULE_ID_LEARNED_QUERY_JOIN),
+				"NONE");
+		try {
+			SPARQLParser parser = new SPARQLParser();
+			ParsedQuery parsedQuery = parser.parseQuery(OPTIONAL_QUERY, null);
+
+			EvaluationStatistics statistics = new EvaluationStatistics();
+			MemoryJoinStats statsProvider = new MemoryJoinStats();
+			List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+			OptimizationTraceSink traceSink = events::add;
+			OptimizationContext context = new OptimizationContext(statistics,
+					new EvaluationStatisticsCardinalityEstimator(statistics), statsProvider, traceSink);
+
+			LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(context, false, new EmptyTripleSource(),
+					new LearnedJoinConfig());
+			optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+			assertTrue(events.stream()
+					.noneMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.RULE_REJECTED
+							&& RuleRegistry.RULE_ID_LEARNED_QUERY_JOIN.equals(event.getAttributes().get("ruleId"))),
+					"Expected no learned strict rejection when rule-specific NONE override is configured");
+		} finally {
+			System.clearProperty(SemanticEquivalenceGuard.STRICT_PROPERTY);
+			System.clearProperty(
+					SemanticEquivalenceGuard
+							.guardedRuleBlockedConstructsProperty(RuleRegistry.RULE_ID_LEARNED_QUERY_JOIN));
+		}
+	}
+
+	@Test
+	void strictSemanticGuardHonorsLearnedGlobalDefaultBlockedConstructOverrideToNone() throws Exception {
+		System.setProperty(SemanticEquivalenceGuard.STRICT_PROPERTY, "true");
+		System.setProperty(SemanticEquivalenceGuard.defaultGuardedRuleBlockedConstructsProperty(), "NONE");
+		try {
+			SPARQLParser parser = new SPARQLParser();
+			ParsedQuery parsedQuery = parser.parseQuery(OPTIONAL_QUERY, null);
+
+			EvaluationStatistics statistics = new EvaluationStatistics();
+			MemoryJoinStats statsProvider = new MemoryJoinStats();
+			List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+			OptimizationTraceSink traceSink = events::add;
+			OptimizationContext context = new OptimizationContext(statistics,
+					new EvaluationStatisticsCardinalityEstimator(statistics), statsProvider, traceSink);
+
+			LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(context, false, new EmptyTripleSource(),
+					new LearnedJoinConfig());
+			optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+			assertTrue(events.stream()
+					.noneMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.RULE_REJECTED
+							&& RuleRegistry.RULE_ID_LEARNED_QUERY_JOIN.equals(event.getAttributes().get("ruleId"))),
+					"Expected no learned strict rejection when global default NONE override is configured");
+		} finally {
+			System.clearProperty(SemanticEquivalenceGuard.STRICT_PROPERTY);
+			System.clearProperty(SemanticEquivalenceGuard.defaultGuardedRuleBlockedConstructsProperty());
+		}
 	}
 }

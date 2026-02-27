@@ -40,6 +40,22 @@ class QueryJoinOptimizerJoinEngineTraceTest {
 			"  ?o ex:p2 ?x .",
 			"  ?x ex:p3 ?y .",
 			"}");
+	private static final String OPTIONAL_QUERY = String.join("\n",
+			"PREFIX ex: <http://example.com/>",
+			"SELECT * WHERE {",
+			"  ?s ex:p1 ?o .",
+			"  OPTIONAL {",
+			"    ?o ex:p2 ?x .",
+			"    ?x ex:p3 ?y .",
+			"  }",
+			"}");
+	private static final String ORDERED_QUERY = String.join("\n",
+			"PREFIX ex: <http://example.com/>",
+			"SELECT * WHERE {",
+			"  ?s ex:p1 ?o .",
+			"  ?o ex:p2 ?x .",
+			"  ?x ex:p3 ?y .",
+			"} ORDER BY ?s");
 
 	@Test
 	void defaultConfigUsesJoinEngineByDefault() throws Exception {
@@ -81,6 +97,186 @@ class QueryJoinOptimizerJoinEngineTraceTest {
 		assertTrue(events.stream()
 				.noneMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.REGION_BUILT),
 				"Expected no engine trace event when disabled");
+	}
+
+	@Test
+	void skipsJoinOptimizationWhenQueryJoinRuleNotEnabled() throws Exception {
+		System.setProperty(RuleRegistry.RULES_ENABLED_PROPERTY, RuleRegistry.RULE_ID_LEARNED_QUERY_JOIN);
+		try {
+			SPARQLParser parser = new SPARQLParser();
+			ParsedQuery parsedQuery = parser.parseQuery(QUERY, null);
+
+			EvaluationStatistics statistics = new EvaluationStatistics();
+			List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+			OptimizationContext context = new OptimizationContext(statistics,
+					new EvaluationStatisticsCardinalityEstimator(statistics), new MemoryJoinStats(), events::add);
+
+			QueryJoinOptimizer optimizer = new QueryJoinOptimizer(context, false, new EmptyTripleSource(), true);
+			optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+			assertTrue(events.stream()
+					.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.RULE_REJECTED
+							&& RuleRegistry.RULE_ID_QUERY_JOIN.equals(event.getAttributes().get("ruleId"))
+							&& RuleRegistry.REJECTION_REASON_DISABLED_BY_RULES_ENABLED
+									.equals(event.getAttributes().get("reason"))),
+					"Expected query-join rejection when rules.enabled excludes query-join");
+			assertTrue(events.stream()
+					.noneMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.REGION_BUILT),
+					"Expected no join-engine exploration when query-join is not enabled");
+		} finally {
+			System.clearProperty(RuleRegistry.RULES_ENABLED_PROPERTY);
+		}
+	}
+
+	@Test
+	void strictSemanticGuardSkipsJoinOptimizationForHighRiskQueryShape() throws Exception {
+		System.setProperty(SemanticEquivalenceGuard.STRICT_PROPERTY, "true");
+		try {
+			SPARQLParser parser = new SPARQLParser();
+			ParsedQuery parsedQuery = parser.parseQuery(OPTIONAL_QUERY, null);
+
+			EvaluationStatistics statistics = new EvaluationStatistics();
+			List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+			OptimizationContext context = new OptimizationContext(statistics,
+					new EvaluationStatisticsCardinalityEstimator(statistics), new MemoryJoinStats(), events::add);
+
+			QueryJoinOptimizer optimizer = new QueryJoinOptimizer(context, false, new EmptyTripleSource(), true);
+			optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+			assertTrue(events.stream()
+					.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.RULE_REJECTED
+							&& RuleRegistry.RULE_ID_QUERY_JOIN.equals(event.getAttributes().get("ruleId"))
+							&& "LEFT_JOIN".equals(event.getAttributes().get("blockedConstruct"))
+							&& SemanticEquivalenceGuard.POLICY_SOURCE_BUILT_IN_RULE_POLICY
+									.equals(event.getAttributes().get("blockedConstructPolicy"))
+							&& RuleRegistry.REJECTION_REASON_STRICT_SEMANTIC_GUARD_HIGH_RISK_QUERY_SHAPE
+									.equals(event.getAttributes().get("reason"))),
+					"Expected strict semantic guard rejection event");
+			assertTrue(events.stream()
+					.noneMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.REGION_BUILT),
+					"Expected no join-engine exploration when strict semantic guard rejects");
+		} finally {
+			System.clearProperty(SemanticEquivalenceGuard.STRICT_PROPERTY);
+		}
+	}
+
+	@Test
+	void strictSemanticGuardStillAllowsJoinOptimizationForOrderedBgp() throws Exception {
+		System.setProperty(SemanticEquivalenceGuard.STRICT_PROPERTY, "true");
+		try {
+			SPARQLParser parser = new SPARQLParser();
+			ParsedQuery parsedQuery = parser.parseQuery(ORDERED_QUERY, null);
+
+			EvaluationStatistics statistics = new EvaluationStatistics();
+			List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+			OptimizationContext context = new OptimizationContext(statistics,
+					new EvaluationStatisticsCardinalityEstimator(statistics), new MemoryJoinStats(), events::add);
+
+			QueryJoinOptimizer optimizer = new QueryJoinOptimizer(context, false, new EmptyTripleSource(), true);
+			optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+			assertTrue(events.stream()
+					.noneMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.RULE_REJECTED
+							&& RuleRegistry.RULE_ID_QUERY_JOIN.equals(event.getAttributes().get("ruleId"))),
+					"Expected no strict semantic guard rejection for ordered BGP");
+			assertTrue(events.stream()
+					.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.REGION_BUILT),
+					"Expected join-engine exploration for ordered BGP");
+		} finally {
+			System.clearProperty(SemanticEquivalenceGuard.STRICT_PROPERTY);
+		}
+	}
+
+	@Test
+	void strictSemanticGuardHonorsRuleSpecificBlockedConstructOverride() throws Exception {
+		System.setProperty(SemanticEquivalenceGuard.STRICT_PROPERTY, "true");
+		System.setProperty(
+				SemanticEquivalenceGuard.guardedRuleBlockedConstructsProperty(RuleRegistry.RULE_ID_QUERY_JOIN),
+				"ORDER");
+		try {
+			SPARQLParser parser = new SPARQLParser();
+			ParsedQuery parsedQuery = parser.parseQuery(ORDERED_QUERY, null);
+
+			EvaluationStatistics statistics = new EvaluationStatistics();
+			List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+			OptimizationContext context = new OptimizationContext(statistics,
+					new EvaluationStatisticsCardinalityEstimator(statistics), new MemoryJoinStats(), events::add);
+
+			QueryJoinOptimizer optimizer = new QueryJoinOptimizer(context, false, new EmptyTripleSource(), true);
+			optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+			assertTrue(events.stream()
+					.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.RULE_REJECTED
+							&& RuleRegistry.RULE_ID_QUERY_JOIN.equals(event.getAttributes().get("ruleId"))
+							&& "ORDER".equals(event.getAttributes().get("blockedConstruct"))
+							&& SemanticEquivalenceGuard.POLICY_SOURCE_RULE_OVERRIDE
+									.equals(event.getAttributes().get("blockedConstructPolicy"))
+							&& RuleRegistry.REJECTION_REASON_STRICT_SEMANTIC_GUARD_HIGH_RISK_QUERY_SHAPE
+									.equals(event.getAttributes().get("reason"))),
+					"Expected strict semantic guard rejection when ORDER override is configured");
+			assertTrue(events.stream()
+					.noneMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.REGION_BUILT),
+					"Expected no join-engine exploration when ORDER override is configured");
+		} finally {
+			System.clearProperty(SemanticEquivalenceGuard.STRICT_PROPERTY);
+			System.clearProperty(
+					SemanticEquivalenceGuard.guardedRuleBlockedConstructsProperty(RuleRegistry.RULE_ID_QUERY_JOIN));
+		}
+	}
+
+	@Test
+	void strictSemanticGuardHonorsGlobalDefaultBlockedConstructOverrideToNone() throws Exception {
+		System.setProperty(SemanticEquivalenceGuard.STRICT_PROPERTY, "true");
+		System.setProperty(SemanticEquivalenceGuard.defaultGuardedRuleBlockedConstructsProperty(), "NONE");
+		try {
+			SPARQLParser parser = new SPARQLParser();
+			ParsedQuery parsedQuery = parser.parseQuery(OPTIONAL_QUERY, null);
+
+			EvaluationStatistics statistics = new EvaluationStatistics();
+			List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+			OptimizationContext context = new OptimizationContext(statistics,
+					new EvaluationStatisticsCardinalityEstimator(statistics), new MemoryJoinStats(), events::add);
+
+			QueryJoinOptimizer optimizer = new QueryJoinOptimizer(context, false, new EmptyTripleSource(), true);
+			optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+			assertTrue(events.stream()
+					.noneMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.RULE_REJECTED
+							&& RuleRegistry.RULE_ID_QUERY_JOIN.equals(event.getAttributes().get("ruleId"))),
+					"Expected no strict semantic guard rejection when global default is NONE");
+		} finally {
+			System.clearProperty(SemanticEquivalenceGuard.STRICT_PROPERTY);
+			System.clearProperty(SemanticEquivalenceGuard.defaultGuardedRuleBlockedConstructsProperty());
+		}
+	}
+
+	@Test
+	void strictSemanticGuardHonorsGlobalDefaultBlockedConstructOverrideForOrder() throws Exception {
+		System.setProperty(SemanticEquivalenceGuard.STRICT_PROPERTY, "true");
+		System.setProperty(SemanticEquivalenceGuard.defaultGuardedRuleBlockedConstructsProperty(), "ORDER");
+		try {
+			SPARQLParser parser = new SPARQLParser();
+			ParsedQuery parsedQuery = parser.parseQuery(ORDERED_QUERY, null);
+
+			EvaluationStatistics statistics = new EvaluationStatistics();
+			List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+			OptimizationContext context = new OptimizationContext(statistics,
+					new EvaluationStatisticsCardinalityEstimator(statistics), new MemoryJoinStats(), events::add);
+
+			QueryJoinOptimizer optimizer = new QueryJoinOptimizer(context, false, new EmptyTripleSource(), true);
+			optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+			assertTrue(events.stream()
+					.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.RULE_REJECTED
+							&& RuleRegistry.RULE_ID_QUERY_JOIN.equals(event.getAttributes().get("ruleId"))
+							&& "ORDER".equals(event.getAttributes().get("blockedConstruct"))
+							&& SemanticEquivalenceGuard.POLICY_SOURCE_DEFAULT_OVERRIDE
+									.equals(event.getAttributes().get("blockedConstructPolicy"))),
+					"Expected strict semantic guard rejection when global default blocks ORDER");
+		} finally {
+			System.clearProperty(SemanticEquivalenceGuard.STRICT_PROPERTY);
+			System.clearProperty(SemanticEquivalenceGuard.defaultGuardedRuleBlockedConstructsProperty());
+		}
 	}
 
 	@Test

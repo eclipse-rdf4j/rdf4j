@@ -12,17 +12,12 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 /**
- * Sink for structured optimizer trace events.
+ * Logical stage for optimizer rule execution.
  */
-@FunctionalInterface
-public interface OptimizationTraceSink {
-
-	OptimizationTraceSink NOOP = event -> {
-	};
-
-	void onEvent(OptimizationTraceEvent event);
-
-	static OptimizationTraceSink orNoop(OptimizationTraceSink traceSink) {
-		return traceSink == null ? NOOP : traceSink;
-	}
+public enum OptimizerPhase {
+	NORMALIZE,
+	REWRITE,
+	JOIN_ORDER,
+	PHYSICAL,
+	OBSERVE
 }

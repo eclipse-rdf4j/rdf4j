@@ -19,6 +19,7 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -92,6 +93,13 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	public static boolean USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN = true;
 
 	private static final int FULL_PAIRWISE_START_LIMIT = 6;
+	private static final RuleMetadata QUERY_JOIN_RULE_METADATA = RuleRegistry.QUERY_JOIN_RULE_METADATA;
+	private static final String ATTRIBUTE_RULE_ID = "ruleId";
+	private static final String ATTRIBUTE_RISK_CLASS = "riskClass";
+	private static final String ATTRIBUTE_REASON = "reason";
+	private static final String ATTRIBUTE_BLOCKED_CONSTRUCT = "blockedConstruct";
+	private static final String ATTRIBUTE_BLOCKED_CONSTRUCT_POLICY = "blockedConstructPolicy";
+	private static final String CONSTANT_BINDING_PREFIX = "_const_";
 
 	protected final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
@@ -122,9 +130,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource,
 			boolean prioritizeExtensions) {
+		this(statistics, trackResultSize, tripleSource, prioritizeExtensions, OptimizationTraceSink.NOOP);
+	}
+
+	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource,
+			boolean prioritizeExtensions, OptimizationTraceSink traceSink) {
 		this(statistics, trackResultSize, tripleSource, prioritizeExtensions, JoinEngineConfig.defaults(),
 				new DefaultJoinOptimizationEngine(), new DefaultUncertaintyAwareEstimator(), new DefaultCostModel(),
-				null, OptimizationTraceSink.NOOP);
+				null, traceSink);
 	}
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource,
@@ -140,7 +153,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		this.estimator = estimator == null ? new DefaultUncertaintyAwareEstimator() : estimator;
 		this.costModel = costModel == null ? new DefaultCostModel() : costModel;
 		this.banditPolicy = banditPolicy == null ? createBanditPolicy(this.joinEngineConfig) : banditPolicy;
-		this.traceSink = traceSink == null ? OptimizationTraceSink.NOOP : traceSink;
+		this.traceSink = OptimizationTraceSink.orNoop(traceSink);
 	}
 
 	private static BanditPolicy createBanditPolicy(JoinEngineConfig config) {
@@ -176,7 +189,51 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		SemanticEquivalenceGuard semanticGuard = SemanticEquivalenceGuard.fromSystemProperties();
+		String selectionRejectionReason = RuleRegistry.rejectionReasonForRule(QUERY_JOIN_RULE_METADATA,
+				semanticGuard);
+		if (selectionRejectionReason != null) {
+			traceSink.onEvent(createRuleRejectedEvent(QUERY_JOIN_RULE_METADATA, selectionRejectionReason));
+			return;
+		}
+		SemanticEquivalenceGuard.BlockingDecision blockingDecision = semanticGuard
+				.blockingDecision(QUERY_JOIN_RULE_METADATA, tupleExpr);
+		if (blockingDecision != null) {
+			traceSink.onEvent(createStrictRuleRejectedEvent(QUERY_JOIN_RULE_METADATA, blockingDecision));
+			return;
+		}
 		tupleExpr.visit(new JoinVisitor(dataset, bindings, traceSink, banditPolicy));
+	}
+
+	protected static OptimizationTraceEvent createRuleRejectedEvent(RuleMetadata metadata, String reason) {
+		return createRuleRejectedEvent(metadata, rejectionAttributes(metadata, reason));
+	}
+
+	protected static OptimizationTraceEvent createStrictRuleRejectedEvent(RuleMetadata metadata,
+			SemanticEquivalenceGuard.BlockingDecision blockingDecision) {
+		Map<String, String> attributes = rejectionAttributes(metadata,
+				RuleRegistry.REJECTION_REASON_STRICT_SEMANTIC_GUARD_HIGH_RISK_QUERY_SHAPE);
+		attributes.put(ATTRIBUTE_BLOCKED_CONSTRUCT, blockingDecision.getBlockedConstruct());
+		attributes.put(ATTRIBUTE_BLOCKED_CONSTRUCT_POLICY, blockingDecision.getPolicySource());
+		return createRuleRejectedEvent(metadata, attributes);
+	}
+
+	private static OptimizationTraceEvent createRuleRejectedEvent(RuleMetadata metadata,
+			Map<String, String> attributes) {
+		return new OptimizationTraceEvent(
+				OptimizationTraceEvent.EventType.RULE_REJECTED,
+				System.currentTimeMillis(),
+				attributes,
+				metadata.getPhase().name(),
+				-1L);
+	}
+
+	private static Map<String, String> rejectionAttributes(RuleMetadata metadata, String reason) {
+		Map<String, String> attributes = new LinkedHashMap<>();
+		attributes.put(ATTRIBUTE_RULE_ID, metadata.getRuleId());
+		attributes.put(ATTRIBUTE_RISK_CLASS, metadata.getRiskClass().name());
+		attributes.put(ATTRIBUTE_REASON, reason);
+		return attributes;
 	}
 
 	/**
@@ -200,7 +257,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			super(trackResultSize);
 			this.dataset = dataset;
 			this.bindings = bindings;
-			this.trace = trace == null ? OptimizationTraceSink.NOOP : trace;
+			this.trace = OptimizationTraceSink.orNoop(trace);
 			this.bandit = bandit == null ? BanditPolicy.noop() : bandit;
 		}
 
@@ -273,9 +330,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					JoinOptimizationContext context = new JoinOptimizationContext(statistics, tripleSource, dataset,
 							bindings, origBoundVars, joinEngineConfig, trace, bandit, estimator, costModel);
 					OptimizationResult result = joinEngine.optimizeJoin(node, region, context);
-					// Engine memo exploration can reuse atom instances across alternatives. Clone the selected
-					// subtree before replacement so parent pointers are fully consistent for downstream optimizers.
-					node.replaceWith(result.getOptimized().clone());
+					node.replaceWith(result.getOptimized());
 					return;
 				}
 
@@ -490,7 +545,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				if (cached != null) {
 					return cached;
 				}
-				double c = statistics.getCardinality(new Join(a, b));
+				double c = statistics.getCardinality(new Join(a.clone(), b.clone()));
 				inner.put(b, c);
 				cardCache.computeIfAbsent(b, k -> new HashMap<>()).put(a, c);
 				return c;
@@ -675,7 +730,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 			int overlap = 0;
 			for (String firstBindingName : firstBindingNames) {
-				if (!firstBindingName.startsWith("_const_") && secondBindingNames.contains(firstBindingName)) {
+				if (!firstBindingName.startsWith(CONSTANT_BINDING_PREFIX)
+						&& secondBindingNames.contains(firstBindingName)) {
 					overlap++;
 				}
 
@@ -1194,7 +1250,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					Set<String> joinBindingNames = join.getBindingNames();
 					boolean crossJoin = true;
 					for (String leftBindingName : joinBindingNames) {
-						if (!leftBindingName.startsWith("_const_")
+						if (!leftBindingName.startsWith(CONSTANT_BINDING_PREFIX)
 								&& allBindingNamesAbove.contains(leftBindingName)) {
 							crossJoin = false;
 							break;

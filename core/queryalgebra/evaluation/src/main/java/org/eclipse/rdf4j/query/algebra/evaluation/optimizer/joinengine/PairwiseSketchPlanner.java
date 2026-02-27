@@ -56,7 +56,7 @@ public final class PairwiseSketchPlanner implements JoinOrderPlanner {
 			if (cached != null) {
 				return cached;
 			}
-			double c = ctx.getStats().getCardinality(new Join(a, b));
+			double c = ctx.getStats().getCardinality(new Join(a.clone(), b.clone()));
 			inner.put(b, c);
 			cardCache.computeIfAbsent(b, k -> new HashMap<>()).put(a, c);
 			return c;

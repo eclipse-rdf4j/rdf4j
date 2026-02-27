@@ -18,12 +18,14 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.EvaluationStatisticsCardinalityEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearnedQueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearningRdfStarTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearningTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.MemoryJoinStats;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OptimizationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OptimizationTraceSink;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedJoinConfig;
 
@@ -48,6 +50,7 @@ public class LearningEvaluationStrategyFactory extends DefaultEvaluationStrategy
 	private final JoinStatsProvider statsProvider;
 	private final EvaluationStatistics optimizerStatisticsOverride;
 	private final LearnedJoinConfig joinConfig;
+	private OptimizationTraceSink optimizationTraceSink = OptimizationTraceSink.NOOP;
 
 	public LearningEvaluationStrategyFactory() {
 		this(new MemoryJoinStats(), null, new LearnedJoinConfig());
@@ -94,6 +97,14 @@ public class LearningEvaluationStrategyFactory extends DefaultEvaluationStrategy
 		return joinConfig;
 	}
 
+	public void setOptimizationTraceSink(OptimizationTraceSink optimizationTraceSink) {
+		this.optimizationTraceSink = OptimizationTraceSink.orNoop(optimizationTraceSink);
+	}
+
+	public OptimizationTraceSink getOptimizationTraceSink() {
+		return optimizationTraceSink;
+	}
+
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
@@ -105,12 +116,16 @@ public class LearningEvaluationStrategyFactory extends DefaultEvaluationStrategy
 		EvaluationStatistics optimizerStatistics = optimizerStatisticsOverride != null
 				? optimizerStatisticsOverride
 				: evaluationStatistics;
-		OptimizationContext optimizationContext = OptimizationContext.from(optimizerStatistics, statsProvider);
+		OptimizationContext optimizationContext = new OptimizationContext(
+				optimizerStatistics,
+				new EvaluationStatisticsCardinalityEstimator(optimizerStatistics),
+				statsProvider,
+				optimizationTraceSink);
 		LearnedQueryJoinOptimizer learnedJoinOptimizer = new LearnedQueryJoinOptimizer(optimizationContext,
 				strategy.isTrackResultSize(), learningTripleSource, joinConfig);
 
 		strategy.setOptimizerPipeline(new SparqlUoQueryOptimizerPipeline(strategy, learningTripleSource,
-				optimizerStatistics, learnedJoinOptimizer));
+				optimizerStatistics, learnedJoinOptimizer, optimizationTraceSink));
 
 //		strategy.setOptimizerPipeline(new SparqlUoQueryOptimizerPipeline(strategy, learningTripleSource,
 //				optimizerStatistics, new QueryJoinOptimizer(optimizerStatistics)));

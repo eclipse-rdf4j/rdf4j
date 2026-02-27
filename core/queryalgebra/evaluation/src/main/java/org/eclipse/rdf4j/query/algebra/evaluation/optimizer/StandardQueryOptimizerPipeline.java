@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
@@ -21,7 +22,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.uoe.UoeObserveOptimizer;
 
 /**
  * A standard pipeline with the default {@link QueryOptimizer}s that will be used by {@link StrictEvaluationStrategy}
@@ -56,12 +56,19 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private final EvaluationStatistics evaluationStatistics;
 	private final TripleSource tripleSource;
 	private final EvaluationStrategy strategy;
+	private final OptimizationTraceSink traceSink;
 
 	public StandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
+		this(strategy, tripleSource, evaluationStatistics, OptimizationTraceSink.NOOP);
+	}
+
+	public StandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+			EvaluationStatistics evaluationStatistics, OptimizationTraceSink traceSink) {
 		this.strategy = strategy;
 		this.tripleSource = tripleSource;
 		this.evaluationStatistics = evaluationStatistics;
+		this.traceSink = OptimizationTraceSink.orNoop(traceSink);
 	}
 
 	/*
@@ -71,25 +78,20 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	 */
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
-		List<QueryOptimizer> optimizers = List.of(
-				BINDING_ASSIGNER,
-				BINDING_SET_ASSIGNMENT_INLINER,
-				new ConstantOptimizer(strategy),
-				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
-				COMPARE_OPTIMIZER,
-				CONJUNCTIVE_CONSTRAINT_SPLITTER,
-				DISJUNCTIVE_CONSTRAINT_OPTIMIZER,
-				SAME_TERM_FILTER_OPTIMIZER,
-				UNION_SCOPE_CHANGE_OPTIMIZER,
-				QUERY_MODEL_NORMALIZER,
-				PROJECTION_REMOVAL_OPTIMIZER, // Make sure this is after the UnionScopeChangeOptimizer
-				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource),
-				ITERATIVE_EVALUATION_OPTIMIZER,
-				FILTER_OPTIMIZER,
-				FILTER_EQUALITY_OPTIMIZER,
-				ORDER_LIMIT_OPTIMIZER,
-				new UoeObserveOptimizer(evaluationStatistics)
-		);
+		RuleRegistry.SelectionResult selection = RuleRegistry.selectStandardRules(strategy, tripleSource,
+				evaluationStatistics,
+				SemanticEquivalenceGuard.fromSystemProperties(), traceSink);
+
+		List<QueryOptimizer> optimizers = new ArrayList<>();
+		long step = 0;
+		for (RuleRegistry.RuleSpec ruleSpec : selection.getSelected()) {
+			QueryOptimizer optimizer = ruleSpec.createOptimizer();
+			optimizers.add(optimizer);
+			traceSink.onEvent(createRuleAppliedSelectionEvent(ruleSpec, optimizer, step++));
+		}
+		for (RuleRegistry.RejectedRule rejectedRule : selection.getRejected()) {
+			traceSink.onEvent(createRuleRejectedSelectionEvent(rejectedRule));
+		}
 
 		if (assertsEnabled) {
 			List<QueryOptimizer> optimizersWithReferenceCleaner = new ArrayList<>();
@@ -102,6 +104,33 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		}
 
 		return optimizers;
+	}
+
+	private static OptimizationTraceEvent createRuleAppliedSelectionEvent(RuleRegistry.RuleSpec ruleSpec,
+			QueryOptimizer optimizer, long step) {
+		return new OptimizationTraceEvent(
+				OptimizationTraceEvent.EventType.RULE_APPLIED,
+				System.currentTimeMillis(),
+				Map.of(
+						"ruleId", ruleSpec.getMetadata().getRuleId(),
+						"riskClass", ruleSpec.getMetadata().getRiskClass().name(),
+						"optimizer", optimizer.getClass().getSimpleName(),
+						"selection", "selected"),
+				ruleSpec.getMetadata().getPhase().name(),
+				step);
+	}
+
+	private static OptimizationTraceEvent createRuleRejectedSelectionEvent(RuleRegistry.RejectedRule rejectedRule) {
+		return new OptimizationTraceEvent(
+				OptimizationTraceEvent.EventType.RULE_REJECTED,
+				System.currentTimeMillis(),
+				Map.of(
+						"ruleId", rejectedRule.getMetadata().getRuleId(),
+						"riskClass", rejectedRule.getMetadata().getRiskClass().name(),
+						"reason", rejectedRule.getReason(),
+						"selection", "rejected"),
+				rejectedRule.getMetadata().getPhase().name(),
+				-1L);
 	}
 
 }
