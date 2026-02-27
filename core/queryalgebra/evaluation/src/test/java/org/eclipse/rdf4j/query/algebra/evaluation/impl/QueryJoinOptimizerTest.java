@@ -305,8 +305,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				.map(QueryJoinOptimizerTest::getPredicateValue)
 				.collect(Collectors.toList());
 		assertThat(predicateOrder).containsExactlyInAnyOrder("ex:pA", "ex:pB", "ex:pC");
-		assertThat(innermostJoin.getLeftArg()).isSameAs(a);
-		assertThat(innermostJoin.getRightArg()).isSameAs(c);
+		assertThat(getPredicateValue(innermostJoin.getLeftArg())).isEqualTo("ex:pA");
+		assertThat(getPredicateValue(innermostJoin.getRightArg())).isEqualTo("ex:pC");
 	}
 
 	@Test
@@ -476,8 +476,11 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		TupleExpr joinTree = (TupleExpr) buildRightJoinTree.invoke(joinVisitor, new ArrayDeque<>(reordered));
 		Join innermostJoin = getInnermostJoin(joinTree);
 
-		assertThat(innermostJoin.getLeftArg()).isSameAs(values);
-		assertThat(innermostJoin.getRightArg()).isSameAs(usesValues);
+		assertThat(innermostJoin.getLeftArg()).isInstanceOf(BindingSetAssignment.class);
+		BindingSetAssignment leftValues = (BindingSetAssignment) innermostJoin.getLeftArg();
+		assertThat(leftValues.getBindingNames()).isEqualTo(values.getBindingNames());
+		assertThat(leftValues.getBindingSets()).containsExactlyElementsOf(values.getBindingSets());
+		assertThat(getPredicateValue(innermostJoin.getRightArg())).isEqualTo("ex:pUses");
 	}
 
 	@Test
@@ -507,8 +510,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		assertThat(reorderedList.get(0)).isSameAs(c);
 		assertThat(reorderedList.subList(1, 3)).containsExactlyInAnyOrder(a, b);
-		assertThat(innermostJoin.getLeftArg()).isSameAs(a);
-		assertThat(innermostJoin.getRightArg()).isSameAs(b);
+		assertThat(getConstrainedPredicateValue(innermostJoin.getLeftArg())).isEqualTo("ex:pA");
+		assertThat(getConstrainedPredicateValue(innermostJoin.getRightArg())).isEqualTo("ex:pB");
 	}
 
 	@Test
@@ -610,6 +613,18 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		StatementPattern statementPattern = extractStatementPattern(expr);
 		assertThat(statementPattern).isNotNull();
 		return statementPattern.getPredicateVar().getValue().stringValue();
+	}
+
+	private static String getConstrainedPredicateValue(TupleExpr expr) {
+		assertThat(expr).isInstanceOf(Filter.class);
+		Filter filter = (Filter) expr;
+		assertThat(filter.getCondition()).isInstanceOf(org.eclipse.rdf4j.query.algebra.Compare.class);
+		org.eclipse.rdf4j.query.algebra.Compare compare = (org.eclipse.rdf4j.query.algebra.Compare) filter
+				.getCondition();
+		assertThat(compare.getRightArg()).isInstanceOf(org.eclipse.rdf4j.query.algebra.ValueConstant.class);
+		org.eclipse.rdf4j.query.algebra.ValueConstant constant = (org.eclipse.rdf4j.query.algebra.ValueConstant) compare
+				.getRightArg();
+		return constant.getValue().stringValue();
 	}
 
 	private static StatementPattern extractStatementPattern(TupleExpr expr) {

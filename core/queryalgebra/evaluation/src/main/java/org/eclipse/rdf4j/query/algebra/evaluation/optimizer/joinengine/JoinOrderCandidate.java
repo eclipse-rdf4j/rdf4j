@@ -24,18 +24,21 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 public final class JoinOrderCandidate {
 
 	private final String planner;
-	private final List<TupleExpr> order;
+	private final List<Integer> orderIndices;
 	private final String signature;
 
-	private JoinOrderCandidate(String planner, List<TupleExpr> order, String signature) {
+	private JoinOrderCandidate(String planner, List<Integer> orderIndices, String signature) {
 		this.planner = Objects.requireNonNull(planner, "planner");
-		this.order = List.copyOf(order);
+		this.orderIndices = List.copyOf(orderIndices);
 		this.signature = Objects.requireNonNull(signature, "signature");
 	}
 
 	public static JoinOrderCandidate of(String planner, List<TupleExpr> order, List<TupleExpr> baseOrder) {
 		Objects.requireNonNull(order, "order");
 		Objects.requireNonNull(baseOrder, "baseOrder");
+		if (order.size() != baseOrder.size()) {
+			throw new IllegalArgumentException("Order size must match base order size");
+		}
 		List<Integer> indexes = new ArrayList<>(order.size());
 		boolean[] used = new boolean[baseOrder.size()];
 		for (TupleExpr expr : order) {
@@ -47,23 +50,32 @@ public final class JoinOrderCandidate {
 					break;
 				}
 			}
+			if (index < 0) {
+				throw new IllegalArgumentException("Order expression not found in base order");
+			}
 			indexes.add(index);
 		}
-		return new JoinOrderCandidate(planner, order, signature(indexes));
+		return new JoinOrderCandidate(planner, indexes, signature(indexes));
 	}
 
 	public static JoinOrderCandidate fromIndices(String planner, List<Integer> orderIndices,
 			List<TupleExpr> baseOrder) {
 		Objects.requireNonNull(orderIndices, "orderIndices");
 		Objects.requireNonNull(baseOrder, "baseOrder");
-		List<TupleExpr> order = new ArrayList<>(orderIndices.size());
+		if (orderIndices.size() != baseOrder.size()) {
+			throw new IllegalArgumentException("Order size must match base order size");
+		}
+		boolean[] used = new boolean[baseOrder.size()];
 		for (Integer index : orderIndices) {
 			if (index == null || index < 0 || index >= baseOrder.size()) {
 				throw new IllegalArgumentException("Invalid order index: " + index);
 			}
-			order.add(baseOrder.get(index));
+			if (used[index]) {
+				throw new IllegalArgumentException("Duplicate order index: " + index);
+			}
+			used[index] = true;
 		}
-		return new JoinOrderCandidate(planner, order, signature(orderIndices));
+		return new JoinOrderCandidate(planner, orderIndices, signature(orderIndices));
 	}
 
 	public static String signature(List<Integer> orderIndices) {
@@ -77,12 +89,30 @@ public final class JoinOrderCandidate {
 		return joiner.toString();
 	}
 
+	public static List<Integer> parseSignature(String signature) {
+		Objects.requireNonNull(signature, "signature");
+		String trimmed = signature.trim();
+		if (trimmed.length() < 2 || trimmed.charAt(0) != '[' || trimmed.charAt(trimmed.length() - 1) != ']') {
+			throw new IllegalArgumentException("Invalid signature: " + signature);
+		}
+		String content = trimmed.substring(1, trimmed.length() - 1).trim();
+		if (content.isEmpty()) {
+			return List.of();
+		}
+		String[] parts = content.split(",");
+		List<Integer> indices = new ArrayList<>(parts.length);
+		for (String part : parts) {
+			indices.add(Integer.parseInt(part.trim()));
+		}
+		return indices;
+	}
+
 	public String getPlanner() {
 		return planner;
 	}
 
-	public List<TupleExpr> getOrder() {
-		return order;
+	public List<Integer> getOrderIndices() {
+		return orderIndices;
 	}
 
 	public String getSignature() {

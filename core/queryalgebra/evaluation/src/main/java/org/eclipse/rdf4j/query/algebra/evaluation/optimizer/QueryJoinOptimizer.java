@@ -443,9 +443,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			// IterativeEvaluationOptimizer to factor out the left-most join
 			// argument
 			int i = orderedJoinArgs.size() - 1;
-			TupleExpr right = orderedJoinArgs.removeLast();
+			TupleExpr right = orderedJoinArgs.removeLast().clone();
 			if (!orderedJoinArgs.isEmpty()) {
-				TupleExpr left = orderedJoinArgs.removeLast();
+				TupleExpr left = orderedJoinArgs.removeLast().clone();
 
 				Set<Var> supportedOrders = new HashSet<>(left.getSupportedOrders(tripleSource));
 				supportedOrders.retainAll(right.getSupportedOrders(tripleSource));
@@ -461,7 +461,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			}
 			while (!orderedJoinArgs.isEmpty()) {
-				Join join = new Join(orderedJoinArgs.removeLast(), right);
+				Join join = new Join(orderedJoinArgs.removeLast().clone(), right);
 				applyJoinEstimates(join);
 				right = join;
 			}
@@ -496,7 +496,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					} else {
 						cardinality = Math.max(cardinality, left.getResultSizeEstimate());
 						cardinality = Math.max(cardinality, right.getResultSizeEstimate());
-						Join join = new Join(left, right);
+						Join join = new Join(left.clone(), right.clone());
 						join.setOrder((Var) supportedOrders.toArray()[0]);
 						join.setMergeJoin(true);
 						applyJoinEstimates(join);
@@ -511,10 +511,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private TupleExpr buildJoinHierarchy(List<TupleExpr> args) {
 			TupleExpr joins = null;
 			if (!args.isEmpty()) {
-				joins = args.getFirst();
+				joins = args.getFirst().clone();
 
 				for (int i = 1; i < args.size(); i++) {
-					Join join = new Join(joins, args.get(i));
+					Join join = new Join(joins, args.get(i).clone());
 					applyJoinEstimates(join);
 					joins = join;
 				}

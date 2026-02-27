@@ -13,31 +13,23 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine;
 
 import java.util.Objects;
 
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
-
 /**
  * Candidate plan tracked in memo/pruning.
  */
 public final class JoinPlan {
 
-	private final TupleExpr expr;
-	private final JoinOrderCandidate candidate;
+	private final JoinPlanKey key;
 	private final PlanDescriptor descriptor;
 	private final Cost cost;
 
-	public JoinPlan(TupleExpr expr, JoinOrderCandidate candidate, PlanDescriptor descriptor, Cost cost) {
-		this.expr = Objects.requireNonNull(expr, "expr");
-		this.candidate = Objects.requireNonNull(candidate, "candidate");
+	public JoinPlan(JoinPlanKey key, PlanDescriptor descriptor, Cost cost) {
+		this.key = Objects.requireNonNull(key, "key");
 		this.descriptor = Objects.requireNonNull(descriptor, "descriptor");
 		this.cost = Objects.requireNonNull(cost, "cost");
 	}
 
-	public TupleExpr getExpr() {
-		return expr;
-	}
-
-	public JoinOrderCandidate getCandidate() {
-		return candidate;
+	public JoinPlanKey getKey() {
+		return key;
 	}
 
 	public PlanDescriptor getDescriptor() {

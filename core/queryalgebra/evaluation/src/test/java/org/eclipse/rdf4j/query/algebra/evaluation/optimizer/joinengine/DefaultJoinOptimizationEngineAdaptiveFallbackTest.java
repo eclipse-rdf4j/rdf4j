@@ -43,6 +43,7 @@ class DefaultJoinOptimizationEngineAdaptiveFallbackTest {
 				context(config, first, second, 90.0d, 100.0d, 0.95d, 0.20d));
 
 		assertThat(result.getDescriptor().getPlanner()).isEqualTo("legacy-greedy");
+		assertThat(leftPredicate(result.getOptimized())).isEqualTo("urn:p1");
 	}
 
 	@Test
@@ -58,6 +59,18 @@ class DefaultJoinOptimizationEngineAdaptiveFallbackTest {
 				context(config, first, second, 90.0d, 100.0d, 0.95d, 0.20d));
 
 		assertThat(result.getDescriptor().getPlanner()).isEqualTo("reverse");
+		assertThat(leftPredicate(result.getOptimized())).isEqualTo("urn:p2");
+	}
+
+	private String leftPredicate(TupleExpr expr) {
+		assertThat(expr).isInstanceOf(Join.class);
+		TupleExpr left = ((Join) expr).getLeftArg();
+		assertThat(left).isInstanceOf(StatementPattern.class);
+		StatementPattern pattern = (StatementPattern) left;
+		Var predicate = pattern.getPredicateVar();
+		assertThat(predicate).isNotNull();
+		assertThat(predicate.hasValue()).isTrue();
+		return predicate.getValue().stringValue();
 	}
 
 	private JoinRegion region(StatementPattern first, StatementPattern second) {
@@ -69,7 +82,7 @@ class DefaultJoinOptimizationEngineAdaptiveFallbackTest {
 		return new JoinOptimizationContext(new EvaluationStatistics(), new EmptyTripleSource(), null,
 				EmptyBindingSet.getInstance(), Set.of(), config, OptimizationTraceSink.NOOP, BanditPolicy.noop(),
 				new FixedEstimator(),
-				new LeftArgIdentityCostModel(first, second, reverseScore, legacyScore, reverseRisk, legacyRisk));
+				new LeftArgPredicateCostModel(first, second, reverseScore, legacyScore, reverseRisk, legacyRisk));
 	}
 
 	private StatementPattern statement(String predicateIri) {
@@ -96,19 +109,20 @@ class DefaultJoinOptimizationEngineAdaptiveFallbackTest {
 		}
 	}
 
-	private static final class LeftArgIdentityCostModel implements CostModel {
+	private static final class LeftArgPredicateCostModel implements CostModel {
 
-		private final TupleExpr legacyLeft;
-		private final TupleExpr reverseLeft;
+		private final String legacyLeftPredicate;
+		private final String reverseLeftPredicate;
 		private final double reverseScore;
 		private final double legacyScore;
 		private final double reverseRisk;
 		private final double legacyRisk;
 
-		private LeftArgIdentityCostModel(TupleExpr legacyLeft, TupleExpr reverseLeft, double reverseScore,
+		private LeftArgPredicateCostModel(StatementPattern legacyLeft, StatementPattern reverseLeft,
+				double reverseScore,
 				double legacyScore, double reverseRisk, double legacyRisk) {
-			this.legacyLeft = legacyLeft;
-			this.reverseLeft = reverseLeft;
+			this.legacyLeftPredicate = predicateIri(legacyLeft);
+			this.reverseLeftPredicate = predicateIri(reverseLeft);
 			this.reverseScore = reverseScore;
 			this.legacyScore = legacyScore;
 			this.reverseRisk = reverseRisk;
@@ -121,13 +135,26 @@ class DefaultJoinOptimizationEngineAdaptiveFallbackTest {
 				return new Cost(legacyScore, legacyRisk, legacyScore, 1.0d);
 			}
 			Join join = (Join) joinTree;
-			if (join.getLeftArg() == reverseLeft) {
+			String leftPredicate = predicateIri(join.getLeftArg());
+			if (reverseLeftPredicate.equals(leftPredicate)) {
 				return new Cost(reverseScore, reverseRisk, reverseScore, 1.0d);
 			}
-			if (join.getLeftArg() == legacyLeft) {
+			if (legacyLeftPredicate.equals(leftPredicate)) {
 				return new Cost(legacyScore, legacyRisk, legacyScore, 1.0d);
 			}
 			return new Cost(legacyScore, legacyRisk, legacyScore, 1.0d);
+		}
+
+		private static String predicateIri(TupleExpr expr) {
+			if (!(expr instanceof StatementPattern)) {
+				return "";
+			}
+			StatementPattern pattern = (StatementPattern) expr;
+			Var predicate = pattern.getPredicateVar();
+			if (predicate == null || !predicate.hasValue()) {
+				return "";
+			}
+			return predicate.getValue().stringValue();
 		}
 	}
 

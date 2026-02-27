@@ -46,7 +46,7 @@ class LegacyGreedyPlannerOrderingTest {
 		List<JoinOrderCandidate> candidates = planner.generatePlans(region, context);
 
 		assertThat(candidates).hasSize(1);
-		List<String> order = predicates(candidates.get(0).getOrder());
+		List<String> order = predicates(candidates.get(0).getOrderIndices(), region.getAtoms());
 		assertThat(order).startsWith("http://example.com/p2");
 		assertThat(order).containsExactlyInAnyOrder("http://example.com/p1", "http://example.com/p2",
 				"http://example.com/p3");
@@ -58,8 +58,9 @@ class LegacyGreedyPlannerOrderingTest {
 				new Var("o"));
 	}
 
-	private static List<String> predicates(List<TupleExpr> order) {
-		return order.stream()
+	private static List<String> predicates(List<Integer> orderIndices, List<TupleExpr> baseOrder) {
+		return orderIndices.stream()
+				.map(baseOrder::get)
 				.map(StatementPattern.class::cast)
 				.map(sp -> sp.getPredicateVar().getValue().stringValue())
 				.toList();

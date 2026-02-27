@@ -29,9 +29,13 @@ public final class JoinTreeBuilder {
 	public static TupleExpr build(JoinRegion region, JoinOrderCandidate candidate, JoinOptimizationContext ctx) {
 		// Alternative plans must remain detached from the live query model tree.
 		TupleExpr priorityJoins = buildJoinHierarchy(region.getFixedPrefix(), ctx);
-		Deque<TupleExpr> orderedJoinArgs = new ArrayDeque<>(candidate.getOrder().size());
-		for (TupleExpr expr : candidate.getOrder()) {
-			orderedJoinArgs.addLast(expr.clone());
+		List<Integer> order = candidate.getOrderIndices();
+		Deque<TupleExpr> orderedJoinArgs = new ArrayDeque<>(order.size());
+		for (Integer index : order) {
+			if (index == null || index < 0 || index >= region.getAtoms().size()) {
+				throw new IllegalArgumentException("Invalid join-order index: " + index);
+			}
+			orderedJoinArgs.addLast(region.getAtoms().get(index).clone());
 		}
 		TupleExpr right = buildRightJoinTree(orderedJoinArgs, ctx);
 		if (priorityJoins == null) {
