@@ -1179,27 +1179,10 @@ public class LearnedBindJoinCostModel implements BindJoinCostModel {
 				}
 			}
 		}
-		if (!areNumericValues(values)) {
+		if (values.isEmpty()) {
 			return FilterConstraints.empty();
 		}
 		return FilterConstraints.ofValues(name, values);
-	}
-
-	private boolean areNumericValues(Set<Value> values) {
-		if (values.isEmpty()) {
-			return false;
-		}
-		for (Value value : values) {
-			if (!(value instanceof Literal)) {
-				return false;
-			}
-			Literal literal = (Literal) value;
-			IRI datatype = literal.getDatatype();
-			if (datatype == null || !XMLDatatypeUtil.isNumericDatatype(datatype)) {
-				return false;
-			}
-		}
-		return true;
 	}
 
 	private Set<String> collectTypeSubjects(List<StatementPattern> patterns) {

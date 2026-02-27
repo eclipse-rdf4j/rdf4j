@@ -16,6 +16,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -108,6 +110,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 	private static final String PLAN_EXPLORE_MAX_EXTRA_MS_PROPERTY = "rdf4j.learned.planExplore.maxExtraMs";
 	private static final String PLAN_STABILITY_ENABLED_PROPERTY = "rdf4j.learned.planStability.enabled";
 	private static final String PLAN_STABILITY_MIN_IMPROVEMENT_PERCENT_PROPERTY = "rdf4j.learned.planStability.minImprovementPercent";
+	private static final String PLAN_STABILITY_SWITCH_CONFIRMATIONS_PROPERTY = "rdf4j.learned.planStability.switchConfirmations";
 	private static final String PLAN_OUTCOME_LEARNING_ENABLED_PROPERTY = "rdf4j.learned.planOutcome.enabled";
 	private static final String PLAN_OUTCOME_MIN_SAMPLES_PROPERTY = "rdf4j.learned.planOutcome.minSamples";
 	private static final String PLAN_OUTCOME_MIN_IMPROVEMENT_PERCENT_PROPERTY = "rdf4j.learned.planOutcome.minImprovementPercent";
@@ -137,6 +140,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			.parseBoolean(System.getProperty(PLAN_STABILITY_ENABLED_PROPERTY, "true"));
 	private static final double PLAN_STABILITY_MIN_IMPROVEMENT_RATIO = parsePercentageProperty(
 			PLAN_STABILITY_MIN_IMPROVEMENT_PERCENT_PROPERTY, 20.0d);
+	private static final int PLAN_STABILITY_SWITCH_CONFIRMATIONS = Math.max(1,
+			Integer.getInteger(PLAN_STABILITY_SWITCH_CONFIRMATIONS_PROPERTY, 2));
 	private static final boolean PLAN_OUTCOME_LEARNING_ENABLED = Boolean
 			.parseBoolean(System.getProperty(PLAN_OUTCOME_LEARNING_ENABLED_PROPERTY, "true"));
 	private static final int PLAN_OUTCOME_MIN_SAMPLES = Math.max(1,
@@ -178,6 +183,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 	private static final String DEBUG_PLAN_PROPERTY = "rdf4j.optimizer.learned.debugPlan";
 	private static final boolean DEBUG_PLAN = Boolean.getBoolean(DEBUG_PLAN_PROPERTY);
 	private static final Map<String, CachedPlanWinner> EXPLORE_WINNER_CACHE = new ConcurrentHashMap<>();
+	private static final Map<String, PendingPlanSwitchConfirmation> PLAN_SWITCH_CONFIRMATIONS = new ConcurrentHashMap<>();
 	private static final Map<PlanOutcomeKey, PlanOutcomeStats> PLAN_OUTCOME_STATS = new ConcurrentHashMap<>();
 	private static final Map<PlanOutcomeKey, Long> PLAN_OUTCOME_QUARANTINE_UNTIL_EPOCH = new ConcurrentHashMap<>();
 	private static final Map<PlanOutcomeKey, Integer> PLAN_OUTCOME_QUARANTINE_BACKOFF_LEVEL = new ConcurrentHashMap<>();
@@ -211,6 +217,16 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		private CachedPlanWinner(String signature, int candidateIndex) {
 			this.signature = signature;
 			this.candidateIndex = candidateIndex;
+		}
+	}
+
+	private static final class PendingPlanSwitchConfirmation {
+		private final String candidateSignature;
+		private final int confirmations;
+
+		private PendingPlanSwitchConfirmation(String candidateSignature, int confirmations) {
+			this.candidateSignature = candidateSignature;
+			this.confirmations = confirmations;
 		}
 	}
 
@@ -1246,6 +1262,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 						&& isTypeAnchoredUnsupportedTriplet(joinArgs, relevantUnsupportedTargets);
 				boolean unsupportedTargetHasVariableEquality = relevantUnsupportedTargets.size() == 1
 						&& hasVariableEqualityFilter(relevantUnsupportedTargets.iterator().next(), filters);
+				boolean unsupportedTargetHasLiteralConstraint = relevantUnsupportedTargets.size() == 1
+						&& hasLiteralConstraintForTarget(relevantUnsupportedTargets.iterator().next(), filters);
 				boolean nestedUnsupportedTarget = hasOuterUnsupportedTarget(relevantUnsupportedTargets);
 				if (planner != null) {
 					plannerUsed = plannerUsed(planner, joinArgs.size());
@@ -1257,7 +1275,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				}
 				if (UNSUPPORTED_LITERAL_JOIN_FALLBACK_ENABLED && relevantUnsupportedTargets.size() == 1
 						&& initiallyBoundVars.isEmpty() && !allowTypeAnchored
-						&& !unsupportedTargetHasVariableEquality && !nestedUnsupportedTarget) {
+						&& !unsupportedTargetHasVariableEquality && !unsupportedTargetHasLiteralConstraint
+						&& !nestedUnsupportedTarget) {
 					planner = null;
 					fallbackReason = "unsupported-literal-fallback";
 					plannerUsed = "none";
@@ -1598,12 +1617,16 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				List<JoinPlanCandidate> planCandidates) {
 			switch (forceMode) {
 			case DP_TOP1:
+				clearSwitchConfirmation(templateHash);
 				return new SelectionDecision(0, "forced-mode", "force-mode");
 			case DP_TOP2:
+				clearSwitchConfirmation(templateHash);
 				return new SelectionDecision(Math.min(1, planCandidates.size() - 1), "forced-mode", "force-mode");
 			case DP_TOP3:
+				clearSwitchConfirmation(templateHash);
 				return new SelectionDecision(Math.min(2, planCandidates.size() - 1), "forced-mode", "force-mode");
 			case LEGACY:
+				clearSwitchConfirmation(templateHash);
 				return new SelectionDecision(-1, "forced-legacy", "force-mode");
 			case AUTO:
 			default:
@@ -1612,18 +1635,21 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			long selectionEpoch = nextPlanSelectionEpoch(templateHash);
 			int winner = exploreWinner(planCandidates);
 			if (!PLAN_STABILITY_ENABLED) {
+				clearSwitchConfirmation(templateHash);
 				cacheWinner(templateHash, planCandidates, winner);
 				return new SelectionDecision(winner, "plan-stability-disabled", "explore", Double.NaN, Double.NaN, -1,
 						winner, winner, "plan-stability-disabled");
 			}
 			CachedPlanWinner cachedWinner = EXPLORE_WINNER_CACHE.get(templateHash);
 			if (cachedWinner == null) {
+				clearSwitchConfirmation(templateHash);
 				cacheWinner(templateHash, planCandidates, winner);
 				return new SelectionDecision(winner, "cache-miss", "explore", Double.NaN, Double.NaN, -1, winner,
 						winner, "cache-miss");
 			}
 			int cachedIndex = resolveCachedWinnerIndex(cachedWinner, planCandidates);
 			if (cachedIndex < 0) {
+				clearSwitchConfirmation(templateHash);
 				cacheWinner(templateHash, planCandidates, winner);
 				return new SelectionDecision(winner, "cache-invalid", "explore", Double.NaN, Double.NaN, -1, winner,
 						winner, "cache-invalid");
@@ -1637,6 +1663,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			int failureRollbackIndex = runtimeFailureRollbackIndex(templateHash, planCandidates, cachedIndex,
 					selectionEpoch);
 			if (failureRollbackIndex >= 0 && failureRollbackIndex != cachedIndex) {
+				clearSwitchConfirmation(templateHash);
 				quarantinePlanAfterRollback(templateHash, planCandidates, cachedIndex, selectionEpoch);
 				cacheWinner(templateHash, planCandidates, failureRollbackIndex);
 				double improvementRatio = stabilityImprovementRatio(planCandidates, cachedIndex, failureRollbackIndex);
@@ -1646,6 +1673,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			}
 			int rollbackIndex = runtimeRollbackIndex(templateHash, planCandidates, cachedIndex, selectionEpoch);
 			if (rollbackIndex >= 0 && rollbackIndex != cachedIndex) {
+				clearSwitchConfirmation(templateHash);
 				quarantinePlanAfterRollback(templateHash, planCandidates, cachedIndex, selectionEpoch);
 				cacheWinner(templateHash, planCandidates, rollbackIndex);
 				double improvementRatio = stabilityImprovementRatio(planCandidates, cachedIndex, rollbackIndex);
@@ -1656,6 +1684,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			int runtimePreferredIndex = runtimePreferredIndex(templateHash, planCandidates, cachedIndex,
 					selectionEpoch);
 			if (runtimePreferredIndex >= 0 && runtimePreferredIndex != adaptiveIndex) {
+				clearSwitchConfirmation(templateHash);
 				cacheWinner(templateHash, planCandidates, runtimePreferredIndex);
 				double improvementRatio = stabilityImprovementRatio(planCandidates, cachedIndex, runtimePreferredIndex);
 				double uncertaintyDelta = stabilityUncertaintyDelta(planCandidates, cachedIndex, runtimePreferredIndex);
@@ -1663,11 +1692,20 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 						improvementRatio, uncertaintyDelta, cachedIndex, winner, runtimePreferredIndex,
 						"runtime-expected-improvement");
 			}
+			int confirmationAdjustedIndex = applySwitchConfirmationGate(templateHash, planCandidates, cachedIndex,
+					adaptiveIndex);
+			boolean switchConfirmationPending = confirmationAdjustedIndex != adaptiveIndex;
+			adaptiveIndex = confirmationAdjustedIndex;
 			cacheWinner(templateHash, planCandidates, adaptiveIndex);
 			double improvementRatio = stabilityImprovementRatio(planCandidates, cachedIndex, adaptiveIndex);
 			double uncertaintyDelta = stabilityUncertaintyDelta(planCandidates, cachedIndex, adaptiveIndex);
-			String switchTrigger = runtimeHealthVetoApplied ? "runtime-health-veto"
-					: stabilitySwitchTrigger(planCandidates, cachedIndex, adaptiveIndex);
+			String switchTrigger;
+			if (switchConfirmationPending) {
+				switchTrigger = "switch-confirmation-pending";
+			} else {
+				switchTrigger = runtimeHealthVetoApplied ? "runtime-health-veto"
+						: stabilitySwitchTrigger(planCandidates, cachedIndex, adaptiveIndex);
+			}
 			if (adaptiveIndex == cachedIndex) {
 				return new SelectionDecision(adaptiveIndex, "cache-hit-keep", "cache", improvementRatio,
 						uncertaintyDelta, cachedIndex, winner, adaptiveIndex, switchTrigger);
@@ -1728,6 +1766,51 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				return "uncertainty-reduction";
 			}
 			return "switch";
+		}
+
+		private int applySwitchConfirmationGate(String templateHash, List<JoinPlanCandidate> planCandidates,
+				int cachedIndex, int selectedIndex) {
+			if (PLAN_STABILITY_SWITCH_CONFIRMATIONS <= 1 || templateHash == null || templateHash.isBlank()
+					|| planCandidates == null || planCandidates.isEmpty()
+					|| cachedIndex < 0 || cachedIndex >= planCandidates.size()
+					|| selectedIndex < 0 || selectedIndex >= planCandidates.size()
+					|| selectedIndex == cachedIndex) {
+				clearSwitchConfirmation(templateHash);
+				return selectedIndex;
+			}
+
+			JoinPlanCandidate selectedCandidate = planCandidates.get(selectedIndex);
+			JoinPlanCandidate cachedCandidate = planCandidates.get(cachedIndex);
+			String selectedSignature = selectedCandidate.getPlanSignature();
+			String cachedSignature = cachedCandidate.getPlanSignature();
+			if (selectedSignature == null || selectedSignature.isBlank()
+					|| selectedSignature.equals(cachedSignature)) {
+				clearSwitchConfirmation(templateHash);
+				return selectedIndex;
+			}
+
+			PendingPlanSwitchConfirmation pending = PLAN_SWITCH_CONFIRMATIONS.get(templateHash);
+			if (pending == null || !selectedSignature.equals(pending.candidateSignature)) {
+				PLAN_SWITCH_CONFIRMATIONS.put(templateHash,
+						new PendingPlanSwitchConfirmation(selectedSignature, 1));
+				return cachedIndex;
+			}
+
+			int confirmations = pending.confirmations + 1;
+			if (confirmations >= PLAN_STABILITY_SWITCH_CONFIRMATIONS) {
+				clearSwitchConfirmation(templateHash);
+				return selectedIndex;
+			}
+			PLAN_SWITCH_CONFIRMATIONS.put(templateHash,
+					new PendingPlanSwitchConfirmation(selectedSignature, confirmations));
+			return cachedIndex;
+		}
+
+		private void clearSwitchConfirmation(String templateHash) {
+			if (templateHash == null || templateHash.isBlank()) {
+				return;
+			}
+			PLAN_SWITCH_CONFIRMATIONS.remove(templateHash);
 		}
 
 		private int exploreWinner(List<JoinPlanCandidate> planCandidates) {
@@ -2114,7 +2197,12 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				boolean tieBreakByUncertainty = candidateFailureRatio == bestFailureRatio
 						&& candidateCost == bestCost
 						&& candidateUncertainty < bestUncertainty;
-				if (bestIndex < 0 || betterFailureRatio || tieBreakByCost || tieBreakByUncertainty) {
+				boolean tieBreakBySignature = candidateFailureRatio == bestFailureRatio
+						&& candidateCost == bestCost
+						&& candidateUncertainty == bestUncertainty
+						&& hasLexicographicallySmallerSignature(candidates, i, bestIndex);
+				if (bestIndex < 0 || betterFailureRatio || tieBreakByCost || tieBreakByUncertainty
+						|| tieBreakBySignature) {
 					bestIndex = i;
 					bestFailureRatio = candidateFailureRatio;
 					bestCost = candidateCost;
@@ -2143,7 +2231,9 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 					continue;
 				}
 				if (bestIndex < 0 || candidateCost < bestCost
-						|| (candidateCost == bestCost && candidateUncertainty < bestUncertainty)) {
+						|| (candidateCost == bestCost && candidateUncertainty < bestUncertainty)
+						|| (candidateCost == bestCost && candidateUncertainty == bestUncertainty
+								&& hasLexicographicallySmallerSignature(candidates, i, bestIndex))) {
 					bestIndex = i;
 					bestCost = candidateCost;
 					bestUncertainty = candidateUncertainty;
@@ -2189,13 +2279,32 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 					continue;
 				}
 				if (bestIndex < 0 || candidateCost < bestCost
-						|| (candidateCost == bestCost && candidateUncertainty < bestUncertainty)) {
+						|| (candidateCost == bestCost && candidateUncertainty < bestUncertainty)
+						|| (candidateCost == bestCost && candidateUncertainty == bestUncertainty
+								&& hasLexicographicallySmallerSignature(candidates, i, bestIndex))) {
 					bestIndex = i;
 					bestCost = candidateCost;
 					bestUncertainty = candidateUncertainty;
 				}
 			}
 			return bestIndex;
+		}
+
+		private boolean hasLexicographicallySmallerSignature(List<JoinPlanCandidate> candidates, int leftIndex,
+				int rightIndex) {
+			if (candidates == null || leftIndex < 0 || rightIndex < 0 || leftIndex >= candidates.size()
+					|| rightIndex >= candidates.size()) {
+				return false;
+			}
+			String leftSignature = candidates.get(leftIndex).getPlanSignature();
+			String rightSignature = candidates.get(rightIndex).getPlanSignature();
+			if (leftSignature == null) {
+				leftSignature = "";
+			}
+			if (rightSignature == null) {
+				rightSignature = "";
+			}
+			return leftSignature.compareTo(rightSignature) < 0;
 		}
 
 		private long nextPlanSelectionEpoch(String templateHash) {
@@ -2283,15 +2392,40 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 		}
 
 		private String queryTemplateHash(List<TupleExpr> joinArgs, List<ValueExpr> filters) {
-			StringBuilder key = new StringBuilder();
+			List<String> joinLabels = new ArrayList<>(joinArgs.size());
 			for (TupleExpr joinArg : joinArgs) {
-				key.append(label(joinArg)).append('|');
+				joinLabels.add(label(joinArg));
 			}
-			key.append('#');
+			Collections.sort(joinLabels);
+			List<String> filterSignatures = new ArrayList<>(filters.size());
 			for (ValueExpr filter : filters) {
-				key.append(filter.getSignature()).append('|');
+				filterSignatures.add(filter.getSignature());
 			}
-			return Integer.toHexString(key.toString().hashCode());
+			Collections.sort(filterSignatures);
+			StringBuilder key = new StringBuilder();
+			key.append(joinLabels.size()).append('#');
+			for (String joinLabel : joinLabels) {
+				key.append(joinLabel).append('|');
+			}
+			key.append('#').append(filterSignatures.size()).append('#');
+			for (String filterSignature : filterSignatures) {
+				key.append(filterSignature).append('|');
+			}
+			return sha256Hex(key.toString());
+		}
+
+		private String sha256Hex(String value) {
+			try {
+				MessageDigest digest = MessageDigest.getInstance("SHA-256");
+				byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+				StringBuilder hex = new StringBuilder(hash.length * 2);
+				for (byte b : hash) {
+					hex.append(String.format("%02x", b));
+				}
+				return hex.toString();
+			} catch (NoSuchAlgorithmException exception) {
+				throw new IllegalStateException("Missing SHA-256 algorithm", exception);
+			}
 		}
 
 		private String plannerUsed(JoinOrderPlanner planner, int operandCount) {
@@ -3368,6 +3502,83 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 						|| isTargetAndOtherUnboundVar(targetName, sameTerm.getRightArg(), sameTerm.getLeftArg());
 			}
 			return false;
+		}
+
+		private boolean hasLiteralConstraintForTarget(String targetName, List<ValueExpr> filters) {
+			if (targetName == null || filters == null || filters.isEmpty()) {
+				return false;
+			}
+			for (ValueExpr filter : filters) {
+				if (containsLiteralConstraintForTarget(targetName, filter)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private boolean containsLiteralConstraintForTarget(String targetName, ValueExpr expr) {
+			if (expr == null) {
+				return false;
+			}
+			if (expr instanceof And) {
+				And and = (And) expr;
+				return containsLiteralConstraintForTarget(targetName, and.getLeftArg())
+						|| containsLiteralConstraintForTarget(targetName, and.getRightArg());
+			}
+			if (expr instanceof Or) {
+				Or or = (Or) expr;
+				return containsLiteralConstraintForTarget(targetName, or.getLeftArg())
+						|| containsLiteralConstraintForTarget(targetName, or.getRightArg());
+			}
+			if (expr instanceof ListMemberOperator) {
+				return listMemberContainsTargetLiteral((ListMemberOperator) expr, targetName);
+			}
+			if (expr instanceof Compare) {
+				Compare compare = (Compare) expr;
+				if (compare.getOperator() != Compare.CompareOp.EQ) {
+					return false;
+				}
+				return isTargetAndConstant(targetName, compare.getLeftArg(), compare.getRightArg())
+						|| isTargetAndConstant(targetName, compare.getRightArg(), compare.getLeftArg());
+			}
+			if (expr instanceof SameTerm) {
+				SameTerm sameTerm = (SameTerm) expr;
+				return isTargetAndConstant(targetName, sameTerm.getLeftArg(), sameTerm.getRightArg())
+						|| isTargetAndConstant(targetName, sameTerm.getRightArg(), sameTerm.getLeftArg());
+			}
+			return false;
+		}
+
+		private boolean listMemberContainsTargetLiteral(ListMemberOperator operator, String targetName) {
+			List<ValueExpr> args = operator.getArguments();
+			if (args == null || args.size() < 2) {
+				return false;
+			}
+			ValueExpr targetExpr = args.get(0);
+			if (!(targetExpr instanceof Var)) {
+				return false;
+			}
+			Var targetVar = (Var) targetExpr;
+			if (targetVar.hasValue() || !targetName.equals(targetVar.getName())) {
+				return false;
+			}
+			for (int i = 1; i < args.size(); i++) {
+				if (constantValue(args.get(i)) != null) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private boolean isTargetAndConstant(String targetName, ValueExpr targetExpr, ValueExpr constantExpr) {
+			if (!(targetExpr instanceof Var)) {
+				return false;
+			}
+			Var targetVar = (Var) targetExpr;
+			if (targetVar.hasValue() || !targetName.equals(targetVar.getName())) {
+				return false;
+			}
+			return constantValue(constantExpr) != null;
 		}
 
 		private boolean isTargetAndOtherUnboundVar(String targetName, ValueExpr left, ValueExpr right) {

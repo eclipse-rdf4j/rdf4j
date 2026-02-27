@@ -141,11 +141,16 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		boolean statementPatternInserted = false;
 		boolean commonFactorInserted = false;
 		boolean optionalFilterJoinInserted = false;
+		boolean lateJoinPrepInserted = false;
 		for (QueryOptimizer optimizer : delegate.getOptimizers()) {
 			if (optimizer instanceof QueryJoinOptimizer) {
 				if (!inserted) {
 					appendPreJoinOptimizers(optimizers);
 					inserted = true;
+				}
+				if (!lateJoinPrepInserted) {
+					appendLateJoinPrepOptimizers(optimizers);
+					lateJoinPrepInserted = true;
 				}
 				optionalFilterJoinInserted = appendJoinStageOptimizers(optimizers, joinRuleEnabled,
 						optionalFilterJoinInserted);
@@ -172,6 +177,10 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		}
 		if (!inserted) {
 			appendPreJoinOptimizers(optimizers);
+			if (!lateJoinPrepInserted) {
+				appendLateJoinPrepOptimizers(optimizers);
+				lateJoinPrepInserted = true;
+			}
 			optionalFilterJoinInserted = appendJoinStageOptimizers(optimizers, joinRuleEnabled,
 					optionalFilterJoinInserted);
 		}
@@ -192,6 +201,13 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		optimizers.add(minusOptimizer);
 		optimizers.add(preJoinFilterOptimizer);
 		optimizers.add(sparqlUoOptimizer);
+	}
+
+	private void appendLateJoinPrepOptimizers(List<QueryOptimizer> optimizers) {
+		optimizers.add(existsFilterPullUpOptimizer);
+		optimizers.add(preJoinFilterOptimizer);
+		optimizers.add(bindingSetAssignmentJoinOrderOptimizer);
+		optimizers.add(unionCommonFilterBindingSetOptimizer);
 	}
 
 	private boolean appendJoinStageOptimizers(List<QueryOptimizer> optimizers, boolean joinRuleEnabled,

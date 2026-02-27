@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -23,7 +25,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearnedQueryJoinOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearnedQueryJoinOptimizer.PlanSelectionSnapshot;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
+import org.eclipse.rdf4j.query.parser.ParsedQuery;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.junit.jupiter.api.Test;
 
 class LearnedQueryJoinOptimizerFallbackTest {
@@ -47,6 +52,27 @@ class LearnedQueryJoinOptimizerFallbackTest {
 
 		assertTrue(statsProvider.seedCalls > 0, "Expected default stats to be seeded");
 		assertEquals(stats.getCardinality(left), left.getResultSizeEstimate());
+	}
+
+	@Test
+	void doesNotFallbackToLegacyForStringInConstraint() throws Exception {
+		String query = String.join("\n",
+				"PREFIX med: <http://example.com/theme/medical/>",
+				"SELECT * WHERE {",
+				"  ?enc med:hasCondition ?cond .",
+				"  ?cond med:code ?condCode .",
+				"  FILTER(?condCode IN (\"DX-200\", \"DX-201\", \"DX-202\"))",
+				"}");
+		LearnedQueryJoinOptimizer.clearLastPlanSelectionSnapshot();
+		LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource(), new AlwaysObservedStatsProvider());
+		ParsedQuery parsed = new SPARQLParser().parseQuery(query, null);
+
+		optimizer.optimize(parsed.getTupleExpr(), null, null);
+
+		PlanSelectionSnapshot snapshot = LearnedQueryJoinOptimizer.getLastPlanSelectionSnapshot();
+		assertNotNull(snapshot);
+		assertNotEquals("unsupported-literal-fallback", snapshot.getReason());
 	}
 
 	private static final class SeedTrackingStatsProvider implements JoinStatsProvider {
@@ -82,6 +108,44 @@ class LearnedQueryJoinOptimizerFallbackTest {
 		@Override
 		public long getTotalCalls() {
 			return 0;
+		}
+	}
+
+	private static final class AlwaysObservedStatsProvider implements JoinStatsProvider {
+		@Override
+		public void reset() {
+		}
+
+		@Override
+		public void recordCall(PatternKey key) {
+		}
+
+		@Override
+		public void recordResults(PatternKey key, long resultCount) {
+		}
+
+		@Override
+		public void seedIfAbsent(PatternKey key, double defaultCardinality, long priorCalls) {
+		}
+
+		@Override
+		public double getAverageResults(PatternKey key) {
+			return 1.0d;
+		}
+
+		@Override
+		public boolean hasStats(PatternKey key) {
+			return true;
+		}
+
+		@Override
+		public long getCalls(PatternKey key) {
+			return 1L;
+		}
+
+		@Override
+		public long getTotalCalls() {
+			return 1L;
 		}
 	}
 }

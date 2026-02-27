@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -553,6 +554,37 @@ class LearnedBindJoinCostModelTest {
 		double estimate = costModel.estimateFanout(pattern, Set.of());
 
 		assertEquals(5.0d, estimate);
+	}
+
+	@Test
+	void appliesStringInListConstraintToScanCardinality() {
+		EvaluationStatistics stats = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expr) {
+				if (expr instanceof StatementPattern) {
+					return 100.0d;
+				}
+				return super.getCardinality(expr);
+			}
+		};
+		JoinStatsProvider statsProvider = new MemoryJoinStats(MemoryJoinStats.InvalidationSettings.disabled());
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern pattern = new StatementPattern(Var.of("cond"), Var.of("p", vf.createIRI("urn:test:code")),
+				Var.of("condCode"));
+		ListMemberOperator listMember = new ListMemberOperator();
+		listMember.addArgument(Var.of("condCode"));
+		listMember.addArgument(new ValueConstant(vf.createLiteral("DX-200")));
+		listMember.addArgument(new ValueConstant(vf.createLiteral("DX-201")));
+		listMember.addArgument(new ValueConstant(vf.createLiteral("DX-202")));
+
+		LearnedBindJoinCostModel baseline = new LearnedBindJoinCostModel(stats, statsProvider);
+		LearnedBindJoinCostModel constrained = new LearnedBindJoinCostModel(stats, statsProvider, List.of(listMember));
+
+		double baselineEstimate = baseline.estimateScanCardinality(pattern, Set.of());
+		double constrainedEstimate = constrained.estimateScanCardinality(pattern, Set.of());
+
+		assertTrue(constrainedEstimate < baselineEstimate,
+				"Expected string IN constraint to reduce scan estimate for condCode");
 	}
 
 	@Test

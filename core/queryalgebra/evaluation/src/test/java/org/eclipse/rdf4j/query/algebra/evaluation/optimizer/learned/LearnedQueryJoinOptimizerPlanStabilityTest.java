@@ -23,7 +23,12 @@ import java.util.Map;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -56,13 +61,41 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 		SelectionResult secondSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
 				List.of(candidate("[0,1]", 100.0d, 1.0d), candidate("[1,0]", 60.0d, 1.0d)));
 
-		assertEquals(1, secondSelection.selectedCandidateIndex,
-				"Expected adaptive plan stability to switch cached winner when improvement is substantial");
-		assertEquals("cache-hit-switch", secondSelection.stabilityDecision);
-		assertEquals("best-cost", secondSelection.stabilitySource);
-		assertEquals("improvement-threshold", secondSelection.stabilitySwitchTrigger);
-		assertEquals(0.4d, secondSelection.stabilityImprovementRatio, 0.0000001d);
+		assertEquals(0, secondSelection.selectedCandidateIndex,
+				"Expected adaptive plan stability to require one extra confirmation before switching");
+		assertEquals("cache-hit-keep", secondSelection.stabilityDecision);
+		assertEquals("cache", secondSelection.stabilitySource);
+		assertEquals("switch-confirmation-pending", secondSelection.stabilitySwitchTrigger);
+		assertEquals(0.0d, secondSelection.stabilityImprovementRatio, 0.0000001d);
 		assertEquals(0.0d, secondSelection.stabilityUncertaintyDelta, 0.0000001d);
+	}
+
+	@Test
+	void autoModeRequiresSwitchConfirmationBeforeChangingCachedWinner() throws Exception {
+		clearExploreWinnerCache();
+		LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource(), new NoopStatsProvider());
+		Object visitor = newLearnedJoinVisitor(optimizer);
+		String templateHash = "plan-stability-switch-confirmation-test";
+
+		SelectionResult firstSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 1.0d), candidate("[1,0]", 130.0d, 1.0d)));
+		assertEquals(0, firstSelection.selectedCandidateIndex);
+
+		SelectionResult secondSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 1.0d), candidate("[1,0]", 60.0d, 1.0d)));
+		assertEquals(0, secondSelection.selectedCandidateIndex,
+				"Expected one extra confirmation before switching away from cached winner");
+		assertEquals("cache-hit-keep", secondSelection.stabilityDecision);
+		assertEquals("cache", secondSelection.stabilitySource);
+		assertEquals("switch-confirmation-pending", secondSelection.stabilitySwitchTrigger);
+
+		SelectionResult thirdSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 1.0d), candidate("[1,0]", 60.0d, 1.0d)));
+		assertEquals(1, thirdSelection.selectedCandidateIndex);
+		assertEquals("cache-hit-switch", thirdSelection.stabilityDecision);
+		assertEquals("best-cost", thirdSelection.stabilitySource);
+		assertEquals("improvement-threshold", thirdSelection.stabilitySwitchTrigger);
 	}
 
 	@Test
@@ -105,13 +138,23 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 		SelectionResult secondSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
 				List.of(candidate("[0,1]", 100.0d, 10.0d), candidate("[1,0]", 99.0d, 1.0d)));
 
-		assertEquals(1, secondSelection.selectedCandidateIndex,
+		assertEquals(0, secondSelection.selectedCandidateIndex);
+		assertEquals("cache-hit-keep", secondSelection.stabilityDecision);
+		assertEquals("cache", secondSelection.stabilitySource);
+		assertEquals("switch-confirmation-pending", secondSelection.stabilitySwitchTrigger);
+		assertEquals(0.0d, secondSelection.stabilityImprovementRatio, 0.0000001d);
+		assertEquals(0.0d, secondSelection.stabilityUncertaintyDelta, 0.0000001d);
+
+		SelectionResult thirdSelection = selectCandidateDecision(visitor, PlanForceMode.AUTO, templateHash,
+				List.of(candidate("[0,1]", 100.0d, 10.0d), candidate("[1,0]", 99.0d, 1.0d)));
+
+		assertEquals(1, thirdSelection.selectedCandidateIndex,
 				"Expected confidence-aware switch when alternative lowers uncertainty and cost");
-		assertEquals("cache-hit-switch", secondSelection.stabilityDecision);
-		assertEquals("explore", secondSelection.stabilitySource);
-		assertEquals("uncertainty-reduction", secondSelection.stabilitySwitchTrigger);
-		assertEquals(0.01d, secondSelection.stabilityImprovementRatio, 0.0000001d);
-		assertEquals(9.0d, secondSelection.stabilityUncertaintyDelta, 0.0000001d);
+		assertEquals("cache-hit-switch", thirdSelection.stabilityDecision);
+		assertEquals("explore", thirdSelection.stabilitySource);
+		assertEquals("uncertainty-reduction", thirdSelection.stabilitySwitchTrigger);
+		assertEquals(0.01d, thirdSelection.stabilityImprovementRatio, 0.0000001d);
+		assertEquals(9.0d, thirdSelection.stabilityUncertaintyDelta, 0.0000001d);
 	}
 
 	@Test
@@ -347,6 +390,29 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 		assertEquals("runtime-health-veto", secondSelection.stabilitySwitchTrigger);
 	}
 
+	@Test
+	void queryTemplateHashIsStableAcrossEquivalentOperandAndFilterOrder() throws Exception {
+		LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource(), new NoopStatsProvider());
+		Object visitor = newLearnedJoinVisitor(optimizer);
+
+		TupleExpr left = new StatementPattern(Var.of("enc"),
+				Var.of("p1", SimpleValueFactory.getInstance().createIRI("urn:test:hasCondition")),
+				Var.of("cond"));
+		TupleExpr right = new StatementPattern(Var.of("cond"),
+				Var.of("p2", SimpleValueFactory.getInstance().createIRI("urn:test:code")),
+				Var.of("condCode"));
+		ValueExpr leftFilter = new Compare(Var.of("condCode"),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral("DX-200")), CompareOp.EQ);
+		ValueExpr rightFilter = new Compare(Var.of("condCode"),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral("DX-201")), CompareOp.EQ);
+
+		String firstHash = queryTemplateHash(visitor, List.of(left, right), List.of(leftFilter, rightFilter));
+		String secondHash = queryTemplateHash(visitor, List.of(right, left), List.of(rightFilter, leftFilter));
+
+		assertEquals(firstHash, secondHash);
+	}
+
 	private static JoinPlanCandidate candidate(String signature, double estimatedCost, double totalUncertainty) {
 		StatementPattern pattern = new StatementPattern(Var.of("s"),
 				Var.of("p", SimpleValueFactory.getInstance().createIRI("urn:test:" + signature)), Var.of("o"));
@@ -382,6 +448,13 @@ class LearnedQueryJoinOptimizerPlanStabilityTest {
 				readStringField(selection, "stabilitySwitchTrigger"),
 				readDoubleField(selection, "stabilityImprovementRatio"),
 				readDoubleField(selection, "stabilityUncertaintyDelta"));
+	}
+
+	private static String queryTemplateHash(Object visitor, List<TupleExpr> joinArgs, List<ValueExpr> filters)
+			throws Exception {
+		Method method = visitor.getClass().getDeclaredMethod("queryTemplateHash", List.class, List.class);
+		method.setAccessible(true);
+		return (String) method.invoke(visitor, joinArgs, filters);
 	}
 
 	private static int readIntField(Object source, String fieldName) throws Exception {

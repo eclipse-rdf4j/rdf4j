@@ -109,10 +109,35 @@ class SparqlUoQueryOptimizerPipelineRuleRegistryTest {
 				.isEqualTo(OptimizationTraceEvent.EventType.REGION_BUILT));
 	}
 
+	@Test
+	void insertsLateFilterPrepStageImmediatelyBeforeJoinOptimizer() {
+		SparqlUoQueryOptimizerPipeline pipeline = new SparqlUoQueryOptimizerPipeline(
+				mock(EvaluationStrategy.class),
+				new EmptyTripleSource(),
+				new EvaluationStatistics(),
+				SparqlUoConfig.builder().build());
+
+		List<Class<? extends QueryOptimizer>> optimizerTypes = optimizerTypeList(pipeline.getOptimizers());
+		int joinIndex = optimizerTypes.indexOf(QueryJoinOptimizer.class);
+
+		assertThat(joinIndex).isGreaterThanOrEqualTo(4);
+		assertThat(optimizerTypes.get(joinIndex - 4)).isEqualTo(ExistsFilterPullUpOptimizer.class);
+		assertThat(FilterOptimizer.class.isAssignableFrom(optimizerTypes.get(joinIndex - 3))).isTrue();
+		assertThat(optimizerTypes.get(joinIndex - 2)).isEqualTo(BindingSetAssignmentJoinOrderOptimizer.class);
+		assertThat(optimizerTypes.get(joinIndex - 1)).isEqualTo(UnionCommonFilterBindingSetOptimizer.class);
+	}
+
 	private static Set<Class<? extends QueryOptimizer>> optimizerTypes(Iterable<QueryOptimizer> optimizers) {
 		return StreamSupport.stream(optimizers.spliterator(), false)
 				.filter(optimizer -> !(optimizer instanceof ParentReferenceChecker))
 				.map(QueryOptimizer::getClass)
 				.collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+	}
+
+	private static List<Class<? extends QueryOptimizer>> optimizerTypeList(Iterable<QueryOptimizer> optimizers) {
+		return StreamSupport.stream(optimizers.spliterator(), false)
+				.filter(optimizer -> !(optimizer instanceof ParentReferenceChecker))
+				.map(QueryOptimizer::getClass)
+				.collect(Collectors.toList());
 	}
 }
