@@ -36,7 +36,7 @@ import org.apache.parquet.schema.MessageType;
  *
  * <pre>
  * List&lt;QuadEntry&gt; entries = ...;
- * byte[] parquetBytes = ParquetFileBuilder.build(entries, SortOrder.SOC);
+ * byte[] parquetBytes = ParquetFileBuilder.build(entries, SortOrder.SPOC);
  * </pre>
  */
 public final class ParquetFileBuilder {
@@ -52,11 +52,8 @@ public final class ParquetFileBuilder {
 	}
 
 	/**
-	 * A quad entry to be written to a Parquet file.
-	 *
-	 * <p>
-	 * For partitioned schemas the predicate is implicit in the partition path, so only subject, object, context, and
-	 * flag are stored. For unpartitioned schemas, the predicate field is also written.
+	 * A quad entry to be written to a Parquet file. All 5 fields (subject, predicate, object, context, flag) are
+	 * stored.
 	 */
 	public static class QuadEntry {
 		public final long subject;
@@ -66,19 +63,7 @@ public final class ParquetFileBuilder {
 		public final byte flag;
 
 		/**
-		 * Creates a quad entry for partitioned files (predicate implicit in path).
-		 *
-		 * @param subject the subject value ID
-		 * @param object  the object value ID
-		 * @param context the context value ID
-		 * @param flag    the entry flag (e.g. insert vs tombstone)
-		 */
-		public QuadEntry(long subject, long object, long context, byte flag) {
-			this(subject, -1, object, context, flag);
-		}
-
-		/**
-		 * Creates a quad entry for unpartitioned files (predicate stored explicitly).
+		 * Creates a quad entry with all components.
 		 *
 		 * @param subject   the subject value ID
 		 * @param predicate the predicate value ID
@@ -99,14 +84,14 @@ public final class ParquetFileBuilder {
 	 * Builds a Parquet file from the given entries using default settings.
 	 *
 	 * <p>
-	 * Uses {@link ParquetSchemas#PARTITIONED_SCHEMA}, 8 MiB row group size, and 64 KiB page size.
+	 * Uses {@link ParquetSchemas#QUAD_SCHEMA}, 8 MiB row group size, and 64 KiB page size.
 	 *
 	 * @param entries   the quad entries to write (must already be sorted)
 	 * @param sortOrder the sort order of the entries
 	 * @return the serialized Parquet file as a byte array
 	 */
 	public static byte[] build(List<QuadEntry> entries, ParquetSchemas.SortOrder sortOrder) {
-		return build(entries, ParquetSchemas.PARTITIONED_SCHEMA, sortOrder, -1,
+		return build(entries, ParquetSchemas.QUAD_SCHEMA, sortOrder,
 				DEFAULT_ROW_GROUP_SIZE, DEFAULT_PAGE_SIZE);
 	}
 
@@ -116,13 +101,12 @@ public final class ParquetFileBuilder {
 	 * @param entries      the quad entries to write (must already be sorted)
 	 * @param schema       the Parquet schema to use
 	 * @param sortOrder    the sort order of the entries
-	 * @param predicateId  the predicate ID for partitioned files (ignored for unpartitioned)
 	 * @param rowGroupSize the row group size in bytes
 	 * @param pageSize     the page size in bytes
 	 * @return the serialized Parquet file as a byte array
 	 */
 	public static byte[] build(List<QuadEntry> entries, MessageType schema,
-			ParquetSchemas.SortOrder sortOrder, long predicateId,
+			ParquetSchemas.SortOrder sortOrder,
 			int rowGroupSize, int pageSize) {
 		try {
 			ByteArrayOutputFile outputFile = new ByteArrayOutputFile();
@@ -152,12 +136,10 @@ public final class ParquetFileBuilder {
 	private static class QuadEntryWriteSupport extends WriteSupport<QuadEntry> {
 
 		private final MessageType schema;
-		private final boolean hasPredicateColumn;
 		private RecordConsumer recordConsumer;
 
 		QuadEntryWriteSupport(MessageType schema) {
 			this.schema = schema;
-			this.hasPredicateColumn = schema.containsField(ParquetSchemas.COL_PREDICATE);
 		}
 
 		@Override
@@ -187,13 +169,11 @@ public final class ParquetFileBuilder {
 			recordConsumer.endField(ParquetSchemas.COL_SUBJECT, fieldIndex);
 			fieldIndex++;
 
-			// predicate (only for unpartitioned schema)
-			if (hasPredicateColumn) {
-				recordConsumer.startField(ParquetSchemas.COL_PREDICATE, fieldIndex);
-				recordConsumer.addLong(entry.predicate);
-				recordConsumer.endField(ParquetSchemas.COL_PREDICATE, fieldIndex);
-				fieldIndex++;
-			}
+			// predicate
+			recordConsumer.startField(ParquetSchemas.COL_PREDICATE, fieldIndex);
+			recordConsumer.addLong(entry.predicate);
+			recordConsumer.endField(ParquetSchemas.COL_PREDICATE, fieldIndex);
+			fieldIndex++;
 
 			// object
 			recordConsumer.startField(ParquetSchemas.COL_OBJECT, fieldIndex);

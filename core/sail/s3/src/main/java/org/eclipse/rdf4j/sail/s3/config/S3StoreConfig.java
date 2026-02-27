@@ -87,7 +87,7 @@ public class S3StoreConfig extends BaseSailConfig {
 
 	private String s3SecretKey;
 
-	private boolean s3ForcePathStyle = true;
+	private Boolean s3ForcePathStyle;
 
 	/*--------------*
 	 * Constructors *
@@ -105,6 +105,31 @@ public class S3StoreConfig extends BaseSailConfig {
 	/*---------*
 	 * Methods *
 	 *---------*/
+
+	/**
+	 * Resolves a configuration value from (in order): environment variable, system property, or null.
+	 *
+	 * <p>
+	 * S3 connection settings are shared at the RDF4J instance level so that multiple S3 SAIL repositories can share the
+	 * same bucket. Each repository differentiates itself via {@code s3Prefix}.
+	 * </p>
+	 *
+	 * <p>
+	 * Environment variables: {@code RDF4J_S3_BUCKET}, {@code RDF4J_S3_ENDPOINT}, {@code RDF4J_S3_REGION},
+	 * {@code RDF4J_S3_ACCESS_KEY}, {@code RDF4J_S3_SECRET_KEY}, {@code RDF4J_S3_FORCE_PATH_STYLE}.
+	 * </p>
+	 */
+	private static String resolveEnv(String envVar, String sysProp) {
+		String val = System.getenv(envVar);
+		if (val != null && !val.isEmpty()) {
+			return val;
+		}
+		val = System.getProperty(sysProp);
+		if (val != null && !val.isEmpty()) {
+			return val;
+		}
+		return null;
+	}
 
 	public String getQuadIndexes() {
 		return quadIndexes != null ? quadIndexes : DEFAULT_QUAD_INDEXES;
@@ -179,7 +204,10 @@ public class S3StoreConfig extends BaseSailConfig {
 	}
 
 	public String getS3Bucket() {
-		return s3Bucket;
+		if (s3Bucket != null) {
+			return s3Bucket;
+		}
+		return resolveEnv("RDF4J_S3_BUCKET", "rdf4j.s3.bucket");
 	}
 
 	public S3StoreConfig setS3Bucket(String s3Bucket) {
@@ -188,7 +216,10 @@ public class S3StoreConfig extends BaseSailConfig {
 	}
 
 	public String getS3Endpoint() {
-		return s3Endpoint;
+		if (s3Endpoint != null) {
+			return s3Endpoint;
+		}
+		return resolveEnv("RDF4J_S3_ENDPOINT", "rdf4j.s3.endpoint");
 	}
 
 	public S3StoreConfig setS3Endpoint(String s3Endpoint) {
@@ -197,7 +228,11 @@ public class S3StoreConfig extends BaseSailConfig {
 	}
 
 	public String getS3Region() {
-		return s3Region != null ? s3Region : "us-east-1";
+		if (s3Region != null) {
+			return s3Region;
+		}
+		String env = resolveEnv("RDF4J_S3_REGION", "rdf4j.s3.region");
+		return env != null ? env : "us-east-1";
 	}
 
 	public S3StoreConfig setS3Region(String s3Region) {
@@ -215,7 +250,10 @@ public class S3StoreConfig extends BaseSailConfig {
 	}
 
 	public String getS3AccessKey() {
-		return s3AccessKey;
+		if (s3AccessKey != null) {
+			return s3AccessKey;
+		}
+		return resolveEnv("RDF4J_S3_ACCESS_KEY", "rdf4j.s3.accessKey");
 	}
 
 	public S3StoreConfig setS3AccessKey(String s3AccessKey) {
@@ -224,7 +262,10 @@ public class S3StoreConfig extends BaseSailConfig {
 	}
 
 	public String getS3SecretKey() {
-		return s3SecretKey;
+		if (s3SecretKey != null) {
+			return s3SecretKey;
+		}
+		return resolveEnv("RDF4J_S3_SECRET_KEY", "rdf4j.s3.secretKey");
 	}
 
 	public S3StoreConfig setS3SecretKey(String s3SecretKey) {
@@ -233,7 +274,11 @@ public class S3StoreConfig extends BaseSailConfig {
 	}
 
 	public boolean isS3ForcePathStyle() {
-		return s3ForcePathStyle;
+		if (s3ForcePathStyle != null) {
+			return s3ForcePathStyle;
+		}
+		String env = resolveEnv("RDF4J_S3_FORCE_PATH_STYLE", "rdf4j.s3.forcePathStyle");
+		return env == null || Boolean.parseBoolean(env);
 	}
 
 	public S3StoreConfig setS3ForcePathStyle(boolean s3ForcePathStyle) {
@@ -242,7 +287,7 @@ public class S3StoreConfig extends BaseSailConfig {
 	}
 
 	public boolean isS3Configured() {
-		return s3Bucket != null && !s3Bucket.isEmpty();
+		return getS3Bucket() != null && !getS3Bucket().isEmpty();
 	}
 
 	@Override
@@ -293,7 +338,9 @@ public class S3StoreConfig extends BaseSailConfig {
 		if (s3SecretKey != null) {
 			m.add(implNode, S3StoreSchema.S3_SECRET_KEY, vf.createLiteral(s3SecretKey));
 		}
-		m.add(implNode, S3StoreSchema.S3_FORCE_PATH_STYLE, vf.createLiteral(s3ForcePathStyle));
+		if (s3ForcePathStyle != null) {
+			m.add(implNode, S3StoreSchema.S3_FORCE_PATH_STYLE, vf.createLiteral(s3ForcePathStyle));
+		}
 		return implNode;
 	}
 

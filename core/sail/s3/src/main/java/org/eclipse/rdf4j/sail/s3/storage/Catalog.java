@@ -14,10 +14,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -26,11 +23,11 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * JSON-serialized catalog tracking Parquet files with per-file statistics and predicate partitioning.
+ * JSON-serialized catalog tracking Parquet files with per-file statistics.
  *
  * <p>
- * Evolved from {@link Manifest} to support the Parquet-based storage format with predicate partitioning. Each predicate
- * ID maps to a list of {@link ParquetFileInfo} entries describing the Parquet files for that partition.
+ * All quads are stored in flat files (no predicate partitioning). Each file has statistics including min/max for all
+ * four quad components (subject, predicate, object, context).
  *
  * <h3>S3 Layout</h3>
  *
@@ -43,15 +40,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  *
  * <pre>
  * {
- *   "version": 2,
+ *   "version": 3,
  *   "epoch": 42,
  *   "nextValueId": 12345,
- *   "predicatePartitions": {
- *     "7": [ { file info... } ],
- *     "42": [ { file info... } ]
- *   },
- *   "predicateLabels": { "7": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" },
- *   "unpartitionedFiles": []
+ *   "files": [ { file info... } ]
  * }
  * </pre>
  */
@@ -59,7 +51,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class Catalog {
 
 	@JsonProperty("version")
-	private int version = 2;
+	private int version = 3;
 
 	@JsonProperty("epoch")
 	private long epoch;
@@ -67,14 +59,8 @@ public class Catalog {
 	@JsonProperty("nextValueId")
 	private long nextValueId;
 
-	@JsonProperty("predicatePartitions")
-	private Map<String, List<ParquetFileInfo>> predicatePartitions = new LinkedHashMap<>();
-
-	@JsonProperty("predicateLabels")
-	private Map<String, String> predicateLabels = new LinkedHashMap<>();
-
-	@JsonProperty("unpartitionedFiles")
-	private List<ParquetFileInfo> unpartitionedFiles = new ArrayList<>();
+	@JsonProperty("files")
+	private List<ParquetFileInfo> files = new ArrayList<>();
 
 	public Catalog() {
 	}
@@ -103,28 +89,12 @@ public class Catalog {
 		this.nextValueId = nextValueId;
 	}
 
-	public Map<String, List<ParquetFileInfo>> getPredicatePartitions() {
-		return predicatePartitions;
+	public List<ParquetFileInfo> getFiles() {
+		return files;
 	}
 
-	public void setPredicatePartitions(Map<String, List<ParquetFileInfo>> predicatePartitions) {
-		this.predicatePartitions = predicatePartitions;
-	}
-
-	public Map<String, String> getPredicateLabels() {
-		return predicateLabels;
-	}
-
-	public void setPredicateLabels(Map<String, String> predicateLabels) {
-		this.predicateLabels = predicateLabels;
-	}
-
-	public List<ParquetFileInfo> getUnpartitionedFiles() {
-		return unpartitionedFiles;
-	}
-
-	public void setUnpartitionedFiles(List<ParquetFileInfo> unpartitionedFiles) {
-		this.unpartitionedFiles = unpartitionedFiles;
+	public void setFiles(List<ParquetFileInfo> files) {
+		this.files = files;
 	}
 
 	/**
@@ -179,53 +149,38 @@ public class Catalog {
 	}
 
 	/**
-	 * Returns the set of predicate IDs that have partitioned files.
+	 * Adds a Parquet file to the catalog.
 	 *
-	 * @return set of predicate IDs parsed from the partition keys
+	 * @param info the file info to add
 	 */
-	public Set<Long> getPredicateIds() {
-		return predicatePartitions.keySet()
-				.stream()
-				.map(Long::parseLong)
-				.collect(Collectors.toSet());
+	public void addFile(ParquetFileInfo info) {
+		files.add(info);
 	}
 
 	/**
-	 * Returns the list of Parquet files for the given predicate ID.
+	 * Removes Parquet files by their S3 keys.
 	 *
-	 * @param predicateId the predicate value ID
-	 * @return the list of file info entries, or an empty list if no files exist for this predicate
+	 * @param s3Keys the set of S3 keys to remove
 	 */
-	public List<ParquetFileInfo> getFilesForPredicate(long predicateId) {
-		return predicatePartitions.getOrDefault(String.valueOf(predicateId), Collections.emptyList());
+	public void removeFiles(Set<String> s3Keys) {
+		files.removeIf(f -> s3Keys.contains(f.getS3Key()));
 	}
 
 	/**
-	 * Adds a Parquet file to the partition for the given predicate.
+	 * Returns all files for the given sort order.
 	 *
-	 * @param predicateId the predicate value ID
-	 * @param info        the file info to add
+	 * @param sortOrder the sort order suffix (e.g. "spoc", "opsc", "cspo")
+	 * @return list of files matching the sort order
 	 */
-	public void addFile(long predicateId, ParquetFileInfo info) {
-		predicatePartitions.computeIfAbsent(String.valueOf(predicateId), k -> new ArrayList<>()).add(info);
-	}
-
-	/**
-	 * Removes Parquet files from the partition for the given predicate by their S3 keys.
-	 *
-	 * @param predicateId the predicate value ID
-	 * @param s3Keys      the set of S3 keys to remove
-	 */
-	public void removeFiles(long predicateId, Set<String> s3Keys) {
-		List<ParquetFileInfo> files = predicatePartitions.get(String.valueOf(predicateId));
-		if (files != null) {
-			files.removeIf(f -> s3Keys.contains(f.getS3Key()));
-		}
+	public List<ParquetFileInfo> getFilesForSortOrder(String sortOrder) {
+		return files.stream()
+				.filter(f -> sortOrder.equals(f.getSortOrder()))
+				.collect(Collectors.toList());
 	}
 
 	/**
 	 * Metadata about a single Parquet file in the catalog, including its location, sort order, size, and min/max
-	 * statistics for subject, object, and context columns.
+	 * statistics for subject, predicate, object, and context columns.
 	 */
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	public static class ParquetFileInfo {
@@ -254,6 +209,12 @@ public class Catalog {
 		@JsonProperty("maxSubject")
 		private long maxSubject;
 
+		@JsonProperty("minPredicate")
+		private long minPredicate;
+
+		@JsonProperty("maxPredicate")
+		private long maxPredicate;
+
 		@JsonProperty("minObject")
 		private long minObject;
 
@@ -272,6 +233,7 @@ public class Catalog {
 		public ParquetFileInfo(String s3Key, int level, String sortOrder, long rowCount,
 				long epoch, long sizeBytes,
 				long minSubject, long maxSubject,
+				long minPredicate, long maxPredicate,
 				long minObject, long maxObject,
 				long minContext, long maxContext) {
 			this.s3Key = s3Key;
@@ -282,6 +244,8 @@ public class Catalog {
 			this.sizeBytes = sizeBytes;
 			this.minSubject = minSubject;
 			this.maxSubject = maxSubject;
+			this.minPredicate = minPredicate;
+			this.maxPredicate = maxPredicate;
 			this.minObject = minObject;
 			this.maxObject = maxObject;
 			this.minContext = minContext;
@@ -350,6 +314,22 @@ public class Catalog {
 
 		public void setMaxSubject(long maxSubject) {
 			this.maxSubject = maxSubject;
+		}
+
+		public long getMinPredicate() {
+			return minPredicate;
+		}
+
+		public void setMinPredicate(long minPredicate) {
+			this.minPredicate = minPredicate;
+		}
+
+		public long getMaxPredicate() {
+			return maxPredicate;
+		}
+
+		public void setMaxPredicate(long maxPredicate) {
+			this.maxPredicate = maxPredicate;
 		}
 
 		public long getMinObject() {

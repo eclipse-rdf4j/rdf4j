@@ -74,6 +74,7 @@
 								</option>
 								<option value="federate">Federation</option>
 								<option value="lmdb">LMDB Store</option>
+								<option value="s3">S3 Store</option>
 							</select>
 						</td>
 						<td></td>

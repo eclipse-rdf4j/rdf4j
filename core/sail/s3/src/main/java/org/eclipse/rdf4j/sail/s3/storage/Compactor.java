@@ -21,8 +21,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Performs merge compaction on Parquet files within a predicate partition. Merges files at a source level into one set
- * of files at the target level, per sort order.
+ * Performs merge compaction on Parquet files. Merges files at a source level into one set of files at the target level,
+ * per sort order.
  *
  * <ul>
  * <li>L0→L1: merge all L0 files per sort order, tombstones preserved</li>
@@ -32,7 +32,7 @@ import org.slf4j.LoggerFactory;
 public class Compactor {
 
 	private static final Logger logger = LoggerFactory.getLogger(Compactor.class);
-	private static final String[] SORT_ORDERS = { "soc", "osc", "cso" };
+	private static final String[] SORT_ORDERS = { "spoc", "opsc", "cspo" };
 
 	private final ObjectStore objectStore;
 	private final TieredCache cache;
@@ -49,15 +49,14 @@ public class Compactor {
 	/**
 	 * Compacts files at the source level into a single set of files at the target level.
 	 *
-	 * @param predicateId the predicate partition being compacted
-	 * @param sourceFiles all files at the source level in this partition
+	 * @param sourceFiles all files at the source level
 	 * @param sourceLevel the source level (0 or 1)
 	 * @param targetLevel the target level (1 or 2)
 	 * @param epoch       the epoch for the new compacted files
 	 * @param catalog     the catalog to update
 	 * @return result containing new files created and old files removed
 	 */
-	public CompactionResult compact(long predicateId, List<Catalog.ParquetFileInfo> sourceFiles,
+	public CompactionResult compact(List<Catalog.ParquetFileInfo> sourceFiles,
 			int sourceLevel, int targetLevel, long epoch, Catalog catalog) {
 
 		boolean suppressTombstones = (targetLevel == 2);
@@ -65,6 +64,8 @@ public class Compactor {
 		Set<String> oldKeys = new HashSet<>();
 
 		for (String sortOrder : SORT_ORDERS) {
+			QuadIndex quadIndex = new QuadIndex(sortOrder);
+
 			// Collect source files for this sort order, ordered newest-first (highest epoch first)
 			List<Catalog.ParquetFileInfo> sortOrderFiles = sourceFiles.stream()
 					.filter(f -> sortOrder.equals(f.getSortOrder()))
@@ -88,7 +89,7 @@ public class Compactor {
 					logger.warn("Missing Parquet file during compaction: {}", fileInfo.getS3Key());
 					continue;
 				}
-				sources.add(new ParquetQuadSource(fileData, sortOrder));
+				sources.add(new ParquetQuadSource(fileData, quadIndex));
 			}
 
 			if (sources.isEmpty()) {
@@ -96,38 +97,35 @@ public class Compactor {
 			}
 
 			// Merge and collect entries
-			List<MemTable.QuadEntry> merged = mergeEntries(sources, suppressTombstones);
+			List<ParquetFileBuilder.QuadEntry> merged = mergeEntries(sources, quadIndex, suppressTombstones);
 
 			if (merged.isEmpty()) {
 				continue;
 			}
 
-			// Convert to ParquetFileBuilder.QuadEntry
-			List<ParquetFileBuilder.QuadEntry> parquetEntries = new ArrayList<>();
-			for (MemTable.QuadEntry e : merged) {
-				parquetEntries.add(new ParquetFileBuilder.QuadEntry(e.subject, e.object, e.context, e.flag));
-			}
-
 			// Write merged Parquet file
-			ParquetSchemas.SortOrder parsedSortOrder = ParquetSchemas.SortOrder.valueOf(sortOrder.toUpperCase());
-			String s3Key = "data/predicates/" + predicateId + "/L" + targetLevel + "-"
+			ParquetSchemas.SortOrder parsedSortOrder = ParquetSchemas.SortOrder.fromSuffix(sortOrder);
+			String s3Key = "data/L" + targetLevel + "-"
 					+ String.format("%05d", epoch) + "-" + sortOrder + ".parquet";
 
-			byte[] parquetData = ParquetFileBuilder.build(parquetEntries, ParquetSchemas.PARTITIONED_SCHEMA,
-					parsedSortOrder, predicateId, rowGroupSize, pageSize);
+			byte[] parquetData = ParquetFileBuilder.build(merged, ParquetSchemas.QUAD_SCHEMA,
+					parsedSortOrder, rowGroupSize, pageSize);
 
 			objectStore.put(s3Key, parquetData);
 			if (cache != null) {
 				cache.writeThrough(s3Key, parquetData);
 			}
 
-			// Compute stats from sorted entries
+			// Compute stats from merged entries
 			long minSubject = Long.MAX_VALUE, maxSubject = Long.MIN_VALUE;
+			long minPredicate = Long.MAX_VALUE, maxPredicate = Long.MIN_VALUE;
 			long minObject = Long.MAX_VALUE, maxObject = Long.MIN_VALUE;
 			long minContext = Long.MAX_VALUE, maxContext = Long.MIN_VALUE;
-			for (MemTable.QuadEntry e : merged) {
+			for (ParquetFileBuilder.QuadEntry e : merged) {
 				minSubject = Math.min(minSubject, e.subject);
 				maxSubject = Math.max(maxSubject, e.subject);
+				minPredicate = Math.min(minPredicate, e.predicate);
+				maxPredicate = Math.max(maxPredicate, e.predicate);
 				minObject = Math.min(minObject, e.object);
 				maxObject = Math.max(maxObject, e.object);
 				minContext = Math.min(minContext, e.context);
@@ -136,13 +134,14 @@ public class Compactor {
 
 			newFiles.add(new Catalog.ParquetFileInfo(s3Key, targetLevel, sortOrder, merged.size(),
 					epoch, parquetData.length,
-					minSubject, maxSubject, minObject, maxObject, minContext, maxContext));
+					minSubject, maxSubject, minPredicate, maxPredicate,
+					minObject, maxObject, minContext, maxContext));
 		}
 
 		// Update catalog: remove old files, add new ones
-		catalog.removeFiles(predicateId, oldKeys);
+		catalog.removeFiles(oldKeys);
 		for (Catalog.ParquetFileInfo newFile : newFiles) {
-			catalog.addFile(predicateId, newFile);
+			catalog.addFile(newFile);
 		}
 
 		// Delete old S3 files and invalidate cache
@@ -153,23 +152,18 @@ public class Compactor {
 			}
 		}
 
-		logger.info("Compacted predicate {} L{}→L{}: {} files merged into {} files",
-				predicateId, sourceLevel, targetLevel, oldKeys.size(), newFiles.size());
+		logger.info("Compacted L{}→L{}: {} files merged into {} files",
+				sourceLevel, targetLevel, oldKeys.size(), newFiles.size());
 
 		return new CompactionResult(newFiles, oldKeys);
 	}
 
-	private List<MemTable.QuadEntry> mergeEntries(List<RawEntrySource> sources, boolean suppressTombstones) {
-		List<MemTable.QuadEntry> result = new ArrayList<>();
+	private List<ParquetFileBuilder.QuadEntry> mergeEntries(List<RawEntrySource> sources, QuadIndex quadIndex,
+			boolean suppressTombstones) {
+		List<ParquetFileBuilder.QuadEntry> result = new ArrayList<>();
 
-		// Simple K-way merge: use a priority queue approach
-		// Each source is already sorted. We merge them, dedup by key, newest wins.
-		// For simplicity, read all into one list then dedup.
-		// Since compaction is a background operation, this is acceptable.
-
-		// Use ParquetQuadSource entries directly
 		// Sources are ordered newest-first, so for dedup, first occurrence wins
-		java.util.TreeMap<CompactKey, MemTable.QuadEntry> deduped = new java.util.TreeMap<>();
+		java.util.TreeMap<CompactKey, ParquetFileBuilder.QuadEntry> deduped = new java.util.TreeMap<>();
 		for (RawEntrySource source : sources) {
 			while (source.hasNext()) {
 				byte[] key = source.peekKey();
@@ -177,14 +171,13 @@ public class Compactor {
 				// Only insert if not already present (first = newest wins)
 				CompactKey ck = new CompactKey(key);
 				if (!deduped.containsKey(ck)) {
-					// Decode the key to get quad values
-					// The key format from ParquetQuadSource encodes (subject, object, context) as varints
-					java.nio.ByteBuffer bb = java.nio.ByteBuffer.wrap(key);
-					long v1 = Varint.readUnsigned(bb);
-					long v2 = Varint.readUnsigned(bb);
-					long v3 = Varint.readUnsigned(bb);
+					// Decode 4-varint key to quad values
+					long[] quad = new long[4];
+					quadIndex.keyToQuad(key, quad);
 					if (!suppressTombstones || flag != MemTable.FLAG_TOMBSTONE) {
-						deduped.put(ck, new MemTable.QuadEntry(v1, v2, v3, flag));
+						deduped.put(ck, new ParquetFileBuilder.QuadEntry(
+								quad[QuadIndex.SUBJ_IDX], quad[QuadIndex.PRED_IDX],
+								quad[QuadIndex.OBJ_IDX], quad[QuadIndex.CONTEXT_IDX], flag));
 					}
 				}
 				source.advance();
@@ -192,7 +185,7 @@ public class Compactor {
 		}
 
 		if (suppressTombstones) {
-			for (MemTable.QuadEntry e : deduped.values()) {
+			for (ParquetFileBuilder.QuadEntry e : deduped.values()) {
 				if (e.flag != MemTable.FLAG_TOMBSTONE) {
 					result.add(e);
 				}

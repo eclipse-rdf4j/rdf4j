@@ -1,0 +1,25 @@
+#
+# Configuration template for an S3Store
+#
+# S3 connection settings (bucket, endpoint, region, credentials) are configured
+# at the RDF4J instance level via environment variables or system properties:
+#
+#   RDF4J_S3_BUCKET, RDF4J_S3_ENDPOINT, RDF4J_S3_REGION,
+#   RDF4J_S3_ACCESS_KEY, RDF4J_S3_SECRET_KEY, RDF4J_S3_FORCE_PATH_STYLE
+#
+# Each repository uses s3Prefix to partition its data within the shared bucket.
+#
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix config: <tag:rdf4j.org,2023:config/>.
+@prefix s3: <http://rdf4j.org/config/sail/s3#>.
+
+[] a config:Repository ;
+   config:rep.id "{%Repository ID|s3%}" ;
+   rdfs:label "{%Repository title|S3 Store%}" ;
+   config:rep.impl [
+      config:rep.type "openrdf:SailRepository" ;
+      config:sail.impl [
+         config:sail.type "rdf4j:S3Store" ;
+         s3:s3Prefix "{%S3 Prefix|%}"
+      ]
+   ].

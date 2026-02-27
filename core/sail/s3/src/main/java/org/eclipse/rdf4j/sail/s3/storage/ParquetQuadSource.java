@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.sail.s3.storage;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -29,11 +28,11 @@ import org.apache.parquet.schema.MessageType;
 
 /**
  * A {@link RawEntrySource} that reads entries from an in-memory Parquet file. Entries are sorted according to the
- * file's sort order (soc, osc, cso) and emitted as varint-encoded byte[] keys with 1-byte flag values.
+ * file's sort order and emitted as 4-varint-encoded byte[] keys with 1-byte flag values.
  *
  * <p>
- * The key format encodes (value1, value2, value3) as varints in the sort order of the file. For example, an "soc" file
- * produces keys as varint(subject)||varint(object)||varint(context).
+ * The key format encodes all four quad components (s, p, o, c) as varints in the order defined by the
+ * {@link QuadIndex}.
  * </p>
  */
 public class ParquetQuadSource implements RawEntrySource {
@@ -45,10 +44,10 @@ public class ParquetQuadSource implements RawEntrySource {
 	 * Creates a source from Parquet file bytes.
 	 *
 	 * @param parquetData the complete Parquet file as byte[]
-	 * @param sortOrder   the sort order of the file ("soc", "osc", or "cso")
+	 * @param quadIndex   the quad index defining the key encoding order
 	 */
-	public ParquetQuadSource(byte[] parquetData, String sortOrder) {
-		this.entries = readAllEntries(parquetData, sortOrder);
+	public ParquetQuadSource(byte[] parquetData, QuadIndex quadIndex) {
+		this.entries = readAllEntries(parquetData, quadIndex, -1, -1, -1, -1);
 		this.pos = 0;
 	}
 
@@ -56,27 +55,15 @@ public class ParquetQuadSource implements RawEntrySource {
 	 * Creates a source from Parquet file bytes with filtering.
 	 *
 	 * @param parquetData the complete Parquet file as byte[]
-	 * @param sortOrder   the sort order of the file
+	 * @param quadIndex   the quad index defining the key encoding order
 	 * @param subject     subject filter, or -1 for wildcard
+	 * @param predicate   predicate filter, or -1 for wildcard
 	 * @param object      object filter, or -1 for wildcard
 	 * @param context     context filter, or -1 for wildcard
 	 */
-	public ParquetQuadSource(byte[] parquetData, String sortOrder, long subject, long object, long context) {
-		List<Entry> all = readAllEntries(parquetData, sortOrder);
-		if (subject >= 0 || object >= 0 || context >= 0) {
-			List<Entry> filtered = new ArrayList<>();
-			for (Entry e : all) {
-				if ((subject >= 0 && e.subject != subject)
-						|| (object >= 0 && e.object != object)
-						|| (context >= 0 && e.context != context)) {
-					continue;
-				}
-				filtered.add(e);
-			}
-			this.entries = filtered;
-		} else {
-			this.entries = all;
-		}
+	public ParquetQuadSource(byte[] parquetData, QuadIndex quadIndex,
+			long subject, long predicate, long object, long context) {
+		this.entries = readAllEntries(parquetData, quadIndex, subject, predicate, object, context);
 		this.pos = 0;
 	}
 
@@ -100,7 +87,8 @@ public class ParquetQuadSource implements RawEntrySource {
 		pos++;
 	}
 
-	private static List<Entry> readAllEntries(byte[] parquetData, String sortOrder) {
+	private static List<Entry> readAllEntries(byte[] parquetData, QuadIndex quadIndex,
+			long filterS, long filterP, long filterO, long filterC) {
 		List<Entry> result = new ArrayList<>();
 		ByteArrayInputFile inputFile = new ByteArrayInputFile(parquetData);
 
@@ -120,12 +108,21 @@ public class ParquetQuadSource implements RawEntrySource {
 				for (long i = 0; i < rows; i++) {
 					Group group = recordReader.read();
 					long subject = group.getLong(ParquetSchemas.COL_SUBJECT, 0);
+					long predicate = group.getLong(ParquetSchemas.COL_PREDICATE, 0);
 					long object = group.getLong(ParquetSchemas.COL_OBJECT, 0);
 					long context = group.getLong(ParquetSchemas.COL_CONTEXT, 0);
 					int flag = group.getInteger(ParquetSchemas.COL_FLAG, 0);
 
-					byte[] key = encodeKey(sortOrder, subject, object, context);
-					result.add(new Entry(key, (byte) flag, subject, object, context));
+					// Apply filters
+					if ((filterS >= 0 && subject != filterS)
+							|| (filterP >= 0 && predicate != filterP)
+							|| (filterO >= 0 && object != filterO)
+							|| (filterC >= 0 && context != filterC)) {
+						continue;
+					}
+
+					byte[] key = quadIndex.toKeyBytes(subject, predicate, object, context);
+					result.add(new Entry(key, (byte) flag));
 				}
 			}
 		} catch (IOException e) {
@@ -135,51 +132,13 @@ public class ParquetQuadSource implements RawEntrySource {
 		return result;
 	}
 
-	/**
-	 * Encodes a key in the given sort order as varints.
-	 */
-	static byte[] encodeKey(String sortOrder, long subject, long object, long context) {
-		long v1, v2, v3;
-		switch (sortOrder) {
-		case "osc":
-			v1 = object;
-			v2 = subject;
-			v3 = context;
-			break;
-		case "cso":
-			v1 = context;
-			v2 = subject;
-			v3 = object;
-			break;
-		case "soc":
-		default:
-			v1 = subject;
-			v2 = object;
-			v3 = context;
-			break;
-		}
-
-		int len = Varint.calcLengthUnsigned(v1) + Varint.calcLengthUnsigned(v2) + Varint.calcLengthUnsigned(v3);
-		ByteBuffer bb = ByteBuffer.allocate(len);
-		Varint.writeUnsigned(bb, v1);
-		Varint.writeUnsigned(bb, v2);
-		Varint.writeUnsigned(bb, v3);
-		return bb.array();
-	}
-
 	private static class Entry {
 		final byte[] key;
 		final byte flag;
-		final long subject;
-		final long object;
-		final long context;
 
-		Entry(byte[] key, byte flag, long subject, long object, long context) {
+		Entry(byte[] key, byte flag) {
 			this.key = key;
 			this.flag = flag;
-			this.subject = subject;
-			this.object = object;
-			this.context = context;
 		}
 	}
 }

@@ -27,10 +27,10 @@ import java.util.StringTokenizer;
  */
 public class QuadIndex {
 
-	static final int SUBJ_IDX = 0;
-	static final int PRED_IDX = 1;
-	static final int OBJ_IDX = 2;
-	static final int CONTEXT_IDX = 3;
+	public static final int SUBJ_IDX = 0;
+	public static final int PRED_IDX = 1;
+	public static final int OBJ_IDX = 2;
+	public static final int CONTEXT_IDX = 3;
 
 	static final int MAX_KEY_LENGTH = 4 * 9; // 4 varints, max 9 bytes each
 

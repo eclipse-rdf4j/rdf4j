@@ -13,6 +13,9 @@ package org.eclipse.rdf4j.sail.s3;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -179,6 +182,159 @@ class S3PersistenceTest {
 			dataset.close();
 			sailStore.close();
 		}
+	}
+
+	@Test
+	void multiplePredicates_allQueriesWork() throws Exception {
+		FileSystemObjectStore store = new FileSystemObjectStore(tempDir);
+		S3StoreConfig config = new S3StoreConfig();
+
+		IRI s1 = VF.createIRI("http://example.org/s1");
+		IRI s2 = VF.createIRI("http://example.org/s2");
+		IRI p1 = VF.createIRI("http://example.org/name");
+		IRI p2 = VF.createIRI("http://example.org/age");
+		IRI o1 = VF.createIRI("http://example.org/Alice");
+		IRI o2 = VF.createIRI("http://example.org/30");
+
+		// Write data with multiple predicates, flush, restart
+		{
+			S3SailStore sailStore = new S3SailStore(config, store);
+			var source = sailStore.getExplicitSailSource();
+			var sink = source.sink(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+
+			sink.approve(s1, p1, o1, null);
+			sink.approve(s1, p2, o2, null);
+			sink.approve(s2, p1, o2, null);
+			sink.flush();
+			sailStore.close();
+		}
+
+		// Restart and verify queries
+		{
+			S3SailStore sailStore = new S3SailStore(config, store);
+			var source = sailStore.getExplicitSailSource();
+			var dataset = source.dataset(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+
+			// All statements
+			List<Statement> all = drain(dataset.getStatements(null, null, null));
+			assertEquals(3, all.size());
+
+			// By predicate (p1)
+			List<Statement> byP1 = drain(dataset.getStatements(null, p1, null));
+			assertEquals(2, byP1.size());
+			for (Statement st : byP1) {
+				assertEquals(p1.stringValue(), st.getPredicate().stringValue());
+			}
+
+			// By predicate (p2)
+			List<Statement> byP2 = drain(dataset.getStatements(null, p2, null));
+			assertEquals(1, byP2.size());
+			assertEquals(p2.stringValue(), byP2.get(0).getPredicate().stringValue());
+
+			// By subject
+			List<Statement> byS1 = drain(dataset.getStatements(s1, null, null));
+			assertEquals(2, byS1.size());
+
+			// By subject + predicate
+			List<Statement> byS1P1 = drain(dataset.getStatements(s1, p1, null));
+			assertEquals(1, byS1P1.size());
+
+			// By object
+			List<Statement> byO2 = drain(dataset.getStatements(null, null, o2));
+			assertEquals(2, byO2.size());
+
+			dataset.close();
+			sailStore.close();
+		}
+	}
+
+	@Test
+	void fileLayout_flatDataDirectory() throws Exception {
+		FileSystemObjectStore store = new FileSystemObjectStore(tempDir);
+		S3StoreConfig config = new S3StoreConfig();
+
+		IRI s = VF.createIRI("http://example.org/s1");
+		IRI p = VF.createIRI("http://example.org/p1");
+		IRI o = VF.createIRI("http://example.org/o1");
+
+		{
+			S3SailStore sailStore = new S3SailStore(config, store);
+			var source = sailStore.getExplicitSailSource();
+			var sink = source.sink(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			sink.approve(s, p, o, null);
+			sink.flush();
+			sailStore.close();
+		}
+
+		// Verify flat file paths (no predicates/ directory)
+		List<String> dataFiles = store.list("data/");
+		assertFalse(dataFiles.isEmpty(), "Should have data files");
+		for (String key : dataFiles) {
+			assertFalse(key.contains("predicates/"), "Should not have predicate partitions: " + key);
+			assertTrue(key.startsWith("data/L0-"), "Should start with data/L0-: " + key);
+			assertTrue(key.endsWith(".parquet"), "Should end with .parquet: " + key);
+		}
+
+		// Should have 3 files (one per sort order)
+		assertEquals(3, dataFiles.size(), "Should have 3 files (spoc, opsc, cspo)");
+
+		// Check sort orders are present
+		List<String> suffixes = dataFiles.stream()
+				.map(k -> k.substring(k.lastIndexOf('-') + 1, k.lastIndexOf('.')))
+				.collect(Collectors.toList());
+		assertTrue(suffixes.contains("spoc"), "Missing spoc file");
+		assertTrue(suffixes.contains("opsc"), "Missing opsc file");
+		assertTrue(suffixes.contains("cspo"), "Missing cspo file");
+	}
+
+	@Test
+	void contextQuery_afterRestart() throws Exception {
+		FileSystemObjectStore store = new FileSystemObjectStore(tempDir);
+		S3StoreConfig config = new S3StoreConfig();
+
+		IRI s = VF.createIRI("http://example.org/s1");
+		IRI p = VF.createIRI("http://example.org/p1");
+		IRI o = VF.createIRI("http://example.org/o1");
+		IRI g1 = VF.createIRI("http://example.org/graph1");
+		IRI g2 = VF.createIRI("http://example.org/graph2");
+
+		{
+			S3SailStore sailStore = new S3SailStore(config, store);
+			var source = sailStore.getExplicitSailSource();
+			var sink = source.sink(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			sink.approve(s, p, o, g1);
+			sink.approve(s, p, o, g2);
+			sink.flush();
+			sailStore.close();
+		}
+
+		{
+			S3SailStore sailStore = new S3SailStore(config, store);
+			var source = sailStore.getExplicitSailSource();
+			var dataset = source.dataset(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+
+			// Query by context g1
+			List<Statement> byG1 = drain(
+					dataset.getStatements(null, null, null, new org.eclipse.rdf4j.model.Resource[] { g1 }));
+			assertEquals(1, byG1.size());
+			assertEquals(g1.stringValue(), byG1.get(0).getContext().stringValue());
+
+			// Query all
+			List<Statement> all = drain(dataset.getStatements(null, null, null));
+			assertEquals(2, all.size());
+
+			dataset.close();
+			sailStore.close();
+		}
+	}
+
+	private List<Statement> drain(CloseableIteration<? extends Statement> iter) {
+		List<Statement> result = new ArrayList<>();
+		while (iter.hasNext()) {
+			result.add(iter.next());
+		}
+		iter.close();
+		return result;
 	}
 
 	@Test

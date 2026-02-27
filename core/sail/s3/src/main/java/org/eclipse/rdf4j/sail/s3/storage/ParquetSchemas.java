@@ -18,13 +18,8 @@ import org.apache.parquet.schema.Types;
  * Parquet schema definitions for quad storage.
  *
  * <p>
- * Two schemas are provided:
- * <ul>
- * <li>{@link #PARTITIONED_SCHEMA} - for files within {@code predicates/{id}/} directories, where the predicate is
- * implicit in the partition path.</li>
- * <li>{@link #UNPARTITIONED_SCHEMA} - for files in {@code _unpartitioned/}, which include an explicit predicate
- * column.</li>
- * </ul>
+ * All files use {@link #QUAD_SCHEMA} with 5 columns (subject, predicate, object, context, flag). Three sort orders
+ * determine the key encoding: SPOC (subject-leading), OPSC (object-leading), and CSPO (context-leading).
  */
 public final class ParquetSchemas {
 
@@ -44,25 +39,9 @@ public final class ParquetSchemas {
 	public static final String COL_FLAG = "flag";
 
 	/**
-	 * Schema for partitioned Parquet files stored under {@code predicates/{id}/}. The predicate is implicit in the
-	 * directory path and not stored as a column.
+	 * Schema for all Parquet files. Includes all 5 columns: subject, predicate, object, context, flag.
 	 */
-	public static final MessageType PARTITIONED_SCHEMA = Types.buildMessage()
-			.required(PrimitiveTypeName.INT64)
-			.named(COL_SUBJECT)
-			.required(PrimitiveTypeName.INT64)
-			.named(COL_OBJECT)
-			.required(PrimitiveTypeName.INT64)
-			.named(COL_CONTEXT)
-			.required(PrimitiveTypeName.INT32)
-			.named(COL_FLAG)
-			.named("quad_partitioned");
-
-	/**
-	 * Schema for unpartitioned Parquet files stored under {@code _unpartitioned/}. Includes an explicit predicate
-	 * column.
-	 */
-	public static final MessageType UNPARTITIONED_SCHEMA = Types.buildMessage()
+	public static final MessageType QUAD_SCHEMA = Types.buildMessage()
 			.required(PrimitiveTypeName.INT64)
 			.named(COL_SUBJECT)
 			.required(PrimitiveTypeName.INT64)
@@ -73,20 +52,18 @@ public final class ParquetSchemas {
 			.named(COL_CONTEXT)
 			.required(PrimitiveTypeName.INT32)
 			.named(COL_FLAG)
-			.named("quad_unpartitioned");
+			.named("quad");
 
 	/**
 	 * Sort orders for quad entries within a Parquet file.
 	 */
 	public enum SortOrder {
-		/** Subject-Object-Context ordering (partitioned). */
-		SOC("soc"),
-		/** Object-Subject-Context ordering (partitioned). */
-		OSC("osc"),
-		/** Context-Subject-Object ordering (partitioned). */
-		CSO("cso"),
-		/** Subject-Predicate-Object-Context ordering (unpartitioned). */
-		SPOC("spoc");
+		/** Subject-Predicate-Object-Context ordering. */
+		SPOC("spoc"),
+		/** Object-Predicate-Subject-Context ordering. */
+		OPSC("opsc"),
+		/** Context-Subject-Predicate-Object ordering. */
+		CSPO("cspo");
 
 		private final String suffix;
 
@@ -106,7 +83,7 @@ public final class ParquetSchemas {
 		/**
 		 * Returns the SortOrder for the given suffix string.
 		 *
-		 * @param suffix the suffix (e.g. "soc", "osc", "cso", "spoc")
+		 * @param suffix the suffix (e.g. "spoc", "opsc", "cspo")
 		 * @return the matching SortOrder
 		 * @throws IllegalArgumentException if no match found
 		 */
