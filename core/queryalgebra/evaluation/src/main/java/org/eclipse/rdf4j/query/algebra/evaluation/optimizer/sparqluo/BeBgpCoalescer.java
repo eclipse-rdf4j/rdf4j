@@ -117,11 +117,9 @@ public class BeBgpCoalescer {
 	}
 
 	private Set<String> joinKeyVars(StatementPattern pattern) {
-		Set<String> vars = new HashSet<>(4);
+		Set<String> vars = new HashSet<>(2);
 		collectVarName(vars, pattern.getSubjectVar());
-		collectVarName(vars, pattern.getPredicateVar());
 		collectVarName(vars, pattern.getObjectVar());
-		collectVarName(vars, pattern.getContextVar());
 		return vars;
 	}
 

@@ -22,7 +22,31 @@ import org.junit.jupiter.api.Test;
 class BeBgpCoalescerTest {
 
 	@Test
-	void coalescesOnPredicateVar() {
+	void coalescesOnSubjectVar() {
+		BeGroupNode group = new BeGroupNode();
+		StatementPattern first = new StatementPattern(
+				new Var("s"),
+				new Var("p1"),
+				new Var("o1"));
+		StatementPattern second = new StatementPattern(
+				new Var("s"),
+				new Var("p2"),
+				new Var("o2"));
+
+		group.addChild(new BeBgpNode(List.of(first)));
+		group.addChild(new BeBgpNode(List.of(second)));
+
+		new BeBgpCoalescer().coalesce(group);
+
+		assertThat(group.size()).isEqualTo(1);
+		BeNode only = group.getChild(0);
+		assertThat(only).isInstanceOf(BeBgpNode.class);
+		BeBgpNode merged = (BeBgpNode) only;
+		assertThat(merged.getStatementPatterns()).containsExactly(first, second);
+	}
+
+	@Test
+	void doesNotCoalesceOnPredicateVarOnly() {
 		BeGroupNode group = new BeGroupNode();
 		StatementPattern first = new StatementPattern(
 				new Var("s1"),
@@ -38,10 +62,10 @@ class BeBgpCoalescerTest {
 
 		new BeBgpCoalescer().coalesce(group);
 
-		assertThat(group.size()).isEqualTo(1);
-		BeNode only = group.getChild(0);
-		assertThat(only).isInstanceOf(BeBgpNode.class);
-		BeBgpNode merged = (BeBgpNode) only;
-		assertThat(merged.getStatementPatterns()).containsExactly(first, second);
+		assertThat(group.size()).isEqualTo(2);
+		assertThat(group.getChild(0)).isInstanceOf(BeBgpNode.class);
+		assertThat(group.getChild(1)).isInstanceOf(BeBgpNode.class);
+		assertThat(((BeBgpNode) group.getChild(0)).getStatementPatterns()).containsExactly(first);
+		assertThat(((BeBgpNode) group.getChild(1)).getStatementPatterns()).containsExactly(second);
 	}
 }

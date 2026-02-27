@@ -42,6 +42,10 @@ public class BeTreeTransformer {
 	private final BeTreeSerializer serializer = new BeTreeSerializer();
 	private final boolean allowNonImprovingTransforms;
 	private final boolean enableUnionCommonPrefixPullUp;
+	private final boolean enableExtendedHeuristics;
+	private final boolean enableCandidatePruning;
+	private final double candidatePruningFallbackRatio;
+	private final int candidatePruningMaxCandidates;
 	private final boolean debugLogging;
 
 	public BeTreeTransformer(BeCostEstimator costEstimator) {
@@ -58,6 +62,10 @@ public class BeTreeTransformer {
 		this.costEstimator = costEstimator;
 		this.allowNonImprovingTransforms = config.allowNonImprovingTransforms();
 		this.enableUnionCommonPrefixPullUp = config.enableUnionCommonPrefixPullUp();
+		this.enableExtendedHeuristics = config.enableExtendedHeuristics();
+		this.enableCandidatePruning = config.enableCandidatePruning();
+		this.candidatePruningFallbackRatio = config.candidatePruningFallbackRatio();
+		this.candidatePruningMaxCandidates = config.candidatePruningMaxCandidates();
 		this.debugLogging = config.debugLogging();
 	}
 
@@ -82,7 +90,9 @@ public class BeTreeTransformer {
 
 	private void singleLevelTransform(BeGroupNode group) {
 		Set<BeUnionNode> unionsMergedThisPass = Collections.newSetFromMap(new IdentityHashMap<>());
-		applyOptionalJoinLifting(group);
+		if (enableExtendedHeuristics) {
+			applyOptionalJoinLifting(group);
+		}
 		int index = 0;
 		while (index < group.size()) {
 			BeNode node = group.getChild(index);
@@ -172,6 +182,9 @@ public class BeTreeTransformer {
 				continue;
 			}
 			BeOptionalNode optional = (BeOptionalNode) node;
+			if (shouldPreferCandidatePruning(segment, bgpIndex, i, bgp, optional)) {
+				continue;
+			}
 			if (!canInject(bgp, optional)) {
 				continue;
 			}
@@ -190,7 +203,7 @@ public class BeTreeTransformer {
 	}
 
 	private void applyUnionCommonPrefixPullUp(BeGroupNode group, Set<BeUnionNode> unionsMergedThisPass) {
-		if (!enableUnionCommonPrefixPullUp) {
+		if (!enableExtendedHeuristics || !enableUnionCommonPrefixPullUp) {
 			return;
 		}
 		int index = 0;
@@ -248,6 +261,9 @@ public class BeTreeTransformer {
 				continue;
 			}
 			BeUnionNode union = (BeUnionNode) node;
+			if (shouldPreferCandidatePruning(segment, bgpIndex, i, bgp, union)) {
+				continue;
+			}
 			if (!canMerge(bgp, union)) {
 				continue;
 			}
@@ -550,12 +566,48 @@ public class BeTreeTransformer {
 	}
 
 	private List<String> subjectObjectVars(StatementPattern pattern) {
-		List<String> vars = new ArrayList<>(4);
+		List<String> vars = new ArrayList<>(2);
 		collectVar(vars, pattern.getSubjectVar());
-		collectVar(vars, pattern.getPredicateVar());
 		collectVar(vars, pattern.getObjectVar());
-		collectVar(vars, pattern.getContextVar());
 		return vars;
+	}
+
+	private boolean shouldPreferCandidatePruning(Segment segment, int bgpIndex, int targetIndex, BeBgpNode bgp,
+			BeNode target) {
+		if (!enableCandidatePruning) {
+			return false;
+		}
+		if (!isSingleLeadingBgp(segment, bgpIndex, targetIndex)) {
+			return false;
+		}
+		double candidateSize = costEstimator.estimateBgpResultSize(bgp);
+		if (!Double.isFinite(candidateSize) || candidateSize < 0.0) {
+			return false;
+		}
+		double threshold = candidatePruningThreshold(target);
+		if (!Double.isFinite(threshold) || threshold <= 0.0) {
+			return false;
+		}
+		if (debugLogging && LOGGER.isDebugEnabled()) {
+			LOGGER.debug("SparqlUo: candidate-pruning-check source={} target={} candidateSize={} threshold={}",
+					bgp.getType(), target.getType(), candidateSize, threshold);
+		}
+		return candidateSize <= threshold;
+	}
+
+	private boolean isSingleLeadingBgp(Segment segment, int bgpIndex, int targetIndex) {
+		return targetIndex == bgpIndex + 1 && segment.start == bgpIndex;
+	}
+
+	private double candidatePruningThreshold(BeNode target) {
+		double threshold = costEstimator.estimateResultSize(target);
+		if (!Double.isFinite(threshold) || threshold <= 0.0) {
+			threshold = costEstimator.estimateDatasetCardinality() * candidatePruningFallbackRatio;
+		}
+		if (candidatePruningMaxCandidates > 0) {
+			threshold = Math.min(threshold, candidatePruningMaxCandidates);
+		}
+		return threshold;
 	}
 
 	private void collectVar(List<String> target, Var var) {

@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 
 public class BeCostEstimator {
@@ -31,6 +32,7 @@ public class BeCostEstimator {
 	private final BeTreeSerializer serializer = new BeTreeSerializer();
 	private final Map<BeBgpNode, Double> bgpCardinalityCache = new IdentityHashMap<>();
 	private final Map<BeNode, BindingInfo> bindingInfoCache = new IdentityHashMap<>();
+	private Double datasetCardinalityCache;
 
 	public BeCostEstimator(EvaluationStatistics evaluationStatistics) {
 		this(evaluationStatistics, SparqlUoConfig.defaultConfig());
@@ -47,6 +49,27 @@ public class BeCostEstimator {
 
 	public double estimateGroupResultSize(BeGroupNode group) {
 		return estimateGroup(group, BindingInfo.empty(), 1.0).resultSize;
+	}
+
+	double estimateResultSize(BeNode node) {
+		return estimateNodeResultSize(node);
+	}
+
+	double estimateBgpResultSize(BeBgpNode node) {
+		return estimateBgpCardinality(node);
+	}
+
+	double estimateDatasetCardinality() {
+		if (datasetCardinalityCache != null) {
+			return datasetCardinalityCache;
+		}
+		StatementPattern wildcard = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		double estimate = evaluationStatistics.getCardinality(wildcard);
+		if (!Double.isFinite(estimate) || estimate <= 0.0) {
+			estimate = 1.0;
+		}
+		datasetCardinalityCache = estimate;
+		return estimate;
 	}
 
 	private GroupEstimate estimateGroup(BeGroupNode group, BindingInfo seedInfo, double seedSize) {
@@ -271,6 +294,25 @@ public class BeCostEstimator {
 
 	private double estimateJoinedSize(double currentSize, BindingInfo currentInfo, NodeEstimate estimate,
 			TupleExpr currentExpr, TupleExpr candidateExpr) {
+//		if(evaluationStatistics.supportsJoinEstimation() && (currentExpr != null) &&  candidateExpr != null) {
+//			double cardinality = evaluationStatistics.getCardinality(new Join(currentExpr.clone(), candidateExpr.clone()));
+//			if(cardinality >= 0.0) {
+//				return cardinality;
+//			}
+//		}else  if(evaluationStatistics.supportsJoinEstimation()) {
+//			if(currentExpr instanceof Join join) {
+//				double cardinality = evaluationStatistics.getCardinality(join);
+//				if(cardinality >= 0.0) {
+//					return cardinality;
+//				}
+//			}else  if(candidateExpr instanceof Join join) {
+//				double cardinality = evaluationStatistics.getCardinality(join);
+//				if(cardinality >= 0.0) {
+//					return cardinality;
+//				}
+//			}
+//		}
+
 		int sharedVars = sharedAssuredCount(currentInfo, estimate.info);
 		double heuristicSize = fAnd(currentSize, estimate.resultSize, sharedVars);
 		if (currentExpr != null && candidateExpr != null) {

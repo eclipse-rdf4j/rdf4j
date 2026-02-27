@@ -283,6 +283,10 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				.enableMinusUnionSplit(config.enableMinusUnionSplit())
 				.enableOptionalFilterJoin(false)
 				.enableUnionCommonPrefixPullUp(config.enableUnionCommonPrefixPullUp())
+				.enableExtendedHeuristics(config.enableExtendedHeuristics())
+				.enableCandidatePruning(config.enableCandidatePruning())
+				.candidatePruningFallbackRatio(config.candidatePruningFallbackRatio())
+				.candidatePruningMaxCandidates(config.candidatePruningMaxCandidates())
 				.build();
 	}
 

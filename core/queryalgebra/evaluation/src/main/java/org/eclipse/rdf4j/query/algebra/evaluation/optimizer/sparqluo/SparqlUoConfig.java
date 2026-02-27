@@ -23,6 +23,10 @@ public final class SparqlUoConfig {
 	public static final String PROP_ENABLE_MINUS_UNION_SPLIT = "rdf4j.sparqluo.enableMinusUnionSplit";
 	public static final String PROP_ENABLE_OPTIONAL_FILTER_JOIN = "rdf4j.sparqluo.enableOptionalFilterJoin";
 	public static final String PROP_ENABLE_UNION_COMMON_PREFIX_PULL_UP = "rdf4j.sparqluo.enableUnionCommonPrefixPullUp";
+	public static final String PROP_ENABLE_EXTENDED_HEURISTICS = "rdf4j.sparqluo.enableExtendedHeuristics";
+	public static final String PROP_ENABLE_CANDIDATE_PRUNING = "rdf4j.sparqluo.enableCandidatePruning";
+	public static final String PROP_CANDIDATE_PRUNING_FALLBACK_RATIO = "rdf4j.sparqluo.candidatePruningFallbackRatio";
+	public static final String PROP_CANDIDATE_PRUNING_MAX_CANDIDATES = "rdf4j.sparqluo.candidatePruningMaxCandidates";
 
 	public static final boolean DEFAULT_ALLOW_NON_IMPROVING = false;
 	public static final double DEFAULT_VAR_DOMAIN = 10.0;
@@ -34,6 +38,10 @@ public final class SparqlUoConfig {
 	public static final boolean DEFAULT_ENABLE_MINUS_UNION_SPLIT = true;
 	public static final boolean DEFAULT_ENABLE_OPTIONAL_FILTER_JOIN = true;
 	public static final boolean DEFAULT_ENABLE_UNION_COMMON_PREFIX_PULL_UP = false;
+	public static final boolean DEFAULT_ENABLE_EXTENDED_HEURISTICS = false;
+	public static final boolean DEFAULT_ENABLE_CANDIDATE_PRUNING = true;
+	public static final double DEFAULT_CANDIDATE_PRUNING_FALLBACK_RATIO = 0.01;
+	public static final int DEFAULT_CANDIDATE_PRUNING_MAX_CANDIDATES = 10_000;
 
 	private final boolean allowNonImprovingTransforms;
 	private final double assumedVarDomainCardinality;
@@ -45,6 +53,10 @@ public final class SparqlUoConfig {
 	private final boolean enableMinusUnionSplit;
 	private final boolean enableOptionalFilterJoin;
 	private final boolean enableUnionCommonPrefixPullUp;
+	private final boolean enableExtendedHeuristics;
+	private final boolean enableCandidatePruning;
+	private final double candidatePruningFallbackRatio;
+	private final int candidatePruningMaxCandidates;
 
 	private SparqlUoConfig(Builder builder) {
 		this.allowNonImprovingTransforms = builder.allowNonImprovingTransforms;
@@ -58,6 +70,12 @@ public final class SparqlUoConfig {
 		this.enableMinusUnionSplit = builder.enableMinusUnionSplit;
 		this.enableOptionalFilterJoin = builder.enableOptionalFilterJoin;
 		this.enableUnionCommonPrefixPullUp = builder.enableUnionCommonPrefixPullUp;
+		this.enableExtendedHeuristics = builder.enableExtendedHeuristics;
+		this.enableCandidatePruning = builder.enableCandidatePruning;
+		this.candidatePruningFallbackRatio = nonNegativeOrDefault(builder.candidatePruningFallbackRatio,
+				DEFAULT_CANDIDATE_PRUNING_FALLBACK_RATIO);
+		this.candidatePruningMaxCandidates = nonNegativeOrDefault(builder.candidatePruningMaxCandidates,
+				DEFAULT_CANDIDATE_PRUNING_MAX_CANDIDATES);
 	}
 
 	public static SparqlUoConfig defaultConfig() {
@@ -106,6 +124,22 @@ public final class SparqlUoConfig {
 		if (enableUnionCommonPrefixPullUp != null) {
 			builder.enableUnionCommonPrefixPullUp(enableUnionCommonPrefixPullUp);
 		}
+		Boolean enableExtendedHeuristics = readBoolean(PROP_ENABLE_EXTENDED_HEURISTICS);
+		if (enableExtendedHeuristics != null) {
+			builder.enableExtendedHeuristics(enableExtendedHeuristics);
+		}
+		Boolean enableCandidatePruning = readBoolean(PROP_ENABLE_CANDIDATE_PRUNING);
+		if (enableCandidatePruning != null) {
+			builder.enableCandidatePruning(enableCandidatePruning);
+		}
+		Double candidatePruningFallbackRatio = readDouble(PROP_CANDIDATE_PRUNING_FALLBACK_RATIO);
+		if (candidatePruningFallbackRatio != null) {
+			builder.candidatePruningFallbackRatio(candidatePruningFallbackRatio);
+		}
+		Integer candidatePruningMaxCandidates = readInt(PROP_CANDIDATE_PRUNING_MAX_CANDIDATES);
+		if (candidatePruningMaxCandidates != null) {
+			builder.candidatePruningMaxCandidates(candidatePruningMaxCandidates);
+		}
 		return builder.build();
 	}
 
@@ -151,6 +185,22 @@ public final class SparqlUoConfig {
 
 	public boolean enableUnionCommonPrefixPullUp() {
 		return enableUnionCommonPrefixPullUp;
+	}
+
+	public boolean enableExtendedHeuristics() {
+		return enableExtendedHeuristics;
+	}
+
+	public boolean enableCandidatePruning() {
+		return enableCandidatePruning;
+	}
+
+	public double candidatePruningFallbackRatio() {
+		return candidatePruningFallbackRatio;
+	}
+
+	public int candidatePruningMaxCandidates() {
+		return candidatePruningMaxCandidates;
 	}
 
 	private static Boolean readBoolean(String property) {
@@ -208,6 +258,10 @@ public final class SparqlUoConfig {
 		private boolean enableMinusUnionSplit = DEFAULT_ENABLE_MINUS_UNION_SPLIT;
 		private boolean enableOptionalFilterJoin = DEFAULT_ENABLE_OPTIONAL_FILTER_JOIN;
 		private boolean enableUnionCommonPrefixPullUp = DEFAULT_ENABLE_UNION_COMMON_PREFIX_PULL_UP;
+		private boolean enableExtendedHeuristics = DEFAULT_ENABLE_EXTENDED_HEURISTICS;
+		private boolean enableCandidatePruning = DEFAULT_ENABLE_CANDIDATE_PRUNING;
+		private double candidatePruningFallbackRatio = DEFAULT_CANDIDATE_PRUNING_FALLBACK_RATIO;
+		private int candidatePruningMaxCandidates = DEFAULT_CANDIDATE_PRUNING_MAX_CANDIDATES;
 
 		private Builder() {
 		}
@@ -259,6 +313,26 @@ public final class SparqlUoConfig {
 
 		public Builder enableUnionCommonPrefixPullUp(boolean enableUnionCommonPrefixPullUp) {
 			this.enableUnionCommonPrefixPullUp = enableUnionCommonPrefixPullUp;
+			return this;
+		}
+
+		public Builder enableExtendedHeuristics(boolean enableExtendedHeuristics) {
+			this.enableExtendedHeuristics = enableExtendedHeuristics;
+			return this;
+		}
+
+		public Builder enableCandidatePruning(boolean enableCandidatePruning) {
+			this.enableCandidatePruning = enableCandidatePruning;
+			return this;
+		}
+
+		public Builder candidatePruningFallbackRatio(double candidatePruningFallbackRatio) {
+			this.candidatePruningFallbackRatio = candidatePruningFallbackRatio;
+			return this;
+		}
+
+		public Builder candidatePruningMaxCandidates(int candidatePruningMaxCandidates) {
+			this.candidatePruningMaxCandidates = candidatePruningMaxCandidates;
 			return this;
 		}
 
