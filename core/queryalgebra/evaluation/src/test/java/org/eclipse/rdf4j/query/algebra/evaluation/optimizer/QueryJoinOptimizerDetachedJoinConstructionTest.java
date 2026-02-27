@@ -61,6 +61,27 @@ class QueryJoinOptimizerDetachedJoinConstructionTest {
 		assertThat(second.getParentNode()).isNull();
 	}
 
+	@Test
+	void reorderJoinArgsKeepsLiveOperandsDetachedDuringPairwiseEstimation() throws Exception {
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new EvaluationStatistics());
+		QueryJoinOptimizer.JoinVisitor visitor = optimizer.new JoinVisitor();
+		StatementPattern first = statement("urn:first");
+		StatementPattern second = statement("urn:second");
+		StatementPattern third = statement("urn:third");
+		Deque<TupleExpr> ordered = new ArrayDeque<>();
+		ordered.addLast(first);
+		ordered.addLast(second);
+		ordered.addLast(third);
+
+		@SuppressWarnings("unchecked")
+		Deque<TupleExpr> reordered = (Deque<TupleExpr>) invokePrivate(visitor, "reorderJoinArgs", List.of(ordered));
+
+		assertThat(reordered).containsExactlyInAnyOrder(first, second, third);
+		assertThat(first.getParentNode()).isNull();
+		assertThat(second.getParentNode()).isNull();
+		assertThat(third.getParentNode()).isNull();
+	}
+
 	private static Object invokePrivate(Object target, String methodName, List<Object> args) throws Exception {
 		Method method = null;
 		for (Method candidate : target.getClass().getDeclaredMethods()) {
