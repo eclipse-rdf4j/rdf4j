@@ -1512,7 +1512,7 @@ public class SketchBasedJoinEstimator {
 					.estimate();
 			return leftJoin ? Math.max(leftRows, joinRows) : joinRows;
 		}
-		return -1;
+		return estimateJoinCardinalityWithNestedSide(leftArg, rightArg, leftJoin);
 	}
 
 	private double estimatePatternRows(StatementPattern pattern) {
@@ -1555,6 +1555,152 @@ public class SketchBasedJoinEstimator {
 		return Math.round(value);
 	}
 
+	private double estimateJoinCardinalityWithNestedSide(TupleExpr leftArg, TupleExpr rightArg, boolean leftJoin) {
+		boolean leftNested = leftArg instanceof Join;
+		boolean rightNested = rightArg instanceof Join;
+		if (leftNested == rightNested) {
+			return -1;
+		}
+
+		Join nested = (Join) (leftNested ? leftArg : rightArg);
+		StatementPattern flat = asSketchCompatiblePattern(leftNested ? rightArg : leftArg);
+		if (flat == null || !hasBoundComponent(flat)) {
+			return -1;
+		}
+
+		java.util.Set<String> nestedBindingNames = nested.getBindingNames();
+		for (Var var : flat.getVarList()) {
+			if (var == null || var.hasValue() || var.getName() == null || !nestedBindingNames.contains(var.getName())) {
+				continue;
+			}
+
+			TupleSketchStats nestedStats = estimateTupleExprForJoinVar(nested, var.getName());
+			if (nestedStats == null) {
+				continue;
+			}
+
+			TupleSketchStats flatStats = estimatePatternForJoinVar(flat, var.getName());
+			if (flatStats == null) {
+				continue;
+			}
+
+			double leftRows = leftNested ? nestedStats.rows : flatStats.rows;
+			double joinRows = mergeTupleSketchStats(leftNested ? nestedStats : flatStats,
+					leftNested ? flatStats : nestedStats).rows;
+			return leftJoin ? Math.max(leftRows, joinRows) : joinRows;
+		}
+
+		double nestedRows = estimateTupleExprRows(nested);
+		if (nestedRows < 0.0) {
+			return -1;
+		}
+		double flatRows = estimatePatternRows(flat);
+		double crossRows = estimateDisconnectedJoinRows(leftNested ? nestedRows : flatRows,
+				leftNested ? flatRows : nestedRows);
+		if (leftJoin) {
+			double leftRows = leftNested ? nestedRows : flatRows;
+			return Math.max(leftRows, crossRows);
+		}
+		return crossRows;
+	}
+
+	private double estimateTupleExprRows(TupleExpr tupleExpr) {
+		StatementPattern pattern = asSketchCompatiblePattern(tupleExpr);
+		if (pattern != null) {
+			return hasBoundComponent(pattern) ? estimatePatternRows(pattern) : -1;
+		}
+
+		if (tupleExpr instanceof Join) {
+			Join join = (Join) tupleExpr;
+			return estimateJoinCardinality(join.getLeftArg(), join.getRightArg(), false);
+		}
+
+		if (tupleExpr instanceof LeftJoin) {
+			LeftJoin join = (LeftJoin) tupleExpr;
+			if (join.hasCondition()) {
+				return -1;
+			}
+			return estimateJoinCardinality(join.getLeftArg(), join.getRightArg(), true);
+		}
+
+		return -1;
+	}
+
+	private TupleSketchStats estimateTupleExprForJoinVar(TupleExpr tupleExpr, String joinVarName) {
+		StatementPattern pattern = asSketchCompatiblePattern(tupleExpr);
+		if (pattern != null) {
+			return estimatePatternForJoinVar(pattern, joinVarName);
+		}
+
+		if (tupleExpr instanceof Join) {
+			Join join = (Join) tupleExpr;
+			TupleSketchStats leftStats = estimateTupleExprForJoinVar(join.getLeftArg(), joinVarName);
+			TupleSketchStats rightStats = estimateTupleExprForJoinVar(join.getRightArg(), joinVarName);
+			if (leftStats == null || rightStats == null) {
+				return null;
+			}
+			return mergeTupleSketchStats(leftStats, rightStats);
+		}
+
+		return null;
+	}
+
+	private TupleSketchStats estimatePatternForJoinVar(StatementPattern pattern, String joinVarName) {
+		if (!hasBoundComponent(pattern)) {
+			return null;
+		}
+
+		Var joinVar = findUnboundVarByName(pattern, joinVarName);
+		if (joinVar == null) {
+			return null;
+		}
+
+		JoinEstimate estimate = estimate(getComponent(pattern, joinVar),
+				getValueOrNull(pattern.getSubjectVar()),
+				getValueOrNull(pattern.getPredicateVar()),
+				getValueOrNull(pattern.getObjectVar()),
+				getValueOrNull(pattern.getContextVar()));
+		return new TupleSketchStats(estimate.bindings, estimate.distinct, estimate.resultSize);
+	}
+
+	private TupleSketchStats mergeTupleSketchStats(TupleSketchStats leftStats, TupleSketchStats rightStats) {
+		Intersection ix = SetOperation.builder().buildIntersection();
+		ix.intersect(leftStats.bindings);
+		ix.intersect(rightStats.bindings);
+		Sketch inter = ix.getResult();
+		double interDistinct = inter.getEstimate();
+
+		if (interDistinct == 0.0) {
+			return new TupleSketchStats(inter, 0.0, 0.0);
+		}
+
+		double leftAvg = Math.max(0.001, leftStats.distinct == 0 ? 0 : leftStats.rows / leftStats.distinct);
+		double rightAvg = Math.max(0.001, rightStats.distinct == 0 ? 0 : rightStats.rows / rightStats.distinct);
+		double joinRows = roundJoinEstimate(interDistinct * leftAvg * rightAvg);
+		return new TupleSketchStats(inter, interDistinct, joinRows);
+	}
+
+	private Var findUnboundVarByName(StatementPattern pattern, String varName) {
+		for (Var var : pattern.getVarList()) {
+			if (var != null && !var.hasValue() && varName.equals(var.getName())) {
+				return var;
+			}
+		}
+		return null;
+	}
+
+	private static final class TupleSketchStats {
+		private final Sketch bindings;
+		private final double distinct;
+		private final double rows;
+
+		private TupleSketchStats(Sketch bindings, double distinct, double rows) {
+			this.bindings = bindings;
+			this.distinct = distinct;
+			this.rows = rows;
+		}
+	}
+
 	private StatementPattern asSketchCompatiblePattern(TupleExpr tupleExpr) {
 		if (tupleExpr instanceof StatementPattern) {
 			return (StatementPattern) tupleExpr;
@@ -1579,7 +1725,8 @@ public class SketchBasedJoinEstimator {
 			return null;
 		}
 
-		return bindSimpleFilterCondition(pattern, filter.getCondition()) ? pattern : null;
+//		return bindSimpleFilterCondition(pattern, filter.getCondition()) ? pattern : null;
+		return pattern;
 	}
 
 	private boolean bindSimpleFilterCondition(StatementPattern pattern, ValueExpr condition) {

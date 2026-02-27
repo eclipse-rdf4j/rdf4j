@@ -173,6 +173,32 @@ public class SketchBasedJoinEstimatorExtraTest {
 	}
 
 	@Test
+	void cardinalityJoinNodeWithNestedJoinArgument() {
+		sailStore.addAll(List.of(
+				stmt(s1, p1, o1),
+				stmt(s1, p2, o1),
+				stmt(s1, p1, o2)));
+		fullRebuild();
+
+		StatementPattern left = new StatementPattern(
+				Var.of("s"),
+				Var.of("p1", p1),
+				Var.of("o1", o1));
+		StatementPattern middle = new StatementPattern(
+				Var.of("s"),
+				Var.of("p2", p2),
+				Var.of("o1", o1));
+		StatementPattern right = new StatementPattern(
+				Var.of("s"),
+				Var.of("p1", p1),
+				Var.of("o2", o2));
+
+		double card = est.cardinality(new Join(new Join(left, middle), right));
+
+		assertApprox(1.0, card);
+	}
+
+	@Test
 	void cardinalityJoinNodeNoCommonVariable() {
 		/* left & right bind DIFFERENT subject variables */
 		sailStore.add(stmt(s1, p1, o1));
