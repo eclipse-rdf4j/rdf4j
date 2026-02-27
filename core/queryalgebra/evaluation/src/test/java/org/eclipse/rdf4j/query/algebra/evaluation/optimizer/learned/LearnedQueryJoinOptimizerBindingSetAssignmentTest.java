@@ -35,6 +35,8 @@ class LearnedQueryJoinOptimizerBindingSetAssignmentTest {
 	private static final String EX_NS = "http://example.com/";
 	private static final IRI P_BOUND = SimpleValueFactory.getInstance().createIRI(EX_NS, "pBound");
 	private static final IRI P_UNBOUND = SimpleValueFactory.getInstance().createIRI(EX_NS, "pUnbound");
+	private static final IRI P_AB = SimpleValueFactory.getInstance().createIRI(EX_NS, "pAB");
+	private static final IRI P_BC = SimpleValueFactory.getInstance().createIRI(EX_NS, "pBC");
 
 	private static final String QUERY = String.join("\n",
 			"PREFIX ex: <http://example.com/>",
@@ -42,6 +44,16 @@ class LearnedQueryJoinOptimizerBindingSetAssignmentTest {
 			"  VALUES ?b { ex:b1 ex:b2 }",
 			"  ?x ex:pUnbound ?y .",
 			"  ?b ex:pBound ?x .",
+			"}");
+
+	private static final String BOUND_PREFIX_QUERY = String.join("\n",
+			"PREFIX ex: <http://example.com/>",
+			"SELECT * WHERE {",
+			"  VALUES ?b { ex:b1 ex:b2 ex:b3 ex:b4 }",
+			"  VALUES ?c { ex:c1 ex:c2 ex:c3 ex:c4 }",
+			"  FILTER(?a != ?b)",
+			"  ?a ex:pAB ?b .",
+			"  ?b ex:pBC ?c .",
 			"}");
 
 	@Test
@@ -58,6 +70,20 @@ class LearnedQueryJoinOptimizerBindingSetAssignmentTest {
 				"VALUES bindings should bias join ordering toward bound patterns");
 	}
 
+	@Test
+	void promotesNewVarOperandAheadOfBoundOnlyPrefix() throws Exception {
+		SPARQLParser parser = new SPARQLParser();
+		ParsedQuery parsedQuery = parser.parseQuery(BOUND_PREFIX_QUERY, null);
+		LearnedQueryJoinOptimizer optimizer = new LearnedQueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource(), new BoundPrefixStatsProvider());
+
+		optimizer.optimize(parsedQuery.getTupleExpr(), null, null);
+
+		List<IRI> order = orderedPredicates(parsedQuery.getTupleExpr());
+		assertEquals(List.of(P_AB, P_BC), order,
+				"Operand that introduces new vars should be planned before bound-only prefix operand");
+	}
+
 	private List<IRI> orderedPredicates(TupleExpr tupleExpr) {
 		List<IRI> order = new ArrayList<>();
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -68,7 +94,8 @@ class LearnedQueryJoinOptimizerBindingSetAssignmentTest {
 						&& node.getPredicateVar().getValue() instanceof IRI) {
 					predicate = (IRI) node.getPredicateVar().getValue();
 				}
-				if (P_BOUND.equals(predicate) || P_UNBOUND.equals(predicate)) {
+				if (P_BOUND.equals(predicate) || P_UNBOUND.equals(predicate)
+						|| P_AB.equals(predicate) || P_BC.equals(predicate)) {
 					order.add(predicate);
 				}
 			}
@@ -103,6 +130,47 @@ class LearnedQueryJoinOptimizerBindingSetAssignmentTest {
 			}
 			if (P_UNBOUND.equals(predicate)) {
 				return 10.0d;
+			}
+			return 1000.0d;
+		}
+
+		@Override
+		public boolean hasStats(PatternKey key) {
+			return true;
+		}
+
+		@Override
+		public long getTotalCalls() {
+			return 0;
+		}
+	}
+
+	private static final class BoundPrefixStatsProvider implements JoinStatsProvider {
+
+		@Override
+		public void reset() {
+		}
+
+		@Override
+		public void recordCall(PatternKey key) {
+		}
+
+		@Override
+		public void recordResults(PatternKey key, long resultCount) {
+		}
+
+		@Override
+		public void seedIfAbsent(PatternKey key, double defaultCardinality, long priorCalls) {
+		}
+
+		@Override
+		public double getAverageResults(PatternKey key) {
+			IRI predicate = key.getPredicate();
+			if (P_AB.equals(predicate)) {
+				return 150.0d;
+			}
+			if (P_BC.equals(predicate)) {
+				return 1.0d;
 			}
 			return 1000.0d;
 		}

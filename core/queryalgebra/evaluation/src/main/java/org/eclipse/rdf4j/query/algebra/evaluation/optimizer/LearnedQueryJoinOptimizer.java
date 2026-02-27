@@ -1210,14 +1210,11 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				List<TupleExpr> subSelects = getSubSelects(joinArgs);
 				List<TupleExpr> orderedSubselects = reorderSubselects(subSelects);
 				joinArgs.removeAll(orderedSubselects);
-				List<TupleExpr> bindingAssignments = getBindingSetAssignments(joinArgs);
-				joinArgs.removeAll(bindingAssignments);
+				List<TupleExpr> bindingAssignmentAnchors = getBindingSetAssignmentAnchors(joinArgs);
+				joinArgs.removeAll(bindingAssignmentAnchors);
 				Set<String> initiallyBoundVars = determineInitiallyBoundVars(joinArgs);
-				if (!bindingAssignments.isEmpty()) {
-					Set<String> assignmentVars = new HashSet<>();
-					for (TupleExpr assignment : bindingAssignments) {
-						assignmentVars.addAll(filteredBindingNames(assignment));
-					}
+				if (!bindingAssignmentAnchors.isEmpty()) {
+					Set<String> assignmentVars = collectBindingSetAssignmentVars(bindingAssignmentAnchors);
 					if (!assignmentVars.isEmpty()) {
 						initiallyBoundVars.addAll(assignmentVars);
 					}
@@ -1386,6 +1383,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 					}
 					planned = captureRewrite("rebalanceUnsupportedTargetTypePair", planned,
 							rebalanceUnsupportedTargetTypePair(planned, relevantUnsupportedTargets), rebalanceDiffs);
+					planned = captureRewrite("rebalanceBoundOnlyPrefix", planned,
+							rebalanceBoundOnlyPrefix(planned, initiallyBoundVars), rebalanceDiffs);
 					planned = captureRewrite("rebalanceTypeAfterDetachedPredecessor", planned,
 							rebalanceTypeAfterDetachedPredecessor(planned), rebalanceDiffs);
 					planned = captureRewrite("rebalanceLargeDualTypeHub", planned,
@@ -1400,11 +1399,12 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 					boolean connectedPlan = isConnectedPlan(planned, initiallyBoundVars);
 					if (connectedPlan || !fullyConnectable) {
 						finalOrderLabels = labels(planned);
-						if (bindingAssignments.isEmpty()) {
+						if (bindingAssignmentAnchors.isEmpty()) {
 							plannedOrder = new ArrayDeque<>(planned);
 						} else {
-							List<TupleExpr> combined = new ArrayList<>(bindingAssignments.size() + planned.size());
-							combined.addAll(bindingAssignments);
+							List<TupleExpr> combined = new ArrayList<>(
+									bindingAssignmentAnchors.size() + planned.size());
+							combined.addAll(bindingAssignmentAnchors);
 							combined.addAll(planned);
 							plannedOrder = new ArrayDeque<>(combined);
 						}
@@ -2861,13 +2861,13 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			return filtered;
 		}
 
-		private List<TupleExpr> getBindingSetAssignments(List<TupleExpr> expressions) {
+		private List<TupleExpr> getBindingSetAssignmentAnchors(List<TupleExpr> expressions) {
 			if (expressions.isEmpty()) {
 				return List.of();
 			}
 			List<TupleExpr> assignments = List.of();
 			for (TupleExpr expr : expressions) {
-				if (expr instanceof BindingSetAssignment) {
+				if (expr instanceof BindingSetAssignment || containsBindingSetAssignment(expr)) {
 					if (assignments.isEmpty()) {
 						assignments = List.of(expr);
 					} else {
@@ -2879,6 +2879,37 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				}
 			}
 			return assignments;
+		}
+
+		private boolean containsBindingSetAssignment(TupleExpr expression) {
+			if (expression == null || expression instanceof BindingSetAssignment) {
+				return false;
+			}
+			final boolean[] contains = { false };
+			expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(BindingSetAssignment node) {
+					contains[0] = true;
+				}
+			});
+			return contains[0];
+		}
+
+		private Set<String> collectBindingSetAssignmentVars(List<TupleExpr> expressions) {
+			if (expressions.isEmpty()) {
+				return Set.of();
+			}
+			Set<String> names = new HashSet<>();
+			for (TupleExpr expr : expressions) {
+				expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+					@Override
+					public void meet(BindingSetAssignment node) {
+						names.addAll(filteredBindingNames(node));
+						super.meet(node);
+					}
+				});
+			}
+			return names;
 		}
 
 		private Set<String> collectNestedBindingSetAssignmentVars(List<TupleExpr> expressions) {
@@ -3346,6 +3377,52 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				reordered.add(planned.get(i));
 			}
 			return reordered;
+		}
+
+		private List<TupleExpr> rebalanceBoundOnlyPrefix(List<TupleExpr> planned, Set<String> initiallyBoundVars) {
+			if (planned.size() < 2 || initiallyBoundVars == null || initiallyBoundVars.isEmpty()) {
+				return planned;
+			}
+			List<TupleExpr> reordered = null;
+			Set<String> bound = new HashSet<>(initiallyBoundVars);
+			for (int i = 0; i < planned.size() - 1; i++) {
+				List<TupleExpr> source = reordered == null ? planned : reordered;
+				TupleExpr current = source.get(i);
+				Set<String> currentVars = filteredBindingNames(current);
+				if (currentVars.isEmpty()) {
+					continue;
+				}
+				Set<String> currentNewVars = new HashSet<>(currentVars);
+				currentNewVars.removeAll(bound);
+				if (!currentNewVars.isEmpty()) {
+					bound.addAll(currentVars);
+					continue;
+				}
+				int promoteIndex = -1;
+				for (int j = i + 1; j < source.size(); j++) {
+					TupleExpr candidate = source.get(j);
+					Set<String> candidateVars = filteredBindingNames(candidate);
+					if (candidateVars.isEmpty() || disjoint(bound, candidateVars)) {
+						continue;
+					}
+					Set<String> candidateNewVars = new HashSet<>(candidateVars);
+					candidateNewVars.removeAll(bound);
+					if (!candidateNewVars.isEmpty()) {
+						promoteIndex = j;
+						break;
+					}
+				}
+				if (promoteIndex >= 0) {
+					if (reordered == null) {
+						reordered = new ArrayList<>(planned);
+					}
+					TupleExpr promoted = reordered.remove(promoteIndex);
+					reordered.add(i, promoted);
+					currentVars = filteredBindingNames(reordered.get(i));
+				}
+				bound.addAll(currentVars);
+			}
+			return reordered == null ? planned : reordered;
 		}
 
 		private String firstTypeSubject(List<TupleExpr> expressions) {
