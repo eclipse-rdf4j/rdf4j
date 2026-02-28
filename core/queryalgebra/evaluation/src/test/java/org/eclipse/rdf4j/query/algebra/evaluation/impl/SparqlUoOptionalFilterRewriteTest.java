@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
@@ -35,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.SparqlUoConfig;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -466,6 +468,31 @@ class SparqlUoOptionalFilterRewriteTest {
 	}
 
 	@Test
+	void rewritesOptionalToJoinWhenNonExistsConjunctRequiresRightVar() {
+		String query = "SELECT * WHERE { "
+				+ "?drug <urn:targets> ?target . "
+				+ "OPTIONAL { ?drug <urn:testedIn> ?trial . BIND(?trial AS ?optTrial) } "
+				+ "FILTER((?optTrial != <urn:trial0>) && EXISTS { ?trial <urn:hasArm> ?arm . }) "
+				+ "}";
+
+		TupleExpr expr = optimize(query);
+
+		assertThat(containsLeftJoin(expr)).isFalse();
+	}
+
+	@Test
+	void ordersExistsConjunctAfterAliasCompareWhenExistsCannotBeRewritten() {
+		String query = "SELECT * WHERE { "
+				+ "?drug <urn:targets> ?target . "
+				+ "OPTIONAL { ?drug <urn:testedIn> ?trial . BIND(?trial AS ?optTrial) } "
+				+ "FILTER(EXISTS { ?trial <urn:hasArm> ?arm . } && (?target != <urn:target0>)) "
+				+ "}";
+
+		TupleExpr expr = optimize(query);
+		assertThat(hasExistsOnLeftInMixedAndFilter(expr)).isFalse();
+	}
+
+	@Test
 	void rewritesExistsWhenSharedConstantsAppearInOptional() {
 		String query = "SELECT * WHERE { "
 				+ "?s <urn:p1> ?o . "
@@ -695,6 +722,39 @@ class SparqlUoOptionalFilterRewriteTest {
 			@Override
 			public void meet(Exists node) {
 				found.set(true);
+			}
+		});
+		return found.get();
+	}
+
+	private static boolean containsExistsExpr(ValueExpr expr) {
+		if (expr == null) {
+			return false;
+		}
+		AtomicBoolean found = new AtomicBoolean(false);
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Exists node) {
+				found.set(true);
+			}
+		});
+		return found.get();
+	}
+
+	private static boolean hasExistsOnLeftInMixedAndFilter(TupleExpr expr) {
+		AtomicBoolean found = new AtomicBoolean(false);
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (node.getCondition() instanceof And) {
+					And and = (And) node.getCondition();
+					boolean leftHasExists = containsExistsExpr(and.getLeftArg());
+					boolean rightHasExists = containsExistsExpr(and.getRightArg());
+					if (leftHasExists && !rightHasExists) {
+						found.set(true);
+					}
+				}
+				super.meet(node);
 			}
 		});
 		return found.get();

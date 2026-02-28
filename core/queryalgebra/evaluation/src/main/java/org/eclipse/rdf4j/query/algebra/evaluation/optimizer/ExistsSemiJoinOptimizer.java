@@ -92,6 +92,14 @@ public class ExistsSemiJoinOptimizer implements QueryOptimizer {
 			if (extraction == null) {
 				return;
 			}
+			if (extraction.remainingCondition != null
+					&& ExistsExtraction.shouldMoveExistsConjunctToEnd(filter.getCondition())) {
+				filter.setCondition(ExistsExtraction.rebuildWithExistsConjunctAtEnd(extraction));
+				extraction = ExistsExtraction.from(filter.getCondition());
+				if (extraction == null) {
+					return;
+				}
+			}
 			TupleExpr arg = filter.getArg();
 			if (arg == null) {
 				return;
@@ -475,6 +483,30 @@ public class ExistsSemiJoinOptimizer implements QueryOptimizer {
 			}
 			ValueExpr remainingCondition = rebuildAndChain(remaining);
 			return new ExistsExtraction(exists, remainingCondition);
+		}
+
+		private static boolean shouldMoveExistsConjunctToEnd(ValueExpr condition) {
+			if (!(condition instanceof And)) {
+				return false;
+			}
+			List<ValueExpr> conjuncts = new ArrayList<>();
+			collectConjuncts(condition, conjuncts);
+			if (conjuncts.size() < 2) {
+				return false;
+			}
+			int existsCount = 0;
+			for (ValueExpr conjunct : conjuncts) {
+				if (conjunct instanceof Exists) {
+					existsCount++;
+				}
+			}
+			return existsCount == 1 && !(conjuncts.get(conjuncts.size() - 1) instanceof Exists);
+		}
+
+		private static ValueExpr rebuildWithExistsConjunctAtEnd(ExistsExtraction extraction) {
+			ValueExpr left = (ValueExpr) extraction.remainingCondition.clone();
+			ValueExpr right = (ValueExpr) extraction.exists.clone();
+			return new And(left, right);
 		}
 
 		private static void collectConjuncts(ValueExpr expr, List<ValueExpr> conjuncts) {
