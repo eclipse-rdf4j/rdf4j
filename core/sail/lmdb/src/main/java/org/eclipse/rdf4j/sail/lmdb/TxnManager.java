@@ -88,11 +88,19 @@ class TxnManager {
 	}
 
 	/**
-	 * Creates a new read-only transaction that is not tracked in {@link #active}, but is still owned by the returned
-	 * reference and released on close.
+	 * Creates a new read-only transaction that is treated as untracked for reset semantics.
+	 *
+	 * <p>
+	 * Untracked read transactions skip {@link #reset()} so long-lived refresh readers are not invalidated on every
+	 * write commit, but they still participate in deactivate/activate to remain safe during map resize.
+	 * </p>
 	 */
 	Txn createReadTxnUntracked() throws IOException {
-		return new Txn(createReadTxnInternal());
+		Txn txnRef = new Txn(createReadTxnInternal());
+		synchronized (active) {
+			active.put(txnRef, Boolean.FALSE);
+		}
+		return txnRef;
 	}
 
 	long createReadTxnInternal() throws IOException {
@@ -157,8 +165,10 @@ class TxnManager {
 
 	void reset() throws IOException {
 		synchronized (active) {
-			for (Txn txn : active.keySet()) {
-				txn.reset();
+			for (var entry : active.entrySet()) {
+				if (Boolean.TRUE.equals(entry.getValue())) {
+					entry.getKey().reset();
+				}
 			}
 		}
 	}

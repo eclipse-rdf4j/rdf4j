@@ -92,7 +92,9 @@ class LmdbSailStore implements SailStore {
 	private PersistentSet<Long> unusedIds, nextUnusedIds;
 
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator = new SketchBasedJoinEstimator(this,
-			SketchBasedJoinEstimator.suggestNominalEntries()*16, 1024*1024, 2);
+			SketchBasedJoinEstimator.Config.defaults()
+					.withThrottleEveryN(1024 * 1024)
+					.withThrottleMillis(2));
 	private final ScheduledExecutorService estimatorPersistExec = Executors.newSingleThreadScheduledExecutor(r -> {
 		Thread t = new Thread(r, "LmdbJoinEstimator-Persist");
 		t.setDaemon(true);
@@ -233,6 +235,8 @@ class LmdbSailStore implements SailStore {
 			initialized = true;
 			Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
 			boolean snapshotExists = Files.exists(estimatorPath);
+			sketchBasedJoinEstimator.setLowMemorySupplier(LmdbSailStore::isLowMemory);
+			sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
 			sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
 			if (!snapshotExists) {
 				sketchBasedJoinEstimator.rebuildOnceSlow();

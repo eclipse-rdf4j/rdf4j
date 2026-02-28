@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.ref.SoftReference;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -137,5 +139,41 @@ class SketchBasedJoinEstimatorPersistenceTest {
 
 		reader.setLowMemorySupplier(() -> false);
 		assertTrue(reader.isReady(), "Readiness should recover when memory gate clears");
+	}
+
+	@Test
+	void cachedSnapshotLoadWorksWithoutReloadingFromDisk(@TempDir Path tempDir) throws Exception {
+		Resource s = VF.createIRI("urn:s");
+		IRI p = VF.createIRI("urn:p");
+		Value o = VF.createIRI("urn:o");
+
+		StubSailStore sourceStore = new StubSailStore();
+		sourceStore.add(st(s, p, o));
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+
+		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(sourceStore, smallConfig());
+		writer.rebuildOnceSlow();
+		writer.configurePersistence(snapshot, false);
+		assertTrue(writer.persistIfDirty());
+
+		SketchBasedJoinEstimator warmReader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		warmReader.configurePersistence(snapshot, true);
+		assertTrue(warmReader.isReady(), "Expected first lazy load from disk");
+
+		Files.delete(snapshot);
+
+		SketchBasedJoinEstimator cachedReader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		cachedReader.configurePersistence(snapshot, true);
+		cachedReader.unload();
+		assertTrue(cachedReader.isReady(), "Expected cached lazy load without re-reading snapshot file");
+	}
+
+	@Test
+	void snapshotCachePayloadUsesSoftReference() throws Exception {
+		Class<?> cacheEntryClass = Class
+				.forName("org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator$SnapshotCacheEntry");
+		var payloadField = cacheEntryClass.getDeclaredField("payloadRef");
+
+		assertEquals(SoftReference.class, payloadField.getType());
 	}
 }

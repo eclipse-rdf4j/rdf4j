@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.util.List;
 
+import org.apache.datasketches.thetacommon.ThetaUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -113,5 +114,22 @@ class SketchBasedJoinEstimatorConfigTest {
 		kField.setAccessible(true);
 
 		assertEquals(60, kField.getInt(bufA));
+	}
+
+	@Test
+	void defaultsUseFixedBucketsAndSketchDefaultAccuracy() throws Exception {
+		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, SketchBasedJoinEstimator.Config.defaults());
+
+		var bucketsField = est.getClass().getDeclaredField("nominalEntries");
+		bucketsField.setAccessible(true);
+		assertEquals(64 * 1024, bucketsField.getInt(est));
+
+		var bufField = est.getClass().getDeclaredField("bufA");
+		bufField.setAccessible(true);
+		Object bufA = bufField.get(est);
+		var kField = bufA.getClass().getDeclaredField("k");
+		kField.setAccessible(true);
+
+		assertEquals(ThetaUtil.DEFAULT_NOMINAL_ENTRIES, kField.getInt(bufA));
 	}
 }
