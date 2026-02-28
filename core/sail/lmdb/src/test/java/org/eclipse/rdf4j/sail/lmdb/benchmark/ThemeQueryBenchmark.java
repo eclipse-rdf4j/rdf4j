@@ -225,13 +225,15 @@ public class ThemeQueryBenchmark {
 
 	private void loadData() throws IOException {
 		try (var connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
+			connection.begin();
 			connection.clear();
+			connection.commit();
 			var inserter = new RDFInserter(connection);
 			for (var themeDataset : Theme.values()) {
+				connection.begin(IsolationLevels.READ_COMMITTED);
 				ThemeDataSetGenerator.generate(themeDataset, inserter);
+				connection.commit();
 			}
-			connection.commit();
 		}
 	}
 
