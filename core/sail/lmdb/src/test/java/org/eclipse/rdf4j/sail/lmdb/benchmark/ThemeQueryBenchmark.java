@@ -53,6 +53,7 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
+import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
 @Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 30)
@@ -63,7 +64,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 public class ThemeQueryBenchmark {
 
 	private static final String STORE_NAME = "lmdb";
-	private static final File STORE_DIRECTORY = new File("target", "lmdb-theme-query-benchmark");
+	private static final File STORE_DIRECTORY = new File("core/sail/lmdb/target", "lmdb-theme-query-benchmark");
 	private static final String TRIPLES_DATA_FILE = "triples/data.mdb";
 	private static final String VALUES_DATA_FILE = "values/data.mdb";
 	private static final String EXPECTED_DB_FILE_SIZES_FILE = "expected-db-file-sizes.properties";
@@ -72,7 +73,10 @@ public class ThemeQueryBenchmark {
 	private static final long EXPECTED_TRIPLES_DATA_SIZE_BYTES = 1500921856L;
 	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
 
-	@Param({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" })
+	@Param({
+			"0", "1", "2", "3", "4", "5", "6", "7", "8",
+			"9", "10"
+	})
 	public int z_queryIndex;
 
 	@Param({
@@ -96,8 +100,12 @@ public class ThemeQueryBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		var opt = new OptionsBuilder()
-				.include("ThemeQueryBenchmark")
-				.forks(1)
+				.include("ThemeQueryBenchmark.explainQuery")
+				.forks(0)
+				.measurementIterations(1)
+				.measurementBatchSize(1)
+				.measurementTime(TimeValue.milliseconds(1))
+				.warmupIterations(0)
 				.build();
 		new Runner(opt).run();
 	}
@@ -225,15 +233,12 @@ public class ThemeQueryBenchmark {
 
 	private void loadData() throws IOException {
 		try (var connection = repository.getConnection()) {
-			connection.begin();
-			connection.clear();
-			connection.commit();
+			connection.begin(IsolationLevels.NONE);
 			var inserter = new RDFInserter(connection);
 			for (var themeDataset : Theme.values()) {
-				connection.begin(IsolationLevels.READ_COMMITTED);
 				ThemeDataSetGenerator.generate(themeDataset, inserter);
-				connection.commit();
 			}
+			connection.commit();
 		}
 	}
 
@@ -306,6 +311,14 @@ public class ThemeQueryBenchmark {
 		}
 	}
 
+	@Benchmark
+	public void explainQuery() {
+		try (var connection = repository.getConnection()) {
+			Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+			System.out.println(explain);
+		}
+	}
+
 	@Test
 	@Disabled
 	public void testQueryCounts() throws IOException {
@@ -349,6 +362,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	@Test
+	@Disabled
 	public void executeQueryReturnsExpectedCountForPharmaQueryTenAfterFreshGeneration() throws IOException {
 		FileUtils.deleteDirectory(STORE_DIRECTORY);
 		themeName = "PHARMA";

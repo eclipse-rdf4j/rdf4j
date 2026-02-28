@@ -35,6 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -1223,33 +1224,84 @@ public class SketchBasedJoinEstimator {
 	/* Unified mutable state (add + delete) */
 	/* ────────────────────────────────────────────────────────────── */
 
+	private static final class StateComponents<T> {
+		public final T S;
+		public final T P;
+		public final T O;
+		public final T C;
+
+		StateComponents(T s, T p, T o, T c) {
+			S = s;
+			P = p;
+			O = o;
+			C = c;
+		}
+
+		T get(Component component) {
+			switch (component) {
+			case S:
+				return S;
+			case P:
+				return P;
+			case O:
+				return O;
+			case C:
+				return C;
+			default:
+				throw new IllegalStateException("Unsupported component: " + component);
+			}
+		}
+
+		void forEach(Consumer<? super T> consumer) {
+			consumer.accept(S);
+			consumer.accept(P);
+			consumer.accept(O);
+			consumer.accept(C);
+		}
+	}
+
 	private static final class State {
 		final int k; // sketch nominal entries
 		final int buckets; // array bucket count (outer.nominalEntries)
 
 		/* live (add) sketches */
-		final EnumMap<Component, AtomicReferenceArray<UpdateSketch>> singleTriples = new EnumMap<>(
-				Component.class);
-		final EnumMap<Component, SingleBuild> singles = new EnumMap<>(Component.class);
+		final StateComponents<AtomicReferenceArray<UpdateSketch>> singleTriples;
+		final StateComponents<SingleBuild> singles;
 		final EnumMap<Pair, PairBuild> pairs = new EnumMap<>(Pair.class);
 
 		/* tomb‑stone (delete) sketches */
-		final EnumMap<Component, AtomicReferenceArray<UpdateSketch>> delSingleTriples = new EnumMap<>(
-				Component.class);
-		final EnumMap<Component, SingleBuild> delSingles = new EnumMap<>(Component.class);
+		final StateComponents<AtomicReferenceArray<UpdateSketch>> delSingleTriples;
+		final StateComponents<SingleBuild> delSingles;
 		final EnumMap<Pair, PairBuild> delPairs = new EnumMap<>(Pair.class);
 
 		State(int k, int buckets) {
 			this.k = k;
 			this.buckets = buckets;
 
-			for (Component c : Component.values()) {
-				singleTriples.put(c, new AtomicReferenceArray<>(buckets));
-				delSingleTriples.put(c, new AtomicReferenceArray<>(buckets));
+			singleTriples = new StateComponents<>(
+					new AtomicReferenceArray<>(buckets),
+					new AtomicReferenceArray<>(buckets),
+					new AtomicReferenceArray<>(buckets),
+					new AtomicReferenceArray<>(buckets));
 
-				singles.put(c, new SingleBuild(k, c, buckets));
-				delSingles.put(c, new SingleBuild(k, c, buckets));
-			}
+			delSingleTriples = new StateComponents<>(
+					new AtomicReferenceArray<>(buckets),
+					new AtomicReferenceArray<>(buckets),
+					new AtomicReferenceArray<>(buckets),
+					new AtomicReferenceArray<>(buckets));
+
+			singles = new StateComponents<>(
+					new SingleBuild(k, Component.S, buckets),
+					new SingleBuild(k, Component.P, buckets),
+					new SingleBuild(k, Component.O, buckets),
+					new SingleBuild(k, Component.C, buckets));
+
+			delSingles = new StateComponents<>(
+					new SingleBuild(k, Component.S, buckets),
+					new SingleBuild(k, Component.P, buckets),
+					new SingleBuild(k, Component.O, buckets),
+					new SingleBuild(k, Component.C, buckets));
+
 			for (Pair p : Pair.values()) {
 				pairs.put(p, new PairBuild(k, buckets));
 				delPairs.put(p, new PairBuild(k, buckets));
@@ -1257,11 +1309,11 @@ public class SketchBasedJoinEstimator {
 		}
 
 		void clear() {
-			singleTriples.values().forEach(SketchBasedJoinEstimator::clearArray);
-			delSingleTriples.values().forEach(SketchBasedJoinEstimator::clearArray);
+			singleTriples.forEach(SketchBasedJoinEstimator::clearArray);
+			delSingleTriples.forEach(SketchBasedJoinEstimator::clearArray);
 
-			singles.values().forEach(SingleBuild::clear);
-			delSingles.values().forEach(SingleBuild::clear);
+			singles.forEach(SingleBuild::clear);
+			delSingles.forEach(SingleBuild::clear);
 
 			pairs.values().forEach(PairBuild::clear);
 			delPairs.values().forEach(PairBuild::clear);
