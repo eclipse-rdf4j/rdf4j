@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -37,6 +38,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 
 	private static final Logger log = LoggerFactory.getLogger(LmdbEvaluationStatistics.class);
 	private static final int SHARED_CACHE_MAX_ENTRIES = 262_144;
+	private static final long JOIN_SUPPORT_CACHE_TTL_NANOS = TimeUnit.MILLISECONDS.toNanos(250);
 	private static final Map<SharedCardinalityKey, Double> sharedCardinalityCache = new ConcurrentHashMap<>();
 
 	private final ValueStore valueStore;
@@ -45,6 +47,9 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 	private final int tripleStoreIdentity;
 	private final Map<CardinalityKey, Double> cardinalityCache = new ConcurrentHashMap<>();
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
+	private volatile long joinSupportCacheExpiryNanos = Long.MIN_VALUE;
+	private volatile long joinSupportCacheRevisionId = Long.MIN_VALUE;
+	private volatile boolean joinSupportCacheValue = false;
 
 	public LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
 			SketchBasedJoinEstimator sketchBasedJoinEstimator) {
@@ -56,12 +61,21 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 
 	@Override
 	public boolean supportsJoinEstimation() {
-		return sketchBasedJoinEstimator.isReady();
-//		return false;
+		long now = System.nanoTime();
+		long revisionId = valueStore.getRevision().getRevisionId();
+		if (now < joinSupportCacheExpiryNanos && revisionId == joinSupportCacheRevisionId) {
+			return joinSupportCacheValue;
+		}
+
+		boolean ready = sketchBasedJoinEstimator.isReady();
+		joinSupportCacheValue = ready;
+		joinSupportCacheRevisionId = revisionId;
+		joinSupportCacheExpiryNanos = now + JOIN_SUPPORT_CACHE_TTL_NANOS;
+		return ready;
 	}
 
 	public boolean isJoinEstimationReady() {
-		return sketchBasedJoinEstimator.isReady();
+		return supportsJoinEstimation();
 	}
 
 	public Object joinEstimationDiagnostics() {

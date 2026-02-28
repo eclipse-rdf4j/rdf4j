@@ -14,11 +14,18 @@ package org.eclipse.rdf4j.sail.base;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.ref.SoftReference;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -29,6 +36,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -175,5 +184,170 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		var payloadField = cacheEntryClass.getDeclaredField("payloadRef");
 
 		assertEquals(SoftReference.class, payloadField.getType());
+	}
+
+	@Test
+	void stopWaitsForBlockedRebuildToExit() throws Exception {
+		Resource s = VF.createIRI("urn:s");
+		IRI p = VF.createIRI("urn:p");
+		Value o = VF.createIRI("urn:o");
+
+		BlockingRebuildStore store = new BlockingRebuildStore(st(s, p, o));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+				smallConfig().withRefreshSleepMillis(1));
+		estimator.unload();
+		estimator.addStatement(st(s, p, o));
+		estimator.startBackgroundRefresh(0);
+
+		assertTrue(store.awaitRebuildEntry(2, TimeUnit.SECONDS), "Expected rebuild loop to enter dataset scan");
+
+		ExecutorService exec = Executors.newSingleThreadExecutor();
+		Future<?> stopFuture = exec.submit(() -> {
+			estimator.stop();
+			return null;
+		});
+
+		try {
+			assertThrows(TimeoutException.class,
+					() -> stopFuture.get(5200, TimeUnit.MILLISECONDS),
+					"stop() returned while rebuild still blocked");
+		} finally {
+			store.releaseRebuild();
+			stopFuture.get(2, TimeUnit.SECONDS);
+			exec.shutdownNow();
+		}
+	}
+
+	private static final class BlockingRebuildStore implements SailStore {
+		private final Statement statement;
+		private final CountDownLatch rebuildEntered = new CountDownLatch(1);
+		private final CountDownLatch releaseRebuild = new CountDownLatch(1);
+
+		private BlockingRebuildStore(Statement statement) {
+			this.statement = statement;
+		}
+
+		boolean awaitRebuildEntry(long timeout, TimeUnit unit) throws InterruptedException {
+			return rebuildEntered.await(timeout, unit);
+		}
+
+		void releaseRebuild() {
+			releaseRebuild.countDown();
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return VF;
+		}
+
+		@Override
+		public EvaluationStatistics getEvaluationStatistics() {
+			return null;
+		}
+
+		@Override
+		public SailSource getExplicitSailSource() {
+			return new SailSource() {
+				@Override
+				public void close() {
+				}
+
+				@Override
+				public SailSource fork() {
+					return null;
+				}
+
+				@Override
+				public SailSink sink(org.eclipse.rdf4j.common.transaction.IsolationLevel level) {
+					return null;
+				}
+
+				@Override
+				public SailDataset dataset(org.eclipse.rdf4j.common.transaction.IsolationLevel level) {
+					return new SailDataset() {
+						private boolean emitted;
+
+						@Override
+						public void close() {
+						}
+
+						@Override
+						public String getNamespace(String prefix) {
+							return null;
+						}
+
+						@Override
+						public org.eclipse.rdf4j.common.iteration.CloseableIteration<? extends org.eclipse.rdf4j.model.Namespace> getNamespaces() {
+							return null;
+						}
+
+						@Override
+						public org.eclipse.rdf4j.common.iteration.CloseableIteration<? extends Resource> getContextIDs() {
+							return null;
+						}
+
+						@Override
+						public org.eclipse.rdf4j.common.iteration.CloseableIteration<? extends Statement> getStatements(
+								Resource subj, IRI pred, Value obj, Resource... contexts) {
+							return new org.eclipse.rdf4j.common.iteration.CloseableIteration<Statement>() {
+								@Override
+								public void close() {
+								}
+
+								@Override
+								public boolean hasNext() {
+									if (emitted) {
+										return false;
+									}
+									rebuildEntered.countDown();
+									boolean interrupted = false;
+									while (releaseRebuild.getCount() > 0L) {
+										try {
+											if (releaseRebuild.await(50, TimeUnit.MILLISECONDS)) {
+												break;
+											}
+										} catch (InterruptedException e) {
+											interrupted = true;
+										}
+									}
+									if (interrupted) {
+										Thread.currentThread().interrupt();
+									}
+									return !emitted;
+								}
+
+								@Override
+								public Statement next() {
+									emitted = true;
+									return statement;
+								}
+
+								@Override
+								public void remove() {
+									throw new UnsupportedOperationException();
+								}
+							};
+						}
+					};
+				}
+
+				@Override
+				public void prepare() {
+				}
+
+				@Override
+				public void flush() {
+				}
+			};
+		}
+
+		@Override
+		public SailSource getInferredSailSource() {
+			return null;
+		}
+
+		@Override
+		public void close() throws SailException {
+		}
 	}
 }

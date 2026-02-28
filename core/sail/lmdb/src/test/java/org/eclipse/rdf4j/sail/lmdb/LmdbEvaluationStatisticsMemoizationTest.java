@@ -12,8 +12,13 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.lang.reflect.Field;
@@ -42,10 +47,35 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 
 class LmdbEvaluationStatisticsMemoizationTest {
+
+	@Test
+	void memoizesSupportsJoinEstimationAndInvalidatesAfterCacheWindow() throws Exception {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.isReady()).thenReturn(true, false, false);
+		ValueStore valueStore = mock(ValueStore.class);
+		ValueStoreRevision revision = mock(ValueStoreRevision.class);
+		when(valueStore.getRevision()).thenReturn(revision);
+		when(revision.getRevisionId()).thenReturn(1L);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(
+				valueStore,
+				mock(TripleStore.class),
+				estimator);
+
+		assertTrue(statistics.supportsJoinEstimation(), "Expected initial readiness probe");
+		assertTrue(statistics.supportsJoinEstimation(), "Expected second probe to use cached readiness");
+		verify(estimator, times(1)).isReady();
+
+		Thread.sleep(300);
+
+		assertFalse(statistics.supportsJoinEstimation(), "Expected readiness cache invalidation after cache window");
+		verify(estimator, times(2)).isReady();
+	}
 
 	@Test
 	void cachesEquivalentStatementPatternCardinalitiesByResolvedIds() throws Exception {

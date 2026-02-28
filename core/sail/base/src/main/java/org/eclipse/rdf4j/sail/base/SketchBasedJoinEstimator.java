@@ -32,7 +32,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.BooleanSupplier;
@@ -519,12 +518,20 @@ public class SketchBasedJoinEstimator {
 
 	public void stop() {
 		running = false;
-		if (refresher != null) {
-			refresher.interrupt();
+		Thread refreshThread = refresher;
+		if (refreshThread != null) {
+			refreshThread.interrupt();
+			if (Thread.currentThread() == refreshThread) {
+				return;
+			}
 			try {
-				refresher.join(TimeUnit.SECONDS.toMillis(5));
+				while (refreshThread.isAlive()) {
+					refreshThread.join(250L);
+				}
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
+			} finally {
+				refresher = null;
 			}
 		}
 	}
@@ -565,6 +572,9 @@ public class SketchBasedJoinEstimator {
 				CloseableIteration<? extends Statement> it = ds.getStatements(null, null, null)) {
 
 			while (it.hasNext()) {
+				if (Thread.currentThread().isInterrupted() || !running && Thread.currentThread() == refresher) {
+					break;
+				}
 				Statement st = it.next();
 				try {
 					synchronized (tgt) {
@@ -590,6 +600,7 @@ public class SketchBasedJoinEstimator {
 						Thread.sleep(throttleMillis);
 					} catch (InterruptedException ie) {
 						Thread.currentThread().interrupt();
+						break;
 					}
 				}
 
