@@ -19,7 +19,7 @@ public class S3StoreTest extends RDFNotifyingStoreTest {
 
 	@Override
 	protected NotifyingSail createSail() throws SailException {
-		NotifyingSail sail = new S3Store(new S3StoreConfig("spoc,posc"));
+		NotifyingSail sail = new S3Store(new S3StoreConfig());
 		sail.init();
 		return sail;
 	}

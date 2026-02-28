@@ -10,7 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.s3.storage;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,10 +28,10 @@ class ParquetRoundTripTest {
 	@Test
 	void roundTrip_spocOrder_allFieldsPreserved() {
 		QuadIndex spoc = new QuadIndex("spoc");
-		List<ParquetFileBuilder.QuadEntry> entries = List.of(
-				new ParquetFileBuilder.QuadEntry(1, 2, 3, 4, MemTable.FLAG_EXPLICIT),
-				new ParquetFileBuilder.QuadEntry(5, 6, 7, 8, MemTable.FLAG_INFERRED),
-				new ParquetFileBuilder.QuadEntry(9, 10, 11, 0, MemTable.FLAG_TOMBSTONE));
+		List<QuadEntry> entries = List.of(
+				new QuadEntry(1, 2, 3, 4, MemTable.FLAG_EXPLICIT),
+				new QuadEntry(5, 6, 7, 8, MemTable.FLAG_INFERRED),
+				new QuadEntry(9, 10, 11, 0, MemTable.FLAG_TOMBSTONE));
 
 		byte[] parquetData = ParquetFileBuilder.build(entries, ParquetSchemas.SortOrder.SPOC);
 		ParquetQuadSource source = new ParquetQuadSource(parquetData, spoc);
@@ -49,10 +51,10 @@ class ParquetRoundTripTest {
 	void roundTrip_opscOrder_keysSortedByObject() {
 		QuadIndex opsc = new QuadIndex("opsc");
 		// Written sorted in OPSC order (by object: 10, 20, 30)
-		List<ParquetFileBuilder.QuadEntry> entries = List.of(
-				new ParquetFileBuilder.QuadEntry(100, 200, 10, 0, MemTable.FLAG_EXPLICIT),
-				new ParquetFileBuilder.QuadEntry(300, 400, 20, 0, MemTable.FLAG_EXPLICIT),
-				new ParquetFileBuilder.QuadEntry(500, 600, 30, 0, MemTable.FLAG_EXPLICIT));
+		List<QuadEntry> entries = List.of(
+				new QuadEntry(100, 200, 10, 0, MemTable.FLAG_EXPLICIT),
+				new QuadEntry(300, 400, 20, 0, MemTable.FLAG_EXPLICIT),
+				new QuadEntry(500, 600, 30, 0, MemTable.FLAG_EXPLICIT));
 
 		byte[] parquetData = ParquetFileBuilder.build(entries, ParquetSchemas.SortOrder.OPSC);
 		ParquetQuadSource source = new ParquetQuadSource(parquetData, opsc);
@@ -69,10 +71,10 @@ class ParquetRoundTripTest {
 	void roundTrip_cspoOrder_keysSortedByContext() {
 		QuadIndex cspo = new QuadIndex("cspo");
 		// Written sorted in CSPO order (by context: 5, 10, 15)
-		List<ParquetFileBuilder.QuadEntry> entries = List.of(
-				new ParquetFileBuilder.QuadEntry(1, 2, 3, 5, MemTable.FLAG_EXPLICIT),
-				new ParquetFileBuilder.QuadEntry(4, 5, 6, 10, MemTable.FLAG_EXPLICIT),
-				new ParquetFileBuilder.QuadEntry(7, 8, 9, 15, MemTable.FLAG_EXPLICIT));
+		List<QuadEntry> entries = List.of(
+				new QuadEntry(1, 2, 3, 5, MemTable.FLAG_EXPLICIT),
+				new QuadEntry(4, 5, 6, 10, MemTable.FLAG_EXPLICIT),
+				new QuadEntry(7, 8, 9, 15, MemTable.FLAG_EXPLICIT));
 
 		byte[] parquetData = ParquetFileBuilder.build(entries, ParquetSchemas.SortOrder.CSPO);
 		ParquetQuadSource source = new ParquetQuadSource(parquetData, cspo);
@@ -87,10 +89,10 @@ class ParquetRoundTripTest {
 	@Test
 	void roundTrip_filterBySubject() {
 		QuadIndex spoc = new QuadIndex("spoc");
-		List<ParquetFileBuilder.QuadEntry> entries = List.of(
-				new ParquetFileBuilder.QuadEntry(1, 2, 3, 0, MemTable.FLAG_EXPLICIT),
-				new ParquetFileBuilder.QuadEntry(5, 6, 7, 0, MemTable.FLAG_EXPLICIT),
-				new ParquetFileBuilder.QuadEntry(10, 11, 12, 0, MemTable.FLAG_EXPLICIT));
+		List<QuadEntry> entries = List.of(
+				new QuadEntry(1, 2, 3, 0, MemTable.FLAG_EXPLICIT),
+				new QuadEntry(5, 6, 7, 0, MemTable.FLAG_EXPLICIT),
+				new QuadEntry(10, 11, 12, 0, MemTable.FLAG_EXPLICIT));
 
 		byte[] parquetData = ParquetFileBuilder.build(entries, ParquetSchemas.SortOrder.SPOC);
 		ParquetQuadSource source = new ParquetQuadSource(parquetData, spoc, 5, -1, -1, -1);
@@ -103,10 +105,10 @@ class ParquetRoundTripTest {
 	@Test
 	void roundTrip_filterByPredicate() {
 		QuadIndex spoc = new QuadIndex("spoc");
-		List<ParquetFileBuilder.QuadEntry> entries = List.of(
-				new ParquetFileBuilder.QuadEntry(1, 10, 3, 0, MemTable.FLAG_EXPLICIT),
-				new ParquetFileBuilder.QuadEntry(2, 20, 4, 0, MemTable.FLAG_EXPLICIT),
-				new ParquetFileBuilder.QuadEntry(3, 10, 5, 0, MemTable.FLAG_EXPLICIT));
+		List<QuadEntry> entries = List.of(
+				new QuadEntry(1, 10, 3, 0, MemTable.FLAG_EXPLICIT),
+				new QuadEntry(2, 20, 4, 0, MemTable.FLAG_EXPLICIT),
+				new QuadEntry(3, 10, 5, 0, MemTable.FLAG_EXPLICIT));
 
 		byte[] parquetData = ParquetFileBuilder.build(entries, ParquetSchemas.SortOrder.SPOC);
 		ParquetQuadSource source = new ParquetQuadSource(parquetData, spoc, -1, 10, -1, -1);
@@ -121,10 +123,10 @@ class ParquetRoundTripTest {
 	@Test
 	void roundTrip_filterByMultipleComponents() {
 		QuadIndex spoc = new QuadIndex("spoc");
-		List<ParquetFileBuilder.QuadEntry> entries = List.of(
-				new ParquetFileBuilder.QuadEntry(1, 2, 3, 4, MemTable.FLAG_EXPLICIT),
-				new ParquetFileBuilder.QuadEntry(1, 2, 99, 4, MemTable.FLAG_EXPLICIT),
-				new ParquetFileBuilder.QuadEntry(1, 99, 3, 4, MemTable.FLAG_EXPLICIT));
+		List<QuadEntry> entries = List.of(
+				new QuadEntry(1, 2, 3, 4, MemTable.FLAG_EXPLICIT),
+				new QuadEntry(1, 2, 99, 4, MemTable.FLAG_EXPLICIT),
+				new QuadEntry(1, 99, 3, 4, MemTable.FLAG_EXPLICIT));
 
 		byte[] parquetData = ParquetFileBuilder.build(entries, ParquetSchemas.SortOrder.SPOC);
 		ParquetQuadSource source = new ParquetQuadSource(parquetData, spoc, 1, 2, 3, 4);
@@ -147,15 +149,15 @@ class ParquetRoundTripTest {
 		QuadIndex spoc = new QuadIndex("spoc");
 
 		// File 1: newer epoch
-		List<ParquetFileBuilder.QuadEntry> file1 = List.of(
-				new ParquetFileBuilder.QuadEntry(1, 2, 3, 0, MemTable.FLAG_EXPLICIT),
-				new ParquetFileBuilder.QuadEntry(5, 6, 7, 0, MemTable.FLAG_EXPLICIT));
+		List<QuadEntry> file1 = List.of(
+				new QuadEntry(1, 2, 3, 0, MemTable.FLAG_EXPLICIT),
+				new QuadEntry(5, 6, 7, 0, MemTable.FLAG_EXPLICIT));
 		byte[] data1 = ParquetFileBuilder.build(file1, ParquetSchemas.SortOrder.SPOC);
 
 		// File 2: older epoch, overlaps on (1,2,3,0)
-		List<ParquetFileBuilder.QuadEntry> file2 = List.of(
-				new ParquetFileBuilder.QuadEntry(1, 2, 3, 0, MemTable.FLAG_INFERRED),
-				new ParquetFileBuilder.QuadEntry(10, 11, 12, 0, MemTable.FLAG_EXPLICIT));
+		List<QuadEntry> file2 = List.of(
+				new QuadEntry(1, 2, 3, 0, MemTable.FLAG_INFERRED),
+				new QuadEntry(10, 11, 12, 0, MemTable.FLAG_EXPLICIT));
 		byte[] data2 = ParquetFileBuilder.build(file2, ParquetSchemas.SortOrder.SPOC);
 
 		List<RawEntrySource> sources = List.of(

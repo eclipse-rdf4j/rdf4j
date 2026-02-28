@@ -15,16 +15,12 @@ import java.io.IOException;
 import java.nio.file.Path;
 
 import org.eclipse.rdf4j.sail.s3.storage.ObjectStore;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Unified three-tier cache facade: L1 (heap) -> L2 (disk) -> L3 (S3 / ObjectStore). On a cache miss at a given tier,
  * data is fetched from the next tier down and promoted into all higher tiers.
  */
 public class TieredCache implements Closeable {
-
-	private static final Logger logger = LoggerFactory.getLogger(TieredCache.class);
 
 	private final L1HeapCache l1;
 	private final L2DiskCache l2; // nullable when no disk cache path is configured
@@ -59,10 +55,7 @@ public class TieredCache implements Closeable {
 		// L3 (S3)
 		data = objectStore.get(s3Key);
 		if (data != null) {
-			l1.put(s3Key, data); // populate L1
-			if (l2 != null) {
-				l2.put(s3Key, data); // populate L2
-			}
+			promoteToUpperTiers(s3Key, data);
 		}
 		return data;
 	}
@@ -72,9 +65,13 @@ public class TieredCache implements Closeable {
 	 * separately.
 	 */
 	public void writeThrough(String s3Key, byte[] data) {
-		l1.put(s3Key, data);
+		promoteToUpperTiers(s3Key, data);
+	}
+
+	private void promoteToUpperTiers(String key, byte[] data) {
+		l1.put(key, data);
 		if (l2 != null) {
-			l2.put(s3Key, data);
+			l2.put(key, data);
 		}
 	}
 

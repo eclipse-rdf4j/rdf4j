@@ -60,15 +60,6 @@ public class MemTable {
 	}
 
 	/**
-	 * Creates a frozen (immutable) MemTable from an existing data map. Used internally by {@link #freeze()}.
-	 */
-	private MemTable(QuadIndex index, ConcurrentSkipListMap<byte[], byte[]> data, boolean frozen) {
-		this.index = index;
-		this.data = data;
-		this.frozen.set(frozen);
-	}
-
-	/**
 	 * Stores a quad in the table.
 	 *
 	 * @param s        subject ID
@@ -160,8 +151,7 @@ public class MemTable {
 	}
 
 	/**
-	 * Returns a frozen (immutable) snapshot of this table. After freezing, no further writes are accepted on this
-	 * instance.
+	 * Freezes this table in place, preventing further writes. Does not create a copy.
 	 *
 	 * @return this MemTable, now frozen
 	 */

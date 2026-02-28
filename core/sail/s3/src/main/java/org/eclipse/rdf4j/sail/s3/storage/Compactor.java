@@ -11,10 +11,12 @@
 package org.eclipse.rdf4j.sail.s3.storage;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeMap;
 
 import org.eclipse.rdf4j.sail.s3.cache.TieredCache;
 import org.slf4j.Logger;
@@ -32,7 +34,7 @@ import org.slf4j.LoggerFactory;
 public class Compactor {
 
 	private static final Logger logger = LoggerFactory.getLogger(Compactor.class);
-	private static final String[] SORT_ORDERS = { "spoc", "opsc", "cspo" };
+	private static final ParquetSchemas.SortOrder[] SORT_ORDERS = ParquetSchemas.SortOrder.values();
 
 	private final ObjectStore objectStore;
 	private final TieredCache cache;
@@ -63,12 +65,13 @@ public class Compactor {
 		List<Catalog.ParquetFileInfo> newFiles = new ArrayList<>();
 		Set<String> oldKeys = new HashSet<>();
 
-		for (String sortOrder : SORT_ORDERS) {
-			QuadIndex quadIndex = new QuadIndex(sortOrder);
+		for (ParquetSchemas.SortOrder sortOrder : SORT_ORDERS) {
+			String suffix = sortOrder.suffix();
+			QuadIndex quadIndex = new QuadIndex(suffix);
 
 			// Collect source files for this sort order, ordered newest-first (highest epoch first)
 			List<Catalog.ParquetFileInfo> sortOrderFiles = sourceFiles.stream()
-					.filter(f -> sortOrder.equals(f.getSortOrder()))
+					.filter(f -> suffix.equals(f.getSortOrder()))
 					.sorted(Comparator.comparingLong(Catalog.ParquetFileInfo::getEpoch).reversed())
 					.toList();
 
@@ -97,19 +100,18 @@ public class Compactor {
 			}
 
 			// Merge and collect entries
-			List<ParquetFileBuilder.QuadEntry> merged = mergeEntries(sources, quadIndex, suppressTombstones);
+			List<QuadEntry> merged = mergeEntries(sources, quadIndex, suppressTombstones);
 
 			if (merged.isEmpty()) {
 				continue;
 			}
 
 			// Write merged Parquet file
-			ParquetSchemas.SortOrder parsedSortOrder = ParquetSchemas.SortOrder.fromSuffix(sortOrder);
 			String s3Key = "data/L" + targetLevel + "-"
-					+ String.format("%05d", epoch) + "-" + sortOrder + ".parquet";
+					+ String.format("%05d", epoch) + "-" + suffix + ".parquet";
 
 			byte[] parquetData = ParquetFileBuilder.build(merged, ParquetSchemas.QUAD_SCHEMA,
-					parsedSortOrder, rowGroupSize, pageSize);
+					sortOrder, rowGroupSize, pageSize);
 
 			objectStore.put(s3Key, parquetData);
 			if (cache != null) {
@@ -117,22 +119,16 @@ public class Compactor {
 			}
 
 			QuadStats stats = QuadStats.fromEntries(merged);
-			newFiles.add(new Catalog.ParquetFileInfo(s3Key, targetLevel, sortOrder, merged.size(),
+			newFiles.add(new Catalog.ParquetFileInfo(s3Key, targetLevel, suffix, merged.size(),
 					epoch, parquetData.length, stats));
 		}
 
-		// Update catalog: remove old files, add new ones
+		// Update catalog in memory: remove old files, add new ones.
+		// Physical deletion of old files is deferred to the caller, after the catalog is saved,
+		// to prevent data loss if the process crashes between deletion and catalog save.
 		catalog.removeFiles(oldKeys);
 		for (Catalog.ParquetFileInfo newFile : newFiles) {
 			catalog.addFile(newFile);
-		}
-
-		// Delete old S3 files and invalidate cache
-		for (String key : oldKeys) {
-			objectStore.delete(key);
-			if (cache != null) {
-				cache.invalidate(key);
-			}
 		}
 
 		logger.info("Compacted L{}→L{}: {} files merged into {} files",
@@ -141,10 +137,10 @@ public class Compactor {
 		return new CompactionResult(newFiles, oldKeys);
 	}
 
-	private List<ParquetFileBuilder.QuadEntry> mergeEntries(List<RawEntrySource> sources, QuadIndex quadIndex,
+	private List<QuadEntry> mergeEntries(List<RawEntrySource> sources, QuadIndex quadIndex,
 			boolean suppressTombstones) {
 		// Sources are ordered newest-first, so for dedup, first occurrence wins
-		java.util.TreeMap<CompactKey, ParquetFileBuilder.QuadEntry> deduped = new java.util.TreeMap<>();
+		TreeMap<CompactKey, QuadEntry> deduped = new TreeMap<>();
 		for (RawEntrySource source : sources) {
 			while (source.hasNext()) {
 				byte[] key = source.peekKey();
@@ -154,7 +150,7 @@ public class Compactor {
 					long[] quad = new long[4];
 					quadIndex.keyToQuad(key, quad);
 					if (!suppressTombstones || flag != MemTable.FLAG_TOMBSTONE) {
-						deduped.put(ck, new ParquetFileBuilder.QuadEntry(
+						deduped.put(ck, new QuadEntry(
 								quad[QuadIndex.SUBJ_IDX], quad[QuadIndex.PRED_IDX],
 								quad[QuadIndex.OBJ_IDX], quad[QuadIndex.CONTEXT_IDX], flag));
 					}
@@ -175,7 +171,7 @@ public class Compactor {
 
 		@Override
 		public int compareTo(CompactKey other) {
-			return java.util.Arrays.compareUnsigned(this.key, other.key);
+			return Arrays.compareUnsigned(this.key, other.key);
 		}
 
 		@Override
@@ -186,12 +182,12 @@ public class Compactor {
 			if (!(o instanceof CompactKey)) {
 				return false;
 			}
-			return java.util.Arrays.equals(key, ((CompactKey) o).key);
+			return Arrays.equals(key, ((CompactKey) o).key);
 		}
 
 		@Override
 		public int hashCode() {
-			return java.util.Arrays.hashCode(key);
+			return Arrays.hashCode(key);
 		}
 	}
 

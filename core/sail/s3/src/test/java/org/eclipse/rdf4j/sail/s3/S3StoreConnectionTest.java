@@ -21,6 +21,6 @@ public class S3StoreConnectionTest extends RepositoryConnectionTest {
 
 	@Override
 	protected Repository createRepository(File dataDir) {
-		return new SailRepository(new S3Store(new S3StoreConfig("spoc")));
+		return new SailRepository(new S3Store(new S3StoreConfig()));
 	}
 }

@@ -15,6 +15,7 @@ import java.io.UncheckedIOException;
 import java.util.HashMap;
 import java.util.List;
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.conf.ParquetConfiguration;
 import org.apache.parquet.conf.PlainParquetConfiguration;
 import org.apache.parquet.hadoop.ParquetWriter;
@@ -49,35 +50,6 @@ public final class ParquetFileBuilder {
 
 	private ParquetFileBuilder() {
 		// utility class
-	}
-
-	/**
-	 * A quad entry to be written to a Parquet file. All 5 fields (subject, predicate, object, context, flag) are
-	 * stored.
-	 */
-	public static class QuadEntry {
-		public final long subject;
-		public final long predicate;
-		public final long object;
-		public final long context;
-		public final byte flag;
-
-		/**
-		 * Creates a quad entry with all components.
-		 *
-		 * @param subject   the subject value ID
-		 * @param predicate the predicate value ID
-		 * @param object    the object value ID
-		 * @param context   the context value ID
-		 * @param flag      the entry flag (e.g. insert vs tombstone)
-		 */
-		public QuadEntry(long subject, long predicate, long object, long context, byte flag) {
-			this.subject = subject;
-			this.predicate = predicate;
-			this.object = object;
-			this.context = context;
-			this.flag = flag;
-		}
 	}
 
 	/**
@@ -143,7 +115,7 @@ public final class ParquetFileBuilder {
 		}
 
 		@Override
-		public WriteContext init(org.apache.hadoop.conf.Configuration configuration) {
+		public WriteContext init(Configuration configuration) {
 			return new WriteContext(schema, new HashMap<>());
 		}
 
@@ -216,8 +188,7 @@ public final class ParquetFileBuilder {
 		}
 
 		@Override
-		protected WriteSupport<QuadEntry> getWriteSupport(
-				org.apache.hadoop.conf.Configuration conf) {
+		protected WriteSupport<QuadEntry> getWriteSupport(Configuration conf) {
 			return new QuadEntryWriteSupport(schema);
 		}
 

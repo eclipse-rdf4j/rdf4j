@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Determines when compaction should be triggered for a predicate partition. Counts distinct epochs at each level and
+ * Determines when compaction should be triggered. Counts distinct epochs at each level in the flat file catalog and
  * compares against configurable thresholds.
  */
 public class CompactionPolicy {
@@ -61,9 +61,9 @@ public class CompactionPolicy {
 	}
 
 	/**
-	 * Returns the files at the given level for a predicate partition.
+	 * Returns the files at the given level.
 	 *
-	 * @param files all files in the partition
+	 * @param files all catalog files
 	 * @param level the target level (0, 1, or 2)
 	 * @return files at that level
 	 */

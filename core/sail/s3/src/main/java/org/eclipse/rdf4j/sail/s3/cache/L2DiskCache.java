@@ -108,7 +108,7 @@ public class L2DiskCache implements Closeable {
 		}
 	}
 
-	private void evictIfNeeded(long incomingSize) {
+	private synchronized void evictIfNeeded(long incomingSize) {
 		while (currentSizeBytes.get() + incomingSize > maxSizeBytes && !index.isEmpty()) {
 			// Find LRU entry
 			String lruKey = null;
@@ -196,7 +196,7 @@ public class L2DiskCache implements Closeable {
 		public long sizeBytes;
 
 		@JsonProperty("lastAccessNanos")
-		public long lastAccessNanos;
+		public volatile long lastAccessNanos;
 
 		public CacheEntry() {
 			// for Jackson deserialization

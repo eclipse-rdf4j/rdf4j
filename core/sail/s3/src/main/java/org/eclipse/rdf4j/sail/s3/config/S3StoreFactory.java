@@ -15,15 +15,11 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.config.SailFactory;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
 import org.eclipse.rdf4j.sail.s3.S3Store;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * A {@link SailFactory} that creates {@link S3Store}s based on RDF configuration data.
  */
 public class S3StoreFactory implements SailFactory {
-
-	private static final Logger logger = LoggerFactory.getLogger(S3StoreFactory.class);
 
 	/**
 	 * The type of repositories that are created by this factory.
@@ -53,9 +49,8 @@ public class S3StoreFactory implements SailFactory {
 
 		if (config instanceof S3StoreConfig) {
 			return new S3Store((S3StoreConfig) config);
-		} else {
-			logger.warn("Config is instance of {} is not S3StoreConfig.", config.getClass().getName());
-			return new S3Store();
 		}
+		throw new SailConfigException(
+				"Expected S3StoreConfig but got " + config.getClass().getName());
 	}
 }

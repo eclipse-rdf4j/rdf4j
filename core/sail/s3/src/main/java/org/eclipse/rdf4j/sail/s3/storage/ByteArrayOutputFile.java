@@ -67,34 +67,29 @@ public class ByteArrayOutputFile implements OutputFile {
 	private static class ByteArrayPositionOutputStream extends PositionOutputStream {
 
 		private final ByteArrayOutputStream baos;
-		private long pos;
 
 		ByteArrayPositionOutputStream(ByteArrayOutputStream baos) {
 			this.baos = baos;
-			this.pos = 0;
 		}
 
 		@Override
 		public long getPos() {
-			return pos;
+			return baos.size();
 		}
 
 		@Override
 		public void write(int b) throws IOException {
 			baos.write(b);
-			pos++;
 		}
 
 		@Override
 		public void write(byte[] b) throws IOException {
 			baos.write(b);
-			pos += b.length;
 		}
 
 		@Override
 		public void write(byte[] b, int off, int len) throws IOException {
 			baos.write(b, off, len);
-			pos += len;
 		}
 
 		@Override

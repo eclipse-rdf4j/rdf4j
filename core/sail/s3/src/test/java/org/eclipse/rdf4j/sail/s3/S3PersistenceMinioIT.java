@@ -10,9 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.s3;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -81,7 +84,7 @@ class S3PersistenceMinioIT {
 			S3SailStore sailStore = new S3SailStore(config, objectStore);
 
 			var source = sailStore.getExplicitSailSource();
-			var sink = source.sink(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			var sink = source.sink(IsolationLevels.NONE);
 			sink.approve(s, p, o, null);
 			sink.flush();
 			sailStore.close();
@@ -94,7 +97,7 @@ class S3PersistenceMinioIT {
 			S3SailStore sailStore = new S3SailStore(config, objectStore);
 
 			var source = sailStore.getExplicitSailSource();
-			var dataset = source.dataset(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			var dataset = source.dataset(IsolationLevels.NONE);
 
 			CloseableIteration<? extends Statement> iter = dataset.getStatements(null, null, null);
 			assertTrue(iter.hasNext());

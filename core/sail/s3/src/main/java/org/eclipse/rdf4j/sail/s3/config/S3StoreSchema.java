@@ -25,19 +25,9 @@ public class S3StoreSchema {
 	public static final String NAMESPACE = "http://rdf4j.org/config/sail/s3#";
 
 	/**
-	 * <tt>http://rdf4j.org/config/sail/s3#quadIndexes</tt>
-	 */
-	public final static IRI QUAD_INDEXES;
-
-	/**
 	 * <tt>http://rdf4j.org/config/sail/s3#memTableSize</tt>
 	 */
 	public final static IRI MEM_TABLE_SIZE;
-
-	/**
-	 * <tt>http://rdf4j.org/config/sail/s3#blockSize</tt>
-	 */
-	public final static IRI BLOCK_SIZE;
 
 	/**
 	 * <tt>http://rdf4j.org/config/sail/s3#memoryCacheSize</tt>
@@ -53,16 +43,6 @@ public class S3StoreSchema {
 	 * <tt>http://rdf4j.org/config/sail/s3#diskCachePath</tt>
 	 */
 	public final static IRI DISK_CACHE_PATH;
-
-	/**
-	 * <tt>http://rdf4j.org/config/sail/s3#valueCacheSize</tt>
-	 */
-	public final static IRI VALUE_CACHE_SIZE;
-
-	/**
-	 * <tt>http://rdf4j.org/config/sail/s3#valueIdCacheSize</tt>
-	 */
-	public final static IRI VALUE_ID_CACHE_SIZE;
 
 	public final static IRI S3_BUCKET;
 
@@ -85,14 +65,10 @@ public class S3StoreSchema {
 
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
-		QUAD_INDEXES = factory.createIRI(NAMESPACE, "quadIndexes");
 		MEM_TABLE_SIZE = factory.createIRI(NAMESPACE, "memTableSize");
-		BLOCK_SIZE = factory.createIRI(NAMESPACE, "blockSize");
 		MEMORY_CACHE_SIZE = factory.createIRI(NAMESPACE, "memoryCacheSize");
 		DISK_CACHE_SIZE = factory.createIRI(NAMESPACE, "diskCacheSize");
 		DISK_CACHE_PATH = factory.createIRI(NAMESPACE, "diskCachePath");
-		VALUE_CACHE_SIZE = factory.createIRI(NAMESPACE, "valueCacheSize");
-		VALUE_ID_CACHE_SIZE = factory.createIRI(NAMESPACE, "valueIdCacheSize");
 		S3_BUCKET = factory.createIRI(NAMESPACE, "s3Bucket");
 		S3_ENDPOINT = factory.createIRI(NAMESPACE, "s3Endpoint");
 		S3_REGION = factory.createIRI(NAMESPACE, "s3Region");

@@ -38,14 +38,19 @@ public class S3ObjectStore implements ObjectStore {
 	public S3ObjectStore(String bucket, String endpoint, String region, String prefix,
 			String accessKey, String secretKey, boolean forcePathStyle) {
 		this.bucket = bucket;
-		this.prefix = (prefix != null && !prefix.isEmpty() && !prefix.endsWith("/")) ? prefix + "/"
-				: (prefix != null ? prefix : "");
+		if (prefix == null || prefix.isEmpty()) {
+			this.prefix = "";
+		} else if (prefix.endsWith("/")) {
+			this.prefix = prefix;
+		} else {
+			this.prefix = prefix + "/";
+		}
 
-		MinioClient.Builder builder = MinioClient.builder()
+		this.client = MinioClient.builder()
 				.endpoint(endpoint)
 				.credentials(accessKey, secretKey)
-				.region(region);
-		this.client = builder.build();
+				.region(region)
+				.build();
 	}
 
 	private String resolve(String key) {
@@ -68,37 +73,32 @@ public class S3ObjectStore implements ObjectStore {
 
 	@Override
 	public byte[] get(String key) {
-		try (InputStream is = client.getObject(GetObjectArgs.builder()
+		return executeGet(GetObjectArgs.builder()
 				.bucket(bucket)
 				.object(resolve(key))
-				.build())) {
-			return is.readAllBytes();
-		} catch (ErrorResponseException e) {
-			if ("NoSuchKey".equals(e.errorResponse().code())) {
-				return null;
-			}
-			throw new UncheckedIOException(new IOException("Failed to get " + key, e));
-		} catch (Exception e) {
-			throw new UncheckedIOException(new IOException("Failed to get " + key, e));
-		}
+				.build(), key);
 	}
 
 	@Override
 	public byte[] getRange(String key, long offset, long length) {
-		try (InputStream is = client.getObject(GetObjectArgs.builder()
+		return executeGet(GetObjectArgs.builder()
 				.bucket(bucket)
 				.object(resolve(key))
 				.offset(offset)
 				.length(length)
-				.build())) {
+				.build(), key);
+	}
+
+	private byte[] executeGet(GetObjectArgs args, String key) {
+		try (InputStream is = client.getObject(args)) {
 			return is.readAllBytes();
 		} catch (ErrorResponseException e) {
 			if ("NoSuchKey".equals(e.errorResponse().code())) {
 				return null;
 			}
-			throw new UncheckedIOException(new IOException("Failed to getRange " + key, e));
+			throw new UncheckedIOException(new IOException("Failed to get " + key, e));
 		} catch (Exception e) {
-			throw new UncheckedIOException(new IOException("Failed to getRange " + key, e));
+			throw new UncheckedIOException(new IOException("Failed to get " + key, e));
 		}
 	}
 

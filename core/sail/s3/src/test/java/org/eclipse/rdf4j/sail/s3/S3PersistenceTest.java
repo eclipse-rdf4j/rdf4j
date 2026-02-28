@@ -10,7 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.s3;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -18,6 +20,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -51,7 +54,7 @@ class S3PersistenceTest {
 
 			// Add statements using sink
 			var source = sailStore.getExplicitSailSource();
-			var sink = source.sink(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			var sink = source.sink(IsolationLevels.NONE);
 
 			// We need to resolve values through the sail's value factory
 			S3ValueStore vs = (S3ValueStore) svf;
@@ -71,7 +74,7 @@ class S3PersistenceTest {
 			ValueFactory svf = sailStore.getValueFactory();
 
 			var source = sailStore.getExplicitSailSource();
-			var dataset = source.dataset(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			var dataset = source.dataset(IsolationLevels.NONE);
 
 			CloseableIteration<? extends Statement> iter = dataset.getStatements(null, null, null);
 			assertTrue(iter.hasNext(), "Should have at least one statement after restart");
@@ -104,7 +107,7 @@ class S3PersistenceTest {
 			S3SailStore sailStore = new S3SailStore(config, store);
 
 			var source = sailStore.getExplicitSailSource();
-			var sink = source.sink(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			var sink = source.sink(IsolationLevels.NONE);
 
 			sink.approve(s1, p, o, null);
 			sink.flush();
@@ -120,7 +123,7 @@ class S3PersistenceTest {
 			S3SailStore sailStore = new S3SailStore(config, store);
 
 			var source = sailStore.getExplicitSailSource();
-			var dataset = source.dataset(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			var dataset = source.dataset(IsolationLevels.NONE);
 
 			CloseableIteration<? extends Statement> iter = dataset.getStatements(null, null, null);
 			int count = 0;
@@ -151,7 +154,7 @@ class S3PersistenceTest {
 			S3SailStore sailStore = new S3SailStore(config, store);
 
 			var source = sailStore.getExplicitSailSource();
-			var sink = source.sink(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			var sink = source.sink(IsolationLevels.NONE);
 
 			sink.approve(s1, p, o, null);
 			sink.approve(s2, p, o, null);
@@ -170,7 +173,7 @@ class S3PersistenceTest {
 			S3SailStore sailStore = new S3SailStore(config, store);
 
 			var source = sailStore.getExplicitSailSource();
-			var dataset = source.dataset(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			var dataset = source.dataset(IsolationLevels.NONE);
 
 			CloseableIteration<? extends Statement> iter = dataset.getStatements(null, null, null);
 			assertTrue(iter.hasNext());
@@ -200,7 +203,7 @@ class S3PersistenceTest {
 		{
 			S3SailStore sailStore = new S3SailStore(config, store);
 			var source = sailStore.getExplicitSailSource();
-			var sink = source.sink(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			var sink = source.sink(IsolationLevels.NONE);
 
 			sink.approve(s1, p1, o1, null);
 			sink.approve(s1, p2, o2, null);
@@ -213,7 +216,7 @@ class S3PersistenceTest {
 		{
 			S3SailStore sailStore = new S3SailStore(config, store);
 			var source = sailStore.getExplicitSailSource();
-			var dataset = source.dataset(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			var dataset = source.dataset(IsolationLevels.NONE);
 
 			// All statements
 			List<Statement> all = drain(dataset.getStatements(null, null, null));
@@ -260,7 +263,7 @@ class S3PersistenceTest {
 		{
 			S3SailStore sailStore = new S3SailStore(config, store);
 			var source = sailStore.getExplicitSailSource();
-			var sink = source.sink(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			var sink = source.sink(IsolationLevels.NONE);
 			sink.approve(s, p, o, null);
 			sink.flush();
 			sailStore.close();
@@ -301,7 +304,7 @@ class S3PersistenceTest {
 		{
 			S3SailStore sailStore = new S3SailStore(config, store);
 			var source = sailStore.getExplicitSailSource();
-			var sink = source.sink(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			var sink = source.sink(IsolationLevels.NONE);
 			sink.approve(s, p, o, g1);
 			sink.approve(s, p, o, g2);
 			sink.flush();
@@ -311,7 +314,7 @@ class S3PersistenceTest {
 		{
 			S3SailStore sailStore = new S3SailStore(config, store);
 			var source = sailStore.getExplicitSailSource();
-			var dataset = source.dataset(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			var dataset = source.dataset(IsolationLevels.NONE);
 
 			// Query by context g1
 			List<Statement> byG1 = drain(
@@ -347,7 +350,7 @@ class S3PersistenceTest {
 			S3SailStore sailStore = new S3SailStore(config, store);
 
 			var source = sailStore.getExplicitSailSource();
-			var sink = source.sink(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			var sink = source.sink(IsolationLevels.NONE);
 			sink.setNamespace("ex", "http://example.org/");
 			sink.flush();
 			sailStore.close();
@@ -358,7 +361,7 @@ class S3PersistenceTest {
 			S3SailStore sailStore = new S3SailStore(config, store);
 
 			var source = sailStore.getExplicitSailSource();
-			var dataset = source.dataset(org.eclipse.rdf4j.common.transaction.IsolationLevels.NONE);
+			var dataset = source.dataset(IsolationLevels.NONE);
 
 			assertEquals("http://example.org/", dataset.getNamespace("ex"));
 

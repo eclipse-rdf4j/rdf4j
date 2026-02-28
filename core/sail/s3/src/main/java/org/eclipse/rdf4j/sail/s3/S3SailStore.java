@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +56,7 @@ import org.eclipse.rdf4j.sail.s3.storage.ObjectStore;
 import org.eclipse.rdf4j.sail.s3.storage.ParquetFileBuilder;
 import org.eclipse.rdf4j.sail.s3.storage.ParquetQuadSource;
 import org.eclipse.rdf4j.sail.s3.storage.ParquetSchemas;
+import org.eclipse.rdf4j.sail.s3.storage.QuadEntry;
 import org.eclipse.rdf4j.sail.s3.storage.QuadIndex;
 import org.eclipse.rdf4j.sail.s3.storage.QuadStats;
 import org.eclipse.rdf4j.sail.s3.storage.RawEntrySource;
@@ -79,12 +81,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 class S3SailStore implements SailStore {
 
-	final Logger logger = LoggerFactory.getLogger(S3SailStore.class);
+	private static final Logger logger = LoggerFactory.getLogger(S3SailStore.class);
 
 	private static final QuadIndex SPOC_INDEX = new QuadIndex("spoc");
-	private static final QuadIndex OPSC_INDEX = new QuadIndex("opsc");
-	private static final QuadIndex CSPO_INDEX = new QuadIndex("cspo");
-	private static final List<QuadIndex> ALL_INDEXES = List.of(SPOC_INDEX, OPSC_INDEX, CSPO_INDEX);
+	private static final List<QuadIndex> ALL_INDEXES;
+
+	static {
+		ParquetSchemas.SortOrder[] orders = ParquetSchemas.SortOrder.values();
+		List<QuadIndex> indexes = new ArrayList<>(orders.length);
+		for (ParquetSchemas.SortOrder order : orders) {
+			indexes.add(new QuadIndex(order.suffix()));
+		}
+		ALL_INDEXES = List.copyOf(indexes);
+	}
 
 	private static final int DEFAULT_ROW_GROUP_SIZE = 8 * 1024 * 1024; // 8 MiB
 	private static final int DEFAULT_PAGE_SIZE = 64 * 1024; // 64 KiB
@@ -218,18 +227,24 @@ class S3SailStore implements SailStore {
 			return;
 		}
 
+		// Always persist namespaces and values (they may have changed without any quad writes)
+		valueStore.serialize(objectStore);
+		namespaceStore.serialize(objectStore, jsonMapper);
+
+		if (memTable.size() == 0) {
+			return; // no quads to flush — avoid wasting epoch numbers and S3 writes
+		}
+
 		long epoch = epochCounter.getAndIncrement();
 
-		if (memTable.size() > 0) {
-			// Freeze active MemTable and swap in fresh one
-			MemTable frozen = memTable;
-			frozen.freeze();
-			memTable = new MemTable(SPOC_INDEX);
+		// Freeze active MemTable and swap in fresh one
+		MemTable frozen = memTable;
+		frozen.freeze();
+		memTable = new MemTable(SPOC_INDEX);
 
-			List<long[]> allQuads = collectQuads(frozen);
-			QuadStats stats = QuadStats.fromQuads(allQuads);
-			writeParquetFiles(epoch, allQuads, stats);
-		}
+		List<long[]> allQuads = collectQuads(frozen);
+		QuadStats stats = QuadStats.fromQuads(allQuads);
+		writeParquetFiles(epoch, allQuads, stats);
 
 		persistMetadata(epoch);
 		runCompactionIfNeeded();
@@ -254,7 +269,7 @@ class S3SailStore implements SailStore {
 	private void writeParquetFiles(long epoch, List<long[]> allQuads, QuadStats stats) {
 		for (QuadIndex sortIndex : ALL_INDEXES) {
 			String sortSuffix = sortIndex.getFieldSeqString();
-			List<ParquetFileBuilder.QuadEntry> sorted = sortQuadEntries(allQuads, sortIndex);
+			List<QuadEntry> sorted = sortQuadEntries(allQuads, sortIndex);
 
 			ParquetSchemas.SortOrder sortOrder = ParquetSchemas.SortOrder.fromSuffix(sortSuffix);
 			byte[] parquetData = ParquetFileBuilder.build(sorted, ParquetSchemas.QUAD_SCHEMA,
@@ -273,17 +288,20 @@ class S3SailStore implements SailStore {
 	}
 
 	private void persistMetadata(long epoch) {
-		valueStore.serialize(objectStore);
-		namespaceStore.serialize(objectStore, jsonMapper);
+		// Save catalog first: if we crash after catalog but before values,
+		// on restart we have new nextValueId but old values — IDs are gaps (safe).
+		// The reverse (values first, catalog second) risks ID reuse on crash (corruption).
 		catalog.setNextValueId(valueStore.getNextId());
 		catalog.setEpoch(epoch);
 		catalog.save(objectStore, jsonMapper, epoch);
+		valueStore.serialize(objectStore);
+		namespaceStore.serialize(objectStore, jsonMapper);
 	}
 
 	/**
 	 * Sorts quad entries according to the given sort index.
 	 */
-	private static List<ParquetFileBuilder.QuadEntry> sortQuadEntries(List<long[]> quads, QuadIndex sortIndex) {
+	private static List<QuadEntry> sortQuadEntries(List<long[]> quads, QuadIndex sortIndex) {
 		List<long[]> sorted = new ArrayList<>(quads);
 		String seq = sortIndex.getFieldSeqString();
 		sorted.sort((a, b) -> {
@@ -297,9 +315,9 @@ class S3SailStore implements SailStore {
 			return 0;
 		});
 
-		List<ParquetFileBuilder.QuadEntry> result = new ArrayList<>(sorted.size());
+		List<QuadEntry> result = new ArrayList<>(sorted.size());
 		for (long[] q : sorted) {
-			result.add(new ParquetFileBuilder.QuadEntry(q[0], q[1], q[2], q[3], (byte) q[4]));
+			result.add(new QuadEntry(q[0], q[1], q[2], q[3], (byte) q[4]));
 		}
 		return result;
 	}
@@ -312,13 +330,14 @@ class S3SailStore implements SailStore {
 			return;
 		}
 
+		List<Compactor.CompactionResult> results = new ArrayList<>();
 		List<Catalog.ParquetFileInfo> files = catalog.getFiles();
 
 		// L0→L1 compaction
 		if (compactionPolicy.shouldCompact(files, 0)) {
 			List<Catalog.ParquetFileInfo> l0Files = CompactionPolicy.filesAtLevel(files, 0);
 			long compactEpoch = epochCounter.getAndIncrement();
-			compactor.compact(l0Files, 0, 1, compactEpoch, catalog);
+			results.add(compactor.compact(l0Files, 0, 1, compactEpoch, catalog));
 			files = catalog.getFiles();
 		}
 
@@ -326,13 +345,25 @@ class S3SailStore implements SailStore {
 		if (compactionPolicy.shouldCompact(files, 1)) {
 			List<Catalog.ParquetFileInfo> l1Files = CompactionPolicy.filesAtLevel(files, 1);
 			long compactEpoch = epochCounter.getAndIncrement();
-			compactor.compact(l1Files, 1, 2, compactEpoch, catalog);
+			results.add(compactor.compact(l1Files, 1, 2, compactEpoch, catalog));
 		}
 
-		// Save catalog after compaction
-		long epoch = epochCounter.getAndIncrement();
-		catalog.setEpoch(epoch);
-		catalog.save(objectStore, jsonMapper, epoch);
+		if (!results.isEmpty()) {
+			// Save catalog BEFORE deleting old files — crash-safe ordering
+			long epoch = epochCounter.getAndIncrement();
+			catalog.setEpoch(epoch);
+			catalog.save(objectStore, jsonMapper, epoch);
+
+			// Now safe to delete old files
+			for (Compactor.CompactionResult result : results) {
+				for (String key : result.getDeletedKeys()) {
+					objectStore.delete(key);
+					if (cache != null) {
+						cache.invalidate(key);
+					}
+				}
+			}
+		}
 	}
 
 	private boolean hasPersistence() {
@@ -575,24 +606,9 @@ class S3SailStore implements SailStore {
 		public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
 			sinkStoreAccessLock.lock();
 			try {
-				for (Statement statement : approved) {
-					Resource subj = statement.getSubject();
-					IRI pred = statement.getPredicate();
-					Value obj = statement.getObject();
-					Resource context = statement.getContext();
-
-					long s = valueStore.storeValue(subj);
-					long p = valueStore.storeValue(pred);
-					long o = valueStore.storeValue(obj);
-					long c = context == null ? 0 : valueStore.storeValue(context);
-
-					if (!explicit) {
-						mayHaveInferred = true;
-					}
-
-					memTable.put(s, p, o, c, explicit);
+				for (Statement st : approved) {
+					storeQuad(st.getSubject(), st.getPredicate(), st.getObject(), explicit, st.getContext());
 				}
-
 				// Size-triggered flush
 				if (objectStore != null && memTable.approximateSizeInBytes() >= memTableFlushSize) {
 					flushToObjectStore();
@@ -621,19 +637,21 @@ class S3SailStore implements SailStore {
 		private void addStatement(Resource subj, IRI pred, Value obj, boolean explicit, Resource context) {
 			sinkStoreAccessLock.lock();
 			try {
-				long s = valueStore.storeValue(subj);
-				long p = valueStore.storeValue(pred);
-				long o = valueStore.storeValue(obj);
-				long c = context == null ? 0 : valueStore.storeValue(context);
-
-				if (!explicit) {
-					mayHaveInferred = true;
-				}
-
-				memTable.put(s, p, o, c, explicit);
+				storeQuad(subj, pred, obj, explicit, context);
 			} finally {
 				sinkStoreAccessLock.unlock();
 			}
+		}
+
+		private void storeQuad(Resource subj, IRI pred, Value obj, boolean explicit, Resource context) {
+			long s = valueStore.storeValue(subj);
+			long p = valueStore.storeValue(pred);
+			long o = valueStore.storeValue(obj);
+			long c = context == null ? 0 : valueStore.storeValue(context);
+			if (!explicit) {
+				mayHaveInferred = true;
+			}
+			memTable.put(s, p, o, c, explicit);
 		}
 
 		private long removeStatements(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) {
@@ -735,7 +753,7 @@ class S3SailStore implements SailStore {
 							return val instanceof Resource ? (Resource) val : null;
 						}
 					}) {
-				private final java.util.Set<Resource> seen = new java.util.HashSet<>();
+				private final Set<Resource> seen = new HashSet<>();
 
 				@Override
 				protected boolean accept(Resource ctx) {
@@ -755,10 +773,13 @@ class S3SailStore implements SailStore {
 			return createStatementIterator(subj, pred, obj, explicit, contexts);
 		}
 
+		/**
+		 * @throws UnsupportedOperationException always — ordered iteration is not supported
+		 */
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj,
 				IRI pred, Value obj, Resource... contexts) throws SailException {
-			throw new UnsupportedOperationException("Not implemented yet");
+			throw new UnsupportedOperationException("Ordered iteration is not supported by S3Store");
 		}
 
 		@Override
@@ -796,6 +817,11 @@ class S3SailStore implements SailStore {
 			Resource subj = (Resource) valueStore.getValue(quad[0]);
 			IRI pred = (IRI) valueStore.getValue(quad[1]);
 			Value obj = valueStore.getValue(quad[2]);
+			if (subj == null || pred == null || obj == null) {
+				// Value ID exists in Parquet but not in value store — can happen after
+				// crash recovery when catalog was saved but value file was not.
+				return null;
+			}
 			Resource ctx = quad[3] == 0 ? null : (Resource) valueStore.getValue(quad[3]);
 			return valueStore.createStatement(subj, pred, obj, ctx);
 		}

@@ -15,6 +15,8 @@ import java.io.RandomAccessFile;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
@@ -40,7 +42,10 @@ public class FileSystemObjectStore implements ObjectStore {
 		try {
 			Path target = resolve(key);
 			Files.createDirectories(target.getParent());
-			Files.write(target, data);
+			// Atomic write via temp file + rename to prevent corrupt files on crash
+			Path tmp = target.resolveSibling(target.getFileName() + ".tmp");
+			Files.write(tmp, data, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+			Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
 		}

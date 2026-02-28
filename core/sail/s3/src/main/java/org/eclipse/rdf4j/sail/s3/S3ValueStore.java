@@ -106,60 +106,26 @@ class S3ValueStore extends AbstractValueFactory {
 		try {
 			ByteArrayOutputStream baos = new ByteArrayOutputStream();
 			DataOutputStream out = new DataOutputStream(baos);
+			ByteBuffer buf = ByteBuffer.allocate(9); // reusable scratch for varints
 
-			int count = idToValue.size();
-			// Write count as varint
-			ByteBuffer countBuf = ByteBuffer.allocate(9);
-			Varint.writeUnsigned(countBuf, count);
-			out.write(countBuf.array(), 0, countBuf.position());
+			writeVarint(out, buf, idToValue.size());
 
 			for (Map.Entry<Long, Value> entry : idToValue.entrySet()) {
-				long id = entry.getKey();
+				writeVarint(out, buf, entry.getKey());
 				Value val = entry.getValue();
 
-				// Write id as varint
-				ByteBuffer idBuf = ByteBuffer.allocate(9);
-				Varint.writeUnsigned(idBuf, id);
-				out.write(idBuf.array(), 0, idBuf.position());
-
 				if (val instanceof IRI) {
-					out.writeByte(0); // type = IRI
-					byte[] payload = val.stringValue().getBytes(StandardCharsets.UTF_8);
-					ByteBuffer lenBuf = ByteBuffer.allocate(9);
-					Varint.writeUnsigned(lenBuf, payload.length);
-					out.write(lenBuf.array(), 0, lenBuf.position());
-					out.write(payload);
+					out.writeByte(0);
+					writeBytes(out, buf, val.stringValue().getBytes(StandardCharsets.UTF_8));
 				} else if (val instanceof Literal) {
-					out.writeByte(1); // type = Literal
+					out.writeByte(1);
 					Literal lit = (Literal) val;
-					byte[] label = lit.getLabel().getBytes(StandardCharsets.UTF_8);
-					byte[] dt = lit.getDatatype().stringValue().getBytes(StandardCharsets.UTF_8);
-					String langStr = lit.getLanguage().orElse("");
-					byte[] lang = langStr.getBytes(StandardCharsets.UTF_8);
-
-					ByteBuffer buf = ByteBuffer.allocate(9);
-
-					buf.clear();
-					Varint.writeUnsigned(buf, label.length);
-					out.write(buf.array(), 0, buf.position());
-					out.write(label);
-
-					buf.clear();
-					Varint.writeUnsigned(buf, dt.length);
-					out.write(buf.array(), 0, buf.position());
-					out.write(dt);
-
-					buf.clear();
-					Varint.writeUnsigned(buf, lang.length);
-					out.write(buf.array(), 0, buf.position());
-					out.write(lang);
+					writeBytes(out, buf, lit.getLabel().getBytes(StandardCharsets.UTF_8));
+					writeBytes(out, buf, lit.getDatatype().stringValue().getBytes(StandardCharsets.UTF_8));
+					writeBytes(out, buf, lit.getLanguage().orElse("").getBytes(StandardCharsets.UTF_8));
 				} else if (val instanceof BNode) {
-					out.writeByte(2); // type = BNode
-					byte[] payload = ((BNode) val).getID().getBytes(StandardCharsets.UTF_8);
-					ByteBuffer lenBuf = ByteBuffer.allocate(9);
-					Varint.writeUnsigned(lenBuf, payload.length);
-					out.write(lenBuf.array(), 0, lenBuf.position());
-					out.write(payload);
+					out.writeByte(2);
+					writeBytes(out, buf, ((BNode) val).getID().getBytes(StandardCharsets.UTF_8));
 				} else {
 					throw new IllegalStateException("Unsupported value type: " + val.getClass());
 				}
@@ -248,5 +214,16 @@ class S3ValueStore extends AbstractValueFactory {
 	 */
 	public void close() {
 		clear();
+	}
+
+	private static void writeVarint(DataOutputStream out, ByteBuffer buf, long value) throws IOException {
+		buf.clear();
+		Varint.writeUnsigned(buf, value);
+		out.write(buf.array(), 0, buf.position());
+	}
+
+	private static void writeBytes(DataOutputStream out, ByteBuffer buf, byte[] data) throws IOException {
+		writeVarint(out, buf, data.length);
+		out.write(data);
 	}
 }

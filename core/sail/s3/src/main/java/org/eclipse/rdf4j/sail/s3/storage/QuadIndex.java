@@ -188,13 +188,15 @@ public class QuadIndex {
 	}
 
 	/**
-	 * Constructs the minimum key for a range scan. Unbound components (-1 or 0) become 0.
+	 * Constructs the minimum key for a range scan. Unbound or zero-valued components become 0 (the lowest valid ID).
+	 * Context ID 0 is the default/null graph sentinel and maps to 0, which is correct for both exact and wildcard
+	 * scans.
 	 *
 	 * @param bb      buffer for writing bytes
 	 * @param subj    subject ID, or -1 for wildcard
 	 * @param pred    predicate ID, or -1 for wildcard
 	 * @param obj     object ID, or -1 for wildcard
-	 * @param context context ID, or -1 for wildcard
+	 * @param context context ID, or -1 for wildcard (0 = default graph)
 	 */
 	public void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
 		toKey(bb,
@@ -216,20 +218,21 @@ public class QuadIndex {
 	}
 
 	/**
-	 * Constructs the maximum key for a range scan. Unbound components become Long.MAX_VALUE.
+	 * Constructs the maximum key for a range scan. Unbound components (negative) become Long.MAX_VALUE. Context ID 0
+	 * (the default/null graph) is a valid bound value, not a wildcard.
 	 *
 	 * @param bb      buffer for writing bytes
 	 * @param subj    subject ID, or -1 for wildcard
 	 * @param pred    predicate ID, or -1 for wildcard
 	 * @param obj     object ID, or -1 for wildcard
-	 * @param context context ID, or -1 for wildcard
+	 * @param context context ID, or -1 for wildcard (0 = default graph, a valid bound value)
 	 */
 	public void getMaxKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
 		toKey(bb,
-				subj <= 0 ? Long.MAX_VALUE : subj,
-				pred <= 0 ? Long.MAX_VALUE : pred,
-				obj <= 0 ? Long.MAX_VALUE : obj,
-				context <= 0 ? Long.MAX_VALUE : context);
+				subj < 0 ? Long.MAX_VALUE : subj,
+				pred < 0 ? Long.MAX_VALUE : pred,
+				obj < 0 ? Long.MAX_VALUE : obj,
+				context < 0 ? Long.MAX_VALUE : context);
 	}
 
 	/**
@@ -237,10 +240,10 @@ public class QuadIndex {
 	 */
 	public byte[] getMaxKeyBytes(long subj, long pred, long obj, long context) {
 		return toKeyBytes(
-				subj <= 0 ? Long.MAX_VALUE : subj,
-				pred <= 0 ? Long.MAX_VALUE : pred,
-				obj <= 0 ? Long.MAX_VALUE : obj,
-				context <= 0 ? Long.MAX_VALUE : context);
+				subj < 0 ? Long.MAX_VALUE : subj,
+				pred < 0 ? Long.MAX_VALUE : pred,
+				obj < 0 ? Long.MAX_VALUE : obj,
+				context < 0 ? Long.MAX_VALUE : context);
 	}
 
 	/**

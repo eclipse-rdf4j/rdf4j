@@ -37,7 +37,8 @@ public final class QuadStats {
 	}
 
 	/**
-	 * Computes min/max stats from a list of long[5] arrays (s, p, o, c, flag).
+	 * Computes min/max stats from a list of long[5] arrays (s, p, o, c, flag). Tombstones (flag == 0) are excluded so
+	 * that deleted entries do not inflate the range statistics used for pruning.
 	 */
 	public static QuadStats fromQuads(List<long[]> quads) {
 		long minS = Long.MAX_VALUE, maxS = Long.MIN_VALUE;
@@ -45,6 +46,9 @@ public final class QuadStats {
 		long minO = Long.MAX_VALUE, maxO = Long.MIN_VALUE;
 		long minC = Long.MAX_VALUE, maxC = Long.MIN_VALUE;
 		for (long[] q : quads) {
+			if (q[4] == MemTable.FLAG_TOMBSTONE) {
+				continue;
+			}
 			minS = Math.min(minS, q[0]);
 			maxS = Math.max(maxS, q[0]);
 			minP = Math.min(minP, q[1]);
@@ -60,12 +64,12 @@ public final class QuadStats {
 	/**
 	 * Computes min/max stats from a list of QuadEntry objects.
 	 */
-	public static QuadStats fromEntries(List<ParquetFileBuilder.QuadEntry> entries) {
+	public static QuadStats fromEntries(List<QuadEntry> entries) {
 		long minS = Long.MAX_VALUE, maxS = Long.MIN_VALUE;
 		long minP = Long.MAX_VALUE, maxP = Long.MIN_VALUE;
 		long minO = Long.MAX_VALUE, maxO = Long.MIN_VALUE;
 		long minC = Long.MAX_VALUE, maxC = Long.MIN_VALUE;
-		for (ParquetFileBuilder.QuadEntry e : entries) {
+		for (QuadEntry e : entries) {
 			minS = Math.min(minS, e.subject);
 			maxS = Math.max(maxS, e.subject);
 			minP = Math.min(minP, e.predicate);

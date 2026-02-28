@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -135,7 +136,7 @@ public class S3Store extends AbstractNotifyingSail implements FederatedServiceRe
 
 		try {
 			backingStore = new S3SailStore(config);
-			this.store = new SnapshotSailStore(backingStore, () -> new org.eclipse.rdf4j.model.impl.LinkedHashModel()) {
+			this.store = new SnapshotSailStore(backingStore, LinkedHashModel::new) {
 
 				@Override
 				public SailSource getExplicitSailSource() {

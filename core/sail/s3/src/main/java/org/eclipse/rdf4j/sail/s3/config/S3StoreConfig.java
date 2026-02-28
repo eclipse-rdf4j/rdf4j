@@ -10,6 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.s3.config;
 
+import java.util.function.Consumer;
+
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -25,19 +28,9 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 public class S3StoreConfig extends BaseSailConfig {
 
 	/**
-	 * The default quad indexes.
-	 */
-	public static final String DEFAULT_QUAD_INDEXES = "spoc,posc";
-
-	/**
 	 * The default memtable size (64 MiB).
 	 */
 	public static final long DEFAULT_MEM_TABLE_SIZE = 67_108_864;
-
-	/**
-	 * The default block size (4 MiB).
-	 */
-	public static final int DEFAULT_BLOCK_SIZE = 4_194_304;
 
 	/**
 	 * The default memory cache size (256 MiB).
@@ -49,31 +42,13 @@ public class S3StoreConfig extends BaseSailConfig {
 	 */
 	public static final long DEFAULT_DISK_CACHE_SIZE = 10_737_418_240L;
 
-	/**
-	 * The default value cache size.
-	 */
-	public static final int DEFAULT_VALUE_CACHE_SIZE = 512;
-
-	/**
-	 * The default value id cache size.
-	 */
-	public static final int DEFAULT_VALUE_ID_CACHE_SIZE = 128;
-
-	private String quadIndexes;
-
 	private long memTableSize = -1;
-
-	private int blockSize = -1;
 
 	private long memoryCacheSize = -1;
 
 	private long diskCacheSize = -1;
 
 	private String diskCachePath;
-
-	private int valueCacheSize = -1;
-
-	private int valueIdCacheSize = -1;
 
 	private String s3Bucket;
 
@@ -97,11 +72,6 @@ public class S3StoreConfig extends BaseSailConfig {
 
 	public S3StoreConfig() {
 		super(S3StoreFactory.SAIL_TYPE);
-	}
-
-	public S3StoreConfig(String quadIndexes) {
-		this();
-		setQuadIndexes(quadIndexes);
 	}
 
 	/*---------*
@@ -133,13 +103,8 @@ public class S3StoreConfig extends BaseSailConfig {
 		return null;
 	}
 
-	public String getQuadIndexes() {
-		return quadIndexes != null ? quadIndexes : DEFAULT_QUAD_INDEXES;
-	}
-
-	public S3StoreConfig setQuadIndexes(String quadIndexes) {
-		this.quadIndexes = quadIndexes;
-		return this;
+	private static String resolveField(String field, String envVar, String sysProp) {
+		return field != null ? field : resolveEnv(envVar, sysProp);
 	}
 
 	public long getMemTableSize() {
@@ -148,15 +113,6 @@ public class S3StoreConfig extends BaseSailConfig {
 
 	public S3StoreConfig setMemTableSize(long memTableSize) {
 		this.memTableSize = memTableSize;
-		return this;
-	}
-
-	public int getBlockSize() {
-		return blockSize >= 0 ? blockSize : DEFAULT_BLOCK_SIZE;
-	}
-
-	public S3StoreConfig setBlockSize(int blockSize) {
-		this.blockSize = blockSize;
 		return this;
 	}
 
@@ -187,29 +143,8 @@ public class S3StoreConfig extends BaseSailConfig {
 		return this;
 	}
 
-	public int getValueCacheSize() {
-		return valueCacheSize >= 0 ? valueCacheSize : DEFAULT_VALUE_CACHE_SIZE;
-	}
-
-	public S3StoreConfig setValueCacheSize(int valueCacheSize) {
-		this.valueCacheSize = valueCacheSize;
-		return this;
-	}
-
-	public int getValueIdCacheSize() {
-		return valueIdCacheSize >= 0 ? valueIdCacheSize : DEFAULT_VALUE_ID_CACHE_SIZE;
-	}
-
-	public S3StoreConfig setValueIdCacheSize(int valueIdCacheSize) {
-		this.valueIdCacheSize = valueIdCacheSize;
-		return this;
-	}
-
 	public String getS3Bucket() {
-		if (s3Bucket != null) {
-			return s3Bucket;
-		}
-		return resolveEnv("RDF4J_S3_BUCKET", "rdf4j.s3.bucket");
+		return resolveField(s3Bucket, "RDF4J_S3_BUCKET", "rdf4j.s3.bucket");
 	}
 
 	public S3StoreConfig setS3Bucket(String s3Bucket) {
@@ -218,10 +153,7 @@ public class S3StoreConfig extends BaseSailConfig {
 	}
 
 	public String getS3Endpoint() {
-		if (s3Endpoint != null) {
-			return s3Endpoint;
-		}
-		return resolveEnv("RDF4J_S3_ENDPOINT", "rdf4j.s3.endpoint");
+		return resolveField(s3Endpoint, "RDF4J_S3_ENDPOINT", "rdf4j.s3.endpoint");
 	}
 
 	public S3StoreConfig setS3Endpoint(String s3Endpoint) {
@@ -230,11 +162,8 @@ public class S3StoreConfig extends BaseSailConfig {
 	}
 
 	public String getS3Region() {
-		if (s3Region != null) {
-			return s3Region;
-		}
-		String env = resolveEnv("RDF4J_S3_REGION", "rdf4j.s3.region");
-		return env != null ? env : "us-east-1";
+		String resolved = resolveField(s3Region, "RDF4J_S3_REGION", "rdf4j.s3.region");
+		return resolved != null ? resolved : "us-east-1";
 	}
 
 	public S3StoreConfig setS3Region(String s3Region) {
@@ -252,10 +181,7 @@ public class S3StoreConfig extends BaseSailConfig {
 	}
 
 	public String getS3AccessKey() {
-		if (s3AccessKey != null) {
-			return s3AccessKey;
-		}
-		return resolveEnv("RDF4J_S3_ACCESS_KEY", "rdf4j.s3.accessKey");
+		return resolveField(s3AccessKey, "RDF4J_S3_ACCESS_KEY", "rdf4j.s3.accessKey");
 	}
 
 	public S3StoreConfig setS3AccessKey(String s3AccessKey) {
@@ -264,10 +190,7 @@ public class S3StoreConfig extends BaseSailConfig {
 	}
 
 	public String getS3SecretKey() {
-		if (s3SecretKey != null) {
-			return s3SecretKey;
-		}
-		return resolveEnv("RDF4J_S3_SECRET_KEY", "rdf4j.s3.secretKey");
+		return resolveField(s3SecretKey, "RDF4J_S3_SECRET_KEY", "rdf4j.s3.secretKey");
 	}
 
 	public S3StoreConfig setS3SecretKey(String s3SecretKey) {
@@ -293,10 +216,7 @@ public class S3StoreConfig extends BaseSailConfig {
 	}
 
 	public String getDataDir() {
-		if (dataDir != null) {
-			return dataDir;
-		}
-		return resolveEnv("RDF4J_S3_DATA_DIR", "rdf4j.s3.dataDir");
+		return resolveField(dataDir, "RDF4J_S3_DATA_DIR", "rdf4j.s3.dataDir");
 	}
 
 	public S3StoreConfig setDataDir(String dataDir) {
@@ -310,55 +230,33 @@ public class S3StoreConfig extends BaseSailConfig {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
 		m.setNamespace("s3", S3StoreSchema.NAMESPACE);
-		if (quadIndexes != null) {
-			m.add(implNode, S3StoreSchema.QUAD_INDEXES, vf.createLiteral(quadIndexes));
-		}
-		if (memTableSize >= 0) {
-			m.add(implNode, S3StoreSchema.MEM_TABLE_SIZE, vf.createLiteral(memTableSize));
-		}
-		if (blockSize >= 0) {
-			m.add(implNode, S3StoreSchema.BLOCK_SIZE, vf.createLiteral(blockSize));
-		}
-		if (memoryCacheSize >= 0) {
-			m.add(implNode, S3StoreSchema.MEMORY_CACHE_SIZE, vf.createLiteral(memoryCacheSize));
-		}
-		if (diskCacheSize >= 0) {
-			m.add(implNode, S3StoreSchema.DISK_CACHE_SIZE, vf.createLiteral(diskCacheSize));
-		}
-		if (diskCachePath != null) {
-			m.add(implNode, S3StoreSchema.DISK_CACHE_PATH, vf.createLiteral(diskCachePath));
-		}
-		if (valueCacheSize >= 0) {
-			m.add(implNode, S3StoreSchema.VALUE_CACHE_SIZE, vf.createLiteral(valueCacheSize));
-		}
-		if (valueIdCacheSize >= 0) {
-			m.add(implNode, S3StoreSchema.VALUE_ID_CACHE_SIZE, vf.createLiteral(valueIdCacheSize));
-		}
-		if (s3Bucket != null) {
-			m.add(implNode, S3StoreSchema.S3_BUCKET, vf.createLiteral(s3Bucket));
-		}
-		if (s3Endpoint != null) {
-			m.add(implNode, S3StoreSchema.S3_ENDPOINT, vf.createLiteral(s3Endpoint));
-		}
-		if (s3Region != null) {
-			m.add(implNode, S3StoreSchema.S3_REGION, vf.createLiteral(s3Region));
-		}
-		if (s3Prefix != null) {
-			m.add(implNode, S3StoreSchema.S3_PREFIX, vf.createLiteral(s3Prefix));
-		}
-		if (s3AccessKey != null) {
-			m.add(implNode, S3StoreSchema.S3_ACCESS_KEY, vf.createLiteral(s3AccessKey));
-		}
-		if (s3SecretKey != null) {
-			m.add(implNode, S3StoreSchema.S3_SECRET_KEY, vf.createLiteral(s3SecretKey));
-		}
+		exportLong(m, implNode, vf, S3StoreSchema.MEM_TABLE_SIZE, memTableSize);
+		exportLong(m, implNode, vf, S3StoreSchema.MEMORY_CACHE_SIZE, memoryCacheSize);
+		exportLong(m, implNode, vf, S3StoreSchema.DISK_CACHE_SIZE, diskCacheSize);
+		exportString(m, implNode, vf, S3StoreSchema.DISK_CACHE_PATH, diskCachePath);
+		exportString(m, implNode, vf, S3StoreSchema.S3_BUCKET, s3Bucket);
+		exportString(m, implNode, vf, S3StoreSchema.S3_ENDPOINT, s3Endpoint);
+		exportString(m, implNode, vf, S3StoreSchema.S3_REGION, s3Region);
+		exportString(m, implNode, vf, S3StoreSchema.S3_PREFIX, s3Prefix);
+		exportString(m, implNode, vf, S3StoreSchema.S3_ACCESS_KEY, s3AccessKey);
+		exportString(m, implNode, vf, S3StoreSchema.S3_SECRET_KEY, s3SecretKey);
 		if (s3ForcePathStyle != null) {
 			m.add(implNode, S3StoreSchema.S3_FORCE_PATH_STYLE, vf.createLiteral(s3ForcePathStyle));
 		}
-		if (dataDir != null) {
-			m.add(implNode, S3StoreSchema.DATA_DIR, vf.createLiteral(dataDir));
-		}
+		exportString(m, implNode, vf, S3StoreSchema.DATA_DIR, dataDir);
 		return implNode;
+	}
+
+	private static void exportString(Model m, Resource node, ValueFactory vf, IRI prop, String value) {
+		if (value != null) {
+			m.add(node, prop, vf.createLiteral(value));
+		}
+	}
+
+	private static void exportLong(Model m, Resource node, ValueFactory vf, IRI prop, long value) {
+		if (value >= 0) {
+			m.add(node, prop, vf.createLiteral(value));
+		}
 	}
 
 	@Override
@@ -366,102 +264,39 @@ public class S3StoreConfig extends BaseSailConfig {
 		super.parse(m, implNode);
 
 		try {
-			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.QUAD_INDEXES, null))
-					.ifPresent(lit -> setQuadIndexes(lit.getLabel()));
-
-			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.MEM_TABLE_SIZE, null))
-					.ifPresent(lit -> {
-						try {
-							setMemTableSize(lit.longValue());
-						} catch (NumberFormatException e) {
-							throw new SailConfigException(
-									"Long value required for " + S3StoreSchema.MEM_TABLE_SIZE
-											+ " property, found " + lit);
-						}
-					});
-
-			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.BLOCK_SIZE, null))
-					.ifPresent(lit -> {
-						try {
-							setBlockSize(lit.intValue());
-						} catch (NumberFormatException e) {
-							throw new SailConfigException(
-									"Integer value required for " + S3StoreSchema.BLOCK_SIZE
-											+ " property, found " + lit);
-						}
-					});
-
-			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.MEMORY_CACHE_SIZE, null))
-					.ifPresent(lit -> {
-						try {
-							setMemoryCacheSize(lit.longValue());
-						} catch (NumberFormatException e) {
-							throw new SailConfigException(
-									"Long value required for " + S3StoreSchema.MEMORY_CACHE_SIZE
-											+ " property, found " + lit);
-						}
-					});
-
-			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.DISK_CACHE_SIZE, null))
-					.ifPresent(lit -> {
-						try {
-							setDiskCacheSize(lit.longValue());
-						} catch (NumberFormatException e) {
-							throw new SailConfigException(
-									"Long value required for " + S3StoreSchema.DISK_CACHE_SIZE
-											+ " property, found " + lit);
-						}
-					});
-
-			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.DISK_CACHE_PATH, null))
-					.ifPresent(lit -> setDiskCachePath(lit.getLabel()));
-
-			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.VALUE_CACHE_SIZE, null))
-					.ifPresent(lit -> {
-						try {
-							setValueCacheSize(lit.intValue());
-						} catch (NumberFormatException e) {
-							throw new SailConfigException(
-									"Integer value required for " + S3StoreSchema.VALUE_CACHE_SIZE
-											+ " property, found " + lit);
-						}
-					});
-
-			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.VALUE_ID_CACHE_SIZE, null))
-					.ifPresent(lit -> {
-						try {
-							setValueIdCacheSize(lit.intValue());
-						} catch (NumberFormatException e) {
-							throw new SailConfigException(
-									"Integer value required for " + S3StoreSchema.VALUE_ID_CACHE_SIZE
-											+ " property, found " + lit);
-						}
-					});
-			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.S3_BUCKET, null))
-					.ifPresent(lit -> setS3Bucket(lit.getLabel()));
-
-			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.S3_ENDPOINT, null))
-					.ifPresent(lit -> setS3Endpoint(lit.getLabel()));
-
-			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.S3_REGION, null))
-					.ifPresent(lit -> setS3Region(lit.getLabel()));
-
-			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.S3_PREFIX, null))
-					.ifPresent(lit -> setS3Prefix(lit.getLabel()));
-
-			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.S3_ACCESS_KEY, null))
-					.ifPresent(lit -> setS3AccessKey(lit.getLabel()));
-
-			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.S3_SECRET_KEY, null))
-					.ifPresent(lit -> setS3SecretKey(lit.getLabel()));
-
+			parseLong(m, implNode, S3StoreSchema.MEM_TABLE_SIZE, this::setMemTableSize);
+			parseLong(m, implNode, S3StoreSchema.MEMORY_CACHE_SIZE, this::setMemoryCacheSize);
+			parseLong(m, implNode, S3StoreSchema.DISK_CACHE_SIZE, this::setDiskCacheSize);
+			parseString(m, implNode, S3StoreSchema.DISK_CACHE_PATH, this::setDiskCachePath);
+			parseString(m, implNode, S3StoreSchema.S3_BUCKET, this::setS3Bucket);
+			parseString(m, implNode, S3StoreSchema.S3_ENDPOINT, this::setS3Endpoint);
+			parseString(m, implNode, S3StoreSchema.S3_REGION, this::setS3Region);
+			parseString(m, implNode, S3StoreSchema.S3_PREFIX, this::setS3Prefix);
+			parseString(m, implNode, S3StoreSchema.S3_ACCESS_KEY, this::setS3AccessKey);
+			parseString(m, implNode, S3StoreSchema.S3_SECRET_KEY, this::setS3SecretKey);
 			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.S3_FORCE_PATH_STYLE, null))
 					.ifPresent(lit -> setS3ForcePathStyle(lit.booleanValue()));
-
-			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.DATA_DIR, null))
-					.ifPresent(lit -> setDataDir(lit.getLabel()));
+			parseString(m, implNode, S3StoreSchema.DATA_DIR, this::setDataDir);
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
 	}
+
+	private static void parseString(Model m, Resource node, IRI prop, Consumer<String> setter) {
+		Models.objectLiteral(m.getStatements(node, prop, null))
+				.ifPresent(lit -> setter.accept(lit.getLabel()));
+	}
+
+	private static void parseLong(Model m, Resource node, IRI prop, Consumer<Long> setter) {
+		Models.objectLiteral(m.getStatements(node, prop, null))
+				.ifPresent(lit -> {
+					try {
+						setter.accept(lit.longValue());
+					} catch (NumberFormatException e) {
+						throw new SailConfigException(
+								"Long value required for " + prop + " property, found " + lit);
+					}
+				});
+	}
+
 }

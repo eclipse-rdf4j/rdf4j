@@ -19,6 +19,6 @@ public class S3StoreIsolationLevelTest extends SailIsolationLevelTest {
 
 	@Override
 	protected NotifyingSail createSail() throws SailException {
-		return new S3Store(new S3StoreConfig("spoc,posc"));
+		return new S3Store(new S3StoreConfig());
 	}
 }

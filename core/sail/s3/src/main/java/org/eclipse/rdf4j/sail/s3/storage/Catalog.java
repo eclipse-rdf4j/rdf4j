@@ -16,7 +16,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -60,7 +59,7 @@ public class Catalog {
 	private long nextValueId;
 
 	@JsonProperty("files")
-	private List<ParquetFileInfo> files = new ArrayList<>();
+	private volatile List<ParquetFileInfo> files = new ArrayList<>();
 
 	public Catalog() {
 	}
@@ -94,7 +93,7 @@ public class Catalog {
 	}
 
 	public void setFiles(List<ParquetFileInfo> files) {
-		this.files = files;
+		this.files = new ArrayList<>(files);
 	}
 
 	/**
@@ -149,33 +148,43 @@ public class Catalog {
 	}
 
 	/**
-	 * Adds a Parquet file to the catalog.
+	 * Adds a Parquet file to the catalog. Copy-on-write for thread safety.
 	 *
 	 * @param info the file info to add
 	 */
 	public void addFile(ParquetFileInfo info) {
-		files.add(info);
+		List<ParquetFileInfo> updated = new ArrayList<>(files);
+		updated.add(info);
+		files = updated;
 	}
 
 	/**
-	 * Removes Parquet files by their S3 keys.
+	 * Removes Parquet files by their S3 keys. Copy-on-write for thread safety.
 	 *
 	 * @param s3Keys the set of S3 keys to remove
 	 */
 	public void removeFiles(Set<String> s3Keys) {
-		files.removeIf(f -> s3Keys.contains(f.getS3Key()));
+		List<ParquetFileInfo> updated = new ArrayList<>(files);
+		updated.removeIf(f -> s3Keys.contains(f.getS3Key()));
+		files = updated;
 	}
 
 	/**
-	 * Returns all files for the given sort order.
+	 * Returns all files for the given sort order. Reads from a volatile snapshot so it is safe to call without external
+	 * synchronization.
 	 *
 	 * @param sortOrder the sort order suffix (e.g. "spoc", "opsc", "cspo")
 	 * @return list of files matching the sort order
 	 */
 	public List<ParquetFileInfo> getFilesForSortOrder(String sortOrder) {
-		return files.stream()
-				.filter(f -> sortOrder.equals(f.getSortOrder()))
-				.collect(Collectors.toList());
+		List<ParquetFileInfo> snapshot = files;
+		List<ParquetFileInfo> result = new ArrayList<>();
+		for (ParquetFileInfo f : snapshot) {
+			if (sortOrder.equals(f.getSortOrder())) {
+				result.add(f);
+			}
+		}
+		return result;
 	}
 
 	/**

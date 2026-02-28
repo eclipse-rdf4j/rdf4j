@@ -10,7 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.s3.storage;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.util.List;
