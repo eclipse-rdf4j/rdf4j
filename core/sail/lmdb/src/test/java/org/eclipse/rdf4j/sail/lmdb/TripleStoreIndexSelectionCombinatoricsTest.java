@@ -60,7 +60,8 @@ public class TripleStoreIndexSelectionCombinatoricsTest {
 					}
 
 					for (long[] pattern : statementPatterns) {
-						TripleStore.TripleIndex selected = selectorStore.getBestIndex(pattern[0], pattern[1], pattern[2],
+						TripleStore.TripleIndex selected = selectorStore.getBestIndex(pattern[0], pattern[1],
+								pattern[2],
 								pattern[3]);
 						String selectedSpec = new String(selected.getFieldSeq());
 						int selectedScore = patternScore(selectedSpec, pattern);
