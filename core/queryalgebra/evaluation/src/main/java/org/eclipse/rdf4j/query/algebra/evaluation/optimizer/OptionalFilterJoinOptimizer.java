@@ -63,6 +63,9 @@ public class OptionalFilterJoinOptimizer implements QueryOptimizer {
 		if (condition == null || arg == null) {
 			return;
 		}
+		if (containsExists(condition)) {
+			return;
+		}
 		arg.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(LeftJoin leftJoin) {
@@ -75,6 +78,9 @@ public class OptionalFilterJoinOptimizer implements QueryOptimizer {
 				if (rightOnly.isEmpty()) {
 					return;
 				}
+				if (hasNonAssuredSharedBindings(leftJoin)) {
+					return;
+				}
 				if (!requiresRightVars(condition, rightOnly)) {
 					return;
 				}
@@ -82,6 +88,35 @@ public class OptionalFilterJoinOptimizer implements QueryOptimizer {
 				leftJoin.replaceWith(join);
 			}
 		});
+	}
+
+	private static boolean hasNonAssuredSharedBindings(LeftJoin leftJoin) {
+		Set<String> shared = new HashSet<>(leftJoin.getLeftArg().getBindingNames());
+		shared.retainAll(leftJoin.getRightArg().getBindingNames());
+		if (shared.isEmpty()) {
+			return false;
+		}
+		Set<String> assuredLeft = leftJoin.getLeftArg().getAssuredBindingNames();
+		for (String binding : shared) {
+			if (!assuredLeft.contains(binding)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean containsExists(ValueExpr expression) {
+		if (expression == null) {
+			return false;
+		}
+		final boolean[] found = { false };
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Exists node) throws RuntimeException {
+				found[0] = true;
+			}
+		});
+		return found[0];
 	}
 
 	private static boolean requiresRightVars(ValueExpr expr, Set<String> rightOnly) {

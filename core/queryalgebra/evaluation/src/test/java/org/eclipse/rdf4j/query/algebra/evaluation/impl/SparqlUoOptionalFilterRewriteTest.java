@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -72,6 +74,90 @@ class SparqlUoOptionalFilterRewriteTest {
 		assertThat(join).isNotNull();
 		assertThat(containsStatementPatternWithPredicate(join.getLeftArg(), "urn:follows")).isTrue();
 		assertThat(containsStatementPatternWithPredicate(join.getRightArg(), "urn:name")).isTrue();
+	}
+
+	@Test
+	void keepsLibraryLoanChainAheadOfAuthorNameAnchor() {
+		String query = String.join("\n",
+				"PREFIX lib: <http://example.com/theme/library/>",
+				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+				"SELECT (COUNT(DISTINCT ?member) AS ?count) WHERE {",
+				"  VALUES ?target { \"Author 1\" \"Author 2\" }",
+				"  ?member a lib:Member .",
+				"  ?loan a lib:Loan ; lib:borrowedBy ?member ; lib:loanedCopy ?copy .",
+				"  ?book lib:hasCopy ?copy ; lib:writtenBy ?author .",
+				"  ?author lib:name ?authorName .",
+				"  FILTER(?authorName = ?target || ?authorName = \"Author 3\")",
+				"  FILTER NOT EXISTS { ?loan lib:dueDate ?due .",
+				"                      FILTER(?due < \"2024-01-10\"^^xsd:date) }",
+				"  OPTIONAL { ?book lib:title ?optTitle . }",
+				"  FILTER(?optTitle != \"\")",
+				"}");
+
+		EvaluationStatistics stats = new PredicateCardinalityStatistics(Map.ofEntries(
+				Map.entry("http://www.w3.org/1999/02/22-rdf-syntax-ns#type", 10_000.0),
+				Map.entry("http://example.com/theme/library/borrowedBy", 10_000.0),
+				Map.entry("http://example.com/theme/library/loanedCopy", 10_000.0),
+				Map.entry("http://example.com/theme/library/hasCopy", 10_000.0),
+				Map.entry("http://example.com/theme/library/writtenBy", 10_000.0),
+				Map.entry("http://example.com/theme/library/name", 9_000.0),
+				Map.entry("http://example.com/theme/library/title", 11_000.0),
+				Map.entry("http://example.com/theme/library/dueDate", 12_000.0)));
+
+		TupleExpr expr = optimize(query, stats);
+
+		assertThat(containsLeftJoin(expr)).isTrue();
+	}
+
+	@Test
+	void keepsLargeLoanBridgeAheadOfOptionalLiteralNameAnchor() {
+		String query = String.join("\n",
+				"PREFIX lib: <http://example.com/theme/library/>",
+				"SELECT * WHERE {",
+				"  ?book a lib:Book ; lib:writtenBy ?author ; lib:hasCopy ?copy .",
+				"  ?copy lib:locatedAt ?branch .",
+				"  ?loan a lib:Loan ; lib:loanedCopy ?copy ; lib:borrowedBy ?member .",
+				"  OPTIONAL { ?member lib:name ?optName . }",
+				"  FILTER(?optName IN (\"Member 1\", \"Member 2\", \"Member 3\"))",
+				"}");
+
+		EvaluationStatistics stats = new PredicateCardinalityStatistics(Map.ofEntries(
+				Map.entry("http://www.w3.org/1999/02/22-rdf-syntax-ns#type", 10_240.0),
+				Map.entry("http://example.com/theme/library/writtenBy", 257_200.0),
+				Map.entry("http://example.com/theme/library/hasCopy", 386_300.0),
+				Map.entry("http://example.com/theme/library/locatedAt", 386_300.0),
+				Map.entry("http://example.com/theme/library/loanedCopy", 10_240.0),
+				Map.entry("http://example.com/theme/library/borrowedBy", 10_240.0),
+				Map.entry("http://example.com/theme/library/name", 45_300.0)));
+
+		TupleExpr expr = optimize(query, stats);
+		List<String> predicateOrder = statementPatternPredicateOrder(expr);
+		String name = "http://example.com/theme/library/name";
+		String locatedAt = "http://example.com/theme/library/locatedAt";
+
+		assertThat(predicateOrder).contains(name, locatedAt);
+		assertThat(predicateOrder.indexOf(name)).as("predicate order: %s", predicateOrder)
+				.isGreaterThan(predicateOrder.indexOf(locatedAt));
+	}
+
+	@Test
+	void keepsOptionalWhenSharedJoinVarIsNotAssuredAcrossUnionBranches() {
+		String query = String.join("\n",
+				"PREFIX lib: <http://example.com/theme/library/>",
+				"SELECT * WHERE {",
+				"  { ?loan a lib:Loan ; lib:borrowedBy ?member . }",
+				"  UNION",
+				"  { ?member a lib:Member . }",
+				"  OPTIONAL {",
+				"    ?loan lib:loanedCopy ?copy .",
+				"    BIND(?copy AS ?optCopy)",
+				"  }",
+				"  FILTER(?optCopy != ?member)",
+				"}");
+
+		TupleExpr expr = optimize(query);
+
+		assertThat(containsLeftJoin(expr)).isTrue();
 	}
 
 	@Test
@@ -274,6 +360,21 @@ class SparqlUoOptionalFilterRewriteTest {
 
 		assertThat(containsExists(expr)).isTrue();
 		assertThat(containsDistinct(expr)).isFalse();
+	}
+
+	@Test
+	void keepsExistsForLibraryQ7ShapedDifferenceQuery() {
+		String query = "SELECT * WHERE { "
+				+ "?copy a <urn:Copy> ; <urn:locatedAt> ?branch . "
+				+ "?branch <urn:name> ?branchName . "
+				+ "FILTER(?branchName = \"Branch 0\" || ?branchName = \"Branch 1\") "
+				+ "FILTER EXISTS { ?copy a <urn:Copy> . } "
+				+ "MINUS { ?copy <urn:locatedAt> ?branch . FILTER(CONTAINS(STR(?branch), \"branch/0\")) } "
+				+ "}";
+
+		TupleExpr expr = optimize(query);
+
+		assertThat(containsExists(expr)).isTrue();
 	}
 
 	@Test
@@ -483,6 +584,31 @@ class SparqlUoOptionalFilterRewriteTest {
 			return findLeaf(((BinaryTupleOperator) expr).getLeftArg());
 		}
 		return expr;
+	}
+
+	private static List<String> statementPatternPredicateOrder(TupleExpr expr) {
+		List<String> predicates = new ArrayList<>();
+		collectStatementPatternPredicates(expr, predicates);
+		return predicates;
+	}
+
+	private static void collectStatementPatternPredicates(TupleExpr expr, List<String> target) {
+		if (expr instanceof StatementPattern) {
+			StatementPattern statementPattern = (StatementPattern) expr;
+			if (statementPattern.getPredicateVar() != null && statementPattern.getPredicateVar().hasValue()) {
+				target.add(statementPattern.getPredicateVar().getValue().stringValue());
+			}
+			return;
+		}
+		if (expr instanceof UnaryTupleOperator) {
+			collectStatementPatternPredicates(((UnaryTupleOperator) expr).getArg(), target);
+			return;
+		}
+		if (expr instanceof BinaryTupleOperator) {
+			BinaryTupleOperator binary = (BinaryTupleOperator) expr;
+			collectStatementPatternPredicates(binary.getLeftArg(), target);
+			collectStatementPatternPredicates(binary.getRightArg(), target);
+		}
 	}
 
 	private static boolean containsLeftJoin(TupleExpr expr) {

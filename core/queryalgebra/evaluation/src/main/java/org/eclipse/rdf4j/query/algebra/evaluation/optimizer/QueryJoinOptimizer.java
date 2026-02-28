@@ -377,7 +377,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					orderAllJoinArgs(joinArgs, cardinalityMap, varsMap, varFreqMap, orderedJoinArgs);
 				}
 
-				if (statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2) {
+				if (shouldReorderJoinArgs(orderedJoinArgs)) {
 					orderedJoinArgs = reorderJoinArgs(orderedJoinArgs);
 				}
 				TupleExpr priorityJoins = buildJoinHierarchy(priorityArgs);
@@ -528,7 +528,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		 * @param orderedJoinArgs
 		 * @return
 		 */
-		private Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs) {
+		protected boolean shouldReorderJoinArgs(Deque<TupleExpr> orderedJoinArgs) {
+			return statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2;
+		}
+
+		protected Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs) {
 			// Copy input into a mutable list
 			List<TupleExpr> tupleExprs = new ArrayList<>(orderedJoinArgs);
 			Deque<TupleExpr> ret = new ArrayDeque<>();

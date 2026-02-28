@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.MemoryJoinStats.InvalidationSettings;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.SparqlUoConfig;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -125,6 +126,28 @@ class SparqlUoQueryOptimizerPipelineRuleRegistryTest {
 		assertThat(FilterOptimizer.class.isAssignableFrom(optimizerTypes.get(joinIndex - 3))).isTrue();
 		assertThat(optimizerTypes.get(joinIndex - 2)).isEqualTo(BindingSetAssignmentJoinOrderOptimizer.class);
 		assertThat(optimizerTypes.get(joinIndex - 1)).isEqualTo(UnionCommonFilterBindingSetOptimizer.class);
+	}
+
+	@Test
+	void includesLearnedJoinOptimizerOnlyOnce() {
+		EvaluationStatistics evaluationStatistics = new EvaluationStatistics();
+		LearnedQueryJoinOptimizer learnedJoinOptimizer = new LearnedQueryJoinOptimizer(
+				evaluationStatistics,
+				new EmptyTripleSource(),
+				new MemoryJoinStats(InvalidationSettings.disabled()));
+		SparqlUoQueryOptimizerPipeline pipeline = new SparqlUoQueryOptimizerPipeline(
+				mock(EvaluationStrategy.class),
+				new EmptyTripleSource(),
+				evaluationStatistics,
+				learnedJoinOptimizer,
+				SparqlUoConfig.builder().build());
+
+		long learnedJoinCount = StreamSupport.stream(pipeline.getOptimizers().spliterator(), false)
+				.filter(optimizer -> !(optimizer instanceof ParentReferenceChecker))
+				.filter(LearnedQueryJoinOptimizer.class::isInstance)
+				.count();
+
+		assertThat(learnedJoinCount).isEqualTo(1L);
 	}
 
 	private static Set<Class<? extends QueryOptimizer>> optimizerTypes(Iterable<QueryOptimizer> optimizers) {

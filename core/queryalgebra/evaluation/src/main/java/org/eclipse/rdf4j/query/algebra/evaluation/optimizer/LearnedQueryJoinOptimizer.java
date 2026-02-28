@@ -91,6 +91,7 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 	private static final String REBALANCE_PROMOTE_UNSUPPORTED_TARGET_ANCHORS_PROPERTY = "rdf4j.optimizer.learned.rebalance.promoteUnsupportedTargetAnchors.enabled";
 	private static final boolean REBALANCE_PROMOTE_UNSUPPORTED_TARGET_ANCHORS_ENABLED = Boolean.parseBoolean(
 			System.getProperty(REBALANCE_PROMOTE_UNSUPPORTED_TARGET_ANCHORS_PROPERTY, "true"));
+	private static final String REBALANCE_UNSUPPORTED_TARGET_PROMOTE_MIN_IMPROVEMENT_PERCENT_PROPERTY = "rdf4j.optimizer.learned.rebalance.unsupportedTargetPromoteMinImprovementPercent";
 	private static final String REBALANCE_TYPE_ANCHORED_BRIDGE_TRIPLET_PROPERTY = "rdf4j.optimizer.learned.rebalance.typeAnchoredBridgeTriplet.enabled";
 	private static final boolean REBALANCE_TYPE_ANCHORED_BRIDGE_TRIPLET_ENABLED = Boolean.parseBoolean(
 			System.getProperty(REBALANCE_TYPE_ANCHORED_BRIDGE_TRIPLET_PROPERTY, "true"));
@@ -140,6 +141,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			.parseBoolean(System.getProperty(PLAN_STABILITY_ENABLED_PROPERTY, "true"));
 	private static final double PLAN_STABILITY_MIN_IMPROVEMENT_RATIO = parsePercentageProperty(
 			PLAN_STABILITY_MIN_IMPROVEMENT_PERCENT_PROPERTY, 20.0d);
+	private static final double REBALANCE_UNSUPPORTED_TARGET_PROMOTE_MIN_IMPROVEMENT_RATIO = parsePercentageProperty(
+			REBALANCE_UNSUPPORTED_TARGET_PROMOTE_MIN_IMPROVEMENT_PERCENT_PROPERTY, 50.0d);
 	private static final int PLAN_STABILITY_SWITCH_CONFIRMATIONS = Math.max(1,
 			Integer.getInteger(PLAN_STABILITY_SWITCH_CONFIRMATIONS_PROPERTY, 2));
 	private static final boolean PLAN_OUTCOME_LEARNING_ENABLED = Boolean
@@ -1513,6 +1516,16 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				}
 			}
 			return super.selectNextTupleExpr(expressions, cardinalityMap, varsMap, varFreqMap);
+		}
+
+		@Override
+		protected boolean shouldReorderJoinArgs(Deque<TupleExpr> orderedJoinArgs) {
+			// Preserve the learned candidate order for this join region. If no learned
+			// plan was selected, fall back to the base pairwise reorder behavior.
+			if (plannedOrder != null) {
+				return false;
+			}
+			return super.shouldReorderJoinArgs(orderedJoinArgs);
 		}
 
 		private TupleExpr nextPlanned(List<TupleExpr> expressions) {
@@ -3232,6 +3245,9 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				StatementPattern second = (StatementPattern) secondExpr;
 				StatementPattern third = (StatementPattern) thirdExpr;
 				if (!isNewScopePattern(third) && isTypeBridgeOuterTriplet(first, second, third)) {
+					if (!shouldPlaceTargetBeforeType(third, first, planned, List.of(), Set.of())) {
+						continue;
+					}
 					if (reordered == null) {
 						reordered = new ArrayList<>(planned);
 					}
@@ -3241,6 +3257,9 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 					continue;
 				}
 				if (!isNewScopePattern(third) && isBridgeTypeOuterTriplet(first, second, third)) {
+					if (!shouldPlaceTargetBeforeType(third, second, planned, List.of(), Set.of())) {
+						continue;
+					}
 					if (reordered == null) {
 						reordered = new ArrayList<>(planned);
 					}
@@ -3349,6 +3368,13 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			if (typeIndex <= 0) {
 				return planned;
 			}
+			StatementPattern typePattern = (StatementPattern) planned.get(typeIndex);
+			if (planned.get(0) instanceof StatementPattern) {
+				StatementPattern firstPattern = (StatementPattern) planned.get(0);
+				if (!shouldPlaceTypeBeforeTarget(typePattern, firstPattern, planned, List.of(), Set.of())) {
+					return planned;
+				}
+			}
 			for (int i = 0; i < planned.size(); i++) {
 				if (!(planned.get(i) instanceof StatementPattern)) {
 					continue;
@@ -3394,24 +3420,14 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				}
 				Set<String> currentNewVars = new HashSet<>(currentVars);
 				currentNewVars.removeAll(bound);
-				if (!currentNewVars.isEmpty()) {
-					bound.addAll(currentVars);
-					continue;
-				}
-				int promoteIndex = -1;
-				for (int j = i + 1; j < source.size(); j++) {
-					TupleExpr candidate = source.get(j);
-					Set<String> candidateVars = filteredBindingNames(candidate);
-					if (candidateVars.isEmpty() || disjoint(bound, candidateVars)) {
-						continue;
-					}
-					Set<String> candidateNewVars = new HashSet<>(candidateVars);
-					candidateNewVars.removeAll(bound);
-					if (!candidateNewVars.isEmpty()) {
-						promoteIndex = j;
-						break;
-					}
-				}
+				boolean currentConnectedToBound = !disjoint(bound, currentVars);
+				boolean requiresPromotion = currentNewVars.isEmpty() || !currentConnectedToBound;
+				boolean requireBridgeToCurrent = !currentConnectedToBound || currentNewVars.isEmpty();
+				boolean allowBridgeFallback = !currentConnectedToBound;
+				int promoteIndex = requiresPromotion
+						? firstPromotableIndex(source, i, bound, currentVars,
+								requireBridgeToCurrent, allowBridgeFallback)
+						: -1;
 				if (promoteIndex >= 0) {
 					if (reordered == null) {
 						reordered = new ArrayList<>(planned);
@@ -3419,10 +3435,37 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 					TupleExpr promoted = reordered.remove(promoteIndex);
 					reordered.add(i, promoted);
 					currentVars = filteredBindingNames(reordered.get(i));
+				} else if (!currentNewVars.isEmpty()) {
+					bound.addAll(currentVars);
+					continue;
 				}
 				bound.addAll(currentVars);
 			}
 			return reordered == null ? planned : reordered;
+		}
+
+		private int firstPromotableIndex(List<TupleExpr> source, int currentIndex, Set<String> bound,
+				Set<String> currentVars, boolean requireBridgeToCurrent, boolean allowBridgeFallback) {
+			int fallbackIndex = -1;
+			for (int j = currentIndex + 1; j < source.size(); j++) {
+				TupleExpr candidate = source.get(j);
+				Set<String> candidateVars = filteredBindingNames(candidate);
+				if (candidateVars.isEmpty() || disjoint(bound, candidateVars)) {
+					continue;
+				}
+				Set<String> candidateNewVars = new HashSet<>(candidateVars);
+				candidateNewVars.removeAll(bound);
+				if (candidateNewVars.isEmpty()) {
+					continue;
+				}
+				if (!requireBridgeToCurrent || !disjoint(candidateVars, currentVars)) {
+					return j;
+				}
+				if (allowBridgeFallback && fallbackIndex < 0) {
+					fallbackIndex = j;
+				}
+			}
+			return fallbackIndex;
 		}
 
 		private String firstTypeSubject(List<TupleExpr> expressions) {
@@ -3516,6 +3559,11 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 			if (targetIndex <= 0 || targetPattern == null) {
 				return planned;
 			}
+			if (planned.get(0) instanceof StatementPattern
+					&& !shouldPromoteUnsupportedTargetAnchor(targetPattern, (StatementPattern) planned.get(0), planned,
+							filters, unsupportedTargets)) {
+				return planned;
+			}
 			boolean connected = false;
 			for (TupleExpr expr : planned) {
 				if (expr == targetPattern || !(expr instanceof StatementPattern)) {
@@ -3537,6 +3585,18 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				}
 			}
 			return reordered;
+		}
+
+		private boolean shouldPromoteUnsupportedTargetAnchor(StatementPattern targetPattern,
+				StatementPattern leadingPattern, List<TupleExpr> planned, List<ValueExpr> filters,
+				Set<String> unsupportedTargets) {
+			double targetEstimate = estimateRebalanceScan(targetPattern, planned, filters, unsupportedTargets);
+			double leadingEstimate = estimateRebalanceScan(leadingPattern, planned, filters, unsupportedTargets);
+			if (!Double.isFinite(targetEstimate) || !Double.isFinite(leadingEstimate) || leadingEstimate <= 0.0d) {
+				return true;
+			}
+			double relativeCost = targetEstimate / leadingEstimate;
+			return relativeCost <= REBALANCE_UNSUPPORTED_TARGET_PROMOTE_MIN_IMPROVEMENT_RATIO;
 		}
 
 		private boolean hasVariableEqualityFilter(String targetName, List<ValueExpr> filters) {

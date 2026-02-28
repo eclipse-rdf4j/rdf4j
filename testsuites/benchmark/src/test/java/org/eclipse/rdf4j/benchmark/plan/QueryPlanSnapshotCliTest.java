@@ -87,6 +87,162 @@ class QueryPlanSnapshotCliTest {
 	}
 
 	@Test
+	void tmpRunWritesSnapshotIntoRepositoryTmpDirectory() throws Exception {
+		Path tmpOutputDirectory = Path.of("tmp").resolve("query-plan-snapshot").resolve("cli").resolve("memory");
+		long beforeJsonCount = countJsonFiles(tmpOutputDirectory);
+		ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
+		QueryPlanSnapshotCli cli = newCli("", outputBuffer);
+
+		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--no-interactive",
+				"--store", "memory",
+				"--theme", "MEDICAL_RECORDS",
+				"--query-index", "0",
+				"--tmp-run"
+		});
+
+		cli.run(options);
+
+		long afterJsonCount = countJsonFiles(tmpOutputDirectory);
+		assertEquals(beforeJsonCount + 1L, afterJsonCount);
+	}
+
+	@Test
+	void overwriteThemeQueryRunsRemovesPriorRunsForSameThemeAndQuery() throws Exception {
+		Path outputDirectory = Path.of("tmp").resolve("query-plan-snapshot").resolve("cli").resolve("memory");
+		Files.createDirectories(outputDirectory);
+		Map<String, String> matchingMetadata = Map.of("store", "memory", "theme", "MEDICAL_RECORDS", "queryIndex",
+				"0");
+		writeSnapshot(outputDirectory, "memory-medical_records-q0", "fingerprint-old-a", "2026-02-17T10:00:00Z",
+				matchingMetadata);
+		writeSnapshot(outputDirectory, "memory-medical_records-q0", "fingerprint-old-b", "2026-02-17T10:05:00Z",
+				matchingMetadata);
+		writeSnapshot(outputDirectory, "memory-medical_records-q1", "fingerprint-keep", "2026-02-17T10:10:00Z",
+				Map.of("store", "memory", "theme", "MEDICAL_RECORDS", "queryIndex", "1"));
+		Path oldThemeQuerySnapshotA = outputDirectory
+				.resolve("memory-medical_records-q0-2026-02-17T10-00-00Z.json");
+		Path oldThemeQuerySnapshotB = outputDirectory
+				.resolve("memory-medical_records-q0-2026-02-17T10-05-00Z.json");
+		Path keptThemeQuerySnapshot = outputDirectory
+				.resolve("memory-medical_records-q1-2026-02-17T10-10-00Z.json");
+		Files.writeString(learnedPlanTraceCompanionPath(oldThemeQuerySnapshotA), "{\"trace\":\"old-a\"}\n",
+				StandardCharsets.UTF_8);
+		Files.writeString(learnedPlanTraceCompanionPath(oldThemeQuerySnapshotB), "{\"trace\":\"old-b\"}\n",
+				StandardCharsets.UTF_8);
+		Files.writeString(learnedPlanTraceCompanionPath(keptThemeQuerySnapshot), "{\"trace\":\"keep\"}\n",
+				StandardCharsets.UTF_8);
+
+		ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
+		QueryPlanSnapshotCli cli = newCli("", outputBuffer);
+		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--no-interactive",
+				"--store", "memory",
+				"--theme", "MEDICAL_RECORDS",
+				"--query-index", "0",
+				"--tmp-run",
+				"--overwrite-theme-query-runs"
+		});
+
+		cli.run(options);
+
+		QueryPlanCapture capture = new QueryPlanCapture();
+		int matchingThemeQueryRuns = 0;
+		try (java.util.stream.Stream<Path> snapshots = Files.list(outputDirectory)) {
+			for (Path snapshotPath : snapshots.filter(path -> path.getFileName().toString().endsWith(".json"))
+					.toList()) {
+				QueryPlanSnapshot snapshot = capture.readSnapshot(snapshotPath);
+				Map<String, String> metadata = snapshot.getMetadata();
+				if (metadata != null && "MEDICAL_RECORDS".equals(metadata.get("theme"))
+						&& "0".equals(metadata.get("queryIndex"))) {
+					matchingThemeQueryRuns++;
+				}
+			}
+		}
+		assertEquals(1, matchingThemeQueryRuns);
+		assertFalse(Files.exists(learnedPlanTraceCompanionPath(oldThemeQuerySnapshotA)));
+		assertFalse(Files.exists(learnedPlanTraceCompanionPath(oldThemeQuerySnapshotB)));
+		assertTrue(Files.exists(learnedPlanTraceCompanionPath(keptThemeQuerySnapshot)));
+	}
+
+	@Test
+	void overwriteThemeQueryRunsRequiresTmpRun() {
+		assertThrows(IllegalArgumentException.class, () -> QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--store", "memory",
+				"--theme", "MEDICAL_RECORDS",
+				"--query-index", "0",
+				"--overwrite-theme-query-runs"
+		}));
+	}
+
+	@Test
+	void runModeWritesLearnedPlanTraceCompanionNextToSnapshot() throws Exception {
+		Path outputDirectory = Files.createTempDirectory("rdf4j-cli-learned-trace-store-");
+		ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
+		QueryPlanSnapshotCli cli = newCli("", outputBuffer);
+		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--no-interactive",
+				"--store", "memory",
+				"--theme", "MEDICAL_RECORDS",
+				"--query-index", "0",
+				"--output-dir", outputDirectory.toString()
+		});
+
+		cli.run(options);
+
+		Path snapshotPath;
+		try (java.util.stream.Stream<Path> snapshots = Files.list(outputDirectory)) {
+			snapshotPath = snapshots
+					.filter(path -> path.getFileName().toString().endsWith(".json"))
+					.findFirst()
+					.orElseThrow();
+		}
+		assertTrue(Files.exists(learnedPlanTraceCompanionPath(snapshotPath)),
+				"Expected learned plan trace companion file for snapshot " + snapshotPath);
+	}
+
+	@Test
+	void retrieveLearnedPlanTraceRequiresCompareExistingMode() {
+		assertThrows(IllegalArgumentException.class, () -> QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--store", "memory",
+				"--theme", "MEDICAL_RECORDS",
+				"--query-index", "0",
+				"--retrieve-learned-plan-trace"
+		}));
+	}
+
+	@Test
+	void compareExistingCanRetrieveLearnedPlanTraceCompanion() throws Exception {
+		Path outputDir = Files.createTempDirectory("rdf4j-cli-retrieve-learned-trace-");
+		writeSnapshot(outputDir, "q-trace", "fingerprint-trace", "2026-02-17T10:00:00Z");
+		Path snapshotPath;
+		try (java.util.stream.Stream<Path> snapshots = Files.list(outputDir)) {
+			snapshotPath = snapshots
+					.filter(path -> path.getFileName().toString().endsWith(".json"))
+					.findFirst()
+					.orElseThrow();
+		}
+		Path learnedTracePath = learnedPlanTraceCompanionPath(snapshotPath);
+		String traceLine = "{\"selectedCandidate\":0,\"reason\":\"unit-test\"}";
+		Files.writeString(learnedTracePath, traceLine + System.lineSeparator(), StandardCharsets.UTF_8);
+
+		ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
+		QueryPlanSnapshotCli cli = newCli("", outputBuffer);
+		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--compare-existing",
+				"--no-interactive",
+				"--output-dir", outputDir.toString(),
+				"--query-id", "q-trace",
+				"--retrieve-learned-plan-trace"
+		});
+
+		cli.run(options);
+
+		String printed = outputBuffer.toString(StandardCharsets.UTF_8);
+		assertTrue(printed.contains(traceLine), printed);
+		assertTrue(printed.contains(learnedTracePath.toAbsolutePath().toString()), printed);
+	}
+
+	@Test
 	void parsesRunAllThemeQueriesModeWithStore() {
 		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
 				"--store", "memory",
@@ -1126,6 +1282,15 @@ class QueryPlanSnapshotCliTest {
 		}
 	}
 
+	private static long countJsonFiles(Path directory) throws Exception {
+		if (!Files.exists(directory)) {
+			return 0L;
+		}
+		try (java.util.stream.Stream<Path> files = Files.list(directory)) {
+			return files.filter(path -> path.getFileName().toString().endsWith(".json")).count();
+		}
+	}
+
 	private static String firstCsvRowColumnValue(String csv, String columnName) {
 		String[] lines = csv.split("\\R", -1);
 		assertTrue(lines.length >= 2, csv);
@@ -1233,5 +1398,13 @@ class QueryPlanSnapshotCliTest {
 		explanations.put("executed", executedExplanation);
 		snapshot.setExplanations(explanations);
 		capture.writeSnapshot(outputDir.resolve(queryId + "-" + capturedAt.replace(":", "-") + ".json"), snapshot);
+	}
+
+	private static Path learnedPlanTraceCompanionPath(Path snapshotPath) {
+		String snapshotFileName = snapshotPath.getFileName().toString();
+		String baseName = snapshotFileName.endsWith(".json")
+				? snapshotFileName.substring(0, snapshotFileName.length() - ".json".length())
+				: snapshotFileName;
+		return snapshotPath.resolveSibling(baseName + "-learned-plan-trace.jsonl");
 	}
 }

@@ -12,16 +12,23 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
@@ -29,6 +36,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.SparqlUoConfig;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
@@ -241,6 +250,8 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
 	private static final class BoundJoinRightArgOptimizer implements QueryOptimizer {
 
+		private static final int LEARNED_SINGLE_SHARED_VAR_RIGHT_ARG_PATTERN_LIMIT = 5;
+
 		private final QueryOptimizer joinOptimizer;
 
 		private BoundJoinRightArgOptimizer(QueryOptimizer joinOptimizer) {
@@ -262,14 +273,16 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 						return;
 					}
 					Set<String> shared = node.getRightArg().getBindingNames();
-					boolean sharesBindings = false;
+					Set<String> sharedBoundNames = new LinkedHashSet<>();
 					for (String name : boundNames) {
 						if (shared.contains(name)) {
-							sharesBindings = true;
-							break;
+							sharedBoundNames.add(name);
 						}
 					}
-					if (!sharesBindings) {
+					if (sharedBoundNames.isEmpty()) {
+						return;
+					}
+					if (shouldSkipLearnedRightArgReorder(node, sharedBoundNames)) {
 						return;
 					}
 					BindingSetAssignment seed = new BindingSetAssignment();
@@ -279,6 +292,80 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 					LeftJoin leftJoin = new LeftJoin(seed, optimizedRight);
 					joinOptimizer.optimize(leftJoin, dataset, bindings);
 					node.setRightArg(leftJoin.getRightArg());
+				}
+
+				private boolean shouldSkipLearnedRightArgReorder(Join node, Set<String> sharedBoundNames) {
+					if (!(joinOptimizer instanceof LearnedQueryJoinOptimizer) || sharedBoundNames.size() != 1) {
+						return false;
+					}
+					int rightPatternCount = StatementPatternCollector.process(node.getRightArg()).size();
+					if (rightPatternCount <= LEARNED_SINGLE_SHARED_VAR_RIGHT_ARG_PATTERN_LIMIT) {
+						return false;
+					}
+					return !hasLiteralAnchorOnSharedBinding(node.getLeftArg(), sharedBoundNames);
+				}
+
+				private boolean hasLiteralAnchorOnSharedBinding(TupleExpr leftArg, Set<String> sharedBoundNames) {
+					AtomicBoolean anchored = new AtomicBoolean(false);
+					Set<String> anchorVars = expandAnchorVars(leftArg, sharedBoundNames);
+					leftArg.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+						@Override
+						public void meet(Filter node) throws RuntimeException {
+							if (referencesAnchorWithLiteral(node.getCondition(), anchorVars)) {
+								anchored.set(true);
+								return;
+							}
+							super.meet(node);
+						}
+					});
+					return anchored.get();
+				}
+
+				private Set<String> expandAnchorVars(TupleExpr leftArg, Set<String> sharedBoundNames) {
+					Set<String> expanded = new LinkedHashSet<>(sharedBoundNames);
+					List<StatementPattern> patterns = StatementPatternCollector.process(leftArg);
+					boolean changed;
+					do {
+						changed = false;
+						for (StatementPattern pattern : patterns) {
+							Var subject = pattern.getSubjectVar();
+							Var object = pattern.getObjectVar();
+							String subjectName = variableName(subject);
+							String objectName = variableName(object);
+							if (subjectName == null || objectName == null) {
+								continue;
+							}
+							if (expanded.contains(subjectName)) {
+								changed |= expanded.add(objectName);
+							}
+							if (expanded.contains(objectName)) {
+								changed |= expanded.add(subjectName);
+							}
+						}
+					} while (changed);
+					return expanded;
+				}
+
+				private String variableName(Var var) {
+					if (var == null || var.hasValue()) {
+						return null;
+					}
+					return var.getName();
+				}
+
+				private boolean referencesAnchorWithLiteral(ValueExpr condition, Set<String> anchorVars) {
+					if (condition == null
+							|| VarNameCollector.process(condition).stream().noneMatch(anchorVars::contains)) {
+						return false;
+					}
+					AtomicBoolean hasLiteral = new AtomicBoolean(false);
+					condition.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+						@Override
+						public void meet(ValueConstant node) throws RuntimeException {
+							hasLiteral.set(true);
+						}
+					});
+					return hasLiteral.get();
 				}
 			});
 		}

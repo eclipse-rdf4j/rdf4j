@@ -19,6 +19,7 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
@@ -84,6 +85,14 @@ public final class QueryPlanSnapshotCli {
 	private static final int DEFAULT_EXECUTION_REPEAT_MIN_RUNS = 2;
 	private static final int DEFAULT_EXECUTION_REPEAT_MAX_RUNS = 128;
 	private static final long DEFAULT_BATCH_ETA_UPDATE_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(10);
+	private static final Path TMP_RUN_OUTPUT_ROOT = Path.of("tmp")
+			.resolve("query-plan-snapshot")
+			.resolve("cli");
+	private static final Path LEARNED_PLAN_TRACE_TMP_ROOT = Path.of("tmp")
+			.resolve("query-plan-snapshot")
+			.resolve("learned-plan-trace");
+	private static final String LEARNED_PLAN_TRACE_PROPERTY = "rdf4j.learned.planTrace.path";
+	private static final String LEARNED_PLAN_TRACE_FILE_SUFFIX = "-learned-plan-trace.jsonl";
 	private static final List<String> PLAN_INPUT_FEATURE_FLAG_PREFIXES = List.of(
 			"cli.",
 			"systemProperty.",
@@ -249,9 +258,10 @@ public final class QueryPlanSnapshotCli {
 		String queryText = resolveQueryText(options, benchmarkQuery);
 		String querySource = benchmarkQuery == null ? "direct" : "theme-index";
 		String queryId = options.queryId != null ? options.queryId : defaultQueryId(options, benchmarkQuery);
-		Path outputDirectory = options.outputDirectory != null
-				? options.outputDirectory
-				: defaultOutputDirectory(options.store);
+		Path outputDirectory = resolveRunOutputDirectory(options);
+		if (options.overwriteThemeQueryRuns) {
+			deleteExistingThemeQueryRuns(outputDirectory, options, queryId);
+		}
 
 		FeatureFlagCollector featureFlags = createFeatureFlagCollector(options, storeRuntime, querySource,
 				themeDataLoadStatus);
@@ -262,23 +272,27 @@ public final class QueryPlanSnapshotCli {
 		QueryPlanSnapshot currentSnapshot;
 		Path snapshotPath = null;
 		QueryExecutionVerification executionVerification;
-		try (SailRepositoryConnection connection = storeRuntime.repository.getConnection()) {
-			if (options.persist) {
-				snapshotPath = capture.captureAndWrite(context,
-						() -> prepareTupleQuery(connection, queryText, options.queryTimeoutSeconds));
-				currentSnapshot = capture.readSnapshot(snapshotPath);
-				output.println("Snapshot written: " + snapshotPath.toAbsolutePath());
-			} else {
-				currentSnapshot = capture.capture(context,
-						() -> prepareTupleQuery(connection, queryText, options.queryTimeoutSeconds));
-				output.println("Snapshot captured in-memory only (--persist=false).");
+		try (LearnedPlanTraceCaptureSession learnedPlanTraceCapture = startLearnedPlanTraceCapture(options)) {
+			try (SailRepositoryConnection connection = storeRuntime.repository.getConnection()) {
+				if (options.persist) {
+					snapshotPath = capture.captureAndWrite(context,
+							() -> prepareTupleQuery(connection, queryText, options.queryTimeoutSeconds));
+					currentSnapshot = capture.readSnapshot(snapshotPath);
+					output.println("Snapshot written: " + snapshotPath.toAbsolutePath());
+				} else {
+					currentSnapshot = capture.capture(context,
+							() -> prepareTupleQuery(connection, queryText, options.queryTimeoutSeconds));
+					output.println("Snapshot captured in-memory only (--persist=false).");
+				}
+				applySnapshotPlanDebugMetadata(currentSnapshot);
+				executionVerification = verifyRepeatedExecution(connection, queryText, options.queryTimeoutSeconds);
 			}
-			applySnapshotPlanDebugMetadata(currentSnapshot);
-			executionVerification = verifyRepeatedExecution(connection, queryText, options.queryTimeoutSeconds);
-		}
-		applyExecutionVerificationMetadata(currentSnapshot, executionVerification);
-		if (options.persist && snapshotPath != null) {
-			capture.writeSnapshot(snapshotPath, currentSnapshot);
+			applyExecutionVerificationMetadata(currentSnapshot, executionVerification);
+			if (options.persist && snapshotPath != null) {
+				capture.writeSnapshot(snapshotPath, currentSnapshot);
+				Path learnedPlanTracePath = learnedPlanTraceCapture.persistForSnapshot(snapshotPath);
+				output.println("Learned plan trace written: " + learnedPlanTracePath.toAbsolutePath());
+			}
 		}
 
 		printResultsSection(options, queryId, queryText);
@@ -292,9 +306,7 @@ public final class QueryPlanSnapshotCli {
 
 	private void runAllThemeQueriesCapture(QueryPlanSnapshotCliOptions options,
 			QueryPlanSnapshotStoreSupport.StoreRuntime storeRuntime) throws Exception {
-		Path outputDirectory = options.outputDirectory != null
-				? options.outputDirectory
-				: defaultOutputDirectory(options.store);
+		Path outputDirectory = resolveRunOutputDirectory(options);
 		QueryPlanSnapshotStoreSupport.ThemeDataLoadStatus themeDataLoadStatus = QueryPlanSnapshotStoreSupport
 				.ensureThemeDataLoaded(storeRuntime);
 		printThemeDataLoadStatus(themeDataLoadStatus);
@@ -325,24 +337,31 @@ public final class QueryPlanSnapshotCli {
 				QueryPlanSnapshot currentSnapshot;
 				Path snapshotPath = null;
 				QueryExecutionVerification executionVerification;
-				try (SailRepositoryConnection connection = storeRuntime.repository.getConnection()) {
-					if (options.persist) {
-						snapshotPath = capture.captureAndWrite(context,
-								() -> prepareTupleQuery(connection, queryText, perQueryOptions.queryTimeoutSeconds));
-						currentSnapshot = capture.readSnapshot(snapshotPath);
-						output.println("Snapshot written: " + snapshotPath.toAbsolutePath());
-					} else {
-						currentSnapshot = capture.capture(context,
-								() -> prepareTupleQuery(connection, queryText, perQueryOptions.queryTimeoutSeconds));
-						output.println("Snapshot captured in-memory only (--persist=false).");
+				try (LearnedPlanTraceCaptureSession learnedPlanTraceCapture = startLearnedPlanTraceCapture(
+						perQueryOptions)) {
+					try (SailRepositoryConnection connection = storeRuntime.repository.getConnection()) {
+						if (options.persist) {
+							snapshotPath = capture.captureAndWrite(context,
+									() -> prepareTupleQuery(connection, queryText,
+											perQueryOptions.queryTimeoutSeconds));
+							currentSnapshot = capture.readSnapshot(snapshotPath);
+							output.println("Snapshot written: " + snapshotPath.toAbsolutePath());
+						} else {
+							currentSnapshot = capture.capture(context,
+									() -> prepareTupleQuery(connection, queryText,
+											perQueryOptions.queryTimeoutSeconds));
+							output.println("Snapshot captured in-memory only (--persist=false).");
+						}
+						applySnapshotPlanDebugMetadata(currentSnapshot);
+						executionVerification = verifyRepeatedExecution(connection, queryText,
+								perQueryOptions.queryTimeoutSeconds);
 					}
-					applySnapshotPlanDebugMetadata(currentSnapshot);
-					executionVerification = verifyRepeatedExecution(connection, queryText,
-							perQueryOptions.queryTimeoutSeconds);
-				}
-				applyExecutionVerificationMetadata(currentSnapshot, executionVerification);
-				if (options.persist && snapshotPath != null) {
-					capture.writeSnapshot(snapshotPath, currentSnapshot);
+					applyExecutionVerificationMetadata(currentSnapshot, executionVerification);
+					if (options.persist && snapshotPath != null) {
+						capture.writeSnapshot(snapshotPath, currentSnapshot);
+						Path learnedPlanTracePath = learnedPlanTraceCapture.persistForSnapshot(snapshotPath);
+						output.println("Learned plan trace written: " + learnedPlanTracePath.toAbsolutePath());
+					}
 				}
 				long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(Math.max(1L, System.nanoTime() - startedNanos));
 				etaReporter.markCompleted(queryId, elapsedMillis);
@@ -511,6 +530,10 @@ public final class QueryPlanSnapshotCli {
 		}
 
 		QueryPlanSnapshotComparator.printRunList(output, matchingRuns);
+		if (resolved.retrieveLearnedPlanTrace) {
+			printLearnedPlanTraces(matchingRuns, resolved.compareIndices);
+			return;
+		}
 		if (resolved.compareIndices != null || resolved.noInteractive) {
 			if (matchingRuns.size() < 2) {
 				output.println("Need at least two runs to compare.");
@@ -526,6 +549,49 @@ public final class QueryPlanSnapshotCli {
 		}
 
 		runInteractiveRunBrowser(matchingRuns, resolved.diffMode);
+	}
+
+	private void printLearnedPlanTraces(List<QueryPlanSnapshotComparator.SnapshotRun> runs,
+			QueryPlanSnapshotCliOptions.ComparisonPair selectedPair) throws IOException {
+		LinkedHashMap<Integer, QueryPlanSnapshotComparator.SnapshotRun> selectedRuns = new LinkedHashMap<>();
+		if (selectedPair != null) {
+			selectedRuns.put(selectedPair.leftIndex,
+					QueryPlanSnapshotComparator.runAtIndex(runs, selectedPair.leftIndex));
+			selectedRuns.put(selectedPair.rightIndex,
+					QueryPlanSnapshotComparator.runAtIndex(runs, selectedPair.rightIndex));
+		} else {
+			for (int i = 0; i < runs.size(); i++) {
+				selectedRuns.put(i, runs.get(i));
+			}
+		}
+
+		output.println();
+		output.println("=== Learned Plan Trace ===");
+		for (Map.Entry<Integer, QueryPlanSnapshotComparator.SnapshotRun> entry : selectedRuns.entrySet()) {
+			int index = entry.getKey();
+			QueryPlanSnapshotComparator.SnapshotRun run = entry.getValue();
+			QueryPlanSnapshot snapshot = run.snapshot();
+			output.println();
+			output.println("Run [" + index + "] capturedAt=" + normalizedOrUnknown(snapshot.getCapturedAt())
+					+ ", queryId=" + normalizedOrUnknown(snapshot.getQueryId()) + ", fingerprint="
+					+ normalizedOrUnknown(snapshot.getUnoptimizedFingerprint()));
+			Path learnedPlanTracePath = learnedPlanTracePath(run.path());
+			if (learnedPlanTracePath == null) {
+				output.println("(no snapshot file path available)");
+				continue;
+			}
+			if (!Files.exists(learnedPlanTracePath)) {
+				output.println("Learned plan trace not found: " + learnedPlanTracePath.toAbsolutePath());
+				continue;
+			}
+			output.println("Learned plan trace path: " + learnedPlanTracePath.toAbsolutePath());
+			String traceContent = Files.readString(learnedPlanTracePath, StandardCharsets.UTF_8);
+			if (traceContent.isBlank()) {
+				output.println("(empty learned plan trace)");
+			} else {
+				output.println(traceContent.stripTrailing());
+			}
+		}
 	}
 
 	private void runCompareRunNamePairBatch(QueryPlanSnapshotCliOptions options,
@@ -1370,6 +1436,18 @@ public final class QueryPlanSnapshotCli {
 		return resolved;
 	}
 
+	private static LearnedPlanTraceCaptureSession startLearnedPlanTraceCapture(QueryPlanSnapshotCliOptions options)
+			throws IOException {
+		if (!options.persist) {
+			return LearnedPlanTraceCaptureSession.disabled();
+		}
+		String previousValue = System.getProperty(LEARNED_PLAN_TRACE_PROPERTY);
+		Files.createDirectories(LEARNED_PLAN_TRACE_TMP_ROOT);
+		Path temporaryTracePath = Files.createTempFile(LEARNED_PLAN_TRACE_TMP_ROOT, "capture-", ".jsonl");
+		System.setProperty(LEARNED_PLAN_TRACE_PROPERTY, temporaryTracePath.toAbsolutePath().toString());
+		return LearnedPlanTraceCaptureSession.enabled(previousValue, temporaryTracePath);
+	}
+
 	private QueryPlanSnapshotCliOptions resolveCompareOptions(QueryPlanSnapshotCliOptions options) throws IOException {
 		QueryPlanSnapshotCliOptions resolved = options.copy();
 		if (requiresInteractiveInput(resolved)) {
@@ -1929,6 +2007,8 @@ public final class QueryPlanSnapshotCli {
 				.addValue("cli.theme", options.theme.name())
 				.addValue("cli.querySource", querySource)
 				.addValue("cli.persist", Boolean.toString(options.persist))
+				.addValue("cli.tmpRun", Boolean.toString(options.tmpRun))
+				.addValue("cli.overwriteThemeQueryRuns", Boolean.toString(options.overwriteThemeQueryRuns))
 				.addValue("cli.runName",
 						options.runName == null || options.runName.isBlank() ? "<none>" : options.runName)
 				.addValue("cli.queryTimeoutSeconds", formatQueryTimeoutSeconds(options.queryTimeoutSeconds))
@@ -1980,6 +2060,83 @@ public final class QueryPlanSnapshotCli {
 		return QueryPlanCapture.resolveOutputDirectory().resolve("cli").resolve(storeType.id);
 	}
 
+	private static Path defaultTmpRunOutputDirectory(QueryPlanSnapshotCliOptions.StoreType storeType) {
+		return TMP_RUN_OUTPUT_ROOT.resolve(storeType.id);
+	}
+
+	private static Path resolveRunOutputDirectory(QueryPlanSnapshotCliOptions options) {
+		if (options.outputDirectory != null) {
+			return options.outputDirectory;
+		}
+		if (options.tmpRun) {
+			return defaultTmpRunOutputDirectory(options.store);
+		}
+		return defaultOutputDirectory(options.store);
+	}
+
+	private static Path learnedPlanTracePath(Path snapshotPath) {
+		if (snapshotPath == null) {
+			return null;
+		}
+		String snapshotFileName = snapshotPath.getFileName().toString();
+		String baseName = snapshotFileName.endsWith(".json")
+				? snapshotFileName.substring(0, snapshotFileName.length() - ".json".length())
+				: snapshotFileName;
+		return snapshotPath.resolveSibling(baseName + LEARNED_PLAN_TRACE_FILE_SUFFIX);
+	}
+
+	private void deleteExistingThemeQueryRuns(Path outputDirectory, QueryPlanSnapshotCliOptions options, String queryId)
+			throws IOException {
+		QueryPlanCapture capture = new QueryPlanCapture();
+		List<QueryPlanSnapshotComparator.SnapshotRun> runs = QueryPlanSnapshotComparator.loadRuns(outputDirectory,
+				capture);
+		if (runs.isEmpty()) {
+			return;
+		}
+
+		int deleted = 0;
+		String queryIndex = Integer.toString(options.queryIndex);
+		for (QueryPlanSnapshotComparator.SnapshotRun run : runs) {
+			Path snapshotPath = run.path();
+			if (snapshotPath == null) {
+				continue;
+			}
+
+			QueryPlanSnapshot snapshot = run.snapshot();
+			if (!matchesThemeQueryTarget(snapshot, queryId, options.store.id, options.theme.name(), queryIndex)) {
+				continue;
+			}
+			if (Files.deleteIfExists(snapshotPath)) {
+				deleted++;
+			}
+			Path learnedPlanTracePath = learnedPlanTracePath(snapshotPath);
+			if (learnedPlanTracePath != null) {
+				Files.deleteIfExists(learnedPlanTracePath);
+			}
+		}
+
+		output.println("Overwrite mode removed " + deleted + " existing run(s) for theme "
+				+ options.theme.name() + " query " + queryIndex + ".");
+	}
+
+	private static boolean matchesThemeQueryTarget(QueryPlanSnapshot snapshot, String queryId, String storeId,
+			String theme, String queryIndex) {
+		if (snapshot == null) {
+			return false;
+		}
+		if (queryId.equals(normalizedOrNull(snapshot.getQueryId()))) {
+			return true;
+		}
+
+		Map<String, String> metadata = snapshot.getMetadata();
+		if (metadata == null || metadata.isEmpty()) {
+			return false;
+		}
+		return storeId.equals(normalizedOrNull(metadata.get("store")))
+				&& theme.equals(normalizedOrNull(metadata.get("theme")))
+				&& queryIndex.equals(normalizedOrNull(metadata.get("queryIndex")));
+	}
+
 	private static BenchmarkQuery resolveBenchmarkQuery(QueryPlanSnapshotCliOptions options) {
 		if (options.queryIndex == null) {
 			return null;
@@ -2020,6 +2177,11 @@ public final class QueryPlanSnapshotCli {
 		}
 		String normalized = value.trim();
 		return normalized.isEmpty() ? null : normalized;
+	}
+
+	private static String normalizedOrUnknown(String value) {
+		String normalized = normalizedOrNull(value);
+		return normalized == null ? UNKNOWN_VALUE : normalized;
 	}
 
 	private static String formatLocalTime(String capturedAt) {
@@ -3118,6 +3280,64 @@ public final class QueryPlanSnapshotCli {
 
 		private String failurePlanHash() {
 			return failure == null ? "" : failure.planHash;
+		}
+	}
+
+	private static final class LearnedPlanTraceCaptureSession implements AutoCloseable {
+		private final boolean enabled;
+		private final String previousValue;
+		private final Path temporaryTracePath;
+		private boolean persisted;
+
+		private LearnedPlanTraceCaptureSession(boolean enabled, String previousValue, Path temporaryTracePath) {
+			this.enabled = enabled;
+			this.previousValue = previousValue;
+			this.temporaryTracePath = temporaryTracePath;
+		}
+
+		private static LearnedPlanTraceCaptureSession disabled() {
+			return new LearnedPlanTraceCaptureSession(false, null, null);
+		}
+
+		private static LearnedPlanTraceCaptureSession enabled(String previousValue, Path temporaryTracePath) {
+			return new LearnedPlanTraceCaptureSession(true, previousValue, temporaryTracePath);
+		}
+
+		private Path persistForSnapshot(Path snapshotPath) throws IOException {
+			Path destinationPath = learnedPlanTracePath(snapshotPath);
+			if (!enabled || destinationPath == null) {
+				return destinationPath;
+			}
+			Path parent = destinationPath.getParent();
+			if (parent != null) {
+				Files.createDirectories(parent);
+			}
+			if (temporaryTracePath != null && Files.exists(temporaryTracePath)) {
+				Files.move(temporaryTracePath, destinationPath, StandardCopyOption.REPLACE_EXISTING);
+			} else {
+				Files.writeString(destinationPath, "", StandardCharsets.UTF_8);
+			}
+			persisted = true;
+			return destinationPath;
+		}
+
+		@Override
+		public void close() {
+			if (!enabled) {
+				return;
+			}
+			if (previousValue == null) {
+				System.clearProperty(LEARNED_PLAN_TRACE_PROPERTY);
+			} else {
+				System.setProperty(LEARNED_PLAN_TRACE_PROPERTY, previousValue);
+			}
+			if (!persisted && temporaryTracePath != null) {
+				try {
+					Files.deleteIfExists(temporaryTracePath);
+				} catch (IOException ignored) {
+					// Best-effort cleanup.
+				}
+			}
 		}
 	}
 

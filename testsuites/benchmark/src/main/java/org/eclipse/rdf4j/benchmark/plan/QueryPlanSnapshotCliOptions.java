@@ -34,7 +34,10 @@ final class QueryPlanSnapshotCliOptions {
 	boolean compareExisting;
 	boolean renameRunsByCommit;
 	boolean compareLatest;
+	boolean retrieveLearnedPlanTrace;
 	boolean runAllThemeQueries;
+	boolean tmpRun;
+	boolean overwriteThemeQueryRuns;
 	boolean persist = true;
 	DiffMode diffMode = DiffMode.STRUCTURE;
 	ComparisonPair compareIndices;
@@ -70,7 +73,10 @@ final class QueryPlanSnapshotCliOptions {
 		copy.compareExisting = compareExisting;
 		copy.renameRunsByCommit = renameRunsByCommit;
 		copy.compareLatest = compareLatest;
+		copy.retrieveLearnedPlanTrace = retrieveLearnedPlanTrace;
 		copy.runAllThemeQueries = runAllThemeQueries;
+		copy.tmpRun = tmpRun;
+		copy.overwriteThemeQueryRuns = overwriteThemeQueryRuns;
 		copy.persist = persist;
 		copy.diffMode = diffMode;
 		copy.compareIndices = compareIndices;
@@ -145,8 +151,17 @@ final class QueryPlanSnapshotCliOptions {
 			case "--compare-latest":
 				options.compareLatest = true;
 				break;
+			case "--retrieve-learned-plan-trace":
+				options.retrieveLearnedPlanTrace = true;
+				break;
 			case "--all-theme-queries":
 				options.runAllThemeQueries = true;
+				break;
+			case "--tmp-run":
+				options.tmpRun = true;
+				break;
+			case "--overwrite-theme-query-runs":
+				options.overwriteThemeQueryRuns = true;
 				break;
 			case "--diff-mode":
 				options.diffMode = parseDiffMode(requireValue(args, ++i, arg), arg);
@@ -242,6 +257,12 @@ final class QueryPlanSnapshotCliOptions {
 		}
 
 		if (options.compareExisting) {
+			if (options.tmpRun) {
+				throw new IllegalArgumentException("--tmp-run is only supported in run mode.");
+			}
+			if (options.overwriteThemeQueryRuns) {
+				throw new IllegalArgumentException("--overwrite-theme-query-runs is only supported in run mode.");
+			}
 			if (options.compareLatest) {
 				throw new IllegalArgumentException("Use either --compare-existing or --compare-latest, not both.");
 			}
@@ -249,6 +270,10 @@ final class QueryPlanSnapshotCliOptions {
 				throw new IllegalArgumentException("--all-theme-queries is only supported in run mode.");
 			}
 			if (options.compareRunNames != null) {
+				if (options.retrieveLearnedPlanTrace) {
+					throw new IllegalArgumentException(
+							"--retrieve-learned-plan-trace cannot be combined with --compare-run-names.");
+				}
 				if (options.runName != null && !options.runName.isBlank()) {
 					throw new IllegalArgumentException("--compare-run-names cannot be combined with --run-name.");
 				}
@@ -270,11 +295,19 @@ final class QueryPlanSnapshotCliOptions {
 			return;
 		}
 
+		if (options.retrieveLearnedPlanTrace) {
+			throw new IllegalArgumentException(
+					"--retrieve-learned-plan-trace is only supported in --compare-existing mode.");
+		}
 		if (options.emitCsv != null) {
 			throw new IllegalArgumentException("--emit-csv is only supported in --compare-existing mode.");
 		}
 
 		if (options.runAllThemeQueries) {
+			if (options.overwriteThemeQueryRuns) {
+				throw new IllegalArgumentException(
+						"--overwrite-theme-query-runs requires a specific themed query and is not supported with --all-theme-queries.");
+			}
 			if (options.hasQueryInput()) {
 				throw new IllegalArgumentException(
 						"Do not combine --all-theme-queries with --query, --query-file, --query-index or --theme-query.");
@@ -296,6 +329,21 @@ final class QueryPlanSnapshotCliOptions {
 		}
 		if (options.query != null && options.queryFile != null) {
 			throw new IllegalArgumentException("Use either --query or --query-file, not both.");
+		}
+		if (options.overwriteThemeQueryRuns) {
+			if (!options.tmpRun) {
+				throw new IllegalArgumentException("--overwrite-theme-query-runs requires --tmp-run.");
+			}
+			if (options.outputDirectory != null) {
+				throw new IllegalArgumentException("--overwrite-theme-query-runs does not support --output-dir.");
+			}
+			if (options.theme == null || options.queryIndex == null) {
+				throw new IllegalArgumentException(
+						"--overwrite-theme-query-runs requires --theme and --query-index (or --theme-query).");
+			}
+			if (!options.persist) {
+				throw new IllegalArgumentException("--overwrite-theme-query-runs requires snapshot persistence.");
+			}
 		}
 		if (options.noInteractive && missingRequiredRunOptions(options)) {
 			throw new IllegalArgumentException(
@@ -540,12 +588,17 @@ final class QueryPlanSnapshotCliOptions {
 		output.println("  --execution-repeat-soft-limit-millis <long>=1");
 		output.println("                                       soft time budget before verification stops");
 		output.println("  --persist <true|false> | --no-persist");
+		output.println(
+				"  --tmp-run                            run with repo-local tmp/ defaults for transient captures");
+		output.println(
+				"  --overwrite-theme-query-runs         delete existing runs for the selected themed query before capture (requires --tmp-run)");
 		output.println("  --compare-latest                     compare current run with latest prior run");
 		output.println();
 		output.println("Compare-existing mode:");
 		output.println("  --compare-existing");
 		output.println("  --query-id <id> or --run-name <name> or --fingerprint <hash>");
 		output.println("  --compare-indices <i,j>              optional, else interactive/latest-two");
+		output.println("  --retrieve-learned-plan-trace        print learned plan trace companion file(s)");
 		output.println("  --compare-run-names <left,right>     batch compare run names by query id");
 		output.println("  --emit-csv <path>                    write batch comparison CSV (run-name mode)");
 		output.println("  --diff-mode <structure|structure+estimates>");

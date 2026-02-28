@@ -34,6 +34,9 @@ final class QueryPlanSnapshotStoreSupport {
 
 	private static final String LMDB_FULLY_LOADED_SIZE_FILE = ".rdf4j-query-plan-cli-fully-loaded-size-bytes";
 	private static final long LMDB_SIZE_MATCH_TOLERANCE_BYTES = 1_048_576L;
+	private static final Path TMP_RUN_LMDB_DATA_ROOT = Path.of("tmp")
+			.resolve("query-plan-snapshot")
+			.resolve("lmdb-data");
 
 	private QueryPlanSnapshotStoreSupport() {
 	}
@@ -76,7 +79,12 @@ final class QueryPlanSnapshotStoreSupport {
 		Path dataDirectory = options.lmdbDataDirectory;
 		boolean deleteDataDirectory = false;
 		if (dataDirectory == null) {
-			dataDirectory = Files.createTempDirectory("rdf4j-lmdb-plan-cli-");
+			if (options.tmpRun) {
+				Files.createDirectories(TMP_RUN_LMDB_DATA_ROOT);
+				dataDirectory = Files.createTempDirectory(TMP_RUN_LMDB_DATA_ROOT, "rdf4j-lmdb-plan-cli-");
+			} else {
+				dataDirectory = Files.createTempDirectory("rdf4j-lmdb-plan-cli-");
+			}
 			deleteDataDirectory = true;
 		}
 		LmdbStoreConfig config = new LmdbStoreConfig();

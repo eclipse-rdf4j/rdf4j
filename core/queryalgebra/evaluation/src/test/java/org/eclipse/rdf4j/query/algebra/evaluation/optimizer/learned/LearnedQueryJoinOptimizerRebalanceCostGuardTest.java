@@ -77,6 +77,79 @@ class LearnedQueryJoinOptimizerRebalanceCostGuardTest {
 		assertEquals(List.of(typePattern, bridgePattern, targetPattern), reordered);
 	}
 
+	@Test
+	void largeDualTypeHubKeepsSelectivePrefixWhenPreferredTypeEstimateIsHigher() throws Exception {
+		LearnedQueryJoinOptimizer optimizer = optimizerWithPredicateCardinalities(
+				Map.of(
+						RDF.TYPE.stringValue(), 1000.0d,
+						"urn:loanedCopy", 10.0d,
+						"urn:borrowedBy", 20.0d,
+						"urn:hasCopy", 200.0d,
+						"urn:locatedAt", 300.0d));
+		Object visitor = newLearnedJoinVisitor(optimizer);
+		StatementPattern loanedCopyPattern = pattern("loan", "urn:loanedCopy", "copy");
+		StatementPattern loanTypePattern = typePattern("loan", "urn:Loan");
+		StatementPattern borrowedByPattern = pattern("loan", "urn:borrowedBy", "member");
+		StatementPattern bookHasCopyPattern = pattern("book", "urn:hasCopy", "copy");
+		StatementPattern bookTypePattern = typePattern("book", "urn:Book");
+		StatementPattern locatedAtPattern = pattern("copy", "urn:locatedAt", "branch");
+
+		List<TupleExpr> planned = List.of(loanedCopyPattern, loanTypePattern, borrowedByPattern,
+				bookHasCopyPattern, bookTypePattern, locatedAtPattern);
+		List<TupleExpr> joinArgs = List.of(bookTypePattern, bookHasCopyPattern, loanedCopyPattern, loanTypePattern,
+				borrowedByPattern, locatedAtPattern);
+
+		List<TupleExpr> reordered = rebalanceLargeDualTypeHub(visitor, planned, joinArgs);
+
+		assertEquals(planned, reordered);
+	}
+
+	@Test
+	void largeDualTypeHubKeepsExistingLeadingTypeWhenPreferredTypeEstimateIsHigher() throws Exception {
+		LearnedQueryJoinOptimizer optimizer = optimizerWithPredicateCardinalities(
+				Map.of(
+						RDF.TYPE.stringValue() + "|urn:Loan", 1.0d,
+						RDF.TYPE.stringValue() + "|urn:Book", 1000.0d,
+						"urn:loanedCopy", 10.0d,
+						"urn:borrowedBy", 20.0d,
+						"urn:hasCopy", 200.0d,
+						"urn:locatedAt", 300.0d));
+		Object visitor = newLearnedJoinVisitor(optimizer);
+		StatementPattern loanTypePattern = typePattern("loan", "urn:Loan");
+		StatementPattern loanedCopyPattern = pattern("loan", "urn:loanedCopy", "copy");
+		StatementPattern borrowedByPattern = pattern("loan", "urn:borrowedBy", "member");
+		StatementPattern bookHasCopyPattern = pattern("book", "urn:hasCopy", "copy");
+		StatementPattern bookTypePattern = typePattern("book", "urn:Book");
+		StatementPattern locatedAtPattern = pattern("copy", "urn:locatedAt", "branch");
+
+		List<TupleExpr> planned = List.of(loanTypePattern, loanedCopyPattern, borrowedByPattern,
+				bookHasCopyPattern, bookTypePattern, locatedAtPattern);
+		List<TupleExpr> joinArgs = List.of(bookTypePattern, bookHasCopyPattern, loanedCopyPattern, loanTypePattern,
+				borrowedByPattern, locatedAtPattern);
+
+		List<TupleExpr> reordered = rebalanceLargeDualTypeHub(visitor, planned, joinArgs);
+
+		assertEquals(planned, reordered);
+	}
+
+	@Test
+	void typeBridgeOuterChainKeepsSelectiveTypePrefixWhenOuterEstimateIsHigher() throws Exception {
+		LearnedQueryJoinOptimizer optimizer = optimizerWithPredicateCardinalities(
+				Map.of(
+						RDF.TYPE.stringValue() + "|urn:Loan", 1.0d,
+						"urn:loanedCopy", 10.0d,
+						"urn:hasCopy", 1000.0d));
+		Object visitor = newLearnedJoinVisitor(optimizer);
+		StatementPattern loanTypePattern = typePattern("loan", "urn:Loan");
+		StatementPattern loanedCopyPattern = pattern("loan", "urn:loanedCopy", "copy");
+		StatementPattern bookHasCopyPattern = pattern("book", "urn:hasCopy", "copy");
+		List<TupleExpr> planned = List.of(loanTypePattern, loanedCopyPattern, bookHasCopyPattern);
+
+		List<TupleExpr> reordered = rebalanceTypeBridgeOuterChain(visitor, planned);
+
+		assertEquals(planned, reordered);
+	}
+
 	private static StatementPattern pattern(String subjectName, String predicateIri, String objectName) {
 		return new StatementPattern(Var.of(subjectName), Var.of("_const_p", VF.createIRI(predicateIri)),
 				Var.of(objectName));
@@ -112,6 +185,23 @@ class LearnedQueryJoinOptimizerRebalanceCostGuardTest {
 		return (List<TupleExpr>) method.invoke(visitor, planned, unsupportedTargets, List.<ValueExpr>of());
 	}
 
+	@SuppressWarnings("unchecked")
+	private static List<TupleExpr> rebalanceLargeDualTypeHub(Object visitor, List<TupleExpr> planned,
+			List<TupleExpr> joinArgs)
+			throws Exception {
+		Method method = visitor.getClass().getDeclaredMethod("rebalanceLargeDualTypeHub", List.class, List.class);
+		method.setAccessible(true);
+		return (List<TupleExpr>) method.invoke(visitor, planned, joinArgs);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<TupleExpr> rebalanceTypeBridgeOuterChain(Object visitor, List<TupleExpr> planned)
+			throws Exception {
+		Method method = visitor.getClass().getDeclaredMethod("rebalanceTypeBridgeOuterChain", List.class, Set.class);
+		method.setAccessible(true);
+		return (List<TupleExpr>) method.invoke(visitor, planned, Set.of());
+	}
+
 	private static final class PredicateCardinalityStatistics extends EvaluationStatistics {
 
 		private final Map<String, Double> cardinalityByPredicate;
@@ -132,6 +222,14 @@ class LearnedQueryJoinOptimizerRebalanceCostGuardTest {
 					Value value = predicateVar.getValue();
 					if (!(value instanceof IRI)) {
 						return 1.0d;
+					}
+					Var objectVar = sp.getObjectVar();
+					if (objectVar != null && objectVar.hasValue()) {
+						String scopedKey = value.stringValue() + "|" + objectVar.getValue().stringValue();
+						Double scopedCardinality = cardinalityByPredicate.get(scopedKey);
+						if (scopedCardinality != null) {
+							return scopedCardinality.doubleValue();
+						}
 					}
 					return cardinalityByPredicate.getOrDefault(value.stringValue(), 1.0d);
 				}

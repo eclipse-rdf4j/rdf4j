@@ -19,13 +19,19 @@ Use this skill to run reproducible query-plan captures and classify likely regre
 Use wrapper (enforces pre-install and optional logging):
 
 - Baseline:
-  - `./.codex/skills/query-plan-snapshot-cli/scripts/run_query_plan_snapshot.sh --log /tmp/qps-baseline.log -- --store memory --theme MEDICAL_RECORDS --query-index 0 --query-id med-q0`
+  - `./.codex/skills/query-plan-snapshot-cli/scripts/run_query_plan_snapshot.sh --log tmp/qps-baseline.log -- --store memory --theme MEDICAL_RECORDS --query-index 0 --query-id med-q0`
 - Candidate:
-  - `./.codex/skills/query-plan-snapshot-cli/scripts/run_query_plan_snapshot.sh --log /tmp/qps-candidate.log -- --store memory --theme MEDICAL_RECORDS --query-index 0 --query-id med-q0 --compare-latest --diff-mode structure+estimates`
+  - `./.codex/skills/query-plan-snapshot-cli/scripts/run_query_plan_snapshot.sh --log tmp/qps-candidate.log -- --store memory --theme MEDICAL_RECORDS --query-index 0 --query-id med-q0 --compare-latest --diff-mode structure+estimates`
+- Temporary run rooted in repo `tmp/`:
+  - `./.codex/skills/query-plan-snapshot-cli/scripts/run_query_plan_snapshot.sh --tmp-run --log tmp/qps-tmp.log -- --store lmdb --theme LIBRARY --query-index 8 --query-timeout-seconds 5`
+- Overwrite all previous runs for one themed query before capture:
+  - `./.codex/skills/query-plan-snapshot-cli/scripts/run_query_plan_snapshot.sh --tmp-run --log tmp/qps-overwrite.log -- --store lmdb --theme LIBRARY --query-index 8 --overwrite-theme-query-runs`
+- Retrieve learned plan traces from existing runs:
+  - `./.codex/skills/query-plan-snapshot-cli/scripts/run_query_plan_snapshot.sh --log tmp/qps-learned-trace.log -- --compare-existing --query-id med-q0 --retrieve-learned-plan-trace --no-interactive`
 - Compare existing snapshots explicitly:
-  - `mvn -o -Dmaven.repo.local=.m2_repo -pl testsuites/benchmark -DskipTests exec:java@query-plan-snapshot -Dexec.args="--compare-existing --query-id med-q0 --compare-indices 1,0 --no-interactive --diff-mode structure+estimates" | tee /tmp/qps-compare.log`
+  - `mvn -o -Dmaven.repo.local=.m2_repo -pl testsuites/benchmark -DskipTests exec:java@query-plan-snapshot -Dexec.args="--compare-existing --query-id med-q0 --compare-indices 1,0 --no-interactive --diff-mode structure+estimates" | tee tmp/qps-compare.log`
 - Summarize improvement/regression signal:
-  - `python3 ./.codex/skills/query-plan-snapshot-cli/scripts/interpret_query_plan_regression.py --baseline-log /tmp/qps-baseline.log --candidate-log /tmp/qps-candidate.log --comparison-log /tmp/qps-compare.log`
+  - `python3 ./.codex/skills/query-plan-snapshot-cli/scripts/interpret_query_plan_regression.py --baseline-log tmp/qps-baseline.log --candidate-log tmp/qps-candidate.log --comparison-log tmp/qps-compare.log`
 
 ## Interpretation rule-of-thumb
 
@@ -34,5 +40,7 @@ Use wrapper (enforces pre-install and optional logging):
 - `actualResultSizes=diff`: semantic/data-shape risk; perf conclusion low confidence.
 - `joinAlgorithms=diff` or `structure=diff`: optimizer behavior changed; correlate with runtime delta.
 - `estimates=diff` only: model/statistics shift; validate with repeated runs.
+- Persisted captures now also write a learned-trace companion file beside each snapshot:
+  - `<snapshot-base>-learned-plan-trace.jsonl`
 
 For more detailed reading patterns and triage prompts, use `references/workflow.md`.
