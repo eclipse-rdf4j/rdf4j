@@ -35,11 +35,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A SAIL implementation that stores RDF data on S3-compatible object storage using an LSM-tree architecture.
+ * A SAIL implementation that stores RDF data on S3-compatible object storage using an LSM-tree architecture with
+ * Parquet files, stats-based pruning, and multi-tier caching (Caffeine heap + disk LRU + S3).
  *
  * <p>
- * Phase 1b: In-memory only. Data is stored in sorted MemTables and is not yet persisted to S3. This enables passing the
- * SAIL compliance tests with the core storage engine.
+ * Supports three modes: S3 persistence (bucket configured), local filesystem persistence (dataDir configured), or pure
+ * in-memory (neither configured).
  * </p>
  *
  * @implNote the S3 store is in an experimental state: its existence, signature or behavior may change without warning
@@ -154,7 +155,7 @@ public class S3Store extends AbstractNotifyingSail implements FederatedServiceRe
 					}
 				}
 			};
-		} catch (Throwable e) {
+		} catch (Exception e) {
 			throw new SailException(e);
 		}
 

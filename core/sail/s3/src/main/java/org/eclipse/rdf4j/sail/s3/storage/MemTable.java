@@ -87,14 +87,13 @@ public class MemTable {
 	/**
 	 * Removes a quad by writing a tombstone.
 	 *
-	 * @param s        subject ID
-	 * @param p        predicate ID
-	 * @param o        object ID
-	 * @param c        context ID
-	 * @param explicit true for explicit, false for inferred (currently unused; tombstone applies to either)
+	 * @param s subject ID
+	 * @param p predicate ID
+	 * @param o object ID
+	 * @param c context ID
 	 * @throws IllegalStateException if the table is frozen
 	 */
-	public void remove(long s, long p, long o, long c, boolean explicit) {
+	public void remove(long s, long p, long o, long c) {
 		checkNotFrozen();
 		byte[] key = index.toKeyBytes(s, p, o, c);
 		data.put(key, VALUE_TOMBSTONE);
@@ -238,11 +237,7 @@ public class MemTable {
 		long[] quad = new long[4];
 		for (Map.Entry<byte[], byte[]> entry : range.entrySet()) {
 			index.keyToQuad(entry.getKey(), quad);
-			// Apply additional filters (range scan may include extra entries)
-			if ((s >= 0 && quad[QuadIndex.SUBJ_IDX] != s)
-					|| (p >= 0 && quad[QuadIndex.PRED_IDX] != p)
-					|| (o >= 0 && quad[QuadIndex.OBJ_IDX] != o)
-					|| (c >= 0 && quad[QuadIndex.CONTEXT_IDX] != c)) {
+			if (!QuadIndex.matches(quad, s, p, o, c)) {
 				continue;
 			}
 			byte[] newKey = targetIndex.toKeyBytes(
@@ -370,10 +365,7 @@ public class MemTable {
 				}
 				long[] quad = new long[4];
 				quadIndex.keyToQuad(entry.getKey(), quad);
-				if ((patternS >= 0 && quad[QuadIndex.SUBJ_IDX] != patternS)
-						|| (patternP >= 0 && quad[QuadIndex.PRED_IDX] != patternP)
-						|| (patternO >= 0 && quad[QuadIndex.OBJ_IDX] != patternO)
-						|| (patternC >= 0 && quad[QuadIndex.CONTEXT_IDX] != patternC)) {
+				if (!QuadIndex.matches(quad, patternS, patternP, patternO, patternC)) {
 					continue;
 				}
 				next = quad;

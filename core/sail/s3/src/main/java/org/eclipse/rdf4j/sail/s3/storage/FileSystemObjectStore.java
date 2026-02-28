@@ -11,16 +11,17 @@
 package org.eclipse.rdf4j.sail.s3.storage;
 
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
 
 /**
- * Test double for {@link ObjectStore} backed by the local filesystem.
+ * {@link ObjectStore} implementation backed by the local filesystem. Stores each key as a file under the configured
+ * root directory, creating subdirectories as needed.
  */
 public class FileSystemObjectStore implements ObjectStore {
 
@@ -60,13 +61,24 @@ public class FileSystemObjectStore implements ObjectStore {
 
 	@Override
 	public byte[] getRange(String key, long offset, long length) {
-		byte[] full = get(key);
-		if (full == null) {
+		Path target = resolve(key);
+		if (!Files.exists(target)) {
 			return null;
 		}
-		int start = (int) offset;
-		int end = (int) Math.min(start + length, full.length);
-		return Arrays.copyOfRange(full, start, end);
+		try (RandomAccessFile raf = new RandomAccessFile(target.toFile(), "r")) {
+			long fileLen = raf.length();
+			int start = (int) Math.min(offset, fileLen);
+			int readLen = (int) Math.min(length, fileLen - start);
+			if (readLen <= 0) {
+				return new byte[0];
+			}
+			raf.seek(start);
+			byte[] buf = new byte[readLen];
+			raf.readFully(buf);
+			return buf;
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
 	}
 
 	@Override

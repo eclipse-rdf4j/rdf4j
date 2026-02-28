@@ -45,7 +45,7 @@ class MergeIteratorTest {
 	@Test
 	void tombstoneSuppression() {
 		MemTable newer = new MemTable(spoc);
-		newer.remove(1, 2, 3, 0, true); // tombstone
+		newer.remove(1, 2, 3, 0); // tombstone
 
 		MemTable older = new MemTable(spoc);
 		older.put(1, 2, 3, 0, true); // explicit
@@ -152,7 +152,7 @@ class MergeIteratorTest {
 		olderData.put(4, 5, 6, 0, true);
 
 		MemTable memTable = new MemTable(spoc);
-		memTable.remove(1, 2, 3, 0, true); // tombstone shadows older entry
+		memTable.remove(1, 2, 3, 0); // tombstone shadows older entry
 
 		List<RawEntrySource> sources = Arrays.asList(
 				memTable.asRawSource(-1, -1, -1, -1),

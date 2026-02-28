@@ -89,6 +89,8 @@ public class S3StoreConfig extends BaseSailConfig {
 
 	private Boolean s3ForcePathStyle;
 
+	private String dataDir;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -290,6 +292,18 @@ public class S3StoreConfig extends BaseSailConfig {
 		return getS3Bucket() != null && !getS3Bucket().isEmpty();
 	}
 
+	public String getDataDir() {
+		if (dataDir != null) {
+			return dataDir;
+		}
+		return resolveEnv("RDF4J_S3_DATA_DIR", "rdf4j.s3.dataDir");
+	}
+
+	public S3StoreConfig setDataDir(String dataDir) {
+		this.dataDir = dataDir;
+		return this;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -340,6 +354,9 @@ public class S3StoreConfig extends BaseSailConfig {
 		}
 		if (s3ForcePathStyle != null) {
 			m.add(implNode, S3StoreSchema.S3_FORCE_PATH_STYLE, vf.createLiteral(s3ForcePathStyle));
+		}
+		if (dataDir != null) {
+			m.add(implNode, S3StoreSchema.DATA_DIR, vf.createLiteral(dataDir));
 		}
 		return implNode;
 	}
@@ -440,6 +457,9 @@ public class S3StoreConfig extends BaseSailConfig {
 
 			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.S3_FORCE_PATH_STYLE, null))
 					.ifPresent(lit -> setS3ForcePathStyle(lit.booleanValue()));
+
+			Models.objectLiteral(m.getStatements(implNode, S3StoreSchema.DATA_DIR, null))
+					.ifPresent(lit -> setDataDir(lit.getLabel()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}

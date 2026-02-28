@@ -47,8 +47,7 @@ public class ParquetQuadSource implements RawEntrySource {
 	 * @param quadIndex   the quad index defining the key encoding order
 	 */
 	public ParquetQuadSource(byte[] parquetData, QuadIndex quadIndex) {
-		this.entries = readAllEntries(parquetData, quadIndex, -1, -1, -1, -1);
-		this.pos = 0;
+		this(parquetData, quadIndex, -1, -1, -1, -1);
 	}
 
 	/**
@@ -113,11 +112,8 @@ public class ParquetQuadSource implements RawEntrySource {
 					long context = group.getLong(ParquetSchemas.COL_CONTEXT, 0);
 					int flag = group.getInteger(ParquetSchemas.COL_FLAG, 0);
 
-					// Apply filters
-					if ((filterS >= 0 && subject != filterS)
-							|| (filterP >= 0 && predicate != filterP)
-							|| (filterO >= 0 && object != filterO)
-							|| (filterC >= 0 && context != filterC)) {
+					long[] quad = { subject, predicate, object, context };
+					if (!QuadIndex.matches(quad, filterS, filterP, filterO, filterC)) {
 						continue;
 					}
 

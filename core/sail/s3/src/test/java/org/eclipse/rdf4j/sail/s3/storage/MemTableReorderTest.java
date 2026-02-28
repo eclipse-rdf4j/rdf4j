@@ -124,7 +124,7 @@ class MemTableReorderTest {
 	void reorderedSource_includesAliveAndTombstones() {
 		MemTable mt = new MemTable(spoc);
 		mt.put(1, 2, 3, 0, true);
-		mt.remove(5, 6, 7, 0, true);
+		mt.remove(5, 6, 7, 0);
 
 		RawEntrySource source = mt.asRawSource(opsc, -1, -1, -1, -1);
 

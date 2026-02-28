@@ -39,23 +39,15 @@ public class CompactionPolicy {
 	}
 
 	/**
-	 * Checks if L0→L1 compaction should run for the given predicate partition files.
+	 * Checks if compaction should run at the given level.
 	 *
-	 * @param files all files in the predicate partition
-	 * @return true if the number of distinct L0 epochs >= l0Threshold
+	 * @param files all catalog files
+	 * @param level the source level (0 or 1)
+	 * @return true if the number of distinct epochs at that level >= threshold
 	 */
-	public boolean shouldCompactL0(List<Catalog.ParquetFileInfo> files) {
-		return countEpochsAtLevel(files, 0) >= l0Threshold;
-	}
-
-	/**
-	 * Checks if L1→L2 compaction should run for the given predicate partition files.
-	 *
-	 * @param files all files in the predicate partition
-	 * @return true if the number of distinct L1 epochs >= l1Threshold
-	 */
-	public boolean shouldCompactL1(List<Catalog.ParquetFileInfo> files) {
-		return countEpochsAtLevel(files, 1) >= l1Threshold;
+	public boolean shouldCompact(List<Catalog.ParquetFileInfo> files, int level) {
+		int threshold = level == 0 ? l0Threshold : l1Threshold;
+		return countEpochsAtLevel(files, level) >= threshold;
 	}
 
 	private static int countEpochsAtLevel(List<Catalog.ParquetFileInfo> files, int level) {

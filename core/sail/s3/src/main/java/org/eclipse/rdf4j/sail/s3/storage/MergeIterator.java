@@ -94,10 +94,7 @@ public class MergeIterator implements Iterator<long[]> {
 			long[] quad = new long[4];
 			quadIndex.keyToQuad(winningKey, quad);
 
-			if ((patternS >= 0 && quad[QuadIndex.SUBJ_IDX] != patternS)
-					|| (patternP >= 0 && quad[QuadIndex.PRED_IDX] != patternP)
-					|| (patternO >= 0 && quad[QuadIndex.OBJ_IDX] != patternO)
-					|| (patternC >= 0 && quad[QuadIndex.CONTEXT_IDX] != patternC)) {
+			if (!QuadIndex.matches(quad, patternS, patternP, patternO, patternC)) {
 				continue;
 			}
 

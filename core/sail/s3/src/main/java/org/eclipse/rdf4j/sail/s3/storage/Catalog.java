@@ -231,6 +231,13 @@ public class Catalog {
 		}
 
 		public ParquetFileInfo(String s3Key, int level, String sortOrder, long rowCount,
+				long epoch, long sizeBytes, QuadStats stats) {
+			this(s3Key, level, sortOrder, rowCount, epoch, sizeBytes,
+					stats.minSubject, stats.maxSubject, stats.minPredicate, stats.maxPredicate,
+					stats.minObject, stats.maxObject, stats.minContext, stats.maxContext);
+		}
+
+		public ParquetFileInfo(String s3Key, int level, String sortOrder, long rowCount,
 				long epoch, long sizeBytes,
 				long minSubject, long maxSubject,
 				long minPredicate, long maxPredicate,

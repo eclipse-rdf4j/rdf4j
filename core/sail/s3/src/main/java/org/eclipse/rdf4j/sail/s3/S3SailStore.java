@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.sail.s3.config.S3StoreConfig;
 import org.eclipse.rdf4j.sail.s3.storage.Catalog;
 import org.eclipse.rdf4j.sail.s3.storage.CompactionPolicy;
 import org.eclipse.rdf4j.sail.s3.storage.Compactor;
+import org.eclipse.rdf4j.sail.s3.storage.FileSystemObjectStore;
 import org.eclipse.rdf4j.sail.s3.storage.MemTable;
 import org.eclipse.rdf4j.sail.s3.storage.MergeIterator;
 import org.eclipse.rdf4j.sail.s3.storage.ObjectStore;
@@ -55,6 +56,7 @@ import org.eclipse.rdf4j.sail.s3.storage.ParquetFileBuilder;
 import org.eclipse.rdf4j.sail.s3.storage.ParquetQuadSource;
 import org.eclipse.rdf4j.sail.s3.storage.ParquetSchemas;
 import org.eclipse.rdf4j.sail.s3.storage.QuadIndex;
+import org.eclipse.rdf4j.sail.s3.storage.QuadStats;
 import org.eclipse.rdf4j.sail.s3.storage.RawEntrySource;
 import org.eclipse.rdf4j.sail.s3.storage.S3ObjectStore;
 import org.slf4j.Logger;
@@ -97,7 +99,7 @@ class S3SailStore implements SailStore {
 	// Persistence fields (null when S3 is not configured)
 	private final ObjectStore objectStore;
 	private final ObjectMapper jsonMapper;
-	private Catalog catalog;
+	private final Catalog catalog;
 	private final AtomicLong epochCounter;
 	private final long memTableFlushSize;
 	private final TieredCache cache;
@@ -112,11 +114,20 @@ class S3SailStore implements SailStore {
 	private final ReentrantLock sinkStoreAccessLock = new ReentrantLock();
 
 	S3SailStore(S3StoreConfig config) {
-		this(config, config.isS3Configured()
-				? new S3ObjectStore(config.getS3Bucket(), config.getS3Endpoint(), config.getS3Region(),
-						config.getS3Prefix(), config.getS3AccessKey(), config.getS3SecretKey(),
-						config.isS3ForcePathStyle())
-				: null);
+		this(config, createObjectStore(config));
+	}
+
+	private static ObjectStore createObjectStore(S3StoreConfig config) {
+		if (config.isS3Configured()) {
+			return new S3ObjectStore(config.getS3Bucket(), config.getS3Endpoint(), config.getS3Region(),
+					config.getS3Prefix(), config.getS3AccessKey(), config.getS3SecretKey(),
+					config.isS3ForcePathStyle());
+		}
+		String dataDir = config.getDataDir();
+		if (dataDir != null && !dataDir.isEmpty()) {
+			return new FileSystemObjectStore(Path.of(dataDir));
+		}
+		return null; // in-memory only
 	}
 
 	/**
@@ -154,6 +165,7 @@ class S3SailStore implements SailStore {
 			namespaceStore.deserialize(objectStore, jsonMapper);
 		} else {
 			this.jsonMapper = null;
+			this.catalog = null;
 			this.epochCounter = null;
 			this.cache = null;
 			this.compactionPolicy = null;
@@ -206,25 +218,24 @@ class S3SailStore implements SailStore {
 			return;
 		}
 
-		if (memTable.size() == 0) {
-			// Still persist value store and namespaces
-			long epoch = epochCounter.getAndIncrement();
-			valueStore.serialize(objectStore);
-			namespaceStore.serialize(objectStore, jsonMapper);
-			catalog.setNextValueId(valueStore.getNextId());
-			catalog.setEpoch(epoch);
-			catalog.save(objectStore, jsonMapper, epoch);
-			return;
-		}
-
 		long epoch = epochCounter.getAndIncrement();
 
-		// Freeze active MemTable and swap in fresh one
-		MemTable frozen = memTable;
-		frozen.freeze();
-		memTable = new MemTable(SPOC_INDEX);
+		if (memTable.size() > 0) {
+			// Freeze active MemTable and swap in fresh one
+			MemTable frozen = memTable;
+			frozen.freeze();
+			memTable = new MemTable(SPOC_INDEX);
 
-		// Collect all entries as full quads
+			List<long[]> allQuads = collectQuads(frozen);
+			QuadStats stats = QuadStats.fromQuads(allQuads);
+			writeParquetFiles(epoch, allQuads, stats);
+		}
+
+		persistMetadata(epoch);
+		runCompactionIfNeeded();
+	}
+
+	private static List<long[]> collectQuads(MemTable frozen) {
 		List<long[]> allQuads = new ArrayList<>(frozen.size());
 		long[] quad = new long[4];
 		for (Map.Entry<byte[], byte[]> entry : frozen.getData().entrySet()) {
@@ -237,61 +248,36 @@ class S3SailStore implements SailStore {
 			q[4] = entry.getValue()[0];
 			allQuads.add(q);
 		}
+		return allQuads;
+	}
 
-		// Compute stats across all entries
-		long minSubject = Long.MAX_VALUE, maxSubject = Long.MIN_VALUE;
-		long minPredicate = Long.MAX_VALUE, maxPredicate = Long.MIN_VALUE;
-		long minObject = Long.MAX_VALUE, maxObject = Long.MIN_VALUE;
-		long minContext = Long.MAX_VALUE, maxContext = Long.MIN_VALUE;
-		for (long[] q : allQuads) {
-			minSubject = Math.min(minSubject, q[0]);
-			maxSubject = Math.max(maxSubject, q[0]);
-			minPredicate = Math.min(minPredicate, q[1]);
-			maxPredicate = Math.max(maxPredicate, q[1]);
-			minObject = Math.min(minObject, q[2]);
-			maxObject = Math.max(maxObject, q[2]);
-			minContext = Math.min(minContext, q[3]);
-			maxContext = Math.max(maxContext, q[3]);
-		}
-
-		// For each sort order, sort and write one Parquet file
+	private void writeParquetFiles(long epoch, List<long[]> allQuads, QuadStats stats) {
 		for (QuadIndex sortIndex : ALL_INDEXES) {
 			String sortSuffix = sortIndex.getFieldSeqString();
-
-			// Sort entries according to the sort order
 			List<ParquetFileBuilder.QuadEntry> sorted = sortQuadEntries(allQuads, sortIndex);
 
-			// Build Parquet file
 			ParquetSchemas.SortOrder sortOrder = ParquetSchemas.SortOrder.fromSuffix(sortSuffix);
 			byte[] parquetData = ParquetFileBuilder.build(sorted, ParquetSchemas.QUAD_SCHEMA,
 					sortOrder, rowGroupSize, pageSize);
 
 			String s3Key = "data/L0-" + String.format("%05d", epoch) + "-" + sortSuffix + ".parquet";
-
 			objectStore.put(s3Key, parquetData);
 
-			// Write-through to cache
 			if (cache != null) {
 				cache.writeThrough(s3Key, parquetData);
 			}
 
 			catalog.addFile(new Catalog.ParquetFileInfo(
-					s3Key, 0, sortSuffix, sorted.size(), epoch, parquetData.length,
-					minSubject, maxSubject, minPredicate, maxPredicate,
-					minObject, maxObject, minContext, maxContext));
+					s3Key, 0, sortSuffix, sorted.size(), epoch, parquetData.length, stats));
 		}
+	}
 
-		// Persist value store and namespaces
+	private void persistMetadata(long epoch) {
 		valueStore.serialize(objectStore);
 		namespaceStore.serialize(objectStore, jsonMapper);
-
-		// Atomic catalog update
 		catalog.setNextValueId(valueStore.getNextId());
 		catalog.setEpoch(epoch);
 		catalog.save(objectStore, jsonMapper, epoch);
-
-		// Check compaction triggers
-		runCompactionIfNeeded();
 	}
 
 	/**
@@ -302,7 +288,7 @@ class S3SailStore implements SailStore {
 		String seq = sortIndex.getFieldSeqString();
 		sorted.sort((a, b) -> {
 			for (int i = 0; i < 4; i++) {
-				int idx = fieldCharToIdx(seq.charAt(i));
+				int idx = QuadIndex.fieldCharToIdx(seq.charAt(i));
 				int cmp = Long.compare(a[idx], b[idx]);
 				if (cmp != 0) {
 					return cmp;
@@ -318,21 +304,6 @@ class S3SailStore implements SailStore {
 		return result;
 	}
 
-	private static int fieldCharToIdx(char c) {
-		switch (c) {
-		case 's':
-			return 0;
-		case 'p':
-			return 1;
-		case 'o':
-			return 2;
-		case 'c':
-			return 3;
-		default:
-			throw new IllegalArgumentException("Invalid field: " + c);
-		}
-	}
-
 	/**
 	 * Checks compaction triggers and runs compaction if needed.
 	 */
@@ -344,17 +315,15 @@ class S3SailStore implements SailStore {
 		List<Catalog.ParquetFileInfo> files = catalog.getFiles();
 
 		// L0→L1 compaction
-		if (compactionPolicy.shouldCompactL0(files)) {
+		if (compactionPolicy.shouldCompact(files, 0)) {
 			List<Catalog.ParquetFileInfo> l0Files = CompactionPolicy.filesAtLevel(files, 0);
 			long compactEpoch = epochCounter.getAndIncrement();
 			compactor.compact(l0Files, 0, 1, compactEpoch, catalog);
-
-			// Re-fetch files after compaction
 			files = catalog.getFiles();
 		}
 
 		// L1→L2 compaction
-		if (compactionPolicy.shouldCompactL1(files)) {
+		if (compactionPolicy.shouldCompact(files, 1)) {
 			List<Catalog.ParquetFileInfo> l1Files = CompactionPolicy.filesAtLevel(files, 1);
 			long compactEpoch = epochCounter.getAndIncrement();
 			compactor.compact(l1Files, 1, 2, compactEpoch, catalog);
@@ -364,6 +333,30 @@ class S3SailStore implements SailStore {
 		long epoch = epochCounter.getAndIncrement();
 		catalog.setEpoch(epoch);
 		catalog.save(objectStore, jsonMapper, epoch);
+	}
+
+	private boolean hasPersistence() {
+		return objectStore != null;
+	}
+
+	/**
+	 * Queries quads using the best available source (merged Parquet + MemTable, or MemTable only).
+	 */
+	private Iterator<long[]> queryQuads(long s, long p, long o, long c, boolean explicit) {
+		return hasPersistence()
+				? createMergedIterator(s, p, o, c, explicit)
+				: memTable.scan(s, p, o, c, explicit);
+	}
+
+	/**
+	 * Resolves a Value to its stored ID. Returns UNKNOWN_ID if the value is null, or the stored ID (which may be
+	 * UNKNOWN_ID if the value is not in the store).
+	 */
+	private long resolveValueId(Value value) {
+		if (value == null) {
+			return S3ValueStore.UNKNOWN_ID;
+		}
+		return valueStore.getId(value);
 	}
 
 	/**
@@ -376,28 +369,19 @@ class S3SailStore implements SailStore {
 			return new EmptyIteration<>();
 		}
 
-		long subjID = S3ValueStore.UNKNOWN_ID;
-		if (subj != null) {
-			subjID = valueStore.getId(subj);
-			if (subjID == S3ValueStore.UNKNOWN_ID) {
-				return new EmptyIteration<>();
-			}
+		long subjID = resolveValueId(subj);
+		if (subj != null && subjID == S3ValueStore.UNKNOWN_ID) {
+			return new EmptyIteration<>();
 		}
 
-		long predID = S3ValueStore.UNKNOWN_ID;
-		if (pred != null) {
-			predID = valueStore.getId(pred);
-			if (predID == S3ValueStore.UNKNOWN_ID) {
-				return new EmptyIteration<>();
-			}
+		long predID = resolveValueId(pred);
+		if (pred != null && predID == S3ValueStore.UNKNOWN_ID) {
+			return new EmptyIteration<>();
 		}
 
-		long objID = S3ValueStore.UNKNOWN_ID;
-		if (obj != null) {
-			objID = valueStore.getId(obj);
-			if (objID == S3ValueStore.UNKNOWN_ID) {
-				return new EmptyIteration<>();
-			}
+		long objID = resolveValueId(obj);
+		if (obj != null && objID == S3ValueStore.UNKNOWN_ID) {
+			return new EmptyIteration<>();
 		}
 
 		List<Long> contextIDList = new ArrayList<>(contexts.length == 0 ? 1 : contexts.length);
@@ -420,17 +404,10 @@ class S3SailStore implements SailStore {
 			return new EmptyIteration<>();
 		}
 
-		boolean hasPersistence = objectStore != null && catalog != null;
-
 		ArrayList<CloseableIteration<? extends Statement>> perContextIterList = new ArrayList<>(contextIDList.size());
 
 		for (long contextID : contextIDList) {
-			Iterator<long[]> quads;
-			if (hasPersistence) {
-				quads = createMergedIterator(subjID, predID, objID, contextID, explicit);
-			} else {
-				quads = memTable.scan(subjID, predID, objID, contextID, explicit);
-			}
+			Iterator<long[]> quads = queryQuads(subjID, predID, objID, contextID, explicit);
 			perContextIterList.add(new QuadToStatementIteration(quads, valueStore));
 		}
 
@@ -665,34 +642,19 @@ class S3SailStore implements SailStore {
 
 			sinkStoreAccessLock.lock();
 			try {
-				final long subjID;
-				if (subj != null) {
-					subjID = valueStore.getId(subj);
-					if (subjID == S3ValueStore.UNKNOWN_ID) {
-						return 0;
-					}
-				} else {
-					subjID = S3ValueStore.UNKNOWN_ID;
+				long subjID = resolveValueId(subj);
+				if (subj != null && subjID == S3ValueStore.UNKNOWN_ID) {
+					return 0;
 				}
 
-				final long predID;
-				if (pred != null) {
-					predID = valueStore.getId(pred);
-					if (predID == S3ValueStore.UNKNOWN_ID) {
-						return 0;
-					}
-				} else {
-					predID = S3ValueStore.UNKNOWN_ID;
+				long predID = resolveValueId(pred);
+				if (pred != null && predID == S3ValueStore.UNKNOWN_ID) {
+					return 0;
 				}
 
-				final long objID;
-				if (obj != null) {
-					objID = valueStore.getId(obj);
-					if (objID == S3ValueStore.UNKNOWN_ID) {
-						return 0;
-					}
-				} else {
-					objID = S3ValueStore.UNKNOWN_ID;
+				long objID = resolveValueId(obj);
+				if (obj != null && objID == S3ValueStore.UNKNOWN_ID) {
+					return 0;
 				}
 
 				final long[] contextIds;
@@ -713,21 +675,16 @@ class S3SailStore implements SailStore {
 
 				long removeCount = 0;
 				for (long contextId : contextIds) {
-					boolean hasPersistence = objectStore != null && catalog != null;
+					Iterator<long[]> iter = queryQuads(subjID, predID, objID, contextId, explicit);
 
-					Iterator<long[]> iter;
-					if (hasPersistence) {
-						iter = createMergedIterator(subjID, predID, objID, contextId, explicit);
-					} else {
-						iter = memTable.scan(subjID, predID, objID, contextId, explicit);
-					}
-
+					// Buffer results before removing to avoid ConcurrentModificationException
+					// when the iterator is backed by the MemTable's own map
 					List<long[]> toRemove = new ArrayList<>();
 					while (iter.hasNext()) {
 						toRemove.add(iter.next());
 					}
 					for (long[] quad : toRemove) {
-						memTable.remove(quad[0], quad[1], quad[2], quad[3], explicit);
+						memTable.remove(quad[0], quad[1], quad[2], quad[3]);
 						removeCount++;
 					}
 				}
@@ -764,15 +721,7 @@ class S3SailStore implements SailStore {
 
 		@Override
 		public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
-			// Scan all quads and collect distinct non-null contexts
-			boolean hasPersistence = objectStore != null && catalog != null;
-
-			Iterator<long[]> allQuads;
-			if (hasPersistence) {
-				allQuads = createMergedIterator(-1, -1, -1, -1, explicit);
-			} else {
-				allQuads = memTable.scan(-1, -1, -1, -1, explicit);
-			}
+			Iterator<long[]> allQuads = queryQuads(-1, -1, -1, -1, explicit);
 
 			return new FilterIteration<Resource>(
 					new ConvertingIteration<long[], Resource>(

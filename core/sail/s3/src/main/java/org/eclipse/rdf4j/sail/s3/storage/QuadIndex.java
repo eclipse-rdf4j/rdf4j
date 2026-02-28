@@ -35,6 +35,7 @@ public class QuadIndex {
 	static final int MAX_KEY_LENGTH = 4 * 9; // 4 varints, max 9 bytes each
 
 	private final char[] fieldSeq;
+	private final String fieldSeqString;
 	private final int[] indexMap;
 
 	/**
@@ -48,6 +49,7 @@ public class QuadIndex {
 			throw new IllegalArgumentException("Field sequence must be exactly 4 characters: " + fieldSeq);
 		}
 		this.fieldSeq = fieldSeq.toCharArray();
+		this.fieldSeqString = fieldSeq;
 		this.indexMap = buildIndexMap(this.fieldSeq);
 	}
 
@@ -62,7 +64,7 @@ public class QuadIndex {
 	 * Returns the field sequence as a String.
 	 */
 	public String getFieldSeqString() {
-		return new String(fieldSeq);
+		return fieldSeqString;
 	}
 
 	/**
@@ -227,7 +229,7 @@ public class QuadIndex {
 				subj <= 0 ? Long.MAX_VALUE : subj,
 				pred <= 0 ? Long.MAX_VALUE : pred,
 				obj <= 0 ? Long.MAX_VALUE : obj,
-				context < 0 ? Long.MAX_VALUE : context);
+				context <= 0 ? Long.MAX_VALUE : context);
 	}
 
 	/**
@@ -238,7 +240,7 @@ public class QuadIndex {
 				subj <= 0 ? Long.MAX_VALUE : subj,
 				pred <= 0 ? Long.MAX_VALUE : pred,
 				obj <= 0 ? Long.MAX_VALUE : obj,
-				context < 0 ? Long.MAX_VALUE : context);
+				context <= 0 ? Long.MAX_VALUE : context);
 	}
 
 	/**
@@ -296,9 +298,44 @@ public class QuadIndex {
 		return indexes;
 	}
 
+	/**
+	 * Tests whether a decoded quad matches the given pattern. Unbound components (< 0) are treated as wildcards.
+	 *
+	 * @param quad a long[4] array in SPOC order
+	 * @param s    subject pattern, or -1 for wildcard
+	 * @param p    predicate pattern, or -1 for wildcard
+	 * @param o    object pattern, or -1 for wildcard
+	 * @param c    context pattern, or -1 for wildcard
+	 * @return true if all bound components match
+	 */
+	public static boolean matches(long[] quad, long s, long p, long o, long c) {
+		return (s < 0 || quad[SUBJ_IDX] == s)
+				&& (p < 0 || quad[PRED_IDX] == p)
+				&& (o < 0 || quad[OBJ_IDX] == o)
+				&& (c < 0 || quad[CONTEXT_IDX] == c);
+	}
+
+	/**
+	 * Maps a field character ('s', 'p', 'o', 'c') to the corresponding array index (0-3).
+	 */
+	public static int fieldCharToIdx(char c) {
+		switch (c) {
+		case 's':
+			return SUBJ_IDX;
+		case 'p':
+			return PRED_IDX;
+		case 'o':
+			return OBJ_IDX;
+		case 'c':
+			return CONTEXT_IDX;
+		default:
+			throw new IllegalArgumentException("Invalid field: " + c);
+		}
+	}
+
 	@Override
 	public String toString() {
-		return new String(fieldSeq);
+		return fieldSeqString;
 	}
 
 	private static int[] buildIndexMap(char[] fieldSeq) {

@@ -116,26 +116,9 @@ public class Compactor {
 				cache.writeThrough(s3Key, parquetData);
 			}
 
-			// Compute stats from merged entries
-			long minSubject = Long.MAX_VALUE, maxSubject = Long.MIN_VALUE;
-			long minPredicate = Long.MAX_VALUE, maxPredicate = Long.MIN_VALUE;
-			long minObject = Long.MAX_VALUE, maxObject = Long.MIN_VALUE;
-			long minContext = Long.MAX_VALUE, maxContext = Long.MIN_VALUE;
-			for (ParquetFileBuilder.QuadEntry e : merged) {
-				minSubject = Math.min(minSubject, e.subject);
-				maxSubject = Math.max(maxSubject, e.subject);
-				minPredicate = Math.min(minPredicate, e.predicate);
-				maxPredicate = Math.max(maxPredicate, e.predicate);
-				minObject = Math.min(minObject, e.object);
-				maxObject = Math.max(maxObject, e.object);
-				minContext = Math.min(minContext, e.context);
-				maxContext = Math.max(maxContext, e.context);
-			}
-
+			QuadStats stats = QuadStats.fromEntries(merged);
 			newFiles.add(new Catalog.ParquetFileInfo(s3Key, targetLevel, sortOrder, merged.size(),
-					epoch, parquetData.length,
-					minSubject, maxSubject, minPredicate, maxPredicate,
-					minObject, maxObject, minContext, maxContext));
+					epoch, parquetData.length, stats));
 		}
 
 		// Update catalog: remove old files, add new ones
@@ -160,18 +143,14 @@ public class Compactor {
 
 	private List<ParquetFileBuilder.QuadEntry> mergeEntries(List<RawEntrySource> sources, QuadIndex quadIndex,
 			boolean suppressTombstones) {
-		List<ParquetFileBuilder.QuadEntry> result = new ArrayList<>();
-
 		// Sources are ordered newest-first, so for dedup, first occurrence wins
 		java.util.TreeMap<CompactKey, ParquetFileBuilder.QuadEntry> deduped = new java.util.TreeMap<>();
 		for (RawEntrySource source : sources) {
 			while (source.hasNext()) {
 				byte[] key = source.peekKey();
 				byte flag = source.peekFlag();
-				// Only insert if not already present (first = newest wins)
 				CompactKey ck = new CompactKey(key);
 				if (!deduped.containsKey(ck)) {
-					// Decode 4-varint key to quad values
 					long[] quad = new long[4];
 					quadIndex.keyToQuad(key, quad);
 					if (!suppressTombstones || flag != MemTable.FLAG_TOMBSTONE) {
@@ -184,17 +163,7 @@ public class Compactor {
 			}
 		}
 
-		if (suppressTombstones) {
-			for (ParquetFileBuilder.QuadEntry e : deduped.values()) {
-				if (e.flag != MemTable.FLAG_TOMBSTONE) {
-					result.add(e);
-				}
-			}
-		} else {
-			result.addAll(deduped.values());
-		}
-
-		return result;
+		return new ArrayList<>(deduped.values());
 	}
 
 	private static class CompactKey implements Comparable<CompactKey> {

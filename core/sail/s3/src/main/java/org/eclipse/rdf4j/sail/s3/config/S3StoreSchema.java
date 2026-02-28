@@ -78,6 +78,11 @@ public class S3StoreSchema {
 
 	public final static IRI S3_FORCE_PATH_STYLE;
 
+	/**
+	 * <tt>http://rdf4j.org/config/sail/s3#dataDir</tt>
+	 */
+	public final static IRI DATA_DIR;
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 		QUAD_INDEXES = factory.createIRI(NAMESPACE, "quadIndexes");
@@ -95,5 +100,6 @@ public class S3StoreSchema {
 		S3_ACCESS_KEY = factory.createIRI(NAMESPACE, "s3AccessKey");
 		S3_SECRET_KEY = factory.createIRI(NAMESPACE, "s3SecretKey");
 		S3_FORCE_PATH_STYLE = factory.createIRI(NAMESPACE, "s3ForcePathStyle");
+		DATA_DIR = factory.createIRI(NAMESPACE, "dataDir");
 	}
 }

@@ -20,6 +20,7 @@
       config:rep.type "openrdf:SailRepository" ;
       config:sail.impl [
          config:sail.type "rdf4j:S3Store" ;
-         s3:s3Prefix "{%S3 Prefix|%}"
+         s3:s3Prefix "{%S3 Prefix|%}" ;
+         s3:dataDir "{%Data Directory|%}"
       ]
    ].

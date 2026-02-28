@@ -56,6 +56,13 @@
 						<td></td>
 					</tr>
 					<tr>
+						<th>Data Directory</th>
+						<td>
+							<input type="text" id="dataDir" name="Data Directory" size="48" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
 						<td></td>
 						<td>
 							<input type="button" value="{$cancel.label}" style="float:right"
