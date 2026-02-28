@@ -1215,12 +1215,10 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 				joinArgs.removeAll(orderedSubselects);
 				List<TupleExpr> bindingAssignmentAnchors = getBindingSetAssignmentAnchors(joinArgs);
 				joinArgs.removeAll(bindingAssignmentAnchors);
+				Set<String> bindingAssignmentVars = collectBindingSetAssignmentVars(bindingAssignmentAnchors);
 				Set<String> initiallyBoundVars = determineInitiallyBoundVars(joinArgs);
-				if (!bindingAssignmentAnchors.isEmpty()) {
-					Set<String> assignmentVars = collectBindingSetAssignmentVars(bindingAssignmentAnchors);
-					if (!assignmentVars.isEmpty()) {
-						initiallyBoundVars.addAll(assignmentVars);
-					}
+				if (!bindingAssignmentVars.isEmpty()) {
+					initiallyBoundVars.addAll(bindingAssignmentVars);
 				}
 				Set<String> nestedAssignmentVars = collectNestedBindingSetAssignmentVars(joinArgs);
 				if (!nestedAssignmentVars.isEmpty()) {
@@ -1402,36 +1400,36 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 					boolean connectedPlan = isConnectedPlan(planned, initiallyBoundVars);
 					if (connectedPlan || !fullyConnectable) {
 						finalOrderLabels = labels(planned);
-						if (bindingAssignmentAnchors.isEmpty()) {
-							plannedOrder = new ArrayDeque<>(planned);
+						boolean requiresBindingAssignmentPriorityFallback = !bindingAssignmentAnchors.isEmpty()
+								&& !bindingAssignmentVars.isEmpty()
+								&& !canFullyConnectPlan(joinArgs, bindingAssignmentVars);
+						if (requiresBindingAssignmentPriorityFallback) {
+							plannedOrder = null;
+							fallbackReason = "binding-assignment-priority-fallback";
 						} else {
-							List<TupleExpr> combined = new ArrayList<>(
-									bindingAssignmentAnchors.size() + planned.size());
-							combined.addAll(bindingAssignmentAnchors);
-							combined.addAll(planned);
-							plannedOrder = new ArrayDeque<>(combined);
-						}
-						if (!connectedPlan) {
-							planSelectionReason = "planned-unavoidable-disconnected";
-						}
-						publishPlanSelection(queryTemplateHash, selectedCandidateIndex, selectedPlanSignature,
-								planCandidates, planSelectionReason, plannerUsed, rawOrderLabels, finalOrderLabels,
-								rebalanceDiffs, repairApplied, repairBeforeLabels, repairAfterLabels,
-								initiallyBoundVars, relevantUnsupportedTargets, stabilityDecision,
-								stabilitySource, stabilitySwitchTrigger, stabilityImprovementRatio,
-								stabilityUncertaintyDelta,
-								stabilityCachedCandidateIndex, stabilityExploreWinnerIndex,
-								stabilityAdaptiveCandidateIndex, planSelectionEpoch);
-						if (DEBUG_PLAN) {
-							System.out.println("LEARNED-PLAN used joinArgs=" + joinArgs.size()
-									+ " bound=" + initiallyBoundVars
-									+ " unsupportedTargets=" + relevantUnsupportedTargets
-									+ " joinArgLabels=" + labels(joinArgs)
-									+ " reason=" + planSelectionReason
-									+ " selectedCandidate=" + selectedCandidateIndex
-									+ " candidateSignature=" + selectedPlanSignature
-									+ " plannerUsed=" + plannerUsed
-									+ " plannedOrder=" + labels(planned));
+							plannedOrder = new ArrayDeque<>(planned);
+							if (!connectedPlan) {
+								planSelectionReason = "planned-unavoidable-disconnected";
+							}
+							publishPlanSelection(queryTemplateHash, selectedCandidateIndex, selectedPlanSignature,
+									planCandidates, planSelectionReason, plannerUsed, rawOrderLabels, finalOrderLabels,
+									rebalanceDiffs, repairApplied, repairBeforeLabels, repairAfterLabels,
+									initiallyBoundVars, relevantUnsupportedTargets, stabilityDecision,
+									stabilitySource, stabilitySwitchTrigger, stabilityImprovementRatio,
+									stabilityUncertaintyDelta,
+									stabilityCachedCandidateIndex, stabilityExploreWinnerIndex,
+									stabilityAdaptiveCandidateIndex, planSelectionEpoch);
+							if (DEBUG_PLAN) {
+								System.out.println("LEARNED-PLAN used joinArgs=" + joinArgs.size()
+										+ " bound=" + initiallyBoundVars
+										+ " unsupportedTargets=" + relevantUnsupportedTargets
+										+ " joinArgLabels=" + labels(joinArgs)
+										+ " reason=" + planSelectionReason
+										+ " selectedCandidate=" + selectedCandidateIndex
+										+ " candidateSignature=" + selectedPlanSignature
+										+ " plannerUsed=" + plannerUsed
+										+ " plannedOrder=" + labels(planned));
+							}
 						}
 					} else {
 						plannedOrder = null;
@@ -1440,7 +1438,8 @@ public class LearnedQueryJoinOptimizer extends QueryJoinOptimizer {
 					}
 				}
 				if (plannedOrder == null) {
-					publishPlanSelection(queryTemplateHash, -1, selectedPlanSignature, planCandidates, fallbackReason,
+					publishPlanSelection(queryTemplateHash, selectedCandidateIndex, selectedPlanSignature,
+							planCandidates, fallbackReason,
 							plannerUsed, rawOrderLabels, finalOrderLabels, rebalanceDiffs, repairApplied,
 							repairBeforeLabels, repairAfterLabels, initiallyBoundVars, relevantUnsupportedTargets,
 							stabilityDecision, stabilitySource, stabilitySwitchTrigger, stabilityImprovementRatio,

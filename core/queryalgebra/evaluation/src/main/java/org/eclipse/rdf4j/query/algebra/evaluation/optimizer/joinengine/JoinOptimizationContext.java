@@ -18,6 +18,8 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CardinalityEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OptimizationTraceSink;
 
 /**
@@ -35,11 +37,22 @@ public final class JoinOptimizationContext {
 	private final BanditPolicy bandit;
 	private final UncertaintyAwareEstimator estimator;
 	private final CostModel costModel;
+	private final JoinStatsProvider joinStatsProvider;
+	private final CardinalityEstimator cardinalityEstimator;
 
 	public JoinOptimizationContext(EvaluationStatistics stats, TripleSource tripleSource, Dataset dataset,
 			BindingSet bindings,
 			Set<String> outerBoundVars, JoinEngineConfig config, OptimizationTraceSink traceSink, BanditPolicy bandit,
 			UncertaintyAwareEstimator estimator, CostModel costModel) {
+		this(stats, tripleSource, dataset, bindings, outerBoundVars, config, traceSink, bandit, estimator, costModel,
+				null, null);
+	}
+
+	public JoinOptimizationContext(EvaluationStatistics stats, TripleSource tripleSource, Dataset dataset,
+			BindingSet bindings,
+			Set<String> outerBoundVars, JoinEngineConfig config, OptimizationTraceSink traceSink, BanditPolicy bandit,
+			UncertaintyAwareEstimator estimator, CostModel costModel, JoinStatsProvider joinStatsProvider,
+			CardinalityEstimator cardinalityEstimator) {
 		this.stats = Objects.requireNonNull(stats, "stats");
 		this.tripleSource = Objects.requireNonNull(tripleSource, "tripleSource");
 		this.dataset = dataset;
@@ -50,6 +63,8 @@ public final class JoinOptimizationContext {
 		this.bandit = Objects.requireNonNull(bandit, "bandit");
 		this.estimator = Objects.requireNonNull(estimator, "estimator");
 		this.costModel = Objects.requireNonNull(costModel, "costModel");
+		this.joinStatsProvider = joinStatsProvider;
+		this.cardinalityEstimator = cardinalityEstimator;
 	}
 
 	public EvaluationStatistics getStats() {
@@ -90,5 +105,13 @@ public final class JoinOptimizationContext {
 
 	public CostModel getCostModel() {
 		return costModel;
+	}
+
+	public JoinStatsProvider getJoinStatsProvider() {
+		return joinStatsProvider;
+	}
+
+	public CardinalityEstimator getCardinalityEstimator() {
+		return cardinalityEstimator;
 	}
 }

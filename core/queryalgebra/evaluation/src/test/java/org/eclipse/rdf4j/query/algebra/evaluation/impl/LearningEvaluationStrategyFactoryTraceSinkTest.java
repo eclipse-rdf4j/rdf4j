@@ -36,20 +36,33 @@ class LearningEvaluationStrategyFactoryTraceSinkTest {
 
 	@Test
 	void emitsLearnedPlanTraceWhenTraceSinkConfigured() throws Exception {
-		List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
-		LearningEvaluationStrategyFactory factory = new LearningEvaluationStrategyFactory();
-		factory.setOptimizationTraceSink(events::add);
+		System.setProperty("rdf4j.optimizer.joinengine.portfolioSize", "4");
+		try {
+			List<OptimizationTraceEvent> events = new CopyOnWriteArrayList<>();
+			LearningEvaluationStrategyFactory factory = new LearningEvaluationStrategyFactory();
+			factory.setOptimizationTraceSink(events::add);
 
-		EvaluationStatistics statistics = new EvaluationStatistics();
-		EvaluationStrategy strategy = factory.createEvaluationStrategy(null, new EmptyTripleSource(), statistics);
+			EvaluationStatistics statistics = new EvaluationStatistics();
+			EvaluationStrategy strategy = factory.createEvaluationStrategy(null, new EmptyTripleSource(), statistics);
 
-		ParsedQuery parsedQuery = new SPARQLParser().parseQuery(QUERY, null);
-		strategy.optimize(parsedQuery.getTupleExpr(), statistics, EmptyBindingSet.getInstance());
+			ParsedQuery parsedQuery = new SPARQLParser().parseQuery(QUERY, null);
+			strategy.optimize(parsedQuery.getTupleExpr(), statistics, EmptyBindingSet.getInstance());
 
-		assertTrue(
-				events.stream()
-						.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.PLAN_SELECTED),
-				"Expected learned plan selection trace event");
+			assertTrue(
+					events.stream()
+							.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.PLAN_SELECTED),
+					"Expected learned plan selection trace event");
+			assertTrue(
+					events.stream()
+							.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.REGION_BUILT),
+					"Expected join-engine region trace event");
+			assertTrue(events.stream()
+					.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.CANDIDATE_GENERATED
+							&& "learned-adapter".equals(event.getAttributes().get("planner"))),
+					"Expected learned-adapter candidate event");
+		} finally {
+			System.clearProperty("rdf4j.optimizer.joinengine.portfolioSize");
+		}
 	}
 
 	@Test
@@ -70,6 +83,10 @@ class LearningEvaluationStrategyFactoryTraceSinkTest {
 					events.stream()
 							.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.PLAN_SELECTED),
 					"Expected learned plan selection when only learned-query-join is enabled");
+			assertTrue(
+					events.stream()
+							.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.REGION_BUILT),
+					"Expected join-engine region when only learned-query-join is enabled");
 		} finally {
 			System.clearProperty(RuleRegistry.RULES_ENABLED_PROPERTY);
 		}
@@ -93,6 +110,10 @@ class LearningEvaluationStrategyFactoryTraceSinkTest {
 					events.stream()
 							.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.PLAN_SELECTED),
 					"Expected learned plan selection when only query-join is enabled");
+			assertTrue(
+					events.stream()
+							.anyMatch(event -> event.getEventType() == OptimizationTraceEvent.EventType.REGION_BUILT),
+					"Expected join-engine region when only query-join is enabled");
 		} finally {
 			System.clearProperty(RuleRegistry.RULES_ENABLED_PROPERTY);
 		}

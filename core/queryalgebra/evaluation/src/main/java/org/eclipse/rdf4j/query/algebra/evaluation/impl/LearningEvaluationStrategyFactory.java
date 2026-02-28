@@ -20,13 +20,14 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.EvaluationStatisticsCardinalityEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearnedQueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearningRdfStarTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearningTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.MemoryJoinStats;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OptimizationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OptimizationTraceSink;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoQueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.JoinEngineConfig;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedJoinConfig;
 
 /**
@@ -121,14 +122,19 @@ public class LearningEvaluationStrategyFactory extends DefaultEvaluationStrategy
 				new EvaluationStatisticsCardinalityEstimator(optimizerStatistics),
 				statsProvider,
 				optimizationTraceSink);
-		LearnedQueryJoinOptimizer learnedJoinOptimizer = new LearnedQueryJoinOptimizer(optimizationContext,
-				strategy.isTrackResultSize(), learningTripleSource, joinConfig);
-
+		JoinEngineConfig defaults = JoinEngineConfig.defaults();
+		JoinEngineConfig learningJoinEngineConfig = new JoinEngineConfig(defaults.isEnabled(),
+				defaults.getRiskPenaltyWeight(), joinConfig.getDpThreshold(), defaults.getPortfolioSize(),
+				joinConfig.isEnableDp(), defaults.isAdaptiveFallbackEnabled(),
+				defaults.getAdaptiveFallbackRiskThreshold(), defaults.getAdaptiveFallbackMinGainRatio(),
+				defaults.isRuntimeFeedbackEnabled(), defaults.getBanditPolicyType(),
+				defaults.isBanditPersistenceEnabled(), defaults.getBanditPersistencePath());
+		QueryJoinOptimizer fusedJoinOptimizer = new QueryJoinOptimizer(optimizerStatistics,
+				strategy.isTrackResultSize(),
+				learningTripleSource, true, learningJoinEngineConfig, null, null, null, null,
+				optimizationTraceSink, statsProvider, optimizationContext.getCardinalityEstimator(), true);
 		strategy.setOptimizerPipeline(new SparqlUoQueryOptimizerPipeline(strategy, learningTripleSource,
-				optimizerStatistics, learnedJoinOptimizer, optimizationTraceSink));
-
-//		strategy.setOptimizerPipeline(new SparqlUoQueryOptimizerPipeline(strategy, learningTripleSource,
-//				optimizerStatistics, new QueryJoinOptimizer(optimizerStatistics)));
+				optimizerStatistics, fusedJoinOptimizer, optimizationTraceSink));
 
 		return strategy;
 	}

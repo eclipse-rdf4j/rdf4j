@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.DpLeftDeepBi
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.GreedyBindJoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.HybridBindJoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.JoinPlanCandidate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedBindJoinCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.LearnedJoinConfig;
 
 /**
@@ -45,7 +46,7 @@ public final class LearnedPlannerAdapter implements JoinOrderPlanner {
 			return List.of();
 		}
 
-		BindJoinCostModel costModel = new EstimatorBackedBindJoinCostModel(ctx);
+		BindJoinCostModel costModel = createCostModel(ctx);
 		org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.JoinOrderPlanner greedy = new GreedyBindJoinOrderPlanner(
 				costModel);
 		org.eclipse.rdf4j.query.algebra.evaluation.optimizer.learned.JoinOrderPlanner dp = new DpLeftDeepBindJoinOrderPlanner(
@@ -68,6 +69,14 @@ public final class LearnedPlannerAdapter implements JoinOrderPlanner {
 
 	private boolean isEnabled() {
 		return Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"));
+	}
+
+	private BindJoinCostModel createCostModel(JoinOptimizationContext ctx) {
+		if (ctx.getJoinStatsProvider() != null && ctx.getCardinalityEstimator() != null) {
+			return new LearnedBindJoinCostModel(ctx.getStats(), ctx.getCardinalityEstimator(),
+					ctx.getJoinStatsProvider());
+		}
+		return new EstimatorBackedBindJoinCostModel(ctx);
 	}
 
 	private static final class EstimatorBackedBindJoinCostModel implements BindJoinCostModel {

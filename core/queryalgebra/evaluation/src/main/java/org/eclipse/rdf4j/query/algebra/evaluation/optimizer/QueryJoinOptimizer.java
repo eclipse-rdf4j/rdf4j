@@ -111,6 +111,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	private final CostModel costModel;
 	private final BanditPolicy banditPolicy;
 	private final OptimizationTraceSink traceSink;
+	private final JoinStatsProvider joinStatsProvider;
+	private final CardinalityEstimator cardinalityEstimator;
+	private final boolean allowLearnedRuleFallback;
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics) {
 		this(statistics, false, new EmptyTripleSource(), true);
@@ -137,13 +140,31 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			boolean prioritizeExtensions, OptimizationTraceSink traceSink) {
 		this(statistics, trackResultSize, tripleSource, prioritizeExtensions, JoinEngineConfig.defaults(),
 				new DefaultJoinOptimizationEngine(), new DefaultUncertaintyAwareEstimator(), new DefaultCostModel(),
-				null, traceSink);
+				null, traceSink, null, null);
 	}
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource,
 			boolean prioritizeExtensions, JoinEngineConfig joinEngineConfig, JoinOptimizationEngine joinEngine,
 			UncertaintyAwareEstimator estimator, CostModel costModel, BanditPolicy banditPolicy,
 			OptimizationTraceSink traceSink) {
+		this(statistics, trackResultSize, tripleSource, prioritizeExtensions, joinEngineConfig, joinEngine, estimator,
+				costModel, banditPolicy, traceSink, null, null);
+	}
+
+	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource,
+			boolean prioritizeExtensions, JoinEngineConfig joinEngineConfig, JoinOptimizationEngine joinEngine,
+			UncertaintyAwareEstimator estimator, CostModel costModel, BanditPolicy banditPolicy,
+			OptimizationTraceSink traceSink, JoinStatsProvider joinStatsProvider,
+			CardinalityEstimator cardinalityEstimator) {
+		this(statistics, trackResultSize, tripleSource, prioritizeExtensions, joinEngineConfig, joinEngine, estimator,
+				costModel, banditPolicy, traceSink, joinStatsProvider, cardinalityEstimator, false);
+	}
+
+	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource,
+			boolean prioritizeExtensions, JoinEngineConfig joinEngineConfig, JoinOptimizationEngine joinEngine,
+			UncertaintyAwareEstimator estimator, CostModel costModel, BanditPolicy banditPolicy,
+			OptimizationTraceSink traceSink, JoinStatsProvider joinStatsProvider,
+			CardinalityEstimator cardinalityEstimator, boolean allowLearnedRuleFallback) {
 		this.statistics = statistics;
 		this.trackResultSize = trackResultSize;
 		this.tripleSource = tripleSource;
@@ -154,6 +175,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		this.costModel = costModel == null ? new DefaultCostModel() : costModel;
 		this.banditPolicy = banditPolicy == null ? createBanditPolicy(this.joinEngineConfig) : banditPolicy;
 		this.traceSink = OptimizationTraceSink.orNoop(traceSink);
+		this.joinStatsProvider = joinStatsProvider;
+		this.cardinalityEstimator = cardinalityEstimator;
+		this.allowLearnedRuleFallback = allowLearnedRuleFallback;
 	}
 
 	private static BanditPolicy createBanditPolicy(JoinEngineConfig config) {
@@ -179,7 +203,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			TripleSource tripleSource,
 			boolean prioritizeExtensions) {
 		this(optimizationContext.getEvaluationStatistics(), trackResultSize, tripleSource, prioritizeExtensions,
-				JoinEngineConfig.defaults(), null, null, null, null, optimizationContext.getTraceSink());
+				JoinEngineConfig.defaults(), null, null, null, null, optimizationContext.getTraceSink(),
+				optimizationContext.getJoinStatsProvider(), optimizationContext.getCardinalityEstimator());
 	}
 
 	/**
@@ -190,16 +215,52 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		SemanticEquivalenceGuard semanticGuard = SemanticEquivalenceGuard.fromSystemProperties();
-		String selectionRejectionReason = RuleRegistry.rejectionReasonForRule(QUERY_JOIN_RULE_METADATA,
-				semanticGuard);
-		if (selectionRejectionReason != null) {
-			traceSink.onEvent(createRuleRejectedEvent(QUERY_JOIN_RULE_METADATA, selectionRejectionReason));
+		if (!allowLearnedRuleFallback) {
+			String queryJoinRejectionReason = RuleRegistry.rejectionReasonForRule(QUERY_JOIN_RULE_METADATA,
+					semanticGuard);
+			if (queryJoinRejectionReason != null) {
+				traceSink.onEvent(createRuleRejectedEvent(QUERY_JOIN_RULE_METADATA, queryJoinRejectionReason));
+				return;
+			}
+			SemanticEquivalenceGuard.BlockingDecision queryJoinBlockingDecision = semanticGuard
+					.blockingDecision(QUERY_JOIN_RULE_METADATA, tupleExpr);
+			if (queryJoinBlockingDecision != null) {
+				traceSink.onEvent(createStrictRuleRejectedEvent(QUERY_JOIN_RULE_METADATA, queryJoinBlockingDecision));
+				return;
+			}
+			tupleExpr.visit(new JoinVisitor(dataset, bindings, traceSink, banditPolicy));
 			return;
 		}
-		SemanticEquivalenceGuard.BlockingDecision blockingDecision = semanticGuard
-				.blockingDecision(QUERY_JOIN_RULE_METADATA, tupleExpr);
-		if (blockingDecision != null) {
-			traceSink.onEvent(createStrictRuleRejectedEvent(QUERY_JOIN_RULE_METADATA, blockingDecision));
+		String queryJoinRejectionReason = RuleRegistry.rejectionReasonForRule(QUERY_JOIN_RULE_METADATA, semanticGuard);
+		String learnedJoinRejectionReason = RuleRegistry.rejectionReasonForLearnedQueryJoinRule(semanticGuard);
+		boolean queryJoinAllowed = queryJoinRejectionReason == null;
+		boolean learnedJoinAllowed = learnedJoinRejectionReason == null;
+		if (!queryJoinAllowed && !learnedJoinAllowed) {
+			traceSink.onEvent(createRuleRejectedEvent(QUERY_JOIN_RULE_METADATA, queryJoinRejectionReason));
+			return;
+		}
+
+		if (queryJoinAllowed) {
+			SemanticEquivalenceGuard.BlockingDecision queryJoinBlockingDecision = semanticGuard
+					.blockingDecision(QUERY_JOIN_RULE_METADATA, tupleExpr);
+			if (queryJoinBlockingDecision == null) {
+				tupleExpr.visit(new JoinVisitor(dataset, bindings, traceSink, banditPolicy));
+				return;
+			}
+			if (!learnedJoinAllowed) {
+				traceSink.onEvent(createStrictRuleRejectedEvent(QUERY_JOIN_RULE_METADATA, queryJoinBlockingDecision));
+				return;
+			}
+		}
+		if (learnedJoinAllowed) {
+			SemanticEquivalenceGuard.BlockingDecision learnedJoinBlockingDecision = semanticGuard
+					.blockingDecision(RuleRegistry.LEARNED_QUERY_JOIN_RULE_METADATA, tupleExpr);
+			if (learnedJoinBlockingDecision == null) {
+				tupleExpr.visit(new JoinVisitor(dataset, bindings, traceSink, banditPolicy));
+				return;
+			}
+			traceSink.onEvent(createStrictRuleRejectedEvent(RuleRegistry.LEARNED_QUERY_JOIN_RULE_METADATA,
+					learnedJoinBlockingDecision));
 			return;
 		}
 		tupleExpr.visit(new JoinVisitor(dataset, bindings, traceSink, banditPolicy));
@@ -324,11 +385,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					priorityArgs.addAll(orderedSubselects);
 				}
 
-				if (joinEngineConfig.isEnabled()) {
+				if (joinEngineConfig.isEnabled() && !containsPrioritySensitiveJoinArg(joinArgs)) {
 					optimizeJoinArgsRecursively(joinArgs);
 					JoinRegion region = new JoinRegion(new ArrayList<>(joinArgs), priorityArgs, origBoundVars, null);
 					JoinOptimizationContext context = new JoinOptimizationContext(statistics, tripleSource, dataset,
-							bindings, origBoundVars, joinEngineConfig, trace, bandit, estimator, costModel);
+							bindings, origBoundVars, joinEngineConfig, trace, bandit, estimator, costModel,
+							joinStatsProvider, cardinalityEstimator);
 					OptimizationResult result = joinEngine.optimizeJoin(node, region, context);
 					node.replaceWith(result.getOptimized());
 					return;
@@ -391,6 +453,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			for (TupleExpr tupleExpr : joinArgs) {
 				tupleExpr.visit(this);
 			}
+		}
+
+		private boolean containsPrioritySensitiveJoinArg(List<TupleExpr> joinArgs) {
+			for (TupleExpr tupleExpr : joinArgs) {
+				if (tupleExpr instanceof BindingSetAssignment || containsValueConstant(tupleExpr)) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		private void orderAllJoinArgs(List<TupleExpr> joinArgs, Map<TupleExpr, Double> cardinalityMap,

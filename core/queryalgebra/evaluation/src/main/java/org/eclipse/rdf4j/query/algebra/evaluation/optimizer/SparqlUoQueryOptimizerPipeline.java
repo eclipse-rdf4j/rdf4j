@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -37,7 +38,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.sparqluo.SparqlUoConfig;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
-import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
@@ -242,10 +242,14 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 			return true;
 		}
 		SemanticEquivalenceGuard semanticGuard = SemanticEquivalenceGuard.fromSystemProperties();
-		if (joinOptimizer instanceof LearnedQueryJoinOptimizer) {
+		String queryJoinRejection = RuleRegistry.rejectionReasonForRule(QUERY_JOIN_RULE_METADATA, semanticGuard);
+		if (queryJoinRejection == null) {
+			return true;
+		}
+		if (joinOptimizer instanceof QueryJoinOptimizer || joinOptimizer instanceof LearnedQueryJoinOptimizer) {
 			return RuleRegistry.rejectionReasonForLearnedQueryJoinRule(semanticGuard) == null;
 		}
-		return RuleRegistry.rejectionReasonForRule(QUERY_JOIN_RULE_METADATA, semanticGuard) == null;
+		return false;
 	}
 
 	private static final class BoundJoinRightArgOptimizer implements QueryOptimizer {
@@ -285,8 +289,15 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 					if (shouldSkipLearnedRightArgReorder(node, sharedBoundNames)) {
 						return;
 					}
+					Set<String> seedBindingNames = new LinkedHashSet<>(boundNames);
+					if (joinOptimizer instanceof LearnedQueryJoinOptimizer) {
+						seedBindingNames.addAll(collectLiteralFilterBindingNames(node.getLeftArg()));
+						seedBindingNames
+								.addAll(collectLiteralAnchoredBindingNames(node.getRightArg(), sharedBoundNames));
+						seedBindingNames.addAll(collectAncestorLiteralAnchoredBindingNames(node, sharedBoundNames));
+					}
 					BindingSetAssignment seed = new BindingSetAssignment();
-					seed.setBindingNames(boundNames);
+					seed.setBindingNames(seedBindingNames);
 					seed.setBindingSets(List.of());
 					TupleExpr optimizedRight = (TupleExpr) node.getRightArg().clone();
 					LeftJoin leftJoin = new LeftJoin(seed, optimizedRight);
@@ -354,8 +365,7 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				}
 
 				private boolean referencesAnchorWithLiteral(ValueExpr condition, Set<String> anchorVars) {
-					if (condition == null
-							|| VarNameCollector.process(condition).stream().noneMatch(anchorVars::contains)) {
+					if (condition == null) {
 						return false;
 					}
 					AtomicBoolean hasLiteral = new AtomicBoolean(false);
@@ -366,6 +376,88 @@ public class SparqlUoQueryOptimizerPipeline implements QueryOptimizerPipeline {
 						}
 					});
 					return hasLiteral.get();
+				}
+
+				private Set<String> collectLiteralFilterBindingNames(TupleExpr leftArg) {
+					Set<String> literalBindingNames = new LinkedHashSet<>();
+					leftArg.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+						@Override
+						public void meet(Filter node) throws RuntimeException {
+							literalBindingNames.addAll(extractLiteralConditionBindingNames(node.getCondition()));
+							super.meet(node);
+						}
+					});
+					return literalBindingNames;
+				}
+
+				private Set<String> collectLiteralAnchoredBindingNames(TupleExpr tupleExpr,
+						Set<String> sharedBoundNames) {
+					Set<String> anchorVars = expandAnchorVars(tupleExpr, sharedBoundNames);
+					Set<String> literalAnchoredBindingNames = new LinkedHashSet<>();
+					tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+						@Override
+						public void meet(Filter node) throws RuntimeException {
+							Set<String> conditionBindingNames = extractLiteralConditionBindingNames(
+									node.getCondition());
+							if (containsAny(conditionBindingNames, anchorVars)) {
+								literalAnchoredBindingNames.addAll(conditionBindingNames);
+							}
+							super.meet(node);
+						}
+					});
+					return literalAnchoredBindingNames;
+				}
+
+				private boolean containsAny(Set<String> left, Set<String> right) {
+					for (String value : left) {
+						if (right.contains(value)) {
+							return true;
+						}
+					}
+					return false;
+				}
+
+				private Set<String> extractLiteralConditionBindingNames(ValueExpr condition) {
+					if (condition == null) {
+						return Set.of();
+					}
+					Set<String> conditionBindingNames = new LinkedHashSet<>();
+					AtomicBoolean hasLiteral = new AtomicBoolean(false);
+					condition.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+						@Override
+						public void meet(ValueConstant node) throws RuntimeException {
+							hasLiteral.set(true);
+						}
+
+						@Override
+						public void meet(Var node) throws RuntimeException {
+							if (!node.hasValue()) {
+								conditionBindingNames.add(node.getName());
+							}
+						}
+					});
+					if (!hasLiteral.get()) {
+						return Set.of();
+					}
+					return conditionBindingNames;
+				}
+
+				private Set<String> collectAncestorLiteralAnchoredBindingNames(Join node,
+						Set<String> sharedBoundNames) {
+					Set<String> literalAnchoredBindingNames = new LinkedHashSet<>();
+					Set<String> anchorVars = expandAnchorVars(node, sharedBoundNames);
+					QueryModelNode current = node.getParentNode();
+					while (current != null) {
+						if (current instanceof Filter) {
+							Set<String> conditionBindingNames = extractLiteralConditionBindingNames(
+									((Filter) current).getCondition());
+							if (containsAny(conditionBindingNames, anchorVars)) {
+								literalAnchoredBindingNames.addAll(conditionBindingNames);
+							}
+						}
+						current = current.getParentNode();
+					}
+					return literalAnchoredBindingNames;
 				}
 			});
 		}
