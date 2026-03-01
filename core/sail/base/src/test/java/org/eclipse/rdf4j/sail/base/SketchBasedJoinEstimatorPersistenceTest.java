@@ -19,17 +19,20 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -202,6 +205,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		setSketchBudgetBytes(writer, 0L, 0L);
 
 		writer.addStatement(st(s, p, o));
+		flushIncrementalBuffer(writer);
 
 		assertTrue(Files.exists(sidecar), "Expected payload sidecar to be written by dirty eviction");
 		assertFalse(Files.exists(snapshot), "Manifest writes should be deferred until explicit persist");
@@ -224,6 +228,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		setSketchBudgetBytes(writer, 0L, 0L);
 
 		writer.addStatement(st(s, p, o));
+		flushIncrementalBuffer(writer);
 
 		assertFalse(residentSinglePredicateHashes(writer).contains(hash(writer, p.stringValue())),
 				"Expected predicate sketch to be evicted from resident cache");
@@ -297,6 +302,79 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
+	void persistRolloverCreatesAdditionalBlobShardAndLazyLoads(@TempDir Path tempDir) throws Exception {
+		String property = "org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.maxPersistenceBlobBytes";
+		String previous = System.getProperty(property);
+		System.setProperty(property, "512");
+		try {
+			Resource sBase = VF.createIRI("urn:s");
+			IRI p = VF.createIRI("urn:p");
+			Value oBase = VF.createIRI("urn:o");
+
+			Path snapshot = tempDir.resolve("join-estimator.rjes");
+			SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+			writer.configurePersistence(snapshot, false);
+			for (int i = 0; i < 400; i++) {
+				writer.addStatement(st(VF.createIRI(sBase.stringValue() + i), p,
+						VF.createIRI(oBase.stringValue() + i)));
+			}
+			assertTrue(writer.persistIfDirty(), "Expected persisted snapshot after ingest");
+			assertTrue(Files.exists(snapshot.resolveSibling("join-estimator.rjes.sketches.1")),
+					"Expected rollover sidecar shard when blob size cap is tiny");
+
+			SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+			reader.configurePersistence(snapshot, true);
+			assertTrue(reader.isReady(), "Expected lazy load from persisted shards");
+			assertTrue(reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()) > 0.0,
+					"Expected predicate cardinality to be readable after lazy load");
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+	}
+
+	@Test
+	void incrementalIngestBuffersFirst1024StatementsBeforeApplying(@TempDir Path tempDir) throws Exception {
+		IRI predicate = VF.createIRI("urn:p");
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		estimator.configurePersistence(snapshot, false);
+
+		for (int i = 0; i < 1023; i++) {
+			estimator.addStatement(st(VF.createIRI("urn:s" + i), predicate, VF.createIRI("urn:o" + i)));
+		}
+		assertTrue(estimator.debugResidentSketches().isEmpty(),
+				"Expected no resident sketch updates before 1024-statement incremental batch threshold");
+
+		estimator.addStatement(st(VF.createIRI("urn:s1023"), predicate, VF.createIRI("urn:o1023")));
+		assertFalse(estimator.debugResidentSketches().isEmpty(),
+				"Expected incremental batch flush to apply updates when 1024 statements are buffered");
+	}
+
+	@Test
+	void legacyV2ManifestWithSingleBlobLoadsSuccessfully(@TempDir Path tempDir) throws Exception {
+		Resource s = VF.createIRI("urn:s");
+		IRI p = VF.createIRI("urn:p");
+		Value o = VF.createIRI("urn:o");
+
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		writer.configurePersistence(snapshot, false);
+		writer.addStatement(st(s, p, o));
+		assertTrue(writer.persistIfDirty(), "Expected persisted snapshot");
+
+		rewriteManifestAsVersion2(snapshot);
+
+		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		reader.configurePersistence(snapshot, true);
+		assertTrue(reader.isReady(), "Expected legacy v2 manifest to load");
+		assertEquals(1.0, reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()), 1.0);
+	}
+
+	@Test
 	void allSketchFamiliesParticipateInLruBudget(@TempDir Path tempDir) throws Exception {
 		Resource s = VF.createIRI("urn:s");
 		IRI p = VF.createIRI("urn:p");
@@ -310,6 +388,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		Statement statement = st(s, p, o, c);
 		estimator.addStatement(statement);
 		estimator.deleteStatement(statement);
+		flushIncrementalBuffer(estimator);
 
 		Set<Byte> recordTypes = residentRecordTypes(estimator);
 		assertTrue(recordTypes.contains((byte) 1), "single sketches should be tracked");
@@ -332,14 +411,20 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		setSketchBudgetBytes(estimator, 0L, Long.MAX_VALUE);
 
 		estimator.addStatement(st(s, p1, o));
+		flushIncrementalBuffer(estimator);
 		long residentAfterWarmup = residentSketchBytes(estimator);
 		assertTrue(residentAfterWarmup > 0L, "Expected warmup statement to materialize resident sketches");
 
 		setSketchBudgetBytes(estimator, 0L, Math.max(1L, residentAfterWarmup / 2L));
 		estimator.addStatement(st(s, p2, o));
+		flushIncrementalBuffer(estimator);
 
 		assertEquals(0L, residentSketchBytes(estimator),
 				"Expected eviction to drain resident cache down to min budget");
+	}
+
+	private static void flushIncrementalBuffer(SketchBasedJoinEstimator estimator) {
+		estimator.debugFlushPendingIncremental();
 	}
 
 	@Test
@@ -389,6 +474,73 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		}
 	}
 
+	private static void rewriteManifestAsVersion2(Path snapshot) throws Exception {
+		byte[] original = Files.readAllBytes(snapshot);
+		try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(original));
+				ByteArrayOutputStream bos = new ByteArrayOutputStream(original.length);
+				DataOutputStream out = new DataOutputStream(bos)) {
+			byte[] magic = new byte[4];
+			in.readFully(magic);
+			out.write(magic);
+			int version = in.readUnsignedByte();
+			assertEquals(3, version, "Expected v3 manifest before downgrade");
+			out.writeByte(2);
+
+			int buckets = in.readInt();
+			int sketchK = in.readInt();
+			String defaultContext = readString(in);
+			long seenTriples = in.readLong();
+			long approxStoreSize = in.readLong();
+			long lastPublishMs = in.readLong();
+			out.writeInt(buckets);
+			out.writeInt(sketchK);
+			writeString(out, defaultContext);
+			out.writeLong(seenTriples);
+			out.writeLong(approxStoreSize);
+			out.writeLong(lastPublishMs);
+
+			int count = in.readInt();
+			out.writeInt(count);
+			for (int i = 0; i < count; i++) {
+				byte recType = in.readByte();
+				boolean isDelete = in.readBoolean();
+				byte axisA = in.readByte();
+				byte axisB = in.readByte();
+				int x = in.readInt();
+				int y = in.readInt();
+				int blobId = in.readInt();
+				long offset = in.readLong();
+				int length = in.readInt();
+
+				assertEquals(0, blobId, "Expected single-blob snapshot before v2 downgrade");
+				out.writeByte(recType);
+				out.writeBoolean(isDelete);
+				out.writeByte(axisA);
+				out.writeByte(axisB);
+				out.writeInt(x);
+				out.writeInt(y);
+				out.writeLong(offset);
+				out.writeInt(length);
+			}
+
+			out.flush();
+			Files.write(snapshot, bos.toByteArray());
+		}
+	}
+
+	private static void writeString(DataOutputStream out, String value) throws Exception {
+		byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+		out.writeInt(bytes.length);
+		out.write(bytes);
+	}
+
+	private static String readString(DataInputStream in) throws Exception {
+		int length = in.readInt();
+		byte[] bytes = new byte[length];
+		in.readFully(bytes);
+		return new String(bytes, StandardCharsets.UTF_8);
+	}
+
 	private static int hash(SketchBasedJoinEstimator estimator, String value) throws Exception {
 		Method hashMethod = SketchBasedJoinEstimator.class.getDeclaredMethod("hash", String.class);
 		hashMethod.setAccessible(true);
@@ -413,11 +565,11 @@ class SketchBasedJoinEstimatorPersistenceTest {
 
 	private static Set<Integer> residentSinglePredicateHashes(SketchBasedJoinEstimator estimator) throws Exception {
 		Set<Integer> hashes = new HashSet<>();
-		for (Object address : residentSketchAddresses(estimator)) {
-			byte recType = getByteField(address, "recType");
-			boolean isDelete = getBooleanField(address, "isDelete");
-			byte axisA = getByteField(address, "axisA");
-			int x = getIntField(address, "x");
+		for (SketchBasedJoinEstimator.DebugSketchAddress address : estimator.debugResidentSketches()) {
+			byte recType = address.recType();
+			boolean isDelete = address.isDelete();
+			byte axisA = address.axisA();
+			int x = address.x();
 			if (recType == 1 && !isDelete && axisA == (byte) SketchBasedJoinEstimator.Component.P.ordinal()) {
 				hashes.add(x);
 			}
@@ -428,14 +580,11 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	private static boolean hasPersistedSinglePredicateSketch(SketchBasedJoinEstimator estimator, String predicate)
 			throws Exception {
 		int predicateHash = hash(estimator, predicate);
-		Field indexField = SketchBasedJoinEstimator.class.getDeclaredField("persistedSketchIndex");
-		indexField.setAccessible(true);
-		Map<?, ?> index = (Map<?, ?>) indexField.get(estimator);
-		for (Object address : index.keySet()) {
-			byte recType = getByteField(address, "recType");
-			boolean isDelete = getBooleanField(address, "isDelete");
-			byte axisA = getByteField(address, "axisA");
-			int x = getIntField(address, "x");
+		for (SketchBasedJoinEstimator.DebugSketchAddress address : estimator.debugPersistedSketches()) {
+			byte recType = address.recType();
+			boolean isDelete = address.isDelete();
+			byte axisA = address.axisA();
+			int x = address.x();
 			if (recType == 1 && !isDelete && axisA == (byte) SketchBasedJoinEstimator.Component.P.ordinal()
 					&& x == predicateHash) {
 				return true;
@@ -446,15 +595,15 @@ class SketchBasedJoinEstimatorPersistenceTest {
 
 	private static Set<Byte> residentRecordTypes(SketchBasedJoinEstimator estimator) throws Exception {
 		Set<Byte> recordTypes = new HashSet<>();
-		for (Object address : residentSketchAddresses(estimator)) {
-			recordTypes.add(getByteField(address, "recType"));
+		for (SketchBasedJoinEstimator.DebugSketchAddress address : estimator.debugResidentSketches()) {
+			recordTypes.add(address.recType());
 		}
 		return recordTypes;
 	}
 
 	private static boolean hasDeleteResidentSketch(SketchBasedJoinEstimator estimator) throws Exception {
-		for (Object address : residentSketchAddresses(estimator)) {
-			if (getBooleanField(address, "isDelete")) {
+		for (SketchBasedJoinEstimator.DebugSketchAddress address : estimator.debugResidentSketches()) {
+			if (address.isDelete()) {
 				return true;
 			}
 		}
@@ -463,74 +612,20 @@ class SketchBasedJoinEstimatorPersistenceTest {
 
 	private static List<FileChannel> mappedChannels(SketchBasedJoinEstimator estimator) throws Exception {
 		List<FileChannel> channels = new ArrayList<>();
-		for (Object value : mappedChannelEntries(estimator)) {
-			Field channelField = value.getClass().getDeclaredField("channel");
-			channelField.setAccessible(true);
-			channels.add((FileChannel) channelField.get(value));
+		for (SketchBasedJoinEstimator.DebugMappedChannelView channelView : estimator.debugMappedChannels()) {
+			channels.add(channelView.channel());
 		}
 		return channels;
 	}
 
 	private static MappedByteBuffer mappedBuffer(SketchBasedJoinEstimator estimator, boolean writeAccess)
 			throws Exception {
-		for (Object value : mappedChannelEntries(estimator)) {
-			Field writeAccessField = value.getClass().getDeclaredField("writeAccess");
-			writeAccessField.setAccessible(true);
-			if (writeAccessField.getBoolean(value) == writeAccess) {
-				Field mappedBufferField = value.getClass().getDeclaredField("mappedBuffer");
-				mappedBufferField.setAccessible(true);
-				return (MappedByteBuffer) mappedBufferField.get(value);
+		for (SketchBasedJoinEstimator.DebugMappedChannelView channelView : estimator.debugMappedChannels()) {
+			if (channelView.writeAccess() == writeAccess && channelView.blobId() == 0) {
+				return channelView.mappedBuffer();
 			}
 		}
 		return null;
-	}
-
-	private static List<Object> mappedChannelEntries(SketchBasedJoinEstimator estimator) throws Exception {
-		List<Object> entries = new ArrayList<>(2);
-		Field readEntryField = SketchBasedJoinEstimator.class.getDeclaredField("readMappedChannelEntry");
-		Field writeEntryField = SketchBasedJoinEstimator.class.getDeclaredField("writeMappedChannelEntry");
-		readEntryField.setAccessible(true);
-		writeEntryField.setAccessible(true);
-		Object readEntry = readEntryField.get(estimator);
-		Object writeEntry = writeEntryField.get(estimator);
-		if (readEntry != null) {
-			entries.add(readEntry);
-		}
-		if (writeEntry != null && writeEntry != readEntry) {
-			entries.add(writeEntry);
-		}
-		return entries;
-	}
-
-	private static Set<Object> residentSketchAddresses(SketchBasedJoinEstimator estimator) throws Exception {
-		Field residentField = SketchBasedJoinEstimator.class.getDeclaredField("residentSketches");
-		residentField.setAccessible(true);
-		Map<?, ?> resident = (Map<?, ?>) residentField.get(estimator);
-		Set<Object> addresses = new HashSet<>();
-		for (Object key : resident.keySet()) {
-			Field sketchAddressField = key.getClass().getDeclaredField("sketchAddress");
-			sketchAddressField.setAccessible(true);
-			addresses.add(sketchAddressField.get(key));
-		}
-		return addresses;
-	}
-
-	private static byte getByteField(Object target, String name) throws Exception {
-		Field field = target.getClass().getDeclaredField(name);
-		field.setAccessible(true);
-		return field.getByte(target);
-	}
-
-	private static int getIntField(Object target, String name) throws Exception {
-		Field field = target.getClass().getDeclaredField(name);
-		field.setAccessible(true);
-		return field.getInt(target);
-	}
-
-	private static boolean getBooleanField(Object target, String name) throws Exception {
-		Field field = target.getClass().getDeclaredField(name);
-		field.setAccessible(true);
-		return field.getBoolean(target);
 	}
 
 	private static final class BlockingRebuildStore implements SailStore {

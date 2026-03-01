@@ -98,6 +98,10 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		assertTrue(new File(dataDir, SNAPSHOT_FILE).isFile(), "Expected estimator manifest after shutdown");
 		assertTrue(new File(dataDir, SNAPSHOT_FILE + ".sketches").isFile(),
 				"Expected estimator sidecar after shutdown");
+		File[] sidecarShards = dataDir.listFiles((dir, name) -> name.equals(SNAPSHOT_FILE + ".sketches")
+				|| name.startsWith(SNAPSHOT_FILE + ".sketches."));
+		assertTrue(sidecarShards != null && sidecarShards.length >= 1,
+				"Expected at least one estimator sidecar shard after shutdown");
 
 		LmdbStore reopened = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
 		reopened.init();

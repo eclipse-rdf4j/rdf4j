@@ -28,10 +28,11 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -219,15 +220,17 @@ public class SketchBasedJoinEstimator {
 	/* ────────────────────────────────────────────────────────────── */
 
 	private static final byte[] PERSIST_MAGIC = new byte[] { 'R', 'J', 'E', 'S' };
-	private static final int PERSIST_VERSION = 2;
-	private static final int DEFAULT_BUCKET_COUNT = 1 * 1024;
+	private static final int PERSIST_VERSION = 3;
+	private static final int DEFAULT_BUCKET_COUNT = 64 * 1024;
 	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = ThetaUtil.DEFAULT_NOMINAL_ENTRIES;
+	private static final long DEFAULT_MAX_PERSISTENCE_BLOB_BYTES = 1L << 30; // 1 GiB
 	private static final int MAX_STRING_BYTES = 16 * 1024 * 1024;
 	private static final int MAX_SKETCH_ENTRIES = 1_000_000;
 	private static final int MIN_MAPPED_GROWTH_BYTES = 32 * 1024 * 1024;
 	private static final byte[] FILE_GROWTH_MARKER = new byte[] { 0 };
 	private static final String MIN_SKETCH_MEMORY_PERCENT_PROPERTY = "minSketchMemoryPercent";
 	private static final String MAX_SKETCH_MEMORY_PERCENT_PROPERTY = "maxSketchMemoryPercent";
+	private static final String MAX_PERSISTENCE_BLOB_BYTES_PROPERTY = "maxPersistenceBlobBytes";
 
 	private static final byte REC_SINGLE_TRIPLE = 1;
 	private static final byte REC_SINGLE_CPL = 2;
@@ -278,38 +281,13 @@ public class SketchBasedJoinEstimator {
 		B
 	}
 
-	private static final class ResidentSketchAddress {
-		private final BufferSlot slot;
-		private final SketchAddress sketchAddress;
-
-		private ResidentSketchAddress(BufferSlot slot, SketchAddress sketchAddress) {
-			this.slot = slot;
-			this.sketchAddress = sketchAddress;
-		}
-
-		@Override
-		public boolean equals(Object o) {
-			if (this == o) {
-				return true;
-			}
-			if (!(o instanceof ResidentSketchAddress)) {
-				return false;
-			}
-			ResidentSketchAddress that = (ResidentSketchAddress) o;
-			return slot == that.slot && Objects.equals(sketchAddress, that.sketchAddress);
-		}
-
-		@Override
-		public int hashCode() {
-			return Objects.hash(slot, sketchAddress);
-		}
-	}
-
 	private static final class PersistedSketchRef {
+		private final int blobId;
 		private final long offset;
 		private final int length;
 
-		private PersistedSketchRef(long offset, int length) {
+		private PersistedSketchRef(int blobId, long offset, int length) {
+			this.blobId = blobId;
 			this.offset = offset;
 			this.length = length;
 		}
@@ -331,11 +309,765 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
+	private static final class ManifestSketchEntry {
+		private final SketchAddress address;
+		private final PersistedSketchRef persistedSketchRef;
+
+		private ManifestSketchEntry(SketchAddress address, PersistedSketchRef persistedSketchRef) {
+			this.address = address;
+			this.persistedSketchRef = persistedSketchRef;
+		}
+	}
+
+	private static final class CacheDirectory {
+		private static final byte FLAG_DIRTY = 1;
+		private static final int EMPTY_BUCKET = -1;
+		private static final int NO_NODE = -1;
+		private static final int NO_BLOB = -1;
+
+		private int size;
+		private int[] buckets;
+		private int bucketMask;
+
+		private byte[] flags;
+		private int[] keyPrefixes;
+		private int[] xs;
+		private int[] ys;
+		private int[] keyHashes;
+
+		private int[] persistedBlobIds;
+		private long[] persistedOffsets;
+		private int[] persistedLengths;
+
+		private int[] residentNodeA;
+		private int[] residentNodeB;
+
+		private int[] dirtyPrev;
+		private int[] dirtyNext;
+		private int dirtyHead;
+		private int dirtyTail;
+
+		private CacheDirectory() {
+			initBuckets(256);
+			flags = new byte[256];
+			keyPrefixes = new int[256];
+			xs = new int[256];
+			ys = new int[256];
+			keyHashes = new int[256];
+			persistedBlobIds = new int[256];
+			persistedOffsets = new long[256];
+			persistedLengths = new int[256];
+			residentNodeA = new int[256];
+			residentNodeB = new int[256];
+			dirtyPrev = new int[256];
+			dirtyNext = new int[256];
+			Arrays.fill(persistedBlobIds, NO_BLOB);
+			Arrays.fill(residentNodeA, NO_NODE);
+			Arrays.fill(residentNodeB, NO_NODE);
+			Arrays.fill(dirtyPrev, NO_NODE);
+			Arrays.fill(dirtyNext, NO_NODE);
+			dirtyHead = NO_NODE;
+			dirtyTail = NO_NODE;
+		}
+
+		private void initBuckets(int capacity) {
+			buckets = new int[capacity];
+			Arrays.fill(buckets, EMPTY_BUCKET);
+			bucketMask = capacity - 1;
+		}
+
+		private void clear() {
+			size = 0;
+			Arrays.fill(buckets, EMPTY_BUCKET);
+			dirtyHead = NO_NODE;
+			dirtyTail = NO_NODE;
+		}
+
+		private int size() {
+			return size;
+		}
+
+		private int find(SketchAddress address) {
+			return find(address.recType, address.isDelete, address.axisA, address.axisB, address.x, address.y);
+		}
+
+		private int find(byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y) {
+			int keyPrefix = keyPrefix(recType, isDelete, axisA, axisB);
+			int keyHash = hash(keyPrefix, x, y);
+			int slot = keyHash & bucketMask;
+			while (true) {
+				int entryId = buckets[slot];
+				if (entryId == EMPTY_BUCKET) {
+					return -1;
+				}
+				if (keyHashes[entryId] == keyHash && keyPrefixes[entryId] == keyPrefix && xs[entryId] == x
+						&& ys[entryId] == y) {
+					return entryId;
+				}
+				slot = (slot + 1) & bucketMask;
+			}
+		}
+
+		private int findOrAdd(SketchAddress address) {
+			return findOrAdd(address.recType, address.isDelete, address.axisA, address.axisB, address.x, address.y);
+		}
+
+		private int findOrAdd(byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y) {
+			if ((size + 1) * 10 >= buckets.length * 7) {
+				rehash(buckets.length << 1);
+			}
+			int keyPrefix = keyPrefix(recType, isDelete, axisA, axisB);
+			int keyHash = hash(keyPrefix, x, y);
+			int slot = keyHash & bucketMask;
+			while (true) {
+				int entryId = buckets[slot];
+				if (entryId == EMPTY_BUCKET) {
+					entryId = size++;
+					ensureEntryCapacity(size);
+					buckets[slot] = entryId;
+					flags[entryId] = 0;
+					keyPrefixes[entryId] = keyPrefix;
+					xs[entryId] = x;
+					ys[entryId] = y;
+					keyHashes[entryId] = keyHash;
+					persistedBlobIds[entryId] = NO_BLOB;
+					persistedOffsets[entryId] = 0L;
+					persistedLengths[entryId] = 0;
+					residentNodeA[entryId] = NO_NODE;
+					residentNodeB[entryId] = NO_NODE;
+					dirtyPrev[entryId] = NO_NODE;
+					dirtyNext[entryId] = NO_NODE;
+					return entryId;
+				}
+				if (keyHashes[entryId] == keyHash && keyPrefixes[entryId] == keyPrefix && xs[entryId] == x
+						&& ys[entryId] == y) {
+					return entryId;
+				}
+				slot = (slot + 1) & bucketMask;
+			}
+		}
+
+		private void ensureEntryCapacity(int minCapacity) {
+			int current = flags.length;
+			if (minCapacity <= current) {
+				return;
+			}
+			int next = current;
+			while (next < minCapacity) {
+				next <<= 1;
+			}
+			flags = Arrays.copyOf(flags, next);
+			keyPrefixes = Arrays.copyOf(keyPrefixes, next);
+			xs = Arrays.copyOf(xs, next);
+			ys = Arrays.copyOf(ys, next);
+			keyHashes = Arrays.copyOf(keyHashes, next);
+			int previousLength = persistedBlobIds.length;
+			persistedBlobIds = Arrays.copyOf(persistedBlobIds, next);
+			Arrays.fill(persistedBlobIds, previousLength, next, NO_BLOB);
+			persistedOffsets = Arrays.copyOf(persistedOffsets, next);
+			persistedLengths = Arrays.copyOf(persistedLengths, next);
+			residentNodeA = Arrays.copyOf(residentNodeA, next);
+			Arrays.fill(residentNodeA, previousLength, next, NO_NODE);
+			residentNodeB = Arrays.copyOf(residentNodeB, next);
+			Arrays.fill(residentNodeB, previousLength, next, NO_NODE);
+			dirtyPrev = Arrays.copyOf(dirtyPrev, next);
+			Arrays.fill(dirtyPrev, previousLength, next, NO_NODE);
+			dirtyNext = Arrays.copyOf(dirtyNext, next);
+			Arrays.fill(dirtyNext, previousLength, next, NO_NODE);
+		}
+
+		private void rehash(int newCapacity) {
+			int[] oldBuckets = buckets;
+			initBuckets(newCapacity);
+			for (int slot = 0; slot < oldBuckets.length; slot++) {
+				int entryId = oldBuckets[slot];
+				if (entryId == EMPTY_BUCKET) {
+					continue;
+				}
+				int newSlot = keyHashes[entryId] & bucketMask;
+				while (buckets[newSlot] != EMPTY_BUCKET) {
+					newSlot = (newSlot + 1) & bucketMask;
+				}
+				buckets[newSlot] = entryId;
+			}
+		}
+
+		private static int keyPrefix(byte recType, boolean isDelete, byte axisA, byte axisB) {
+			int prefix = recType & 0xff;
+			prefix |= (isDelete ? 1 : 0) << 8;
+			prefix |= (axisA & 0xff) << 16;
+			prefix |= (axisB & 0xff) << 24;
+			return prefix;
+		}
+
+		private static int hash(int keyPrefix, int x, int y) {
+			int h = 31 * keyPrefix + x;
+			h = 31 * h + y;
+			h ^= (h >>> 16);
+			return h;
+		}
+
+		private static byte recTypeFromPrefix(int keyPrefix) {
+			return (byte) keyPrefix;
+		}
+
+		private static boolean isDeleteFromPrefix(int keyPrefix) {
+			return ((keyPrefix >>> 8) & 1) != 0;
+		}
+
+		private static byte axisAFromPrefix(int keyPrefix) {
+			return (byte) (keyPrefix >>> 16);
+		}
+
+		private static byte axisBFromPrefix(int keyPrefix) {
+			return (byte) (keyPrefix >>> 24);
+		}
+
+		private void setPersistedRef(int entryId, int blobId, long offset, int length) {
+			persistedBlobIds[entryId] = blobId;
+			persistedOffsets[entryId] = offset;
+			persistedLengths[entryId] = length;
+		}
+
+		private PersistedSketchRef persistedRef(int entryId) {
+			int blobId = persistedBlobIds[entryId];
+			if (blobId < 0 || persistedLengths[entryId] <= 0) {
+				return null;
+			}
+			return new PersistedSketchRef(blobId, persistedOffsets[entryId], persistedLengths[entryId]);
+		}
+
+		private List<ManifestSketchEntry> snapshotPersistedEntries() {
+			List<ManifestSketchEntry> entries = new ArrayList<>();
+			for (int entryId = 0; entryId < size; entryId++) {
+				PersistedSketchRef persisted = persistedRef(entryId);
+				if (persisted == null) {
+					continue;
+				}
+				entries.add(new ManifestSketchEntry(toSketchAddress(entryId), persisted));
+			}
+			return entries;
+		}
+
+		private SketchAddress toSketchAddress(int entryId) {
+			int keyPrefix = keyPrefixes[entryId];
+			return new SketchAddress(recTypeFromPrefix(keyPrefix), isDeleteFromPrefix(keyPrefix),
+					axisAFromPrefix(keyPrefix),
+					axisBFromPrefix(keyPrefix), xs[entryId], ys[entryId]);
+		}
+
+		private boolean markDirty(int entryId) {
+			if (isDirty(entryId)) {
+				return false;
+			}
+			flags[entryId] = (byte) (flags[entryId] | FLAG_DIRTY);
+			dirtyPrev[entryId] = dirtyTail;
+			dirtyNext[entryId] = NO_NODE;
+			if (dirtyTail != NO_NODE) {
+				dirtyNext[dirtyTail] = entryId;
+			}
+			dirtyTail = entryId;
+			if (dirtyHead == NO_NODE) {
+				dirtyHead = entryId;
+			}
+			return true;
+		}
+
+		private void clearDirty(int entryId) {
+			if (!isDirty(entryId)) {
+				return;
+			}
+			flags[entryId] = (byte) (flags[entryId] & ~FLAG_DIRTY);
+			int prev = dirtyPrev[entryId];
+			int next = dirtyNext[entryId];
+			if (prev != NO_NODE) {
+				dirtyNext[prev] = next;
+			} else {
+				dirtyHead = next;
+			}
+			if (next != NO_NODE) {
+				dirtyPrev[next] = prev;
+			} else {
+				dirtyTail = prev;
+			}
+			dirtyPrev[entryId] = NO_NODE;
+			dirtyNext[entryId] = NO_NODE;
+		}
+
+		private int[] snapshotDirtyEntries() {
+			if (dirtyHead == NO_NODE) {
+				return new int[0];
+			}
+			int count = 0;
+			for (int cursor = dirtyHead; cursor != NO_NODE; cursor = dirtyNext[cursor]) {
+				count++;
+			}
+			int[] snapshot = new int[count];
+			int i = 0;
+			for (int cursor = dirtyHead; cursor != NO_NODE; cursor = dirtyNext[cursor]) {
+				snapshot[i++] = cursor;
+			}
+			return snapshot;
+		}
+
+		private boolean isDirty(int entryId) {
+			return (flags[entryId] & FLAG_DIRTY) != 0;
+		}
+
+		private int residentNode(int entryId, byte slot) {
+			return slot == 0 ? residentNodeA[entryId] : residentNodeB[entryId];
+		}
+
+		private void setResidentNode(int entryId, byte slot, int nodeId) {
+			if (slot == 0) {
+				residentNodeA[entryId] = nodeId;
+			} else {
+				residentNodeB[entryId] = nodeId;
+			}
+		}
+
+		private void clearResidentNodesForSlot(byte slot) {
+			int[] nodes = slot == 0 ? residentNodeA : residentNodeB;
+			for (int i = 0; i < size; i++) {
+				nodes[i] = NO_NODE;
+			}
+		}
+
+		private void clearAllResidentNodes() {
+			for (int i = 0; i < size; i++) {
+				residentNodeA[i] = NO_NODE;
+				residentNodeB[i] = NO_NODE;
+			}
+		}
+
+		private byte recType(int entryId) {
+			return recTypeFromPrefix(keyPrefixes[entryId]);
+		}
+
+		private byte axisA(int entryId) {
+			return axisAFromPrefix(keyPrefixes[entryId]);
+		}
+
+		private int x(int entryId) {
+			return xs[entryId];
+		}
+	}
+
+	private static final class ResidentLru {
+		private static final int NO_NODE = -1;
+
+		private int[] prev = new int[256];
+		private int[] next = new int[256];
+		private int[] entryIds = new int[256];
+		private byte[] slots = new byte[256];
+		private long[] bytes = new long[256];
+		private boolean[] used = new boolean[256];
+
+		private int head = NO_NODE;
+		private int tail = NO_NODE;
+		private int freeHead = NO_NODE;
+		private int nextNodeId;
+
+		private ResidentLru() {
+			Arrays.fill(prev, NO_NODE);
+			Arrays.fill(next, NO_NODE);
+		}
+
+		private void clear() {
+			Arrays.fill(used, false);
+			Arrays.fill(prev, NO_NODE);
+			Arrays.fill(next, NO_NODE);
+			head = NO_NODE;
+			tail = NO_NODE;
+			freeHead = NO_NODE;
+			nextNodeId = 0;
+		}
+
+		private boolean isEmpty() {
+			return head == NO_NODE;
+		}
+
+		private int headNode() {
+			return head;
+		}
+
+		private int nextNode(int nodeId) {
+			return next[nodeId];
+		}
+
+		private int entryId(int nodeId) {
+			return entryIds[nodeId];
+		}
+
+		private byte slot(int nodeId) {
+			return slots[nodeId];
+		}
+
+		private long bytes(int nodeId) {
+			return bytes[nodeId];
+		}
+
+		private int add(int entryId, byte slot, long nodeBytes) {
+			int nodeId = allocNode();
+			entryIds[nodeId] = entryId;
+			slots[nodeId] = slot;
+			bytes[nodeId] = nodeBytes;
+			used[nodeId] = true;
+			appendTail(nodeId);
+			return nodeId;
+		}
+
+		private void touch(int nodeId, long nodeBytes) {
+			if (!used[nodeId]) {
+				return;
+			}
+			bytes[nodeId] = nodeBytes;
+			if (tail == nodeId) {
+				return;
+			}
+			unlink(nodeId);
+			appendTail(nodeId);
+		}
+
+		private long remove(int nodeId) {
+			if (nodeId == NO_NODE || nodeId >= used.length || !used[nodeId]) {
+				return 0L;
+			}
+			long removedBytes = bytes[nodeId];
+			unlink(nodeId);
+			used[nodeId] = false;
+			next[nodeId] = freeHead;
+			prev[nodeId] = NO_NODE;
+			freeHead = nodeId;
+			bytes[nodeId] = 0L;
+			return removedBytes;
+		}
+
+		private void unlink(int nodeId) {
+			int nodePrev = prev[nodeId];
+			int nodeNext = next[nodeId];
+			if (nodePrev != NO_NODE) {
+				next[nodePrev] = nodeNext;
+			} else {
+				head = nodeNext;
+			}
+			if (nodeNext != NO_NODE) {
+				prev[nodeNext] = nodePrev;
+			} else {
+				tail = nodePrev;
+			}
+			prev[nodeId] = NO_NODE;
+			next[nodeId] = NO_NODE;
+		}
+
+		private void appendTail(int nodeId) {
+			prev[nodeId] = tail;
+			next[nodeId] = NO_NODE;
+			if (tail != NO_NODE) {
+				next[tail] = nodeId;
+			}
+			tail = nodeId;
+			if (head == NO_NODE) {
+				head = nodeId;
+			}
+		}
+
+		private int allocNode() {
+			if (freeHead != NO_NODE) {
+				int node = freeHead;
+				freeHead = next[node];
+				next[node] = NO_NODE;
+				return node;
+			}
+			int node = nextNodeId++;
+			ensureNodeCapacity(node + 1);
+			return node;
+		}
+
+		private void ensureNodeCapacity(int minCapacity) {
+			int current = prev.length;
+			if (minCapacity <= current) {
+				return;
+			}
+			int nextCapacity = current;
+			while (nextCapacity < minCapacity) {
+				nextCapacity <<= 1;
+			}
+			prev = Arrays.copyOf(prev, nextCapacity);
+			Arrays.fill(prev, current, nextCapacity, NO_NODE);
+			next = Arrays.copyOf(next, nextCapacity);
+			Arrays.fill(next, current, nextCapacity, NO_NODE);
+			entryIds = Arrays.copyOf(entryIds, nextCapacity);
+			slots = Arrays.copyOf(slots, nextCapacity);
+			bytes = Arrays.copyOf(bytes, nextCapacity);
+			used = Arrays.copyOf(used, nextCapacity);
+		}
+	}
+
+	static final class DebugSketchAddress {
+		private final BufferSlot slot;
+		private final byte recType;
+		private final boolean isDelete;
+		private final byte axisA;
+		private final byte axisB;
+		private final int x;
+		private final int y;
+
+		private DebugSketchAddress(BufferSlot slot, SketchAddress address) {
+			this.slot = slot;
+			this.recType = address.recType;
+			this.isDelete = address.isDelete;
+			this.axisA = address.axisA;
+			this.axisB = address.axisB;
+			this.x = address.x;
+			this.y = address.y;
+		}
+
+		BufferSlot slot() {
+			return slot;
+		}
+
+		byte recType() {
+			return recType;
+		}
+
+		boolean isDelete() {
+			return isDelete;
+		}
+
+		byte axisA() {
+			return axisA;
+		}
+
+		int x() {
+			return x;
+		}
+	}
+
+	static final class DebugMappedChannelView {
+		private final int blobId;
+		private final boolean writeAccess;
+		private final FileChannel channel;
+		private final MappedByteBuffer mappedBuffer;
+
+		private DebugMappedChannelView(int blobId, boolean writeAccess, FileChannel channel,
+				MappedByteBuffer mappedBuffer) {
+			this.blobId = blobId;
+			this.writeAccess = writeAccess;
+			this.channel = channel;
+			this.mappedBuffer = mappedBuffer;
+		}
+
+		int blobId() {
+			return blobId;
+		}
+
+		boolean writeAccess() {
+			return writeAccess;
+		}
+
+		FileChannel channel() {
+			return channel;
+		}
+
+		MappedByteBuffer mappedBuffer() {
+			return mappedBuffer;
+		}
+	}
+
+	private static final class IngestEvent {
+		private final boolean isDelete;
+		private final int si;
+		private final int pi;
+		private final int oi;
+		private final int ci;
+		private final long hs;
+		private final long hp;
+		private final long ho;
+		private final long hc;
+		private final long sig;
+		private final long spKey;
+		private final long soKey;
+		private final long scKey;
+		private final long poKey;
+		private final long pcKey;
+		private final long ocKey;
+
+		private IngestEvent(boolean isDelete, int si, int pi, int oi, int ci, long hs, long hp, long ho, long hc,
+				long sig, long spKey, long soKey, long scKey, long poKey, long pcKey, long ocKey) {
+			this.isDelete = isDelete;
+			this.si = si;
+			this.pi = pi;
+			this.oi = oi;
+			this.ci = ci;
+			this.hs = hs;
+			this.hp = hp;
+			this.ho = ho;
+			this.hc = hc;
+			this.sig = sig;
+			this.spKey = spKey;
+			this.soKey = soKey;
+			this.scKey = scKey;
+			this.poKey = poKey;
+			this.pcKey = pcKey;
+			this.ocKey = ocKey;
+		}
+	}
+
+	@FunctionalInterface
+	private interface BatchUpdateConsumer {
+		void accept(byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y, long[] values,
+				int valueCount);
+	}
+
+	private static final class BatchUpdateAccumulator {
+		private static final int EMPTY_BUCKET = -1;
+
+		private int size;
+		private int[] buckets;
+		private int bucketMask;
+
+		private int[] keyPrefixes;
+		private int[] xs;
+		private int[] ys;
+		private int[] keyHashes;
+		private long[][] values;
+		private int[] valueCounts;
+
+		private BatchUpdateAccumulator(int expectedUpdates) {
+			int bucketCapacity = 256;
+			int targetBuckets = Math.max(256, expectedUpdates << 1);
+			while (bucketCapacity < targetBuckets) {
+				bucketCapacity <<= 1;
+			}
+			initBuckets(bucketCapacity);
+
+			int entryCapacity = 256;
+			int targetEntries = Math.max(256, expectedUpdates);
+			while (entryCapacity < targetEntries) {
+				entryCapacity <<= 1;
+			}
+			keyPrefixes = new int[entryCapacity];
+			xs = new int[entryCapacity];
+			ys = new int[entryCapacity];
+			keyHashes = new int[entryCapacity];
+			values = new long[entryCapacity][];
+			valueCounts = new int[entryCapacity];
+		}
+
+		private void initBuckets(int capacity) {
+			buckets = new int[capacity];
+			Arrays.fill(buckets, EMPTY_BUCKET);
+			bucketMask = capacity - 1;
+		}
+
+		private void add(byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y, long value) {
+			if ((size + 1) * 10 >= buckets.length * 7) {
+				rehash(buckets.length << 1);
+			}
+			int keyPrefix = keyPrefix(recType, isDelete, axisA, axisB);
+			int keyHash = hash(keyPrefix, x, y);
+			int slot = keyHash & bucketMask;
+			while (true) {
+				int entryId = buckets[slot];
+				if (entryId == EMPTY_BUCKET) {
+					entryId = size++;
+					ensureEntryCapacity(size);
+					buckets[slot] = entryId;
+					keyPrefixes[entryId] = keyPrefix;
+					xs[entryId] = x;
+					ys[entryId] = y;
+					keyHashes[entryId] = keyHash;
+					values[entryId] = new long[8];
+					valueCounts[entryId] = 0;
+					appendValue(entryId, value);
+					return;
+				}
+				if (keyHashes[entryId] == keyHash && keyPrefixes[entryId] == keyPrefix && xs[entryId] == x
+						&& ys[entryId] == y) {
+					appendValue(entryId, value);
+					return;
+				}
+				slot = (slot + 1) & bucketMask;
+			}
+		}
+
+		private void appendValue(int entryId, long value) {
+			long[] entryValues = values[entryId];
+			int count = valueCounts[entryId];
+			if (count == entryValues.length) {
+				entryValues = Arrays.copyOf(entryValues, count << 1);
+				values[entryId] = entryValues;
+			}
+			entryValues[count] = value;
+			valueCounts[entryId] = count + 1;
+		}
+
+		private void ensureEntryCapacity(int minCapacity) {
+			int current = keyPrefixes.length;
+			if (minCapacity <= current) {
+				return;
+			}
+			int next = current;
+			while (next < minCapacity) {
+				next <<= 1;
+			}
+			keyPrefixes = Arrays.copyOf(keyPrefixes, next);
+			xs = Arrays.copyOf(xs, next);
+			ys = Arrays.copyOf(ys, next);
+			keyHashes = Arrays.copyOf(keyHashes, next);
+			values = Arrays.copyOf(values, next);
+			valueCounts = Arrays.copyOf(valueCounts, next);
+		}
+
+		private void rehash(int newCapacity) {
+			int[] oldBuckets = buckets;
+			initBuckets(newCapacity);
+			for (int slot = 0; slot < oldBuckets.length; slot++) {
+				int entryId = oldBuckets[slot];
+				if (entryId == EMPTY_BUCKET) {
+					continue;
+				}
+				int newSlot = keyHashes[entryId] & bucketMask;
+				while (buckets[newSlot] != EMPTY_BUCKET) {
+					newSlot = (newSlot + 1) & bucketMask;
+				}
+				buckets[newSlot] = entryId;
+			}
+		}
+
+		private static int keyPrefix(byte recType, boolean isDelete, byte axisA, byte axisB) {
+			int prefix = recType & 0xff;
+			prefix |= (isDelete ? 1 : 0) << 8;
+			prefix |= (axisA & 0xff) << 16;
+			prefix |= (axisB & 0xff) << 24;
+			return prefix;
+		}
+
+		private static int hash(int keyPrefix, int x, int y) {
+			int h = 31 * keyPrefix + x;
+			h = 31 * h + y;
+			h ^= (h >>> 16);
+			return h;
+		}
+
+		private void forEach(BatchUpdateConsumer consumer) {
+			for (int i = 0; i < size; i++) {
+				int keyPrefix = keyPrefixes[i];
+				consumer.accept((byte) keyPrefix, ((keyPrefix >>> 8) & 1) != 0, (byte) (keyPrefix >>> 16),
+						(byte) (keyPrefix >>> 24), xs[i], ys[i],
+						values[i],
+						valueCounts[i]);
+			}
+		}
+	}
+
 	private volatile Path persistenceFile;
-	private volatile Path persistenceBlobFile;
+	private volatile Path persistenceBlobBaseFile;
 	private volatile boolean persistenceEnabled;
 	private volatile boolean lazyLoadEnabled;
 	private volatile boolean sketchesLoaded = true;
+	private final long maxPersistenceBlobBytes;
 
 	/**
 	 * True when writes happened while sketches were unloaded. In this state, the estimator must not claim readiness
@@ -357,16 +1089,19 @@ public class SketchBasedJoinEstimator {
 	private final Object loadLock = new Object();
 	private final Object sketchCacheLock = new Object();
 	private final Object mappedChannelLock = new Object();
-	private final LinkedHashMap<ResidentSketchAddress, Long> residentSketches = new LinkedHashMap<>(128, 0.75f, true);
-	private MappedChannelEntry readMappedChannelEntry;
-	private Path readMappedChannelPath;
-	private MappedChannelEntry writeMappedChannelEntry;
-	private Path writeMappedChannelPath;
-	private final Map<SketchAddress, PersistedSketchRef> persistedSketchIndex = new HashMap<>();
-	private final Set<SketchAddress> dirtySketches = new HashSet<>();
+	private final CacheDirectory cacheDirectory = new CacheDirectory();
+	private final ResidentLru residentLru = new ResidentLru();
+	private final List<MappedChannelEntry> readMappedBlobEntries = new ArrayList<>();
+	private final List<MappedChannelEntry> writeMappedBlobEntries = new ArrayList<>();
+	private int activeWriteBlobId;
 	private volatile long minSketchMemoryBytes;
 	private volatile long maxSketchMemoryBytes;
 	private long residentSketchBytes;
+
+	private static final int INCREMENTAL_BATCH_SIZE = 1024;
+	private final Object incrementalBufferLock = new Object();
+	private IngestEvent[] incrementalBuffer = new IngestEvent[INCREMENTAL_BATCH_SIZE * 2];
+	private int incrementalBufferCount;
 
 	// ──────────────────────────────────────────────────────────────
 	// Staleness tracking (global, lock‑free reads)
@@ -417,6 +1152,7 @@ public class SketchBasedJoinEstimator {
 		int kMult = cfg.sketchKMultiplier;
 		double minSketchMemoryPercent = cfg.minSketchMemoryPercent;
 		double maxSketchMemoryPercent = cfg.maxSketchMemoryPercent;
+		long maxBlobBytes = cfg.maxPersistenceBlobBytes;
 
 		// Overlay from system properties (take precedence)
 		nEntries = propInt("nominalEntries", nEntries);
@@ -436,6 +1172,7 @@ public class SketchBasedJoinEstimator {
 		kMult = Math.max(0, kMult);
 		minSketchMemoryPercent = propDouble(MIN_SKETCH_MEMORY_PERCENT_PROPERTY, minSketchMemoryPercent);
 		maxSketchMemoryPercent = propDouble(MAX_SKETCH_MEMORY_PERCENT_PROPERTY, maxSketchMemoryPercent);
+		maxBlobBytes = propLong(MAX_PERSISTENCE_BLOB_BYTES_PROPERTY, maxBlobBytes);
 
 		int buckets = dbl ? (nEntries * 2) : nEntries;
 		int k = resolveSketchK(kProp, kCfg, buckets, kMult);
@@ -447,6 +1184,8 @@ public class SketchBasedJoinEstimator {
 		churnRemovalTh = clamp(churnRemovalTh, 0.0, 1.0);
 		minSketchMemoryPercent = clamp(minSketchMemoryPercent, 0.0, 1.0);
 		maxSketchMemoryPercent = clamp(maxSketchMemoryPercent, minSketchMemoryPercent, 1.0);
+		maxBlobBytes = Math.max(1L, maxBlobBytes);
+		maxBlobBytes = Math.min(maxBlobBytes, Integer.MAX_VALUE);
 
 		this.sailStore = sailStore;
 		this.nominalEntries = buckets;
@@ -468,6 +1207,8 @@ public class SketchBasedJoinEstimator {
 		this.sketchesLoaded = true;
 		this.persistenceEnabled = false;
 		this.lazyLoadEnabled = false;
+		this.maxPersistenceBlobBytes = maxBlobBytes;
+		this.activeWriteBlobId = 0;
 		long heapMax = Runtime.getRuntime().maxMemory();
 		this.minSketchMemoryBytes = percentToBytes(minSketchMemoryPercent, heapMax);
 		this.maxSketchMemoryBytes = percentToBytes(maxSketchMemoryPercent, heapMax);
@@ -512,23 +1253,24 @@ public class SketchBasedJoinEstimator {
 	 */
 	public void configurePersistence(Path file, boolean lazyLoad) {
 		Path previousPersistenceFile = this.persistenceFile;
-		Path previousBlobFile = this.persistenceBlobFile;
+		Path previousBlobFile = this.persistenceBlobBaseFile;
 		this.persistenceFile = file;
-		this.persistenceBlobFile = file == null ? null : sidecarPath(file);
+		this.persistenceBlobBaseFile = file == null ? null : sidecarPath(file);
 		this.persistenceEnabled = (file != null);
 		this.lazyLoadEnabled = lazyLoad;
 
-		if (this.persistenceBlobFile != null) {
+		if (this.persistenceBlobBaseFile != null) {
 			try {
-				ensureParentDirectoryExists(this.persistenceBlobFile);
+				ensureParentDirectoryExists(this.persistenceBlobBaseFile);
 			} catch (IOException e) {
-				logger.debug("Failed to pre-create persistence sidecar directory {}", this.persistenceBlobFile, e);
+				logger.debug("Failed to pre-create persistence sidecar directory {}", this.persistenceBlobBaseFile, e);
 			}
 		}
 
 		if (!Objects.equals(previousPersistenceFile, this.persistenceFile)
-				|| !Objects.equals(previousBlobFile, this.persistenceBlobFile)) {
+				|| !Objects.equals(previousBlobFile, this.persistenceBlobBaseFile)) {
 			closeMappedChannels();
+			activeWriteBlobId = 0;
 		}
 
 		if (lazyLoad && file != null && hasSnapshotAvailable(file)) {
@@ -647,6 +1389,7 @@ public class SketchBasedJoinEstimator {
 	}
 
 	public void close() {
+		flushPendingIncremental();
 		stop();
 		try {
 			persistIfDirty();
@@ -666,6 +1409,8 @@ public class SketchBasedJoinEstimator {
 	 * @return number of statements scanned.
 	 */
 	public synchronized long rebuildOnceSlow() {
+		flushPendingIncremental();
+
 //		try {
 //			Thread.sleep(r.nextInt(10));
 //		} catch (InterruptedException e) {
@@ -792,12 +1537,16 @@ public class SketchBasedJoinEstimator {
 			return;
 		}
 
-		String signature = sig(str(st.getSubject()), str(st.getPredicate()), str(st.getObject()), str(st.getContext()));
+		String s = str(st.getSubject());
+		String p = str(st.getPredicate());
+		String o = str(st.getObject());
+		String c = str(st.getContext());
+		String signature = sig(s, p, o, c);
 		churnSampler.recordAdd(signature, samplingInterval());
 		seenTriples = approxStoreSize.incrementAndGet();
 
 		try {
-			ingestIncremental(st, false);
+			ingestIncremental(s, p, o, c, false);
 		} catch (OutOfMemoryError oom) {
 			logger.warn("Out of memory while applying incremental estimator update; unloading sketches", oom);
 			unloadInternal(true);
@@ -825,12 +1574,16 @@ public class SketchBasedJoinEstimator {
 			return;
 		}
 
-		String signature = sig(str(st.getSubject()), str(st.getPredicate()), str(st.getObject()), str(st.getContext()));
+		String s = str(st.getSubject());
+		String p = str(st.getPredicate());
+		String o = str(st.getObject());
+		String c = str(st.getContext());
+		String signature = sig(s, p, o, c);
 		churnSampler.recordDelete(signature, samplingInterval());
 		seenTriples = approxStoreSize.updateAndGet(v -> Math.max(0, v - 1));
 
 		try {
-			ingestIncremental(st, true);
+			ingestIncremental(s, p, o, c, true);
 		} catch (OutOfMemoryError oom) {
 			logger.warn("Out of memory while applying incremental estimator delete; unloading sketches", oom);
 			unloadInternal(true);
@@ -847,15 +1600,100 @@ public class SketchBasedJoinEstimator {
 		deleteStatement(s, p, o, null);
 	}
 
-	private void ingestIncremental(Statement st, boolean isDelete) {
+	private void ingestIncremental(String s, String p, String o, String c, boolean isDelete) {
+		IngestEvent event = toIngestEvent(s, p, o, c, isDelete);
+		if (event == null) {
+			return;
+		}
+		IngestEvent[] batch = null;
+		int batchSize = 0;
+		synchronized (incrementalBufferLock) {
+			ensureIncrementalBufferCapacity(incrementalBufferCount + 1);
+			incrementalBuffer[incrementalBufferCount++] = event;
+			if (incrementalBufferCount >= INCREMENTAL_BATCH_SIZE) {
+				batch = drainIncrementalBufferLocked();
+				batchSize = batch.length;
+			}
+		}
+		if (batch != null) {
+			applyIncrementalBatch(batch, batchSize);
+		}
+	}
+
+	private IngestEvent toIngestEvent(String s, String p, String o, String c, boolean isDelete) {
+		try {
+			int si = hash(s);
+			int pi = hash(p);
+			int oi = hash(o);
+			int ci = hash(c);
+
+			long hs = valueFingerprint(s);
+			long hp = valueFingerprint(p);
+			long ho = valueFingerprint(o);
+			long hc = valueFingerprint(c);
+			long sig = quadFingerprint(hs, hp, ho, hc);
+			long spKey = pairKey(si, pi);
+			long soKey = pairKey(si, oi);
+			long scKey = pairKey(si, ci);
+			long poKey = pairKey(pi, oi);
+			long pcKey = pairKey(pi, ci);
+			long ocKey = pairKey(oi, ci);
+			return new IngestEvent(isDelete, si, pi, oi, ci, hs, hp, ho, hc, sig, spKey, soKey, scKey, poKey, pcKey,
+					ocKey);
+		} catch (NullPointerException npe) {
+			return null;
+		}
+	}
+
+	private void ensureIncrementalBufferCapacity(int minCapacity) {
+		if (minCapacity <= incrementalBuffer.length) {
+			return;
+		}
+		int next = incrementalBuffer.length;
+		while (next < minCapacity) {
+			next <<= 1;
+		}
+		incrementalBuffer = Arrays.copyOf(incrementalBuffer, next);
+	}
+
+	private IngestEvent[] drainIncrementalBufferLocked() {
+		if (incrementalBufferCount == 0) {
+			return null;
+		}
+		IngestEvent[] drained = Arrays.copyOf(incrementalBuffer, incrementalBufferCount);
+		Arrays.fill(incrementalBuffer, 0, incrementalBufferCount, null);
+		incrementalBufferCount = 0;
+		return drained;
+	}
+
+	private void flushPendingIncremental() {
+		while (true) {
+			IngestEvent[] batch;
+			int batchSize;
+			synchronized (incrementalBufferLock) {
+				batch = drainIncrementalBufferLocked();
+				if (batch == null) {
+					return;
+				}
+				batchSize = batch.length;
+			}
+			applyIncrementalBatch(batch, batchSize);
+		}
+	}
+
+	private void applyIncrementalBatch(IngestEvent[] batch, int batchSize) {
+		if (batchSize == 0) {
+			return;
+		}
+
 		while (true) {
 			long epoch = rebuildEpoch.get();
 			if ((epoch & 1L) != 0L) {
 				synchronized (bufA) {
-					ingest(bufA, st, isDelete);
+					ingestBatch(bufA, batch, batchSize);
 				}
 				synchronized (bufB) {
-					ingest(bufB, st, isDelete);
+					ingestBatch(bufB, batch, batchSize);
 				}
 				return;
 			}
@@ -865,10 +1703,92 @@ public class SketchBasedJoinEstimator {
 				if (rebuildEpoch.get() != epoch) {
 					continue;
 				}
-				ingest(target, st, isDelete);
+				ingestBatch(target, batch, batchSize);
 				return;
 			}
 		}
+	}
+
+	private void ingestBatch(State state, IngestEvent[] batch, int batchSize) {
+		BatchUpdateAccumulator updates = new BatchUpdateAccumulator(Math.max(64, batchSize << 5));
+		for (int i = 0; i < batchSize; i++) {
+			IngestEvent event = batch[i];
+			if (event == null) {
+				continue;
+			}
+			accumulateIngestEvent(updates, event);
+		}
+		updates.forEach(
+				(recType, isDelete, axisA, axisB, x, y, values, valueCount) -> applyGroupedUpdate(state, recType,
+						isDelete, axisA, axisB, x, y, values, valueCount));
+		enforceSketchBudget();
+	}
+
+	private void applyGroupedUpdate(State state, byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y,
+			long[] values, int valueCount) {
+		int entryId;
+		synchronized (sketchCacheLock) {
+			entryId = cacheDirectory.findOrAdd(recType, isDelete, axisA, axisB, x, y);
+		}
+		SketchAddress address = new SketchAddress(recType, isDelete, axisA, axisB, x, y);
+		UpdateSketch sketch = getSketchForWrite(state, address, entryId);
+		for (int i = 0; i < valueCount; i++) {
+			sketch.update(values[i]);
+		}
+		markDirty(entryId);
+		touchResidentSketch(state, entryId, sketch, false);
+	}
+
+	private void accumulateIngestEvent(BatchUpdateAccumulator updates, IngestEvent event) {
+		boolean isDelete = event.isDelete;
+		int si = event.si;
+		int pi = event.pi;
+		int oi = event.oi;
+		int ci = event.ci;
+		long hs = event.hs;
+		long hp = event.hp;
+		long ho = event.ho;
+		long hc = event.hc;
+		long sig = event.sig;
+
+		updates.add(REC_SINGLE_TRIPLE, isDelete, (byte) Component.S.ordinal(), (byte) 0, si, 0, sig);
+		updates.add(REC_SINGLE_TRIPLE, isDelete, (byte) Component.P.ordinal(), (byte) 0, pi, 0, sig);
+		updates.add(REC_SINGLE_TRIPLE, isDelete, (byte) Component.O.ordinal(), (byte) 0, oi, 0, sig);
+		updates.add(REC_SINGLE_TRIPLE, isDelete, (byte) Component.C.ordinal(), (byte) 0, ci, 0, sig);
+
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.S.ordinal(), (byte) Component.P.ordinal(), si, 0, hp);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.S.ordinal(), (byte) Component.O.ordinal(), si, 0, ho);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.S.ordinal(), (byte) Component.C.ordinal(), si, 0, hc);
+
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.P.ordinal(), (byte) Component.S.ordinal(), pi, 0, hs);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.P.ordinal(), (byte) Component.O.ordinal(), pi, 0, ho);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.P.ordinal(), (byte) Component.C.ordinal(), pi, 0, hc);
+
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.O.ordinal(), (byte) Component.S.ordinal(), oi, 0, hs);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.O.ordinal(), (byte) Component.P.ordinal(), oi, 0, hp);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.O.ordinal(), (byte) Component.C.ordinal(), oi, 0, hc);
+
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.C.ordinal(), (byte) Component.S.ordinal(), ci, 0, hs);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.C.ordinal(), (byte) Component.P.ordinal(), ci, 0, hp);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.C.ordinal(), (byte) Component.O.ordinal(), ci, 0, ho);
+
+		accumulatePair(updates, Pair.SP, isDelete, event.spKey, sig, ho, hc);
+		accumulatePair(updates, Pair.SO, isDelete, event.soKey, sig, hp, hc);
+		accumulatePair(updates, Pair.SC, isDelete, event.scKey, sig, hp, ho);
+		accumulatePair(updates, Pair.PO, isDelete, event.poKey, sig, hs, hc);
+		accumulatePair(updates, Pair.PC, isDelete, event.pcKey, sig, hs, ho);
+		accumulatePair(updates, Pair.OC, isDelete, event.ocKey, sig, hs, hp);
+	}
+
+	private static void accumulatePair(BatchUpdateAccumulator updates, Pair pair, boolean isDelete, long key,
+			long triple,
+			long comp1, long comp2) {
+		int x = (int) (key >>> 32);
+		int y = (int) key;
+		byte axis = (byte) pair.ordinal();
+		updates.add(REC_PAIR_TRIPLE, isDelete, axis, (byte) 0, x, y, triple);
+		updates.add(REC_PAIR_COMP1, isDelete, axis, (byte) 0, x, y, comp1);
+		updates.add(REC_PAIR_COMP2, isDelete, axis, (byte) 0, x, y, comp2);
 	}
 
 	/* ------------------------------------------------------------------ */
@@ -959,6 +1879,7 @@ public class SketchBasedJoinEstimator {
 	/* ────────────────────────────────────────────────────────────── */
 
 	public double cardinalitySingle(Component c, String v) {
+		flushPendingIncremental();
 		State snap = current;
 		synchronized (snap) {
 			int idx = hash(v);
@@ -969,6 +1890,7 @@ public class SketchBasedJoinEstimator {
 	}
 
 	public double cardinalityPair(Pair p, String x, String y) {
+		flushPendingIncremental();
 		State snap = current;
 		synchronized (snap) {
 			long key = pairKey(hash(x), hash(y));
@@ -1005,6 +1927,7 @@ public class SketchBasedJoinEstimator {
 	/* ────────────────────────────────────────────────────────────── */
 
 	public JoinEstimate estimate(Component joinVar, String s, String p, String o, String c) {
+		flushPendingIncremental();
 		State snap = current;
 		synchronized (snap) {
 			PatternStats st = statsOf(snap, joinVar, s, p, o, c);
@@ -2373,7 +3296,8 @@ public class SketchBasedJoinEstimator {
 	 * @return true if persisted state was updated.
 	 */
 	public boolean persistIfDirty() {
-		if (!persistenceEnabled || persistenceFile == null || persistenceBlobFile == null) {
+		flushPendingIncremental();
+		if (!persistenceEnabled || persistenceFile == null || persistenceBlobBaseFile == null) {
 			return false;
 		}
 		if (!dirty.get() && !manifestDirty.get()) {
@@ -2406,6 +3330,10 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private void unloadInternal(boolean markRebuildRequired) {
+		synchronized (incrementalBufferLock) {
+			Arrays.fill(incrementalBuffer, 0, incrementalBufferCount, null);
+			incrementalBufferCount = 0;
+		}
 		synchronized (bufA) {
 			bufA.clear();
 		}
@@ -2413,7 +3341,8 @@ public class SketchBasedJoinEstimator {
 			bufB.clear();
 		}
 		synchronized (sketchCacheLock) {
-			residentSketches.clear();
+			residentLru.clear();
+			cacheDirectory.clearAllResidentNodes();
 			residentSketchBytes = 0L;
 		}
 		seenTriples = 0L;
@@ -2471,6 +3400,13 @@ public class SketchBasedJoinEstimator {
 		return manifest.resolveSibling(manifest.getFileName().toString() + ".sketches");
 	}
 
+	private static Path sidecarPath(Path baseBlob, int blobId) {
+		if (blobId <= 0) {
+			return baseBlob;
+		}
+		return baseBlob.resolveSibling(baseBlob.getFileName().toString() + "." + blobId);
+	}
+
 	private boolean isRebuildAllowed() {
 		BooleanSupplier supplier = rebuildAllowedSupplier;
 		if (supplier != null) {
@@ -2498,6 +3434,10 @@ public class SketchBasedJoinEstimator {
 
 	private BufferSlot slotOf(State state) {
 		return state == bufA ? BufferSlot.A : BufferSlot.B;
+	}
+
+	private static byte slotByte(BufferSlot slot) {
+		return slot == BufferSlot.A ? (byte) 0 : (byte) 1;
 	}
 
 	private State stateOf(BufferSlot slot) {
@@ -2540,17 +3480,43 @@ public class SketchBasedJoinEstimator {
 		return sketch;
 	}
 
+	private UpdateSketch getSketchForWrite(State state, SketchAddress address, int entryId) {
+		UpdateSketch sketch = getResidentSketch(state, address);
+		if (sketch == null) {
+			sketch = loadPersistedSketch(state, address, entryId);
+			if (sketch != null) {
+				setResidentSketch(state, address, sketch);
+			}
+		}
+		if (sketch == null) {
+			sketch = newSk(state.k);
+			setResidentSketch(state, address, sketch);
+		}
+		return sketch;
+	}
+
 	private UpdateSketch loadPersistedSketch(State state, SketchAddress address) {
+		int entryId;
+		synchronized (sketchCacheLock) {
+			entryId = cacheDirectory.find(address);
+		}
+		if (entryId < 0) {
+			return null;
+		}
+		return loadPersistedSketch(state, address, entryId);
+	}
+
+	private UpdateSketch loadPersistedSketch(State state, SketchAddress address, int entryId) {
 		PersistedSketchRef persistedSketchRef;
 		synchronized (sketchCacheLock) {
-			persistedSketchRef = persistedSketchIndex.get(address);
+			persistedSketchRef = cacheDirectory.persistedRef(entryId);
 		}
-		if (persistedSketchRef == null || persistenceBlobFile == null) {
+		if (persistedSketchRef == null || persistenceBlobBaseFile == null) {
 			return null;
 		}
 
 		try {
-			UpdateSketch loaded = readSketchFromBlob(persistenceBlobFile, persistedSketchRef, state.k);
+			UpdateSketch loaded = readSketchFromBlob(persistenceBlobBaseFile, persistedSketchRef, state.k);
 			putResidentSketch(state, address, loaded);
 			return loaded;
 		} catch (IOException e) {
@@ -2569,14 +3535,27 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private void touchResidentSketch(State state, SketchAddress address, UpdateSketch sketch, boolean enforceBudget) {
-		ResidentSketchAddress residentSketchAddress = new ResidentSketchAddress(slotOf(state), address);
+		int entryId;
+		synchronized (sketchCacheLock) {
+			entryId = cacheDirectory.findOrAdd(address);
+		}
+		touchResidentSketch(state, entryId, sketch, enforceBudget);
+	}
+
+	private void touchResidentSketch(State state, int entryId, UpdateSketch sketch, boolean enforceBudget) {
+		byte slot = slotByte(slotOf(state));
 		long bytes = estimatedSketchBytes(sketch);
 		synchronized (sketchCacheLock) {
-			Long previous = residentSketches.put(residentSketchAddress, bytes);
-			if (previous != null) {
-				residentSketchBytes -= previous;
+			int nodeId = cacheDirectory.residentNode(entryId, slot);
+			if (nodeId == -1) {
+				int createdNodeId = residentLru.add(entryId, slot, bytes);
+				cacheDirectory.setResidentNode(entryId, slot, createdNodeId);
+				residentSketchBytes += bytes;
+			} else {
+				long previousBytes = residentLru.bytes(nodeId);
+				residentLru.touch(nodeId, bytes);
+				residentSketchBytes += (bytes - previousBytes);
 			}
-			residentSketchBytes += bytes;
 		}
 		if (enforceBudget) {
 			enforceSketchBudget();
@@ -2584,88 +3563,125 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private void removeResidentSketchTracking(State state, SketchAddress address) {
-		ResidentSketchAddress residentSketchAddress = new ResidentSketchAddress(slotOf(state), address);
+		byte slot = slotByte(slotOf(state));
+		int entryId;
 		synchronized (sketchCacheLock) {
-			Long previous = residentSketches.remove(residentSketchAddress);
-			if (previous != null) {
-				residentSketchBytes -= previous;
+			entryId = cacheDirectory.find(address);
+			if (entryId < 0) {
+				return;
 			}
+			removeResidentSketchTracking(entryId, slot);
 		}
 	}
 
 	private void clearResidentTrackingForSlot(BufferSlot slot) {
+		byte targetSlot = slotByte(slot);
 		synchronized (sketchCacheLock) {
-			residentSketches.entrySet().removeIf(entry -> {
-				if (entry.getKey().slot != slot) {
-					return false;
+			for (int node = residentLru.headNode(); node != -1;) {
+				int nextNode = residentLru.nextNode(node);
+				if (residentLru.slot(node) == targetSlot) {
+					int entryId = residentLru.entryId(node);
+					residentSketchBytes -= residentLru.remove(node);
+					cacheDirectory.setResidentNode(entryId, targetSlot, -1);
 				}
-				residentSketchBytes -= entry.getValue();
-				return true;
-			});
+				node = nextNode;
+			}
+			cacheDirectory.clearResidentNodesForSlot(targetSlot);
 		}
 	}
 
+	private void removeResidentSketchTracking(int entryId, byte slot) {
+		int nodeId = cacheDirectory.residentNode(entryId, slot);
+		if (nodeId == -1) {
+			return;
+		}
+		residentSketchBytes -= residentLru.remove(nodeId);
+		cacheDirectory.setResidentNode(entryId, slot, -1);
+	}
+
 	private void markDirty(SketchAddress address) {
+		int entryId;
 		synchronized (sketchCacheLock) {
-			dirtySketches.add(address);
+			entryId = cacheDirectory.findOrAdd(address);
+		}
+		markDirty(entryId);
+	}
+
+	private void markDirty(int entryId) {
+		synchronized (sketchCacheLock) {
+			cacheDirectory.markDirty(entryId);
 		}
 		dirty.set(true);
 	}
 
-	private boolean isDirty(SketchAddress address) {
+	private boolean isDirty(int entryId) {
 		synchronized (sketchCacheLock) {
-			return dirtySketches.contains(address);
+			return cacheDirectory.isDirty(entryId);
 		}
 	}
 
 	private void enforceSketchBudget() {
 		long targetBytes;
 		synchronized (sketchCacheLock) {
-			if (residentSketchBytes <= maxSketchMemoryBytes || residentSketches.isEmpty()) {
+			if (residentSketchBytes <= maxSketchMemoryBytes || residentLru.isEmpty()) {
 				return;
 			}
 			targetBytes = minSketchMemoryBytes;
 		}
 
 		while (true) {
-			ResidentSketchAddress candidate;
+			int candidateEntryId;
+			byte candidateSlot;
 			synchronized (sketchCacheLock) {
-				if (residentSketchBytes <= targetBytes || residentSketches.isEmpty()) {
+				if (residentSketchBytes <= targetBytes || residentLru.isEmpty()) {
 					return;
 				}
-				candidate = residentSketches.entrySet().iterator().next().getKey();
+				int headNode = residentLru.headNode();
+				candidateEntryId = residentLru.entryId(headNode);
+				candidateSlot = residentLru.slot(headNode);
 			}
 
-			if (!evictResidentSketch(candidate)) {
+			if (!evictResidentSketch(candidateEntryId, candidateSlot)) {
 				return;
 			}
 		}
 	}
 
-	private boolean evictResidentSketch(ResidentSketchAddress residentSketchAddress) {
-		State state = stateOf(residentSketchAddress.slot);
-		SketchAddress sketchAddress = residentSketchAddress.sketchAddress;
+	private boolean evictResidentSketch(int entryId, byte slotByte) {
+		BufferSlot slot = slotByte == 0 ? BufferSlot.A : BufferSlot.B;
+		State state = stateOf(slot);
+		SketchAddress sketchAddress;
+		synchronized (sketchCacheLock) {
+			if (entryId < 0 || entryId >= cacheDirectory.size()) {
+				return true;
+			}
+			sketchAddress = cacheDirectory.toSketchAddress(entryId);
+		}
 		UpdateSketch sketch;
 		boolean dirtySketch;
 		synchronized (state) {
 			sketch = getResidentSketch(state, sketchAddress);
 			if (sketch == null) {
-				removeResidentSketchTracking(state, sketchAddress);
+				synchronized (sketchCacheLock) {
+					removeResidentSketchTracking(entryId, slotByte);
+				}
 				return true;
 			}
-			dirtySketch = isDirty(sketchAddress);
-			if (dirtySketch && (!persistenceEnabled || persistenceFile == null || persistenceBlobFile == null)) {
+			dirtySketch = isDirty(entryId);
+			if (dirtySketch && (!persistenceEnabled || persistenceFile == null || persistenceBlobBaseFile == null)) {
 				return false;
 			}
 			setResidentSketch(state, sketchAddress, null);
-			removeResidentSketchTracking(state, sketchAddress);
+			synchronized (sketchCacheLock) {
+				removeResidentSketchTracking(entryId, slotByte);
+			}
 		}
 		if (!dirtySketch) {
 			return true;
 		}
 		synchronized (persistLock) {
 			try {
-				appendSketchPayload(sketchAddress, sketch);
+				appendSketchPayload(entryId, sketchAddress, sketch);
 				return true;
 			} catch (IOException e) {
 				logger.warn("Failed to persist dirty sketch during eviction", e);
@@ -2766,12 +3782,19 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private void flushDirtySketches() throws IOException {
-		List<SketchAddress> pending;
+		int[] pending;
 		synchronized (sketchCacheLock) {
-			pending = new ArrayList<>(dirtySketches);
+			pending = cacheDirectory.snapshotDirtyEntries();
 		}
 
-		for (SketchAddress address : pending) {
+		for (int entryId : pending) {
+			SketchAddress address;
+			synchronized (sketchCacheLock) {
+				if (!cacheDirectory.isDirty(entryId)) {
+					continue;
+				}
+				address = cacheDirectory.toSketchAddress(entryId);
+			}
 			byte[] payload = null;
 			synchronized (bufA) {
 				UpdateSketch sketch = getResidentSketch(bufA, address);
@@ -2788,19 +3811,29 @@ public class SketchBasedJoinEstimator {
 				}
 			}
 			if (payload != null) {
-				appendSketchPayload(address, payload);
+				appendSketchPayload(entryId, address, payload);
 			}
 		}
 	}
 
 	private void appendSketchPayload(SketchAddress address, UpdateSketch sketch) throws IOException {
 		byte[] payload = serializeSketchPayload(sketch);
-		appendSketchPayload(address, payload);
+		int entryId;
+		synchronized (sketchCacheLock) {
+			entryId = cacheDirectory.findOrAdd(address);
+		}
+		appendSketchPayload(entryId, address, payload);
 	}
 
-	private void appendSketchPayload(SketchAddress address, byte[] payload) throws IOException {
+	private void appendSketchPayload(int entryId, SketchAddress address, UpdateSketch sketch) throws IOException {
+		byte[] payload = serializeSketchPayload(sketch);
+		appendSketchPayload(entryId, address, payload);
+	}
+
+	private void appendSketchPayload(int entryId, SketchAddress address, byte[] payload) throws IOException {
+		int blobId = selectWriteBlobId(payload.length);
 		long offset;
-		MappedChannelEntry entry = getMappedChannelEntry(persistenceBlobFile, true);
+		MappedChannelEntry entry = getMappedChannelEntry(persistenceBlobBaseFile, blobId, true);
 		synchronized (entry) {
 			offset = entry.writePosition;
 			ensureMappedBufferRange(entry, offset, payload.length);
@@ -2810,8 +3843,8 @@ public class SketchBasedJoinEstimator {
 			entry.writePosition = offset + payload.length;
 		}
 		synchronized (sketchCacheLock) {
-			persistedSketchIndex.put(address, new PersistedSketchRef(offset, payload.length));
-			dirtySketches.remove(address);
+			cacheDirectory.setPersistedRef(entryId, blobId, offset, payload.length);
+			cacheDirectory.clearDirty(entryId);
 			manifestDirty.set(true);
 		}
 	}
@@ -2834,21 +3867,22 @@ public class SketchBasedJoinEstimator {
 			out.writeLong(approxStoreSize.get());
 			out.writeLong(lastRebuildPublishMs);
 
-			List<Map.Entry<SketchAddress, PersistedSketchRef>> entries;
+			List<ManifestSketchEntry> entries;
 			synchronized (sketchCacheLock) {
-				entries = new ArrayList<>(persistedSketchIndex.entrySet());
+				entries = cacheDirectory.snapshotPersistedEntries();
 			}
 
 			out.writeInt(entries.size());
-			for (Map.Entry<SketchAddress, PersistedSketchRef> entry : entries) {
-				SketchAddress key = entry.getKey();
-				PersistedSketchRef persistedSketchRef = entry.getValue();
+			for (ManifestSketchEntry entry : entries) {
+				SketchAddress key = entry.address;
+				PersistedSketchRef persistedSketchRef = entry.persistedSketchRef;
 				out.writeByte(key.recType);
 				out.writeBoolean(key.isDelete);
 				out.writeByte(key.axisA);
 				out.writeByte(key.axisB);
 				out.writeInt(key.x);
 				out.writeInt(key.y);
+				out.writeInt(persistedSketchRef.blobId);
 				out.writeLong(persistedSketchRef.offset);
 				out.writeInt(persistedSketchRef.length);
 			}
@@ -2863,7 +3897,7 @@ public class SketchBasedJoinEstimator {
 
 	private void readManifest(Path file) throws IOException {
 		try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(Files.readAllBytes(file)))) {
-			validateManifestHeader(in);
+			int version = validateManifestHeader(in);
 			int buckets = in.readInt();
 			int k = in.readInt();
 			String defCtx = readString(in);
@@ -2882,7 +3916,8 @@ public class SketchBasedJoinEstimator {
 			}
 
 			int count = in.readInt();
-			Map<SketchAddress, PersistedSketchRef> loadedIndex = new HashMap<>();
+			List<ManifestSketchEntry> loadedEntries = new ArrayList<>(count);
+			int maxLoadedBlobId = 0;
 			for (int i = 0; i < count; i++) {
 				byte recType = in.readByte();
 				boolean isDelete = in.readBoolean();
@@ -2890,10 +3925,12 @@ public class SketchBasedJoinEstimator {
 				byte axisB = in.readByte();
 				int x = in.readInt();
 				int y = in.readInt();
+				int blobId = version >= 3 ? in.readInt() : 0;
 				long offset = in.readLong();
 				int length = in.readInt();
 				SketchAddress key = new SketchAddress(recType, isDelete, axisA, axisB, x, y);
-				loadedIndex.put(key, new PersistedSketchRef(offset, length));
+				loadedEntries.add(new ManifestSketchEntry(key, new PersistedSketchRef(blobId, offset, length)));
+				maxLoadedBlobId = Math.max(maxLoadedBlobId, blobId);
 			}
 
 			synchronized (bufA) {
@@ -2903,13 +3940,20 @@ public class SketchBasedJoinEstimator {
 				bufB.clear();
 			}
 			synchronized (sketchCacheLock) {
-				persistedSketchIndex.clear();
-				persistedSketchIndex.putAll(loadedIndex);
-				dirtySketches.clear();
-				residentSketches.clear();
+				cacheDirectory.clear();
+				for (ManifestSketchEntry loadedEntry : loadedEntries) {
+					int entryId = cacheDirectory.findOrAdd(loadedEntry.address);
+					PersistedSketchRef persistedSketchRef = loadedEntry.persistedSketchRef;
+					cacheDirectory.setPersistedRef(entryId, persistedSketchRef.blobId, persistedSketchRef.offset,
+							persistedSketchRef.length);
+					cacheDirectory.clearDirty(entryId);
+				}
+				residentLru.clear();
+				cacheDirectory.clearAllResidentNodes();
 				residentSketchBytes = 0L;
 				manifestDirty.set(false);
 			}
+			activeWriteBlobId = maxLoadedBlobId;
 			current = bufA;
 			usingA = true;
 			seenTriples = seen;
@@ -2919,7 +3963,7 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
-	private static void validateManifestHeader(DataInputStream in) throws IOException {
+	private static int validateManifestHeader(DataInputStream in) throws IOException {
 		for (byte expected : PERSIST_MAGIC) {
 			byte actual = in.readByte();
 			if (expected != actual) {
@@ -2927,10 +3971,12 @@ public class SketchBasedJoinEstimator {
 			}
 		}
 		int version = in.readUnsignedByte();
-		if (version != PERSIST_VERSION) {
+		if (version < 2 || version > PERSIST_VERSION) {
 			throw new IOException(
-					"Unsupported join estimator snapshot version: " + version + " (expected " + PERSIST_VERSION + ")");
+					"Unsupported join estimator snapshot version: " + version + " (expected 2-" + PERSIST_VERSION
+							+ ")");
 		}
+		return version;
 	}
 
 	private static byte[] serializeSketchPayload(UpdateSketch sketch) throws IOException {
@@ -2945,7 +3991,7 @@ public class SketchBasedJoinEstimator {
 	private UpdateSketch readSketchFromBlob(Path blob, PersistedSketchRef persistedSketchRef, int k)
 			throws IOException {
 		byte[] payload = new byte[persistedSketchRef.length];
-		MappedChannelEntry entry = getMappedChannelEntry(blob, false);
+		MappedChannelEntry entry = getMappedChannelEntry(blob, persistedSketchRef.blobId, false);
 		synchronized (entry) {
 			long endOffset = persistedSketchRef.offset + persistedSketchRef.length;
 			if (endOffset > entry.cachedFileSize) {
@@ -2953,8 +3999,9 @@ public class SketchBasedJoinEstimator {
 			}
 			if (persistedSketchRef.offset < 0 || persistedSketchRef.length < 0
 					|| endOffset < persistedSketchRef.offset || endOffset > entry.cachedFileSize) {
-				throw new IOException("Persisted sketch ref exceeds sidecar bounds: offset=" + persistedSketchRef.offset
-						+ " length=" + persistedSketchRef.length + " fileSize=" + entry.cachedFileSize);
+				throw new IOException("Persisted sketch ref exceeds sidecar bounds: blobId=" + persistedSketchRef.blobId
+						+ " offset=" + persistedSketchRef.offset + " length=" + persistedSketchRef.length + " fileSize="
+						+ entry.cachedFileSize);
 			}
 
 			ensureMappedBufferRange(entry, persistedSketchRef.offset, persistedSketchRef.length);
@@ -2967,34 +4014,73 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
-	private MappedChannelEntry getMappedChannelEntry(Path path, boolean writeAccess) throws IOException {
-		Path normalizedPath = path.toAbsolutePath().normalize();
+	private MappedChannelEntry getMappedChannelEntry(Path baseBlobPath, int blobId, boolean writeAccess)
+			throws IOException {
 		synchronized (mappedChannelLock) {
-			if (writeAccess) {
-				if (isOpenEntry(writeMappedChannelEntry, writeMappedChannelPath, normalizedPath)) {
-					return writeMappedChannelEntry;
-				}
-				closeMappedChannelEntry(writeMappedChannelEntry);
-				writeMappedChannelEntry = openMappedChannelEntry(normalizedPath, true);
-				writeMappedChannelPath = normalizedPath;
-				return writeMappedChannelEntry;
-			}
-
-			if (isOpenEntry(writeMappedChannelEntry, writeMappedChannelPath, normalizedPath)) {
-				return writeMappedChannelEntry;
-			}
-			if (isOpenEntry(readMappedChannelEntry, readMappedChannelPath, normalizedPath)) {
-				return readMappedChannelEntry;
-			}
-			closeMappedChannelEntry(readMappedChannelEntry);
-			readMappedChannelEntry = openMappedChannelEntry(normalizedPath, false);
-			readMappedChannelPath = normalizedPath;
-			return readMappedChannelEntry;
+			return getMappedChannelEntryLocked(baseBlobPath, blobId, writeAccess);
 		}
 	}
 
-	private static boolean isOpenEntry(MappedChannelEntry entry, Path entryPath, Path path) {
-		return entry != null && entry.channel.isOpen() && Objects.equals(entryPath, path);
+	private MappedChannelEntry getMappedChannelEntryLocked(Path baseBlobPath, int blobId, boolean writeAccess)
+			throws IOException {
+		if (blobId < 0) {
+			throw new IOException("Invalid blob id: " + blobId);
+		}
+		ensureBlobEntryCapacity(blobId);
+		if (writeAccess) {
+			MappedChannelEntry entry = writeMappedBlobEntries.get(blobId);
+			if (!isOpenEntry(entry)) {
+				closeMappedChannelEntry(entry);
+				entry = openMappedChannelEntry(sidecarPath(baseBlobPath, blobId).toAbsolutePath().normalize(), true);
+				writeMappedBlobEntries.set(blobId, entry);
+			}
+			return entry;
+		}
+		MappedChannelEntry writeEntry = writeMappedBlobEntries.get(blobId);
+		if (isOpenEntry(writeEntry)) {
+			return writeEntry;
+		}
+		MappedChannelEntry readEntry = readMappedBlobEntries.get(blobId);
+		if (!isOpenEntry(readEntry)) {
+			closeMappedChannelEntry(readEntry);
+			readEntry = openMappedChannelEntry(sidecarPath(baseBlobPath, blobId).toAbsolutePath().normalize(), false);
+			readMappedBlobEntries.set(blobId, readEntry);
+		}
+		return readEntry;
+	}
+
+	private void ensureBlobEntryCapacity(int blobId) {
+		while (readMappedBlobEntries.size() <= blobId) {
+			readMappedBlobEntries.add(null);
+		}
+		while (writeMappedBlobEntries.size() <= blobId) {
+			writeMappedBlobEntries.add(null);
+		}
+	}
+
+	private static boolean isOpenEntry(MappedChannelEntry entry) {
+		return entry != null && entry.channel.isOpen();
+	}
+
+	private int selectWriteBlobId(int payloadLength) throws IOException {
+		synchronized (mappedChannelLock) {
+			int blobId = Math.max(0, activeWriteBlobId);
+			while (true) {
+				MappedChannelEntry entry = getMappedChannelEntryLocked(persistenceBlobBaseFile, blobId, true);
+				long writePosition;
+				long projectedWritePosition;
+				synchronized (entry) {
+					writePosition = entry.writePosition;
+					projectedWritePosition = writePosition + payloadLength;
+				}
+				if (writePosition > 0 && projectedWritePosition > maxPersistenceBlobBytes) {
+					blobId++;
+					continue;
+				}
+				activeWriteBlobId = blobId;
+				return blobId;
+			}
+		}
 	}
 
 	private static MappedChannelEntry openMappedChannelEntry(Path normalizedPath, boolean writeAccess)
@@ -3079,20 +4165,76 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private void closeMappedChannels() {
-		MappedChannelEntry readEntry;
-		MappedChannelEntry writeEntry;
+		Set<MappedChannelEntry> entriesToClose = Collections.newSetFromMap(new IdentityHashMap<>());
 		synchronized (mappedChannelLock) {
-			readEntry = readMappedChannelEntry;
-			writeEntry = writeMappedChannelEntry;
-			readMappedChannelEntry = null;
-			writeMappedChannelEntry = null;
-			readMappedChannelPath = null;
-			writeMappedChannelPath = null;
+			for (MappedChannelEntry entry : readMappedBlobEntries) {
+				if (entry != null) {
+					entriesToClose.add(entry);
+				}
+			}
+			for (MappedChannelEntry entry : writeMappedBlobEntries) {
+				if (entry != null) {
+					entriesToClose.add(entry);
+				}
+			}
+			readMappedBlobEntries.clear();
+			writeMappedBlobEntries.clear();
+			activeWriteBlobId = 0;
 		}
-		closeMappedChannelEntry(readEntry);
-		if (writeEntry != readEntry) {
-			closeMappedChannelEntry(writeEntry);
+		for (MappedChannelEntry entry : entriesToClose) {
+			closeMappedChannelEntry(entry);
 		}
+	}
+
+	List<DebugSketchAddress> debugResidentSketches() {
+		List<DebugSketchAddress> resident = new ArrayList<>();
+		synchronized (sketchCacheLock) {
+			for (int node = residentLru.headNode(); node != -1; node = residentLru.nextNode(node)) {
+				int entryId = residentLru.entryId(node);
+				BufferSlot slot = residentLru.slot(node) == 0 ? BufferSlot.A : BufferSlot.B;
+				resident.add(new DebugSketchAddress(slot, cacheDirectory.toSketchAddress(entryId)));
+			}
+		}
+		return resident;
+	}
+
+	List<DebugSketchAddress> debugPersistedSketches() {
+		List<DebugSketchAddress> persisted = new ArrayList<>();
+		synchronized (sketchCacheLock) {
+			for (ManifestSketchEntry entry : cacheDirectory.snapshotPersistedEntries()) {
+				persisted.add(new DebugSketchAddress(null, entry.address));
+			}
+		}
+		return persisted;
+	}
+
+	List<DebugMappedChannelView> debugMappedChannels() {
+		List<DebugMappedChannelView> channels = new ArrayList<>();
+		synchronized (mappedChannelLock) {
+			for (int blobId = 0; blobId < readMappedBlobEntries.size(); blobId++) {
+				MappedChannelEntry entry = readMappedBlobEntries.get(blobId);
+				if (entry != null) {
+					channels.add(new DebugMappedChannelView(blobId, false, entry.channel, entry.mappedBuffer));
+				}
+			}
+			for (int blobId = 0; blobId < writeMappedBlobEntries.size(); blobId++) {
+				MappedChannelEntry entry = writeMappedBlobEntries.get(blobId);
+				if (entry != null) {
+					channels.add(new DebugMappedChannelView(blobId, true, entry.channel, entry.mappedBuffer));
+				}
+			}
+		}
+		return channels;
+	}
+
+	int debugPendingIncrementalCount() {
+		synchronized (incrementalBufferLock) {
+			return incrementalBufferCount;
+		}
+	}
+
+	void debugFlushPendingIncremental() {
+		flushPendingIncremental();
 	}
 
 	private static void closeMappedChannelEntry(MappedChannelEntry entry) {
@@ -3180,10 +4322,14 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private void updateSketch(State state, SketchAddress address, long value) {
-		UpdateSketch sketch = getSketchForWrite(state, address);
+		int entryId;
+		synchronized (sketchCacheLock) {
+			entryId = cacheDirectory.findOrAdd(address);
+		}
+		UpdateSketch sketch = getSketchForWrite(state, address, entryId);
 		sketch.update(value);
-		markDirty(address);
-		touchResidentSketch(state, address, sketch, false);
+		markDirty(entryId);
+		touchResidentSketch(state, entryId, sketch, false);
 	}
 
 	private void updatePairSketch(State state, boolean isDelete, Pair pair, byte recType, long key, long value) {
@@ -3313,7 +4459,8 @@ public class SketchBasedJoinEstimator {
 		double churnReaddThreshold = 0.20;
 		double churnRemovalRatioThreshold = 0.50;
 		double minSketchMemoryPercent = 0.01;
-		double maxSketchMemoryPercent = 0.10;
+		double maxSketchMemoryPercent = 0.02;
+		long maxPersistenceBlobBytes = DEFAULT_MAX_PERSISTENCE_BLOB_BYTES;
 
 		/** Return a new config with all defaults. */
 		public static Config defaults() {
@@ -3424,6 +4571,12 @@ public class SketchBasedJoinEstimator {
 		public Config withMaxSketchMemoryPercent(double fraction) {
 			double normalized = Double.isFinite(fraction) ? fraction : this.maxSketchMemoryPercent;
 			this.maxSketchMemoryPercent = SketchBasedJoinEstimator.clamp(normalized, this.minSketchMemoryPercent, 1.0d);
+			return this;
+		}
+
+		/** Maximum bytes per persistence blob shard before rolling over to the next sidecar shard. */
+		public Config withMaxPersistenceBlobBytes(long bytes) {
+			this.maxPersistenceBlobBytes = Math.max(1L, bytes);
 			return this;
 		}
 	}
