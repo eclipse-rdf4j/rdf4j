@@ -173,7 +173,8 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		assertTrue(reader.isReady());
 		reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue());
 		reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p2.stringValue());
-		setSketchBudgetBytes(reader, 0L, residentSketchBytes(reader));
+		long residentBytes = residentSketchBytes(reader);
+		setSketchBudgetBytes(reader, residentBytes, residentBytes);
 		reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue());
 		reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p3.stringValue());
 
@@ -181,6 +182,29 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		assertTrue(residentPredicateHashes.contains(hash(reader, p1.stringValue())));
 		assertTrue(residentPredicateHashes.contains(hash(reader, p3.stringValue())));
 		assertFalse(residentPredicateHashes.contains(hash(reader, p2.stringValue())));
+	}
+
+	@Test
+	void dirtyEvictionDefersManifestWriteUntilPersist(@TempDir Path tempDir) throws Exception {
+		Resource s = VF.createIRI("urn:s");
+		IRI p = VF.createIRI("urn:p");
+		Value o = VF.createIRI("urn:o");
+
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		Path sidecar = snapshot.resolveSibling("join-estimator.rjes.sketches");
+		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		writer.configurePersistence(snapshot, false);
+		setSketchBudgetBytes(writer, 0L, 0L);
+
+		writer.addStatement(st(s, p, o));
+
+		assertTrue(Files.exists(sidecar), "Expected payload sidecar to be written by dirty eviction");
+		assertFalse(Files.exists(snapshot), "Manifest writes should be deferred until explicit persist");
+		assertTrue(hasPersistedSinglePredicateSketch(writer, p.stringValue()),
+				"Expected persisted index to be updated in memory for lazy reload");
+
+		assertTrue(writer.persistIfDirty(), "Expected persistIfDirty to flush deferred manifest");
+		assertTrue(Files.exists(snapshot), "Expected manifest written by explicit persist");
 	}
 
 	@Test
@@ -231,6 +255,28 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		assertTrue(recordTypes.contains((byte) 4), "pair comp1 sketches should be tracked");
 		assertTrue(recordTypes.contains((byte) 5), "pair comp2 sketches should be tracked");
 		assertTrue(hasDeleteResidentSketch(estimator), "tombstone sketches should be tracked in the same LRU");
+	}
+
+	@Test
+	void evictionUsesHysteresisAndDrainsToMinBudget(@TempDir Path tempDir) throws Exception {
+		Resource s = VF.createIRI("urn:s");
+		Value o = VF.createIRI("urn:o");
+		IRI p1 = VF.createIRI("urn:p1");
+		IRI p2 = VF.createIRI("urn:p2");
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		estimator.configurePersistence(tempDir.resolve("join-estimator.rjes"), false);
+		setSketchBudgetBytes(estimator, 0L, Long.MAX_VALUE);
+
+		estimator.addStatement(st(s, p1, o));
+		long residentAfterWarmup = residentSketchBytes(estimator);
+		assertTrue(residentAfterWarmup > 0L, "Expected warmup statement to materialize resident sketches");
+
+		setSketchBudgetBytes(estimator, 0L, Math.max(1L, residentAfterWarmup / 2L));
+		estimator.addStatement(st(s, p2, o));
+
+		assertEquals(0L, residentSketchBytes(estimator),
+				"Expected eviction to drain resident cache down to min budget");
 	}
 
 	@Test

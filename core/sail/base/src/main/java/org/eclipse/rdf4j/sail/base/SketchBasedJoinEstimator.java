@@ -26,7 +26,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -328,6 +327,8 @@ public class SketchBasedJoinEstimator {
 
 	/** True when in-memory state changed and should be snapshotted at the next scheduled persist point. */
 	private final AtomicBoolean dirty = new AtomicBoolean(false);
+	/** True when persisted index metadata changed and manifest rewrite is pending. */
+	private final AtomicBoolean manifestDirty = new AtomicBoolean(false);
 
 	private volatile BooleanSupplier rebuildAllowedSupplier;
 	private final Object persistLock = new Object();
@@ -897,6 +898,8 @@ public class SketchBasedJoinEstimator {
 			updatePairSketch(t, isDelete, Pair.OC, REC_PAIR_COMP2, ocKey, hp);
 		} catch (NullPointerException npe) {
 			// ignore NPEs from null values (e.g. missing context)
+		} finally {
+			enforceSketchBudget();
 		}
 	}
 
@@ -2322,16 +2325,19 @@ public class SketchBasedJoinEstimator {
 		if (!persistenceEnabled || persistenceFile == null || persistenceBlobFile == null) {
 			return false;
 		}
-		if (!dirty.get()) {
+		if (!dirty.get() && !manifestDirty.get()) {
 			return false;
 		}
 		synchronized (persistLock) {
-			if (!dirty.get()) {
+			if (!dirty.get() && !manifestDirty.get()) {
 				return false;
 			}
 			try {
 				flushDirtySketches();
-				writeManifest(persistenceFile);
+				if (manifestDirty.get()) {
+					writeManifest(persistenceFile);
+					manifestDirty.set(false);
+				}
 				dirty.set(false);
 				return true;
 			} catch (Throwable t) {
@@ -2382,6 +2388,7 @@ public class SketchBasedJoinEstimator {
 				sketchesLoaded = true;
 				rebuildRequired.set(false);
 				dirty.set(false);
+				manifestDirty.set(false);
 				return true;
 			} catch (Throwable t) {
 				if (isUnsupportedSnapshotVersion(t)) {
@@ -2461,7 +2468,7 @@ public class SketchBasedJoinEstimator {
 	private UpdateSketch getSketchForRead(State state, SketchAddress address) {
 		UpdateSketch sketch = getResidentSketch(state, address);
 		if (sketch != null) {
-			touchResidentSketch(state, address, sketch);
+			touchResidentSketch(state, address, sketch, false);
 			return sketch;
 		}
 		return loadPersistedSketch(state, address);
@@ -2503,11 +2510,11 @@ public class SketchBasedJoinEstimator {
 		if (sketch == null) {
 			removeResidentSketchTracking(state, address);
 		} else {
-			touchResidentSketch(state, address, sketch);
+			touchResidentSketch(state, address, sketch, true);
 		}
 	}
 
-	private void touchResidentSketch(State state, SketchAddress address, UpdateSketch sketch) {
+	private void touchResidentSketch(State state, SketchAddress address, UpdateSketch sketch, boolean enforceBudget) {
 		ResidentSketchAddress residentSketchAddress = new ResidentSketchAddress(slotOf(state), address);
 		long bytes = estimatedSketchBytes(sketch);
 		synchronized (sketchCacheLock) {
@@ -2517,7 +2524,9 @@ public class SketchBasedJoinEstimator {
 			}
 			residentSketchBytes += bytes;
 		}
-		enforceSketchBudget();
+		if (enforceBudget) {
+			enforceSketchBudget();
+		}
 	}
 
 	private void removeResidentSketchTracking(State state, SketchAddress address) {
@@ -2556,11 +2565,18 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private void enforceSketchBudget() {
+		long targetBytes;
+		synchronized (sketchCacheLock) {
+			if (residentSketchBytes <= maxSketchMemoryBytes || residentSketches.isEmpty()) {
+				return;
+			}
+			targetBytes = minSketchMemoryBytes;
+		}
+
 		while (true) {
 			ResidentSketchAddress candidate;
 			synchronized (sketchCacheLock) {
-				if (residentSketchBytes <= maxSketchMemoryBytes || residentSketchBytes <= minSketchMemoryBytes
-						|| residentSketches.isEmpty()) {
+				if (residentSketchBytes <= targetBytes || residentSketches.isEmpty()) {
 					return;
 				}
 				candidate = residentSketches.entrySet().iterator().next().getKey();
@@ -2574,29 +2590,39 @@ public class SketchBasedJoinEstimator {
 
 	private boolean evictResidentSketch(ResidentSketchAddress residentSketchAddress) {
 		State state = stateOf(residentSketchAddress.slot);
+		SketchAddress sketchAddress = residentSketchAddress.sketchAddress;
+		UpdateSketch sketch;
+		boolean dirtySketch;
 		synchronized (state) {
-			UpdateSketch sketch = getResidentSketch(state, residentSketchAddress.sketchAddress);
+			sketch = getResidentSketch(state, sketchAddress);
 			if (sketch == null) {
-				removeResidentSketchTracking(state, residentSketchAddress.sketchAddress);
+				removeResidentSketchTracking(state, sketchAddress);
 				return true;
 			}
-			if (isDirty(residentSketchAddress.sketchAddress)) {
-				if (!persistenceEnabled || persistenceFile == null || persistenceBlobFile == null) {
-					return false;
-				}
-				synchronized (persistLock) {
-					try {
-						appendSketchPayload(residentSketchAddress.sketchAddress, sketch);
-						writeManifest(persistenceFile);
-					} catch (IOException e) {
-						logger.warn("Failed to persist dirty sketch during eviction", e);
-						return false;
+			dirtySketch = isDirty(sketchAddress);
+			if (dirtySketch && (!persistenceEnabled || persistenceFile == null || persistenceBlobFile == null)) {
+				return false;
+			}
+			setResidentSketch(state, sketchAddress, null);
+			removeResidentSketchTracking(state, sketchAddress);
+		}
+		if (!dirtySketch) {
+			return true;
+		}
+		synchronized (persistLock) {
+			try {
+				appendSketchPayload(sketchAddress, sketch);
+				return true;
+			} catch (IOException e) {
+				logger.warn("Failed to persist dirty sketch during eviction", e);
+				synchronized (state) {
+					if (getResidentSketch(state, sketchAddress) == null) {
+						setResidentSketch(state, sketchAddress, sketch);
+						touchResidentSketch(state, sketchAddress, sketch, false);
 					}
 				}
+				return false;
 			}
-			setResidentSketch(state, residentSketchAddress.sketchAddress, null);
-			removeResidentSketchTracking(state, residentSketchAddress.sketchAddress);
-			return true;
 		}
 	}
 
@@ -2733,6 +2759,7 @@ public class SketchBasedJoinEstimator {
 		synchronized (sketchCacheLock) {
 			persistedSketchIndex.put(address, new PersistedSketchRef(offset, payload.length));
 			dirtySketches.remove(address);
+			manifestDirty.set(true);
 		}
 	}
 
@@ -2758,31 +2785,6 @@ public class SketchBasedJoinEstimator {
 			synchronized (sketchCacheLock) {
 				entries = new ArrayList<>(persistedSketchIndex.entrySet());
 			}
-			Collections.sort(entries, (a, b) -> {
-				SketchAddress ka = a.getKey();
-				SketchAddress kb = b.getKey();
-				int cmp = Byte.compare(ka.recType, kb.recType);
-				if (cmp != 0) {
-					return cmp;
-				}
-				cmp = Boolean.compare(ka.isDelete, kb.isDelete);
-				if (cmp != 0) {
-					return cmp;
-				}
-				cmp = Byte.compare(ka.axisA, kb.axisA);
-				if (cmp != 0) {
-					return cmp;
-				}
-				cmp = Byte.compare(ka.axisB, kb.axisB);
-				if (cmp != 0) {
-					return cmp;
-				}
-				cmp = Integer.compare(ka.x, kb.x);
-				if (cmp != 0) {
-					return cmp;
-				}
-				return Integer.compare(ka.y, kb.y);
-			});
 
 			out.writeInt(entries.size());
 			for (Map.Entry<SketchAddress, PersistedSketchRef> entry : entries) {
@@ -2853,6 +2855,7 @@ public class SketchBasedJoinEstimator {
 				dirtySketches.clear();
 				residentSketches.clear();
 				residentSketchBytes = 0L;
+				manifestDirty.set(false);
 			}
 			current = bufA;
 			usingA = true;
@@ -2957,7 +2960,7 @@ public class SketchBasedJoinEstimator {
 		UpdateSketch sketch = getSketchForWrite(state, address);
 		sketch.update(value);
 		markDirty(address);
-		touchResidentSketch(state, address, sketch);
+		touchResidentSketch(state, address, sketch, false);
 	}
 
 	private void updatePairSketch(State state, boolean isDelete, Pair pair, byte recType, long key, long value) {
