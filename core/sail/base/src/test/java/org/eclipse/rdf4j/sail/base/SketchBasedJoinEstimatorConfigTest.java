@@ -14,10 +14,10 @@ package org.eclipse.rdf4j.sail.base;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.List;
 
-import org.apache.datasketches.thetacommon.ThetaUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -130,6 +130,65 @@ class SketchBasedJoinEstimatorConfigTest {
 		var kField = bufA.getClass().getDeclaredField("k");
 		kField.setAccessible(true);
 
-		assertEquals(ThetaUtil.DEFAULT_NOMINAL_ENTRIES, kField.getInt(bufA));
+		assertEquals(1024, kField.getInt(bufA));
+	}
+
+	@Test
+	void lowMemorySupplierApiRemoved() {
+		assertThrows(NoSuchMethodException.class, () -> SketchBasedJoinEstimator.class
+				.getMethod("setLowMemorySupplier", java.util.function.BooleanSupplier.class));
+	}
+
+	@Test
+	void defaultsExposeMin1Max2Percent() {
+		SketchBasedJoinEstimator.Config cfg = SketchBasedJoinEstimator.Config.defaults();
+		assertEquals(0.01d, cfg.minSketchMemoryPercent, 0.0d);
+		assertEquals(0.02d, cfg.maxSketchMemoryPercent, 0.0d);
+	}
+
+	@Test
+	void maxPercentClampedAtLeastMin() {
+		SketchBasedJoinEstimator.Config cfg = SketchBasedJoinEstimator.Config.defaults()
+				.withMinSketchMemoryPercent(0.30d)
+				.withMaxSketchMemoryPercent(0.10d);
+
+		assertEquals(0.30d, cfg.minSketchMemoryPercent, 0.0d);
+		assertEquals(0.30d, cfg.maxSketchMemoryPercent, 0.0d);
+	}
+
+	@Test
+	void systemPropertyOverridesForSketchMemoryPercents() throws Exception {
+		String minKey = "org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.minSketchMemoryPercent";
+		String maxKey = "org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.maxSketchMemoryPercent";
+		String prevMin = System.getProperty(minKey);
+		String prevMax = System.getProperty(maxKey);
+		try {
+			System.setProperty(minKey, "0.04");
+			System.setProperty(maxKey, "0.07");
+			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+					SketchBasedJoinEstimator.Config.defaults()
+							.withMinSketchMemoryPercent(0.01d)
+							.withMaxSketchMemoryPercent(0.02d));
+
+			var minBytesField = SketchBasedJoinEstimator.class.getDeclaredField("minSketchMemoryBytes");
+			var maxBytesField = SketchBasedJoinEstimator.class.getDeclaredField("maxSketchMemoryBytes");
+			minBytesField.setAccessible(true);
+			maxBytesField.setAccessible(true);
+
+			long heapMax = Math.max(64L * 1024L * 1024L, Runtime.getRuntime().maxMemory());
+			assertEquals(Math.round(heapMax * 0.04d), minBytesField.getLong(estimator));
+			assertEquals(Math.round(heapMax * 0.07d), maxBytesField.getLong(estimator));
+		} finally {
+			if (prevMin == null) {
+				System.clearProperty(minKey);
+			} else {
+				System.setProperty(minKey, prevMin);
+			}
+			if (prevMax == null) {
+				System.clearProperty(maxKey);
+			} else {
+				System.setProperty(maxKey, prevMax);
+			}
+		}
 	}
 }

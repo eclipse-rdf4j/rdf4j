@@ -64,7 +64,7 @@ import org.openjdk.jmh.runner.options.TimeValue;
 public class ThemeQueryBenchmark {
 
 	private static final String STORE_NAME = "lmdb";
-	private static final File STORE_DIRECTORY = new File("core/sail/lmdb/target", "lmdb-theme-query-benchmark");
+	private static final File STORE_DIRECTORY = new File("target", "lmdb-theme-query-benchmark");
 	private static final String TRIPLES_DATA_FILE = "triples/data.mdb";
 	private static final String VALUES_DATA_FILE = "values/data.mdb";
 	private static final String EXPECTED_DB_FILE_SIZES_FILE = "expected-db-file-sizes.properties";
@@ -112,6 +112,7 @@ public class ThemeQueryBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
+		System.out.println(STORE_DIRECTORY.getAbsolutePath());
 		theme = Theme.valueOf(themeName);
 		query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
 		expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
@@ -236,6 +237,7 @@ public class ThemeQueryBenchmark {
 			connection.begin(IsolationLevels.NONE);
 			var inserter = new RDFInserter(connection);
 			for (var themeDataset : Theme.values()) {
+				System.out.println("Loading theme dataset: " + themeDataset);
 				ThemeDataSetGenerator.generate(themeDataset, inserter);
 			}
 			connection.commit();

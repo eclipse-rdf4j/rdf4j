@@ -30,7 +30,6 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -70,12 +69,6 @@ class LmdbSailStore implements SailStore {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbSailStore.class);
 	private static final String JOIN_ESTIMATOR_FILE_NAME = "join-estimator.rjes";
-	private static final Runtime RUNTIME = Runtime.getRuntime();
-	private static final long MAX_MEMORY = RUNTIME.maxMemory();
-	private static final long LOW_MEM_ABS = 64L * 1024L * 1024L;
-	private static final double LOW_MEM_RATIO = 1.0 / 8.0;
-	private static final BooleanSupplier DEFAULT_LOW_MEMORY_SUPPLIER = LmdbSailStore::isLowMemoryHeuristic;
-	private static volatile BooleanSupplier lowMemorySupplier = DEFAULT_LOW_MEMORY_SUPPLIER;
 
 	private final TripleStore tripleStore;
 
@@ -239,7 +232,6 @@ class LmdbSailStore implements SailStore {
 			initialized = true;
 			Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
 			boolean snapshotExists = Files.exists(estimatorPath);
-			sketchBasedJoinEstimator.setLowMemorySupplier(LmdbSailStore::isLowMemory);
 			sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
 			sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
 			if (!snapshotExists) {
@@ -260,28 +252,6 @@ class LmdbSailStore implements SailStore {
 
 	SketchBasedJoinEstimator getSketchBasedJoinEstimator() {
 		return sketchBasedJoinEstimator;
-	}
-
-	private static boolean isLowMemoryHeuristic() {
-		long total = RUNTIME.totalMemory();
-		long free = RUNTIME.freeMemory();
-		long used = total - free;
-		long freeToAllocate = MAX_MEMORY - used;
-		return freeToAllocate < LOW_MEM_ABS || (freeToAllocate + 0.0) / (MAX_MEMORY + 0.0) < LOW_MEM_RATIO;
-	}
-
-	private static boolean isLowMemory() {
-		BooleanSupplier supplier = lowMemorySupplier;
-		try {
-			return supplier.getAsBoolean();
-		} catch (RuntimeException e) {
-			logger.debug("Failed to evaluate low-memory supplier, falling back to heuristic", e);
-			return isLowMemoryHeuristic();
-		}
-	}
-
-	static void setLowMemorySupplierForTests(BooleanSupplier supplier) {
-		lowMemorySupplier = supplier == null ? DEFAULT_LOW_MEMORY_SUPPLIER : supplier;
 	}
 
 	void rollback() throws SailException {
@@ -675,13 +645,7 @@ class LmdbSailStore implements SailStore {
 						valueStore.commit();
 						applyEstimatorUpdates();
 						nonIsolatedUpdatesApplied = false;
-						if (isLowMemory()) {
-							// Persist synchronously before unloading so readiness can recover via snapshot load.
-							sketchBasedJoinEstimator.persistIfDirty();
-							sketchBasedJoinEstimator.unload();
-						} else {
-							scheduleEstimatorPersist();
-						}
+						scheduleEstimatorPersist();
 						// do not set flag to false until _after_ commit is successfully completed.
 						storeTxnStarted.set(false);
 					}

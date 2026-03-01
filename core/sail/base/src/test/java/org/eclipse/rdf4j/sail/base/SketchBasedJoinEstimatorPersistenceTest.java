@@ -14,12 +14,18 @@ package org.eclipse.rdf4j.sail.base;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.lang.ref.SoftReference;
+import java.io.DataOutputStream;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -144,63 +150,103 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
-	void lowMemorySupplierBlocksLazyLoad(@TempDir Path tempDir) {
+	void evictsLeastRecentlyUsedSketchWhenOverBudget(@TempDir Path tempDir) throws Exception {
 		Resource s = VF.createIRI("urn:s");
-		IRI p = VF.createIRI("urn:p");
 		Value o = VF.createIRI("urn:o");
+		IRI p1 = VF.createIRI("urn:p1");
+		IRI p2 = VF.createIRI("urn:p2");
+		IRI p3 = VF.createIRI("urn:p3");
 
 		StubSailStore sourceStore = new StubSailStore();
-		sourceStore.add(st(s, p, o));
-		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(sourceStore, smallConfig());
-		writer.rebuildOnceSlow();
+		sourceStore.add(st(s, p1, o));
+		sourceStore.add(st(s, p2, o));
+		sourceStore.add(st(s, p3, o));
 
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(sourceStore, smallConfig());
+		writer.rebuildOnceSlow();
 		writer.configurePersistence(snapshot, false);
 		assertTrue(writer.persistIfDirty());
 
 		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
 		reader.configurePersistence(snapshot, true);
-		reader.setLowMemorySupplier(() -> true);
-		assertFalse(reader.isReady(), "Low-memory gate must block lazy-load");
+		assertTrue(reader.isReady());
+		setSketchBudgetBytes(reader, 0L, 24L);
 
-		reader.setLowMemorySupplier(() -> false);
-		assertTrue(reader.isReady(), "Readiness should recover when memory gate clears");
+		reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue());
+		reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p2.stringValue());
+		reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue());
+		reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p3.stringValue());
+
+		Set<Integer> residentPredicateHashes = residentSinglePredicateHashes(reader);
+		assertTrue(residentPredicateHashes.contains(hash(reader, p1.stringValue())));
+		assertTrue(residentPredicateHashes.contains(hash(reader, p3.stringValue())));
+		assertFalse(residentPredicateHashes.contains(hash(reader, p2.stringValue())));
 	}
 
 	@Test
-	void cachedSnapshotLoadWorksWithoutReloadingFromDisk(@TempDir Path tempDir) throws Exception {
+	void dirtyEvictionPersistsSketchAndReloadsOnDemand(@TempDir Path tempDir) throws Exception {
 		Resource s = VF.createIRI("urn:s");
 		IRI p = VF.createIRI("urn:p");
 		Value o = VF.createIRI("urn:o");
 
-		StubSailStore sourceStore = new StubSailStore();
-		sourceStore.add(st(s, p, o));
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
-
-		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(sourceStore, smallConfig());
-		writer.rebuildOnceSlow();
+		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
 		writer.configurePersistence(snapshot, false);
-		assertTrue(writer.persistIfDirty());
+		setSketchBudgetBytes(writer, 0L, 0L);
 
-		SketchBasedJoinEstimator warmReader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-		warmReader.configurePersistence(snapshot, true);
-		assertTrue(warmReader.isReady(), "Expected first lazy load from disk");
+		writer.addStatement(st(s, p, o));
 
-		Files.delete(snapshot);
+		assertFalse(residentSinglePredicateHashes(writer).contains(hash(writer, p.stringValue())),
+				"Expected predicate sketch to be evicted from resident cache");
+		assertTrue(writer.persistIfDirty(), "Expected explicit persist to flush manifest/index");
+		assertTrue(Files.exists(snapshot), "Expected manifest written after persistence flush");
+		assertTrue(Files.exists(snapshot.resolveSibling("join-estimator.rjes.sketches")),
+				"Expected sidecar blob file written by dirty eviction");
 
-		SketchBasedJoinEstimator cachedReader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-		cachedReader.configurePersistence(snapshot, true);
-		cachedReader.unload();
-		assertTrue(cachedReader.isReady(), "Expected cached lazy load without re-reading snapshot file");
+		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		reader.configurePersistence(snapshot, true);
+		assertTrue(reader.isReady());
+		assertEquals(1.0, reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()), 1.0);
 	}
 
 	@Test
-	void snapshotCachePayloadUsesSoftReference() throws Exception {
-		Class<?> cacheEntryClass = Class
-				.forName("org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator$SnapshotCacheEntry");
-		var payloadField = cacheEntryClass.getDeclaredField("payloadRef");
+	void allSketchFamiliesParticipateInLruBudget(@TempDir Path tempDir) throws Exception {
+		Resource s = VF.createIRI("urn:s");
+		IRI p = VF.createIRI("urn:p");
+		Value o = VF.createIRI("urn:o");
+		Resource c = VF.createIRI("urn:c");
 
-		assertEquals(SoftReference.class, payloadField.getType());
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		estimator.configurePersistence(tempDir.resolve("join-estimator.rjes"), false);
+		setSketchBudgetBytes(estimator, 0L, Long.MAX_VALUE / 4L);
+
+		Statement statement = st(s, p, o, c);
+		estimator.addStatement(statement);
+		estimator.deleteStatement(statement);
+
+		Set<Byte> recordTypes = residentRecordTypes(estimator);
+		assertTrue(recordTypes.contains((byte) 1), "single sketches should be tracked");
+		assertTrue(recordTypes.contains((byte) 2), "single complement sketches should be tracked");
+		assertTrue(recordTypes.contains((byte) 3), "pair triple sketches should be tracked");
+		assertTrue(recordTypes.contains((byte) 4), "pair comp1 sketches should be tracked");
+		assertTrue(recordTypes.contains((byte) 5), "pair comp2 sketches should be tracked");
+		assertTrue(hasDeleteResidentSketch(estimator), "tombstone sketches should be tracked in the same LRU");
+	}
+
+	@Test
+	void legacySnapshotVersionIsRejected(@TempDir Path tempDir) throws Exception {
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(snapshot))) {
+			out.write(new byte[] { 'R', 'J', 'E', 'S' });
+			out.writeByte(1);
+		}
+
+		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		reader.configurePersistence(snapshot, true);
+		IllegalStateException exception = assertThrows(IllegalStateException.class, reader::isReady);
+		assertNotNull(exception.getMessage());
+		assertTrue(exception.getMessage().contains("Unsupported join estimator snapshot version"));
 	}
 
 	@Test
@@ -233,6 +279,103 @@ class SketchBasedJoinEstimatorPersistenceTest {
 			stopFuture.get(2, TimeUnit.SECONDS);
 			exec.shutdownNow();
 		}
+	}
+
+	private static int hash(SketchBasedJoinEstimator estimator, String value) throws Exception {
+		Method hashMethod = SketchBasedJoinEstimator.class.getDeclaredMethod("hash", String.class);
+		hashMethod.setAccessible(true);
+		return (int) hashMethod.invoke(estimator, value);
+	}
+
+	private static void setSketchBudgetBytes(SketchBasedJoinEstimator estimator, long minBytes, long maxBytes)
+			throws Exception {
+		Field minField = SketchBasedJoinEstimator.class.getDeclaredField("minSketchMemoryBytes");
+		Field maxField = SketchBasedJoinEstimator.class.getDeclaredField("maxSketchMemoryBytes");
+		minField.setAccessible(true);
+		maxField.setAccessible(true);
+		minField.setLong(estimator, minBytes);
+		maxField.setLong(estimator, maxBytes);
+	}
+
+	private static Set<Integer> residentSinglePredicateHashes(SketchBasedJoinEstimator estimator) throws Exception {
+		Set<Integer> hashes = new HashSet<>();
+		for (Object address : residentSketchAddresses(estimator)) {
+			byte recType = getByteField(address, "recType");
+			boolean isDelete = getBooleanField(address, "isDelete");
+			byte axisA = getByteField(address, "axisA");
+			int x = getIntField(address, "x");
+			if (recType == 1 && !isDelete && axisA == (byte) SketchBasedJoinEstimator.Component.P.ordinal()) {
+				hashes.add(x);
+			}
+		}
+		return hashes;
+	}
+
+	private static boolean hasPersistedSinglePredicateSketch(SketchBasedJoinEstimator estimator, String predicate)
+			throws Exception {
+		int predicateHash = hash(estimator, predicate);
+		Field indexField = SketchBasedJoinEstimator.class.getDeclaredField("persistedSketchIndex");
+		indexField.setAccessible(true);
+		Map<?, ?> index = (Map<?, ?>) indexField.get(estimator);
+		for (Object address : index.keySet()) {
+			byte recType = getByteField(address, "recType");
+			boolean isDelete = getBooleanField(address, "isDelete");
+			byte axisA = getByteField(address, "axisA");
+			int x = getIntField(address, "x");
+			if (recType == 1 && !isDelete && axisA == (byte) SketchBasedJoinEstimator.Component.P.ordinal()
+					&& x == predicateHash) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static Set<Byte> residentRecordTypes(SketchBasedJoinEstimator estimator) throws Exception {
+		Set<Byte> recordTypes = new HashSet<>();
+		for (Object address : residentSketchAddresses(estimator)) {
+			recordTypes.add(getByteField(address, "recType"));
+		}
+		return recordTypes;
+	}
+
+	private static boolean hasDeleteResidentSketch(SketchBasedJoinEstimator estimator) throws Exception {
+		for (Object address : residentSketchAddresses(estimator)) {
+			if (getBooleanField(address, "isDelete")) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static Set<Object> residentSketchAddresses(SketchBasedJoinEstimator estimator) throws Exception {
+		Field residentField = SketchBasedJoinEstimator.class.getDeclaredField("residentSketches");
+		residentField.setAccessible(true);
+		Map<?, ?> resident = (Map<?, ?>) residentField.get(estimator);
+		Set<Object> addresses = new HashSet<>();
+		for (Object key : resident.keySet()) {
+			Field sketchAddressField = key.getClass().getDeclaredField("sketchAddress");
+			sketchAddressField.setAccessible(true);
+			addresses.add(sketchAddressField.get(key));
+		}
+		return addresses;
+	}
+
+	private static byte getByteField(Object target, String name) throws Exception {
+		Field field = target.getClass().getDeclaredField(name);
+		field.setAccessible(true);
+		return field.getByte(target);
+	}
+
+	private static int getIntField(Object target, String name) throws Exception {
+		Field field = target.getClass().getDeclaredField(name);
+		field.setAccessible(true);
+		return field.getInt(target);
+	}
+
+	private static boolean getBooleanField(Object target, String name) throws Exception {
+		Field field = target.getClass().getDeclaredField(name);
+		field.setAccessible(true);
+		return field.getBoolean(target);
 	}
 
 	private static final class BlockingRebuildStore implements SailStore {

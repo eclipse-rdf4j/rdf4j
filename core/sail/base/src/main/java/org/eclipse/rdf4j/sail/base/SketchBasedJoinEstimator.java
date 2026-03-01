@@ -17,27 +17,29 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
-import java.io.EOFException;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.lang.ref.SoftReference;
+import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
-import java.util.zip.GZIPInputStream;
-import java.util.zip.GZIPOutputStream;
 
 import org.apache.datasketches.theta.AnotB;
 import org.apache.datasketches.theta.HashIterator;
@@ -210,42 +212,100 @@ public class SketchBasedJoinEstimator {
 	/* ────────────────────────────────────────────────────────────── */
 
 	private static final byte[] PERSIST_MAGIC = new byte[] { 'R', 'J', 'E', 'S' };
-	private static final int PERSIST_VERSION = 1;
+	private static final int PERSIST_VERSION = 2;
 	private static final int DEFAULT_BUCKET_COUNT = 64 * 1024;
 	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = ThetaUtil.DEFAULT_NOMINAL_ENTRIES;
 	private static final int MAX_STRING_BYTES = 16 * 1024 * 1024;
 	private static final int MAX_SKETCH_ENTRIES = 1_000_000;
+	private static final String MIN_SKETCH_MEMORY_PERCENT_PROPERTY = "minSketchMemoryPercent";
+	private static final String MAX_SKETCH_MEMORY_PERCENT_PROPERTY = "maxSketchMemoryPercent";
 
-	private static final byte REC_EOF = 0;
 	private static final byte REC_SINGLE_TRIPLE = 1;
 	private static final byte REC_SINGLE_CPL = 2;
 	private static final byte REC_PAIR_TRIPLE = 3;
 	private static final byte REC_PAIR_COMP1 = 4;
 	private static final byte REC_PAIR_COMP2 = 5;
 
-	private static final ConcurrentHashMap<Path, SnapshotCacheEntry> SNAPSHOT_CACHE = new ConcurrentHashMap<>();
+	private static final class SketchAddress {
+		private final byte recType;
+		private final boolean isDelete;
+		private final byte axisA;
+		private final byte axisB;
+		private final int x;
+		private final int y;
 
-	private static final class SnapshotCacheEntry {
-		private final long size;
-		private final long modifiedMillis;
-		private final SoftReference<byte[]> payloadRef;
-
-		private SnapshotCacheEntry(long size, long modifiedMillis, byte[] payload) {
-			this.size = size;
-			this.modifiedMillis = modifiedMillis;
-			this.payloadRef = new SoftReference<>(payload);
+		private SketchAddress(byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y) {
+			this.recType = recType;
+			this.isDelete = isDelete;
+			this.axisA = axisA;
+			this.axisB = axisB;
+			this.x = x;
+			this.y = y;
 		}
 
-		private byte[] payload() {
-			return payloadRef.get();
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (!(o instanceof SketchAddress)) {
+				return false;
+			}
+			SketchAddress that = (SketchAddress) o;
+			return recType == that.recType && isDelete == that.isDelete && axisA == that.axisA && axisB == that.axisB
+					&& x == that.x && y == that.y;
 		}
 
-		private boolean matches(long currentSize, long currentModifiedMillis) {
-			return size == currentSize && modifiedMillis == currentModifiedMillis;
+		@Override
+		public int hashCode() {
+			return Objects.hash(recType, isDelete, axisA, axisB, x, y);
+		}
+	}
+
+	private enum BufferSlot {
+		A,
+		B
+	}
+
+	private static final class ResidentSketchAddress {
+		private final BufferSlot slot;
+		private final SketchAddress sketchAddress;
+
+		private ResidentSketchAddress(BufferSlot slot, SketchAddress sketchAddress) {
+			this.slot = slot;
+			this.sketchAddress = sketchAddress;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (!(o instanceof ResidentSketchAddress)) {
+				return false;
+			}
+			ResidentSketchAddress that = (ResidentSketchAddress) o;
+			return slot == that.slot && Objects.equals(sketchAddress, that.sketchAddress);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(slot, sketchAddress);
+		}
+	}
+
+	private static final class PersistedSketchRef {
+		private final long offset;
+		private final int length;
+
+		private PersistedSketchRef(long offset, int length) {
+			this.offset = offset;
+			this.length = length;
 		}
 	}
 
 	private volatile Path persistenceFile;
+	private volatile Path persistenceBlobFile;
 	private volatile boolean persistenceEnabled;
 	private volatile boolean lazyLoadEnabled;
 	private volatile boolean sketchesLoaded = true;
@@ -263,10 +323,16 @@ public class SketchBasedJoinEstimator {
 	/** True when in-memory state changed and should be snapshotted at the next scheduled persist point. */
 	private final AtomicBoolean dirty = new AtomicBoolean(false);
 
-	private volatile BooleanSupplier lowMemorySupplier;
 	private volatile BooleanSupplier rebuildAllowedSupplier;
 	private final Object persistLock = new Object();
 	private final Object loadLock = new Object();
+	private final Object sketchCacheLock = new Object();
+	private final LinkedHashMap<ResidentSketchAddress, Long> residentSketches = new LinkedHashMap<>(128, 0.75f, true);
+	private final Map<SketchAddress, PersistedSketchRef> persistedSketchIndex = new HashMap<>();
+	private final Set<SketchAddress> dirtySketches = new HashSet<>();
+	private volatile long minSketchMemoryBytes;
+	private volatile long maxSketchMemoryBytes;
+	private long residentSketchBytes;
 
 	// ──────────────────────────────────────────────────────────────
 	// Staleness tracking (global, lock‑free reads)
@@ -315,6 +381,8 @@ public class SketchBasedJoinEstimator {
 		boolean roundEst = cfg.roundJoinEstimates;
 		int kCfg = cfg.sketchK;
 		int kMult = cfg.sketchKMultiplier;
+		double minSketchMemoryPercent = cfg.minSketchMemoryPercent;
+		double maxSketchMemoryPercent = cfg.maxSketchMemoryPercent;
 
 		// Overlay from system properties (take precedence)
 		nEntries = propInt("nominalEntries", nEntries);
@@ -332,6 +400,8 @@ public class SketchBasedJoinEstimator {
 		int kProp = propIntOrNegOne("sketchK", kCfg);
 		kMult = propInt("sketchKMultiplier", kMult);
 		kMult = Math.max(0, kMult);
+		minSketchMemoryPercent = propDouble(MIN_SKETCH_MEMORY_PERCENT_PROPERTY, minSketchMemoryPercent);
+		maxSketchMemoryPercent = propDouble(MAX_SKETCH_MEMORY_PERCENT_PROPERTY, maxSketchMemoryPercent);
 
 		int buckets = dbl ? (nEntries * 2) : nEntries;
 		int k = resolveSketchK(kProp, kCfg, buckets, kMult);
@@ -341,6 +411,8 @@ public class SketchBasedJoinEstimator {
 		sampleMax = Math.max(0, sampleMax);
 		churnReaddTh = clamp(churnReaddTh, 0.0, 1.0);
 		churnRemovalTh = clamp(churnRemovalTh, 0.0, 1.0);
+		minSketchMemoryPercent = clamp(minSketchMemoryPercent, 0.0, 1.0);
+		maxSketchMemoryPercent = clamp(maxSketchMemoryPercent, minSketchMemoryPercent, 1.0);
 
 		this.sailStore = sailStore;
 		this.nominalEntries = buckets;
@@ -362,6 +434,9 @@ public class SketchBasedJoinEstimator {
 		this.sketchesLoaded = true;
 		this.persistenceEnabled = false;
 		this.lazyLoadEnabled = false;
+		long heapMax = Math.max(64L * 1024L * 1024L, Runtime.getRuntime().maxMemory());
+		this.minSketchMemoryBytes = percentToBytes(minSketchMemoryPercent, heapMax);
+		this.maxSketchMemoryBytes = percentToBytes(maxSketchMemoryPercent, heapMax);
 	}
 
 	private static int resolveSketchK(int kProp, int kCfg, int buckets, int kMult) {
@@ -386,9 +461,6 @@ public class SketchBasedJoinEstimator {
 		if (sketchesLoaded && seenTriples > 0) {
 			return true;
 		}
-		if (isLowMemory()) {
-			return false;
-		}
 
 		if (!sketchesLoaded && persistenceEnabled && persistenceFile != null && hasSnapshotAvailable(persistenceFile)) {
 			boolean loaded = tryLoadFromDisk();
@@ -406,6 +478,7 @@ public class SketchBasedJoinEstimator {
 	 */
 	public void configurePersistence(Path file, boolean lazyLoad) {
 		this.persistenceFile = file;
+		this.persistenceBlobFile = file == null ? null : sidecarPath(file);
 		this.persistenceEnabled = (file != null);
 		this.lazyLoadEnabled = lazyLoad;
 
@@ -413,13 +486,6 @@ public class SketchBasedJoinEstimator {
 			unloadInternal(false);
 			this.sketchesLoaded = false;
 		}
-	}
-
-	/**
-	 * Install a store-provided low-memory signal used before loading/rebuilding.
-	 */
-	public void setLowMemorySupplier(BooleanSupplier supplier) {
-		this.lowMemorySupplier = supplier;
 	}
 
 	public void setLearnedStatsProvider(JoinStatsProvider learnedStatsProvider) {
@@ -442,16 +508,6 @@ public class SketchBasedJoinEstimator {
 
 		refresher = new Thread(() -> {
 			while (running) {
-				if (isLowMemory()) {
-					try {
-						Thread.sleep(refreshSleepMillis);
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
-						break;
-					}
-					continue;
-				}
-
 				if (!isRebuildAllowed()) {
 					try {
 						Thread.sleep(refreshSleepMillis);
@@ -552,11 +608,6 @@ public class SketchBasedJoinEstimator {
 	 * @return number of statements scanned.
 	 */
 	public synchronized long rebuildOnceSlow() {
-		if (isLowMemory()) {
-			unloadInternal(true);
-			return 0L;
-		}
-
 //		try {
 //			Thread.sleep(r.nextInt(10));
 //		} catch (InterruptedException e) {
@@ -568,6 +619,7 @@ public class SketchBasedJoinEstimator {
 		boolean rebuildIntoA = !usingA; // remember before toggling
 
 		State tgt = rebuildIntoA ? bufA : bufB;
+		clearResidentTrackingForSlot(slotOf(tgt));
 		tgt.clear(); // wipe everything (add + del)
 		rebuildEpoch.incrementAndGet(); // mark rebuild in progress (odd epoch)
 
@@ -594,11 +646,6 @@ public class SketchBasedJoinEstimator {
 						return seen;
 					} catch (Throwable e) {
 						continue;
-					}
-
-					if ((seen & 0x3FFF) == 0 && isLowMemory()) {
-						unloadInternal(true);
-						return seen;
 					}
 
 					if (++seen % throttleEveryN == 0 && throttleMillis > 0) {
@@ -678,14 +725,6 @@ public class SketchBasedJoinEstimator {
 
 	public void addStatement(Statement st) {
 		Objects.requireNonNull(st);
-		if (isLowMemory()) {
-			if (persistenceEnabled && persistenceFile != null) {
-				persistIfDirty();
-				unloadInternal(false);
-			} else {
-				unloadInternal(true);
-			}
-		}
 		if (!sketchesLoaded && persistenceEnabled && persistenceFile != null && hasSnapshotAvailable(persistenceFile)) {
 			tryLoadFromDisk();
 		}
@@ -719,14 +758,6 @@ public class SketchBasedJoinEstimator {
 
 	public void deleteStatement(Statement st) {
 		Objects.requireNonNull(st);
-		if (isLowMemory()) {
-			if (persistenceEnabled && persistenceFile != null) {
-				persistIfDirty();
-				unloadInternal(false);
-			} else {
-				unloadInternal(true);
-			}
-		}
 		if (!sketchesLoaded && persistenceEnabled && persistenceFile != null && hasSnapshotAvailable(persistenceFile)) {
 			tryLoadFromDisk();
 		}
@@ -811,58 +842,53 @@ public class SketchBasedJoinEstimator {
 			long pcKey = pairKey(pi, ci);
 			long ocKey = pairKey(oi, ci);
 
-			/* Select the correct target maps depending on add / delete. */
-			var tgtST = isDelete ? t.delSingleTriples : t.singleTriples;
-			var tgtS = isDelete ? t.delSingles : t.singles;
-			var tgtP = isDelete ? t.delPairs : t.pairs;
+			/* single‑component cardinalities */
+			updateSketch(t, singleTripleAddress(isDelete, Component.S, si), sig);
+			updateSketch(t, singleTripleAddress(isDelete, Component.P, pi), sig);
+			updateSketch(t, singleTripleAddress(isDelete, Component.O, oi), sig);
+			updateSketch(t, singleTripleAddress(isDelete, Component.C, ci), sig);
 
-			/* single‑component cardinalities (array-backed) */
-			updateCell(tgtST.get(Component.S), si, sig, t.k);
-			updateCell(tgtST.get(Component.P), pi, sig, t.k);
-			updateCell(tgtST.get(Component.O), oi, sig, t.k);
-			updateCell(tgtST.get(Component.C), ci, sig, t.k);
+			/* complement sets for singles */
+			updateSketch(t, singleComplementAddress(isDelete, Component.S, Component.P, si), hp);
+			updateSketch(t, singleComplementAddress(isDelete, Component.S, Component.O, si), ho);
+			updateSketch(t, singleComplementAddress(isDelete, Component.S, Component.C, si), hc);
 
-			/* complement sets for singles (array-backed second layer) */
-			tgtS.get(Component.S).upd(Component.P, si, hp);
-			tgtS.get(Component.S).upd(Component.O, si, ho);
-			tgtS.get(Component.S).upd(Component.C, si, hc);
+			updateSketch(t, singleComplementAddress(isDelete, Component.P, Component.S, pi), hs);
+			updateSketch(t, singleComplementAddress(isDelete, Component.P, Component.O, pi), ho);
+			updateSketch(t, singleComplementAddress(isDelete, Component.P, Component.C, pi), hc);
 
-			tgtS.get(Component.P).upd(Component.S, pi, hs);
-			tgtS.get(Component.P).upd(Component.O, pi, ho);
-			tgtS.get(Component.P).upd(Component.C, pi, hc);
+			updateSketch(t, singleComplementAddress(isDelete, Component.O, Component.S, oi), hs);
+			updateSketch(t, singleComplementAddress(isDelete, Component.O, Component.P, oi), hp);
+			updateSketch(t, singleComplementAddress(isDelete, Component.O, Component.C, oi), hc);
 
-			tgtS.get(Component.O).upd(Component.S, oi, hs);
-			tgtS.get(Component.O).upd(Component.P, oi, hp);
-			tgtS.get(Component.O).upd(Component.C, oi, hc);
+			updateSketch(t, singleComplementAddress(isDelete, Component.C, Component.S, ci), hs);
+			updateSketch(t, singleComplementAddress(isDelete, Component.C, Component.P, ci), hp);
+			updateSketch(t, singleComplementAddress(isDelete, Component.C, Component.O, ci), ho);
 
-			tgtS.get(Component.C).upd(Component.S, ci, hs);
-			tgtS.get(Component.C).upd(Component.P, ci, hp);
-			tgtS.get(Component.C).upd(Component.O, ci, ho);
+			/* pairs (triples + complements) */
+			updatePairSketch(t, isDelete, Pair.SP, REC_PAIR_TRIPLE, spKey, sig);
+			updatePairSketch(t, isDelete, Pair.SP, REC_PAIR_COMP1, spKey, ho);
+			updatePairSketch(t, isDelete, Pair.SP, REC_PAIR_COMP2, spKey, hc);
 
-			/* pairs (triples + complements) — row-chunked arrays */
-			tgtP.get(Pair.SP).upT(spKey, sig);
-			tgtP.get(Pair.SP).up1(spKey, ho);
-			tgtP.get(Pair.SP).up2(spKey, hc);
+			updatePairSketch(t, isDelete, Pair.SO, REC_PAIR_TRIPLE, soKey, sig);
+			updatePairSketch(t, isDelete, Pair.SO, REC_PAIR_COMP1, soKey, hp);
+			updatePairSketch(t, isDelete, Pair.SO, REC_PAIR_COMP2, soKey, hc);
 
-			tgtP.get(Pair.SO).upT(soKey, sig);
-			tgtP.get(Pair.SO).up1(soKey, hp);
-			tgtP.get(Pair.SO).up2(soKey, hc);
+			updatePairSketch(t, isDelete, Pair.SC, REC_PAIR_TRIPLE, scKey, sig);
+			updatePairSketch(t, isDelete, Pair.SC, REC_PAIR_COMP1, scKey, hp);
+			updatePairSketch(t, isDelete, Pair.SC, REC_PAIR_COMP2, scKey, ho);
 
-			tgtP.get(Pair.SC).upT(scKey, sig);
-			tgtP.get(Pair.SC).up1(scKey, hp);
-			tgtP.get(Pair.SC).up2(scKey, ho);
+			updatePairSketch(t, isDelete, Pair.PO, REC_PAIR_TRIPLE, poKey, sig);
+			updatePairSketch(t, isDelete, Pair.PO, REC_PAIR_COMP1, poKey, hs);
+			updatePairSketch(t, isDelete, Pair.PO, REC_PAIR_COMP2, poKey, hc);
 
-			tgtP.get(Pair.PO).upT(poKey, sig);
-			tgtP.get(Pair.PO).up1(poKey, hs);
-			tgtP.get(Pair.PO).up2(poKey, hc);
+			updatePairSketch(t, isDelete, Pair.PC, REC_PAIR_TRIPLE, pcKey, sig);
+			updatePairSketch(t, isDelete, Pair.PC, REC_PAIR_COMP1, pcKey, hs);
+			updatePairSketch(t, isDelete, Pair.PC, REC_PAIR_COMP2, pcKey, ho);
 
-			tgtP.get(Pair.PC).upT(pcKey, sig);
-			tgtP.get(Pair.PC).up1(pcKey, hs);
-			tgtP.get(Pair.PC).up2(pcKey, ho);
-
-			tgtP.get(Pair.OC).upT(ocKey, sig);
-			tgtP.get(Pair.OC).up1(ocKey, hs);
-			tgtP.get(Pair.OC).up2(ocKey, hp);
+			updatePairSketch(t, isDelete, Pair.OC, REC_PAIR_TRIPLE, ocKey, sig);
+			updatePairSketch(t, isDelete, Pair.OC, REC_PAIR_COMP1, ocKey, hs);
+			updatePairSketch(t, isDelete, Pair.OC, REC_PAIR_COMP2, ocKey, hp);
 		} catch (NullPointerException npe) {
 			// ignore NPEs from null values (e.g. missing context)
 		}
@@ -876,10 +902,8 @@ public class SketchBasedJoinEstimator {
 		State snap = current;
 		synchronized (snap) {
 			int idx = hash(v);
-			AtomicReferenceArray<UpdateSketch> arrAdd = snap.singleTriples.get(c);
-			AtomicReferenceArray<UpdateSketch> arrDel = snap.delSingleTriples.get(c);
-			UpdateSketch add = arrAdd.get(idx);
-			UpdateSketch del = arrDel.get(idx);
+			UpdateSketch add = getSketchForRead(snap, singleTripleAddress(false, c, idx));
+			UpdateSketch del = getSketchForRead(snap, singleTripleAddress(true, c, idx));
 			return estimateMinus(add, del);
 		}
 	}
@@ -888,8 +912,10 @@ public class SketchBasedJoinEstimator {
 		State snap = current;
 		synchronized (snap) {
 			long key = pairKey(hash(x), hash(y));
-			UpdateSketch add = snap.pairs.get(p).getTriple(key);
-			UpdateSketch del = snap.delPairs.get(p).getTriple(key);
+			int row = (int) (key >>> 32);
+			int col = (int) key;
+			UpdateSketch add = getSketchForRead(snap, pairAddress(REC_PAIR_TRIPLE, false, p, row, col));
+			UpdateSketch del = getSketchForRead(snap, pairAddress(REC_PAIR_TRIPLE, true, p, row, col));
 			return estimateMinus(add, del);
 		}
 	}
@@ -1081,15 +1107,17 @@ public class SketchBasedJoinEstimator {
 
 	private double cardSingle(State st, Component c, String val) {
 		int idx = hash(val);
-		UpdateSketch add = st.singleTriples.get(c).get(idx);
-		UpdateSketch del = st.delSingleTriples.get(c).get(idx);
+		UpdateSketch add = getSketchForRead(st, singleTripleAddress(false, c, idx));
+		UpdateSketch del = getSketchForRead(st, singleTripleAddress(true, c, idx));
 		return estimateMinus(add, del);
 	}
 
 	private double cardPair(State st, Pair p, String x, String y) {
 		long key = pairKey(hash(x), hash(y));
-		UpdateSketch add = st.pairs.get(p).getTriple(key);
-		UpdateSketch del = st.delPairs.get(p).getTriple(key);
+		int row = (int) (key >>> 32);
+		int col = (int) key;
+		UpdateSketch add = getSketchForRead(st, pairAddress(REC_PAIR_TRIPLE, false, p, row, col));
+		UpdateSketch del = getSketchForRead(st, pairAddress(REC_PAIR_TRIPLE, true, p, row, col));
 		return estimateMinus(add, del);
 	}
 
@@ -1160,56 +1188,51 @@ public class SketchBasedJoinEstimator {
 	/* ────────────────────────────────────────────────────────────── */
 
 	private StateSingleWrapper singleWrapper(State st, Component fixed) {
-		return new StateSingleWrapper(fixed, st.singles.get(fixed), st.delSingles.get(fixed));
+		return new StateSingleWrapper(st, fixed);
 	}
 
 	private StatePairWrapper pairWrapper(State st, Pair p) {
-		return new StatePairWrapper(p, st.pairs.get(p), st.delPairs.get(p));
+		return new StatePairWrapper(st, p);
 	}
 
-	private static final class StateSingleWrapper {
+	private final class StateSingleWrapper {
+		final State state;
 		final Component fixed;
-		final SingleBuild add, del;
 
-		StateSingleWrapper(Component f, SingleBuild add, SingleBuild del) {
+		StateSingleWrapper(State state, Component f) {
+			this.state = state;
 			this.fixed = f;
-			this.add = add;
-			this.del = del;
 		}
 
 		Sketch getComplementSketch(Component c, int fi) {
 			if (c == fixed) {
 				return null;
 			}
-			AtomicReferenceArray<UpdateSketch> arrA = add.cmpl.get(c);
-			AtomicReferenceArray<UpdateSketch> arrD = del.cmpl.get(c);
-			if (arrA == null || arrD == null) {
-				return null;
-			}
-			UpdateSketch a = arrA.get(fi);
-			UpdateSketch d = arrD.get(fi);
+			UpdateSketch a = getSketchForRead(state, singleComplementAddress(false, fixed, c, fi));
+			UpdateSketch d = getSketchForRead(state, singleComplementAddress(true, fixed, c, fi));
 			return subtractSketch(a, d);
 		}
 	}
 
-	private static final class StatePairWrapper {
+	private final class StatePairWrapper {
+		final State state;
 		final Pair p;
-		final PairBuild add, del;
 
-		StatePairWrapper(Pair p, PairBuild add, PairBuild del) {
+		StatePairWrapper(State state, Pair p) {
+			this.state = state;
 			this.p = p;
-			this.add = add;
-			this.del = del;
 		}
 
 		Sketch getComplementSketch(Component c, long key) {
+			int x = (int) (key >>> 32);
+			int y = (int) key;
 			UpdateSketch a, d;
 			if (c == p.comp1) {
-				a = add.getComp1(key);
-				d = del.getComp1(key);
+				a = getSketchForRead(state, pairAddress(REC_PAIR_COMP1, false, p, x, y));
+				d = getSketchForRead(state, pairAddress(REC_PAIR_COMP1, true, p, x, y));
 			} else if (c == p.comp2) {
-				a = add.getComp2(key);
-				d = del.getComp2(key);
+				a = getSketchForRead(state, pairAddress(REC_PAIR_COMP2, false, p, x, y));
+				d = getSketchForRead(state, pairAddress(REC_PAIR_COMP2, true, p, x, y));
 			} else {
 				return null;
 			}
@@ -2281,27 +2304,28 @@ public class SketchBasedJoinEstimator {
 	/* ────────────────────────────────────────────────────────────── */
 
 	/**
-	 * Best-effort snapshot persistence intended for scheduled store-level sync/commit paths.
+	 * Best-effort sketch persistence intended for scheduled store-level sync/commit paths.
 	 *
-	 * @return true if a snapshot was written.
+	 * @return true if persisted state was updated.
 	 */
 	public boolean persistIfDirty() {
-		if (!persistenceEnabled || persistenceFile == null) {
+		if (!persistenceEnabled || persistenceFile == null || persistenceBlobFile == null) {
 			return false;
 		}
-		if (!dirty.get() || !sketchesLoaded) {
+		if (!dirty.get()) {
 			return false;
 		}
 		synchronized (persistLock) {
-			if (!dirty.get() || !sketchesLoaded) {
+			if (!dirty.get()) {
 				return false;
 			}
 			try {
-				writeSnapshot(persistenceFile);
+				flushDirtySketches();
+				writeManifest(persistenceFile);
 				dirty.set(false);
 				return true;
 			} catch (Throwable t) {
-				logger.warn("Failed to persist join estimator snapshot to {}", persistenceFile, t);
+				logger.warn("Failed to persist join estimator state to {}", persistenceFile, t);
 				return false;
 			}
 		}
@@ -2321,6 +2345,10 @@ public class SketchBasedJoinEstimator {
 		synchronized (bufB) {
 			bufB.clear();
 		}
+		synchronized (sketchCacheLock) {
+			residentSketches.clear();
+			residentSketchBytes = 0L;
+		}
 		seenTriples = 0L;
 		sketchesLoaded = false;
 		if (markRebuildRequired) {
@@ -2332,9 +2360,6 @@ public class SketchBasedJoinEstimator {
 		if (!persistenceEnabled || persistenceFile == null) {
 			return false;
 		}
-		if (isLowMemory()) {
-			return false;
-		}
 		synchronized (loadLock) {
 			if (sketchesLoaded) {
 				return true;
@@ -2343,52 +2368,39 @@ public class SketchBasedJoinEstimator {
 				return false;
 			}
 			try {
-				readSnapshot(persistenceFile);
+				readManifest(persistenceFile);
 				sketchesLoaded = true;
 				rebuildRequired.set(false);
 				dirty.set(false);
 				return true;
 			} catch (Throwable t) {
-				logger.warn("Failed to load join estimator snapshot from {}", persistenceFile, t);
+				if (isUnsupportedSnapshotVersion(t)) {
+					throw new IllegalStateException("Unsupported join estimator snapshot version", t);
+				}
+				logger.warn("Failed to load join estimator state from {}", persistenceFile, t);
 				return false;
 			}
 		}
 	}
 
-	private static boolean hasSnapshotAvailable(Path file) {
-		if (file == null) {
-			return false;
+	private static boolean isUnsupportedSnapshotVersion(Throwable t) {
+		Throwable cursor = t;
+		while (cursor != null) {
+			String message = cursor.getMessage();
+			if (message != null && message.startsWith("Unsupported join estimator snapshot version")) {
+				return true;
+			}
+			cursor = cursor.getCause();
 		}
-		cleanupClearedSnapshotCacheEntries();
-		if (Files.isReadable(file)) {
-			return true;
-		}
-		Path key = normalizeSnapshotKey(file);
-		SnapshotCacheEntry cached = SNAPSHOT_CACHE.get(key);
-		if (cached == null) {
-			return false;
-		}
-		if (cached.payload() != null) {
-			return true;
-		}
-		SNAPSHOT_CACHE.remove(key, cached);
 		return false;
 	}
 
-	private static Path normalizeSnapshotKey(Path file) {
-		return file.toAbsolutePath().normalize();
+	private static boolean hasSnapshotAvailable(Path file) {
+		return file != null && Files.isReadable(file);
 	}
 
-	private boolean isLowMemory() {
-		BooleanSupplier supplier = lowMemorySupplier;
-		if (supplier != null) {
-			try {
-				return supplier.getAsBoolean();
-			} catch (Throwable t) {
-				logger.debug("Ignoring low-memory supplier failure", t);
-			}
-		}
-		return isMemoryLowHeuristic();
+	private static Path sidecarPath(Path manifest) {
+		return manifest.resolveSibling(manifest.getFileName().toString() + ".sketches");
 	}
 
 	private boolean isRebuildAllowed() {
@@ -2403,62 +2415,379 @@ public class SketchBasedJoinEstimator {
 		return true;
 	}
 
-	private static boolean isMemoryLowHeuristic() {
-		Runtime rt = Runtime.getRuntime();
-		long max = rt.maxMemory();
-		long total = rt.totalMemory();
-		long free = rt.freeMemory();
-		long used = total - free;
-		long freeToAllocate = max - used;
-
-		final long absMin = 64L * 1024L * 1024L;
-		final double ratioMin = 1.0 / 8.0;
-		return freeToAllocate < absMin || (freeToAllocate + 0.0) / (max + 0.0) < ratioMin;
+	private static long percentToBytes(double fraction, long heapMaxBytes) {
+		return Math.max(0L, Math.round(fraction * heapMaxBytes));
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
-	/* Snapshot IO */
+	/* Sketch cache + IO */
 	/* ────────────────────────────────────────────────────────────── */
 
-	private void writeSnapshot(Path file) throws IOException {
-		State snap = current;
-		synchronized (snap) {
-			Path parent = file.getParent();
-			if (parent != null) {
-				Files.createDirectories(parent);
-			}
+	private static long estimatedSketchBytes(UpdateSketch sketch) {
+		return Integer.BYTES + ((long) sketch.getRetainedEntries() * Long.BYTES);
+	}
 
-			Path tmp = file.resolveSibling(file.getFileName().toString() + ".tmp");
-			try (OutputStream raw = new BufferedOutputStream(
-					Files.newOutputStream(tmp, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING))) {
-				raw.write(PERSIST_MAGIC);
-				raw.write(PERSIST_VERSION);
-				raw.flush();
+	private BufferSlot slotOf(State state) {
+		return state == bufA ? BufferSlot.A : BufferSlot.B;
+	}
 
-				try (DataOutputStream out = new DataOutputStream(new GZIPOutputStream(raw))) {
-					out.writeInt(snap.buckets);
-					out.writeInt(snap.k);
-					writeString(out, defaultContextString);
-					out.writeLong(seenTriples);
-					out.writeLong(approxStoreSize.get());
-					out.writeLong(lastRebuildPublishMs);
-					writeState(out, snap);
-					out.writeByte(REC_EOF);
-				}
-			}
+	private State stateOf(BufferSlot slot) {
+		return slot == BufferSlot.A ? bufA : bufB;
+	}
 
-			try {
-				Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-			} catch (IOException e) {
-				Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
-			}
-			SNAPSHOT_CACHE.remove(normalizeSnapshotKey(file));
+	private static SketchAddress singleTripleAddress(boolean isDelete, Component component, int idx) {
+		return new SketchAddress(REC_SINGLE_TRIPLE, isDelete, (byte) component.ordinal(), (byte) 0, idx, 0);
+	}
+
+	private static SketchAddress singleComplementAddress(boolean isDelete, Component fixed, Component other, int idx) {
+		return new SketchAddress(REC_SINGLE_CPL, isDelete, (byte) fixed.ordinal(), (byte) other.ordinal(), idx, 0);
+	}
+
+	private static SketchAddress pairAddress(byte recType, boolean isDelete, Pair pair, int x, int y) {
+		return new SketchAddress(recType, isDelete, (byte) pair.ordinal(), (byte) 0, x, y);
+	}
+
+	private UpdateSketch getSketchForRead(State state, SketchAddress address) {
+		UpdateSketch sketch = getResidentSketch(state, address);
+		if (sketch != null) {
+			touchResidentSketch(state, address, sketch);
+			return sketch;
+		}
+		return loadPersistedSketch(state, address);
+	}
+
+	private UpdateSketch getSketchForWrite(State state, SketchAddress address) {
+		UpdateSketch sketch = getResidentSketch(state, address);
+		if (sketch == null) {
+			sketch = loadPersistedSketch(state, address);
+		}
+		if (sketch == null) {
+			sketch = newSk(state.k);
+		}
+		setResidentSketch(state, address, sketch);
+		return sketch;
+	}
+
+	private UpdateSketch loadPersistedSketch(State state, SketchAddress address) {
+		PersistedSketchRef persistedSketchRef;
+		synchronized (sketchCacheLock) {
+			persistedSketchRef = persistedSketchIndex.get(address);
+		}
+		if (persistedSketchRef == null || persistenceBlobFile == null || !Files.isReadable(persistenceBlobFile)) {
+			return null;
+		}
+
+		try {
+			UpdateSketch loaded = readSketchFromBlob(persistenceBlobFile, persistedSketchRef, state.k);
+			putResidentSketch(state, address, loaded);
+			return loaded;
+		} catch (IOException e) {
+			logger.warn("Failed to load persisted sketch {}", address, e);
+			return null;
 		}
 	}
 
-	private void readSnapshot(Path file) throws IOException {
-		byte[] payload = loadSnapshotPayload(file);
-		try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(payload))) {
+	private void putResidentSketch(State state, SketchAddress address, UpdateSketch sketch) {
+		setResidentSketch(state, address, sketch);
+		if (sketch == null) {
+			removeResidentSketchTracking(state, address);
+		} else {
+			touchResidentSketch(state, address, sketch);
+		}
+	}
+
+	private void touchResidentSketch(State state, SketchAddress address, UpdateSketch sketch) {
+		ResidentSketchAddress residentSketchAddress = new ResidentSketchAddress(slotOf(state), address);
+		long bytes = estimatedSketchBytes(sketch);
+		synchronized (sketchCacheLock) {
+			Long previous = residentSketches.put(residentSketchAddress, bytes);
+			if (previous != null) {
+				residentSketchBytes -= previous;
+			}
+			residentSketchBytes += bytes;
+		}
+		enforceSketchBudget();
+	}
+
+	private void removeResidentSketchTracking(State state, SketchAddress address) {
+		ResidentSketchAddress residentSketchAddress = new ResidentSketchAddress(slotOf(state), address);
+		synchronized (sketchCacheLock) {
+			Long previous = residentSketches.remove(residentSketchAddress);
+			if (previous != null) {
+				residentSketchBytes -= previous;
+			}
+		}
+	}
+
+	private void clearResidentTrackingForSlot(BufferSlot slot) {
+		synchronized (sketchCacheLock) {
+			residentSketches.entrySet().removeIf(entry -> {
+				if (entry.getKey().slot != slot) {
+					return false;
+				}
+				residentSketchBytes -= entry.getValue();
+				return true;
+			});
+		}
+	}
+
+	private void markDirty(SketchAddress address) {
+		synchronized (sketchCacheLock) {
+			dirtySketches.add(address);
+		}
+		dirty.set(true);
+	}
+
+	private boolean isDirty(SketchAddress address) {
+		synchronized (sketchCacheLock) {
+			return dirtySketches.contains(address);
+		}
+	}
+
+	private void enforceSketchBudget() {
+		while (true) {
+			ResidentSketchAddress candidate;
+			synchronized (sketchCacheLock) {
+				if (residentSketchBytes <= maxSketchMemoryBytes || residentSketchBytes <= minSketchMemoryBytes
+						|| residentSketches.isEmpty()) {
+					return;
+				}
+				candidate = residentSketches.entrySet().iterator().next().getKey();
+			}
+
+			if (!evictResidentSketch(candidate)) {
+				return;
+			}
+		}
+	}
+
+	private boolean evictResidentSketch(ResidentSketchAddress residentSketchAddress) {
+		State state = stateOf(residentSketchAddress.slot);
+		synchronized (state) {
+			UpdateSketch sketch = getResidentSketch(state, residentSketchAddress.sketchAddress);
+			if (sketch == null) {
+				removeResidentSketchTracking(state, residentSketchAddress.sketchAddress);
+				return true;
+			}
+			if (isDirty(residentSketchAddress.sketchAddress)) {
+				if (!persistenceEnabled || persistenceFile == null || persistenceBlobFile == null) {
+					return false;
+				}
+				synchronized (persistLock) {
+					try {
+						appendSketchPayload(residentSketchAddress.sketchAddress, sketch);
+						writeManifest(persistenceFile);
+					} catch (IOException e) {
+						logger.warn("Failed to persist dirty sketch during eviction", e);
+						return false;
+					}
+				}
+			}
+			setResidentSketch(state, residentSketchAddress.sketchAddress, null);
+			removeResidentSketchTracking(state, residentSketchAddress.sketchAddress);
+			return true;
+		}
+	}
+
+	private UpdateSketch getResidentSketch(State state, SketchAddress address) {
+		switch (address.recType) {
+		case REC_SINGLE_TRIPLE: {
+			Component component = Component.values()[address.axisA];
+			AtomicReferenceArray<UpdateSketch> arr = address.isDelete ? state.delSingleTriples.get(component)
+					: state.singleTriples.get(component);
+			return arr.get(address.x);
+		}
+		case REC_SINGLE_CPL: {
+			Component fixed = Component.values()[address.axisA];
+			Component other = Component.values()[address.axisB];
+			SingleBuild build = address.isDelete ? state.delSingles.get(fixed) : state.singles.get(fixed);
+			AtomicReferenceArray<UpdateSketch> arr = build.cmpl.get(other);
+			return arr == null ? null : arr.get(address.x);
+		}
+		case REC_PAIR_TRIPLE:
+		case REC_PAIR_COMP1:
+		case REC_PAIR_COMP2: {
+			Pair pair = Pair.values()[address.axisA];
+			PairBuild build = address.isDelete ? state.delPairs.get(pair) : state.pairs.get(pair);
+			PairBuild.Row row = build.rows.get(address.x);
+			if (row == null) {
+				return null;
+			}
+			if (address.recType == REC_PAIR_TRIPLE) {
+				return row.triples.get(address.y);
+			}
+			if (address.recType == REC_PAIR_COMP1) {
+				return row.comp1.get(address.y);
+			}
+			return row.comp2.get(address.y);
+		}
+		default:
+			throw new IllegalStateException("Unknown sketch record type: " + address.recType);
+		}
+	}
+
+	private void setResidentSketch(State state, SketchAddress address, UpdateSketch sketch) {
+		switch (address.recType) {
+		case REC_SINGLE_TRIPLE: {
+			Component component = Component.values()[address.axisA];
+			AtomicReferenceArray<UpdateSketch> arr = address.isDelete ? state.delSingleTriples.get(component)
+					: state.singleTriples.get(component);
+			arr.set(address.x, sketch);
+			return;
+		}
+		case REC_SINGLE_CPL: {
+			Component fixed = Component.values()[address.axisA];
+			Component other = Component.values()[address.axisB];
+			SingleBuild build = address.isDelete ? state.delSingles.get(fixed) : state.singles.get(fixed);
+			AtomicReferenceArray<UpdateSketch> arr = build.cmpl.get(other);
+			if (arr != null) {
+				arr.set(address.x, sketch);
+			}
+			return;
+		}
+		case REC_PAIR_TRIPLE:
+		case REC_PAIR_COMP1:
+		case REC_PAIR_COMP2: {
+			Pair pair = Pair.values()[address.axisA];
+			PairBuild build = address.isDelete ? state.delPairs.get(pair) : state.pairs.get(pair);
+			PairBuild.Row row = build.getOrCreateRow(address.x);
+			Map<Integer, UpdateSketch> target;
+			if (address.recType == REC_PAIR_TRIPLE) {
+				target = row.triples;
+			} else if (address.recType == REC_PAIR_COMP1) {
+				target = row.comp1;
+			} else {
+				target = row.comp2;
+			}
+			if (sketch == null) {
+				target.remove(address.y);
+				if (row.triples.isEmpty() && row.comp1.isEmpty() && row.comp2.isEmpty()) {
+					build.rows.remove(address.x);
+				}
+			} else {
+				target.put(address.y, sketch);
+			}
+			return;
+		}
+		default:
+			throw new IllegalStateException("Unknown sketch record type: " + address.recType);
+		}
+	}
+
+	private void flushDirtySketches() throws IOException {
+		List<SketchAddress> pending;
+		synchronized (sketchCacheLock) {
+			pending = new ArrayList<>(dirtySketches);
+		}
+
+		for (SketchAddress address : pending) {
+			UpdateSketch sketch = null;
+			synchronized (bufA) {
+				sketch = getResidentSketch(bufA, address);
+			}
+			if (sketch == null) {
+				synchronized (bufB) {
+					sketch = getResidentSketch(bufB, address);
+				}
+			}
+			if (sketch != null) {
+				appendSketchPayload(address, sketch);
+			}
+		}
+	}
+
+	private void appendSketchPayload(SketchAddress address, UpdateSketch sketch) throws IOException {
+		byte[] payload = serializeSketchPayload(sketch);
+		Path parent = persistenceBlobFile.getParent();
+		if (parent != null) {
+			Files.createDirectories(parent);
+		}
+
+		long offset;
+		try (RandomAccessFile out = new RandomAccessFile(persistenceBlobFile.toFile(), "rw")) {
+			offset = out.length();
+			out.seek(offset);
+			out.write(payload);
+		}
+		synchronized (sketchCacheLock) {
+			persistedSketchIndex.put(address, new PersistedSketchRef(offset, payload.length));
+			dirtySketches.remove(address);
+		}
+	}
+
+	private void writeManifest(Path file) throws IOException {
+		Path parent = file.getParent();
+		if (parent != null) {
+			Files.createDirectories(parent);
+		}
+		Path tmp = file.resolveSibling(file.getFileName().toString() + ".tmp");
+		try (OutputStream raw = new BufferedOutputStream(
+				Files.newOutputStream(tmp, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING));
+				DataOutputStream out = new DataOutputStream(raw)) {
+			out.write(PERSIST_MAGIC);
+			out.writeByte(PERSIST_VERSION);
+			out.writeInt(nominalEntries);
+			out.writeInt(bufA.k);
+			writeString(out, defaultContextString);
+			out.writeLong(seenTriples);
+			out.writeLong(approxStoreSize.get());
+			out.writeLong(lastRebuildPublishMs);
+
+			List<Map.Entry<SketchAddress, PersistedSketchRef>> entries;
+			synchronized (sketchCacheLock) {
+				entries = new ArrayList<>(persistedSketchIndex.entrySet());
+			}
+			Collections.sort(entries, (a, b) -> {
+				SketchAddress ka = a.getKey();
+				SketchAddress kb = b.getKey();
+				int cmp = Byte.compare(ka.recType, kb.recType);
+				if (cmp != 0) {
+					return cmp;
+				}
+				cmp = Boolean.compare(ka.isDelete, kb.isDelete);
+				if (cmp != 0) {
+					return cmp;
+				}
+				cmp = Byte.compare(ka.axisA, kb.axisA);
+				if (cmp != 0) {
+					return cmp;
+				}
+				cmp = Byte.compare(ka.axisB, kb.axisB);
+				if (cmp != 0) {
+					return cmp;
+				}
+				cmp = Integer.compare(ka.x, kb.x);
+				if (cmp != 0) {
+					return cmp;
+				}
+				return Integer.compare(ka.y, kb.y);
+			});
+
+			out.writeInt(entries.size());
+			for (Map.Entry<SketchAddress, PersistedSketchRef> entry : entries) {
+				SketchAddress key = entry.getKey();
+				PersistedSketchRef persistedSketchRef = entry.getValue();
+				out.writeByte(key.recType);
+				out.writeBoolean(key.isDelete);
+				out.writeByte(key.axisA);
+				out.writeByte(key.axisB);
+				out.writeInt(key.x);
+				out.writeInt(key.y);
+				out.writeLong(persistedSketchRef.offset);
+				out.writeInt(persistedSketchRef.length);
+			}
+		}
+
+		try {
+			Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+		} catch (IOException e) {
+			Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+		}
+	}
+
+	private void readManifest(Path file) throws IOException {
+		try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(Files.readAllBytes(file)))) {
+			validateManifestHeader(in);
 			int buckets = in.readInt();
 			int k = in.readInt();
 			String defCtx = readString(in);
@@ -2466,25 +2795,44 @@ public class SketchBasedJoinEstimator {
 			long approx = in.readLong();
 			long lastPublish = in.readLong();
 
-			if (buckets != this.nominalEntries) {
-				throw new IOException(
-						"Snapshot buckets mismatch: snapshot=" + buckets + " current=" + this.nominalEntries);
+			if (buckets != nominalEntries) {
+				throw new IOException("Snapshot buckets mismatch: snapshot=" + buckets + " current=" + nominalEntries);
 			}
-			if (k != this.bufA.k) {
-				throw new IOException("Snapshot sketchK mismatch: snapshot=" + k + " current=" + this.bufA.k);
+			if (k != bufA.k) {
+				throw new IOException("Snapshot sketchK mismatch: snapshot=" + k + " current=" + bufA.k);
 			}
-			if (!Objects.equals(defCtx, this.defaultContextString)) {
+			if (!Objects.equals(defCtx, defaultContextString)) {
 				throw new IOException("Snapshot defaultContextString mismatch");
+			}
+
+			int count = in.readInt();
+			Map<SketchAddress, PersistedSketchRef> loadedIndex = new HashMap<>();
+			for (int i = 0; i < count; i++) {
+				byte recType = in.readByte();
+				boolean isDelete = in.readBoolean();
+				byte axisA = in.readByte();
+				byte axisB = in.readByte();
+				int x = in.readInt();
+				int y = in.readInt();
+				long offset = in.readLong();
+				int length = in.readInt();
+				SketchAddress key = new SketchAddress(recType, isDelete, axisA, axisB, x, y);
+				loadedIndex.put(key, new PersistedSketchRef(offset, length));
 			}
 
 			synchronized (bufA) {
 				bufA.clear();
-				synchronized (bufB) {
-					bufB.clear();
-					readStateInto(in, bufA, bufB);
-				}
 			}
-
+			synchronized (bufB) {
+				bufB.clear();
+			}
+			synchronized (sketchCacheLock) {
+				persistedSketchIndex.clear();
+				persistedSketchIndex.putAll(loadedIndex);
+				dirtySketches.clear();
+				residentSketches.clear();
+				residentSketchBytes = 0L;
+			}
 			current = bufA;
 			usingA = true;
 			seenTriples = seen;
@@ -2494,67 +2842,38 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
-	private static byte[] loadSnapshotPayload(Path file) throws IOException {
-		cleanupClearedSnapshotCacheEntries();
-		Path key = normalizeSnapshotKey(file);
-		SnapshotCacheEntry cached = SNAPSHOT_CACHE.get(key);
-		if (cached != null) {
-			byte[] cachedPayload = cached.payload();
-			if (cachedPayload == null) {
-				SNAPSHOT_CACHE.remove(key, cached);
-			} else if (!Files.isReadable(file)) {
-				return cachedPayload;
-			} else {
-				long modifiedMillis = Files.getLastModifiedTime(file).toMillis();
-				long size = Files.size(file);
-				if (cached.matches(size, modifiedMillis)) {
-					return cachedPayload;
-				}
-			}
-		}
-
-		if (!Files.isReadable(file)) {
-			throw new IOException("Snapshot file is not readable and no cached payload exists: " + file);
-		}
-
-		byte[] raw = Files.readAllBytes(file);
-		long modifiedMillis = Files.getLastModifiedTime(file).toMillis();
-		validateSnapshotHeader(raw);
-		byte[] payload = inflateSnapshotPayload(raw);
-		SNAPSHOT_CACHE.put(key, new SnapshotCacheEntry(raw.length, modifiedMillis, payload));
-		return payload;
-	}
-
-	private static void cleanupClearedSnapshotCacheEntries() {
-		SNAPSHOT_CACHE.entrySet().removeIf(entry -> entry.getValue().payload() == null);
-	}
-
-	private static void validateSnapshotHeader(byte[] raw) throws IOException {
-		int headerLen = PERSIST_MAGIC.length + 1;
-		if (raw.length < headerLen) {
-			throw new EOFException("Short read of estimator snapshot header");
-		}
-		for (int i = 0; i < PERSIST_MAGIC.length; i++) {
-			if (raw[i] != PERSIST_MAGIC[i]) {
+	private static void validateManifestHeader(DataInputStream in) throws IOException {
+		for (byte expected : PERSIST_MAGIC) {
+			byte actual = in.readByte();
+			if (expected != actual) {
 				throw new IOException("Not a join estimator snapshot file");
 			}
 		}
-		int version = raw[PERSIST_MAGIC.length] & 0xFF;
+		int version = in.readUnsignedByte();
 		if (version != PERSIST_VERSION) {
-			throw new IOException("Unsupported join estimator snapshot version: " + version);
+			throw new IOException(
+					"Unsupported join estimator snapshot version: " + version + " (expected " + PERSIST_VERSION + ")");
 		}
 	}
 
-	private static byte[] inflateSnapshotPayload(byte[] raw) throws IOException {
-		int offset = PERSIST_MAGIC.length + 1;
-		try (GZIPInputStream gzip = new GZIPInputStream(new ByteArrayInputStream(raw, offset, raw.length - offset));
-				ByteArrayOutputStream out = new ByteArrayOutputStream(Math.max(1024, raw.length))) {
-			byte[] buffer = new byte[8192];
-			int read;
-			while ((read = gzip.read(buffer)) != -1) {
-				out.write(buffer, 0, read);
-			}
-			return out.toByteArray();
+	private static byte[] serializeSketchPayload(UpdateSketch sketch) throws IOException {
+		try (ByteArrayOutputStream bos = new ByteArrayOutputStream(128);
+				DataOutputStream out = new DataOutputStream(bos)) {
+			writeSketch(out, sketch);
+			out.flush();
+			return bos.toByteArray();
+		}
+	}
+
+	private static UpdateSketch readSketchFromBlob(Path blob, PersistedSketchRef persistedSketchRef, int k)
+			throws IOException {
+		byte[] payload = new byte[persistedSketchRef.length];
+		try (RandomAccessFile in = new RandomAccessFile(blob.toFile(), "r")) {
+			in.seek(persistedSketchRef.offset);
+			in.readFully(payload);
+		}
+		try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(payload))) {
+			return readSketch(input, k);
 		}
 	}
 
@@ -2600,187 +2919,6 @@ public class SketchBasedJoinEstimator {
 		return sketch;
 	}
 
-	private static UpdateSketch cloneSketch(UpdateSketch source, int k) {
-		UpdateSketch copy = newSk(k);
-		HashIterator it = source.iterator();
-		while (it.next()) {
-			copy.update(it.get());
-		}
-		return copy;
-	}
-
-	private static void writeState(DataOutputStream out, State state) throws IOException {
-		for (Component c : Component.values()) {
-			writeSketchArray(out, REC_SINGLE_TRIPLE, false, (byte) c.ordinal(), state.singleTriples.get(c));
-			writeSketchArray(out, REC_SINGLE_TRIPLE, true, (byte) c.ordinal(), state.delSingleTriples.get(c));
-		}
-
-		for (Component fixed : Component.values()) {
-			SingleBuild add = state.singles.get(fixed);
-			SingleBuild del = state.delSingles.get(fixed);
-			for (Map.Entry<Component, AtomicReferenceArray<UpdateSketch>> entry : add.cmpl.entrySet()) {
-				writeSketchArray(out, REC_SINGLE_CPL, false, (byte) fixed.ordinal(), (byte) entry.getKey().ordinal(),
-						entry.getValue());
-			}
-			for (Map.Entry<Component, AtomicReferenceArray<UpdateSketch>> entry : del.cmpl.entrySet()) {
-				writeSketchArray(out, REC_SINGLE_CPL, true, (byte) fixed.ordinal(), (byte) entry.getKey().ordinal(),
-						entry.getValue());
-			}
-		}
-
-		for (Pair pair : Pair.values()) {
-			writePairBuild(out, pair, false, state.pairs.get(pair));
-			writePairBuild(out, pair, true, state.delPairs.get(pair));
-		}
-	}
-
-	private static void writeSketchArray(DataOutputStream out, byte recType, boolean isDelete, byte comp,
-			AtomicReferenceArray<UpdateSketch> array) throws IOException {
-		if (array == null) {
-			return;
-		}
-		for (int i = 0; i < array.length(); i++) {
-			UpdateSketch sketch = array.get(i);
-			if (sketch == null || sketch.getRetainedEntries() == 0) {
-				continue;
-			}
-			out.writeByte(recType);
-			out.writeBoolean(isDelete);
-			out.writeByte(comp);
-			out.writeInt(i);
-			writeSketch(out, sketch);
-		}
-	}
-
-	private static void writeSketchArray(DataOutputStream out, byte recType, boolean isDelete, byte fixed, byte other,
-			AtomicReferenceArray<UpdateSketch> array) throws IOException {
-		if (array == null) {
-			return;
-		}
-		for (int i = 0; i < array.length(); i++) {
-			UpdateSketch sketch = array.get(i);
-			if (sketch == null || sketch.getRetainedEntries() == 0) {
-				continue;
-			}
-			out.writeByte(recType);
-			out.writeBoolean(isDelete);
-			out.writeByte(fixed);
-			out.writeByte(other);
-			out.writeInt(i);
-			writeSketch(out, sketch);
-		}
-	}
-
-	private static void writePairBuild(DataOutputStream out, Pair pair, boolean isDelete, PairBuild build)
-			throws IOException {
-		if (build == null) {
-			return;
-		}
-		for (Map.Entry<Integer, PairBuild.Row> entry : build.rows.entrySet()) {
-			int x = entry.getKey();
-			PairBuild.Row row = entry.getValue();
-			if (row == null) {
-				continue;
-			}
-			writePairRow(out, pair, isDelete, REC_PAIR_TRIPLE, row.triples, x);
-			writePairRow(out, pair, isDelete, REC_PAIR_COMP1, row.comp1, x);
-			writePairRow(out, pair, isDelete, REC_PAIR_COMP2, row.comp2, x);
-		}
-	}
-
-	private static void writePairRow(DataOutputStream out, Pair pair, boolean isDelete, byte recType,
-			Map<Integer, UpdateSketch> array, int x) throws IOException {
-		for (Map.Entry<Integer, UpdateSketch> entry : array.entrySet()) {
-			int y = entry.getKey();
-			UpdateSketch sketch = entry.getValue();
-			if (sketch == null || sketch.getRetainedEntries() == 0) {
-				continue;
-			}
-			out.writeByte(recType);
-			out.writeBoolean(isDelete);
-			out.writeByte((byte) pair.ordinal());
-			out.writeInt(x);
-			out.writeInt(y);
-			writeSketch(out, sketch);
-		}
-	}
-
-	private static void readStateInto(DataInputStream in, State stateA, State stateB) throws IOException {
-		while (true) {
-			byte rec = in.readByte();
-			if (rec == REC_EOF) {
-				return;
-			}
-
-			switch (rec) {
-			case REC_SINGLE_TRIPLE: {
-				boolean isDelete = in.readBoolean();
-				Component component = Component.values()[in.readByte()];
-				int idx = in.readInt();
-				UpdateSketch skA = readSketch(in, stateA.k);
-				UpdateSketch skB = cloneSketch(skA, stateB.k);
-
-				AtomicReferenceArray<UpdateSketch> arrA = isDelete ? stateA.delSingleTriples.get(component)
-						: stateA.singleTriples.get(component);
-				AtomicReferenceArray<UpdateSketch> arrB = isDelete ? stateB.delSingleTriples.get(component)
-						: stateB.singleTriples.get(component);
-				arrA.set(idx, skA);
-				arrB.set(idx, skB);
-				break;
-			}
-			case REC_SINGLE_CPL: {
-				boolean isDelete = in.readBoolean();
-				Component fixed = Component.values()[in.readByte()];
-				Component other = Component.values()[in.readByte()];
-				int idx = in.readInt();
-				UpdateSketch skA = readSketch(in, stateA.k);
-				UpdateSketch skB = cloneSketch(skA, stateB.k);
-
-				SingleBuild sbA = isDelete ? stateA.delSingles.get(fixed) : stateA.singles.get(fixed);
-				SingleBuild sbB = isDelete ? stateB.delSingles.get(fixed) : stateB.singles.get(fixed);
-				sbA.cmpl.get(other).set(idx, skA);
-				sbB.cmpl.get(other).set(idx, skB);
-				break;
-			}
-			case REC_PAIR_TRIPLE:
-			case REC_PAIR_COMP1:
-			case REC_PAIR_COMP2: {
-				boolean isDelete = in.readBoolean();
-				Pair pair = Pair.values()[in.readByte()];
-				int x = in.readInt();
-				int y = in.readInt();
-				UpdateSketch skA = readSketch(in, stateA.k);
-				UpdateSketch skB = cloneSketch(skA, stateB.k);
-
-				PairBuild pbA = isDelete ? stateA.delPairs.get(pair) : stateA.pairs.get(pair);
-				PairBuild pbB = isDelete ? stateB.delPairs.get(pair) : stateB.pairs.get(pair);
-
-				PairBuild.Row rowA = pbA.getOrCreateRow(x);
-				PairBuild.Row rowB = pbB.getOrCreateRow(x);
-
-				Map<Integer, UpdateSketch> arrA;
-				Map<Integer, UpdateSketch> arrB;
-				if (rec == REC_PAIR_TRIPLE) {
-					arrA = rowA.triples;
-					arrB = rowB.triples;
-				} else if (rec == REC_PAIR_COMP1) {
-					arrA = rowA.comp1;
-					arrB = rowB.comp1;
-				} else {
-					arrA = rowA.comp2;
-					arrB = rowB.comp2;
-				}
-
-				arrA.put(y, skA);
-				arrB.put(y, skB);
-				break;
-			}
-			default:
-				throw new IOException("Unknown estimator snapshot record type: " + rec);
-			}
-		}
-	}
-
 	/* ────────────────────────────────────────────────────────────── */
 	/* Array helpers (private) */
 	/* ────────────────────────────────────────────────────────────── */
@@ -2792,6 +2930,19 @@ public class SketchBasedJoinEstimator {
 		for (int i = 0; i < arr.length(); i++) {
 			arr.set(i, null);
 		}
+	}
+
+	private void updateSketch(State state, SketchAddress address, long value) {
+		UpdateSketch sketch = getSketchForWrite(state, address);
+		sketch.update(value);
+		markDirty(address);
+		touchResidentSketch(state, address, sketch);
+	}
+
+	private void updatePairSketch(State state, boolean isDelete, Pair pair, byte recType, long key, long value) {
+		int x = (int) (key >>> 32);
+		int y = (int) key;
+		updateSketch(state, pairAddress(recType, isDelete, pair, x, y), value);
 	}
 
 	private static void updateCell(AtomicReferenceArray<UpdateSketch> arr, int idx, long value, int k) {
@@ -2890,7 +3041,7 @@ public class SketchBasedJoinEstimator {
 		// capacity & layout
 		int nominalEntries = DEFAULT_BUCKET_COUNT;
 		boolean doubleArrayBuckets = false;
-		int sketchK = 1024; // <= 0 -> use DataSketches default unless multiplier is set
+		int sketchK = DEFAULT_SKETCH_NOMINAL_ENTRIES; // <= 0 -> use DataSketches default unless multiplier is set
 		int sketchKMultiplier = 0;
 
 		// rebuild throttling
@@ -2909,6 +3060,8 @@ public class SketchBasedJoinEstimator {
 		double churnSamplePercent = 0.01;
 		double churnReaddThreshold = 0.20;
 		double churnRemovalRatioThreshold = 0.50;
+		double minSketchMemoryPercent = 0.01;
+		double maxSketchMemoryPercent = 0.02;
 
 		/** Return a new config with all defaults. */
 		public static Config defaults() {
@@ -3002,6 +3155,23 @@ public class SketchBasedJoinEstimator {
 		/** Threshold for the ratio of removed to added sampled statements. */
 		public Config withChurnRemovalRatioThreshold(double fraction) {
 			this.churnRemovalRatioThreshold = fraction;
+			return this;
+		}
+
+		/** Minimum heap fraction reserved as eviction floor for resident sketches (0..1). */
+		public Config withMinSketchMemoryPercent(double fraction) {
+			double normalized = Double.isFinite(fraction) ? fraction : 0.0d;
+			this.minSketchMemoryPercent = SketchBasedJoinEstimator.clamp(normalized, 0.0d, 1.0d);
+			if (this.maxSketchMemoryPercent < this.minSketchMemoryPercent) {
+				this.maxSketchMemoryPercent = this.minSketchMemoryPercent;
+			}
+			return this;
+		}
+
+		/** Maximum heap fraction used as resident sketch eviction ceiling (0..1, and >= min). */
+		public Config withMaxSketchMemoryPercent(double fraction) {
+			double normalized = Double.isFinite(fraction) ? fraction : this.maxSketchMemoryPercent;
+			this.maxSketchMemoryPercent = SketchBasedJoinEstimator.clamp(normalized, this.minSketchMemoryPercent, 1.0d);
 			return this;
 		}
 	}

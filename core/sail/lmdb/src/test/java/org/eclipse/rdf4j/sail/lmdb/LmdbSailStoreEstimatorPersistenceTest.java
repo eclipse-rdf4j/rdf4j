@@ -18,7 +18,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.lang.reflect.Field;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -58,7 +57,6 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		try {
 			LmdbSailStore backingStore = reopened.getBackingStore();
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
-			estimator.setLowMemorySupplier(() -> false);
 
 			Field loadedField = SketchBasedJoinEstimator.class.getDeclaredField("sketchesLoaded");
 			loadedField.setAccessible(true);
@@ -70,7 +68,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	}
 
 	@Test
-	void lowMemoryUnloadAfterNoneCommitStillAllowsReadyWithoutRebuild(@TempDir File dataDir) throws Exception {
+	void commitPersistsWithLruEvictionsAndRemainsReadyAfterRestart(@TempDir File dataDir) throws Exception {
 		var vf = SimpleValueFactory.getInstance();
 		var s = vf.createIRI("urn:s");
 		var p = vf.createIRI("urn:p");
@@ -79,33 +77,9 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
 		store.init();
 		try {
-			AtomicInteger lowMemoryChecks = new AtomicInteger();
-			LmdbSailStore.setLowMemorySupplierForTests(() -> {
-				lowMemoryChecks.incrementAndGet();
-				StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-				boolean inEstimatorUpdate = false;
-				boolean inLmdbFlush = false;
-				for (StackTraceElement frame : stackTrace) {
-					if (frame.getClassName().equals(SketchBasedJoinEstimator.class.getName())
-							&& ("addStatement".equals(frame.getMethodName())
-									|| "deleteStatement".equals(frame.getMethodName()))) {
-						inEstimatorUpdate = true;
-						break;
-					}
-					if (frame.getClassName().contains("LmdbSailStore$LmdbSailSink")
-							&& "flush".equals(frame.getMethodName())) {
-						inLmdbFlush = true;
-					}
-				}
-				return inLmdbFlush && !inEstimatorUpdate;
-			});
-
 			LmdbSailStore backingStore = store.getBackingStore();
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
-
-			// Keep the test deterministic by removing background rebuild effects.
-			estimator.stop();
-			estimator.setRebuildAllowedSupplier(() -> false);
+			setSketchBudgetBytes(estimator, 0L, 0L);
 
 			try (NotifyingSailConnection conn = store.getConnection()) {
 				conn.begin(IsolationLevels.NONE);
@@ -115,18 +89,23 @@ class LmdbSailStoreEstimatorPersistenceTest {
 
 			Field loadedField = SketchBasedJoinEstimator.class.getDeclaredField("sketchesLoaded");
 			loadedField.setAccessible(true);
-			assertFalse(loadedField.getBoolean(estimator), "Expected low-memory flush to unload estimator sketches");
-			assertTrue(lowMemoryChecks.get() > 0, "Expected low-memory supplier to be consulted during commit");
-
-			// Let the scheduled async persist run if any was queued.
-			Thread.sleep(1500L);
-			LmdbSailStore.setLowMemorySupplierForTests(() -> false);
-
-			assertTrue(estimator.isReady(),
-					"Estimator should remain recoverable from snapshot without requiring a rebuild");
+			assertTrue(loadedField.getBoolean(estimator), "LRU evictions must not unload estimator state");
+			assertTrue(estimator.isReady());
 		} finally {
-			LmdbSailStore.setLowMemorySupplierForTests(null);
 			store.shutDown();
+		}
+
+		assertTrue(new File(dataDir, SNAPSHOT_FILE).isFile(), "Expected estimator manifest after shutdown");
+		assertTrue(new File(dataDir, SNAPSHOT_FILE + ".sketches").isFile(),
+				"Expected estimator sidecar after shutdown");
+
+		LmdbStore reopened = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		reopened.init();
+		try {
+			SketchBasedJoinEstimator estimator = reopened.getBackingStore().getSketchBasedJoinEstimator();
+			assertTrue(estimator.isReady(), "Expected estimator to recover from persisted LRU snapshots");
+		} finally {
+			reopened.shutDown();
 		}
 	}
 
@@ -143,7 +122,6 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			LmdbSailStore backingStore = store.getBackingStore();
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
 			estimator.stop();
-			estimator.setLowMemorySupplier(() -> false);
 			estimator.setRebuildAllowedSupplier(() -> false);
 
 			try (NotifyingSailConnection conn = store.getConnection()) {
@@ -159,5 +137,15 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		} finally {
 			store.shutDown();
 		}
+	}
+
+	private static void setSketchBudgetBytes(SketchBasedJoinEstimator estimator, long minBytes, long maxBytes)
+			throws Exception {
+		Field minField = SketchBasedJoinEstimator.class.getDeclaredField("minSketchMemoryBytes");
+		Field maxField = SketchBasedJoinEstimator.class.getDeclaredField("maxSketchMemoryBytes");
+		minField.setAccessible(true);
+		maxField.setAccessible(true);
+		minField.setLong(estimator, minBytes);
+		maxField.setLong(estimator, maxBytes);
 	}
 }

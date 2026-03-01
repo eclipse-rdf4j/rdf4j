@@ -110,7 +110,6 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().setLowMemorySupplier(() -> false);
 			backingStore.getSketchBasedJoinEstimator().rebuildOnceSlow();
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
@@ -143,7 +142,6 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().setLowMemorySupplier(() -> false);
 			backingStore.getSketchBasedJoinEstimator().rebuildOnceSlow();
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
@@ -189,7 +187,6 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().setLowMemorySupplier(() -> false);
 			backingStore.getSketchBasedJoinEstimator().rebuildOnceSlow();
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
