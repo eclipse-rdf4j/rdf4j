@@ -2556,7 +2556,7 @@ public class SketchBasedJoinEstimator {
 		UpdateSketch sketch = getResidentSketch(state, address);
 		if (sketch == null) {
 			sketch = loadPersistedSketch(state, address);
-			if(sketch != null) {
+			if (sketch != null) {
 				setResidentSketch(state, address, sketch);
 			}
 		}
@@ -2975,12 +2975,13 @@ public class SketchBasedJoinEstimator {
 		MappedChannelEntry entry = getMappedChannelEntry(blob, false);
 		synchronized (entry) {
 			long endOffset = persistedSketchRef.offset + persistedSketchRef.length;
-//			if (persistedSketchRef.offset < 0 || persistedSketchRef.length < 0 || endOffset < persistedSketchRef.offset
-//					|| endOffset > entry.channel.size()) {
-//				throw new IOException("Persisted sketch ref exceeds sidecar bounds: offset=" + persistedSketchRef.offset
-//						+ " length=" + persistedSketchRef.length + " fileSize=" + entry.channel.size());
-//			}
-//			ensureMappedBufferRange(entry, persistedSketchRef.offset, persistedSketchRef.length);
+			if (persistedSketchRef.offset < 0 || persistedSketchRef.length < 0
+					|| endOffset < persistedSketchRef.offset) {
+				throw new IOException("Persisted sketch ref exceeds sidecar bounds: offset=" + persistedSketchRef.offset
+						+ " length=" + persistedSketchRef.length + " fileSize=" + entry.channel.size());
+			}
+
+			ensureMappedBufferRange(entry, persistedSketchRef.offset, persistedSketchRef.length);
 			MappedByteBuffer mapped = entry.mappedBuffer.duplicate();
 			mapped.position((int) (persistedSketchRef.offset - entry.mappedOffset));
 			mapped.get(payload);
@@ -3227,8 +3228,9 @@ public class SketchBasedJoinEstimator {
 
 	private static int propInt(String name, int def) {
 		String v = System.getProperty(PROP_PREFIX + name);
-		if (v == null)
+		if (v == null) {
 			return def;
+		}
 		try {
 			return Integer.parseInt(v.trim());
 		} catch (Exception e) {
@@ -3238,8 +3240,9 @@ public class SketchBasedJoinEstimator {
 
 	private static int propIntOrNegOne(String name, int def) {
 		String v = System.getProperty(PROP_PREFIX + name);
-		if (v == null)
+		if (v == null) {
 			return def;
+		}
 		try {
 			return Integer.parseInt(v.trim());
 		} catch (Exception e) {
@@ -3249,8 +3252,9 @@ public class SketchBasedJoinEstimator {
 
 	private static long propLong(String name, long def) {
 		String v = System.getProperty(PROP_PREFIX + name);
-		if (v == null)
+		if (v == null) {
 			return def;
+		}
 		try {
 			return Long.parseLong(v.trim());
 		} catch (Exception e) {
@@ -3260,8 +3264,9 @@ public class SketchBasedJoinEstimator {
 
 	private static double propDouble(String name, double def) {
 		String v = System.getProperty(PROP_PREFIX + name);
-		if (v == null)
+		if (v == null) {
 			return def;
+		}
 		try {
 			return Double.parseDouble(v.trim());
 		} catch (Exception e) {
@@ -3271,8 +3276,9 @@ public class SketchBasedJoinEstimator {
 
 	private static boolean propBool(String name, boolean def) {
 		String v = System.getProperty(PROP_PREFIX + name);
-		if (v == null)
+		if (v == null) {
 			return def;
+		}
 		return Boolean.parseBoolean(v.trim());
 	}
 
