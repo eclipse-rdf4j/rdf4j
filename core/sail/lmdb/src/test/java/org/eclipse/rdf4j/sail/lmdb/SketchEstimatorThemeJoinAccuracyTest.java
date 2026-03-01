@@ -26,6 +26,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.time.StopWatch;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -131,16 +132,21 @@ class SketchEstimatorThemeJoinAccuracyTest {
 
 	private static void loadAllThemesInSingleGraph(SailRepository repository) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
 			RDFInserter inserter = new RDFInserter(connection);
 			inserter.enforceContext(THEME_GRAPH);
 			for (ThemeDataSetGenerator.Theme theme : ThemeDataSetGenerator.Theme.values()) {
+				connection.begin();
+
+				StopWatch started = StopWatch.createStarted();
 				System.out.println("Loading theme: " + theme);
 				ThemeDataSetGenerator.generate(theme, inserter);
+				connection.commit();
+
 				System.out.println("Finished loading theme: " + theme);
+				System.out.println("Time taken: " + started);
 //				break;
+
 			}
-			connection.commit();
 		}
 	}
 

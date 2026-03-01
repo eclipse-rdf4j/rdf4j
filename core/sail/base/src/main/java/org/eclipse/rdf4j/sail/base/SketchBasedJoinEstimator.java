@@ -19,6 +19,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -238,6 +239,29 @@ public class SketchBasedJoinEstimator {
 	private static final byte REC_PAIR_COMP1 = 4;
 	private static final byte REC_PAIR_COMP2 = 5;
 
+	private static int packKeyPrefix(byte recType, boolean isDelete, byte axisA, byte axisB) {
+		int prefix = recType & 0xff;
+		prefix |= (isDelete ? 1 : 0) << 8;
+		prefix |= (axisA & 0xff) << 16;
+		prefix |= (axisB & 0xff) << 24;
+		return prefix;
+	}
+
+	private static int mixAddressHash(int keyPrefix, int x, int y) {
+		int h = 31 * keyPrefix + x;
+		h = 31 * h + y;
+		return fmix32(h);
+	}
+
+	private static int fmix32(int h) {
+		h ^= h >>> 16;
+		h *= 0x85ebca6b;
+		h ^= h >>> 13;
+		h *= 0xc2b2ae35;
+		h ^= h >>> 16;
+		return h;
+	}
+
 	private static final class SketchAddress {
 		private final byte recType;
 		private final boolean isDelete;
@@ -254,7 +278,7 @@ public class SketchBasedJoinEstimator {
 			this.axisB = axisB;
 			this.x = x;
 			this.y = y;
-			this.hashCode = Objects.hash(recType, isDelete, axisA, axisB, x, y);
+			this.hashCode = mixAddressHash(packKeyPrefix(recType, isDelete, axisA, axisB), x, y);
 		}
 
 		@Override
@@ -321,19 +345,18 @@ public class SketchBasedJoinEstimator {
 
 	private static final class CacheDirectory {
 		private static final byte FLAG_DIRTY = 1;
-		private static final int EMPTY_BUCKET = -1;
+		private static final long EMPTY_BUCKET = 0L;
 		private static final int NO_NODE = -1;
 		private static final int NO_BLOB = -1;
 
 		private int size;
-		private int[] buckets;
+		private long[] buckets;
 		private int bucketMask;
 
 		private byte[] flags;
 		private int[] keyPrefixes;
 		private int[] xs;
 		private int[] ys;
-		private int[] keyHashes;
 
 		private int[] persistedBlobIds;
 		private long[] persistedOffsets;
@@ -353,7 +376,6 @@ public class SketchBasedJoinEstimator {
 			keyPrefixes = new int[256];
 			xs = new int[256];
 			ys = new int[256];
-			keyHashes = new int[256];
 			persistedBlobIds = new int[256];
 			persistedOffsets = new long[256];
 			persistedLengths = new int[256];
@@ -371,8 +393,7 @@ public class SketchBasedJoinEstimator {
 		}
 
 		private void initBuckets(int capacity) {
-			buckets = new int[capacity];
-			Arrays.fill(buckets, EMPTY_BUCKET);
+			buckets = new long[capacity];
 			bucketMask = capacity - 1;
 		}
 
@@ -392,17 +413,19 @@ public class SketchBasedJoinEstimator {
 		}
 
 		private int find(byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y) {
-			int keyPrefix = keyPrefix(recType, isDelete, axisA, axisB);
-			int keyHash = hash(keyPrefix, x, y);
+			int keyPrefix = packKeyPrefix(recType, isDelete, axisA, axisB);
+			int keyHash = mixAddressHash(keyPrefix, x, y);
 			int slot = keyHash & bucketMask;
 			while (true) {
-				int entryId = buckets[slot];
-				if (entryId == EMPTY_BUCKET) {
+				long bucket = buckets[slot];
+				if (bucket == EMPTY_BUCKET) {
 					return -1;
 				}
-				if (keyHashes[entryId] == keyHash && keyPrefixes[entryId] == keyPrefix && xs[entryId] == x
-						&& ys[entryId] == y) {
-					return entryId;
+				if (bucketHash(bucket) == keyHash) {
+					int entryId = bucketEntryId(bucket);
+					if (keyPrefixes[entryId] == keyPrefix && xs[entryId] == x && ys[entryId] == y) {
+						return entryId;
+					}
 				}
 				slot = (slot + 1) & bucketMask;
 			}
@@ -416,20 +439,19 @@ public class SketchBasedJoinEstimator {
 			if ((size + 1) * 10 >= buckets.length * 7) {
 				rehash(buckets.length << 1);
 			}
-			int keyPrefix = keyPrefix(recType, isDelete, axisA, axisB);
-			int keyHash = hash(keyPrefix, x, y);
+			int keyPrefix = packKeyPrefix(recType, isDelete, axisA, axisB);
+			int keyHash = mixAddressHash(keyPrefix, x, y);
 			int slot = keyHash & bucketMask;
 			while (true) {
-				int entryId = buckets[slot];
-				if (entryId == EMPTY_BUCKET) {
-					entryId = size++;
+				long bucket = buckets[slot];
+				if (bucket == EMPTY_BUCKET) {
+					int entryId = size++;
 					ensureEntryCapacity(size);
-					buckets[slot] = entryId;
+					buckets[slot] = encodeBucket(keyHash, entryId);
 					flags[entryId] = 0;
 					keyPrefixes[entryId] = keyPrefix;
 					xs[entryId] = x;
 					ys[entryId] = y;
-					keyHashes[entryId] = keyHash;
 					persistedBlobIds[entryId] = NO_BLOB;
 					persistedOffsets[entryId] = 0L;
 					persistedLengths[entryId] = 0;
@@ -439,12 +461,26 @@ public class SketchBasedJoinEstimator {
 					dirtyNext[entryId] = NO_NODE;
 					return entryId;
 				}
-				if (keyHashes[entryId] == keyHash && keyPrefixes[entryId] == keyPrefix && xs[entryId] == x
-						&& ys[entryId] == y) {
-					return entryId;
+				if (bucketHash(bucket) == keyHash) {
+					int entryId = bucketEntryId(bucket);
+					if (keyPrefixes[entryId] == keyPrefix && xs[entryId] == x && ys[entryId] == y) {
+						return entryId;
+					}
 				}
 				slot = (slot + 1) & bucketMask;
 			}
+		}
+
+		private static long encodeBucket(int keyHash, int entryId) {
+			return (((long) keyHash) << 32) | ((entryId + 1L) & 0xffffffffL);
+		}
+
+		private static int bucketHash(long bucket) {
+			return (int) (bucket >>> 32);
+		}
+
+		private static int bucketEntryId(long bucket) {
+			return (int) (bucket & 0xffffffffL) - 1;
 		}
 
 		private void ensureEntryCapacity(int minCapacity) {
@@ -460,7 +496,6 @@ public class SketchBasedJoinEstimator {
 			keyPrefixes = Arrays.copyOf(keyPrefixes, next);
 			xs = Arrays.copyOf(xs, next);
 			ys = Arrays.copyOf(ys, next);
-			keyHashes = Arrays.copyOf(keyHashes, next);
 			int previousLength = persistedBlobIds.length;
 			persistedBlobIds = Arrays.copyOf(persistedBlobIds, next);
 			Arrays.fill(persistedBlobIds, previousLength, next, NO_BLOB);
@@ -477,34 +512,18 @@ public class SketchBasedJoinEstimator {
 		}
 
 		private void rehash(int newCapacity) {
-			int[] oldBuckets = buckets;
+			long[] oldBuckets = buckets;
 			initBuckets(newCapacity);
-			for (int slot = 0; slot < oldBuckets.length; slot++) {
-				int entryId = oldBuckets[slot];
-				if (entryId == EMPTY_BUCKET) {
+			for (long bucket : oldBuckets) {
+				if (bucket == EMPTY_BUCKET) {
 					continue;
 				}
-				int newSlot = keyHashes[entryId] & bucketMask;
+				int newSlot = bucketHash(bucket) & bucketMask;
 				while (buckets[newSlot] != EMPTY_BUCKET) {
 					newSlot = (newSlot + 1) & bucketMask;
 				}
-				buckets[newSlot] = entryId;
+				buckets[newSlot] = bucket;
 			}
-		}
-
-		private static int keyPrefix(byte recType, boolean isDelete, byte axisA, byte axisB) {
-			int prefix = recType & 0xff;
-			prefix |= (isDelete ? 1 : 0) << 8;
-			prefix |= (axisA & 0xff) << 16;
-			prefix |= (axisB & 0xff) << 24;
-			return prefix;
-		}
-
-		private static int hash(int keyPrefix, int x, int y) {
-			int h = 31 * keyPrefix + x;
-			h = 31 * h + y;
-			h ^= (h >>> 16);
-			return h;
 		}
 
 		private static byte recTypeFromPrefix(int keyPrefix) {
@@ -921,16 +940,15 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private static final class BatchUpdateAccumulator {
-		private static final int EMPTY_BUCKET = -1;
+		private static final long EMPTY_BUCKET = 0L;
 
 		private int size;
-		private int[] buckets;
+		private long[] buckets;
 		private int bucketMask;
 
 		private int[] keyPrefixes;
 		private int[] xs;
 		private int[] ys;
-		private int[] keyHashes;
 		private long[][] values;
 		private int[] valueCounts;
 
@@ -950,14 +968,12 @@ public class SketchBasedJoinEstimator {
 			keyPrefixes = new int[entryCapacity];
 			xs = new int[entryCapacity];
 			ys = new int[entryCapacity];
-			keyHashes = new int[entryCapacity];
 			values = new long[entryCapacity][];
 			valueCounts = new int[entryCapacity];
 		}
 
 		private void initBuckets(int capacity) {
-			buckets = new int[capacity];
-			Arrays.fill(buckets, EMPTY_BUCKET);
+			buckets = new long[capacity];
 			bucketMask = capacity - 1;
 		}
 
@@ -965,31 +981,44 @@ public class SketchBasedJoinEstimator {
 			if ((size + 1) * 10 >= buckets.length * 7) {
 				rehash(buckets.length << 1);
 			}
-			int keyPrefix = keyPrefix(recType, isDelete, axisA, axisB);
-			int keyHash = hash(keyPrefix, x, y);
+			int keyPrefix = packKeyPrefix(recType, isDelete, axisA, axisB);
+			int keyHash = mixAddressHash(keyPrefix, x, y);
 			int slot = keyHash & bucketMask;
 			while (true) {
-				int entryId = buckets[slot];
-				if (entryId == EMPTY_BUCKET) {
-					entryId = size++;
+				long bucket = buckets[slot];
+				if (bucket == EMPTY_BUCKET) {
+					int entryId = size++;
 					ensureEntryCapacity(size);
-					buckets[slot] = entryId;
+					buckets[slot] = encodeBucket(keyHash, entryId);
 					keyPrefixes[entryId] = keyPrefix;
 					xs[entryId] = x;
 					ys[entryId] = y;
-					keyHashes[entryId] = keyHash;
 					values[entryId] = new long[8];
 					valueCounts[entryId] = 0;
 					appendValue(entryId, value);
 					return;
 				}
-				if (keyHashes[entryId] == keyHash && keyPrefixes[entryId] == keyPrefix && xs[entryId] == x
-						&& ys[entryId] == y) {
-					appendValue(entryId, value);
-					return;
+				if (bucketHash(bucket) == keyHash) {
+					int entryId = bucketEntryId(bucket);
+					if (keyPrefixes[entryId] == keyPrefix && xs[entryId] == x && ys[entryId] == y) {
+						appendValue(entryId, value);
+						return;
+					}
 				}
 				slot = (slot + 1) & bucketMask;
 			}
+		}
+
+		private static long encodeBucket(int keyHash, int entryId) {
+			return (((long) keyHash) << 32) | ((entryId + 1L) & 0xffffffffL);
+		}
+
+		private static int bucketHash(long bucket) {
+			return (int) (bucket >>> 32);
+		}
+
+		private static int bucketEntryId(long bucket) {
+			return (int) (bucket & 0xffffffffL) - 1;
 		}
 
 		private void appendValue(int entryId, long value) {
@@ -1015,40 +1044,23 @@ public class SketchBasedJoinEstimator {
 			keyPrefixes = Arrays.copyOf(keyPrefixes, next);
 			xs = Arrays.copyOf(xs, next);
 			ys = Arrays.copyOf(ys, next);
-			keyHashes = Arrays.copyOf(keyHashes, next);
 			values = Arrays.copyOf(values, next);
 			valueCounts = Arrays.copyOf(valueCounts, next);
 		}
 
 		private void rehash(int newCapacity) {
-			int[] oldBuckets = buckets;
+			long[] oldBuckets = buckets;
 			initBuckets(newCapacity);
-			for (int slot = 0; slot < oldBuckets.length; slot++) {
-				int entryId = oldBuckets[slot];
-				if (entryId == EMPTY_BUCKET) {
+			for (long bucket : oldBuckets) {
+				if (bucket == EMPTY_BUCKET) {
 					continue;
 				}
-				int newSlot = keyHashes[entryId] & bucketMask;
+				int newSlot = bucketHash(bucket) & bucketMask;
 				while (buckets[newSlot] != EMPTY_BUCKET) {
 					newSlot = (newSlot + 1) & bucketMask;
 				}
-				buckets[newSlot] = entryId;
+				buckets[newSlot] = bucket;
 			}
-		}
-
-		private static int keyPrefix(byte recType, boolean isDelete, byte axisA, byte axisB) {
-			int prefix = recType & 0xff;
-			prefix |= (isDelete ? 1 : 0) << 8;
-			prefix |= (axisA & 0xff) << 16;
-			prefix |= (axisB & 0xff) << 24;
-			return prefix;
-		}
-
-		private static int hash(int keyPrefix, int x, int y) {
-			int h = 31 * keyPrefix + x;
-			h = 31 * h + y;
-			h ^= (h >>> 16);
-			return h;
 		}
 
 		private void forEach(BatchUpdateConsumer consumer) {
@@ -3429,7 +3441,7 @@ public class SketchBasedJoinEstimator {
 
 	private static long estimatedSketchBytes(UpdateSketch sketch) {
 		// getCurrentBytes() is O(1) and avoids scanning retained entries on every cache touch.
-		return Math.max(Integer.BYTES, (long) sketch.getCurrentBytes());
+		return sketch.getCurrentBytes();
 	}
 
 	private BufferSlot slotOf(State state) {
@@ -3626,14 +3638,43 @@ public class SketchBasedJoinEstimator {
 			if (residentSketchBytes <= maxSketchMemoryBytes || residentLru.isEmpty()) {
 				return;
 			}
-			targetBytes = minSketchMemoryBytes;
+			// get amount of free memory here
+
+			targetBytes = minSketchMemoryBytes; // hysteresis: try to get under budget by evicting until we're under a lower threshold
 		}
+		System.gc();
+		try {
+			Thread.sleep(1);
+		} catch (InterruptedException e) {
+			throw new RuntimeException(e);
+		}
+		System.gc();
+		try {
+			Thread.sleep(1);
+		} catch (InterruptedException e) {
+			throw new RuntimeException(e);
+		}
+		System.out.println(ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().toString());
 
 		while (true) {
 			int candidateEntryId;
 			byte candidateSlot;
 			synchronized (sketchCacheLock) {
 				if (residentSketchBytes <= targetBytes || residentLru.isEmpty()) {
+					System.gc();
+					try {
+						Thread.sleep(1);
+					} catch (InterruptedException e) {
+						throw new RuntimeException(e);
+					}
+					System.gc();
+					try {
+						Thread.sleep(1);
+					} catch (InterruptedException e) {
+						throw new RuntimeException(e);
+					}
+					System.out.println("after: "+ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().toString());
+
 					return;
 				}
 				int headNode = residentLru.headNode();
@@ -3642,9 +3683,12 @@ public class SketchBasedJoinEstimator {
 			}
 
 			if (!evictResidentSketch(candidateEntryId, candidateSlot)) {
+				System.out.println("after: "+ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().toString());
+
 				return;
 			}
 		}
+
 	}
 
 	private boolean evictResidentSketch(int entryId, byte slotByte) {
@@ -4458,8 +4502,8 @@ public class SketchBasedJoinEstimator {
 		double churnSamplePercent = 0.01;
 		double churnReaddThreshold = 0.20;
 		double churnRemovalRatioThreshold = 0.50;
-		double minSketchMemoryPercent = 0.01;
-		double maxSketchMemoryPercent = 0.02;
+		double minSketchMemoryPercent = 0.05;
+		double maxSketchMemoryPercent = 0.10;
 		long maxPersistenceBlobBytes = DEFAULT_MAX_PERSISTENCE_BLOB_BYTES;
 
 		/** Return a new config with all defaults. */

@@ -355,6 +355,67 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
+	void packedBucketRehashRetainsSketchReachability(@TempDir Path tempDir) throws Exception {
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		writer.configurePersistence(snapshot, false);
+
+		List<IRI> predicates = new ArrayList<>();
+		int statementCount = 320;
+		for (int i = 0; i < statementCount; i++) {
+			IRI predicate = VF.createIRI("urn:rehash:p" + i);
+			predicates.add(predicate);
+			writer.addStatement(st(VF.createIRI("urn:rehash:s" + i), predicate, VF.createIRI("urn:rehash:o" + i)));
+		}
+
+		assertTrue(writer.persistIfDirty(), "Expected persisted snapshot after rehash-heavy ingest");
+		assertTrue(writer.debugPersistedSketches().size() > statementCount,
+				"Expected persisted index to keep sketches after repeated cache-directory rehashes");
+
+		int[] sampleIndexes = new int[] { 0, 37, 119, 231, 319 };
+		for (int index : sampleIndexes) {
+			assertTrue(hasPersistedSinglePredicateSketch(writer, predicates.get(index).stringValue()),
+					"Expected persisted predicate sketch for sample index " + index);
+		}
+
+		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		reader.configurePersistence(snapshot, true);
+		assertTrue(reader.isReady(), "Expected lazy reload after packed-bucket rehash churn");
+		for (int index : sampleIndexes) {
+			assertTrue(
+					reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+							predicates.get(index).stringValue()) > 0.0,
+					"Expected sampled predicate cardinality to remain reachable after reload at index " + index);
+		}
+	}
+
+	@Test
+	void batchAccumulatorHandlesHighCollisionProbeChains(@TempDir Path tempDir) throws Exception {
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		writer.configurePersistence(snapshot, false);
+
+		IRI predicate = VF.createIRI("urn:collision:p");
+		Resource context = VF.createIRI("urn:collision:c");
+		for (int i = 0; i < 2048; i++) {
+			writer.addStatement(st(VF.createIRI("urn:collision:s" + i), predicate,
+					VF.createIRI("urn:collision:o" + (i % 97)), context));
+		}
+
+		assertTrue(writer.persistIfDirty(), "Expected batch-ingest flush to persist grouped updates");
+		assertTrue(hasPersistedSinglePredicateSketch(writer, predicate.stringValue()),
+				"Expected persisted predicate sketch after collision-heavy grouped ingest");
+		assertTrue(writer.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()) > 0.0,
+				"Expected non-zero predicate cardinality after grouped ingest");
+
+		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		reader.configurePersistence(snapshot, true);
+		assertTrue(reader.isReady(), "Expected reload after grouped-ingest persist");
+		assertTrue(reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()) > 0.0,
+				"Expected persisted grouped-ingest cardinality to reload correctly");
+	}
+
+	@Test
 	void legacyV2ManifestWithSingleBlobLoadsSuccessfully(@TempDir Path tempDir) throws Exception {
 		Resource s = VF.createIRI("urn:s");
 		IRI p = VF.createIRI("urn:p");
