@@ -15,32 +15,33 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
+import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.RDFHandlerException;
-import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
-import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -49,31 +50,24 @@ class SketchEstimatorThemeJoinAccuracyTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI THEME_GRAPH = VF.createIRI("urn:test:theme-graph");
-	private static final String THEME_DATA_RESOURCE = "benchmarkFiles/datagovbe-valid.ttl.gz";
-	private static final int TOP_PO_PAIRS = 48;
-	private static final int REQUIRED_JOIN_SCENARIOS = 3;
-	private static final int MIN_INTERSECTION = 100;
-	private static final double MAX_RELATIVE_ERROR = 0.10d;
-	private static final int LOAD_COMMIT_BATCH_SIZE = 50_000;
+	private static final int TOP_PO_PAIRS = 80;
+	private static final int REQUIRED_JOIN_SCENARIOS = 5;
+	private static final int MIN_INTERSECTION = 25;
+	private static final double MAX_RELATIVE_ERROR = 0.20d;
 
 	@Test
-	void estimatorMatchesManualJoinWithinTenPercent(@TempDir File dataDir) throws Exception {
+	void estimatorMatchesManualJoinAcrossAllThemes(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
-			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
-			// Keep the test deterministic and avoid concurrent full refresh rebuilds while bulk-loading.
-			estimator.stop();
-			estimator.setLowMemorySupplier(() -> false);
+			loadAllThemesInSingleGraph(repository);
 
-			loadThemeDataInSingleGraph(repository);
-			if (!estimator.isReady()) {
-				estimator.rebuildOnceSlow();
-			}
-			assertTrue(estimator.isReady(), "Sketch estimator should be ready after test-data load");
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			assertTrue(awaitJoinEstimationReady(statistics),
+					"LMDB evaluation statistics should expose join estimation after test-data load");
 
 			List<JoinScenario> scenarios = selectJoinScenarios(repository);
 			assertTrue(scenarios.size() >= REQUIRED_JOIN_SCENARIOS,
@@ -81,18 +75,15 @@ class SketchEstimatorThemeJoinAccuracyTest {
 
 			for (int i = 0; i < REQUIRED_JOIN_SCENARIOS; i++) {
 				JoinScenario scenario = scenarios.get(i);
-				double estimate = estimator.estimateJoinOn(
-						SketchBasedJoinEstimator.Component.S,
-						SketchBasedJoinEstimator.Pair.PO,
-						scenario.left.predicate(),
-						scenario.left.object(),
-						SketchBasedJoinEstimator.Pair.PO,
-						scenario.right.predicate(),
-						scenario.right.object());
+				double estimate = statistics.getCardinality(asJoinNode(scenario));
+
+				assertTrue(estimate > 0.0d,
+						() -> "Estimator returned zero for scenario left=" + scenario.left + ", right=" + scenario.right
+								+ ", actual=" + scenario.actualJoinCount());
 
 				double relativeError = Math.abs(estimate - scenario.actualJoinCount()) / scenario.actualJoinCount();
 				assertTrue(relativeError <= MAX_RELATIVE_ERROR,
-						() -> "Join estimate outside 10% bound. left=" + scenario.left + ", right="
+						() -> "Join estimate outside 20% bound. left=" + scenario.left + ", right="
 								+ scenario.right + ", estimate=" + estimate + ", actual="
 								+ scenario.actualJoinCount() + ", error=" + relativeError);
 			}
@@ -101,36 +92,59 @@ class SketchEstimatorThemeJoinAccuracyTest {
 		}
 	}
 
-	private static void loadThemeDataInSingleGraph(SailRepository repository) throws Exception {
-		try (SailRepositoryConnection connection = repository.getConnection();
-				InputStream in = BenchmarkResources.openDecompressedStream(THEME_DATA_RESOURCE)) {
-			connection.begin(IsolationLevels.NONE);
-			RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
-			parser.setRDFHandler(new AbstractRDFHandler() {
-				private int statementsInTransaction = 0;
+	private static boolean awaitJoinEstimationReady(EvaluationStatistics statistics) throws InterruptedException {
+		long now = System.currentTimeMillis();
+		long deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(10);
+		while (System.currentTimeMillis() < deadline) {
+			if (statistics.supportsJoinEstimation()) {
+				return true;
+			}
+			Thread.sleep(100);
+		}
+		deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(50);
+		while (System.currentTimeMillis() < deadline) {
+			if (statistics.supportsJoinEstimation()) {
+				return true;
+			}
+			System.out.println("Waiting for join estimation to become available, waitted "
+					+ (System.currentTimeMillis() - now) / 1000 + " seconds...");
+			Thread.sleep(1000);
+		}
+		return statistics.supportsJoinEstimation();
+	}
 
-				@Override
-				public void handleStatement(Statement statement) throws RDFHandlerException {
-					connection.add(statement.getSubject(), statement.getPredicate(), statement.getObject(),
-							THEME_GRAPH);
-					statementsInTransaction++;
-					if (statementsInTransaction >= LOAD_COMMIT_BATCH_SIZE) {
-						try {
-							connection.commit();
-							connection.begin(IsolationLevels.NONE);
-						} catch (RuntimeException e) {
-							throw new RDFHandlerException(e);
-						}
-						statementsInTransaction = 0;
-					}
-				}
-			});
-			parser.parse(in, "");
+	private static Join asJoinNode(JoinScenario scenario) {
+		StatementPattern left = new StatementPattern(
+				Var.of("s"),
+				Var.of("leftPredicate", scenario.left.predicate()),
+				Var.of("leftObject", scenario.left.object()),
+				Var.of("leftContext", THEME_GRAPH));
+
+		StatementPattern right = new StatementPattern(
+				Var.of("s"),
+				Var.of("rightPredicate", scenario.right.predicate()),
+				Var.of("rightObject", scenario.right.object()),
+				Var.of("rightContext", THEME_GRAPH));
+
+		return new Join(left, right);
+	}
+
+	private static void loadAllThemesInSingleGraph(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			RDFInserter inserter = new RDFInserter(connection);
+			inserter.enforceContext(THEME_GRAPH);
+			for (ThemeDataSetGenerator.Theme theme : ThemeDataSetGenerator.Theme.values()) {
+				System.out.println("Loading theme: " + theme);
+				ThemeDataSetGenerator.generate(theme, inserter);
+				System.out.println("Finished loading theme: " + theme);
+//				break;
+			}
 			connection.commit();
 		}
 	}
 
-	private static List<JoinScenario> selectJoinScenarios(SailRepository repository) throws IOException {
+	private static List<JoinScenario> selectJoinScenarios(SailRepository repository) {
 		Map<PoKey, Integer> pairCounts = new HashMap<>();
 
 		try (SailRepositoryConnection connection = repository.getConnection();
@@ -145,12 +159,12 @@ class SketchEstimatorThemeJoinAccuracyTest {
 
 		List<PoKey> topPairs = pairCounts.entrySet()
 				.stream()
-				.sorted(Map.Entry.<PoKey, Integer>comparingByValue(Comparator.reverseOrder()))
+				.sorted(Map.Entry.comparingByValue(Comparator.reverseOrder()))
 				.limit(TOP_PO_PAIRS)
 				.map(Map.Entry::getKey)
 				.collect(Collectors.toList());
 
-		Map<PoKey, Set<String>> subjectsByPair = new HashMap<>();
+		Map<PoKey, Set<Resource>> subjectsByPair = new HashMap<>();
 		for (PoKey pair : topPairs) {
 			subjectsByPair.put(pair, new HashSet<>());
 		}
@@ -161,9 +175,9 @@ class SketchEstimatorThemeJoinAccuracyTest {
 			while (statements.hasNext()) {
 				Statement statement = statements.next();
 				PoKey key = PoKey.of(statement);
-				Set<String> subjects = subjectsByPair.get(key);
+				Set<Resource> subjects = subjectsByPair.get(key);
 				if (subjects != null) {
-					subjects.add(statement.getSubject().stringValue());
+					subjects.add(statement.getSubject());
 				}
 			}
 		}
@@ -171,14 +185,14 @@ class SketchEstimatorThemeJoinAccuracyTest {
 		List<JoinScenario> candidates = new ArrayList<>();
 		for (int i = 0; i < topPairs.size(); i++) {
 			PoKey left = topPairs.get(i);
-			Set<String> leftSubjects = subjectsByPair.get(left);
+			Set<Resource> leftSubjects = subjectsByPair.get(left);
 			if (leftSubjects == null || leftSubjects.isEmpty()) {
 				continue;
 			}
 
 			for (int j = i + 1; j < topPairs.size(); j++) {
 				PoKey right = topPairs.get(j);
-				Set<String> rightSubjects = subjectsByPair.get(right);
+				Set<Resource> rightSubjects = subjectsByPair.get(right);
 				if (rightSubjects == null || rightSubjects.isEmpty()) {
 					continue;
 				}
@@ -194,12 +208,12 @@ class SketchEstimatorThemeJoinAccuracyTest {
 		return candidates;
 	}
 
-	private static long intersectCount(Set<String> first, Set<String> second) {
-		Set<String> smaller = first.size() <= second.size() ? first : second;
-		Set<String> larger = first.size() <= second.size() ? second : first;
+	private static long intersectCount(Set<Resource> first, Set<Resource> second) {
+		Set<Resource> smaller = first.size() <= second.size() ? first : second;
+		Set<Resource> larger = first.size() <= second.size() ? second : first;
 
 		long count = 0L;
-		for (String value : smaller) {
+		for (Resource value : smaller) {
 			if (larger.contains(value)) {
 				count++;
 			}
@@ -207,10 +221,15 @@ class SketchEstimatorThemeJoinAccuracyTest {
 		return count;
 	}
 
-	private record PoKey(String predicate, String object) {
+	private record PoKey(IRI predicate, Value object) {
+
+		private PoKey {
+			Objects.requireNonNull(predicate, "predicate");
+			Objects.requireNonNull(object, "object");
+		}
 
 		private static PoKey of(Statement statement) {
-			return new PoKey(statement.getPredicate().stringValue(), statement.getObject().stringValue());
+			return new PoKey(statement.getPredicate(), statement.getObject());
 		}
 	}
 

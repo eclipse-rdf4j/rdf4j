@@ -15,7 +15,6 @@ import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -38,7 +37,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 
 	private static final Logger log = LoggerFactory.getLogger(LmdbEvaluationStatistics.class);
 	private static final int SHARED_CACHE_MAX_ENTRIES = 262_144;
-	private static final long JOIN_SUPPORT_CACHE_TTL_NANOS = TimeUnit.MILLISECONDS.toNanos(250);
+	private static final long JOIN_SUPPORT_CACHE_TTL_MS = 100;
 	private static final Map<SharedCardinalityKey, Double> sharedCardinalityCache = new ConcurrentHashMap<>();
 
 	private final ValueStore valueStore;
@@ -47,7 +46,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 	private final int tripleStoreIdentity;
 	private final Map<CardinalityKey, Double> cardinalityCache = new ConcurrentHashMap<>();
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
-	private volatile long joinSupportCacheExpiryNanos = Long.MIN_VALUE;
+	private volatile long joinSupportCacheExpiryMs = Long.MIN_VALUE;
 	private volatile long joinSupportCacheRevisionId = Long.MIN_VALUE;
 	private volatile boolean joinSupportCacheValue = false;
 
@@ -61,16 +60,16 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 
 	@Override
 	public boolean supportsJoinEstimation() {
-		long now = System.nanoTime();
+		long now = System.currentTimeMillis();
 		long revisionId = valueStore.getRevision().getRevisionId();
-		if (now < joinSupportCacheExpiryNanos && revisionId == joinSupportCacheRevisionId) {
+		if (now < joinSupportCacheExpiryMs && revisionId == joinSupportCacheRevisionId) {
 			return joinSupportCacheValue;
 		}
 
 		boolean ready = sketchBasedJoinEstimator.isReady();
 		joinSupportCacheValue = ready;
 		joinSupportCacheRevisionId = revisionId;
-		joinSupportCacheExpiryNanos = now + JOIN_SUPPORT_CACHE_TTL_NANOS;
+		joinSupportCacheExpiryMs = now + JOIN_SUPPORT_CACHE_TTL_MS;
 		return ready;
 	}
 
@@ -104,6 +103,9 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 		public void meet(Join node) {
 			if (supportsJoinEstimation()) {
 				double estimatedCardinality = sketchBasedJoinEstimator.cardinality(node);
+				if (estimatedCardinality >= 0 && estimatedCardinality < 1) {
+					System.out.println("Estimated cardinality for join is less than 1: " + estimatedCardinality);
+				}
 				if (estimatedCardinality >= 0) {
 //					System.out.println("HERE: "+estimatedCardinality);
 					this.cardinality = estimatedCardinality;
