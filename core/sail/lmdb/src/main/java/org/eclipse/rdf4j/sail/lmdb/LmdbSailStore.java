@@ -288,8 +288,7 @@ class LmdbSailStore implements SailStore {
 				if (persistFuture != null) {
 					persistFuture.cancel(false);
 				}
-				sketchBasedJoinEstimator.stop();
-				sketchBasedJoinEstimator.persistIfDirty();
+				sketchBasedJoinEstimator.close();
 			} finally {
 				try {
 					if (namespaceStore != null) {

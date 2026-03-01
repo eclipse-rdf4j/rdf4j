@@ -15,15 +15,20 @@ package org.eclipse.rdf4j.sail.base;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.DataOutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -234,6 +239,64 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
+	void closeClosesMappedChannelCache(@TempDir Path tempDir) throws Exception {
+		Resource s = VF.createIRI("urn:s");
+		IRI p = VF.createIRI("urn:p");
+		Value o = VF.createIRI("urn:o");
+
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		estimator.configurePersistence(snapshot, false);
+		estimator.addStatement(st(s, p, o));
+		assertTrue(estimator.persistIfDirty());
+
+		List<FileChannel> openedChannels = mappedChannels(estimator);
+		assertFalse(openedChannels.isEmpty(),
+				"Expected mmap channel cache populated after writing sidecar payload");
+		for (FileChannel channel : openedChannels) {
+			assertTrue(channel.isOpen(), "Expected cached channel to be open before estimator close");
+		}
+
+		estimator.close();
+
+		assertTrue(mappedChannels(estimator).isEmpty(), "Expected mmap channel cache empty after estimator close");
+		for (FileChannel channel : openedChannels) {
+			assertFalse(channel.isOpen(), "Expected cached channels to be closed on estimator close");
+		}
+	}
+
+	@Test
+	void repeatedLazyLoadsReuseMappedBufferWindow(@TempDir Path tempDir) throws Exception {
+		Resource s = VF.createIRI("urn:s");
+		IRI p = VF.createIRI("urn:p");
+		Value o = VF.createIRI("urn:o");
+
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		writer.configurePersistence(snapshot, false);
+		setSketchBudgetBytes(writer, 0L, 0L);
+		writer.addStatement(st(s, p, o));
+		assertTrue(writer.persistIfDirty());
+
+		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		reader.configurePersistence(snapshot, true);
+		setSketchBudgetBytes(reader, 0L, 0L);
+		assertTrue(reader.isReady());
+
+		reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue());
+		assertFalse(residentSinglePredicateHashes(reader).contains(hash(reader, p.stringValue())),
+				"Expected zero-budget lazy read to evict predicate sketch");
+		MappedByteBuffer firstBuffer = mappedBuffer(reader, false);
+		assertNotNull(firstBuffer, "Expected read-side mapped buffer to be cached");
+
+		reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue());
+		assertFalse(residentSinglePredicateHashes(reader).contains(hash(reader, p.stringValue())),
+				"Expected repeated zero-budget lazy read to evict predicate sketch");
+		MappedByteBuffer secondBuffer = mappedBuffer(reader, false);
+		assertSame(firstBuffer, secondBuffer, "Expected repeated reads to reuse mapped buffer window");
+	}
+
+	@Test
 	void allSketchFamiliesParticipateInLruBudget(@TempDir Path tempDir) throws Exception {
 		Resource s = VF.createIRI("urn:s");
 		IRI p = VF.createIRI("urn:p");
@@ -396,6 +459,36 @@ class SketchBasedJoinEstimatorPersistenceTest {
 			}
 		}
 		return false;
+	}
+
+	private static List<FileChannel> mappedChannels(SketchBasedJoinEstimator estimator) throws Exception {
+		Field mappedChannelsField = SketchBasedJoinEstimator.class.getDeclaredField("mappedChannels");
+		mappedChannelsField.setAccessible(true);
+		Map<?, ?> mappedChannels = (Map<?, ?>) mappedChannelsField.get(estimator);
+		List<FileChannel> channels = new ArrayList<>();
+		for (Object value : mappedChannels.values()) {
+			Field channelField = value.getClass().getDeclaredField("channel");
+			channelField.setAccessible(true);
+			channels.add((FileChannel) channelField.get(value));
+		}
+		return channels;
+	}
+
+	private static MappedByteBuffer mappedBuffer(SketchBasedJoinEstimator estimator, boolean writeAccess)
+			throws Exception {
+		Field mappedChannelsField = SketchBasedJoinEstimator.class.getDeclaredField("mappedChannels");
+		mappedChannelsField.setAccessible(true);
+		Map<?, ?> mappedChannels = (Map<?, ?>) mappedChannelsField.get(estimator);
+		for (Object value : mappedChannels.values()) {
+			Field writeAccessField = value.getClass().getDeclaredField("writeAccess");
+			writeAccessField.setAccessible(true);
+			if (writeAccessField.getBoolean(value) == writeAccess) {
+				Field mappedBufferField = value.getClass().getDeclaredField("mappedBuffer");
+				mappedBufferField.setAccessible(true);
+				return (MappedByteBuffer) mappedBufferField.get(value);
+			}
+		}
+		return null;
 	}
 
 	private static Set<Object> residentSketchAddresses(SketchBasedJoinEstimator estimator) throws Exception {
