@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
+import org.apache.datasketches.common.Family;
 import org.apache.datasketches.theta.AnotB;
 import org.apache.datasketches.theta.HashIterator;
 import org.apache.datasketches.theta.Intersection;
@@ -205,7 +206,10 @@ public class SketchBasedJoinEstimator {
 
 	private long seenTriples = 0L;
 
-	private static final Sketch EMPTY = UpdateSketch.builder().build().compact();
+	private static final Sketch EMPTY = UpdateSketch.builder()
+			.setFamily(Family.ALPHA)
+			.build()
+			.compact();
 
 	/* ────────────────────────────────────────────────────────────── */
 	/* Persistence & runtime memory behavior */
@@ -1528,7 +1532,10 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private static UpdateSketch newSk(int k) {
-		return UpdateSketch.builder().setNominalEntries(k).build();
+		return UpdateSketch.builder()
+				.setFamily(Family.ALPHA)
+				.setNominalEntries(k)
+				.build();
 	}
 
 	private int hash(String v) {
@@ -2424,7 +2431,8 @@ public class SketchBasedJoinEstimator {
 	/* ────────────────────────────────────────────────────────────── */
 
 	private static long estimatedSketchBytes(UpdateSketch sketch) {
-		return Integer.BYTES + ((long) sketch.getRetainedEntries() * Long.BYTES);
+		// getCurrentBytes() is O(1) and avoids scanning retained entries on every cache touch.
+		return Math.max(Integer.BYTES, (long) sketch.getCurrentBytes());
 	}
 
 	private BufferSlot slotOf(State state) {
@@ -2681,23 +2689,33 @@ public class SketchBasedJoinEstimator {
 		}
 
 		for (SketchAddress address : pending) {
-			UpdateSketch sketch = null;
+			byte[] payload = null;
 			synchronized (bufA) {
-				sketch = getResidentSketch(bufA, address);
-			}
-			if (sketch == null) {
-				synchronized (bufB) {
-					sketch = getResidentSketch(bufB, address);
+				UpdateSketch sketch = getResidentSketch(bufA, address);
+				if (sketch != null) {
+					payload = serializeSketchPayload(sketch);
 				}
 			}
-			if (sketch != null) {
-				appendSketchPayload(address, sketch);
+			if (payload == null) {
+				synchronized (bufB) {
+					UpdateSketch sketch = getResidentSketch(bufB, address);
+					if (sketch != null) {
+						payload = serializeSketchPayload(sketch);
+					}
+				}
+			}
+			if (payload != null) {
+				appendSketchPayload(address, payload);
 			}
 		}
 	}
 
 	private void appendSketchPayload(SketchAddress address, UpdateSketch sketch) throws IOException {
 		byte[] payload = serializeSketchPayload(sketch);
+		appendSketchPayload(address, payload);
+	}
+
+	private void appendSketchPayload(SketchAddress address, byte[] payload) throws IOException {
 		Path parent = persistenceBlobFile.getParent();
 		if (parent != null) {
 			Files.createDirectories(parent);
