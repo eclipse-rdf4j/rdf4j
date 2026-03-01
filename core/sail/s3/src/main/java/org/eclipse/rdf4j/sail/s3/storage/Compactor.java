@@ -38,14 +38,10 @@ public class Compactor {
 
 	private final ObjectStore objectStore;
 	private final TieredCache cache;
-	private final int rowGroupSize;
-	private final int pageSize;
 
-	public Compactor(ObjectStore objectStore, TieredCache cache, int rowGroupSize, int pageSize) {
+	public Compactor(ObjectStore objectStore, TieredCache cache) {
 		this.objectStore = objectStore;
 		this.cache = cache;
-		this.rowGroupSize = rowGroupSize;
-		this.pageSize = pageSize;
 	}
 
 	/**
@@ -107,11 +103,9 @@ public class Compactor {
 			}
 
 			// Write merged Parquet file
-			String s3Key = "data/L" + targetLevel + "-"
-					+ String.format("%05d", epoch) + "-" + suffix + ".parquet";
+			String s3Key = Catalog.dataKey(targetLevel, epoch, suffix);
 
-			byte[] parquetData = ParquetFileBuilder.build(merged, ParquetSchemas.QUAD_SCHEMA,
-					sortOrder, rowGroupSize, pageSize);
+			byte[] parquetData = ParquetFileBuilder.build(merged, sortOrder);
 
 			objectStore.put(s3Key, parquetData);
 			if (cache != null) {

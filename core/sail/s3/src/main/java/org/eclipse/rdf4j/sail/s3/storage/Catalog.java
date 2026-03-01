@@ -49,6 +49,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Catalog {
 
+	static final String CATALOG_POINTER_KEY = "catalog/current";
+	private static final String CATALOG_DIR = "catalog/";
+
 	@JsonProperty("version")
 	private int version = 3;
 
@@ -108,11 +111,11 @@ public class Catalog {
 	 * @return the loaded catalog, or an empty catalog if none exists
 	 */
 	public static Catalog load(ObjectStore store, ObjectMapper mapper) {
-		byte[] pointer = store.get("catalog/current");
+		byte[] pointer = store.get(CATALOG_POINTER_KEY);
 		if (pointer == null) {
 			return new Catalog();
 		}
-		String catalogKey = "catalog/" + new String(pointer, StandardCharsets.UTF_8).trim();
+		String catalogKey = CATALOG_DIR + new String(pointer, StandardCharsets.UTF_8).trim();
 		byte[] json = store.get(catalogKey);
 		if (json == null) {
 			return new Catalog();
@@ -140,8 +143,8 @@ public class Catalog {
 		try {
 			String versionedKey = "v" + epoch + ".json";
 			byte[] json = mapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(this);
-			store.put("catalog/" + versionedKey, json);
-			store.put("catalog/current", versionedKey.getBytes(StandardCharsets.UTF_8));
+			store.put(CATALOG_DIR + versionedKey, json);
+			store.put(CATALOG_POINTER_KEY, versionedKey.getBytes(StandardCharsets.UTF_8));
 		} catch (IOException e) {
 			throw new UncheckedIOException("Failed to save catalog", e);
 		}
@@ -185,6 +188,13 @@ public class Catalog {
 			}
 		}
 		return result;
+	}
+
+	/**
+	 * Generates the S3 key for a data file at the given level, epoch, and sort suffix.
+	 */
+	public static String dataKey(int level, long epoch, String sortSuffix) {
+		return "data/L" + level + "-" + String.format("%05d", epoch) + "-" + sortSuffix + ".parquet";
 	}
 
 	/**
@@ -246,7 +256,7 @@ public class Catalog {
 					stats.minObject, stats.maxObject, stats.minContext, stats.maxContext);
 		}
 
-		public ParquetFileInfo(String s3Key, int level, String sortOrder, long rowCount,
+		ParquetFileInfo(String s3Key, int level, String sortOrder, long rowCount,
 				long epoch, long sizeBytes,
 				long minSubject, long maxSubject,
 				long minPredicate, long maxPredicate,

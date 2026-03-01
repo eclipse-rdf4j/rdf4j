@@ -95,9 +95,6 @@ class S3SailStore implements SailStore {
 		ALL_INDEXES = List.copyOf(indexes);
 	}
 
-	private static final int DEFAULT_ROW_GROUP_SIZE = 8 * 1024 * 1024; // 8 MiB
-	private static final int DEFAULT_PAGE_SIZE = 64 * 1024; // 64 KiB
-
 	private final S3ValueStore valueStore;
 	private final S3NamespaceStore namespaceStore;
 
@@ -114,8 +111,6 @@ class S3SailStore implements SailStore {
 	private final TieredCache cache;
 	private final CompactionPolicy compactionPolicy;
 	private final Compactor compactor;
-	private final int rowGroupSize;
-	private final int pageSize;
 
 	/**
 	 * A lock to control concurrent access by {@link S3SailSink} to the stores.
@@ -147,8 +142,6 @@ class S3SailStore implements SailStore {
 		this.namespaceStore = new S3NamespaceStore();
 		this.objectStore = objectStore;
 		this.memTableFlushSize = config.getMemTableSize();
-		this.rowGroupSize = DEFAULT_ROW_GROUP_SIZE;
-		this.pageSize = DEFAULT_PAGE_SIZE;
 
 		// Single SPOC index for the MemTable
 		this.memTable = new MemTable(SPOC_INDEX);
@@ -165,7 +158,7 @@ class S3SailStore implements SailStore {
 					config.getDiskCacheSize(), objectStore);
 
 			this.compactionPolicy = new CompactionPolicy();
-			this.compactor = new Compactor(objectStore, cache, rowGroupSize, pageSize);
+			this.compactor = new Compactor(objectStore, cache);
 
 			// Deserialize value store and namespaces
 			if (catalog.getNextValueId() > 0) {
@@ -227,12 +220,11 @@ class S3SailStore implements SailStore {
 			return;
 		}
 
-		// Always persist namespaces and values (they may have changed without any quad writes)
-		valueStore.serialize(objectStore);
-		namespaceStore.serialize(objectStore, jsonMapper);
-
 		if (memTable.size() == 0) {
-			return; // no quads to flush — avoid wasting epoch numbers and S3 writes
+			// No quads to flush — still persist namespaces/values (they may have changed)
+			valueStore.serialize(objectStore);
+			namespaceStore.serialize(objectStore, jsonMapper);
+			return;
 		}
 
 		long epoch = epochCounter.getAndIncrement();
@@ -252,16 +244,14 @@ class S3SailStore implements SailStore {
 
 	private static List<long[]> collectQuads(MemTable frozen) {
 		List<long[]> allQuads = new ArrayList<>(frozen.size());
-		long[] quad = new long[4];
+		long[] scratch = new long[4];
 		for (Map.Entry<byte[], byte[]> entry : frozen.getData().entrySet()) {
-			long[] q = new long[5]; // s, p, o, c, flag
-			frozen.getIndex().keyToQuad(entry.getKey(), quad);
-			q[0] = quad[QuadIndex.SUBJ_IDX];
-			q[1] = quad[QuadIndex.PRED_IDX];
-			q[2] = quad[QuadIndex.OBJ_IDX];
-			q[3] = quad[QuadIndex.CONTEXT_IDX];
-			q[4] = entry.getValue()[0];
-			allQuads.add(q);
+			frozen.getIndex().keyToQuad(entry.getKey(), scratch);
+			allQuads.add(new long[] {
+					scratch[QuadIndex.SUBJ_IDX], scratch[QuadIndex.PRED_IDX],
+					scratch[QuadIndex.OBJ_IDX], scratch[QuadIndex.CONTEXT_IDX],
+					entry.getValue()[0]
+			});
 		}
 		return allQuads;
 	}
@@ -272,10 +262,9 @@ class S3SailStore implements SailStore {
 			List<QuadEntry> sorted = sortQuadEntries(allQuads, sortIndex);
 
 			ParquetSchemas.SortOrder sortOrder = ParquetSchemas.SortOrder.fromSuffix(sortSuffix);
-			byte[] parquetData = ParquetFileBuilder.build(sorted, ParquetSchemas.QUAD_SCHEMA,
-					sortOrder, rowGroupSize, pageSize);
+			byte[] parquetData = ParquetFileBuilder.build(sorted, sortOrder);
 
-			String s3Key = "data/L0-" + String.format("%05d", epoch) + "-" + sortSuffix + ".parquet";
+			String s3Key = Catalog.dataKey(0, epoch, sortSuffix);
 			objectStore.put(s3Key, parquetData);
 
 			if (cache != null) {
@@ -304,15 +293,24 @@ class S3SailStore implements SailStore {
 	private static List<QuadEntry> sortQuadEntries(List<long[]> quads, QuadIndex sortIndex) {
 		List<long[]> sorted = new ArrayList<>(quads);
 		String seq = sortIndex.getFieldSeqString();
+		int i0 = QuadIndex.fieldCharToIdx(seq.charAt(0));
+		int i1 = QuadIndex.fieldCharToIdx(seq.charAt(1));
+		int i2 = QuadIndex.fieldCharToIdx(seq.charAt(2));
+		int i3 = QuadIndex.fieldCharToIdx(seq.charAt(3));
 		sorted.sort((a, b) -> {
-			for (int i = 0; i < 4; i++) {
-				int idx = QuadIndex.fieldCharToIdx(seq.charAt(i));
-				int cmp = Long.compare(a[idx], b[idx]);
-				if (cmp != 0) {
-					return cmp;
-				}
+			int cmp = Long.compare(a[i0], b[i0]);
+			if (cmp != 0) {
+				return cmp;
 			}
-			return 0;
+			cmp = Long.compare(a[i1], b[i1]);
+			if (cmp != 0) {
+				return cmp;
+			}
+			cmp = Long.compare(a[i2], b[i2]);
+			if (cmp != 0) {
+				return cmp;
+			}
+			return Long.compare(a[i3], b[i3]);
 		});
 
 		List<QuadEntry> result = new ArrayList<>(sorted.size());

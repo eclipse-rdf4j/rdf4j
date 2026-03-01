@@ -35,6 +35,11 @@ import org.eclipse.rdf4j.sail.s3.storage.Varint;
 class S3ValueStore extends AbstractValueFactory {
 
 	static final long UNKNOWN_ID = -1;
+	static final String VALUES_KEY = "values/current";
+
+	private static final byte TYPE_IRI = 0;
+	private static final byte TYPE_LITERAL = 1;
+	private static final byte TYPE_BNODE = 2;
 
 	private final ConcurrentHashMap<Value, Long> valueToId = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<Long, Value> idToValue = new ConcurrentHashMap<>();
@@ -115,16 +120,16 @@ class S3ValueStore extends AbstractValueFactory {
 				Value val = entry.getValue();
 
 				if (val instanceof IRI) {
-					out.writeByte(0);
+					out.writeByte(TYPE_IRI);
 					writeBytes(out, buf, val.stringValue().getBytes(StandardCharsets.UTF_8));
 				} else if (val instanceof Literal) {
-					out.writeByte(1);
+					out.writeByte(TYPE_LITERAL);
 					Literal lit = (Literal) val;
 					writeBytes(out, buf, lit.getLabel().getBytes(StandardCharsets.UTF_8));
 					writeBytes(out, buf, lit.getDatatype().stringValue().getBytes(StandardCharsets.UTF_8));
 					writeBytes(out, buf, lit.getLanguage().orElse("").getBytes(StandardCharsets.UTF_8));
 				} else if (val instanceof BNode) {
-					out.writeByte(2);
+					out.writeByte(TYPE_BNODE);
 					writeBytes(out, buf, ((BNode) val).getID().getBytes(StandardCharsets.UTF_8));
 				} else {
 					throw new IllegalStateException("Unsupported value type: " + val.getClass());
@@ -132,7 +137,7 @@ class S3ValueStore extends AbstractValueFactory {
 			}
 
 			out.flush();
-			objectStore.put("values/current", baos.toByteArray());
+			objectStore.put(VALUES_KEY, baos.toByteArray());
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
 		}
@@ -142,7 +147,7 @@ class S3ValueStore extends AbstractValueFactory {
 	 * Deserializes the value store from the object store.
 	 */
 	void deserialize(ObjectStore objectStore, long nextValueId) {
-		byte[] data = objectStore.get("values/current");
+		byte[] data = objectStore.get(VALUES_KEY);
 		if (data == null) {
 			return;
 		}
@@ -157,14 +162,14 @@ class S3ValueStore extends AbstractValueFactory {
 
 				Value val;
 				switch (type) {
-				case 0: { // IRI
+				case TYPE_IRI: {
 					int len = (int) Varint.readUnsigned(bb);
 					byte[] payload = new byte[len];
 					bb.get(payload);
 					val = createIRI(new String(payload, StandardCharsets.UTF_8));
 					break;
 				}
-				case 1: { // Literal
+				case TYPE_LITERAL: {
 					int labelLen = (int) Varint.readUnsigned(bb);
 					byte[] labelBytes = new byte[labelLen];
 					bb.get(labelBytes);
@@ -188,7 +193,7 @@ class S3ValueStore extends AbstractValueFactory {
 					}
 					break;
 				}
-				case 2: { // BNode
+				case TYPE_BNODE: {
 					int len = (int) Varint.readUnsigned(bb);
 					byte[] payload = new byte[len];
 					bb.get(payload);

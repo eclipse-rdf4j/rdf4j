@@ -41,44 +41,45 @@ public final class QuadStats {
 	 * that deleted entries do not inflate the range statistics used for pruning.
 	 */
 	public static QuadStats fromQuads(List<long[]> quads) {
-		long minS = Long.MAX_VALUE, maxS = Long.MIN_VALUE;
-		long minP = Long.MAX_VALUE, maxP = Long.MIN_VALUE;
-		long minO = Long.MAX_VALUE, maxO = Long.MIN_VALUE;
-		long minC = Long.MAX_VALUE, maxC = Long.MIN_VALUE;
+		Accumulator acc = new Accumulator();
 		for (long[] q : quads) {
-			if (q[4] == MemTable.FLAG_TOMBSTONE) {
-				continue;
+			if (q[4] != MemTable.FLAG_TOMBSTONE) {
+				acc.add(q[0], q[1], q[2], q[3]);
 			}
-			minS = Math.min(minS, q[0]);
-			maxS = Math.max(maxS, q[0]);
-			minP = Math.min(minP, q[1]);
-			maxP = Math.max(maxP, q[1]);
-			minO = Math.min(minO, q[2]);
-			maxO = Math.max(maxO, q[2]);
-			minC = Math.min(minC, q[3]);
-			maxC = Math.max(maxC, q[3]);
 		}
-		return new QuadStats(minS, maxS, minP, maxP, minO, maxO, minC, maxC);
+		return acc.build();
 	}
 
 	/**
 	 * Computes min/max stats from a list of QuadEntry objects.
 	 */
 	public static QuadStats fromEntries(List<QuadEntry> entries) {
+		Accumulator acc = new Accumulator();
+		for (QuadEntry e : entries) {
+			acc.add(e.subject, e.predicate, e.object, e.context);
+		}
+		return acc.build();
+	}
+
+	private static class Accumulator {
 		long minS = Long.MAX_VALUE, maxS = Long.MIN_VALUE;
 		long minP = Long.MAX_VALUE, maxP = Long.MIN_VALUE;
 		long minO = Long.MAX_VALUE, maxO = Long.MIN_VALUE;
 		long minC = Long.MAX_VALUE, maxC = Long.MIN_VALUE;
-		for (QuadEntry e : entries) {
-			minS = Math.min(minS, e.subject);
-			maxS = Math.max(maxS, e.subject);
-			minP = Math.min(minP, e.predicate);
-			maxP = Math.max(maxP, e.predicate);
-			minO = Math.min(minO, e.object);
-			maxO = Math.max(maxO, e.object);
-			minC = Math.min(minC, e.context);
-			maxC = Math.max(maxC, e.context);
+
+		void add(long s, long p, long o, long c) {
+			minS = Math.min(minS, s);
+			maxS = Math.max(maxS, s);
+			minP = Math.min(minP, p);
+			maxP = Math.max(maxP, p);
+			minO = Math.min(minO, o);
+			maxO = Math.max(maxO, o);
+			minC = Math.min(minC, c);
+			maxC = Math.max(maxC, c);
 		}
-		return new QuadStats(minS, maxS, minP, maxP, minO, maxO, minC, maxC);
+
+		QuadStats build() {
+			return new QuadStats(minS, maxS, minP, maxP, minO, maxO, minC, maxC);
+		}
 	}
 }

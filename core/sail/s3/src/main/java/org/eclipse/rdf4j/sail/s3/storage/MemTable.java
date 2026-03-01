@@ -20,6 +20,7 @@ import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * In-memory sorted store for quads using a {@link ConcurrentSkipListMap}. Stores quads as varint-encoded byte[] keys
@@ -45,9 +46,13 @@ public class MemTable {
 	private static final byte[] VALUE_INFERRED = new byte[] { FLAG_INFERRED };
 	private static final byte[] VALUE_TOMBSTONE = new byte[] { FLAG_TOMBSTONE };
 
+	/** Estimated overhead per skip-list entry: key array header + value array header + node overhead. */
+	private static final int ENTRY_OVERHEAD = 16 + 16 + 64;
+
 	private final QuadIndex index;
 	private final ConcurrentSkipListMap<byte[], byte[]> data;
 	private final AtomicBoolean frozen = new AtomicBoolean(false);
+	private final AtomicLong estimatedBytes = new AtomicLong();
 
 	/**
 	 * Creates a new MemTable backed by the given index for key encoding.
@@ -72,7 +77,10 @@ public class MemTable {
 	public void put(long s, long p, long o, long c, boolean explicit) {
 		checkNotFrozen();
 		byte[] key = index.toKeyBytes(s, p, o, c);
-		data.put(key, explicit ? VALUE_EXPLICIT : VALUE_INFERRED);
+		byte[] prev = data.put(key, explicit ? VALUE_EXPLICIT : VALUE_INFERRED);
+		if (prev == null) {
+			estimatedBytes.addAndGet(key.length + 1L + ENTRY_OVERHEAD);
+		}
 	}
 
 	/**
@@ -87,7 +95,10 @@ public class MemTable {
 	public void remove(long s, long p, long o, long c) {
 		checkNotFrozen();
 		byte[] key = index.toKeyBytes(s, p, o, c);
-		data.put(key, VALUE_TOMBSTONE);
+		byte[] prev = data.put(key, VALUE_TOMBSTONE);
+		if (prev == null) {
+			estimatedBytes.addAndGet(key.length + 1L + ENTRY_OVERHEAD);
+		}
 	}
 
 	/**
@@ -138,16 +149,10 @@ public class MemTable {
 	}
 
 	/**
-	 * Returns a rough estimate of memory consumption in bytes.
+	 * Returns a rough estimate of memory consumption in bytes. O(1) — maintained incrementally on put/remove.
 	 */
 	public long approximateSizeInBytes() {
-		long size = 0;
-		for (Map.Entry<byte[], byte[]> entry : data.entrySet()) {
-			// key array overhead (16 bytes) + key data + value array overhead (16 bytes) + value data
-			// + map entry overhead (~64 bytes for skip list node)
-			size += 16 + entry.getKey().length + 16 + entry.getValue().length + 64;
-		}
-		return size;
+		return estimatedBytes.get();
 	}
 
 	/**
@@ -175,6 +180,7 @@ public class MemTable {
 	public void clear() {
 		checkNotFrozen();
 		data.clear();
+		estimatedBytes.set(0);
 	}
 
 	/**

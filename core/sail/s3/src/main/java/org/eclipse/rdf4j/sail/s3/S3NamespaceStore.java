@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.s3;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -26,6 +27,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * In-memory store for namespace prefix information. All operations are synchronized for thread safety.
  */
 class S3NamespaceStore implements Iterable<SimpleNamespace> {
+
+	static final String NAMESPACES_KEY = "namespaces/current";
 
 	private final Map<String, SimpleNamespace> namespacesMap = new LinkedHashMap<>(16);
 
@@ -61,7 +64,7 @@ class S3NamespaceStore implements Iterable<SimpleNamespace> {
 
 	@SuppressWarnings("unchecked")
 	synchronized void deserialize(ObjectStore objectStore, ObjectMapper mapper) {
-		byte[] data = objectStore.get("namespaces/current");
+		byte[] data = objectStore.get(NAMESPACES_KEY);
 		if (data == null) {
 			return;
 		}
@@ -79,14 +82,14 @@ class S3NamespaceStore implements Iterable<SimpleNamespace> {
 
 	synchronized void serialize(ObjectStore objectStore, ObjectMapper mapper) {
 		try {
-			List<Map<String, String>> entries = new java.util.ArrayList<>();
+			List<Map<String, String>> entries = new ArrayList<>();
 			for (SimpleNamespace ns : namespacesMap.values()) {
 				Map<String, String> entry = new LinkedHashMap<>();
 				entry.put("prefix", ns.getPrefix());
 				entry.put("name", ns.getName());
 				entries.add(entry);
 			}
-			objectStore.put("namespaces/current", mapper.writeValueAsBytes(entries));
+			objectStore.put(NAMESPACES_KEY, mapper.writeValueAsBytes(entries));
 		} catch (IOException e) {
 			throw new UncheckedIOException("Failed to serialize namespaces", e);
 		}
