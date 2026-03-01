@@ -31,7 +31,6 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -221,12 +220,11 @@ public class SketchBasedJoinEstimator {
 
 	private static final byte[] PERSIST_MAGIC = new byte[] { 'R', 'J', 'E', 'S' };
 	private static final int PERSIST_VERSION = 2;
-	private static final int DEFAULT_BUCKET_COUNT = 64 * 1024;
+	private static final int DEFAULT_BUCKET_COUNT = 1 * 1024;
 	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = ThetaUtil.DEFAULT_NOMINAL_ENTRIES;
 	private static final int MAX_STRING_BYTES = 16 * 1024 * 1024;
 	private static final int MAX_SKETCH_ENTRIES = 1_000_000;
-	private static final int MAX_OPEN_MAPPED_CHANNELS = 128;
-	private static final int MAPPED_BUFFER_WINDOW_BYTES = 8 * 1024 * 1024;
+	private static final int MIN_MAPPED_GROWTH_BYTES = 32 * 1024 * 1024;
 	private static final byte[] FILE_GROWTH_MARKER = new byte[] { 0 };
 	private static final String MIN_SKETCH_MEMORY_PERCENT_PROPERTY = "minSketchMemoryPercent";
 	private static final String MAX_SKETCH_MEMORY_PERCENT_PROPERTY = "maxSketchMemoryPercent";
@@ -317,47 +315,19 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
-	private static final class ChannelKey {
-		private final Path path;
-		private final boolean writeAccess;
-		private final int hashCode;
-
-		private ChannelKey(Path path, boolean writeAccess) {
-			this.path = path;
-			this.writeAccess = writeAccess;
-			this.hashCode = Objects.hash(path, writeAccess);
-		}
-
-		@Override
-		public boolean equals(Object o) {
-			if (this == o) {
-				return true;
-			}
-			if (!(o instanceof ChannelKey)) {
-				return false;
-			}
-			ChannelKey that = (ChannelKey) o;
-			return writeAccess == that.writeAccess && Objects.equals(path, that.path);
-		}
-
-		@Override
-		public int hashCode() {
-			return hashCode;
-		}
-	}
-
 	private static final class MappedChannelEntry {
 		private final FileChannel channel;
 		private final boolean writeAccess;
 		private MappedByteBuffer mappedBuffer;
-		private long mappedOffset;
 		private int mappedLength;
+		private long cachedFileSize;
 		private long writePosition;
 
 		private MappedChannelEntry(FileChannel channel, boolean writeAccess) throws IOException {
 			this.channel = channel;
 			this.writeAccess = writeAccess;
-			this.writePosition = channel.size();
+			this.cachedFileSize = channel.size();
+			this.writePosition = cachedFileSize;
 		}
 	}
 
@@ -388,7 +358,10 @@ public class SketchBasedJoinEstimator {
 	private final Object sketchCacheLock = new Object();
 	private final Object mappedChannelLock = new Object();
 	private final LinkedHashMap<ResidentSketchAddress, Long> residentSketches = new LinkedHashMap<>(128, 0.75f, true);
-	private final LinkedHashMap<ChannelKey, MappedChannelEntry> mappedChannels = new LinkedHashMap<>(32, 0.75f, true);
+	private MappedChannelEntry readMappedChannelEntry;
+	private Path readMappedChannelPath;
+	private MappedChannelEntry writeMappedChannelEntry;
+	private Path writeMappedChannelPath;
 	private final Map<SketchAddress, PersistedSketchRef> persistedSketchIndex = new HashMap<>();
 	private final Set<SketchAddress> dirtySketches = new HashSet<>();
 	private volatile long minSketchMemoryBytes;
@@ -2832,7 +2805,7 @@ public class SketchBasedJoinEstimator {
 			offset = entry.writePosition;
 			ensureMappedBufferRange(entry, offset, payload.length);
 			MappedByteBuffer mapped = entry.mappedBuffer.duplicate();
-			mapped.position((int) (offset - entry.mappedOffset));
+			mapped.position((int) offset);
 			mapped.put(payload);
 			entry.writePosition = offset + payload.length;
 		}
@@ -2975,15 +2948,18 @@ public class SketchBasedJoinEstimator {
 		MappedChannelEntry entry = getMappedChannelEntry(blob, false);
 		synchronized (entry) {
 			long endOffset = persistedSketchRef.offset + persistedSketchRef.length;
+			if (endOffset > entry.cachedFileSize) {
+				refreshCachedFileSizeIfIncreased(entry);
+			}
 			if (persistedSketchRef.offset < 0 || persistedSketchRef.length < 0
-					|| endOffset < persistedSketchRef.offset) {
+					|| endOffset < persistedSketchRef.offset || endOffset > entry.cachedFileSize) {
 				throw new IOException("Persisted sketch ref exceeds sidecar bounds: offset=" + persistedSketchRef.offset
-						+ " length=" + persistedSketchRef.length + " fileSize=" + entry.channel.size());
+						+ " length=" + persistedSketchRef.length + " fileSize=" + entry.cachedFileSize);
 			}
 
 			ensureMappedBufferRange(entry, persistedSketchRef.offset, persistedSketchRef.length);
 			MappedByteBuffer mapped = entry.mappedBuffer.duplicate();
-			mapped.position((int) (persistedSketchRef.offset - entry.mappedOffset));
+			mapped.position((int) persistedSketchRef.offset);
 			mapped.get(payload);
 		}
 		try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(payload))) {
@@ -2993,29 +2969,45 @@ public class SketchBasedJoinEstimator {
 
 	private MappedChannelEntry getMappedChannelEntry(Path path, boolean writeAccess) throws IOException {
 		Path normalizedPath = path.toAbsolutePath().normalize();
-		ChannelKey channelKey = new ChannelKey(normalizedPath, writeAccess);
 		synchronized (mappedChannelLock) {
-			MappedChannelEntry existing = mappedChannels.get(channelKey);
-			if (existing != null) {
-				if (existing.channel.isOpen()) {
-					return existing;
+			if (writeAccess) {
+				if (isOpenEntry(writeMappedChannelEntry, writeMappedChannelPath, normalizedPath)) {
+					return writeMappedChannelEntry;
 				}
-				mappedChannels.remove(channelKey);
+				closeMappedChannelEntry(writeMappedChannelEntry);
+				writeMappedChannelEntry = openMappedChannelEntry(normalizedPath, true);
+				writeMappedChannelPath = normalizedPath;
+				return writeMappedChannelEntry;
 			}
 
-			FileChannel opened;
-			if (writeAccess) {
-				ensureParentDirectoryExists(normalizedPath);
-				opened = FileChannel.open(normalizedPath, StandardOpenOption.CREATE, StandardOpenOption.READ,
-						StandardOpenOption.WRITE);
-			} else {
-				opened = FileChannel.open(normalizedPath, StandardOpenOption.READ);
+			if (isOpenEntry(writeMappedChannelEntry, writeMappedChannelPath, normalizedPath)) {
+				return writeMappedChannelEntry;
 			}
-			MappedChannelEntry entry = new MappedChannelEntry(opened, writeAccess);
-			mappedChannels.put(channelKey, entry);
-			evictLeastRecentlyUsedChannelIfNeeded();
-			return entry;
+			if (isOpenEntry(readMappedChannelEntry, readMappedChannelPath, normalizedPath)) {
+				return readMappedChannelEntry;
+			}
+			closeMappedChannelEntry(readMappedChannelEntry);
+			readMappedChannelEntry = openMappedChannelEntry(normalizedPath, false);
+			readMappedChannelPath = normalizedPath;
+			return readMappedChannelEntry;
 		}
+	}
+
+	private static boolean isOpenEntry(MappedChannelEntry entry, Path entryPath, Path path) {
+		return entry != null && entry.channel.isOpen() && Objects.equals(entryPath, path);
+	}
+
+	private static MappedChannelEntry openMappedChannelEntry(Path normalizedPath, boolean writeAccess)
+			throws IOException {
+		FileChannel opened;
+		if (writeAccess) {
+			ensureParentDirectoryExists(normalizedPath);
+			opened = FileChannel.open(normalizedPath, StandardOpenOption.CREATE, StandardOpenOption.READ,
+					StandardOpenOption.WRITE);
+		} else {
+			opened = FileChannel.open(normalizedPath, StandardOpenOption.READ);
+		}
+		return new MappedChannelEntry(opened, writeAccess);
 	}
 
 	private static void ensureParentDirectoryExists(Path filePath) throws IOException {
@@ -3030,88 +3022,91 @@ public class SketchBasedJoinEstimator {
 		if (offset < 0 || length <= 0 || endOffset < offset) {
 			throw new IOException("Invalid mapped range: offset=" + offset + " length=" + length);
 		}
-		long mappedEnd = entry.mappedOffset + entry.mappedLength;
-		if (entry.mappedBuffer != null && offset >= entry.mappedOffset && endOffset <= mappedEnd) {
+
+		if (entry.writeAccess) {
+			ensureChannelSize(entry, endOffset);
+		}
+		if (endOffset > entry.cachedFileSize) {
+			refreshCachedFileSizeIfIncreased(entry);
+		}
+		if (endOffset > entry.cachedFileSize) {
+			throw new IOException(
+					"Mapped range exceeds sidecar bounds: end=" + endOffset + " fileSize=" + entry.cachedFileSize);
+		}
+
+		if (entry.cachedFileSize > Integer.MAX_VALUE) {
+			throw new IOException(
+					"Mapped sidecar file exceeds maximum mappable size: " + entry.cachedFileSize + " bytes");
+		}
+
+		if (entry.mappedBuffer != null && entry.mappedLength == (int) entry.cachedFileSize) {
 			return;
 		}
 
-		long mappedOffset = offset - (offset % MAPPED_BUFFER_WINDOW_BYTES);
-		long requiredLength = endOffset - mappedOffset;
-		if (requiredLength <= 0L || requiredLength > Integer.MAX_VALUE) {
-			throw new IOException("Requested mapped range too large: length=" + requiredLength);
-		}
-
-		long targetLength = Math.max(requiredLength, (long) MAPPED_BUFFER_WINDOW_BYTES);
-		targetLength = Math.min(targetLength, Integer.MAX_VALUE);
-		if (targetLength < requiredLength) {
-			targetLength = requiredLength;
-		}
-
-		if (entry.writeAccess) {
-			ensureChannelSize(entry.channel, mappedOffset + targetLength);
-		}
-
-		long fileSize = entry.channel.size();
-		if (endOffset > fileSize) {
-			throw new IOException("Mapped range exceeds sidecar bounds: end=" + endOffset + " fileSize=" + fileSize);
-		}
-
-		long availableLength = fileSize - mappedOffset;
-		if (availableLength < requiredLength) {
-			throw new IOException(
-					"Mapped window shorter than requested range: required=" + requiredLength + " available="
-							+ availableLength);
-		}
-
-		int mappedLength = (int) Math.min(targetLength, availableLength);
-		if (mappedLength < requiredLength) {
-			throw new IOException("Mapped window overflow: requested=" + requiredLength + " mapped=" + mappedLength);
-		}
-
+		int mappedLength = (int) entry.cachedFileSize;
 		FileChannel.MapMode mapMode = entry.writeAccess ? FileChannel.MapMode.READ_WRITE
 				: FileChannel.MapMode.READ_ONLY;
-		entry.mappedBuffer = entry.channel.map(mapMode, mappedOffset, mappedLength);
-		entry.mappedOffset = mappedOffset;
+		entry.mappedBuffer = entry.channel.map(mapMode, 0L, mappedLength);
 		entry.mappedLength = mappedLength;
 	}
 
-	private static void ensureChannelSize(FileChannel channel, long requiredSize) throws IOException {
-		if (requiredSize <= channel.size()) {
+	private static void ensureChannelSize(MappedChannelEntry entry, long requiredSize) throws IOException {
+		if (requiredSize <= entry.cachedFileSize) {
 			return;
 		}
-		channel.write(ByteBuffer.wrap(FILE_GROWTH_MARKER), requiredSize - 1L);
+		long growthBy = Math.max(requiredSize - entry.cachedFileSize, (long) MIN_MAPPED_GROWTH_BYTES);
+		long targetSize;
+		try {
+			targetSize = Math.addExact(entry.cachedFileSize, growthBy);
+		} catch (ArithmeticException e) {
+			targetSize = Long.MAX_VALUE;
+		}
+		if (targetSize < requiredSize) {
+			targetSize = requiredSize;
+		}
+		if (targetSize > Integer.MAX_VALUE) {
+			throw new IOException("Mapped sidecar file exceeds maximum mappable size: " + targetSize + " bytes");
+		}
+		entry.channel.write(ByteBuffer.wrap(FILE_GROWTH_MARKER), targetSize - 1L);
+		entry.cachedFileSize = targetSize;
 	}
 
-	private void evictLeastRecentlyUsedChannelIfNeeded() {
-		Iterator<Map.Entry<ChannelKey, MappedChannelEntry>> iterator = mappedChannels.entrySet().iterator();
-		while (mappedChannels.size() > MAX_OPEN_MAPPED_CHANNELS && iterator.hasNext()) {
-			MappedChannelEntry entry = iterator.next().getValue();
-			iterator.remove();
-			closeMappedChannelEntry(entry);
+	private static void refreshCachedFileSizeIfIncreased(MappedChannelEntry entry) throws IOException {
+		long actualSize = entry.channel.size();
+		if (actualSize > entry.cachedFileSize) {
+			entry.cachedFileSize = actualSize;
 		}
 	}
 
 	private void closeMappedChannels() {
-		List<MappedChannelEntry> channelsToClose;
+		MappedChannelEntry readEntry;
+		MappedChannelEntry writeEntry;
 		synchronized (mappedChannelLock) {
-			channelsToClose = new ArrayList<>(mappedChannels.values());
-			mappedChannels.clear();
+			readEntry = readMappedChannelEntry;
+			writeEntry = writeMappedChannelEntry;
+			readMappedChannelEntry = null;
+			writeMappedChannelEntry = null;
+			readMappedChannelPath = null;
+			writeMappedChannelPath = null;
 		}
-		for (MappedChannelEntry entry : channelsToClose) {
-			closeMappedChannelEntry(entry);
+		closeMappedChannelEntry(readEntry);
+		if (writeEntry != readEntry) {
+			closeMappedChannelEntry(writeEntry);
 		}
 	}
 
 	private static void closeMappedChannelEntry(MappedChannelEntry entry) {
+		if (entry == null) {
+			return;
+		}
 		synchronized (entry) {
 			entry.mappedBuffer = null;
 			entry.mappedLength = 0;
-			entry.mappedOffset = 0L;
 			if (entry.writeAccess) {
 				try {
-					long channelSize = entry.channel.size();
-					if (channelSize > entry.writePosition) {
+					if (entry.cachedFileSize > entry.writePosition) {
 						entry.channel.truncate(entry.writePosition);
+						entry.cachedFileSize = entry.writePosition;
 					}
 				} catch (IOException e) {
 					logger.debug("Failed to trim mapped sidecar channel", e);

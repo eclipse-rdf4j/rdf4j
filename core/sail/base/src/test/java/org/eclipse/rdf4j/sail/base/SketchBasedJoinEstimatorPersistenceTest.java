@@ -462,11 +462,8 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	private static List<FileChannel> mappedChannels(SketchBasedJoinEstimator estimator) throws Exception {
-		Field mappedChannelsField = SketchBasedJoinEstimator.class.getDeclaredField("mappedChannels");
-		mappedChannelsField.setAccessible(true);
-		Map<?, ?> mappedChannels = (Map<?, ?>) mappedChannelsField.get(estimator);
 		List<FileChannel> channels = new ArrayList<>();
-		for (Object value : mappedChannels.values()) {
+		for (Object value : mappedChannelEntries(estimator)) {
 			Field channelField = value.getClass().getDeclaredField("channel");
 			channelField.setAccessible(true);
 			channels.add((FileChannel) channelField.get(value));
@@ -476,10 +473,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 
 	private static MappedByteBuffer mappedBuffer(SketchBasedJoinEstimator estimator, boolean writeAccess)
 			throws Exception {
-		Field mappedChannelsField = SketchBasedJoinEstimator.class.getDeclaredField("mappedChannels");
-		mappedChannelsField.setAccessible(true);
-		Map<?, ?> mappedChannels = (Map<?, ?>) mappedChannelsField.get(estimator);
-		for (Object value : mappedChannels.values()) {
+		for (Object value : mappedChannelEntries(estimator)) {
 			Field writeAccessField = value.getClass().getDeclaredField("writeAccess");
 			writeAccessField.setAccessible(true);
 			if (writeAccessField.getBoolean(value) == writeAccess) {
@@ -489,6 +483,23 @@ class SketchBasedJoinEstimatorPersistenceTest {
 			}
 		}
 		return null;
+	}
+
+	private static List<Object> mappedChannelEntries(SketchBasedJoinEstimator estimator) throws Exception {
+		List<Object> entries = new ArrayList<>(2);
+		Field readEntryField = SketchBasedJoinEstimator.class.getDeclaredField("readMappedChannelEntry");
+		Field writeEntryField = SketchBasedJoinEstimator.class.getDeclaredField("writeMappedChannelEntry");
+		readEntryField.setAccessible(true);
+		writeEntryField.setAccessible(true);
+		Object readEntry = readEntryField.get(estimator);
+		Object writeEntry = writeEntryField.get(estimator);
+		if (readEntry != null) {
+			entries.add(readEntry);
+		}
+		if (writeEntry != null && writeEntry != readEntry) {
+			entries.add(writeEntry);
+		}
+		return entries;
 	}
 
 	private static Set<Object> residentSketchAddresses(SketchBasedJoinEstimator estimator) throws Exception {
