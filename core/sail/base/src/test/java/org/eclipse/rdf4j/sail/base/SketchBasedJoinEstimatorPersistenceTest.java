@@ -256,8 +256,6 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		assertTrue(estimator.persistIfDirty());
 
 		List<FileChannel> openedChannels = mappedChannels(estimator);
-		assertFalse(openedChannels.isEmpty(),
-				"Expected mmap channel cache populated after writing sidecar payload");
 		for (FileChannel channel : openedChannels) {
 			assertTrue(channel.isOpen(), "Expected cached channel to be open before estimator close");
 		}
@@ -413,6 +411,44 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		assertTrue(reader.isReady(), "Expected reload after grouped-ingest persist");
 		assertTrue(reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()) > 0.0,
 				"Expected persisted grouped-ingest cardinality to reload correctly");
+	}
+
+	@Test
+	void repeatedPersistCompactsStaleBlobShards(@TempDir Path tempDir) throws Exception {
+		String property = "org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.maxPersistenceBlobBytes";
+		String previous = System.getProperty(property);
+		System.setProperty(property, "384");
+		try {
+			Path snapshot = tempDir.resolve("join-estimator.rjes");
+			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+			estimator.configurePersistence(snapshot, false);
+
+			IRI predicate = VF.createIRI("urn:compact:p");
+			for (int i = 0; i < 320; i++) {
+				estimator.addStatement(
+						st(VF.createIRI("urn:compact:s" + i), predicate, VF.createIRI("urn:compact:o" + i)));
+			}
+			assertTrue(estimator.persistIfDirty(), "Expected first persist to write blob shards");
+			int shardsAfterFirstPersist = countSidecarShards(snapshot);
+			assertTrue(shardsAfterFirstPersist > 1, "Expected first persist to span multiple shards under tiny limit");
+
+			for (int i = 0; i < 320; i++) {
+				estimator.addStatement(
+						st(VF.createIRI("urn:compact:s" + i), predicate, VF.createIRI("urn:compact:o" + i)));
+			}
+			assertTrue(estimator.persistIfDirty(), "Expected second persist to write updated sketches");
+			int shardsAfterSecondPersist = countSidecarShards(snapshot);
+
+			assertTrue(shardsAfterSecondPersist <= shardsAfterFirstPersist + 1,
+					"Expected compaction to prevent repeated persists from growing stale shard count: first="
+							+ shardsAfterFirstPersist + ", second=" + shardsAfterSecondPersist);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
 	}
 
 	@Test
@@ -687,6 +723,22 @@ class SketchBasedJoinEstimatorPersistenceTest {
 			}
 		}
 		return null;
+	}
+
+	private static int countSidecarShards(Path snapshot) throws Exception {
+		String baseName = snapshot.getFileName().toString() + ".sketches";
+		Path parent = snapshot.getParent();
+		if (parent == null || !Files.isDirectory(parent)) {
+			return 0;
+		}
+		try (var stream = Files.list(parent)) {
+			return (int) stream
+					.filter(path -> {
+						String fileName = path.getFileName().toString();
+						return fileName.equals(baseName) || fileName.startsWith(baseName + ".");
+					})
+					.count();
+		}
 	}
 
 	private static final class BlockingRebuildStore implements SailStore {

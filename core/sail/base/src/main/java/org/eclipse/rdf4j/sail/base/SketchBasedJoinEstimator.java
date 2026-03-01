@@ -343,6 +343,16 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
+	private static final class PersistedEntrySnapshot {
+		private final int entryId;
+		private final PersistedSketchRef persistedSketchRef;
+
+		private PersistedEntrySnapshot(int entryId, PersistedSketchRef persistedSketchRef) {
+			this.entryId = entryId;
+			this.persistedSketchRef = persistedSketchRef;
+		}
+	}
+
 	private static final class CacheDirectory {
 		private static final byte FLAG_DIRTY = 1;
 		private static final long EMPTY_BUCKET = 0L;
@@ -564,6 +574,18 @@ public class SketchBasedJoinEstimator {
 					continue;
 				}
 				entries.add(new ManifestSketchEntry(toSketchAddress(entryId), persisted));
+			}
+			return entries;
+		}
+
+		private List<PersistedEntrySnapshot> snapshotPersistedEntryRefs() {
+			List<PersistedEntrySnapshot> entries = new ArrayList<>();
+			for (int entryId = 0; entryId < size; entryId++) {
+				PersistedSketchRef persisted = persistedRef(entryId);
+				if (persisted == null) {
+					continue;
+				}
+				entries.add(new PersistedEntrySnapshot(entryId, persisted));
 			}
 			return entries;
 		}
@@ -3320,7 +3342,11 @@ public class SketchBasedJoinEstimator {
 				return false;
 			}
 			try {
+				boolean hadDirty = dirty.get();
 				flushDirtySketches();
+				if (hadDirty) {
+					compactPersistedBlobShards();
+				}
 				if (manifestDirty.get()) {
 					writeManifest(persistenceFile);
 					manifestDirty.set(false);
@@ -3640,40 +3666,28 @@ public class SketchBasedJoinEstimator {
 			}
 			// get amount of free memory here
 
-			targetBytes = minSketchMemoryBytes; // hysteresis: try to get under budget by evicting until we're under a lower threshold
+			targetBytes = minSketchMemoryBytes; // hysteresis: try to get under budget by evicting until we're under a
+												// lower threshold
 		}
-		System.gc();
-		try {
-			Thread.sleep(1);
-		} catch (InterruptedException e) {
-			throw new RuntimeException(e);
-		}
-		System.gc();
-		try {
-			Thread.sleep(1);
-		} catch (InterruptedException e) {
-			throw new RuntimeException(e);
-		}
-		System.out.println(ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().toString());
 
 		while (true) {
 			int candidateEntryId;
 			byte candidateSlot;
 			synchronized (sketchCacheLock) {
 				if (residentSketchBytes <= targetBytes || residentLru.isEmpty()) {
-					System.gc();
-					try {
-						Thread.sleep(1);
-					} catch (InterruptedException e) {
-						throw new RuntimeException(e);
-					}
-					System.gc();
-					try {
-						Thread.sleep(1);
-					} catch (InterruptedException e) {
-						throw new RuntimeException(e);
-					}
-					System.out.println("after: "+ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().toString());
+//					System.gc();
+//					try {
+//						Thread.sleep(1);
+//					} catch (InterruptedException e) {
+//						throw new RuntimeException(e);
+//					}
+//					System.gc();
+//					try {
+//						Thread.sleep(1);
+//					} catch (InterruptedException e) {
+//						throw new RuntimeException(e);
+//					}
+//					System.out.println("after: " + ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().toString());
 
 					return;
 				}
@@ -3683,7 +3697,7 @@ public class SketchBasedJoinEstimator {
 			}
 
 			if (!evictResidentSketch(candidateEntryId, candidateSlot)) {
-				System.out.println("after: "+ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().toString());
+				System.out.println("after: " + ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().toString());
 
 				return;
 			}
@@ -3893,6 +3907,188 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
+	private void compactPersistedBlobShards() throws IOException {
+		Path blobBase = persistenceBlobBaseFile;
+		if (blobBase == null) {
+			return;
+		}
+
+		List<PersistedEntrySnapshot> persistedEntries;
+		synchronized (sketchCacheLock) {
+			persistedEntries = cacheDirectory.snapshotPersistedEntryRefs();
+		}
+		if (persistedEntries.isEmpty()) {
+			closeMappedChannels();
+			deleteStaleBlobShards(blobBase, -1);
+			activeWriteBlobId = 0;
+			synchronized (sketchCacheLock) {
+				manifestDirty.set(true);
+			}
+			return;
+		}
+
+		Path compactBase = blobBase.resolveSibling(blobBase.getFileName().toString() + ".compact.tmp");
+		deleteAllBlobShards(compactBase);
+
+		int entryCount = persistedEntries.size();
+		int[] entryIds = new int[entryCount];
+		int[] blobIds = new int[entryCount];
+		long[] offsets = new long[entryCount];
+		int[] lengths = new int[entryCount];
+		List<FileChannel> compactChannels = new ArrayList<>();
+		List<Path> compactChannelPaths = new ArrayList<>();
+		int maxBlobId = 0;
+		int writeBlobId = 0;
+		long writeOffset = 0L;
+
+		try {
+			for (int i = 0; i < entryCount; i++) {
+				PersistedEntrySnapshot persistedEntry = persistedEntries.get(i);
+				byte[] payload = readPersistedPayloadBytes(blobBase, persistedEntry.persistedSketchRef);
+				if (writeOffset > 0L && writeOffset + payload.length > maxPersistenceBlobBytes) {
+					writeBlobId++;
+					writeOffset = 0L;
+				}
+
+				Path compactBlobPath = sidecarPath(compactBase, writeBlobId);
+				FileChannel compactChannel = openCompactionBlobChannel(compactChannels, compactChannelPaths,
+						compactBlobPath,
+						writeBlobId);
+				writePayload(compactChannel, writeOffset, payload);
+				entryIds[i] = persistedEntry.entryId;
+				blobIds[i] = writeBlobId;
+				offsets[i] = writeOffset;
+				lengths[i] = payload.length;
+				writeOffset += payload.length;
+				maxBlobId = Math.max(maxBlobId, writeBlobId);
+			}
+
+			closeChannelsQuietly(compactChannels);
+			closeMappedChannels();
+			moveCompactedBlobShards(compactBase, blobBase, maxBlobId);
+			deleteStaleBlobShards(blobBase, maxBlobId);
+			activeWriteBlobId = maxBlobId;
+
+			synchronized (sketchCacheLock) {
+				for (int i = 0; i < entryCount; i++) {
+					cacheDirectory.setPersistedRef(entryIds[i], blobIds[i], offsets[i], lengths[i]);
+				}
+				manifestDirty.set(true);
+			}
+		} catch (IOException | RuntimeException e) {
+			closeChannelsQuietly(compactChannels);
+			deleteBlobPathsQuietly(compactChannelPaths);
+			throw e;
+		}
+	}
+
+	private static FileChannel openCompactionBlobChannel(List<FileChannel> channels, List<Path> channelPaths, Path path,
+			int blobId) throws IOException {
+		while (channels.size() <= blobId) {
+			channels.add(null);
+		}
+		FileChannel existing = channels.get(blobId);
+		if (existing != null && existing.isOpen()) {
+			return existing;
+		}
+		ensureParentDirectoryExists(path);
+		FileChannel opened = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+				StandardOpenOption.WRITE);
+		channels.set(blobId, opened);
+		channelPaths.add(path);
+		return opened;
+	}
+
+	private static void writePayload(FileChannel channel, long offset, byte[] payload) throws IOException {
+		ByteBuffer buffer = ByteBuffer.wrap(payload);
+		long position = offset;
+		while (buffer.hasRemaining()) {
+			position += channel.write(buffer, position);
+		}
+	}
+
+	private static void closeChannelsQuietly(List<FileChannel> channels) {
+		for (FileChannel channel : channels) {
+			if (channel != null) {
+				closeChannelQuietly(channel);
+			}
+		}
+	}
+
+	private static void moveCompactedBlobShards(Path compactBase, Path blobBase, int maxBlobId) throws IOException {
+		for (int blobId = 0; blobId <= maxBlobId; blobId++) {
+			Path source = sidecarPath(compactBase, blobId);
+			Path target = sidecarPath(blobBase, blobId);
+			moveReplaceExisting(source, target);
+		}
+	}
+
+	private static void moveReplaceExisting(Path source, Path target) throws IOException {
+		try {
+			Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+		} catch (IOException e) {
+			Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+		}
+	}
+
+	private static void deleteAllBlobShards(Path baseBlob) throws IOException {
+		for (Path shard : listBlobShards(baseBlob)) {
+			Files.deleteIfExists(shard);
+		}
+	}
+
+	private static void deleteStaleBlobShards(Path baseBlob, int maxBlobIdToKeep) throws IOException {
+		for (Path shard : listBlobShards(baseBlob)) {
+			int blobId = parseBlobId(baseBlob, shard);
+			if (blobId > maxBlobIdToKeep) {
+				Files.deleteIfExists(shard);
+			}
+		}
+	}
+
+	private static List<Path> listBlobShards(Path baseBlob) throws IOException {
+		Path parent = baseBlob.getParent();
+		if (parent == null || !Files.isDirectory(parent)) {
+			return Collections.emptyList();
+		}
+		String baseName = baseBlob.getFileName().toString();
+		List<Path> shards = new ArrayList<>();
+		try (var stream = Files.list(parent)) {
+			stream.filter(path -> {
+				String fileName = path.getFileName().toString();
+				return fileName.equals(baseName) || fileName.startsWith(baseName + ".");
+			}).forEach(shards::add);
+		}
+		return shards;
+	}
+
+	private static int parseBlobId(Path baseBlob, Path path) {
+		String baseName = baseBlob.getFileName().toString();
+		String fileName = path.getFileName().toString();
+		if (fileName.equals(baseName)) {
+			return 0;
+		}
+		if (!fileName.startsWith(baseName + ".")) {
+			return -1;
+		}
+		String suffix = fileName.substring(baseName.length() + 1);
+		try {
+			return Integer.parseInt(suffix);
+		} catch (NumberFormatException e) {
+			return -1;
+		}
+	}
+
+	private static void deleteBlobPathsQuietly(List<Path> paths) {
+		for (Path path : paths) {
+			try {
+				Files.deleteIfExists(path);
+			} catch (IOException e) {
+				logger.debug("Failed to delete compacted shard {}", path, e);
+			}
+		}
+	}
+
 	private void writeManifest(Path file) throws IOException {
 		Path parent = file.getParent();
 		if (parent != null) {
@@ -4032,8 +4228,7 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
-	private UpdateSketch readSketchFromBlob(Path blob, PersistedSketchRef persistedSketchRef, int k)
-			throws IOException {
+	private byte[] readPersistedPayloadBytes(Path blob, PersistedSketchRef persistedSketchRef) throws IOException {
 		byte[] payload = new byte[persistedSketchRef.length];
 		MappedChannelEntry entry = getMappedChannelEntry(blob, persistedSketchRef.blobId, false);
 		synchronized (entry) {
@@ -4053,6 +4248,12 @@ public class SketchBasedJoinEstimator {
 			mapped.position((int) persistedSketchRef.offset);
 			mapped.get(payload);
 		}
+		return payload;
+	}
+
+	private UpdateSketch readSketchFromBlob(Path blob, PersistedSketchRef persistedSketchRef, int k)
+			throws IOException {
+		byte[] payload = readPersistedPayloadBytes(blob, persistedSketchRef);
 		try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(payload))) {
 			return readSketch(input, k);
 		}
@@ -4502,8 +4703,8 @@ public class SketchBasedJoinEstimator {
 		double churnSamplePercent = 0.01;
 		double churnReaddThreshold = 0.20;
 		double churnRemovalRatioThreshold = 0.50;
-		double minSketchMemoryPercent = 0.05;
-		double maxSketchMemoryPercent = 0.10;
+		double minSketchMemoryPercent = 0.10;
+		double maxSketchMemoryPercent = 0.30;
 		long maxPersistenceBlobBytes = DEFAULT_MAX_PERSISTENCE_BLOB_BYTES;
 
 		/** Return a new config with all defaults. */

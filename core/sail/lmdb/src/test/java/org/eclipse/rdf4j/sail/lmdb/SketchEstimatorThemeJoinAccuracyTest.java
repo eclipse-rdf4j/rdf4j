@@ -132,21 +132,23 @@ class SketchEstimatorThemeJoinAccuracyTest {
 
 	private static void loadAllThemesInSingleGraph(SailRepository repository) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+
 			RDFInserter inserter = new RDFInserter(connection);
 			inserter.enforceContext(THEME_GRAPH);
 			for (ThemeDataSetGenerator.Theme theme : ThemeDataSetGenerator.Theme.values()) {
-				connection.begin();
 
 				StopWatch started = StopWatch.createStarted();
 				System.out.println("Loading theme: " + theme);
 				ThemeDataSetGenerator.generate(theme, inserter);
-				connection.commit();
 
 				System.out.println("Finished loading theme: " + theme);
 				System.out.println("Time taken: " + started);
 //				break;
 
 			}
+			connection.commit();
+
 		}
 	}
 
