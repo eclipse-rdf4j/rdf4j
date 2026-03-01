@@ -18,6 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.List;
 
+import org.apache.datasketches.common.ResizeFactor;
+import org.apache.datasketches.theta.UpdateSketch;
 import org.apache.datasketches.thetacommon.ThetaUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -132,6 +134,14 @@ class SketchBasedJoinEstimatorConfigTest {
 		kField.setAccessible(true);
 
 		assertEquals(ThetaUtil.DEFAULT_NOMINAL_ENTRIES, kField.getInt(bufA));
+	}
+
+	@Test
+	void sketchesUseResizeFactorX8() throws Exception {
+		var newSkMethod = SketchBasedJoinEstimator.class.getDeclaredMethod("newSk", int.class);
+		newSkMethod.setAccessible(true);
+		UpdateSketch sketch = (UpdateSketch) newSkMethod.invoke(null, ThetaUtil.DEFAULT_NOMINAL_ENTRIES);
+		assertEquals(ResizeFactor.X8, sketch.getResizeFactor());
 	}
 
 	@Test

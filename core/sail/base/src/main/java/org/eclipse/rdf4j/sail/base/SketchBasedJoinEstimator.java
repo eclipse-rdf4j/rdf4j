@@ -42,6 +42,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 import org.apache.datasketches.common.Family;
+import org.apache.datasketches.common.ResizeFactor;
 import org.apache.datasketches.theta.AnotB;
 import org.apache.datasketches.theta.HashIterator;
 import org.apache.datasketches.theta.Intersection;
@@ -208,6 +209,7 @@ public class SketchBasedJoinEstimator {
 
 	private static final Sketch EMPTY = UpdateSketch.builder()
 			.setFamily(Family.ALPHA)
+			.setResizeFactor(ResizeFactor.X8)
 			.build()
 			.compact();
 
@@ -438,7 +440,7 @@ public class SketchBasedJoinEstimator {
 		this.sketchesLoaded = true;
 		this.persistenceEnabled = false;
 		this.lazyLoadEnabled = false;
-		long heapMax = Math.max(64L * 1024L * 1024L, Runtime.getRuntime().maxMemory());
+		long heapMax = Runtime.getRuntime().maxMemory();
 		this.minSketchMemoryBytes = percentToBytes(minSketchMemoryPercent, heapMax);
 		this.maxSketchMemoryBytes = percentToBytes(maxSketchMemoryPercent, heapMax);
 	}
@@ -1534,6 +1536,7 @@ public class SketchBasedJoinEstimator {
 	private static UpdateSketch newSk(int k) {
 		return UpdateSketch.builder()
 				.setFamily(Family.ALPHA)
+				.setResizeFactor(ResizeFactor.X8)
 				.setNominalEntries(k)
 				.build();
 	}
@@ -3079,7 +3082,7 @@ public class SketchBasedJoinEstimator {
 		double churnReaddThreshold = 0.20;
 		double churnRemovalRatioThreshold = 0.50;
 		double minSketchMemoryPercent = 0.01;
-		double maxSketchMemoryPercent = 0.02;
+		double maxSketchMemoryPercent = 0.10;
 
 		/** Return a new config with all defaults. */
 		public static Config defaults() {

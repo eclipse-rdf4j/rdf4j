@@ -171,10 +171,9 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
 		reader.configurePersistence(snapshot, true);
 		assertTrue(reader.isReady());
-		setSketchBudgetBytes(reader, 0L, 24L);
-
 		reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue());
 		reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p2.stringValue());
+		setSketchBudgetBytes(reader, 0L, residentSketchBytes(reader));
 		reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue());
 		reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p3.stringValue());
 
@@ -295,6 +294,12 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		maxField.setAccessible(true);
 		minField.setLong(estimator, minBytes);
 		maxField.setLong(estimator, maxBytes);
+	}
+
+	private static long residentSketchBytes(SketchBasedJoinEstimator estimator) throws Exception {
+		Field residentBytesField = SketchBasedJoinEstimator.class.getDeclaredField("residentSketchBytes");
+		residentBytesField.setAccessible(true);
+		return residentBytesField.getLong(estimator);
 	}
 
 	private static Set<Integer> residentSinglePredicateHashes(SketchBasedJoinEstimator estimator) throws Exception {
