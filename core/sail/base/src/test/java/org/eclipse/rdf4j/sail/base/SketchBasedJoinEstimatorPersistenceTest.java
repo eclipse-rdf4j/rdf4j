@@ -107,6 +107,23 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
+	void incrementalAddAfterEmptyRebuildBecomesReadyWithoutRebuild() {
+		Resource s = VF.createIRI("urn:s");
+		IRI p = VF.createIRI("urn:p");
+		Value o = VF.createIRI("urn:o");
+
+		StubSailStore store = new StubSailStore();
+		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, smallConfig());
+		est.rebuildOnceSlow();
+		assertFalse(est.isReady(), "Expected empty rebuild to remain unready");
+
+		store.add(st(s, p, o));
+		est.addStatement(st(s, p, o));
+
+		assertTrue(est.isReady(), "Incremental adds on loaded sketches should not require rebuild");
+	}
+
+	@Test
 	void cardinalityJoinFallsBackWhenUnloaded() {
 		Resource s = VF.createIRI("urn:s");
 		IRI p1 = VF.createIRI("urn:p1");

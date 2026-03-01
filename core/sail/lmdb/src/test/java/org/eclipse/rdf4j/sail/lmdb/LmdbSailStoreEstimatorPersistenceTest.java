@@ -18,7 +18,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.lang.reflect.Field;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
@@ -64,6 +66,98 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			assertDoesNotThrow(estimator::isReady);
 		} finally {
 			reopened.shutDown();
+		}
+	}
+
+	@Test
+	void lowMemoryUnloadAfterNoneCommitStillAllowsReadyWithoutRebuild(@TempDir File dataDir) throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		var s = vf.createIRI("urn:s");
+		var p = vf.createIRI("urn:p");
+		var o = vf.createIRI("urn:o");
+
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		store.init();
+		try {
+			AtomicInteger lowMemoryChecks = new AtomicInteger();
+			LmdbSailStore.setLowMemorySupplierForTests(() -> {
+				lowMemoryChecks.incrementAndGet();
+				StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+				boolean inEstimatorUpdate = false;
+				boolean inLmdbFlush = false;
+				for (StackTraceElement frame : stackTrace) {
+					if (frame.getClassName().equals(SketchBasedJoinEstimator.class.getName())
+							&& ("addStatement".equals(frame.getMethodName())
+									|| "deleteStatement".equals(frame.getMethodName()))) {
+						inEstimatorUpdate = true;
+						break;
+					}
+					if (frame.getClassName().contains("LmdbSailStore$LmdbSailSink")
+							&& "flush".equals(frame.getMethodName())) {
+						inLmdbFlush = true;
+					}
+				}
+				return inLmdbFlush && !inEstimatorUpdate;
+			});
+
+			LmdbSailStore backingStore = store.getBackingStore();
+			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+
+			// Keep the test deterministic by removing background rebuild effects.
+			estimator.stop();
+			estimator.setRebuildAllowedSupplier(() -> false);
+
+			try (NotifyingSailConnection conn = store.getConnection()) {
+				conn.begin(IsolationLevels.NONE);
+				conn.addStatement(s, p, o);
+				conn.commit();
+			}
+
+			Field loadedField = SketchBasedJoinEstimator.class.getDeclaredField("sketchesLoaded");
+			loadedField.setAccessible(true);
+			assertFalse(loadedField.getBoolean(estimator), "Expected low-memory flush to unload estimator sketches");
+			assertTrue(lowMemoryChecks.get() > 0, "Expected low-memory supplier to be consulted during commit");
+
+			// Let the scheduled async persist run if any was queued.
+			Thread.sleep(1500L);
+			LmdbSailStore.setLowMemorySupplierForTests(() -> false);
+
+			assertTrue(estimator.isReady(),
+					"Estimator should remain recoverable from snapshot without requiring a rebuild");
+		} finally {
+			LmdbSailStore.setLowMemorySupplierForTests(null);
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void noneIsolationAppliesEstimatorUpdatesAcrossSinkFlushes(@TempDir File dataDir) throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		var s = vf.createIRI("urn:s");
+		var p = vf.createIRI("urn:p");
+		var o = vf.createIRI("urn:o");
+
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		store.init();
+		try {
+			LmdbSailStore backingStore = store.getBackingStore();
+			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+			estimator.stop();
+			estimator.setLowMemorySupplier(() -> false);
+			estimator.setRebuildAllowedSupplier(() -> false);
+
+			try (NotifyingSailConnection conn = store.getConnection()) {
+				conn.begin(IsolationLevels.NONE);
+				conn.addStatement(s, p, o);
+				// Namespace updates use a different sink and trigger internal flushes in NONE transactions.
+				conn.setNamespace("ex", "urn:example");
+				conn.commit();
+			}
+
+			assertTrue(estimator.isReady(),
+					"Estimator should receive queued updates even when NONE transactions flush through another sink");
+		} finally {
+			store.shutDown();
 		}
 	}
 }

@@ -106,7 +106,7 @@ class SketchEstimatorThemeJoinAccuracyTest {
 			if (statistics.supportsJoinEstimation()) {
 				return true;
 			}
-			System.out.println("Waiting for join estimation to become available, waitted "
+			System.out.println("Waiting for join estimation to become available, waited "
 					+ (System.currentTimeMillis() - now) / 1000 + " seconds...");
 			Thread.sleep(1000);
 		}

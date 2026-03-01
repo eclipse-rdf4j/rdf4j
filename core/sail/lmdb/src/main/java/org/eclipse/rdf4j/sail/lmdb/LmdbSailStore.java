@@ -30,6 +30,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -40,6 +41,7 @@ import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -66,12 +68,14 @@ import org.slf4j.LoggerFactory;
  */
 class LmdbSailStore implements SailStore {
 
-	final Logger logger = LoggerFactory.getLogger(LmdbSailStore.class);
+	private static final Logger logger = LoggerFactory.getLogger(LmdbSailStore.class);
 	private static final String JOIN_ESTIMATOR_FILE_NAME = "join-estimator.rjes";
 	private static final Runtime RUNTIME = Runtime.getRuntime();
 	private static final long MAX_MEMORY = RUNTIME.maxMemory();
 	private static final long LOW_MEM_ABS = 64L * 1024L * 1024L;
 	private static final double LOW_MEM_RATIO = 1.0 / 8.0;
+	private static final BooleanSupplier DEFAULT_LOW_MEMORY_SUPPLIER = LmdbSailStore::isLowMemoryHeuristic;
+	private static volatile BooleanSupplier lowMemorySupplier = DEFAULT_LOW_MEMORY_SUPPLIER;
 
 	private final TripleStore tripleStore;
 
@@ -258,12 +262,26 @@ class LmdbSailStore implements SailStore {
 		return sketchBasedJoinEstimator;
 	}
 
-	private static boolean isLowMemory() {
+	private static boolean isLowMemoryHeuristic() {
 		long total = RUNTIME.totalMemory();
 		long free = RUNTIME.freeMemory();
 		long used = total - free;
 		long freeToAllocate = MAX_MEMORY - used;
 		return freeToAllocate < LOW_MEM_ABS || (freeToAllocate + 0.0) / (MAX_MEMORY + 0.0) < LOW_MEM_RATIO;
+	}
+
+	private static boolean isLowMemory() {
+		BooleanSupplier supplier = lowMemorySupplier;
+		try {
+			return supplier.getAsBoolean();
+		} catch (RuntimeException e) {
+			logger.debug("Failed to evaluate low-memory supplier, falling back to heuristic", e);
+			return isLowMemoryHeuristic();
+		}
+	}
+
+	static void setLowMemorySupplierForTests(BooleanSupplier supplier) {
+		lowMemorySupplier = supplier == null ? DEFAULT_LOW_MEMORY_SUPPLIER : supplier;
 	}
 
 	void rollback() throws SailException {
@@ -492,7 +510,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public SailSink sink(IsolationLevel level) throws SailException {
-			return new LmdbSailSink(explicit);
+			return new LmdbSailSink(explicit, level);
 		}
 
 		@Override
@@ -510,14 +528,22 @@ class LmdbSailStore implements SailStore {
 	private final class LmdbSailSink implements SailSink {
 
 		private final boolean explicit;
+		private final boolean nonIsolated;
 		private final List<Runnable> pendingEstimatorUpdates = new ArrayList<>();
+		private boolean nonIsolatedUpdatesApplied;
 
-		public LmdbSailSink(boolean explicit) throws SailException {
+		public LmdbSailSink(boolean explicit, IsolationLevel level) throws SailException {
 			this.explicit = explicit;
+			this.nonIsolated = IsolationLevels.NONE.isCompatibleWith(level);
 		}
 
 		private void queueEstimatorAdd(Statement st) {
 			if (!explicit) {
+				return;
+			}
+			if (nonIsolated) {
+				sketchBasedJoinEstimator.addStatement(st);
+				nonIsolatedUpdatesApplied = true;
 				return;
 			}
 			synchronized (pendingEstimatorUpdates) {
@@ -529,13 +555,18 @@ class LmdbSailStore implements SailStore {
 			if (!explicit) {
 				return;
 			}
+			if (nonIsolated) {
+				sketchBasedJoinEstimator.deleteStatement(st);
+				nonIsolatedUpdatesApplied = true;
+				return;
+			}
 			synchronized (pendingEstimatorUpdates) {
 				pendingEstimatorUpdates.add(() -> sketchBasedJoinEstimator.deleteStatement(st));
 			}
 		}
 
 		private void applyEstimatorUpdates() {
-			if (!explicit) {
+			if (!explicit || nonIsolated) {
 				return;
 			}
 			List<Runnable> updates;
@@ -550,6 +581,15 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void clearEstimatorUpdates() {
+			if (nonIsolated) {
+				// In NONE isolation updates are applied eagerly; rollback cannot replay inverse deltas safely.
+				// Unload so the estimator recovers from persisted snapshot or rebuild.
+				if (nonIsolatedUpdatesApplied) {
+					sketchBasedJoinEstimator.unload();
+					nonIsolatedUpdatesApplied = false;
+				}
+				return;
+			}
 			synchronized (pendingEstimatorUpdates) {
 				pendingEstimatorUpdates.clear();
 			}
@@ -634,9 +674,13 @@ class LmdbSailStore implements SailStore {
 						handleRemovedIdsInValueStore();
 						valueStore.commit();
 						applyEstimatorUpdates();
-						scheduleEstimatorPersist();
+						nonIsolatedUpdatesApplied = false;
 						if (isLowMemory()) {
+							// Persist synchronously before unloading so readiness can recover via snapshot load.
+							sketchBasedJoinEstimator.persistIfDirty();
 							sketchBasedJoinEstimator.unload();
+						} else {
+							scheduleEstimatorPersist();
 						}
 						// do not set flag to false until _after_ commit is successfully completed.
 						storeTxnStarted.set(false);

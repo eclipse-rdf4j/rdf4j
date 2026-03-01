@@ -255,6 +255,10 @@ public class SketchBasedJoinEstimator {
 	 * until it rebuilds from store contents.
 	 */
 	private final AtomicBoolean rebuildRequired = new AtomicBoolean(false);
+	/**
+	 * Even value means no rebuild in progress. Odd value means rebuild in progress.
+	 */
+	private final java.util.concurrent.atomic.AtomicLong rebuildEpoch = new java.util.concurrent.atomic.AtomicLong();
 
 	/** True when in-memory state changed and should be snapshotted at the next scheduled persist point. */
 	private final AtomicBoolean dirty = new AtomicBoolean(false);
@@ -376,14 +380,14 @@ public class SketchBasedJoinEstimator {
 	/* --------------------------------------------------------------------- */
 
 	public boolean isReady() {
-		if (isLowMemory()) {
-			return false;
-		}
 		if (rebuildRequired.get()) {
 			return false;
 		}
 		if (sketchesLoaded && seenTriples > 0) {
 			return true;
+		}
+		if (isLowMemory()) {
+			return false;
 		}
 
 		if (!sketchesLoaded && persistenceEnabled && persistenceFile != null && hasSnapshotAvailable(persistenceFile)) {
@@ -565,60 +569,63 @@ public class SketchBasedJoinEstimator {
 
 		State tgt = rebuildIntoA ? bufA : bufB;
 		tgt.clear(); // wipe everything (add + del)
+		rebuildEpoch.incrementAndGet(); // mark rebuild in progress (odd epoch)
 
 		long seen = 0L;
 		long l = System.currentTimeMillis();
+		try {
+			try (SailDataset ds = sailStore.getExplicitSailSource().dataset(IsolationLevels.READ_COMMITTED);
+					CloseableIteration<? extends Statement> it = ds.getStatements(null, null, null)) {
 
-		try (SailDataset ds = sailStore.getExplicitSailSource().dataset(IsolationLevels.READ_COMMITTED);
-				CloseableIteration<? extends Statement> it = ds.getStatements(null, null, null)) {
-
-			while (it.hasNext()) {
-				if (Thread.currentThread().isInterrupted() || !running && Thread.currentThread() == refresher) {
-					break;
-				}
-				Statement st = it.next();
-				try {
-					synchronized (tgt) {
-						ingest(tgt, st, /* isDelete= */false);
-					}
-				} catch (OutOfMemoryError oom) {
-					logger.warn(
-							"Out of memory while rebuilding estimator state; unloading sketches and deferring rebuild",
-							oom);
-					unloadInternal(true);
-					return seen;
-				} catch (Throwable e) {
-					continue;
-				}
-
-				if ((seen & 0x3FFF) == 0 && isLowMemory()) {
-					unloadInternal(true);
-					return seen;
-				}
-
-				if (++seen % throttleEveryN == 0 && throttleMillis > 0) {
-					try {
-						Thread.sleep(throttleMillis);
-					} catch (InterruptedException ie) {
-						Thread.currentThread().interrupt();
+				while (it.hasNext()) {
+					if (Thread.currentThread().isInterrupted() || !running && Thread.currentThread() == refresher) {
 						break;
 					}
-				}
+					Statement st = it.next();
+					try {
+						synchronized (tgt) {
+							ingest(tgt, st, /* isDelete= */false);
+						}
+					} catch (OutOfMemoryError oom) {
+						logger.warn(
+								"Out of memory while rebuilding estimator state; unloading sketches and deferring rebuild",
+								oom);
+						unloadInternal(true);
+						return seen;
+					} catch (Throwable e) {
+						continue;
+					}
 
-				if (seen % 100000 == 0) {
-					System.out.println("RdfJoinEstimator: Rebuilding " + (rebuildIntoA ? "bufA" : "bufB") + ", seen "
-							+ seen + " triples so far. Elapsed: " + (System.currentTimeMillis() - l) / 1000 + " s.");
+					if ((seen & 0x3FFF) == 0 && isLowMemory()) {
+						unloadInternal(true);
+						return seen;
+					}
+
+					if (++seen % throttleEveryN == 0 && throttleMillis > 0) {
+						try {
+							Thread.sleep(throttleMillis);
+						} catch (InterruptedException ie) {
+							Thread.currentThread().interrupt();
+							break;
+						}
+					}
+
+					if (seen % 100000 == 0) {
+						System.out.println(
+								"RdfJoinEstimator: Rebuilding " + (rebuildIntoA ? "bufA" : "bufB") + ", seen "
+										+ seen + " triples so far. Elapsed: " + (System.currentTimeMillis() - l) / 1000
+										+ " s.");
+					}
 				}
 			}
-		}
 
-		current = tgt; // single volatile write → visible to all readers
-		seenTriples = seen;
-		approxStoreSize.set(seen);
-		sketchesLoaded = true;
-		rebuildRequired.set(false);
-		dirty.set(true);
-		usingA = !usingA;
+			current = tgt; // single volatile write → visible to all readers
+			seenTriples = seen;
+			approxStoreSize.set(seen);
+			sketchesLoaded = true;
+			rebuildRequired.set(false);
+			dirty.set(true);
+			usingA = !usingA;
 
 //		long currentMemoryUsageAfter = currentMemoryUsage();
 //		System.out.println("RdfJoinEstimator: Rebuilt " + (rebuildIntoA ? "bufA" : "bufB") +
@@ -626,11 +633,16 @@ public class SketchBasedJoinEstimator {
 //				currentMemoryUsageAfter / 1024 / 1024 + " MB, delta = " +
 //				(currentMemoryUsageAfter - currentMemoryUsage) / 1024 / 1024 + " MB.");
 
-		// staleness: publish times & reset churn sampler
-		lastRebuildPublishMs = System.currentTimeMillis();
-		churnSampler.reset();
+			// staleness: publish times & reset churn sampler
+			lastRebuildPublishMs = System.currentTimeMillis();
+			churnSampler.reset();
 
-		return seen;
+			return seen;
+		} finally {
+			if ((rebuildEpoch.get() & 1L) != 0L) {
+				rebuildEpoch.incrementAndGet(); // mark rebuild complete (even epoch)
+			}
+		}
 	}
 
 	private long currentMemoryUsage() {
@@ -667,8 +679,15 @@ public class SketchBasedJoinEstimator {
 	public void addStatement(Statement st) {
 		Objects.requireNonNull(st);
 		if (isLowMemory()) {
-			unloadInternal(true);
-			return;
+			if (persistenceEnabled && persistenceFile != null) {
+				persistIfDirty();
+				unloadInternal(false);
+			} else {
+				unloadInternal(true);
+			}
+		}
+		if (!sketchesLoaded && persistenceEnabled && persistenceFile != null && hasSnapshotAvailable(persistenceFile)) {
+			tryLoadFromDisk();
 		}
 		if (!sketchesLoaded) {
 			approxStoreSize.incrementAndGet();
@@ -678,15 +697,10 @@ public class SketchBasedJoinEstimator {
 
 		String signature = sig(str(st.getSubject()), str(st.getPredicate()), str(st.getObject()), str(st.getContext()));
 		churnSampler.recordAdd(signature, samplingInterval());
-		approxStoreSize.incrementAndGet();
+		seenTriples = approxStoreSize.incrementAndGet();
 
 		try {
-			synchronized (bufA) {
-				ingest(bufA, st, /* isDelete= */false);
-			}
-			synchronized (bufB) {
-				ingest(bufB, st, /* isDelete= */false);
-			}
+			ingestIncremental(st, false);
 		} catch (OutOfMemoryError oom) {
 			logger.warn("Out of memory while applying incremental estimator update; unloading sketches", oom);
 			unloadInternal(true);
@@ -706,8 +720,15 @@ public class SketchBasedJoinEstimator {
 	public void deleteStatement(Statement st) {
 		Objects.requireNonNull(st);
 		if (isLowMemory()) {
-			unloadInternal(true);
-			return;
+			if (persistenceEnabled && persistenceFile != null) {
+				persistIfDirty();
+				unloadInternal(false);
+			} else {
+				unloadInternal(true);
+			}
+		}
+		if (!sketchesLoaded && persistenceEnabled && persistenceFile != null && hasSnapshotAvailable(persistenceFile)) {
+			tryLoadFromDisk();
 		}
 		if (!sketchesLoaded) {
 			approxStoreSize.updateAndGet(v -> Math.max(0, v - 1));
@@ -717,15 +738,10 @@ public class SketchBasedJoinEstimator {
 
 		String signature = sig(str(st.getSubject()), str(st.getPredicate()), str(st.getObject()), str(st.getContext()));
 		churnSampler.recordDelete(signature, samplingInterval());
-		approxStoreSize.updateAndGet(v -> Math.max(0, v - 1));
+		seenTriples = approxStoreSize.updateAndGet(v -> Math.max(0, v - 1));
 
 		try {
-			synchronized (bufA) {
-				ingest(bufA, st, /* isDelete= */true);
-			}
-			synchronized (bufB) {
-				ingest(bufB, st, /* isDelete= */true);
-			}
+			ingestIncremental(st, true);
 		} catch (OutOfMemoryError oom) {
 			logger.warn("Out of memory while applying incremental estimator delete; unloading sketches", oom);
 			unloadInternal(true);
@@ -740,6 +756,30 @@ public class SketchBasedJoinEstimator {
 
 	public void deleteStatement(Resource s, IRI p, Value o) {
 		deleteStatement(s, p, o, null);
+	}
+
+	private void ingestIncremental(Statement st, boolean isDelete) {
+		while (true) {
+			long epoch = rebuildEpoch.get();
+			if ((epoch & 1L) != 0L) {
+				synchronized (bufA) {
+					ingest(bufA, st, isDelete);
+				}
+				synchronized (bufB) {
+					ingest(bufB, st, isDelete);
+				}
+				return;
+			}
+
+			State target = current;
+			synchronized (target) {
+				if (rebuildEpoch.get() != epoch) {
+					continue;
+				}
+				ingest(target, st, isDelete);
+				return;
+			}
+		}
 	}
 
 	/* ------------------------------------------------------------------ */
