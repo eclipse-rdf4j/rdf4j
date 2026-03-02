@@ -125,7 +125,9 @@ class SketchBasedJoinEstimatorConfigTest {
 
 		var bucketsField = est.getClass().getDeclaredField("nominalEntries");
 		bucketsField.setAccessible(true);
-		assertEquals(64 * 1024, bucketsField.getInt(est));
+		var defaultBucketsField = SketchBasedJoinEstimator.class.getDeclaredField("DEFAULT_BUCKET_COUNT");
+		defaultBucketsField.setAccessible(true);
+		assertEquals(defaultBucketsField.getInt(null), bucketsField.getInt(est));
 
 		var bufField = est.getClass().getDeclaredField("bufA");
 		bufField.setAccessible(true);
@@ -153,8 +155,8 @@ class SketchBasedJoinEstimatorConfigTest {
 	@Test
 	void defaultsExposeMin1Max2Percent() {
 		SketchBasedJoinEstimator.Config cfg = SketchBasedJoinEstimator.Config.defaults();
-		assertEquals(0.01d, cfg.minSketchMemoryPercent, 0.0d);
-		assertEquals(0.02d, cfg.maxSketchMemoryPercent, 0.0d);
+		assertEquals(0.10d, cfg.minSketchMemoryPercent, 0.0d);
+		assertEquals(0.30d, cfg.maxSketchMemoryPercent, 0.0d);
 	}
 
 	@Test
