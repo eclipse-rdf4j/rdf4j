@@ -78,6 +78,14 @@ class SketchEstimatorThemeJoinAccuracyTest {
 				JoinScenario scenario = scenarios.get(i);
 				double estimate = statistics.getCardinality(asJoinNode(scenario));
 
+				if (estimate <= 0.0d) {
+					System.out.println(
+							"Estimator returned zero for scenario left=" + scenario.left + ", right=" + scenario.right
+									+ ", actual=" + scenario.actualJoinCount());
+					double temp = statistics.getCardinality(asJoinNode(scenario));
+
+				}
+
 				assertTrue(estimate > 0.0d,
 						() -> "Estimator returned zero for scenario left=" + scenario.left + ", right=" + scenario.right
 								+ ", actual=" + scenario.actualJoinCount());

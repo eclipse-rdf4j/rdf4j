@@ -2200,6 +2200,46 @@ public class SketchBasedJoinEstimator {
 				int idxY = hash(f.get(pr.y));
 				return pairWrapper(st, pr).getComplementSketch(j, pairKey(idxX, idxY));
 			}
+		} else if (f.size() == 3) {
+			List<Sketch> pairCandidates = new ArrayList<>(3);
+			for (int i = 0; i < cs.length; i++) {
+				for (int k = i + 1; k < cs.length; k++) {
+					Pair pr = findPair(cs[i], cs[k]);
+					if (pr == null || (j != pr.comp1 && j != pr.comp2)) {
+						continue;
+					}
+					int idxX = hash(f.get(pr.x));
+					int idxY = hash(f.get(pr.y));
+					Sketch candidate = pairWrapper(st, pr).getComplementSketch(j, pairKey(idxX, idxY));
+					if (candidate == null) {
+						continue;
+					}
+					pairCandidates.add(candidate);
+				}
+			}
+
+			Sketch best = null;
+			double bestEstimate = Double.POSITIVE_INFINITY;
+			for (int i = 0; i < pairCandidates.size(); i++) {
+				for (int k = i + 1; k < pairCandidates.size(); k++) {
+					Intersection ix = SetOperation.builder().buildIntersection();
+					ix.intersect(pairCandidates.get(i));
+					ix.intersect(pairCandidates.get(k));
+					Sketch intersection = ix.getResult();
+					double estimate = intersection.getEstimate();
+					if (best == null || estimate < bestEstimate) {
+						best = intersection;
+						bestEstimate = estimate;
+					}
+				}
+			}
+
+			if (best != null) {
+				return best;
+			}
+			if (!pairCandidates.isEmpty()) {
+				return pairCandidates.get(0);
+			}
 		}
 
 		/* generic fall‑back */
