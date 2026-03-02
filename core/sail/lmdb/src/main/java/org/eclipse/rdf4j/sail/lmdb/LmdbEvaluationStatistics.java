@@ -104,7 +104,8 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 			if (supportsJoinEstimation()) {
 				double estimatedCardinality = sketchBasedJoinEstimator.cardinality(node);
 				double estimatedCardinality2 = sketchBasedJoinEstimator.cardinality(node);
-				assert estimatedCardinality == estimatedCardinality2 : "SketchBasedJoinEstimator returned different cardinality estimates for the same join";
+				assert estimatedCardinality == estimatedCardinality2
+						: "SketchBasedJoinEstimator returned different cardinality estimates for the same join";
 				if (estimatedCardinality >= 0 && estimatedCardinality < 1) {
 					System.out.println("Estimated cardinality for join is less than 1: " + estimatedCardinality);
 				}

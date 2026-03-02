@@ -393,7 +393,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 							continue;
 						}
 						double cost = getCard.apply(prev, cand);
-						if (cost < bestCost) {
+						if (cost > 0 && cost < bestCost) {
 							bestCost = cost;
 							bestCandidate = cand;
 						}

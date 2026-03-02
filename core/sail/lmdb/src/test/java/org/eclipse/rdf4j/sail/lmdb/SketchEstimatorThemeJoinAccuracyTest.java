@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
+import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -65,6 +66,7 @@ class SketchEstimatorThemeJoinAccuracyTest {
 
 		try {
 			loadAllThemesInSingleGraph(repository);
+			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 			assertTrue(awaitJoinEstimationReady(statistics),
@@ -82,13 +84,13 @@ class SketchEstimatorThemeJoinAccuracyTest {
 					System.out.println(
 							"Estimator returned zero for scenario left=" + scenario.left + ", right=" + scenario.right
 									+ ", actual=" + scenario.actualJoinCount());
-					 statistics.getCardinality(asJoinNode(scenario));
-					 statistics.getCardinality(asJoinNode(scenario));
-					 statistics.getCardinality(asJoinNode(scenario));
-					 statistics.getCardinality(asJoinNode(scenario));
-					 statistics.getCardinality(asJoinNode(scenario));
-					 statistics.getCardinality(asJoinNode(scenario));
-					 statistics.getCardinality(asJoinNode(scenario));
+					statistics.getCardinality(asJoinNode(scenario));
+					statistics.getCardinality(asJoinNode(scenario));
+					statistics.getCardinality(asJoinNode(scenario));
+					statistics.getCardinality(asJoinNode(scenario));
+					statistics.getCardinality(asJoinNode(scenario));
+					statistics.getCardinality(asJoinNode(scenario));
+					statistics.getCardinality(asJoinNode(scenario));
 
 				}
 
@@ -97,6 +99,11 @@ class SketchEstimatorThemeJoinAccuracyTest {
 								+ ", actual=" + scenario.actualJoinCount());
 
 				double relativeError = Math.abs(estimate - scenario.actualJoinCount()) / scenario.actualJoinCount();
+				if (relativeError > MAX_RELATIVE_ERROR) {
+					System.out.println("Scenario sizes leftSubjects=" + scenario.leftSubjects() + ", rightSubjects="
+							+ scenario.rightSubjects() + ", intersection=" + scenario.actualJoinCount());
+					printDirectPairCounts(repository, scenario);
+				}
 				if (relativeError > MAX_RELATIVE_ERROR) {
 					statistics.getCardinality(asJoinNode(scenario));
 					statistics.getCardinality(asJoinNode(scenario));
@@ -111,6 +118,9 @@ class SketchEstimatorThemeJoinAccuracyTest {
 							+ scenario.right + ", estimate=" + estimate + ", actual=" + scenario.actualJoinCount()
 							+ ", error=" + relativeError);
 				}
+				if (relativeError > MAX_RELATIVE_ERROR) {
+					printScenarioDiagnostics(estimator, scenario);
+				}
 
 				assertTrue(relativeError <= MAX_RELATIVE_ERROR,
 						() -> "Join estimate outside 20% bound. left=" + scenario.left + ", right="
@@ -120,6 +130,61 @@ class SketchEstimatorThemeJoinAccuracyTest {
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	private static void printScenarioDiagnostics(SketchBasedJoinEstimator estimator, JoinScenario scenario) {
+		String context = THEME_GRAPH.stringValue();
+		String leftPredicate = scenario.left.predicate().stringValue();
+		String leftObject = scenario.left.object().stringValue();
+		String rightPredicate = scenario.right.predicate().stringValue();
+		String rightObject = scenario.right.object().stringValue();
+
+		double leftEstimate = estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, leftPredicate,
+				leftObject, context);
+		double rightEstimate = estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, rightPredicate,
+				rightObject, context);
+		double poLeft = estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, leftPredicate, leftObject);
+		double pcLeft = estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PC, leftPredicate, context);
+		double ocLeft = estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.OC, leftObject, context);
+		double poRight = estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, rightPredicate, rightObject);
+		double pcRight = estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PC, rightPredicate, context);
+		double ocRight = estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.OC, rightObject, context);
+		double pairJoinEstimate = estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.S,
+				SketchBasedJoinEstimator.Pair.PO, leftPredicate, leftObject, SketchBasedJoinEstimator.Pair.PO,
+				rightPredicate, rightObject);
+
+		System.out.println("Diagnostics leftEstimate=" + leftEstimate + ", rightEstimate=" + rightEstimate
+				+ ", pairJoinEstimate(POxPO)=" + pairJoinEstimate);
+		System.out.println("Diagnostics leftPairs po=" + poLeft + ", pc=" + pcLeft + ", oc=" + ocLeft);
+		System.out.println("Diagnostics rightPairs po=" + poRight + ", pc=" + pcRight + ", oc=" + ocRight);
+	}
+
+	private static void printDirectPairCounts(SailRepository repository, JoinScenario scenario) {
+		long leftStatements = 0L;
+		long rightStatements = 0L;
+		Set<String> leftSubjects = new HashSet<>();
+		Set<String> rightSubjects = new HashSet<>();
+
+		try (SailRepositoryConnection connection = repository.getConnection();
+				CloseableIteration<? extends Statement> left = connection.getStatements(
+						null, scenario.left.predicate(), scenario.left.object(), false, THEME_GRAPH);
+				CloseableIteration<? extends Statement> right = connection.getStatements(
+						null, scenario.right.predicate(), scenario.right.object(), false, THEME_GRAPH)) {
+			while (left.hasNext()) {
+				Statement st = left.next();
+				leftStatements++;
+				leftSubjects.add(st.getSubject().stringValue());
+			}
+			while (right.hasNext()) {
+				Statement st = right.next();
+				rightStatements++;
+				rightSubjects.add(st.getSubject().stringValue());
+			}
+		}
+
+		System.out.println("Direct counts leftStatements=" + leftStatements + ", leftDistinctSubjects="
+				+ leftSubjects.size() + ", rightStatements=" + rightStatements + ", rightDistinctSubjects="
+				+ rightSubjects.size());
 	}
 
 	private static boolean awaitJoinEstimationReady(EvaluationStatistics statistics) throws InterruptedException {
@@ -229,7 +294,8 @@ class SketchEstimatorThemeJoinAccuracyTest {
 
 				long intersection = intersectCount(leftSubjects, rightSubjects);
 				if (intersection > 0L) {
-					candidates.add(new JoinScenario(left, right, intersection));
+					candidates.add(
+							new JoinScenario(left, right, leftSubjects.size(), rightSubjects.size(), intersection));
 				}
 			}
 		}
@@ -266,6 +332,6 @@ class SketchEstimatorThemeJoinAccuracyTest {
 		}
 	}
 
-	private record JoinScenario(PoKey left, PoKey right, long actualJoinCount) {
+	private record JoinScenario(PoKey left, PoKey right, int leftSubjects, int rightSubjects, long actualJoinCount) {
 	}
 }

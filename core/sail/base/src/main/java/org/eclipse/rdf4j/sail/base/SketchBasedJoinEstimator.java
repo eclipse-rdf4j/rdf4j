@@ -19,6 +19,9 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
@@ -222,7 +225,8 @@ public class SketchBasedJoinEstimator {
 
 	private static final byte[] PERSIST_MAGIC = new byte[] { 'R', 'J', 'E', 'S' };
 	private static final int PERSIST_VERSION = 3;
-	private static final int DEFAULT_BUCKET_COUNT = 128;
+	private static final int SKETCH_PAYLOAD_FORMAT_NATIVE = -1;
+	private static final int DEFAULT_BUCKET_COUNT = 512;
 	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = 4096;
 	private static final long DEFAULT_MAX_PERSISTENCE_BLOB_BYTES = 1L << 30; // 1 GiB
 	private static final int MAX_STRING_BYTES = 16 * 1024 * 1024;
@@ -232,6 +236,10 @@ public class SketchBasedJoinEstimator {
 	private static final String MIN_SKETCH_MEMORY_PERCENT_PROPERTY = "minSketchMemoryPercent";
 	private static final String MAX_SKETCH_MEMORY_PERCENT_PROPERTY = "maxSketchMemoryPercent";
 	private static final String MAX_PERSISTENCE_BLOB_BYTES_PROPERTY = "maxPersistenceBlobBytes";
+
+	private static final Method HASH_UPDATE_METHOD = resolveHashUpdateMethod();
+	private static final Field HEAP_ALPHA_THETA_LONG_FIELD = resolveHeapAlphaField("thetaLong_");
+	private static final Field HEAP_ALPHA_EMPTY_FIELD = resolveHeapAlphaField("empty_");
 
 	private static final byte REC_SINGLE_TRIPLE = 1;
 	private static final byte REC_SINGLE_CPL = 2;
@@ -2142,7 +2150,7 @@ public class SketchBasedJoinEstimator {
 
 		double pairDrivenCardinality = usedPairCardinality(st, fixed, bindingSketch.usedPairs);
 		if (Double.isFinite(pairDrivenCardinality)) {
-			return new PatternStats(sk, pairDrivenCardinality);
+			return new PatternStats(sk, enforceCardinalityLowerBound(sk, pairDrivenCardinality));
 		}
 
 		double card;
@@ -2179,7 +2187,7 @@ public class SketchBasedJoinEstimator {
 			break;
 		}
 		}
-		return new PatternStats(sk, card);
+		return new PatternStats(sk, enforceCardinalityLowerBound(sk, card));
 	}
 
 	private double usedPairCardinality(State st, EnumMap<Component, String> fixed, EnumSet<Pair> usedPairs) {
@@ -2197,6 +2205,30 @@ public class SketchBasedJoinEstimator {
 		}
 		return Double.isFinite(card) ? card : Double.NaN;
 	}
+
+	private static double enforceCardinalityLowerBound(Sketch sketch, double cardinality) {
+		if (sketch == null || !Double.isFinite(cardinality)) {
+			return cardinality;
+		}
+//		if(cardinality < sketch.getEstimate()){
+//			System.out.println("Cardinality " + cardinality + " is lower than sketch estimate " + sketch.getEstimate());
+//		}else if(cardinality > sketch.getEstimate()) {
+//			System.out.println("Cardinality " + cardinality + " is higher than sketch estimate " + sketch.getEstimate());
+//		}
+
+		// Cardinality cannot be lower than the estimated number of distinct join bindings.
+//		return Math.max(cardinality, sketch.getEstimate());
+		return cardinality;
+	}
+
+	/*
+Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, object=http://example.com/theme/library/Copy], right=PoKey[predicate=http://example.com/theme/library/locatedAt, object=http://example.com/theme/library/branch/2], estimate=76452.0, actual=77331, error=0.011366722271792683
+Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, object=http://example.com/theme/library/Copy], right=PoKey[predicate=http://example.com/theme/library/locatedAt, object=http://example.com/theme/library/branch/3], estimate=77034.0, actual=77326, error=0.0037762201588081626
+Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, object=http://example.com/theme/library/Copy], right=PoKey[predicate=http://example.com/theme/library/locatedAt, object=http://example.com/theme/library/branch/1], estimate=79833.0, actual=77295, error=0.032835241606830975
+Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, object=http://example.com/theme/library/Copy], right=PoKey[predicate=http://example.com/theme/library/locatedAt, object=http://example.com/theme/library/branch/4], estimate=72867.0, actual=77279, error=0.057091836074483364
+Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, object=http://example.com/theme/library/Copy], right=PoKey[predicate=http://example.com/theme/library/locatedAt, object=http://example.com/theme/library/branch/0], estimate=74045.0, actual=77111, error=0.039760864208738055
+
+	 */
 
 	/* ────────────────────────────────────────────────────────────── */
 	/* Snapshot‑level cardinalities */
@@ -2671,6 +2703,54 @@ public class SketchBasedJoinEstimator {
 				.setResizeFactor(ResizeFactor.X8)
 				.setNominalEntries(k)
 				.build();
+	}
+
+	private static Method resolveHashUpdateMethod() {
+		try {
+			Method method = UpdateSketch.class.getDeclaredMethod("hashUpdate", long.class);
+			method.setAccessible(true);
+			return method;
+		} catch (NoSuchMethodException e) {
+			throw new ExceptionInInitializerError(e);
+		}
+	}
+
+	private static Field resolveHeapAlphaField(String fieldName) {
+		try {
+			Class<?> heapAlphaClass = Class.forName("org.apache.datasketches.theta.HeapAlphaSketch");
+			Field field = heapAlphaClass.getDeclaredField(fieldName);
+			field.setAccessible(true);
+			return field;
+		} catch (ClassNotFoundException | NoSuchFieldException e) {
+			throw new ExceptionInInitializerError(e);
+		}
+	}
+
+	private static void hashUpdateRaw(UpdateSketch sketch, long hash) throws IOException {
+		try {
+			HASH_UPDATE_METHOD.invoke(sketch, hash);
+		} catch (IllegalAccessException e) {
+			throw new IOException("Unable to apply raw sketch hash", e);
+		} catch (InvocationTargetException e) {
+			Throwable cause = e.getCause();
+			if (cause instanceof RuntimeException) {
+				throw (RuntimeException) cause;
+			}
+			if (cause instanceof Error) {
+				throw (Error) cause;
+			}
+			throw new IOException("Unable to apply raw sketch hash", cause);
+		}
+	}
+
+	private static void applySerializedThetaAndEmpty(UpdateSketch sketch, long thetaLong, boolean empty)
+			throws IOException {
+		try {
+			HEAP_ALPHA_THETA_LONG_FIELD.setLong(sketch, thetaLong);
+			HEAP_ALPHA_EMPTY_FIELD.setBoolean(sketch, empty);
+		} catch (IllegalAccessException | IllegalArgumentException e) {
+			throw new IOException("Unable to restore sketch theta metadata", e);
+		}
 	}
 
 	private int hash(String v) {
@@ -4398,7 +4478,7 @@ public class SketchBasedJoinEstimator {
 			throws IOException {
 		byte[] payload = readPersistedPayloadBytes(blob, persistedSketchRef);
 		try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(payload))) {
-			return readSketch(input, k);
+			return readSketchPayload(input, k);
 		}
 	}
 
@@ -4672,11 +4752,14 @@ public class SketchBasedJoinEstimator {
 
 	private static void writeSketch(DataOutputStream out, UpdateSketch sketch) throws IOException {
 		int retained = sketch.getRetainedEntries();
+		out.writeInt(SKETCH_PAYLOAD_FORMAT_NATIVE);
 		out.writeInt(retained);
-		HashIterator it = sketch.iterator();
+		out.writeLong(sketch.getThetaLong());
+		out.writeBoolean(sketch.isEmpty());
+		HashIterator iterator = sketch.iterator();
 		int written = 0;
-		while (it.next()) {
-			out.writeLong(it.get());
+		while (iterator.next()) {
+			out.writeLong(iterator.get());
 			written++;
 		}
 		if (written != retained) {
@@ -4684,14 +4767,34 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
-	private static UpdateSketch readSketch(DataInputStream in, int k) throws IOException {
-		int retained = in.readInt();
+	private static UpdateSketch readSketchPayload(DataInputStream in, int k) throws IOException {
+		int formatMarker = in.readInt();
+		if (formatMarker == SKETCH_PAYLOAD_FORMAT_NATIVE) {
+			int retained = in.readInt();
+			long thetaLong = in.readLong();
+			boolean empty = in.readBoolean();
+			UpdateSketch sketch = readLegacySketch(retained, in, k);
+			applySerializedThetaAndEmpty(sketch, thetaLong, empty);
+			if (in.available() > 0) {
+				throw new IOException("Trailing bytes in sketch payload: " + in.available());
+			}
+			return sketch;
+		}
+		// legacy payloads contain only retained hashes (no theta metadata).
+		UpdateSketch sketch = readLegacySketch(formatMarker, in, k);
+		if (in.available() > 0) {
+			throw new IOException("Trailing bytes in legacy sketch payload: " + in.available());
+		}
+		return sketch;
+	}
+
+	private static UpdateSketch readLegacySketch(int retained, DataInputStream in, int k) throws IOException {
 		if (retained < 0 || retained > MAX_SKETCH_ENTRIES) {
 			throw new IOException("Invalid retained entry count: " + retained);
 		}
 		UpdateSketch sketch = newSk(k);
 		for (int i = 0; i < retained; i++) {
-			sketch.update(in.readLong());
+			hashUpdateRaw(sketch, in.readLong());
 		}
 		return sketch;
 	}
