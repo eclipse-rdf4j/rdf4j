@@ -19,10 +19,10 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.management.ManagementFactory;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -37,10 +37,12 @@ import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -62,7 +64,9 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -74,6 +78,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.slf4j.Logger;
@@ -2222,12 +2227,22 @@ public class SketchBasedJoinEstimator {
 	}
 
 	/*
-Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, object=http://example.com/theme/library/Copy], right=PoKey[predicate=http://example.com/theme/library/locatedAt, object=http://example.com/theme/library/branch/2], estimate=76452.0, actual=77331, error=0.011366722271792683
-Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, object=http://example.com/theme/library/Copy], right=PoKey[predicate=http://example.com/theme/library/locatedAt, object=http://example.com/theme/library/branch/3], estimate=77034.0, actual=77326, error=0.0037762201588081626
-Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, object=http://example.com/theme/library/Copy], right=PoKey[predicate=http://example.com/theme/library/locatedAt, object=http://example.com/theme/library/branch/1], estimate=79833.0, actual=77295, error=0.032835241606830975
-Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, object=http://example.com/theme/library/Copy], right=PoKey[predicate=http://example.com/theme/library/locatedAt, object=http://example.com/theme/library/branch/4], estimate=72867.0, actual=77279, error=0.057091836074483364
-Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, object=http://example.com/theme/library/Copy], right=PoKey[predicate=http://example.com/theme/library/locatedAt, object=http://example.com/theme/library/branch/0], estimate=74045.0, actual=77111, error=0.039760864208738055
-
+	 * Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type,
+	 * object=http://example.com/theme/library/Copy], right=PoKey[predicate=http://example.com/theme/library/locatedAt,
+	 * object=http://example.com/theme/library/branch/2], estimate=76452.0, actual=77331, error=0.011366722271792683
+	 * Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type,
+	 * object=http://example.com/theme/library/Copy], right=PoKey[predicate=http://example.com/theme/library/locatedAt,
+	 * object=http://example.com/theme/library/branch/3], estimate=77034.0, actual=77326, error=0.0037762201588081626
+	 * Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type,
+	 * object=http://example.com/theme/library/Copy], right=PoKey[predicate=http://example.com/theme/library/locatedAt,
+	 * object=http://example.com/theme/library/branch/1], estimate=79833.0, actual=77295, error=0.032835241606830975
+	 * Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type,
+	 * object=http://example.com/theme/library/Copy], right=PoKey[predicate=http://example.com/theme/library/locatedAt,
+	 * object=http://example.com/theme/library/branch/4], estimate=72867.0, actual=77279, error=0.057091836074483364
+	 * Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type,
+	 * object=http://example.com/theme/library/Copy], right=PoKey[predicate=http://example.com/theme/library/locatedAt,
+	 * object=http://example.com/theme/library/branch/0], estimate=74045.0, actual=77111, error=0.039760864208738055
+	 *
 	 */
 
 	/* ────────────────────────────────────────────────────────────── */
@@ -2292,7 +2307,7 @@ Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/2
 					if (candidate == null) {
 						continue;
 					}
-					if(candidate.getEstimate() < best) {
+					if (candidate.getEstimate() < best) {
 						best = candidate.getEstimate();
 						candidateForBest = BindingSketchResult.of(candidate, pr);
 					}
@@ -2300,7 +2315,7 @@ Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/2
 				}
 			}
 
-			if(candidateForBest != null) {
+			if (candidateForBest != null) {
 				return candidateForBest;
 			}
 
@@ -2814,6 +2829,333 @@ Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/2
 	/* ────────────────────────────────────────────────────────────── */
 	/* OPTIONAL optimiser helper (unchanged API) */
 	/* ────────────────────────────────────────────────────────────── */
+
+	public Optional<JoinOrderPlanner.JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
+			JoinOrderPlanner.Algorithm algorithm) {
+		if (!isReady() || args == null || args.isEmpty()) {
+			return Optional.empty();
+		}
+
+		List<TupleExpr> expressions = List.copyOf(args);
+		Set<String> bound = initiallyBoundVars == null ? Collections.emptySet() : Set.copyOf(initiallyBoundVars);
+		List<TuplePlanEstimate> estimates = new ArrayList<>(expressions.size());
+		for (TupleExpr tupleExpr : expressions) {
+			TuplePlanEstimate estimate = toTuplePlanEstimate(tupleExpr, bound);
+			if (estimate == null) {
+				return Optional.empty();
+			}
+			estimates.add(estimate);
+		}
+
+		Optional<JoinPlannerState> plannedState = Optional.empty();
+		if (algorithm == JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING) {
+			plannedState = planJoinOrderDynamicProgramming(estimates);
+		}
+		if (plannedState.isEmpty()) {
+			plannedState = planJoinOrderGreedy(estimates);
+		}
+
+		if (plannedState.isEmpty()) {
+			return Optional.empty();
+		}
+
+		JoinPlannerState state = plannedState.get();
+		List<TupleExpr> orderedArgs = new ArrayList<>(state.order.size());
+		for (Integer index : state.order) {
+			orderedArgs.add(expressions.get(index));
+		}
+
+		return Optional.of(new JoinOrderPlanner.JoinOrderPlan(orderedArgs, state.rows, state.totalWork));
+	}
+
+	private Optional<JoinPlannerState> planJoinOrderGreedy(List<TuplePlanEstimate> estimates) {
+		int size = estimates.size();
+		if (size == 1) {
+			return Optional.of(JoinPlannerState.single(0, estimates.get(0)));
+		}
+
+		int bestLeft = 0;
+		int bestRight = 1;
+		JoinStepEstimate bestStep = estimateJoinStep(estimates.get(0), estimates.get(1));
+		for (int left = 0; left < size - 1; left++) {
+			for (int right = left + 1; right < size; right++) {
+				JoinStepEstimate candidate = estimateJoinStep(estimates.get(left), estimates.get(right));
+				if (candidate.rows < bestStep.rows) {
+					bestLeft = left;
+					bestRight = right;
+					bestStep = candidate;
+				}
+			}
+		}
+
+		List<Integer> order = new ArrayList<>(size);
+		order.add(bestLeft);
+		order.add(bestRight);
+		boolean[] used = new boolean[size];
+		used[bestLeft] = true;
+		used[bestRight] = true;
+		JoinPlannerState state = new JoinPlannerState(order, bestStep.rows, bestStep.rows, bestStep.vars);
+
+		while (state.order.size() < size) {
+			int bestCandidate = -1;
+			JoinStepEstimate bestCandidateStep = null;
+			for (int index = 0; index < size; index++) {
+				if (used[index]) {
+					continue;
+				}
+				JoinStepEstimate candidateStep = estimateJoinStep(state.toEstimate(), estimates.get(index));
+				if (bestCandidateStep == null || candidateStep.rows < bestCandidateStep.rows) {
+					bestCandidate = index;
+					bestCandidateStep = candidateStep;
+				}
+			}
+
+			if (bestCandidate < 0 || bestCandidateStep == null) {
+				return Optional.empty();
+			}
+
+			used[bestCandidate] = true;
+			List<Integer> nextOrder = new ArrayList<>(state.order.size() + 1);
+			nextOrder.addAll(state.order);
+			nextOrder.add(bestCandidate);
+			double nextWork = state.totalWork + bestCandidateStep.rows;
+			state = new JoinPlannerState(nextOrder, bestCandidateStep.rows, nextWork, bestCandidateStep.vars);
+		}
+
+		return Optional.of(state);
+	}
+
+	private Optional<JoinPlannerState> planJoinOrderDynamicProgramming(List<TuplePlanEstimate> estimates) {
+		int size = estimates.size();
+		if (size == 0) {
+			return Optional.empty();
+		}
+		if (size == 1) {
+			return Optional.of(JoinPlannerState.single(0, estimates.get(0)));
+		}
+		if (size > 30) {
+			return Optional.empty();
+		}
+
+		Map<Long, JoinPlannerState> bestByMask = new HashMap<>();
+		for (int i = 0; i < size; i++) {
+			long mask = 1L << i;
+			bestByMask.put(mask, JoinPlannerState.single(i, estimates.get(i)));
+		}
+
+		long fullMask = (1L << size) - 1L;
+		for (int selected = 1; selected < size; selected++) {
+			Map<Long, JoinPlannerState> next = new HashMap<>();
+			for (Map.Entry<Long, JoinPlannerState> entry : bestByMask.entrySet()) {
+				long mask = entry.getKey();
+				JoinPlannerState state = entry.getValue();
+				for (int nextIndex = 0; nextIndex < size; nextIndex++) {
+					long bit = 1L << nextIndex;
+					if ((mask & bit) != 0L) {
+						continue;
+					}
+					JoinStepEstimate step = estimateJoinStep(state.toEstimate(), estimates.get(nextIndex));
+					long nextMask = mask | bit;
+					List<Integer> order = new ArrayList<>(state.order.size() + 1);
+					order.addAll(state.order);
+					order.add(nextIndex);
+					double totalWork = state.totalWork + step.rows;
+					JoinPlannerState candidate = new JoinPlannerState(order, step.rows, totalWork, step.vars);
+					JoinPlannerState incumbent = next.get(nextMask);
+					if (incumbent == null || candidate.totalWork < incumbent.totalWork) {
+						next.put(nextMask, candidate);
+					}
+				}
+			}
+			bestByMask = next;
+		}
+
+		return Optional.ofNullable(bestByMask.get(fullMask));
+	}
+
+	private TuplePlanEstimate toTuplePlanEstimate(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
+		TuplePlanEstimate estimate;
+		if (tupleExpr instanceof BindingSetAssignment) {
+			estimate = estimateBindingSetAssignment((BindingSetAssignment) tupleExpr);
+		} else {
+			PatternEstimateInput input = asSketchCompatibleInput(tupleExpr);
+			if (input == null) {
+				return null;
+			}
+			StatementPattern pattern = input.pattern;
+			double rows = applyFilterMultiplier(estimatePatternRows(pattern), input.filterMultiplier);
+			Map<String, Double> varDistinct = new HashMap<>();
+			Set<String> seenVars = new HashSet<>();
+			for (Var var : pattern.getVarList()) {
+				if (var == null || var.hasValue() || var.getName() == null || !seenVars.add(var.getName())) {
+					continue;
+				}
+				JoinEstimate joinEstimate = estimate(getComponent(pattern, var),
+						getValueOrNull(pattern.getSubjectVar()),
+						getValueOrNull(pattern.getPredicateVar()),
+						getValueOrNull(pattern.getObjectVar()),
+						getValueOrNull(pattern.getContextVar()));
+				double distinct = applyFilterMultiplier(joinEstimate.distinct, input.filterMultiplier);
+				if (Double.isFinite(distinct) && distinct > 0.0d) {
+					varDistinct.put(var.getName(), distinct);
+				}
+			}
+			estimate = new TuplePlanEstimate(normalizeRows(rows), varDistinct);
+		}
+		return applyInitiallyBoundVars(estimate, initiallyBoundVars);
+	}
+
+	private TuplePlanEstimate estimateBindingSetAssignment(BindingSetAssignment assignment) {
+		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
+		double rows = 0.0d;
+		Map<String, Set<Value>> valueSets = new HashMap<>();
+		Set<String> assuredBindingNames = assignment.getAssuredBindingNames();
+		if (bindingSets != null) {
+			for (BindingSet bindingSet : bindingSets) {
+				rows++;
+				for (String bindingName : assuredBindingNames) {
+					Value value = bindingSet.getValue(bindingName);
+					if (value != null) {
+						valueSets.computeIfAbsent(bindingName, key -> new HashSet<>()).add(value);
+					}
+				}
+			}
+		}
+
+		Map<String, Double> varDistinct = new HashMap<>();
+		for (Map.Entry<String, Set<Value>> entry : valueSets.entrySet()) {
+			if (!entry.getValue().isEmpty()) {
+				varDistinct.put(entry.getKey(), (double) entry.getValue().size());
+			}
+		}
+		return new TuplePlanEstimate(normalizeRows(rows), varDistinct);
+	}
+
+	private TuplePlanEstimate applyInitiallyBoundVars(TuplePlanEstimate estimate, Set<String> initiallyBoundVars) {
+		if (estimate == null || initiallyBoundVars == null || initiallyBoundVars.isEmpty()
+				|| estimate.varDistinct.isEmpty()) {
+			return estimate;
+		}
+
+		double rows = estimate.rows;
+		Map<String, Double> adjustedDistinct = new HashMap<>(estimate.varDistinct);
+		for (String varName : initiallyBoundVars) {
+			Double distinct = adjustedDistinct.get(varName);
+			if (distinct == null || distinct <= 1.0d || !Double.isFinite(distinct)) {
+				continue;
+			}
+			rows = rows / distinct;
+			adjustedDistinct.put(varName, 1.0d);
+		}
+		return new TuplePlanEstimate(normalizeRows(rows), adjustedDistinct);
+	}
+
+	private JoinStepEstimate estimateJoinStep(TuplePlanEstimate left, TuplePlanEstimate right) {
+		if (left.rows <= 0.0d || right.rows <= 0.0d) {
+			return new JoinStepEstimate(0.0d, Collections.emptyMap());
+		}
+
+		Map<String, Double> mergedDistinct = new HashMap<>();
+		Set<String> sharedVars = new HashSet<>();
+		for (Map.Entry<String, Double> entry : left.varDistinct.entrySet()) {
+			String varName = entry.getKey();
+			Double rightDistinct = right.varDistinct.get(varName);
+			if (rightDistinct != null) {
+				sharedVars.add(varName);
+			}
+		}
+
+		double rows;
+		if (sharedVars.isEmpty()) {
+			rows = estimateDisconnectedJoinRows(left.rows, right.rows);
+		} else {
+			rows = left.rows * right.rows;
+			if (!Double.isFinite(rows)) {
+				rows = Double.MAX_VALUE;
+			}
+			for (String sharedVar : sharedVars) {
+				double leftDistinct = Math.max(1.0d, left.varDistinct.getOrDefault(sharedVar, 1.0d));
+				double rightDistinct = Math.max(1.0d, right.varDistinct.getOrDefault(sharedVar, 1.0d));
+				rows = rows / Math.max(leftDistinct, rightDistinct);
+			}
+			rows = Math.min(rows, estimateDisconnectedJoinRows(left.rows, right.rows));
+		}
+		rows = normalizeRows(rows);
+
+		for (Map.Entry<String, Double> entry : left.varDistinct.entrySet()) {
+			String varName = entry.getKey();
+			Double rightDistinct = right.varDistinct.get(varName);
+			double distinct = rightDistinct == null
+					? entry.getValue()
+					: Math.min(entry.getValue(), rightDistinct);
+			mergedDistinct.put(varName, clampDistinct(distinct, rows));
+		}
+		for (Map.Entry<String, Double> entry : right.varDistinct.entrySet()) {
+			String varName = entry.getKey();
+			if (mergedDistinct.containsKey(varName)) {
+				continue;
+			}
+			mergedDistinct.put(varName, clampDistinct(entry.getValue(), rows));
+		}
+
+		return new JoinStepEstimate(rows, mergedDistinct);
+	}
+
+	private double normalizeRows(double rows) {
+		if (!Double.isFinite(rows) || rows < 0.0d) {
+			return rows < 0.0d ? -1.0d : Double.MAX_VALUE;
+		}
+		return roundJoinEstimate(rows);
+	}
+
+	private double clampDistinct(double distinct, double rows) {
+		if (!Double.isFinite(distinct) || distinct <= 0.0d || rows <= 0.0d) {
+			return 0.0d;
+		}
+		return Math.min(distinct, rows);
+	}
+
+	private static final class TuplePlanEstimate {
+		private final double rows;
+		private final Map<String, Double> varDistinct;
+
+		private TuplePlanEstimate(double rows, Map<String, Double> varDistinct) {
+			this.rows = rows;
+			this.varDistinct = Collections.unmodifiableMap(new HashMap<>(varDistinct));
+		}
+	}
+
+	private static final class JoinStepEstimate {
+		private final double rows;
+		private final Map<String, Double> vars;
+
+		private JoinStepEstimate(double rows, Map<String, Double> vars) {
+			this.rows = rows;
+			this.vars = Collections.unmodifiableMap(new HashMap<>(vars));
+		}
+	}
+
+	private static final class JoinPlannerState {
+		private final List<Integer> order;
+		private final double rows;
+		private final double totalWork;
+		private final Map<String, Double> varDistinct;
+
+		private JoinPlannerState(List<Integer> order, double rows, double totalWork, Map<String, Double> varDistinct) {
+			this.order = Collections.unmodifiableList(new ArrayList<>(order));
+			this.rows = rows;
+			this.totalWork = totalWork;
+			this.varDistinct = Collections.unmodifiableMap(new HashMap<>(varDistinct));
+		}
+
+		private static JoinPlannerState single(int index, TuplePlanEstimate estimate) {
+			return new JoinPlannerState(List.of(index), estimate.rows, estimate.rows, estimate.varDistinct);
+		}
+
+		private TuplePlanEstimate toEstimate() {
+			return new TuplePlanEstimate(rows, varDistinct);
+		}
+	}
 
 	public double cardinality(Join node) {
 		if (!isReady()) {
@@ -3625,6 +3967,7 @@ Join estimate within 20% bound. left=PoKey[predicate=http://www.w3.org/1999/02/2
 				if (isUnsupportedSnapshotVersion(t)) {
 					throw new IllegalStateException("Unsupported join estimator snapshot version", t);
 				}
+				rebuildRequired.set(true);
 				logger.warn("Failed to load join estimator state from {}", persistenceFile, t);
 				return false;
 			}

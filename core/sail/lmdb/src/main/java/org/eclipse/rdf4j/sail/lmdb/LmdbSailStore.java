@@ -903,8 +903,6 @@ class LmdbSailStore implements SailStore {
 					}
 					counter++;
 					if (counter % 100000 == 0) {
-						// TODO: Disable
-						System.out.println("Added " + counter + " statements asynchronously");
 						logger.debug("Added {} statements asynchronously", counter);
 					}
 

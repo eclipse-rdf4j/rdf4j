@@ -13,7 +13,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -23,8 +26,10 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
@@ -33,7 +38,7 @@ import org.slf4j.LoggerFactory;
 /**
  *
  */
-class LmdbEvaluationStatistics extends EvaluationStatistics {
+class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrderPlanner {
 
 	private static final Logger log = LoggerFactory.getLogger(LmdbEvaluationStatistics.class);
 	private static final int SHARED_CACHE_MAX_ENTRIES = 262_144;
@@ -73,6 +78,15 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 		return ready;
 	}
 
+	@Override
+	public Optional<JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
+			Algorithm algorithm) {
+		if (!supportsJoinEstimation()) {
+			return Optional.empty();
+		}
+		return sketchBasedJoinEstimator.planJoinOrder(args, initiallyBoundVars, algorithm);
+	}
+
 	public boolean isJoinEstimationReady() {
 		return supportsJoinEstimation();
 	}
@@ -103,14 +117,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 		public void meet(Join node) {
 			if (supportsJoinEstimation()) {
 				double estimatedCardinality = sketchBasedJoinEstimator.cardinality(node);
-				double estimatedCardinality2 = sketchBasedJoinEstimator.cardinality(node);
-				assert estimatedCardinality == estimatedCardinality2
-						: "SketchBasedJoinEstimator returned different cardinality estimates for the same join";
-				if (estimatedCardinality >= 0 && estimatedCardinality < 1) {
-					System.out.println("Estimated cardinality for join is less than 1: " + estimatedCardinality);
-				}
 				if (estimatedCardinality >= 0) {
-//					System.out.println("HERE: "+estimatedCardinality);
 					this.cardinality = estimatedCardinality;
 					return;
 				}

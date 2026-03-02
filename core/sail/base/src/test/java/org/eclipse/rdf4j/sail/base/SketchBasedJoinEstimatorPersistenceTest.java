@@ -376,16 +376,18 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
 		estimator.configurePersistence(snapshot, false);
+		int batchSize = incrementalBatchSize();
 
-		for (int i = 0; i < 1023; i++) {
+		for (int i = 0; i < batchSize - 1; i++) {
 			estimator.addStatement(st(VF.createIRI("urn:s" + i), predicate, VF.createIRI("urn:o" + i)));
 		}
 		assertTrue(estimator.debugResidentSketches().isEmpty(),
-				"Expected no resident sketch updates before 1024-statement incremental batch threshold");
+				"Expected no resident sketch updates before incremental batch threshold");
 
-		estimator.addStatement(st(VF.createIRI("urn:s1023"), predicate, VF.createIRI("urn:o1023")));
+		estimator.addStatement(st(VF.createIRI("urn:s" + (batchSize - 1)), predicate,
+				VF.createIRI("urn:o" + (batchSize - 1))));
 		assertFalse(estimator.debugResidentSketches().isEmpty(),
-				"Expected incremental batch flush to apply updates when 1024 statements are buffered");
+				"Expected incremental batch flush to apply updates when batch threshold is reached");
 	}
 
 	@Test
@@ -558,6 +560,40 @@ class SketchBasedJoinEstimatorPersistenceTest {
 
 	private static void flushIncrementalBuffer(SketchBasedJoinEstimator estimator) {
 		estimator.debugFlushPendingIncremental();
+	}
+
+	private static int incrementalBatchSize() throws Exception {
+		Field field = SketchBasedJoinEstimator.class.getDeclaredField("INCREMENTAL_BATCH_SIZE");
+		field.setAccessible(true);
+		return field.getInt(null);
+	}
+
+	@Test
+	void backgroundRefreshRebuildsAfterLazySnapshotLoadFailure(@TempDir Path tempDir) throws Exception {
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		Files.write(snapshot, new byte[] { 1, 2, 3, 4, 5, 6 });
+
+		StubSailStore store = new StubSailStore();
+		store.add(st(VF.createIRI("urn:s"), VF.createIRI("urn:p"), VF.createIRI("urn:o")));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+				smallConfig().withRefreshSleepMillis(10));
+		estimator.configurePersistence(snapshot, true);
+		estimator.startBackgroundRefresh(0);
+		try {
+			boolean ready = false;
+			long deadline = System.currentTimeMillis() + 2000;
+			while (System.currentTimeMillis() < deadline) {
+				if (estimator.isReady()) {
+					ready = true;
+					break;
+				}
+				Thread.sleep(20);
+			}
+			assertTrue(ready, "Expected background refresh to rebuild after lazy snapshot load failure");
+		} finally {
+			estimator.stop();
+		}
 	}
 
 	@Test

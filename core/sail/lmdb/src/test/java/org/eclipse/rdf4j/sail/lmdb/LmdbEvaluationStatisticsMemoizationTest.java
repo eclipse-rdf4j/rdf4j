@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -99,6 +100,30 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			repository.shutDown();
 			FileUtils.deleteDirectory(dataDir);
 		}
+	}
+
+	@Test
+	void joinCardinalityUsesSingleSketchProbeWhenReady() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.isReady()).thenReturn(true);
+		when(estimator.cardinality(any(Join.class))).thenReturn(7.0d);
+		ValueStore valueStore = mock(ValueStore.class);
+		ValueStoreRevision revision = mock(ValueStoreRevision.class);
+		when(valueStore.getRevision()).thenReturn(revision);
+		when(revision.getRevisionId()).thenReturn(1L);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, mock(TripleStore.class),
+				estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern left = new StatementPattern(Var.of("s"), Var.of("p", vf.createIRI("urn:test:follows")),
+				Var.of("o"));
+		StatementPattern right = new StatementPattern(Var.of("s"), Var.of("p2", vf.createIRI("urn:test:name")),
+				Var.of("name"));
+
+		double card = statistics.getCardinality(new Join(left, right));
+
+		assertEquals(7.0d, card);
+		verify(estimator, times(1)).cardinality(any(Join.class));
 	}
 
 	@Test
