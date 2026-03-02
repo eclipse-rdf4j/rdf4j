@@ -53,12 +53,11 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
-import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
 @Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 30)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms32G", "-Xmx32G" })
+@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx32G" })
 @Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
@@ -100,12 +99,12 @@ public class ThemeQueryBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		var opt = new OptionsBuilder()
-				.include("ThemeQueryBenchmark.explainQuery")
+				.include("ThemeQueryBenchmark.executeQuery")
 				.forks(0)
-				.measurementIterations(1)
-				.measurementBatchSize(1)
-				.measurementTime(TimeValue.milliseconds(1))
-				.warmupIterations(0)
+//				.measurementIterations(1)
+//				.measurementBatchSize(1)
+//				.measurementTime(TimeValue.milliseconds(1))
+//				.warmupIterations(0)
 				.build();
 		new Runner(opt).run();
 	}

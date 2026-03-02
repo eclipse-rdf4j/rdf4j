@@ -52,7 +52,6 @@ import org.apache.datasketches.theta.Intersection;
 import org.apache.datasketches.theta.SetOperation;
 import org.apache.datasketches.theta.Sketch;
 import org.apache.datasketches.theta.UpdateSketch;
-import org.apache.datasketches.thetacommon.ThetaUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -222,8 +221,8 @@ public class SketchBasedJoinEstimator {
 
 	private static final byte[] PERSIST_MAGIC = new byte[] { 'R', 'J', 'E', 'S' };
 	private static final int PERSIST_VERSION = 3;
-	private static final int DEFAULT_BUCKET_COUNT =  1024;
-	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = ThetaUtil.DEFAULT_NOMINAL_ENTRIES;
+	private static final int DEFAULT_BUCKET_COUNT = 512;
+	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = 1024;
 	private static final long DEFAULT_MAX_PERSISTENCE_BLOB_BYTES = 1L << 30; // 1 GiB
 	private static final int MAX_STRING_BYTES = 16 * 1024 * 1024;
 	private static final int MAX_SKETCH_ENTRIES = 1_000_000;
@@ -1132,7 +1131,7 @@ public class SketchBasedJoinEstimator {
 	private volatile long maxSketchMemoryBytes;
 	private long residentSketchBytes;
 
-	private static final int INCREMENTAL_BATCH_SIZE = 1024;
+	private static final int INCREMENTAL_BATCH_SIZE = 4 * 1024;
 	private final Object incrementalBufferLock = new Object();
 	private IngestEvent[] incrementalBuffer = new IngestEvent[INCREMENTAL_BATCH_SIZE * 2];
 	private int incrementalBufferCount;
@@ -1581,6 +1580,29 @@ public class SketchBasedJoinEstimator {
 
 		try {
 			ingestIncremental(s, p, o, c, false);
+
+//				while (true) {
+//					long epoch = rebuildEpoch.get();
+//					if ((epoch & 1L) != 0L) {
+//						synchronized (bufA) {
+//							ingest(bufA, st, false);
+//						}
+//						synchronized (bufB) {
+//							ingest(bufB, st, false);
+//						}
+//						break;
+//					}
+//
+//					State target = current;
+//					synchronized (target) {
+//						if (rebuildEpoch.get() != epoch) {
+//							continue;
+//						}
+//						ingest(target, st, false);
+//						break;
+//					}
+//				}
+
 		} catch (OutOfMemoryError oom) {
 			logger.warn("Out of memory while applying incremental estimator update; unloading sketches", oom);
 			unloadInternal(true);
@@ -3337,22 +3359,34 @@ public class SketchBasedJoinEstimator {
 		if (!dirty.get() && !manifestDirty.get()) {
 			return false;
 		}
+		// Lock order rule: never block on State monitors while holding persistLock.
+		// flushDirtySketches() touches bufA/bufB, so run it outside persistLock.
+		boolean hadDirty = dirty.get();
+		if (hadDirty) {
+			try {
+				flushDirtySketches();
+			} catch (Throwable t) {
+				logger.warn("Failed to persist join estimator state to {}", persistenceFile, t);
+				return false;
+			}
+		}
 		synchronized (persistLock) {
 			if (!dirty.get() && !manifestDirty.get()) {
 				return false;
 			}
 			try {
-				boolean hadDirty = dirty.get();
-				flushDirtySketches();
+				boolean persisted = false;
 				if (hadDirty) {
 					compactPersistedBlobShards();
+					persisted = true;
 				}
 				if (manifestDirty.get()) {
 					writeManifest(persistenceFile);
 					manifestDirty.set(false);
+					persisted = true;
 				}
-				dirty.set(false);
-				return true;
+				refreshDirtyFlagFromCacheDirectory();
+				return persisted;
 			} catch (Throwable t) {
 				logger.warn("Failed to persist join estimator state to {}", persistenceFile, t);
 				return false;
@@ -3545,21 +3579,23 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private UpdateSketch loadPersistedSketch(State state, SketchAddress address, int entryId) {
-		PersistedSketchRef persistedSketchRef;
-		synchronized (sketchCacheLock) {
-			persistedSketchRef = cacheDirectory.persistedRef(entryId);
-		}
-		if (persistedSketchRef == null || persistenceBlobBaseFile == null) {
-			return null;
-		}
-
 		try {
-			UpdateSketch loaded = readSketchFromBlob(persistenceBlobBaseFile, persistedSketchRef, state.k);
+			UpdateSketch loaded;
+			synchronized (persistLock) {
+				PersistedSketchRef persistedSketchRef;
+				synchronized (sketchCacheLock) {
+					persistedSketchRef = cacheDirectory.persistedRef(entryId);
+				}
+				if (persistedSketchRef == null || persistenceBlobBaseFile == null) {
+					return null;
+				}
+				loaded = readSketchFromBlob(persistenceBlobBaseFile, persistedSketchRef, state.k);
+			}
 			putResidentSketch(state, address, loaded);
 			return loaded;
 		} catch (IOException e) {
 			logger.warn("Failed to load persisted sketch {}", address, e);
-			return null;
+			throw new RuntimeException("Failed to load persisted sketch " + address, e);
 		}
 	}
 
@@ -3655,6 +3691,14 @@ public class SketchBasedJoinEstimator {
 	private boolean isDirty(int entryId) {
 		synchronized (sketchCacheLock) {
 			return cacheDirectory.isDirty(entryId);
+		}
+	}
+
+	private boolean refreshDirtyFlagFromCacheDirectory() {
+		synchronized (sketchCacheLock) {
+			boolean hasDirtyEntries = cacheDirectory.snapshotDirtyEntries().length > 0;
+			dirty.set(hasDirtyEntries);
+			return hasDirtyEntries;
 		}
 	}
 
@@ -3853,24 +3897,24 @@ public class SketchBasedJoinEstimator {
 				}
 				address = cacheDirectory.toSketchAddress(entryId);
 			}
-			byte[] payload = null;
-			synchronized (bufA) {
-				UpdateSketch sketch = getResidentSketch(bufA, address);
-				if (sketch != null) {
-					payload = serializeSketchPayload(sketch);
-				}
+			if (appendDirtySketchIfResident(entryId, address, bufA)) {
+				continue;
 			}
-			if (payload == null) {
-				synchronized (bufB) {
-					UpdateSketch sketch = getResidentSketch(bufB, address);
-					if (sketch != null) {
-						payload = serializeSketchPayload(sketch);
-					}
-				}
+			appendDirtySketchIfResident(entryId, address, bufB);
+		}
+	}
+
+	private boolean appendDirtySketchIfResident(int entryId, SketchAddress address, State state) throws IOException {
+		synchronized (state) {
+			UpdateSketch sketch = getResidentSketch(state, address);
+			if (sketch == null) {
+				return false;
 			}
-			if (payload != null) {
+			byte[] payload = serializeSketchPayload(sketch);
+			synchronized (persistLock) {
 				appendSketchPayload(entryId, address, payload);
 			}
+			return true;
 		}
 	}
 

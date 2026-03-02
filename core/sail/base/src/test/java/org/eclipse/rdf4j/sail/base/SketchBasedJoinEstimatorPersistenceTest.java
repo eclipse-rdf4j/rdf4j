@@ -23,6 +23,9 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MonitorInfo;
+import java.lang.management.ThreadInfo;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.MappedByteBuffer;
@@ -31,6 +34,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -40,6 +44,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -571,6 +577,66 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		}
 	}
 
+	@Test
+	void persistIfDirtyDoesNotHoldPersistLockWhileBlockedOnStateLock(@TempDir Path tempDir) throws Exception {
+		Resource subject = VF.createIRI("urn:s");
+		IRI predicate = VF.createIRI("urn:p");
+		Value object = VF.createIRI("urn:o");
+		StubSailStore store = new StubSailStore();
+		store.add(st(subject, predicate, object));
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, smallConfig());
+		estimator.rebuildOnceSlow();
+		estimator.configurePersistence(snapshot, false);
+
+		Object stateLockA = privateFieldValue(estimator, "bufA");
+		Object stateLockB = privateFieldValue(estimator, "bufB");
+		Object persistLock = privateFieldValue(estimator, "persistLock");
+
+		CountDownLatch stateLocked = new CountDownLatch(1);
+		CountDownLatch releaseStateLock = new CountDownLatch(1);
+		Thread stateHolder = new Thread(() -> {
+			synchronized (stateLockA) {
+				synchronized (stateLockB) {
+					stateLocked.countDown();
+					awaitUninterruptibly(releaseStateLock);
+				}
+			}
+		}, "SketchEstimator-StateLockHolder");
+		stateHolder.start();
+		assertTrue(stateLocked.await(2, TimeUnit.SECONDS), "Expected state lock to be acquired by helper thread");
+
+		AtomicReference<Throwable> persistFailure = new AtomicReference<>();
+		AtomicBoolean persistCompleted = new AtomicBoolean(false);
+		Thread persistThread = new Thread(() -> {
+			try {
+				estimator.persistIfDirty();
+				persistCompleted.set(true);
+			} catch (Throwable t) {
+				persistFailure.set(t);
+			}
+		}, "SketchEstimator-PersistAttempt");
+		persistThread.start();
+		ThreadInfo blockedInfo = waitForThreadBlockedOnLocks(persistThread, TimeUnit.SECONDS.toMillis(2),
+				stateLockA, stateLockB);
+		int persistLockIdentity = System.identityHashCode(persistLock);
+		boolean heldPersistLock = false;
+		for (MonitorInfo monitorInfo : blockedInfo.getLockedMonitors()) {
+			if (monitorInfo.getIdentityHashCode() == persistLockIdentity) {
+				heldPersistLock = true;
+				break;
+			}
+		}
+
+		releaseStateLock.countDown();
+		stateHolder.join(TimeUnit.SECONDS.toMillis(2));
+		persistThread.join(TimeUnit.SECONDS.toMillis(2));
+
+		assertFalse(heldPersistLock, "persistIfDirty should not hold persistLock while waiting on state lock");
+		assertTrue(persistCompleted.get(), "Persist thread should complete after state lock is released");
+		assertEquals(null, persistFailure.get(), "Persist thread should not fail");
+	}
+
 	private static void rewriteManifestAsVersion2(Path snapshot) throws Exception {
 		byte[] original = Files.readAllBytes(snapshot);
 		try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(original));
@@ -642,6 +708,52 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		Method hashMethod = SketchBasedJoinEstimator.class.getDeclaredMethod("hash", String.class);
 		hashMethod.setAccessible(true);
 		return (int) hashMethod.invoke(estimator, value);
+	}
+
+	private static Object privateFieldValue(Object target, String fieldName) throws Exception {
+		Field field = target.getClass().getDeclaredField(fieldName);
+		field.setAccessible(true);
+		return field.get(target);
+	}
+
+	private static void awaitUninterruptibly(CountDownLatch latch) {
+		boolean interrupted = false;
+		while (true) {
+			try {
+				latch.await();
+				break;
+			} catch (InterruptedException e) {
+				interrupted = true;
+			}
+		}
+		if (interrupted) {
+			Thread.currentThread().interrupt();
+		}
+	}
+
+	private static ThreadInfo waitForThreadBlockedOnLocks(Thread thread, long timeoutMillis, Object... locks)
+			throws InterruptedException {
+		int[] lockIdentities = Arrays.stream(locks).mapToInt(System::identityHashCode).toArray();
+		var threadMxBean = ManagementFactory.getThreadMXBean();
+		long[] threadIds = new long[] { thread.getId() };
+		long deadline = System.currentTimeMillis() + timeoutMillis;
+		while (System.currentTimeMillis() < deadline) {
+			ThreadInfo info = threadMxBean.getThreadInfo(threadIds, true, true)[0];
+			if (info != null && info.getThreadState() == Thread.State.BLOCKED && info.getLockInfo() != null) {
+				int blockedOn = info.getLockInfo().getIdentityHashCode();
+				for (int lockIdentity : lockIdentities) {
+					if (blockedOn == lockIdentity) {
+						return info;
+					}
+				}
+			}
+			Thread.sleep(10);
+		}
+		ThreadInfo finalInfo = threadMxBean.getThreadInfo(threadIds, true, true)[0];
+		assertNotNull(finalInfo, "Persist thread should still be available for lock diagnostics");
+		assertEquals(Thread.State.BLOCKED, finalInfo.getThreadState(),
+				"Expected persist thread to block on one of the state locks");
+		return finalInfo;
 	}
 
 	private static void setSketchBudgetBytes(SketchBasedJoinEstimator estimator, long minBytes, long maxBytes)

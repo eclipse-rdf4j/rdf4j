@@ -83,6 +83,14 @@ class SketchEstimatorThemeJoinAccuracyTest {
 								+ ", actual=" + scenario.actualJoinCount());
 
 				double relativeError = Math.abs(estimate - scenario.actualJoinCount()) / scenario.actualJoinCount();
+				if (relativeError > MAX_RELATIVE_ERROR) {
+					double estimated = statistics.getCardinality(asJoinNode(scenario));
+				} else {
+					System.out.println("Join estimate within 20% bound. left=" + scenario.left + ", right="
+							+ scenario.right + ", estimate=" + estimate + ", actual=" + scenario.actualJoinCount()
+							+ ", error=" + relativeError);
+				}
+
 				assertTrue(relativeError <= MAX_RELATIVE_ERROR,
 						() -> "Join estimate outside 20% bound. left=" + scenario.left + ", right="
 								+ scenario.right + ", estimate=" + estimate + ", actual="
@@ -131,24 +139,17 @@ class SketchEstimatorThemeJoinAccuracyTest {
 	}
 
 	private static void loadAllThemesInSingleGraph(SailRepository repository) {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		try (var connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-
-			RDFInserter inserter = new RDFInserter(connection);
+			var inserter = new RDFInserter(connection);
 			inserter.enforceContext(THEME_GRAPH);
-			for (ThemeDataSetGenerator.Theme theme : ThemeDataSetGenerator.Theme.values()) {
-
+			for (var themeDataset : ThemeDataSetGenerator.Theme.values()) {
 				StopWatch started = StopWatch.createStarted();
-				System.out.println("Loading theme: " + theme);
-				ThemeDataSetGenerator.generate(theme, inserter);
-
-				System.out.println("Finished loading theme: " + theme);
-				System.out.println("Time taken: " + started);
-//				break;
-
+				System.out.println("Loading theme dataset: " + themeDataset);
+				ThemeDataSetGenerator.generate(themeDataset, inserter);
+				System.out.println("Finished loading theme dataset: " + themeDataset + " in " + started);
 			}
 			connection.commit();
-
 		}
 	}
 
@@ -206,14 +207,17 @@ class SketchEstimatorThemeJoinAccuracyTest {
 				}
 
 				long intersection = intersectCount(leftSubjects, rightSubjects);
-				if (intersection >= MIN_INTERSECTION) {
+				if (intersection > 0L) {
 					candidates.add(new JoinScenario(left, right, intersection));
 				}
 			}
 		}
 
 		candidates.sort(Comparator.comparingLong(JoinScenario::actualJoinCount).reversed());
-		return candidates;
+		List<JoinScenario> strongCandidates = candidates.stream()
+				.filter(candidate -> candidate.actualJoinCount() >= MIN_INTERSECTION)
+				.collect(Collectors.toList());
+		return strongCandidates.size() >= REQUIRED_JOIN_SCENARIOS ? strongCandidates : candidates;
 	}
 
 	private static long intersectCount(Set<Resource> first, Set<Resource> second) {

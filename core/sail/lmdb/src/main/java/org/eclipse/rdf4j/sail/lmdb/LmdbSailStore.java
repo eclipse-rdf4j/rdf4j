@@ -873,6 +873,8 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		private int counter = 0;
+
 		private void addStatement(Resource subj, IRI pred, Value obj, boolean explicit, Resource context)
 				throws SailException {
 			sinkStoreAccessLock.lock();
@@ -899,6 +901,13 @@ class LmdbSailStore implements SailStore {
 							Thread.onSpinWait();
 						}
 					}
+					counter++;
+					if (counter % 100000 == 0) {
+						// TODO: Disable
+						System.out.println("Added " + counter + " statements asynchronously");
+						logger.debug("Added {} statements asynchronously", counter);
+					}
+
 				} else {
 					q.execute();
 				}
