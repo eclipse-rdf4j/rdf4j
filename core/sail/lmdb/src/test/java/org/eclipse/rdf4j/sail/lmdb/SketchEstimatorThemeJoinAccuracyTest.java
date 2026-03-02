@@ -82,7 +82,13 @@ class SketchEstimatorThemeJoinAccuracyTest {
 					System.out.println(
 							"Estimator returned zero for scenario left=" + scenario.left + ", right=" + scenario.right
 									+ ", actual=" + scenario.actualJoinCount());
-					double temp = statistics.getCardinality(asJoinNode(scenario));
+					 statistics.getCardinality(asJoinNode(scenario));
+					 statistics.getCardinality(asJoinNode(scenario));
+					 statistics.getCardinality(asJoinNode(scenario));
+					 statistics.getCardinality(asJoinNode(scenario));
+					 statistics.getCardinality(asJoinNode(scenario));
+					 statistics.getCardinality(asJoinNode(scenario));
+					 statistics.getCardinality(asJoinNode(scenario));
 
 				}
 
@@ -92,7 +98,14 @@ class SketchEstimatorThemeJoinAccuracyTest {
 
 				double relativeError = Math.abs(estimate - scenario.actualJoinCount()) / scenario.actualJoinCount();
 				if (relativeError > MAX_RELATIVE_ERROR) {
-					double estimated = statistics.getCardinality(asJoinNode(scenario));
+					statistics.getCardinality(asJoinNode(scenario));
+					statistics.getCardinality(asJoinNode(scenario));
+					statistics.getCardinality(asJoinNode(scenario));
+					statistics.getCardinality(asJoinNode(scenario));
+					statistics.getCardinality(asJoinNode(scenario));
+					statistics.getCardinality(asJoinNode(scenario));
+					statistics.getCardinality(asJoinNode(scenario));
+					statistics.getCardinality(asJoinNode(scenario));
 				} else {
 					System.out.println("Join estimate within 20% bound. left=" + scenario.left + ", right="
 							+ scenario.right + ", estimate=" + estimate + ", actual=" + scenario.actualJoinCount()

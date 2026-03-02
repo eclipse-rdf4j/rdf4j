@@ -164,6 +164,36 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
+	void estimateCountWithThreeConstantsDoesNotExceedTwoConstantEstimate() {
+		IRI p = VF.createIRI("urn:p-target");
+		Value o = VF.createIRI("urn:o-target");
+		Resource c = VF.createIRI("urn:c-target");
+		Resource cAlt1 = VF.createIRI("urn:c-alt-1");
+		Resource cAlt2 = VF.createIRI("urn:c-alt-2");
+
+		StubSailStore store = new StubSailStore();
+		store.add(st(VF.createIRI("urn:s-match-1"), p, o, c));
+		store.add(st(VF.createIRI("urn:s-match-2"), p, o, c));
+		for (int i = 0; i < 40; i++) {
+			store.add(st(VF.createIRI("urn:s-p-" + i), p, VF.createIRI("urn:o-p-" + i), cAlt1));
+			store.add(st(VF.createIRI("urn:s-o-" + i), VF.createIRI("urn:p-o-" + i), o, cAlt2));
+			store.add(st(VF.createIRI("urn:s-c-" + i), VF.createIRI("urn:p-c-" + i), VF.createIRI("urn:o-c-" + i), c));
+		}
+
+		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, smallConfig());
+		est.rebuildOnceSlow();
+
+		double twoConstants = est.estimateCount(SketchBasedJoinEstimator.Component.S, null, p.stringValue(),
+				o.stringValue(),
+				null);
+		double threeConstants = est.estimateCount(SketchBasedJoinEstimator.Component.S, null, p.stringValue(),
+				o.stringValue(), c.stringValue());
+
+		assertTrue(threeConstants <= twoConstants,
+				"Adding a third constant must not increase estimated row count");
+	}
+
+	@Test
 	void evictsLeastRecentlyUsedSketchWhenOverBudget(@TempDir Path tempDir) throws Exception {
 		Resource s = VF.createIRI("urn:s");
 		Value o = VF.createIRI("urn:o");

@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -1131,7 +1132,7 @@ public class SketchBasedJoinEstimator {
 	private volatile long maxSketchMemoryBytes;
 	private long residentSketchBytes;
 
-	private static final int INCREMENTAL_BATCH_SIZE = 4 * 1024;
+	private static final int INCREMENTAL_BATCH_SIZE = 32 * 1024;
 	private final Object incrementalBufferLock = new Object();
 	private IngestEvent[] incrementalBuffer = new IngestEvent[INCREMENTAL_BATCH_SIZE * 2];
 	private int incrementalBufferCount;
@@ -2082,13 +2083,39 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
-	/** Build both |R| and Θ‑sketch for one triple pattern. */
-	private PatternStats statsOf(State st, Component j,
-			String s, String p, String o, String c) {
+	private static final class BindingSketchResult {
+		final Sketch sketch;
+		final EnumSet<Pair> usedPairs;
 
-		Sketch sk = bindingsSketch(st, j, s, p, o, c);
+		private BindingSketchResult(Sketch sketch, EnumSet<Pair> usedPairs) {
+			this.sketch = sketch;
+			this.usedPairs = usedPairs;
+		}
 
-		/* ------------- relation cardinality --------------------------- */
+		static BindingSketchResult of(Sketch sketch) {
+			return new BindingSketchResult(sketch, EnumSet.noneOf(Pair.class));
+		}
+
+		static BindingSketchResult of(Sketch sketch, Pair pair) {
+			return new BindingSketchResult(sketch, EnumSet.of(pair));
+		}
+
+		static BindingSketchResult of(Sketch sketch, Pair first, Pair second) {
+			return new BindingSketchResult(sketch, EnumSet.of(first, second));
+		}
+	}
+
+	private static final class PairSketchCandidate {
+		final Pair pair;
+		final Sketch sketch;
+
+		PairSketchCandidate(Pair pair, Sketch sketch) {
+			this.pair = pair;
+			this.sketch = sketch;
+		}
+	}
+
+	private static EnumMap<Component, String> fixedComponents(String s, String p, String o, String c) {
 		EnumMap<Component, String> fixed = new EnumMap<>(Component.class);
 		if (s != null) {
 			fixed.put(Component.S, s);
@@ -2101,6 +2128,21 @@ public class SketchBasedJoinEstimator {
 		}
 		if (c != null) {
 			fixed.put(Component.C, c);
+		}
+		return fixed;
+	}
+
+	/** Build both |R| and Θ‑sketch for one triple pattern. */
+	private PatternStats statsOf(State st, Component j,
+			String s, String p, String o, String c) {
+
+		EnumMap<Component, String> fixed = fixedComponents(s, p, o, c);
+		BindingSketchResult bindingSketch = bindingsSketch(st, j, fixed);
+		Sketch sk = bindingSketch.sketch;
+
+		double pairDrivenCardinality = usedPairCardinality(st, fixed, bindingSketch.usedPairs);
+		if (Double.isFinite(pairDrivenCardinality)) {
+			return new PatternStats(sk, pairDrivenCardinality);
 		}
 
 		double card;
@@ -2140,6 +2182,22 @@ public class SketchBasedJoinEstimator {
 		return new PatternStats(sk, card);
 	}
 
+	private double usedPairCardinality(State st, EnumMap<Component, String> fixed, EnumSet<Pair> usedPairs) {
+		if (usedPairs.isEmpty()) {
+			return Double.NaN;
+		}
+		double card = Double.POSITIVE_INFINITY;
+		for (Pair pair : usedPairs) {
+			String xValue = fixed.get(pair.x);
+			String yValue = fixed.get(pair.y);
+			if (xValue == null || yValue == null) {
+				continue;
+			}
+			card = Math.min(card, cardPair(st, pair, xValue, yValue));
+		}
+		return Double.isFinite(card) ? card : Double.NaN;
+	}
+
 	/* ────────────────────────────────────────────────────────────── */
 	/* Snapshot‑level cardinalities */
 	/* ────────────────────────────────────────────────────────────── */
@@ -2164,31 +2222,16 @@ public class SketchBasedJoinEstimator {
 	/* Sketch helpers */
 	/* ────────────────────────────────────────────────────────────── */
 
-	private Sketch bindingsSketch(State st, Component j,
-			String s, String p, String o, String c) {
-
-		EnumMap<Component, String> f = new EnumMap<>(Component.class);
-		if (s != null) {
-			f.put(Component.S, s);
-		}
-		if (p != null) {
-			f.put(Component.P, p);
-		}
-		if (o != null) {
-			f.put(Component.O, o);
-		}
-		if (c != null) {
-			f.put(Component.C, c);
-		}
+	private BindingSketchResult bindingsSketch(State st, Component j, EnumMap<Component, String> f) {
 
 		if (f.isEmpty()) {
-			return null; // no constant – unsupported
+			return BindingSketchResult.of(null); // no constant – unsupported
 		}
 
 		/* 1 constant → single complement */
 		if (f.size() == 1) {
 			Map.Entry<Component, String> e = f.entrySet().iterator().next();
-			return singleWrapper(st, e.getKey()).getComplementSketch(j, hash(e.getValue()));
+			return BindingSketchResult.of(singleWrapper(st, e.getKey()).getComplementSketch(j, hash(e.getValue())));
 		}
 
 		/* 2 constants: pair fast path */
@@ -2198,10 +2241,13 @@ public class SketchBasedJoinEstimator {
 			if (pr != null && (j == pr.comp1 || j == pr.comp2)) {
 				int idxX = hash(f.get(pr.x));
 				int idxY = hash(f.get(pr.y));
-				return pairWrapper(st, pr).getComplementSketch(j, pairKey(idxX, idxY));
+				Sketch pairSketch = pairWrapper(st, pr).getComplementSketch(j, pairKey(idxX, idxY));
+				return BindingSketchResult.of(pairSketch, pr);
 			}
 		} else if (f.size() == 3) {
-			List<Sketch> pairCandidates = new ArrayList<>(3);
+			List<PairSketchCandidate> pairCandidates = new ArrayList<>(3);
+			var best = Double.POSITIVE_INFINITY;
+			BindingSketchResult candidateForBest = null;
 			for (int i = 0; i < cs.length; i++) {
 				for (int k = i + 1; k < cs.length; k++) {
 					Pair pr = findPair(cs[i], cs[k]);
@@ -2214,31 +2260,44 @@ public class SketchBasedJoinEstimator {
 					if (candidate == null) {
 						continue;
 					}
-					pairCandidates.add(candidate);
-				}
-			}
-
-			Sketch best = null;
-			double bestEstimate = Double.POSITIVE_INFINITY;
-			for (int i = 0; i < pairCandidates.size(); i++) {
-				for (int k = i + 1; k < pairCandidates.size(); k++) {
-					Intersection ix = SetOperation.builder().buildIntersection();
-					ix.intersect(pairCandidates.get(i));
-					ix.intersect(pairCandidates.get(k));
-					Sketch intersection = ix.getResult();
-					double estimate = intersection.getEstimate();
-					if (best == null || estimate < bestEstimate) {
-						best = intersection;
-						bestEstimate = estimate;
+					if(candidate.getEstimate() < best) {
+						best = candidate.getEstimate();
+						candidateForBest = BindingSketchResult.of(candidate, pr);
 					}
+					pairCandidates.add(new PairSketchCandidate(pr, candidate));
 				}
 			}
 
-			if (best != null) {
-				return best;
+			if(candidateForBest != null) {
+				return candidateForBest;
 			}
+
+//			Sketch best = null;
+//			Pair bestFirst = null;
+//			Pair bestSecond = null;
+//			double bestEstimate = Double.POSITIVE_INFINITY;
+//			for (int i = 0; i < pairCandidates.size(); i++) {
+//				for (int k = i + 1; k < pairCandidates.size(); k++) {
+//					Intersection ix = SetOperation.builder().buildIntersection();
+//					ix.intersect(pairCandidates.get(i).sketch);
+//					ix.intersect(pairCandidates.get(k).sketch);
+//					Sketch intersection = ix.getResult();
+//					double estimate = intersection.getEstimate();
+//					if (best == null || estimate < bestEstimate) {
+//						best = intersection;
+//						bestFirst = pairCandidates.get(i).pair;
+//						bestSecond = pairCandidates.get(k).pair;
+//						bestEstimate = estimate;
+//					}
+//				}
+//			}
+
+//			if (best != null) {
+//				return BindingSketchResult.of(best, bestFirst, bestSecond);
+//			}
 			if (!pairCandidates.isEmpty()) {
-				return pairCandidates.get(0);
+				PairSketchCandidate first = pairCandidates.get(0);
+				return BindingSketchResult.of(first.sketch, first.pair);
 			}
 		}
 
@@ -2259,7 +2318,7 @@ public class SketchBasedJoinEstimator {
 				acc = ix.getResult();
 			}
 		}
-		return acc;
+		return BindingSketchResult.of(acc);
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
