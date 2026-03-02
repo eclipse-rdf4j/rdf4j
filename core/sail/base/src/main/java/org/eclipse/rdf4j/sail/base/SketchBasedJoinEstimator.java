@@ -221,8 +221,8 @@ public class SketchBasedJoinEstimator {
 
 	private static final byte[] PERSIST_MAGIC = new byte[] { 'R', 'J', 'E', 'S' };
 	private static final int PERSIST_VERSION = 3;
-	private static final int DEFAULT_BUCKET_COUNT = 512;
-	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = 1024;
+	private static final int DEFAULT_BUCKET_COUNT = 128;
+	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = 4096;
 	private static final long DEFAULT_MAX_PERSISTENCE_BLOB_BYTES = 1L << 30; // 1 GiB
 	private static final int MAX_STRING_BYTES = 16 * 1024 * 1024;
 	private static final int MAX_SKETCH_ENTRIES = 1_000_000;
