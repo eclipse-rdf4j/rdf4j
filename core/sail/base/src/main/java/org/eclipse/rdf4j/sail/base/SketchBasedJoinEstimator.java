@@ -68,12 +68,19 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -155,6 +162,8 @@ public class SketchBasedJoinEstimator {
 	private static final long MIX64_C2 = 0x94d049bb133111ebL;
 	private static final long QUAD_SEED = 0x9e3779b97f4a7c15L;
 	private static final double MIN_FILTER_MULTIPLIER = 0.05d;
+	private static final double DISCONNECTED_JOIN_WORK_PENALTY = 16.0d;
+	private static final int DP_PARETO_CAP = 8;
 
 	/* ────────────────────────────────────────────────────────────── */
 	/* Public enums */
@@ -2847,19 +2856,12 @@ public class SketchBasedJoinEstimator {
 			tuples.add(tuple);
 		}
 
-		Map<String, Integer> varFreqMap = buildVarFreqMap(tuples);
-		Set<String> varsUsedInOtherExpressions = Collections.unmodifiableSet(new HashSet<>(varFreqMap.keySet()));
-		Set<Integer> zeroCostStartCandidates = findZeroCostStartCandidates(tuples, bound, varFreqMap,
-				varsUsedInOtherExpressions);
-
 		Optional<JoinPlannerState> plannedState = Optional.empty();
 		if (algorithm == JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING) {
-			plannedState = planJoinOrderDynamicProgramming(tuples, bound, varFreqMap, varsUsedInOtherExpressions,
-					zeroCostStartCandidates);
+			plannedState = planJoinOrderDynamicProgramming(tuples);
 		}
 		if (plannedState.isEmpty()) {
-			plannedState = planJoinOrderGreedy(tuples, bound, varFreqMap, varsUsedInOtherExpressions,
-					zeroCostStartCandidates);
+			plannedState = planJoinOrderGreedy(tuples);
 		}
 
 		if (plannedState.isEmpty()) {
@@ -2875,290 +2877,183 @@ public class SketchBasedJoinEstimator {
 		return Optional.of(new JoinOrderPlanner.JoinOrderPlan(orderedArgs, state.rows, state.totalWork));
 	}
 
-	private Optional<JoinPlannerState> planJoinOrderGreedy(List<PlannerTuple> tuples, Set<String> initiallyBoundVars,
-			Map<String, Integer> varFreqMap, Set<String> varsUsedInOtherExpressions,
-			Set<Integer> zeroCostStartCandidates) {
+	private Optional<JoinPlannerState> planJoinOrderGreedy(List<PlannerTuple> tuples) {
 		int size = tuples.size();
 		if (size == 0) {
 			return Optional.empty();
 		}
 		if (size == 1) {
-			return Optional.of(seedState(0, tuples.get(0), initiallyBoundVars, varFreqMap, varsUsedInOtherExpressions));
+			return Optional.of(seedState(0, tuples.get(0)));
 		}
 
-		int bestFirst = -1;
-		int bestSecond = -1;
-		JoinPlannerState bestState = null;
+		JoinPlannerState bestFinalState = null;
 		for (int first = 0; first < size; first++) {
-			if (!zeroCostStartCandidates.isEmpty() && !zeroCostStartCandidates.contains(first)) {
-				continue;
+			boolean[] used = new boolean[size];
+			used[first] = true;
+			JoinPlannerState state = seedState(first, tuples.get(first));
+
+			while (state.order.size() < size) {
+				int bestCandidate = -1;
+				JoinPlannerState bestCandidateState = null;
+				for (int index = 0; index < size; index++) {
+					if (used[index]) {
+						continue;
+					}
+					JoinPlannerState candidateState = appendState(state, index, tuples.get(index));
+					if (bestCandidateState == null || isBetterPlannerState(candidateState, bestCandidateState)) {
+						bestCandidate = index;
+						bestCandidateState = candidateState;
+					}
+				}
+
+				if (bestCandidate < 0 || bestCandidateState == null) {
+					state = null;
+					break;
+				}
+				used[bestCandidate] = true;
+				state = bestCandidateState;
 			}
-			JoinPlannerState firstState = seedState(first, tuples.get(first), initiallyBoundVars, varFreqMap,
-					varsUsedInOtherExpressions);
-			for (int second = 0; second < size; second++) {
-				if (second == first) {
-					continue;
-				}
-				JoinPlannerState candidate = appendState(firstState, second, tuples.get(second), varFreqMap,
-						varsUsedInOtherExpressions);
-				if (bestState == null || candidate.totalWork < bestState.totalWork) {
-					bestState = candidate;
-					bestFirst = first;
-					bestSecond = second;
-				}
+
+			if (state != null && (bestFinalState == null || isBetterPlannerState(state, bestFinalState))) {
+				bestFinalState = state;
 			}
 		}
-		if (bestState == null) {
-			return Optional.empty();
-		}
 
-		boolean[] used = new boolean[size];
-		used[bestFirst] = true;
-		used[bestSecond] = true;
-		JoinPlannerState state = bestState;
-
-		while (state.order.size() < size) {
-			int bestCandidate = -1;
-			JoinPlannerState bestCandidateState = null;
-			for (int index = 0; index < size; index++) {
-				if (used[index]) {
-					continue;
-				}
-				JoinPlannerState candidateState = appendState(state, index, tuples.get(index), varFreqMap,
-						varsUsedInOtherExpressions);
-				if (bestCandidateState == null || candidateState.totalWork < bestCandidateState.totalWork) {
-					bestCandidate = index;
-					bestCandidateState = candidateState;
-				}
-			}
-
-			if (bestCandidate < 0 || bestCandidateState == null) {
-				return Optional.empty();
-			}
-
-			used[bestCandidate] = true;
-			state = bestCandidateState;
-		}
-
-		return Optional.of(state);
+		return Optional.ofNullable(bestFinalState);
 	}
 
-	private Optional<JoinPlannerState> planJoinOrderDynamicProgramming(List<PlannerTuple> tuples,
-			Set<String> initiallyBoundVars,
-			Map<String, Integer> varFreqMap, Set<String> varsUsedInOtherExpressions,
-			Set<Integer> zeroCostStartCandidates) {
+	private Optional<JoinPlannerState> planJoinOrderDynamicProgramming(List<PlannerTuple> tuples) {
 		int size = tuples.size();
 		if (size == 0) {
 			return Optional.empty();
 		}
 		if (size == 1) {
-			return Optional.of(seedState(0, tuples.get(0), initiallyBoundVars, varFreqMap, varsUsedInOtherExpressions));
+			return Optional.of(seedState(0, tuples.get(0)));
 		}
 		if (size > 30) {
 			return Optional.empty();
 		}
 
-		Map<Long, JoinPlannerState> bestByMask = new HashMap<>();
+		Map<Long, List<JoinPlannerState>> bestByMask = new HashMap<>();
 		for (int i = 0; i < size; i++) {
-			if (!zeroCostStartCandidates.isEmpty() && !zeroCostStartCandidates.contains(i)) {
-				continue;
-			}
 			long mask = 1L << i;
-			bestByMask.put(mask,
-					seedState(i, tuples.get(i), initiallyBoundVars, varFreqMap, varsUsedInOtherExpressions));
-		}
-		if (bestByMask.isEmpty()) {
-			return Optional.empty();
+			addPlannerState(bestByMask, mask, seedState(i, tuples.get(i)));
 		}
 
 		long fullMask = (1L << size) - 1L;
 		for (int selected = 1; selected < size; selected++) {
-			Map<Long, JoinPlannerState> next = new HashMap<>();
-			for (Map.Entry<Long, JoinPlannerState> entry : bestByMask.entrySet()) {
+			Map<Long, List<JoinPlannerState>> next = new HashMap<>();
+			for (Map.Entry<Long, List<JoinPlannerState>> entry : bestByMask.entrySet()) {
 				long mask = entry.getKey();
-				JoinPlannerState state = entry.getValue();
-				for (int nextIndex = 0; nextIndex < size; nextIndex++) {
-					long bit = 1L << nextIndex;
-					if ((mask & bit) != 0L) {
-						continue;
-					}
-					JoinPlannerState candidate = appendState(state, nextIndex, tuples.get(nextIndex), varFreqMap,
-							varsUsedInOtherExpressions);
-					long nextMask = mask | bit;
-					JoinPlannerState incumbent = next.get(nextMask);
-					if (incumbent == null || candidate.totalWork < incumbent.totalWork) {
-						next.put(nextMask, candidate);
+				for (JoinPlannerState state : entry.getValue()) {
+					for (int nextIndex = 0; nextIndex < size; nextIndex++) {
+						long bit = 1L << nextIndex;
+						if ((mask & bit) != 0L) {
+							continue;
+						}
+						JoinPlannerState candidate = appendState(state, nextIndex, tuples.get(nextIndex));
+						long nextMask = mask | bit;
+						addPlannerState(next, nextMask, candidate);
 					}
 				}
 			}
 			bestByMask = next;
 		}
 
-		return Optional.ofNullable(bestByMask.get(fullMask));
+		return Optional.ofNullable(selectBestPlannerState(bestByMask.get(fullMask)));
 	}
 
-	private Map<String, Integer> buildVarFreqMap(List<PlannerTuple> tuples) {
-		Map<String, Integer> varFreqMap = new HashMap<>();
-		for (PlannerTuple tuple : tuples) {
-			for (PlannerVar var : tuple.vars) {
-				if (var.name == null) {
-					continue;
-				}
-				varFreqMap.merge(var.name, 1, Integer::sum);
+	private void addPlannerState(Map<Long, List<JoinPlannerState>> statesByMask, long mask,
+			JoinPlannerState candidate) {
+		List<JoinPlannerState> states = statesByMask.computeIfAbsent(mask, key -> new ArrayList<>());
+		for (int i = states.size() - 1; i >= 0; i--) {
+			JoinPlannerState existing = states.get(i);
+			if (comparePlannerStates(existing, candidate) == 0 || dominates(existing, candidate)) {
+				return;
+			}
+			if (dominates(candidate, existing)) {
+				states.remove(i);
 			}
 		}
-		return varFreqMap;
+		states.add(candidate);
+		states.sort(this::comparePlannerStates);
+		if (states.size() > DP_PARETO_CAP) {
+			states.subList(DP_PARETO_CAP, states.size()).clear();
+		}
 	}
 
-	private Set<Integer> findZeroCostStartCandidates(List<PlannerTuple> tuples, Set<String> initiallyBoundVars,
-			Map<String, Integer> varFreqMap, Set<String> varsUsedInOtherExpressions) {
-		Set<Integer> candidates = new HashSet<>();
-		for (int i = 0; i < tuples.size(); i++) {
-			double tupleCost = estimateTupleCost(tuples.get(i), initiallyBoundVars, 1.0d, varFreqMap,
-					varsUsedInOtherExpressions);
-			if (tupleCost == 0.0d) {
-				candidates.add(i);
+	private JoinPlannerState selectBestPlannerState(List<JoinPlannerState> states) {
+		if (states == null || states.isEmpty()) {
+			return null;
+		}
+		JoinPlannerState best = null;
+		for (JoinPlannerState state : states) {
+			if (best == null || isBetterPlannerState(state, best)) {
+				best = state;
 			}
 		}
-		return candidates;
+		return best;
 	}
 
-	private JoinPlannerState seedState(int index, PlannerTuple tuple, Set<String> initiallyBoundVars,
-			Map<String, Integer> varFreqMap, Set<String> varsUsedInOtherExpressions) {
-		double tupleCost = estimateTupleCost(tuple, initiallyBoundVars, 1.0d, varFreqMap, varsUsedInOtherExpressions);
-		Set<String> boundVars = new HashSet<>(initiallyBoundVars);
-		boundVars.addAll(tuple.bindingNames);
-		return new JoinPlannerState(List.of(index), tuple.estimate.rows, tupleCost, Math.max(1.0d, tupleCost),
-				boundVars,
-				tuple.estimate.varDistinct);
+	private boolean isBetterPlannerState(JoinPlannerState candidate, JoinPlannerState incumbent) {
+		return comparePlannerStates(candidate, incumbent) < 0;
 	}
 
-	private JoinPlannerState appendState(JoinPlannerState state, int nextIndex, PlannerTuple nextTuple,
-			Map<String, Integer> varFreqMap, Set<String> varsUsedInOtherExpressions) {
-		JoinStepEstimate step = estimateJoinStep(state.toEstimate(), nextTuple.estimate);
-		double tupleCost = estimateTupleCost(nextTuple, state.boundVars, state.highestTupleCost, varFreqMap,
-				varsUsedInOtherExpressions);
+	private int comparePlannerStates(JoinPlannerState left, JoinPlannerState right) {
+		int workComparison = Double.compare(left.totalWork, right.totalWork);
+		if (workComparison != 0) {
+			return workComparison;
+		}
+		int rowsComparison = Double.compare(left.rows, right.rows);
+		if (rowsComparison != 0) {
+			return rowsComparison;
+		}
+		int size = Math.min(left.order.size(), right.order.size());
+		for (int i = 0; i < size; i++) {
+			int orderComparison = Integer.compare(left.order.get(i), right.order.get(i));
+			if (orderComparison != 0) {
+				return orderComparison;
+			}
+		}
+		return Integer.compare(left.order.size(), right.order.size());
+	}
+
+	private boolean dominates(JoinPlannerState left, JoinPlannerState right) {
+		boolean noWorseWork = left.totalWork <= right.totalWork;
+		boolean noWorseRows = left.rows <= right.rows;
+		boolean strictlyBetter = left.totalWork < right.totalWork || left.rows < right.rows;
+		return noWorseWork && noWorseRows && strictlyBetter;
+	}
+
+	private JoinPlannerState seedState(int index, PlannerTuple tuple) {
+		return new JoinPlannerState(List.of(index), tuple.estimate.outputRows, tuple.estimate.outputRows,
+				tuple.estimate.varStats, tuple.tupleExpr);
+	}
+
+	private JoinPlannerState appendState(JoinPlannerState state, int nextIndex, PlannerTuple nextTuple) {
+		JoinStepEstimate step = estimateJoinStep(state.toEstimate(), nextTuple.estimate, state.tupleExpr,
+				nextTuple.tupleExpr, true);
 		List<Integer> nextOrder = new ArrayList<>(state.order.size() + 1);
 		nextOrder.addAll(state.order);
 		nextOrder.add(nextIndex);
-		Set<String> nextBoundVars = new HashSet<>(state.boundVars);
-		nextBoundVars.addAll(nextTuple.bindingNames);
-		double nextTotalWork = state.totalWork + tupleCost + step.rows;
-		double nextHighestTupleCost = Math.max(state.highestTupleCost, tupleCost);
-		return new JoinPlannerState(nextOrder, step.rows, nextTotalWork, nextHighestTupleCost, nextBoundVars,
-				step.vars);
-	}
-
-	private double estimateTupleCost(PlannerTuple tuple, Set<String> boundVars, double currentHighestCost,
-			Map<String, Integer> varFreqMap, Set<String> varsUsedInOtherExpressions) {
-		if (tuple.bindingSetAssignment) {
-			Set<String> bindingNamesForCost = tuple.assuredBindingNames.isEmpty()
-					? tuple.bindingNames
-					: tuple.assuredBindingNames;
-			for (String assuredBindingName : bindingNamesForCost) {
-				if (varsUsedInOtherExpressions.contains(assuredBindingName)) {
-					return 0.0d;
-				}
-			}
-		}
-
-		double cost = tuple.estimate.rows;
-		if (!Double.isFinite(cost) || cost < 0.0d) {
-			cost = Double.MAX_VALUE;
-		}
-
-		// Preserve QueryJoinOptimizer.getTupleExprCost() semantics.
-		cost += 5.0d;
-
-		List<String> unboundVars = getUnboundVars(tuple.vars, boundVars);
-		int constantVars = countConstantVars(tuple.vars);
-		int nonConstantVarCount = tuple.vars.size() - constantVars;
-
-		if (nonConstantVarCount > 0) {
-			int boundVarCount = nonConstantVarCount - unboundVars.size();
-			if (boundVarCount == 0) {
-				cost = cost * currentHighestCost;
-			} else {
-				double exp = (double) unboundVars.size() / nonConstantVarCount;
-				cost = Math.pow(cost, exp);
-			}
-		}
-
-		if (unboundVars.isEmpty()) {
-			if (nonConstantVarCount > 0) {
-				cost /= nonConstantVarCount;
-			}
-		} else {
-			int foreignVarFreq = getForeignVarFreq(unboundVars, varFreqMap);
-			if (foreignVarFreq > 0) {
-				cost /= 1 + foreignVarFreq;
-			}
-		}
-
-		if (!Double.isFinite(cost) || cost < 0.0d) {
-			return Double.MAX_VALUE;
-		}
-		return cost;
-	}
-
-	private int countConstantVars(List<PlannerVar> vars) {
-		int count = 0;
-		for (PlannerVar var : vars) {
-			if (var.constant) {
-				count++;
-			}
-		}
-		return count;
-	}
-
-	private List<String> getUnboundVars(List<PlannerVar> vars, Set<String> boundVars) {
-		List<String> unboundVars = null;
-		for (PlannerVar var : vars) {
-			if (!var.constant && var.name != null && !boundVars.contains(var.name)) {
-				if (unboundVars == null) {
-					unboundVars = List.of(var.name);
-				} else {
-					if (unboundVars.size() == 1) {
-						unboundVars = new ArrayList<>(unboundVars);
-					}
-					unboundVars.add(var.name);
-				}
-			}
-		}
-		return unboundVars == null ? Collections.emptyList() : unboundVars;
-	}
-
-	private int getForeignVarFreq(List<String> ownUnboundVars, Map<String, Integer> varFreqMap) {
-		if (ownUnboundVars.isEmpty()) {
-			return 0;
-		}
-		if (ownUnboundVars.size() == 1) {
-			return varFreqMap.getOrDefault(ownUnboundVars.get(0), 1) - 1;
-		}
-
-		int result = -ownUnboundVars.size();
-		for (String varName : new HashSet<>(ownUnboundVars)) {
-			result += varFreqMap.getOrDefault(varName, 0);
-		}
-		return result;
+		double nextTotalWork = state.totalWork + step.workRows;
+		TupleExpr joinedExpr = new Join(cloneTupleExpr(state.tupleExpr), cloneTupleExpr(nextTuple.tupleExpr));
+		return new JoinPlannerState(nextOrder, step.outputRows, nextTotalWork, step.varStats, joinedExpr);
 	}
 
 	private PlannerTuple toPlannerTuple(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
 		TuplePlanEstimate estimate;
-		List<PlannerVar> vars;
-		boolean bindingSetAssignment = tupleExpr instanceof BindingSetAssignment;
 		if (tupleExpr instanceof BindingSetAssignment) {
 			estimate = estimateBindingSetAssignment((BindingSetAssignment) tupleExpr);
-			vars = Collections.emptyList();
 		} else {
 			PatternEstimateInput input = asSketchCompatibleInput(tupleExpr);
 			if (input == null) {
 				return null;
 			}
 			StatementPattern pattern = input.pattern;
-			vars = toPlannerVars(pattern.getVarList());
-			double rows = applyFilterMultiplier(estimatePatternRows(pattern), input.filterMultiplier);
-			Map<String, Double> varDistinct = new HashMap<>();
+			double baseRows = normalizeRows(estimatePatternRows(pattern));
+			double outputRows = normalizeRows(applyFilterMultiplier(baseRows, input.filterMultiplier));
+			Map<String, VarPlanStats> varStats = new HashMap<>();
 			Set<String> seenVars = new HashSet<>();
 			for (Var var : pattern.getVarList()) {
 				if (var == null || var.hasValue() || var.getName() == null || !seenVars.add(var.getName())) {
@@ -3169,125 +3064,172 @@ public class SketchBasedJoinEstimator {
 						getValueOrNull(pattern.getPredicateVar()),
 						getValueOrNull(pattern.getObjectVar()),
 						getValueOrNull(pattern.getContextVar()));
-				double distinct = applyFilterMultiplier(joinEstimate.distinct, input.filterMultiplier);
+				double distinct = clampDistinct(joinEstimate.distinct, baseRows);
 				if (Double.isFinite(distinct) && distinct > 0.0d) {
-					varDistinct.put(var.getName(), distinct);
+					varStats.put(var.getName(), new VarPlanStats(distinct, joinEstimate.bindings));
 				}
 			}
-			estimate = new TuplePlanEstimate(normalizeRows(rows), varDistinct);
+			estimate = new TuplePlanEstimate(baseRows, outputRows, input.filterMultiplier, varStats);
 		}
 		TuplePlanEstimate adjusted = applyInitiallyBoundVars(estimate, initiallyBoundVars);
-		return new PlannerTuple(adjusted, vars, tupleExpr.getBindingNames(), tupleExpr.getAssuredBindingNames(),
-				bindingSetAssignment);
-	}
-
-	private List<PlannerVar> toPlannerVars(List<Var> vars) {
-		if (vars == null || vars.isEmpty()) {
-			return Collections.emptyList();
-		}
-		List<PlannerVar> plannerVars = new ArrayList<>(vars.size());
-		for (Var var : vars) {
-			if (var != null) {
-				plannerVars.add(new PlannerVar(var.getName(), var.hasValue()));
-			}
-		}
-		return plannerVars;
+		return new PlannerTuple(adjusted, tupleExpr);
 	}
 
 	private TuplePlanEstimate estimateBindingSetAssignment(BindingSetAssignment assignment) {
 		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
 		double rows = 0.0d;
 		Map<String, Set<Value>> valueSets = new HashMap<>();
-		Set<String> assuredBindingNames = assignment.getAssuredBindingNames();
+		Map<String, UpdateSketch> valueSketches = new HashMap<>();
+		Set<String> bindingNames = assignment.getBindingNames();
 		if (bindingSets != null) {
 			for (BindingSet bindingSet : bindingSets) {
 				rows++;
-				for (String bindingName : assuredBindingNames) {
+				for (String bindingName : bindingNames) {
 					Value value = bindingSet.getValue(bindingName);
 					if (value != null) {
 						valueSets.computeIfAbsent(bindingName, key -> new HashSet<>()).add(value);
+						UpdateSketch sketch = valueSketches.computeIfAbsent(bindingName, key -> newSk(bufA.k));
+						sketch.update(valueFingerprint(str(value)));
 					}
 				}
 			}
 		}
 
-		Map<String, Double> varDistinct = new HashMap<>();
+		rows = normalizeRows(rows);
+		Map<String, VarPlanStats> varStats = new HashMap<>();
 		for (Map.Entry<String, Set<Value>> entry : valueSets.entrySet()) {
 			if (!entry.getValue().isEmpty()) {
-				varDistinct.put(entry.getKey(), (double) entry.getValue().size());
+				double distinct = clampDistinct(entry.getValue().size(), rows);
+				Sketch sketch = valueSketches.get(entry.getKey());
+				varStats.put(entry.getKey(), new VarPlanStats(distinct, sketch == null ? null : sketch.compact()));
 			}
 		}
-		return new TuplePlanEstimate(normalizeRows(rows), varDistinct);
+		return new TuplePlanEstimate(rows, rows, 1.0d, varStats);
 	}
 
 	private TuplePlanEstimate applyInitiallyBoundVars(TuplePlanEstimate estimate, Set<String> initiallyBoundVars) {
 		if (estimate == null || initiallyBoundVars == null || initiallyBoundVars.isEmpty()
-				|| estimate.varDistinct.isEmpty()) {
+				|| estimate.varStats.isEmpty()) {
 			return estimate;
 		}
 
-		double rows = estimate.rows;
-		Map<String, Double> adjustedDistinct = new HashMap<>(estimate.varDistinct);
+		double baseRows = estimate.baseRows;
+		double outputRows = estimate.outputRows;
+		Map<String, VarPlanStats> adjustedStats = new HashMap<>(estimate.varStats);
 		for (String varName : initiallyBoundVars) {
-			Double distinct = adjustedDistinct.get(varName);
-			if (distinct == null || distinct <= 1.0d || !Double.isFinite(distinct)) {
+			VarPlanStats stats = adjustedStats.get(varName);
+			if (stats == null || stats.distinct <= 1.0d || !Double.isFinite(stats.distinct)) {
 				continue;
 			}
-			rows = rows / distinct;
-			adjustedDistinct.put(varName, 1.0d);
+			baseRows = baseRows / stats.distinct;
+			outputRows = outputRows / stats.distinct;
+			adjustedStats.put(varName, new VarPlanStats(1.0d, null));
 		}
-		return new TuplePlanEstimate(normalizeRows(rows), adjustedDistinct);
+		return new TuplePlanEstimate(normalizeRows(baseRows), normalizeRows(outputRows), estimate.localFilterMultiplier,
+				adjustedStats);
 	}
 
-	private JoinStepEstimate estimateJoinStep(TuplePlanEstimate left, TuplePlanEstimate right) {
-		if (left.rows <= 0.0d || right.rows <= 0.0d) {
-			return new JoinStepEstimate(0.0d, Collections.emptyMap());
+	private JoinStepEstimate estimateJoinStep(TuplePlanEstimate left, TuplePlanEstimate right, TupleExpr leftExpr,
+			TupleExpr rightExpr, boolean usePublicCardinality) {
+		if (left.outputRows <= 0.0d || right.baseRows <= 0.0d) {
+			return new JoinStepEstimate(0.0d, 0.0d, Collections.emptyMap());
 		}
 
-		Map<String, Double> mergedDistinct = new HashMap<>();
-		Set<String> sharedVars = new HashSet<>();
-		for (Map.Entry<String, Double> entry : left.varDistinct.entrySet()) {
-			String varName = entry.getKey();
-			Double rightDistinct = right.varDistinct.get(varName);
-			if (rightDistinct != null) {
-				sharedVars.add(varName);
-			}
-		}
-
-		double rows;
-		if (sharedVars.isEmpty()) {
-			rows = estimateDisconnectedJoinRows(left.rows, right.rows);
-		} else {
-			rows = left.rows * right.rows;
-			if (!Double.isFinite(rows)) {
-				rows = Double.MAX_VALUE;
-			}
-			for (String sharedVar : sharedVars) {
-				double leftDistinct = Math.max(1.0d, left.varDistinct.getOrDefault(sharedVar, 1.0d));
-				double rightDistinct = Math.max(1.0d, right.varDistinct.getOrDefault(sharedVar, 1.0d));
-				rows = rows / Math.max(leftDistinct, rightDistinct);
-			}
-			rows = Math.min(rows, estimateDisconnectedJoinRows(left.rows, right.rows));
-		}
-		rows = normalizeRows(rows);
-
-		for (Map.Entry<String, Double> entry : left.varDistinct.entrySet()) {
-			String varName = entry.getKey();
-			Double rightDistinct = right.varDistinct.get(varName);
-			double distinct = rightDistinct == null
-					? entry.getValue()
-					: Math.min(entry.getValue(), rightDistinct);
-			mergedDistinct.put(varName, clampDistinct(distinct, rows));
-		}
-		for (Map.Entry<String, Double> entry : right.varDistinct.entrySet()) {
-			String varName = entry.getKey();
-			if (mergedDistinct.containsKey(varName)) {
+		double disconnectedRows = estimateDisconnectedJoinRows(left.outputRows, right.baseRows);
+		Map<String, SharedVarEstimate> sharedVars = new HashMap<>();
+		double rawRows = Double.POSITIVE_INFINITY;
+		for (Map.Entry<String, VarPlanStats> entry : left.varStats.entrySet()) {
+			VarPlanStats rightStats = right.varStats.get(entry.getKey());
+			if (rightStats == null) {
 				continue;
 			}
-			mergedDistinct.put(varName, clampDistinct(entry.getValue(), rows));
+			SharedVarEstimate shared = estimateSharedVarJoin(left.outputRows, right.baseRows, entry.getValue(),
+					rightStats, disconnectedRows);
+			sharedVars.put(entry.getKey(), shared);
+			rawRows = Math.min(rawRows, shared.rows);
 		}
 
-		return new JoinStepEstimate(rows, mergedDistinct);
+		double rawWorkRows;
+		if (sharedVars.isEmpty()) {
+			rawRows = disconnectedRows;
+			rawWorkRows = estimateDisconnectedJoinWorkRows(left.outputRows, right.baseRows);
+		} else {
+			rawRows = Math.min(rawRows, disconnectedRows);
+			rawWorkRows = rawRows;
+		}
+		double outputRows = normalizeRows(applyFilterMultiplier(rawRows, right.localFilterMultiplier));
+		double workRows = normalizeRows(applyFilterMultiplier(rawWorkRows, right.localFilterMultiplier));
+		if (usePublicCardinality) {
+			double cardinalityRows = estimateJoinRowsUsingPublicCardinality(leftExpr, rightExpr);
+			if (cardinalityRows >= 0.0d) {
+				outputRows = cardinalityRows;
+				workRows = sharedVars.isEmpty()
+						? normalizeRows(outputRows * DISCONNECTED_JOIN_WORK_PENALTY)
+						: outputRows;
+			}
+		}
+
+		Map<String, VarPlanStats> mergedStats = new HashMap<>();
+		for (Map.Entry<String, VarPlanStats> entry : left.varStats.entrySet()) {
+			String varName = entry.getKey();
+			SharedVarEstimate shared = sharedVars.get(varName);
+			if (shared != null) {
+				mergedStats.put(varName, new VarPlanStats(clampDistinct(shared.distinct, outputRows), shared.sketch));
+			} else {
+				mergedStats.put(varName, new VarPlanStats(clampDistinct(entry.getValue().distinct, outputRows),
+						entry.getValue().sketch));
+			}
+		}
+		for (Map.Entry<String, VarPlanStats> entry : right.varStats.entrySet()) {
+			if (mergedStats.containsKey(entry.getKey())) {
+				continue;
+			}
+			mergedStats.put(entry.getKey(),
+					new VarPlanStats(clampDistinct(entry.getValue().distinct, outputRows), entry.getValue().sketch));
+		}
+		return new JoinStepEstimate(outputRows, workRows, mergedStats);
+	}
+
+	private double estimateJoinRowsUsingPublicCardinality(TupleExpr leftExpr, TupleExpr rightExpr) {
+		if (leftExpr == null || rightExpr == null) {
+			return -1.0d;
+		}
+		double rows = cardinality(new Join(cloneTupleExpr(leftExpr), cloneTupleExpr(rightExpr)));
+		if (!Double.isFinite(rows) || rows < 0.0d) {
+			return -1.0d;
+		}
+		return normalizeRows(rows);
+	}
+
+	private TupleExpr cloneTupleExpr(TupleExpr tupleExpr) {
+		return tupleExpr == null ? null : tupleExpr.clone();
+	}
+
+	private SharedVarEstimate estimateSharedVarJoin(double leftRows, double rightRows, VarPlanStats leftStats,
+			VarPlanStats rightStats, double disconnectedRows) {
+		double leftDistinct = Math.max(1.0d, leftStats.distinct);
+		double rightDistinct = Math.max(1.0d, rightStats.distinct);
+		if (leftStats.sketch != null && rightStats.sketch != null) {
+			Intersection ix = SetOperation.builder().buildIntersection();
+			ix.intersect(leftStats.sketch);
+			ix.intersect(rightStats.sketch);
+			Sketch intersection = ix.getResult();
+			double distinct = Math.max(0.0d, intersection.getEstimate());
+			if (distinct == 0.0d) {
+				return new SharedVarEstimate(0.0d, 0.0d, intersection);
+			}
+			double leftAvg = Math.max(0.001d, leftRows / leftDistinct);
+			double rightAvg = Math.max(0.001d, rightRows / rightDistinct);
+			double rows = Math.min(disconnectedRows, distinct * leftAvg * rightAvg);
+			return new SharedVarEstimate(normalizeRows(rows), distinct, intersection);
+		}
+		double rows = leftRows * rightRows;
+		if (!Double.isFinite(rows)) {
+			rows = Double.MAX_VALUE;
+		}
+		rows = rows / Math.max(leftDistinct, rightDistinct);
+		rows = Math.min(rows, disconnectedRows);
+		return new SharedVarEstimate(normalizeRows(rows), Math.min(leftDistinct, rightDistinct), null);
 	}
 
 	private double normalizeRows(double rows) {
@@ -3305,49 +3247,61 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private static final class TuplePlanEstimate {
-		private final double rows;
-		private final Map<String, Double> varDistinct;
+		private final double baseRows;
+		private final double outputRows;
+		private final double localFilterMultiplier;
+		private final Map<String, VarPlanStats> varStats;
 
-		private TuplePlanEstimate(double rows, Map<String, Double> varDistinct) {
-			this.rows = rows;
-			this.varDistinct = Collections.unmodifiableMap(new HashMap<>(varDistinct));
+		private TuplePlanEstimate(double baseRows, double outputRows, double localFilterMultiplier,
+				Map<String, VarPlanStats> varStats) {
+			this.baseRows = baseRows;
+			this.outputRows = outputRows;
+			this.localFilterMultiplier = localFilterMultiplier;
+			this.varStats = Collections.unmodifiableMap(new HashMap<>(varStats));
 		}
 	}
 
 	private static final class PlannerTuple {
 		private final TuplePlanEstimate estimate;
-		private final List<PlannerVar> vars;
-		private final Set<String> bindingNames;
-		private final Set<String> assuredBindingNames;
-		private final boolean bindingSetAssignment;
+		private final TupleExpr tupleExpr;
 
-		private PlannerTuple(TuplePlanEstimate estimate, List<PlannerVar> vars, Set<String> bindingNames,
-				Set<String> assuredBindingNames, boolean bindingSetAssignment) {
+		private PlannerTuple(TuplePlanEstimate estimate, TupleExpr tupleExpr) {
 			this.estimate = estimate;
-			this.vars = Collections.unmodifiableList(new ArrayList<>(vars));
-			this.bindingNames = Collections.unmodifiableSet(new HashSet<>(bindingNames));
-			this.assuredBindingNames = Collections.unmodifiableSet(new HashSet<>(assuredBindingNames));
-			this.bindingSetAssignment = bindingSetAssignment;
+			this.tupleExpr = tupleExpr;
 		}
 	}
 
-	private static final class PlannerVar {
-		private final String name;
-		private final boolean constant;
+	private static final class VarPlanStats {
+		private final double distinct;
+		private final Sketch sketch;
 
-		private PlannerVar(String name, boolean constant) {
-			this.name = name;
-			this.constant = constant;
+		private VarPlanStats(double distinct, Sketch sketch) {
+			this.distinct = distinct;
+			this.sketch = sketch;
+		}
+	}
+
+	private static final class SharedVarEstimate {
+		private final double rows;
+		private final double distinct;
+		private final Sketch sketch;
+
+		private SharedVarEstimate(double rows, double distinct, Sketch sketch) {
+			this.rows = rows;
+			this.distinct = distinct;
+			this.sketch = sketch;
 		}
 	}
 
 	private static final class JoinStepEstimate {
-		private final double rows;
-		private final Map<String, Double> vars;
+		private final double outputRows;
+		private final double workRows;
+		private final Map<String, VarPlanStats> varStats;
 
-		private JoinStepEstimate(double rows, Map<String, Double> vars) {
-			this.rows = rows;
-			this.vars = Collections.unmodifiableMap(new HashMap<>(vars));
+		private JoinStepEstimate(double outputRows, double workRows, Map<String, VarPlanStats> varStats) {
+			this.outputRows = outputRows;
+			this.workRows = workRows;
+			this.varStats = Collections.unmodifiableMap(new HashMap<>(varStats));
 		}
 	}
 
@@ -3355,22 +3309,20 @@ public class SketchBasedJoinEstimator {
 		private final List<Integer> order;
 		private final double rows;
 		private final double totalWork;
-		private final double highestTupleCost;
-		private final Set<String> boundVars;
-		private final Map<String, Double> varDistinct;
+		private final Map<String, VarPlanStats> varStats;
+		private final TupleExpr tupleExpr;
 
-		private JoinPlannerState(List<Integer> order, double rows, double totalWork, double highestTupleCost,
-				Set<String> boundVars, Map<String, Double> varDistinct) {
+		private JoinPlannerState(List<Integer> order, double rows, double totalWork,
+				Map<String, VarPlanStats> varStats, TupleExpr tupleExpr) {
 			this.order = Collections.unmodifiableList(new ArrayList<>(order));
 			this.rows = rows;
 			this.totalWork = totalWork;
-			this.highestTupleCost = highestTupleCost;
-			this.boundVars = Collections.unmodifiableSet(new HashSet<>(boundVars));
-			this.varDistinct = Collections.unmodifiableMap(new HashMap<>(varDistinct));
+			this.varStats = Collections.unmodifiableMap(new HashMap<>(varStats));
+			this.tupleExpr = tupleExpr;
 		}
 
 		private TuplePlanEstimate toEstimate() {
-			return new TuplePlanEstimate(rows, varDistinct);
+			return new TuplePlanEstimate(rows, rows, 1.0d, varStats);
 		}
 	}
 
@@ -3379,10 +3331,43 @@ public class SketchBasedJoinEstimator {
 			return -1;
 		}
 
+		List<TupleExpr> orderedArgs = new ArrayList<>();
+		flattenJoinTreeToOrderedArgs(node, orderedArgs);
+		double flattenedRows = cardinality(orderedArgs);
+		if (flattenedRows >= 0.0d) {
+			return flattenedRows;
+		}
+
 		TupleExpr leftArg = node.getLeftArg();
 		TupleExpr rightArg = node.getRightArg();
-
 		return estimateJoinCardinality(leftArg, rightArg, false);
+	}
+
+	public double cardinality(List<TupleExpr> tupleExprs) {
+		if (!isReady() || tupleExprs == null || tupleExprs.isEmpty()) {
+			return -1;
+		}
+
+		TuplePlanEstimate currentEstimate = null;
+		TupleExpr currentExpr = null;
+		for (TupleExpr tupleExpr : tupleExprs) {
+			TuplePlanEstimate nextEstimate = estimateTupleExprPlan(tupleExpr);
+			if (nextEstimate == null) {
+				return -1.0d;
+			}
+
+			if (currentEstimate == null) {
+				currentEstimate = nextEstimate;
+				currentExpr = tupleExpr;
+				continue;
+			}
+
+			JoinStepEstimate step = estimateJoinStep(currentEstimate, nextEstimate, currentExpr, tupleExpr, false);
+			currentEstimate = new TuplePlanEstimate(step.outputRows, step.outputRows, 1.0d, step.varStats);
+			currentExpr = new Join(cloneTupleExpr(currentExpr), cloneTupleExpr(tupleExpr));
+		}
+
+		return currentEstimate == null ? -1.0d : normalizeRows(currentEstimate.outputRows);
 	}
 
 	public double cardinality(LeftJoin node) {
@@ -3416,7 +3401,7 @@ public class SketchBasedJoinEstimator {
 			StatementPattern l = leftInput.pattern;
 			StatementPattern r = rightInput.pattern;
 			if (!hasBoundComponent(l) || !hasBoundComponent(r)) {
-				return -1; // unsupported sketch case, let caller fall back
+				return estimateJoinCardinalityFromTuplePlans(leftArg, rightArg, leftJoin);
 			}
 
 			/* find first common unbound variable */
@@ -3454,7 +3439,107 @@ public class SketchBasedJoinEstimator {
 					.estimate(), leftInput.filterMultiplier * rightInput.filterMultiplier);
 			return leftJoin ? Math.max(leftRows, joinRows) : joinRows;
 		}
-		return estimateJoinCardinalityWithNestedSide(leftArg, rightArg, leftJoin);
+		double nestedEstimate = estimateJoinCardinalityWithNestedSide(leftArg, rightArg, leftJoin);
+		if (nestedEstimate >= 0.0d) {
+			return nestedEstimate;
+		}
+		return estimateJoinCardinalityFromTuplePlans(leftArg, rightArg, leftJoin);
+	}
+
+	private double estimateJoinCardinalityFromTuplePlans(TupleExpr leftArg, TupleExpr rightArg, boolean leftJoin) {
+		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(leftArg);
+		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(rightArg);
+		if (leftEstimate == null || rightEstimate == null) {
+			return -1.0d;
+		}
+		JoinStepEstimate step = estimateJoinStep(leftEstimate, rightEstimate, leftArg, rightArg, false);
+		double rows = leftJoin ? Math.max(leftEstimate.outputRows, step.outputRows) : step.outputRows;
+		return normalizeRows(rows);
+	}
+
+	private void flattenJoinTreeToOrderedArgs(TupleExpr tupleExpr, List<TupleExpr> orderedArgs) {
+		if (tupleExpr instanceof Join) {
+			Join join = (Join) tupleExpr;
+			flattenJoinTreeToOrderedArgs(join.getLeftArg(), orderedArgs);
+			flattenJoinTreeToOrderedArgs(join.getRightArg(), orderedArgs);
+			return;
+		}
+		orderedArgs.add(tupleExpr);
+	}
+
+	private TuplePlanEstimate estimateTupleExprPlan(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return null;
+		}
+
+		PlannerTuple plannerTuple = toPlannerTuple(tupleExpr, Collections.emptySet());
+		if (plannerTuple != null) {
+			return plannerTuple.estimate;
+		}
+
+		if (tupleExpr instanceof Join) {
+			Join join = (Join) tupleExpr;
+			return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), false);
+		}
+		if (tupleExpr instanceof LeftJoin) {
+			LeftJoin join = (LeftJoin) tupleExpr;
+			if (join.hasCondition()) {
+				return null;
+			}
+			return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), true);
+		}
+		if (tupleExpr instanceof EmptySet) {
+			return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
+		}
+		if (tupleExpr instanceof SingletonSet) {
+			return new TuplePlanEstimate(1.0d, 1.0d, 1.0d, Collections.emptyMap());
+		}
+		if (tupleExpr instanceof Slice) {
+			return estimateSliceTupleExprPlan((Slice) tupleExpr);
+		}
+		if (tupleExpr instanceof Distinct || tupleExpr instanceof Reduced) {
+			return estimateDistinctTupleExprPlan((UnaryTupleOperator) tupleExpr);
+		}
+		if (tupleExpr instanceof UnaryTupleOperator) {
+			return estimateTupleExprPlan(((UnaryTupleOperator) tupleExpr).getArg());
+		}
+		return null;
+	}
+
+	private TuplePlanEstimate estimateJoinedTupleExprPlan(TupleExpr leftArg, TupleExpr rightArg, boolean leftJoin) {
+		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(leftArg);
+		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(rightArg);
+		if (leftEstimate == null || rightEstimate == null) {
+			return null;
+		}
+		JoinStepEstimate step = estimateJoinStep(leftEstimate, rightEstimate, leftArg, rightArg, false);
+		double outputRows = leftJoin ? Math.max(leftEstimate.outputRows, step.outputRows) : step.outputRows;
+		return new TuplePlanEstimate(outputRows, outputRows, 1.0d, step.varStats);
+	}
+
+	private TuplePlanEstimate estimateSliceTupleExprPlan(Slice slice) {
+		TuplePlanEstimate argEstimate = estimateTupleExprPlan(slice.getArg());
+		if (argEstimate == null) {
+			return null;
+		}
+		double rows = argEstimate.outputRows;
+		if (slice.hasOffset()) {
+			rows = Math.max(0.0d, rows - slice.getOffset());
+		}
+		if (slice.hasLimit()) {
+			rows = Math.min(rows, slice.getLimit());
+		}
+		rows = normalizeRows(rows);
+		return new TuplePlanEstimate(rows, rows, 1.0d, argEstimate.varStats);
+	}
+
+	private TuplePlanEstimate estimateDistinctTupleExprPlan(UnaryTupleOperator tupleExpr) {
+		TuplePlanEstimate argEstimate = estimateTupleExprPlan(tupleExpr.getArg());
+		if (argEstimate == null) {
+			return null;
+		}
+		double rows = normalizeRows(argEstimate.outputRows);
+		return new TuplePlanEstimate(rows, rows, 1.0d, argEstimate.varStats);
 	}
 
 	private double estimatePatternRows(StatementPattern pattern) {
@@ -3483,7 +3568,19 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private double estimateDisconnectedJoinRows(double leftRows, double rightRows) {
-		double estimate = leftRows + rightRows;
+		double estimate = leftRows * rightRows;
+		if (!Double.isFinite(estimate)) {
+			return Double.MAX_VALUE;
+		}
+		return roundJoinEstimate(estimate);
+	}
+
+	private double estimateDisconnectedJoinWorkRows(double leftRows, double rightRows) {
+		double estimate = estimateDisconnectedJoinRows(leftRows, rightRows);
+		if (!Double.isFinite(estimate)) {
+			return Double.MAX_VALUE;
+		}
+		estimate = estimate * DISCONNECTED_JOIN_WORK_PENALTY;
 		if (!Double.isFinite(estimate)) {
 			return Double.MAX_VALUE;
 		}
@@ -3718,6 +3815,10 @@ public class SketchBasedJoinEstimator {
 		if (filter.getCondition() == null) {
 			return -1.0d;
 		}
+		double listMemberMultiplier = estimateListMemberFilterMultiplier(pattern, filter.getCondition());
+		if (listMemberMultiplier > 0.0d) {
+			return listMemberMultiplier;
+		}
 		double baseRows = estimatePatternRows(pattern);
 		if (!(baseRows > 0.0d) || !Double.isFinite(baseRows)) {
 			return -1.0d;
@@ -3735,6 +3836,67 @@ public class SketchBasedJoinEstimator {
 			return -1.0d;
 		}
 		return normalizeFilterMultiplier(ratio);
+	}
+
+	private double estimateListMemberFilterMultiplier(StatementPattern pattern, ValueExpr condition) {
+		if (condition instanceof And) {
+			And and = (And) condition;
+			double left = estimateListMemberFilterMultiplier(pattern, and.getLeftArg());
+			double right = estimateListMemberFilterMultiplier(pattern, and.getRightArg());
+			if (left > 0.0d && right > 0.0d) {
+				return normalizeFilterMultiplier(left * right);
+			}
+			return left > 0.0d ? left : right;
+		}
+		if (!(condition instanceof ListMemberOperator)) {
+			return -1.0d;
+		}
+
+		List<ValueExpr> arguments = ((ListMemberOperator) condition).getArguments();
+		if (arguments == null || arguments.size() < 2 || !(arguments.get(0) instanceof Var)) {
+			return -1.0d;
+		}
+		Var listedVar = (Var) arguments.get(0);
+		if (listedVar.getName() == null) {
+			return -1.0d;
+		}
+
+		Set<Value> constants = new HashSet<>();
+		for (int i = 1; i < arguments.size(); i++) {
+			ValueExpr argument = arguments.get(i);
+			if (!(argument instanceof ValueConstant)) {
+				return -1.0d;
+			}
+			Value value = ((ValueConstant) argument).getValue();
+			if (value == null) {
+				return -1.0d;
+			}
+			constants.add(value);
+		}
+		if (constants.isEmpty()) {
+			return -1.0d;
+		}
+
+		Var patternVar = findUnboundVarByName(pattern, listedVar.getName());
+		if (patternVar == null) {
+			return -1.0d;
+		}
+
+		JoinEstimate estimate = estimate(getComponent(pattern, patternVar),
+				getValueOrNull(pattern.getSubjectVar()),
+				getValueOrNull(pattern.getPredicateVar()),
+				getValueOrNull(pattern.getObjectVar()),
+				getValueOrNull(pattern.getContextVar()));
+		double distinct = estimate.distinct;
+		if (!Double.isFinite(distinct) || distinct <= 0.0d) {
+			return -1.0d;
+		}
+
+		double ratio = constants.size() / Math.max(1.0d, distinct);
+		if (!Double.isFinite(ratio) || ratio <= 0.0d) {
+			return -1.0d;
+		}
+		return normalizeFilterMultiplier(Math.min(1.0d, ratio));
 	}
 
 	private boolean isValidFilterMultiplier(double value) {
