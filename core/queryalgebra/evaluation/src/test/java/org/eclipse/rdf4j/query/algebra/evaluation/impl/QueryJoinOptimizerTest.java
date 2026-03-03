@@ -264,6 +264,30 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		assertThat(predicateOrder.get(2)).isEqualTo("ex:pA");
 	}
 
+	@Test
+	public void optimizeSetsResultSizeEstimateOnGeneratedJoinNodes() throws Exception {
+		String query = "SELECT * WHERE { ?s <ex:pA> ?o1 . ?s <ex:pB> ?o2 . ?s <ex:pC> ?o3 . }";
+
+		ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new PairwiseJoinStatistics(), new EmptyTripleSource());
+		QueryRoot root = new QueryRoot(parsed.getTupleExpr());
+
+		optimizer.optimize(root, null, null);
+
+		List<Join> joins = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join join) {
+				joins.add(join);
+				super.meet(join);
+			}
+		});
+
+		assertThat(joins).isNotEmpty();
+		assertThat(joins).allMatch(join -> join.getResultSizeEstimate() >= 0,
+				"expected all optimized joins to carry resultSizeEstimate");
+	}
+
 	@Override
 	public QueryJoinOptimizer getOptimizer() {
 		return new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());

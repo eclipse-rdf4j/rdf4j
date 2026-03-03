@@ -29,6 +29,8 @@ import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCaptureContext;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -53,6 +55,7 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
+import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
 @Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 30)
@@ -63,7 +66,19 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 public class ThemeQueryBenchmark {
 
 	private static final String STORE_NAME = "lmdb";
-	private static final File STORE_DIRECTORY = new File("target", "lmdb-theme-query-benchmark");
+	private static final String TARGET_DIRECTORY_ROOT = "core/sail/lmdb/";
+	private static final File STORE_DIRECTORY;
+
+	static {
+		File target = new File("target", "lmdb-theme-query-benchmark");
+		if(target.getAbsolutePath().toLowerCase().contains(TARGET_DIRECTORY_ROOT)){
+			STORE_DIRECTORY = target;
+		} else {
+			// In case the benchmark is run from an IDE with a different working directory, we want to ensure the store directory is still in the target directory of the project.
+			STORE_DIRECTORY = new File(TARGET_DIRECTORY_ROOT + "target", "lmdb-theme-query-benchmark");
+		}
+	}
+
 	private static final String TRIPLES_DATA_FILE = "triples/data.mdb";
 	private static final String VALUES_DATA_FILE = "values/data.mdb";
 	private static final String EXPECTED_DB_FILE_SIZES_FILE = "expected-db-file-sizes.properties";
@@ -73,20 +88,22 @@ public class ThemeQueryBenchmark {
 	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
 
 	@Param({
-			"0", "1", "2", "3", "4", "5", "6", "7", "8",
-			"9", "10"
+//			"0", "1", "2", "3", "4",
+			"5"
+//			, "6", "7", "8",
+//			"9", "10"
 	})
 	public int z_queryIndex;
 
 	@Param({
 			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
-			"LIBRARY",
-			"ENGINEERING",
-			"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
-			"PHARMA"
+//			"SOCIAL_MEDIA",
+//			"LIBRARY",
+//			"ENGINEERING",
+//			"HIGHLY_CONNECTED",
+//			"TRAIN",
+//			"ELECTRICAL_GRID",
+//			"PHARMA"
 	})
 	public String themeName;
 
@@ -99,12 +116,12 @@ public class ThemeQueryBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		var opt = new OptionsBuilder()
-				.include("ThemeQueryBenchmark.executeQuery")
+				.include("ThemeQueryBenchmark.explainQuery")
 				.forks(0)
-//				.measurementIterations(1)
-//				.measurementBatchSize(1)
-//				.measurementTime(TimeValue.milliseconds(1))
-//				.warmupIterations(0)
+				.measurementIterations(1)
+				.measurementBatchSize(1)
+				.measurementTime(TimeValue.milliseconds(1))
+				.warmupIterations(0)
 				.build();
 		new Runner(opt).run();
 	}
@@ -314,10 +331,34 @@ public class ThemeQueryBenchmark {
 
 	@Benchmark
 	public void explainQuery() {
-		try (var connection = repository.getConnection()) {
-			Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-			System.out.println(explain);
+		try {
+			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = false;
+			try (var connection = repository.getConnection()) {
+				System.out.println("=== Explanation with join reordering disabled ===");
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				System.out.println(explain);
+				System.out.println();
+			}
+			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
+			try (var connection = repository.getConnection()) {
+				System.out.println("=== Explanation with join reordering enabled ===");
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				System.out.println(explain);
+				System.out.println();
+			}
+			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
+			try (var connection = repository.getConnection()) {
+				System.out.println("=== Explanation with join reordering enabled and telemetry ===");
+				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+				tupleQuery.setMaxExecutionTime(9999999);
+				Explanation explain = tupleQuery.explain(Explanation.Level.Telemetry);
+				System.out.println(explain);
+				System.out.println();
+			}
+		}finally {
+			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
 		}
+
 	}
 
 	@Test
@@ -413,14 +454,7 @@ public class ThemeQueryBenchmark {
 		}
 	}
 
-	private static final class DbFileSizes {
-		private final long triplesDataSizeBytes;
-		private final long valuesDataSizeBytes;
-
-		private DbFileSizes(long triplesDataSizeBytes, long valuesDataSizeBytes) {
-			this.triplesDataSizeBytes = triplesDataSizeBytes;
-			this.valuesDataSizeBytes = valuesDataSizeBytes;
-		}
+	private record DbFileSizes(long triplesDataSizeBytes, long valuesDataSizeBytes) {
 	}
 
 }

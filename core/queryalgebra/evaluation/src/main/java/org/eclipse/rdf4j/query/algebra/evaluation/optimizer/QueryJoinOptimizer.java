@@ -76,6 +76,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	@Experimental
 	public static int DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT = 8;
 
+	@Experimental
+	public static boolean REORDER_JOINS_WITH_SKETCHES = true;
+
 	public enum JoinOrderStrategy {
 		GREEDY,
 		DYNAMIC_PROGRAMMING,
@@ -245,7 +248,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 				}
 
-				if (statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2) {
+				if (REORDER_JOINS_WITH_SKETCHES && statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2) {
 					orderedJoinArgs = reorderJoinArgs(orderedJoinArgs);
 				}
 
@@ -255,7 +258,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					priorityJoins = priorityArgs.get(0);
 
 					for (int i = 1; i < priorityArgs.size(); i++) {
-						priorityJoins = new Join(priorityJoins, priorityArgs.get(i));
+						priorityJoins = createJoinWithEstimatedResultSize(priorityJoins, priorityArgs.get(i));
 					}
 				}
 
@@ -286,7 +289,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						} else {
 							cardinality = Math.max(cardinality, left.getResultSizeEstimate());
 							cardinality = Math.max(cardinality, right.getResultSizeEstimate());
-							Join join = new Join(left, right);
+							Join join = createJoinWithEstimatedResultSize(left, right);
 							join.setOrder((Var) supportedOrders.toArray()[0]);
 							join.setMergeJoin(true);
 							orderedJoinArgs.addFirst(join);
@@ -308,7 +311,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						Set<Var> supportedOrders = new HashSet<>(left.getSupportedOrders(tripleSource));
 						supportedOrders.retainAll(right.getSupportedOrders(tripleSource));
 
-						Join join = new Join(left, right);
+						Join join = createJoinWithEstimatedResultSize(left, right);
 
 						if (USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN) {
 							mergeJoinForCrossJoin(orderedJoinArgs, supportedOrders, left, right, join);
@@ -318,11 +321,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 					}
 					while (!orderedJoinArgs.isEmpty()) {
-						right = new Join(orderedJoinArgs.removeLast(), right);
+						right = createJoinWithEstimatedResultSize(orderedJoinArgs.removeLast(), right);
 					}
 
 					if (priorityJoins != null) {
-						right = new Join(priorityJoins, right);
+						right = createJoinWithEstimatedResultSize(priorityJoins, right);
 					}
 
 					// Replace old join hierarchy
@@ -372,6 +375,17 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			appendReorderedSegment(reordered, currentSegment, boundBeforeSegment);
 
 			return reordered;
+		}
+
+		private Join createJoinWithEstimatedResultSize(TupleExpr left, TupleExpr right) {
+			Join join = new Join(left, right);
+			if (statistics.supportsJoinEstimation()) {
+				double estimatedResultSize = statistics.getCardinality(join);
+				if (!Double.isNaN(estimatedResultSize) && estimatedResultSize >= 0) {
+					join.setResultSizeEstimate(Math.max(join.getResultSizeEstimate(), estimatedResultSize));
+				}
+			}
+			return join;
 		}
 
 		private void appendReorderedSegment(Deque<TupleExpr> reordered, List<TupleExpr> segment,

@@ -114,6 +114,43 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(greedyPlan.get().getOrderedArgs().containsAll(args));
 	}
 
+	@Test
+	void planJoinOrderPrefersBindingSetAssignmentThatBindsForeignVars() {
+		StubSailStore store = new StubSailStore();
+		IRI pA = VF.createIRI("urn:pA");
+		IRI pB = VF.createIRI("urn:pB");
+		IRI y = VF.createIRI("urn:y");
+
+		BindingSetAssignment bindings = new BindingSetAssignment();
+		List<BindingSet> bindingSets = new java.util.ArrayList<>();
+
+		for (int i = 0; i < 512; i++) {
+			Resource s = VF.createIRI("urn:s" + i);
+			IRI x = VF.createIRI("urn:x" + i);
+			store.add(VF.createStatement(s, pA, x));
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("s", s);
+			bindingSets.add(row);
+		}
+		store.add(VF.createStatement(VF.createIRI("urn:x0"), pB, y));
+
+		bindings.setBindingSets(bindingSets);
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern a = pattern("s", pA, "x");
+		StatementPattern b = pattern("x", pB, "y");
+		List<TupleExpr> args = List.of(a, b, bindings);
+
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(),
+				JoinOrderPlanner.Algorithm.GREEDY);
+
+		assertTrue(plan.isPresent(), "Expected planner to produce a plan");
+		assertEquals(bindings, plan.get().getOrderedArgs().get(0),
+				"BindingSetAssignment that binds join vars should be selected first");
+	}
+
 	private static SketchBasedJoinEstimator.Config config() {
 		return SketchBasedJoinEstimator.Config.defaults()
 				.withNominalEntries(64)

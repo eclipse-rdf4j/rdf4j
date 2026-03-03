@@ -2838,21 +2838,28 @@ public class SketchBasedJoinEstimator {
 
 		List<TupleExpr> expressions = List.copyOf(args);
 		Set<String> bound = initiallyBoundVars == null ? Collections.emptySet() : Set.copyOf(initiallyBoundVars);
-		List<TuplePlanEstimate> estimates = new ArrayList<>(expressions.size());
+		List<PlannerTuple> tuples = new ArrayList<>(expressions.size());
 		for (TupleExpr tupleExpr : expressions) {
-			TuplePlanEstimate estimate = toTuplePlanEstimate(tupleExpr, bound);
-			if (estimate == null) {
+			PlannerTuple tuple = toPlannerTuple(tupleExpr, bound);
+			if (tuple == null) {
 				return Optional.empty();
 			}
-			estimates.add(estimate);
+			tuples.add(tuple);
 		}
+
+		Map<String, Integer> varFreqMap = buildVarFreqMap(tuples);
+		Set<String> varsUsedInOtherExpressions = Collections.unmodifiableSet(new HashSet<>(varFreqMap.keySet()));
+		Set<Integer> zeroCostStartCandidates = findZeroCostStartCandidates(tuples, bound, varFreqMap,
+				varsUsedInOtherExpressions);
 
 		Optional<JoinPlannerState> plannedState = Optional.empty();
 		if (algorithm == JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING) {
-			plannedState = planJoinOrderDynamicProgramming(estimates);
+			plannedState = planJoinOrderDynamicProgramming(tuples, bound, varFreqMap, varsUsedInOtherExpressions,
+					zeroCostStartCandidates);
 		}
 		if (plannedState.isEmpty()) {
-			plannedState = planJoinOrderGreedy(estimates);
+			plannedState = planJoinOrderGreedy(tuples, bound, varFreqMap, varsUsedInOtherExpressions,
+					zeroCostStartCandidates);
 		}
 
 		if (plannedState.isEmpty()) {
@@ -2868,70 +2875,84 @@ public class SketchBasedJoinEstimator {
 		return Optional.of(new JoinOrderPlanner.JoinOrderPlan(orderedArgs, state.rows, state.totalWork));
 	}
 
-	private Optional<JoinPlannerState> planJoinOrderGreedy(List<TuplePlanEstimate> estimates) {
-		int size = estimates.size();
+	private Optional<JoinPlannerState> planJoinOrderGreedy(List<PlannerTuple> tuples, Set<String> initiallyBoundVars,
+			Map<String, Integer> varFreqMap, Set<String> varsUsedInOtherExpressions,
+			Set<Integer> zeroCostStartCandidates) {
+		int size = tuples.size();
+		if (size == 0) {
+			return Optional.empty();
+		}
 		if (size == 1) {
-			return Optional.of(JoinPlannerState.single(0, estimates.get(0)));
+			return Optional.of(seedState(0, tuples.get(0), initiallyBoundVars, varFreqMap, varsUsedInOtherExpressions));
 		}
 
-		int bestLeft = 0;
-		int bestRight = 1;
-		JoinStepEstimate bestStep = estimateJoinStep(estimates.get(0), estimates.get(1));
-		for (int left = 0; left < size - 1; left++) {
-			for (int right = left + 1; right < size; right++) {
-				JoinStepEstimate candidate = estimateJoinStep(estimates.get(left), estimates.get(right));
-				if (candidate.rows < bestStep.rows) {
-					bestLeft = left;
-					bestRight = right;
-					bestStep = candidate;
+		int bestFirst = -1;
+		int bestSecond = -1;
+		JoinPlannerState bestState = null;
+		for (int first = 0; first < size; first++) {
+			if (!zeroCostStartCandidates.isEmpty() && !zeroCostStartCandidates.contains(first)) {
+				continue;
+			}
+			JoinPlannerState firstState = seedState(first, tuples.get(first), initiallyBoundVars, varFreqMap,
+					varsUsedInOtherExpressions);
+			for (int second = 0; second < size; second++) {
+				if (second == first) {
+					continue;
+				}
+				JoinPlannerState candidate = appendState(firstState, second, tuples.get(second), varFreqMap,
+						varsUsedInOtherExpressions);
+				if (bestState == null || candidate.totalWork < bestState.totalWork) {
+					bestState = candidate;
+					bestFirst = first;
+					bestSecond = second;
 				}
 			}
 		}
+		if (bestState == null) {
+			return Optional.empty();
+		}
 
-		List<Integer> order = new ArrayList<>(size);
-		order.add(bestLeft);
-		order.add(bestRight);
 		boolean[] used = new boolean[size];
-		used[bestLeft] = true;
-		used[bestRight] = true;
-		JoinPlannerState state = new JoinPlannerState(order, bestStep.rows, bestStep.rows, bestStep.vars);
+		used[bestFirst] = true;
+		used[bestSecond] = true;
+		JoinPlannerState state = bestState;
 
 		while (state.order.size() < size) {
 			int bestCandidate = -1;
-			JoinStepEstimate bestCandidateStep = null;
+			JoinPlannerState bestCandidateState = null;
 			for (int index = 0; index < size; index++) {
 				if (used[index]) {
 					continue;
 				}
-				JoinStepEstimate candidateStep = estimateJoinStep(state.toEstimate(), estimates.get(index));
-				if (bestCandidateStep == null || candidateStep.rows < bestCandidateStep.rows) {
+				JoinPlannerState candidateState = appendState(state, index, tuples.get(index), varFreqMap,
+						varsUsedInOtherExpressions);
+				if (bestCandidateState == null || candidateState.totalWork < bestCandidateState.totalWork) {
 					bestCandidate = index;
-					bestCandidateStep = candidateStep;
+					bestCandidateState = candidateState;
 				}
 			}
 
-			if (bestCandidate < 0 || bestCandidateStep == null) {
+			if (bestCandidate < 0 || bestCandidateState == null) {
 				return Optional.empty();
 			}
 
 			used[bestCandidate] = true;
-			List<Integer> nextOrder = new ArrayList<>(state.order.size() + 1);
-			nextOrder.addAll(state.order);
-			nextOrder.add(bestCandidate);
-			double nextWork = state.totalWork + bestCandidateStep.rows;
-			state = new JoinPlannerState(nextOrder, bestCandidateStep.rows, nextWork, bestCandidateStep.vars);
+			state = bestCandidateState;
 		}
 
 		return Optional.of(state);
 	}
 
-	private Optional<JoinPlannerState> planJoinOrderDynamicProgramming(List<TuplePlanEstimate> estimates) {
-		int size = estimates.size();
+	private Optional<JoinPlannerState> planJoinOrderDynamicProgramming(List<PlannerTuple> tuples,
+			Set<String> initiallyBoundVars,
+			Map<String, Integer> varFreqMap, Set<String> varsUsedInOtherExpressions,
+			Set<Integer> zeroCostStartCandidates) {
+		int size = tuples.size();
 		if (size == 0) {
 			return Optional.empty();
 		}
 		if (size == 1) {
-			return Optional.of(JoinPlannerState.single(0, estimates.get(0)));
+			return Optional.of(seedState(0, tuples.get(0), initiallyBoundVars, varFreqMap, varsUsedInOtherExpressions));
 		}
 		if (size > 30) {
 			return Optional.empty();
@@ -2939,8 +2960,15 @@ public class SketchBasedJoinEstimator {
 
 		Map<Long, JoinPlannerState> bestByMask = new HashMap<>();
 		for (int i = 0; i < size; i++) {
+			if (!zeroCostStartCandidates.isEmpty() && !zeroCostStartCandidates.contains(i)) {
+				continue;
+			}
 			long mask = 1L << i;
-			bestByMask.put(mask, JoinPlannerState.single(i, estimates.get(i)));
+			bestByMask.put(mask,
+					seedState(i, tuples.get(i), initiallyBoundVars, varFreqMap, varsUsedInOtherExpressions));
+		}
+		if (bestByMask.isEmpty()) {
+			return Optional.empty();
 		}
 
 		long fullMask = (1L << size) - 1L;
@@ -2954,13 +2982,9 @@ public class SketchBasedJoinEstimator {
 					if ((mask & bit) != 0L) {
 						continue;
 					}
-					JoinStepEstimate step = estimateJoinStep(state.toEstimate(), estimates.get(nextIndex));
+					JoinPlannerState candidate = appendState(state, nextIndex, tuples.get(nextIndex), varFreqMap,
+							varsUsedInOtherExpressions);
 					long nextMask = mask | bit;
-					List<Integer> order = new ArrayList<>(state.order.size() + 1);
-					order.addAll(state.order);
-					order.add(nextIndex);
-					double totalWork = state.totalWork + step.rows;
-					JoinPlannerState candidate = new JoinPlannerState(order, step.rows, totalWork, step.vars);
 					JoinPlannerState incumbent = next.get(nextMask);
 					if (incumbent == null || candidate.totalWork < incumbent.totalWork) {
 						next.put(nextMask, candidate);
@@ -2973,16 +2997,166 @@ public class SketchBasedJoinEstimator {
 		return Optional.ofNullable(bestByMask.get(fullMask));
 	}
 
-	private TuplePlanEstimate toTuplePlanEstimate(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
+	private Map<String, Integer> buildVarFreqMap(List<PlannerTuple> tuples) {
+		Map<String, Integer> varFreqMap = new HashMap<>();
+		for (PlannerTuple tuple : tuples) {
+			for (PlannerVar var : tuple.vars) {
+				if (var.name == null) {
+					continue;
+				}
+				varFreqMap.merge(var.name, 1, Integer::sum);
+			}
+		}
+		return varFreqMap;
+	}
+
+	private Set<Integer> findZeroCostStartCandidates(List<PlannerTuple> tuples, Set<String> initiallyBoundVars,
+			Map<String, Integer> varFreqMap, Set<String> varsUsedInOtherExpressions) {
+		Set<Integer> candidates = new HashSet<>();
+		for (int i = 0; i < tuples.size(); i++) {
+			double tupleCost = estimateTupleCost(tuples.get(i), initiallyBoundVars, 1.0d, varFreqMap,
+					varsUsedInOtherExpressions);
+			if (tupleCost == 0.0d) {
+				candidates.add(i);
+			}
+		}
+		return candidates;
+	}
+
+	private JoinPlannerState seedState(int index, PlannerTuple tuple, Set<String> initiallyBoundVars,
+			Map<String, Integer> varFreqMap, Set<String> varsUsedInOtherExpressions) {
+		double tupleCost = estimateTupleCost(tuple, initiallyBoundVars, 1.0d, varFreqMap, varsUsedInOtherExpressions);
+		Set<String> boundVars = new HashSet<>(initiallyBoundVars);
+		boundVars.addAll(tuple.bindingNames);
+		return new JoinPlannerState(List.of(index), tuple.estimate.rows, tupleCost, Math.max(1.0d, tupleCost),
+				boundVars,
+				tuple.estimate.varDistinct);
+	}
+
+	private JoinPlannerState appendState(JoinPlannerState state, int nextIndex, PlannerTuple nextTuple,
+			Map<String, Integer> varFreqMap, Set<String> varsUsedInOtherExpressions) {
+		JoinStepEstimate step = estimateJoinStep(state.toEstimate(), nextTuple.estimate);
+		double tupleCost = estimateTupleCost(nextTuple, state.boundVars, state.highestTupleCost, varFreqMap,
+				varsUsedInOtherExpressions);
+		List<Integer> nextOrder = new ArrayList<>(state.order.size() + 1);
+		nextOrder.addAll(state.order);
+		nextOrder.add(nextIndex);
+		Set<String> nextBoundVars = new HashSet<>(state.boundVars);
+		nextBoundVars.addAll(nextTuple.bindingNames);
+		double nextTotalWork = state.totalWork + tupleCost + step.rows;
+		double nextHighestTupleCost = Math.max(state.highestTupleCost, tupleCost);
+		return new JoinPlannerState(nextOrder, step.rows, nextTotalWork, nextHighestTupleCost, nextBoundVars,
+				step.vars);
+	}
+
+	private double estimateTupleCost(PlannerTuple tuple, Set<String> boundVars, double currentHighestCost,
+			Map<String, Integer> varFreqMap, Set<String> varsUsedInOtherExpressions) {
+		if (tuple.bindingSetAssignment) {
+			Set<String> bindingNamesForCost = tuple.assuredBindingNames.isEmpty()
+					? tuple.bindingNames
+					: tuple.assuredBindingNames;
+			for (String assuredBindingName : bindingNamesForCost) {
+				if (varsUsedInOtherExpressions.contains(assuredBindingName)) {
+					return 0.0d;
+				}
+			}
+		}
+
+		double cost = tuple.estimate.rows;
+		if (!Double.isFinite(cost) || cost < 0.0d) {
+			cost = Double.MAX_VALUE;
+		}
+
+		// Preserve QueryJoinOptimizer.getTupleExprCost() semantics.
+		cost += 5.0d;
+
+		List<String> unboundVars = getUnboundVars(tuple.vars, boundVars);
+		int constantVars = countConstantVars(tuple.vars);
+		int nonConstantVarCount = tuple.vars.size() - constantVars;
+
+		if (nonConstantVarCount > 0) {
+			int boundVarCount = nonConstantVarCount - unboundVars.size();
+			if (boundVarCount == 0) {
+				cost = cost * currentHighestCost;
+			} else {
+				double exp = (double) unboundVars.size() / nonConstantVarCount;
+				cost = Math.pow(cost, exp);
+			}
+		}
+
+		if (unboundVars.isEmpty()) {
+			if (nonConstantVarCount > 0) {
+				cost /= nonConstantVarCount;
+			}
+		} else {
+			int foreignVarFreq = getForeignVarFreq(unboundVars, varFreqMap);
+			if (foreignVarFreq > 0) {
+				cost /= 1 + foreignVarFreq;
+			}
+		}
+
+		if (!Double.isFinite(cost) || cost < 0.0d) {
+			return Double.MAX_VALUE;
+		}
+		return cost;
+	}
+
+	private int countConstantVars(List<PlannerVar> vars) {
+		int count = 0;
+		for (PlannerVar var : vars) {
+			if (var.constant) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private List<String> getUnboundVars(List<PlannerVar> vars, Set<String> boundVars) {
+		List<String> unboundVars = null;
+		for (PlannerVar var : vars) {
+			if (!var.constant && var.name != null && !boundVars.contains(var.name)) {
+				if (unboundVars == null) {
+					unboundVars = List.of(var.name);
+				} else {
+					if (unboundVars.size() == 1) {
+						unboundVars = new ArrayList<>(unboundVars);
+					}
+					unboundVars.add(var.name);
+				}
+			}
+		}
+		return unboundVars == null ? Collections.emptyList() : unboundVars;
+	}
+
+	private int getForeignVarFreq(List<String> ownUnboundVars, Map<String, Integer> varFreqMap) {
+		if (ownUnboundVars.isEmpty()) {
+			return 0;
+		}
+		if (ownUnboundVars.size() == 1) {
+			return varFreqMap.getOrDefault(ownUnboundVars.get(0), 1) - 1;
+		}
+
+		int result = -ownUnboundVars.size();
+		for (String varName : new HashSet<>(ownUnboundVars)) {
+			result += varFreqMap.getOrDefault(varName, 0);
+		}
+		return result;
+	}
+
+	private PlannerTuple toPlannerTuple(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
 		TuplePlanEstimate estimate;
+		List<PlannerVar> vars;
+		boolean bindingSetAssignment = tupleExpr instanceof BindingSetAssignment;
 		if (tupleExpr instanceof BindingSetAssignment) {
 			estimate = estimateBindingSetAssignment((BindingSetAssignment) tupleExpr);
+			vars = Collections.emptyList();
 		} else {
 			PatternEstimateInput input = asSketchCompatibleInput(tupleExpr);
 			if (input == null) {
 				return null;
 			}
 			StatementPattern pattern = input.pattern;
+			vars = toPlannerVars(pattern.getVarList());
 			double rows = applyFilterMultiplier(estimatePatternRows(pattern), input.filterMultiplier);
 			Map<String, Double> varDistinct = new HashMap<>();
 			Set<String> seenVars = new HashSet<>();
@@ -3002,7 +3176,22 @@ public class SketchBasedJoinEstimator {
 			}
 			estimate = new TuplePlanEstimate(normalizeRows(rows), varDistinct);
 		}
-		return applyInitiallyBoundVars(estimate, initiallyBoundVars);
+		TuplePlanEstimate adjusted = applyInitiallyBoundVars(estimate, initiallyBoundVars);
+		return new PlannerTuple(adjusted, vars, tupleExpr.getBindingNames(), tupleExpr.getAssuredBindingNames(),
+				bindingSetAssignment);
+	}
+
+	private List<PlannerVar> toPlannerVars(List<Var> vars) {
+		if (vars == null || vars.isEmpty()) {
+			return Collections.emptyList();
+		}
+		List<PlannerVar> plannerVars = new ArrayList<>(vars.size());
+		for (Var var : vars) {
+			if (var != null) {
+				plannerVars.add(new PlannerVar(var.getName(), var.hasValue()));
+			}
+		}
+		return plannerVars;
 	}
 
 	private TuplePlanEstimate estimateBindingSetAssignment(BindingSetAssignment assignment) {
@@ -3125,6 +3314,33 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
+	private static final class PlannerTuple {
+		private final TuplePlanEstimate estimate;
+		private final List<PlannerVar> vars;
+		private final Set<String> bindingNames;
+		private final Set<String> assuredBindingNames;
+		private final boolean bindingSetAssignment;
+
+		private PlannerTuple(TuplePlanEstimate estimate, List<PlannerVar> vars, Set<String> bindingNames,
+				Set<String> assuredBindingNames, boolean bindingSetAssignment) {
+			this.estimate = estimate;
+			this.vars = Collections.unmodifiableList(new ArrayList<>(vars));
+			this.bindingNames = Collections.unmodifiableSet(new HashSet<>(bindingNames));
+			this.assuredBindingNames = Collections.unmodifiableSet(new HashSet<>(assuredBindingNames));
+			this.bindingSetAssignment = bindingSetAssignment;
+		}
+	}
+
+	private static final class PlannerVar {
+		private final String name;
+		private final boolean constant;
+
+		private PlannerVar(String name, boolean constant) {
+			this.name = name;
+			this.constant = constant;
+		}
+	}
+
 	private static final class JoinStepEstimate {
 		private final double rows;
 		private final Map<String, Double> vars;
@@ -3139,17 +3355,18 @@ public class SketchBasedJoinEstimator {
 		private final List<Integer> order;
 		private final double rows;
 		private final double totalWork;
+		private final double highestTupleCost;
+		private final Set<String> boundVars;
 		private final Map<String, Double> varDistinct;
 
-		private JoinPlannerState(List<Integer> order, double rows, double totalWork, Map<String, Double> varDistinct) {
+		private JoinPlannerState(List<Integer> order, double rows, double totalWork, double highestTupleCost,
+				Set<String> boundVars, Map<String, Double> varDistinct) {
 			this.order = Collections.unmodifiableList(new ArrayList<>(order));
 			this.rows = rows;
 			this.totalWork = totalWork;
+			this.highestTupleCost = highestTupleCost;
+			this.boundVars = Collections.unmodifiableSet(new HashSet<>(boundVars));
 			this.varDistinct = Collections.unmodifiableMap(new HashMap<>(varDistinct));
-		}
-
-		private static JoinPlannerState single(int index, TuplePlanEstimate estimate) {
-			return new JoinPlannerState(List.of(index), estimate.rows, estimate.rows, estimate.varDistinct);
 		}
 
 		private TuplePlanEstimate toEstimate() {
