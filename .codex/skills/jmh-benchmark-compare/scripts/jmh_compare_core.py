@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import itertools
 import math
 import re
 from dataclasses import dataclass
@@ -118,8 +119,26 @@ def parse_row_split(line: str, columns: Sequence[str]) -> Optional[Dict[str, str
     return {col: part.strip() for col, part in zip(columns, parts)}
 
 
-def parse_row_tokens(line: str, columns: Sequence[str]) -> Optional[Dict[str, str]]:
-    parts = line.strip().split()
+def is_int_token(text: str) -> bool:
+    return bool(re.fullmatch(r"[+-]?\d+", text or ""))
+
+
+def has_valid_metric_values(row: Dict[str, str], columns: Sequence[str]) -> bool:
+    for col in columns:
+        value = row.get(col, "")
+        if col == "Score":
+            if extract_numeric(value) is None:
+                return False
+        elif col == "Cnt" and value:
+            if not is_int_token(value):
+                return False
+        elif col == "Error" and value:
+            if extract_numeric(value) is None:
+                return False
+    return True
+
+
+def map_parts_to_columns(parts: Sequence[str], columns: Sequence[str]) -> Optional[Dict[str, str]]:
     if len(parts) < len(columns):
         return None
     overflow = len(parts) - len(columns)
@@ -127,6 +146,26 @@ def parse_row_tokens(line: str, columns: Sequence[str]) -> Optional[Dict[str, st
     for idx, col in enumerate(columns[1:], start=1):
         row[col] = parts[overflow + idx]
     return row
+
+
+def parse_row_with_optional_metrics(parts: Sequence[str], columns: Sequence[str]) -> Optional[Dict[str, str]]:
+    optional_positions = [idx for idx, col in enumerate(columns) if col in {"Cnt", "Error"}]
+    for drop_count in range(0, len(optional_positions) + 1):
+        for drop_positions in itertools.combinations(optional_positions, drop_count):
+            reduced_columns = [col for idx, col in enumerate(columns) if idx not in drop_positions]
+            row = map_parts_to_columns(parts, reduced_columns)
+            if row is None or not has_valid_metric_values(row, reduced_columns):
+                continue
+            full_row = {col: "" for col in columns}
+            full_row.update(row)
+            return full_row
+
+    return None
+
+
+def parse_row_tokens(line: str, columns: Sequence[str]) -> Optional[Dict[str, str]]:
+    parts = [part for part in line.strip().split() if part != "±"]
+    return parse_row_with_optional_metrics(parts, columns)
 
 
 def parse_timestamp_from_filename(name: str) -> Optional[dt.datetime]:
@@ -195,11 +234,11 @@ def parse_file(path: Path, label: str, id_columns: Optional[str], timestamp_sour
             continue
         row = parse_row(line, specs)
         split_row = parse_row_split(line, columns)
-        if split_row is not None and extract_numeric(split_row.get("Score", "")) is not None:
+        if split_row is not None and has_valid_metric_values(split_row, columns):
             row = split_row
         else:
             token_row = parse_row_tokens(line, columns)
-            if token_row is not None and extract_numeric(token_row.get("Score", "")) is not None:
+            if token_row is not None and has_valid_metric_values(token_row, columns):
                 row = token_row
         if not row.get("Benchmark"):
             if saw_data:
@@ -293,6 +332,49 @@ def build_overlap_keys(files: List[ParsedFile], overlap_mode: str) -> List[Tuple
     return sorted(keys)
 
 
+def build_overlap_keys_from_maps(
+    score_maps: Sequence[Dict[Tuple[str, ...], float]], overlap_mode: str
+) -> List[Tuple[str, ...]]:
+    key_sets = [set(score_map.keys()) for score_map in score_maps]
+    if overlap_mode == "all":
+        keys = set.intersection(*key_sets)
+    else:
+        counts: Dict[Tuple[str, ...], int] = {}
+        for keys_set in key_sets:
+            for key in keys_set:
+                counts[key] = counts.get(key, 0) + 1
+        keys = {key for key, count in counts.items() if count >= 2}
+    return sorted(keys)
+
+
+def derive_comparison_key_columns(files: List[ParsedFile], preferred_order: Optional[Sequence[str]] = None) -> List[str]:
+    preferred = list(preferred_order) if preferred_order else files[0].key_columns
+    preferred = [col for col in preferred if col not in METRIC_COLUMNS]
+    shared = [col for col in preferred if all(col in file_entry.columns for file_entry in files)]
+    if shared:
+        return shared
+
+    fallback = [col for col in files[0].columns if col not in METRIC_COLUMNS]
+    shared_fallback = [col for col in fallback if all(col in file_entry.columns for file_entry in files)]
+    if shared_fallback:
+        return shared_fallback
+
+    raise ValueError("No common key columns found across files.")
+
+
+def rekey_file(file_entry: ParsedFile, key_columns: Sequence[str]) -> Tuple[Dict[Tuple[str, ...], float], Dict[Tuple[str, ...], Dict[str, str]]]:
+    score_by_key: Dict[Tuple[str, ...], float] = {}
+    row_by_key: Dict[Tuple[str, ...], Dict[str, str]] = {}
+    for row in file_entry.rows:
+        key = tuple(row.get(col, "") for col in key_columns)
+        score = extract_numeric(row.get("Score", ""))
+        if score is None:
+            continue
+        score_by_key[key] = score
+        row_by_key[key] = row
+    return score_by_key, row_by_key
+
+
 def build_comparison_table(
     files: List[ParsedFile],
     baseline: ParsedFile,
@@ -301,7 +383,7 @@ def build_comparison_table(
     regressions_over_pct: Optional[float],
     direction_flag: str,
 ) -> TableData:
-    key_columns = baseline.key_columns
+    key_columns = derive_comparison_key_columns(files, baseline.key_columns)
     score_columns = [f"Score [{f.label}]" for f in files]
     compare_targets = [f for f in files if f.label != baseline.label]
     diff_columns = [f"Diff Score [{t.label} - {baseline.label}]" for t in compare_targets]
@@ -309,23 +391,28 @@ def build_comparison_table(
     status_columns = [f"Status [{t.label} vs {baseline.label}]" for t in compare_targets]
     columns = key_columns + score_columns + diff_columns + pct_columns + status_columns
     rows: List[Dict[str, object]] = []
+    score_maps: Dict[str, Dict[Tuple[str, ...], float]] = {}
+    row_maps: Dict[str, Dict[Tuple[str, ...], Dict[str, str]]] = {}
+    for file_entry in files:
+        score_maps[file_entry.label], row_maps[file_entry.label] = rekey_file(file_entry, key_columns)
+    overlap_keys = build_overlap_keys_from_maps([score_maps[file_entry.label] for file_entry in files], overlap_mode)
 
-    for key in build_overlap_keys(files, overlap_mode):
+    for key in overlap_keys:
         row: Dict[str, object] = {}
         status_by_column: Dict[str, str] = {}
         for idx, col in enumerate(key_columns):
             row[col] = key[idx]
         for file_entry, score_col in zip(files, score_columns):
-            row[score_col] = file_entry.score_by_key.get(key)
+            row[score_col] = score_maps[file_entry.label].get(key)
 
-        base_score = baseline.score_by_key.get(key)
-        base_row = baseline.row_by_key.get(key, {})
+        base_score = score_maps[baseline.label].get(key)
+        base_row = row_maps[baseline.label].get(key, {})
         direction = score_direction(base_row.get("Mode", ""), base_row.get("Units", ""), direction_flag)
         max_abs_pct = 0.0
         has_regression_over = False
 
         for target, diff_col, pct_col, status_col in zip(compare_targets, diff_columns, pct_columns, status_columns):
-            target_score = target.score_by_key.get(key)
+            target_score = score_maps[target.label].get(key)
             if base_score is None or target_score is None:
                 diff = None
                 pct = None
@@ -400,7 +487,12 @@ def build_timeline_table(
     regression_threshold: float,
 ) -> TableData:
     ordered = sorted(files, key=lambda f: (f.timestamp, f.label))
-    keys = build_overlap_keys(ordered, overlap_mode)
+    key_columns = derive_comparison_key_columns(ordered, key_columns)
+    score_maps: Dict[str, Dict[Tuple[str, ...], float]] = {}
+    row_maps: Dict[str, Dict[Tuple[str, ...], Dict[str, str]]] = {}
+    for file_entry in ordered:
+        score_maps[file_entry.label], row_maps[file_entry.label] = rekey_file(file_entry, key_columns)
+    keys = build_overlap_keys_from_maps([score_maps[file_entry.label] for file_entry in ordered], overlap_mode)
     threshold_col = f"Regressions > {regression_threshold:.3f}%"
     columns = key_columns + [
         "First Timestamp",
@@ -428,10 +520,10 @@ def build_timeline_table(
     for key in keys:
         series = []
         for file_entry in ordered:
-            score = file_entry.score_by_key.get(key)
+            score = score_maps[file_entry.label].get(key)
             if score is None:
                 continue
-            row = file_entry.row_by_key.get(key, {})
+            row = row_maps[file_entry.label].get(key, {})
             direction = score_direction(row.get("Mode", ""), row.get("Units", ""), direction_flag)
             series.append((file_entry.timestamp, score, direction))
         if len(series) < 2:

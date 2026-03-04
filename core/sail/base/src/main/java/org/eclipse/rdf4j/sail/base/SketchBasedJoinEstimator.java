@@ -2847,6 +2847,11 @@ public class SketchBasedJoinEstimator {
 
 		List<TupleExpr> expressions = List.copyOf(args);
 		Set<String> bound = initiallyBoundVars == null ? Collections.emptySet() : Set.copyOf(initiallyBoundVars);
+		Optional<JoinOrderPlanner.JoinOrderPlan> pairExpansionPlan = planJoinOrderByPairExpansion(expressions, bound);
+		if (pairExpansionPlan.isPresent()) {
+			return pairExpansionPlan;
+		}
+
 		List<PlannerTuple> tuples = new ArrayList<>(expressions.size());
 		for (TupleExpr tupleExpr : expressions) {
 			PlannerTuple tuple = toPlannerTuple(tupleExpr, bound);
@@ -2875,6 +2880,203 @@ public class SketchBasedJoinEstimator {
 		}
 
 		return Optional.of(new JoinOrderPlanner.JoinOrderPlan(orderedArgs, state.rows, state.totalWork));
+	}
+
+	private Optional<JoinOrderPlanner.JoinOrderPlan> planJoinOrderByPairExpansion(List<TupleExpr> expressions,
+			Set<String> initiallyBoundVars) {
+		int size = expressions.size();
+		if (size == 0) {
+			return Optional.empty();
+		}
+		if (size == 1) {
+			double rows = estimatePlannerPrefixRows(expressions, List.of(0), initiallyBoundVars,
+					new HashMap<>());
+			if (rows < 0.0d) {
+				return Optional.empty();
+			}
+			return Optional.of(new JoinOrderPlanner.JoinOrderPlan(List.of(expressions.get(0)), rows, rows));
+		}
+
+		Map<List<Integer>, Double> prefixCostCache = new HashMap<>();
+		double[] singletonRows = new double[size];
+		for (int i = 0; i < size; i++) {
+			double rows = estimatePlannerPrefixRows(expressions, List.of(i), initiallyBoundVars, prefixCostCache);
+			if (rows < 0.0d) {
+				return Optional.empty();
+			}
+			singletonRows[i] = rows;
+		}
+
+		int bestPairLeft = -1;
+		int bestPairRight = -1;
+		double bestPairRows = Double.MAX_VALUE;
+		int bestConnectedPairLeft = -1;
+		int bestConnectedPairRight = -1;
+		double bestConnectedPairRows = Double.MAX_VALUE;
+		for (int leftIndex = 0; leftIndex < size; leftIndex++) {
+			for (int rightIndex = leftIndex + 1; rightIndex < size; rightIndex++) {
+				int first = singletonRows[leftIndex] <= singletonRows[rightIndex] ? leftIndex : rightIndex;
+				int second = first == leftIndex ? rightIndex : leftIndex;
+				double pairRows = estimatePlannerPrefixRows(expressions, List.of(first, second), initiallyBoundVars,
+						prefixCostCache);
+				if (pairRows < 0.0d) {
+					continue;
+				}
+
+				boolean betterPair = bestPairLeft < 0 || pairRows < bestPairRows;
+				if (!betterPair && Double.compare(pairRows, bestPairRows) == 0) {
+					int singletonComparison = Double.compare(singletonRows[first], singletonRows[bestPairLeft]);
+					if (singletonComparison < 0) {
+						betterPair = true;
+					} else if (singletonComparison == 0) {
+						int firstIndexComparison = Integer.compare(first, bestPairLeft);
+						if (firstIndexComparison < 0
+								|| (firstIndexComparison == 0 && Integer.compare(second, bestPairRight) < 0)) {
+							betterPair = true;
+						}
+					}
+				}
+
+				if (betterPair) {
+					bestPairLeft = first;
+					bestPairRight = second;
+					bestPairRows = pairRows;
+				}
+
+				if (sharesJoinVariable(expressions.get(first), expressions.get(second))) {
+					boolean betterConnectedPair = bestConnectedPairLeft < 0 || pairRows < bestConnectedPairRows;
+					if (!betterConnectedPair && Double.compare(pairRows, bestConnectedPairRows) == 0) {
+						int singletonComparison = Double.compare(singletonRows[first],
+								singletonRows[bestConnectedPairLeft]);
+						if (singletonComparison < 0) {
+							betterConnectedPair = true;
+						} else if (singletonComparison == 0) {
+							int firstIndexComparison = Integer.compare(first, bestConnectedPairLeft);
+							if (firstIndexComparison < 0
+									|| (firstIndexComparison == 0
+											&& Integer.compare(second, bestConnectedPairRight) < 0)) {
+								betterConnectedPair = true;
+							}
+						}
+					}
+					if (betterConnectedPair) {
+						bestConnectedPairLeft = first;
+						bestConnectedPairRight = second;
+						bestConnectedPairRows = pairRows;
+					}
+				}
+			}
+		}
+		if (bestConnectedPairLeft >= 0) {
+			bestPairLeft = bestConnectedPairLeft;
+			bestPairRight = bestConnectedPairRight;
+			bestPairRows = bestConnectedPairRows;
+		}
+		if (bestPairLeft < 0) {
+			return Optional.empty();
+		}
+
+		boolean[] used = new boolean[size];
+		used[bestPairLeft] = true;
+		used[bestPairRight] = true;
+		List<Integer> order = new ArrayList<>(size);
+		order.add(bestPairLeft);
+		order.add(bestPairRight);
+		double finalRows = bestPairRows;
+		double totalWork = singletonRows[bestPairLeft] + bestPairRows;
+
+		while (order.size() < size) {
+			int bestNext = -1;
+			double bestPrefixRows = Double.MAX_VALUE;
+			for (int candidate = 0; candidate < size; candidate++) {
+				if (used[candidate]) {
+					continue;
+				}
+				List<Integer> candidateOrder = new ArrayList<>(order);
+				candidateOrder.add(candidate);
+				double candidateRows = estimatePlannerPrefixRows(expressions, candidateOrder, initiallyBoundVars,
+						prefixCostCache);
+				if (candidateRows < 0.0d) {
+					continue;
+				}
+
+				boolean betterCandidate = bestNext < 0 || candidateRows < bestPrefixRows;
+				if (!betterCandidate && Double.compare(candidateRows, bestPrefixRows) == 0) {
+					int singletonComparison = Double.compare(singletonRows[candidate], singletonRows[bestNext]);
+					if (singletonComparison < 0
+							|| (singletonComparison == 0 && Integer.compare(candidate, bestNext) < 0)) {
+						betterCandidate = true;
+					}
+				}
+
+				if (betterCandidate) {
+					bestNext = candidate;
+					bestPrefixRows = candidateRows;
+				}
+			}
+
+			if (bestNext < 0) {
+				return Optional.empty();
+			}
+			used[bestNext] = true;
+			order.add(bestNext);
+			finalRows = bestPrefixRows;
+			totalWork += bestPrefixRows;
+		}
+
+		return Optional.of(new JoinOrderPlanner.JoinOrderPlan(tupleExprsForOrder(expressions, order), finalRows,
+				totalWork));
+	}
+
+	private boolean sharesJoinVariable(TupleExpr left, TupleExpr right) {
+		Set<String> leftBindings = left.getBindingNames();
+		if (leftBindings == null || leftBindings.isEmpty()) {
+			return false;
+		}
+		Set<String> rightBindings = right.getBindingNames();
+		if (rightBindings == null || rightBindings.isEmpty()) {
+			return false;
+		}
+		for (String leftBinding : leftBindings) {
+			if (rightBindings.contains(leftBinding)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private double estimatePlannerPrefixRows(List<TupleExpr> expressions, List<Integer> order,
+			Set<String> initiallyBoundVars, Map<List<Integer>, Double> prefixCostCache) {
+		List<Integer> cacheKey = List.copyOf(order);
+		Double cached = prefixCostCache.get(cacheKey);
+		if (cached != null) {
+			return cached;
+		}
+
+		List<TupleExpr> orderedTupleExprs = tupleExprsForOrder(expressions, cacheKey);
+		double rows = estimatePlannerListRows(orderedTupleExprs, initiallyBoundVars);
+		if (!Double.isFinite(rows) || rows < 0.0d) {
+			prefixCostCache.put(cacheKey, -1.0d);
+			return -1.0d;
+		}
+		rows = normalizeRows(rows);
+		prefixCostCache.put(cacheKey, rows);
+		return rows;
+	}
+
+	private double estimatePlannerListRows(List<TupleExpr> orderedTupleExprs, Set<String> initiallyBoundVars) {
+		if (initiallyBoundVars == null || initiallyBoundVars.isEmpty()) {
+			return cardinality(orderedTupleExprs);
+		}
+		return cardinalityWithInitiallyBoundVars(orderedTupleExprs, initiallyBoundVars);
+	}
+
+	private List<TupleExpr> tupleExprsForOrder(List<TupleExpr> expressions, List<Integer> order) {
+		List<TupleExpr> orderedTupleExprs = new ArrayList<>(order.size());
+		for (Integer index : order) {
+			orderedTupleExprs.add(expressions.get(index));
+		}
+		return orderedTupleExprs;
 	}
 
 	private Optional<JoinPlannerState> planJoinOrderGreedy(List<PlannerTuple> tuples) {
@@ -3344,16 +3546,25 @@ public class SketchBasedJoinEstimator {
 	}
 
 	public double cardinality(List<TupleExpr> tupleExprs) {
+		return cardinalityWithInitiallyBoundVars(tupleExprs, Collections.emptySet());
+	}
+
+	private double cardinalityWithInitiallyBoundVars(List<TupleExpr> tupleExprs, Set<String> initiallyBoundVars) {
 		if (!isReady() || tupleExprs == null || tupleExprs.isEmpty()) {
 			return -1;
 		}
 
+		Set<String> bound = initiallyBoundVars == null || initiallyBoundVars.isEmpty() ? Collections.emptySet()
+				: Set.copyOf(initiallyBoundVars);
 		TuplePlanEstimate currentEstimate = null;
 		TupleExpr currentExpr = null;
 		for (TupleExpr tupleExpr : tupleExprs) {
 			TuplePlanEstimate nextEstimate = estimateTupleExprPlan(tupleExpr);
 			if (nextEstimate == null) {
 				return -1.0d;
+			}
+			if (!bound.isEmpty()) {
+				nextEstimate = applyInitiallyBoundVars(nextEstimate, bound);
 			}
 
 			if (currentEstimate == null) {

@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -498,6 +499,64 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				"Expected cardinality(Join) to delegate to cardinality(List) for flattenable join trees");
 	}
 
+	@Test
+	void planJoinOrderUsesPairFirstThenPrefixExpansionCosting() {
+		StubSailStore store = new StubSailStore();
+		IRI pA = VF.createIRI("urn:pA");
+		IRI pB = VF.createIRI("urn:pB");
+		IRI pC = VF.createIRI("urn:pC");
+		IRI pD = VF.createIRI("urn:pD");
+
+		for (int i = 0; i < 20; i++) {
+			Resource s = VF.createIRI("urn:s" + i);
+			store.add(VF.createStatement(s, pA, VF.createIRI("urn:a" + i)));
+			store.add(VF.createStatement(s, pB, VF.createIRI("urn:b" + i)));
+			store.add(VF.createStatement(s, pC, VF.createIRI("urn:c" + i)));
+			store.add(VF.createStatement(s, pD, VF.createIRI("urn:d" + i)));
+		}
+
+		Map<String, Double> prefixCosts = Map.ofEntries(
+				Map.entry("pA", 4.0d),
+				Map.entry("pB", 1.0d),
+				Map.entry("pC", 2.0d),
+				Map.entry("pD", 3.0d),
+				Map.entry("pB>pA", 5.0d),
+				Map.entry("pC>pA", 6.0d),
+				Map.entry("pD>pA", 7.0d),
+				Map.entry("pB>pC", 8.0d),
+				Map.entry("pB>pD", 9.0d),
+				Map.entry("pC>pD", 10.0d),
+				Map.entry("pB>pA>pC", 100.0d),
+				Map.entry("pB>pA>pD", 20.0d),
+				Map.entry("pB>pA>pD>pC", 50.0d),
+				Map.entry("pC>pA>pD", 2.0d),
+				Map.entry("pC>pA>pD>pB", 2.0d));
+
+		SketchBasedJoinEstimator estimator = new PrefixCostSketchBasedJoinEstimator(store, config(), prefixCosts);
+		estimator.rebuildOnceSlow();
+
+		StatementPattern a = pattern("s", pA, "a");
+		StatementPattern b = pattern("s", pB, "b");
+		StatementPattern c = pattern("s", pC, "c");
+		StatementPattern d = pattern("s", pD, "d");
+		List<TupleExpr> args = List.of(a, b, c, d);
+
+		assertPairExpansionOrder(args, estimator, JoinOrderPlanner.Algorithm.GREEDY);
+		assertPairExpansionOrder(args, estimator, JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+	}
+
+	private static void assertPairExpansionOrder(List<TupleExpr> args, SketchBasedJoinEstimator estimator,
+			JoinOrderPlanner.Algorithm algorithm) {
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(), algorithm);
+		assertTrue(plan.isPresent(), "Expected planner to produce a plan for " + algorithm);
+		List<TupleExpr> ordered = plan.get().getOrderedArgs();
+		assertEquals(args.get(1), ordered.get(0),
+				"Expected pair-first rule to start with cheaper tuple from best pair");
+		assertEquals(args.get(0), ordered.get(1), "Expected best pair to be retained as first prefix");
+		assertEquals(args.get(3), ordered.get(2), "Expected cheapest 3-prefix extension to be chosen next");
+		assertEquals(args.get(2), ordered.get(3), "Expected final tuple to be the remaining extension");
+	}
+
 	private static void assertConnectedExpansion(List<TupleExpr> args, BindingSetAssignment disconnectedBindings,
 			JoinOrderPlanner.Algorithm algorithm,
 			SketchBasedJoinEstimator estimator) {
@@ -552,6 +611,63 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		@Override
 		public long getTotalCalls() {
 			return 0L;
+		}
+	}
+
+	private static final class PrefixCostSketchBasedJoinEstimator extends SketchBasedJoinEstimator {
+		private final Map<String, Double> prefixCosts;
+
+		private PrefixCostSketchBasedJoinEstimator(StubSailStore store, Config config,
+				Map<String, Double> prefixCosts) {
+			super(store, config);
+			this.prefixCosts = prefixCosts;
+		}
+
+		@Override
+		public double cardinality(List<TupleExpr> tupleExprs) {
+			return prefixCosts.getOrDefault(prefixKey(tupleExprs), 10_000.0d);
+		}
+
+		@Override
+		public double cardinality(Join node) {
+			List<TupleExpr> flattened = new java.util.ArrayList<>();
+			flatten(node, flattened);
+			return cardinality(flattened);
+		}
+
+		private static void flatten(TupleExpr tupleExpr, List<TupleExpr> flattened) {
+			if (tupleExpr instanceof Join) {
+				Join join = (Join) tupleExpr;
+				flatten(join.getLeftArg(), flattened);
+				flatten(join.getRightArg(), flattened);
+			} else {
+				flattened.add(tupleExpr);
+			}
+		}
+
+		private static String prefixKey(List<TupleExpr> tupleExprs) {
+			StringBuilder builder = new StringBuilder();
+			for (int i = 0; i < tupleExprs.size(); i++) {
+				if (i > 0) {
+					builder.append('>');
+				}
+				builder.append(label(tupleExprs.get(i)));
+			}
+			return builder.toString();
+		}
+
+		private static String label(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof Filter) {
+				return label(((Filter) tupleExpr).getArg());
+			}
+			if (tupleExpr instanceof StatementPattern) {
+				StatementPattern pattern = (StatementPattern) tupleExpr;
+				if (pattern.getPredicateVar() != null && pattern.getPredicateVar().hasValue()
+						&& pattern.getPredicateVar().getValue() instanceof IRI) {
+					return ((IRI) pattern.getPredicateVar().getValue()).getLocalName();
+				}
+			}
+			return tupleExpr.getClass().getSimpleName();
 		}
 	}
 
