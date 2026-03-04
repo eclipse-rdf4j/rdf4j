@@ -23,4 +23,7 @@ public interface RawEntrySource {
 	byte peekFlag();
 
 	void advance();
+
+	default void close() {
+	}
 }

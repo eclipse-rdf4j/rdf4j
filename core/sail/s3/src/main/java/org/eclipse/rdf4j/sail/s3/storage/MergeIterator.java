@@ -26,6 +26,7 @@ public class MergeIterator implements Iterator<long[]> {
 	private final byte expectedFlag;
 	private final long patternS, patternP, patternO, patternC;
 	private final PriorityQueue<SourceCursor> heap;
+	private final List<RawEntrySource> allSources;
 	private long[] next;
 
 	/**
@@ -46,6 +47,7 @@ public class MergeIterator implements Iterator<long[]> {
 		this.patternO = o;
 		this.patternC = c;
 		this.heap = new PriorityQueue<>();
+		this.allSources = sources;
 
 		for (int i = 0; i < sources.size(); i++) {
 			RawEntrySource src = sources.get(i);
@@ -100,6 +102,15 @@ public class MergeIterator implements Iterator<long[]> {
 
 			next = quad;
 			return;
+		}
+
+		// Heap exhausted — close all sources
+		closeSources();
+	}
+
+	private void closeSources() {
+		for (RawEntrySource source : allSources) {
+			source.close();
 		}
 	}
 

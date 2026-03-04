@@ -11,10 +11,9 @@
 package org.eclipse.rdf4j.sail.s3.storage;
 
 import java.nio.ByteBuffer;
-import java.util.HashSet;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
-import java.util.StringTokenizer;
+import java.util.function.ToLongFunction;
 
 /**
  * Manages index permutations for quad (S, P, O, C) storage. Each QuadIndex defines a field ordering (e.g. "spoc",
@@ -54,13 +53,6 @@ public class QuadIndex {
 	}
 
 	/**
-	 * Returns the field sequence for this index.
-	 */
-	public char[] getFieldSeq() {
-		return fieldSeq;
-	}
-
-	/**
 	 * Returns the field sequence as a String.
 	 */
 	public String getFieldSeqString() {
@@ -79,71 +71,16 @@ public class QuadIndex {
 	 * @return pattern score (0-4)
 	 */
 	public int getPatternScore(long subj, long pred, long obj, long context) {
+		long[] values = { subj, pred, obj, context };
 		int score = 0;
-		for (char field : fieldSeq) {
-			switch (field) {
-			case 's':
-				if (subj >= 0) {
-					score++;
-				} else {
-					return score;
-				}
-				break;
-			case 'p':
-				if (pred >= 0) {
-					score++;
-				} else {
-					return score;
-				}
-				break;
-			case 'o':
-				if (obj >= 0) {
-					score++;
-				} else {
-					return score;
-				}
-				break;
-			case 'c':
-				if (context >= 0) {
-					score++;
-				} else {
-					return score;
-				}
-				break;
-			default:
-				throw new IllegalStateException(
-						"Invalid character '" + field + "' in field sequence: " + new String(fieldSeq));
+		for (int idx : indexMap) {
+			if (values[idx] >= 0) {
+				score++;
+			} else {
+				return score;
 			}
 		}
 		return score;
-	}
-
-	/**
-	 * Writes a quad as varints in index order into the given buffer.
-	 *
-	 * @param bb      buffer for writing bytes
-	 * @param subj    subject ID
-	 * @param pred    predicate ID
-	 * @param obj     object ID
-	 * @param context context ID
-	 */
-	public void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		for (char field : fieldSeq) {
-			switch (field) {
-			case 's':
-				Varint.writeUnsigned(bb, subj);
-				break;
-			case 'p':
-				Varint.writeUnsigned(bb, pred);
-				break;
-			case 'o':
-				Varint.writeUnsigned(bb, obj);
-				break;
-			case 'c':
-				Varint.writeUnsigned(bb, context);
-				break;
-			}
-		}
 	}
 
 	/**
@@ -156,13 +93,14 @@ public class QuadIndex {
 	 * @return encoded byte array key
 	 */
 	public byte[] toKeyBytes(long subj, long pred, long obj, long context) {
+		long[] values = { subj, pred, obj, context };
 		int length = Varint.calcListLengthUnsigned(
-				getValueForField(fieldSeq[0], subj, pred, obj, context),
-				getValueForField(fieldSeq[1], subj, pred, obj, context),
-				getValueForField(fieldSeq[2], subj, pred, obj, context),
-				getValueForField(fieldSeq[3], subj, pred, obj, context));
+				values[indexMap[0]], values[indexMap[1]],
+				values[indexMap[2]], values[indexMap[3]]);
 		ByteBuffer bb = ByteBuffer.allocate(length);
-		toKey(bb, subj, pred, obj, context);
+		for (int idx : indexMap) {
+			Varint.writeUnsigned(bb, values[idx]);
+		}
 		return bb.array();
 	}
 
@@ -188,26 +126,7 @@ public class QuadIndex {
 	}
 
 	/**
-	 * Constructs the minimum key for a range scan. Unbound or zero-valued components become 0 (the lowest valid ID).
-	 * Context ID 0 is the default/null graph sentinel and maps to 0, which is correct for both exact and wildcard
-	 * scans.
-	 *
-	 * @param bb      buffer for writing bytes
-	 * @param subj    subject ID, or -1 for wildcard
-	 * @param pred    predicate ID, or -1 for wildcard
-	 * @param obj     object ID, or -1 for wildcard
-	 * @param context context ID, or -1 for wildcard (0 = default graph)
-	 */
-	public void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		toKey(bb,
-				subj <= 0 ? 0 : subj,
-				pred <= 0 ? 0 : pred,
-				obj <= 0 ? 0 : obj,
-				context <= 0 ? 0 : context);
-	}
-
-	/**
-	 * Constructs the minimum key as a byte array for a range scan.
+	 * Constructs the minimum key as a byte array for a range scan. Unbound or zero-valued components become 0.
 	 */
 	public byte[] getMinKeyBytes(long subj, long pred, long obj, long context) {
 		return toKeyBytes(
@@ -218,25 +137,7 @@ public class QuadIndex {
 	}
 
 	/**
-	 * Constructs the maximum key for a range scan. Unbound components (negative) become Long.MAX_VALUE. Context ID 0
-	 * (the default/null graph) is a valid bound value, not a wildcard.
-	 *
-	 * @param bb      buffer for writing bytes
-	 * @param subj    subject ID, or -1 for wildcard
-	 * @param pred    predicate ID, or -1 for wildcard
-	 * @param obj     object ID, or -1 for wildcard
-	 * @param context context ID, or -1 for wildcard (0 = default graph, a valid bound value)
-	 */
-	public void getMaxKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		toKey(bb,
-				subj < 0 ? Long.MAX_VALUE : subj,
-				pred < 0 ? Long.MAX_VALUE : pred,
-				obj < 0 ? Long.MAX_VALUE : obj,
-				context < 0 ? Long.MAX_VALUE : context);
-	}
-
-	/**
-	 * Constructs the maximum key as a byte array for a range scan.
+	 * Constructs the maximum key as a byte array for a range scan. Unbound components (negative) become Long.MAX_VALUE.
 	 */
 	public byte[] getMaxKeyBytes(long subj, long pred, long obj, long context) {
 		return toKeyBytes(
@@ -273,35 +174,6 @@ public class QuadIndex {
 	}
 
 	/**
-	 * Parses a comma/whitespace-separated list of index specifications. Each spec must consist of 4 characters: 's',
-	 * 'p', 'o' and 'c'.
-	 *
-	 * @param indexSpecStr a string like "spoc, posc, cosp"
-	 * @return a set of parsed index specifications
-	 * @throws IllegalArgumentException if any spec is invalid
-	 */
-	public static Set<String> parseIndexSpecList(String indexSpecStr) {
-		Set<String> indexes = new HashSet<>();
-
-		if (indexSpecStr != null) {
-			StringTokenizer tok = new StringTokenizer(indexSpecStr, ", \t");
-			while (tok.hasMoreTokens()) {
-				String index = tok.nextToken().toLowerCase();
-
-				if (index.length() != 4 || index.indexOf('s') == -1 || index.indexOf('p') == -1
-						|| index.indexOf('o') == -1 || index.indexOf('c') == -1) {
-					throw new IllegalArgumentException(
-							"Invalid value '" + index + "' in index specification: " + indexSpecStr);
-				}
-
-				indexes.add(index);
-			}
-		}
-
-		return indexes;
-	}
-
-	/**
 	 * Tests whether a decoded quad matches the given pattern. Unbound components (< 0) are treated as wildcards.
 	 *
 	 * @param quad a long[4] array in SPOC order
@@ -319,26 +191,49 @@ public class QuadIndex {
 	}
 
 	/**
-	 * Maps a field character ('s', 'p', 'o', 'c') to the corresponding array index (0-3).
+	 * Returns a comparator that orders {@link QuadEntry} objects according to this index's field sequence. Field
+	 * extractors are precomputed at construction time for efficient sorting.
 	 */
-	public static int fieldCharToIdx(char c) {
-		switch (c) {
-		case 's':
-			return SUBJ_IDX;
-		case 'p':
-			return PRED_IDX;
-		case 'o':
-			return OBJ_IDX;
-		case 'c':
-			return CONTEXT_IDX;
-		default:
-			throw new IllegalArgumentException("Invalid field: " + c);
-		}
+	public Comparator<QuadEntry> entryComparator() {
+		ToLongFunction<QuadEntry> e0 = extractorFor(indexMap[0]);
+		ToLongFunction<QuadEntry> e1 = extractorFor(indexMap[1]);
+		ToLongFunction<QuadEntry> e2 = extractorFor(indexMap[2]);
+		ToLongFunction<QuadEntry> e3 = extractorFor(indexMap[3]);
+		return (a, b) -> {
+			int cmp = Long.compare(e0.applyAsLong(a), e0.applyAsLong(b));
+			if (cmp != 0) {
+				return cmp;
+			}
+			cmp = Long.compare(e1.applyAsLong(a), e1.applyAsLong(b));
+			if (cmp != 0) {
+				return cmp;
+			}
+			cmp = Long.compare(e2.applyAsLong(a), e2.applyAsLong(b));
+			if (cmp != 0) {
+				return cmp;
+			}
+			return Long.compare(e3.applyAsLong(a), e3.applyAsLong(b));
+		};
 	}
 
 	@Override
 	public String toString() {
 		return fieldSeqString;
+	}
+
+	private static ToLongFunction<QuadEntry> extractorFor(int componentIndex) {
+		switch (componentIndex) {
+		case SUBJ_IDX:
+			return e -> e.subject;
+		case PRED_IDX:
+			return e -> e.predicate;
+		case OBJ_IDX:
+			return e -> e.object;
+		case CONTEXT_IDX:
+			return e -> e.context;
+		default:
+			throw new IllegalArgumentException("Invalid component index: " + componentIndex);
+		}
 	}
 
 	private static int[] buildIndexMap(char[] fieldSeq) {
@@ -363,20 +258,5 @@ public class QuadIndex {
 			}
 		}
 		return indexes;
-	}
-
-	private static long getValueForField(char field, long subj, long pred, long obj, long context) {
-		switch (field) {
-		case 's':
-			return subj;
-		case 'p':
-			return pred;
-		case 'o':
-			return obj;
-		case 'c':
-			return context;
-		default:
-			throw new IllegalArgumentException("Invalid field: " + field);
-		}
 	}
 }

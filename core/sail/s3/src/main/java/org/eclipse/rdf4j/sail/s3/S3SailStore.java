@@ -14,20 +14,20 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.s3.cache.TieredCache;
 import org.eclipse.rdf4j.sail.s3.config.S3StoreConfig;
+import org.eclipse.rdf4j.sail.s3.storage.BloomFilter;
 import org.eclipse.rdf4j.sail.s3.storage.Catalog;
 import org.eclipse.rdf4j.sail.s3.storage.CompactionPolicy;
 import org.eclipse.rdf4j.sail.s3.storage.Compactor;
@@ -84,6 +85,7 @@ class S3SailStore implements SailStore {
 	private static final Logger logger = LoggerFactory.getLogger(S3SailStore.class);
 
 	private static final QuadIndex SPOC_INDEX = new QuadIndex("spoc");
+	private static final QuadIndex CSPO_INDEX = new QuadIndex("cspo");
 	private static final List<QuadIndex> ALL_INDEXES;
 
 	static {
@@ -111,6 +113,9 @@ class S3SailStore implements SailStore {
 	private final TieredCache cache;
 	private final CompactionPolicy compactionPolicy;
 	private final Compactor compactor;
+	private final ExecutorService writeExecutor;
+	private final ExecutorService compactionExecutor;
+	private volatile CompletableFuture<Void> pendingCompaction;
 
 	/**
 	 * A lock to control concurrent access by {@link S3SailSink} to the stores.
@@ -159,6 +164,9 @@ class S3SailStore implements SailStore {
 
 			this.compactionPolicy = new CompactionPolicy();
 			this.compactor = new Compactor(objectStore, cache);
+			this.writeExecutor = Executors.newFixedThreadPool(
+					Math.min(ALL_INDEXES.size(), Runtime.getRuntime().availableProcessors()));
+			this.compactionExecutor = Executors.newSingleThreadExecutor();
 
 			// Deserialize value store and namespaces
 			if (catalog.getNextValueId() > 0) {
@@ -172,6 +180,8 @@ class S3SailStore implements SailStore {
 			this.cache = null;
 			this.compactionPolicy = null;
 			this.compactor = null;
+			this.writeExecutor = null;
+			this.compactionExecutor = null;
 		}
 	}
 
@@ -182,7 +192,7 @@ class S3SailStore implements SailStore {
 
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
-		return new S3EvaluationStatistics();
+		return new S3EvaluationStatistics(valueStore, catalog);
 	}
 
 	@Override
@@ -199,7 +209,18 @@ class S3SailStore implements SailStore {
 	public void close() throws SailException {
 		try {
 			if (objectStore != null) {
+				// Await any pending compaction before flushing
+				CompletableFuture<Void> compaction = pendingCompaction;
+				if (compaction != null) {
+					compaction.join();
+				}
 				flushToObjectStore();
+				if (writeExecutor != null) {
+					writeExecutor.shutdown();
+				}
+				if (compactionExecutor != null) {
+					compactionExecutor.shutdown();
+				}
 				if (cache != null) {
 					cache.close();
 				}
@@ -234,45 +255,77 @@ class S3SailStore implements SailStore {
 		frozen.freeze();
 		memTable = new MemTable(SPOC_INDEX);
 
-		List<long[]> allQuads = collectQuads(frozen);
-		QuadStats stats = QuadStats.fromQuads(allQuads);
-		writeParquetFiles(epoch, allQuads, stats);
+		List<QuadEntry> allEntries = collectEntries(frozen);
+		QuadStats stats = QuadStats.fromEntries(allEntries);
+		writeParquetFiles(epoch, allEntries, stats);
 
 		persistMetadata(epoch);
 		runCompactionIfNeeded();
 	}
 
-	private static List<long[]> collectQuads(MemTable frozen) {
-		List<long[]> allQuads = new ArrayList<>(frozen.size());
+	private static List<QuadEntry> collectEntries(MemTable frozen) {
+		List<QuadEntry> entries = new ArrayList<>(frozen.size());
 		long[] scratch = new long[4];
 		for (Map.Entry<byte[], byte[]> entry : frozen.getData().entrySet()) {
 			frozen.getIndex().keyToQuad(entry.getKey(), scratch);
-			allQuads.add(new long[] {
+			entries.add(new QuadEntry(
 					scratch[QuadIndex.SUBJ_IDX], scratch[QuadIndex.PRED_IDX],
 					scratch[QuadIndex.OBJ_IDX], scratch[QuadIndex.CONTEXT_IDX],
-					entry.getValue()[0]
-			});
+					entry.getValue()[0]));
 		}
-		return allQuads;
+		return entries;
 	}
 
-	private void writeParquetFiles(long epoch, List<long[]> allQuads, QuadStats stats) {
+	private void writeParquetFiles(long epoch, List<QuadEntry> allEntries, QuadStats stats) {
+		List<CompletableFuture<Void>> futures = new ArrayList<>(ALL_INDEXES.size());
 		for (QuadIndex sortIndex : ALL_INDEXES) {
-			String sortSuffix = sortIndex.getFieldSeqString();
-			List<QuadEntry> sorted = sortQuadEntries(allQuads, sortIndex);
+			futures.add(CompletableFuture.runAsync(() -> {
+				String sortSuffix = sortIndex.getFieldSeqString();
+				List<QuadEntry> sorted = new ArrayList<>(allEntries);
+				sorted.sort(sortIndex.entryComparator());
 
-			ParquetSchemas.SortOrder sortOrder = ParquetSchemas.SortOrder.fromSuffix(sortSuffix);
-			byte[] parquetData = ParquetFileBuilder.build(sorted, sortOrder);
+				ParquetSchemas.SortOrder sortOrder = ParquetSchemas.SortOrder.fromSuffix(sortSuffix);
+				byte[] parquetData = ParquetFileBuilder.build(sorted, sortOrder);
 
-			String s3Key = Catalog.dataKey(0, epoch, sortSuffix);
-			objectStore.put(s3Key, parquetData);
+				BloomFilter bloom = buildBloomFilter(sorted, sortSuffix);
 
-			if (cache != null) {
-				cache.writeThrough(s3Key, parquetData);
-			}
+				String s3Key = Catalog.dataKey(0, epoch, sortSuffix);
+				objectStore.put(s3Key, parquetData);
 
-			catalog.addFile(new Catalog.ParquetFileInfo(
-					s3Key, 0, sortSuffix, sorted.size(), epoch, parquetData.length, stats));
+				if (cache != null) {
+					cache.writeThrough(s3Key, parquetData);
+				}
+
+				catalog.addFile(new Catalog.ParquetFileInfo(
+						s3Key, 0, sortSuffix, sorted.size(), epoch, parquetData.length, stats, bloom));
+			}, writeExecutor));
+		}
+		CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
+	}
+
+	/**
+	 * Builds a bloom filter for the leading component of the given sort order.
+	 */
+	static BloomFilter buildBloomFilter(List<QuadEntry> entries, String sortSuffix) {
+		BloomFilter bloom = new BloomFilter(Math.max(1, entries.size()), 0.01);
+		for (QuadEntry entry : entries) {
+			bloom.add(leadingComponent(entry, sortSuffix));
+		}
+		return bloom;
+	}
+
+	private static long leadingComponent(QuadEntry entry, String sortSuffix) {
+		switch (sortSuffix.charAt(0)) {
+		case 's':
+			return entry.subject;
+		case 'o':
+			return entry.object;
+		case 'c':
+			return entry.context;
+		case 'p':
+			return entry.predicate;
+		default:
+			return entry.subject;
 		}
 	}
 
@@ -288,55 +341,54 @@ class S3SailStore implements SailStore {
 	}
 
 	/**
-	 * Sorts quad entries according to the given sort index.
-	 */
-	private static List<QuadEntry> sortQuadEntries(List<long[]> quads, QuadIndex sortIndex) {
-		List<long[]> sorted = new ArrayList<>(quads);
-		String seq = sortIndex.getFieldSeqString();
-		int i0 = QuadIndex.fieldCharToIdx(seq.charAt(0));
-		int i1 = QuadIndex.fieldCharToIdx(seq.charAt(1));
-		int i2 = QuadIndex.fieldCharToIdx(seq.charAt(2));
-		int i3 = QuadIndex.fieldCharToIdx(seq.charAt(3));
-		sorted.sort((a, b) -> {
-			int cmp = Long.compare(a[i0], b[i0]);
-			if (cmp != 0) {
-				return cmp;
-			}
-			cmp = Long.compare(a[i1], b[i1]);
-			if (cmp != 0) {
-				return cmp;
-			}
-			cmp = Long.compare(a[i2], b[i2]);
-			if (cmp != 0) {
-				return cmp;
-			}
-			return Long.compare(a[i3], b[i3]);
-		});
-
-		List<QuadEntry> result = new ArrayList<>(sorted.size());
-		for (long[] q : sorted) {
-			result.add(new QuadEntry(q[0], q[1], q[2], q[3], (byte) q[4]));
-		}
-		return result;
-	}
-
-	/**
-	 * Checks compaction triggers and runs compaction if needed.
+	 * Checks compaction triggers and submits compaction to the background executor if needed. If a compaction is
+	 * already running, skips to avoid queuing multiple compactions.
 	 */
 	private void runCompactionIfNeeded() {
 		if (compactionPolicy == null || compactor == null) {
 			return;
 		}
 
+		// Skip if a compaction is already running
+		CompletableFuture<Void> current = pendingCompaction;
+		if (current != null && !current.isDone()) {
+			return;
+		}
+
+		List<Catalog.ParquetFileInfo> filesSnapshot = catalog.getFiles();
+		boolean needsL0 = compactionPolicy.shouldCompact(filesSnapshot, 0);
+		boolean needsL1 = compactionPolicy.shouldCompact(filesSnapshot, 1);
+
+		if (!needsL0 && !needsL1) {
+			return;
+		}
+
+		pendingCompaction = CompletableFuture.runAsync(() -> {
+			try {
+				doCompaction();
+			} catch (Exception e) {
+				logger.error("Background compaction failed", e);
+			}
+		}, compactionExecutor);
+	}
+
+	private void doCompaction() {
 		List<Compactor.CompactionResult> results = new ArrayList<>();
-		List<Catalog.ParquetFileInfo> files = catalog.getFiles();
+
+		// Snapshot file list under synchronization
+		List<Catalog.ParquetFileInfo> files;
+		synchronized (catalog) {
+			files = catalog.getFiles();
+		}
 
 		// L0→L1 compaction
 		if (compactionPolicy.shouldCompact(files, 0)) {
 			List<Catalog.ParquetFileInfo> l0Files = CompactionPolicy.filesAtLevel(files, 0);
 			long compactEpoch = epochCounter.getAndIncrement();
 			results.add(compactor.compact(l0Files, 0, 1, compactEpoch, catalog));
-			files = catalog.getFiles();
+			synchronized (catalog) {
+				files = catalog.getFiles();
+			}
 		}
 
 		// L1→L2 compaction
@@ -348,9 +400,11 @@ class S3SailStore implements SailStore {
 
 		if (!results.isEmpty()) {
 			// Save catalog BEFORE deleting old files — crash-safe ordering
-			long epoch = epochCounter.getAndIncrement();
-			catalog.setEpoch(epoch);
-			catalog.save(objectStore, jsonMapper, epoch);
+			synchronized (catalog) {
+				long epoch = epochCounter.getAndIncrement();
+				catalog.setEpoch(epoch);
+				catalog.save(objectStore, jsonMapper, epoch);
+			}
 
 			// Now safe to delete old files
 			for (Compactor.CompactionResult result : results) {
@@ -373,7 +427,17 @@ class S3SailStore implements SailStore {
 	 */
 	private Iterator<long[]> queryQuads(long s, long p, long o, long c, boolean explicit) {
 		return hasPersistence()
-				? createMergedIterator(s, p, o, c, explicit)
+				? createMergedIterator(s, p, o, c, explicit, null)
+				: memTable.scan(s, p, o, c, explicit);
+	}
+
+	/**
+	 * Queries quads with a preferred index hint.
+	 */
+	private Iterator<long[]> queryQuads(long s, long p, long o, long c, boolean explicit,
+			QuadIndex preferredIndex) {
+		return hasPersistence()
+				? createMergedIterator(s, p, o, c, explicit, preferredIndex)
 				: memTable.scan(s, p, o, c, explicit);
 	}
 
@@ -452,12 +516,13 @@ class S3SailStore implements SailStore {
 	 * prunes files using catalog stats, and merges all sources.
 	 */
 	private Iterator<long[]> createMergedIterator(long subjID, long predID, long objID, long contextID,
-			boolean explicit) {
+			boolean explicit, QuadIndex preferredIndex) {
 
 		byte expectedFlag = explicit ? MemTable.FLAG_EXPLICIT : MemTable.FLAG_INFERRED;
 
-		// Select best index for the query pattern
-		QuadIndex bestIndex = QuadIndex.getBestIndex(ALL_INDEXES, subjID, predID, objID, contextID);
+		// Select best index for the query pattern, or use the preferred index if provided
+		QuadIndex bestIndex = preferredIndex != null ? preferredIndex
+				: QuadIndex.getBestIndex(ALL_INDEXES, subjID, predID, objID, contextID);
 		String sortSuffix = bestIndex.getFieldSeqString();
 
 		// Build sources: MemTable (newest) + Parquet files (newest epoch first)
@@ -473,17 +538,7 @@ class S3SailStore implements SailStore {
 				.toList();
 
 		for (Catalog.ParquetFileInfo fileInfo : sortOrderFiles) {
-			// Catalog-level pruning using per-file stats
-			if (subjID >= 0 && (subjID < fileInfo.getMinSubject() || subjID > fileInfo.getMaxSubject())) {
-				continue;
-			}
-			if (predID >= 0 && (predID < fileInfo.getMinPredicate() || predID > fileInfo.getMaxPredicate())) {
-				continue;
-			}
-			if (objID >= 0 && (objID < fileInfo.getMinObject() || objID > fileInfo.getMaxObject())) {
-				continue;
-			}
-			if (contextID >= 0 && (contextID < fileInfo.getMinContext() || contextID > fileInfo.getMaxContext())) {
+			if (!fileInfo.mayContain(subjID, predID, objID, contextID)) {
 				continue;
 			}
 
@@ -737,29 +792,45 @@ class S3SailStore implements SailStore {
 
 		@Override
 		public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
-			Iterator<long[]> allQuads = queryQuads(-1, -1, -1, -1, explicit);
+			// Use CSPO index where context is the leading field, so context values are grouped
+			Iterator<long[]> allQuads = queryQuads(-1, -1, -1, -1, explicit, CSPO_INDEX);
 
-			return new FilterIteration<Resource>(
-					new ConvertingIteration<long[], Resource>(
-							new CloseableIteratorIteration<>(allQuads)) {
-						@Override
-						protected Resource convert(long[] quad) {
-							if (quad[3] == 0) {
-								return null;
+			return new CloseableIteration<>() {
+				private long lastContextId = Long.MIN_VALUE;
+				private Resource nextCtx = advance();
+
+				private Resource advance() {
+					while (allQuads.hasNext()) {
+						long[] quad = allQuads.next();
+						long ctxId = quad[3];
+						if (ctxId != 0 && ctxId != lastContextId) {
+							lastContextId = ctxId;
+							Value val = valueStore.getValue(ctxId);
+							if (val instanceof Resource) {
+								return (Resource) val;
 							}
-							Value val = valueStore.getValue(quad[3]);
-							return val instanceof Resource ? (Resource) val : null;
 						}
-					}) {
-				private final Set<Resource> seen = new HashSet<>();
-
-				@Override
-				protected boolean accept(Resource ctx) {
-					return ctx != null && seen.add(ctx);
+					}
+					return null;
 				}
 
 				@Override
-				protected void handleClose() {
+				public boolean hasNext() {
+					return nextCtx != null;
+				}
+
+				@Override
+				public Resource next() {
+					if (nextCtx == null) {
+						throw new java.util.NoSuchElementException();
+					}
+					Resource result = nextCtx;
+					nextCtx = advance();
+					return result;
+				}
+
+				@Override
+				public void close() {
 					// no-op
 				}
 			};

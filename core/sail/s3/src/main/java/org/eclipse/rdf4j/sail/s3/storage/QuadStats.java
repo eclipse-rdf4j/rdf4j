@@ -37,26 +37,15 @@ public final class QuadStats {
 	}
 
 	/**
-	 * Computes min/max stats from a list of long[5] arrays (s, p, o, c, flag). Tombstones (flag == 0) are excluded so
-	 * that deleted entries do not inflate the range statistics used for pruning.
-	 */
-	public static QuadStats fromQuads(List<long[]> quads) {
-		Accumulator acc = new Accumulator();
-		for (long[] q : quads) {
-			if (q[4] != MemTable.FLAG_TOMBSTONE) {
-				acc.add(q[0], q[1], q[2], q[3]);
-			}
-		}
-		return acc.build();
-	}
-
-	/**
-	 * Computes min/max stats from a list of QuadEntry objects.
+	 * Computes min/max stats from a list of QuadEntry objects. Tombstones are excluded so that deleted entries do not
+	 * inflate the range statistics used for pruning.
 	 */
 	public static QuadStats fromEntries(List<QuadEntry> entries) {
 		Accumulator acc = new Accumulator();
 		for (QuadEntry e : entries) {
-			acc.add(e.subject, e.predicate, e.object, e.context);
+			if (e.flag != MemTable.FLAG_TOMBSTONE) {
+				acc.add(e.subject, e.predicate, e.object, e.context);
+			}
 		}
 		return acc.build();
 	}

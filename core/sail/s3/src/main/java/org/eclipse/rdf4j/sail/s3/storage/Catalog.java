@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -246,6 +247,11 @@ public class Catalog {
 		@JsonProperty("maxContext")
 		private long maxContext;
 
+		@JsonProperty("bloomFilter")
+		private String bloomFilterBase64;
+
+		private transient BloomFilter bloomFilter;
+
 		public ParquetFileInfo() {
 		}
 
@@ -254,6 +260,12 @@ public class Catalog {
 			this(s3Key, level, sortOrder, rowCount, epoch, sizeBytes,
 					stats.minSubject, stats.maxSubject, stats.minPredicate, stats.maxPredicate,
 					stats.minObject, stats.maxObject, stats.minContext, stats.maxContext);
+		}
+
+		public ParquetFileInfo(String s3Key, int level, String sortOrder, long rowCount,
+				long epoch, long sizeBytes, QuadStats stats, BloomFilter bloomFilter) {
+			this(s3Key, level, sortOrder, rowCount, epoch, sizeBytes, stats);
+			setBloomFilter(bloomFilter);
 		}
 
 		ParquetFileInfo(String s3Key, int level, String sortOrder, long rowCount,
@@ -388,6 +400,70 @@ public class Catalog {
 
 		public void setMaxContext(long maxContext) {
 			this.maxContext = maxContext;
+		}
+
+		@JsonIgnore
+		public BloomFilter getBloomFilter() {
+			if (bloomFilter == null && bloomFilterBase64 != null) {
+				bloomFilter = BloomFilter.fromBase64(bloomFilterBase64);
+			}
+			return bloomFilter;
+		}
+
+		public void setBloomFilter(BloomFilter filter) {
+			this.bloomFilter = filter;
+			this.bloomFilterBase64 = filter != null ? filter.toBase64() : null;
+		}
+
+		/**
+		 * Returns the leading component's filter value for this file's sort order. SPOC → subject, OPSC → object, CSPO
+		 * → context.
+		 */
+		private long getLeadingFilterValue(long s, long p, long o, long c) {
+			if (sortOrder == null) {
+				return -1;
+			}
+			switch (sortOrder.charAt(0)) {
+			case 's':
+				return s;
+			case 'o':
+				return o;
+			case 'c':
+				return c;
+			case 'p':
+				return p;
+			default:
+				return -1;
+			}
+		}
+
+		/**
+		 * Tests whether this file's statistics allow it to contain a quad matching the given pattern. Bound components
+		 * (>= 0) are checked against the file's min/max range; unbound components (< 0) are wildcards. Also checks the
+		 * bloom filter for the leading component if available.
+		 */
+		public boolean mayContain(long s, long p, long o, long c) {
+			if (s >= 0 && (s < minSubject || s > maxSubject)) {
+				return false;
+			}
+			if (p >= 0 && (p < minPredicate || p > maxPredicate)) {
+				return false;
+			}
+			if (o >= 0 && (o < minObject || o > maxObject)) {
+				return false;
+			}
+			if (c >= 0 && (c < minContext || c > maxContext)) {
+				return false;
+			}
+			// Check bloom filter for the leading component
+			BloomFilter bf = getBloomFilter();
+			if (bf != null) {
+				long leadingVal = getLeadingFilterValue(s, p, o, c);
+				if (leadingVal >= 0 && !bf.mightContain(leadingVal)) {
+					return false;
+				}
+			}
+			return true;
 		}
 	}
 }
