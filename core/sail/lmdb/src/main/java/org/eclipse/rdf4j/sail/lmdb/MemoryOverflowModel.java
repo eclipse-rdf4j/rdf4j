@@ -95,4 +95,14 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 		}
 	}
 
+	@Override
+	public void close() {
+		try {
+			closeOverflowModel(disk);
+		} finally {
+			super.close();
+		}
+
+	}
+
 }

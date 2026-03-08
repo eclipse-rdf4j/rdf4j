@@ -76,4 +76,13 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 			store = null;
 		}
 	}
+
+	@Override
+	public void close() {
+		try {
+			closeOverflowModel(disk);
+		} finally {
+			super.close();
+		}
+	}
 }
