@@ -578,11 +578,15 @@ class SailSourceBranch implements SailSource {
 			semaphore.lock();
 			if (changes.size() == 1 && !changes.getFirst().isRefback() && sink instanceof Changeset
 					&& !isChanged((Changeset) sink)) {
-				// Copy into the destination Changeset so any prepended readers keep owning their original models.
 				Changeset dst = (Changeset) sink;
 				Changeset change = changes.pop();
-				flush(change, dst);
-				closeDetachedChangesetIfUnreferenced(change);
+				if (isReferencedByPendingChangeset(change)) {
+					// Pending changesets still prepending this change need to keep their original models.
+					flush(change, dst);
+					closeDetachedChangesetIfUnreferenced(change);
+				} else {
+					dst.setChangeset(change);
+				}
 			} else {
 				Iterator<Changeset> iter = changes.iterator();
 				while (iter.hasNext()) {
