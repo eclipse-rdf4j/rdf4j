@@ -173,8 +173,8 @@ if ${enable_jfr}; then
         jfr_notice="JFR profiling enabled: enforcing warmup=0, measurement=10 iterations of 10s, forks=1. Recording will be written to ${jfr_output}."
 fi
 
-mvn_cmd_parallel=(mvn "-T" "2C" "-pl" "${module}" "-am" "-P" "benchmarks" "-DskipTests" install)
-mvn_cmd_single_threaded=(mvn "-pl" "${module}" "-am" "-P" "benchmarks" "-DskipTests" install)
+mvn_cmd_parallel=(mvn "-T" "2C" "-pl" "${module}" "-am" "-P" "benchmarks" "-DskipTests" package)
+mvn_cmd_single_threaded=(mvn "-pl" "${module}" "-am" "-P" "benchmarks" "-DskipTests" package)
 
 benchmark_pattern="${benchmark_class}.${benchmark_method}"
 jmh_args=(-wi "${warmup_iterations}" -i "${measurement_iterations}" -f "${forks}")

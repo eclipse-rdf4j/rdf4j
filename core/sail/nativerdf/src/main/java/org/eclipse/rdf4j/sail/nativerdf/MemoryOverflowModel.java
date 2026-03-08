@@ -57,7 +57,8 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 	}
 
 	@Override
-	protected synchronized void closeOverflowModel(SailSourceModel overflowModel) {
+	protected synchronized void innerClose(Model memoryToRecycle, SailSourceModel overflowModelToClose) {
+		super.innerClose(memoryToRecycle, overflowModelToClose);
 		try {
 			if (store != null) {
 				store.close();
@@ -74,15 +75,6 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 			}
 			dataDir = null;
 			store = null;
-		}
-	}
-
-	@Override
-	public void close() {
-		try {
-			closeOverflowModel(disk);
-		} finally {
-			super.close();
 		}
 	}
 }
