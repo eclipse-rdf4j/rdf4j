@@ -58,23 +58,43 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 
 	@Override
 	protected synchronized void innerClose(Model memoryToRecycle, SailSourceModel overflowModelToClose) {
-		super.innerClose(memoryToRecycle, overflowModelToClose);
+		// Subclasses that override closeOverflowModel own the backing-store lifecycle for explicit close as well.
+		boolean closeOverflowModelHandlesBackingStore = overridesCloseOverflowModel();
 		try {
-			if (store != null) {
-				store.close();
-			}
-		} catch (SailException e) {
-			logger.error(e.toString(), e);
-		} finally {
-			if (dataDir != null) {
+			super.innerClose(memoryToRecycle, overflowModelToClose);
+			if (!closeOverflowModelHandlesBackingStore) {
 				try {
-					FileUtil.deleteDir(dataDir);
-				} catch (IOException e) {
-					logger.error("Could not remove overflow directory {}", dataDir, e);
+					if (store != null) {
+						store.close();
+					}
+				} catch (SailException e) {
+					logger.error(e.toString(), e);
+				} finally {
+					if (dataDir != null) {
+						try {
+							FileUtil.deleteDir(dataDir);
+						} catch (IOException e) {
+							logger.error("Could not remove overflow directory {}", dataDir, e);
+						}
+					}
 				}
 			}
+		} finally {
 			dataDir = null;
 			store = null;
 		}
+	}
+
+	private boolean overridesCloseOverflowModel() {
+		Class<?> type = getClass();
+		while (type != null && type != MemoryOverflowModel.class) {
+			try {
+				type.getDeclaredMethod("closeOverflowModel", SailSourceModel.class);
+				return true;
+			} catch (NoSuchMethodException e) {
+				type = type.getSuperclass();
+			}
+		}
+		return false;
 	}
 }
