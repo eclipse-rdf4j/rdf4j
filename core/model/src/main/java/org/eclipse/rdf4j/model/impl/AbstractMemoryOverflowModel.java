@@ -468,9 +468,6 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 				Model memory = this.memory;
 				this.memory = null;
 				overflowToDiskInner(memory);
-				if (disk != null) {
-					recycleDynamicModel(memory);
-				}
 
 				logger.debug("overflow synced to disk");
 				System.gc();

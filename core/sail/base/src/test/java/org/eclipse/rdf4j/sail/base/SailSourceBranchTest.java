@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.base;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -255,6 +256,33 @@ class SailSourceBranchTest {
 		}
 	}
 
+	@Test
+	void flushFailureClosesQueuedChangesetModels() throws SailException {
+		TrackingModelFactory modelFactory = new TrackingModelFactory();
+		SailSourceBranch branch = new SailSourceBranch(createApproveFailingBackingSource(), modelFactory::create);
+		SailSink writer = branch.sink(IsolationLevels.NONE);
+		Statement approved = vf.createStatement(vf.createIRI("urn:approved:s"), vf.createIRI("urn:approved:p"),
+				vf.createLiteral("approved:o"));
+
+		try {
+			writer.approve(approved);
+			writer.flush();
+			writer.close();
+			writer = null;
+
+			CloseAwareModel model = modelFactory.onlyModel();
+			assertFalse(model.isClosed());
+
+			assertThrows(SailException.class, branch::flush);
+			assertTrue(model.isClosed());
+		} finally {
+			if (writer != null) {
+				writer.close();
+			}
+			branch.close();
+		}
+	}
+
 	private BackingSailSource createBackingSource() {
 		return new BackingSailSource() {
 			@Override
@@ -338,6 +366,61 @@ class SailSourceBranchTest {
 						return new EmptyIteration<>();
 					}
 				};
+			}
+		};
+	}
+
+	private BackingSailSource createApproveFailingBackingSource() {
+		return new BackingSailSource() {
+			@Override
+			public SailSink sink(org.eclipse.rdf4j.common.transaction.IsolationLevel level) {
+				return new SailSink() {
+					@Override
+					public void close() throws SailException {
+					}
+
+					@Override
+					public void prepare() throws SailException {
+					}
+
+					@Override
+					public void flush() throws SailException {
+					}
+
+					@Override
+					public void setNamespace(String prefix, String name) throws SailException {
+					}
+
+					@Override
+					public void removeNamespace(String prefix) throws SailException {
+					}
+
+					@Override
+					public void clearNamespaces() throws SailException {
+					}
+
+					@Override
+					public void clear(Resource... contexts) throws SailException {
+					}
+
+					@Override
+					public void observe(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+					}
+
+					@Override
+					public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+						throw new SailException("approve failed");
+					}
+
+					@Override
+					public void deprecate(Statement statement) throws SailException {
+					}
+				};
+			}
+
+			@Override
+			public SailDataset dataset(org.eclipse.rdf4j.common.transaction.IsolationLevel level) {
+				return createBackingSource().dataset(level);
 			}
 		};
 	}
