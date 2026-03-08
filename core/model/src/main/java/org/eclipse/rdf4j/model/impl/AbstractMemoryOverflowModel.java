@@ -16,7 +16,10 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
+import java.lang.ref.SoftReference;
+import java.util.ArrayDeque;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -43,7 +46,8 @@ import com.sun.management.GarbageCollectionNotificationInfo;
 import com.sun.management.GcInfo;
 
 @InternalUseOnly
-public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> extends AbstractModel {
+public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> extends AbstractModel
+		implements AutoCloseable {
 
 	private static final long serialVersionUID = 4119844228099208169L;
 
@@ -84,9 +88,14 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	@SuppressWarnings("StaticNonFinalField")
 	public static int MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = RUNTIME.maxMemory() >= 1024 * 1024 * 1024 ? 128 : 32;
 
+	@SuppressWarnings("StaticNonFinalField")
+	public static int DYNAMIC_MODEL_POOL_MAX_SIZE = 32;
+
+	private static final Deque<SoftReference<DynamicModel>> DYNAMIC_MODEL_POOL = new ArrayDeque<>();
+
 	static final Logger logger = LoggerFactory.getLogger(AbstractMemoryOverflowModel.class);
 
-	private volatile LinkedHashModel memory;
+	private volatile Model memory;
 
 	protected transient volatile T disk;
 
@@ -188,11 +197,12 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	private volatile boolean closed;
 
 	public AbstractMemoryOverflowModel() {
-		memory = new LinkedHashModel();
+		memory = borrowDynamicModel();
 	}
 
 	public AbstractMemoryOverflowModel(Set<Namespace> namespaces) {
-		memory = new LinkedHashModel(namespaces, 0);
+		memory = borrowDynamicModel();
+		namespaces.forEach(memory::setNamespace);
 	}
 
 	@Override
@@ -312,10 +322,47 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	public synchronized void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
 			Resource... contexts) {
 		if (disk == null) {
-			memory.removeTermIteration(iter, subj, pred, obj, contexts);
+			if (memory instanceof AbstractModel) {
+				((AbstractModel) memory).removeTermIteration(iter, subj, pred, obj, contexts);
+			} else if (memory instanceof DynamicModel) {
+				((DynamicModel) memory).removeTermIteration(iter, subj, pred, obj, contexts);
+			} else {
+				iter.remove();
+				while (iter.hasNext()) {
+					Statement statement = iter.next();
+					if (matchesPattern(statement, subj, pred, obj, contexts)) {
+						iter.remove();
+					}
+				}
+			}
 		} else {
 			disk.removeTermIteration(iter, subj, pred, obj, contexts);
 		}
+	}
+
+	private static boolean matchesPattern(Statement statement, Resource subj, IRI pred, Value obj,
+			Resource... contexts) {
+		if (subj != null && !subj.equals(statement.getSubject())) {
+			return false;
+		}
+		if (pred != null && !pred.equals(statement.getPredicate())) {
+			return false;
+		}
+		if (obj != null && !obj.equals(statement.getObject())) {
+			return false;
+		}
+		if (contexts == null || contexts.length == 0) {
+			return true;
+		}
+		for (Resource context : contexts) {
+			boolean contextMatch = context == null
+					? statement.getContext() == null
+					: context.equals(statement.getContext());
+			if (contextMatch) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private Model getDelegate() {
@@ -418,9 +465,12 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 					return;
 				}
 
-				LinkedHashModel memory = this.memory;
+				Model memory = this.memory;
 				this.memory = null;
 				overflowToDiskInner(memory);
+				if (disk != null) {
+					recycleDynamicModel(memory);
+				}
 
 				logger.debug("overflow synced to disk");
 				System.gc();
@@ -432,6 +482,89 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 			throw new RuntimeException(e);
 		}
 
+	}
+
+	private static DynamicModel borrowDynamicModel() {
+		synchronized (DYNAMIC_MODEL_POOL) {
+			purgeClearedDynamicModelReferences();
+			while (!DYNAMIC_MODEL_POOL.isEmpty()) {
+				SoftReference<DynamicModel> reference = DYNAMIC_MODEL_POOL.removeFirst();
+				DynamicModel pooledModel = reference.get();
+				if (pooledModel != null && pooledModel.getUpgradedModel() == null) {
+					pooledModel.clearForReuse();
+					return pooledModel;
+				}
+			}
+		}
+		return new DynamicModel(new LinkedHashModelFactory());
+	}
+
+	private static void recycleDynamicModel(Model model) {
+		if (!(model instanceof DynamicModel)) {
+			return;
+		}
+
+		DynamicModel dynamicModel = (DynamicModel) model;
+		if (dynamicModel.getUpgradedModel() != null) {
+			return;
+		}
+
+		synchronized (DYNAMIC_MODEL_POOL) {
+			purgeClearedDynamicModelReferences();
+			int maxSize = Math.max(DYNAMIC_MODEL_POOL_MAX_SIZE, 0);
+			if (DYNAMIC_MODEL_POOL.size() >= maxSize) {
+				return;
+			}
+			if (dynamicModel.getUpgradedModel() != null) {
+				return;
+			}
+			DYNAMIC_MODEL_POOL.addFirst(new SoftReference<>(dynamicModel));
+		}
+	}
+
+	private static void purgeClearedDynamicModelReferences() {
+		Iterator<SoftReference<DynamicModel>> iterator = DYNAMIC_MODEL_POOL.iterator();
+		while (iterator.hasNext()) {
+			if (iterator.next().get() == null) {
+				iterator.remove();
+			}
+		}
+
+		int maxSize = Math.max(DYNAMIC_MODEL_POOL_MAX_SIZE, 0);
+		while (DYNAMIC_MODEL_POOL.size() > maxSize) {
+			DYNAMIC_MODEL_POOL.removeLast();
+		}
+	}
+
+	@Override
+	public void close() {
+		Model memoryToRecycle = null;
+		T overflowModelToClose = null;
+		try {
+			lock.lockInterruptibly();
+			try {
+				if (closed) {
+					return;
+				}
+				closed = true;
+				memoryToRecycle = memory;
+				memory = null;
+				overflowModelToClose = disk;
+				disk = null;
+			} finally {
+				lock.unlock();
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new RuntimeException(e);
+		}
+
+		recycleDynamicModel(memoryToRecycle);
+		closeOverflowModel(overflowModelToClose);
+	}
+
+	protected void closeOverflowModel(T overflowModel) {
+		// subclasses close backing stores if needed
 	}
 
 	protected abstract void overflowToDiskInner(Model memory);

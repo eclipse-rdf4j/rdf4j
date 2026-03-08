@@ -158,7 +158,17 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void close() throws SailException {
+		if (closed) {
+			return;
+		}
 		closed = true;
+
+		Model approvedModel = approved;
+		Model deprecatedModel = deprecated == approvedModel ? null : deprecated;
+		SailException closeException = null;
+		closeException = closeAutoCloseableModel(approvedModel, closeException);
+		closeException = closeAutoCloseableModel(deprecatedModel, closeException);
+
 		refbacks = null;
 		prepend = null;
 		observed = null;
@@ -168,6 +178,36 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		deprecatedContexts = null;
 		addedNamespaces = null;
 		removedPrefixes = null;
+
+		if (closeException != null) {
+			throw closeException;
+		}
+	}
+
+	void detachStatementModels() {
+		approved = null;
+		approvedEmpty = true;
+		deprecated = null;
+		deprecatedEmpty = true;
+		approvedContexts = null;
+	}
+
+	private SailException closeAutoCloseableModel(Model model, SailException existingException) {
+		if (!(model instanceof AutoCloseable)) {
+			return existingException;
+		}
+
+		try {
+			((AutoCloseable) model).close();
+			return existingException;
+		} catch (Exception e) {
+			SailException sailException = new SailException("Failed to close transaction isolation model", e);
+			if (existingException != null) {
+				existingException.addSuppressed(sailException);
+				return existingException;
+			}
+			return sailException;
+		}
 	}
 
 	@Override
