@@ -13,8 +13,17 @@ package org.eclipse.rdf4j.model.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Iterator;
+import java.util.Map;
+
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.junit.jupiter.api.Test;
 
 public class DynamicModelTest {
@@ -49,6 +58,16 @@ public class DynamicModelTest {
 	}
 
 	@Test
+	void statementsStorageForDynamicModelUsesMap() throws Exception {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		Field statementsField = DynamicModel.class.getDeclaredField("statements");
+		statementsField.setAccessible(true);
+		Object statements = statementsField.get(model);
+
+		assertThat(statements).isInstanceOf(Map.class);
+	}
+
+	@Test
 	public void testRemoveNamespace() {
 		Namespace ns = new SimpleNamespace("ex", "example:namespace");
 
@@ -63,6 +82,84 @@ public class DynamicModelTest {
 				.isFalse();
 		assertThat(model.getNamespace(ns.getPrefix()).isPresent())
 				.isFalse();
+	}
+
+	@Test
+	void containsWildcardDoesNotForceUpgrade() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+
+		assertThat(model.getUpgradedModel()).isNull();
+		assertThat(model.contains(null, null, null)).isFalse();
+		assertThat(model.getUpgradedModel()).isNull();
+
+		model.add(valueFactory.createIRI("urn:subject"), valueFactory.createIRI("urn:predicate"),
+				valueFactory.createLiteral("object"));
+
+		assertThat(model.contains(null, null, null)).isTrue();
+		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
+	void getStatementsWithoutContextDoesNotForceUpgradeAndChecksAllSeenContexts() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Resource context1 = valueFactory.createIRI("urn:context:1");
+		Resource context2 = valueFactory.createIRI("urn:context:2");
+
+		model.add(subject, predicate, valueFactory.createLiteral("object"), context1);
+		model.add(subject, predicate, valueFactory.createLiteral("object"), context2);
+
+		assertThat(model.getUpgradedModel()).isNull();
+
+		Iterable<Statement> statements = model.getStatements(subject, predicate, valueFactory.createLiteral("object"));
+
+		assertThat(model.getUpgradedModel()).isNull();
+		assertThat(statements)
+				.containsExactlyInAnyOrder(
+						valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"),
+								context1),
+						valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"),
+								context2));
+	}
+
+	@Test
+	void removeTermIterationRemovesAllStatementsForSubjectWithoutUpgrade() throws Exception {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject1 = valueFactory.createIRI("urn:subject:1");
+		Resource subject2 = valueFactory.createIRI("urn:subject:2");
+		IRI predicate1 = valueFactory.createIRI("urn:predicate:1");
+		IRI predicate2 = valueFactory.createIRI("urn:predicate:2");
+		Resource context1 = valueFactory.createIRI("urn:context:1");
+		Resource context2 = valueFactory.createIRI("urn:context:2");
+
+		model.add(subject1, predicate1, valueFactory.createLiteral("value:1"), context1);
+		model.add(subject1, predicate2, valueFactory.createLiteral("value:2"), context2);
+		model.add(subject2, predicate1, valueFactory.createLiteral("value:1"), context1);
+
+		Iterator<Statement> iterator = model.iterator();
+		Statement first = null;
+		while (iterator.hasNext()) {
+			Statement next = iterator.next();
+			if (next.getSubject().equals(subject1)) {
+				first = next;
+				break;
+			}
+		}
+
+		assertThat(first).isNotNull();
+
+		Method removeTermIteration = DynamicModel.class.getMethod("removeTermIteration", Iterator.class, Resource.class,
+				IRI.class, org.eclipse.rdf4j.model.Value.class, Resource[].class);
+		removeTermIteration.invoke(model, iterator, subject1, null, null, (Object) new Resource[0]);
+
+		assertThat(model.contains(subject1, predicate1, valueFactory.createLiteral("value:1"), context1)).isFalse();
+		assertThat(model.contains(subject1, predicate2, valueFactory.createLiteral("value:2"), context2)).isFalse();
+		assertThat(model.contains(subject2, predicate1, valueFactory.createLiteral("value:1"), context1)).isTrue();
+		assertThat(model.getUpgradedModel()).isNull();
 	}
 
 }

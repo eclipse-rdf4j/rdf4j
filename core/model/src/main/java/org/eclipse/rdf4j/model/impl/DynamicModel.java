@@ -12,10 +12,12 @@
 package org.eclipse.rdf4j.model.impl;
 
 import java.util.AbstractSet;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -33,15 +35,15 @@ import org.eclipse.rdf4j.model.Value;
 
 /**
  * A LinkedHashModel or a TreeModel achieves fast data access at the cost of higher indexing time. The DynamicModel
- * postpones this cost until such access is actually needed. It stores all data in a LinkedHashMap and supports adding,
+ * postpones this cost until such access is actually needed. It stores all data in a HashMap and supports adding,
  * retrieving and removing data. The model will upgrade to a full model (provided by the modelFactory) if more complex
  * operations are called, for instance removing data according to a pattern (eg. all statements with rdf:type as
  * predicate).
  * <p>
- * DynamicModel is thread safe to the extent that the underlying LinkedHashMap or Model is. The upgrade path is
- * protected by the actual upgrade method being synchronized. The LinkedHashMap storage is not removed once upgraded, so
- * concurrent reads that have started reading from the LinkedHashMap can continue to read even during an upgrade. We do
- * make the LinkedHashMap unmodifiable to reduce the chance of there being a bug.
+ * DynamicModel is thread safe to the extent that the underlying HashMap or Model is. The upgrade path is protected by
+ * the actual upgrade method being synchronized. The HashMap storage is not removed once upgraded, so concurrent reads
+ * that have started reading from the HashMap can continue to read even during an upgrade. We do make the HashMap
+ * unmodifiable to reduce the chance of there being a bug.
  *
  * @author Håvard Mikkelsen Ottestad
  */
@@ -51,7 +53,8 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	private static final Resource[] NULL_CTX = new Resource[] { null };
 
-	private Map<Statement, Statement> statements = new LinkedHashMap<>();
+	private Map<Statement, Statement> statements = new HashMap<>();
+	private Set<Resource> addedContexts = new HashSet<>();
 	final Set<Namespace> namespaces = new LinkedHashSet<>();
 
 	volatile private Model model = null;
@@ -60,6 +63,19 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	public DynamicModel(ModelFactory modelFactory) {
 		this.modelFactory = modelFactory;
+	}
+
+	Model getUpgradedModel() {
+		return model;
+	}
+
+	void clearForReuse() {
+		if (model != null) {
+			throw new IllegalStateException("Cannot reuse upgraded DynamicModel");
+		}
+		statements.clear();
+		addedContexts.clear();
+		namespaces.clear();
 	}
 
 	@Override
@@ -126,7 +142,42 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	@Override
 	public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		upgrade();
+		if (model == null) {
+			if (subj == null && pred == null && obj == null && (contexts == null || contexts.length == 0)) {
+				return !statements.isEmpty();
+			}
+
+			if (subj != null && pred != null && obj != null && contexts != null && contexts.length > 0) {
+				for (Resource context : contexts) {
+					Statement statement = SimpleValueFactory.getInstance()
+							.createStatement(subj, pred, obj, context);
+					if (statements.containsKey(statement)) {
+						return true;
+					}
+				}
+				return false;
+			}
+
+			if (subj != null && pred != null && obj != null && (contexts == null || contexts.length == 0)) {
+				for (Resource context : addedContexts) {
+					Statement statement = SimpleValueFactory.getInstance()
+							.createStatement(subj, pred, obj, context);
+					if (statements.containsKey(statement)) {
+						return true;
+					}
+				}
+				return false;
+			}
+
+			for (Statement statement : statements.values()) {
+				if (matchesPattern(statement, subj, pred, obj, contexts)) {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
 		return model.contains(subj, pred, obj, contexts);
 	}
 
@@ -140,8 +191,8 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			boolean added = false;
 			for (Resource context : contexts) {
 				Statement statement = SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context);
-				added = added
-						| statements.put(statement, statement) == null;
+				addedContexts.add(context);
+				added = added | statements.put(statement, statement) == null;
 			}
 			return added;
 		} else {
@@ -257,6 +308,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	public boolean add(Statement statement) {
 		Objects.requireNonNull(statement);
 		if (model == null) {
+			addedContexts.add(statement.getContext());
 			return statements.put(statement, statement) == null;
 		}
 		return model.add(statement);
@@ -284,13 +336,13 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	public boolean addAll(Collection<? extends Statement> c) {
 		Objects.requireNonNull(c);
 		if (model == null) {
-			return c.stream()
-					.map(s -> {
-						Objects.requireNonNull(s);
-						return statements.put(s, s) == null;
-					})
-					.reduce((a, b) -> a || b)
-					.orElse(false);
+			boolean changed = false;
+			for (Statement statement : c) {
+				Objects.requireNonNull(statement);
+				addedContexts.add(statement.getContext());
+				changed = changed | statements.put(statement, statement) == null;
+			}
+			return changed;
 		}
 		return model.addAll(c);
 	}
@@ -336,6 +388,18 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 				return List.of();
 			}
 			return List.of(foundStatement);
+		} else if (model == null && subject != null && predicate != null && object != null
+				&& (contexts == null || contexts.length == 0)) {
+			List<Statement> foundStatements = new ArrayList<>();
+			for (Resource context : addedContexts) {
+				Statement statement = SimpleValueFactory.getInstance()
+						.createStatement(subject, predicate, object, context);
+				Statement foundStatement = statements.get(statement);
+				if (foundStatement != null) {
+					foundStatements.add(foundStatement);
+				}
+			}
+			return foundStatements;
 		} else if (model == null && subject == null && predicate == null && object == null && contexts != null
 				&& contexts.length == 0) {
 			return this;
@@ -343,6 +407,29 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			upgrade();
 			return model.getStatements(subject, predicate, object, contexts);
 		}
+	}
+
+	public void removeTermIteration(Iterator<Statement> iterator, Resource subj, IRI pred, Value obj,
+			Resource... contexts) {
+		if (model == null) {
+			iterator.remove();
+			Map<Statement, Statement> updatedStatements = new HashMap<>(statements);
+			updatedStatements.keySet().removeIf(statement -> matchesPattern(statement, subj, pred, obj, contexts));
+			statements = updatedStatements;
+			return;
+		}
+
+		if (model instanceof AbstractModel) {
+			try {
+				((AbstractModel) model).removeTermIteration(iterator, subj, pred, obj, contexts);
+				return;
+			} catch (ClassCastException ignored) {
+				// The active iterator may still come from pre-upgrade map-based storage.
+			}
+		}
+
+		iterator.remove();
+		model.remove(subj, pred, obj, contexts);
 	}
 
 	private void upgrade() {
@@ -356,11 +443,37 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			// make statements unmodifiable first, to increase chance of an early failure if the user is doing
 			// concurrent write with reads
 			statements = Collections.unmodifiableMap(statements);
+			addedContexts = Collections.unmodifiableSet(addedContexts);
 			Model tempModel = modelFactory.createEmptyModel();
 			tempModel.addAll(statements.values());
 			namespaces.forEach(tempModel::setNamespace);
 			model = tempModel;
 		}
+	}
+
+	private static boolean matchesPattern(Statement statement, Resource subj, IRI pred, Value obj,
+			Resource... contexts) {
+		if (subj != null && !subj.equals(statement.getSubject())) {
+			return false;
+		}
+		if (pred != null && !pred.equals(statement.getPredicate())) {
+			return false;
+		}
+		if (obj != null && !obj.equals(statement.getObject())) {
+			return false;
+		}
+		if (contexts == null || contexts.length == 0) {
+			return true;
+		}
+		for (Resource context : contexts) {
+			boolean contextMatch = context == null
+					? statement.getContext() == null
+					: context.equals(statement.getContext());
+			if (contextMatch) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@Override

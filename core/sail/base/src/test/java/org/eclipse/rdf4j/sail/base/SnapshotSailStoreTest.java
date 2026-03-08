@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.base;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -20,6 +21,7 @@ import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -145,6 +147,24 @@ public class SnapshotSailStoreTest {
 		}
 	}
 
+	@Test
+	public void testAutoFlushClosesAutoCloseableModelAfterCommit() {
+		AtomicInteger closeCount = new AtomicInteger();
+		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink(),
+				() -> new CloseCountingModel(closeCount));
+		Sail sail = createSail(sailStore);
+
+		try (SailConnection connection = sail.getConnection()) {
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.addStatement(RDF.TYPE, RDFS.LABEL, sail.getValueFactory().createLiteral("type"));
+			connection.commit();
+
+			assertTrue(closeCount.get() > 0);
+		} finally {
+			sail.shutDown();
+		}
+	}
+
 	private Sail createSail(SailStore sailStore) {
 		return new AbstractNotifyingSail() {
 			@Override
@@ -181,6 +201,11 @@ public class SnapshotSailStoreTest {
 	}
 
 	private SnapshotSailStore createSnapshotSailStore(Function<IsolationLevel, SailSink> sinkFactory) {
+		return createSnapshotSailStore(sinkFactory, LinkedHashModel::new);
+	}
+
+	private SnapshotSailStore createSnapshotSailStore(Function<IsolationLevel, SailSink> sinkFactory,
+			ModelFactory modelFactory) {
 		BackingSailSource dummySource = new BackingSailSource() {
 			@Override
 			public SailSink sink(IsolationLevel level) throws SailException {
@@ -242,6 +267,20 @@ public class SnapshotSailStoreTest {
 			@Override
 			public void close() throws SailException {
 			}
-		}, LinkedHashModel::new);
+		}, modelFactory);
+	}
+
+	private static final class CloseCountingModel extends LinkedHashModel implements AutoCloseable {
+
+		private final AtomicInteger closeCount;
+
+		private CloseCountingModel(AtomicInteger closeCount) {
+			this.closeCount = closeCount;
+		}
+
+		@Override
+		public void close() {
+			closeCount.incrementAndGet();
+		}
 	}
 }

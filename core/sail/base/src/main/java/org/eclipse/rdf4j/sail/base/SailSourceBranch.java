@@ -380,6 +380,7 @@ class SailSourceBranch implements SailSource {
 			if (isChanged(change)) {
 				Changeset merged;
 				changes.add(change.shallowClone());
+				change.detachStatementModels();
 				compressChanges();
 				merged = changes.getLast();
 
@@ -436,6 +437,7 @@ class SailSourceBranch implements SailSource {
 				try {
 					prepare(pop, changes.getLast());
 					flush(pop, changes.getLast());
+					closeDetachedChangesetIfUnreferenced(pop);
 				} catch (SailException e) {
 					// Changeset does not throw SailException
 					throw new AssertionError(e);
@@ -547,13 +549,22 @@ class SailSourceBranch implements SailSource {
 			} else {
 				Iterator<Changeset> iter = changes.iterator();
 				while (iter.hasNext()) {
-					flush(iter.next(), sink);
+					Changeset next = iter.next();
+					flush(next, sink);
 					iter.remove();
+					closeDetachedChangesetIfUnreferenced(next);
 				}
 			}
 		} finally {
 			semaphore.unlock();
 		}
+	}
+
+	private void closeDetachedChangesetIfUnreferenced(Changeset changeset) throws SailException {
+		if (changeset == null || !pending.isEmpty() || changeset.isRefback()) {
+			return;
+		}
+		changeset.close();
 	}
 
 	private void flush(Changeset change, SailSink sink) throws SailException {
