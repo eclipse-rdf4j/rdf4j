@@ -416,28 +416,6 @@ public class Catalog {
 		}
 
 		/**
-		 * Returns the leading component's filter value for this file's sort order. SPOC → subject, OPSC → object, CSPO
-		 * → context.
-		 */
-		private long getLeadingFilterValue(long s, long p, long o, long c) {
-			if (sortOrder == null) {
-				return -1;
-			}
-			switch (sortOrder.charAt(0)) {
-			case 's':
-				return s;
-			case 'o':
-				return o;
-			case 'c':
-				return c;
-			case 'p':
-				return p;
-			default:
-				return -1;
-			}
-		}
-
-		/**
 		 * Tests whether this file's statistics allow it to contain a quad matching the given pattern. Bound components
 		 * (>= 0) are checked against the file's min/max range; unbound components (< 0) are wildcards. Also checks the
 		 * bloom filter for the leading component if available.
@@ -458,7 +436,7 @@ public class Catalog {
 			// Check bloom filter for the leading component
 			BloomFilter bf = getBloomFilter();
 			if (bf != null) {
-				long leadingVal = getLeadingFilterValue(s, p, o, c);
+				long leadingVal = BloomFilter.leadingComponent(s, p, o, c, sortOrder);
 				if (leadingVal >= 0 && !bf.mightContain(leadingVal)) {
 					return false;
 				}

@@ -287,7 +287,7 @@ class S3SailStore implements SailStore {
 				ParquetSchemas.SortOrder sortOrder = ParquetSchemas.SortOrder.fromSuffix(sortSuffix);
 				byte[] parquetData = ParquetFileBuilder.build(sorted, sortOrder);
 
-				BloomFilter bloom = buildBloomFilter(sorted, sortSuffix);
+				BloomFilter bloom = BloomFilter.buildForEntries(sorted, sortSuffix);
 
 				String s3Key = Catalog.dataKey(0, epoch, sortSuffix);
 				objectStore.put(s3Key, parquetData);
@@ -301,32 +301,6 @@ class S3SailStore implements SailStore {
 			}, writeExecutor));
 		}
 		CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
-	}
-
-	/**
-	 * Builds a bloom filter for the leading component of the given sort order.
-	 */
-	static BloomFilter buildBloomFilter(List<QuadEntry> entries, String sortSuffix) {
-		BloomFilter bloom = new BloomFilter(Math.max(1, entries.size()), 0.01);
-		for (QuadEntry entry : entries) {
-			bloom.add(leadingComponent(entry, sortSuffix));
-		}
-		return bloom;
-	}
-
-	private static long leadingComponent(QuadEntry entry, String sortSuffix) {
-		switch (sortSuffix.charAt(0)) {
-		case 's':
-			return entry.subject;
-		case 'o':
-			return entry.object;
-		case 'c':
-			return entry.context;
-		case 'p':
-			return entry.predicate;
-		default:
-			return entry.subject;
-		}
 	}
 
 	private void persistMetadata(long epoch) {
@@ -365,14 +339,14 @@ class S3SailStore implements SailStore {
 
 		pendingCompaction = CompletableFuture.runAsync(() -> {
 			try {
-				doCompaction();
+				doCompaction(needsL0, needsL1);
 			} catch (Exception e) {
 				logger.error("Background compaction failed", e);
 			}
 		}, compactionExecutor);
 	}
 
-	private void doCompaction() {
+	private void doCompaction(boolean compactL0, boolean compactL1) {
 		List<Compactor.CompactionResult> results = new ArrayList<>();
 
 		// Snapshot file list under synchronization
@@ -382,7 +356,7 @@ class S3SailStore implements SailStore {
 		}
 
 		// L0→L1 compaction
-		if (compactionPolicy.shouldCompact(files, 0)) {
+		if (compactL0) {
 			List<Catalog.ParquetFileInfo> l0Files = CompactionPolicy.filesAtLevel(files, 0);
 			long compactEpoch = epochCounter.getAndIncrement();
 			results.add(compactor.compact(l0Files, 0, 1, compactEpoch, catalog));
@@ -391,8 +365,8 @@ class S3SailStore implements SailStore {
 			}
 		}
 
-		// L1→L2 compaction
-		if (compactionPolicy.shouldCompact(files, 1)) {
+		// L1→L2 compaction (re-check after L0 compaction may have produced new L1 files)
+		if (compactL1 || (compactL0 && compactionPolicy.shouldCompact(files, 1))) {
 			List<Catalog.ParquetFileInfo> l1Files = CompactionPolicy.filesAtLevel(files, 1);
 			long compactEpoch = epochCounter.getAndIncrement();
 			results.add(compactor.compact(l1Files, 1, 2, compactEpoch, catalog));
@@ -423,16 +397,8 @@ class S3SailStore implements SailStore {
 	}
 
 	/**
-	 * Queries quads using the best available source (merged Parquet + MemTable, or MemTable only).
-	 */
-	private Iterator<long[]> queryQuads(long s, long p, long o, long c, boolean explicit) {
-		return hasPersistence()
-				? createMergedIterator(s, p, o, c, explicit, null)
-				: memTable.scan(s, p, o, c, explicit);
-	}
-
-	/**
-	 * Queries quads with a preferred index hint.
+	 * Queries quads using the best available source (merged Parquet + MemTable, or MemTable only). If
+	 * {@code preferredIndex} is non-null, it is used instead of automatic index selection.
 	 */
 	private Iterator<long[]> queryQuads(long s, long p, long o, long c, boolean explicit,
 			QuadIndex preferredIndex) {
@@ -500,7 +466,7 @@ class S3SailStore implements SailStore {
 		ArrayList<CloseableIteration<? extends Statement>> perContextIterList = new ArrayList<>(contextIDList.size());
 
 		for (long contextID : contextIDList) {
-			Iterator<long[]> quads = queryQuads(subjID, predID, objID, contextID, explicit);
+			Iterator<long[]> quads = queryQuads(subjID, predID, objID, contextID, explicit, null);
 			perContextIterList.add(new QuadToStatementIteration(quads, valueStore));
 		}
 
@@ -746,7 +712,7 @@ class S3SailStore implements SailStore {
 
 				long removeCount = 0;
 				for (long contextId : contextIds) {
-					Iterator<long[]> iter = queryQuads(subjID, predID, objID, contextId, explicit);
+					Iterator<long[]> iter = queryQuads(subjID, predID, objID, contextId, explicit, null);
 
 					// Buffer results before removing to avoid ConcurrentModificationException
 					// when the iterator is backed by the MemTable's own map

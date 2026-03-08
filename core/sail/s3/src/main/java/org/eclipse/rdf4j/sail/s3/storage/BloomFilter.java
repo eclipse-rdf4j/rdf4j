@@ -10,7 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.s3.storage;
 
+import java.nio.ByteBuffer;
 import java.util.Base64;
+import java.util.List;
 
 /**
  * A simple bit-array bloom filter for long values. Uses two independent hash functions derived from a single
@@ -79,30 +81,80 @@ public final class BloomFilter {
 	}
 
 	/**
+	 * Builds a bloom filter for the leading component of the given sort order.
+	 */
+	public static BloomFilter buildForEntries(List<QuadEntry> entries, String sortSuffix) {
+		BloomFilter bloom = new BloomFilter(Math.max(1, entries.size()), 0.01);
+		for (QuadEntry entry : entries) {
+			bloom.add(leadingComponent(entry, sortSuffix));
+		}
+		return bloom;
+	}
+
+	/**
+	 * Extracts the leading component value from a quad entry based on the sort order suffix.
+	 */
+	static long leadingComponent(QuadEntry entry, String sortSuffix) {
+		switch (sortSuffix.charAt(0)) {
+		case 's':
+			return entry.subject;
+		case 'o':
+			return entry.object;
+		case 'c':
+			return entry.context;
+		case 'p':
+			return entry.predicate;
+		default:
+			return entry.subject;
+		}
+	}
+
+	/**
+	 * Extracts the leading component value from raw quad IDs based on the sort order suffix.
+	 */
+	static long leadingComponent(long s, long p, long o, long c, String sortOrder) {
+		if (sortOrder == null) {
+			return -1;
+		}
+		switch (sortOrder.charAt(0)) {
+		case 's':
+			return s;
+		case 'p':
+			return p;
+		case 'o':
+			return o;
+		case 'c':
+			return c;
+		default:
+			return -1;
+		}
+	}
+
+	/**
 	 * Serializes this bloom filter to a Base64-encoded string for JSON storage.
 	 */
 	public String toBase64() {
 		// Format: [numBits (4 bytes)] [numHashFunctions (4 bytes)] [bits array (8 bytes each)]
-		byte[] data = new byte[8 + bits.length * 8];
-		writeInt(data, 0, numBits);
-		writeInt(data, 4, numHashFunctions);
-		for (int i = 0; i < bits.length; i++) {
-			writeLong(data, 8 + i * 8, bits[i]);
+		ByteBuffer buf = ByteBuffer.allocate(8 + bits.length * 8);
+		buf.putInt(numBits);
+		buf.putInt(numHashFunctions);
+		for (long word : bits) {
+			buf.putLong(word);
 		}
-		return Base64.getEncoder().encodeToString(data);
+		return Base64.getEncoder().encodeToString(buf.array());
 	}
 
 	/**
 	 * Deserializes a bloom filter from a Base64-encoded string.
 	 */
 	public static BloomFilter fromBase64(String encoded) {
-		byte[] data = Base64.getDecoder().decode(encoded);
-		int numBits = readInt(data, 0);
-		int numHash = readInt(data, 4);
-		int arrayLen = (data.length - 8) / 8;
+		ByteBuffer buf = ByteBuffer.wrap(Base64.getDecoder().decode(encoded));
+		int numBits = buf.getInt();
+		int numHash = buf.getInt();
+		int arrayLen = buf.remaining() / 8;
 		long[] bits = new long[arrayLen];
 		for (int i = 0; i < arrayLen; i++) {
-			bits[i] = readLong(data, 8 + i * 8);
+			bits[i] = buf.getLong();
 		}
 		return new BloomFilter(bits, numBits, numHash);
 	}
@@ -125,33 +177,4 @@ public final class BloomFilter {
 		return Math.max(1, (int) Math.round((double) m / n * Math.log(2)));
 	}
 
-	private static void writeInt(byte[] buf, int offset, int value) {
-		buf[offset] = (byte) (value >>> 24);
-		buf[offset + 1] = (byte) (value >>> 16);
-		buf[offset + 2] = (byte) (value >>> 8);
-		buf[offset + 3] = (byte) value;
-	}
-
-	private static void writeLong(byte[] buf, int offset, long value) {
-		buf[offset] = (byte) (value >>> 56);
-		buf[offset + 1] = (byte) (value >>> 48);
-		buf[offset + 2] = (byte) (value >>> 40);
-		buf[offset + 3] = (byte) (value >>> 32);
-		buf[offset + 4] = (byte) (value >>> 24);
-		buf[offset + 5] = (byte) (value >>> 16);
-		buf[offset + 6] = (byte) (value >>> 8);
-		buf[offset + 7] = (byte) value;
-	}
-
-	private static int readInt(byte[] buf, int offset) {
-		return ((buf[offset] & 0xFF) << 24) | ((buf[offset + 1] & 0xFF) << 16)
-				| ((buf[offset + 2] & 0xFF) << 8) | (buf[offset + 3] & 0xFF);
-	}
-
-	private static long readLong(byte[] buf, int offset) {
-		return ((long) (buf[offset] & 0xFF) << 56) | ((long) (buf[offset + 1] & 0xFF) << 48)
-				| ((long) (buf[offset + 2] & 0xFF) << 40) | ((long) (buf[offset + 3] & 0xFF) << 32)
-				| ((long) (buf[offset + 4] & 0xFF) << 24) | ((long) (buf[offset + 5] & 0xFF) << 16)
-				| ((long) (buf[offset + 6] & 0xFF) << 8) | (long) (buf[offset + 7] & 0xFF);
-	}
 }

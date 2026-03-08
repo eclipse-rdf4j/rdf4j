@@ -112,8 +112,7 @@ public class Compactor {
 				cache.writeThrough(s3Key, parquetData);
 			}
 
-			// Build bloom filter for the leading component
-			BloomFilter bloom = buildBloomFilter(merged, suffix);
+			BloomFilter bloom = BloomFilter.buildForEntries(merged, suffix);
 
 			QuadStats stats = QuadStats.fromEntries(merged);
 			newFiles.add(new Catalog.ParquetFileInfo(s3Key, targetLevel, suffix, merged.size(),
@@ -157,32 +156,6 @@ public class Compactor {
 		}
 
 		return new ArrayList<>(deduped.values());
-	}
-
-	private static BloomFilter buildBloomFilter(List<QuadEntry> entries, String sortSuffix) {
-		BloomFilter bloom = new BloomFilter(Math.max(1, entries.size()), 0.01);
-		for (QuadEntry entry : entries) {
-			long val;
-			switch (sortSuffix.charAt(0)) {
-			case 's':
-				val = entry.subject;
-				break;
-			case 'o':
-				val = entry.object;
-				break;
-			case 'c':
-				val = entry.context;
-				break;
-			case 'p':
-				val = entry.predicate;
-				break;
-			default:
-				val = entry.subject;
-				break;
-			}
-			bloom.add(val);
-		}
-		return bloom;
 	}
 
 	private static class CompactKey implements Comparable<CompactKey> {
