@@ -12,13 +12,22 @@
 package org.eclipse.rdf4j.sail.nativerdf;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.impl.AbstractMemoryOverflowModel;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailSink;
+import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.junit.jupiter.api.Test;
 
@@ -33,6 +42,17 @@ class MemoryOverflowModelCloseOrderTest {
 		assertThat(model.getCloseOverflowInvocations()).isEqualTo(1);
 		assertThat(model.wasClosedFlagVisible()).isTrue();
 		assertThat(model.wasDiskCleared()).isTrue();
+	}
+
+	@Test
+	void closeDoesNotCloseStoreTwiceWhenOverflowModelHandlesCleanup() {
+		CleanerBackedMemoryOverflowModel model = new CleanerBackedMemoryOverflowModel();
+
+		model.forceOverflowToDisk();
+		model.close();
+
+		assertThat(model.getCleanupInvocations()).isEqualTo(1);
+		assertThat(model.getStoreCloseInvocations()).isEqualTo(1);
 	}
 
 	private static final class RecordingMemoryOverflowModel extends MemoryOverflowModel {
@@ -87,5 +107,63 @@ class MemoryOverflowModelCloseOrderTest {
 				throw new RuntimeException(e);
 			}
 		}
+	}
+
+	private static final class CleanerBackedMemoryOverflowModel extends MemoryOverflowModel {
+
+		private static final long serialVersionUID = 1L;
+
+		private ThrowingRunnable cleanup;
+		private int cleanupInvocations;
+		private int storeCloseInvocations;
+
+		void forceOverflowToDisk() {
+			overflowToDiskInner(new LinkedHashModel());
+		}
+
+		int getCleanupInvocations() {
+			return cleanupInvocations;
+		}
+
+		int getStoreCloseInvocations() {
+			return storeCloseInvocations;
+		}
+
+		@Override
+		protected SailStore createSailStore(File dataDir) throws IOException, SailException {
+			SailStore sailStore = mock(SailStore.class);
+			SailSource sailSource = mock(SailSource.class);
+			SailSink sailSink = mock(SailSink.class);
+
+			when(sailStore.getExplicitSailSource()).thenReturn(sailSource);
+			when(sailStore.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+			when(sailStore.getEvaluationStatistics()).thenReturn(new EvaluationStatistics());
+			when(sailSource.sink(IsolationLevels.NONE)).thenReturn(sailSink);
+			doAnswer(invocation -> {
+				storeCloseInvocations++;
+				return null;
+			}).when(sailStore).close();
+
+			cleanup = () -> {
+				cleanupInvocations++;
+				sailStore.close();
+			};
+
+			return sailStore;
+		}
+
+		@Override
+		protected synchronized void closeOverflowModel(SailSourceModel overflowModel) {
+			try {
+				cleanup.run();
+			} catch (IOException | SailException e) {
+				throw new RuntimeException(e);
+			}
+		}
+	}
+
+	@FunctionalInterface
+	private interface ThrowingRunnable {
+		void run() throws IOException, SailException;
 	}
 }
