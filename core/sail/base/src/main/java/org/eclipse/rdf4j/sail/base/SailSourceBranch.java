@@ -54,6 +54,11 @@ class SailSourceBranch implements SailSource {
 	private final ArrayDeque<Changeset> changes = new ArrayDeque<>();
 
 	/**
+	 * Detached changesets whose models can only be closed after pending writers and refback readers release them.
+	 */
+	private final Set<Changeset> deferredClose = Collections.newSetFromMap(new IdentityHashMap<>());
+
+	/**
 	 * {@link SailSink} that have been created, but not yet {@link SailSink#flush()}ed to this {@link SailSource}.
 	 */
 	private final Set<Changeset> pending = Collections
@@ -152,6 +157,7 @@ class SailSourceBranch implements SailSource {
 				if (toClosePrepared != null) {
 					toClosePrepared.close();
 				}
+				closeDeferredChangesetsIfPossible();
 
 			}
 		} finally {
@@ -194,6 +200,8 @@ class SailSourceBranch implements SailSource {
 						if (prepared) {
 							closeChangeset(this);
 							prepared = false;
+						} else {
+							closeDeferredChangesetsAfterStateChange();
 						}
 						autoFlush();
 					}
@@ -289,6 +297,7 @@ class SailSourceBranch implements SailSource {
 					semaphore.lock();
 					observers.remove(this);
 					compressChanges();
+					closeDeferredChangesetsIfPossible();
 					autoFlush();
 				} finally {
 					semaphore.unlock();
@@ -391,6 +400,7 @@ class SailSourceBranch implements SailSource {
 				for (Changeset c : pending) {
 					c.prepend(merged);
 				}
+				closeDeferredChangesetsIfPossible();
 			}
 		} finally {
 			semaphore.unlock();
@@ -450,7 +460,11 @@ class SailSourceBranch implements SailSource {
 	}
 
 	void closeChangeset(Changeset changeset) {
-		semaphore.unlock();
+		try {
+			closeDeferredChangesetsIfPossible();
+		} finally {
+			semaphore.unlock();
+		}
 	}
 
 	void autoFlush() throws SailException {
@@ -563,10 +577,40 @@ class SailSourceBranch implements SailSource {
 	}
 
 	private void closeDetachedChangesetIfUnreferenced(Changeset changeset) throws SailException {
-		if (changeset == null || !pending.isEmpty() || changeset.isRefback()) {
+		if (changeset == null) {
 			return;
 		}
+		if (!pending.isEmpty() || changeset.isRefback()) {
+			deferredClose.add(changeset);
+			return;
+		}
+		deferredClose.remove(changeset);
 		changeset.close();
+	}
+
+	private void closeDeferredChangesetsAfterStateChange() throws SailException {
+		try {
+			semaphore.lock();
+			closeDeferredChangesetsIfPossible();
+		} finally {
+			semaphore.unlock();
+		}
+	}
+
+	private void closeDeferredChangesetsIfPossible() throws SailException {
+		if (deferredClose.isEmpty() || !pending.isEmpty()) {
+			return;
+		}
+
+		Iterator<Changeset> iter = deferredClose.iterator();
+		while (iter.hasNext()) {
+			Changeset changeset = iter.next();
+			if (changeset.isRefback()) {
+				continue;
+			}
+			iter.remove();
+			changeset.close();
+		}
 	}
 
 	private void flush(Changeset change, SailSink sink) throws SailException {

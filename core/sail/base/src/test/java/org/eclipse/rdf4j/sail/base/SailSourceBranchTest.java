@@ -12,6 +12,12 @@
 package org.eclipse.rdf4j.sail.base;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -61,6 +67,47 @@ class SailSourceBranchTest {
 			observer.close();
 			child.close();
 			parent.close();
+		}
+	}
+
+	@Test
+	void flushClosesDetachedChangesetModelAfterPendingTransactionsAndReadersRelease() throws SailException {
+		TrackingModelFactory modelFactory = new TrackingModelFactory();
+		SailSourceBranch branch = new SailSourceBranch(createBackingSource(), modelFactory::create);
+		SailSink writer = branch.sink(IsolationLevels.NONE);
+		SailSink pendingWriter = null;
+		SailDataset reader = null;
+		Statement approved = vf.createStatement(vf.createIRI("urn:approved:s"), vf.createIRI("urn:approved:p"),
+				vf.createLiteral("approved:o"));
+
+		try {
+			writer.approve(approved);
+			writer.flush();
+			writer.close();
+
+			CloseAwareModel model = modelFactory.onlyModel();
+			reader = branch.dataset(IsolationLevels.NONE);
+			pendingWriter = branch.sink(IsolationLevels.NONE);
+
+			branch.flush();
+			assertFalse(model.isClosed());
+
+			pendingWriter.close();
+			pendingWriter = null;
+			assertFalse(model.isClosed());
+
+			reader.close();
+			reader = null;
+			assertTrue(model.isClosed());
+		} finally {
+			writer.close();
+			if (pendingWriter != null) {
+				pendingWriter.close();
+			}
+			if (reader != null) {
+				reader.close();
+			}
+			branch.close();
 		}
 	}
 
@@ -165,6 +212,25 @@ class SailSourceBranchTest {
 		@Override
 		public void close() {
 			closed = true;
+		}
+
+		private boolean isClosed() {
+			return closed;
+		}
+	}
+
+	private static final class TrackingModelFactory {
+		private final List<CloseAwareModel> created = new ArrayList<>();
+
+		private CloseAwareModel create() {
+			CloseAwareModel model = new CloseAwareModel();
+			created.add(model);
+			return model;
+		}
+
+		private CloseAwareModel onlyModel() {
+			assertEquals(1, created.size());
+			return created.get(0);
 		}
 	}
 }
