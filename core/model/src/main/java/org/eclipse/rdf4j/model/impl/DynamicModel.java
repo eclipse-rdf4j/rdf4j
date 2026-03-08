@@ -15,9 +15,8 @@ import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -53,8 +52,8 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	private static final Resource[] NULL_CTX = new Resource[] { null };
 
-	private Map<Statement, Statement> statements = new HashMap<>();
-	private Set<Resource> addedContexts = new HashSet<>();
+	private Map<Statement, Statement> statements = new LinkedHashMap<>();
+	private Set<Resource> addedContexts = new LinkedHashSet<>();
 	final Set<Namespace> namespaces = new LinkedHashSet<>();
 
 	volatile private Model model = null;
@@ -413,7 +412,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			Resource... contexts) {
 		if (model == null) {
 			iterator.remove();
-			Map<Statement, Statement> updatedStatements = new HashMap<>(statements);
+			Map<Statement, Statement> updatedStatements = new LinkedHashMap<>(statements);
 			updatedStatements.keySet().removeIf(statement -> matchesPattern(statement, subj, pred, obj, contexts));
 			statements = updatedStatements;
 			return;
