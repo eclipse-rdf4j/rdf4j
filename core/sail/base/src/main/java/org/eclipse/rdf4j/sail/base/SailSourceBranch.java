@@ -371,8 +371,7 @@ class SailSourceBranch implements SailSource {
 				}
 			}
 		} catch (Throwable e) {
-			// clear changes if flush fails
-			changes.clear();
+			discardQueuedChangesAfterFailedFlush(e);
 			prepared = null;
 			throw e;
 		} finally {
@@ -606,6 +605,20 @@ class SailSourceBranch implements SailSource {
 		}
 		deferredClose.remove(changeset);
 		changeset.close();
+	}
+
+	private void discardQueuedChangesAfterFailedFlush(Throwable cause) {
+		Iterator<Changeset> iter = changes.iterator();
+		while (iter.hasNext()) {
+			Changeset changeset = iter.next();
+			try {
+				closeDetachedChangesetIfUnreferenced(changeset);
+			} catch (Throwable closeFailure) {
+				cause.addSuppressed(closeFailure);
+			} finally {
+				iter.remove();
+			}
+		}
 	}
 
 	private void closeDeferredChangesetsAfterStateChange() throws SailException {

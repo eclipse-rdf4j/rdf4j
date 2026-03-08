@@ -192,6 +192,36 @@ public class AbstractMemoryOverflowModelTest {
 		}
 	}
 
+	@Test
+	void overflowToDiskDoesNotRecycleDetachedMemoryModel() throws Exception {
+		int originalMaxSize = getDynamicModelPoolMaxSize();
+		try {
+			clearDynamicModelPool();
+			setDynamicModelPoolMaxSize(4);
+
+			AbstractMemoryOverflowModel<AbstractModel> model = new AbstractMemoryOverflowModel<>() {
+				private static final long serialVersionUID = 4119844228099208169L;
+
+				@Override
+				protected void overflowToDiskInner(Model memory) {
+					disk = new LinkedHashModel();
+				}
+			};
+
+			Model memoryModel = getMemoryModel(model);
+
+			invokeOverflowToDisk(model);
+
+			assertThat(getMemoryModel(model)).isNull();
+			assertThat(getDynamicModelPool()).isEmpty();
+			assertThat(getDynamicModelPool().stream().map(SoftReference::get))
+					.doesNotContain((DynamicModel) memoryModel);
+		} finally {
+			clearDynamicModelPool();
+			setDynamicModelPoolMaxSize(originalMaxSize);
+		}
+	}
+
 	private static AbstractMemoryOverflowModel<AbstractModel> newModel() {
 		return new AbstractMemoryOverflowModel<>() {
 			private static final long serialVersionUID = 4119844228099208169L;
@@ -236,5 +266,11 @@ public class AbstractMemoryOverflowModelTest {
 		Method recycleMethod = AbstractMemoryOverflowModel.class.getDeclaredMethod("recycleDynamicModel", Model.class);
 		recycleMethod.setAccessible(true);
 		recycleMethod.invoke(null, model);
+	}
+
+	private static void invokeOverflowToDisk(AbstractMemoryOverflowModel<AbstractModel> model) throws Exception {
+		Method overflowToDiskMethod = AbstractMemoryOverflowModel.class.getDeclaredMethod("overflowToDisk");
+		overflowToDiskMethod.setAccessible(true);
+		overflowToDiskMethod.invoke(model);
 	}
 }
