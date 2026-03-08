@@ -11,6 +11,8 @@
 
 package org.eclipse.rdf4j.model.impl;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -23,6 +25,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -73,7 +76,11 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			throw new IllegalStateException("Cannot reuse upgraded DynamicModel");
 		}
 		statements.clear();
-		addedContexts.clear();
+		if (addedContexts == null) {
+			addedContexts = new LinkedHashSet<>();
+		} else {
+			addedContexts.clear();
+		}
 		namespaces.clear();
 	}
 
@@ -158,7 +165,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			}
 
 			if (subj != null && pred != null && obj != null && (contexts == null || contexts.length == 0)) {
-				for (Resource context : addedContexts) {
+				for (Resource context : initializeAddedContextsIfNeeded()) {
 					Statement statement = SimpleValueFactory.getInstance()
 							.createStatement(subj, pred, obj, context);
 					if (statements.containsKey(statement)) {
@@ -190,7 +197,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			boolean added = false;
 			for (Resource context : contexts) {
 				Statement statement = SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context);
-				addedContexts.add(context);
+				initializeAddedContextsIfNeeded().add(context);
 				added = added | statements.put(statement, statement) == null;
 			}
 			return added;
@@ -307,7 +314,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	public boolean add(Statement statement) {
 		Objects.requireNonNull(statement);
 		if (model == null) {
-			addedContexts.add(statement.getContext());
+			initializeAddedContextsIfNeeded().add(statement.getContext());
 			return statements.put(statement, statement) == null;
 		}
 		return model.add(statement);
@@ -338,7 +345,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			boolean changed = false;
 			for (Statement statement : c) {
 				Objects.requireNonNull(statement);
-				addedContexts.add(statement.getContext());
+				initializeAddedContextsIfNeeded().add(statement.getContext());
 				changed = changed | statements.put(statement, statement) == null;
 			}
 			return changed;
@@ -390,7 +397,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		} else if (model == null && subject != null && predicate != null && object != null
 				&& (contexts == null || contexts.length == 0)) {
 			List<Statement> foundStatements = new ArrayList<>();
-			for (Resource context : addedContexts) {
+			for (Resource context : initializeAddedContextsIfNeeded()) {
 				Statement statement = SimpleValueFactory.getInstance()
 						.createStatement(subject, predicate, object, context);
 				Statement foundStatement = statements.get(statement);
@@ -442,12 +449,27 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			// make statements unmodifiable first, to increase chance of an early failure if the user is doing
 			// concurrent write with reads
 			statements = Collections.unmodifiableMap(statements);
-			addedContexts = Collections.unmodifiableSet(addedContexts);
+			addedContexts = Collections.unmodifiableSet(initializeAddedContextsIfNeeded());
 			Model tempModel = modelFactory.createEmptyModel();
 			tempModel.addAll(statements.values());
 			namespaces.forEach(tempModel::setNamespace);
 			model = tempModel;
 		}
+	}
+
+	private void readObject(ObjectInputStream objectInputStream) throws IOException, ClassNotFoundException {
+		objectInputStream.defaultReadObject();
+		initializeAddedContextsIfNeeded();
+	}
+
+	private Set<Resource> initializeAddedContextsIfNeeded() {
+		if (addedContexts == null) {
+			addedContexts = statements.values()
+					.stream()
+					.map(Statement::getContext)
+					.collect(Collectors.toCollection(LinkedHashSet::new));
+		}
+		return addedContexts;
 	}
 
 	private static boolean matchesPattern(Statement statement, Resource subj, IRI pred, Value obj,
