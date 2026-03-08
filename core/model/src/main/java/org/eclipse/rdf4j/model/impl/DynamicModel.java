@@ -236,6 +236,9 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 						| statements.remove(
 								SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context)) != null;
 			}
+			if (removed) {
+				invalidateAddedContexts();
+			}
 			return removed;
 		} else {
 			return model.remove(subj, pred, obj, contexts);
@@ -299,7 +302,24 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public Iterator<Statement> iterator() {
 		if (model == null) {
-			return statements.values().iterator();
+			Iterator<Statement> iterator = statements.values().iterator();
+			return new Iterator<>() {
+				@Override
+				public boolean hasNext() {
+					return iterator.hasNext();
+				}
+
+				@Override
+				public Statement next() {
+					return iterator.next();
+				}
+
+				@Override
+				public void remove() {
+					iterator.remove();
+					invalidateAddedContexts();
+				}
+			};
 		}
 
 		return model.iterator();
@@ -335,7 +355,11 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	public boolean remove(Object o) {
 		Objects.requireNonNull(o);
 		if (model == null) {
-			return statements.remove(o) != null;
+			boolean removed = statements.remove(o) != null;
+			if (removed) {
+				invalidateAddedContexts();
+			}
+			return removed;
 		}
 		return model.remove(o);
 	}
@@ -367,7 +391,11 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public boolean retainAll(Collection<?> c) {
 		if (model == null) {
-			return statements.keySet().retainAll(c);
+			boolean changed = statements.keySet().retainAll(c);
+			if (changed) {
+				invalidateAddedContexts();
+			}
+			return changed;
 		}
 		return model.retainAll(c);
 	}
@@ -375,12 +403,16 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public boolean removeAll(Collection<?> c) {
 		if (model == null) {
-			return c
+			boolean changed = c
 					.stream()
 					.map(statements::remove)
 					.map(Objects::nonNull)
 					.reduce((a, b) -> a || b)
 					.orElse(false);
+			if (changed) {
+				invalidateAddedContexts();
+			}
+			return changed;
 		}
 		return model.removeAll(c);
 	}
@@ -389,6 +421,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	public void clear() {
 		if (model == null) {
 			statements.clear();
+			invalidateAddedContexts();
 		} else {
 			model.clear();
 		}
@@ -444,6 +477,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			Map<Statement, Statement> updatedStatements = new LinkedHashMap<>(statements);
 			updatedStatements.keySet().removeIf(statement -> matchesPattern(statement, subj, pred, obj, contexts));
 			statements = updatedStatements;
+			invalidateAddedContexts();
 			return;
 		}
 
@@ -492,6 +526,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 					.collect(Collectors.toCollection(LinkedHashSet::new));
 		}
 		return addedContexts;
+	}
+
+	private void invalidateAddedContexts() {
+		addedContexts = null;
 	}
 
 	private static boolean matchesPattern(Statement statement, Resource subj, IRI pred, Value obj,

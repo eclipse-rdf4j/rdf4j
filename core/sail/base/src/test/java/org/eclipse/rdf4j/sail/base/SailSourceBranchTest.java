@@ -153,6 +153,31 @@ class SailSourceBranchTest {
 		}
 	}
 
+	@Test
+	void closeClosesQueuedChangesetModelsWithoutFlush() throws SailException {
+		TrackingModelFactory modelFactory = new TrackingModelFactory();
+		SailSourceBranch branch = new SailSourceBranch(createBackingSource(), modelFactory::create);
+		SailSink writer = branch.sink(IsolationLevels.NONE);
+		Statement approved = vf.createStatement(vf.createIRI("urn:approved:s"), vf.createIRI("urn:approved:p"),
+				vf.createLiteral("approved:o"));
+
+		try {
+			writer.approve(approved);
+			writer.flush();
+			writer.close();
+
+			CloseAwareModel model = modelFactory.onlyModel();
+			assertFalse(model.isClosed());
+
+			branch.close();
+
+			assertTrue(model.isClosed());
+		} finally {
+			writer.close();
+			branch.close();
+		}
+	}
+
 	private BackingSailSource createBackingSource() {
 		return new BackingSailSource() {
 			@Override

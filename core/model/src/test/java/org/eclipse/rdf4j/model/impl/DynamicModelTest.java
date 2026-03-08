@@ -27,6 +27,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.BiConsumer;
 
 import javax.tools.JavaCompiler;
 import javax.tools.ToolProvider;
@@ -163,6 +165,27 @@ public class DynamicModelTest {
 	}
 
 	@Test
+	void inMemoryDeletePathsPruneNullContextCacheWithoutUpgrade() {
+		assertNullContextCacheClearedWithoutUpgrade(DynamicModel::remove);
+		assertNullContextCacheClearedWithoutUpgrade(
+				(model, statement) -> model.remove(statement.getSubject(), statement.getPredicate(),
+						statement.getObject(), statement.getContext()));
+		assertNullContextCacheClearedWithoutUpgrade((model, statement) -> model.removeAll(Set.of(statement)));
+		assertNullContextCacheClearedWithoutUpgrade((model, statement) -> model.retainAll(Set.of()));
+		assertNullContextCacheClearedWithoutUpgrade((model, statement) -> model.clear());
+		assertNullContextCacheClearedWithoutUpgrade((model, statement) -> {
+			Iterator<Statement> iterator = model.iterator();
+			assertThat(iterator.next()).isEqualTo(statement);
+			iterator.remove();
+		});
+		assertNullContextCacheClearedWithoutUpgrade((model, statement) -> {
+			Iterator<Statement> iterator = model.iterator();
+			assertThat(iterator.next()).isEqualTo(statement);
+			model.removeTermIteration(iterator, statement.getSubject(), null, null, new Resource[0]);
+		});
+	}
+
+	@Test
 	void removeTermIterationRemovesAllStatementsForSubjectWithoutUpgrade() throws Exception {
 		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
 		ValueFactory valueFactory = SimpleValueFactory.getInstance();
@@ -216,6 +239,25 @@ public class DynamicModelTest {
 		assertThat(deserialized.contains(statement.getSubject(), statement.getPredicate(), statement.getObject()))
 				.isTrue();
 		assertThat(deserialized.getUpgradedModel()).isNull();
+	}
+
+	private static void assertNullContextCacheClearedWithoutUpgrade(
+			BiConsumer<DynamicModel, Statement> deleteOperation) {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Statement statement = valueFactory.createStatement(valueFactory.createIRI("urn:subject"),
+				valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral("object"));
+
+		model.add(statement);
+
+		assertThat(model.contains(null, null, null, (Resource[]) null)).isTrue();
+		assertThat(model.getUpgradedModel()).isNull();
+
+		deleteOperation.accept(model, statement);
+
+		assertThat(model.contains(null, null, null, (Resource[]) null)).isFalse();
+		assertThat(model.isEmpty()).isTrue();
+		assertThat(model.getUpgradedModel()).isNull();
 	}
 
 	private static byte[] serializeLegacyDynamicModel(Statement statement) throws Exception {
