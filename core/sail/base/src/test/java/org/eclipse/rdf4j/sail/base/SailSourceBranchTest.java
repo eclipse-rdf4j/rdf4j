@@ -111,6 +111,48 @@ class SailSourceBranchTest {
 		}
 	}
 
+	@Test
+	void flushClosesDetachedChangesetModelAfterLastReferencingWriterCloses() throws SailException {
+		TrackingModelFactory modelFactory = new TrackingModelFactory();
+		SailSourceBranch branch = new SailSourceBranch(createBackingSource(), modelFactory::create);
+		SailSink lastReferencingWriter = null;
+		SailSink mergingWriter = null;
+		SailSink unrelatedWriter = null;
+		Statement approved = vf.createStatement(vf.createIRI("urn:approved:s"), vf.createIRI("urn:approved:p"),
+				vf.createLiteral("approved:o"));
+
+		try {
+			lastReferencingWriter = branch.sink(IsolationLevels.NONE);
+			mergingWriter = branch.sink(IsolationLevels.NONE);
+			mergingWriter.approve(approved);
+			mergingWriter.flush();
+			mergingWriter.close();
+			mergingWriter = null;
+
+			CloseAwareModel model = modelFactory.onlyModel();
+			unrelatedWriter = branch.sink(IsolationLevels.NONE);
+
+			branch.flush();
+			assertFalse(model.isClosed());
+
+			lastReferencingWriter.close();
+			lastReferencingWriter = null;
+
+			assertTrue(model.isClosed());
+		} finally {
+			if (mergingWriter != null) {
+				mergingWriter.close();
+			}
+			if (lastReferencingWriter != null) {
+				lastReferencingWriter.close();
+			}
+			if (unrelatedWriter != null) {
+				unrelatedWriter.close();
+			}
+			branch.close();
+		}
+	}
+
 	private BackingSailSource createBackingSource() {
 		return new BackingSailSource() {
 			@Override
