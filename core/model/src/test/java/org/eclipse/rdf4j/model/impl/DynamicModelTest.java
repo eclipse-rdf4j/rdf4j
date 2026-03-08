@@ -13,13 +13,26 @@ package org.eclipse.rdf4j.model.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.Map;
 
+import javax.tools.JavaCompiler;
+import javax.tools.ToolProvider;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -160,6 +173,121 @@ public class DynamicModelTest {
 		assertThat(model.contains(subject1, predicate2, valueFactory.createLiteral("value:2"), context2)).isFalse();
 		assertThat(model.contains(subject2, predicate1, valueFactory.createLiteral("value:1"), context1)).isTrue();
 		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
+	void deserializingOlderDynamicModelInitializesAddedContexts() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Statement statement = valueFactory.createStatement(valueFactory.createIRI("urn:subject"),
+				valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral("object"),
+				valueFactory.createIRI("urn:context"));
+
+		byte[] serialized = serializeLegacyDynamicModel(statement);
+
+		DynamicModel deserialized;
+		try (ObjectInputStream objectInputStream = new ObjectInputStream(new ByteArrayInputStream(serialized))) {
+			deserialized = (DynamicModel) objectInputStream.readObject();
+		}
+
+		assertThat(deserialized.contains(statement.getSubject(), statement.getPredicate(), statement.getObject()))
+				.isTrue();
+		assertThat(deserialized.getUpgradedModel()).isNull();
+	}
+
+	private static byte[] serializeLegacyDynamicModel(Statement statement) throws Exception {
+		Path tempDir = Files.createTempDirectory("dynamic-model-legacy");
+		Path packageDir = Files.createDirectories(tempDir.resolve("org/eclipse/rdf4j/model/impl"));
+		Path sourceFile = packageDir.resolve("DynamicModel.java");
+		Files.writeString(sourceFile, legacyDynamicModelSource(), StandardCharsets.UTF_8);
+
+		JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+		assertThat(compiler).isNotNull();
+
+		ByteArrayOutputStream compilerError = new ByteArrayOutputStream();
+		int exitCode = compiler.run(null, null, compilerError, "--release", "11", "-classpath",
+				System.getProperty("java.class.path"), "-d", tempDir.toString(), sourceFile.toString());
+		assertThat(exitCode)
+				.withFailMessage("Legacy DynamicModel compilation failed:%n%s",
+						compilerError.toString(StandardCharsets.UTF_8))
+				.isZero();
+
+		try (ChildFirstClassLoader classLoader = new ChildFirstClassLoader(new URL[] { tempDir.toUri().toURL() },
+				DynamicModelTest.class.getClassLoader(), DynamicModel.class.getName())) {
+			Class<?> legacyDynamicModelClass = Class.forName(DynamicModel.class.getName(), true, classLoader);
+			Object legacyDynamicModel = legacyDynamicModelClass.getConstructor(ModelFactory.class)
+					.newInstance(new LinkedHashModelFactory());
+			legacyDynamicModelClass.getMethod("addStatement", Statement.class).invoke(legacyDynamicModel, statement);
+
+			try (ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+					ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteArrayOutputStream)) {
+				objectOutputStream.writeObject(legacyDynamicModel);
+				objectOutputStream.flush();
+				return byteArrayOutputStream.toByteArray();
+			}
+		}
+	}
+
+	private static String legacyDynamicModelSource() {
+		return String.join("\n",
+				"package org.eclipse.rdf4j.model.impl;",
+				"",
+				"import java.io.Serializable;",
+				"import java.util.LinkedHashMap;",
+				"import java.util.LinkedHashSet;",
+				"import java.util.Map;",
+				"import java.util.Set;",
+				"",
+				"import org.eclipse.rdf4j.model.Model;",
+				"import org.eclipse.rdf4j.model.ModelFactory;",
+				"import org.eclipse.rdf4j.model.Namespace;",
+				"import org.eclipse.rdf4j.model.Statement;",
+				"",
+				"public class DynamicModel implements Serializable {",
+				"\tprivate static final long serialVersionUID = -9162104133818983614L;",
+				"\tprivate Map<Statement, Statement> statements = new LinkedHashMap<>();",
+				"\tfinal Set<Namespace> namespaces = new LinkedHashSet<>();",
+				"\tprivate volatile Model model = null;",
+				"\tprivate final ModelFactory modelFactory;",
+				"",
+				"\tpublic DynamicModel(ModelFactory modelFactory) {",
+				"\t\tthis.modelFactory = modelFactory;",
+				"\t}",
+				"",
+				"\tpublic void addStatement(Statement statement) {",
+				"\t\tstatements.put(statement, statement);",
+				"\t}",
+				"}",
+				"");
+	}
+
+	private static final class ChildFirstClassLoader extends URLClassLoader {
+		private final String childFirstClassName;
+
+		private ChildFirstClassLoader(URL[] urls, ClassLoader parent, String childFirstClassName) {
+			super(urls, parent);
+			this.childFirstClassName = childFirstClassName;
+		}
+
+		@Override
+		protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+			synchronized (getClassLoadingLock(name)) {
+				Class<?> loadedClass = findLoadedClass(name);
+				if (loadedClass == null && childFirstClassName.equals(name)) {
+					try {
+						loadedClass = findClass(name);
+					} catch (ClassNotFoundException ignored) {
+						// fall through to parent
+					}
+				}
+				if (loadedClass == null) {
+					loadedClass = super.loadClass(name, false);
+				}
+				if (resolve) {
+					resolveClass(loadedClass);
+				}
+				return loadedClass;
+			}
+		}
 	}
 
 }
