@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -174,6 +175,82 @@ class SailSourceBranchTest {
 			assertTrue(model.isClosed());
 		} finally {
 			writer.close();
+			branch.close();
+		}
+	}
+
+	@Test
+	void closeDefersQueuedChangesetModelUntilOpenReaderCloses() throws SailException {
+		TrackingModelFactory modelFactory = new TrackingModelFactory();
+		SailSourceBranch branch = new SailSourceBranch(createBackingSource(), modelFactory::create);
+		SailSink writer = branch.sink(IsolationLevels.NONE);
+		SailDataset reader = null;
+		Statement approved = vf.createStatement(vf.createIRI("urn:approved:s"), vf.createIRI("urn:approved:p"),
+				vf.createLiteral("approved:o"));
+
+		try {
+			writer.approve(approved);
+			writer.flush();
+			writer.close();
+			writer = null;
+
+			CloseAwareModel model = modelFactory.onlyModel();
+			reader = branch.dataset(IsolationLevels.NONE);
+
+			branch.close();
+
+			assertFalse(model.isClosed());
+			try (CloseableIteration<? extends Statement> statements = reader.getStatements(approved.getSubject(),
+					approved.getPredicate(), approved.getObject(), approved.getContext())) {
+				assertTrue(statements.hasNext());
+				assertEquals(approved, statements.next());
+			}
+
+			reader.close();
+			reader = null;
+			assertTrue(model.isClosed());
+		} finally {
+			if (writer != null) {
+				writer.close();
+			}
+			if (reader != null) {
+				reader.close();
+			}
+			branch.close();
+		}
+	}
+
+	@Test
+	void closeDefersQueuedChangesetModelUntilPendingWriterCloses() throws SailException {
+		TrackingModelFactory modelFactory = new TrackingModelFactory();
+		SailSourceBranch branch = new SailSourceBranch(createBackingSource(), modelFactory::create);
+		SailSink pendingWriter = branch.sink(IsolationLevels.NONE);
+		SailSink writer = branch.sink(IsolationLevels.NONE);
+		Statement approved = vf.createStatement(vf.createIRI("urn:approved:s"), vf.createIRI("urn:approved:p"),
+				vf.createLiteral("approved:o"));
+
+		try {
+			writer.approve(approved);
+			writer.flush();
+			writer.close();
+			writer = null;
+
+			CloseAwareModel model = modelFactory.onlyModel();
+
+			branch.close();
+
+			assertFalse(model.isClosed());
+
+			pendingWriter.close();
+			pendingWriter = null;
+			assertTrue(model.isClosed());
+		} finally {
+			if (writer != null) {
+				writer.close();
+			}
+			if (pendingWriter != null) {
+				pendingWriter.close();
+			}
 			branch.close();
 		}
 	}
