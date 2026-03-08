@@ -136,6 +136,8 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public void close() throws SailException {
+		Set<Changeset> changesetsToClose = Collections.newSetFromMap(new IdentityHashMap<>());
+		SailException closeException = null;
 		semaphore.lock();
 		try {
 			try {
@@ -152,17 +154,35 @@ class SailSourceBranch implements SailSource {
 						toCloseSerializable.close();
 					}
 				}
+			} catch (SailException e) {
+				closeException = e;
 			} finally {
-				SailSink toClosePrepared = prepared;
-				prepared = null;
-				if (toClosePrepared != null) {
-					toClosePrepared.close();
+				try {
+					SailSink toClosePrepared = prepared;
+					prepared = null;
+					if (toClosePrepared != null) {
+						toClosePrepared.close();
+					}
+					closeDeferredChangesetsIfPossible();
+				} catch (SailException e) {
+					if (closeException == null) {
+						closeException = e;
+					} else {
+						closeException.addSuppressed(e);
+					}
+				} finally {
+					changesetsToClose.addAll(changes);
+					changes.clear();
+					changesetsToClose.addAll(deferredClose);
+					deferredClose.clear();
 				}
-				closeDeferredChangesetsIfPossible();
-
 			}
 		} finally {
 			semaphore.unlock();
+		}
+		closeException = closeChangesets(changesetsToClose, closeException);
+		if (closeException != null) {
+			throw closeException;
 		}
 	}
 
@@ -612,6 +632,22 @@ class SailSourceBranch implements SailSource {
 			iter.remove();
 			changeset.close();
 		}
+	}
+
+	private SailException closeChangesets(Collection<Changeset> changesets, SailException existingException) {
+		SailException closeException = existingException;
+		for (Changeset changeset : changesets) {
+			try {
+				changeset.close();
+			} catch (SailException e) {
+				if (closeException == null) {
+					closeException = e;
+				} else {
+					closeException.addSuppressed(e);
+				}
+			}
+		}
+		return closeException;
 	}
 
 	private boolean isReferencedByPendingChangeset(Changeset detachedChangeset) {
