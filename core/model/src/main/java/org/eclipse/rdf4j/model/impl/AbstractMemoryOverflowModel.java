@@ -557,10 +557,15 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new RuntimeException(e);
+		} finally {
+			innerClose(memoryToRecycle, overflowModelToClose);
 		}
 
-		recycleDynamicModel(memoryToRecycle);
+	}
+
+	protected void innerClose(Model memoryToRecycle, T overflowModelToClose) {
 		closeOverflowModel(overflowModelToClose);
+		recycleDynamicModel(memoryToRecycle);
 	}
 
 	protected void closeOverflowModel(T overflowModel) {
