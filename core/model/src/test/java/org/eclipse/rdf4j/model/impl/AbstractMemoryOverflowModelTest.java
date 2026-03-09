@@ -211,6 +211,16 @@ public class AbstractMemoryOverflowModelTest {
 	}
 
 	@Test
+	void closeDoesNotInvokeInnerCloseAfterAlreadyClosedFastPath() {
+		CloseTrackingOverflowModel model = new CloseTrackingOverflowModel();
+
+		model.close();
+		model.close();
+
+		assertThat(model.getInnerCloseInvocations()).isEqualTo(1);
+	}
+
+	@Test
 	void overflowToDiskDoesNotRecycleDetachedMemoryModel() throws Exception {
 		int originalMaxSize = getDynamicModelPoolMaxSize();
 		try {
@@ -257,6 +267,20 @@ public class AbstractMemoryOverflowModelTest {
 		return (Model) memoryField.get(model);
 	}
 
+	private static <T> T getField(AbstractMemoryOverflowModel<AbstractModel> model, String fieldName, Class<T> type)
+			throws Exception {
+		Field field = AbstractMemoryOverflowModel.class.getDeclaredField(fieldName);
+		field.setAccessible(true);
+		return type.cast(field.get(model));
+	}
+
+	private static void setField(AbstractMemoryOverflowModel<AbstractModel> model, String fieldName, Object value)
+			throws Exception {
+		Field field = AbstractMemoryOverflowModel.class.getDeclaredField(fieldName);
+		field.setAccessible(true);
+		field.set(model, value);
+	}
+
 	@SuppressWarnings("unchecked")
 	private static Deque<SoftReference<DynamicModel>> getDynamicModelPool() throws Exception {
 		Field poolField = AbstractMemoryOverflowModel.class.getDeclaredField("DYNAMIC_MODEL_POOL");
@@ -290,5 +314,37 @@ public class AbstractMemoryOverflowModelTest {
 		Method overflowToDiskMethod = AbstractMemoryOverflowModel.class.getDeclaredMethod("overflowToDisk");
 		overflowToDiskMethod.setAccessible(true);
 		overflowToDiskMethod.invoke(model);
+	}
+
+	private static final class CloseTrackingOverflowModel extends AbstractMemoryOverflowModel<AbstractModel> {
+		private static final long serialVersionUID = 4119844228099208170L;
+
+		private int innerCloseInvocations;
+		private boolean teardownWhileStillOpen;
+
+		@Override
+		protected void overflowToDiskInner(Model memory) {
+			// no-op
+		}
+
+		@Override
+		protected void innerClose(Model memoryToRecycle, AbstractModel overflowModelToClose) {
+			innerCloseInvocations++;
+			try {
+				teardownWhileStillOpen |= !getField(this, "closed", Boolean.class)
+						&& getField(this, "disk", AbstractModel.class) != null;
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+			super.innerClose(memoryToRecycle, overflowModelToClose);
+		}
+
+		private int getInnerCloseInvocations() {
+			return innerCloseInvocations;
+		}
+
+		private boolean sawTeardownWhileStillOpen() {
+			return teardownWhileStillOpen;
+		}
 	}
 }
