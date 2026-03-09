@@ -55,6 +55,17 @@ class MemoryOverflowModelCloseOrderTest {
 		assertThat(model.getStoreCloseInvocations()).isEqualTo(1);
 	}
 
+	@Test
+	void closeStillClosesStoreWhenCloseOverflowModelOnlyObserves() {
+		ObservingMemoryOverflowModel model = new ObservingMemoryOverflowModel();
+
+		model.forceOverflowToDisk();
+		model.close();
+
+		assertThat(model.getCloseOverflowInvocations()).isEqualTo(1);
+		assertThat(model.getStoreCloseInvocations()).isEqualTo(1);
+	}
+
 	private static final class RecordingMemoryOverflowModel extends MemoryOverflowModel {
 
 		private static final long serialVersionUID = 1L;
@@ -71,7 +82,7 @@ class MemoryOverflowModelCloseOrderTest {
 		}
 
 		@Override
-		protected synchronized void closeOverflowModel(SailSourceModel overflowModel) {
+		protected synchronized void innerClose() {
 			closeOverflowInvocations++;
 			closedFlagVisible &= readField(CLOSED_FIELD, this, Boolean.class);
 			diskCleared &= readField(DISK_FIELD, this, Object.class) == null;
@@ -153,12 +164,56 @@ class MemoryOverflowModelCloseOrderTest {
 		}
 
 		@Override
-		protected synchronized void closeOverflowModel(SailSourceModel overflowModel) {
+		protected synchronized void innerClose() {
 			try {
 				cleanup.run();
 			} catch (IOException | SailException e) {
 				throw new RuntimeException(e);
 			}
+		}
+
+	}
+
+	private static final class ObservingMemoryOverflowModel extends MemoryOverflowModel {
+
+		private static final long serialVersionUID = 1L;
+
+		private int closeOverflowInvocations;
+		private int storeCloseInvocations;
+
+		void forceOverflowToDisk() {
+			overflowToDiskInner(new LinkedHashModel());
+		}
+
+		int getCloseOverflowInvocations() {
+			return closeOverflowInvocations;
+		}
+
+		int getStoreCloseInvocations() {
+			return storeCloseInvocations;
+		}
+
+		@Override
+		protected SailStore createSailStore(File dataDir) throws IOException, SailException {
+			SailStore sailStore = mock(SailStore.class);
+			SailSource sailSource = mock(SailSource.class);
+			SailSink sailSink = mock(SailSink.class);
+
+			when(sailStore.getExplicitSailSource()).thenReturn(sailSource);
+			when(sailStore.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+			when(sailStore.getEvaluationStatistics()).thenReturn(new EvaluationStatistics());
+			when(sailSource.sink(IsolationLevels.NONE)).thenReturn(sailSink);
+			doAnswer(invocation -> {
+				storeCloseInvocations++;
+				return null;
+			}).when(sailStore).close();
+
+			return sailStore;
+		}
+
+		@Override
+		protected synchronized void innerClose() {
+			closeOverflowInvocations++;
 		}
 	}
 

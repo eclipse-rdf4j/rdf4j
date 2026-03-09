@@ -54,7 +54,7 @@ class MemoryOverflowModelCloseOrderTest {
 		}
 
 		@Override
-		protected synchronized void closeOverflowModel(SailSourceModel overflowModel) {
+		protected synchronized void innerClose() {
 			closeOverflowInvocations++;
 			closedFlagVisible &= readField(CLOSED_FIELD, this, Boolean.class);
 			diskCleared &= readField(DISK_FIELD, this, Object.class) == null;

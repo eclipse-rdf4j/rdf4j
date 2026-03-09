@@ -55,7 +55,11 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 					logger.debug("finalizing {}", dataDir);
 					if (disk == this) {
 						try {
-							store.close();
+							var localStore = store;
+							store = null;
+							if (localStore != null) {
+								localStore.close();
+							}
 						} catch (SailException e) {
 							logger.error(e.toString(), e);
 						} finally {
@@ -75,11 +79,12 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 	}
 
 	@Override
-	protected synchronized void innerClose(Model memoryToRecycle, SailSourceModel overflowModelToClose) {
-		super.innerClose(memoryToRecycle, overflowModelToClose);
+	protected synchronized void innerClose() {
 		try {
-			if (store != null) {
-				store.close();
+			var localStore = store;
+			store = null;
+			if (localStore != null) {
+				localStore.close();
 			}
 		} catch (SailException e) {
 			logger.error(e.toString(), e);
