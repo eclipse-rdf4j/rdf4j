@@ -557,20 +557,15 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 			Thread.currentThread().interrupt();
 			throw new RuntimeException(e);
 		} finally {
-			if (!wasClosed)
-				innerClose(memoryToRecycle, overflowModelToClose);
+			if (!wasClosed) {
+				innerClose();
+			}
 		}
-
-	}
-
-	protected void innerClose(Model memoryToRecycle, T overflowModelToClose) {
-		closeOverflowModel(overflowModelToClose);
 		recycleDynamicModel(memoryToRecycle);
+
 	}
 
-	protected void closeOverflowModel(T overflowModel) {
-		// subclasses close backing stores if needed
-	}
+	abstract protected void innerClose();
 
 	protected abstract void overflowToDiskInner(Model memory);
 }

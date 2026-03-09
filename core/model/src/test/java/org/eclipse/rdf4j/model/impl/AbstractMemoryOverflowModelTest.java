@@ -30,6 +30,11 @@ public class AbstractMemoryOverflowModelTest {
 			private static final long serialVersionUID = 4119844228099208169L;
 
 			@Override
+			protected void innerClose() {
+				// no-op
+			}
+
+			@Override
 			protected void overflowToDiskInner(Model memory) {
 				// no-op
 			}
@@ -46,6 +51,11 @@ public class AbstractMemoryOverflowModelTest {
 	void removingViaSubjectsUsesInMemoryDelegateMethod() {
 		AbstractMemoryOverflowModel<AbstractModel> model = new AbstractMemoryOverflowModel<>() {
 			private static final long serialVersionUID = 4119844228099208169L;
+
+			@Override
+			protected void innerClose() {
+				// no-op
+			}
 
 			@Override
 			protected void overflowToDiskInner(Model memory) {
@@ -69,6 +79,11 @@ public class AbstractMemoryOverflowModelTest {
 	void removingMultipleSubjectsViaIteratorStaysStable() {
 		AbstractMemoryOverflowModel<AbstractModel> model = new AbstractMemoryOverflowModel<>() {
 			private static final long serialVersionUID = 4119844228099208169L;
+
+			@Override
+			protected void innerClose() {
+				// no-op
+			}
 
 			@Override
 			protected void overflowToDiskInner(Model memory) {
@@ -231,6 +246,11 @@ public class AbstractMemoryOverflowModelTest {
 				private static final long serialVersionUID = 4119844228099208169L;
 
 				@Override
+				protected void innerClose() {
+					// no-op
+				}
+
+				@Override
 				protected void overflowToDiskInner(Model memory) {
 					disk = new LinkedHashModel();
 				}
@@ -253,6 +273,11 @@ public class AbstractMemoryOverflowModelTest {
 	private static AbstractMemoryOverflowModel<AbstractModel> newModel() {
 		return new AbstractMemoryOverflowModel<>() {
 			private static final long serialVersionUID = 4119844228099208169L;
+
+			@Override
+			protected void innerClose() {
+				// no-op
+			}
 
 			@Override
 			protected void overflowToDiskInner(Model memory) {
@@ -328,7 +353,7 @@ public class AbstractMemoryOverflowModelTest {
 		}
 
 		@Override
-		protected void innerClose(Model memoryToRecycle, AbstractModel overflowModelToClose) {
+		protected void innerClose() {
 			innerCloseInvocations++;
 			try {
 				teardownWhileStillOpen |= !getField(this, "closed", Boolean.class)
@@ -336,7 +361,6 @@ public class AbstractMemoryOverflowModelTest {
 			} catch (Exception e) {
 				throw new RuntimeException(e);
 			}
-			super.innerClose(memoryToRecycle, overflowModelToClose);
 		}
 
 		private int getInnerCloseInvocations() {

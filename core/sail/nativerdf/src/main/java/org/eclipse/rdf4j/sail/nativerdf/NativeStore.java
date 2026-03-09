@@ -127,12 +127,8 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 		}
 
 		@Override
-		protected synchronized void closeOverflowModel(SailSourceModel overflowModel) {
-			Cleaner.Cleanable overflowStoreCleanup = this.overflowStoreCleanup;
-			if (overflowStoreCleanup != null) {
-				overflowStoreCleanup.clean();
-				this.overflowStoreCleanup = null;
-			}
+		protected synchronized void innerClose() {
+			overflowStoreCleanup.clean();
 		}
 	}
 
