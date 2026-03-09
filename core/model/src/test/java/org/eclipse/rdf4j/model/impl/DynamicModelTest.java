@@ -165,6 +165,44 @@ public class DynamicModelTest {
 	}
 
 	@Test
+	void nullableContextArrayOnlyRemovesNullContextWithoutUpgrade() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Resource namedContext = valueFactory.createIRI("urn:context:named");
+
+		model.add(subject, predicate, valueFactory.createLiteral("object"));
+		model.add(subject, predicate, valueFactory.createLiteral("object"), namedContext);
+
+		assertThat(model.getUpgradedModel()).isNull();
+		assertThat(model.remove(subject, predicate, valueFactory.createLiteral("object"), (Resource[]) null)).isTrue();
+		assertThat(model.contains(subject, predicate, valueFactory.createLiteral("object"), (Resource[]) null))
+				.isFalse();
+		assertThat(model.contains(subject, predicate, valueFactory.createLiteral("object"), namedContext)).isTrue();
+		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
+	void nullableContextArrayOnlyRemovesNullContextAfterUpgrade() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Resource namedContext = valueFactory.createIRI("urn:context:named");
+
+		model.add(subject, predicate, valueFactory.createLiteral("object"));
+		model.add(subject, predicate, valueFactory.createLiteral("object"), namedContext);
+		model.filter(null, null, null);
+
+		assertThat(model.getUpgradedModel()).isNotNull();
+		assertThat(model.remove(subject, predicate, valueFactory.createLiteral("object"), (Resource[]) null)).isTrue();
+		assertThat(model.contains(subject, predicate, valueFactory.createLiteral("object"), (Resource[]) null))
+				.isFalse();
+		assertThat(model.contains(subject, predicate, valueFactory.createLiteral("object"), namedContext)).isTrue();
+	}
+
+	@Test
 	void inMemoryDeletePathsPruneNullContextCacheWithoutUpgrade() {
 		assertNullContextCacheClearedWithoutUpgrade(DynamicModel::remove);
 		assertNullContextCacheClearedWithoutUpgrade(

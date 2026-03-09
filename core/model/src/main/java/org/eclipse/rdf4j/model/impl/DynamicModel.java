@@ -225,11 +225,21 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	@Override
 	public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		if (subj == null || pred == null || obj == null || contexts.length == 0) {
+		if (subj == null || pred == null || obj == null || (contexts != null && contexts.length == 0)) {
 			upgrade();
 		}
 
 		if (model == null) {
+			if (contexts == null) {
+				boolean removed = statements
+						.remove(SimpleValueFactory.getInstance()
+								.createStatement(subj, pred, obj, (Resource) null)) != null;
+				if (removed) {
+					invalidateAddedContexts();
+				}
+				return removed;
+			}
+
 			boolean removed = false;
 			for (Resource context : contexts) {
 				removed = removed
