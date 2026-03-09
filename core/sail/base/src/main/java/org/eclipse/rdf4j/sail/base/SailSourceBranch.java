@@ -371,8 +371,8 @@ class SailSourceBranch implements SailSource {
 				}
 			}
 		} catch (Throwable e) {
+			discardPreparedSinkAfterFailedFlush(e);
 			discardQueuedChangesAfterFailedFlush(e);
-			prepared = null;
 			throw e;
 		} finally {
 			semaphore.unlock();
@@ -397,16 +397,20 @@ class SailSourceBranch implements SailSource {
 		semaphore.lock();
 	}
 
-	void merge(Changeset change) {
+	void merge(Changeset change) throws SailException {
 		try {
 			semaphore.lock();
 			pending.remove(change);
 			if (isChanged(change)) {
-				Changeset merged;
+				SailException failure = null;
 				changes.add(change.shallowClone());
 				change.detachStatementModels();
-				compressChanges();
-				merged = changes.getLast();
+				try {
+					compressChanges();
+				} catch (SailException e) {
+					failure = e;
+				}
+				Changeset merged = changes.getLast();
 
 				// ´pending´ is a synchronized collection, so we should in theory use a synchronized block here to
 				// protect our iterator. The ´semaphore´ is already protecting all writes, and we have already acquired
@@ -415,14 +419,25 @@ class SailSourceBranch implements SailSource {
 				for (Changeset c : pending) {
 					c.prepend(merged);
 				}
-				closeDeferredChangesetsIfPossible();
+				try {
+					closeDeferredChangesetsIfPossible();
+				} catch (SailException e) {
+					if (failure == null) {
+						failure = e;
+					} else {
+						failure.addSuppressed(e);
+					}
+				}
+				if (failure != null) {
+					throw failure;
+				}
 			}
 		} finally {
 			semaphore.unlock();
 		}
 	}
 
-	void compressChanges() {
+	void compressChanges() throws SailException {
 		try {
 			semaphore.lock();
 
@@ -459,14 +474,9 @@ class SailSourceBranch implements SailSource {
 					return;
 				}
 
-				try {
-					prepare(pop, changes.getLast());
-					flush(pop, changes.getLast());
-					closeDetachedChangesetIfUnreferenced(pop);
-				} catch (SailException e) {
-					// Changeset does not throw SailException
-					throw new AssertionError(e);
-				}
+				prepare(pop, changes.getLast());
+				flush(pop, changes.getLast());
+				closeDetachedChangesetIfUnreferenced(pop);
 			}
 
 		} finally {
@@ -618,6 +628,22 @@ class SailSourceBranch implements SailSource {
 			} finally {
 				iter.remove();
 			}
+		}
+	}
+
+	private void discardPreparedSinkAfterFailedFlush(Throwable cause) {
+		SailSink failedPrepared = prepared;
+		prepared = null;
+		if (failedPrepared == null) {
+			return;
+		}
+		if (failedPrepared == serializable) {
+			serializable = null;
+		}
+		try {
+			failedPrepared.close();
+		} catch (Throwable closeFailure) {
+			cause.addSuppressed(closeFailure);
 		}
 	}
 

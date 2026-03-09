@@ -92,6 +92,24 @@ public class AbstractMemoryOverflowModelTest {
 	}
 
 	@Test
+	void removeWithNullableContextArrayDelegatesToDynamicModelSemantics() {
+		AbstractMemoryOverflowModel<AbstractModel> model = newModel();
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+
+		model.add(valueFactory.createIRI("urn:subject"), valueFactory.createIRI("urn:predicate"),
+				valueFactory.createLiteral("value"));
+		model.add(valueFactory.createIRI("urn:subject"), valueFactory.createIRI("urn:predicate"),
+				valueFactory.createLiteral("value"), valueFactory.createIRI("urn:context"));
+
+		assertThat(model.remove(valueFactory.createIRI("urn:subject"), valueFactory.createIRI("urn:predicate"),
+				valueFactory.createLiteral("value"), (org.eclipse.rdf4j.model.Resource[]) null)).isTrue();
+		assertThat(model.contains(valueFactory.createIRI("urn:subject"), valueFactory.createIRI("urn:predicate"),
+				valueFactory.createLiteral("value"), (org.eclipse.rdf4j.model.Resource[]) null)).isFalse();
+		assertThat(model.contains(valueFactory.createIRI("urn:subject"), valueFactory.createIRI("urn:predicate"),
+				valueFactory.createLiteral("value"), valueFactory.createIRI("urn:context"))).isTrue();
+	}
+
+	@Test
 	void reusesPooledUnupgradedDynamicModel() throws Exception {
 		int originalMaxSize = getDynamicModelPoolMaxSize();
 		try {
