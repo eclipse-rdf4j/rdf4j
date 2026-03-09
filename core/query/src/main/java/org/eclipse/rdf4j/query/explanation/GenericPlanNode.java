@@ -455,6 +455,14 @@ public class GenericPlanNode {
 	}
 
 	/**
+	 * Accepts selfTimeActual when deserializing JSON for compatibility with clients/servers that include this derived
+	 * field.
+	 */
+	public void setSelfTimeActual(Double ignoredSelfTimeActual) {
+		// selfTimeActual is derived from totalTimeActual and child totals.
+	}
+
+	/**
 	 * @return true if this node introduces a new scope
 	 */
 	public Boolean isNewScope() {

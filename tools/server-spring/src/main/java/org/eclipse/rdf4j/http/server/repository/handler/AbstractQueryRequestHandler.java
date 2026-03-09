@@ -79,12 +79,18 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			long offset = getOffset(request);
 			boolean distinct = isDistinct(request);
 			final Optional<Explanation.Level> explainLevel = getExplain(request);
+
 			try {
 				if (!headersOnly) {
 					// explain param is present, return the query explanation
 					if (explainLevel.isPresent()) {
-						final Explanation explanation = explainQuery(query, explainLevel.get());
-						return getExplainQueryResponse(request, response, explanation);
+						try {
+							Explanation explanation = explainQuery(query, explainLevel.get());
+							return getExplainQueryResponse(request, response, explanation);
+						}finally {
+							// explanation is fully evaluated at this point, so we can safely close the connection before returning the response
+							repositoryCon.close();
+						}
 					}
 					queryResponse = evaluateQuery(query, limit, offset, distinct);
 				}

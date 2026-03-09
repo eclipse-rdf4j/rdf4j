@@ -15,12 +15,18 @@ module workbench {
          * JSON value provided by script element in document (see query.xsl).
          */
         declare var sparqlNamespaces: any;
+        declare var Viz: any;
+        declare var svgPanZoom: any;
 
         /**
          * Holds the current selected query language.
          */
         var currentQueryLn = '';
         var yasqe: YASQE_Instance = null;
+        var latestExplanation = '';
+        var latestExplanationFormat = 'text';
+        var vizRenderer: any = null;
+        var dotPanZoomInstance: any = null;
         
         /**
          * Populate reasonable default name space declarations into the query text area.
@@ -95,6 +101,235 @@ module workbench {
             written: boolean;
         }
 
+        interface AjaxExplainResponse {
+            content: string;
+            format: string;
+            error: string;
+        }
+
+        function clearExplainSelection() {
+            $('#explain').val('');
+            $('#explain-level').val('Optimized');
+        }
+
+        function updateDownloadButtonState() {
+            $('#download-explanation').prop('disabled', !latestExplanation);
+        }
+
+        function lockExplanationDimensions() {
+            var explanation = $('#query-explanation');
+            var dotView = $('#query-explanation-dot-view');
+            var currentHeight = explanation.outerHeight();
+            var currentWidth = explanation.outerWidth();
+            var dotHeight = dotView.outerHeight();
+            var dotWidth = dotView.outerWidth();
+            if (dotHeight && (!currentHeight || dotHeight > currentHeight)) {
+                currentHeight = dotHeight;
+            }
+            if (dotWidth && (!currentWidth || dotWidth > currentWidth)) {
+                currentWidth = dotWidth;
+            }
+            if (currentHeight) {
+                explanation.css('min-height', currentHeight + 'px');
+                dotView.css('min-height', currentHeight + 'px');
+            }
+            if (currentWidth) {
+                explanation.css('min-width', currentWidth + 'px');
+                dotView.css('min-width', currentWidth + 'px');
+            }
+        }
+
+        function clearExplanationDimensionLock() {
+            var explanation = $('#query-explanation');
+            var dotView = $('#query-explanation-dot-view');
+            explanation.css('min-height', '');
+            explanation.css('min-width', '');
+            dotView.css('min-height', '');
+            dotView.css('min-width', '');
+        }
+
+        function destroyDotPanZoom() {
+            if (dotPanZoomInstance && typeof dotPanZoomInstance.destroy === 'function') {
+                dotPanZoomInstance.destroy();
+            }
+            dotPanZoomInstance = null;
+        }
+
+        function setExplanationDisplayMode(format: string) {
+            if (format === 'dot') {
+                $('#query-explanation').hide();
+                $('#query-explanation-dot-view').show();
+            } else {
+                $('#query-explanation').show();
+                $('#query-explanation-dot-view').hide();
+                destroyDotPanZoom();
+            }
+        }
+
+        function applyDotPanZoom(svgElement: SVGElement) {
+            destroyDotPanZoom();
+            if (typeof svgPanZoom === 'undefined') {
+                return;
+            }
+            dotPanZoomInstance = svgPanZoom(svgElement, {
+                zoomEnabled: true,
+                controlIconsEnabled: true,
+                fit: true,
+                center: true,
+                minZoom: 0.2,
+                maxZoom: 20
+            });
+        }
+
+        function clearRenderedExplanation() {
+            $('#query-explanation-row').show();
+            $('#query-explanation-controls-row').show();
+            lockExplanationDimensions();
+            $('#query-explanation').text('');
+            var pendingFormat = (<string>$('#explain-format').val() || 'text').toLowerCase();
+            $('#query-explanation').attr('data-format', pendingFormat);
+            latestExplanation = '';
+            latestExplanationFormat = pendingFormat;
+            updateDownloadButtonState();
+            destroyDotPanZoom();
+            $('#query-explanation-dot-view').empty();
+            setExplanationDisplayMode(pendingFormat);
+        }
+
+        function showExplainError(message: string) {
+            var errorMessage = message || 'Explain request failed.';
+            clearRenderedExplanation();
+            $('#queryString.errors').text(errorMessage);
+            $('#query-explanation').show().text(errorMessage).attr('data-format', 'text');
+            $('#query-explanation-dot-view').hide().empty();
+            destroyDotPanZoom();
+            clearExplanationDimensionLock();
+        }
+
+        function renderDotView(explanationText: string, format: string) {
+            var dotView = $('#query-explanation-dot-view');
+            if (format !== 'dot') {
+                destroyDotPanZoom();
+                dotView.hide().empty();
+                return;
+            }
+            setExplanationDisplayMode('dot');
+            if (!explanationText) {
+                dotView.empty().show();
+                return;
+            }
+            dotView.html('<div>Rendering DOT graph...</div>').show();
+            if (typeof Viz === 'undefined') {
+                dotView.html('<div class="error">Graphviz visualizer script not loaded.</div>');
+                return;
+            }
+            if (!vizRenderer) {
+                vizRenderer = new Viz();
+            }
+            vizRenderer.renderSVGElement(explanationText).then(function(svgElement: SVGElement) {
+                svgElement.setAttribute('width', '100%');
+                svgElement.setAttribute('height', '100%');
+                $(svgElement).css({
+                    width: '100%',
+                    height: 'auto',
+                    display: 'block'
+                });
+                dotView.empty().append(svgElement).show();
+                applyDotPanZoom(svgElement);
+            }).catch(function() {
+                vizRenderer = new Viz();
+                destroyDotPanZoom();
+                dotView.html('<div class="error">Unable to render DOT graph.</div>');
+            });
+        }
+
+        function renderExplanation(explanationText: string, format: string) {
+            var normalizedFormat = (format || 'text').toLowerCase();
+            $('#query-explanation-row').show();
+            $('#query-explanation-controls-row').show();
+            if (normalizedFormat === 'dot') {
+                $('#query-explanation').text('').attr('data-format', normalizedFormat);
+            } else {
+                $('#query-explanation').text(explanationText).attr('data-format', normalizedFormat);
+            }
+            setExplanationDisplayMode(normalizedFormat);
+            latestExplanation = explanationText;
+            latestExplanationFormat = normalizedFormat;
+            updateDownloadButtonState();
+            renderDotView(explanationText, normalizedFormat);
+            clearExplanationDimensionLock();
+        }
+
+        function getExplainErrorMessage(jqXHR: JQueryXHR, textStatus: string, errorThrown: string): string {
+            var response: any = jqXHR.responseJSON;
+            if (response && response.error) {
+                return response.error;
+            }
+            var responseText = jqXHR.responseText;
+            if (responseText) {
+                try {
+                    var parsedResponse = JSON.parse(responseText);
+                    if (parsedResponse && parsedResponse.error) {
+                        return parsedResponse.error;
+                    }
+                } catch (e) {
+                    // fall through and return plain response text
+                }
+                return responseText;
+            }
+            if (textStatus == 'timeout') {
+                return 'Timed out waiting for explanation response.';
+            }
+            if (errorThrown) {
+                return 'Explain request failed: ' + errorThrown;
+            }
+            return 'Explain request failed.';
+        }
+
+        function ajaxExplain() {
+            var form = $('form[action="query"]');
+            $('#queryString.errors').text('');
+            clearRenderedExplanation();
+            $.ajax({
+                url: 'query',
+                type: 'POST',
+                dataType: 'json',
+                data: form.serialize(),
+                timeout: 30000,
+                error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
+                    showExplainError(getExplainErrorMessage(jqXHR, textStatus, errorThrown));
+                },
+                success: function(response: AjaxExplainResponse) {
+                    if (response.error) {
+                        showExplainError(response.error);
+                        return;
+                    }
+                    $('#queryString.errors').text('');
+                    renderExplanation(response.content || '', response.format || <string>$('#explain-format').val());
+                }
+            });
+        }
+
+        function getExplanationDownloadMimeType(format: string): string {
+            if (format === 'json') {
+                return 'application/json';
+            }
+            if (format === 'dot') {
+                return 'text/vnd.graphviz';
+            }
+            return 'text/plain';
+        }
+
+        function getExplanationDownloadExtension(format: string): string {
+            if (format === 'json') {
+                return 'json';
+            }
+            if (format === 'dot') {
+                return 'dot';
+            }
+            return 'txt';
+        }
+
         /**
          * Send a background HTTP request to save the query, and handle the
          * response asynchronously.
@@ -163,6 +398,7 @@ module workbench {
             var allowPageToSubmitForm = false;
             var save = ($('#action').val() == 'save');
             if (save) {
+                clearExplainSelection();
                 ajaxSave(false);
             } else {
                 var url: string[] = [];
@@ -177,6 +413,8 @@ module workbench {
                 workbench.addParam(url, 'query');
                 workbench.addParam(url, 'limit_query');
                 workbench.addParam(url, 'infer');
+                workbench.addParam(url, 'explain');
+                workbench.addParam(url, 'explain-format');
                 var href = url.join('');
                 var loc = document.location;
                 var currentBaseLength = loc.href.length - loc.pathname.length
@@ -199,6 +437,48 @@ module workbench {
             // Value returned to form submit event. If not true, prevents normal form
             // submission.
             return allowPageToSubmitForm;
+        }
+
+        export function runExplain(level?: string) {
+            var effectiveLevel = level || <string>$('#explain-level').val() || 'Optimized';
+            $('#explain-level').val(effectiveLevel);
+            if (yasqe) yasqe.save();
+            $('#action').val('explain');
+            $('#explain').val(effectiveLevel);
+            ajaxExplain();
+        }
+
+        export function downloadExplanation() {
+            if (!latestExplanation) {
+                return;
+            }
+            var format = latestExplanationFormat || <string>$('#explain-format').val() || 'text';
+            var extension = getExplanationDownloadExtension(format);
+            var mimeType = getExplanationDownloadMimeType(format);
+            var blob = new Blob([latestExplanation], { type: mimeType + ';charset=utf-8' });
+            var link = document.createElement('a');
+            var selectedLevel = <string>$('#explain-level').val() || 'query';
+            link.download = 'query-explanation-' + selectedLevel.toLowerCase() + '.' + extension;
+            link.href = window.URL.createObjectURL(blob);
+            document.body.appendChild(link);
+            link.click();
+            window.URL.revokeObjectURL(link.href);
+            document.body.removeChild(link);
+        }
+
+        export function initializeExplanationView() {
+            var initialExplanation = $('#query-explanation').text();
+            var initialFormat = <string>$('#query-explanation').attr('data-format')
+                || <string>$('#explain-format').val() || 'text';
+            if (initialExplanation) {
+                renderExplanation(initialExplanation, initialFormat);
+            } else {
+                latestExplanation = '';
+                latestExplanationFormat = initialFormat.toLowerCase();
+                updateDownloadButtonState();
+                renderDotView('', latestExplanationFormat);
+                $('#query-explanation-controls-row').hide();
+            }
         }
 
         export function setQueryValue(queryString: string): void {
@@ -314,14 +594,27 @@ workbench.addLoad(function queryPageLoaded() {
     // Trim the query text area contents of any leading and/or trailing 
     // whitespace.
     workbench.query.setQueryValue($.trim(workbench.query.getQueryValue()));
+    workbench.query.initializeExplanationView();
 
     // Add click handlers identifying the clicked element in a hidden 'action' 
     // form field.
-    var addHandler = function(id: string) {
-        $('#' + id).click(function setAction() { $('#action').val(id); });
+    var addHandler = function(id: string, callback?: () => void) {
+        $('#' + id).click(function setAction() {
+            $('#action').val(id);
+            if (callback) {
+                callback();
+            }
+        });
     };
-    addHandler('exec');
-    addHandler('save');
+    addHandler('exec', function() {
+        $('#explain').val('');
+        $('#explain-level').val('');
+    });
+    addHandler('save', function() {
+        $('#explain').val('');
+        $('#explain-level').val('');
+    });
+    $('#download-explanation').click(workbench.query.downloadExplanation);
 
     // Add event handlers to the save name field to react to changes in it.
     $('#query-name').bind('keydown cut paste', workbench.query.handleNameChange);

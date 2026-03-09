@@ -70,6 +70,12 @@ public class QueryServlet extends TransformationServlet {
 
 	protected static final String QUERY = "query";
 
+	private static final String ACTION = "action";
+
+	private static final String ACTION_GET = "get";
+
+	private static final String ACTION_EXPLAIN = "explain";
+
 	private static final String[] EDIT_PARAMS = new String[] { QUERY_LN, QUERY, INFER, LIMIT };
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(QueryServlet.class);
@@ -172,17 +178,62 @@ public class QueryServlet extends TransformationServlet {
 			queryCache.put(hash, queryValue);
 			cookies.addCookie(req, resp, QUERY, hash);
 		}
-		if ("get".equals(req.getParameter("action"))) {
-			ObjectNode jsonObject = mapper.createObjectNode();
-			jsonObject.put("queryText", getQueryText(req));
-			PrintWriter writer = new PrintWriter(new BufferedWriter(resp.getWriter()));
-			try {
-				writer.write(mapper.writeValueAsString(jsonObject));
-			} finally {
-				writer.flush();
-			}
+		final String action = req.getParameter(ACTION);
+		if (ACTION_GET.equals(action)) {
+			writeQueryTextResponse(req, resp);
+		} else if (ACTION_EXPLAIN.equals(action)) {
+			writeExplainResponse(req, resp);
 		} else {
 			handleStandardBrowserRequest(req, resp, xslPath);
+		}
+	}
+
+	private void writeQueryTextResponse(final WorkbenchRequest req, final HttpServletResponse resp)
+			throws IOException, RDF4JException, BadRequestException {
+		resp.setContentType("application/json");
+		ObjectNode jsonObject = mapper.createObjectNode();
+		jsonObject.put("queryText", getQueryText(req));
+		PrintWriter writer = new PrintWriter(new BufferedWriter(resp.getWriter()));
+		try {
+			writer.write(mapper.writeValueAsString(jsonObject));
+		} finally {
+			writer.flush();
+		}
+	}
+
+	private void writeExplainResponse(final WorkbenchRequest req, final HttpServletResponse resp) throws IOException {
+		resp.setContentType("application/json");
+		ObjectNode jsonObject = mapper.createObjectNode();
+		try (RepositoryConnection con = repository.getConnection()) {
+			con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
+			String queryText = getQueryText(req);
+			QueryEvaluator.ExplainQueryResult explainQueryResult = EVAL.explain(con, queryText, req);
+			jsonObject.put("format", explainQueryResult.getFormat());
+			jsonObject.put("content", explainQueryResult.getContent());
+		} catch (BadRequestException e) {
+			resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+			jsonObject.put("error", e.getMessage());
+		} catch (MalformedQueryException e) {
+			resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+			jsonObject.put("error", e.getMessage());
+		} catch (HTTPQueryEvaluationException e) {
+			resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+			if (e.getCause() instanceof MalformedQueryException) {
+				jsonObject.put("error", e.getCause().getMessage());
+			} else {
+				jsonObject.put("error", e.getMessage());
+			}
+		} catch (RDF4JException e) {
+			LOGGER.warn(e.toString(), e);
+			resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+			jsonObject.put("error", e.getMessage());
+		}
+
+		PrintWriter writer = new PrintWriter(new BufferedWriter(resp.getWriter()));
+		try {
+			writer.write(mapper.writeValueAsString(jsonObject));
+		} finally {
+			writer.flush();
 		}
 	}
 
@@ -208,7 +259,7 @@ public class QueryServlet extends TransformationServlet {
 	@Override
 	protected void doPost(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
 			throws IOException, BadRequestException, RDF4JException {
-		final String action = req.getParameter("action");
+		final String action = req.getParameter(ACTION);
 		if ("save".equals(action)) {
 			saveQuery(req, resp);
 		} else if ("edit".equals(action)) {
@@ -234,6 +285,12 @@ public class QueryServlet extends TransformationServlet {
 		} else if ("exec".equals(action)) {
 			if (canReadSavedQuery(req)) {
 				service(req, resp, xslPath);
+			} else {
+				throw new BadRequestException("Current user may not read the given query.");
+			}
+		} else if (ACTION_EXPLAIN.equals(action)) {
+			if (canReadSavedQuery(req)) {
+				writeExplainResponse(req, resp);
 			} else {
 				throw new BadRequestException("Current user may not read the given query.");
 			}

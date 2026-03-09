@@ -14,6 +14,9 @@ var workbench;
          */
         var currentQueryLn = '';
         var yasqe = null;
+        var latestExplanation = '';
+        var latestExplanationFormat = 'text';
+        var vizRenderer = null;
         /**
          * Populate reasonable default name space declarations into the query text area.
          * The server has provided the declaration text in hidden elements.
@@ -139,6 +142,146 @@ var workbench;
                 }
             });
         }
+        function clearExplainSelection() {
+            $('#explain').val('');
+            $('#explain-level').val('Optimized');
+        }
+        function updateDownloadButtonState() {
+            $('#download-explanation').prop('disabled', !latestExplanation);
+        }
+        function lockExplanationDimensions() {
+            var explanation = $('#query-explanation');
+            var currentHeight = explanation.outerHeight();
+            var currentWidth = explanation.outerWidth();
+            if (currentHeight) {
+                explanation.css('min-height', currentHeight + 'px');
+            }
+            if (currentWidth) {
+                explanation.css('min-width', currentWidth + 'px');
+            }
+        }
+        function clearExplanationDimensionLock() {
+            var explanation = $('#query-explanation');
+            explanation.css('min-height', '');
+            explanation.css('min-width', '');
+        }
+        function clearRenderedExplanation() {
+            $('#query-explanation-row').show();
+            $('#query-explanation-controls-row').show();
+            lockExplanationDimensions();
+            $('#query-explanation').text('');
+            $('#query-explanation').attr('data-format', 'text');
+            latestExplanation = '';
+            latestExplanationFormat = 'text';
+            updateDownloadButtonState();
+            $('#query-explanation-dot-view').hide().empty();
+        }
+        function showExplainError(message) {
+            var errorMessage = message || 'Explain request failed.';
+            clearRenderedExplanation();
+            $('#queryString.errors').text(errorMessage);
+            $('#query-explanation').text(errorMessage);
+            clearExplanationDimensionLock();
+        }
+        function renderDotView(explanationText, format) {
+            var dotView = $('#query-explanation-dot-view');
+            if (format !== 'dot') {
+                dotView.hide().empty();
+                return;
+            }
+            dotView.html('<div>Rendering DOT graph...</div>').show();
+            if (typeof Viz === 'undefined') {
+                dotView.html('<div class="error">Graphviz visualizer script not loaded; raw DOT shown above.</div>');
+                return;
+            }
+            if (!vizRenderer) {
+                vizRenderer = new Viz();
+            }
+            vizRenderer.renderSVGElement(explanationText).then(function (svgElement) {
+                dotView.empty().append(svgElement).show();
+            }).catch(function () {
+                vizRenderer = new Viz();
+                dotView.html('<div class="error">Unable to render DOT graph; raw DOT shown above.</div>');
+            });
+        }
+        function renderExplanation(explanationText, format) {
+            var normalizedFormat = (format || 'text').toLowerCase();
+            $('#query-explanation-row').show();
+            $('#query-explanation-controls-row').show();
+            $('#query-explanation').text(explanationText).attr('data-format', normalizedFormat);
+            latestExplanation = explanationText;
+            latestExplanationFormat = normalizedFormat;
+            updateDownloadButtonState();
+            renderDotView(explanationText, normalizedFormat);
+            clearExplanationDimensionLock();
+        }
+        function getExplainErrorMessage(jqXHR, textStatus, errorThrown) {
+            var response = jqXHR.responseJSON;
+            if (response && response.error) {
+                return response.error;
+            }
+            var responseText = jqXHR.responseText;
+            if (responseText) {
+                try {
+                    var parsedResponse = JSON.parse(responseText);
+                    if (parsedResponse && parsedResponse.error) {
+                        return parsedResponse.error;
+                    }
+                }
+                catch (e) {
+                    // fall through and return plain response text
+                }
+                return responseText;
+            }
+            if (textStatus == 'timeout') {
+                return 'Timed out waiting for explanation response.';
+            }
+            if (errorThrown) {
+                return 'Explain request failed: ' + errorThrown;
+            }
+            return 'Explain request failed.';
+        }
+        function ajaxExplain() {
+            var form = $('form[action="query"]');
+            $('#queryString.errors').text('');
+            clearRenderedExplanation();
+            $.ajax({
+                url: 'query',
+                type: 'POST',
+                dataType: 'json',
+                data: form.serialize(),
+                timeout: 30000,
+                error: function (jqXHR, textStatus, errorThrown) {
+                    showExplainError(getExplainErrorMessage(jqXHR, textStatus, errorThrown));
+                },
+                success: function (response) {
+                    if (response.error) {
+                        showExplainError(response.error);
+                        return;
+                    }
+                    $('#queryString.errors').text('');
+                    renderExplanation(response.content || '', response.format || $('#explain-format').val());
+                }
+            });
+        }
+        function getExplanationDownloadMimeType(format) {
+            if (format === 'json') {
+                return 'application/json';
+            }
+            if (format === 'dot') {
+                return 'text/vnd.graphviz';
+            }
+            return 'text/plain';
+        }
+        function getExplanationDownloadExtension(format) {
+            if (format === 'json') {
+                return 'json';
+            }
+            if (format === 'dot') {
+                return 'dot';
+            }
+            return 'txt';
+        }
         /**
          * Invoked by form submission.
          *
@@ -152,6 +295,7 @@ var workbench;
             var allowPageToSubmitForm = false;
             var save = ($('#action').val() == 'save');
             if (save) {
+                clearExplainSelection();
                 ajaxSave(false);
             }
             else {
@@ -168,6 +312,8 @@ var workbench;
                 workbench.addParam(url, 'query');
                 workbench.addParam(url, 'limit_query');
                 workbench.addParam(url, 'infer');
+                workbench.addParam(url, 'explain');
+                workbench.addParam(url, 'explain-format');
                 var href = url.join('');
                 var loc = document.location;
                 var currentBaseLength = loc.href.length - loc.pathname.length
@@ -191,6 +337,50 @@ var workbench;
             return allowPageToSubmitForm;
         }
         query_1.doSubmit = doSubmit;
+        function runExplain(level) {
+            var effectiveLevel = level || $('#explain-level').val() || 'Optimized';
+            $('#explain-level').val(effectiveLevel);
+            if (yasqe)
+                yasqe.save();
+            $('#action').val('explain');
+            $('#explain').val(effectiveLevel);
+            ajaxExplain();
+        }
+        query_1.runExplain = runExplain;
+        function downloadExplanation() {
+            if (!latestExplanation) {
+                return;
+            }
+            var format = latestExplanationFormat || $('#explain-format').val() || 'text';
+            var extension = getExplanationDownloadExtension(format);
+            var mimeType = getExplanationDownloadMimeType(format);
+            var blob = new Blob([latestExplanation], { type: mimeType + ';charset=utf-8' });
+            var link = document.createElement('a');
+            var selectedLevel = $('#explain-level').val() || 'query';
+            link.download = 'query-explanation-' + selectedLevel.toLowerCase() + '.' + extension;
+            link.href = window.URL.createObjectURL(blob);
+            document.body.appendChild(link);
+            link.click();
+            window.URL.revokeObjectURL(link.href);
+            document.body.removeChild(link);
+        }
+        query_1.downloadExplanation = downloadExplanation;
+        function initializeExplanationView() {
+            var initialExplanation = $('#query-explanation').text();
+            var initialFormat = $('#query-explanation').attr('data-format')
+                || $('#explain-format').val() || 'text';
+            if (initialExplanation) {
+                renderExplanation(initialExplanation, initialFormat);
+            }
+            else {
+                latestExplanation = '';
+                latestExplanationFormat = initialFormat.toLowerCase();
+                updateDownloadButtonState();
+                renderDotView('', latestExplanationFormat);
+                $('#query-explanation-controls-row').hide();
+            }
+        }
+        query_1.initializeExplanationView = initializeExplanationView;
         function setQueryValue(queryString) {
             yasqe.setValue(queryString.trim());
         }
@@ -293,13 +483,26 @@ workbench.addLoad(function queryPageLoaded() {
     // Trim the query text area contents of any leading and/or trailing 
     // whitespace.
     workbench.query.setQueryValue($.trim(workbench.query.getQueryValue()));
+    workbench.query.initializeExplanationView();
     // Add click handlers identifying the clicked element in a hidden 'action' 
     // form field.
-    var addHandler = function (id) {
-        $('#' + id).click(function setAction() { $('#action').val(id); });
+    var addHandler = function (id, callback) {
+        $('#' + id).click(function setAction() {
+            $('#action').val(id);
+            if (callback) {
+                callback();
+            }
+        });
     };
-    addHandler('exec');
-    addHandler('save');
+    addHandler('exec', function () {
+        $('#explain').val('');
+        $('#explain-level').val('');
+    });
+    addHandler('save', function () {
+        $('#explain').val('');
+        $('#explain-level').val('');
+    });
+    $('#download-explanation').click(workbench.query.downloadExplanation);
     // Add event handlers to the save name field to react to changes in it.
     $('#query-name').bind('keydown cut paste', workbench.query.handleNameChange);
     // Add event handlers to the query text area to react to changes in it.

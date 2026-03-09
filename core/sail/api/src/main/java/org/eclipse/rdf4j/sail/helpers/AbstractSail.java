@@ -72,14 +72,7 @@ public abstract class AbstractSail implements Sail {
 	static final String DEBUG_PROP = "org.eclipse.rdf4j.repository.debug";
 
 	protected static boolean debugEnabled() {
-		try {
-			String value = System.getProperty(DEBUG_PROP);
-			return value != null && !value.equals("false");
-		} catch (SecurityException e) {
-			// Thrown when not allowed to read system properties, for example when
-			// running in applets
-			return false;
-		}
+		return true;
 	}
 
 	private static final Logger logger = LoggerFactory.getLogger(AbstractSail.class);
@@ -210,6 +203,14 @@ public abstract class AbstractSail implements Sail {
 				if (!activeConnections.isEmpty()) {
 					logger.debug("Waiting for active connections to close before shutting down...");
 					try {
+						activeConnections.forEach((c, e) -> {
+							System.out.println("Active connection: " + c + " acquired at:");
+							if (e != null) {
+								e.printStackTrace(System.out);
+							} else {
+								System.out.println("Debugging was disabled at the time this connection was acquired, no stack trace available.");
+							}
+						});
 						activeConnections.wait(connectionTimeOut);
 					} catch (InterruptedException e) {
 						// ignore and continue

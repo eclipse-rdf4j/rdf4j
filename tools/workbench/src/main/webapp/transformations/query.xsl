@@ -16,8 +16,13 @@
 			select="sparql:results/sparql:result/sparql:binding[@name='queryLn']" />
 		<xsl:variable name="query"
 			select="sparql:results/sparql:result/sparql:binding[@name='query']" />
+		<xsl:variable name="explanation"
+			select="sparql:results/sparql:result/sparql:binding[@name='explanation']/sparql:literal" />
+		<xsl:variable name="explanationFormat"
+			select="sparql:results/sparql:result/sparql:binding[@name='explanation-format']/sparql:literal" />
 		<form action="query" method="post" onsubmit="return workbench.query.doSubmit()">
 			<input type="hidden" name="action" id="action" />
+			<input type="hidden" name="explain" id="explain" />
 			<table class="dataentry">
 				<tbody>
 					<tr>
@@ -65,6 +70,69 @@
 							</span>
 						</td>
 					</tr>
+					<tr id="query-explanation-row">
+						<xsl:if test="string-length(normalize-space($explanation)) = 0">
+							<xsl:attribute name="style">display:none;</xsl:attribute>
+						</xsl:if>
+						<th>
+							<xsl:value-of select="$query-explanation.label" />
+						</th>
+						<td>
+							<pre id="query-explanation"
+								data-format="{normalize-space($explanationFormat)}"
+								style="max-height:none; overflow:auto; white-space:pre-wrap; word-break:break-word; background:#ffffff; color:#000000; border:1px solid #d0d0d0; padding:0.75em;">
+								<xsl:value-of select="$explanation" />
+							</pre>
+							<div id="query-explanation-dot-view"
+								style="display:none; margin-top:0.75em; background:#ffffff; border:1px solid #d0d0d0; padding:0.75em; font-size:1em; width:100%; box-sizing:border-box; overflow:auto;"></div>
+						</td>
+						<td>
+						</td>
+					</tr>
+					<tr id="query-explanation-controls-row">
+						<xsl:if test="string-length(normalize-space($explanation)) = 0">
+							<xsl:attribute name="style">display:none;</xsl:attribute>
+						</xsl:if>
+						<th></th>
+						<td>
+							<select id="explain-format" name="explain-format">
+								<option value="text">
+									<xsl:if test="normalize-space($explanationFormat) = '' or normalize-space($explanationFormat) = 'text'">
+										<xsl:attribute name="selected">selected</xsl:attribute>
+									</xsl:if>
+									Text
+								</option>
+								<option value="dot">
+									<xsl:if test="normalize-space($explanationFormat) = 'dot'">
+										<xsl:attribute name="selected">selected</xsl:attribute>
+									</xsl:if>
+									DOT
+								</option>
+								<option value="json">
+									<xsl:if test="normalize-space($explanationFormat) = 'json'">
+										<xsl:attribute name="selected">selected</xsl:attribute>
+									</xsl:if>
+									JSON
+								</option>
+							</select>
+							<select id="explain-level">
+								<option value="Unoptimized">Unoptimized</option>
+								<option value="Optimized" selected="selected">Optimized</option>
+								<option value="Executed">Executed</option>
+								<option value="Telemetry">Telemetry</option>
+								<option value="Timed">Timed</option>
+							</select>
+							<input id="rerun-explanation" type="button"
+								value="{$explain-query.label}" onclick="workbench.query.runExplain()" />
+							<input id="download-explanation" type="button"
+								value="{$download-explanation.label}">
+								<xsl:if test="string-length(normalize-space($explanation)) = 0">
+									<xsl:attribute name="disabled">disabled</xsl:attribute>
+								</xsl:if>
+							</input>
+						</td>
+						<td></td>
+					</tr>
 					<tr>
 						<th>
 							<xsl:value-of select="$result-limit.label" />
@@ -100,6 +168,8 @@
 						<td>
 							<input type="button" onclick="workbench.query.resetNamespaces()" value="Clear" />
 							<input id="exec" type="submit" value="{$execute.label}" />
+							<input id="explain-trigger" type="button"
+								value="{$explain-query.label}" onclick="workbench.query.runExplain()" />
 							<input id="save" type="submit" value="{$save.label}"
 								disabled="disabled" />
 							<input id="query-name" name="query-name" type="text" size="32"
@@ -124,7 +194,10 @@
 		<script src="../../scripts/codemirror.4.5.0.min.js" type="text/javascript"></script>
 		<script src="../../scripts/yasqe.min.js" type="text/javascript"></script>
 		<script src="../../scripts/yasqeHelper.js" type="text/javascript"></script>
+		<script src="../../scripts/viz/viz.js" type="text/javascript"></script>
+		<script src="../../scripts/viz/full.render.js" type="text/javascript"></script>
+		<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.2/dist/svg-pan-zoom.min.js" type="text/javascript"></script>
 		<script src="../../scripts/query.js" type="text/javascript"></script>
-		
+
 	</xsl:template>
 </xsl:stylesheet>

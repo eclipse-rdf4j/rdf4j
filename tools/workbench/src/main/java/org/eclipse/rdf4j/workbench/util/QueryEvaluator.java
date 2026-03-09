@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.workbench.util;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import javax.servlet.http.HttpServletResponse;
 
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -46,8 +48,34 @@ public final class QueryEvaluator {
 
 	private static final String ACCEPT = "Accept";
 
+	private static final String EXPLAIN = "explain";
+
+	private static final String EXPLAIN_FORMAT = "explain-format";
+
+	private static final String EXPLANATION = "explanation";
+
+	private static final String EXPLANATION_FORMAT = "explanation-format";
+
 	private QueryEvaluator() {
 		// do nothing
+	}
+
+	public static final class ExplainQueryResult {
+		private final String content;
+		private final String format;
+
+		private ExplainQueryResult(String content, String format) {
+			this.content = content;
+			this.format = format;
+		}
+
+		public String getContent() {
+			return content;
+		}
+
+		public String getFormat() {
+			return format;
+		}
 	}
 
 	/**
@@ -70,7 +98,13 @@ public final class QueryEvaluator {
 			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
 			final WorkbenchRequest req, final CookieHandler cookies) throws BadRequestException, RDF4JException {
 		final QueryLanguage queryLn = QueryLanguage.valueOf(req.getParameter("queryLn"));
-		Query query = QueryFactory.prepareQuery(con, queryLn, queryText);
+		Query query = prepareQuery(con, queryText, req);
+		if (req.isParameterPresent(EXPLAIN)) {
+			ExplainQueryResult explainQueryResult = explain(query, req);
+			explainQuery(builder, xslPath, explainQueryResult);
+			return;
+		}
+
 		boolean evaluateCookie = false;
 		int offset = req.getInt("offset");
 		int limit = req.getInt("limit_query");
@@ -92,11 +126,106 @@ public final class QueryEvaluator {
 				}
 			}
 		}
+		this.evaluate(builder, out, xslPath, req, resp, cookies, query, evaluateCookie, paged, offset, limit);
+	}
+
+	public ExplainQueryResult explain(final RepositoryConnection con, final String queryText,
+			final WorkbenchRequest req)
+			throws BadRequestException, RDF4JException {
+		Query query = prepareQuery(con, queryText, req);
+		return explain(query, req);
+	}
+
+	private Query prepareQuery(final RepositoryConnection con, final String queryText, final WorkbenchRequest req)
+			throws BadRequestException, RDF4JException {
+		final QueryLanguage queryLn = QueryLanguage.valueOf(req.getParameter("queryLn"));
+		Query query = QueryFactory.prepareQuery(con, queryLn, queryText);
 		if (req.isParameterPresent("infer")) {
 			final boolean infer = Boolean.parseBoolean(req.getParameter("infer"));
 			query.setIncludeInferred(infer);
 		}
-		this.evaluate(builder, out, xslPath, req, resp, cookies, query, evaluateCookie, paged, offset, limit);
+		return query;
+	}
+
+	private ExplainQueryResult explain(final Query query, final WorkbenchRequest req) throws BadRequestException {
+		Explanation.Level level = getExplainLevel(req.getParameter(EXPLAIN));
+		ExplainFormat format = getExplainFormat(req.getParameter(EXPLAIN_FORMAT));
+		Explanation explanation;
+		try {
+			explanation = query.explain(level);
+		} catch (UnsupportedOperationException e) {
+			throw new BadRequestException("Explain is not supported for this query or repository.", e);
+		}
+		return new ExplainQueryResult(formatExplanation(explanation, format), format.getValue());
+	}
+
+	private void explainQuery(final TupleResultBuilder builder, final String xslPath,
+			final ExplainQueryResult explainQueryResult) throws QueryResultHandlerException {
+		builder.transform(xslPath, "query.xsl");
+		builder.start(EXPLANATION, EXPLANATION_FORMAT);
+		builder.link(List.of(INFO, "namespaces"));
+		builder.result(explainQueryResult.getContent(), explainQueryResult.getFormat());
+		builder.end();
+	}
+
+	private Explanation.Level getExplainLevel(String explainLevel) throws BadRequestException {
+		try {
+			return Explanation.Level.valueOf(explainLevel);
+		} catch (IllegalArgumentException | NullPointerException e) {
+			throw new BadRequestException("Unknown explain level '" + explainLevel + "'. Expected one of: "
+					+ getAvailableExplainLevels(), e);
+		}
+	}
+
+	private ExplainFormat getExplainFormat(String explainFormat) throws BadRequestException {
+		if (explainFormat == null || explainFormat.isBlank()) {
+			return ExplainFormat.TEXT;
+		}
+		try {
+			return ExplainFormat.valueOf(explainFormat.toUpperCase(Locale.ENGLISH));
+		} catch (IllegalArgumentException e) {
+			throw new BadRequestException(
+					"Unknown explain format '" + explainFormat + "'. Expected one of: text, dot, json", e);
+		}
+	}
+
+	private String formatExplanation(Explanation explanation, ExplainFormat explainFormat) {
+		switch (explainFormat) {
+		case DOT:
+			return explanation.toDot();
+		case JSON:
+			return explanation.toJson();
+		case TEXT:
+		default:
+			return explanation.toString();
+		}
+	}
+
+	private enum ExplainFormat {
+		TEXT("text"),
+		DOT("dot"),
+		JSON("json");
+
+		private final String value;
+
+		ExplainFormat(String value) {
+			this.value = value;
+		}
+
+		private String getValue() {
+			return value;
+		}
+	}
+
+	private String getAvailableExplainLevels() {
+		StringBuilder levels = new StringBuilder();
+		for (Explanation.Level level : Explanation.Level.values()) {
+			if (levels.length() > 0) {
+				levels.append(", ");
+			}
+			levels.append(level.name());
+		}
+		return levels.toString();
 	}
 
 	/***

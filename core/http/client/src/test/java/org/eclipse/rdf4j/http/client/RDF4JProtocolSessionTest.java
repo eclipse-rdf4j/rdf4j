@@ -20,6 +20,8 @@ import java.util.HashMap;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -278,6 +280,53 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 						.withPath("/rdf4j-server/repositories")
 						.withHeader(testHeader, testValue)
 		);
+	}
+
+	@Test
+	public void testSendQueryExplanation(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("explain", "Optimized"),
+				Times.once())
+				.respond(
+						response()
+								.withBody("{\"type\":\"Projection\"}")
+								.withContentType(MediaType.APPLICATION_JSON)
+				);
+
+		Explanation explanation = getRDF4JSession().sendQueryExplanation(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0, Explanation.Level.Optimized);
+		assertThat(explanation.toGenericPlanNode().getType()).isEqualTo("Projection");
+
+		client.verify(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("explain", "Optimized")
+						.withHeader(testHeader, testValue)
+						.withHeader("Accept", "application/json")
+		);
+	}
+
+	@Test
+	public void testSendQueryExplanationAcceptsSelfTimeActualField(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("explain", "Optimized"),
+				Times.once())
+				.respond(
+						response()
+								.withBody("{\"type\":\"Projection\",\"totalTimeActual\":10.0,\"selfTimeActual\":2.0}")
+								.withContentType(MediaType.APPLICATION_JSON)
+				);
+
+		Explanation explanation = getRDF4JSession().sendQueryExplanation(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0, Explanation.Level.Optimized);
+		assertThat(explanation.toGenericPlanNode().getType()).isEqualTo("Projection");
 	}
 
 	@Test

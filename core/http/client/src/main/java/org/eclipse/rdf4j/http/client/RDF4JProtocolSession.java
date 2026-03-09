@@ -25,6 +25,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
@@ -80,6 +81,9 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -94,6 +98,8 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 /**
  * A {@link SPARQLProtocolSession} subclass which extends the standard SPARQL 1.1 Protocol with additional
  * functionality, as documented in the <a href="http://docs.rdf4j.org/rest-api">RDF4J REST API</a>.
@@ -103,6 +109,7 @@ import org.slf4j.LoggerFactory;
  * @see <a href="http://docs.rdf4j.org/rest-api">RDF4J REST API</a>
  */
 public class RDF4JProtocolSession extends SPARQLProtocolSession {
+	private static final ObjectMapper EXPLANATION_MAPPER = new ObjectMapper();
 
 	/**
 	 * How long the client should wait before sending another PING to the server
@@ -965,6 +972,17 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		return builder.build();
 	}
 
+	public Explanation sendQueryExplanation(QueryLanguage ql, String query, String baseURI, Dataset dataset,
+			boolean includeInferred, int maxQueryTime, Explanation.Level level, Binding... bindings)
+			throws IOException, RepositoryException, MalformedQueryException, UnauthorizedException,
+			QueryInterruptedException {
+		Objects.requireNonNull(level, "Explanation level may not be null");
+		HttpUriRequest queryMethod = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime,
+				bindings);
+		HttpUriRequest explainMethod = addQueryParameter(queryMethod, Protocol.EXPLAIN_PARAM_NAME, level.name());
+		return getQueryExplanation(explainMethod);
+	}
+
 	@Override
 	protected HttpUriRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
 			boolean includeInferred, int maxExecutionTime, Binding... bindings) {
@@ -1216,5 +1234,34 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			method.addHeader(additionalHeader.getKey(), additionalHeader.getValue());
 		}
 		return method;
+	}
+
+	private HttpUriRequest addQueryParameter(HttpUriRequest method, String parameterName, String parameterValue) {
+		try {
+			URIBuilder uriBuilder = new URIBuilder(method.getURI());
+			uriBuilder.addParameter(parameterName, parameterValue);
+			return RequestBuilder.copy(method).setUri(uriBuilder.build()).build();
+		} catch (URISyntaxException e) {
+			throw new AssertionError(e);
+		}
+	}
+
+	private Explanation getQueryExplanation(HttpUriRequest method)
+			throws IOException, RepositoryException, MalformedQueryException, UnauthorizedException,
+			QueryInterruptedException {
+		method.addHeader(Protocol.ACCEPT_PARAM_NAME, "application/json");
+		HttpResponse response = executeOK(method);
+		try {
+			String mimeType = getResponseMIMEType(response);
+			if (mimeType == null || !mimeType.toLowerCase(Locale.ROOT).contains("json")) {
+				throw new RepositoryException("Server responded with an unsupported explanation format: " + mimeType);
+			}
+
+			GenericPlanNode planNode = EXPLANATION_MAPPER.readValue(response.getEntity().getContent(),
+					GenericPlanNode.class);
+			return new ExplanationImpl(planNode, Boolean.TRUE.equals(planNode.getTimedOut()), null);
+		} finally {
+			EntityUtils.consumeQuietly(response.getEntity());
+		}
 	}
 }

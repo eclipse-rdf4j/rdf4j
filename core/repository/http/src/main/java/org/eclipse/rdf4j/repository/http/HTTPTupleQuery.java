@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.repository.http;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
 
+import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.http.client.query.AbstractHTTPQuery;
 import org.eclipse.rdf4j.http.protocol.Protocol;
@@ -71,6 +72,13 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 
 	@Override
 	public Explanation explain(Explanation.Level level) {
-		throw new UnsupportedOperationException();
+		RDF4JProtocolSession client = conn.getSesameSession();
+		try {
+			conn.flushTransactionState(Protocol.Action.QUERY);
+			return client.sendQueryExplanation(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),
+					getMaxExecutionTime(), level, getBindingsArray());
+		} catch (IOException | RepositoryException | MalformedQueryException e) {
+			throw new HTTPQueryEvaluationException(e.getMessage(), e);
+		}
 	}
 }

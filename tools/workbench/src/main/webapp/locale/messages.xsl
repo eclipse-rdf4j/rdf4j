@@ -77,6 +77,9 @@
 	<variable name="show.label">Show</variable>
 	<variable name="clear.label">Clear</variable>
 	<variable name="execute.label">Execute</variable>
+	<variable name="explain-query.label">Explain Query</variable>
+	<variable name="explain-format.label">Explain format</variable>
+	<variable name="download-explanation.label">Download explanation</variable>
 	<variable name="change-server.label">RDF4J Server URL</variable>
 	<variable name="change.label">Change</variable>
 	<variable name="server.label">RDF4J Server</variable>
@@ -134,6 +137,7 @@
 	<variable name="predicate.label">Predicate</variable>
 	<variable name="query-options.label">Action Options</variable>
 	<variable name="query-actions.label">Actions</variable>
+	<variable name="query-explanation.label">Query Explanation</variable>
 	<variable name="query-language.label">Query Language</variable>
 	<variable name="query-string.label">Query</variable>
 	<variable name="update-string.label">Update</variable>
