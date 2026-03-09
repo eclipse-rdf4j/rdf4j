@@ -27,6 +27,9 @@ module workbench {
         var latestExplanationFormat = 'text';
         var vizRenderer: any = null;
         var dotPanZoomInstance: any = null;
+        var shouldRestoreButtonViewportOnDotRender = false;
+        var explainButtonViewportTopBeforeRequest: number = null;
+        var explainButtonIdBeforeRequest = '';
         
         /**
          * Populate reasonable default name space declarations into the query text area.
@@ -155,6 +158,52 @@ module workbench {
             dotPanZoomInstance = null;
         }
 
+        function clearExplainButtonViewportRestoreState() {
+            shouldRestoreButtonViewportOnDotRender = false;
+            explainButtonViewportTopBeforeRequest = null;
+            explainButtonIdBeforeRequest = '';
+        }
+
+        function getExplainTriggerButtonElement(): HTMLElement {
+            var activeElement = <HTMLElement>document.activeElement;
+            if (activeElement
+                    && (activeElement.id === 'explain-trigger' || activeElement.id === 'rerun-explanation')) {
+                return activeElement;
+            }
+            return <HTMLElement>document.getElementById('explain-trigger');
+        }
+
+        function captureExplainButtonViewportTop() {
+            var explainButton = getExplainTriggerButtonElement();
+            if (!explainButton) {
+                clearExplainButtonViewportRestoreState();
+                return;
+            }
+            explainButtonViewportTopBeforeRequest = explainButton.getBoundingClientRect().top;
+            explainButtonIdBeforeRequest = explainButton.id;
+        }
+
+        function restoreExplainButtonViewportTopIfNeeded(format: string) {
+            if (format !== 'dot' || !shouldRestoreButtonViewportOnDotRender || explainButtonViewportTopBeforeRequest === null) {
+                return;
+            }
+            var explainButton = explainButtonIdBeforeRequest
+                    ? <HTMLElement>document.getElementById(explainButtonIdBeforeRequest)
+                    : getExplainTriggerButtonElement();
+            if (!explainButton) {
+                clearExplainButtonViewportRestoreState();
+                return;
+            }
+            window.requestAnimationFrame(function() {
+                var currentButtonTop = explainButton.getBoundingClientRect().top;
+                var scrollDelta = currentButtonTop - explainButtonViewportTopBeforeRequest;
+                if (Math.abs(scrollDelta) > 1) {
+                    window.scrollBy(0, scrollDelta);
+                }
+                clearExplainButtonViewportRestoreState();
+            });
+        }
+
         function setExplanationDisplayMode(format: string) {
             if (format === 'dot') {
                 $('#query-explanation').hide();
@@ -203,6 +252,7 @@ module workbench {
             $('#query-explanation').show().text(errorMessage).attr('data-format', 'text');
             $('#query-explanation-dot-view').hide().empty();
             destroyDotPanZoom();
+            clearExplainButtonViewportRestoreState();
             clearExplanationDimensionLock();
         }
 
@@ -216,6 +266,7 @@ module workbench {
             setExplanationDisplayMode('dot');
             if (!explanationText) {
                 dotView.empty().show();
+                restoreExplainButtonViewportTopIfNeeded(format);
                 return;
             }
             dotView.html('<div>Rendering DOT graph...</div>').show();
@@ -227,19 +278,21 @@ module workbench {
                 vizRenderer = new Viz();
             }
             vizRenderer.renderSVGElement(explanationText).then(function(svgElement: SVGElement) {
-                svgElement.setAttribute('width', '100%');
-                svgElement.setAttribute('height', '100%');
                 $(svgElement).css({
                     width: '100%',
                     height: 'auto',
+                    maxWidth: '100%',
+                    maxHeight: 'none',
                     display: 'block'
                 });
                 dotView.empty().append(svgElement).show();
                 applyDotPanZoom(svgElement);
+                restoreExplainButtonViewportTopIfNeeded(format);
             }).catch(function() {
                 vizRenderer = new Viz();
                 destroyDotPanZoom();
                 dotView.html('<div class="error">Unable to render DOT graph.</div>');
+                clearExplainButtonViewportRestoreState();
             });
         }
 
@@ -251,6 +304,7 @@ module workbench {
                 $('#query-explanation').text('').attr('data-format', normalizedFormat);
             } else {
                 $('#query-explanation').text(explanationText).attr('data-format', normalizedFormat);
+                clearExplainButtonViewportRestoreState();
             }
             setExplanationDisplayMode(normalizedFormat);
             latestExplanation = explanationText;
@@ -442,6 +496,16 @@ module workbench {
         export function runExplain(level?: string) {
             var effectiveLevel = level || <string>$('#explain-level').val() || 'Optimized';
             $('#explain-level').val(effectiveLevel);
+            var selectedFormat = (<string>$('#explain-format').val() || 'text').toLowerCase();
+            var previousFormat = (latestExplanationFormat
+                    || <string>$('#query-explanation').attr('data-format')
+                    || 'text').toLowerCase();
+            shouldRestoreButtonViewportOnDotRender = selectedFormat === 'dot' && previousFormat !== 'dot';
+            if (shouldRestoreButtonViewportOnDotRender) {
+                captureExplainButtonViewportTop();
+            } else {
+                clearExplainButtonViewportRestoreState();
+            }
             if (yasqe) yasqe.save();
             $('#action').val('explain');
             $('#explain').val(effectiveLevel);

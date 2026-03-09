@@ -17,6 +17,10 @@ var workbench;
         var latestExplanation = '';
         var latestExplanationFormat = 'text';
         var vizRenderer = null;
+        var dotPanZoomInstance = null;
+        var shouldRestoreButtonViewportOnDotRender = false;
+        var explainButtonViewportTopBeforeRequest = null;
+        var explainButtonIdBeforeRequest = '';
         /**
          * Populate reasonable default name space declarations into the query text area.
          * The server has provided the declaration text in hidden elements.
@@ -151,64 +155,182 @@ var workbench;
         }
         function lockExplanationDimensions() {
             var explanation = $('#query-explanation');
+            var dotView = $('#query-explanation-dot-view');
             var currentHeight = explanation.outerHeight();
             var currentWidth = explanation.outerWidth();
+            var dotHeight = dotView.outerHeight();
+            var dotWidth = dotView.outerWidth();
+            if (dotHeight && (!currentHeight || dotHeight > currentHeight)) {
+                currentHeight = dotHeight;
+            }
+            if (dotWidth && (!currentWidth || dotWidth > currentWidth)) {
+                currentWidth = dotWidth;
+            }
             if (currentHeight) {
                 explanation.css('min-height', currentHeight + 'px');
+                dotView.css('min-height', currentHeight + 'px');
             }
             if (currentWidth) {
                 explanation.css('min-width', currentWidth + 'px');
+                dotView.css('min-width', currentWidth + 'px');
             }
         }
         function clearExplanationDimensionLock() {
             var explanation = $('#query-explanation');
+            var dotView = $('#query-explanation-dot-view');
             explanation.css('min-height', '');
             explanation.css('min-width', '');
+            dotView.css('min-height', '');
+            dotView.css('min-width', '');
+        }
+        function destroyDotPanZoom() {
+            if (dotPanZoomInstance && typeof dotPanZoomInstance.destroy === 'function') {
+                dotPanZoomInstance.destroy();
+            }
+            dotPanZoomInstance = null;
+        }
+        function clearExplainButtonViewportRestoreState() {
+            shouldRestoreButtonViewportOnDotRender = false;
+            explainButtonViewportTopBeforeRequest = null;
+            explainButtonIdBeforeRequest = '';
+        }
+        function getExplainTriggerButtonElement() {
+            var activeElement = document.activeElement;
+            if (activeElement
+                && (activeElement.id === 'explain-trigger' || activeElement.id === 'rerun-explanation')) {
+                return activeElement;
+            }
+            return document.getElementById('explain-trigger');
+        }
+        function captureExplainButtonViewportTop() {
+            var explainButton = getExplainTriggerButtonElement();
+            if (!explainButton) {
+                clearExplainButtonViewportRestoreState();
+                return;
+            }
+            explainButtonViewportTopBeforeRequest = explainButton.getBoundingClientRect().top;
+            explainButtonIdBeforeRequest = explainButton.id;
+        }
+        function restoreExplainButtonViewportTopIfNeeded(format) {
+            if (format !== 'dot' || !shouldRestoreButtonViewportOnDotRender || explainButtonViewportTopBeforeRequest === null) {
+                return;
+            }
+            var explainButton = explainButtonIdBeforeRequest
+                ? document.getElementById(explainButtonIdBeforeRequest)
+                : getExplainTriggerButtonElement();
+            if (!explainButton) {
+                clearExplainButtonViewportRestoreState();
+                return;
+            }
+            window.requestAnimationFrame(function () {
+                var currentButtonTop = explainButton.getBoundingClientRect().top;
+                var scrollDelta = currentButtonTop - explainButtonViewportTopBeforeRequest;
+                if (Math.abs(scrollDelta) > 1) {
+                    window.scrollBy(0, scrollDelta);
+                }
+                clearExplainButtonViewportRestoreState();
+            });
+        }
+        function setExplanationDisplayMode(format) {
+            if (format === 'dot') {
+                $('#query-explanation').hide();
+                $('#query-explanation-dot-view').show();
+            }
+            else {
+                $('#query-explanation').show();
+                $('#query-explanation-dot-view').hide();
+                destroyDotPanZoom();
+            }
+        }
+        function applyDotPanZoom(svgElement) {
+            destroyDotPanZoom();
+            if (typeof svgPanZoom === 'undefined') {
+                return;
+            }
+            dotPanZoomInstance = svgPanZoom(svgElement, {
+                zoomEnabled: true,
+                controlIconsEnabled: true,
+                fit: true,
+                center: true,
+                minZoom: 0.2,
+                maxZoom: 20
+            });
         }
         function clearRenderedExplanation() {
             $('#query-explanation-row').show();
             $('#query-explanation-controls-row').show();
             lockExplanationDimensions();
             $('#query-explanation').text('');
-            $('#query-explanation').attr('data-format', 'text');
+            var pendingFormat = ($('#explain-format').val() || 'text').toLowerCase();
+            $('#query-explanation').attr('data-format', pendingFormat);
             latestExplanation = '';
-            latestExplanationFormat = 'text';
+            latestExplanationFormat = pendingFormat;
             updateDownloadButtonState();
-            $('#query-explanation-dot-view').hide().empty();
+            destroyDotPanZoom();
+            $('#query-explanation-dot-view').empty();
+            setExplanationDisplayMode(pendingFormat);
         }
         function showExplainError(message) {
             var errorMessage = message || 'Explain request failed.';
             clearRenderedExplanation();
             $('#queryString.errors').text(errorMessage);
-            $('#query-explanation').text(errorMessage);
+            $('#query-explanation').show().text(errorMessage).attr('data-format', 'text');
+            $('#query-explanation-dot-view').hide().empty();
+            destroyDotPanZoom();
+            clearExplainButtonViewportRestoreState();
             clearExplanationDimensionLock();
         }
         function renderDotView(explanationText, format) {
             var dotView = $('#query-explanation-dot-view');
             if (format !== 'dot') {
+                destroyDotPanZoom();
                 dotView.hide().empty();
+                return;
+            }
+            setExplanationDisplayMode('dot');
+            if (!explanationText) {
+                dotView.empty().show();
+                restoreExplainButtonViewportTopIfNeeded(format);
                 return;
             }
             dotView.html('<div>Rendering DOT graph...</div>').show();
             if (typeof Viz === 'undefined') {
-                dotView.html('<div class="error">Graphviz visualizer script not loaded; raw DOT shown above.</div>');
+                dotView.html('<div class="error">Graphviz visualizer script not loaded.</div>');
                 return;
             }
             if (!vizRenderer) {
                 vizRenderer = new Viz();
             }
             vizRenderer.renderSVGElement(explanationText).then(function (svgElement) {
+                $(svgElement).css({
+                    width: '100%',
+                    height: 'auto',
+                    maxWidth: '100%',
+                    maxHeight: 'none',
+                    display: 'block'
+                });
                 dotView.empty().append(svgElement).show();
+                applyDotPanZoom(svgElement);
+                restoreExplainButtonViewportTopIfNeeded(format);
             }).catch(function () {
                 vizRenderer = new Viz();
-                dotView.html('<div class="error">Unable to render DOT graph; raw DOT shown above.</div>');
+                destroyDotPanZoom();
+                dotView.html('<div class="error">Unable to render DOT graph.</div>');
+                clearExplainButtonViewportRestoreState();
             });
         }
         function renderExplanation(explanationText, format) {
             var normalizedFormat = (format || 'text').toLowerCase();
             $('#query-explanation-row').show();
             $('#query-explanation-controls-row').show();
-            $('#query-explanation').text(explanationText).attr('data-format', normalizedFormat);
+            if (normalizedFormat === 'dot') {
+                $('#query-explanation').text('').attr('data-format', normalizedFormat);
+            }
+            else {
+                $('#query-explanation').text(explanationText).attr('data-format', normalizedFormat);
+                clearExplainButtonViewportRestoreState();
+            }
+            setExplanationDisplayMode(normalizedFormat);
             latestExplanation = explanationText;
             latestExplanationFormat = normalizedFormat;
             updateDownloadButtonState();
@@ -340,6 +462,17 @@ var workbench;
         function runExplain(level) {
             var effectiveLevel = level || $('#explain-level').val() || 'Optimized';
             $('#explain-level').val(effectiveLevel);
+            var selectedFormat = ($('#explain-format').val() || 'text').toLowerCase();
+            var previousFormat = (latestExplanationFormat
+                || $('#query-explanation').attr('data-format')
+                || 'text').toLowerCase();
+            shouldRestoreButtonViewportOnDotRender = selectedFormat === 'dot' && previousFormat !== 'dot';
+            if (shouldRestoreButtonViewportOnDotRender) {
+                captureExplainButtonViewportTop();
+            }
+            else {
+                clearExplainButtonViewportRestoreState();
+            }
             if (yasqe)
                 yasqe.save();
             $('#action').val('explain');

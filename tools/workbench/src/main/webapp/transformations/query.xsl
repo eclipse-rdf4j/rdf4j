@@ -84,7 +84,7 @@
 								<xsl:value-of select="$explanation" />
 							</pre>
 							<div id="query-explanation-dot-view"
-								style="display:none; margin-top:0.75em; background:#ffffff; border:1px solid #d0d0d0; padding:0.75em; font-size:1em; width:100%; box-sizing:border-box; overflow:auto;"></div>
+								style="display:none; margin-top:0.75em; background:#ffffff; border:1px solid #d0d0d0; padding:0; font-size:1em; width:100%; box-sizing:border-box; overflow:auto; height:75vh;"></div>
 						</td>
 						<td>
 						</td>

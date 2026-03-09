@@ -65,11 +65,19 @@ class QueryTemplateTest {
 		assertThat(queryTemplate)
 				.contains("svg-pan-zoom")
 				.contains("font-size:1em")
-				.contains("width:100%");
+				.contains("width:100%")
+				.contains("padding:0;")
+				.contains("height:75vh")
+				.doesNotContain("max-height:75vh");
 
 		assertThat(queryScript)
 				.contains("svgPanZoom(")
 				.contains("$('#query-explanation').hide()")
-				.contains("$('#query-explanation').show()");
+				.contains("$('#query-explanation').show()")
+				.contains("width: '100%'")
+				.contains("maxWidth: '100%'")
+				.contains("shouldRestoreButtonViewportOnDotRender")
+				.contains("captureExplainButtonViewportTop")
+				.contains("restoreExplainButtonViewportTopIfNeeded");
 	}
 }
