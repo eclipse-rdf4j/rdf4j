@@ -574,7 +574,12 @@ module workbench {
             //some styling conflicts. Could add my own css file, but not a lot of things need changing, so just do this programmatically
             //first, set the font size (otherwise font is as small as menu, which is too small)
             //second, set the width. YASQE normally expands to 100%, but the use of a table requires us to set a fixed width
-            $(yasqe.getWrapperElement()).css({"fontSize": "14px", "width": "900px"});
+            $(yasqe.getWrapperElement()).css({
+                "fontSize": "14px",
+                "width": "900px",
+                "maxWidth": "100%",
+                "boxSizing": "border-box"
+            });
             //we made a change to the css wrapper element (and did so after initialization). So, force a manual update of the yasqe instance
             yasqe.refresh();
         }

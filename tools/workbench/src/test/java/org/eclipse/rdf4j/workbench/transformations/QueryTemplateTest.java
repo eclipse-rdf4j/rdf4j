@@ -80,4 +80,24 @@ class QueryTemplateTest {
 				.contains("captureExplainButtonViewportTop")
 				.contains("restoreExplainButtonViewportTopIfNeeded");
 	}
+
+	@Test
+	void queryAndTextExplanationShouldStayWithinPageWidth() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.doesNotContain("table-layout:fixed;")
+				.contains("width:900px;")
+				.contains("white-space:pre;")
+				.contains("overflow:auto;")
+				.contains("max-width:100%;")
+				.doesNotContain("white-space:pre-wrap;")
+				.doesNotContain("word-break:break-word;");
+
+		assertThat(queryScript)
+				.contains("\"width\": \"900px\"")
+				.contains("\"maxWidth\": \"100%\"");
+	}
 }

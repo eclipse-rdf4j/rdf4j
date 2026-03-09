@@ -543,7 +543,12 @@ var workbench;
             //some styling conflicts. Could add my own css file, but not a lot of things need changing, so just do this programmatically
             //first, set the font size (otherwise font is as small as menu, which is too small)
             //second, set the width. YASQE normally expands to 100%, but the use of a table requires us to set a fixed width
-            $(yasqe.getWrapperElement()).css({ "fontSize": "14px", "width": "900px" });
+            $(yasqe.getWrapperElement()).css({
+                "fontSize": "14px",
+                "width":"100%",
+                "maxWidth": "100%",
+                "boxSizing": "border-box"
+            });
             //we made a change to the css wrapper element (and did so after initialization). So, force a manual update of the yasqe instance
             yasqe.refresh();
         }
@@ -598,7 +603,7 @@ workbench.addLoad(function queryPageLoaded() {
     //(all the following 'set' and 'get' SPARQL query functions require an instantiated yasqe instance
     workbench.query.updateYasqe();
     // Populate the query text area with the value of the URL query parameter,
-    // only if it is present. If it is not present in the URL query, then 
+    // only if it is present. If it is not present in the URL query, then
     // looks for the 'query' cookie, and sets it from that. (The cookie
     // enables re-populating the text field with the previous query when the
     // user returns via the browser back button.)
@@ -613,11 +618,11 @@ workbench.addLoad(function queryPageLoaded() {
         }
     }
     workbench.query.loadNamespaces();
-    // Trim the query text area contents of any leading and/or trailing 
+    // Trim the query text area contents of any leading and/or trailing
     // whitespace.
     workbench.query.setQueryValue($.trim(workbench.query.getQueryValue()));
     workbench.query.initializeExplanationView();
-    // Add click handlers identifying the clicked element in a hidden 'action' 
+    // Add click handlers identifying the clicked element in a hidden 'action'
     // form field.
     var addHandler = function (id, callback) {
         $('#' + id).click(function setAction() {

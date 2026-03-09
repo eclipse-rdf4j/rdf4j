@@ -23,7 +23,7 @@
 		<form action="query" method="post" onsubmit="return workbench.query.doSubmit()">
 			<input type="hidden" name="action" id="action" />
 			<input type="hidden" name="explain" id="explain" />
-			<table class="dataentry">
+			<table class="dataentry" style="width: 100%">
 				<tbody>
 					<tr>
 						<th>
@@ -54,6 +54,7 @@
 						</th>
 						<td>
 							<textarea id="query" name="query" rows="16" cols="80"
+								style="width:900px; max-width:100%; box-sizing:border-box;"
 								wrap="soft">
 								<xsl:value-of select="$query" />
 							</textarea>
@@ -80,7 +81,7 @@
 						<td>
 							<pre id="query-explanation"
 								data-format="{normalize-space($explanationFormat)}"
-								style="max-height:none; overflow:auto; white-space:pre-wrap; word-break:break-word; background:#ffffff; color:#000000; border:1px solid #d0d0d0; padding:0.75em;">
+								style="max-height:none; width:900px; max-width:100%; overflow:auto; white-space:pre; word-break:normal; overflow-wrap:normal; background:#ffffff; color:#000000; border:1px solid #d0d0d0; padding:0.75em; box-sizing:border-box;">
 								<xsl:value-of select="$explanation" />
 							</pre>
 							<div id="query-explanation-dot-view"
