@@ -12,16 +12,28 @@
 package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.repository.ExplainQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.QueryResultView;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.Query;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,6 +44,8 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.servlet.ModelAndView;
 
 class TestTransactionControllerExplain {
+
+	private static final String SELECT_ALL_QUERY = "select * where { ?s ?p ?o }";
 
 	private final String repositoryID = "test-repo";
 
@@ -58,16 +72,7 @@ class TestTransactionControllerExplain {
 		ActiveTransactionRegistry.INSTANCE.register(txn);
 
 		try {
-			final UUID transactionId = txn.getID();
-
-			request.setRequestURI("/repositories/" + repositoryID + "/transactions/" + transactionId);
-			request.setPathInfo(repositoryID + "/transactions/" + transactionId);
-			request.setMethod(HttpMethod.PUT.name());
-			request.setCharacterEncoding(StandardCharsets.UTF_8.name());
-			request.setContentType("application/sparql-query; charset=utf-8");
-			request.setContent("select * where { ?s ?p ?o }".getBytes(StandardCharsets.UTF_8));
-			request.setParameter(Protocol.ACTION_PARAM_NAME, Protocol.Action.QUERY.toString());
-			request.setParameter(Protocol.EXPLAIN_PARAM_NAME, Explanation.Level.Optimized.name());
+			configureExplainRequest(txn.getID());
 			request.addHeader("Accept", "application/json");
 
 			TransactionController transactionController = new TransactionController();
@@ -89,6 +94,140 @@ class TestTransactionControllerExplain {
 			} finally {
 				ActiveTransactionRegistry.INSTANCE.deregister(txn);
 			}
+		}
+	}
+
+	@Test
+	void shouldReturnPlainTextExplainViewForWildcardAcceptHeaders() throws Exception {
+		Transaction txn = new Transaction(repository);
+		ActiveTransactionRegistry.INSTANCE.register(txn);
+
+		try {
+			configureExplainRequest(txn.getID());
+			request.addHeader("Accept", "*/*");
+
+			TransactionController transactionController = new TransactionController();
+			ModelAndView result = transactionController.handleRequestInternal(request, response);
+
+			result.getView().render(result.getModel(), request, response);
+
+			assertThat(response.getStatus()).isEqualTo(200);
+			assertThat(response.getContentType()).startsWith("text/plain");
+			assertThat(response.getContentAsString()).isNotBlank();
+		} finally {
+			try {
+				txn.close();
+			} finally {
+				ActiveTransactionRegistry.INSTANCE.deregister(txn);
+			}
+		}
+	}
+
+	@Test
+	void shouldReturnClientErrorWhenExplainIsUnsupported() throws Exception {
+		Repository unsupportedRepository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		Query unsupportedQuery = new UnsupportedExplainQuery();
+
+		when(unsupportedRepository.getConnection()).thenReturn(connection);
+		when(connection.getParserConfig()).thenReturn(new ParserConfig());
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SELECT_ALL_QUERY, null)).thenReturn(unsupportedQuery);
+
+		Transaction txn = new Transaction(unsupportedRepository);
+		ActiveTransactionRegistry.INSTANCE.register(txn);
+
+		try {
+			configureExplainRequest(txn.getID());
+			request.addHeader("Accept", "application/json");
+
+			TransactionController transactionController = new TransactionController();
+
+			assertThatThrownBy(() -> transactionController.handleRequestInternal(request, response))
+					.isInstanceOfSatisfying(ClientHTTPException.class, error -> {
+						assertThat(error.getStatusCode()).isEqualTo(400);
+					});
+		} finally {
+			try {
+				txn.close();
+			} finally {
+				ActiveTransactionRegistry.INSTANCE.deregister(txn);
+			}
+		}
+	}
+
+	private void configureExplainRequest(UUID transactionId) {
+		request.setRequestURI("/repositories/" + repositoryID + "/transactions/" + transactionId);
+		request.setPathInfo(repositoryID + "/transactions/" + transactionId);
+		request.setMethod(HttpMethod.PUT.name());
+		request.setCharacterEncoding(StandardCharsets.UTF_8.name());
+		request.setContentType("application/sparql-query; charset=utf-8");
+		request.setContent(SELECT_ALL_QUERY.getBytes(StandardCharsets.UTF_8));
+		request.setParameter(Protocol.ACTION_PARAM_NAME, Protocol.Action.QUERY.toString());
+		request.setParameter(Protocol.EXPLAIN_PARAM_NAME, Explanation.Level.Optimized.name());
+	}
+
+	private static final class UnsupportedExplainQuery implements Query {
+
+		private Dataset dataset;
+		private boolean includeInferred;
+		private int maxExecutionTime;
+		private int maxQueryTime;
+
+		@Override
+		public void setMaxQueryTime(int maxQueryTime) {
+			this.maxQueryTime = maxQueryTime;
+		}
+
+		@Override
+		public int getMaxQueryTime() {
+			return maxQueryTime;
+		}
+
+		@Override
+		public void setBinding(String name, Value value) {
+		}
+
+		@Override
+		public void removeBinding(String name) {
+		}
+
+		@Override
+		public void clearBindings() {
+		}
+
+		@Override
+		public BindingSet getBindings() {
+			return EmptyBindingSet.getInstance();
+		}
+
+		@Override
+		public void setDataset(Dataset dataset) {
+			this.dataset = dataset;
+		}
+
+		@Override
+		public Dataset getDataset() {
+			return dataset;
+		}
+
+		@Override
+		public void setIncludeInferred(boolean includeInferred) {
+			this.includeInferred = includeInferred;
+		}
+
+		@Override
+		public boolean getIncludeInferred() {
+			return includeInferred;
+		}
+
+		@Override
+		public void setMaxExecutionTime(int maxExecutionTimeSeconds) {
+			this.maxExecutionTime = maxExecutionTimeSeconds;
+		}
+
+		@Override
+		public int getMaxExecutionTime() {
+			return maxExecutionTime;
 		}
 	}
 }
