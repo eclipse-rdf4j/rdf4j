@@ -51,6 +51,7 @@ module workbench {
             form.appendChild(createHiddenInput('action', 'exec'));
             addCookieToFormIfPresent(form, 'query');
             addCookieToFormIfPresent(form, 'ref');
+            addCookieToFormIfPresent(form, 'owner');
             addCookieToFormIfPresent(form, 'queryLn');
             addCookieToFormIfPresent(form, 'infer');
             addCookieToFormIfPresent(form, 'limit_query');
@@ -71,6 +72,7 @@ module workbench {
             form.appendChild(createHiddenInput('action', 'exec'));
             addCookieToFormIfPresent(form, 'query');
             addCookieToFormIfPresent(form, 'ref');
+            addCookieToFormIfPresent(form, 'owner');
             addCookieToFormIfPresent(form, 'queryLn');
             addCookieToFormIfPresent(form, 'infer');
             addCookieToFormIfPresent(form, 'limit_query');

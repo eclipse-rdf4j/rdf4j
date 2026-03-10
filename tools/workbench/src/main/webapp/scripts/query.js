@@ -533,15 +533,22 @@ var workbench;
             }
             return 'Explain request failed.';
         }
-        function ajaxExplain() {
+        function ajaxExplain(level) {
             var form = $('form[action="query"]');
+            var previousAction = $('#action').val();
+            var previousExplain = $('#explain').val();
+            $('#action').val('explain');
+            $('#explain').val(level);
+            var serializedForm = form.serialize();
+            $('#action').val(previousAction);
+            $('#explain').val(previousExplain);
             $('#queryString.errors').text('');
             clearRenderedExplanation();
             $.ajax({
                 url: 'query',
                 type: 'POST',
                 dataType: 'json',
-                data: form.serialize(),
+                data: serializedForm,
                 error: function (jqXHR, textStatus, errorThrown) {
                     showExplainError(getExplainErrorMessage(jqXHR, textStatus, errorThrown));
                 },
@@ -694,9 +701,7 @@ var workbench;
             captureExplainButtonViewportTop();
             if (yasqe)
                 yasqe.save();
-            $('#action').val('explain');
-            $('#explain').val(effectiveLevel);
-            ajaxExplain();
+            ajaxExplain(effectiveLevel);
         }
         query_1.runExplain = runExplain;
         function downloadExplanation() {

@@ -30,6 +30,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.List;
 
 import javax.servlet.ServletException;
 import javax.servlet.ServletOutputStream;
@@ -83,6 +84,13 @@ public class QueryServletTest {
 	@Test
 	public final void testNoQuery() throws ServletException {
 		assertThat(servlet.shouldWriteQueryCookie(null)).isTrue();
+	}
+
+	@Test
+	public void testCookieNamesShouldPreserveSavedQueryOwner() {
+		servlet.writeQueryCookie = true;
+
+		assertThat(List.of(servlet.getCookieNames())).contains("owner");
 	}
 
 	@Test

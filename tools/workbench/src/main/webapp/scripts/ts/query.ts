@@ -596,15 +596,22 @@ module workbench {
             return 'Explain request failed.';
         }
 
-        function ajaxExplain() {
+        function ajaxExplain(level: string) {
             var form = $('form[action="query"]');
+            var previousAction = $('#action').val();
+            var previousExplain = $('#explain').val();
+            $('#action').val('explain');
+            $('#explain').val(level);
+            var serializedForm = form.serialize();
+            $('#action').val(previousAction);
+            $('#explain').val(previousExplain);
             $('#queryString.errors').text('');
             clearRenderedExplanation();
             $.ajax({
                 url: 'query',
                 type: 'POST',
                 dataType: 'json',
-                data: form.serialize(),
+                data: serializedForm,
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
                     showExplainError(getExplainErrorMessage(jqXHR, textStatus, errorThrown));
                 },
@@ -754,9 +761,7 @@ module workbench {
             $('#explain-level').val(effectiveLevel);
             captureExplainButtonViewportTop();
             if (yasqe) yasqe.save();
-            $('#action').val('explain');
-            $('#explain').val(effectiveLevel);
-            ajaxExplain();
+            ajaxExplain(effectiveLevel);
         }
 
         export function downloadExplanation() {

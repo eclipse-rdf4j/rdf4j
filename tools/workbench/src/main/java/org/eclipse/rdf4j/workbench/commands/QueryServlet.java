@@ -120,10 +120,10 @@ public class QueryServlet extends TransformationServlet {
 	public String[] getCookieNames() {
 		String[] result;
 		if (writeQueryCookie) {
-			result = new String[] { QUERY, REF, LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, "total_result_count",
+			result = new String[] { QUERY, REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, "total_result_count",
 					"show-datatypes" };
 		} else {
-			result = new String[] { REF, LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, "total_result_count",
+			result = new String[] { REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, "total_result_count",
 					"show-datatypes" };
 		}
 		return result;

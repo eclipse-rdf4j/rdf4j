@@ -123,7 +123,7 @@ public final class QueryEvaluator {
 					limit = pagedQuery.getLimit();
 				}
 				if (!evaluateCookie) {
-					query = QueryFactory.prepareQuery(con, queryLn, pagedQuery.toString());
+					query = prepareQuery(con, pagedQuery.toString(), req);
 				}
 			}
 		}

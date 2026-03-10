@@ -49,8 +49,26 @@ class QueryTemplateTest {
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 
 		assertThat(queryScript)
-				.contains("function ajaxExplain()")
+				.contains("function ajaxExplain(")
 				.doesNotContain("timeout: 30000");
+	}
+
+	@Test
+	void explainScriptShouldRestoreTransientExplainFormStateAfterAjaxSerialization() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.containsPattern(
+						"function ajaxExplain\\([^)]*\\) \\{[\\s\\S]*var previousAction = \\$\\('#action'\\)\\.val\\(\\);")
+				.containsPattern(
+						"function ajaxExplain\\([^)]*\\) \\{[\\s\\S]*var previousExplain = \\$\\('#explain'\\)\\.val\\(\\);")
+				.containsPattern(
+						"function ajaxExplain\\([^)]*\\) \\{[\\s\\S]*var serializedForm = form\\.serialize\\(\\);")
+				.containsPattern(
+						"function ajaxExplain\\([^)]*\\) \\{[\\s\\S]*\\$\\('#action'\\)\\.val\\(previousAction\\);")
+				.containsPattern(
+						"function ajaxExplain\\([^)]*\\) \\{[\\s\\S]*\\$\\('#explain'\\)\\.val\\(previousExplain\\);")
+				.containsPattern("function ajaxExplain\\([^)]*\\) \\{[\\s\\S]*data: serializedForm");
 	}
 
 	@Test
@@ -162,6 +180,7 @@ class QueryTemplateTest {
 				.contains("form.appendChild(createHiddenInput('action', 'exec'))")
 				.contains("addCookieToFormIfPresent(form, 'query')")
 				.contains("addCookieToFormIfPresent(form, 'ref')")
+				.contains("addCookieToFormIfPresent(form, 'owner')")
 				.doesNotContain("Save your query on the server");
 	}
 
@@ -175,6 +194,7 @@ class QueryTemplateTest {
 				.contains("form.appendChild(createHiddenInput(name, value))")
 				.contains("addCookieToFormIfPresent(form, 'query')")
 				.contains("addCookieToFormIfPresent(form, 'ref')")
+				.contains("addCookieToFormIfPresent(form, 'owner')")
 				.contains("addCookieToFormIfPresent(form, 'queryLn')")
 				.contains("addCookieToFormIfPresent(form, 'infer')")
 				.contains("addCookieToFormIfPresent(form, 'limit_query')")

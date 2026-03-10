@@ -17,11 +17,14 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayOutputStream;
+import java.util.List;
 
 import javax.servlet.http.HttpServletResponse;
 
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.Test;
@@ -139,5 +142,44 @@ class QueryEvaluatorTest {
 				queryText, req, cookies);
 
 		verify(tupleQuery).setMaxExecutionTime(12);
+	}
+
+	@Test
+	void shouldReapplyInferAndTimeoutWhenPagingUsesKnownTotalResultCount() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		String pagedQueryText = queryText + "\nlimit 10\noffset 20";
+		String xslPath = "/xsl";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery initialQuery = mock(TupleQuery.class);
+		TupleQuery pagedQuery = mock(TupleQuery.class);
+		TupleQueryResult tupleQueryResult = mock(TupleQueryResult.class);
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("infer")).thenReturn(true);
+		when(req.getParameter("infer")).thenReturn("true");
+		when(req.getInt("query-timeout")).thenReturn(12);
+		when(req.getInt("limit_query")).thenReturn(10);
+		when(req.getInt("offset")).thenReturn(20);
+		when(req.getInt("know_total")).thenReturn(25);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(initialQuery);
+		when(con.prepareQuery(QueryLanguage.SPARQL, pagedQueryText)).thenReturn(pagedQuery);
+		when(pagedQuery.evaluate()).thenReturn(tupleQueryResult);
+		when(tupleQueryResult.getBindingNames()).thenReturn(List.of("s"));
+		when(tupleQueryResult.hasNext()).thenReturn(false);
+		when(tupleQueryResult.iterator()).thenReturn(List.<BindingSet>of().iterator());
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+				queryText, req, cookies);
+
+		verify(initialQuery).setIncludeInferred(true);
+		verify(initialQuery).setMaxExecutionTime(12);
+		verify(pagedQuery).setIncludeInferred(true);
+		verify(pagedQuery).setMaxExecutionTime(12);
+		verify(pagedQuery).evaluate();
+		verify(cookies).addTotalResultCountCookie(req, resp, 25);
 	}
 }
