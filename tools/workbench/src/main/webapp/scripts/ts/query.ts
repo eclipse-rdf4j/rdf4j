@@ -27,7 +27,6 @@ module workbench {
         var latestExplanationFormat = 'text';
         var vizRenderer: any = null;
         var dotPanZoomInstance: any = null;
-        var shouldRestoreButtonViewportOnDotRender = false;
         var explainButtonViewportTopBeforeRequest: number = null;
         var explainButtonIdBeforeRequest = '';
         
@@ -159,7 +158,6 @@ module workbench {
         }
 
         function clearExplainButtonViewportRestoreState() {
-            shouldRestoreButtonViewportOnDotRender = false;
             explainButtonViewportTopBeforeRequest = null;
             explainButtonIdBeforeRequest = '';
         }
@@ -183,8 +181,8 @@ module workbench {
             explainButtonIdBeforeRequest = explainButton.id;
         }
 
-        function restoreExplainButtonViewportTopIfNeeded(format: string) {
-            if (format !== 'dot' || !shouldRestoreButtonViewportOnDotRender || explainButtonViewportTopBeforeRequest === null) {
+        function restoreExplainButtonViewportTopIfNeeded() {
+            if (explainButtonViewportTopBeforeRequest === null) {
                 return;
             }
             var explainButton = explainButtonIdBeforeRequest
@@ -252,48 +250,48 @@ module workbench {
             $('#query-explanation').show().text(errorMessage).attr('data-format', 'text');
             $('#query-explanation-dot-view').hide().empty();
             destroyDotPanZoom();
-            clearExplainButtonViewportRestoreState();
+            restoreExplainButtonViewportTopIfNeeded();
             clearExplanationDimensionLock();
         }
 
         function renderDotView(explanationText: string, format: string) {
             var dotView = $('#query-explanation-dot-view');
-            if (format !== 'dot') {
-                destroyDotPanZoom();
-                dotView.hide().empty();
-                return;
-            }
-            setExplanationDisplayMode('dot');
-            if (!explanationText) {
-                dotView.empty().show();
-                restoreExplainButtonViewportTopIfNeeded(format);
-                return;
-            }
-            dotView.html('<div>Rendering DOT graph...</div>').show();
-            if (typeof Viz === 'undefined') {
-                dotView.html('<div class="error">Graphviz visualizer script not loaded.</div>');
-                return;
-            }
-            if (!vizRenderer) {
-                vizRenderer = new Viz();
-            }
-            vizRenderer.renderSVGElement(explanationText).then(function(svgElement: SVGElement) {
-                $(svgElement).css({
-                    width: '100%',
-                    height: 'auto',
-                    maxWidth: '100%',
-                    maxHeight: 'none',
-                    display: 'block'
+            if (format === 'dot') {
+                setExplanationDisplayMode('dot');
+                if (!explanationText) {
+                    dotView.empty().show();
+                    restoreExplainButtonViewportTopIfNeeded();
+                    return;
+                }
+                dotView.html('<div>Rendering DOT graph...</div>').show();
+                if (typeof Viz === 'undefined') {
+                    dotView.html('<div class="error">Graphviz visualizer script not loaded.</div>');
+                    return;
+                }
+                if (!vizRenderer) {
+                    vizRenderer = new Viz();
+                }
+                vizRenderer.renderSVGElement(explanationText).then(function(svgElement: SVGElement) {
+                    $(svgElement).css({
+                        width: '100%',
+                        height: 'auto',
+                        maxWidth: '100%',
+                        maxHeight: 'none',
+                        display: 'block'
+                    });
+                    dotView.empty().append(svgElement).show();
+                    applyDotPanZoom(svgElement);
+                    restoreExplainButtonViewportTopIfNeeded();
+                }).catch(function() {
+                    vizRenderer = new Viz();
+                    destroyDotPanZoom();
+                    dotView.html('<div class="error">Unable to render DOT graph.</div>');
+                    restoreExplainButtonViewportTopIfNeeded();
                 });
-                dotView.empty().append(svgElement).show();
-                applyDotPanZoom(svgElement);
-                restoreExplainButtonViewportTopIfNeeded(format);
-            }).catch(function() {
-                vizRenderer = new Viz();
-                destroyDotPanZoom();
-                dotView.html('<div class="error">Unable to render DOT graph.</div>');
-                clearExplainButtonViewportRestoreState();
-            });
+                return;
+            }
+            destroyDotPanZoom();
+            dotView.hide().empty();
         }
 
         function renderExplanation(explanationText: string, format: string) {
@@ -304,13 +302,15 @@ module workbench {
                 $('#query-explanation').text('').attr('data-format', normalizedFormat);
             } else {
                 $('#query-explanation').text(explanationText).attr('data-format', normalizedFormat);
-                clearExplainButtonViewportRestoreState();
             }
             setExplanationDisplayMode(normalizedFormat);
             latestExplanation = explanationText;
             latestExplanationFormat = normalizedFormat;
             updateDownloadButtonState();
             renderDotView(explanationText, normalizedFormat);
+            if (normalizedFormat !== 'dot') {
+                restoreExplainButtonViewportTopIfNeeded();
+            }
             clearExplanationDimensionLock();
         }
 
@@ -496,16 +496,7 @@ module workbench {
         export function runExplain(level?: string) {
             var effectiveLevel = level || <string>$('#explain-level').val() || 'Optimized';
             $('#explain-level').val(effectiveLevel);
-            var selectedFormat = (<string>$('#explain-format').val() || 'text').toLowerCase();
-            var previousFormat = (latestExplanationFormat
-                    || <string>$('#query-explanation').attr('data-format')
-                    || 'text').toLowerCase();
-            shouldRestoreButtonViewportOnDotRender = selectedFormat === 'dot' && previousFormat !== 'dot';
-            if (shouldRestoreButtonViewportOnDotRender) {
-                captureExplainButtonViewportTop();
-            } else {
-                clearExplainButtonViewportRestoreState();
-            }
+            captureExplainButtonViewportTop();
             if (yasqe) yasqe.save();
             $('#action').val('explain');
             $('#explain').val(effectiveLevel);

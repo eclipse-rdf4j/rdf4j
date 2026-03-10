@@ -68,7 +68,8 @@ class QueryTemplateTest {
 				.contains("width:100%")
 				.contains("padding:0;")
 				.contains("height:75vh")
-				.doesNotContain("max-height:75vh");
+				.containsPattern("#query-explanation-dot-view\\s*\\{[^}]*height:75vh")
+				.doesNotContainPattern("#query-explanation-dot-view\\s*\\{[^}]*max-height");
 
 		assertThat(queryScript)
 				.contains("svgPanZoom(")
@@ -76,9 +77,10 @@ class QueryTemplateTest {
 				.contains("$('#query-explanation').show()")
 				.contains("width: '100%'")
 				.contains("maxWidth: '100%'")
-				.contains("shouldRestoreButtonViewportOnDotRender")
-				.contains("captureExplainButtonViewportTop")
-				.contains("restoreExplainButtonViewportTopIfNeeded");
+				.contains("captureExplainButtonViewportTop();")
+				.contains("restoreExplainButtonViewportTopIfNeeded();")
+				.doesNotContain("shouldRestoreButtonViewportOnDotRender")
+				.doesNotContain("format !== 'dot'");
 	}
 
 	@Test
