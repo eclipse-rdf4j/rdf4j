@@ -276,6 +276,32 @@ public class QueryServletTest {
 	}
 
 	@Test
+	public void testDownloadShouldNotUseGzipWhenClientDisablesIt() throws Exception {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try {
+			servlet.setRepository(repository);
+			servlet.writeQueryCookie = true;
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.getParameter("action")).thenReturn("exec");
+			when(request.isParameterPresent("Accept")).thenReturn(true);
+			when(request.getParameter("Accept")).thenReturn("text/csv");
+			when(request.getHeader("Accept")).thenReturn("application/sparql-results+xml");
+			when(request.getHeader("Accept-Encoding")).thenReturn("gzip;q=0, identity;q=1");
+			when(request.isParameterPresent("query")).thenReturn(false);
+
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
+
+			servlet.service(request, response, "/transformations");
+
+			verify(response, never()).setHeader("Content-Encoding", "gzip");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	public void testExecShouldEmbedRequestedLongQueryTextInXmlResponse() throws Exception {
 		SailRepository repository = new SailRepository(new MemoryStore());
 		repository.init();

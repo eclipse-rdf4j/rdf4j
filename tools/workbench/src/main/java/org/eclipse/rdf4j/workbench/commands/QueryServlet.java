@@ -280,7 +280,61 @@ public class QueryServlet extends TransformationServlet {
 
 	private boolean clientAcceptsGzip(WorkbenchRequest req) {
 		String acceptEncoding = req.getHeader("Accept-Encoding");
-		return acceptEncoding != null && acceptEncoding.toLowerCase(Locale.ENGLISH).contains("gzip");
+		if (acceptEncoding == null) {
+			return false;
+		}
+
+		Double gzipQuality = null;
+		double wildcardQuality = 0;
+		for (String encoding : acceptEncoding.split(",")) {
+			String[] directives = encoding.trim().split(";");
+			if (directives.length == 0) {
+				continue;
+			}
+
+			String coding = directives[0].trim().toLowerCase(Locale.ENGLISH);
+			if (coding.isEmpty()) {
+				continue;
+			}
+
+			double quality = 1.0;
+			for (int i = 1; i < directives.length; i++) {
+				quality = parseEncodingQuality(directives[i], quality);
+			}
+
+			if ("gzip".equals(coding)) {
+				gzipQuality = quality;
+			} else if ("*".equals(coding)) {
+				wildcardQuality = quality;
+			}
+		}
+
+		if (gzipQuality != null) {
+			return gzipQuality > 0;
+		}
+		return wildcardQuality > 0;
+	}
+
+	private double parseEncodingQuality(String directive, double defaultQuality) {
+		String trimmedDirective = directive.trim();
+		int separatorIdx = trimmedDirective.indexOf('=');
+		if (separatorIdx < 0) {
+			return defaultQuality;
+		}
+		if (!"q".equalsIgnoreCase(trimmedDirective.substring(0, separatorIdx).trim())) {
+			return defaultQuality;
+		}
+
+		String rawQuality = trimmedDirective.substring(separatorIdx + 1).trim();
+		try {
+			double quality = Double.parseDouble(rawQuality);
+			if (quality >= 0 && quality <= 1) {
+				return quality;
+			}
+		} catch (NumberFormatException ignored) {
+			// Ignore malformed q-values and fall back to "do not gzip".
+		}
+		return 0;
 	}
 
 	private void flushResponseOutputStream(OutputStream out) throws IOException {
