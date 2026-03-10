@@ -29,7 +29,7 @@ module workbench {
         var dotPanZoomInstance: any = null;
         var explainButtonViewportTopBeforeRequest: number = null;
         var explainButtonIdBeforeRequest = '';
-        
+
         /**
          * Populate reasonable default name space declarations into the query text area.
          * The server has provided the declaration text in hidden elements.
@@ -53,7 +53,7 @@ module workbench {
                 }
             }
         }
-        
+
         /**
          *Fires when the query language is changed
          */
@@ -274,7 +274,7 @@ module workbench {
                 vizRenderer.renderSVGElement(explanationText).then(function(svgElement: SVGElement) {
                     $(svgElement).css({
                         width: '100%',
-                        height: 'auto',
+                        height: '100%',
                         maxWidth: '100%',
                         maxHeight: 'none',
                         display: 'block'
@@ -387,7 +387,7 @@ module workbench {
         /**
          * Send a background HTTP request to save the query, and handle the
          * response asynchronously.
-         * 
+         *
          * @param overwrite
          *            if true, add a URL parameter that tells the server we wish
          *            to overwrite any already saved query
@@ -558,7 +558,7 @@ module workbench {
 
         function initYasqe() {
             workbench.yasqeHelper.setupCompleters(sparqlNamespaces);
-            
+
             yasqe = YASQE.fromTextArea(<HTMLTextAreaElement>document.getElementById('query'), {
                 consumeShareLink: null//don't try to parse the url args. this is already done by the addLoad function below
             });
@@ -583,7 +583,7 @@ module workbench {
                 yasqe = null;
             }
         }
-        
+
     }
 }
 
@@ -593,9 +593,9 @@ interface QueryTextResponse {
 
 workbench.addLoad(function queryPageLoaded() {
     /**
-     * Gets a parameter from the URL or the cookies, preferentially in that 
+     * Gets a parameter from the URL or the cookies, preferentially in that
      * order.
-     * 
+     *
      * @param param
      *            the name of the parameter
      * @returns the value of the given parameter, or something that evaluates
@@ -630,13 +630,13 @@ workbench.addLoad(function queryPageLoaded() {
                 }
             });
     }
-    
+
     //Start with initializing our YASQE instance, given that 'SPARQL' is the selected query language
     //(all the following 'set' and 'get' SPARQL query functions require an instantiated yasqe instance
     workbench.query.updateYasqe();
-    
+
     // Populate the query text area with the value of the URL query parameter,
-    // only if it is present. If it is not present in the URL query, then 
+    // only if it is present. If it is not present in the URL query, then
     // looks for the 'query' cookie, and sets it from that. (The cookie
     // enables re-populating the text field with the previous query when the
     // user returns via the browser back button.)
@@ -651,12 +651,12 @@ workbench.addLoad(function queryPageLoaded() {
     }
     workbench.query.loadNamespaces();
 
-    // Trim the query text area contents of any leading and/or trailing 
+    // Trim the query text area contents of any leading and/or trailing
     // whitespace.
     workbench.query.setQueryValue($.trim(workbench.query.getQueryValue()));
     workbench.query.initializeExplanationView();
 
-    // Add click handlers identifying the clicked element in a hidden 'action' 
+    // Add click handlers identifying the clicked element in a hidden 'action'
     // form field.
     var addHandler = function(id: string, callback?: () => void) {
         $('#' + id).click(function setAction() {
@@ -685,7 +685,7 @@ workbench.addLoad(function queryPageLoaded() {
         workbench.query.getYasqe().on('change',
             workbench.query.clearFeedback);
     }
-    
+
     // Detect if there is no current authenticated user, and if so, disable
     // the 'save privately' option.
     if ($('#selected-user>span').is('.disabled')) {
