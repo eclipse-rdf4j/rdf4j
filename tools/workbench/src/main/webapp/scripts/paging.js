@@ -48,6 +48,25 @@ var workbench;
             form.submit();
             document.body.removeChild(form);
         }
+        function submitPagingParamRequest(name, value) {
+            var form = document.createElement('form');
+            form.method = 'POST';
+            form.action = 'query';
+            form.style.display = 'none';
+            form.appendChild(createHiddenInput('action', 'exec'));
+            addCookieToFormIfPresent(form, 'query');
+            addCookieToFormIfPresent(form, 'ref');
+            addCookieToFormIfPresent(form, 'queryLn');
+            addCookieToFormIfPresent(form, 'infer');
+            addCookieToFormIfPresent(form, 'limit_query');
+            if (!hasQueryParameter(KT) || 'false' == getQueryParameter(KT)) {
+                form.appendChild(createHiddenInput(KT, String(getTotalResultCount())));
+            }
+            form.appendChild(createHiddenInput(name, value));
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+        }
         /**
          * Invoked in graph.xsl and tuple.xsl for download functionality. Takes a
          * document element by name, and creates a request with it as a parameter.
@@ -112,6 +131,10 @@ var workbench;
          * @param {number} value The value of the query parameter.
          */
         function addPagingParam(name, value) {
+            if (document.location.pathname.match(/\/query$/)) {
+                submitPagingParamRequest(name, String(value));
+                return;
+            }
             var url = document.location.href;
             var hasParams = (url.indexOf('?') + 1 || url.indexOf(';') + 1);
             var sep = hasParams ? AMP : ';';

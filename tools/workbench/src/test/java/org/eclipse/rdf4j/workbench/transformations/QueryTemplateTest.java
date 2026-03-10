@@ -128,4 +128,20 @@ class QueryTemplateTest {
 				.contains("addCookieToFormIfPresent(form, 'ref')")
 				.doesNotContain("Save your query on the server");
 	}
+
+	@Test
+	void pagingLimitAndOffsetShouldPostOnQueryResultPages() throws IOException {
+		String pagingScript = Files.readString(Path.of("src/main/webapp/scripts/ts/paging.ts"), StandardCharsets.UTF_8);
+
+		assertThat(pagingScript)
+				.contains("function submitPagingParamRequest")
+				.contains("document.location.pathname.match(/\\/query$/)")
+				.contains("form.appendChild(createHiddenInput(name, value))")
+				.contains("addCookieToFormIfPresent(form, 'query')")
+				.contains("addCookieToFormIfPresent(form, 'ref')")
+				.contains("addCookieToFormIfPresent(form, 'queryLn')")
+				.contains("addCookieToFormIfPresent(form, 'infer')")
+				.contains("addCookieToFormIfPresent(form, 'limit_query')")
+				.contains("submitPagingParamRequest(name, String(value))");
+	}
 }
