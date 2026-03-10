@@ -50,6 +50,16 @@
 					</tr>
 					<tr>
 						<th>
+							<xsl:value-of select="$repository-indexes.label" />
+						</th>
+						<td>
+							<input type="text" id="indexes" name="Triple indexes" size="16"
+								value="spoc,posc" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>
 							<xsl:value-of select="$repository-evaluation-mode.label" />
 						</th>
 						<td>

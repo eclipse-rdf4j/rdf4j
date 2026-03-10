@@ -43,6 +43,7 @@ var workbench;
             addCookieToFormIfPresent(form, 'queryLn');
             addCookieToFormIfPresent(form, 'infer');
             addCookieToFormIfPresent(form, 'limit_query');
+            addCookieToFormIfPresent(form, 'query-timeout');
             form.appendChild(createHiddenInput(name, value));
             document.body.appendChild(form);
             form.submit();
@@ -59,6 +60,7 @@ var workbench;
             addCookieToFormIfPresent(form, 'queryLn');
             addCookieToFormIfPresent(form, 'infer');
             addCookieToFormIfPresent(form, 'limit_query');
+            addCookieToFormIfPresent(form, 'query-timeout');
             if (!hasQueryParameter(KT) || 'false' == getQueryParameter(KT)) {
                 form.appendChild(createHiddenInput(KT, String(getTotalResultCount())));
             }

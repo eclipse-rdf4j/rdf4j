@@ -144,4 +144,30 @@ class QueryTemplateTest {
 				.contains("addCookieToFormIfPresent(form, 'limit_query')")
 				.contains("submitPagingParamRequest(name, String(value))");
 	}
+
+	@Test
+	void queryTemplateShouldHideQueryLanguageRowWhenOnlySparqlAndExposeQueryTimeout() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains("id=\"query-language-row\"")
+				.contains("count($info//sparql:binding[@name='query-format']) = 1")
+				.contains(
+						"substring-before(normalize-space($info//sparql:binding[@name='query-format'][1]/sparql:literal), ' ') = 'SPARQL'")
+				.contains("$query-timeout.label")
+				.contains("id=\"query-timeout\"")
+				.contains("name=\"query-timeout\"");
+	}
+
+	@Test
+	void createLmdbTemplateShouldExposeTripleIndexesField() throws IOException {
+		String createLmdbTemplate = Files.readString(Path.of("src/main/webapp/transformations/create-lmdb.xsl"),
+				StandardCharsets.UTF_8);
+
+		assertThat(createLmdbTemplate)
+				.contains("$repository-indexes.label")
+				.contains("id=\"indexes\"")
+				.contains("name=\"Triple indexes\"");
+	}
 }

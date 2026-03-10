@@ -87,8 +87,9 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 						try {
 							Explanation explanation = explainQuery(query, explainLevel.get());
 							return getExplainQueryResponse(request, response, explanation);
-						}finally {
-							// explanation is fully evaluated at this point, so we can safely close the connection before returning the response
+						} finally {
+							// explanation is fully evaluated at this point, so we can safely close the connection
+							// before returning the response
 							repositoryCon.close();
 						}
 					}

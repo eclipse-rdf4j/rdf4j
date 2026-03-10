@@ -466,6 +466,7 @@ module workbench {
                 workbench.addParam(url, 'queryLn');
                 workbench.addParam(url, 'query');
                 workbench.addParam(url, 'limit_query');
+                workbench.addParam(url, 'query-timeout');
                 workbench.addParam(url, 'infer');
                 workbench.addParam(url, 'explain');
                 workbench.addParam(url, 'explain-format');

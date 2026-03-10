@@ -16,6 +16,10 @@
 			select="sparql:results/sparql:result/sparql:binding[@name='queryLn']" />
 		<xsl:variable name="query"
 			select="sparql:results/sparql:result/sparql:binding[@name='query']" />
+		<xsl:variable name="hideQueryLanguageRow"
+			select="count($info//sparql:binding[@name='query-format']) = 1 and substring-before(normalize-space($info//sparql:binding[@name='query-format'][1]/sparql:literal), ' ') = 'SPARQL'" />
+		<xsl:variable name="defaultQueryTimeout"
+			select="$info//sparql:binding[@name='default-query-timeout']/sparql:literal/text()" />
 		<xsl:variable name="explanation"
 			select="sparql:results/sparql:result/sparql:binding[@name='explanation']/sparql:literal" />
 		<xsl:variable name="explanationFormat"
@@ -26,7 +30,7 @@
 			<input type="hidden" name="ref" value="text" />
 			<style type="text/css">
 				.query-form {
-					--query-form-label-width:10rem;
+					--query-form-label-width:12rem;
 					width:100%;
 					display:flex;
 					flex-direction:column;
@@ -139,9 +143,23 @@
 						content:'';
 					}
 				}
+
+				.yasqe .CodeMirror {
+					height: auto;
+				}
+
+				.yasqe .CodeMirror-scroll {
+					height: auto;
+					max-height: 70vh;
+					overflow-y: auto;
+					overflow-x: auto;
+				}
 			</style>
 			<div class="query-form">
-				<div class="query-form__row">
+				<div id="query-language-row" class="query-form__row">
+					<xsl:if test="$hideQueryLanguageRow">
+						<xsl:attribute name="style">display:none;</xsl:attribute>
+					</xsl:if>
 					<label class="query-form__label" for="queryLn">
 						<xsl:value-of select="$query-language.label" />
 					</label>
@@ -248,6 +266,23 @@
 						<xsl:call-template name="limit-select">
                                 <xsl:with-param name="limit_id">limit_query</xsl:with-param>
                             </xsl:call-template>
+					</div>
+				</div>
+				<div class="query-form__row">
+					<label class="query-form__label" for="query-timeout">
+						<xsl:value-of select="$query-timeout.label" />
+					</label>
+					<div class="query-form__field">
+						<input id="query-timeout" name="query-timeout" type="number" min="0" step="1">
+							<xsl:attribute name="value">
+								<xsl:choose>
+									<xsl:when test="string-length(normalize-space($defaultQueryTimeout)) &gt; 0">
+										<xsl:value-of select="$defaultQueryTimeout" />
+									</xsl:when>
+									<xsl:otherwise>0</xsl:otherwise>
+								</xsl:choose>
+							</xsl:attribute>
+						</input>
 					</div>
 				</div>
 				<div class="query-form__row">

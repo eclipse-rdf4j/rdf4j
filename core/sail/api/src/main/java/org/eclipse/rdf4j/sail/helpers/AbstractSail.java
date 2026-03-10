@@ -208,7 +208,8 @@ public abstract class AbstractSail implements Sail {
 							if (e != null) {
 								e.printStackTrace(System.out);
 							} else {
-								System.out.println("Debugging was disabled at the time this connection was acquired, no stack trace available.");
+								System.out.println(
+										"Debugging was disabled at the time this connection was acquired, no stack trace available.");
 							}
 						});
 						activeConnections.wait(connectionTimeOut);

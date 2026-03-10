@@ -219,7 +219,7 @@ public abstract class AbstractServlet implements Servlet {
 		} else {
 			// If the JSON-P check above failed, use the normal methods to
 			// determine output format
-			resultWriter = getResultWriter(req, resp, resp.getOutputStream());
+			resultWriter = getResultWriter(req, resp, outputStream);
 			contentType = resultWriter.getQueryResultFormat().getDefaultMIMEType();
 		}
 

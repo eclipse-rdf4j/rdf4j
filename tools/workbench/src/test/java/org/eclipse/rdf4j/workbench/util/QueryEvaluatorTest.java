@@ -113,4 +113,31 @@ class QueryEvaluatorTest {
 		verify(builder).result("{\"plan\":\"value\"}", "json");
 		verify(explanation).toJson();
 	}
+
+	@Test
+	void shouldApplyQueryTimeoutWhenTimeoutParameterIsProvided() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		String xslPath = "/xsl";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		Explanation explanation = mock(Explanation.class);
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("explain")).thenReturn(true);
+		when(req.getParameter("explain")).thenReturn("Optimized");
+		when(req.getParameter("explain-format")).thenReturn("text");
+		when(req.getInt("query-timeout")).thenReturn(12);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("optimized plan");
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+				queryText, req, cookies);
+
+		verify(tupleQuery).setMaxExecutionTime(12);
+	}
 }

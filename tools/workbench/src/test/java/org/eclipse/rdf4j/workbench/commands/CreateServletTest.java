@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.fail;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -114,5 +115,19 @@ public class CreateServletTest {
 		} catch (RDF4JException | IOException e) {
 			fail(e.getMessage());
 		}
+	}
+
+	@Test
+	public void testLmdbTemplateShouldRenderConfiguredTripleIndexes() throws IOException {
+		String rendered = CreateServlet.getConfigTemplate("lmdb")
+				.render(Map.of(
+						"Repository ID", "lmdb-custom",
+						"Repository title", "LMDB custom",
+						"Triple indexes", "spoc,opsc",
+						"Query Evaluation Mode", "STRICT"));
+
+		assertThat(rendered)
+				.contains("tripleIndexes")
+				.contains("spoc,opsc");
 	}
 }
