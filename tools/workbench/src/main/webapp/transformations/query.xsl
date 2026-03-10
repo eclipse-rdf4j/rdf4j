@@ -26,7 +26,7 @@
 			<input type="hidden" name="ref" value="text" />
 			<style type="text/css">
 				.query-form {
-					--query-form-label-width:15rem;
+					--query-form-label-width:10rem;
 					width:100%;
 					display:flex;
 					flex-direction:column;
@@ -47,10 +47,11 @@
 				}
 
 				.query-form__label {
-					padding-top:0.35em;
 					font-family: Roboto, Libre Franklin, Helvetica Neue, Helvetica, Arial, sans-serif;
 					font-weight:bold;
 					white-space:nowrap;
+					margin-top: auto;
+					margin-bottom: auto;
 				}
 
 				.query-form__label:after {
