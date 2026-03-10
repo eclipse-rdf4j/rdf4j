@@ -42,6 +42,25 @@ module workbench {
             }
         }
 
+        function getEmbeddedQueryText(): string {
+            var queryText = <HTMLTextAreaElement>document.getElementById('wb-query-text');
+            if (queryText && queryText.value) {
+                return queryText.value;
+            }
+            return '';
+        }
+
+        function addQueryReferenceToForm(form: HTMLFormElement) {
+            var queryText = getEmbeddedQueryText();
+            if (queryText) {
+                form.appendChild(createHiddenInput('query', queryText));
+                form.appendChild(createHiddenInput('ref', 'text'));
+                return;
+            }
+            addCookieToFormIfPresent(form, 'query');
+            addCookieToFormIfPresent(form, 'ref');
+        }
+
         function submitGraphParamRequest(name: string, value: string) {
             var form = document.createElement('form');
             form.method = 'POST';
@@ -49,8 +68,7 @@ module workbench {
             form.style.display = 'none';
 
             form.appendChild(createHiddenInput('action', 'exec'));
-            addCookieToFormIfPresent(form, 'query');
-            addCookieToFormIfPresent(form, 'ref');
+            addQueryReferenceToForm(form);
             addCookieToFormIfPresent(form, 'owner');
             addCookieToFormIfPresent(form, 'queryLn');
             addCookieToFormIfPresent(form, 'infer');
@@ -70,8 +88,7 @@ module workbench {
             form.style.display = 'none';
 
             form.appendChild(createHiddenInput('action', 'exec'));
-            addCookieToFormIfPresent(form, 'query');
-            addCookieToFormIfPresent(form, 'ref');
+            addQueryReferenceToForm(form);
             addCookieToFormIfPresent(form, 'owner');
             addCookieToFormIfPresent(form, 'queryLn');
             addCookieToFormIfPresent(form, 'infer');

@@ -202,6 +202,41 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void queryPageShouldRequestEmbeddedQueryTextForLongPostFallbacks() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains("name=\"include-query-text\"")
+				.contains("id=\"include-query-text\"");
+
+		assertThat(queryScript)
+				.contains("$('#include-query-text').val('false');")
+				.contains("$('#include-query-text').val('true');");
+	}
+
+	@Test
+	void resultPagesShouldStoreEmbeddedQueryTextAndHideMetadataBindings() throws IOException {
+		String tupleTemplate = Files.readString(Path.of("src/main/webapp/transformations/tuple.xsl"),
+				StandardCharsets.UTF_8);
+		String graphTemplate = Files.readString(Path.of("src/main/webapp/transformations/graph.xsl"),
+				StandardCharsets.UTF_8);
+		String pagingScript = Files.readString(Path.of("src/main/webapp/scripts/ts/paging.ts"), StandardCharsets.UTF_8);
+
+		assertThat(tupleTemplate)
+				.contains("__workbench_query_text")
+				.contains("wb-query-text");
+		assertThat(graphTemplate)
+				.contains("__workbench_query_text")
+				.contains("wb-query-text");
+		assertThat(pagingScript)
+				.contains("wb-query-text")
+				.contains("createHiddenInput('ref', 'text')")
+				.contains("createHiddenInput('query', queryText)");
+	}
+
+	@Test
 	void queryTemplateShouldHideQueryLanguageRowWhenOnlySparqlAndExposeQueryTimeout() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);

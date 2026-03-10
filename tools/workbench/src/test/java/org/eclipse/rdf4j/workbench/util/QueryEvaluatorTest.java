@@ -53,7 +53,7 @@ class QueryEvaluatorTest {
 		when(tupleQuery.evaluate()).thenThrow(new AssertionError("evaluate() should not run when explain is selected"));
 
 		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
-				queryText, req, cookies);
+				queryText, req, cookies, null);
 
 		verify(tupleQuery).explain(Explanation.Level.Optimized);
 		verify(tupleQuery, never()).evaluate();
@@ -84,7 +84,7 @@ class QueryEvaluatorTest {
 		when(explanation.toDot()).thenReturn("digraph Explanation {}");
 
 		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
-				queryText, req, cookies);
+				queryText, req, cookies, null);
 
 		verify(builder).result("digraph Explanation {}", "dot");
 		verify(explanation).toDot();
@@ -111,7 +111,7 @@ class QueryEvaluatorTest {
 		when(explanation.toJson()).thenReturn("{\"plan\":\"value\"}");
 
 		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
-				queryText, req, cookies);
+				queryText, req, cookies, null);
 
 		verify(builder).result("{\"plan\":\"value\"}", "json");
 		verify(explanation).toJson();
@@ -139,7 +139,7 @@ class QueryEvaluatorTest {
 		when(explanation.toString()).thenReturn("optimized plan");
 
 		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
-				queryText, req, cookies);
+				queryText, req, cookies, null);
 
 		verify(tupleQuery).setMaxExecutionTime(12);
 	}
@@ -173,7 +173,7 @@ class QueryEvaluatorTest {
 		when(tupleQueryResult.iterator()).thenReturn(List.<BindingSet>of().iterator());
 
 		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
-				queryText, req, cookies);
+				queryText, req, cookies, null);
 
 		verify(initialQuery).setIncludeInferred(true);
 		verify(initialQuery).setMaxExecutionTime(12);

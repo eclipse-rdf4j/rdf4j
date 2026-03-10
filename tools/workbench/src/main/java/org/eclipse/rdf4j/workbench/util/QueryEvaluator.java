@@ -57,6 +57,8 @@ public final class QueryEvaluator {
 
 	private static final String EXPLANATION_FORMAT = "explanation-format";
 
+	private static final String RESPONSE_QUERY_TEXT = "__workbench_query_text";
+
 	private QueryEvaluator() {
 		// do nothing
 	}
@@ -97,7 +99,8 @@ public final class QueryEvaluator {
 	 */
 	public void extractQueryAndEvaluate(final TupleResultBuilder builder, final HttpServletResponse resp,
 			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
-			final WorkbenchRequest req, final CookieHandler cookies) throws BadRequestException, RDF4JException {
+			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText)
+			throws BadRequestException, RDF4JException {
 		final QueryLanguage queryLn = QueryLanguage.valueOf(req.getParameter("queryLn"));
 		Query query = prepareQuery(con, queryText, req);
 		if (req.isParameterPresent(EXPLAIN)) {
@@ -127,7 +130,8 @@ public final class QueryEvaluator {
 				}
 			}
 		}
-		this.evaluate(builder, out, xslPath, req, resp, cookies, query, evaluateCookie, paged, offset, limit);
+		this.evaluate(builder, out, xslPath, req, resp, cookies, query, evaluateCookie, paged, offset, limit,
+				responseQueryText);
 	}
 
 	public ExplainQueryResult explain(final RepositoryConnection con, final String queryText,
@@ -250,7 +254,8 @@ public final class QueryEvaluator {
 	 */
 	public void evaluateTupleQuery(final TupleResultBuilder builder, String xslPath, WorkbenchRequest req,
 			HttpServletResponse resp, CookieHandler cookies, final TupleQuery query, boolean writeCookie, boolean paged,
-			int offset, int limit) throws QueryEvaluationException, QueryResultHandlerException {
+			int offset, int limit, String responseQueryText)
+			throws QueryEvaluationException, QueryResultHandlerException {
 		final TupleQueryResult result = query.evaluate();
 		final String[] names = result.getBindingNames().toArray(new String[0]);
 		List<BindingSet> bindings = Iterations.asList(result);
@@ -258,9 +263,9 @@ public final class QueryEvaluator {
 			cookies.addTotalResultCountCookie(req, resp, bindings.size());
 		}
 		builder.transform(xslPath, "tuple.xsl");
-		builder.start();
-		builder.variables(names);
+		builder.start(getResultVariables(names, responseQueryText));
 		builder.link(List.of(INFO));
+		addResponseQueryTextResult(builder, responseQueryText);
 		final List<Object> values = new ArrayList<>(names.length);
 		if (paged && writeCookie) {
 			// Only in this case do we have paged results, but were given the full
@@ -322,15 +327,16 @@ public final class QueryEvaluator {
 	 */
 	private void evaluateGraphQuery(final TupleResultBuilder builder, String xslPath, WorkbenchRequest req,
 			HttpServletResponse resp, CookieHandler cookies, final GraphQuery query, boolean writeCookie, boolean paged,
-			int offset, int limit) throws QueryEvaluationException, QueryResultHandlerException {
+			int offset, int limit, String responseQueryText)
+			throws QueryEvaluationException, QueryResultHandlerException {
 		List<Statement> statements = Iterations.asList(query.evaluate());
 		if (writeCookie) {
 			cookies.addTotalResultCountCookie(req, resp, statements.size());
 		}
 		builder.transform(xslPath, "graph.xsl");
-		builder.start();
-		builder.variables("subject", "predicate", "object");
+		builder.start(getResultVariables(new String[] { "subject", "predicate", "object" }, responseQueryText));
 		builder.link(List.of(INFO));
+		addResponseQueryTextResult(builder, responseQueryText);
 		if (paged && writeCookie) {
 			// Only in this case do we have paged results, but were given the full
 			// query. Just-in-case parameter massaging below to avoid array index
@@ -360,10 +366,11 @@ public final class QueryEvaluator {
 
 	private void evaluate(final TupleResultBuilder builder, final OutputStream out, final String xslPath,
 			final WorkbenchRequest req, HttpServletResponse resp, CookieHandler cookies, final Query query,
-			boolean writeCookie, boolean paged, int offset, int limit) throws RDF4JException, BadRequestException {
+			boolean writeCookie, boolean paged, int offset, int limit, String responseQueryText)
+			throws RDF4JException, BadRequestException {
 		if (query instanceof TupleQuery) {
 			this.evaluateTupleQuery(builder, xslPath, req, resp, cookies, (TupleQuery) query, writeCookie, paged,
-					offset, limit);
+					offset, limit, responseQueryText);
 		} else {
 			final RDFFormat format = req.isParameterPresent(ACCEPT)
 					? Rio.getWriterFormatForMIMEType(req.getParameter(ACCEPT)).orElse(null)
@@ -372,7 +379,7 @@ public final class QueryEvaluator {
 				GraphQuery graphQuery = (GraphQuery) query;
 				if (null == format) {
 					this.evaluateGraphQuery(builder, xslPath, req, resp, cookies, graphQuery, writeCookie, paged,
-							offset, limit);
+							offset, limit, responseQueryText);
 				} else {
 					this.evaluateGraphQuery(Rio.createWriter(format, out), graphQuery);
 				}
@@ -384,6 +391,23 @@ public final class QueryEvaluator {
 			} else {
 				throw new BadRequestException("Unknown query type: " + query.getClass().getSimpleName());
 			}
+		}
+	}
+
+	private String[] getResultVariables(String[] names, String responseQueryText) {
+		if (responseQueryText == null) {
+			return names;
+		}
+		String[] resultNames = new String[names.length + 1];
+		System.arraycopy(names, 0, resultNames, 0, names.length);
+		resultNames[names.length] = RESPONSE_QUERY_TEXT;
+		return resultNames;
+	}
+
+	private void addResponseQueryTextResult(TupleResultBuilder builder, String responseQueryText)
+			throws QueryResultHandlerException {
+		if (responseQueryText != null) {
+			builder.namedResult(RESPONSE_QUERY_TEXT, responseQueryText);
 		}
 	}
 

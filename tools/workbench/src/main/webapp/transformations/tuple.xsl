@@ -8,20 +8,23 @@
 	<xsl:variable name="title">
 		<xsl:value-of select="$query-result.title" />
 		<xsl:text> (</xsl:text>
-		<xsl:value-of select="count(//sparql:result)" />
+		<xsl:value-of
+			select="count(//sparql:result[not(sparql:binding[@name='__workbench_query_text'])])" />
 		<xsl:text>)</xsl:text>
 	</xsl:variable>
 
 	<xsl:variable name="nextX.label">
 		<xsl:value-of select="$next.label" />
 		<xsl:text> </xsl:text>
-		<xsl:value-of select="count(//sparql:result)" />
+		<xsl:value-of
+			select="count(//sparql:result[not(sparql:binding[@name='__workbench_query_text'])])" />
 	</xsl:variable>
 
 	<xsl:variable name="previousX.label">
 		<xsl:value-of select="$previous.label" />
 		<xsl:text> </xsl:text>
-		<xsl:value-of select="count(//sparql:result)" />
+		<xsl:value-of
+			select="count(//sparql:result[not(sparql:binding[@name='__workbench_query_text'])])" />
 	</xsl:variable>
 
 	<xsl:include href="template.xsl" />
@@ -29,6 +32,10 @@
 	<xsl:include href="table.xsl" />
 
 	<xsl:template match="sparql:sparql">
+		<xsl:if test="//sparql:binding[@name='__workbench_query_text']">
+			<textarea id="wb-query-text" style="display:none;"><xsl:value-of
+				select="//sparql:result[sparql:binding[@name='__workbench_query_text']][1]/sparql:binding[@name='__workbench_query_text']/sparql:literal" /></textarea>
+		</xsl:if>
 		<form>
 			<table class="dataentry">
 				<tbody>
@@ -75,7 +82,7 @@
 						</td>
 						<td id="result-limited">
 							<xsl:if
-								test="$info//sparql:binding[@name='default-limit']/sparql:literal = count(//sparql:result)">
+								test="$info//sparql:binding[@name='default-limit']/sparql:literal = count(//sparql:result[not(sparql:binding[@name='__workbench_query_text'])])">
 								<xsl:value-of select="$result-limited.desc" />
 							</xsl:if>
 						</td>
@@ -112,6 +119,32 @@
 		</script>
 		<script src="../../scripts/tuple.js" type="text/javascript">
 		</script>
+	</xsl:template>
+
+	<xsl:template match="sparql:head">
+		<thead>
+			<tr>
+				<xsl:apply-templates select="sparql:variable[not(@name='__workbench_query_text')]" />
+			</tr>
+		</thead>
+	</xsl:template>
+
+	<xsl:template match="sparql:results">
+		<tbody>
+			<xsl:apply-templates select="sparql:result[not(sparql:binding[@name='__workbench_query_text'])]" />
+		</tbody>
+	</xsl:template>
+
+	<xsl:template match="sparql:result">
+		<xsl:variable name="result" select="." />
+		<tr>
+			<xsl:for-each select="../../sparql:head/sparql:variable[not(@name='__workbench_query_text')]">
+				<xsl:variable name="name" select="@name" />
+				<td>
+					<xsl:apply-templates select="$result/sparql:binding[@name=$name]" />
+				</td>
+			</xsl:for-each>
+		</tr>
 	</xsl:template>
 
 </xsl:stylesheet>

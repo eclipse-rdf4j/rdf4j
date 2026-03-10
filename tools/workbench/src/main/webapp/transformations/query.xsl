@@ -28,6 +28,7 @@
 			<input type="hidden" name="action" id="action" />
 			<input type="hidden" name="explain" id="explain" />
 			<input type="hidden" name="ref" value="text" />
+			<input type="hidden" name="include-query-text" id="include-query-text" value="false" />
 			<style type="text/css">
 				.query-form {
 					--query-form-label-width:12rem;
@@ -261,6 +262,7 @@
 
 				.yasqe .CodeMirror-scroll {
 					height: auto;
+					min-height: 300px;
 					max-height: 55vh;
 					overflow-y: auto;
 					overflow-x: auto;

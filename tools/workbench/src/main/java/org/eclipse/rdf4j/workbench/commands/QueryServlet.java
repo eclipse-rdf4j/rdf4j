@@ -180,14 +180,6 @@ public class QueryServlet extends TransformationServlet {
 	@Override
 	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
 			throws IOException, RDF4JException, BadRequestException {
-		if (!writeQueryCookie) {
-			// If we suppressed putting the query text into the cookies before.
-			cookies.addCookie(req, resp, REF, "hash");
-			String queryValue = req.getParameter(QUERY);
-			String hash = String.valueOf(queryValue.hashCode());
-			queryCache.put(hash, queryValue);
-			cookies.addCookie(req, resp, QUERY, hash);
-		}
 		final String action = req.getParameter(ACTION);
 		if (ACTION_GET.equals(action)) {
 			writeQueryTextResponse(req, resp);
@@ -252,6 +244,7 @@ public class QueryServlet extends TransformationServlet {
 
 	private void handleStandardBrowserRequest(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
 			throws IOException, RDF4JException, QueryResultHandlerException {
+		cacheLongQueryReferenceIfNeeded(req, resp);
 		boolean downloadResponse = setContentType(req, resp);
 		OutputStream out = getResponseOutputStream(req, resp, downloadResponse);
 		try {
@@ -456,7 +449,8 @@ public class QueryServlet extends TransformationServlet {
 				builder.end();
 			} else {
 				try {
-					EVAL.extractQueryAndEvaluate(builder, resp, out, xslPath, con, query, req, this.cookies);
+					EVAL.extractQueryAndEvaluate(builder, resp, out, xslPath, con, query, req, this.cookies,
+							getResponseQueryText(req, query));
 				} catch (MalformedQueryException exc) {
 					throw new BadRequestException(exc.getMessage(), exc);
 				} catch (HTTPQueryEvaluationException exc) {
@@ -467,6 +461,24 @@ public class QueryServlet extends TransformationServlet {
 				}
 			}
 		}
+	}
+
+	private void cacheLongQueryReferenceIfNeeded(WorkbenchRequest req, HttpServletResponse resp) {
+		if (!writeQueryCookie) {
+			// If we suppressed putting the query text into the cookies before.
+			cookies.addCookie(req, resp, REF, "hash");
+			String queryValue = req.getParameter(QUERY);
+			String hash = String.valueOf(queryValue.hashCode());
+			queryCache.put(hash, queryValue);
+			cookies.addCookie(req, resp, QUERY, hash);
+		}
+	}
+
+	private String getResponseQueryText(WorkbenchRequest req, String queryText) {
+		if (req.isParameterPresent(ACCEPT)) {
+			return null;
+		}
+		return queryText;
 	}
 
 	/**

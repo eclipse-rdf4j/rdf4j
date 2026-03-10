@@ -30,6 +30,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 
 import javax.servlet.ServletException;
@@ -50,6 +51,7 @@ import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.util.CookieHandler;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,13 +64,14 @@ public class QueryServletTest {
 
 	private static final String SHORT_QUERY = "select * {?s ?p ?o .}";
 
-	private final QueryServlet servlet = new QueryServlet();
+	private final TestableQueryServlet servlet = new TestableQueryServlet();
 
 	private String longQuery;
 
 	@BeforeEach
 	public void setUp() throws IOException {
 		longQuery = ResourceUtil.getString("long.rq");
+		QueryServlet.substituteQueryCache(new HashMap<>());
 	}
 
 	@Test
@@ -273,6 +276,89 @@ public class QueryServletTest {
 	}
 
 	@Test
+	public void testExecShouldEmbedRequestedLongQueryTextInXmlResponse() throws Exception {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try {
+			CookieHandler cookieHandler = mock(CookieHandler.class);
+			servlet.setCookieHandler(cookieHandler);
+			servlet.setRepository(repository);
+			servlet.writeQueryCookie = false;
+
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.getParameter("action")).thenReturn("exec");
+			when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+			when(request.getParameter(QueryServlet.QUERY)).thenReturn(longQuery);
+			when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
+			when(request.getParameter(QueryServlet.REF)).thenReturn("text");
+			when(request.isParameterPresent("include-query-text")).thenReturn(true);
+			when(request.getParameter("include-query-text")).thenReturn("true");
+			when(request.getParameter("queryLn")).thenReturn("SPARQL");
+			when(request.isParameterPresent("infer")).thenReturn(false);
+			when(request.isParameterPresent("Accept")).thenReturn(false);
+			when(request.isParameterPresent("explain")).thenReturn(false);
+			when(request.getInt("offset")).thenReturn(0);
+			when(request.getInt("limit_query")).thenReturn(0);
+			when(request.getInt("know_total")).thenReturn(0);
+			when(request.getInt("query-timeout")).thenReturn(0);
+			when(request.getHeader("Accept-Encoding")).thenReturn(null);
+			when(request.getContextPath()).thenReturn("");
+
+			ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			when(response.getOutputStream()).thenReturn(outputStream);
+
+			servlet.service(request, response, "/transformations");
+
+			String responseBody = outputStream.asString();
+			assertThat(responseBody).contains("__workbench_query_text");
+			assertThat(responseBody).contains("PREFIX dc1:");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void testExecShouldAlwaysEmbedShortQueryTextInXmlResponse() throws Exception {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try {
+			CookieHandler cookieHandler = mock(CookieHandler.class);
+			servlet.setCookieHandler(cookieHandler);
+			servlet.setRepository(repository);
+			servlet.writeQueryCookie = true;
+
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.getParameter("action")).thenReturn("exec");
+			when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+			when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
+			when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
+			when(request.getParameter("queryLn")).thenReturn("SPARQL");
+			when(request.isParameterPresent("infer")).thenReturn(false);
+			when(request.isParameterPresent("Accept")).thenReturn(false);
+			when(request.isParameterPresent("explain")).thenReturn(false);
+			when(request.getInt("offset")).thenReturn(0);
+			when(request.getInt("limit_query")).thenReturn(0);
+			when(request.getInt("know_total")).thenReturn(0);
+			when(request.getInt("query-timeout")).thenReturn(0);
+			when(request.getHeader("Accept-Encoding")).thenReturn(null);
+			when(request.getContextPath()).thenReturn("");
+
+			ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			when(response.getOutputStream()).thenReturn(outputStream);
+
+			servlet.service(request, response, "/transformations");
+
+			String responseBody = outputStream.asString();
+			assertThat(responseBody).contains("__workbench_query_text");
+			assertThat(responseBody).contains(SHORT_QUERY);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	public void testQueryServletShouldBufferDownloadWrites() throws IOException {
 		String queryServletSource = Files.readString(
 				Path.of("src/main/java/org/eclipse/rdf4j/workbench/commands/QueryServlet.java"),
@@ -297,6 +383,16 @@ public class QueryServletTest {
 		@Override
 		public void setWriteListener(WriteListener writeListener) {
 			// not needed for unit tests
+		}
+
+		private String asString() {
+			return delegate.toString(StandardCharsets.UTF_8);
+		}
+	}
+
+	private static final class TestableQueryServlet extends QueryServlet {
+		private void setCookieHandler(CookieHandler cookieHandler) {
+			this.cookies = cookieHandler;
 		}
 	}
 }

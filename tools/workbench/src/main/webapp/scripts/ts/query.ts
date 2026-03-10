@@ -711,6 +711,7 @@ module workbench {
         export function doSubmit() {
             //if yasqe is instantiated, make sure we save the value to the textarea
             if (yasqe) yasqe.save();
+            $('#include-query-text').val('false');
             var allowPageToSubmitForm = false;
             var save = ($('#action').val() == 'save');
             if (save) {
@@ -744,6 +745,7 @@ module workbench {
                 if (pathLength > 2048 || urlLength > 2083) {
                     alert("Due to its length, your query will be posted in the request body. "
                         + "It won't be possible to use a bookmark for the results page.");
+                    $('#include-query-text').val('true');
                     allowPageToSubmitForm = true;
                 } else {
                     // GET using the constructed URL, method exits here
