@@ -36,7 +36,7 @@ var workbench;
             });
             $wrapper.find(".CodeMirror-scroll").css({
                 "height": "auto",
-                "max-height": "70vh",
+                "max-height": "55vh",
                 "overflow-y": "auto",
                 "overflow-x": "auto"
             });

@@ -59,18 +59,122 @@
 						<td></td>
 					</tr>
 					<tr>
+						<th>Query Iteration Cache sync threshold</th>
+						<td>
+							<input type="text" id="iterationCacheSyncThreshold"
+								name="Query Iteration Cache sync threshold" size="16" value="10000" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Triple DB size</th>
+						<td>
+							<input type="text" id="tripleDBSize" name="Triple DB size" size="16"
+								value="10485760" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Value DB size</th>
+						<td>
+							<input type="text" id="valueDBSize" name="Value DB size" size="16"
+								value="10485760" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Force sync</th>
+						<td>
+							<select id="forceSync" name="Force sync">
+								<option value="false" selected="selected">
+									<xsl:value-of select="$false.label" />
+								</option>
+								<option value="true">
+									<xsl:value-of select="$true.label" />
+								</option>
+							</select>
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Value cache size</th>
+						<td>
+							<input type="text" id="valueCacheSize" name="Value cache size" size="16"
+								value="512" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Value ID cache size</th>
+						<td>
+							<input type="text" id="valueIDCacheSize" name="Value ID cache size" size="16"
+								value="128" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Namespace cache size</th>
+						<td>
+							<input type="text" id="namespaceCacheSize" name="Namespace cache size" size="16"
+								value="64" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Namespace ID cache size</th>
+						<td>
+							<input type="text" id="namespaceIDCacheSize" name="Namespace ID cache size" size="16"
+								value="32" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Auto grow</th>
+						<td>
+							<select id="autoGrow" name="Auto grow">
+								<option value="true" selected="selected">
+									<xsl:value-of select="$true.label" />
+								</option>
+								<option value="false">
+									<xsl:value-of select="$false.label" />
+								</option>
+							</select>
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Page cardinality estimator</th>
+						<td>
+							<select id="pageCardinalityEstimator" name="Page cardinality estimator">
+								<option value="true" selected="selected">
+									<xsl:value-of select="$true.label" />
+								</option>
+								<option value="false">
+									<xsl:value-of select="$false.label" />
+								</option>
+							</select>
+						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>Value eviction interval</th>
+						<td>
+							<input type="text" id="valueEvictionInterval" name="Value eviction interval" size="16"
+								value="60000" />
+						</td>
+						<td></td>
+					</tr>
+					<tr>
 						<th>
 							<xsl:value-of select="$repository-evaluation-mode.label" />
 						</th>
 						<td>
-							<select id="evalStratFactory" name="EvaluationStrategyFactory">
-								<option selected="selected"
-									value="org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory">
-									Strict
+							<select id="queryEvalMode" name="Query Evaluation Mode">
+								<option selected="selected" value="STRICT">
+									strict
 								</option>
-								<option
-									value="org.eclipse.rdf4j.query.algebra.evaluation.impl.ExtendedEvaluationStrategyFactory">
-									Extended
+								<option value="STANDARD">
+									standard
 								</option>
 							</select>
 						</td>

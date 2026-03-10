@@ -130,6 +130,117 @@
 					height:75vh;
 				}
 
+				#query-explanation-json-view {
+					display:none;
+					background:#ffffff;
+					border:1px solid #d0d0d0;
+					padding:0.75em;
+					width:100%;
+					box-sizing:border-box;
+					overflow:auto;
+					max-height:75vh;
+					font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+					line-height:1.45;
+				}
+
+				.query-json-view__raw {
+					margin:0.6em 0 0 0;
+					padding:0.6em;
+					background:#f8f8f8;
+					border:1px solid #e0e0e0;
+					white-space:pre;
+					overflow:auto;
+				}
+
+				.query-json-tree {
+					font-size:0.95em;
+					color:#1f2328;
+				}
+
+				.query-json-node {
+					margin:0.15em 0;
+				}
+
+				.query-json-node__line {
+					display:flex;
+					align-items:flex-start;
+					gap:0.35em;
+					white-space:nowrap;
+				}
+
+				.query-json-node__toggle {
+					border:1px solid #c5d1de;
+					background:#f3f7fb;
+					color:#285d8f;
+					border-radius:3px;
+					font-size:0.72em;
+					line-height:1;
+					width:1.5em;
+					height:1.5em;
+					padding:0;
+					cursor:pointer;
+					flex:0 0 auto;
+				}
+
+				.query-json-node__toggle:hover {
+					background:#e6f1fa;
+				}
+
+				.query-json-node__toggle:focus {
+					outline:2px solid #5a9ad6;
+					outline-offset:1px;
+				}
+
+				.query-json-node__toggle--spacer {
+					border:none;
+					background:transparent;
+					cursor:default;
+				}
+
+				.query-json-node__children {
+					margin-left:1.15em;
+					padding-left:0.75em;
+					border-left:1px dotted #c7d0d9;
+				}
+
+				.query-json-node--collapsed > .query-json-node__children {
+					display:none;
+				}
+
+				.query-json-node__key {
+					color:#0b5da8;
+				}
+
+				.query-json-node__label {
+					color:#5a6775;
+				}
+
+				.query-json-node__summary {
+					color:#6e7781;
+				}
+
+				.query-json-node__percentage {
+					color:#7a3e0a;
+					font-weight:600;
+				}
+
+				.query-json-node__value--string {
+					color:#0a7a36;
+				}
+
+				.query-json-node__value--number {
+					color:#7a3e0a;
+				}
+
+				.query-json-node__value--boolean {
+					color:#8a2a8c;
+				}
+
+				.query-json-node__value--null {
+					color:#6e7781;
+					font-style:italic;
+				}
+
 				@media (max-width: 900px) {
 					.query-form__row {
 						grid-template-columns:minmax(0, 1fr);
@@ -150,7 +261,7 @@
 
 				.yasqe .CodeMirror-scroll {
 					height: auto;
-					max-height: 70vh;
+					max-height: 55vh;
 					overflow-y: auto;
 					overflow-x: auto;
 				}
@@ -213,6 +324,7 @@
 							<xsl:value-of select="$explanation" />
 						</pre>
 						<div id="query-explanation-dot-view"></div>
+						<div id="query-explanation-json-view"></div>
 					</div>
 				</div>
 				<div id="query-explanation-controls-row" class="">

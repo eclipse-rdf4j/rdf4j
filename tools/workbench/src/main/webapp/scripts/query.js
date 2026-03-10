@@ -96,32 +96,46 @@ var workbench;
         function lockExplanationDimensions() {
             var explanation = $('#query-explanation');
             var dotView = $('#query-explanation-dot-view');
+            var jsonView = $('#query-explanation-json-view');
             var currentHeight = explanation.outerHeight();
             var currentWidth = explanation.outerWidth();
             var dotHeight = dotView.outerHeight();
             var dotWidth = dotView.outerWidth();
+            var jsonHeight = jsonView.outerHeight();
+            var jsonWidth = jsonView.outerWidth();
             if (dotHeight && (!currentHeight || dotHeight > currentHeight)) {
                 currentHeight = dotHeight;
             }
             if (dotWidth && (!currentWidth || dotWidth > currentWidth)) {
                 currentWidth = dotWidth;
             }
+            if (jsonHeight && (!currentHeight || jsonHeight > currentHeight)) {
+                currentHeight = jsonHeight;
+            }
+            if (jsonWidth && (!currentWidth || jsonWidth > currentWidth)) {
+                currentWidth = jsonWidth;
+            }
             if (currentHeight) {
                 explanation.css('min-height', currentHeight + 'px');
                 dotView.css('min-height', currentHeight + 'px');
+                jsonView.css('min-height', currentHeight + 'px');
             }
             if (currentWidth) {
                 explanation.css('min-width', currentWidth + 'px');
                 dotView.css('min-width', currentWidth + 'px');
+                jsonView.css('min-width', currentWidth + 'px');
             }
         }
         function clearExplanationDimensionLock() {
             var explanation = $('#query-explanation');
             var dotView = $('#query-explanation-dot-view');
+            var jsonView = $('#query-explanation-json-view');
             explanation.css('min-height', '');
             explanation.css('min-width', '');
             dotView.css('min-height', '');
             dotView.css('min-width', '');
+            jsonView.css('min-height', '');
+            jsonView.css('min-width', '');
         }
         function destroyDotPanZoom() {
             if (dotPanZoomInstance && typeof dotPanZoomInstance.destroy === 'function') {
@@ -173,11 +187,20 @@ var workbench;
         function setExplanationDisplayMode(format) {
             if (format === 'dot') {
                 $('#query-explanation').hide();
+                $('#query-explanation-json-view').hide();
                 $('#query-explanation-dot-view').show();
+                return;
+            }
+            if (format === 'json') {
+                $('#query-explanation').hide();
+                $('#query-explanation-dot-view').hide();
+                $('#query-explanation-json-view').show();
+                destroyDotPanZoom();
             }
             else {
                 $('#query-explanation').show();
                 $('#query-explanation-dot-view').hide();
+                $('#query-explanation-json-view').hide();
                 destroyDotPanZoom();
             }
         }
@@ -207,6 +230,7 @@ var workbench;
             updateDownloadButtonState();
             destroyDotPanZoom();
             $('#query-explanation-dot-view').empty();
+            $('#query-explanation-json-view').empty();
             setExplanationDisplayMode(pendingFormat);
         }
         function showExplainError(message) {
@@ -215,6 +239,7 @@ var workbench;
             $('#queryString.errors').text(errorMessage);
             $('#query-explanation').show().text(errorMessage).attr('data-format', 'text');
             $('#query-explanation-dot-view').hide().empty();
+            $('#query-explanation-json-view').hide().empty();
             destroyDotPanZoom();
             restoreExplainButtonViewportTopIfNeeded();
             clearExplanationDimensionLock();
@@ -258,11 +283,214 @@ var workbench;
             destroyDotPanZoom();
             dotView.hide().empty();
         }
+        function isJsonExpandable(value) {
+            return value !== null && typeof value === 'object';
+        }
+        function getJsonSummary(value) {
+            if (Array.isArray(value)) {
+                return '[ ' + value.length + ' ]';
+            }
+            var keyCount = Object.keys(value).length;
+            return '{ ' + keyCount + ' }';
+        }
+        function formatJsonKey(key) {
+            if (key && key.charAt(0) === '[') {
+                return key;
+            }
+            return '"' + key + '"';
+        }
+        function formatJsonArrayEntryKey(index, arrayEntry) {
+            var indexLabel = '[' + index + ']';
+            if (!arrayEntry || typeof arrayEntry !== 'object') {
+                return indexLabel;
+            }
+            var entryType = arrayEntry.type;
+            if (typeof entryType !== 'string' || entryType.length === 0) {
+                return indexLabel;
+            }
+            return indexLabel + ' ' + entryType;
+        }
+        function parseNumericJsonValue(value) {
+            if (typeof value === 'number' && !isNaN(value) && isFinite(value)) {
+                return value;
+            }
+            if (typeof value !== 'string') {
+                return null;
+            }
+            var parsedValue = Number(value);
+            if (isNaN(parsedValue) || !isFinite(parsedValue)) {
+                return null;
+            }
+            return parsedValue;
+        }
+        function computePlanEntryPercentages(plans) {
+            var planTimes = [];
+            var totalTimeActual = 0;
+            for (var i = 0; i < plans.length; i++) {
+                var planEntry = plans[i];
+                var planTime = null;
+                if (planEntry && typeof planEntry === 'object') {
+                    planTime = parseNumericJsonValue(planEntry.totalTimeActual);
+                }
+                planTimes.push(planTime);
+                if (typeof planTime === 'number' && planTime > 0) {
+                    totalTimeActual += planTime;
+                }
+            }
+            if (totalTimeActual <= 0) {
+                return [];
+            }
+            var percentages = [];
+            for (var j = 0; j < planTimes.length; j++) {
+                var currentPlanTime = planTimes[j];
+                if (typeof currentPlanTime === 'number' && currentPlanTime >= 0) {
+                    percentages.push((currentPlanTime / totalTimeActual) * 100);
+                }
+                else {
+                    percentages.push(null);
+                }
+            }
+            return percentages;
+        }
+        function formatPercentage(percentage) {
+            return percentage.toFixed(1) + '%';
+        }
+        function createJsonScalarElement(value) {
+            var valueElement = document.createElement('span');
+            valueElement.className = 'query-json-node__value';
+            if (value === null) {
+                valueElement.className += ' query-json-node__value--null';
+                valueElement.textContent = 'null';
+            }
+            else if (typeof value === 'string') {
+                valueElement.className += ' query-json-node__value--string';
+                valueElement.textContent = '"' + value + '"';
+            }
+            else if (typeof value === 'number') {
+                valueElement.className += ' query-json-node__value--number';
+                valueElement.textContent = value.toString();
+            }
+            else if (typeof value === 'boolean') {
+                valueElement.className += ' query-json-node__value--boolean';
+                valueElement.textContent = value ? 'true' : 'false';
+            }
+            else {
+                valueElement.className += ' query-json-node__value--other';
+                valueElement.textContent = String(value);
+            }
+            return valueElement;
+        }
+        function createJsonTreeNode(value, key, depth, percentageOfPlansTotal) {
+            var node = document.createElement('div');
+            node.className = 'query-json-node';
+            var line = document.createElement('div');
+            line.className = 'query-json-node__line';
+            node.appendChild(line);
+            var expandable = isJsonExpandable(value);
+            var toggle = null;
+            if (expandable) {
+                toggle = document.createElement('button');
+                toggle.type = 'button';
+                toggle.className = 'query-json-node__toggle';
+                line.appendChild(toggle);
+            }
+            else {
+                var spacer = document.createElement('span');
+                spacer.className = 'query-json-node__toggle query-json-node__toggle--spacer';
+                spacer.setAttribute('aria-hidden', 'true');
+                line.appendChild(spacer);
+            }
+            if (key) {
+                var keyElement = document.createElement('span');
+                keyElement.className = 'query-json-node__key';
+                keyElement.textContent = formatJsonKey(key);
+                line.appendChild(keyElement);
+                var separatorElement = document.createElement('span');
+                separatorElement.className = 'query-json-node__label';
+                separatorElement.textContent = ':';
+                line.appendChild(separatorElement);
+            }
+            if (typeof percentageOfPlansTotal === 'number') {
+                var percentageElement = document.createElement('span');
+                percentageElement.className = 'query-json-node__percentage';
+                percentageElement.textContent = '(' + formatPercentage(percentageOfPlansTotal) + ')';
+                line.appendChild(percentageElement);
+            }
+            if (expandable) {
+                var summaryElement = document.createElement('span');
+                summaryElement.className = 'query-json-node__summary';
+                summaryElement.textContent = getJsonSummary(value);
+                line.appendChild(summaryElement);
+                var childrenElement = document.createElement('div');
+                childrenElement.className = 'query-json-node__children';
+                node.appendChild(childrenElement);
+                var expandedByDefault = depth <= 1;
+                if (!expandedByDefault) {
+                    node.classList.add('query-json-node--collapsed');
+                }
+                toggle.setAttribute('aria-expanded', expandedByDefault ? 'true' : 'false');
+                toggle.textContent = expandedByDefault ? '▾' : '▸';
+                if (Array.isArray(value)) {
+                    var arrayEntryPercentages = [];
+                    if (key === 'plans') {
+                        arrayEntryPercentages = computePlanEntryPercentages(value);
+                    }
+                    for (var index = 0; index < value.length; index++) {
+                        childrenElement.appendChild(createJsonTreeNode(value[index], formatJsonArrayEntryKey(index, value[index]), depth + 1, arrayEntryPercentages[index]));
+                    }
+                }
+                else {
+                    var objectKeys = Object.keys(value);
+                    for (var i = 0; i < objectKeys.length; i++) {
+                        var childKey = objectKeys[i];
+                        childrenElement.appendChild(createJsonTreeNode(value[childKey], childKey, depth + 1));
+                    }
+                }
+                toggle.addEventListener('click', function () {
+                    var isCollapsed = node.classList.toggle('query-json-node--collapsed');
+                    var expanded = !isCollapsed;
+                    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+                    toggle.textContent = expanded ? '▾' : '▸';
+                });
+            }
+            else {
+                line.appendChild(createJsonScalarElement(value));
+            }
+            return node;
+        }
+        function renderJsonExplanationTree(explanationJson) {
+            var treeElement = document.createElement('div');
+            treeElement.className = 'query-json-tree';
+            treeElement.appendChild(createJsonTreeNode(explanationJson, '', 0));
+            return treeElement;
+        }
+        function renderJsonView(explanationText, format) {
+            var jsonView = $('#query-explanation-json-view');
+            if (format !== 'json') {
+                jsonView.hide().empty();
+                return;
+            }
+            setExplanationDisplayMode('json');
+            jsonView.empty().show();
+            if (!explanationText) {
+                restoreExplainButtonViewportTopIfNeeded();
+                return;
+            }
+            try {
+                var explanationJson = JSON.parse(explanationText);
+                jsonView.append(renderJsonExplanationTree(explanationJson));
+            }
+            catch (parseError) {
+                jsonView.append($('<div class="error">Unable to parse JSON explanation. Showing raw content.</div>'));
+                jsonView.append($('<pre class="query-json-view__raw"></pre>').text(explanationText));
+            }
+            restoreExplainButtonViewportTopIfNeeded();
+        }
         function renderExplanation(explanationText, format) {
             var normalizedFormat = (format || 'text').toLowerCase();
             $('#query-explanation-row').show();
             $('#query-explanation-controls-row').show();
-            if (normalizedFormat === 'dot') {
+            if (normalizedFormat === 'dot' || normalizedFormat === 'json') {
                 $('#query-explanation').text('').attr('data-format', normalizedFormat);
             }
             else {
@@ -273,7 +501,8 @@ var workbench;
             latestExplanationFormat = normalizedFormat;
             updateDownloadButtonState();
             renderDotView(explanationText, normalizedFormat);
-            if (normalizedFormat !== 'dot') {
+            renderJsonView(explanationText, normalizedFormat);
+            if (normalizedFormat === 'text') {
                 restoreExplainButtonViewportTopIfNeeded();
             }
             clearExplanationDimensionLock();
@@ -501,6 +730,7 @@ var workbench;
                 latestExplanationFormat = initialFormat.toLowerCase();
                 updateDownloadButtonState();
                 renderDotView('', latestExplanationFormat);
+                renderJsonView('', latestExplanationFormat);
                 $('#query-explanation-controls-row').hide();
             }
         }

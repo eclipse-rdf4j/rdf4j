@@ -84,6 +84,33 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void jsonExplanationShouldRenderAsInteractiveTree() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains("id=\"query-explanation-json-view\"")
+				.contains("#query-explanation-json-view")
+				.contains(".query-json-node__toggle")
+				.contains(".query-json-node__children")
+				.contains(".query-json-node__percentage");
+
+		assertThat(queryScript)
+				.contains("function renderJsonView")
+				.contains("function renderJsonExplanationTree")
+				.contains("function formatJsonArrayEntryKey")
+				.contains("function computePlanEntryPercentages")
+				.contains("function formatPercentage")
+				.contains("formatJsonArrayEntryKey(index, value[index])")
+				.contains("arrayEntryPercentages[index]")
+				.contains("query-json-node__percentage")
+				.contains("query-json-node__toggle")
+				.contains("query-json-node--collapsed")
+				.contains("aria-expanded");
+	}
+
+	@Test
 	void queryAndTextExplanationShouldUseModernResponsiveLayout() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
@@ -161,13 +188,37 @@ class QueryTemplateTest {
 	}
 
 	@Test
-	void createLmdbTemplateShouldExposeTripleIndexesField() throws IOException {
+	void createLmdbTemplateShouldExposeAllLmdbConfigFields() throws IOException {
 		String createLmdbTemplate = Files.readString(Path.of("src/main/webapp/transformations/create-lmdb.xsl"),
 				StandardCharsets.UTF_8);
 
 		assertThat(createLmdbTemplate)
 				.contains("$repository-indexes.label")
 				.contains("id=\"indexes\"")
-				.contains("name=\"Triple indexes\"");
+				.contains("name=\"Triple indexes\"")
+				.contains("id=\"iterationCacheSyncThreshold\"")
+				.contains("name=\"Query Iteration Cache sync threshold\"")
+				.contains("id=\"tripleDBSize\"")
+				.contains("name=\"Triple DB size\"")
+				.contains("id=\"valueDBSize\"")
+				.contains("name=\"Value DB size\"")
+				.contains("id=\"forceSync\"")
+				.contains("name=\"Force sync\"")
+				.contains("id=\"valueCacheSize\"")
+				.contains("name=\"Value cache size\"")
+				.contains("id=\"valueIDCacheSize\"")
+				.contains("name=\"Value ID cache size\"")
+				.contains("id=\"namespaceCacheSize\"")
+				.contains("name=\"Namespace cache size\"")
+				.contains("id=\"namespaceIDCacheSize\"")
+				.contains("name=\"Namespace ID cache size\"")
+				.contains("id=\"autoGrow\"")
+				.contains("name=\"Auto grow\"")
+				.contains("id=\"pageCardinalityEstimator\"")
+				.contains("name=\"Page cardinality estimator\"")
+				.contains("id=\"valueEvictionInterval\"")
+				.contains("name=\"Value eviction interval\"")
+				.contains("id=\"queryEvalMode\"")
+				.contains("name=\"Query Evaluation Mode\"");
 	}
 }

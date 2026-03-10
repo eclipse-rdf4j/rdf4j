@@ -12,7 +12,18 @@
       config:rep.type "openrdf:SailRepository" ;
       config:sail.impl [
          config:sail.type "rdf4j:LmdbStore" ;
+         config:sail.iterationCacheSyncThreshold {%Query Iteration Cache sync threshold|10000%} ;
          lmdb:tripleIndexes "{%Triple indexes|spoc,posc%}" ;
+         lmdb:tripleDBSize {%Triple DB size|10485760%} ;
+         lmdb:valueDBSize {%Value DB size|10485760%} ;
+         lmdb:forceSync {%Force sync|false|true%} ;
+         lmdb:valueCacheSize {%Value cache size|512%} ;
+         lmdb:valueIDCacheSize {%Value ID cache size|128%} ;
+         lmdb:namespaceCacheSize {%Namespace cache size|64%} ;
+         lmdb:namespaceIDCacheSize {%Namespace ID cache size|32%} ;
+         lmdb:autoGrow {%Auto grow|true|false%} ;
+         lmdb:pageCardinalityEstimator {%Page cardinality estimator|true|false%} ;
+         lmdb:valueEvictionInterval {%Value eviction interval|60000%} ;
          config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
       ]
    ].

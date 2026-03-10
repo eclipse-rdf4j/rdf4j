@@ -118,16 +118,50 @@ public class CreateServletTest {
 	}
 
 	@Test
-	public void testLmdbTemplateShouldRenderConfiguredTripleIndexes() throws IOException {
+	public void testLmdbTemplateShouldRenderConfiguredLmdbSettings() throws IOException {
 		String rendered = CreateServlet.getConfigTemplate("lmdb")
-				.render(Map.of(
-						"Repository ID", "lmdb-custom",
-						"Repository title", "LMDB custom",
-						"Triple indexes", "spoc,opsc",
-						"Query Evaluation Mode", "STRICT"));
+				.render(Map.ofEntries(
+						Map.entry("Repository ID", "lmdb-custom"),
+						Map.entry("Repository title", "LMDB custom"),
+						Map.entry("Triple indexes", "spoc,opsc"),
+						Map.entry("Query Iteration Cache sync threshold", "12345"),
+						Map.entry("Triple DB size", "20971520"),
+						Map.entry("Value DB size", "31457280"),
+						Map.entry("Force sync", "true"),
+						Map.entry("Value cache size", "777"),
+						Map.entry("Value ID cache size", "333"),
+						Map.entry("Namespace cache size", "111"),
+						Map.entry("Namespace ID cache size", "222"),
+						Map.entry("Auto grow", "false"),
+						Map.entry("Page cardinality estimator", "false"),
+						Map.entry("Value eviction interval", "15000"),
+						Map.entry("Query Evaluation Mode", "STRICT")));
 
 		assertThat(rendered)
+				.contains("iterationCacheSyncThreshold")
+				.contains("12345")
 				.contains("tripleIndexes")
-				.contains("spoc,opsc");
+				.contains("spoc,opsc")
+				.contains("tripleDBSize")
+				.contains("20971520")
+				.contains("valueDBSize")
+				.contains("31457280")
+				.contains("forceSync")
+				.contains("true")
+				.contains("valueCacheSize")
+				.contains("777")
+				.contains("valueIDCacheSize")
+				.contains("333")
+				.contains("namespaceCacheSize")
+				.contains("111")
+				.contains("namespaceIDCacheSize")
+				.contains("222")
+				.contains("autoGrow")
+				.contains("false")
+				.contains("pageCardinalityEstimator")
+				.contains("valueEvictionInterval")
+				.contains("15000")
+				.contains("defaultQueryEvaluationMode")
+				.contains("STRICT");
 	}
 }
