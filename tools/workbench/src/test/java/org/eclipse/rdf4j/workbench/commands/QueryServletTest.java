@@ -13,10 +13,12 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,9 +38,13 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.ResourceUtil;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -186,6 +192,50 @@ public class QueryServletTest {
 		assertThatCode(() -> servlet.doPost(request, response, "/transformations")).doesNotThrowAnyException();
 		verify(storage).saveQuery(any(), eq("my-query"), eq(""), eq(true), eq(QueryLanguage.SPARQL), eq(SHORT_QUERY),
 				eq(true), eq(100));
+	}
+
+	@Test
+	public void testGetExplainShouldRequireReadAccessForSavedQuery() throws Exception {
+		Repository repository = mock(Repository.class);
+		when(repository.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+		servlet.setRepository(repository);
+
+		QueryStorage storage = mock(QueryStorage.class);
+		servlet.substituteQueryStorage(storage);
+		servlet.writeQueryCookie = true;
+
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		Explanation explanation = mock(Explanation.class);
+		IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:private");
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("action")).thenReturn("explain");
+		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
+		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
+		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(request.getParameter(QueryServlet.QUERY)).thenReturn("private-query");
+		when(request.getParameter("owner")).thenReturn("other-user");
+		when(request.getParameter("server-user")).thenReturn("current-user");
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.getParameter("explain")).thenReturn("Optimized");
+		when(request.getParameter("explain-format")).thenReturn("text");
+		when(storage.selectSavedQuery(anyString(), eq("other-user"), eq("private-query"))).thenReturn(queryId);
+		when(storage.canRead(queryId, "current-user")).thenReturn(false);
+		when(storage.getQueryText(anyString(), eq("other-user"), eq("private-query"))).thenReturn(SHORT_QUERY);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("plan");
+
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
+
+		assertThatThrownBy(() -> servlet.service(request, response, "/transformations"))
+				.isInstanceOf(BadRequestException.class)
+				.hasMessage("Current user may not read the given query.");
+
+		verify(storage).canRead(queryId, "current-user");
+		verify(repository, never()).getConnection();
 	}
 
 	@Test

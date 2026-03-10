@@ -605,7 +605,6 @@ module workbench {
                 type: 'POST',
                 dataType: 'json',
                 data: form.serialize(),
-                timeout: 30000,
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
                     showExplainError(getExplainErrorMessage(jqXHR, textStatus, errorThrown));
                 },

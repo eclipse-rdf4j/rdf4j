@@ -58,6 +58,7 @@ import org.eclipse.rdf4j.http.server.HTTPException;
 import org.eclipse.rdf4j.http.server.ProtocolUtil;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.http.server.repository.BooleanQueryResultView;
+import org.eclipse.rdf4j.http.server.repository.ExplainQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.GraphQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.QueryResultView;
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
@@ -77,6 +78,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterRegistry;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
@@ -365,6 +367,11 @@ public class TransactionController extends AbstractController implements Disposa
 
 		try {
 			Query query = getQuery(txn, queryStr, request, response);
+			Optional<Explanation.Level> explainLevel = getExplain(request);
+
+			if (explainLevel.isPresent()) {
+				return getExplainQueryResponse(txn.explain(query, explainLevel.get()));
+			}
 
 			if (query instanceof TupleQuery) {
 				TupleQuery tQuery = (TupleQuery) query;
@@ -414,6 +421,25 @@ public class TransactionController extends AbstractController implements Disposa
 		model.put(QueryResultView.HEADERS_ONLY, false); // TODO needed for HEAD
 		// requests.
 		return new ModelAndView(view, model);
+	}
+
+	private Optional<Explanation.Level> getExplain(HttpServletRequest request) throws ClientHTTPException {
+		final String explainString = request.getParameter(Protocol.EXPLAIN_PARAM_NAME);
+		if (explainString == null) {
+			return Optional.empty();
+		}
+		try {
+			return Optional.of(Explanation.Level.valueOf(explainString));
+		} catch (IllegalArgumentException e) {
+			throw new ClientHTTPException("Invalid explanation level: " + explainString, e);
+		}
+	}
+
+	private ModelAndView getExplainQueryResponse(Explanation explanation) {
+		Map<String, Object> model = new HashMap<>();
+		model.put(QueryResultView.FILENAME_HINT_KEY, "query-result");
+		model.put(QueryResultView.QUERY_EXPLAIN_RESULT_KEY, explanation);
+		return new ModelAndView(new ExplainQueryResultView(), model);
 	}
 
 	private static Charset getCharset(HttpServletRequest request) {

@@ -542,7 +542,6 @@ var workbench;
                 type: 'POST',
                 dataType: 'json',
                 data: form.serialize(),
-                timeout: 30000,
                 error: function (jqXHR, textStatus, errorThrown) {
                     showExplainError(getExplainErrorMessage(jqXHR, textStatus, errorThrown));
                 },

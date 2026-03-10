@@ -192,6 +192,9 @@ public class QueryServlet extends TransformationServlet {
 		if (ACTION_GET.equals(action)) {
 			writeQueryTextResponse(req, resp);
 		} else if (ACTION_EXPLAIN.equals(action)) {
+			if (isSavedQueryReference(req) && !canReadSavedQuery(req)) {
+				throw new BadRequestException("Current user may not read the given query.");
+			}
 			writeExplainResponse(req, resp);
 		} else {
 			handleStandardBrowserRequest(req, resp, xslPath);
@@ -512,6 +515,10 @@ public class QueryServlet extends TransformationServlet {
 		} else {
 			throw new BadRequestException("Expected 'ref' parameter in request.");
 		}
+	}
+
+	private boolean isSavedQueryReference(WorkbenchRequest req) {
+		return req.isParameterPresent(REF) && "id".equals(req.getParameter(REF));
 	}
 
 }

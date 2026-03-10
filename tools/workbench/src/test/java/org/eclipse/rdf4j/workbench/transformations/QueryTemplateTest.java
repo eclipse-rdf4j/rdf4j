@@ -45,6 +45,15 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void explainScriptShouldNotForceThirtySecondClientTimeout() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.contains("function ajaxExplain()")
+				.doesNotContain("timeout: 30000");
+	}
+
+	@Test
 	void queryTemplateShouldUseSingleExplainButtonAndPostExplanationControlsRow() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
