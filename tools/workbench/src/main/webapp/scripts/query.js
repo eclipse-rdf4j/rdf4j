@@ -86,65 +86,6 @@ var workbench;
             }, 0);
         }
         query_1.handleNameChange = handleNameChange;
-        /**
-         * Send a background HTTP request to save the query, and handle the
-         * response asynchronously.
-         *
-         * @param overwrite
-         *            if true, add a URL parameter that tells the server we wish
-         *            to overwrite any already saved query
-         */
-        function ajaxSave(overwrite) {
-            var feedback = $('#save-feedback');
-            var url = [];
-            url[url.length] = 'query';
-            if (overwrite) {
-                url[url.length] = document.all ? ';' : '?';
-                url[url.length] = 'overwrite=true&';
-            }
-            var href = url.join('');
-            var form = $('form[action="query"]');
-            $.ajax({
-                url: href,
-                type: 'POST',
-                dataType: 'json',
-                data: form.serialize(),
-                timeout: 5000,
-                error: function (jqXHR, textStatus, errorThrown) {
-                    feedback.removeClass().addClass('error');
-                    if (textStatus == 'timeout') {
-                        feedback.text('Timed out waiting for response. Uncertain if save occured.');
-                    }
-                    else {
-                        feedback.text('Save Request Failed: Error Type = ' +
-                            textStatus + ', HTTP Status Text = "' + errorThrown + '"');
-                    }
-                },
-                success: function (response) {
-                    if (response.accessible) {
-                        if (response.written) {
-                            feedback.removeClass().addClass('success');
-                            feedback.text('Query saved.');
-                        }
-                        else {
-                            if (response.existed) {
-                                if (confirm('Query name exists. Click OK to overwrite.')) {
-                                    ajaxSave(true);
-                                }
-                                else {
-                                    feedback.removeClass().addClass('error');
-                                    feedback.text('Cancelled overwriting existing query.');
-                                }
-                            }
-                        }
-                    }
-                    else {
-                        feedback.removeClass().addClass('error');
-                        feedback.text('Repository was not accessible (check your permissions).');
-                    }
-                }
-            });
-        }
         function clearExplainSelection() {
             $('#explain').val('');
             $('#explain-level').val('Optimized');
@@ -298,7 +239,7 @@ var workbench;
                 vizRenderer.renderSVGElement(explanationText).then(function (svgElement) {
                     $(svgElement).css({
                         width: '100%',
-                        height: 'auto',
+                        height: '100%',
                         maxWidth: '100%',
                         maxHeight: 'none',
                         display: 'block'
@@ -403,6 +344,65 @@ var workbench;
                 return 'dot';
             }
             return 'txt';
+        }
+        /**
+         * Send a background HTTP request to save the query, and handle the
+         * response asynchronously.
+         *
+         * @param overwrite
+         *            if true, add a URL parameter that tells the server we wish
+         *            to overwrite any already saved query
+         */
+        function ajaxSave(overwrite) {
+            var feedback = $('#save-feedback');
+            var url = [];
+            url[url.length] = 'query';
+            if (overwrite) {
+                url[url.length] = document.all ? ';' : '?';
+                url[url.length] = 'overwrite=true&';
+            }
+            var href = url.join('');
+            var form = $('form[action="query"]');
+            $.ajax({
+                url: href,
+                type: 'POST',
+                dataType: 'json',
+                data: form.serialize(),
+                timeout: 5000,
+                error: function (jqXHR, textStatus, errorThrown) {
+                    feedback.removeClass().addClass('error');
+                    if (textStatus == 'timeout') {
+                        feedback.text('Timed out waiting for response. Uncertain if save occured.');
+                    }
+                    else {
+                        feedback.text('Save Request Failed: Error Type = ' +
+                            textStatus + ', HTTP Status Text = "' + errorThrown + '"');
+                    }
+                },
+                success: function (response) {
+                    if (response.accessible) {
+                        if (response.written) {
+                            feedback.removeClass().addClass('success');
+                            feedback.text('Query saved.');
+                        }
+                        else {
+                            if (response.existed) {
+                                if (confirm('Query name exists. Click OK to overwrite.')) {
+                                    ajaxSave(true);
+                                }
+                                else {
+                                    feedback.removeClass().addClass('error');
+                                    feedback.text('Cancelled overwriting existing query.');
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        feedback.removeClass().addClass('error');
+                        feedback.text('Repository was not accessible (check your permissions).');
+                    }
+                }
+            });
         }
         /**
          * Invoked by form submission.
@@ -535,7 +535,7 @@ var workbench;
             //second, keep editor width constrained to its table column
             $(yasqe.getWrapperElement()).css({
                 "fontSize": "14px",
-                "width":"100%",
+                "width": "100%",
                 "maxWidth": "100%",
                 "boxSizing": "border-box"
             });

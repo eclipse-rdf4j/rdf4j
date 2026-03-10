@@ -114,4 +114,18 @@ class QueryTemplateTest {
 				.contains("\"width\": \"100%\"")
 				.contains("\"maxWidth\": \"100%\"");
 	}
+
+	@Test
+	void pagingDownloadShouldPostQueryParametersInsteadOfShowingSavedQueryAlert() throws IOException {
+		String pagingScript = Files.readString(Path.of("src/main/webapp/scripts/ts/paging.ts"), StandardCharsets.UTF_8);
+
+		assertThat(pagingScript)
+				.contains("function submitGraphParamRequest")
+				.contains("form.method = 'POST'")
+				.contains("form.action = 'query'")
+				.contains("form.appendChild(createHiddenInput('action', 'exec'))")
+				.contains("addCookieToFormIfPresent(form, 'query')")
+				.contains("addCookieToFormIfPresent(form, 'ref')")
+				.doesNotContain("Save your query on the server");
+	}
 }

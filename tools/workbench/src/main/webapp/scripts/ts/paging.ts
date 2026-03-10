@@ -27,31 +27,56 @@ module workbench {
             return url;
         }
 
+        function createHiddenInput(name: string, value: string): HTMLInputElement {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = name;
+            input.value = value;
+            return input;
+        }
+
+        function addCookieToFormIfPresent(form: HTMLFormElement, name: string) {
+            var value = workbench.getCookie(name);
+            if (value) {
+                form.appendChild(createHiddenInput(name, value));
+            }
+        }
+
+        function submitGraphParamRequest(name: string, value: string) {
+            var form = document.createElement('form');
+            form.method = 'POST';
+            form.action = 'query';
+            form.style.display = 'none';
+
+            form.appendChild(createHiddenInput('action', 'exec'));
+            addCookieToFormIfPresent(form, 'query');
+            addCookieToFormIfPresent(form, 'ref');
+            addCookieToFormIfPresent(form, 'queryLn');
+            addCookieToFormIfPresent(form, 'infer');
+            addCookieToFormIfPresent(form, 'limit_query');
+            form.appendChild(createHiddenInput(name, value));
+
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+        }
+
         /**
          * Invoked in graph.xsl and tuple.xsl for download functionality. Takes a
          * document element by name, and creates a request with it as a parameter.
          */
         export function addGraphParam(name: string) {
-            var value = encodeURIComponent($('#' + name).val());
+            var value = <string>$('#' + name).val();
             var url = document.location.href;
-            var ref = workbench.getCookie('ref');
             if (url.match(/query$/)) { // looking at POST query results?
-                if ('id' == ref) {
-                    url = url + ';ref=id' + AMP + 'action=exec';
-                    url = addCookieToUrlQueryIfPresent(url, 'query');
-                    url = addCookieToUrlQueryIfPresent(url, 'queryLn');
-                    url = addCookieToUrlQueryIfPresent(url, 'infer');
-                    url = addCookieToUrlQueryIfPresent(url, 'limit_query');
-                } else {
-                    alert("Can't put query in URL, since it might be too long for your browser.\n" +
-                    "Save your query on the server, then execute it from the 'Saved Queries' page.");
-                    return;
-                }
+                submitGraphParamRequest(name, value);
+                return;
             }
+            var encodedValue = encodeURIComponent(value);
             if (url.indexOf('?') + 1 || url.indexOf(';') + 1) {
-                document.location.href = url + AMP + name + '=' + value;
+                document.location.href = url + AMP + name + '=' + encodedValue;
             } else {
-                document.location.href = url + ';' + name + '=' + value;
+                document.location.href = url + ';' + name + '=' + encodedValue;
             }
         }
         

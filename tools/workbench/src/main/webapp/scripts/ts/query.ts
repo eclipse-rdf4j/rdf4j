@@ -315,7 +315,7 @@ module workbench {
         }
 
         function getExplainErrorMessage(jqXHR: JQueryXHR, textStatus: string, errorThrown: string): string {
-            var response: any = jqXHR.responseJSON;
+            var response: any = (<any>jqXHR).responseJSON;
             if (response && response.error) {
                 return response.error;
             }
