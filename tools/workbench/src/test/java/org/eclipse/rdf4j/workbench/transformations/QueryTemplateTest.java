@@ -82,22 +82,34 @@ class QueryTemplateTest {
 	}
 
 	@Test
-	void queryAndTextExplanationShouldStayWithinPageWidth() throws IOException {
+	void queryAndTextExplanationShouldUseModernResponsiveLayout() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 
 		assertThat(queryTemplate)
-				.doesNotContain("table-layout:fixed;")
-				.contains("width:900px;")
+				.contains(".query-form")
+				.contains("--query-form-label-width")
+				.contains("grid-template-columns:var(--query-form-label-width) minmax(0, 1fr);")
+				.contains("grid-template-columns:max-content minmax(0, 1fr);")
+				.contains(".query-form__row--stacked")
+				.contains("grid-template-columns:minmax(0, 1fr);")
+				.contains("class=\"query-form\"")
+				.contains("class=\"query-form__row\"")
+				.contains("class=\"query-form__row query-form__row--stacked\"")
+				.contains("id=\"query-explanation-row\" class=\"query-form__row query-form__row--stacked\"")
+				.contains("class=\"query-form__label\"")
+				.contains("class=\"query-form__field\"")
+				.contains("width:100%;")
 				.contains("white-space:pre;")
 				.contains("overflow:auto;")
 				.contains("max-width:100%;")
 				.doesNotContain("white-space:pre-wrap;")
-				.doesNotContain("word-break:break-word;");
+				.doesNotContain("word-break:break-word;")
+				.doesNotContain("<table class=\"dataentry\"");
 
 		assertThat(queryScript)
-				.contains("\"width\": \"900px\"")
+				.contains("\"width\": \"100%\"")
 				.contains("\"maxWidth\": \"100%\"");
 	}
 }

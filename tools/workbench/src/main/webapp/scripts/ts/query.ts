@@ -573,10 +573,10 @@ module workbench {
             });
             //some styling conflicts. Could add my own css file, but not a lot of things need changing, so just do this programmatically
             //first, set the font size (otherwise font is as small as menu, which is too small)
-            //second, set the width. YASQE normally expands to 100%, but the use of a table requires us to set a fixed width
+            //second, keep editor width constrained to its table column
             $(yasqe.getWrapperElement()).css({
                 "fontSize": "14px",
-                "width": "900px",
+                "width": "100%",
                 "maxWidth": "100%",
                 "boxSizing": "border-box"
             });
