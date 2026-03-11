@@ -371,11 +371,7 @@ class QueryTemplateTest {
 				.contains("value=\"" + templateDefault(template, "Query Iteration Cache sync threshold") + "\"")
 				.contains("value=\"" + templateDefault(template, "Triple indexes") + "\"")
 				.contains("value=\"" + templateDefault(template, "Value cache size") + "\"")
-				.contains("name=\"Append mode (experimental)\"")
-				.containsPattern(
-						"type=\"radio\" id=\"lmdb_appendMode-1\" name=\"Append mode \\(experimental\\)\" value=\"true\"[^>]*>Yes")
-				.containsPattern(
-						"type=\"radio\" id=\"lmdb_appendMode-2\" name=\"Append mode \\(experimental\\)\" value=\"false\"[^>]*checked[^>]*>No")
+				.doesNotContain("name=\"Append mode (experimental)\"")
 				.contains("name=\"No readahead\"")
 				.containsPattern(
 						"type=\"radio\" id=\"lmdb_noReadahead-1\" name=\"No readahead\" value=\"true\"[^>]*>Yes")
@@ -384,6 +380,13 @@ class QueryTemplateTest {
 				.contains("name=\"Query Evaluation Mode\"")
 				.contains("<option value=\"" + templateDefault(template, "Query Evaluation Mode") + "\" selected")
 				.contains("option value=\"" + templateOption(template, "Query Evaluation Mode", 1) + "\"");
+	}
+
+	@Test
+	void lmdbTemplateShouldNotExposeUnsupportedAppendModeSetting() throws IOException {
+		ConfigTemplate template = loadLmdbTemplate();
+
+		assertThat(template.getVariableMap()).doesNotContainKey("Append mode (experimental)");
 	}
 
 	@Test
@@ -490,9 +493,6 @@ class QueryTemplateTest {
 				List.of(templateDefault(template, "Query Iteration Cache sync threshold")), "16", "", "", "");
 		appendTemplateField(xml, "lmdb", "LMDB Store", "lmdb_valueCacheSize", "lmdb:valueCacheSize", "",
 				"Value cache size", "text", List.of(templateDefault(template, "Value cache size")), "16", "", "", "");
-		appendTemplateField(xml, "lmdb", "LMDB Store", "lmdb_appendMode", "lmdb:appendMode", "",
-				"Append mode (experimental)", "radio", templateOptions(template, "Append mode (experimental)"), "",
-				"", "", "");
 		appendTemplateField(xml, "lmdb", "LMDB Store", "lmdb_noReadahead", "lmdb:noReadahead", "", "No readahead",
 				"radio", templateOptions(template, "No readahead"), "", "", "", "");
 		appendTemplateField(xml, "lmdb", "LMDB Store", "config_sail-defaultQueryEvaluationMode",

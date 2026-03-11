@@ -376,8 +376,7 @@ public class CreateServletTest {
 				.contains("222")
 				.contains("autoGrow")
 				.contains("false")
-				.contains("appendMode")
-				.contains("true")
+				.doesNotContain("appendMode")
 				.contains("noReadahead")
 				.contains("pageCardinalityEstimator")
 				.contains("valueEvictionInterval")
@@ -385,7 +384,6 @@ public class CreateServletTest {
 				.contains("defaultQueryEvaluationMode")
 				.contains("STRICT");
 
-		assertThat(invokeBooleanGetter(sailConfig, "getAppendMode")).isTrue();
 		assertThat(invokeBooleanGetter(sailConfig, "getNoReadahead")).isTrue();
 	}
 
@@ -419,7 +417,7 @@ public class CreateServletTest {
 				.contains(templateDefault(template, "Value cache size"))
 				.contains(templateDefault(template, "Namespace cache size"))
 				.contains(templateDefault(template, "Value eviction interval"))
-				.contains(templateDefault(template, "Append mode (experimental)"))
+				.doesNotContain("Append mode (experimental)")
 				.contains(templateDefault(template, "No readahead"))
 				.contains(templateDefault(template, "Query Evaluation Mode"));
 	}

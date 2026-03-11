@@ -32,7 +32,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbStoreConfigTest {
 
-	private static final IRI APPEND_MODE = Values.iri(LmdbStoreSchema.NAMESPACE + "appendMode");
+	private static final IRI LEGACY_APPEND_MODE = Values.iri(LmdbStoreSchema.NAMESPACE + "appendMode");
 
 	private static final IRI NO_READAHEAD = Values.iri(LmdbStoreSchema.NAMESPACE + "noReadahead");
 
@@ -44,23 +44,6 @@ class LmdbStoreConfigTest {
 	@Test
 	void noReadaheadDefaultsToDisabled() {
 		assertThat(invokeBooleanGetter(new LmdbStoreConfig(), "getNoReadahead")).isFalse();
-	}
-
-	@Test
-	void appendModeDefaultsToDisabled() {
-		assertThat(invokeBooleanGetter(new LmdbStoreConfig(), "getAppendMode")).isFalse();
-	}
-
-	@ParameterizedTest
-	@ValueSource(booleans = { true, false })
-	void testThatLmdbStoreConfigParseAndExportAppendMode(final boolean appendMode) {
-		testParseAndExportReflective(
-				APPEND_MODE,
-				Values.literal(appendMode),
-				"getAppendMode",
-				appendMode,
-				appendMode
-		);
 	}
 
 	@ParameterizedTest
@@ -144,6 +127,23 @@ class LmdbStoreConfigTest {
 		final LmdbStore store = new LmdbStore(config);
 
 		assertThat(store.getPageCardinalityEstimator()).isFalse();
+	}
+
+	@Test
+	void legacyAppendModePropertyShouldBeIgnored() {
+		final BNode implNode = bnode();
+		final Literal appendMode = Values.literal(true);
+		final LmdbStoreConfig lmdbStoreConfig = new LmdbStoreConfig();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, LEGACY_APPEND_MODE, appendMode)
+				.build();
+
+		lmdbStoreConfig.parse(configModel, implNode);
+
+		final Model exportedModel = new LinkedHashModel();
+		final Resource exportImplNode = lmdbStoreConfig.export(exportedModel);
+
+		assertThat(exportedModel.contains(exportImplNode, LEGACY_APPEND_MODE, appendMode)).isFalse();
 	}
 
 	/**

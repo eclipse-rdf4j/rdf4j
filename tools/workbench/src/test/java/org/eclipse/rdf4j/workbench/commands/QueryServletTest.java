@@ -191,6 +191,7 @@ public class QueryServletTest {
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("limit_query")).thenReturn("100");
 		when(request.getParameter("query-timeout")).thenReturn("17");
+		when(request.getInt("query-timeout")).thenReturn(17);
 		when(request.getParameter("overwrite")).thenReturn("false");
 		when(request.getParameter("save-private")).thenReturn("false");
 		when(request.isParameterPresent("infer")).thenReturn(true);
@@ -230,6 +231,7 @@ public class QueryServletTest {
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("limit_query")).thenReturn("100");
 		when(request.getParameter("query-timeout")).thenReturn("17");
+		when(request.getInt("query-timeout")).thenReturn(17);
 		when(request.getParameter("overwrite")).thenReturn("true");
 		when(request.getParameter("save-private")).thenReturn("false");
 		when(request.isParameterPresent("infer")).thenReturn(true);
@@ -242,6 +244,43 @@ public class QueryServletTest {
 
 		assertThatCode(() -> servlet.doPost(request, response, "/transformations")).doesNotThrowAnyException();
 		verify(storage).updateQuery(savedQuery, "", true, QueryLanguage.SPARQL, SHORT_QUERY, true, 100, 17);
+	}
+
+	@Test
+	public void testSaveShouldTreatBlankQueryTimeoutAsRepositoryDefault() throws Exception {
+		Repository repository = mock(Repository.class);
+		when(repository.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+		servlet.setRepository(repository);
+		RepositoryInfo repositoryInfo = new RepositoryInfo();
+		repositoryInfo.setId("lmdb-store");
+		servlet.setRepositoryInfo(repositoryInfo);
+
+		QueryStorage storage = mock(QueryStorage.class);
+		servlet.substituteQueryStorage(storage);
+		when(storage.checkAccess(any())).thenReturn(true);
+		when(storage.askExists(any(), eq("my-query"), eq(""))).thenReturn(false);
+
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("action")).thenReturn("save");
+		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
+		when(request.getParameter("query-name")).thenReturn("my-query");
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.getParameter("limit_query")).thenReturn("100");
+		when(request.getParameter("query-timeout")).thenReturn("");
+		when(request.getParameter("overwrite")).thenReturn("false");
+		when(request.getParameter("save-private")).thenReturn("false");
+		when(request.isParameterPresent("infer")).thenReturn(true);
+		when(request.getParameter("infer")).thenReturn("true");
+		when(request.getParameter("server-user")).thenReturn(null);
+
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		StringWriter body = new StringWriter();
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+
+		assertThatCode(() -> servlet.doPost(request, response, "/transformations")).doesNotThrowAnyException();
+		verify(storage).saveQuery(any(), eq("my-query"), eq(""), eq(true), eq(QueryLanguage.SPARQL), eq(SHORT_QUERY),
+				eq(true), eq(100), eq(0));
 	}
 
 	@Test

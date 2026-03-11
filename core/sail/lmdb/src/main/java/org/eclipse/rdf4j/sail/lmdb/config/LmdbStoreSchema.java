@@ -43,11 +43,6 @@ public class LmdbStoreSchema {
 	public final static IRI FORCE_SYNC;
 
 	/**
-	 * <tt>http://rdf4j.org/config/sail/lmdb#appendMode</tt>
-	 */
-	public final static IRI APPEND_MODE;
-
-	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#noReadahead</tt>
 	 */
 	public final static IRI NO_READAHEAD;
@@ -97,7 +92,6 @@ public class LmdbStoreSchema {
 		TRIPLE_INDEXES = factory.createIRI(NAMESPACE, "tripleIndexes");
 		TRIPLE_DB_SIZE = factory.createIRI(NAMESPACE, "tripleDBSize");
 		FORCE_SYNC = factory.createIRI(NAMESPACE, "forceSync");
-		APPEND_MODE = factory.createIRI(NAMESPACE, "appendMode");
 		NO_READAHEAD = factory.createIRI(NAMESPACE, "noReadahead");
 		VALUE_DB_SIZE = factory.createIRI(NAMESPACE, "valueDBSize");
 		VALUE_CACHE_SIZE = factory.createIRI(NAMESPACE, "valueCacheSize");
