@@ -14,7 +14,7 @@
       config:sail.impl [
          config:sail.type "rdf4j:LmdbStore" ;
          config:sail.iterationCacheSyncThreshold {%Query Iteration Cache sync threshold[len=16]|2097152%} ; # If each value is 128 bytes, this is 256 MB
-         lmdb:tripleIndexes "{%Triple indexes[len=16]|spoc,posc,ospc,cspo%}" ; #cspo good when using named graphs
+         lmdb:tripleIndexes "{%Triple indexes[len=16]|spoc,posc,ospc%}" ;
          lmdb:tripleDBSize {%Triple DB size[len=16]|1099511627776%} ; # 1 TB
          lmdb:valueDBSize {%Value DB size[len=16]|1099511627776%} ; # 1 TB
          lmdb:valueCacheSize {%Value cache size[len=16]|4096%} ;
@@ -26,6 +26,6 @@
          lmdb:valueEvictionInterval {%Value eviction interval[len=16]|300000%} ;
          lmdb:forceSync {%Force sync|false|true%} ;
          lmdb:noReadahead {%No readahead|false|true%} ;
-         config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}";
+         config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STANDARD|STRICT%}";
       ]
    ].

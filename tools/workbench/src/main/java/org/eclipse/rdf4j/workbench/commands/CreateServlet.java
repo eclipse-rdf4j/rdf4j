@@ -20,6 +20,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
@@ -165,11 +166,17 @@ public class CreateServlet extends TransformationServlet {
 	}
 
 	static List<CreateTemplateConfig> getCreateTemplates() throws IOException {
-		return CreateTemplateConfig.loadBuiltin();
+		return visibleCreateTemplates(CreateTemplateConfig.loadBuiltin());
 	}
 
 	static CreateTemplateConfig getCreateTemplate(String type) throws IOException {
 		return CreateTemplateConfig.load(type);
+	}
+
+	static List<CreateTemplateConfig> visibleCreateTemplates(List<CreateTemplateConfig> templates) {
+		return templates.stream()
+				.filter(template -> !template.isHidden())
+				.collect(Collectors.toList());
 	}
 
 	private void writeTemplateCatalog(TupleResultBuilder builder) throws IOException, QueryResultHandlerException {

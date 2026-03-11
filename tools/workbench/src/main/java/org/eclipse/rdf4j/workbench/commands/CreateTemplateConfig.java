@@ -155,14 +155,16 @@ final class CreateTemplateConfig {
 	private final String type;
 	private final String label;
 	private final int order;
+	private final boolean hidden;
 	private final ConfigTemplate configTemplate;
 	private final List<Field> fields;
 
-	private CreateTemplateConfig(String type, String label, int order, ConfigTemplate configTemplate,
+	private CreateTemplateConfig(String type, String label, int order, boolean hidden, ConfigTemplate configTemplate,
 			List<Field> fields) {
 		this.type = type;
 		this.label = label;
 		this.order = order;
+		this.hidden = hidden;
 		this.configTemplate = configTemplate;
 		this.fields = List.copyOf(fields);
 	}
@@ -177,6 +179,10 @@ final class CreateTemplateConfig {
 
 	int getOrder() {
 		return order;
+	}
+
+	boolean isHidden() {
+		return hidden;
 	}
 
 	List<Field> getFields() {
@@ -224,7 +230,8 @@ final class CreateTemplateConfig {
 		}
 
 		return new CreateTemplateConfig(type, metadata.label != null ? metadata.label : type,
-				metadata.order != null ? metadata.order : Integer.MAX_VALUE, configTemplate, fields);
+				metadata.order != null ? metadata.order : Integer.MAX_VALUE, metadata.hidden != null && metadata.hidden,
+				configTemplate, fields);
 	}
 
 	private static FieldControl defaultControl(ConfigTemplate configTemplate, String rawFieldName,
@@ -368,15 +375,18 @@ final class CreateTemplateConfig {
 	private static final class Metadata {
 		private final String label;
 		private final Integer order;
+		private final Boolean hidden;
 
-		private Metadata(String label, Integer order) {
+		private Metadata(String label, Integer order, Boolean hidden) {
 			this.label = label;
 			this.order = order;
+			this.hidden = hidden;
 		}
 
 		static Metadata parse(String templateText) {
 			String label = null;
 			Integer order = null;
+			Boolean hidden = null;
 
 			for (String line : templateText.split("\\R")) {
 				Matcher templateMatcher = TEMPLATE_METADATA_PATTERN.matcher(line);
@@ -384,10 +394,11 @@ final class CreateTemplateConfig {
 					Map<String, String> attributes = parseAttributes(templateMatcher.group(1));
 					label = attributes.get("label");
 					order = parseInteger(attributes.get("order"));
+					hidden = parseBoolean(attributes.get("hidden"));
 				}
 			}
 
-			return new Metadata(label, order);
+			return new Metadata(label, order, hidden);
 		}
 
 		private static Map<String, String> parseAttributes(String text) {
@@ -402,6 +413,10 @@ final class CreateTemplateConfig {
 
 		private static Integer parseInteger(String value) {
 			return value == null || value.isEmpty() ? null : Integer.valueOf(value);
+		}
+
+		private static Boolean parseBoolean(String value) {
+			return value == null || value.isEmpty() ? null : Boolean.valueOf(value);
 		}
 	}
 

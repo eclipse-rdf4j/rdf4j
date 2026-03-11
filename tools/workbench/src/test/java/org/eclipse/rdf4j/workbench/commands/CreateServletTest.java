@@ -120,6 +120,32 @@ public class CreateServletTest {
 	}
 
 	@Test
+	public void testTemplateParserShouldReadHiddenTemplateMetadata() throws Exception {
+		CreateTemplateConfig template = parseTemplate("synthetic-hidden", String.join("\n",
+				"# @workbench.template label=\"Synthetic Hidden\" order=1 hidden=true",
+				"@prefix config: <tag:rdf4j.org,2023:config/> .",
+				"[] config:rep.id \"{%Repository ID|synthetic-hidden%}\" ."));
+
+		assertThat(invokeBooleanMethod(template, "isHidden")).isTrue();
+	}
+
+	@Test
+	public void testCreateTemplateCatalogShouldExcludeHiddenTemplates() throws Exception {
+		CreateTemplateConfig visible = parseTemplate("synthetic-visible", String.join("\n",
+				"# @workbench.template label=\"Synthetic Visible\" order=1",
+				"@prefix config: <tag:rdf4j.org,2023:config/> .",
+				"[] config:rep.id \"{%Repository ID|synthetic-visible%}\" ."));
+		CreateTemplateConfig hidden = parseTemplate("synthetic-hidden", String.join("\n",
+				"# @workbench.template label=\"Synthetic Hidden\" order=2 hidden=true",
+				"@prefix config: <tag:rdf4j.org,2023:config/> .",
+				"[] config:rep.id \"{%Repository ID|synthetic-hidden%}\" ."));
+
+		assertThat(invokeVisibleCreateTemplates(List.of(visible, hidden)))
+				.extracting(CreateTemplateConfig::getType)
+				.containsExactly("synthetic-visible");
+	}
+
+	@Test
 	public void testDiscoveredTemplatesShouldRoundTripDefaults() throws Exception {
 		for (CreateTemplateConfig template : CreateServlet.getCreateTemplates()) {
 			CreateServlet localServlet = new CreateServlet();
@@ -503,6 +529,27 @@ public class CreateServletTest {
 			return (boolean) getter.invoke(target);
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
+		}
+	}
+
+	private static boolean invokeBooleanMethod(Object target, String methodName) {
+		try {
+			Method method = target.getClass().getDeclaredMethod(methodName);
+			method.setAccessible(true);
+			return (boolean) method.invoke(target);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing boolean method: " + methodName, e);
+		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<CreateTemplateConfig> invokeVisibleCreateTemplates(List<CreateTemplateConfig> templates) {
+		try {
+			Method method = CreateServlet.class.getDeclaredMethod("visibleCreateTemplates", List.class);
+			method.setAccessible(true);
+			return (List<CreateTemplateConfig>) method.invoke(null, templates);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing visible template filter", e);
 		}
 	}
 

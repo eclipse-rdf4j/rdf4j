@@ -294,11 +294,10 @@ class QueryTemplateTest {
 				.contains("value=\"" + templateDefault(template, "Triple indexes") + "\"")
 				.contains("value=\"" + templateDefault(template, "Value cache size") + "\"")
 				.contains("name=\"No readahead\"")
-				.contains("type=\"radio\" id=\"lmdb_noReadahead-1\" name=\"No readahead\" value=\""
-						+ templateDefault(template, "No readahead") + "\"")
-				.contains("type=\"radio\" id=\"lmdb_noReadahead-2\" name=\"No readahead\" value=\""
-						+ templateOption(template, "No readahead", 1) + "\"")
-				.contains("checked")
+				.containsPattern(
+						"type=\"radio\" id=\"lmdb_noReadahead-1\" name=\"No readahead\" value=\"true\"[^>]*>Yes")
+				.containsPattern(
+						"type=\"radio\" id=\"lmdb_noReadahead-2\" name=\"No readahead\" value=\"false\"[^>]*checked[^>]*>No")
 				.contains("name=\"Query Evaluation Mode\"")
 				.contains("<option value=\"" + templateDefault(template, "Query Evaluation Mode") + "\" selected")
 				.contains("option value=\"" + templateOption(template, "Query Evaluation Mode", 1) + "\"");

@@ -84,22 +84,32 @@
 										</select>
 									</xsl:when>
 									<xsl:when test="$fieldType = 'radio'">
-										<xsl:for-each select="$fieldRows">
-											<xsl:variable name="value"
-												select="sparql:binding[@name='value']/sparql:literal" />
-											<input type="radio" id="{concat($fieldId, '-', position())}"
-												name="{$fieldName}" value="{$value}">
-												<xsl:call-template name="field-metadata-attributes">
-													<xsl:with-param name="fieldProperty" select="$fieldProperty" />
-													<xsl:with-param name="fieldRole" select="$fieldRole" />
-												</xsl:call-template><xsl:if
-													test="sparql:binding[@name='selected']/sparql:literal = 'true'"><xsl:attribute
-														name="checked">checked</xsl:attribute></xsl:if></input>
-											<xsl:call-template name="option-label">
-												<xsl:with-param name="value" select="$value" />
-											</xsl:call-template>
-											<xsl:text> </xsl:text>
-										</xsl:for-each>
+										<xsl:choose>
+											<xsl:when
+												test="count($fieldRows) = 2 and count($fieldRows[sparql:binding[@name='value']/sparql:literal = 'true']) = 1 and count($fieldRows[sparql:binding[@name='value']/sparql:literal = 'false']) = 1">
+												<xsl:for-each select="$fieldRows">
+													<xsl:sort
+														select="sparql:binding[@name='value']/sparql:literal = 'true'"
+														order="descending" />
+													<xsl:call-template name="render-radio-option">
+														<xsl:with-param name="fieldId" select="$fieldId" />
+														<xsl:with-param name="fieldName" select="$fieldName" />
+														<xsl:with-param name="fieldProperty" select="$fieldProperty" />
+														<xsl:with-param name="fieldRole" select="$fieldRole" />
+													</xsl:call-template>
+												</xsl:for-each>
+											</xsl:when>
+											<xsl:otherwise>
+												<xsl:for-each select="$fieldRows">
+													<xsl:call-template name="render-radio-option">
+														<xsl:with-param name="fieldId" select="$fieldId" />
+														<xsl:with-param name="fieldName" select="$fieldName" />
+														<xsl:with-param name="fieldProperty" select="$fieldProperty" />
+														<xsl:with-param name="fieldRole" select="$fieldRole" />
+													</xsl:call-template>
+												</xsl:for-each>
+											</xsl:otherwise>
+										</xsl:choose>
 									</xsl:when>
 									<xsl:when test="$fieldType = 'textarea'">
 										<textarea id="{$fieldId}" name="{$fieldName}" rows="{$rows}"
@@ -156,6 +166,26 @@
 				<xsl:value-of select="$value" />
 			</xsl:otherwise>
 		</xsl:choose>
+	</xsl:template>
+
+	<xsl:template name="render-radio-option">
+		<xsl:param name="fieldId" />
+		<xsl:param name="fieldName" />
+		<xsl:param name="fieldProperty" />
+		<xsl:param name="fieldRole" />
+		<xsl:variable name="value" select="sparql:binding[@name='value']/sparql:literal" />
+		<input type="radio" id="{concat($fieldId, '-', position())}" name="{$fieldName}"
+			value="{$value}">
+			<xsl:call-template name="field-metadata-attributes">
+				<xsl:with-param name="fieldProperty" select="$fieldProperty" />
+				<xsl:with-param name="fieldRole" select="$fieldRole" />
+			</xsl:call-template><xsl:if
+				test="sparql:binding[@name='selected']/sparql:literal = 'true'"><xsl:attribute
+					name="checked">checked</xsl:attribute></xsl:if></input>
+		<xsl:call-template name="option-label">
+			<xsl:with-param name="value" select="$value" />
+		</xsl:call-template>
+		<xsl:text> </xsl:text>
 	</xsl:template>
 
 	<xsl:template name="field-metadata-attributes">
