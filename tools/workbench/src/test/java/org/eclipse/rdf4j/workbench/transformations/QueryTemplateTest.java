@@ -280,6 +280,8 @@ class QueryTemplateTest {
 				.contains("name=\"Namespace ID cache size\"")
 				.contains("id=\"autoGrow\"")
 				.contains("name=\"Auto grow\"")
+				.contains("id=\"noReadahead\"")
+				.contains("name=\"No readahead\"")
 				.contains("id=\"pageCardinalityEstimator\"")
 				.contains("name=\"Page cardinality estimator\"")
 				.contains("id=\"valueEvictionInterval\"")

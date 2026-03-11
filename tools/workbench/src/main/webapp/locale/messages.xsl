@@ -36,6 +36,7 @@
 		Repository Location
 	</variable>
 	<variable name="repository-size.title">Repository Size</variable>
+	<variable name="effective-config.title">Effective Config Model</variable>
 	<variable name="bad-request.title">Bad Request</variable>
 	<variable name="super-classes.title">Super Classes</variable>
 	<variable name="sub-classes.title">Sub Classes</variable>
@@ -93,6 +94,7 @@
 	<variable name="repository-delete.label">
 		Delete repository
 	</variable>
+	<variable name="effective-config.label">Effective config model</variable>
 	<variable name="show-datatypes.label">Show data types &amp; language tags</variable>
 
 	<!-- General labels -->

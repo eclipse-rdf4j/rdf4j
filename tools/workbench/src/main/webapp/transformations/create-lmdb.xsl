@@ -97,6 +97,20 @@
 						<td></td>
 					</tr>
 					<tr>
+						<th>No readahead</th>
+						<td>
+							<select id="noReadahead" name="No readahead">
+								<option value="false" selected="selected">
+									<xsl:value-of select="$false.label" />
+								</option>
+								<option value="true">
+									<xsl:value-of select="$true.label" />
+								</option>
+							</select>
+						</td>
+						<td></td>
+					</tr>
+					<tr>
 						<th>Value cache size</th>
 						<td>
 							<input type="text" id="valueCacheSize" name="Value cache size" size="16"
