@@ -266,6 +266,19 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void createPageShouldRenderTemplateDrivenTypePickerIncludingLegacyTemplate() throws Exception {
+		Transformer transformer = newCreateTransformer("create.xsl");
+		StringWriter html = new StringWriter();
+
+		transformer.transform(new StreamSource(new StringReader(createTypeResults())), new StreamResult(html));
+
+		assertThat(html.toString())
+				.contains("<option value=\"memory-rdfs-legacy\">Memory Store + RDFS (Legacy)</option>")
+				.contains("<option value=\"native-rdfs-lucene\">Native Store + RDFS and Lucene</option>")
+				.contains("<option value=\"federate\">Federation</option>");
+	}
+
+	@Test
 	void createLmdbPageShouldRenderTemplateDrivenDefaultsAndOptions() throws Exception {
 		ConfigTemplate template = loadLmdbTemplate();
 		Transformer transformer = newCreateLmdbTransformer();
@@ -281,19 +294,78 @@ class QueryTemplateTest {
 				.contains("value=\"" + templateDefault(template, "Triple indexes") + "\"")
 				.contains("value=\"" + templateDefault(template, "Value cache size") + "\"")
 				.contains("name=\"No readahead\"")
-				.contains("<option value=\"" + templateDefault(template, "No readahead") + "\" selected")
-				.contains("<option value=\"" + templateOption(template, "No readahead", 1) + "\"")
+				.contains("type=\"radio\" id=\"lmdb_noReadahead-1\" name=\"No readahead\" value=\""
+						+ templateDefault(template, "No readahead") + "\"")
+				.contains("type=\"radio\" id=\"lmdb_noReadahead-2\" name=\"No readahead\" value=\""
+						+ templateOption(template, "No readahead", 1) + "\"")
+				.contains("checked")
 				.contains("name=\"Query Evaluation Mode\"")
 				.contains("<option value=\"" + templateDefault(template, "Query Evaluation Mode") + "\" selected")
 				.contains("option value=\"" + templateOption(template, "Query Evaluation Mode", 1) + "\"");
 	}
 
+	@Test
+	void createTemplatePageShouldRenderMetadataDrivenControls() throws Exception {
+		Transformer transformer = newCreateTransformer("create-template.xsl");
+		StringWriter html = new StringWriter();
+
+		transformer.transform(new StreamSource(new StringReader(createTemplateResults())), new StreamResult(html));
+
+		assertThat(html.toString())
+				.contains("<option value=\"native\">Native Store</option>")
+				.contains("id=\"config_rep-id\"")
+				.contains("name=\"Repository ID\"")
+				.contains("data-config-property=\"config:rep.id\"")
+				.contains("data-field-role=\"repository-id\"")
+				.contains("id=\"rdfs_label\"")
+				.contains("name=\"Repository title\"")
+				.contains("data-config-property=\"rdfs:label\"")
+				.contains("data-field-role=\"repository-title\"")
+				.contains("id=\"ex_queryLanguage\" name=\"Query Language\"")
+				.contains("textarea id=\"sp_text\" name=\"Rule query\" rows=\"8\" cols=\"80\"")
+				.contains("type=\"radio\" id=\"config_mem-persist-1\" name=\"Persist\"")
+				.contains("placeholder=\"http://example.org/sparql\"");
+	}
+
+	@Test
+	void createScriptShouldLocateRepositoryFieldsByRoleInsteadOfLegacyIds() throws Exception {
+		String createScript = Files.readString(Path.of("src/main/webapp/scripts/ts/create.ts"), StandardCharsets.UTF_8);
+
+		assertThat(createScript)
+				.contains("findFieldByRole")
+				.contains("repository-id")
+				.contains("repository-title")
+				.doesNotContain("$('#title').val(value);");
+	}
+
 	private static Transformer newCreateLmdbTransformer() throws Exception {
+		return newCreateTransformer("create-template.xsl");
+	}
+
+	private static Transformer newCreateTransformer(String stylesheetName) throws Exception {
 		TransformerFactory factory = TransformerFactory.newInstance();
-		StreamSource stylesheet = new StreamSource(Path.of("src/main/webapp/transformations/create-lmdb.xsl").toFile());
-		stylesheet.setSystemId(Path.of("src/main/webapp/transformations/create-lmdb.xsl").toUri().toString());
+		Path stylesheetPath = Path.of("src/main/webapp/transformations", stylesheetName);
+		StreamSource stylesheet = new StreamSource(stylesheetPath.toFile());
+		stylesheet.setSystemId(stylesheetPath.toUri().toString());
 		Templates templates = factory.newTemplates(stylesheet);
 		return templates.newTransformer();
+	}
+
+	private static String createTypeResults() {
+		StringBuilder xml = new StringBuilder();
+		xml.append("<?xml version=\"1.0\"?>\n");
+		xml.append("<sparql xmlns=\"http://www.w3.org/2005/sparql-results#\">\n");
+		xml.append("  <head>\n");
+		xml.append("    <variable name=\"type\"/>\n");
+		xml.append("    <variable name=\"label\"/>\n");
+		xml.append("  </head>\n");
+		xml.append("  <results>\n");
+		appendType(xml, "memory-rdfs-legacy", "Memory Store + RDFS (Legacy)");
+		appendType(xml, "native-rdfs-lucene", "Native Store + RDFS and Lucene");
+		appendType(xml, "federate", "Federation");
+		xml.append("  </results>\n");
+		xml.append("</sparql>\n");
+		return xml.toString();
 	}
 
 	private static ConfigTemplate loadLmdbTemplate() throws IOException {
@@ -310,23 +382,74 @@ class QueryTemplateTest {
 		xml.append("<?xml version=\"1.0\"?>\n");
 		xml.append("<sparql xmlns=\"http://www.w3.org/2005/sparql-results#\">\n");
 		xml.append("  <head>\n");
+		xml.append("    <variable name=\"templateType\"/>\n");
+		xml.append("    <variable name=\"templateLabel\"/>\n");
 		xml.append("    <variable name=\"fieldId\"/>\n");
+		xml.append("    <variable name=\"fieldProperty\"/>\n");
+		xml.append("    <variable name=\"fieldRole\"/>\n");
 		xml.append("    <variable name=\"fieldName\"/>\n");
 		xml.append("    <variable name=\"fieldType\"/>\n");
 		xml.append("    <variable name=\"value\"/>\n");
 		xml.append("    <variable name=\"selected\"/>\n");
+		xml.append("    <variable name=\"size\"/>\n");
+		xml.append("    <variable name=\"rows\"/>\n");
+		xml.append("    <variable name=\"cols\"/>\n");
+		xml.append("    <variable name=\"placeholder\"/>\n");
 		xml.append("  </head>\n");
 		xml.append("  <results>\n");
-		appendField(xml, "id", "Repository ID", "text", List.of(templateDefault(template, "Repository ID")));
-		appendField(xml, "title", "Repository title", "text", List.of(templateDefault(template, "Repository title")));
-		appendField(xml, "indexes", "Triple indexes", "text", List.of(templateDefault(template, "Triple indexes")));
-		appendField(xml, "iterationCacheSyncThreshold", "Query Iteration Cache sync threshold", "text",
-				List.of(templateDefault(template, "Query Iteration Cache sync threshold")));
-		appendField(xml, "valueCacheSize", "Value cache size", "text",
-				List.of(templateDefault(template, "Value cache size")));
-		appendField(xml, "noReadahead", "No readahead", "select", templateOptions(template, "No readahead"));
-		appendField(xml, "queryEvalMode", "Query Evaluation Mode", "select",
-				templateOptions(template, "Query Evaluation Mode"));
+		appendTemplateField(xml, "lmdb", "LMDB Store", "config_rep-id", "config:rep.id", "repository-id",
+				"Repository ID", "text", List.of(templateDefault(template, "Repository ID")), "16", "", "", "");
+		appendTemplateField(xml, "lmdb", "LMDB Store", "rdfs_label", "rdfs:label", "repository-title",
+				"Repository title", "text", List.of(templateDefault(template, "Repository title")), "48", "", "", "");
+		appendTemplateField(xml, "lmdb", "LMDB Store", "lmdb_tripleIndexes", "lmdb:tripleIndexes", "",
+				"Triple indexes", "text", List.of(templateDefault(template, "Triple indexes")), "16", "", "", "");
+		appendTemplateField(xml, "lmdb", "LMDB Store", "config_sail-iterationCacheSyncThreshold",
+				"config:sail.iterationCacheSyncThreshold", "", "Query Iteration Cache sync threshold", "text",
+				List.of(templateDefault(template, "Query Iteration Cache sync threshold")), "16", "", "", "");
+		appendTemplateField(xml, "lmdb", "LMDB Store", "lmdb_valueCacheSize", "lmdb:valueCacheSize", "",
+				"Value cache size", "text", List.of(templateDefault(template, "Value cache size")), "16", "", "", "");
+		appendTemplateField(xml, "lmdb", "LMDB Store", "lmdb_noReadahead", "lmdb:noReadahead", "", "No readahead",
+				"radio", templateOptions(template, "No readahead"), "", "", "", "");
+		appendTemplateField(xml, "lmdb", "LMDB Store", "config_sail-defaultQueryEvaluationMode",
+				"config:sail.defaultQueryEvaluationMode", "", "Query Evaluation Mode", "select",
+				templateOptions(template, "Query Evaluation Mode"), "", "", "", "");
+		xml.append("  </results>\n");
+		xml.append("</sparql>\n");
+		return xml.toString();
+	}
+
+	private static String createTemplateResults() {
+		StringBuilder xml = new StringBuilder();
+		xml.append("<?xml version=\"1.0\"?>\n");
+		xml.append("<sparql xmlns=\"http://www.w3.org/2005/sparql-results#\">\n");
+		xml.append("  <head>\n");
+		xml.append("    <variable name=\"templateType\"/>\n");
+		xml.append("    <variable name=\"templateLabel\"/>\n");
+		xml.append("    <variable name=\"fieldId\"/>\n");
+		xml.append("    <variable name=\"fieldProperty\"/>\n");
+		xml.append("    <variable name=\"fieldRole\"/>\n");
+		xml.append("    <variable name=\"fieldName\"/>\n");
+		xml.append("    <variable name=\"fieldType\"/>\n");
+		xml.append("    <variable name=\"value\"/>\n");
+		xml.append("    <variable name=\"selected\"/>\n");
+		xml.append("    <variable name=\"size\"/>\n");
+		xml.append("    <variable name=\"rows\"/>\n");
+		xml.append("    <variable name=\"cols\"/>\n");
+		xml.append("    <variable name=\"placeholder\"/>\n");
+		xml.append("  </head>\n");
+		xml.append("  <results>\n");
+		appendTemplateField(xml, "native", "Native Store", "config_rep-id", "config:rep.id", "repository-id",
+				"Repository ID", "text", List.of("native"), "16", "", "", "");
+		appendTemplateField(xml, "native", "Native Store", "rdfs_label", "rdfs:label", "repository-title",
+				"Repository title", "text", List.of("Native store"), "48", "", "", "");
+		appendTemplateField(xml, "native", "Native Store", "ex_queryLanguage", "ex:queryLanguage", "",
+				"Query Language", "select", List.of("SPARQL"), "", "", "", "");
+		appendTemplateField(xml, "native", "Native Store", "sp_text", "sp:text", "", "Rule query", "textarea",
+				List.of("insert rule query here"), "", "8", "80", "");
+		appendTemplateField(xml, "native", "Native Store", "config_mem-persist", "config:mem.persist", "", "Persist",
+				"radio", List.of("true", "false"), "", "", "", "");
+		appendTemplateField(xml, "native", "Native Store", "ex_endpoint", "ex:endpoint", "", "SPARQL query endpoint",
+				"text", List.of(""), "48", "", "", "http://example.org/sparql");
 		xml.append("  </results>\n");
 		xml.append("</sparql>\n");
 		return xml.toString();
@@ -342,6 +465,29 @@ class QueryTemplateTest {
 			appendBinding(xml, "fieldType", fieldType);
 			appendBinding(xml, "value", value);
 			appendBinding(xml, "selected", String.valueOf(value.equals(defaultValue)));
+			xml.append("    </result>\n");
+		}
+	}
+
+	private static void appendTemplateField(StringBuilder xml, String templateType, String templateLabel,
+			String fieldId, String fieldProperty, String fieldRole, String fieldName, String fieldType,
+			List<String> values, String size, String rows, String cols, String placeholder) {
+		String defaultValue = values.get(0);
+		for (String value : values) {
+			xml.append("    <result>\n");
+			appendBinding(xml, "templateType", templateType);
+			appendBinding(xml, "templateLabel", templateLabel);
+			appendBinding(xml, "fieldId", fieldId);
+			appendBinding(xml, "fieldProperty", fieldProperty);
+			appendBinding(xml, "fieldRole", fieldRole);
+			appendBinding(xml, "fieldName", fieldName);
+			appendBinding(xml, "fieldType", fieldType);
+			appendBinding(xml, "value", value);
+			appendBinding(xml, "selected", String.valueOf(value.equals(defaultValue)));
+			appendBinding(xml, "size", size);
+			appendBinding(xml, "rows", rows);
+			appendBinding(xml, "cols", cols);
+			appendBinding(xml, "placeholder", placeholder);
 			xml.append("    </result>\n");
 		}
 	}
@@ -368,5 +514,12 @@ class QueryTemplateTest {
 
 	private static String templateOption(ConfigTemplate template, String name, int index) {
 		return templateOptions(template, name).get(index);
+	}
+
+	private static void appendType(StringBuilder xml, String type, String label) {
+		xml.append("    <result>\n");
+		appendBinding(xml, "type", type);
+		appendBinding(xml, "label", label);
+		xml.append("    </result>\n");
 	}
 }

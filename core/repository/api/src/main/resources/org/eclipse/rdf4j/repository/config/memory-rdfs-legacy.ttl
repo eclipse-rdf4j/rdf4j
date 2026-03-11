@@ -2,21 +2,22 @@
 # Configuration template for a main-memory repository with
 # RDF Schema inferencing
 #
+# @workbench.template label="Memory Store + RDFS (Legacy)" order=35
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
 @prefix config: <tag:rdf4j.org,2023:config/>.
 
 [] a config:Repository ;
-   config:rep.id "{%Repository ID|memory-rdfs-new%}" ;
-   rdfs:label "{%Repository title|Memory store with RDFS inferencing (legacy reasoner)%}" ;
+   config:rep.id "{%Repository ID[len=16]|memory-rdfs-legacy%}" ;
+   rdfs:label "{%Repository title[len=48]|Memory store with RDFS inferencing (legacy template)%}" ;
    config:rep.impl [
       config:rep.type "openrdf:SailRepository" ;
       config:sail.impl [
-         config:sail.type "openrdf:ForwardChainingRDFSInferencer" ;
+         config:sail.type "rdf4j:SchemaCachingRDFSInferencer" ;
          config:delegate [
             config:sail.type "openrdf:MemoryStore" ;
-            config:sail.iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
+            config:sail.iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold[len=16]|10000%}";
             config:mem.persist {%Persist|true|false%} ;
-            config:mem.syncDelay {%Sync delay|0%};
+            config:mem.syncDelay {%Sync delay[len=4]|0%};
             config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
          ]
       ]

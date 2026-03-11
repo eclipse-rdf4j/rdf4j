@@ -2,12 +2,13 @@
 # RDF4J configuration template for a native RDF repository with
 # RDF Schema and direct type hierarchy inferencing
 #
+# @workbench.template label="Native Store + RDFS and Direct Type" order=110
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
 @prefix config: <tag:rdf4j.org,2023:config/>.
 
 [] a config:Repository ;
-    config:rep.id "{%Repository ID|native-rdfs-dt%}" ;
-    rdfs:label "{%Repository title|Native store with RDF Schema and direct type inferencing%}" ;
+    config:rep.id "{%Repository ID[len=16]|native-rdfs-dt%}" ;
+    rdfs:label "{%Repository title[len=48]|Native store with RDF Schema and direct type inferencing%}" ;
     config:rep.impl [
         config:rep.type "openrdf:SailRepository" ;
         config:sail.impl [
@@ -16,8 +17,8 @@
                 config:sail.type "rdf4j:SchemaCachingRDFSInferencer" ;
                 config:delegate [
                     config:sail.type "openrdf:NativeStore" ;
-                    config:sail.iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
-                    config:native.tripleIndexes "{%Triple indexes|spoc,posc%}";
+                    config:sail.iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold[len=16]|10000%}";
+                    config:native.tripleIndexes "{%Triple indexes[len=16]|spoc,posc%}";
                     config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
                 ]
             ]

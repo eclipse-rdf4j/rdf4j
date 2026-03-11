@@ -16,8 +16,9 @@ import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import javax.servlet.ServletConfig;
@@ -52,11 +53,15 @@ public class CreateServlet extends TransformationServlet {
 
 	private static final String FEDERATE = "federate";
 
-	private static final String LMDB = "lmdb";
-
 	private static final String[] FEDERATE_RESULT_VARS = { "id", "description", "location" };
 
-	private static final String[] LMDB_RESULT_VARS = { "fieldId", "fieldName", "fieldType", "value", "selected" };
+	private static final String[] TYPE_PICKER_RESULT_VARS = { "type", "label" };
+
+	private static final String[] TEMPLATE_RESULT_VARS = { "templateType", "templateLabel", "fieldId",
+			"fieldProperty", "fieldRole", "fieldName", "fieldType", "value", "selected", "size", "rows", "cols",
+			"placeholder" };
+
+	private static final int FEDERATE_ORDER = 170;
 
 	@Override
 	public void init(final ServletConfig config) throws ServletException {
@@ -87,26 +92,28 @@ public class CreateServlet extends TransformationServlet {
 			throws IOException, RepositoryException, QueryResultHandlerException {
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		boolean federate;
-		boolean lmdb;
+		boolean typedTemplate;
 		if (req.isParameterPresent("type")) {
 			final String type = req.getTypeParameter();
 			federate = FEDERATE.equals(type);
-			lmdb = LMDB.equals(type);
-			builder.transform(xslPath, "create-" + type + ".xsl");
+			typedTemplate = !federate;
+			builder.transform(xslPath, federate ? "create-federate.xsl" : "create-template.xsl");
 		} else {
 			federate = false;
-			lmdb = false;
+			typedTemplate = false;
 			builder.transform(xslPath, "create.xsl");
 		}
-		builder.start(federate ? FEDERATE_RESULT_VARS : lmdb ? LMDB_RESULT_VARS : new String[] {});
+		builder.start(federate ? FEDERATE_RESULT_VARS : typedTemplate ? TEMPLATE_RESULT_VARS : TYPE_PICKER_RESULT_VARS);
 		builder.link(List.of(INFO));
 		if (federate) {
 			for (RepositoryInfo info : manager.getAllRepositoryInfos()) {
 				String identity = info.getId();
 				builder.result(identity, info.getDescription(), info.getLocation());
 			}
-		} else if (lmdb) {
-			writeLmdbConfigFields(builder);
+		} else if (typedTemplate) {
+			writeTemplateFields(getCreateTemplate(req.getTypeParameter()), builder);
+		} else {
+			writeTemplateCatalog(builder);
 		}
 		builder.end();
 	}
@@ -119,7 +126,8 @@ public class CreateServlet extends TransformationServlet {
 			addFederated(newID, req.getParameter("Repository title"),
 					Arrays.asList(req.getParameterValues("memberID")));
 		} else {
-			newID = updateRepositoryConfig(getConfigTemplate(type).render(req.getSingleParameterMap())).getID();
+			CreateTemplateConfig template = getCreateTemplate(type);
+			newID = updateRepositoryConfig(template.render(getTemplateValues(req, template))).getID();
 		}
 		return newID;
 	}
@@ -156,52 +164,83 @@ public class CreateServlet extends TransformationServlet {
 		}
 	}
 
-	private void writeLmdbConfigFields(TupleResultBuilder builder) throws IOException, QueryResultHandlerException {
-		for (Map.Entry<String, List<String>> entry : getConfigTemplate(LMDB).getVariableMap().entrySet()) {
-			String fieldName = entry.getKey();
-			List<String> values = entry.getValue();
-			String fieldId = toLmdbFieldId(fieldName);
-			String fieldType = values.size() > 1 ? "select" : "text";
-			String defaultValue = values.isEmpty() ? "" : values.get(0);
+	static List<CreateTemplateConfig> getCreateTemplates() throws IOException {
+		return CreateTemplateConfig.loadBuiltin();
+	}
 
-			if ("select".equals(fieldType)) {
-				for (String value : values) {
-					builder.result(fieldId, fieldName, fieldType, value, String.valueOf(value.equals(defaultValue)));
+	static CreateTemplateConfig getCreateTemplate(String type) throws IOException {
+		return CreateTemplateConfig.load(type);
+	}
+
+	private void writeTemplateCatalog(TupleResultBuilder builder) throws IOException, QueryResultHandlerException {
+		List<TemplateOption> options = new java.util.ArrayList<>();
+		for (CreateTemplateConfig template : getCreateTemplates()) {
+			options.add(new TemplateOption(template.getType(), template.getLabel(), template.getOrder()));
+		}
+		options.add(new TemplateOption(FEDERATE, "Federation", FEDERATE_ORDER));
+		options.sort(Comparator.comparingInt(TemplateOption::getOrder)
+				.thenComparing(TemplateOption::getLabel)
+				.thenComparing(TemplateOption::getType));
+
+		for (TemplateOption option : options) {
+			builder.result(option.getType(), option.getLabel());
+		}
+	}
+
+	private void writeTemplateFields(CreateTemplateConfig template, TupleResultBuilder builder)
+			throws QueryResultHandlerException {
+		for (CreateTemplateConfig.Field field : template.getFields()) {
+			if (field.getControl() == CreateTemplateConfig.FieldControl.SELECT
+					|| field.getControl() == CreateTemplateConfig.FieldControl.RADIO) {
+				for (String value : field.getValues()) {
+					writeTemplateField(builder, template, field, value, value.equals(field.getDefaultValue()));
 				}
 			} else {
-				builder.result(fieldId, fieldName, fieldType, defaultValue, Boolean.TRUE.toString());
+				writeTemplateField(builder, template, field, field.getDefaultValue(), true);
 			}
 		}
 	}
 
-	private static String toLmdbFieldId(String fieldName) {
-		switch (fieldName) {
-		case "Repository ID":
-			return "id";
-		case "Repository title":
-			return "title";
-		case "Triple indexes":
-			return "indexes";
-		case "Query Iteration Cache sync threshold":
-			return "iterationCacheSyncThreshold";
-		case "Query Evaluation Mode":
-			return "queryEvalMode";
-		default:
-			String[] words = fieldName.replaceAll("[^A-Za-z0-9]+", " ").trim().split("\\s+");
-			if (words.length == 0) {
-				throw new IllegalArgumentException("Cannot derive LMDB field id from empty field name");
+	private void writeTemplateField(TupleResultBuilder builder, CreateTemplateConfig template,
+			CreateTemplateConfig.Field field, String value, boolean selected) throws QueryResultHandlerException {
+		builder.result(template.getType(), template.getLabel(), field.getId(), field.getProperty(), field.getRole(),
+				field.getName(), field.getControl().getXslValue(), value, String.valueOf(selected),
+				String.valueOf(field.getSize()), String.valueOf(field.getRows()), String.valueOf(field.getCols()),
+				field.getPlaceholder());
+	}
+
+	private Map<String, String> getTemplateValues(WorkbenchRequest req, CreateTemplateConfig template) {
+		Map<String, String> values = new LinkedHashMap<>();
+		for (CreateTemplateConfig.Field field : template.getFields()) {
+			String value = req.getParameter(field.getName());
+			if (value != null) {
+				values.put(field.getName(), value);
 			}
-			StringBuilder fieldId = new StringBuilder(words[0].toLowerCase(Locale.ENGLISH));
-			for (int i = 1; i < words.length; i++) {
-				String word = words[i];
-				if (word.equals(word.toUpperCase(Locale.ENGLISH)) && word.length() <= 3) {
-					fieldId.append(word);
-				} else {
-					fieldId.append(Character.toUpperCase(word.charAt(0)))
-							.append(word.substring(1).toLowerCase(Locale.ENGLISH));
-				}
-			}
-			return fieldId.toString();
+		}
+		return values;
+	}
+
+	private static final class TemplateOption {
+		private final String type;
+		private final String label;
+		private final int order;
+
+		private TemplateOption(String type, String label, int order) {
+			this.type = type;
+			this.label = label;
+			this.order = order;
+		}
+
+		private String getType() {
+			return type;
+		}
+
+		private String getLabel() {
+			return label;
+		}
+
+		private int getOrder() {
+			return order;
 		}
 	}
 }

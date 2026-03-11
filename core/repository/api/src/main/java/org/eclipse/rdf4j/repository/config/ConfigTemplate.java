@@ -27,7 +27,13 @@ public class ConfigTemplate {
 	 * Constants *
 	 *-----------*/
 
-	private static final Pattern TOKEN_PATTERN = Pattern.compile("\\{%[\\p{Print}&&[^\\}]]+%\\}");
+	private static final Pattern TOKEN_PATTERN = Pattern.compile("\\{%.*?%\\}");
+
+	private static final Pattern INLINE_HINT_PATTERN = Pattern.compile("^(.*?)(?:\\[[^\\]]+\\])?$");
+
+	private static final Pattern INLINE_HINT_ATTRIBUTES_PATTERN = Pattern.compile("\\[(.*)]$");
+
+	private static final Pattern ATTRIBUTE_PATTERN = Pattern.compile("(\\w+)=(?:\"([^\"]*)\"|(\\S+))");
 
 	/*-----------*
 	 * Variables *
@@ -71,12 +77,12 @@ public class ConfigTemplate {
 			String group = matcher.group();
 			String[] tokensArray = group.substring(2, group.length() - 2).split("\\|");
 			List<String> tokens = Arrays.asList(tokensArray);
-			String var = tokens.get(0).trim();
+			String var = normalizeVariableName(tokens.get(0));
 			if (var.isEmpty()) {
 				throw new IllegalArgumentException("Illegal template token: " + matcher.group());
 			}
 			if (!variableMap.containsKey(var)) {
-				variableMap.put(var, tokens.subList(1, tokens.size()));
+				variableMap.put(var, defaultValues(tokens));
 				int start = matcher.start();
 				String before = template.substring(Math.max(start - 3, 0), start);
 				int end = matcher.end();
@@ -98,7 +104,7 @@ public class ConfigTemplate {
 		while (matcher.find()) {
 			String group = matcher.group();
 			String[] tokensArray = group.substring(2, group.length() - 2).split("\\|");
-			String var = tokensArray[0].trim();
+			String var = normalizeVariableName(tokensArray[0]);
 			String value = valueMap.get(var);
 			if (value == null) {
 				List<String> values = variableMap.get(var);
@@ -111,6 +117,48 @@ public class ConfigTemplate {
 		}
 		matcher.appendTail(result);
 		return result.toString();
+	}
+
+	private static String normalizeVariableName(String variable) {
+		String trimmed = variable.trim();
+		Matcher matcher = INLINE_HINT_PATTERN.matcher(trimmed);
+		if (!matcher.matches()) {
+			return trimmed;
+		}
+		String normalized = matcher.group(1).trim();
+		return normalized.isEmpty() ? trimmed : normalized;
+	}
+
+	private static List<String> defaultValues(List<String> tokens) {
+		List<String> values = tokens.size() > 1 ? tokens.subList(1, tokens.size()) : List.of();
+		String hintedDefault = inlineDefault(tokens.get(0));
+		if (hintedDefault == null) {
+			return values;
+		}
+		if (values.isEmpty()) {
+			return List.of(hintedDefault);
+		}
+		if (values.get(0).isEmpty()) {
+			java.util.ArrayList<String> updated = new java.util.ArrayList<>(values);
+			updated.set(0, hintedDefault);
+			return updated;
+		}
+		return values;
+	}
+
+	private static String inlineDefault(String variable) {
+		Matcher hintMatcher = INLINE_HINT_ATTRIBUTES_PATTERN.matcher(variable.trim());
+		if (!hintMatcher.find()) {
+			return null;
+		}
+		Matcher attributeMatcher = ATTRIBUTE_PATTERN.matcher(hintMatcher.group(1));
+		while (attributeMatcher.find()) {
+			String value = attributeMatcher.group(2) != null ? attributeMatcher.group(2) : attributeMatcher.group(3);
+			if ("default".equals(attributeMatcher.group(1))) {
+				return value;
+			}
+		}
+		return null;
 	}
 
 	/**

@@ -19,13 +19,21 @@ import static org.mockito.Mockito.when;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.StringReader;
+import java.io.UncheckedIOException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import javax.servlet.ServletOutputStream;
 import javax.servlet.WriteListener;
 import javax.servlet.http.HttpServletResponse;
+import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.repository.config.ConfigTemplate;
@@ -36,6 +44,9 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
+import org.xml.sax.InputSource;
 
 /**
  * @author Dale Visser
@@ -47,23 +58,24 @@ public class CreateServletTest {
 
 	static CreateServlet servlet;
 
+	private static final int FEDERATE_ORDER = 170;
+
+	private static final String FEDERATE = "federate";
+
+	private static final String FEDERATE_LABEL = "Federation";
+
 	@BeforeAll
 	public static void setUpServlet() {
 		servlet = new CreateServlet();
 		servlet.setRepositoryManager(new LocalRepositoryManager(datadir));
 	}
 
-	private static final String[] EXPECTED_TEMPLATES = new String[] { "memory-customrule", "memory-rdfs-dt",
-			"memory-rdfs", "memory",
-			"native-customrule", "native-rdfs-dt", "native-rdfs", "native", "remote", "sparql", "memory-shacl",
-			"native-shacl" };
-
 	/**
 	 * Regression test for SES-1907.
 	 */
 	@Test
 	public final void testExpectedTemplatesCanBeResolved() {
-		for (String template : EXPECTED_TEMPLATES) {
+		for (String template : sourceTemplateTypes()) {
 			String resource = template + ".ttl";
 			assertThat(RepositoryConfig.class.getResourceAsStream(resource)).isNotNull().as(resource);
 		}
@@ -71,9 +83,171 @@ public class CreateServletTest {
 
 	@Test
 	public final void testExpectedTemplatesCanBeLoaded() throws IOException {
-		for (String template : EXPECTED_TEMPLATES) {
+		for (String template : sourceTemplateTypes()) {
 			assertThat(CreateServlet.getConfigTemplate(template).getTemplate()).isNotNull();
 		}
+	}
+
+	@Test
+	public void testDiscoveredTemplatesShouldMatchRepositoryConfigCatalog() throws IOException {
+		assertThat(CreateServlet.getCreateTemplates())
+				.extracting(CreateTemplateConfig::getType)
+				.containsExactlyInAnyOrderElementsOf(sourceTemplateTypes());
+	}
+
+	@Test
+	public void testDiscoveredTemplatesShouldExposeMetadataBackedFieldModels() throws IOException {
+		for (CreateTemplateConfig template : CreateServlet.getCreateTemplates()) {
+			ConfigTemplate configTemplate = CreateServlet.getConfigTemplate(template.getType());
+
+			assertThat(template.getLabel()).isNotBlank();
+			assertThat(template.getOrder()).isLessThan(Integer.MAX_VALUE);
+			assertThat(template.getFields())
+					.extracting(CreateTemplateConfig.Field::getName)
+					.containsExactlyElementsOf(configTemplate.getVariableMap()
+							.keySet()
+							.stream()
+							.map(CreateServletTest::displayFieldName)
+							.collect(Collectors.toList()));
+			assertThat(template.getFields())
+					.extracting(CreateTemplateConfig.Field::getId)
+					.doesNotContainNull()
+					.doesNotContain("");
+			assertThat(template.getFields())
+					.extracting(CreateTemplateConfig.Field::getControl)
+					.doesNotContainNull();
+		}
+	}
+
+	@Test
+	public void testDiscoveredTemplatesShouldRoundTripDefaults() throws Exception {
+		for (CreateTemplateConfig template : CreateServlet.getCreateTemplates()) {
+			CreateServlet localServlet = new CreateServlet();
+			File repositoryDir = Files.createDirectories(datadir.toPath().resolve(template.getType())).toFile();
+			localServlet.setRepositoryManager(new LocalRepositoryManager(repositoryDir));
+
+			RepositoryConfig config = localServlet
+					.updateRepositoryConfig(template.render(defaultTemplateValues(template)));
+
+			assertThat(config.getID()).isNotBlank();
+			assertThat(config.getTitle()).isNotBlank();
+		}
+	}
+
+	@Test
+	public void testKnownTemplateRegressionsShouldRemainFixed() throws Exception {
+		assertThat(templateDefault(CreateServlet.getConfigTemplate("memory-lucene"), "Repository title"))
+				.isEqualTo("Memory store with Lucene Support");
+		assertThat(templateDefault(CreateServlet.getConfigTemplate("memory-shacl"), "Repository ID"))
+				.isEqualTo("memory-shacl");
+		assertThat(CreateServlet.getConfigTemplate("memory-shacl").getTemplate())
+				.contains("config:sail.iterationCacheSyncThreshold");
+		assertThat(templateDefault(CreateServlet.getConfigTemplate("memory-rdfs-legacy"), "Repository ID"))
+				.isEqualTo("memory-rdfs-legacy");
+		assertThat(templateDefault(CreateServlet.getConfigTemplate("sparql"), "Repository title"))
+				.isEqualTo("SPARQL endpoint proxy @localhost");
+		assertThat(CreateServlet.getCreateTemplate("remote").getFields())
+				.extracting(CreateTemplateConfig.Field::getName)
+				.contains("RDF4J Server location", "Remote repository ID");
+	}
+
+	@Test
+	public void testLmdbTemplateShouldNormalizeInlineLengthHintsForFieldsAndRenderValues() throws Exception {
+		CreateTemplateConfig template = CreateServlet.getCreateTemplate("lmdb");
+		CreateTemplateConfig.Field tripleDbSize = template.getFields()
+				.stream()
+				.filter(field -> field.getId().equals("lmdb_tripleDBSize"))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Missing Triple DB size field"));
+
+		assertThat(tripleDbSize.getName()).isEqualTo("Triple DB size");
+		assertThat(tripleDbSize.getSize()).isEqualTo(16);
+
+		String rendered = template.render(Map.ofEntries(
+				Map.entry("Repository ID", "lmdb-inline"),
+				Map.entry("Repository title", "LMDB inline"),
+				Map.entry("Query Iteration Cache sync threshold", "512"),
+				Map.entry("Triple indexes", "spoc"),
+				Map.entry("Triple DB size", "20971520"),
+				Map.entry("Value DB size", "31457280"),
+				Map.entry("Value cache size", "128"),
+				Map.entry("Value ID cache size", "64"),
+				Map.entry("Namespace cache size", "32"),
+				Map.entry("Namespace ID cache size", "16"),
+				Map.entry("Auto grow", "true"),
+				Map.entry("Page cardinality estimator", "true"),
+				Map.entry("Value eviction interval", "1000"),
+				Map.entry("Force sync", "false"),
+				Map.entry("No readahead", "true"),
+				Map.entry("Query Evaluation Mode", "STRICT")));
+
+		assertThat(rendered)
+				.contains("20971520")
+				.doesNotContain("Triple DB size[len=16]");
+	}
+
+	@Test
+	public void testTemplateParserShouldInferBooleanOptionsAsRadioButtonsWithoutMetadata() throws Exception {
+		CreateTemplateConfig template = parseTemplate("synthetic", String.join("\n",
+				"# @workbench.template label=\"Synthetic\" order=1",
+				"@prefix ex: <urn:test:> .",
+				"[] ex:persist {%Persist|true|false%} ;",
+				"   ex:mode {%Query Evaluation Mode|STANDARD|STRICT%} ."));
+
+		assertThat(field(template, "Persist").getControl()).isEqualTo(CreateTemplateConfig.FieldControl.RADIO);
+		assertThat(field(template, "Query Evaluation Mode").getControl())
+				.isEqualTo(CreateTemplateConfig.FieldControl.SELECT);
+	}
+
+	@Test
+	public void testTemplateParserShouldDeriveFieldIdsFromPropertyNames() throws Exception {
+		CreateTemplateConfig template = parseTemplate("synthetic", String.join("\n",
+				"# @workbench.template label=\"Synthetic\" order=1",
+				"@prefix config: <tag:rdf4j.org,2023:config/> .",
+				"[] config:rep.id \"{%Repository ID[len=16]|synthetic%}\" ;",
+				"   config:sail.iterationCacheSyncThreshold \"{%Query Iteration Cache sync threshold[len=16]|10000%}\" ;",
+				"   config:mem.persist {%Persist|true|false%} ."));
+
+		assertThat(field(template, "Repository ID").getId()).isEqualTo("config_rep-id");
+		assertThat(field(template, "Query Iteration Cache sync threshold").getId())
+				.isEqualTo("config_sail-iterationCacheSyncThreshold");
+		assertThat(field(template, "Persist").getId()).isEqualTo("config_mem-persist");
+	}
+
+	@Test
+	public void testTemplateParserShouldIgnoreInlineIdHintsAndUsePropertyDerivedIds() throws Exception {
+		CreateTemplateConfig template = parseTemplate("synthetic", String.join("\n",
+				"# @workbench.template label=\"Synthetic\" order=1",
+				"@prefix config: <tag:rdf4j.org,2023:config/> .",
+				"[] config:http.url <{%RDF4J Server location[len=48 id=server-field]|http://localhost:8080/rdf4j-server%}/repositories/{%Remote repository ID[len=16 id=repository-field]|SYSTEM%}> ."));
+
+		assertThat(field(template, "RDF4J Server location").getId()).isEqualTo("config_http-url");
+		assertThat(field(template, "Remote repository ID").getId()).isEqualTo("config_http-url-2");
+	}
+
+	@Test
+	public void testInlineHintsShouldCarryRemainingUiMetadataWithoutFieldComments() throws Exception {
+		CreateTemplateConfig template = parseTemplate("synthetic", String.join("\n",
+				"# @workbench.template label=\"Synthetic\" order=1",
+				"@prefix ex: <urn:test:> .",
+				"[] ex:queryLanguage \"{%Query Language[control=select]|SPARQL%}\" ;",
+				"   ex:ruleQuery '''{%Rule query[rows=7 cols=60]|%}''' ;",
+				"   ex:endpoint <{%SPARQL query endpoint[len=48 placeholder=\"http://example.org/sparql\"]|%}> ."));
+
+		assertThat(field(template, "Query Language").getControl()).isEqualTo(CreateTemplateConfig.FieldControl.SELECT);
+		assertThat(field(template, "Rule query").getControl()).isEqualTo(CreateTemplateConfig.FieldControl.TEXTAREA);
+		assertThat(field(template, "Rule query").getRows()).isEqualTo(7);
+		assertThat(field(template, "Rule query").getCols()).isEqualTo(60);
+		assertThat(field(template, "SPARQL query endpoint").getSize()).isEqualTo(48);
+		assertThat(field(template, "SPARQL query endpoint").getPlaceholder()).isEqualTo("http://example.org/sparql");
+	}
+
+	@Test
+	public void testRemoteTemplateShouldDeriveDuplicatePropertyIdsWithStableSuffixes() throws Exception {
+		CreateTemplateConfig template = CreateServlet.getCreateTemplate("remote");
+
+		assertThat(field(template, "RDF4J Server location").getId()).isEqualTo("config_http-url");
+		assertThat(field(template, "Remote repository ID").getId()).isEqualTo("config_http-url-2");
 	}
 
 	@Test
@@ -131,7 +305,7 @@ public class CreateServletTest {
 
 	@Test
 	public void testLmdbTemplateShouldRenderConfiguredLmdbSettings() throws IOException {
-		String rendered = CreateServlet.getConfigTemplate("lmdb")
+		String rendered = CreateServlet.getCreateTemplate("lmdb")
 				.render(Map.ofEntries(
 						Map.entry("Repository ID", "lmdb-custom"),
 						Map.entry("Repository title", "LMDB custom"),
@@ -201,8 +375,10 @@ public class CreateServletTest {
 		ConfigTemplate template = CreateServlet.getConfigTemplate("lmdb");
 
 		assertThat(xml)
-				.contains("create-lmdb.xsl")
+				.contains("create-template.xsl")
 				.contains("fieldId")
+				.contains("fieldProperty")
+				.contains("fieldRole")
 				.contains("fieldName")
 				.contains("fieldType")
 				.contains("selected")
@@ -217,6 +393,110 @@ public class CreateServletTest {
 				.contains(templateDefault(template, "Query Evaluation Mode"));
 	}
 
+	@Test
+	public void testNativeCreateServiceShouldExposeTemplateDefaultsThroughGenericTemplate() throws Exception {
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.isParameterPresent("type")).thenReturn(true);
+		when(request.getTypeParameter()).thenReturn("native");
+
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+		when(response.getOutputStream()).thenReturn(outputStream);
+
+		servlet.service(request, response, "transformations");
+
+		String xml = outputStream.asString();
+		ConfigTemplate template = CreateServlet.getConfigTemplate("native");
+
+		assertThat(xml)
+				.contains("create-template.xsl")
+				.contains("fieldId")
+				.contains("fieldProperty")
+				.contains("fieldRole")
+				.contains("fieldName")
+				.contains("fieldType")
+				.contains("value")
+				.contains(templateDefault(template, "Repository ID"))
+				.contains(templateDefault(template, "Repository title"))
+				.contains(templateDefault(template, "Query Iteration Cache sync threshold"))
+				.contains(templateDefault(template, "Triple indexes"))
+				.contains(templateDefault(template, "Query Evaluation Mode"));
+	}
+
+	@Test
+	public void testCreateServiceShouldExposeTemplateCatalogIncludingLegacyAndFederate() throws Exception {
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.isParameterPresent("type")).thenReturn(false);
+
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+		when(response.getOutputStream()).thenReturn(outputStream);
+
+		servlet.service(request, response, "transformations");
+
+		String xml = outputStream.asString();
+		assertThat(extractBindingValues(xml, "type")).containsExactlyElementsOf(expectedCatalogTypes());
+		assertThat(extractBindingValues(xml, "label")).containsExactlyElementsOf(expectedCatalogLabels());
+	}
+
+	private static List<String> sourceTemplateTypes() {
+		Path templateDirectory = Path.of("..", "..", "core", "repository", "api", "src", "main", "resources", "org",
+				"eclipse", "rdf4j", "repository", "config");
+		try (var files = Files.list(templateDirectory)) {
+			return files.filter(Files::isRegularFile)
+					.map(path -> path.getFileName().toString())
+					.filter(name -> name.endsWith(".ttl"))
+					.map(name -> name.substring(0, name.length() - 4))
+					.sorted()
+					.collect(Collectors.toList());
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+	}
+
+	private static List<String> expectedCatalogTypes() throws IOException {
+		return expectedCatalogEntries().stream().map(CatalogEntry::getType).collect(Collectors.toList());
+	}
+
+	private static List<String> expectedCatalogLabels() throws IOException {
+		return expectedCatalogEntries().stream().map(CatalogEntry::getLabel).collect(Collectors.toList());
+	}
+
+	private static List<CatalogEntry> expectedCatalogEntries() throws IOException {
+		List<CatalogEntry> entries = CreateServlet.getCreateTemplates()
+				.stream()
+				.map(template -> new CatalogEntry(template.getType(), template.getLabel(), template.getOrder()))
+				.collect(Collectors.toCollection(ArrayList::new));
+		entries.add(new CatalogEntry(FEDERATE, FEDERATE_LABEL, FEDERATE_ORDER));
+		entries.sort(java.util.Comparator.comparingInt(CatalogEntry::getOrder)
+				.thenComparing(CatalogEntry::getLabel)
+				.thenComparing(CatalogEntry::getType));
+		return entries;
+	}
+
+	private static List<String> extractBindingValues(String xml, String bindingName) {
+		try {
+			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+			factory.setNamespaceAware(true);
+			NodeList bindings = factory.newDocumentBuilder()
+					.parse(new InputSource(new StringReader(xml)))
+					.getElementsByTagNameNS("*", "binding");
+			List<String> values = new ArrayList<>();
+			for (int i = 0; i < bindings.getLength(); i++) {
+				Element binding = (Element) bindings.item(i);
+				if (bindingName.equals(binding.getAttribute("name"))) {
+					NodeList literals = binding.getElementsByTagNameNS("*", "literal");
+					if (literals.getLength() > 0) {
+						values.add(literals.item(0).getTextContent());
+					}
+				}
+			}
+			return values;
+		} catch (Exception e) {
+			throw new AssertionError("Could not parse SPARQL XML result", e);
+		}
+	}
+
 	private static boolean invokeBooleanGetter(Object target, String getterName) {
 		try {
 			Method getter = target.getClass().getMethod(getterName);
@@ -226,8 +506,62 @@ public class CreateServletTest {
 		}
 	}
 
+	private static CreateTemplateConfig parseTemplate(String type, String templateText) {
+		try {
+			Method parse = CreateTemplateConfig.class.getDeclaredMethod("parse", String.class, String.class);
+			parse.setAccessible(true);
+			return (CreateTemplateConfig) parse.invoke(null, type, templateText);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Could not parse create template", e);
+		}
+	}
+
+	private static CreateTemplateConfig.Field field(CreateTemplateConfig template, String name) {
+		return template.getFields()
+				.stream()
+				.filter(field -> field.getName().equals(name))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Missing field: " + name));
+	}
+
 	private static String templateDefault(ConfigTemplate template, String name) {
 		return template.getVariableMap().get(name).get(0);
+	}
+
+	private static String displayFieldName(String rawName) {
+		return rawName.replaceFirst("\\[[^\\]]+]$", "");
+	}
+
+	private static Map<String, String> defaultTemplateValues(CreateTemplateConfig template) {
+		Map<String, String> values = new java.util.LinkedHashMap<>();
+		for (CreateTemplateConfig.Field field : template.getFields()) {
+			values.put(field.getName(), field.getDefaultValue());
+		}
+		return values;
+	}
+
+	private static final class CatalogEntry {
+		private final String type;
+		private final String label;
+		private final int order;
+
+		private CatalogEntry(String type, String label, int order) {
+			this.type = type;
+			this.label = label;
+			this.order = order;
+		}
+
+		private String getType() {
+			return type;
+		}
+
+		private String getLabel() {
+			return label;
+		}
+
+		private int getOrder() {
+			return order;
+		}
 	}
 
 	private static final class ByteArrayServletOutputStream extends ServletOutputStream {
