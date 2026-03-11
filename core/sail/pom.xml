@@ -25,5 +25,6 @@
 		<module>elasticsearch</module>
 		<module>elasticsearch-store</module>
 		<module>extensible-store</module>
+		<module>multirepo</module>
 	</modules>
 </project>
