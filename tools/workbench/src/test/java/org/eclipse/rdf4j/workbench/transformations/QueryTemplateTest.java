@@ -14,10 +14,22 @@ package org.eclipse.rdf4j.workbench.transformations;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.StringReader;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
+import javax.xml.transform.Templates;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.stream.StreamResult;
+import javax.xml.transform.stream.StreamSource;
+
+import org.eclipse.rdf4j.repository.config.ConfigTemplate;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.junit.jupiter.api.Test;
 
 class QueryTemplateTest {
@@ -254,39 +266,107 @@ class QueryTemplateTest {
 	}
 
 	@Test
-	void createLmdbTemplateShouldExposeAllLmdbConfigFields() throws IOException {
-		String createLmdbTemplate = Files.readString(Path.of("src/main/webapp/transformations/create-lmdb.xsl"),
-				StandardCharsets.UTF_8);
+	void createLmdbPageShouldRenderTemplateDrivenDefaultsAndOptions() throws Exception {
+		ConfigTemplate template = loadLmdbTemplate();
+		Transformer transformer = newCreateLmdbTransformer();
+		StringWriter html = new StringWriter();
 
-		assertThat(createLmdbTemplate)
-				.contains("$repository-indexes.label")
-				.contains("id=\"indexes\"")
-				.contains("name=\"Triple indexes\"")
-				.contains("id=\"iterationCacheSyncThreshold\"")
-				.contains("name=\"Query Iteration Cache sync threshold\"")
-				.contains("id=\"tripleDBSize\"")
-				.contains("name=\"Triple DB size\"")
-				.contains("id=\"valueDBSize\"")
-				.contains("name=\"Value DB size\"")
-				.contains("id=\"forceSync\"")
-				.contains("name=\"Force sync\"")
-				.contains("id=\"valueCacheSize\"")
-				.contains("name=\"Value cache size\"")
-				.contains("id=\"valueIDCacheSize\"")
-				.contains("name=\"Value ID cache size\"")
-				.contains("id=\"namespaceCacheSize\"")
-				.contains("name=\"Namespace cache size\"")
-				.contains("id=\"namespaceIDCacheSize\"")
-				.contains("name=\"Namespace ID cache size\"")
-				.contains("id=\"autoGrow\"")
-				.contains("name=\"Auto grow\"")
-				.contains("id=\"noReadahead\"")
+		transformer.transform(new StreamSource(new StringReader(createLmdbResults(template))), new StreamResult(html));
+
+		String output = html.toString();
+		assertThat(output)
+				.contains("value=\"" + templateDefault(template, "Repository ID") + "\"")
+				.contains("value=\"" + templateDefault(template, "Repository title") + "\"")
+				.contains("value=\"" + templateDefault(template, "Query Iteration Cache sync threshold") + "\"")
+				.contains("value=\"" + templateDefault(template, "Triple indexes") + "\"")
+				.contains("value=\"" + templateDefault(template, "Value cache size") + "\"")
 				.contains("name=\"No readahead\"")
-				.contains("id=\"pageCardinalityEstimator\"")
-				.contains("name=\"Page cardinality estimator\"")
-				.contains("id=\"valueEvictionInterval\"")
-				.contains("name=\"Value eviction interval\"")
-				.contains("id=\"queryEvalMode\"")
-				.contains("name=\"Query Evaluation Mode\"");
+				.contains("<option value=\"" + templateDefault(template, "No readahead") + "\" selected")
+				.contains("<option value=\"" + templateOption(template, "No readahead", 1) + "\"")
+				.contains("name=\"Query Evaluation Mode\"")
+				.contains("<option value=\"" + templateDefault(template, "Query Evaluation Mode") + "\" selected")
+				.contains("option value=\"" + templateOption(template, "Query Evaluation Mode", 1) + "\"");
+	}
+
+	private static Transformer newCreateLmdbTransformer() throws Exception {
+		TransformerFactory factory = TransformerFactory.newInstance();
+		StreamSource stylesheet = new StreamSource(Path.of("src/main/webapp/transformations/create-lmdb.xsl").toFile());
+		stylesheet.setSystemId(Path.of("src/main/webapp/transformations/create-lmdb.xsl").toUri().toString());
+		Templates templates = factory.newTemplates(stylesheet);
+		return templates.newTransformer();
+	}
+
+	private static ConfigTemplate loadLmdbTemplate() throws IOException {
+		try (InputStream input = RepositoryConfig.class.getResourceAsStream("lmdb.ttl")) {
+			if (input == null) {
+				throw new IOException("Could not load lmdb.ttl from RepositoryConfig resources");
+			}
+			return new ConfigTemplate(new String(input.readAllBytes(), StandardCharsets.UTF_8));
+		}
+	}
+
+	private static String createLmdbResults(ConfigTemplate template) {
+		StringBuilder xml = new StringBuilder();
+		xml.append("<?xml version=\"1.0\"?>\n");
+		xml.append("<sparql xmlns=\"http://www.w3.org/2005/sparql-results#\">\n");
+		xml.append("  <head>\n");
+		xml.append("    <variable name=\"fieldId\"/>\n");
+		xml.append("    <variable name=\"fieldName\"/>\n");
+		xml.append("    <variable name=\"fieldType\"/>\n");
+		xml.append("    <variable name=\"value\"/>\n");
+		xml.append("    <variable name=\"selected\"/>\n");
+		xml.append("  </head>\n");
+		xml.append("  <results>\n");
+		appendField(xml, "id", "Repository ID", "text", List.of(templateDefault(template, "Repository ID")));
+		appendField(xml, "title", "Repository title", "text", List.of(templateDefault(template, "Repository title")));
+		appendField(xml, "indexes", "Triple indexes", "text", List.of(templateDefault(template, "Triple indexes")));
+		appendField(xml, "iterationCacheSyncThreshold", "Query Iteration Cache sync threshold", "text",
+				List.of(templateDefault(template, "Query Iteration Cache sync threshold")));
+		appendField(xml, "valueCacheSize", "Value cache size", "text",
+				List.of(templateDefault(template, "Value cache size")));
+		appendField(xml, "noReadahead", "No readahead", "select", templateOptions(template, "No readahead"));
+		appendField(xml, "queryEvalMode", "Query Evaluation Mode", "select",
+				templateOptions(template, "Query Evaluation Mode"));
+		xml.append("  </results>\n");
+		xml.append("</sparql>\n");
+		return xml.toString();
+	}
+
+	private static void appendField(StringBuilder xml, String fieldId, String fieldName, String fieldType,
+			List<String> values) {
+		String defaultValue = values.get(0);
+		for (String value : values) {
+			xml.append("    <result>\n");
+			appendBinding(xml, "fieldId", fieldId);
+			appendBinding(xml, "fieldName", fieldName);
+			appendBinding(xml, "fieldType", fieldType);
+			appendBinding(xml, "value", value);
+			appendBinding(xml, "selected", String.valueOf(value.equals(defaultValue)));
+			xml.append("    </result>\n");
+		}
+	}
+
+	private static void appendBinding(StringBuilder xml, String name, String value) {
+		xml.append("      <binding name=\"")
+				.append(name)
+				.append("\"><literal>")
+				.append(escapeXml(value))
+				.append("</literal></binding>\n");
+	}
+
+	private static String escapeXml(String value) {
+		return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
+	}
+
+	private static List<String> templateOptions(ConfigTemplate template, String name) {
+		return template.getVariableMap().get(name);
+	}
+
+	private static String templateDefault(ConfigTemplate template, String name) {
+		return templateOptions(template, name).get(0);
+	}
+
+	private static String templateOption(ConfigTemplate template, String name, int index) {
+		return templateOptions(template, name).get(index);
 	}
 }

@@ -13,17 +13,26 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
+import javax.servlet.ServletOutputStream;
+import javax.servlet.WriteListener;
+import javax.servlet.http.HttpServletResponse;
+
 import org.eclipse.rdf4j.common.exception.RDF4JException;
+import org.eclipse.rdf4j.repository.config.ConfigTemplate;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
+import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -176,12 +185,71 @@ public class CreateServletTest {
 		assertThat(invokeBooleanGetter(sailConfig, "getNoReadahead")).isTrue();
 	}
 
+	@Test
+	public void testLmdbCreateServiceShouldExposeTemplateDefaults() throws Exception {
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.isParameterPresent("type")).thenReturn(true);
+		when(request.getTypeParameter()).thenReturn("lmdb");
+
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+		when(response.getOutputStream()).thenReturn(outputStream);
+
+		servlet.service(request, response, "transformations");
+
+		String xml = outputStream.asString();
+		ConfigTemplate template = CreateServlet.getConfigTemplate("lmdb");
+
+		assertThat(xml)
+				.contains("create-lmdb.xsl")
+				.contains("fieldId")
+				.contains("fieldName")
+				.contains("fieldType")
+				.contains("selected")
+				.contains(templateDefault(template, "Repository ID"))
+				.contains(templateDefault(template, "Repository title"))
+				.contains(templateDefault(template, "Query Iteration Cache sync threshold"))
+				.contains(templateDefault(template, "Triple indexes"))
+				.contains(templateDefault(template, "Value cache size"))
+				.contains(templateDefault(template, "Namespace cache size"))
+				.contains(templateDefault(template, "Value eviction interval"))
+				.contains(templateDefault(template, "No readahead"))
+				.contains(templateDefault(template, "Query Evaluation Mode"));
+	}
+
 	private static boolean invokeBooleanGetter(Object target, String getterName) {
 		try {
 			Method getter = target.getClass().getMethod(getterName);
 			return (boolean) getter.invoke(target);
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
+		}
+	}
+
+	private static String templateDefault(ConfigTemplate template, String name) {
+		return template.getVariableMap().get(name).get(0);
+	}
+
+	private static final class ByteArrayServletOutputStream extends ServletOutputStream {
+		private final ByteArrayOutputStream delegate = new ByteArrayOutputStream();
+
+		@Override
+		public void write(int b) {
+			delegate.write(b);
+		}
+
+		@Override
+		public boolean isReady() {
+			return true;
+		}
+
+		@Override
+		public void setWriteListener(WriteListener writeListener) {
+			// not needed for unit tests
+		}
+
+		private String asString() {
+			return delegate.toString(StandardCharsets.UTF_8);
 		}
 	}
 }

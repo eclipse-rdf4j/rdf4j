@@ -11,6 +11,9 @@
 
 	<xsl:include href="template.xsl" />
 
+	<xsl:key name="lmdb-field" match="sparql:result"
+		use="sparql:binding[@name='fieldId']/sparql:literal" />
+
 	<xsl:template match="sparql:sparql">
 		<form action="create" method="post">
 			<table class="dataentry">
@@ -28,172 +31,52 @@
 						</td>
 						<td></td>
 					</tr>
-					<tr>
-						<th>
-							<xsl:value-of select="$repository-id.label" />
-						</th>
-						<td>
-							<input type="text" id="id" name="Repository ID" size="16"
-								value="lmdb" />
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-						<th>
-							<xsl:value-of select="$repository-title.label" />
-						</th>
-						<td>
-							<input type="text" id="title" name="Repository title" size="48"
-								value="LMDB store" />
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-						<th>
-							<xsl:value-of select="$repository-indexes.label" />
-						</th>
-						<td>
-							<input type="text" id="indexes" name="Triple indexes" size="16"
-								value="spoc,posc" />
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-						<th>Query Iteration Cache sync threshold</th>
-						<td>
-							<input type="text" id="iterationCacheSyncThreshold"
-								name="Query Iteration Cache sync threshold" size="16" value="10000" />
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-						<th>Triple DB size</th>
-						<td>
-							<input type="text" id="tripleDBSize" name="Triple DB size" size="16"
-								value="10485760" />
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-						<th>Value DB size</th>
-						<td>
-							<input type="text" id="valueDBSize" name="Value DB size" size="16"
-								value="10485760" />
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-						<th>Force sync</th>
-						<td>
-							<select id="forceSync" name="Force sync">
-								<option value="false" selected="selected">
-									<xsl:value-of select="$false.label" />
-								</option>
-								<option value="true">
-									<xsl:value-of select="$true.label" />
-								</option>
-							</select>
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-						<th>No readahead</th>
-						<td>
-							<select id="noReadahead" name="No readahead">
-								<option value="false" selected="selected">
-									<xsl:value-of select="$false.label" />
-								</option>
-								<option value="true">
-									<xsl:value-of select="$true.label" />
-								</option>
-							</select>
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-						<th>Value cache size</th>
-						<td>
-							<input type="text" id="valueCacheSize" name="Value cache size" size="16"
-								value="512" />
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-						<th>Value ID cache size</th>
-						<td>
-							<input type="text" id="valueIDCacheSize" name="Value ID cache size" size="16"
-								value="128" />
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-						<th>Namespace cache size</th>
-						<td>
-							<input type="text" id="namespaceCacheSize" name="Namespace cache size" size="16"
-								value="64" />
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-						<th>Namespace ID cache size</th>
-						<td>
-							<input type="text" id="namespaceIDCacheSize" name="Namespace ID cache size" size="16"
-								value="32" />
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-						<th>Auto grow</th>
-						<td>
-							<select id="autoGrow" name="Auto grow">
-								<option value="true" selected="selected">
-									<xsl:value-of select="$true.label" />
-								</option>
-								<option value="false">
-									<xsl:value-of select="$false.label" />
-								</option>
-							</select>
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-						<th>Page cardinality estimator</th>
-						<td>
-							<select id="pageCardinalityEstimator" name="Page cardinality estimator">
-								<option value="true" selected="selected">
-									<xsl:value-of select="$true.label" />
-								</option>
-								<option value="false">
-									<xsl:value-of select="$false.label" />
-								</option>
-							</select>
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-						<th>Value eviction interval</th>
-						<td>
-							<input type="text" id="valueEvictionInterval" name="Value eviction interval" size="16"
-								value="60000" />
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-						<th>
-							<xsl:value-of select="$repository-evaluation-mode.label" />
-						</th>
-						<td>
-							<select id="queryEvalMode" name="Query Evaluation Mode">
-								<option selected="selected" value="STRICT">
-									strict
-								</option>
-								<option value="STANDARD">
-									standard
-								</option>
-							</select>
-						</td>
-						<td></td>
-					</tr>
+					<xsl:for-each
+						select="sparql:results/sparql:result[generate-id() = generate-id(key('lmdb-field', sparql:binding[@name='fieldId']/sparql:literal)[1])]">
+						<xsl:variable name="fieldId"
+							select="sparql:binding[@name='fieldId']/sparql:literal" />
+						<xsl:variable name="fieldName"
+							select="sparql:binding[@name='fieldName']/sparql:literal" />
+						<xsl:variable name="fieldType"
+							select="sparql:binding[@name='fieldType']/sparql:literal" />
+						<xsl:variable name="fieldRows" select="key('lmdb-field', $fieldId)" />
+						<tr>
+							<th>
+								<xsl:call-template name="lmdb-field-label">
+									<xsl:with-param name="fieldId" select="$fieldId" />
+									<xsl:with-param name="fieldName" select="$fieldName" />
+								</xsl:call-template>
+							</th>
+							<td>
+								<xsl:choose>
+									<xsl:when test="$fieldType = 'select'">
+										<select id="{$fieldId}" name="{$fieldName}">
+											<xsl:for-each select="$fieldRows">
+												<xsl:variable name="optionValue"
+													select="sparql:binding[@name='value']/sparql:literal" />
+												<option value="{$optionValue}">
+													<xsl:if
+														test="sparql:binding[@name='selected']/sparql:literal = 'true'">
+														<xsl:attribute name="selected">selected</xsl:attribute>
+													</xsl:if>
+													<xsl:call-template name="lmdb-option-label">
+														<xsl:with-param name="fieldId" select="$fieldId" />
+														<xsl:with-param name="optionValue" select="$optionValue" />
+													</xsl:call-template>
+												</option>
+											</xsl:for-each>
+										</select>
+									</xsl:when>
+									<xsl:otherwise>
+										<input type="text" id="{$fieldId}" name="{$fieldName}"
+											size="{($fieldId = 'title') * 48 + not($fieldId = 'title') * 16}"
+											value="{sparql:binding[@name='value']/sparql:literal}" />
+									</xsl:otherwise>
+								</xsl:choose>
+							</td>
+							<td></td>
+						</tr>
+					</xsl:for-each>
 					<tr>
 						<td></td>
 						<td>
@@ -209,6 +92,48 @@
 		</form>
 		<script src="../../scripts/create.js" type="text/javascript">
 		</script>
+	</xsl:template>
+
+	<xsl:template name="lmdb-field-label">
+		<xsl:param name="fieldId" />
+		<xsl:param name="fieldName" />
+		<xsl:choose>
+			<xsl:when test="$fieldId = 'id'">
+				<xsl:value-of select="$repository-id.label" />
+			</xsl:when>
+			<xsl:when test="$fieldId = 'title'">
+				<xsl:value-of select="$repository-title.label" />
+			</xsl:when>
+			<xsl:when test="$fieldId = 'indexes'">
+				<xsl:value-of select="$repository-indexes.label" />
+			</xsl:when>
+			<xsl:when test="$fieldId = 'queryEvalMode'">
+				<xsl:value-of select="$repository-evaluation-mode.label" />
+			</xsl:when>
+			<xsl:otherwise>
+				<xsl:value-of select="$fieldName" />
+			</xsl:otherwise>
+		</xsl:choose>
+	</xsl:template>
+
+	<xsl:template name="lmdb-option-label">
+		<xsl:param name="fieldId" />
+		<xsl:param name="optionValue" />
+		<xsl:choose>
+			<xsl:when test="$optionValue = 'true'">
+				<xsl:value-of select="$true.label" />
+			</xsl:when>
+			<xsl:when test="$optionValue = 'false'">
+				<xsl:value-of select="$false.label" />
+			</xsl:when>
+			<xsl:when test="$fieldId = 'queryEvalMode'">
+				<xsl:value-of
+					select="translate($optionValue, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')" />
+			</xsl:when>
+			<xsl:otherwise>
+				<xsl:value-of select="$optionValue" />
+			</xsl:otherwise>
+		</xsl:choose>
 	</xsl:template>
 
 </xsl:stylesheet>

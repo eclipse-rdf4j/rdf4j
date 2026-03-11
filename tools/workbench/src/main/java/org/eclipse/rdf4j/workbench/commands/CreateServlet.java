@@ -17,6 +17,8 @@ import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
@@ -48,6 +50,14 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 
 public class CreateServlet extends TransformationServlet {
 
+	private static final String FEDERATE = "federate";
+
+	private static final String LMDB = "lmdb";
+
+	private static final String[] FEDERATE_RESULT_VARS = { "id", "description", "location" };
+
+	private static final String[] LMDB_RESULT_VARS = { "fieldId", "fieldName", "fieldType", "value", "selected" };
+
 	@Override
 	public void init(final ServletConfig config) throws ServletException {
 		super.init(config);
@@ -77,21 +87,26 @@ public class CreateServlet extends TransformationServlet {
 			throws IOException, RepositoryException, QueryResultHandlerException {
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		boolean federate;
+		boolean lmdb;
 		if (req.isParameterPresent("type")) {
 			final String type = req.getTypeParameter();
-			federate = "federate".equals(type);
+			federate = FEDERATE.equals(type);
+			lmdb = LMDB.equals(type);
 			builder.transform(xslPath, "create-" + type + ".xsl");
 		} else {
 			federate = false;
+			lmdb = false;
 			builder.transform(xslPath, "create.xsl");
 		}
-		builder.start(federate ? new String[] { "id", "description", "location" } : new String[] {});
+		builder.start(federate ? FEDERATE_RESULT_VARS : lmdb ? LMDB_RESULT_VARS : new String[] {});
 		builder.link(List.of(INFO));
 		if (federate) {
 			for (RepositoryInfo info : manager.getAllRepositoryInfos()) {
 				String identity = info.getId();
 				builder.result(identity, info.getDescription(), info.getLocation());
 			}
+		} else if (lmdb) {
+			writeLmdbConfigFields(builder);
 		}
 		builder.end();
 	}
@@ -99,7 +114,7 @@ public class CreateServlet extends TransformationServlet {
 	private String createRepositoryConfig(final WorkbenchRequest req) throws IOException, RDF4JException {
 		String type = req.getTypeParameter();
 		String newID;
-		if ("federate".equals(type)) {
+		if (FEDERATE.equals(type)) {
 			newID = req.getParameter("Local repository ID");
 			addFederated(newID, req.getParameter("Repository title"),
 					Arrays.asList(req.getParameterValues("memberID")));
@@ -138,6 +153,55 @@ public class CreateServlet extends TransformationServlet {
 		try (InputStream ttlInput = RepositoryConfig.class.getResourceAsStream(type + ".ttl")) {
 			final String template = IOUtil.readString(new InputStreamReader(ttlInput, StandardCharsets.UTF_8));
 			return new ConfigTemplate(template);
+		}
+	}
+
+	private void writeLmdbConfigFields(TupleResultBuilder builder) throws IOException, QueryResultHandlerException {
+		for (Map.Entry<String, List<String>> entry : getConfigTemplate(LMDB).getVariableMap().entrySet()) {
+			String fieldName = entry.getKey();
+			List<String> values = entry.getValue();
+			String fieldId = toLmdbFieldId(fieldName);
+			String fieldType = values.size() > 1 ? "select" : "text";
+			String defaultValue = values.isEmpty() ? "" : values.get(0);
+
+			if ("select".equals(fieldType)) {
+				for (String value : values) {
+					builder.result(fieldId, fieldName, fieldType, value, String.valueOf(value.equals(defaultValue)));
+				}
+			} else {
+				builder.result(fieldId, fieldName, fieldType, defaultValue, Boolean.TRUE.toString());
+			}
+		}
+	}
+
+	private static String toLmdbFieldId(String fieldName) {
+		switch (fieldName) {
+		case "Repository ID":
+			return "id";
+		case "Repository title":
+			return "title";
+		case "Triple indexes":
+			return "indexes";
+		case "Query Iteration Cache sync threshold":
+			return "iterationCacheSyncThreshold";
+		case "Query Evaluation Mode":
+			return "queryEvalMode";
+		default:
+			String[] words = fieldName.replaceAll("[^A-Za-z0-9]+", " ").trim().split("\\s+");
+			if (words.length == 0) {
+				throw new IllegalArgumentException("Cannot derive LMDB field id from empty field name");
+			}
+			StringBuilder fieldId = new StringBuilder(words[0].toLowerCase(Locale.ENGLISH));
+			for (int i = 1; i < words.length; i++) {
+				String word = words[i];
+				if (word.equals(word.toUpperCase(Locale.ENGLISH)) && word.length() <= 3) {
+					fieldId.append(word);
+				} else {
+					fieldId.append(Character.toUpperCase(word.charAt(0)))
+							.append(word.substring(1).toLowerCase(Locale.ENGLISH));
+				}
+			}
+			return fieldId.toString();
 		}
 	}
 }
