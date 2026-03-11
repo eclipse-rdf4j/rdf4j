@@ -29,8 +29,8 @@
 				select="normalize-space(sparql:binding[@name='rowsPerPage'])" />
 			<xsl:variable name="queryTimeout">
 				<xsl:choose>
-					<xsl:when test="string-length(normalize-space(sparql:binding[@name='query-timeout'])) &gt; 0">
-						<xsl:value-of select="normalize-space(sparql:binding[@name='query-timeout'])" />
+					<xsl:when test="string-length(normalize-space(sparql:binding[@name='queryTimeout'])) &gt; 0">
+						<xsl:value-of select="normalize-space(sparql:binding[@name='queryTimeout'])" />
 					</xsl:when>
 					<xsl:when test="string-length(normalize-space($defaultQueryTimeout)) &gt; 0">
 						<xsl:value-of select="$defaultQueryTimeout" />

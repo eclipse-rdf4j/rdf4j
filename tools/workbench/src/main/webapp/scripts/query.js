@@ -14,18 +14,51 @@ var workbench;
          */
         var currentQueryLn = '';
         var yasqe = null;
-        var latestExplanation = '';
-        var latestExplanationFormat = 'text';
+        var compareYasqe = null;
         var vizRenderer = null;
-        var dotPanZoomInstance = null;
-        var explainButtonViewportTopBeforeRequest = null;
-        var explainButtonIdBeforeRequest = '';
         var explainSpinnerVisibleSince = 0;
         var explainSpinnerTargetId = '';
         var explainSpinnerDelayTimeoutId = null;
         var explainSpinnerHideTimeoutId = null;
         var activeExplainRequestId = 0;
         var activeExplainJqXHR = null;
+        var activeCompareRequestId = 0;
+        var activeComparePendingRequests = 0;
+        var activeCompareExplainJqXHRs = [];
+        var compareModeEnabled = false;
+        var compareSidebarOpen = false;
+        var compareQuerySeeded = false;
+        var diffNotReadyLabel = '';
+        var lastDiffTriggerElement = null;
+        var primaryPaneState = {
+            key: 'primary',
+            queryId: 'query',
+            errorId: 'queryString.errors',
+            explanationRowId: 'query-explanation-row',
+            explanationControlsRowId: 'query-explanation-controls-row',
+            explanationId: 'query-explanation',
+            dotViewId: 'query-explanation-dot-view',
+            jsonViewId: 'query-explanation-json-view',
+            latestExplanation: '',
+            latestExplanationFormat: 'text',
+            dotPanZoomInstance: null,
+            explainButtonViewportTopBeforeRequest: null,
+            explainButtonIdBeforeRequest: ''
+        };
+        var comparePaneState = {
+            key: 'compare',
+            queryId: 'query-compare',
+            errorId: 'queryString.errors-compare',
+            explanationRowId: 'query-explanation-row-compare',
+            explanationId: 'query-explanation-compare',
+            dotViewId: 'query-explanation-dot-view-compare',
+            jsonViewId: 'query-explanation-json-view-compare',
+            latestExplanation: '',
+            latestExplanationFormat: 'text',
+            dotPanZoomInstance: null,
+            explainButtonViewportTopBeforeRequest: null,
+            explainButtonIdBeforeRequest: ''
+        };
         /**
          * Populate reasonable default name space declarations into the query text area.
          * The server has provided the declaration text in hidden elements.
@@ -92,17 +125,106 @@ var workbench;
             }, 0);
         }
         query_1.handleNameChange = handleNameChange;
+        function getPaneState(paneKey) {
+            return paneKey === 'compare' ? comparePaneState : primaryPaneState;
+        }
+        function getPaneQueryEditor(paneKey) {
+            return paneKey === 'compare' ? compareYasqe : yasqe;
+        }
+        function setPaneQueryEditor(paneKey, editor) {
+            if (paneKey === 'compare') {
+                compareYasqe = editor;
+                return;
+            }
+            yasqe = editor;
+        }
+        function getPaneQuerySelector(paneKey) {
+            return '#' + getPaneState(paneKey).queryId;
+        }
+        function getPaneRawQueryValue(paneKey) {
+            var queryEditor = getPaneQueryEditor(paneKey);
+            if (queryEditor) {
+                return queryEditor.getValue();
+            }
+            return ($(getPaneQuerySelector(paneKey)).val() || '');
+        }
+        function getPaneQueryValue(paneKey) {
+            return $.trim(getPaneRawQueryValue(paneKey));
+        }
+        function setPaneQueryValue(paneKey, queryString) {
+            var normalizedQuery = queryString || '';
+            var queryEditor = getPaneQueryEditor(paneKey);
+            if (queryEditor) {
+                queryEditor.setValue(normalizedQuery);
+                return;
+            }
+            $(getPaneQuerySelector(paneKey)).val(normalizedQuery);
+        }
+        function savePaneQuery(paneKey) {
+            var queryEditor = getPaneQueryEditor(paneKey);
+            if (queryEditor) {
+                queryEditor.save();
+            }
+        }
         function clearExplainSelection() {
             $('#explain').val('');
             $('#explain-level').val('Optimized');
         }
-        function updateDownloadButtonState() {
-            $('#download-explanation').prop('disabled', !latestExplanation);
+        function hasPrimaryExplanation() {
+            return primaryPaneState.latestExplanation.length > 0;
         }
-        function lockExplanationDimensions() {
-            var explanation = $('#query-explanation');
-            var dotView = $('#query-explanation-dot-view');
-            var jsonView = $('#query-explanation-json-view');
+        function updateDownloadButtonState() {
+            $('#download-explanation').prop('disabled', !primaryPaneState.latestExplanation);
+        }
+        function syncPrimaryExplanationControls() {
+            var primaryExplanationAvailable = hasPrimaryExplanation();
+            var primaryControlsVisible = primaryExplanationAvailable || compareModeEnabled;
+            $('#query-explanation-controls-row').toggle(primaryControlsVisible);
+            $('#primary-explain-settings').toggle(primaryControlsVisible);
+            $('#primary-explain-repeat-controls').toggle(primaryExplanationAvailable && !compareModeEnabled);
+            $('#download-explanation').toggle(primaryControlsVisible);
+            $('#compare-toggle').toggle(primaryExplanationAvailable || compareModeEnabled);
+        }
+        function syncCompareSidebarState() {
+            $('body').toggleClass('query-compare-mode', compareModeEnabled);
+            $('body').toggleClass('query-compare-nav-open', compareModeEnabled && compareSidebarOpen);
+            var sidebarToggle = $('#query-sidebar-toggle');
+            var navigationTransform = '';
+            var queryWorkspaceTransform = '';
+            var sidebarToggleTransform = '';
+            if (!compareModeEnabled) {
+                $('#navigation').css('transform', navigationTransform);
+                $('#title_heading, #noscript-message, .query-form').css('transform', queryWorkspaceTransform);
+                sidebarToggle.css('transform', sidebarToggleTransform);
+                sidebarToggle
+                    .hide()
+                    .removeClass('query-sidebar-toggle--nav-open')
+                    .attr('aria-hidden', 'true')
+                    .attr('tabindex', '-1');
+                return;
+            }
+            navigationTransform = compareSidebarOpen ? 'translateX(0)' : 'translateX(-220px)';
+            queryWorkspaceTransform = compareSidebarOpen ? 'translateX(184px)' : 'translateX(0)';
+            sidebarToggleTransform = compareSidebarOpen ? 'translateX(200px)' : 'translateX(0)';
+            $('#navigation').css('transform', navigationTransform);
+            $('#title_heading, #noscript-message, .query-form').css('transform', queryWorkspaceTransform);
+            sidebarToggle.css('transform', sidebarToggleTransform);
+            var label = compareSidebarOpen
+                ? sidebarToggle.attr('data-hide-label')
+                : sidebarToggle.attr('data-show-label');
+            sidebarToggle
+                .show()
+                .toggleClass('query-sidebar-toggle--nav-open', compareSidebarOpen)
+                .attr('aria-hidden', 'false')
+                .attr('aria-label', label)
+                .attr('title', label)
+                .removeAttr('tabindex');
+        }
+        function lockExplanationDimensions(paneKey) {
+            var paneState = getPaneState(paneKey);
+            var explanation = $('#' + paneState.explanationId);
+            var dotView = $('#' + paneState.dotViewId);
+            var jsonView = $('#' + paneState.jsonViewId);
             var currentHeight = explanation.outerHeight();
             var currentWidth = explanation.outerWidth();
             if (currentHeight) {
@@ -116,10 +238,11 @@ var workbench;
                 jsonView.css('min-width', currentWidth + 'px');
             }
         }
-        function clearExplanationDimensionLock() {
-            var explanation = $('#query-explanation');
-            var dotView = $('#query-explanation-dot-view');
-            var jsonView = $('#query-explanation-json-view');
+        function clearExplanationDimensionLock(paneKey) {
+            var paneState = getPaneState(paneKey);
+            var explanation = $('#' + paneState.explanationId);
+            var dotView = $('#' + paneState.dotViewId);
+            var jsonView = $('#' + paneState.jsonViewId);
             explanation.css('min-height', '');
             explanation.css('min-width', '');
             dotView.css('min-height', '');
@@ -127,15 +250,17 @@ var workbench;
             jsonView.css('min-height', '');
             jsonView.css('min-width', '');
         }
-        function destroyDotPanZoom() {
-            if (dotPanZoomInstance && typeof dotPanZoomInstance.destroy === 'function') {
-                dotPanZoomInstance.destroy();
+        function destroyDotPanZoom(paneKey) {
+            var paneState = getPaneState(paneKey);
+            if (paneState.dotPanZoomInstance && typeof paneState.dotPanZoomInstance.destroy === 'function') {
+                paneState.dotPanZoomInstance.destroy();
             }
-            dotPanZoomInstance = null;
+            paneState.dotPanZoomInstance = null;
         }
-        function clearExplainButtonViewportRestoreState() {
-            explainButtonViewportTopBeforeRequest = null;
-            explainButtonIdBeforeRequest = '';
+        function clearExplainButtonViewportRestoreState(paneKey) {
+            var paneState = getPaneState(paneKey);
+            paneState.explainButtonViewportTopBeforeRequest = null;
+            paneState.explainButtonIdBeforeRequest = '';
         }
         function setExplainButtonsDisabled(disabled) {
             $('#explain-trigger').prop('disabled', disabled);
@@ -245,61 +370,68 @@ var workbench;
             }
             return document.getElementById('explain-trigger');
         }
-        function captureExplainButtonViewportTop(buttonId) {
-            var explainButton = getExplainTriggerButtonElement(buttonId);
+        function captureExplainButtonViewportTop(paneKey, buttonId) {
+            var explainButton = document.getElementById(buttonId)
+                || getExplainTriggerButtonElement(buttonId);
             if (!explainButton) {
-                clearExplainButtonViewportRestoreState();
+                clearExplainButtonViewportRestoreState(paneKey);
                 return;
             }
-            explainButtonViewportTopBeforeRequest = explainButton.getBoundingClientRect().top;
-            explainButtonIdBeforeRequest = explainButton.id;
+            var paneState = getPaneState(paneKey);
+            paneState.explainButtonViewportTopBeforeRequest = explainButton.getBoundingClientRect().top;
+            paneState.explainButtonIdBeforeRequest = explainButton.id;
         }
-        function restoreExplainButtonViewportTopIfNeeded() {
-            if (explainButtonViewportTopBeforeRequest === null) {
+        function restoreExplainButtonViewportTopIfNeeded(paneKey) {
+            var paneState = getPaneState(paneKey);
+            if (paneState.explainButtonViewportTopBeforeRequest === null) {
                 return;
             }
-            var explainButton = explainButtonIdBeforeRequest
-                ? document.getElementById(explainButtonIdBeforeRequest)
+            var explainButton = paneState.explainButtonIdBeforeRequest
+                ? document.getElementById(paneState.explainButtonIdBeforeRequest)
                 : getExplainTriggerButtonElement();
             if (!explainButton) {
-                clearExplainButtonViewportRestoreState();
+                clearExplainButtonViewportRestoreState(paneKey);
                 return;
             }
             window.requestAnimationFrame(function () {
                 var currentButtonTop = explainButton.getBoundingClientRect().top;
-                var scrollDelta = currentButtonTop - explainButtonViewportTopBeforeRequest;
+                var scrollDelta = currentButtonTop - paneState.explainButtonViewportTopBeforeRequest;
                 if (Math.abs(scrollDelta) > 1) {
                     window.scrollBy(0, scrollDelta);
                 }
-                clearExplainButtonViewportRestoreState();
+                clearExplainButtonViewportRestoreState(paneKey);
             });
         }
-        function setExplanationDisplayMode(format) {
+        function setExplanationDisplayMode(paneKey, format) {
+            var paneState = getPaneState(paneKey);
+            var explanation = $('#' + paneState.explanationId);
+            var dotView = $('#' + paneState.dotViewId);
+            var jsonView = $('#' + paneState.jsonViewId);
             if (format === 'dot') {
-                $('#query-explanation').hide();
-                $('#query-explanation-json-view').hide();
-                $('#query-explanation-dot-view').show();
+                explanation.hide();
+                jsonView.hide();
+                dotView.show();
                 return;
             }
             if (format === 'json') {
-                $('#query-explanation').hide();
-                $('#query-explanation-dot-view').hide();
-                $('#query-explanation-json-view').show();
-                destroyDotPanZoom();
+                explanation.hide();
+                dotView.hide();
+                jsonView.show();
+                destroyDotPanZoom(paneKey);
             }
             else {
-                $('#query-explanation').show();
-                $('#query-explanation-dot-view').hide();
-                $('#query-explanation-json-view').hide();
-                destroyDotPanZoom();
+                explanation.show();
+                dotView.hide();
+                jsonView.hide();
+                destroyDotPanZoom(paneKey);
             }
         }
-        function applyDotPanZoom(svgElement) {
-            destroyDotPanZoom();
+        function applyDotPanZoom(paneKey, svgElement) {
+            destroyDotPanZoom(paneKey);
             if (typeof svgPanZoom === 'undefined') {
                 return;
             }
-            dotPanZoomInstance = svgPanZoom(svgElement, {
+            getPaneState(paneKey).dotPanZoomInstance = svgPanZoom(svgElement, {
                 zoomEnabled: true,
                 controlIconsEnabled: true,
                 fit: true,
@@ -308,39 +440,51 @@ var workbench;
                 maxZoom: 20
             });
         }
-        function clearRenderedExplanation() {
-            $('#query-explanation-row').show();
-            $('#query-explanation-controls-row').show();
-            lockExplanationDimensions();
-            $('#query-explanation').text('');
-            var pendingFormat = ($('#explain-format').val() || 'text').toLowerCase();
-            $('#query-explanation').attr('data-format', pendingFormat);
-            latestExplanation = '';
-            latestExplanationFormat = pendingFormat;
-            updateDownloadButtonState();
-            destroyDotPanZoom();
-            $('#query-explanation-dot-view').empty();
-            $('#query-explanation-json-view').empty();
-            setExplanationDisplayMode(pendingFormat);
+        function clearRenderedExplanation(paneKey, pendingFormat) {
+            var paneState = getPaneState(paneKey);
+            $('#' + paneState.explanationRowId).show();
+            if (paneState.explanationControlsRowId) {
+                $('#' + paneState.explanationControlsRowId).show();
+            }
+            lockExplanationDimensions(paneKey);
+            var explanation = $('#' + paneState.explanationId);
+            explanation.text('');
+            var normalizedFormat = (pendingFormat || paneState.latestExplanationFormat || 'text').toLowerCase();
+            explanation.attr('data-format', normalizedFormat);
+            paneState.latestExplanation = '';
+            paneState.latestExplanationFormat = normalizedFormat;
+            if (paneKey !== 'compare') {
+                updateDownloadButtonState();
+                syncPrimaryExplanationControls();
+            }
+            destroyDotPanZoom(paneKey);
+            $('#' + paneState.dotViewId).empty();
+            $('#' + paneState.jsonViewId).empty();
+            setExplanationDisplayMode(paneKey, normalizedFormat);
         }
-        function showExplainError(message) {
+        function showExplainError(paneKey, message) {
+            var paneState = getPaneState(paneKey);
             var errorMessage = message || 'Explain request failed.';
-            clearRenderedExplanation();
-            $('#queryString.errors').text(errorMessage);
-            $('#query-explanation').show().text(errorMessage).attr('data-format', 'text');
-            $('#query-explanation-dot-view').hide().empty();
-            $('#query-explanation-json-view').hide().empty();
-            destroyDotPanZoom();
-            restoreExplainButtonViewportTopIfNeeded();
-            clearExplanationDimensionLock();
+            clearRenderedExplanation(paneKey, 'text');
+            $('#' + paneState.errorId).text(errorMessage);
+            $('#' + paneState.explanationId).show().text(errorMessage).attr('data-format', 'text');
+            $('#' + paneState.dotViewId).hide().empty();
+            $('#' + paneState.jsonViewId).hide().empty();
+            destroyDotPanZoom(paneKey);
+            if (paneKey !== 'compare') {
+                syncPrimaryExplanationControls();
+            }
+            restoreExplainButtonViewportTopIfNeeded(paneKey);
+            clearExplanationDimensionLock(paneKey);
         }
-        function renderDotView(explanationText, format) {
-            var dotView = $('#query-explanation-dot-view');
+        function renderDotView(paneKey, explanationText, format) {
+            var paneState = getPaneState(paneKey);
+            var dotView = $('#' + paneState.dotViewId);
             if (format === 'dot') {
-                setExplanationDisplayMode('dot');
+                setExplanationDisplayMode(paneKey, 'dot');
                 if (!explanationText) {
                     dotView.empty().show();
-                    restoreExplainButtonViewportTopIfNeeded();
+                    restoreExplainButtonViewportTopIfNeeded(paneKey);
                     return;
                 }
                 dotView.html('<div>Rendering DOT graph...</div>').show();
@@ -360,17 +504,17 @@ var workbench;
                         display: 'block'
                     });
                     dotView.empty().append(svgElement).show();
-                    applyDotPanZoom(svgElement);
-                    restoreExplainButtonViewportTopIfNeeded();
+                    applyDotPanZoom(paneKey, svgElement);
+                    restoreExplainButtonViewportTopIfNeeded(paneKey);
                 }).catch(function () {
                     vizRenderer = new Viz();
-                    destroyDotPanZoom();
+                    destroyDotPanZoom(paneKey);
                     dotView.html('<div class="error">Unable to render DOT graph.</div>');
-                    restoreExplainButtonViewportTopIfNeeded();
+                    restoreExplainButtonViewportTopIfNeeded(paneKey);
                 });
                 return;
             }
-            destroyDotPanZoom();
+            destroyDotPanZoom(paneKey);
             dotView.hide().empty();
         }
         function isJsonExpandable(value) {
@@ -554,16 +698,17 @@ var workbench;
             treeElement.appendChild(createJsonTreeNode(explanationJson, '', 0));
             return treeElement;
         }
-        function renderJsonView(explanationText, format) {
-            var jsonView = $('#query-explanation-json-view');
+        function renderJsonView(paneKey, explanationText, format) {
+            var paneState = getPaneState(paneKey);
+            var jsonView = $('#' + paneState.jsonViewId);
             if (format !== 'json') {
                 jsonView.hide().empty();
                 return;
             }
-            setExplanationDisplayMode('json');
+            setExplanationDisplayMode(paneKey, 'json');
             jsonView.empty().show();
             if (!explanationText) {
-                restoreExplainButtonViewportTopIfNeeded();
+                restoreExplainButtonViewportTopIfNeeded(paneKey);
                 return;
             }
             try {
@@ -574,28 +719,34 @@ var workbench;
                 jsonView.append($('<div class="error">Unable to parse JSON explanation. Showing raw content.</div>'));
                 jsonView.append($('<pre class="query-json-view__raw"></pre>').text(explanationText));
             }
-            restoreExplainButtonViewportTopIfNeeded();
+            restoreExplainButtonViewportTopIfNeeded(paneKey);
         }
-        function renderExplanation(explanationText, format) {
+        function renderExplanation(paneKey, explanationText, format) {
+            var paneState = getPaneState(paneKey);
             var normalizedFormat = (format || 'text').toLowerCase();
-            $('#query-explanation-row').show();
-            $('#query-explanation-controls-row').show();
+            $('#' + paneState.explanationRowId).show();
+            if (paneState.explanationControlsRowId) {
+                $('#' + paneState.explanationControlsRowId).show();
+            }
             if (normalizedFormat === 'dot' || normalizedFormat === 'json') {
-                $('#query-explanation').text('').attr('data-format', normalizedFormat);
+                $('#' + paneState.explanationId).text('').attr('data-format', normalizedFormat);
             }
             else {
-                $('#query-explanation').text(explanationText).attr('data-format', normalizedFormat);
+                $('#' + paneState.explanationId).text(explanationText).attr('data-format', normalizedFormat);
             }
-            setExplanationDisplayMode(normalizedFormat);
-            latestExplanation = explanationText;
-            latestExplanationFormat = normalizedFormat;
-            updateDownloadButtonState();
-            renderDotView(explanationText, normalizedFormat);
-            renderJsonView(explanationText, normalizedFormat);
+            setExplanationDisplayMode(paneKey, normalizedFormat);
+            paneState.latestExplanation = explanationText;
+            paneState.latestExplanationFormat = normalizedFormat;
+            if (paneKey !== 'compare') {
+                updateDownloadButtonState();
+                syncPrimaryExplanationControls();
+            }
+            renderDotView(paneKey, explanationText, normalizedFormat);
+            renderJsonView(paneKey, explanationText, normalizedFormat);
             if (normalizedFormat === 'text') {
-                restoreExplainButtonViewportTopIfNeeded();
+                restoreExplainButtonViewportTopIfNeeded(paneKey);
             }
-            clearExplanationDimensionLock();
+            clearExplanationDimensionLock(paneKey);
         }
         function getExplainErrorMessage(jqXHR, textStatus, errorThrown) {
             var response = jqXHR.responseJSON;
@@ -623,34 +774,72 @@ var workbench;
             }
             return 'Explain request failed.';
         }
+        function serializeExplainFormData(queryValue, level, format) {
+            var serializedForm = $('form[action="query"]').serializeArray();
+            var seenAction = false;
+            var seenExplain = false;
+            var seenFormat = false;
+            var seenQuery = false;
+            for (var i = 0; i < serializedForm.length; i++) {
+                if (serializedForm[i].name === 'action') {
+                    serializedForm[i].value = 'explain';
+                    seenAction = true;
+                }
+                else if (serializedForm[i].name === 'explain') {
+                    serializedForm[i].value = level;
+                    seenExplain = true;
+                }
+                else if (serializedForm[i].name === 'explain-format') {
+                    serializedForm[i].value = format;
+                    seenFormat = true;
+                }
+                else if (serializedForm[i].name === 'query') {
+                    serializedForm[i].value = queryValue;
+                    seenQuery = true;
+                }
+            }
+            if (!seenAction) {
+                serializedForm.push({ name: 'action', value: 'explain' });
+            }
+            if (!seenExplain) {
+                serializedForm.push({ name: 'explain', value: level });
+            }
+            if (!seenFormat) {
+                serializedForm.push({ name: 'explain-format', value: format });
+            }
+            if (!seenQuery) {
+                serializedForm.push({ name: 'query', value: queryValue });
+            }
+            return $.param(serializedForm);
+        }
+        function applyExplainResponseToPane(paneKey, response, fallbackFormat) {
+            var responseFormat = response.format || fallbackFormat || 'text';
+            if (response.error) {
+                showExplainError(paneKey, response.error);
+                return;
+            }
+            $('#' + getPaneState(paneKey).errorId).text('');
+            renderExplanation(paneKey, response.content || '', responseFormat);
+        }
         function ajaxExplain(level, requestId) {
-            var form = $('form[action="query"]');
-            var previousAction = $('#action').val();
-            var previousExplain = $('#explain').val();
-            $('#action').val('explain');
-            $('#explain').val(level);
-            var serializedForm = form.serialize();
-            $('#action').val(previousAction);
-            $('#explain').val(previousExplain);
-            $('#queryString.errors').text('');
-            clearRenderedExplanation();
+            var selectedFormat = ($('#explain-format').val() || 'text').toLowerCase();
+            $('#' + primaryPaneState.errorId).text('');
+            clearRenderedExplanation('primary', selectedFormat);
             activeExplainJqXHR = $.ajax({
                 url: 'query',
                 type: 'POST',
                 dataType: 'json',
-                data: serializedForm,
+                data: serializeExplainFormData(getPaneRawQueryValue('primary'), level, selectedFormat),
                 error: function (jqXHR, textStatus, errorThrown) {
                     if (textStatus !== 'abort') {
-                        showExplainError(getExplainErrorMessage(jqXHR, textStatus, errorThrown));
+                        showExplainError('primary', getExplainErrorMessage(jqXHR, textStatus, errorThrown));
                     }
                 },
                 success: function (response) {
-                    if (response.error) {
-                        showExplainError(response.error);
+                    if (requestId !== activeExplainRequestId) {
                         return;
                     }
-                    $('#queryString.errors').text('');
-                    renderExplanation(response.content || '', response.format || $('#explain-format').val());
+                    applyExplainResponseToPane('primary', response, selectedFormat);
                 },
                 complete: function () {
                     activeExplainJqXHR = null;
@@ -675,6 +864,139 @@ var workbench;
                 return 'dot';
             }
             return 'txt';
+        }
+        function hideCompareExplainSpinner() {
+            $('#explain-compare-trigger')
+                .attr('aria-busy', 'false');
+            $('#explain-compare-trigger-icon')
+                .removeClass('query-compare-action__icon--spinning');
+        }
+        function showCompareExplainSpinner() {
+            $('#explain-compare-trigger')
+                .attr('aria-busy', 'true');
+            $('#explain-compare-trigger-icon')
+                .addClass('query-compare-action__icon--spinning');
+        }
+        function setCompareExplainButtonsDisabled(disabled) {
+            $('#explain-compare-trigger').prop('disabled', disabled);
+            $('#explain-trigger').prop('disabled', disabled);
+        }
+        function updateCompareActionState() {
+            var bothQueriesAvailable = compareModeEnabled
+                && getPaneQueryValue('primary').length > 0
+                && getPaneQueryValue('compare').length > 0;
+            $('#query-diff-trigger').prop('disabled', !bothQueriesAvailable || activeComparePendingRequests > 0);
+        }
+        function syncCompareModeVisibility() {
+            $('#query-compare-layout').toggleClass('query-compare-layout--active', compareModeEnabled);
+            $('#query-compare-controls').toggle(compareModeEnabled);
+            $('#explain-trigger').show();
+            if (!compareModeEnabled) {
+                hideCompareExplainSpinner();
+            }
+            syncPrimaryExplanationControls();
+            syncCompareSidebarState();
+            updateCompareActionState();
+        }
+        function splitDiffLines(text) {
+            if (!text) {
+                return [];
+            }
+            return text.replace(/\r\n/g, '\n').split('\n');
+        }
+        function buildDiffRows(leftText, rightText) {
+            var leftLines = splitDiffLines(leftText);
+            var rightLines = splitDiffLines(rightText);
+            var matrix = [];
+            var leftLength = leftLines.length;
+            var rightLength = rightLines.length;
+            for (var rowIndex = 0; rowIndex <= leftLength; rowIndex++) {
+                matrix[rowIndex] = [];
+                for (var columnIndex = 0; columnIndex <= rightLength; columnIndex++) {
+                    matrix[rowIndex][columnIndex] = 0;
+                }
+            }
+            for (var leftIndex = leftLength - 1; leftIndex >= 0; leftIndex--) {
+                for (var rightIndex = rightLength - 1; rightIndex >= 0; rightIndex--) {
+                    if (leftLines[leftIndex] === rightLines[rightIndex]) {
+                        matrix[leftIndex][rightIndex] = matrix[leftIndex + 1][rightIndex + 1] + 1;
+                    }
+                    else {
+                        matrix[leftIndex][rightIndex] = Math.max(matrix[leftIndex + 1][rightIndex], matrix[leftIndex][rightIndex + 1]);
+                    }
+                }
+            }
+            var diffRows = [];
+            var leftPointer = 0;
+            var rightPointer = 0;
+            while (leftPointer < leftLength && rightPointer < rightLength) {
+                if (leftLines[leftPointer] === rightLines[rightPointer]) {
+                    diffRows.push({ marker: ' ', text: leftLines[leftPointer], type: 'context' });
+                    leftPointer += 1;
+                    rightPointer += 1;
+                }
+                else if (matrix[leftPointer + 1][rightPointer] >= matrix[leftPointer][rightPointer + 1]) {
+                    diffRows.push({ marker: '-', text: leftLines[leftPointer], type: 'removed' });
+                    leftPointer += 1;
+                }
+                else {
+                    diffRows.push({ marker: '+', text: rightLines[rightPointer], type: 'added' });
+                    rightPointer += 1;
+                }
+            }
+            while (leftPointer < leftLength) {
+                diffRows.push({ marker: '-', text: leftLines[leftPointer], type: 'removed' });
+                leftPointer += 1;
+            }
+            while (rightPointer < rightLength) {
+                diffRows.push({ marker: '+', text: rightLines[rightPointer], type: 'added' });
+                rightPointer += 1;
+            }
+            return diffRows;
+        }
+        function renderDiffView(targetSelector, leftText, rightText, placeholder) {
+            var target = $(targetSelector);
+            target.empty();
+            if (!leftText && !rightText) {
+                target.text(placeholder || diffNotReadyLabel);
+                return;
+            }
+            var diffRows = buildDiffRows(leftText || '', rightText || '');
+            if (!diffRows.length) {
+                target.text(placeholder || diffNotReadyLabel);
+                return;
+            }
+            for (var i = 0; i < diffRows.length; i++) {
+                var diffRow = diffRows[i];
+                var rowElement = $('<div class="query-diff-row"></div>')
+                    .addClass('query-diff-row--' + diffRow.type);
+                rowElement.append($('<span class="query-diff-row__marker"></span>').text(diffRow.marker));
+                rowElement.append($('<span></span>').text(diffRow.text));
+                target.append(rowElement);
+            }
+        }
+        function beginCompareExplainRequest() {
+            activeCompareRequestId += 1;
+            activeComparePendingRequests = 2;
+            hideCompareExplainSpinner();
+            setCompareExplainButtonsDisabled(true);
+            $('#query-diff-trigger').prop('disabled', true);
+            showCompareExplainSpinner();
+            return activeCompareRequestId;
+        }
+        function finishCompareExplainRequest(requestId) {
+            if (requestId !== activeCompareRequestId) {
+                return;
+            }
+            activeComparePendingRequests -= 1;
+            if (activeComparePendingRequests > 0) {
+                return;
+            }
+            activeComparePendingRequests = 0;
+            activeCompareExplainJqXHRs = [];
+            hideCompareExplainSpinner();
+            setCompareExplainButtonsDisabled(false);
+            updateCompareActionState();
         }
         /**
          * Send a background HTTP request to save the query, and handle the
@@ -794,15 +1116,18 @@ var workbench;
         }
         query_1.doSubmit = doSubmit;
         function runExplain(level, buttonId) {
+            if (compareModeEnabled) {
+                runCompareExplain(buttonId || 'explain-trigger');
+                return;
+            }
             var effectiveLevel = level || $('#explain-level').val() || 'Optimized';
             var explainButton = getExplainTriggerButtonElement(buttonId);
             if (explainButton && explainButton.disabled) {
                 return;
             }
             $('#explain-level').val(effectiveLevel);
-            captureExplainButtonViewportTop(buttonId);
-            if (yasqe)
-                yasqe.save();
+            captureExplainButtonViewportTop('primary', buttonId);
+            savePaneQuery('primary');
             var requestId = beginExplainRequest(explainButton ? explainButton.id : 'explain-trigger');
             ajaxExplain(effectiveLevel, requestId);
         }
@@ -813,14 +1138,70 @@ var workbench;
             }
         }
         query_1.cancelExplain = cancelExplain;
-        function downloadExplanation() {
-            if (!latestExplanation) {
+        function runCompareExplain(buttonId) {
+            if (!compareModeEnabled) {
                 return;
             }
-            var format = latestExplanationFormat || $('#explain-format').val() || 'text';
+            savePaneQuery('primary');
+            savePaneQuery('compare');
+            var effectiveLevel = $('#explain-level').val() || 'Optimized';
+            var selectedFormat = ($('#explain-format').val() || 'text').toLowerCase();
+            var triggerButtonId = buttonId || 'explain-compare-trigger';
+            captureExplainButtonViewportTop('primary', triggerButtonId);
+            captureExplainButtonViewportTop('compare', triggerButtonId);
+            $('#' + primaryPaneState.errorId).text('');
+            $('#' + comparePaneState.errorId).text('');
+            clearRenderedExplanation('primary', selectedFormat);
+            clearRenderedExplanation('compare', selectedFormat);
+            var requestId = beginCompareExplainRequest();
+            var paneKeys = ['primary', 'compare'];
+            for (var i = 0; i < paneKeys.length; i++) {
+                (function (paneKey) {
+                    var compareRequest = $.ajax({
+                        url: 'query',
+                        type: 'POST',
+                        dataType: 'json',
+                        data: serializeExplainFormData(getPaneRawQueryValue(paneKey), effectiveLevel, selectedFormat),
+                        error: function (jqXHR, textStatus, errorThrown) {
+                            if (textStatus !== 'abort' && requestId === activeCompareRequestId) {
+                                showExplainError(paneKey, getExplainErrorMessage(jqXHR, textStatus, errorThrown));
+                            }
+                        },
+                        success: function (response) {
+                            if (requestId !== activeCompareRequestId) {
+                                return;
+                            }
+                            applyExplainResponseToPane(paneKey, response, selectedFormat);
+                        },
+                        complete: function () {
+                            finishCompareExplainRequest(requestId);
+                        }
+                    });
+                    activeCompareExplainJqXHRs.push(compareRequest);
+                })(paneKeys[i]);
+            }
+        }
+        query_1.runCompareExplain = runCompareExplain;
+        function cancelCompareExplain() {
+            activeCompareRequestId += 1;
+            activeComparePendingRequests = 0;
+            for (var i = 0; i < activeCompareExplainJqXHRs.length; i++) {
+                activeCompareExplainJqXHRs[i].abort();
+            }
+            activeCompareExplainJqXHRs = [];
+            hideCompareExplainSpinner();
+            setCompareExplainButtonsDisabled(false);
+            updateCompareActionState();
+        }
+        query_1.cancelCompareExplain = cancelCompareExplain;
+        function downloadExplanation() {
+            if (!primaryPaneState.latestExplanation) {
+                return;
+            }
+            var format = primaryPaneState.latestExplanationFormat || $('#explain-format').val() || 'text';
             var extension = getExplanationDownloadExtension(format);
             var mimeType = getExplanationDownloadMimeType(format);
-            var blob = new Blob([latestExplanation], { type: mimeType + ';charset=utf-8' });
+            var blob = new Blob([primaryPaneState.latestExplanation], { type: mimeType + ';charset=utf-8' });
             var link = document.createElement('a');
             var selectedLevel = $('#explain-level').val() || 'query';
             link.download = 'query-explanation-' + selectedLevel.toLowerCase() + '.' + extension;
@@ -836,24 +1217,29 @@ var workbench;
             var initialFormat = $('#query-explanation').attr('data-format')
                 || $('#explain-format').val() || 'text';
             if (initialExplanation) {
-                renderExplanation(initialExplanation, initialFormat);
+                renderExplanation('primary', initialExplanation, initialFormat);
             }
             else {
-                latestExplanation = '';
-                latestExplanationFormat = initialFormat.toLowerCase();
+                primaryPaneState.latestExplanation = '';
+                primaryPaneState.latestExplanationFormat = initialFormat.toLowerCase();
                 updateDownloadButtonState();
-                renderDotView('', latestExplanationFormat);
-                renderJsonView('', latestExplanationFormat);
+                renderDotView('primary', '', primaryPaneState.latestExplanationFormat);
+                renderJsonView('primary', '', primaryPaneState.latestExplanationFormat);
                 $('#query-explanation-controls-row').hide();
             }
+            comparePaneState.latestExplanation = '';
+            comparePaneState.latestExplanationFormat = 'text';
+            $('#query-explanation-row-compare').hide();
+            renderDotView('compare', '', comparePaneState.latestExplanationFormat);
+            renderJsonView('compare', '', comparePaneState.latestExplanationFormat);
         }
         query_1.initializeExplanationView = initializeExplanationView;
         function setQueryValue(queryString) {
-            yasqe.setValue(queryString.trim());
+            setPaneQueryValue('primary', $.trim(queryString));
         }
         query_1.setQueryValue = setQueryValue;
         function getQueryValue() {
-            return yasqe.getValue().trim();
+            return getPaneQueryValue('primary');
         }
         query_1.getQueryValue = getQueryValue;
         function getYasqe() {
@@ -863,37 +1249,132 @@ var workbench;
         function updateYasqe() {
             if ($("#queryLn").val() == "SPARQL") {
                 initYasqe();
+                if (compareModeEnabled || compareYasqe) {
+                    ensureCompareYasqe();
+                }
             }
             else {
                 closeYasqe();
+                closeCompareYasqe();
             }
+            updateCompareActionState();
         }
         query_1.updateYasqe = updateYasqe;
-        function initYasqe() {
+        function initPaneYasqe(paneKey, clearFeedbackOnChange) {
             workbench.yasqeHelper.setupCompleters(sparqlNamespaces);
-            yasqe = YASQE.fromTextArea(document.getElementById('query'), {
+            var paneEditor = YASQE.fromTextArea(document.getElementById(getPaneState(paneKey).queryId), {
                 consumeShareLink: null //don't try to parse the url args. this is already done by the addLoad function below
             });
-            //some styling conflicts. Could add my own css file, but not a lot of things need changing, so just do this programmatically
-            //first, set the font size (otherwise font is as small as menu, which is too small)
-            //second, keep editor width constrained to its table column
-            $(yasqe.getWrapperElement()).css({
+            $(paneEditor.getWrapperElement()).css({
                 "fontSize": "14px",
                 "width": "100%",
                 "maxWidth": "100%",
                 "boxSizing": "border-box"
             });
-            //we made a change to the css wrapper element (and did so after initialization). So, force a manual update of the yasqe instance
-            yasqe.refresh();
+            if (clearFeedbackOnChange) {
+                paneEditor.on('change', function () {
+                    workbench.query.clearFeedback();
+                    updateCompareActionState();
+                });
+            }
+            else {
+                paneEditor.on('change', updateCompareActionState);
+            }
+            paneEditor.refresh();
+            setPaneQueryEditor(paneKey, paneEditor);
+            return paneEditor;
+        }
+        function initYasqe() {
+            if (yasqe) {
+                yasqe.refresh();
+                return;
+            }
+            initPaneYasqe('primary', true);
+        }
+        function ensureCompareYasqe() {
+            if ($("#queryLn").val() != "SPARQL" || compareYasqe) {
+                return;
+            }
+            initPaneYasqe('compare');
+        }
+        function closeCompareYasqe() {
+            if (compareYasqe) {
+                compareYasqe.toTextArea();
+                compareYasqe = null;
+            }
         }
         function closeYasqe() {
             if (yasqe) {
-                //store yasqe value in text area (not sure whether this is desired, but it mimics current behavior)
-                //it closes the yasqe instance as well
                 yasqe.toTextArea();
                 yasqe = null;
             }
         }
+        function toggleCompareMode() {
+            compareModeEnabled = !compareModeEnabled;
+            if (compareModeEnabled) {
+                compareSidebarOpen = false;
+                if (!compareQuerySeeded && !getPaneQueryValue('compare')) {
+                    setPaneQueryValue('compare', getPaneRawQueryValue('primary'));
+                    compareQuerySeeded = true;
+                }
+                if ($("#queryLn").val() == "SPARQL") {
+                    ensureCompareYasqe();
+                }
+            }
+            else {
+                compareSidebarOpen = false;
+                closeDiffModal();
+            }
+            syncCompareModeVisibility();
+        }
+        query_1.toggleCompareMode = toggleCompareMode;
+        function toggleCompareSidebar() {
+            if (!compareModeEnabled) {
+                return;
+            }
+            compareSidebarOpen = !compareSidebarOpen;
+            syncCompareSidebarState();
+        }
+        query_1.toggleCompareSidebar = toggleCompareSidebar;
+        function openDiffModal() {
+            if (!compareModeEnabled) {
+                return;
+            }
+            lastDiffTriggerElement = document.getElementById('query-diff-trigger');
+            renderDiffView('#query-diff-query', getPaneRawQueryValue('primary'), getPaneRawQueryValue('compare'));
+            if (!primaryPaneState.latestExplanation || !comparePaneState.latestExplanation) {
+                $('#query-diff-explanation').text(diffNotReadyLabel);
+            }
+            else {
+                renderDiffView('#query-diff-explanation', primaryPaneState.latestExplanation, comparePaneState.latestExplanation, diffNotReadyLabel);
+            }
+            $('#query-diff-modal')
+                .addClass('query-diff-modal--open')
+                .attr('aria-hidden', 'false');
+            document.getElementById('query-diff-close').focus();
+        }
+        query_1.openDiffModal = openDiffModal;
+        function closeDiffModal() {
+            $('#query-diff-modal')
+                .removeClass('query-diff-modal--open')
+                .attr('aria-hidden', 'true');
+            if (lastDiffTriggerElement) {
+                lastDiffTriggerElement.focus();
+            }
+        }
+        query_1.closeDiffModal = closeDiffModal;
+        function initializeCompareUi() {
+            compareSidebarOpen = false;
+            $('#query-compare-controls').hide();
+            $('#query-diff-modal').attr('aria-hidden', 'true');
+            diffNotReadyLabel = $.trim($('#query-diff-explanation').text());
+            syncCompareModeVisibility();
+        }
+        query_1.initializeCompareUi = initializeCompareUi;
+        function refreshCompareActionState() {
+            updateCompareActionState();
+        }
+        query_1.refreshCompareActionState = refreshCompareActionState;
     })(query = workbench.query || (workbench.query = {}));
 })(workbench || (workbench = {}));
 workbench.addLoad(function queryPageLoaded() {
@@ -956,6 +1437,7 @@ workbench.addLoad(function queryPageLoaded() {
     // whitespace.
     workbench.query.setQueryValue($.trim(workbench.query.getQueryValue()));
     workbench.query.initializeExplanationView();
+    workbench.query.initializeCompareUi();
     // Add click handlers identifying the clicked element in a hidden 'action'
     // form field.
     var addHandler = function (id, callback) {
@@ -978,10 +1460,24 @@ workbench.addLoad(function queryPageLoaded() {
     // Add event handlers to the save name field to react to changes in it.
     $('#query-name').bind('keydown cut paste', workbench.query.handleNameChange);
     // Add event handlers to the query text area to react to changes in it.
-    $('#query').bind('keydown cut paste', workbench.query.clearFeedback);
-    if (workbench.query.getYasqe()) {
-        workbench.query.getYasqe().on('change', workbench.query.clearFeedback);
-    }
+    $('#query').bind('keydown cut paste', function () {
+        workbench.query.clearFeedback();
+        workbench.query.refreshCompareActionState();
+    });
+    $('#query-compare').bind('keydown cut paste', function () {
+        workbench.query.clearFeedback();
+        workbench.query.refreshCompareActionState();
+    });
+    $('#query-diff-modal').click(function (event) {
+        if (event.target && event.target.id === 'query-diff-modal') {
+            workbench.query.closeDiffModal();
+        }
+    });
+    $(document).keydown(function (event) {
+        if (event.key === 'Escape' && $('#query-diff-modal').hasClass('query-diff-modal--open')) {
+            workbench.query.closeDiffModal();
+        }
+    });
     // Detect if there is no current authenticated user, and if so, disable
     // the 'save privately' option.
     if ($('#selected-user>span').is('.disabled')) {

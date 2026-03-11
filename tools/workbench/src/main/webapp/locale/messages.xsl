@@ -79,6 +79,16 @@
 	<variable name="clear.label">Clear</variable>
 	<variable name="execute.label">Execute</variable>
 	<variable name="explain-query.label">Explain Query</variable>
+	<variable name="compare.label">Compare</variable>
+	<variable name="compare-query.label">Compare query</variable>
+	<variable name="show-menu.label">Show menu</variable>
+	<variable name="hide-menu.label">Hide menu</variable>
+	<variable name="explain-both.label">Explain both</variable>
+	<variable name="refresh-explanations.label">Refresh explanations</variable>
+	<variable name="diff.label">Diff</variable>
+	<variable name="query-diff.title">Query diff</variable>
+	<variable name="explanation-diff.title">Explanation diff</variable>
+	<variable name="diff-not-ready.label">Run Explain both to compare explanations.</variable>
 	<variable name="explain-format.label">Explain format</variable>
 	<variable name="download-explanation.label">Download explanation</variable>
 	<variable name="change-server.label">RDF4J Server URL</variable>

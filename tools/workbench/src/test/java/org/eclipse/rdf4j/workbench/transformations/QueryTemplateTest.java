@@ -50,7 +50,8 @@ class QueryTemplateTest {
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 
 		assertThat(queryScript)
-				.contains("$('#query-explanation').text('');")
+				.contains("function clearRenderedExplanation(paneKey: string")
+				.contains("explanation.text('');")
 				.contains("jqXHR.responseText")
 				.contains("css('min-height'")
 				.contains("css('min-width'");
@@ -61,7 +62,7 @@ class QueryTemplateTest {
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 
 		assertThat(queryScript)
-				.contains("function lockExplanationDimensions()")
+				.contains("function lockExplanationDimensions(paneKey?: string)")
 				.contains("var currentHeight = explanation.outerHeight();")
 				.contains("var currentWidth = explanation.outerWidth();")
 				.doesNotContain("var dotHeight = dotView.outerHeight();")
@@ -84,17 +85,11 @@ class QueryTemplateTest {
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 
 		assertThat(queryScript)
-				.containsPattern(
-						"function ajaxExplain\\([^)]*\\) \\{[\\s\\S]*var previousAction = \\$\\('#action'\\)\\.val\\(\\);")
-				.containsPattern(
-						"function ajaxExplain\\([^)]*\\) \\{[\\s\\S]*var previousExplain = \\$\\('#explain'\\)\\.val\\(\\);")
-				.containsPattern(
-						"function ajaxExplain\\([^)]*\\) \\{[\\s\\S]*var serializedForm = form\\.serialize\\(\\);")
-				.containsPattern(
-						"function ajaxExplain\\([^)]*\\) \\{[\\s\\S]*\\$\\('#action'\\)\\.val\\(previousAction\\);")
-				.containsPattern(
-						"function ajaxExplain\\([^)]*\\) \\{[\\s\\S]*\\$\\('#explain'\\)\\.val\\(previousExplain\\);")
-				.containsPattern("function ajaxExplain\\([^)]*\\) \\{[\\s\\S]*data: serializedForm");
+				.contains("function serializeExplainFormData(")
+				.contains("serializedForm[i].name === 'action'")
+				.contains("serializedForm[i].name === 'explain'")
+				.contains("serializedForm[i].name === 'query'")
+				.containsPattern("function ajaxExplain\\([^)]*\\) \\{[\\s\\S]*data: serializeExplainFormData");
 	}
 
 	@Test
@@ -165,17 +160,20 @@ class QueryTemplateTest {
 				.contains("width:100%")
 				.contains("padding:0;")
 				.contains("height:75vh")
-				.containsPattern("#query-explanation-dot-view\\s*\\{[^}]*height:75vh")
-				.doesNotContainPattern("#query-explanation-dot-view\\s*\\{[^}]*max-height");
+				.containsPattern(
+						"#query-explanation-dot-view,\\s*#query-explanation-dot-view-compare\\s*\\{[^}]*height:75vh")
+				.doesNotContainPattern(
+						"#query-explanation-dot-view,\\s*#query-explanation-dot-view-compare\\s*\\{[^}]*max-height");
 
 		assertThat(queryScript)
 				.contains("svgPanZoom(")
-				.contains("$('#query-explanation').hide()")
-				.contains("$('#query-explanation').show()")
+				.contains("function setExplanationDisplayMode(paneKey: string, format: string)")
+				.contains("explanation.hide();")
+				.contains("explanation.show();")
 				.contains("width: '100%'")
 				.contains("maxWidth: '100%'")
-				.contains("captureExplainButtonViewportTop(buttonId);")
-				.contains("restoreExplainButtonViewportTopIfNeeded();")
+				.contains("captureExplainButtonViewportTop('primary', buttonId);")
+				.contains("restoreExplainButtonViewportTopIfNeeded(paneKey);")
 				.doesNotContain("shouldRestoreButtonViewportOnDotRender")
 				.doesNotContain("format !== 'dot'");
 	}
@@ -237,6 +235,99 @@ class QueryTemplateTest {
 		assertThat(queryScript)
 				.contains("\"width\": \"100%\"")
 				.contains("\"maxWidth\": \"100%\"");
+	}
+
+	@Test
+	void queryTemplateShouldExposeCompareModeRailAndDiffModal() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains("id=\"compare-toggle\"")
+				.contains("id=\"primary-explain-repeat-controls\"")
+				.contains("id=\"query-sidebar-toggle\"")
+				.contains("id=\"query-sidebar-toggle-icon\"")
+				.contains("class=\"query-sidebar-toggle__icon\"")
+				.contains("class=\"query-sidebar-toggle__svg\"")
+				.contains("class=\"query-sidebar-toggle__stroke\"")
+				.contains("<path class=\"query-sidebar-toggle__stroke\" d=\"M5 7.5H19\"></path>")
+				.contains("<path class=\"query-sidebar-toggle__stroke\" d=\"M5 12H19\"></path>")
+				.contains("<path class=\"query-sidebar-toggle__stroke\" d=\"M5 16.5H19\"></path>")
+				.doesNotContain("<path class=\"query-sidebar-toggle__stroke\" d=\"M18 7.5H8\"></path>")
+				.doesNotContain("<path class=\"query-sidebar-toggle__stroke\" d=\"M11.5 4L8 7.5L11.5 11\"></path>")
+				.contains("data-show-label=\"{$show-menu.label}\"")
+				.contains("data-hide-label=\"{$hide-menu.label}\"")
+				.contains("body.query-compare-mode #navigation")
+				.contains("body.query-compare-mode #content")
+				.containsPattern("body\\.query-compare-mode #navigation\\s*\\{[^}]*z-index:1002;")
+				.contains("body.query-compare-mode.query-compare-nav-open #navigation")
+				.contains("id=\"query-compare-layout\"")
+				.contains("id=\"query-compare\"")
+				.contains("id=\"query-explanation-compare\"")
+				.contains("id=\"query-compare-controls\"")
+				.contains("id=\"explain-compare-trigger\"")
+				.contains("id=\"query-diff-trigger\"")
+				.contains("id=\"query-diff-modal\"")
+				.contains("id=\"query-diff-query\"")
+				.contains("id=\"query-diff-explanation\"")
+				.contains("class=\"query-compare-action\"")
+				.contains("id=\"query-diff-trigger-icon\"")
+				.contains("class=\"query-compare-action__icon\"")
+				.contains("class=\"query-compare-action__svg query-compare-action__svg--diff\"")
+				.contains("class=\"query-compare-action__stroke\"")
+				.contains("<path class=\"query-compare-action__stroke\" d=\"M4 8H16\"></path>")
+				.contains("<path class=\"query-compare-action__stroke\" d=\"M12.5 4.5L16 8L12.5 11.5\"></path>")
+				.contains("<path class=\"query-compare-action__stroke\" d=\"M20 16H8\"></path>")
+				.contains("<path class=\"query-compare-action__stroke\" d=\"M11.5 12.5L8 16L11.5 19.5\"></path>")
+				.doesNotContain("query-diff-glyph__divider")
+				.doesNotContain("query-diff-glyph__edge--left")
+				.doesNotContain("query-diff-glyph__edge--right")
+				.contains("aria-label=\"{$refresh-explanations.label}\"")
+				.contains("aria-label=\"{$diff.label}\"")
+				.contains(".query-compare-layout")
+				.contains(".query-compare-action__svg--diff")
+				.contains(".query-diff-modal")
+				.contains("--query-diff-modal-padding:clamp(1rem, 3vw, 2rem);")
+				.contains("padding:var(--query-diff-modal-padding);")
+				.contains("height:calc(100vh - (var(--query-diff-modal-padding) * 2));")
+				.contains("max-height:calc(100vh - (var(--query-diff-modal-padding) * 2));")
+				.contains("grid-template-columns:minmax(0, 1fr);")
+				.contains("grid-template-rows:repeat(2, minmax(0, 1fr));")
+				.contains(".query-diff-view")
+				.doesNotContain("max-height:32vh;")
+				.doesNotContain("grid-template-columns:repeat(2, minmax(0, 1fr));")
+				.containsPattern(
+						"id=\"query-explanation-controls-row\"[\\s\\S]*id=\"download-explanation\"[\\s\\S]*id=\"compare-toggle\"")
+				.containsPattern("</form>\\s*<div id=\"query-diff-modal\"")
+				.doesNotContainPattern("id=\"save\"[\\s\\S]*id=\"compare-toggle\"[\\s\\S]*id=\"query-name\"")
+				.doesNotContain("id=\"compare-explain-format\"")
+				.doesNotContain("id=\"compare-explain-level\"");
+	}
+
+	@Test
+	void queryScriptShouldManageCompareEditorsAndDiffModalState() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.contains("var compareYasqe: YASQE_Instance = null;")
+				.contains("var compareSidebarOpen = false;")
+				.contains("function ensureCompareYasqe()")
+				.contains("function syncCompareSidebarState()")
+				.contains("function toggleCompareMode()")
+				.contains("function toggleCompareSidebar()")
+				.contains("function runCompareExplain(")
+				.contains("function openDiffModal()")
+				.contains("function closeDiffModal()")
+				.contains("function renderDiffView(")
+				.contains("function buildDiffRows(")
+				.contains("function serializeExplainFormData(")
+				.contains("function applyExplainResponseToPane(")
+				.contains("query-compare-mode")
+				.contains("query-compare-nav-open")
+				.contains("$('#query-sidebar-toggle')")
+				.doesNotContain("$('#explain-trigger').toggle(!compareModeEnabled);")
+				.doesNotContain(".text('☰')")
+				.doesNotContain(".text(compareSidebarOpen ? '×' : '☰')");
 	}
 
 	@Test

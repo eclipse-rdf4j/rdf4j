@@ -95,6 +95,105 @@
 					gap:0.1em;
 				}
 
+				.query-form__field--controls-group {
+					display:flex;
+					flex-wrap:wrap;
+					align-items:center;
+					gap:0.1em;
+				}
+
+				#query-sidebar-toggle {
+					display:none;
+					position:fixed;
+					top:6.75rem;
+					left:0.9rem;
+					z-index:1001;
+					width:2.35rem;
+					height:2.35rem;
+					padding:0;
+					border:1px solid #234e73;
+					border-radius:0.9rem;
+					background:#ffffff;
+					color:#234e73;
+					box-shadow:0 10px 24px rgba(12, 25, 36, 0.16);
+					cursor:pointer;
+					transform:translateX(0);
+					transition:transform 0.22s ease, background 0.16s ease, box-shadow 0.16s ease;
+				}
+
+				#query-sidebar-toggle:hover {
+					background:#eef5fb;
+				}
+
+				body.query-compare-mode #query-sidebar-toggle {
+					display:inline-flex;
+					align-items:center;
+					justify-content:center;
+				}
+
+				.query-sidebar-toggle__icon {
+					display:inline-flex;
+					align-items:center;
+					justify-content:center;
+					width:1.1rem;
+					height:1.1rem;
+				}
+
+				.query-sidebar-toggle__svg {
+					display:block;
+					width:100%;
+					height:100%;
+				}
+
+				.query-sidebar-toggle__stroke {
+					fill:none;
+					stroke:currentColor;
+					stroke-width:2.25;
+					stroke-linecap:round;
+					stroke-linejoin:round;
+					vector-effect:non-scaling-stroke;
+				}
+
+					body.query-compare-mode #navigation {
+						transform:translateX(-220px);
+						z-index:1002;
+						opacity:0;
+						visibility:hidden;
+						pointer-events:none;
+						transition:transform 0.22s ease, opacity 0.22s ease, visibility 0s linear 0.22s;
+					}
+
+				body.query-compare-mode #content {
+					margin-left:1rem;
+					transition:margin-left 0.22s ease;
+				}
+
+				body.query-compare-mode #title_heading,
+				body.query-compare-mode #noscript-message,
+				body.query-compare-mode .query-form {
+					transform:translateX(0);
+					transition:transform 0.22s ease;
+				}
+
+				body.query-compare-mode.query-compare-nav-open #navigation {
+					transform:translateX(0);
+					opacity:1;
+					visibility:visible;
+					pointer-events:auto;
+					transition-delay:0s;
+					box-shadow:0 14px 30px rgba(12, 25, 36, 0.2);
+				}
+
+				body.query-compare-mode.query-compare-nav-open #title_heading,
+				body.query-compare-mode.query-compare-nav-open #noscript-message,
+				body.query-compare-mode.query-compare-nav-open .query-form {
+					transform:translateX(184px);
+				}
+
+				body.query-compare-mode.query-compare-nav-open #query-sidebar-toggle {
+					transform:translateX(200px);
+				}
+
 				.query-form__field--actions #query-name {
 					min-width:14em;
 				}
@@ -138,7 +237,13 @@
 					max-width:100%;
 				}
 
-				#query-explanation {
+				#query-compare {
+					width:100%;
+					max-width:100%;
+				}
+
+				#query-explanation,
+				#query-explanation-compare {
 					max-height:none;
 					width:100%;
 					max-width:100%;
@@ -153,7 +258,8 @@
 					box-sizing:border-box;
 				}
 
-				#query-explanation-dot-view {
+				#query-explanation-dot-view,
+				#query-explanation-dot-view-compare {
 					display:none;
 					background:#ffffff;
 					border:1px solid #d0d0d0;
@@ -165,7 +271,8 @@
 					height:75vh;
 				}
 
-				#query-explanation-json-view {
+				#query-explanation-json-view,
+				#query-explanation-json-view-compare {
 					display:none;
 					background:#ffffff;
 					border:1px solid #d0d0d0;
@@ -276,7 +383,223 @@
 					font-style:italic;
 				}
 
-				@media (max-width: 900px) {
+				.query-compare-layout {
+					display:grid;
+					grid-template-columns:minmax(0, 1fr);
+					gap:1rem;
+					align-items:start;
+				}
+
+				.query-compare-pane {
+					min-width:0;
+				}
+
+				.query-compare-pane--secondary,
+				#query-compare-controls {
+					display:none;
+				}
+
+				.query-compare-layout--active {
+					grid-template-columns:minmax(0, 1fr) auto minmax(0, 1fr);
+				}
+
+				.query-compare-layout--active .query-compare-pane--secondary {
+					display:block;
+				}
+
+				.query-compare-layout--active #query-compare-controls {
+					display:flex;
+				}
+
+				#query-compare-controls {
+					flex-direction:column;
+					gap:0.45rem;
+					align-items:center;
+					justify-content:center;
+					width:2.6rem;
+				}
+
+				.query-compare-action {
+					display:inline-flex;
+					align-items:center;
+					justify-content:center;
+					width:2.3rem;
+					height:2.3rem;
+					padding:0;
+					border:1px solid #c7d3df;
+					border-radius:0.75rem;
+					background:#ffffff;
+					color:#234e73;
+					box-shadow:0 8px 18px rgba(12, 25, 36, 0.12);
+					cursor:pointer;
+					transition:transform 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+				}
+
+				.query-compare-action:hover {
+					background:#eef5fb;
+					transform:translateY(-1px);
+				}
+
+				.query-compare-action:focus {
+					outline:2px solid #5a9ad6;
+					outline-offset:2px;
+				}
+
+				.query-compare-action[disabled] {
+					opacity:0.45;
+					cursor:not-allowed;
+					box-shadow:none;
+					transform:none;
+				}
+
+				.query-compare-action__icon {
+					display:inline-flex;
+					align-items:center;
+					justify-content:center;
+					line-height:1;
+					color:currentColor;
+				}
+
+				.query-compare-action__svg {
+					display:block;
+					width:1.2rem;
+					height:1.2rem;
+				}
+
+				.query-compare-action__stroke {
+					fill:none;
+					stroke:currentColor;
+					stroke-width:2.1;
+					stroke-linecap:round;
+					stroke-linejoin:round;
+					vector-effect:non-scaling-stroke;
+				}
+
+				.query-compare-action__icon--spinning {
+					animation:query-explain-spinner-spin 0.8s linear infinite;
+				}
+
+				.query-compare-action__icon--refresh {
+					width:1rem;
+					height:1rem;
+					font-size:0.95rem;
+					transform-origin:center;
+				}
+
+				.query-compare-action__svg--diff {
+					width:1.2rem;
+					height:1.2rem;
+				}
+
+					.query-diff-modal {
+						--query-diff-modal-padding:clamp(1rem, 3vw, 2rem);
+						display:none;
+						position:fixed;
+						inset:0;
+						z-index:999;
+						background:rgba(12, 25, 36, 0.7);
+						align-items:stretch;
+						justify-content:center;
+						padding:var(--query-diff-modal-padding);
+						box-sizing:border-box;
+					}
+
+				.query-diff-modal--open {
+					display:flex;
+				}
+
+					.query-diff-modal__dialog {
+						background:#ffffff;
+						color:#1f2328;
+						width:calc(100vw - (var(--query-diff-modal-padding) * 2));
+						height:calc(100vh - (var(--query-diff-modal-padding) * 2));
+						max-width:1400px;
+						max-height:calc(100vh - (var(--query-diff-modal-padding) * 2));
+						margin:0 auto;
+						border-radius:12px;
+						box-shadow:0 18px 50px rgba(15, 23, 42, 0.35);
+						display:flex;
+						flex-direction:column;
+						overflow:hidden;
+						box-sizing:border-box;
+					}
+
+				.query-diff-modal__header {
+					display:flex;
+					align-items:center;
+					justify-content:space-between;
+					gap:1rem;
+					padding:1rem 1.25rem;
+					border-bottom:1px solid #d0d7de;
+				}
+
+				.query-diff-modal__title {
+					font-size:1.15rem;
+					font-weight:700;
+				}
+
+					.query-diff-modal__body {
+						display:grid;
+						grid-template-columns:minmax(0, 1fr);
+						gap:1rem;
+						padding:1rem 1.25rem 1.25rem 1.25rem;
+						flex:1 1 auto;
+						min-height:0;
+						overflow:hidden;
+					}
+
+					.query-diff-section {
+						display:flex;
+						flex-direction:column;
+						gap:0.5rem;
+						min-height:0;
+					}
+
+				.query-diff-section__title {
+					font-weight:700;
+					color:#234e73;
+				}
+
+					.query-diff-view {
+						border:1px solid #d0d7de;
+						border-radius:8px;
+						background:#f8fafc;
+						font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+						font-size:0.9rem;
+						line-height:1.45;
+						flex:1 1 auto;
+						min-height:0;
+						overflow:auto;
+						max-height:30vh;
+					}
+
+				.query-diff-row {
+					display:grid;
+					grid-template-columns:auto 1fr;
+					gap:0.75rem;
+					padding:0.15rem 0.75rem;
+					white-space:pre;
+				}
+
+				.query-diff-row__marker {
+					font-weight:700;
+				}
+
+				.query-diff-row--added {
+					background:#ecfdf3;
+					color:#116329;
+				}
+
+				.query-diff-row--removed {
+					background:#fff1f0;
+					color:#9f1d1d;
+				}
+
+				.query-diff-row--context {
+					color:#334155;
+				}
+
+					@media (max-width: 900px) {
 					.query-form__row {
 						grid-template-columns:minmax(0, 1fr);
 					}
@@ -288,7 +611,23 @@
 					.query-form__label:after {
 						content:'';
 					}
-				}
+
+					#query-sidebar-toggle {
+						top:5.75rem;
+						left:0.75rem;
+					}
+
+					.query-compare-layout--active {
+						grid-template-columns:minmax(0, 1fr);
+					}
+
+						#query-compare-controls {
+							flex-direction:row;
+							justify-content:flex-start;
+							width:auto;
+						}
+
+					}
 
 				.yasqe .CodeMirror {
 					height: auto;
@@ -302,6 +641,20 @@
 					overflow-x: auto;
 				}
 			</style>
+			<button id="query-sidebar-toggle" type="button"
+				aria-hidden="true" tabindex="-1"
+				data-show-label="{$show-menu.label}"
+				data-hide-label="{$hide-menu.label}"
+				onclick="workbench.query.toggleCompareSidebar()">
+				<span id="query-sidebar-toggle-icon" class="query-sidebar-toggle__icon" aria-hidden="true">
+					<svg class="query-sidebar-toggle__svg" viewBox="0 0 24 24" focusable="false"
+						aria-hidden="true">
+						<path class="query-sidebar-toggle__stroke" d="M5 7.5H19"></path>
+						<path class="query-sidebar-toggle__stroke" d="M5 12H19"></path>
+						<path class="query-sidebar-toggle__stroke" d="M5 16.5H19"></path>
+					</svg>
+				</span>
+			</button>
 			<div class="query-form">
 				<div id="query-language-row" class="query-form__row">
 					<xsl:if test="$hideQueryLanguageRow">
@@ -329,86 +682,148 @@
 						</select>
 					</div>
 				</div>
-				<div class="query-form__row query-form__row--stacked">
-					<label class="query-form__label" for="query">
-						<xsl:value-of select="$query-string.label" />
-					</label>
-					<div class="query-form__field">
-						<textarea id="query" name="query" rows="16" cols="80" wrap="soft">
-							<xsl:value-of select="$query" />
-						</textarea>
-					</div>
-				</div>
-				<div class="query-form__row">
-					<span class="query-form__label query-form__label--blank"></span>
-					<div class="query-form__field">
-						<span id="queryString.errors" class="error">
-							<xsl:value-of select="//sparql:binding[@name='error-message']" />
-						</span>
-					</div>
-				</div>
-				<div id="query-explanation-row" class="query-form__row query-form__row--stacked">
-					<xsl:if test="string-length(normalize-space($explanation)) = 0">
-						<xsl:attribute name="style">display:none;</xsl:attribute>
-					</xsl:if>
-					<span class="query-form__label">
-						<xsl:value-of select="$query-explanation.label" />
-					</span>
-					<div class="query-form__field">
-						<pre id="query-explanation" style="margin-top:0; margin-bottom: 0; max-height:75vh; overflow:scroll;"
-							data-format="{normalize-space($explanationFormat)}">
-							<xsl:value-of select="$explanation" />
-						</pre>
-						<div id="query-explanation-dot-view"></div>
-						<div id="query-explanation-json-view"></div>
-					</div>
-				</div>
-				<div id="query-explanation-controls-row" class="">
-					<xsl:if test="string-length(normalize-space($explanation)) = 0">
-						<xsl:attribute name="style">display:none;</xsl:attribute>
-					</xsl:if>
-<!--					<span class="query-form__label query-form__label&#45;&#45;blank"></span>-->
-					<div class="query-form__field query-form__field--controls">
-						<select id="explain-format" name="explain-format">
-							<option value="text">
-								<xsl:if test="normalize-space($explanationFormat) = '' or normalize-space($explanationFormat) = 'text'">
-									<xsl:attribute name="selected">selected</xsl:attribute>
-								</xsl:if>
-								Text
-							</option>
-							<option value="dot">
-								<xsl:if test="normalize-space($explanationFormat) = 'dot'">
-									<xsl:attribute name="selected">selected</xsl:attribute>
-								</xsl:if>
-								DOT
-							</option>
-							<option value="json">
-								<xsl:if test="normalize-space($explanationFormat) = 'json'">
-									<xsl:attribute name="selected">selected</xsl:attribute>
-								</xsl:if>
-								JSON
-							</option>
-						</select>
-						<select id="explain-level">
-							<option value="Unoptimized">Unoptimized</option>
-							<option value="Optimized" selected="selected">Optimized</option>
-							<option value="Executed">Executed</option>
-							<option value="Telemetry">Telemetry</option>
-							<option value="Timed">Timed</option>
-						</select>
-						<input id="rerun-explanation" type="button"
-							value="{$explain-query.label}" onclick="workbench.query.runExplain(null, 'rerun-explanation')" />
-						<span id="rerun-explanation-spinner" class="query-explain-spinner"
-							aria-hidden="true"></span>
-						<input id="rerun-explanation-cancel" class="query-explain-cancel"
-							type="button" value="{$cancel.label}" onclick="workbench.query.cancelExplain()"
-							aria-hidden="true" disabled="disabled" />
-						<input id="download-explanation" type="button"
-							value="{$download-explanation.label}">
+				<div id="query-compare-layout" class="query-compare-layout">
+					<div id="query-primary-pane" class="query-compare-pane query-compare-pane--primary">
+						<div class="query-form__row query-form__row--stacked">
+							<label class="query-form__label" for="query">
+								<xsl:value-of select="$query-string.label" />
+							</label>
+							<div class="query-form__field">
+								<textarea id="query" name="query" rows="16" cols="80" wrap="soft">
+									<xsl:value-of select="$query" />
+								</textarea>
+							</div>
+						</div>
+						<div class="query-form__row">
+							<span class="query-form__label query-form__label--blank"></span>
+							<div class="query-form__field">
+								<span id="queryString.errors" class="error">
+									<xsl:value-of select="//sparql:binding[@name='error-message']" />
+								</span>
+							</div>
+						</div>
+						<div id="query-explanation-row" class="query-form__row query-form__row--stacked">
 							<xsl:if test="string-length(normalize-space($explanation)) = 0">
-								<xsl:attribute name="disabled">disabled</xsl:attribute>
+								<xsl:attribute name="style">display:none;</xsl:attribute>
 							</xsl:if>
-						</input>
+							<span class="query-form__label">
+								<xsl:value-of select="$query-explanation.label" />
+							</span>
+							<div class="query-form__field">
+								<pre id="query-explanation"
+									style="margin-top:0; margin-bottom: 0; max-height:75vh; overflow:scroll;"
+									data-format="{normalize-space($explanationFormat)}">
+									<xsl:value-of select="$explanation" />
+								</pre>
+								<div id="query-explanation-dot-view"></div>
+								<div id="query-explanation-json-view"></div>
+							</div>
+						</div>
+						<div id="query-explanation-controls-row" class="">
+							<xsl:if test="string-length(normalize-space($explanation)) = 0">
+								<xsl:attribute name="style">display:none;</xsl:attribute>
+							</xsl:if>
+							<div class="query-form__field query-form__field--controls">
+								<span id="primary-explain-settings" class="query-form__field--controls-group">
+									<select id="explain-format" name="explain-format">
+										<option value="text">
+											<xsl:if test="normalize-space($explanationFormat) = '' or normalize-space($explanationFormat) = 'text'">
+												<xsl:attribute name="selected">selected</xsl:attribute>
+											</xsl:if>
+											Text
+										</option>
+										<option value="dot">
+											<xsl:if test="normalize-space($explanationFormat) = 'dot'">
+												<xsl:attribute name="selected">selected</xsl:attribute>
+											</xsl:if>
+											DOT
+										</option>
+										<option value="json">
+											<xsl:if test="normalize-space($explanationFormat) = 'json'">
+												<xsl:attribute name="selected">selected</xsl:attribute>
+											</xsl:if>
+											JSON
+										</option>
+									</select>
+									<select id="explain-level">
+										<option value="Unoptimized">Unoptimized</option>
+										<option value="Optimized" selected="selected">Optimized</option>
+										<option value="Executed">Executed</option>
+										<option value="Telemetry">Telemetry</option>
+										<option value="Timed">Timed</option>
+									</select>
+								</span>
+								<span id="primary-explain-repeat-controls" class="query-form__field--controls-group">
+									<input id="rerun-explanation" type="button"
+										value="{$explain-query.label}"
+										onclick="workbench.query.runExplain(null, 'rerun-explanation')" />
+									<span id="rerun-explanation-spinner" class="query-explain-spinner"
+										aria-hidden="true"></span>
+									<input id="rerun-explanation-cancel" class="query-explain-cancel"
+										type="button" value="{$cancel.label}" onclick="workbench.query.cancelExplain()"
+										aria-hidden="true" disabled="disabled" />
+								</span>
+								<input id="download-explanation" type="button"
+									value="{$download-explanation.label}">
+									<xsl:if test="string-length(normalize-space($explanation)) = 0">
+										<xsl:attribute name="disabled">disabled</xsl:attribute>
+									</xsl:if>
+								</input>
+								<input id="compare-toggle" type="button"
+									value="{$compare.label}" onclick="workbench.query.toggleCompareMode()" />
+							</div>
+						</div>
+					</div>
+					<div id="query-compare-controls">
+						<button id="explain-compare-trigger" class="query-compare-action" type="button"
+							aria-label="{$refresh-explanations.label}" title="{$refresh-explanations.label}"
+							onclick="workbench.query.runCompareExplain()">
+							<span id="explain-compare-trigger-icon"
+								class="query-compare-action__icon query-compare-action__icon--refresh"
+								aria-hidden="true">&#10227;</span>
+						</button>
+						<button id="query-diff-trigger" class="query-compare-action" type="button"
+							aria-label="{$diff.label}" title="{$diff.label}"
+							onclick="workbench.query.openDiffModal()" disabled="disabled">
+							<span id="query-diff-trigger-icon" class="query-compare-action__icon"
+								aria-hidden="true">
+								<svg class="query-compare-action__svg query-compare-action__svg--diff"
+									viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+									<path class="query-compare-action__stroke" d="M4 8H16"></path>
+									<path class="query-compare-action__stroke" d="M12.5 4.5L16 8L12.5 11.5"></path>
+									<path class="query-compare-action__stroke" d="M20 16H8"></path>
+									<path class="query-compare-action__stroke" d="M11.5 12.5L8 16L11.5 19.5"></path>
+								</svg>
+							</span>
+						</button>
+					</div>
+					<div id="query-compare-pane" class="query-compare-pane query-compare-pane--secondary">
+						<div class="query-form__row query-form__row--stacked">
+							<label class="query-form__label" for="query-compare">
+								<xsl:value-of select="$compare-query.label" />
+							</label>
+							<div class="query-form__field">
+								<textarea id="query-compare" rows="16" cols="80" wrap="soft"></textarea>
+							</div>
+						</div>
+						<div class="query-form__row">
+							<span class="query-form__label query-form__label--blank"></span>
+							<div class="query-form__field">
+								<span id="queryString.errors-compare" class="error"></span>
+							</div>
+						</div>
+						<div id="query-explanation-row-compare" class="query-form__row query-form__row--stacked">
+							<span class="query-form__label">
+								<xsl:value-of select="$query-explanation.label" />
+							</span>
+							<div class="query-form__field">
+								<pre id="query-explanation-compare"
+									style="margin-top:0; margin-bottom: 0; max-height:75vh; overflow:scroll;"
+									data-format="text"></pre>
+								<div id="query-explanation-dot-view-compare"></div>
+								<div id="query-explanation-json-view-compare"></div>
+							</div>
+						</div>
 					</div>
 				</div>
 				<div class="query-form__row">
@@ -478,8 +893,36 @@
 						<span id="save-feedback"></span>
 					</div>
 				</div>
+				</div>
+			</form>
+			<div id="query-diff-modal" class="query-diff-modal" aria-hidden="true">
+				<div class="query-diff-modal__dialog" role="dialog" aria-modal="true"
+					aria-labelledby="query-diff-modal-title">
+					<div class="query-diff-modal__header">
+						<div id="query-diff-modal-title" class="query-diff-modal__title">
+							<xsl:value-of select="$diff.label" />
+						</div>
+						<input id="query-diff-close" type="button" value="{$cancel.label}"
+							onclick="workbench.query.closeDiffModal()" />
+					</div>
+					<div class="query-diff-modal__body">
+						<div class="query-diff-section">
+							<div class="query-diff-section__title">
+								<xsl:value-of select="$query-diff.title" />
+							</div>
+							<div id="query-diff-query" class="query-diff-view"></div>
+						</div>
+						<div class="query-diff-section">
+							<div class="query-diff-section__title">
+								<xsl:value-of select="$explanation-diff.title" />
+							</div>
+							<div id="query-diff-explanation" class="query-diff-view">
+								<xsl:value-of select="$diff-not-ready.label" />
+							</div>
+						</div>
+					</div>
+				</div>
 			</div>
-		</form>
 		<script type="text/javascript">
         var sparqlNamespaces = {
           <xsl:for-each

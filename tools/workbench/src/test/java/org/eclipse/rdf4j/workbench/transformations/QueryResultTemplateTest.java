@@ -114,7 +114,7 @@ class QueryResultTemplateTest {
 		appendBinding(xml, "queryText", QUERY_TEXT);
 		appendBinding(xml, "infer", "true");
 		appendBinding(xml, "rowsPerPage", "100");
-		appendBinding(xml, "query-timeout", "17");
+		appendBinding(xml, "queryTimeout", "17");
 		appendBinding(xml, "query", "urn:query:test");
 		appendBinding(xml, "user", "");
 		appendBinding(xml, "queryName", "saved-query");
