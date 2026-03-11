@@ -57,7 +57,11 @@ public final class QueryEvaluator {
 
 	private static final String EXPLANATION_FORMAT = "explanation-format";
 
-	private static final String RESPONSE_QUERY_TEXT = "__workbench_query_text";
+	private static final String METADATA_QUERY_TEXT = "query-text";
+
+	private static final String METADATA_INFER = "infer";
+
+	private static final String METADATA_QUERY_TIMEOUT = "query-timeout";
 
 	private QueryEvaluator() {
 		// do nothing
@@ -263,9 +267,9 @@ public final class QueryEvaluator {
 			cookies.addTotalResultCountCookie(req, resp, bindings.size());
 		}
 		builder.transform(xslPath, "tuple.xsl");
-		builder.start(getResultVariables(names, responseQueryText));
+		builder.start(names);
 		builder.link(List.of(INFO));
-		addResponseQueryTextResult(builder, responseQueryText);
+		addWorkbenchMetadata(builder, req, responseQueryText);
 		final List<Object> values = new ArrayList<>(names.length);
 		if (paged && writeCookie) {
 			// Only in this case do we have paged results, but were given the full
@@ -334,9 +338,9 @@ public final class QueryEvaluator {
 			cookies.addTotalResultCountCookie(req, resp, statements.size());
 		}
 		builder.transform(xslPath, "graph.xsl");
-		builder.start(getResultVariables(new String[] { "subject", "predicate", "object" }, responseQueryText));
+		builder.start("subject", "predicate", "object");
 		builder.link(List.of(INFO));
-		addResponseQueryTextResult(builder, responseQueryText);
+		addWorkbenchMetadata(builder, req, responseQueryText);
 		if (paged && writeCookie) {
 			// Only in this case do we have paged results, but were given the full
 			// query. Just-in-case parameter massaging below to avoid array index
@@ -394,21 +398,16 @@ public final class QueryEvaluator {
 		}
 	}
 
-	private String[] getResultVariables(String[] names, String responseQueryText) {
+	private void addWorkbenchMetadata(TupleResultBuilder builder, WorkbenchRequest req, String responseQueryText) {
 		if (responseQueryText == null) {
-			return names;
+			return;
 		}
-		String[] resultNames = new String[names.length + 1];
-		System.arraycopy(names, 0, resultNames, 0, names.length);
-		resultNames[names.length] = RESPONSE_QUERY_TEXT;
-		return resultNames;
-	}
-
-	private void addResponseQueryTextResult(TupleResultBuilder builder, String responseQueryText)
-			throws QueryResultHandlerException {
-		if (responseQueryText != null) {
-			builder.namedResult(RESPONSE_QUERY_TEXT, responseQueryText);
-		}
+		String queryTimeout = req.getParameter("query-timeout");
+		builder.metadata(METADATA_QUERY_TEXT, responseQueryText);
+		builder.metadata(METADATA_INFER,
+				req.isParameterPresent("infer") ? Boolean.parseBoolean(req.getParameter("infer")) : false);
+		builder.metadata(METADATA_QUERY_TIMEOUT,
+				queryTimeout == null || queryTimeout.isBlank() ? Integer.valueOf(0) : queryTimeout);
 	}
 
 }

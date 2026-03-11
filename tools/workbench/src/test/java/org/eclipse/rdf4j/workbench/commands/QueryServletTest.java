@@ -337,7 +337,9 @@ public class QueryServletTest {
 			servlet.service(request, response, "/transformations");
 
 			String responseBody = outputStream.asString();
-			assertThat(responseBody).contains("__workbench_query_text");
+			assertThat(responseBody)
+					.contains("<workbench:metadata>")
+					.contains("<workbench:query-text>");
 			assertThat(responseBody).contains("PREFIX dc1:");
 		} finally {
 			repository.shutDown();
@@ -377,8 +379,56 @@ public class QueryServletTest {
 			servlet.service(request, response, "/transformations");
 
 			String responseBody = outputStream.asString();
-			assertThat(responseBody).contains("__workbench_query_text");
+			assertThat(responseBody)
+					.contains("<workbench:metadata>")
+					.contains("<workbench:query-text>");
 			assertThat(responseBody).contains(SHORT_QUERY);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void testExecShouldKeepLegalWorkbenchNamedBindingsAsUserResults() throws Exception {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try {
+			CookieHandler cookieHandler = mock(CookieHandler.class);
+			servlet.setCookieHandler(cookieHandler);
+			servlet.setRepository(repository);
+			servlet.writeQueryCookie = true;
+
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			String queryText = "select ?__workbench_query_text where { values ?__workbench_query_text { \"user value\" } }";
+			when(request.getParameter("action")).thenReturn("exec");
+			when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+			when(request.getParameter(QueryServlet.QUERY)).thenReturn(queryText);
+			when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
+			when(request.getParameter("queryLn")).thenReturn("SPARQL");
+			when(request.isParameterPresent("infer")).thenReturn(false);
+			when(request.isParameterPresent("Accept")).thenReturn(false);
+			when(request.isParameterPresent("explain")).thenReturn(false);
+			when(request.getInt("offset")).thenReturn(0);
+			when(request.getInt("limit_query")).thenReturn(0);
+			when(request.getInt("know_total")).thenReturn(0);
+			when(request.getInt("query-timeout")).thenReturn(0);
+			when(request.getHeader("Accept-Encoding")).thenReturn(null);
+			when(request.getContextPath()).thenReturn("");
+
+			ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			when(response.getOutputStream()).thenReturn(outputStream);
+
+			servlet.service(request, response, "/transformations");
+
+			String responseBody = outputStream.asString();
+			assertThat(countOccurrences(responseBody, "<variable name='__workbench_query_text'/>")).isEqualTo(1);
+			assertThat(responseBody).contains("<literal>user value</literal>");
+			assertThat(responseBody)
+					.contains("<workbench:metadata>")
+					.contains("<workbench:query-text>")
+					.contains("<workbench:infer>false</workbench:infer>")
+					.contains("<workbench:query-timeout>0</workbench:query-timeout>");
 		} finally {
 			repository.shutDown();
 		}
@@ -414,6 +464,16 @@ public class QueryServletTest {
 		private String asString() {
 			return delegate.toString(StandardCharsets.UTF_8);
 		}
+	}
+
+	private static int countOccurrences(String text, String match) {
+		int count = 0;
+		int index = 0;
+		while ((index = text.indexOf(match, index)) >= 0) {
+			count++;
+			index += match.length();
+		}
+		return count;
 	}
 
 	private static final class TestableQueryServlet extends QueryServlet {

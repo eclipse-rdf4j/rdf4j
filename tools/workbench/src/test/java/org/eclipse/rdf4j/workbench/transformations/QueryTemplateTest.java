@@ -225,10 +225,12 @@ class QueryTemplateTest {
 		String pagingScript = Files.readString(Path.of("src/main/webapp/scripts/ts/paging.ts"), StandardCharsets.UTF_8);
 
 		assertThat(tupleTemplate)
-				.contains("__workbench_query_text")
+				.doesNotContain("__workbench_query_text")
+				.contains("workbench:metadata/workbench:query-text")
 				.contains("wb-query-text");
 		assertThat(graphTemplate)
-				.contains("__workbench_query_text")
+				.doesNotContain("__workbench_query_text")
+				.contains("workbench:metadata/workbench:query-text")
 				.contains("wb-query-text");
 		assertThat(pagingScript)
 				.contains("wb-query-text")

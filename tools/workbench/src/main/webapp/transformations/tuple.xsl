@@ -1,30 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <xsl:stylesheet version="1.0"
 	xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
-	xmlns:sparql="http://www.w3.org/2005/sparql-results#" xmlns="http://www.w3.org/1999/xhtml">
+	xmlns:sparql="http://www.w3.org/2005/sparql-results#"
+	xmlns:workbench="https://rdf4j.org/schema/workbench#" xmlns="http://www.w3.org/1999/xhtml">
 
 	<xsl:include href="../locale/messages.xsl" />
 
 	<xsl:variable name="title">
 		<xsl:value-of select="$query-result.title" />
 		<xsl:text> (</xsl:text>
-		<xsl:value-of
-			select="count(//sparql:result[not(sparql:binding[@name='__workbench_query_text'])])" />
+		<xsl:value-of select="count(//sparql:result)" />
 		<xsl:text>)</xsl:text>
 	</xsl:variable>
 
 	<xsl:variable name="nextX.label">
 		<xsl:value-of select="$next.label" />
 		<xsl:text> </xsl:text>
-		<xsl:value-of
-			select="count(//sparql:result[not(sparql:binding[@name='__workbench_query_text'])])" />
+		<xsl:value-of select="count(//sparql:result)" />
 	</xsl:variable>
 
 	<xsl:variable name="previousX.label">
 		<xsl:value-of select="$previous.label" />
 		<xsl:text> </xsl:text>
-		<xsl:value-of
-			select="count(//sparql:result[not(sparql:binding[@name='__workbench_query_text'])])" />
+		<xsl:value-of select="count(//sparql:result)" />
 	</xsl:variable>
 
 	<xsl:include href="template.xsl" />
@@ -32,9 +30,9 @@
 	<xsl:include href="table.xsl" />
 
 	<xsl:template match="sparql:sparql">
-		<xsl:if test="//sparql:binding[@name='__workbench_query_text']">
+		<xsl:if test="/sparql:sparql/workbench:metadata/workbench:query-text">
 			<textarea id="wb-query-text" style="display:none;"><xsl:value-of
-				select="//sparql:result[sparql:binding[@name='__workbench_query_text']][1]/sparql:binding[@name='__workbench_query_text']/sparql:literal" /></textarea>
+				select="/sparql:sparql/workbench:metadata/workbench:query-text" /></textarea>
 		</xsl:if>
 		<form>
 			<table class="dataentry">
@@ -82,7 +80,7 @@
 						</td>
 						<td id="result-limited">
 							<xsl:if
-								test="$info//sparql:binding[@name='default-limit']/sparql:literal = count(//sparql:result[not(sparql:binding[@name='__workbench_query_text'])])">
+								test="$info//sparql:binding[@name='default-limit']/sparql:literal = count(//sparql:result)">
 								<xsl:value-of select="$result-limited.desc" />
 							</xsl:if>
 						</td>
@@ -124,21 +122,21 @@
 	<xsl:template match="sparql:head">
 		<thead>
 			<tr>
-				<xsl:apply-templates select="sparql:variable[not(@name='__workbench_query_text')]" />
+				<xsl:apply-templates select="sparql:variable" />
 			</tr>
 		</thead>
 	</xsl:template>
 
 	<xsl:template match="sparql:results">
 		<tbody>
-			<xsl:apply-templates select="sparql:result[not(sparql:binding[@name='__workbench_query_text'])]" />
+			<xsl:apply-templates select="sparql:result" />
 		</tbody>
 	</xsl:template>
 
 	<xsl:template match="sparql:result">
 		<xsl:variable name="result" select="." />
 		<tr>
-			<xsl:for-each select="../../sparql:head/sparql:variable[not(@name='__workbench_query_text')]">
+			<xsl:for-each select="../../sparql:head/sparql:variable">
 				<xsl:variable name="name" select="@name" />
 				<td>
 					<xsl:apply-templates select="$result/sparql:binding[@name=$name]" />

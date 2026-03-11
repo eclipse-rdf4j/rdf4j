@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.resultio.UnsupportedQueryResultFormatException;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+import org.eclipse.rdf4j.workbench.util.WorkbenchTupleResultWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -191,6 +192,10 @@ public abstract class AbstractServlet implements Servlet {
 			// This is safe with the current SPARQL Results XML implementation that
 			// is able to write out boolean results from the "Tuple" writer.
 			resultFormat = TupleQueryResultFormat.SPARQL;
+		}
+
+		if (TupleQueryResultFormat.SPARQL.equals(resultFormat)) {
+			return new WorkbenchTupleResultWriter(outputStream);
 		}
 
 		return QueryResultIO.createWriter(resultFormat, outputStream);
