@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -132,13 +133,27 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		@Override
+		public void meet(Filter node) {
+			node.getArg().visit(this);
+
+			Set<String> origBoundVars = boundVars;
+			try {
+				boundVars = new HashSet<>(boundVars);
+				boundVars.addAll(node.getArg().getAssuredBindingNames());
+				node.getCondition().visit(this);
+			} finally {
+				boundVars = origBoundVars;
+			}
+		}
+
+		@Override
 		public void meet(LeftJoin leftJoin) {
 			leftJoin.getLeftArg().visit(this);
 
 			Set<String> origBoundVars = boundVars;
 			try {
 				boundVars = new HashSet<>(boundVars);
-				boundVars.addAll(leftJoin.getLeftArg().getBindingNames());
+				boundVars.addAll(leftJoin.getLeftArg().getAssuredBindingNames());
 
 				leftJoin.getRightArg().visit(this);
 			} finally {
@@ -196,6 +211,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 				// Reorder the (recursive) join arguments to a more optimal sequence
 				Deque<TupleExpr> orderedJoinArgs = new ArrayDeque<>(joinArgs.size());
+				Set<String> boundVarsBeforePlannerReorder = new HashSet<>(boundVars);
 
 				// We order all remaining join arguments based on cardinality and
 				// variable frequency statistics
@@ -249,7 +265,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 
 				if (REORDER_JOINS_WITH_SKETCHES && statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2) {
-					orderedJoinArgs = reorderJoinArgs(orderedJoinArgs);
+					orderedJoinArgs = reorderJoinArgs(orderedJoinArgs, boundVarsBeforePlannerReorder);
 				}
 
 				// Build new join hierarchy
@@ -300,36 +316,32 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 
 				if (!orderedJoinArgs.isEmpty()) {
-					// Note: generated hierarchy is right-recursive to help the
-					// IterativeEvaluationOptimizer to factor out the left-most join
-					// argument
-					int i = orderedJoinArgs.size() - 1;
-					TupleExpr right = orderedJoinArgs.removeLast();
+					TupleExpr root = orderedJoinArgs.removeFirst();
 					if (!orderedJoinArgs.isEmpty()) {
-						TupleExpr left = orderedJoinArgs.removeLast();
+						TupleExpr next = orderedJoinArgs.removeFirst();
 
-						Set<Var> supportedOrders = new HashSet<>(left.getSupportedOrders(tripleSource));
-						supportedOrders.retainAll(right.getSupportedOrders(tripleSource));
+						Set<Var> supportedOrders = new HashSet<>(root.getSupportedOrders(tripleSource));
+						supportedOrders.retainAll(next.getSupportedOrders(tripleSource));
 
-						Join join = createJoinWithEstimatedResultSize(left, right);
+						Join join = createJoinWithEstimatedResultSize(root, next);
 
 						if (USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN) {
-							mergeJoinForCrossJoin(orderedJoinArgs, supportedOrders, left, right, join);
+							mergeJoinForCrossJoin(orderedJoinArgs, supportedOrders, root, next, join);
 						}
 
-						right = join;
+						root = join;
 
 					}
 					while (!orderedJoinArgs.isEmpty()) {
-						right = createJoinWithEstimatedResultSize(orderedJoinArgs.removeLast(), right);
+						root = createJoinWithEstimatedResultSize(root, orderedJoinArgs.removeFirst());
 					}
 
 					if (priorityJoins != null) {
-						right = createJoinWithEstimatedResultSize(priorityJoins, right);
+						root = createJoinWithEstimatedResultSize(priorityJoins, root);
 					}
 
 					// Replace old join hierarchy
-					node.replaceWith(right);
+					node.replaceWith(root);
 
 					// we optimize after the right call above in case the optimize call below
 					// recurses back into this function and we need all the node's parent/child pointers
@@ -354,6 +366,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		 * @return
 		 */
 		private Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs) {
+			return reorderJoinArgs(orderedJoinArgs, boundVars);
+		}
+
+		private Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs, Set<String> outerBoundVars) {
 			List<TupleExpr> originalOrder = new ArrayList<>(orderedJoinArgs);
 			if (originalOrder.size() < 2) {
 				return new ArrayDeque<>(originalOrder);
@@ -361,7 +377,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			Deque<TupleExpr> reordered = new ArrayDeque<>(originalOrder.size());
 			List<TupleExpr> currentSegment = new ArrayList<>();
-			Set<String> boundBeforeSegment = new HashSet<>(boundVars);
+			Set<String> boundBeforeSegment = new HashSet<>(outerBoundVars);
 
 			for (TupleExpr tupleExpr : originalOrder) {
 				if (TupleExprs.isVariableScopeChange(tupleExpr)) {

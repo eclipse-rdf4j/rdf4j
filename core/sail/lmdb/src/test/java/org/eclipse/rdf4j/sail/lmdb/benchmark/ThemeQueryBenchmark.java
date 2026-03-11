@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCaptureContext;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
-import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
@@ -58,10 +58,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 30)
+@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 30)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx32G" })
-@Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
+@Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -71,10 +71,11 @@ public class ThemeQueryBenchmark {
 
 	static {
 		File target = new File("target", "lmdb-theme-query-benchmark");
-		if(target.getAbsolutePath().toLowerCase().contains(TARGET_DIRECTORY_ROOT)){
+		if (target.getAbsolutePath().toLowerCase().contains(TARGET_DIRECTORY_ROOT)) {
 			STORE_DIRECTORY = target;
 		} else {
-			// In case the benchmark is run from an IDE with a different working directory, we want to ensure the store directory is still in the target directory of the project.
+			// In case the benchmark is run from an IDE with a different working directory, we want to ensure the store
+			// directory is still in the target directory of the project.
 			STORE_DIRECTORY = new File(TARGET_DIRECTORY_ROOT + "target", "lmdb-theme-query-benchmark");
 		}
 	}
@@ -88,9 +89,10 @@ public class ThemeQueryBenchmark {
 	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
 
 	@Param({
-			"0", "1", "2", "3", "4",
-			"5"
-			, "6", "7", "8",
+			"0", "1",
+			"2",
+			"3", "4",
+			"5", "6", "7", "8",
 			"9", "10"
 	})
 	public int z_queryIndex;
@@ -110,6 +112,7 @@ public class ThemeQueryBenchmark {
 	private SailRepository repository;
 	private LmdbStore store;
 	private LmdbStoreConfig storeConfig;
+	private QueryJoinOptimizer.JoinOrderStrategy previousJoinOrderStrategy;
 	private Theme theme;
 	private String query;
 	private long expected;
@@ -128,6 +131,9 @@ public class ThemeQueryBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
+//		previousJoinOrderStrategy = QueryJoinOptimizer.JOIN_ORDER_STRATEGY;
+//		QueryJoinOptimizer.JOIN_ORDER_STRATEGY = QueryJoinOptimizer.JoinOrderStrategy.GREEDY;
+
 		System.out.println(STORE_DIRECTORY.getAbsolutePath());
 		theme = Theme.valueOf(themeName);
 		query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
@@ -303,6 +309,10 @@ public class ThemeQueryBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDown() {
+//		if (previousJoinOrderStrategy != null) {
+//			QueryJoinOptimizer.JOIN_ORDER_STRATEGY = previousJoinOrderStrategy;
+//			previousJoinOrderStrategy = null;
+//		}
 		if (repository != null) {
 			repository.shutDown();
 			repository = null;
@@ -331,12 +341,21 @@ public class ThemeQueryBenchmark {
 
 	@Benchmark
 	public void explainQuery() {
+		System.out.println("=== Explanation for theme " + themeName + " and query index " + z_queryIndex + " ===");
+		System.out.println("Query:\n" + query);
+		System.out.println();
+
 		try {
 			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = false;
 			try (var connection = repository.getConnection()) {
 				System.out.println("=== Explanation with join reordering disabled ===");
 				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
 				System.out.println(explain);
+				System.out.println();
+				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+				System.out.println("=== Rendered optimized TupleExpr with join reordering disabled ===");
+				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+				System.out.println();
 				System.out.println();
 			}
 			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
@@ -345,17 +364,22 @@ public class ThemeQueryBenchmark {
 				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
 				System.out.println(explain);
 				System.out.println();
-			}
-			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
-			try (var connection = repository.getConnection()) {
-				System.out.println("=== Explanation with join reordering enabled and telemetry ===");
-				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
-				tupleQuery.setMaxExecutionTime(9999999);
-				Explanation explain = tupleQuery.explain(Explanation.Level.Telemetry);
-				System.out.println(explain);
+				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+				System.out.println("=== Rendered optimized TupleExpr with join reordering enabled ===");
+				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+				System.out.println();
 				System.out.println();
 			}
-		}finally {
+//			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
+//			try (var connection = repository.getConnection()) {
+//				System.out.println("=== Explanation with join reordering enabled and telemetry ===");
+//				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+//				tupleQuery.setMaxExecutionTime(9999999);
+//				Explanation explain = tupleQuery.explain(Explanation.Level.Telemetry);
+//				System.out.println(explain);
+//				System.out.println();
+//			}
+		} finally {
 			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
 		}
 

@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Constructor;
@@ -59,11 +58,10 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		String query = "prefix ex: <ex:>" + "select ?s ?p ?o ?x where {" + " ex:s1 ex:pred ?v. "
 				+ " ex:s2 ex:pred 'bah'. {" + "  ?s ?p ?o. " + "  optional {"
 				+ "   values ?x {ex:a ex:b ex:c ex:d ex:e ex:f ex:g}. " + "  }" + " }" + "}";
-		// optimal order should be existence check of first statement
-		// followed by left join evaluation
-		String expectedQuery = "prefix ex: <ex:>" + "select ?s ?p ?o ?x where {" + " ex:s2 ex:pred 'bah'. {"
-				+ "  ex:s1 ex:pred ?v. {" + "   ?s ?p ?o. " + "   optional {"
-				+ "    values ?x {ex:a ex:b ex:c ex:d ex:e ex:f ex:g}. " + "   }" + "  }" + " }" + "}";
+		// optimal order should evaluate the two constant existence checks before the unrelated OPTIONAL branch.
+		String expectedQuery = "prefix ex: <ex:>" + "select ?s ?p ?o ?x where {" + " ex:s2 ex:pred 'bah'. "
+				+ " ex:s1 ex:pred ?v. {" + "  ?s ?p ?o. " + "  optional {"
+				+ "   values ?x {ex:a ex:b ex:c ex:d ex:e ex:f ex:g}. " + "  }" + " }" + "}";
 
 		testOptimizer(expectedQuery, query);
 	}
@@ -80,7 +78,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		String expectedQuery = "prefix ex: <ex:>" + "select ?x ?y ?z ?g ?p ?o where {" + " graph ?g {"
 				+ "  ex:s ?sp ?so. " + "  ?ps ex:p ?po. " + "  ?os ?op 'ex:o'. " + " }" + " ?x ?y ?z. " + "}";
 
-		assertThrows(AssertionError.class, () -> testOptimizer(expectedQuery, query));
+		testOptimizer(expectedQuery, query);
 	}
 
 	@Test

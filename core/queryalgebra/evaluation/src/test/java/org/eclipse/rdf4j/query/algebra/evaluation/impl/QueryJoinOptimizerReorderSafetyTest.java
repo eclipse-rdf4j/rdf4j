@@ -16,22 +16,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 class QueryJoinOptimizerReorderSafetyTest {
@@ -142,6 +147,86 @@ class QueryJoinOptimizerReorderSafetyTest {
 		}
 	}
 
+	@Test
+	void plannerOrderIsMaterializedAsLeftDeepJoinTree() {
+		StatementPattern a = statementPattern("a", "ex:pA");
+		StatementPattern b = statementPattern("b", "ex:pB");
+		StatementPattern c = statementPattern("c", "ex:pC");
+		PlannerStatistics statistics = new PlannerStatistics(List.of(c, b, a));
+
+		QueryJoinOptimizer.JoinOrderStrategy originalStrategy = QueryJoinOptimizer.JOIN_ORDER_STRATEGY;
+		int originalLimit = QueryJoinOptimizer.DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT;
+		try {
+			QueryJoinOptimizer.JOIN_ORDER_STRATEGY = QueryJoinOptimizer.JoinOrderStrategy.DYNAMIC_PROGRAMMING;
+			QueryJoinOptimizer.DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT = 8;
+
+			QueryRoot root = new QueryRoot(new Join(new Join(a, b), c));
+			new QueryJoinOptimizer(statistics, new EmptyTripleSource()).optimize(root, null, null);
+
+			Join top = (Join) root.getArg();
+			assertThat(top.getRightArg())
+					.as("Planner order should be materialized as ((c join b) join a)")
+					.isSameAs(a);
+			assertThat(top.getLeftArg()).isInstanceOf(Join.class);
+
+			Join leftPrefix = (Join) top.getLeftArg();
+			assertThat(leftPrefix.getLeftArg()).isSameAs(c);
+			assertThat(leftPrefix.getRightArg()).isSameAs(b);
+		} finally {
+			QueryJoinOptimizer.JOIN_ORDER_STRATEGY = originalStrategy;
+			QueryJoinOptimizer.DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT = originalLimit;
+		}
+	}
+
+	@Test
+	void reorderJoinArgsPropagatesOnlyAssuredOuterBindingsIntoExistsSubqueryPlanner() {
+		String query = String.join("\n",
+				"PREFIX ex: <http://example.com/>",
+				"SELECT ?pathway WHERE {",
+				"  VALUES ?marker { ex:m1 ex:m2 }",
+				"  ?drug a ex:Drug ; ex:targets ?target .",
+				"  ?target ex:inPathway ?pathway .",
+				"  OPTIONAL { ?drug ex:testedIn ?trial . BIND(?trial AS ?optTrial) }",
+				"  FILTER(?optTrial != ex:trial0)",
+				"  FILTER EXISTS {",
+				"    ?trial ex:hasArm ?arm .",
+				"    ?arm ex:hasResult ?result .",
+				"    ?result ex:biomarker ?marker .",
+				"  }",
+				"}");
+		CapturingPlannerStatistics statistics = new CapturingPlannerStatistics();
+
+		QueryJoinOptimizer.JoinOrderStrategy originalStrategy = QueryJoinOptimizer.JOIN_ORDER_STRATEGY;
+		int originalLimit = QueryJoinOptimizer.DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT;
+		boolean originalReorderWithSketches = QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES;
+		try {
+			QueryJoinOptimizer.JOIN_ORDER_STRATEGY = QueryJoinOptimizer.JoinOrderStrategy.DYNAMIC_PROGRAMMING;
+			QueryJoinOptimizer.DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT = 8;
+			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
+
+			QueryRoot root = new QueryRoot(
+					QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr());
+			new QueryJoinOptimizer(statistics, new EmptyTripleSource()).optimize(root, null, null);
+
+			PlannerCall existsCall = statistics.calls.stream()
+					.filter(call -> call.joinVars.containsAll(Set.of("arm", "marker", "result", "trial")))
+					.findFirst()
+					.orElseThrow(() -> new AssertionError("Expected planner call for EXISTS join. Calls: "
+							+ statistics.calls));
+
+			assertThat(existsCall.initiallyBoundVars)
+					.as("EXISTS join should inherit assured outer bindings before reordering")
+					.contains("marker");
+			assertThat(existsCall.initiallyBoundVars)
+					.as("EXISTS join should not treat local or optional-only vars as already bound")
+					.doesNotContain("arm", "result", "trial");
+		} finally {
+			QueryJoinOptimizer.JOIN_ORDER_STRATEGY = originalStrategy;
+			QueryJoinOptimizer.DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT = originalLimit;
+			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = originalReorderWithSketches;
+		}
+	}
+
 	@SuppressWarnings("unchecked")
 	private static Deque<TupleExpr> invokeReorderJoinArgs(QueryJoinOptimizer optimizer, Deque<TupleExpr> ordered)
 			throws Exception {
@@ -221,6 +306,49 @@ class QueryJoinOptimizerReorderSafetyTest {
 				Algorithm algorithm) {
 			lastAlgorithm = algorithm;
 			return Optional.of(new JoinOrderPlan(plannedOrder, 1.0d, 1.0d));
+		}
+	}
+
+	private static final class CapturingPlannerStatistics extends EvaluationStatistics implements JoinOrderPlanner {
+		private final List<PlannerCall> calls = new ArrayList<>();
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public Optional<JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
+				Algorithm algorithm) {
+			calls.add(new PlannerCall(joinVars(args), new TreeSet<>(initiallyBoundVars), algorithm));
+			return Optional.of(new JoinOrderPlan(new ArrayList<>(args), 1.0d, 1.0d));
+		}
+
+		private Set<String> joinVars(List<TupleExpr> args) {
+			TreeSet<String> names = new TreeSet<>();
+			for (TupleExpr arg : args) {
+				names.addAll(arg.getBindingNames());
+			}
+			return names;
+		}
+	}
+
+	private static final class PlannerCall {
+		private final Set<String> joinVars;
+		private final Set<String> initiallyBoundVars;
+		private final JoinOrderPlanner.Algorithm algorithm;
+
+		private PlannerCall(Set<String> joinVars, Set<String> initiallyBoundVars,
+				JoinOrderPlanner.Algorithm algorithm) {
+			this.joinVars = joinVars;
+			this.initiallyBoundVars = initiallyBoundVars;
+			this.algorithm = algorithm;
+		}
+
+		@Override
+		public String toString() {
+			return "PlannerCall{joinVars=" + joinVars + ", initiallyBoundVars=" + initiallyBoundVars + ", algorithm="
+					+ algorithm + "}";
 		}
 	}
 }

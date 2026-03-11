@@ -15,6 +15,8 @@ package org.eclipse.rdf4j.sail.base;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Field;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -191,7 +194,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
-	void planJoinOrderPrefersConnectedTupleBeforeDisconnectedBindingAssignment() {
+	void planJoinOrderHandlesDisconnectedBindingAssignmentAlongsideConnectedChain() {
 		StubSailStore store = new StubSailStore();
 		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
 		IRI patientType = VF.createIRI("urn:Patient");
@@ -231,8 +234,8 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		List<TupleExpr> args = List.of(bindings, typePattern, encounterPattern, observationPattern,
 				filteredValuePattern);
 
-		assertConnectedExpansion(args, bindings, JoinOrderPlanner.Algorithm.GREEDY, estimator);
-		assertConnectedExpansion(args, bindings, JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, estimator);
+		assertPlanWithDisconnectedBindingAssignment(args, JoinOrderPlanner.Algorithm.GREEDY, estimator);
+		assertPlanWithDisconnectedBindingAssignment(args, JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, estimator);
 	}
 
 	@Test
@@ -294,6 +297,176 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(filtered.isPresent(), "Expected filtered planner to produce a plan");
 		assertTrue(filtered.get().getEstimatedFinalRows() < unfiltered.get().getEstimatedFinalRows(),
 				"Filter should reduce estimated final rows");
+	}
+
+	@Test
+	void planEstimateForJoinOrderingDoesNotZeroAllUnboundPattern() {
+		StubSailStore store = new StubSailStore();
+		IRI pA = VF.createIRI("urn:pA");
+		IRI pB = VF.createIRI("urn:pB");
+
+		store.add(VF.createStatement(VF.createIRI("urn:s1"), pA, VF.createIRI("urn:o1")));
+		store.add(VF.createStatement(VF.createIRI("urn:s2"), pA, VF.createIRI("urn:o2")));
+		store.add(VF.createStatement(VF.createIRI("urn:s3"), pB, VF.createIRI("urn:o3")));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern allUnbound = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		SketchBasedJoinEstimator.TuplePlanEstimate estimate = estimator.planEstimateForJoinOrdering(allUnbound,
+				Set.of());
+
+		assertTrue(estimate != null, "Expected planner estimate for an all-unbound statement pattern");
+		assertTrue(estimate.outputRows() > 0.0d,
+				"All-unbound statement patterns should not collapse to zero estimated rows");
+		assertEquals(Set.of("s", "p", "o"), varStats(estimate).keySet(),
+				"All-unbound statement patterns should still expose join vars to the planner");
+	}
+
+	@Test
+	void planEstimateForJoinOrderingAppliesFilterAboveJoinSubtree() {
+		StubSailStore store = new StubSailStore();
+		IRI hasObservation = VF.createIRI("urn:hasObservation");
+		IRI hasValue = VF.createIRI("urn:hasValue");
+
+		for (int i = 0; i < 200; i++) {
+			Resource encounter = VF.createIRI("urn:encounter:" + i);
+			Resource observation = VF.createIRI("urn:observation:" + i);
+			store.add(VF.createStatement(encounter, hasObservation, observation));
+			store.add(VF.createStatement(observation, hasValue, VF.createLiteral(i)));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern encounterPattern = pattern("enc", hasObservation, "obs");
+		StatementPattern valuePattern = pattern("obs", hasValue, "value");
+		Join join = new Join(encounterPattern, valuePattern);
+		Filter filteredJoin = new Filter(join,
+				new Compare(Var.of("value"), new ValueConstant(VF.createLiteral(50)), Compare.CompareOp.EQ));
+
+		SketchBasedJoinEstimator.TuplePlanEstimate unfiltered = estimator.planEstimateForJoinOrdering(join, Set.of());
+		SketchBasedJoinEstimator.TuplePlanEstimate filtered = estimator.planEstimateForJoinOrdering(filteredJoin,
+				Set.of());
+
+		assertTrue(unfiltered != null, "Expected unfiltered join subtree planner estimate");
+		assertTrue(filtered != null, "Expected filtered join subtree planner estimate");
+		assertTrue(filtered.outputRows() < unfiltered.outputRows(),
+				"Filter above a join subtree should reduce the planner row estimate");
+	}
+
+	@Test
+	void cardinalityFilterRetainsSelectivityAboveJoinSubtree() {
+		StubSailStore store = new StubSailStore();
+		IRI hasObservation = VF.createIRI("urn:hasObservation");
+		IRI hasValue = VF.createIRI("urn:hasValue");
+
+		for (int i = 0; i < 200; i++) {
+			Resource encounter = VF.createIRI("urn:encounter:" + i);
+			Resource observation = VF.createIRI("urn:observation:" + i);
+			store.add(VF.createStatement(encounter, hasObservation, observation));
+			store.add(VF.createStatement(observation, hasValue, VF.createLiteral(i)));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern encounterPattern = pattern("enc", hasObservation, "obs");
+		StatementPattern valuePattern = pattern("obs", hasValue, "value");
+		Join join = new Join(encounterPattern, valuePattern);
+		Filter filteredJoin = new Filter(join,
+				new Compare(Var.of("value"), new ValueConstant(VF.createLiteral(50)), Compare.CompareOp.EQ));
+
+		double unfilteredRows = estimator.cardinality(join);
+		double filteredRows = estimator.cardinality(filteredJoin);
+
+		assertTrue(unfilteredRows > 0.0d, "Expected unfiltered join cardinality to be supported");
+		assertTrue(filteredRows >= 0.0d, "Expected filtered join cardinality to be supported");
+		assertTrue(filteredRows < unfilteredRows,
+				"Filter above a join subtree should reduce estimated cardinality");
+	}
+
+	@Test
+	void cardinalityFilterRetainsSelectivityAboveLeftJoinSubtree() {
+		StubSailStore store = new StubSailStore();
+		IRI hasObservation = VF.createIRI("urn:hasObservation");
+		IRI hasValue = VF.createIRI("urn:hasValue");
+
+		for (int i = 0; i < 200; i++) {
+			Resource encounter = VF.createIRI("urn:encounter:" + i);
+			Resource observation = VF.createIRI("urn:observation:" + i);
+			store.add(VF.createStatement(encounter, hasObservation, observation));
+			store.add(VF.createStatement(observation, hasValue, VF.createLiteral(i)));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern encounterPattern = pattern("enc", hasObservation, "obs");
+		StatementPattern valuePattern = pattern("obs", hasValue, "value");
+		LeftJoin leftJoin = new LeftJoin(encounterPattern, valuePattern);
+		Filter filteredLeftJoin = new Filter(leftJoin,
+				new Compare(Var.of("value"), new ValueConstant(VF.createLiteral(50)), Compare.CompareOp.EQ));
+
+		double unfilteredRows = estimator.cardinality(leftJoin);
+		double filteredRows = estimator.cardinality(filteredLeftJoin);
+
+		assertTrue(unfilteredRows > 0.0d, "Expected unfiltered left join cardinality to be supported");
+		assertTrue(filteredRows >= 0.0d, "Expected filtered left join cardinality to be supported");
+		assertTrue(filteredRows < unfilteredRows,
+				"Filter above a left-join subtree should reduce estimated cardinality");
+	}
+
+	@Test
+	void planJoinOrderSeedsFromMostSelectiveCorrelatedChainEnd() {
+		StubSailStore store = new StubSailStore();
+		IRI hasArm = VF.createIRI("urn:hasArm");
+		IRI hasResult = VF.createIRI("urn:hasResult");
+		IRI biomarker = VF.createIRI("urn:biomarker");
+
+		for (int trialIndex = 0; trialIndex < 8; trialIndex++) {
+			Resource trial = VF.createIRI("urn:trial:" + trialIndex);
+			for (int armIndex = 0; armIndex < 50; armIndex++) {
+				Resource arm = VF.createIRI("urn:arm:" + trialIndex + ':' + armIndex);
+				Resource result = VF.createIRI("urn:result:" + trialIndex + ':' + armIndex);
+				Resource marker = VF.createIRI("urn:marker:" + trialIndex + ':' + armIndex);
+				store.add(VF.createStatement(trial, hasArm, arm));
+				store.add(VF.createStatement(arm, hasResult, result));
+				store.add(VF.createStatement(result, biomarker, marker));
+			}
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern trialArmPattern = pattern("trial", hasArm, "arm");
+		StatementPattern armResultPattern = pattern("arm", hasResult, "result");
+		StatementPattern biomarkerPattern = pattern("result", biomarker, "marker");
+		Set<String> outerBoundVars = Set.of("trial", "marker");
+
+		SketchBasedJoinEstimator.TuplePlanEstimate trialArmEstimate = estimator
+				.planEstimateForJoinOrdering(trialArmPattern, outerBoundVars);
+		SketchBasedJoinEstimator.TuplePlanEstimate armResultEstimate = estimator
+				.planEstimateForJoinOrdering(armResultPattern, outerBoundVars);
+		SketchBasedJoinEstimator.TuplePlanEstimate biomarkerEstimate = estimator
+				.planEstimateForJoinOrdering(biomarkerPattern, outerBoundVars);
+
+		SketchBasedJoinEstimator.JoinStepEstimate biomarkerFirst = estimator
+				.estimateJoinStepForJoinOrdering(biomarkerEstimate, armResultEstimate);
+		SketchBasedJoinEstimator.JoinStepEstimate trialFirst = estimator
+				.estimateJoinStepForJoinOrdering(trialArmEstimate, armResultEstimate);
+
+		assertTrue(biomarkerFirst.outputRows() < trialFirst.outputRows(),
+				"Bound biomarker subset should stay smaller than the bound trial subset when extended through result");
+
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(
+				List.of(trialArmPattern, armResultPattern, biomarkerPattern),
+				outerBoundVars,
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+
+		assertTrue(plan.isPresent(), "Expected planner to produce a correlated-chain plan");
+		assertEquals(biomarkerPattern, plan.get().getOrderedArgs().get(0),
+				"Planner should seed from the most selective correlated chain end");
 	}
 
 	@Test
@@ -500,7 +673,94 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
-	void planJoinOrderUsesPairFirstThenPrefixExpansionCosting() {
+	void planJoinOrderGreedyMaySeedFromCheapestDisconnectedTerm() {
+		StubSailStore store = new StubSailStore();
+		IRI pA = VF.createIRI("urn:pA");
+		IRI pB = VF.createIRI("urn:pB");
+		IRI pC = VF.createIRI("urn:pC");
+		Resource seed = VF.createIRI("urn:seed");
+		store.add(VF.createStatement(seed, pA, VF.createIRI("urn:a0")));
+		store.add(VF.createStatement(seed, pB, VF.createIRI("urn:b0")));
+		store.add(VF.createStatement(seed, pC, VF.createIRI("urn:c0")));
+
+		Map<String, Double> prefixCosts = Map.ofEntries(
+				Map.entry("pA", 10.0d),
+				Map.entry("pB", 20.0d),
+				Map.entry("pC", 1.0d),
+				Map.entry("pA>pB", 4.0d),
+				Map.entry("pA>pB>pC", 6.0d),
+				Map.entry("pB>pA", 5.0d),
+				Map.entry("pB>pA>pC", 7.0d),
+				Map.entry("pC>pA", 2.0d),
+				Map.entry("pC>pB", 3.0d),
+				Map.entry("pC>pA>pB", 4.0d),
+				Map.entry("pC>pB>pA", 5.0d));
+		Map<String, Set<String>> connectivity = Map.of(
+				"pA", Set.of("pB"),
+				"pB", Set.of("pA"),
+				"pC", Set.of());
+
+		SketchBasedJoinEstimator estimator = new PrefixCostSketchBasedJoinEstimator(store, config(), prefixCosts,
+				connectivity);
+		estimator.rebuildOnceSlow();
+
+		StatementPattern a = pattern("s", pA, "a");
+		StatementPattern b = pattern("s", pB, "b");
+		StatementPattern c = pattern("s", pC, "c");
+
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(List.of(a, b, c), Set.of(),
+				JoinOrderPlanner.Algorithm.GREEDY);
+
+		assertTrue(plan.isPresent(), "Expected planner to produce a greedy plan");
+		assertEquals(c, plan.get().getOrderedArgs().get(0),
+				"Greedy planner should be allowed to seed from the cheapest disconnected term");
+	}
+
+	@Test
+	void planJoinOrderPrefersLowerWorkBeforeCrossJoinTiming() {
+		StubSailStore store = new StubSailStore();
+		IRI pA = VF.createIRI("urn:pA");
+		IRI pB = VF.createIRI("urn:pB");
+		IRI pC = VF.createIRI("urn:pC");
+		Resource seed = VF.createIRI("urn:seed");
+		store.add(VF.createStatement(seed, pA, VF.createIRI("urn:a0")));
+		store.add(VF.createStatement(seed, pB, VF.createIRI("urn:b0")));
+		store.add(VF.createStatement(seed, pC, VF.createIRI("urn:c0")));
+
+		Map<String, Double> prefixCosts = Map.ofEntries(
+				Map.entry("pA", 20.0d),
+				Map.entry("pB", 30.0d),
+				Map.entry("pC", 1.0d),
+				Map.entry("pA>pB", 100.0d),
+				Map.entry("pA>pC", 2.0d),
+				Map.entry("pA>pC>pB", 2.0d),
+				Map.entry("pA>pB>pC", 100.0d),
+				Map.entry("pB>pA", 100.0d),
+				Map.entry("pB>pC", 2.0d),
+				Map.entry("pB>pC>pA", 2.0d),
+				Map.entry("pB>pA>pC", 100.0d),
+				Map.entry("pC>pA", 2.0d),
+				Map.entry("pC>pB", 3.0d),
+				Map.entry("pC>pA>pB", 2.0d),
+				Map.entry("pC>pB>pA", 2.0d));
+		Map<String, Set<String>> connectivity = Map.of(
+				"pA", Set.of("pB"),
+				"pB", Set.of("pA"),
+				"pC", Set.of());
+
+		SketchBasedJoinEstimator estimator = new PrefixCostSketchBasedJoinEstimator(store, config(), prefixCosts,
+				connectivity);
+		estimator.rebuildOnceSlow();
+
+		StatementPattern a = pattern("s", pA, "a");
+		StatementPattern b = pattern("s", pB, "b");
+		StatementPattern c = pattern("s", pC, "c");
+
+		assertAlgorithmOrder(List.of(a, b, c), estimator, JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, c, a, b);
+	}
+
+	@Test
+	void planJoinOrderUsesRequestedAlgorithmInsteadOfPairExpansionShortcut() {
 		StubSailStore store = new StubSailStore();
 		IRI pA = VF.createIRI("urn:pA");
 		IRI pB = VF.createIRI("urn:pB");
@@ -541,31 +801,27 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		StatementPattern d = pattern("s", pD, "d");
 		List<TupleExpr> args = List.of(a, b, c, d);
 
-		assertPairExpansionOrder(args, estimator, JoinOrderPlanner.Algorithm.GREEDY);
-		assertPairExpansionOrder(args, estimator, JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+		assertAlgorithmOrder(args, estimator, JoinOrderPlanner.Algorithm.GREEDY, b, a, d, c);
+		assertAlgorithmOrder(args, estimator, JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, c, a, d, b);
 	}
 
-	private static void assertPairExpansionOrder(List<TupleExpr> args, SketchBasedJoinEstimator estimator,
-			JoinOrderPlanner.Algorithm algorithm) {
+	private static void assertAlgorithmOrder(List<TupleExpr> args, SketchBasedJoinEstimator estimator,
+			JoinOrderPlanner.Algorithm algorithm, TupleExpr... expectedOrder) {
 		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(), algorithm);
 		assertTrue(plan.isPresent(), "Expected planner to produce a plan for " + algorithm);
-		List<TupleExpr> ordered = plan.get().getOrderedArgs();
-		assertEquals(args.get(1), ordered.get(0),
-				"Expected pair-first rule to start with cheaper tuple from best pair");
-		assertEquals(args.get(0), ordered.get(1), "Expected best pair to be retained as first prefix");
-		assertEquals(args.get(3), ordered.get(2), "Expected cheapest 3-prefix extension to be chosen next");
-		assertEquals(args.get(2), ordered.get(3), "Expected final tuple to be the remaining extension");
+		assertEquals(List.of(expectedOrder), plan.get().getOrderedArgs(),
+				"Expected planner to respect the requested search algorithm for " + algorithm);
 	}
 
-	private static void assertConnectedExpansion(List<TupleExpr> args, BindingSetAssignment disconnectedBindings,
+	private static void assertPlanWithDisconnectedBindingAssignment(List<TupleExpr> args,
 			JoinOrderPlanner.Algorithm algorithm,
 			SketchBasedJoinEstimator estimator) {
 		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(), algorithm);
 		assertTrue(plan.isPresent(), "Expected " + algorithm + " planner to produce a plan");
 
 		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
-		assertTrue(orderedArgs.indexOf(disconnectedBindings) > 0,
-				"Disconnected binding assignment should not seed the plan");
+		assertEquals(args.size(), orderedArgs.size(), "Expected planner to retain every join argument");
+		assertTrue(orderedArgs.containsAll(args), "Expected planner output to contain every join argument");
 		assertTrue(Double.isFinite(plan.get().getEstimatedFinalRows()) && plan.get().getEstimatedFinalRows() >= 0.0d,
 				"Expected planner to provide a finite final-row estimate");
 	}
@@ -616,11 +872,20 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 	private static final class PrefixCostSketchBasedJoinEstimator extends SketchBasedJoinEstimator {
 		private final Map<String, Double> prefixCosts;
+		private final Map<String, Set<String>> connectivityByLabel;
+		private final IdentityHashMap<TuplePlanEstimate, String> labelsByEstimate = new IdentityHashMap<>();
+		private final IdentityHashMap<JoinStepEstimate, String> labelsByStep = new IdentityHashMap<>();
 
 		private PrefixCostSketchBasedJoinEstimator(StubSailStore store, Config config,
 				Map<String, Double> prefixCosts) {
+			this(store, config, prefixCosts, null);
+		}
+
+		private PrefixCostSketchBasedJoinEstimator(StubSailStore store, Config config,
+				Map<String, Double> prefixCosts, Map<String, Set<String>> connectivityByLabel) {
 			super(store, config);
 			this.prefixCosts = prefixCosts;
+			this.connectivityByLabel = connectivityByLabel;
 		}
 
 		@Override
@@ -633,6 +898,60 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			List<TupleExpr> flattened = new java.util.ArrayList<>();
 			flatten(node, flattened);
 			return cardinality(flattened);
+		}
+
+		@Override
+		TuplePlanEstimate planEstimateForJoinOrdering(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
+			String label = label(tupleExpr);
+			TuplePlanEstimate estimate = tuplePlanEstimate(prefixCosts.getOrDefault(label, 10_000.0d));
+			labelsByEstimate.put(estimate, label);
+			return estimate;
+		}
+
+		@Override
+		JoinStepEstimate estimateJoinStepForJoinOrdering(TuplePlanEstimate left, TuplePlanEstimate right) {
+			String prefix = labelsByEstimate.get(left) + ">" + labelsByEstimate.get(right);
+			double rows = prefixCosts.getOrDefault(prefix, 10_000.0d);
+			JoinStepEstimate step = joinStepEstimate(rows, rows);
+			labelsByStep.put(step, prefix);
+			return step;
+		}
+
+		@Override
+		TuplePlanEstimate joinedPlanEstimate(JoinStepEstimate step) {
+			TuplePlanEstimate estimate = tuplePlanEstimate(step.outputRows());
+			labelsByEstimate.put(estimate, labelsByStep.get(step));
+			return estimate;
+		}
+
+		@Override
+		boolean hasSharedJoinVariable(TuplePlanEstimate left, TuplePlanEstimate right) {
+			if (connectivityByLabel == null) {
+				return true;
+			}
+			return labelsShareJoinVariable(labelsByEstimate.get(left), labelsByEstimate.get(right));
+		}
+
+		private boolean labelsShareJoinVariable(String leftLabel, String rightLabel) {
+			if (leftLabel == null || rightLabel == null) {
+				return false;
+			}
+			for (String leftPart : leftLabel.split(">")) {
+				for (String rightPart : rightLabel.split(">")) {
+					if (termsShareJoinVariable(leftPart, rightPart)) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		private boolean termsShareJoinVariable(String leftLabel, String rightLabel) {
+			if (leftLabel.equals(rightLabel)) {
+				return true;
+			}
+			Set<String> connectedTerms = connectivityByLabel.get(leftLabel);
+			return connectedTerms != null && connectedTerms.contains(rightLabel);
 		}
 
 		private static void flatten(TupleExpr tupleExpr, List<TupleExpr> flattened) {
@@ -669,6 +988,27 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			}
 			return tupleExpr.getClass().getSimpleName();
 		}
+
+		private static TuplePlanEstimate tuplePlanEstimate(double rows) {
+			try {
+				var constructor = TuplePlanEstimate.class.getDeclaredConstructor(double.class, double.class,
+						double.class, Map.class);
+				constructor.setAccessible(true);
+				return constructor.newInstance(rows, rows, 1.0d, Map.of());
+			} catch (ReflectiveOperationException e) {
+				throw new AssertionError(e);
+			}
+		}
+
+		private static JoinStepEstimate joinStepEstimate(double outputRows, double workRows) {
+			try {
+				var constructor = JoinStepEstimate.class.getDeclaredConstructor(double.class, double.class, Map.class);
+				constructor.setAccessible(true);
+				return constructor.newInstance(outputRows, workRows, Map.of());
+			} catch (ReflectiveOperationException e) {
+				throw new AssertionError(e);
+			}
+		}
 	}
 
 	private static ListMemberOperator listMemberCondition(String varName, int... values) {
@@ -690,5 +1030,16 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 	private static StatementPattern pattern(String subjVar, IRI pred, String objVar) {
 		return new StatementPattern(Var.of(subjVar), Var.of("p", pred), Var.of(objVar));
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> varStats(SketchBasedJoinEstimator.TuplePlanEstimate estimate) {
+		try {
+			Field field = SketchBasedJoinEstimator.TuplePlanEstimate.class.getDeclaredField("varStats");
+			field.setAccessible(true);
+			return (Map<String, Object>) field.get(estimate);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError(e);
+		}
 	}
 }
