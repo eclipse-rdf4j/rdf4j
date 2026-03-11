@@ -111,7 +111,7 @@
 			</table>
 		</form>
 		<table class="data">
-			<xsl:apply-templates select="*" />
+			<xsl:apply-templates select="sparql:head | sparql:results" />
 		</table>
 		<script src="../../scripts/paging.js" type="text/javascript">
 		</script>

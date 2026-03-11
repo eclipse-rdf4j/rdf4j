@@ -345,6 +345,7 @@ public class CreateServletTest {
 						Map.entry("Namespace cache size", "111"),
 						Map.entry("Namespace ID cache size", "222"),
 						Map.entry("Auto grow", "false"),
+						Map.entry("Append mode (experimental)", "true"),
 						Map.entry("No readahead", "true"),
 						Map.entry("Page cardinality estimator", "false"),
 						Map.entry("Value eviction interval", "15000"),
@@ -375,6 +376,8 @@ public class CreateServletTest {
 				.contains("222")
 				.contains("autoGrow")
 				.contains("false")
+				.contains("appendMode")
+				.contains("true")
 				.contains("noReadahead")
 				.contains("pageCardinalityEstimator")
 				.contains("valueEvictionInterval")
@@ -382,6 +385,7 @@ public class CreateServletTest {
 				.contains("defaultQueryEvaluationMode")
 				.contains("STRICT");
 
+		assertThat(invokeBooleanGetter(sailConfig, "getAppendMode")).isTrue();
 		assertThat(invokeBooleanGetter(sailConfig, "getNoReadahead")).isTrue();
 	}
 
@@ -415,6 +419,7 @@ public class CreateServletTest {
 				.contains(templateDefault(template, "Value cache size"))
 				.contains(templateDefault(template, "Namespace cache size"))
 				.contains(templateDefault(template, "Value eviction interval"))
+				.contains(templateDefault(template, "Append mode (experimental)"))
 				.contains(templateDefault(template, "No readahead"))
 				.contains(templateDefault(template, "Query Evaluation Mode"));
 	}

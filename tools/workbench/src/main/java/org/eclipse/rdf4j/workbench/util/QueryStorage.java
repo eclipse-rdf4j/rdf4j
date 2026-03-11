@@ -68,7 +68,7 @@ public class QueryStorage {
 	private static final String SAVE = "PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>\n" + PRE
 			+ "INSERT DATA { $<query> :userName $<userName> ; :queryName $<queryName> ; "
 			+ ":repository $<repository> ; :shared $<shared> ; :queryLanguage $<queryLanguage> ; :query $<queryText> ; "
-			+ ":infer $<infer> ; :rowsPerPage $<rowsPerPage> . }";
+			+ ":infer $<infer> ; :rowsPerPage $<rowsPerPage> ; :queryTimeout $<queryTimeout> . }";
 
 	private static final String ASK_EXISTS = PRE
 			+ "ASK { [] :userName $<userName> ; :queryName $<queryName> ; :repository $<repository> . }";
@@ -86,10 +86,14 @@ public class QueryStorage {
 
 	private static final String MATCH = ":shared ?s ; :queryLanguage ?ql ; :query ?q ; :rowsPerPage ?rpp .\n";
 
-	private static final String UPDATE = PRE + "DELETE { $<query> " + MATCH
+	private static final String OPTIONAL_UPDATE_FIELDS = "OPTIONAL { $<query> :infer ?infer . }\n"
+			+ "OPTIONAL { $<query> :queryTimeout ?queryTimeout . }\n";
+
+	private static final String UPDATE = PRE
+			+ "DELETE { $<query> " + MATCH + "$<query> :infer ?infer .\n$<query> :queryTimeout ?queryTimeout .\n"
 			+ "}\nINSERT { $<query> :shared $<shared> ; :queryLanguage $<queryLanguage> ; :query $<queryText> ; "
-			+ ":infer $<infer> ; :rowsPerPage $<rowsPerPage> . } WHERE { $<query> :userName ?user ; " + MATCH
-			+ UPDATE_FILTER;
+			+ ":infer $<infer> ; :rowsPerPage $<rowsPerPage> ; :queryTimeout $<queryTimeout> . }\n"
+			+ "WHERE { $<query> :userName ?user ; " + MATCH + OPTIONAL_UPDATE_FIELDS + UPDATE_FILTER;
 
 	private static final String SELECT_URI = PRE
 			+ "SELECT ?query { ?query :repository $<repository> ; :userName $<userName> ; :queryName $<queryName> . } ";
@@ -98,9 +102,10 @@ public class QueryStorage {
 			+ "SELECT ?queryText { [] :repository $<repository> ; :userName $<userName> ; :queryName $<queryName> ; :query ?queryText . } ";
 
 	private static final String SELECT = PRE
-			+ "SELECT ?query ?user ?queryName ?shared ?queryLn ?queryText ?infer ?rowsPerPage "
+			+ "SELECT ?query ?user ?queryName ?shared ?queryLn ?queryText ?infer ?rowsPerPage ?queryTimeout "
 			+ "{ ?query :repository $<repository> ; :userName ?user ; :queryName ?queryName ; :shared ?shared ; "
 			+ ":queryLanguage ?queryLn ; :query ?queryText ; :infer ?infer ; :rowsPerPage ?rowsPerPage .\n"
+			+ "OPTIONAL { ?query :queryTimeout ?queryTimeout . }\n"
 			+ READ_FILTER + "ORDER BY ?user ?queryName";
 
 	private final Repository queries;
@@ -166,11 +171,12 @@ public class QueryStorage {
 	 * @param queryText     the actual query text
 	 * @param infer
 	 * @param rowsPerPage   rows to display per page, may be 0 (all), 10, 50, 100, or 200)
+	 * @param queryTimeout  query timeout in seconds, may be 0 to use the repository default
 	 * @throws RDF4JException
 	 */
 	public void saveQuery(final String repositoryReference, final String queryName, final String userName,
 			final boolean shared, final QueryLanguage queryLanguage, final String queryText, final boolean infer,
-			final int rowsPerPage) throws RDF4JException {
+			final int rowsPerPage, final int queryTimeout) throws RDF4JException {
 		if (QueryLanguage.SPARQL != queryLanguage) {
 			throw new RepositoryException("May only save SPARQL queries, not" + queryLanguage.toString());
 		}
@@ -178,12 +184,15 @@ public class QueryStorage {
 				&& 200 != rowsPerPage) {
 			throw new RepositoryException("Illegal value for rows per page: " + rowsPerPage);
 		}
+		if (queryTimeout < 0) {
+			throw new RepositoryException("Illegal value for query timeout: " + queryTimeout);
+		}
 		this.checkQueryText(queryText);
 		final QueryStringBuilder save = new QueryStringBuilder(SAVE);
 		save.replaceURI(REPOSITORY, repositoryReference);
 		save.replaceURI(QUERY, "urn:uuid:" + UUID.randomUUID());
 		save.replaceQuote(QUERY_NAME, queryName);
-		this.replaceUpdateFields(save, userName, shared, queryLanguage, queryText, infer, rowsPerPage);
+		this.replaceUpdateFields(save, userName, shared, queryLanguage, queryText, infer, rowsPerPage, queryTimeout);
 		updateQueryRepository(save.toString());
 	}
 
@@ -263,23 +272,27 @@ public class QueryStorage {
 	 * @param queryText     the text of the query
 	 * @param infer
 	 * @param rowsPerPage   the rows per page to display of the query
+	 * @param queryTimeout  query timeout in seconds, may be 0 to use the repository default
 	 * @throws RepositoryException      if a problem occurs during the update
 	 * @throws UpdateExecutionException if a problem occurs during the update
 	 * @throws MalformedQueryException  if a problem occurs during the update
 	 */
 	public void updateQuery(final IRI query, final String userName, final boolean shared,
-			final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage)
+			final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage,
+			final int queryTimeout)
 			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
 		final QueryStringBuilder update = new QueryStringBuilder(UPDATE);
 		update.replaceURI(QUERY, query);
-		this.replaceUpdateFields(update, userName, shared, queryLanguage, queryText, infer, rowsPerPage);
+		this.replaceUpdateFields(update, userName, shared, queryLanguage, queryText, infer, rowsPerPage,
+				queryTimeout);
 		this.updateQueryRepository(update.toString());
 	}
 
 	/**
 	 * Prepares a query to retrieve the queries accessible to the given user in the given repository. When evaluated,
 	 * the query result will have the following binding names: query, user, queryName, shared, queryLn, queryText,
-	 * rowsPerPage. It is the responsibility of the calling code to call checkAccess() with the full credentials first.
+	 * rowsPerPage, queryTimeout. It is the responsibility of the calling code to call checkAccess() with the full
+	 * credentials first.
 	 *
 	 * @param repository that the saved queries run against
 	 * @param userName   that is requesting the saved queries
@@ -377,9 +390,11 @@ public class QueryStorage {
 	 * @param queryText     the actual text of the query to save
 	 * @param infer
 	 * @param rowsPerPage   the rows per page to display for results
+	 * @param queryTimeout  query timeout in seconds, may be 0 to use the repository default
 	 */
 	private void replaceUpdateFields(final QueryStringBuilder builder, final String userName, final boolean shared,
-			final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage) {
+			final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage,
+			final int queryTimeout) {
 		builder.replaceQuote(USER_NAME, userName);
 		builder.replace("$<shared>", QueryStringBuilder.xsdQuote(String.valueOf(shared), "boolean"));
 		builder.replaceQuote("$<queryLanguage>", queryLanguage.toString());
@@ -387,6 +402,7 @@ public class QueryStorage {
 		builder.replace("$<queryText>", QueryStringBuilder.quote(queryText, "'''", "'''"));
 		builder.replace("$<infer>", QueryStringBuilder.xsdQuote(String.valueOf(infer), "boolean"));
 		builder.replace("$<rowsPerPage>", QueryStringBuilder.xsdQuote(String.valueOf(rowsPerPage), "unsignedByte"));
+		builder.replace("$<queryTimeout>", QueryStringBuilder.xsdQuote(String.valueOf(queryTimeout), "integer"));
 	}
 
 	/**

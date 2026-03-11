@@ -32,6 +32,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbStoreConfigTest {
 
+	private static final IRI APPEND_MODE = Values.iri(LmdbStoreSchema.NAMESPACE + "appendMode");
+
 	private static final IRI NO_READAHEAD = Values.iri(LmdbStoreSchema.NAMESPACE + "noReadahead");
 
 	@Test
@@ -42,6 +44,23 @@ class LmdbStoreConfigTest {
 	@Test
 	void noReadaheadDefaultsToDisabled() {
 		assertThat(invokeBooleanGetter(new LmdbStoreConfig(), "getNoReadahead")).isFalse();
+	}
+
+	@Test
+	void appendModeDefaultsToDisabled() {
+		assertThat(invokeBooleanGetter(new LmdbStoreConfig(), "getAppendMode")).isFalse();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void testThatLmdbStoreConfigParseAndExportAppendMode(final boolean appendMode) {
+		testParseAndExportReflective(
+				APPEND_MODE,
+				Values.literal(appendMode),
+				"getAppendMode",
+				appendMode,
+				appendMode
+		);
 	}
 
 	@ParameterizedTest

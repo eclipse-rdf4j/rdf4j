@@ -13,6 +13,8 @@
 
 	<xsl:template match="sparql:sparql/sparql:results">
 		<xsl:for-each select="sparql:result">
+			<xsl:variable name="defaultQueryTimeout"
+				select="$info//sparql:binding[@name='default-query-timeout']/sparql:literal/text()" />
 			<xsl:variable name="queryLn"
 				select="normalize-space(sparql:binding[@name='queryLn'])" />
 			<xsl:variable name="queryText" select="sparql:binding[@name='queryText']" />
@@ -25,10 +27,21 @@
 				select="normalize-space(sparql:binding[@name='infer'])" />
 			<xsl:variable name="rowsPerPage"
 				select="normalize-space(sparql:binding[@name='rowsPerPage'])" />
+			<xsl:variable name="queryTimeout">
+				<xsl:choose>
+					<xsl:when test="string-length(normalize-space(sparql:binding[@name='query-timeout'])) &gt; 0">
+						<xsl:value-of select="normalize-space(sparql:binding[@name='query-timeout'])" />
+					</xsl:when>
+					<xsl:when test="string-length(normalize-space($defaultQueryTimeout)) &gt; 0">
+						<xsl:value-of select="$defaultQueryTimeout" />
+					</xsl:when>
+					<xsl:otherwise>0</xsl:otherwise>
+				</xsl:choose>
+			</xsl:variable>
 			<xsl:variable name="query"
 				select="normalize-space(sparql:binding[@name='query'])" />
 			<xsl:variable name="queryHREF"
-				select="concat('query?action=exec&amp;queryLn=', $queryLn, '&amp;query=', $query-url-encoded, '&amp;infer=', $infer, '&amp;limit_query=', $rowsPerPage)" />
+				select="concat('query?action=exec&amp;queryLn=', $queryLn, '&amp;query=', $query-url-encoded, '&amp;infer=', $infer, '&amp;limit_query=', $rowsPerPage, '&amp;query-timeout=', $queryTimeout)" />
 			<xsl:variable name="user"
 				select="normalize-space(sparql:binding[@name='user'])" />
 			<xsl:variable name="previousUser"
@@ -55,6 +68,7 @@
 								<input type="hidden" name="owner" value="{$user}" />
 								<input type="hidden" name="infer" value="{$infer}" />
 								<input type="hidden" name="limit_query" value="{$rowsPerPage}" />
+								<input type="hidden" name="query-timeout" value="{$queryTimeout}" />
 								<input type="submit" value="Execute" />
 							</form>
 						</td>
@@ -85,6 +99,7 @@
 								<input type="hidden" name="owner" value="{$user}" />
 								<input type="hidden" name="infer" value="{$infer}" />
 								<input type="hidden" name="limit_query" value="{$rowsPerPage}" />
+								<input type="hidden" name="query-timeout" value="{$queryTimeout}" />
 								<input type="submit" value="Edit" />
 							</form>
 						</td>

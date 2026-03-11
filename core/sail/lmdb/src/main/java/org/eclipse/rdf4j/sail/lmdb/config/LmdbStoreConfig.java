@@ -64,6 +64,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private boolean forceSync = false;
 
+	private boolean appendMode = false;
+
 	private boolean noReadahead = false;
 
 	private int valueCacheSize = -1;
@@ -136,12 +138,24 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return noReadahead;
 	}
 
+	public boolean getAppendMode() {
+		return appendMode;
+	}
+
 	/**
 	 * Flag indicating whether updates should be synced to disk forcefully. This may have a severe impact on write
 	 * performance. By default, this feature is disabled.
 	 */
 	public LmdbStoreConfig setForceSync(boolean forceSync) {
 		this.forceSync = forceSync;
+		return this;
+	}
+
+	/**
+	 * Experimental flag for enabling LMDB append-mode writes. Disabled by default.
+	 */
+	public LmdbStoreConfig setAppendMode(boolean appendMode) {
+		this.appendMode = appendMode;
 		return this;
 	}
 
@@ -231,6 +245,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (forceSync) {
 			m.add(implNode, LmdbStoreSchema.FORCE_SYNC, vf.createLiteral(true));
 		}
+		if (appendMode) {
+			m.add(implNode, LmdbStoreSchema.APPEND_MODE, vf.createLiteral(true));
+		}
 		if (noReadahead) {
 			m.add(implNode, LmdbStoreSchema.NO_READAHEAD, vf.createLiteral(true));
 		}
@@ -294,6 +311,15 @@ public class LmdbStoreConfig extends BaseSailConfig {
 				} catch (IllegalArgumentException e) {
 					throw new SailConfigException(
 							"Boolean value required for " + LmdbStoreSchema.FORCE_SYNC + " property, found " + lit);
+				}
+			});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.APPEND_MODE, null)).ifPresent(lit -> {
+				try {
+					setAppendMode(lit.booleanValue());
+				} catch (IllegalArgumentException e) {
+					throw new SailConfigException(
+							"Boolean value required for " + LmdbStoreSchema.APPEND_MODE + " property, found " + lit);
 				}
 			});
 

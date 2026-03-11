@@ -408,12 +408,15 @@ public class QueryServlet extends TransformationServlet {
 				final String queryText = req.getParameter(QUERY);
 				final boolean infer = req.isParameterPresent(INFER) ? Boolean.valueOf(req.getParameter(INFER)) : false;
 				final int rowsPerPage = Integer.valueOf(req.getParameter(LIMIT));
+				final String queryTimeoutParam = req.getParameter(QUERY_TIMEOUT);
+				final int queryTimeout = queryTimeoutParam == null ? 0 : Integer.parseInt(queryTimeoutParam);
 				if (existed) {
 					final IRI query = storage.selectSavedQuery(repositoryReference, userName, queryName);
-					storage.updateQuery(query, userName, shared, queryLanguage, queryText, infer, rowsPerPage);
+					storage.updateQuery(query, userName, shared, queryLanguage, queryText, infer, rowsPerPage,
+							queryTimeout);
 				} else {
 					storage.saveQuery(repositoryReference, queryName, userName, shared, queryLanguage, queryText,
-							infer, rowsPerPage);
+							infer, rowsPerPage, queryTimeout);
 				}
 			}
 			jsonObject.put("written", written);

@@ -452,7 +452,7 @@
 		<script src="../../scripts/yasqeHelper.js" type="text/javascript"></script>
 		<script src="../../scripts/viz/viz.js" type="text/javascript"></script>
 		<script src="../../scripts/viz/full.render.js" type="text/javascript"></script>
-		<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.2/dist/svg-pan-zoom.min.js" type="text/javascript"></script>
+		<script src="../../scripts/svg-pan-zoom.min.js" type="text/javascript"></script>
 		<script src="../../scripts/query.js" type="text/javascript"></script>
 
 	</xsl:template>

@@ -25,6 +25,7 @@
          lmdb:pageCardinalityEstimator {%Page cardinality estimator|true|false%} ;
          lmdb:valueEvictionInterval {%Value eviction interval[len=16]|300000%} ;
          lmdb:forceSync {%Force sync|false|true%} ;
+         lmdb:appendMode {%Append mode (experimental)|false|true%} ;
          lmdb:noReadahead {%No readahead|false|true%} ;
          config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STANDARD|STRICT%}";
       ]
