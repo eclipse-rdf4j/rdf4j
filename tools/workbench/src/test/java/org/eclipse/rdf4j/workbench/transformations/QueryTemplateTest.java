@@ -57,6 +57,20 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void explainLoadingShouldLockToCurrentPreSizeOnly() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.contains("function lockExplanationDimensions()")
+				.contains("var currentHeight = explanation.outerHeight();")
+				.contains("var currentWidth = explanation.outerWidth();")
+				.doesNotContain("var dotHeight = dotView.outerHeight();")
+				.doesNotContain("var dotWidth = dotView.outerWidth();")
+				.doesNotContain("var jsonHeight = jsonView.outerHeight();")
+				.doesNotContain("var jsonWidth = jsonView.outerWidth();");
+	}
+
+	@Test
 	void explainScriptShouldNotForceThirtySecondClientTimeout() throws IOException {
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 
@@ -90,9 +104,53 @@ class QueryTemplateTest {
 
 		assertThat(queryTemplate)
 				.contains("id=\"explain-trigger\"")
-				.contains("onclick=\"workbench.query.runExplain()\"")
+				.contains("onclick=\"workbench.query.runExplain(null, 'explain-trigger')\"")
 				.contains("id=\"query-explanation-controls-row\"")
 				.contains("id=\"rerun-explanation\"");
+	}
+
+	@Test
+	void explainUiShouldDisableButtonsAndShowDelayedSpinnerForSlowResponses() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains(".query-explain-spinner")
+				.contains("@keyframes query-explain-spinner-spin")
+				.contains("id=\"explain-trigger-spinner\"")
+				.contains("id=\"rerun-explanation-spinner\"");
+
+		assertThat(queryScript)
+				.contains("function setExplainButtonsDisabled")
+				.contains("setExplainButtonsDisabled(true);")
+				.contains("setExplainButtonsDisabled(false);")
+				.contains("function showExplainSpinner")
+				.contains("function hideExplainSpinners")
+				.contains("window.setTimeout(function()")
+				.contains("1000 - (Date.now() - explainSpinnerVisibleSince)");
+	}
+
+	@Test
+	void explainUiShouldShowButtonScopedCancelControlsAndAbortRequests() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains("onclick=\"workbench.query.runExplain(null, 'rerun-explanation')\"")
+				.contains("onclick=\"workbench.query.runExplain(null, 'explain-trigger')\"")
+				.contains("id=\"rerun-explanation-cancel\"")
+				.contains("id=\"explain-trigger-cancel\"")
+				.contains("onclick=\"workbench.query.cancelExplain()\"");
+
+		assertThat(queryScript)
+				.contains("var activeExplainJqXHR: JQueryXHR = null;")
+				.contains("function showExplainCancelButton")
+				.contains("function hideExplainCancelButtons")
+				.contains("showExplainCancelButton(buttonId);")
+				.contains("activeExplainJqXHR.abort();")
+				.contains("textStatus !== 'abort'");
 	}
 
 	@Test
@@ -116,7 +174,7 @@ class QueryTemplateTest {
 				.contains("$('#query-explanation').show()")
 				.contains("width: '100%'")
 				.contains("maxWidth: '100%'")
-				.contains("captureExplainButtonViewportTop();")
+				.contains("captureExplainButtonViewportTop(buttonId);")
 				.contains("restoreExplainButtonViewportTopIfNeeded();")
 				.doesNotContain("shouldRestoreButtonViewportOnDotRender")
 				.doesNotContain("format !== 'dot'");
@@ -248,6 +306,26 @@ class QueryTemplateTest {
 				.contains("wb-query-text")
 				.contains("createHiddenInput('ref', 'text')")
 				.contains("createHiddenInput('query', queryText)");
+	}
+
+	@Test
+	void resultPagesShouldExposeSeparateDownloadLimitControls() throws IOException {
+		String tupleTemplate = Files.readString(Path.of("src/main/webapp/transformations/tuple.xsl"),
+				StandardCharsets.UTF_8);
+		String graphTemplate = Files.readString(Path.of("src/main/webapp/transformations/graph.xsl"),
+				StandardCharsets.UTF_8);
+		String pagingScript = Files.readString(Path.of("src/main/webapp/scripts/ts/paging.ts"), StandardCharsets.UTF_8);
+
+		assertThat(tupleTemplate)
+				.contains("$download-limit.label")
+				.contains("<xsl:with-param name=\"limit_id\">download_limit</xsl:with-param>");
+		assertThat(graphTemplate)
+				.contains("$download-limit.label")
+				.contains("<xsl:with-param name=\"limit_id\">download_limit</xsl:with-param>");
+		assertThat(pagingScript)
+				.contains("'download_limit'")
+				.contains("addElementValueToFormIfPresent")
+				.contains("addElementValueToUrlIfPresent");
 	}
 
 	@Test

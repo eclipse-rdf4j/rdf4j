@@ -68,7 +68,7 @@ class SummaryServletTest {
 				+ "    </result>\n"
 				+ "  </results>\n"
 				+ "  <workbench:metadata>\n"
-				+ "    <workbench:effective-config-turtle>"
+				+ "    <workbench:config-model-turtle>"
 				+ "@prefix config: &lt;tag:rdf4j.org,2023:config/&gt; .\n"
 				+ "@prefix rdfs: &lt;http://www.w3.org/2000/01/rdf-schema#&gt; .\n"
 				+ "\n"
@@ -77,7 +77,7 @@ class SummaryServletTest {
 				+ "   config:rep.impl [\n"
 				+ "      config:rep.type \"openrdf:SailRepository\"\n"
 				+ "   ] ."
-				+ "</workbench:effective-config-turtle>\n"
+				+ "</workbench:config-model-turtle>\n"
 				+ "  </workbench:metadata>\n"
 				+ "</sparql>\n";
 
@@ -87,7 +87,7 @@ class SummaryServletTest {
 
 		assertThat(output)
 				.contains("<details")
-				.contains("Effective config model")
+				.contains("Config model")
 				.contains("<pre")
 				.contains("@prefix config:")
 				.contains("config:rep.impl [");
@@ -123,7 +123,7 @@ class SummaryServletTest {
 		String xml = buffer.toString(StandardCharsets.UTF_8);
 
 		assertThat(xml)
-				.contains("<workbench:effective-config-turtle>")
+				.contains("<workbench:config-model-turtle>")
 				.contains("@prefix config:")
 				.contains("@prefix rdfs:")
 				.contains("config:rep.id \"memory\"")

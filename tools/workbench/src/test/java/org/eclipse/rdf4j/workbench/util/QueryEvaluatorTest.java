@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.workbench.util;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -21,11 +22,14 @@ import java.util.List;
 
 import javax.servlet.http.HttpServletResponse;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.Test;
 
@@ -181,5 +185,43 @@ class QueryEvaluatorTest {
 		verify(pagedQuery).setMaxExecutionTime(12);
 		verify(pagedQuery).evaluate();
 		verify(cookies).addTotalResultCountCookie(req, resp, 25);
+	}
+
+	@Test
+	void shouldUseDedicatedDownloadLimitWhenDownloadingTupleResults() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		String xslPath = "/xsl";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult tupleQueryResult = new IteratingTupleQueryResult(List.of("s"), List.of(binding("one"),
+				binding("two"), binding("three")));
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("Accept")).thenReturn(true);
+		when(req.isParameterPresent("download_limit")).thenReturn(true);
+		when(req.getParameter("Accept")).thenReturn("text/csv");
+		when(req.getInt("query-timeout")).thenReturn(0);
+		when(req.getInt("offset")).thenReturn(0);
+		when(req.getInt("limit_query")).thenReturn(1);
+		when(req.getInt("download_limit")).thenReturn(2);
+		when(req.getInt("know_total")).thenReturn(0);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+				queryText, req, cookies, null);
+
+		verify(builder, times(2)).result(org.mockito.ArgumentMatchers.any(Object[].class));
+		verify(cookies).addTotalResultCountCookie(req, resp, 3);
+	}
+
+	private static BindingSet binding(String value) {
+		MapBindingSet bindingSet = new MapBindingSet();
+		bindingSet.addBinding("s", SimpleValueFactory.getInstance().createLiteral(value));
+		return bindingSet;
 	}
 }

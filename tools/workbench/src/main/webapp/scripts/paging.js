@@ -32,6 +32,25 @@ var workbench;
                 form.appendChild(createHiddenInput(name, value));
             }
         }
+        function addElementValueToFormIfPresent(form, name) {
+            var element = document.getElementById(name);
+            if (element && element.value) {
+                form.appendChild(createHiddenInput(name, element.value));
+            }
+        }
+        function appendParamToUrl(url, name, value) {
+            if (url.indexOf('?') + 1 || url.indexOf(';') + 1) {
+                return url + AMP + name + '=' + value;
+            }
+            return url + ';' + name + '=' + value;
+        }
+        function addElementValueToUrlIfPresent(url, name) {
+            var element = document.getElementById(name);
+            if (element && element.value) {
+                return appendParamToUrl(url, name, encodeURIComponent(element.value));
+            }
+            return url;
+        }
         function getEmbeddedQueryText() {
             var queryText = document.getElementById('wb-query-text');
             if (queryText && queryText.value) {
@@ -61,6 +80,9 @@ var workbench;
             addCookieToFormIfPresent(form, 'infer');
             addCookieToFormIfPresent(form, 'limit_query');
             addCookieToFormIfPresent(form, 'query-timeout');
+            if (name == 'Accept') {
+                addElementValueToFormIfPresent(form, 'download_limit');
+            }
             form.appendChild(createHiddenInput(name, value));
             document.body.appendChild(form);
             form.submit();
@@ -97,13 +119,10 @@ var workbench;
                 submitGraphParamRequest(name, value);
                 return;
             }
-            var encodedValue = encodeURIComponent(value);
-            if (url.indexOf('?') + 1 || url.indexOf(';') + 1) {
-                document.location.href = url + AMP + name + '=' + encodedValue;
+            if (name == 'Accept') {
+                url = addElementValueToUrlIfPresent(url, 'download_limit');
             }
-            else {
-                document.location.href = url + ';' + name + '=' + encodedValue;
-            }
+            document.location.href = appendParamToUrl(url, name, encodeURIComponent(value));
         }
         paging.addGraphParam = addGraphParam;
         var StringMap = /** @class */ (function () {

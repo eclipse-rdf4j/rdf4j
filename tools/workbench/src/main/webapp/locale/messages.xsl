@@ -36,7 +36,7 @@
 		Repository Location
 	</variable>
 	<variable name="repository-size.title">Repository Size</variable>
-	<variable name="effective-config.title">Effective Config Model</variable>
+	<variable name="config-model.title">Config Model</variable>
 	<variable name="bad-request.title">Bad Request</variable>
 	<variable name="super-classes.title">Super Classes</variable>
 	<variable name="sub-classes.title">Sub Classes</variable>
@@ -89,12 +89,13 @@
 	<variable name="repository.label">Repository</variable>
 	<variable name="download.label">Download</variable>
 	<variable name="download-format.label">Download format</variable>
+	<variable name="download-limit.label">Download limit</variable>
 	<variable name="change-server.desc">for example: http://localhost:8080/rdf4j-server</variable>
 	<variable name="repository-create.label">New repository</variable>
 	<variable name="repository-delete.label">
 		Delete repository
 	</variable>
-	<variable name="effective-config.label">Effective config model</variable>
+	<variable name="config-model.label">Config Model</variable>
 	<variable name="show-datatypes.label">Show data types &amp; language tags</variable>
 
 	<!-- General labels -->

@@ -20,6 +20,12 @@ var workbench;
         var dotPanZoomInstance = null;
         var explainButtonViewportTopBeforeRequest = null;
         var explainButtonIdBeforeRequest = '';
+        var explainSpinnerVisibleSince = 0;
+        var explainSpinnerTargetId = '';
+        var explainSpinnerDelayTimeoutId = null;
+        var explainSpinnerHideTimeoutId = null;
+        var activeExplainRequestId = 0;
+        var activeExplainJqXHR = null;
         /**
          * Populate reasonable default name space declarations into the query text area.
          * The server has provided the declaration text in hidden elements.
@@ -99,22 +105,6 @@ var workbench;
             var jsonView = $('#query-explanation-json-view');
             var currentHeight = explanation.outerHeight();
             var currentWidth = explanation.outerWidth();
-            var dotHeight = dotView.outerHeight();
-            var dotWidth = dotView.outerWidth();
-            var jsonHeight = jsonView.outerHeight();
-            var jsonWidth = jsonView.outerWidth();
-            if (dotHeight && (!currentHeight || dotHeight > currentHeight)) {
-                currentHeight = dotHeight;
-            }
-            if (dotWidth && (!currentWidth || dotWidth > currentWidth)) {
-                currentWidth = dotWidth;
-            }
-            if (jsonHeight && (!currentHeight || jsonHeight > currentHeight)) {
-                currentHeight = jsonHeight;
-            }
-            if (jsonWidth && (!currentWidth || jsonWidth > currentWidth)) {
-                currentWidth = jsonWidth;
-            }
             if (currentHeight) {
                 explanation.css('min-height', currentHeight + 'px');
                 dotView.css('min-height', currentHeight + 'px');
@@ -147,7 +137,107 @@ var workbench;
             explainButtonViewportTopBeforeRequest = null;
             explainButtonIdBeforeRequest = '';
         }
-        function getExplainTriggerButtonElement() {
+        function setExplainButtonsDisabled(disabled) {
+            $('#explain-trigger').prop('disabled', disabled);
+            $('#rerun-explanation').prop('disabled', disabled);
+        }
+        function hideExplainCancelButtons() {
+            $('.query-explain-cancel')
+                .removeClass('query-explain-cancel--visible')
+                .attr('aria-hidden', 'true')
+                .prop('disabled', true);
+        }
+        function showExplainCancelButton(buttonId) {
+            var cancelButtonId = buttonId === 'rerun-explanation'
+                ? '#rerun-explanation-cancel'
+                : '#explain-trigger-cancel';
+            hideExplainCancelButtons();
+            $(cancelButtonId)
+                .addClass('query-explain-cancel--visible')
+                .attr('aria-hidden', 'false')
+                .prop('disabled', false);
+        }
+        function hideExplainSpinners() {
+            $('.query-explain-spinner')
+                .removeClass('query-explain-spinner--visible')
+                .attr('aria-hidden', 'true');
+            explainSpinnerVisibleSince = 0;
+        }
+        function showExplainSpinner(buttonId) {
+            var spinnerId = buttonId === 'rerun-explanation'
+                ? '#rerun-explanation-spinner'
+                : '#explain-trigger-spinner';
+            hideExplainSpinners();
+            explainSpinnerTargetId = buttonId;
+            $(spinnerId)
+                .addClass('query-explain-spinner--visible')
+                .attr('aria-hidden', 'false');
+            showExplainCancelButton(buttonId);
+            explainSpinnerVisibleSince = Date.now();
+        }
+        function clearExplainSpinnerDelayTimeout() {
+            if (explainSpinnerDelayTimeoutId !== null) {
+                window.clearTimeout(explainSpinnerDelayTimeoutId);
+                explainSpinnerDelayTimeoutId = null;
+            }
+        }
+        function clearExplainSpinnerHideTimeout() {
+            if (explainSpinnerHideTimeoutId !== null) {
+                window.clearTimeout(explainSpinnerHideTimeoutId);
+                explainSpinnerHideTimeoutId = null;
+            }
+        }
+        function beginExplainRequest(buttonId) {
+            activeExplainRequestId += 1;
+            var requestId = activeExplainRequestId;
+            explainSpinnerTargetId = buttonId;
+            clearExplainSpinnerDelayTimeout();
+            clearExplainSpinnerHideTimeout();
+            hideExplainSpinners();
+            hideExplainCancelButtons();
+            setExplainButtonsDisabled(true);
+            explainSpinnerDelayTimeoutId = window.setTimeout(function () {
+                if (requestId !== activeExplainRequestId) {
+                    return;
+                }
+                explainSpinnerDelayTimeoutId = null;
+                showExplainSpinner(buttonId);
+            }, 1000);
+            return requestId;
+        }
+        function finishExplainRequest(requestId) {
+            if (requestId !== activeExplainRequestId) {
+                return;
+            }
+            setExplainButtonsDisabled(false);
+            hideExplainCancelButtons();
+            clearExplainSpinnerDelayTimeout();
+            clearExplainSpinnerHideTimeout();
+            if (!explainSpinnerVisibleSince) {
+                hideExplainSpinners();
+                explainSpinnerTargetId = '';
+                return;
+            }
+            var spinnerTargetId = explainSpinnerTargetId;
+            var remainingSpinnerTime = 1000 - (Date.now() - explainSpinnerVisibleSince);
+            if (remainingSpinnerTime > 0) {
+                explainSpinnerHideTimeoutId = window.setTimeout(function () {
+                    if (requestId !== activeExplainRequestId || spinnerTargetId !== explainSpinnerTargetId) {
+                        return;
+                    }
+                    explainSpinnerHideTimeoutId = null;
+                    hideExplainSpinners();
+                    explainSpinnerTargetId = '';
+                }, remainingSpinnerTime);
+                return;
+            }
+            hideExplainSpinners();
+            explainSpinnerTargetId = '';
+        }
+        function getExplainTriggerButtonElement(buttonId) {
+            if (buttonId) {
+                return document.getElementById(buttonId);
+            }
             var activeElement = document.activeElement;
             if (activeElement
                 && (activeElement.id === 'explain-trigger' || activeElement.id === 'rerun-explanation')) {
@@ -155,8 +245,8 @@ var workbench;
             }
             return document.getElementById('explain-trigger');
         }
-        function captureExplainButtonViewportTop() {
-            var explainButton = getExplainTriggerButtonElement();
+        function captureExplainButtonViewportTop(buttonId) {
+            var explainButton = getExplainTriggerButtonElement(buttonId);
             if (!explainButton) {
                 clearExplainButtonViewportRestoreState();
                 return;
@@ -533,7 +623,7 @@ var workbench;
             }
             return 'Explain request failed.';
         }
-        function ajaxExplain(level) {
+        function ajaxExplain(level, requestId) {
             var form = $('form[action="query"]');
             var previousAction = $('#action').val();
             var previousExplain = $('#explain').val();
@@ -544,13 +634,15 @@ var workbench;
             $('#explain').val(previousExplain);
             $('#queryString.errors').text('');
             clearRenderedExplanation();
-            $.ajax({
+            activeExplainJqXHR = $.ajax({
                 url: 'query',
                 type: 'POST',
                 dataType: 'json',
                 data: serializedForm,
                 error: function (jqXHR, textStatus, errorThrown) {
-                    showExplainError(getExplainErrorMessage(jqXHR, textStatus, errorThrown));
+                    if (textStatus !== 'abort') {
+                        showExplainError(getExplainErrorMessage(jqXHR, textStatus, errorThrown));
+                    }
                 },
                 success: function (response) {
                     if (response.error) {
@@ -559,6 +651,10 @@ var workbench;
                     }
                     $('#queryString.errors').text('');
                     renderExplanation(response.content || '', response.format || $('#explain-format').val());
+                },
+                complete: function () {
+                    activeExplainJqXHR = null;
+                    finishExplainRequest(requestId);
                 }
             });
         }
@@ -697,15 +793,26 @@ var workbench;
             return allowPageToSubmitForm;
         }
         query_1.doSubmit = doSubmit;
-        function runExplain(level) {
+        function runExplain(level, buttonId) {
             var effectiveLevel = level || $('#explain-level').val() || 'Optimized';
+            var explainButton = getExplainTriggerButtonElement(buttonId);
+            if (explainButton && explainButton.disabled) {
+                return;
+            }
             $('#explain-level').val(effectiveLevel);
-            captureExplainButtonViewportTop();
+            captureExplainButtonViewportTop(buttonId);
             if (yasqe)
                 yasqe.save();
-            ajaxExplain(effectiveLevel);
+            var requestId = beginExplainRequest(explainButton ? explainButton.id : 'explain-trigger');
+            ajaxExplain(effectiveLevel, requestId);
         }
         query_1.runExplain = runExplain;
+        function cancelExplain() {
+            if (activeExplainJqXHR) {
+                activeExplainJqXHR.abort();
+            }
+        }
+        query_1.cancelExplain = cancelExplain;
         function downloadExplanation() {
             if (!latestExplanation) {
                 return;

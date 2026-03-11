@@ -99,6 +99,40 @@
 					min-width:14em;
 				}
 
+				.query-explain-spinner {
+					display:none;
+					width:0.95em;
+					height:0.95em;
+					box-sizing:border-box;
+					border:2px solid #c8d1db;
+					border-top-color:#356893;
+					border-radius:50%;
+					vertical-align:middle;
+				}
+
+				.query-explain-spinner--visible {
+					display:inline-block;
+					animation:query-explain-spinner-spin 0.8s linear infinite;
+				}
+
+				.query-explain-cancel {
+					display:none;
+				}
+
+				.query-explain-cancel--visible {
+					display:inline-block;
+				}
+
+				@keyframes query-explain-spinner-spin {
+					from {
+						transform:rotate(0deg);
+					}
+
+					to {
+						transform:rotate(360deg);
+					}
+				}
+
 				#query {
 					width:100%;
 					max-width:100%;
@@ -363,7 +397,12 @@
 							<option value="Timed">Timed</option>
 						</select>
 						<input id="rerun-explanation" type="button"
-							value="{$explain-query.label}" onclick="workbench.query.runExplain()" />
+							value="{$explain-query.label}" onclick="workbench.query.runExplain(null, 'rerun-explanation')" />
+						<span id="rerun-explanation-spinner" class="query-explain-spinner"
+							aria-hidden="true"></span>
+						<input id="rerun-explanation-cancel" class="query-explain-cancel"
+							type="button" value="{$cancel.label}" onclick="workbench.query.cancelExplain()"
+							aria-hidden="true" disabled="disabled" />
 						<input id="download-explanation" type="button"
 							value="{$download-explanation.label}">
 							<xsl:if test="string-length(normalize-space($explanation)) = 0">
@@ -427,7 +466,12 @@
 						<input type="button" onclick="workbench.query.resetNamespaces()" value="Clear" />
 						<input id="exec" type="submit" value="{$execute.label}" />
 						<input id="explain-trigger" type="button"
-							value="{$explain-query.label}" onclick="workbench.query.runExplain()" />
+							value="{$explain-query.label}" onclick="workbench.query.runExplain(null, 'explain-trigger')" />
+						<span id="explain-trigger-spinner" class="query-explain-spinner"
+							aria-hidden="true"></span>
+						<input id="explain-trigger-cancel" class="query-explain-cancel"
+							type="button" value="{$cancel.label}" onclick="workbench.query.cancelExplain()"
+							aria-hidden="true" disabled="disabled" />
 						<input id="save" type="submit" value="{$save.label}" disabled="disabled" />
 						<input id="query-name" name="query-name" type="text" size="32"
 							maxlength="32" value="" />

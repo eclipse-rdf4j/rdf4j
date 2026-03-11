@@ -42,6 +42,28 @@ module workbench {
             }
         }
 
+        function addElementValueToFormIfPresent(form: HTMLFormElement, name: string) {
+            var element = <HTMLInputElement | HTMLSelectElement>document.getElementById(name);
+            if (element && element.value) {
+                form.appendChild(createHiddenInput(name, element.value));
+            }
+        }
+
+        function appendParamToUrl(url: string, name: string, value: string) {
+            if (url.indexOf('?') + 1 || url.indexOf(';') + 1) {
+                return url + AMP + name + '=' + value;
+            }
+            return url + ';' + name + '=' + value;
+        }
+
+        function addElementValueToUrlIfPresent(url: string, name: string) {
+            var element = <HTMLInputElement | HTMLSelectElement>document.getElementById(name);
+            if (element && element.value) {
+                return appendParamToUrl(url, name, encodeURIComponent(element.value));
+            }
+            return url;
+        }
+
         function getEmbeddedQueryText(): string {
             var queryText = <HTMLTextAreaElement>document.getElementById('wb-query-text');
             if (queryText && queryText.value) {
@@ -74,6 +96,9 @@ module workbench {
             addCookieToFormIfPresent(form, 'infer');
             addCookieToFormIfPresent(form, 'limit_query');
             addCookieToFormIfPresent(form, 'query-timeout');
+            if (name == 'Accept') {
+                addElementValueToFormIfPresent(form, 'download_limit');
+            }
             form.appendChild(createHiddenInput(name, value));
 
             document.body.appendChild(form);
@@ -115,12 +140,10 @@ module workbench {
                 submitGraphParamRequest(name, value);
                 return;
             }
-            var encodedValue = encodeURIComponent(value);
-            if (url.indexOf('?') + 1 || url.indexOf(';') + 1) {
-                document.location.href = url + AMP + name + '=' + encodedValue;
-            } else {
-                document.location.href = url + ';' + name + '=' + encodedValue;
+            if (name == 'Accept') {
+                url = addElementValueToUrlIfPresent(url, 'download_limit');
             }
+            document.location.href = appendParamToUrl(url, name, encodeURIComponent(value));
         }
         
         class StringMap {

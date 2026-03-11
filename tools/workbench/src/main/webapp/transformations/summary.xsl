@@ -75,15 +75,15 @@
 				</tr>
 			</tbody>
 		</table>
-		<xsl:if test="/sparql:sparql/workbench:metadata/workbench:effective-config-turtle">
+		<xsl:if test="/sparql:sparql/workbench:metadata/workbench:config-model-turtle">
 			<h2>
-				<xsl:value-of select="$effective-config.title" />
+				<xsl:value-of select="$config-model.title" />
 			</h2>
 			<details>
 				<summary>
-					<xsl:value-of select="$effective-config.label" />
+					<xsl:value-of select="$config-model.label" />
 				</summary>
-				<pre><xsl:value-of select="/sparql:sparql/workbench:metadata/workbench:effective-config-turtle" /></pre>
+				<pre><xsl:value-of select="/sparql:sparql/workbench:metadata/workbench:config-model-turtle" /></pre>
 			</details>
 		</xsl:if>
 	</xsl:template>

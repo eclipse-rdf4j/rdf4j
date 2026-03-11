@@ -2,7 +2,7 @@
 # RDF4J configuration template for a native RDF repository with
 # a custom graph query inference rule.
 #
-# @workbench.template label="Native Store + Custom Graph Query Inference" order=130  hidden=true
+# @workbench.template label="Native Store + Custom Graph Query Inference" order=130
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
 @prefix config: <tag:rdf4j.org,2023:config/>.
 @prefix sp: <http://spinrdf.org/sp#>.

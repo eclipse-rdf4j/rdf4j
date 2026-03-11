@@ -45,7 +45,7 @@ import org.slf4j.LoggerFactory;
 
 public class SummaryServlet extends TransformationServlet {
 
-	private static final String EFFECTIVE_CONFIG_TURTLE = "effective-config-turtle";
+	private static final String EFFECTIVE_CONFIG_TURTLE = "config-model-turtle";
 
 	private final ExecutorService executorService = Executors.newCachedThreadPool();
 

@@ -29,6 +29,12 @@ module workbench {
         var dotPanZoomInstance: any = null;
         var explainButtonViewportTopBeforeRequest: number = null;
         var explainButtonIdBeforeRequest = '';
+        var explainSpinnerVisibleSince = 0;
+        var explainSpinnerTargetId = '';
+        var explainSpinnerDelayTimeoutId: number = null;
+        var explainSpinnerHideTimeoutId: number = null;
+        var activeExplainRequestId = 0;
+        var activeExplainJqXHR: JQueryXHR = null;
 
         /**
          * Populate reasonable default name space declarations into the query text area.
@@ -124,22 +130,6 @@ module workbench {
             var jsonView = $('#query-explanation-json-view');
             var currentHeight = explanation.outerHeight();
             var currentWidth = explanation.outerWidth();
-            var dotHeight = dotView.outerHeight();
-            var dotWidth = dotView.outerWidth();
-            var jsonHeight = jsonView.outerHeight();
-            var jsonWidth = jsonView.outerWidth();
-            if (dotHeight && (!currentHeight || dotHeight > currentHeight)) {
-                currentHeight = dotHeight;
-            }
-            if (dotWidth && (!currentWidth || dotWidth > currentWidth)) {
-                currentWidth = dotWidth;
-            }
-            if (jsonHeight && (!currentHeight || jsonHeight > currentHeight)) {
-                currentHeight = jsonHeight;
-            }
-            if (jsonWidth && (!currentWidth || jsonWidth > currentWidth)) {
-                currentWidth = jsonWidth;
-            }
             if (currentHeight) {
                 explanation.css('min-height', currentHeight + 'px');
                 dotView.css('min-height', currentHeight + 'px');
@@ -176,17 +166,126 @@ module workbench {
             explainButtonIdBeforeRequest = '';
         }
 
-        function getExplainTriggerButtonElement(): HTMLElement {
-            var activeElement = <HTMLElement>document.activeElement;
+        function setExplainButtonsDisabled(disabled: boolean) {
+            $('#explain-trigger').prop('disabled', disabled);
+            $('#rerun-explanation').prop('disabled', disabled);
+        }
+
+        function hideExplainCancelButtons() {
+            $('.query-explain-cancel')
+                .removeClass('query-explain-cancel--visible')
+                .attr('aria-hidden', 'true')
+                .prop('disabled', true);
+        }
+
+        function showExplainCancelButton(buttonId: string) {
+            var cancelButtonId = buttonId === 'rerun-explanation'
+                ? '#rerun-explanation-cancel'
+                : '#explain-trigger-cancel';
+            hideExplainCancelButtons();
+            $(cancelButtonId)
+                .addClass('query-explain-cancel--visible')
+                .attr('aria-hidden', 'false')
+                .prop('disabled', false);
+        }
+
+        function hideExplainSpinners() {
+            $('.query-explain-spinner')
+                .removeClass('query-explain-spinner--visible')
+                .attr('aria-hidden', 'true');
+            explainSpinnerVisibleSince = 0;
+        }
+
+        function showExplainSpinner(buttonId: string) {
+            var spinnerId = buttonId === 'rerun-explanation'
+                ? '#rerun-explanation-spinner'
+                : '#explain-trigger-spinner';
+            hideExplainSpinners();
+            explainSpinnerTargetId = buttonId;
+            $(spinnerId)
+                .addClass('query-explain-spinner--visible')
+                .attr('aria-hidden', 'false');
+            showExplainCancelButton(buttonId);
+            explainSpinnerVisibleSince = Date.now();
+        }
+
+        function clearExplainSpinnerDelayTimeout() {
+            if (explainSpinnerDelayTimeoutId !== null) {
+                window.clearTimeout(explainSpinnerDelayTimeoutId);
+                explainSpinnerDelayTimeoutId = null;
+            }
+        }
+
+        function clearExplainSpinnerHideTimeout() {
+            if (explainSpinnerHideTimeoutId !== null) {
+                window.clearTimeout(explainSpinnerHideTimeoutId);
+                explainSpinnerHideTimeoutId = null;
+            }
+        }
+
+        function beginExplainRequest(buttonId: string): number {
+            activeExplainRequestId += 1;
+            var requestId = activeExplainRequestId;
+            explainSpinnerTargetId = buttonId;
+            clearExplainSpinnerDelayTimeout();
+            clearExplainSpinnerHideTimeout();
+            hideExplainSpinners();
+            hideExplainCancelButtons();
+            setExplainButtonsDisabled(true);
+            explainSpinnerDelayTimeoutId = window.setTimeout(function() {
+                if (requestId !== activeExplainRequestId) {
+                    return;
+                }
+                explainSpinnerDelayTimeoutId = null;
+                showExplainSpinner(buttonId);
+            }, 1000);
+            return requestId;
+        }
+
+        function finishExplainRequest(requestId: number) {
+            if (requestId !== activeExplainRequestId) {
+                return;
+            }
+            setExplainButtonsDisabled(false);
+            hideExplainCancelButtons();
+            clearExplainSpinnerDelayTimeout();
+            clearExplainSpinnerHideTimeout();
+            if (!explainSpinnerVisibleSince) {
+                hideExplainSpinners();
+                explainSpinnerTargetId = '';
+                return;
+            }
+            var spinnerTargetId = explainSpinnerTargetId;
+            var remainingSpinnerTime = 1000 - (Date.now() - explainSpinnerVisibleSince);
+            if (remainingSpinnerTime > 0) {
+                explainSpinnerHideTimeoutId = window.setTimeout(function() {
+                    if (requestId !== activeExplainRequestId || spinnerTargetId !== explainSpinnerTargetId) {
+                        return;
+                    }
+                    explainSpinnerHideTimeoutId = null;
+                    hideExplainSpinners();
+                    explainSpinnerTargetId = '';
+                }, remainingSpinnerTime);
+                return;
+            }
+            hideExplainSpinners();
+            explainSpinnerTargetId = '';
+        }
+
+        function getExplainTriggerButtonElement(buttonId?: string): HTMLInputElement {
+            if (buttonId) {
+                return <HTMLInputElement>document.getElementById(buttonId);
+            }
+            var activeElement = <HTMLInputElement>document.activeElement;
             if (activeElement
                     && (activeElement.id === 'explain-trigger' || activeElement.id === 'rerun-explanation')) {
                 return activeElement;
             }
-            return <HTMLElement>document.getElementById('explain-trigger');
+            return <HTMLInputElement>document.getElementById('explain-trigger');
         }
 
-        function captureExplainButtonViewportTop() {
-            var explainButton = getExplainTriggerButtonElement();
+        function captureExplainButtonViewportTop(buttonId?: string) {
+            var explainButton = getExplainTriggerButtonElement(buttonId);
             if (!explainButton) {
                 clearExplainButtonViewportRestoreState();
                 return;
@@ -596,7 +695,7 @@ module workbench {
             return 'Explain request failed.';
         }
 
-        function ajaxExplain(level: string) {
+        function ajaxExplain(level: string, requestId: number) {
             var form = $('form[action="query"]');
             var previousAction = $('#action').val();
             var previousExplain = $('#explain').val();
@@ -607,13 +706,15 @@ module workbench {
             $('#explain').val(previousExplain);
             $('#queryString.errors').text('');
             clearRenderedExplanation();
-            $.ajax({
+            activeExplainJqXHR = $.ajax({
                 url: 'query',
                 type: 'POST',
                 dataType: 'json',
                 data: serializedForm,
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
-                    showExplainError(getExplainErrorMessage(jqXHR, textStatus, errorThrown));
+                    if (textStatus !== 'abort') {
+                        showExplainError(getExplainErrorMessage(jqXHR, textStatus, errorThrown));
+                    }
                 },
                 success: function(response: AjaxExplainResponse) {
                     if (response.error) {
@@ -622,6 +723,10 @@ module workbench {
                     }
                     $('#queryString.errors').text('');
                     renderExplanation(response.content || '', response.format || <string>$('#explain-format').val());
+                },
+                complete: function() {
+                    activeExplainJqXHR = null;
+                    finishExplainRequest(requestId);
                 }
             });
         }
@@ -758,12 +863,23 @@ module workbench {
             return allowPageToSubmitForm;
         }
 
-        export function runExplain(level?: string) {
+        export function runExplain(level?: string, buttonId?: string) {
             var effectiveLevel = level || <string>$('#explain-level').val() || 'Optimized';
+            var explainButton = getExplainTriggerButtonElement(buttonId);
+            if (explainButton && explainButton.disabled) {
+                return;
+            }
             $('#explain-level').val(effectiveLevel);
-            captureExplainButtonViewportTop();
+            captureExplainButtonViewportTop(buttonId);
             if (yasqe) yasqe.save();
-            ajaxExplain(effectiveLevel);
+            var requestId = beginExplainRequest(explainButton ? explainButton.id : 'explain-trigger');
+            ajaxExplain(effectiveLevel, requestId);
+        }
+
+        export function cancelExplain() {
+            if (activeExplainJqXHR) {
+                activeExplainJqXHR.abort();
+            }
         }
 
         export function downloadExplanation() {

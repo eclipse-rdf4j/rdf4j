@@ -49,6 +49,8 @@ public final class QueryEvaluator {
 
 	private static final String ACCEPT = "Accept";
 
+	private static final String DOWNLOAD_LIMIT = "download_limit";
+
 	private static final String EXPLAIN = "explain";
 
 	private static final String EXPLAIN_FORMAT = "explain-format";
@@ -115,7 +117,7 @@ public final class QueryEvaluator {
 
 		boolean evaluateCookie = false;
 		int offset = req.getInt("offset");
-		int limit = req.getInt("limit_query");
+		int limit = getResultLimit(req);
 		boolean paged = limit > 0;
 		if (query instanceof GraphQuery || query instanceof TupleQuery) {
 			final int know_total = req.getInt("know_total");
@@ -158,6 +160,13 @@ public final class QueryEvaluator {
 			query.setMaxExecutionTime(queryTimeoutSeconds);
 		}
 		return query;
+	}
+
+	private int getResultLimit(WorkbenchRequest req) throws BadRequestException {
+		if (req.isParameterPresent(ACCEPT) && req.isParameterPresent(DOWNLOAD_LIMIT)) {
+			return req.getInt(DOWNLOAD_LIMIT);
+		}
+		return req.getInt("limit_query");
 	}
 
 	private ExplainQueryResult explain(final Query query, final WorkbenchRequest req) throws BadRequestException {

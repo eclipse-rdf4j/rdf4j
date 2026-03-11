@@ -48,6 +48,17 @@
 								value="{$download.label}" />
 						</td>
 					</tr>
+					<tr>
+						<th>
+							<xsl:value-of select="$download-limit.label" />
+						</th>
+						<td>
+							<xsl:call-template name="limit-select">
+								<xsl:with-param name="limit_id">download_limit</xsl:with-param>
+							</xsl:call-template>
+						</td>
+						<td></td>
+					</tr>
 				</tbody>
 			</table>
 		</form>
