@@ -787,6 +787,57 @@ module workbench {
             return '#' + getPaneState(paneKey).queryId;
         }
 
+        function getPanePersistedQueryStorageKey(paneKey: string): string {
+            return paneKey === 'compare'
+                ? 'yasqe_query-compare-pane_queryVal'
+                : 'yasqe_query-primary-pane_queryVal';
+        }
+
+        function clearPanePersistedQuery(paneKey: string): void {
+            var storageKey = getPanePersistedQueryStorageKey(paneKey);
+            try {
+                window.localStorage.removeItem(storageKey);
+            } catch (e) {
+                // Ignore browsers where storage access is unavailable.
+            }
+            try {
+                window.sessionStorage.removeItem(storageKey);
+            } catch (e) {
+                // Ignore browsers where storage access is unavailable.
+            }
+        }
+
+        function persistPrimaryQueryEditorValue(queryEditor: YASQE_Instance): void {
+            if (!queryEditor) {
+                return;
+            }
+            queryEditor.save();
+            (<HTMLTextAreaElement>document.getElementById(primaryPaneState.queryId)).value = queryEditor.getValue();
+            if (YASQE.storeQuery) {
+                YASQE.storeQuery(queryEditor);
+            }
+        }
+
+        function getWorkbenchCookiePath(): string {
+            var pathSegments = window.location.pathname.split('/');
+            return pathSegments.length > 1 && pathSegments[1]
+                ? '/' + pathSegments[1]
+                : '/';
+        }
+
+        function setWorkbenchCookie(name: string, value: string): void {
+            document.cookie = name + '=' + encodeURIComponent(value || '') + '; path=' + getWorkbenchCookiePath();
+        }
+
+        function clearWorkbenchCookie(name: string): void {
+            document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=' + getWorkbenchCookiePath();
+        }
+
+        function persistPrimaryQueryValue(): void {
+            setWorkbenchCookie('query', getPaneRawQueryValue('primary'));
+            clearWorkbenchCookie('ref');
+        }
+
         function getPaneRawQueryValue(paneKey?: string): string {
             var queryEditor = getPaneQueryEditor(paneKey);
             if (queryEditor) {
@@ -1943,6 +1994,9 @@ module workbench {
             if (eventType === 'COMPARE_QUERY_CHANGED' && queryPageState) {
                 queryPageState.compareQuerySeeded = false;
             }
+            if (eventType === 'PRIMARY_QUERY_CHANGED') {
+                persistPrimaryQueryValue();
+            }
             dispatchQueryPageEvent({ type: eventType });
         }
 
@@ -2428,8 +2482,12 @@ module workbench {
         function initPaneYasqe(paneKey: string, clearFeedbackOnChange?: boolean): YASQE_Instance {
             workbench.yasqeHelper.setupCompleters(sparqlNamespaces);
             var paneEditor = YASQE.fromTextArea(<HTMLTextAreaElement>document.getElementById(getPaneState(paneKey).queryId), {
-                consumeShareLink: null//don't try to parse the url args. this is already done by the addLoad function below
+                consumeShareLink: null,//don't try to parse the url args. this is already done by the addLoad function below
+                persistent: paneKey === 'compare' ? null : getPanePersistedQueryStorageKey(paneKey)
             });
+            if (paneKey === 'compare') {
+                clearPanePersistedQuery('compare');
+            }
             $(paneEditor.getWrapperElement()).css({
                 "fontSize": "14px",
                 "width": "100%",
@@ -2437,6 +2495,11 @@ module workbench {
                 "boxSizing": "border-box"
             });
             paneEditor.on('change', function() {
+                if (paneKey === 'compare') {
+                    clearPanePersistedQuery('compare');
+                } else {
+                    persistPrimaryQueryEditorValue(paneEditor);
+                }
                 workbench.query.clearFeedback();
                 handleQueryPageInputChange(paneKey === 'compare' ? 'COMPARE_QUERY_CHANGED' : 'PRIMARY_QUERY_CHANGED');
             });
@@ -2465,6 +2528,7 @@ module workbench {
                 compareYasqe.toTextArea();
                 compareYasqe = null;
             }
+            clearPanePersistedQuery('compare');
         }
 
         function closeYasqe() {
@@ -2520,6 +2584,7 @@ module workbench {
         }
 
         export function initializeCompareUi() {
+            clearPanePersistedQuery('compare');
             diffNotReadyLabel = $.trim($('#query-diff-explanation').text());
             resetComparePaneState();
             syncCompareModeVisibility();

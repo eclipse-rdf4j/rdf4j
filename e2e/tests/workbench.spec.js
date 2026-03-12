@@ -33,6 +33,16 @@ async function createRepo(page) {
 
 }
 
+async function typeIntoCodeMirror(page, index, value) {
+    await page.locator('.CodeMirror').nth(index).click();
+    await page.keyboard.press('Meta+A');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.type(value);
+    await expect.poll(async () => page.evaluate(editorIndex => {
+        return document.querySelectorAll('.CodeMirror')[editorIndex].CodeMirror.getValue();
+    }, index)).toBe(value);
+}
+
 test('Create repo', async ({page}) => {
     await page.goto('http://localhost:8080/rdf4j-workbench/');
     page.on('dialog', dialog => {
@@ -213,7 +223,7 @@ test('Query compare mode diffs query and explanation', async ({page}) => {
     await expect(page.locator('#query-diff-modal')).not.toHaveClass(/query-diff-modal--open/);
 });
 
-test('Query compare mode resets secondary query on disable and reload', async ({page}) => {
+test('Query compare mode keeps primary query on reload without persisting secondary query', async ({page}) => {
     await page.goto('http://localhost:8080/rdf4j-workbench/');
     page.on('dialog', dialog => {
         console.log(dialog.message());
@@ -225,11 +235,10 @@ test('Query compare mode resets secondary query on disable and reload', async ({
     await page.waitForSelector('.CodeMirror');
 
     const primaryQuery = 'SELECT * WHERE { ?s ?p ?o } LIMIT 10';
+    const updatedPrimaryQuery = 'SELECT * WHERE { ?s ?p ?o } LIMIT 5';
     const compareQuery = 'ASK { ?s ?p ?o }';
 
-    await page.evaluate(query => {
-        document.querySelectorAll('.CodeMirror')[0].CodeMirror.setValue(query);
-    }, primaryQuery);
+    await typeIntoCodeMirror(page, 0, primaryQuery);
 
     await page.locator('#explain-trigger').click();
     await page.waitForFunction(() => {
@@ -239,38 +248,28 @@ test('Query compare mode resets secondary query on disable and reload', async ({
 
     await page.locator('#compare-toggle').click();
     await page.waitForFunction(() => document.querySelectorAll('.CodeMirror').length === 2);
-    await page.evaluate(query => {
-        document.querySelectorAll('.CodeMirror')[1].CodeMirror.setValue(query);
-    }, compareQuery);
+    await typeIntoCodeMirror(page, 1, compareQuery);
 
-    await page.locator('#compare-toggle').click();
-    await page.locator('#compare-toggle').click();
-    await page.waitForFunction(() => document.querySelectorAll('.CodeMirror').length === 2);
-    await expect.poll(async () => page.evaluate(() => {
-        return document.querySelectorAll('.CodeMirror')[1].CodeMirror.getValue();
-    })).toBe(primaryQuery);
-
-    await page.evaluate(query => {
-        document.querySelectorAll('.CodeMirror')[1].CodeMirror.setValue(query);
-    }, compareQuery);
+    await typeIntoCodeMirror(page, 0, updatedPrimaryQuery);
 
     await page.reload();
     await page.waitForSelector('.CodeMirror');
-    await page.evaluate(query => {
-        document.querySelectorAll('.CodeMirror')[0].CodeMirror.setValue(query);
-    }, primaryQuery);
-
-    await page.locator('#explain-trigger').click();
-    await page.waitForFunction(() => {
-        const explanation = document.getElementById('query-explanation');
-        return explanation && explanation.textContent.trim().length > 0;
-    });
-
-    await page.locator('#compare-toggle').click();
-    await page.waitForFunction(() => document.querySelectorAll('.CodeMirror').length === 2);
     await expect.poll(async () => page.evaluate(() => {
-        return document.querySelectorAll('.CodeMirror')[1].CodeMirror.getValue();
-    })).toBe(primaryQuery);
+        return document.querySelectorAll('.CodeMirror')[0].CodeMirror.getValue();
+    })).toBe(updatedPrimaryQuery);
+
+    await expect.poll(async () => page.evaluate(query => {
+        const storages = [window.localStorage, window.sessionStorage];
+        return storages.some(storage => {
+            for (let index = 0; index < storage.length; index++) {
+                const value = storage.getItem(storage.key(index));
+                if (value && value.includes(query)) {
+                    return true;
+                }
+            }
+            return false;
+        });
+    }, compareQuery)).toBe(false);
 });
 
 test('Query page keeps explanation panes hidden until explain runs', async ({page}) => {

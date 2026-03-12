@@ -566,6 +566,52 @@ var workbench;
         function getPaneQuerySelector(paneKey) {
             return '#' + getPaneState(paneKey).queryId;
         }
+        function getPanePersistedQueryStorageKey(paneKey) {
+            return paneKey === 'compare'
+                ? 'yasqe_query-compare-pane_queryVal'
+                : 'yasqe_query-primary-pane_queryVal';
+        }
+        function clearPanePersistedQuery(paneKey) {
+            var storageKey = getPanePersistedQueryStorageKey(paneKey);
+            try {
+                window.localStorage.removeItem(storageKey);
+            }
+            catch (e) {
+                // Ignore browsers where storage access is unavailable.
+            }
+            try {
+                window.sessionStorage.removeItem(storageKey);
+            }
+            catch (e) {
+                // Ignore browsers where storage access is unavailable.
+            }
+        }
+        function persistPrimaryQueryEditorValue(queryEditor) {
+            if (!queryEditor) {
+                return;
+            }
+            queryEditor.save();
+            document.getElementById(primaryPaneState.queryId).value = queryEditor.getValue();
+            if (YASQE.storeQuery) {
+                YASQE.storeQuery(queryEditor);
+            }
+        }
+        function getWorkbenchCookiePath() {
+            var pathSegments = window.location.pathname.split('/');
+            return pathSegments.length > 1 && pathSegments[1]
+                ? '/' + pathSegments[1]
+                : '/';
+        }
+        function setWorkbenchCookie(name, value) {
+            document.cookie = name + '=' + encodeURIComponent(value || '') + '; path=' + getWorkbenchCookiePath();
+        }
+        function clearWorkbenchCookie(name) {
+            document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=' + getWorkbenchCookiePath();
+        }
+        function persistPrimaryQueryValue() {
+            setWorkbenchCookie('query', getPaneRawQueryValue('primary'));
+            clearWorkbenchCookie('ref');
+        }
         function getPaneRawQueryValue(paneKey) {
             var queryEditor = getPaneQueryEditor(paneKey);
             if (queryEditor) {
@@ -1616,6 +1662,9 @@ var workbench;
             if (eventType === 'COMPARE_QUERY_CHANGED' && queryPageState) {
                 queryPageState.compareQuerySeeded = false;
             }
+            if (eventType === 'PRIMARY_QUERY_CHANGED') {
+                persistPrimaryQueryValue();
+            }
             dispatchQueryPageEvent({ type: eventType });
         }
         function notifyQueryPageInputChange(eventType) {
@@ -2092,8 +2141,12 @@ var workbench;
         function initPaneYasqe(paneKey, clearFeedbackOnChange) {
             workbench.yasqeHelper.setupCompleters(sparqlNamespaces);
             var paneEditor = YASQE.fromTextArea(document.getElementById(getPaneState(paneKey).queryId), {
-                consumeShareLink: null //don't try to parse the url args. this is already done by the addLoad function below
+                consumeShareLink: null, //don't try to parse the url args. this is already done by the addLoad function below
+                persistent: paneKey === 'compare' ? null : getPanePersistedQueryStorageKey(paneKey)
             });
+            if (paneKey === 'compare') {
+                clearPanePersistedQuery('compare');
+            }
             $(paneEditor.getWrapperElement()).css({
                 "fontSize": "14px",
                 "width": "100%",
@@ -2101,6 +2154,12 @@ var workbench;
                 "boxSizing": "border-box"
             });
             paneEditor.on('change', function () {
+                if (paneKey === 'compare') {
+                    clearPanePersistedQuery('compare');
+                }
+                else {
+                    persistPrimaryQueryEditorValue(paneEditor);
+                }
                 workbench.query.clearFeedback();
                 handleQueryPageInputChange(paneKey === 'compare' ? 'COMPARE_QUERY_CHANGED' : 'PRIMARY_QUERY_CHANGED');
             });
@@ -2126,6 +2185,7 @@ var workbench;
                 compareYasqe.toTextArea();
                 compareYasqe = null;
             }
+            clearPanePersistedQuery('compare');
         }
         function closeYasqe() {
             if (yasqe) {
@@ -2180,6 +2240,7 @@ var workbench;
         }
         query_1.closeDiffModal = closeDiffModal;
         function initializeCompareUi() {
+            clearPanePersistedQuery('compare');
             diffNotReadyLabel = $.trim($('#query-diff-explanation').text());
             resetComparePaneState();
             syncCompareModeVisibility();
