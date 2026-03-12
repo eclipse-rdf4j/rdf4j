@@ -1,0 +1,53 @@
+=== optional_rhs_filter - EXECUTED ===
+Projection (resultSizeActual=37.9K)
+╠══ ProjectionElemList
+║     ProjectionElem "dist"
+║     ProjectionElem "a"
+║     ProjectionElem "lang"
+╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=37.9K)
+   ├── StatementPattern (resultSizeEstimate=37.9K, resultSizeActual=37.9K) [left]
+   │     s: Var (name=dist)
+   │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │     o: Var (name=_const_81f8b9ff_uri, value=http://www.w3.org/ns/dcat#Distribution, anonymous)
+   └── Join (JoinIterator) (costEstimate=3.2K, resultSizeActual=2.8K) [right]
+      ╠══ StatementPattern (costEstimate=97, resultSizeEstimate=37.9K, resultSizeActual=37.9K) [left]
+      ║     s: Var (name=a)
+      ║     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║     o: Var (name=dist)
+      ╚══ Filter (resultSizeActual=2.8K) [right]
+         ├── SameTerm
+         │     Var (name=lang)
+         │     ValueConstant (value=http://publications.europa.eu/resource/authority/language/ENG)
+         └── StatementPattern (costEstimate=1.00, resultSizeEstimate=2.2K, resultSizeActual=2.8K)
+               s: Var (name=a)
+               p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+               o: Var (name=lang, value=http://publications.europa.eu/resource/authority/language/ENG)
+
+
+
+
+=== optional_rhs_filter - OPTIMIZED ===
+Projection
+╠══ ProjectionElemList
+║     ProjectionElem "dist"
+║     ProjectionElem "a"
+║     ProjectionElem "lang"
+╚══ LeftJoin (LeftJoinIterator)
+   ├── StatementPattern (resultSizeEstimate=37.9K) [left]
+   │     s: Var (name=dist)
+   │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │     o: Var (name=_const_81f8b9ff_uri, value=http://www.w3.org/ns/dcat#Distribution, anonymous)
+   └── Join (JoinIterator) (costEstimate=3.2K) [right]
+      ╠══ StatementPattern (costEstimate=97, resultSizeEstimate=37.9K) [left]
+      ║     s: Var (name=a)
+      ║     p: Var (name=_const_782d65df_uri, value=http://www.w3.org/ns/dcat#distribution, anonymous)
+      ║     o: Var (name=dist)
+      ╚══ Filter [right]
+         ├── SameTerm
+         │     Var (name=lang)
+         │     ValueConstant (value=http://publications.europa.eu/resource/authority/language/ENG)
+         └── StatementPattern (costEstimate=1.00, resultSizeEstimate=2.2K)
+               s: Var (name=a)
+               p: Var (name=_const_2783f1e8_uri, value=http://purl.org/dc/terms/language, anonymous)
+               o: Var (name=lang, value=http://publications.europa.eu/resource/authority/language/ENG)
+

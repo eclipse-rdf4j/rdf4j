@@ -4,20 +4,26 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  run_query_plan_snapshot.sh [--log <path>] [--online] -- <QueryPlanSnapshotCli args>
+  run_query_plan_snapshot.sh [--log <path>] [--online] [--tmp-run] -- <QueryPlanSnapshotCli args>
 
 Examples:
-  run_query_plan_snapshot.sh --log /tmp/qps.log -- \
+  run_query_plan_snapshot.sh --log tmp/qps.log -- \
     --store memory --theme MEDICAL_RECORDS --query-index 0 --query-id med-q0
+  run_query_plan_snapshot.sh --tmp-run --log tmp/qps-tmp.log -- \
+    --store lmdb --theme LIBRARY --query-index 8 --query-timeout-seconds 5
+  run_query_plan_snapshot.sh --log tmp/qps-learned-trace.log -- \
+    --compare-existing --query-id med-q0 --retrieve-learned-plan-trace --no-interactive
 
 Notes:
   - Always runs root install first: mvn -T 1C [-o] -Dmaven.repo.local=.m2_repo -Pquick clean install
+  - --tmp-run appends QueryPlanSnapshotCli --tmp-run (repo-local tmp/ output + temp LMDB data dir)
   - Pass QueryPlanSnapshotCli args after '--'
 USAGE
 }
 
 log_file=""
 offline_flag="-o"
+tmp_run="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -31,6 +37,10 @@ while [[ $# -gt 0 ]]; do
     ;;
   --online)
     offline_flag=""
+    shift
+    ;;
+  --tmp-run)
+    tmp_run="true"
     shift
     ;;
   --help|-h)
@@ -56,6 +66,9 @@ if [[ $# -eq 0 ]]; then
 fi
 
 raw_cli_args=("$@")
+if [[ "$tmp_run" == "true" ]]; then
+  raw_cli_args=(--tmp-run "${raw_cli_args[@]}")
+fi
 printf -v cli_args '%q ' "${raw_cli_args[@]}"
 cli_args="${cli_args% }"
 

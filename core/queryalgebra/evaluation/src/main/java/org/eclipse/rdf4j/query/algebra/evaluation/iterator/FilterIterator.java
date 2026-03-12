@@ -23,15 +23,25 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearningTripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 public class FilterIterator extends FilterIteration<BindingSet> implements IndexReportingIterator {
@@ -49,6 +59,11 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private long exprTrueCountActual;
 	private long exprFalseCountActual;
 	private long exprEvalTimeNanosActual;
+	private final JoinStatsProvider learnedStatsProvider;
+	private final PatternKey learnedPatternKey;
+	private final String learnedFilterKey;
+	private long learnedPassedRows;
+	private long learnedFilteredRows;
 
 	public static QueryEvaluationStep supply(Filter filter, EvaluationStrategy strategy,
 			QueryEvaluationContext context) {
@@ -80,6 +95,10 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		super(iter);
 		this.filterNode = filter;
 		this.runtimeTelemetryEnabled = filter != null && filter.isRuntimeTelemetryEnabled();
+		LearnedFilterRecorder recorder = resolveLearnedFilterRecorder(filter, strategy);
+		this.learnedStatsProvider = recorder.statsProvider;
+		this.learnedPatternKey = recorder.patternKey;
+		this.learnedFilterKey = recorder.filterKey;
 		this.condition = condition;
 		this.strategy = strategy;
 		if (!isPartOfSubQuery(filter)) {
@@ -99,6 +118,10 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		super(iter);
 		this.filterNode = filterNode;
 		this.runtimeTelemetryEnabled = filterNode != null && filterNode.isRuntimeTelemetryEnabled();
+		LearnedFilterRecorder recorder = resolveLearnedFilterRecorder(filterNode, strategy);
+		this.learnedStatsProvider = recorder.statsProvider;
+		this.learnedPatternKey = recorder.patternKey;
+		this.learnedFilterKey = recorder.filterKey;
 		this.condition = condition;
 		this.strategy = strategy;
 		// FIXME Jeen Boekstra scopeBindingNames should include bindings from superquery
@@ -135,13 +158,73 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		};
 	}
 
+	private static LearnedFilterRecorder resolveLearnedFilterRecorder(Filter filter, EvaluationStrategy strategy) {
+		if (filter == null || strategy == null) {
+			return LearnedFilterRecorder.EMPTY;
+		}
+		if (!(strategy instanceof DefaultEvaluationStrategy)) {
+			return LearnedFilterRecorder.EMPTY;
+		}
+		TripleSource tripleSource = ((DefaultEvaluationStrategy) strategy).getTripleSource();
+		if (!(tripleSource instanceof LearningTripleSource)) {
+			return LearnedFilterRecorder.EMPTY;
+		}
+		StatementPattern pattern = extractStatementPattern(filter);
+		if (pattern == null) {
+			return LearnedFilterRecorder.EMPTY;
+		}
+		if (!FilterSelectivityKeys.conditionIntersectsPattern(filter.getCondition(), pattern)) {
+			return LearnedFilterRecorder.EMPTY;
+		}
+		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(pattern);
+		if (patternKey == null) {
+			return LearnedFilterRecorder.EMPTY;
+		}
+		String filterKey = FilterSelectivityKeys.filterKeyFor(filter.getCondition());
+		JoinStatsProvider statsProvider = ((LearningTripleSource) tripleSource).getStatsProvider();
+		return new LearnedFilterRecorder(statsProvider, patternKey, filterKey);
+	}
+
+	private static StatementPattern extractStatementPattern(Filter filter) {
+		TupleExpr tupleExpr = filter.getArg();
+		while (true) {
+			if (tupleExpr instanceof Filter) {
+				tupleExpr = ((Filter) tupleExpr).getArg();
+				continue;
+			}
+			if (tupleExpr instanceof Extension) {
+				tupleExpr = ((Extension) tupleExpr).getArg();
+				continue;
+			}
+			if (tupleExpr instanceof Reduced) {
+				tupleExpr = ((Reduced) tupleExpr).getArg();
+				continue;
+			}
+			return tupleExpr instanceof StatementPattern ? (StatementPattern) tupleExpr : null;
+		}
+	}
+
+	private void recordLearnedOutcome(boolean accepted) {
+		if (learnedStatsProvider == null) {
+			return;
+		}
+		if (accepted) {
+			learnedPassedRows++;
+		} else {
+			learnedFilteredRows++;
+		}
+	}
+
 	@Override
 	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
 		if (!runtimeTelemetryEnabled) {
 			try {
 				BindingSet scopeBindings = this.retain.apply(bindings);
-				return strategy.isTrue(condition, scopeBindings);
+				boolean accepted = strategy.isTrue(condition, scopeBindings);
+				recordLearnedOutcome(accepted);
+				return accepted;
 			} catch (ValueExprEvaluationException e) {
+				recordLearnedOutcome(false);
 				return false;
 			}
 		}
@@ -161,14 +244,29 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 				sourceRowsFilteredActual++;
 				exprFalseCountActual++;
 			}
+			recordLearnedOutcome(accepted);
 			return accepted;
 		} catch (ValueExprEvaluationException e) {
 			// failed to evaluate condition
 			sourceRowsFilteredActual++;
 			predicateErrorCountActual++;
+			recordLearnedOutcome(false);
 			return false;
 		} finally {
 			exprEvalTimeNanosActual += Math.max(0L, System.nanoTime() - started);
+		}
+	}
+
+	private static final class LearnedFilterRecorder {
+		private static final LearnedFilterRecorder EMPTY = new LearnedFilterRecorder(null, null, null);
+		private final JoinStatsProvider statsProvider;
+		private final PatternKey patternKey;
+		private final String filterKey;
+
+		private LearnedFilterRecorder(JoinStatsProvider statsProvider, PatternKey patternKey, String filterKey) {
+			this.statsProvider = statsProvider;
+			this.patternKey = patternKey;
+			this.filterKey = filterKey;
 		}
 	}
 
@@ -187,6 +285,10 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 	@Override
 	protected void handleClose() {
+		if (learnedStatsProvider != null && (learnedPassedRows > 0L || learnedFilteredRows > 0L)) {
+			learnedStatsProvider.recordFilterOutcome(learnedPatternKey, learnedFilterKey, learnedPassedRows,
+					learnedFilteredRows);
+		}
 		if (filterNode != null && runtimeTelemetryEnabled) {
 			filterNode.setLongMetricActual(TelemetryMetricNames.PREDICATE_ERROR_COUNT_ACTUAL,
 					Math.max(0L, filterNode.getLongMetricActual(TelemetryMetricNames.PREDICATE_ERROR_COUNT_ACTUAL))

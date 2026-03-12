@@ -5,7 +5,7 @@ Complete guide for query-plan capture, persistence, and comparison.
 Scope:
 - Any tuple query (not only themed query benchmark).
 - MemoryStore and LMDB Store.
-- Unoptimized, optimized, executed explanations.
+- Unoptimized, optimized, telemetry explanations.
 - TupleExpr JSON dump + load-back.
 - Metadata + feature-flag state for reproducibility.
 - Smart semantic diff modes.
@@ -20,16 +20,18 @@ Each snapshot stores:
 - Three explanation levels:
   - `unoptimized`
   - `optimized`
-  - `executed`
+  - `telemetry`
 - For each level:
   - explanation JSON
   - tuple expression JSON
-  - IR-rendered query (optimized/executed by default)
+  - IR-rendered query (optimized/telemetry by default)
 - Metadata (git commit, benchmark/store/theme context, custom keys).
 - Feature flags (system properties, direct values, reflection probes).
 - Execution verification summary printed by CLI:
   - repeated query executions
   - dynamic run count with a soft 60-second cap per query
+- Companion learned-plan trace artifact per persisted snapshot:
+  - `<snapshot-base>-learned-plan-trace.jsonl`
 
 ## Where Things Live
 
@@ -53,7 +55,7 @@ From repo root.
 Run interactive mode:
 
 ```bash
-mvn -o -Dmaven.repo.local=.m2_repo -pl testsuites/benchmark -DskipTests exec:java@query-plan-snapshot
+mvn -o -Dmaven.repo.local=.m2_repo install -Pquick && mvn -o -Dmaven.repo.local=.m2_repo -pl testsuites/benchmark -DskipTests exec:java@query-plan-snapshot
 ```
 
 Interactive menu behavior:
@@ -99,7 +101,7 @@ mvn -o -Dmaven.repo.local=.m2_repo -pl testsuites/benchmark -DskipTests exec:jav
 ### 3) Run query from file
 
 ```bash
-... -Dexec.args="--store memory --theme MEDICAL_RECORDS --query-file /tmp/query.rq"
+... -Dexec.args="--store memory --theme MEDICAL_RECORDS --query-file tmp/query.rq"
 ```
 
 ### 4) Run and compare to latest previous run for same query
@@ -112,7 +114,30 @@ Matching order for `--compare-latest`:
 1. Same unoptimized fingerprint.
 2. Fallback to same `queryId`.
 
-### 5) Compare existing runs (without running a query)
+### 5) Temporary run rooted in repo `tmp/`
+
+```bash
+... -Dexec.args="--store lmdb --theme LIBRARY --query-index 8 --tmp-run --query-timeout-seconds 5"
+```
+
+What `--tmp-run` changes:
+- default output directory becomes `tmp/query-plan-snapshot/cli/<store>/`
+- for LMDB without `--lmdb-data-dir`, data loads into a temp dir under `tmp/query-plan-snapshot/lmdb-data/`
+- temp LMDB data dir is removed after the run
+
+### 6) Overwrite all existing runs for one themed query
+
+```bash
+... -Dexec.args="--store lmdb --theme LIBRARY --query-index 8 --tmp-run --overwrite-theme-query-runs"
+```
+
+Behavior:
+- deletes prior snapshot files matching that themed query before writing the new run
+- only allowed in tmp mode (`--tmp-run`) so overwrite is confined to repo `tmp/`
+- requires themed query selection (`--theme` + `--query-index` or `--theme-query`)
+- requires persistence (`--persist` must stay true)
+
+### 7) Compare existing runs (without running a query)
 
 Interactive selection (browse/view/compare):
 
@@ -142,6 +167,18 @@ Filter by fingerprint instead of query id:
 
 ```bash
 ... -Dexec.args="--compare-existing --fingerprint <sha256> --compare-indices 0,1 --no-interactive"
+```
+
+Retrieve learned plan traces for matching runs:
+
+```bash
+... -Dexec.args="--compare-existing --query-id my-q0 --retrieve-learned-plan-trace --no-interactive"
+```
+
+Optional: scope retrieval to two run indices:
+
+```bash
+... -Dexec.args="--compare-existing --query-id my-q0 --retrieve-learned-plan-trace --compare-indices 1,0 --no-interactive"
 ```
 
 ### 6) Capture without persistence
@@ -242,7 +279,7 @@ Examples:
 ... -Dexec.args="--compare-existing --query-id my-q0 --compare-indices 0,1 --diff-mode structure+estimates --no-interactive"
 ```
 
-Diff output per level (`unoptimized`, `optimized`, `executed`) includes:
+Diff output per level (`unoptimized`, `optimized`, `telemetry`) includes:
 - `structure`
 - `joinAlgorithms`
 - `actualResultSizes`
@@ -329,7 +366,7 @@ Themed benchmark capture default:
 Override output dir:
 
 ```bash
-... -Dexec.args="... --output-dir /tmp/query-plan-snapshots"
+... -Dexec.args="... --output-dir tmp/query-plan-snapshots"
 ```
 
 Filename pattern:
@@ -351,7 +388,7 @@ Top-level keys:
 `explanations` map keys:
 - `unoptimized`
 - `optimized`
-- `executed`
+- `telemetry`
 
 Per explanation:
 - `level`
@@ -411,8 +448,11 @@ This path stores themed benchmark artifacts without CLI wrapper.
 - `--query-file <path>`
 - `--persist <true|false>`
 - `--no-persist`
+- `--tmp-run`
+- `--overwrite-theme-query-runs`
 - `--compare-latest`
 - `--compare-existing`
+- `--retrieve-learned-plan-trace`
 - `--all-theme-queries`
   - optional with `--theme` to scope to one theme
 - `--query-id <id>`
@@ -439,5 +479,11 @@ This path stores themed benchmark artifacts without CLI wrapper.
   - need at least two runs to compare.
 - LMDB temp dir issues:
   - set `--lmdb-data-dir` explicitly.
+- Want repo-local transient artifacts:
+  - add `--tmp-run`.
+- Overwrite existing runs for a themed query:
+  - use `--tmp-run --overwrite-theme-query-runs` (not supported with `--output-dir`).
+- Retrieve learned plan traces:
+  - use `--compare-existing --query-id <id> --retrieve-learned-plan-trace`.
 - Want deterministic reproduction:
   - set `--query-id`, `--metadata`, and explicit system properties.

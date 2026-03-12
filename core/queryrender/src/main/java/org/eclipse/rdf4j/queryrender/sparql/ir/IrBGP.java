@@ -282,9 +282,8 @@ public class IrBGP extends IrNode {
 		if (n == null) {
 			return false;
 		}
-		assert !n.startsWith("anon_");
-
-		return n.startsWith("_anon_bnode_");
+		return (n.startsWith("_anon_bnode_") || n.startsWith("anon_bnode_"))
+				&& !n.startsWith("_anon_path_") && !n.startsWith("anon_path_");
 	}
 
 	private static final class InlinePrinter implements IrPrinter {

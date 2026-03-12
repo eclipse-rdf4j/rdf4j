@@ -80,6 +80,35 @@ public final class QueryPlanCapture {
 	private static final Pattern ANONYMOUS_VARIABLE_TOKEN_PATTERN = Pattern
 			.compile("_anon_[A-Za-z]+_[A-Za-z0-9]+");
 	private static final int OPERATOR_WORK_TOP_CONTRIBUTOR_LIMIT = 8;
+	private static final String UOE_TRACE_METRIC_NAME = "rdf4j.optimizer.uoe.trace";
+	private static final String UOE_TRACE_DEBUG_METRIC_NAME = "uoeTrace";
+	private static final String UOE_TRACE_ID_DEBUG_METRIC_NAME = "uoeTraceId";
+	private static final String UOE_TRACE_OPTIMIZER_DEBUG_METRIC_NAME = "uoeTraceOptimizer";
+	private static final String UOE_TRACE_OPTIMIZER_VERSION_DEBUG_METRIC_NAME = "uoeTraceOptimizerVersion";
+	private static final String UOE_TRACE_CHOSEN_PLAN_HASH_DEBUG_METRIC_NAME = "uoeTraceChosenPlanHash";
+	private static final String UOE_TRACE_CHOSEN_PLAN_STRATEGY_DEBUG_METRIC_NAME = "uoeTraceChosenPlanStrategy";
+	private static final String UOE_TRACE_CHOSEN_PLAN_REASON_DEBUG_METRIC_NAME = "uoeTraceChosenPlanReason";
+	private static final String UOE_TRACE_CHOSEN_PLAN_RISK_DEBUG_METRIC_NAME = "uoeTraceChosenPlanRisk";
+	private static final String UOE_TRACE_CHOSEN_PLAN_PREDICTED_MILLIS_DEBUG_METRIC_NAME = "uoeTraceChosenPlanPredictedMillis";
+	private static final String UOE_TRACE_TOP_K_COUNT_DEBUG_METRIC_NAME = "uoeTraceTopKCount";
+	private static final String UOE_TRACE_TOP_K_FIRST_PLAN_HASH_DEBUG_METRIC_NAME = "uoeTraceTopKFirstPlanHash";
+	private static final String UOE_TRACE_TOP_K_FIRST_RANK_DEBUG_METRIC_NAME = "uoeTraceTopKFirstRank";
+	private static final String UOE_TRACE_TOP_K_FIRST_PREDICTED_MILLIS_DEBUG_METRIC_NAME = "uoeTraceTopKFirstPredictedMillis";
+	private static final String UOE_TRACE_TOP_K_FIRST_RISK_DEBUG_METRIC_NAME = "uoeTraceTopKFirstRisk";
+	private static final String UOE_TRACE_EVENT_COUNT_DEBUG_METRIC_NAME = "uoeTraceEventCount";
+	private static final String UOE_TRACE_CANDIDATE_PLAN_EVENT_COUNT_DEBUG_METRIC_NAME = "uoeTraceCandidatePlanEventCount";
+	private static final String UOE_TRACE_NORMALIZATION_APPLIED_EVENT_COUNT_DEBUG_METRIC_NAME = "uoeTraceNormalizationAppliedEventCount";
+	private static final String UOE_TRACE_REGION_BUILT_EVENT_COUNT_DEBUG_METRIC_NAME = "uoeTraceRegionBuiltEventCount";
+	private static final String UOE_TRACE_RULE_MATCHED_EVENT_COUNT_DEBUG_METRIC_NAME = "uoeTraceRuleMatchedEventCount";
+	private static final String UOE_TRACE_RULE_APPLIED_EVENT_COUNT_DEBUG_METRIC_NAME = "uoeTraceRuleAppliedEventCount";
+	private static final String UOE_TRACE_RULE_REJECTED_EVENT_COUNT_DEBUG_METRIC_NAME = "uoeTraceRuleRejectedEventCount";
+	private static final String UOE_TRACE_RULE_APPLIED_REASON_DELTA_MILLIS_DEBUG_METRIC_NAME = "uoeTraceRuleAppliedReasonDeltaMillis";
+	private static final String UOE_TRACE_RULE_APPLIED_REASON_PRECONDITIONS_OBSERVE_MODE_DEBUG_METRIC_NAME = "uoeTraceRuleAppliedReasonPreconditionsObserveMode";
+	private static final String UOE_TRACE_RULE_REJECTED_REASON_CAUSE_DEBUG_METRIC_NAME = "uoeTraceRuleRejectedReasonCause";
+	private static final String UOE_TRACE_RULE_REJECTED_REASON_PRECONDITIONS_OBSERVE_MODE_DEBUG_METRIC_NAME = "uoeTraceRuleRejectedReasonPreconditionsObserveMode";
+	private static final String UOE_TRACE_COSTED_PLAN_EVENT_COUNT_DEBUG_METRIC_NAME = "uoeTraceCostedPlanEventCount";
+	private static final String UOE_TRACE_PRUNED_EVENT_COUNT_DEBUG_METRIC_NAME = "uoeTracePrunedEventCount";
+	private static final String UOE_TRACE_CHOSEN_EVENT_COUNT_DEBUG_METRIC_NAME = "uoeTraceChosenEventCount";
 	private static final double MODELED_WORK_SCAN_PER_ROW = 1.0d;
 	private static final double MODELED_WORK_FILTER_PER_INPUT_ROW = 0.3d;
 	private static final double MODELED_WORK_PROJECTION_PER_INPUT_ROW = 0.05d;
@@ -262,7 +291,9 @@ public final class QueryPlanCapture {
 
 		Object tupleExprObject = explanation.tupleExpr();
 		if (tupleExprObject instanceof TupleExpr) {
-			TupleExpr tupleExpr = ((TupleExpr) tupleExprObject).clone();
+			TupleExpr sourceTupleExpr = (TupleExpr) tupleExprObject;
+			captureUoeTrace(sourceTupleExpr, captured);
+			TupleExpr tupleExpr = sourceTupleExpr.clone();
 			appendIteratorTelemetry(tupleExpr, captured.getDebugMetrics());
 			captured.setTupleExprTree(tupleExpr.toString());
 			captured.setTupleExprJson(tupleExprJsonCodec.toJson(tupleExpr));
@@ -272,6 +303,332 @@ public final class QueryPlanCapture {
 		}
 
 		return captured;
+	}
+
+	private static void captureUoeTrace(TupleExpr tupleExpr, QueryPlanExplanation captured) {
+		String uoeTrace = firstStringMetric(tupleExpr, UOE_TRACE_METRIC_NAME);
+		if (uoeTrace == null || uoeTrace.isBlank()) {
+			return;
+		}
+		captured.setUoeTrace(uoeTrace);
+		captured.getDebugMetrics().put(UOE_TRACE_DEBUG_METRIC_NAME, uoeTrace);
+		String traceId = extractUoeTraceStringField(uoeTrace, "traceId");
+		if (traceId != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_ID_DEBUG_METRIC_NAME, traceId);
+		}
+		String optimizer = extractUoeTraceStringField(uoeTrace, "optimizer");
+		if (optimizer != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_OPTIMIZER_DEBUG_METRIC_NAME, optimizer);
+		}
+		String optimizerVersion = extractUoeTraceStringField(uoeTrace, "optimizerVersion");
+		if (optimizerVersion != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_OPTIMIZER_VERSION_DEBUG_METRIC_NAME, optimizerVersion);
+		}
+		String chosenPlanHash = extractUoeTraceChosenPlanField(uoeTrace, "planHash");
+		if (chosenPlanHash != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_CHOSEN_PLAN_HASH_DEBUG_METRIC_NAME, chosenPlanHash);
+		}
+		String chosenPlanStrategy = extractUoeTraceChosenPlanField(uoeTrace, "strategy");
+		if (chosenPlanStrategy != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_CHOSEN_PLAN_STRATEGY_DEBUG_METRIC_NAME, chosenPlanStrategy);
+		}
+		String chosenPlanReason = extractUoeTraceChosenPlanField(uoeTrace, "reason");
+		if (chosenPlanReason != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_CHOSEN_PLAN_REASON_DEBUG_METRIC_NAME, chosenPlanReason);
+		}
+		String chosenPlanRisk = extractUoeTraceChosenPlanField(uoeTrace, "risk");
+		if (chosenPlanRisk != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_CHOSEN_PLAN_RISK_DEBUG_METRIC_NAME, chosenPlanRisk);
+		}
+		String chosenPlanPredictedMillis = extractUoeTraceChosenPlanField(uoeTrace, "predictedMillis");
+		if (chosenPlanPredictedMillis != null) {
+			captured.getDebugMetrics()
+					.put(UOE_TRACE_CHOSEN_PLAN_PREDICTED_MILLIS_DEBUG_METRIC_NAME,
+							chosenPlanPredictedMillis);
+		}
+		String topKCount = extractUoeTraceTopKCount(uoeTrace);
+		if (topKCount != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_TOP_K_COUNT_DEBUG_METRIC_NAME, topKCount);
+		}
+		String topKFirstPlanHash = extractUoeTraceTopKFirstPlanHash(uoeTrace);
+		if (topKFirstPlanHash != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_TOP_K_FIRST_PLAN_HASH_DEBUG_METRIC_NAME, topKFirstPlanHash);
+		}
+		String topKFirstRank = extractUoeTraceTopKFirstScalar(uoeTrace, "rank");
+		if (topKFirstRank != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_TOP_K_FIRST_RANK_DEBUG_METRIC_NAME, topKFirstRank);
+		}
+		String topKFirstPredictedMillis = extractUoeTraceTopKFirstScalar(uoeTrace, "predictedMillis");
+		if (topKFirstPredictedMillis != null) {
+			captured.getDebugMetrics()
+					.put(UOE_TRACE_TOP_K_FIRST_PREDICTED_MILLIS_DEBUG_METRIC_NAME,
+							topKFirstPredictedMillis);
+		}
+		String topKFirstRisk = extractUoeTraceTopKFirstScalar(uoeTrace, "risk");
+		if (topKFirstRisk != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_TOP_K_FIRST_RISK_DEBUG_METRIC_NAME, topKFirstRisk);
+		}
+		String eventCount = extractUoeTraceEventCount(uoeTrace);
+		if (eventCount != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_EVENT_COUNT_DEBUG_METRIC_NAME, eventCount);
+		}
+		String candidatePlanEventCount = extractUoeTraceEventCount(uoeTrace, "CANDIDATE_PLAN_GENERATED");
+		if (candidatePlanEventCount != null) {
+			captured.getDebugMetrics()
+					.put(UOE_TRACE_CANDIDATE_PLAN_EVENT_COUNT_DEBUG_METRIC_NAME,
+							candidatePlanEventCount);
+		}
+		String normalizationAppliedEventCount = extractUoeTraceEventCount(uoeTrace, "NORMALIZATION_APPLIED");
+		if (normalizationAppliedEventCount != null) {
+			captured.getDebugMetrics()
+					.put(UOE_TRACE_NORMALIZATION_APPLIED_EVENT_COUNT_DEBUG_METRIC_NAME, normalizationAppliedEventCount);
+		}
+		String regionBuiltEventCount = extractUoeTraceEventCount(uoeTrace, "REGION_BUILT");
+		if (regionBuiltEventCount != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_REGION_BUILT_EVENT_COUNT_DEBUG_METRIC_NAME, regionBuiltEventCount);
+		}
+		String ruleMatchedEventCount = extractUoeTraceEventCount(uoeTrace, "RULE_MATCHED");
+		if (ruleMatchedEventCount != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_RULE_MATCHED_EVENT_COUNT_DEBUG_METRIC_NAME, ruleMatchedEventCount);
+		}
+		String ruleAppliedEventCount = extractUoeTraceEventCount(uoeTrace, "RULE_APPLIED");
+		if (ruleAppliedEventCount != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_RULE_APPLIED_EVENT_COUNT_DEBUG_METRIC_NAME, ruleAppliedEventCount);
+		}
+		String ruleRejectedEventCount = extractUoeTraceEventCount(uoeTrace, "RULE_REJECTED");
+		if (ruleRejectedEventCount != null) {
+			captured.getDebugMetrics()
+					.put(UOE_TRACE_RULE_REJECTED_EVENT_COUNT_DEBUG_METRIC_NAME, ruleRejectedEventCount);
+		}
+		String ruleAppliedReasonDeltaMillis = extractUoeTraceEventField(uoeTrace, "RULE_APPLIED", "reason",
+				"deltaMillis");
+		if (ruleAppliedReasonDeltaMillis != null) {
+			captured.getDebugMetrics()
+					.put(UOE_TRACE_RULE_APPLIED_REASON_DELTA_MILLIS_DEBUG_METRIC_NAME, ruleAppliedReasonDeltaMillis);
+		}
+		String ruleAppliedReasonObserveMode = extractUoeTraceEventField(uoeTrace, "RULE_APPLIED", "reason",
+				"preconditions", "observeMode");
+		if (ruleAppliedReasonObserveMode != null) {
+			captured.getDebugMetrics()
+					.put(
+							UOE_TRACE_RULE_APPLIED_REASON_PRECONDITIONS_OBSERVE_MODE_DEBUG_METRIC_NAME,
+							ruleAppliedReasonObserveMode);
+		}
+		String ruleRejectedReasonCause = extractUoeTraceEventField(uoeTrace, "RULE_REJECTED", "reason", "cause");
+		if (ruleRejectedReasonCause != null) {
+			captured.getDebugMetrics()
+					.put(UOE_TRACE_RULE_REJECTED_REASON_CAUSE_DEBUG_METRIC_NAME, ruleRejectedReasonCause);
+		}
+		String ruleRejectedReasonObserveMode = extractUoeTraceEventField(uoeTrace, "RULE_REJECTED", "reason",
+				"preconditions", "observeMode");
+		if (ruleRejectedReasonObserveMode != null) {
+			captured.getDebugMetrics()
+					.put(
+							UOE_TRACE_RULE_REJECTED_REASON_PRECONDITIONS_OBSERVE_MODE_DEBUG_METRIC_NAME,
+							ruleRejectedReasonObserveMode);
+		}
+		String costedPlanEventCount = extractUoeTraceEventCount(uoeTrace, "COSTED_PLAN");
+		if (costedPlanEventCount != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_COSTED_PLAN_EVENT_COUNT_DEBUG_METRIC_NAME, costedPlanEventCount);
+		}
+		String prunedEventCount = extractUoeTraceEventCount(uoeTrace, "PRUNED");
+		if (prunedEventCount != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_PRUNED_EVENT_COUNT_DEBUG_METRIC_NAME, prunedEventCount);
+		}
+		String chosenEventCount = extractUoeTraceEventCount(uoeTrace, "CHOSEN");
+		if (chosenEventCount != null) {
+			captured.getDebugMetrics().put(UOE_TRACE_CHOSEN_EVENT_COUNT_DEBUG_METRIC_NAME, chosenEventCount);
+		}
+	}
+
+	private static String extractUoeTraceStringField(String uoeTrace, String fieldName) {
+		if (uoeTrace == null || uoeTrace.isBlank() || fieldName == null || fieldName.isBlank()) {
+			return null;
+		}
+		try {
+			JsonNode trace = parseUoeTraceRoot(uoeTrace);
+			JsonNode valueNode = trace.path(fieldName);
+			if (!valueNode.isTextual()) {
+				return null;
+			}
+			String value = valueNode.asText();
+			return value == null || value.isBlank() ? null : value;
+		} catch (IOException ignored) {
+			return null;
+		}
+	}
+
+	private static String extractUoeTraceNestedStringField(String uoeTrace, String... path) {
+		if (uoeTrace == null || uoeTrace.isBlank() || path == null || path.length == 0) {
+			return null;
+		}
+		try {
+			JsonNode trace = parseUoeTraceRoot(uoeTrace);
+			for (String segment : path) {
+				if (segment == null || segment.isBlank()) {
+					return null;
+				}
+				trace = trace.path(segment);
+			}
+			if (!trace.isValueNode() || trace.isNull()) {
+				return null;
+			}
+			String value = trace.asText();
+			return value == null || value.isBlank() ? null : value;
+		} catch (IOException ignored) {
+			return null;
+		}
+	}
+
+	private static String extractUoeTraceEventCount(String uoeTrace) {
+		if (uoeTrace == null || uoeTrace.isBlank()) {
+			return null;
+		}
+		try {
+			JsonNode events = parseUoeTraceRoot(uoeTrace).path("events");
+			if (!events.isArray()) {
+				return null;
+			}
+			return Integer.toString(events.size());
+		} catch (IOException ignored) {
+			return null;
+		}
+	}
+
+	private static String extractUoeTraceTopKCount(String uoeTrace) {
+		if (uoeTrace == null || uoeTrace.isBlank()) {
+			return null;
+		}
+		try {
+			JsonNode topK = parseUoeTraceRoot(uoeTrace).path("finalChoice").path("topK");
+			if (!topK.isArray()) {
+				return null;
+			}
+			return Integer.toString(topK.size());
+		} catch (IOException ignored) {
+			return null;
+		}
+	}
+
+	private static String extractUoeTraceChosenPlanField(String uoeTrace, String fieldName) {
+		String nestedChosenPlanField = extractUoeTraceNestedStringField(uoeTrace, "finalChoice", "chosenPlan",
+				fieldName);
+		if (nestedChosenPlanField != null) {
+			return nestedChosenPlanField;
+		}
+		return extractUoeTraceNestedStringField(uoeTrace, "finalChoice", fieldName);
+	}
+
+	private static String extractUoeTraceTopKFirstPlanHash(String uoeTrace) {
+		return extractUoeTraceTopKFirstScalar(uoeTrace, "planHash");
+	}
+
+	private static String extractUoeTraceTopKFirstScalar(String uoeTrace, String fieldName) {
+		if (uoeTrace == null || uoeTrace.isBlank()) {
+			return null;
+		}
+		if (fieldName == null || fieldName.isBlank()) {
+			return null;
+		}
+		try {
+			JsonNode topK = parseUoeTraceRoot(uoeTrace).path("finalChoice").path("topK");
+			if (!topK.isArray() || topK.isEmpty()) {
+				return null;
+			}
+			JsonNode firstValueNode = topK.get(0).path(fieldName);
+			if (!firstValueNode.isValueNode() || firstValueNode.isNull()) {
+				return null;
+			}
+			String value = firstValueNode.asText();
+			return value == null || value.isBlank() ? null : value;
+		} catch (IOException ignored) {
+			return null;
+		}
+	}
+
+	private static String extractUoeTraceEventCount(String uoeTrace, String eventName) {
+		if (uoeTrace == null || uoeTrace.isBlank() || eventName == null || eventName.isBlank()) {
+			return null;
+		}
+		try {
+			JsonNode events = parseUoeTraceRoot(uoeTrace).path("events");
+			if (!events.isArray()) {
+				return null;
+			}
+			int count = 0;
+			for (JsonNode event : events) {
+				if (eventName.equals(event.path("event").asText(null))) {
+					count++;
+				}
+			}
+			return Integer.toString(count);
+		} catch (IOException ignored) {
+			return null;
+		}
+	}
+
+	private static String extractUoeTraceEventField(String uoeTrace, String eventName, String... path) {
+		if (uoeTrace == null || uoeTrace.isBlank() || eventName == null || eventName.isBlank() || path == null
+				|| path.length == 0) {
+			return null;
+		}
+		try {
+			JsonNode events = parseUoeTraceRoot(uoeTrace).path("events");
+			if (!events.isArray()) {
+				return null;
+			}
+			for (JsonNode event : events) {
+				if (!eventName.equals(event.path("event").asText(null))) {
+					continue;
+				}
+				JsonNode valueNode = event;
+				for (String segment : path) {
+					if (segment == null || segment.isBlank()) {
+						return null;
+					}
+					valueNode = valueNode.path(segment);
+				}
+				if (!valueNode.isValueNode() || valueNode.isNull()) {
+					return null;
+				}
+				String value = valueNode.asText();
+				return value == null || value.isBlank() ? null : value;
+			}
+			return null;
+		} catch (IOException ignored) {
+			return null;
+		}
+	}
+
+	private static JsonNode parseUoeTraceRoot(String uoeTrace) throws IOException {
+		JsonNode root = JSON_MAPPER.readTree(uoeTrace);
+		JsonNode wrappedTrace = root.path("uoeTrace");
+		if (!wrappedTrace.isMissingNode() && wrappedTrace.isObject()) {
+			return wrappedTrace;
+		}
+		return root;
+	}
+
+	private static String firstStringMetric(TupleExpr tupleExpr, String metricName) {
+		if (tupleExpr == null || metricName == null || metricName.isBlank()) {
+			return null;
+		}
+		final String[] metric = { null };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) throws RuntimeException {
+				if (metric[0] != null || node == null) {
+					return;
+				}
+				String value = node.getStringMetricActual(metricName);
+				if (value != null && !value.isBlank()) {
+					metric[0] = value;
+					return;
+				}
+				super.meetNode(node);
+			}
+		});
+		return metric[0];
 	}
 
 	public static Map<String, String> extractDebugMetrics(String explanationJson) {

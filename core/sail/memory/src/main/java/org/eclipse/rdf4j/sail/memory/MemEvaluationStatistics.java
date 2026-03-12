@@ -10,17 +10,32 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.JoinEstimationDiagnosticsProvider;
+import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
 import org.eclipse.rdf4j.sail.memory.model.MemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
+
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 
 /**
  * Uses the MemoryStore's statement sizes to give cost estimates based on the size of the expected results. This process
@@ -29,14 +44,21 @@ import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
  * @author Arjohn Kampman
  * @author James Leigh
  */
-class MemEvaluationStatistics extends EvaluationStatistics {
+class MemEvaluationStatistics extends EvaluationStatistics implements JoinEstimationDiagnosticsProvider {
 
 	private final MemValueFactory valueFactory;
 	private final MemStatementList memStatementList;
+	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
+	private final Cache<IsomorphicJoin, Double> joinEstimateCache = CacheBuilder.newBuilder()
+			.maximumSize(10000)
+			.expireAfterAccess(100, TimeUnit.MILLISECONDS)
+			.build();
 
-	MemEvaluationStatistics(MemValueFactory valueFactory, MemStatementList memStatementList) {
+	MemEvaluationStatistics(MemValueFactory valueFactory, MemStatementList memStatementList,
+			SketchBasedJoinEstimator sketchBasedJoinEstimator) {
 		this.valueFactory = valueFactory;
 		this.memStatementList = memStatementList;
+		this.sketchBasedJoinEstimator = sketchBasedJoinEstimator;
 	}
 
 	@Override
@@ -44,7 +66,210 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 		return new MemCardinalityCalculator();
 	}
 
+	@Override
+	public boolean supportsJoinEstimation() {
+		return sketchBasedJoinEstimator.isReady();
+//		return false;
+	}
+
+	@Override
+	public boolean isJoinEstimationReady() {
+		return sketchBasedJoinEstimator.isReady();
+	}
+
+	@Override
+	public Object joinEstimationDiagnostics() {
+		SketchBasedJoinEstimator.Staleness staleness = sketchBasedJoinEstimator.staleness();
+		Map<String, Object> diagnostics = new LinkedHashMap<>();
+		diagnostics.put("estimator", "SketchBasedJoinEstimator");
+		diagnostics.put("ready", sketchBasedJoinEstimator.isReady());
+		diagnostics.put("stalenessScore", staleness.stalenessScore);
+		diagnostics.put("ageMillis", staleness.ageMillis);
+		diagnostics.put("sampledAdds", staleness.sampledAdds);
+		diagnostics.put("sampledRemoved", staleness.sampledRemoved);
+		diagnostics.put("sampledReadded", staleness.sampledReadded);
+		diagnostics.put("sampledRemovalRatio", staleness.sampledRemovalRatio);
+		diagnostics.put("sampledReaddRatio", staleness.sampledReaddRatio);
+		return diagnostics;
+	}
+
+	/**
+	 * Cache key for join estimation that ignores variable names and blank node identifiers, but preserves the
+	 * structural form of the two statement patterns. Assumes left/right args are {@link StatementPattern}s.
+	 */
+	static final class IsomorphicJoin extends Join {
+		private final Object[] signature;
+		private final int hash;
+
+		IsomorphicJoin(Join original) {
+			StatementPattern left = (StatementPattern) original.getLeftArg();
+			StatementPattern right = (StatementPattern) original.getRightArg();
+			this.signature = computeSignature(left, right);
+			this.hash = Arrays.hashCode(signature);
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof IsomorphicJoin)) {
+				return false;
+			}
+			IsomorphicJoin o = (IsomorphicJoin) other;
+			return Arrays.equals(this.signature, o.signature);
+		}
+
+		@Override
+		public int hashCode() {
+			return hash;
+		}
+
+		@Override
+		public String toString() {
+			return "IsomorphicJoin(signature=" + Arrays.toString(signature) + ")";
+		}
+
+		private static Object[] computeSignature(StatementPattern left, StatementPattern right) {
+			Object[] sig = new Object[10];
+			Var[] seenVars = new Var[8];
+			BNode[] seenBNodes = new BNode[8];
+			int[] counts = new int[2]; // [0]=vars, [1]=bnodes
+
+			int idx = 0;
+			idx = addPatternSignature(sig, idx, left, seenVars, seenBNodes, counts);
+			addPatternSignature(sig, idx, right, seenVars, seenBNodes, counts);
+
+			return sig;
+		}
+
+		private static int addPatternSignature(Object[] sig, int idx, StatementPattern sp,
+				Var[] seenVars, BNode[] seenBNodes, int[] counts) {
+			sig[idx++] = sp.getScope();
+			idx = addVarSignature(sig, idx, sp.getSubjectVar(), seenVars, seenBNodes, counts);
+			idx = addVarSignature(sig, idx, sp.getPredicateVar(), seenVars, seenBNodes, counts);
+			idx = addVarSignature(sig, idx, sp.getObjectVar(), seenVars, seenBNodes, counts);
+			idx = addVarSignature(sig, idx, sp.getContextVar(), seenVars, seenBNodes, counts);
+			return idx;
+		}
+
+		private static int addVarSignature(Object[] sig, int idx, Var var,
+				Var[] seenVars, BNode[] seenBNodes, int[] counts) {
+			if (var == null) {
+				sig[idx++] = NullToken.INSTANCE;
+				return idx;
+			}
+
+			if (var.hasValue()) {
+				Value v = var.getValue();
+				if (v instanceof BNode) {
+					int id = indexOf(seenBNodes, counts[1], (BNode) v);
+					if (id < 0) {
+						id = counts[1]++;
+						seenBNodes[id] = (BNode) v;
+					}
+					sig[idx++] = new Token('b', id);
+				} else {
+					sig[idx++] = constantKey(v);
+				}
+			} else {
+				int id = indexOf(seenVars, counts[0], var);
+				if (id < 0) {
+					id = counts[0]++;
+					seenVars[id] = var;
+				}
+				sig[idx++] = new Token('v', id);
+			}
+			return idx;
+		}
+
+		private static <T> int indexOf(T[] array, int count, T value) {
+			for (int i = 0; i < count; i++) {
+				if (array[i].equals(value)) {
+					return i;
+				}
+			}
+			return -1;
+		}
+
+		private static String constantKey(Value v) {
+			if (v instanceof IRI) {
+				return "I:" + v.stringValue();
+			}
+			if (v instanceof Literal) {
+				Literal lit = (Literal) v;
+				StringBuilder sb = new StringBuilder("L:");
+				sb.append(lit.getLabel());
+				lit.getLanguage()
+						.ifPresentOrElse(lang -> sb.append('@').append(lang),
+								() -> sb.append("^^").append(lit.getDatatype().stringValue()));
+				return sb.toString();
+			}
+			if (v instanceof Triple) {
+				return "T:" + v.stringValue();
+			}
+			return "V:" + v.stringValue();
+		}
+
+		private static final class Token {
+			final char kind;
+			final int id;
+
+			Token(char kind, int id) {
+				this.kind = kind;
+				this.id = id;
+			}
+
+			@Override
+			public boolean equals(Object other) {
+				if (this == other) {
+					return true;
+				}
+				if (!(other instanceof Token)) {
+					return false;
+				}
+				Token o = (Token) other;
+				return kind == o.kind && id == o.id;
+			}
+
+			@Override
+			public int hashCode() {
+				return (kind * 31) + id;
+			}
+		}
+
+		private enum NullToken {
+			INSTANCE
+		}
+	}
+
 	protected class MemCardinalityCalculator extends CardinalityCalculator {
+
+		@Override
+		public void meet(Join node) {
+			if (supportsJoinEstimation()) {
+
+				if (node.getLeftArg() instanceof StatementPattern && node.getRightArg() instanceof StatementPattern) {
+					// this is currently the only case we can estimate
+
+					double estimatedCardinality = 0;
+					try {
+						estimatedCardinality = joinEstimateCache.get(new IsomorphicJoin(node),
+								() -> sketchBasedJoinEstimator.cardinality(node));
+					} catch (ExecutionException e) {
+						throw new RuntimeException(e);
+					}
+
+					if (estimatedCardinality >= 0) {
+						this.cardinality = estimatedCardinality;
+						node.setCostEstimate(estimatedCardinality);
+						return;
+					}
+				}
+			}
+
+			super.meet(node);
+		}
 
 		@Override
 		public double getCardinality(StatementPattern sp) {

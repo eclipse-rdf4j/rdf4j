@@ -12,9 +12,11 @@
 package org.eclipse.rdf4j.queryrender.sparql;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.BNode;
@@ -22,11 +24,22 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -275,7 +288,7 @@ public class TupleExprIRRenderer {
 		final IrSelect ir = toIRSelect(tupleExpr);
 		final boolean asSub = mode == RenderMode.SUBSELECT;
 		String rendered = render(ir, dataset, asSub);
-//		verifyRoundTrip(tupleExpr, rendered);
+		verifyRoundTrip(tupleExpr, rendered);
 		return rendered;
 	}
 
@@ -286,8 +299,8 @@ public class TupleExprIRRenderer {
 
 		try {
 			ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, rendered, null);
-			String expected = VarNameNormalizer.normalizeVars(original.toString());
-			String actual = VarNameNormalizer.normalizeVars(parsed.getTupleExpr().toString());
+			String expected = normalizeForRoundTripComparison(original);
+			String actual = normalizeForRoundTripComparison(parsed.getTupleExpr());
 			if (!expected.equals(actual)) {
 				String message = "Rendered SPARQL does not round-trip to the original TupleExpr."
 						+ "\n# Rendered query\n" + rendered
@@ -303,6 +316,219 @@ public class TupleExprIRRenderer {
 					original, rendered, e);
 			throw new IllegalStateException("Failed to verify rendered SPARQL against the original TupleExpr", e);
 		}
+	}
+
+	private static String normalizeForRoundTripComparison(final TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return "";
+		}
+
+		TupleExpr clone = tupleExpr.clone();
+		clearPlanAnnotations(clone);
+		TupleExpr canonical = canonicalizeForRoundTripComparison(clone);
+		return VarNameNormalizer.normalizeVars(canonical.toString());
+	}
+
+	private static void clearPlanAnnotations(final QueryModelNode root) {
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				node.setCostEstimate(-1);
+				node.setResultSizeEstimate(-1);
+				node.setResultSizeActual(-1);
+				node.setTotalTimeNanosActual(-1);
+				if (node instanceof VariableScopeChange) {
+					((VariableScopeChange) node).setVariableScopeChange(false);
+				}
+				if (node instanceof BinaryTupleOperator) {
+					((BinaryTupleOperator) node).setAlgorithm((String) null);
+				}
+				super.meetNode(node);
+			}
+		});
+	}
+
+	private static TupleExpr canonicalizeForRoundTripComparison(final TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return null;
+		}
+
+		if (tupleExpr instanceof UnaryTupleOperator) {
+			UnaryTupleOperator unary = (UnaryTupleOperator) tupleExpr;
+			unary.setArg(canonicalizeForRoundTripComparison(unary.getArg()));
+		}
+		if (tupleExpr instanceof BinaryTupleOperator) {
+			BinaryTupleOperator binary = (BinaryTupleOperator) tupleExpr;
+			binary.setLeftArg(canonicalizeForRoundTripComparison(binary.getLeftArg()));
+			binary.setRightArg(canonicalizeForRoundTripComparison(binary.getRightArg()));
+		}
+
+		if (tupleExpr instanceof Filter) {
+			return canonicalizeFilter((Filter) tupleExpr);
+		}
+
+		if (tupleExpr instanceof LeftJoin) {
+			return canonicalizeLeftJoin((LeftJoin) tupleExpr);
+		}
+
+		if (tupleExpr instanceof Join) {
+			return canonicalizeJoin((Join) tupleExpr);
+		}
+		if (tupleExpr instanceof Extension) {
+			return canonicalizeExtension((Extension) tupleExpr);
+		}
+
+		return tupleExpr;
+	}
+
+	private static TupleExpr canonicalizeExtension(final Extension extension) {
+		if (!(extension.getArg() instanceof Extension)) {
+			return extension;
+		}
+
+		Extension nestedExtension = (Extension) extension.getArg();
+		if (!(nestedExtension.getArg() instanceof Filter)) {
+			return extension;
+		}
+
+		Filter nestedFilter = (Filter) nestedExtension.getArg();
+		if (!canLiftFilterAboveExtensionForRoundTrip(nestedExtension, nestedFilter)) {
+			return extension;
+		}
+
+		// Normalize equivalent HAVING-related layouts:
+		// Extension(Extension(Filter(x))) -> Extension(Filter(Extension(x)))
+		Extension liftedExtension = new Extension(nestedFilter.getArg());
+		for (ExtensionElem elem : nestedExtension.getElements()) {
+			liftedExtension.addElement(elem.clone());
+		}
+		Filter liftedFilter = new Filter(liftedExtension, canonicalizeConjunction(nestedFilter.getCondition()));
+		extension.setArg(liftedFilter);
+		return extension;
+	}
+
+	private static boolean canLiftFilterAboveExtensionForRoundTrip(final Extension extension, final Filter filter) {
+		Set<String> extensionBindingNames = new HashSet<>();
+		for (ExtensionElem elem : extension.getElements()) {
+			if (elem.getName() != null) {
+				extensionBindingNames.add(elem.getName());
+			}
+		}
+		if (extensionBindingNames.isEmpty()) {
+			return true;
+		}
+
+		Set<String> conditionVars = collectUnboundVarNames(filter.getCondition());
+		conditionVars.retainAll(extensionBindingNames);
+		if (conditionVars.isEmpty()) {
+			return true;
+		}
+		for (String name : conditionVars) {
+			if (!isAnonHavingName(name)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static Set<String> collectUnboundVarNames(final ValueExpr expr) {
+		Set<String> names = new HashSet<>();
+		if (expr == null) {
+			return names;
+		}
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (!var.hasValue() && var.getName() != null) {
+					names.add(var.getName());
+				}
+			}
+		});
+		return names;
+	}
+
+	private static boolean isAnonHavingName(final String name) {
+		return name != null && name.startsWith("_anon_having_");
+	}
+
+	private static TupleExpr canonicalizeJoin(final Join join) {
+		if (join.getLeftArg() instanceof Filter) {
+			Filter leftFilter = (Filter) join.getLeftArg();
+			Join liftedJoin = new Join(leftFilter.getArg(), join.getRightArg());
+			Filter liftedFilter = new Filter(liftedJoin, canonicalizeConjunction(leftFilter.getCondition()));
+			return canonicalizeForRoundTripComparison(liftedFilter);
+		}
+		if (join.getRightArg() instanceof Filter) {
+			Filter rightFilter = (Filter) join.getRightArg();
+			Join liftedJoin = new Join(join.getLeftArg(), rightFilter.getArg());
+			Filter liftedFilter = new Filter(liftedJoin, canonicalizeConjunction(rightFilter.getCondition()));
+			return canonicalizeForRoundTripComparison(liftedFilter);
+		}
+		return join;
+	}
+
+	private static TupleExpr canonicalizeFilter(final Filter filter) {
+		List<ValueExpr> conditions = new ArrayList<>();
+		TupleExpr base = filter;
+		while (base instanceof Filter) {
+			Filter current = (Filter) base;
+			conditions.add(canonicalizeConjunction(current.getCondition()));
+			base = current.getArg();
+		}
+
+		conditions.sort((left, right) -> VarNameNormalizer.normalizeVars(left.toString())
+				.compareTo(VarNameNormalizer.normalizeVars(right.toString())));
+
+		TupleExpr rebuilt = base;
+		for (int index = conditions.size() - 1; index >= 0; index--) {
+			rebuilt = new Filter(rebuilt, conditions.get(index));
+		}
+		return rebuilt;
+	}
+
+	private static TupleExpr canonicalizeLeftJoin(final LeftJoin leftJoin) {
+		if (leftJoin.getRightArg() instanceof Filter) {
+			Filter rightFilter = (Filter) leftJoin.getRightArg();
+			leftJoin.setRightArg(rightFilter.getArg());
+			leftJoin.setCondition(mergeConditions(leftJoin.getCondition(), rightFilter.getCondition()));
+		} else {
+			leftJoin.setCondition(canonicalizeConjunction(leftJoin.getCondition()));
+		}
+		return leftJoin;
+	}
+
+	private static ValueExpr mergeConditions(final ValueExpr first, final ValueExpr second) {
+		if (first == null) {
+			return canonicalizeConjunction(second);
+		}
+		if (second == null) {
+			return canonicalizeConjunction(first);
+		}
+		return canonicalizeConjunction(new And((ValueExpr) first.clone(), (ValueExpr) second.clone()));
+	}
+
+	private static ValueExpr canonicalizeConjunction(final ValueExpr condition) {
+		if (condition == null) {
+			return null;
+		}
+		List<ValueExpr> conjuncts = new ArrayList<>();
+		collectConjuncts(condition, conjuncts);
+		conjuncts.sort((left, right) -> VarNameNormalizer.normalizeVars(left.toString())
+				.compareTo(VarNameNormalizer.normalizeVars(right.toString())));
+		ValueExpr canonical = conjuncts.get(0);
+		for (int index = 1; index < conjuncts.size(); index++) {
+			canonical = new And(canonical, conjuncts.get(index));
+		}
+		return canonical;
+	}
+
+	private static void collectConjuncts(final ValueExpr expr, final List<ValueExpr> target) {
+		if (expr instanceof And) {
+			collectConjuncts(((And) expr).getLeftArg(), target);
+			collectConjuncts(((And) expr).getRightArg(), target);
+			return;
+		}
+		target.add((ValueExpr) expr.clone());
 	}
 
 	// diff the two strings to help debugging

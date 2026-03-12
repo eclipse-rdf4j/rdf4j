@@ -1,0 +1,16 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX dct: <http://purl.org/dc/terms/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?dataset ?title ?len ?issued
+WHERE {
+    {
+        SELECT ?dataset ?title ?issued (STRLEN(STR(?title)) AS ?len)
+        WHERE {
+            ?dataset a dcat:Dataset ;
+                     dct:title ?title ;
+                     dct:issued ?issued .
+        }
+        LIMIT 50
+    }
+}

@@ -86,6 +86,14 @@ class TxnManager {
 		return txnRef;
 	}
 
+	/**
+	 * Creates a new read-only transaction that is not tracked in {@link #active}, but is still owned by the returned
+	 * reference and released on close.
+	 */
+	Txn createReadTxnUntracked() throws IOException {
+		return new Txn(createReadTxnInternal());
+	}
+
 	long createReadTxnInternal() throws IOException {
 		long txn = 0;
 		if (mode == Mode.RESET) {

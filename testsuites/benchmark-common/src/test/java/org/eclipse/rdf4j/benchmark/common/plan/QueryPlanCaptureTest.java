@@ -253,6 +253,157 @@ class QueryPlanCaptureTest {
 	}
 
 	@Test
+	void capturesUoeTraceDebugMetricFromTelemetryTupleExpr() {
+		QueryPlanCapture capture = new QueryPlanCapture();
+		String query = "SELECT ?s WHERE { ?s ?p ?o }";
+		String uoeTrace = "{\"uoeTrace\":{\"optimizer\":\"uoe-observe\",\"optimizerVersion\":\"uoe-observe-v1\","
+				+ "\"traceId\":\"trace-abc123\",\"events\":[{\"phase\":\"SEARCH\","
+				+ "\"event\":\"CANDIDATE_PLAN_GENERATED\"},{\"phase\":\"OBSERVE\",\"event\":\"PIPELINE_PASS\"},"
+				+ "{\"phase\":\"NORMALIZE\",\"event\":\"NORMALIZATION_APPLIED\"},"
+				+ "{\"phase\":\"ANALYZE\",\"event\":\"REGION_BUILT\"},"
+				+ "{\"phase\":\"LOGICAL\",\"event\":\"RULE_MATCHED\"},{\"phase\":\"LOGICAL\","
+				+ "\"event\":\"RULE_APPLIED\",\"reason\":{\"preconditions\":{\"observeMode\":true},"
+				+ "\"deltaMillis\":0.0}},{\"phase\":\"LOGICAL\",\"event\":\"RULE_REJECTED\","
+				+ "\"reason\":{\"preconditions\":{\"observeMode\":true},\"cause\":\"observe-mode\"}},"
+				+ "{\"phase\":\"COST\",\"event\":\"COSTED_PLAN\"},{\"phase\":\"SEARCH\",\"event\":\"PRUNED\"},"
+				+ "{\"phase\":\"SELECT\",\"event\":\"CHOSEN\"}],"
+				+ "\"finalChoice\":{\"chosenPlan\":{\"planHash\":\"plan-deadbeef\",\"strategy\":\"observe-pass\","
+				+ "\"reason\":\"observe-pass\",\"risk\":0.42,\"predictedMillis\":12.5},"
+				+ "\"topK\":[{\"rank\":1,\"planHash\":\"plan-deadbeef\",\"predictedMillis\":12.5,\"risk\":0.42}]}}}";
+
+		EnumMap<Explanation.Level, Explanation> explanations = new EnumMap<>(Explanation.Level.class);
+		for (Explanation.Level level : Explanation.Level.values()) {
+			TupleExpr tupleExpr = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			if (level == Explanation.Level.Telemetry) {
+				tupleExpr.setRuntimeTelemetryEnabled(true);
+				tupleExpr.setStringMetricActual("rdf4j.optimizer.uoe.trace", uoeTrace);
+			}
+			explanations.put(level, toExplanation(tupleExpr));
+		}
+
+		TupleQuery tupleQuery = (TupleQuery) Proxy.newProxyInstance(
+				QueryPlanCaptureTest.class.getClassLoader(),
+				new Class<?>[] { TupleQuery.class },
+				(proxy, method, args) -> {
+					if ("explain".equals(method.getName())) {
+						return explanations.get((Explanation.Level) args[0]);
+					}
+					if ("toString".equals(method.getName())) {
+						return "UoeTraceStubTupleQuery";
+					}
+					if (method.getReturnType().isPrimitive()) {
+						return primitiveDefault(method.getReturnType());
+					}
+					return null;
+				});
+
+		QueryPlanCaptureContext context = QueryPlanCaptureContext.builder()
+				.outputDirectory(tempDir)
+				.queryId("uoe-trace")
+				.queryString(query)
+				.benchmark("QueryPlanCaptureTest")
+				.build();
+
+		QueryPlanSnapshot snapshot = capture.capture(context, () -> tupleQuery);
+		QueryPlanExplanation telemetry = snapshot.getExplanations().get("telemetry");
+		assertNotNull(telemetry, "Expected telemetry explanation");
+		assertEquals(uoeTrace, telemetry.getDebugMetrics().get("uoeTrace"));
+		assertEquals("trace-abc123", telemetry.getDebugMetrics().get("uoeTraceId"));
+		assertEquals("uoe-observe", telemetry.getDebugMetrics().get("uoeTraceOptimizer"));
+		assertEquals("uoe-observe-v1", telemetry.getDebugMetrics().get("uoeTraceOptimizerVersion"));
+		assertEquals("plan-deadbeef", telemetry.getDebugMetrics().get("uoeTraceChosenPlanHash"));
+		assertEquals("observe-pass", telemetry.getDebugMetrics().get("uoeTraceChosenPlanStrategy"));
+		assertEquals("observe-pass", telemetry.getDebugMetrics().get("uoeTraceChosenPlanReason"));
+		assertEquals("0.42", telemetry.getDebugMetrics().get("uoeTraceChosenPlanRisk"));
+		assertEquals("12.5", telemetry.getDebugMetrics().get("uoeTraceChosenPlanPredictedMillis"));
+		assertEquals("10", telemetry.getDebugMetrics().get("uoeTraceEventCount"));
+		assertEquals("1", telemetry.getDebugMetrics().get("uoeTraceCandidatePlanEventCount"));
+		assertEquals("1", telemetry.getDebugMetrics().get("uoeTraceNormalizationAppliedEventCount"));
+		assertEquals("1", telemetry.getDebugMetrics().get("uoeTraceRegionBuiltEventCount"));
+		assertEquals("1", telemetry.getDebugMetrics().get("uoeTraceRuleMatchedEventCount"));
+		assertEquals("1", telemetry.getDebugMetrics().get("uoeTraceRuleAppliedEventCount"));
+		assertEquals("1", telemetry.getDebugMetrics().get("uoeTraceRuleRejectedEventCount"));
+		assertEquals("0.0", telemetry.getDebugMetrics().get("uoeTraceRuleAppliedReasonDeltaMillis"));
+		assertEquals("true",
+				telemetry.getDebugMetrics().get("uoeTraceRuleAppliedReasonPreconditionsObserveMode"));
+		assertEquals("observe-mode", telemetry.getDebugMetrics().get("uoeTraceRuleRejectedReasonCause"));
+		assertEquals("true",
+				telemetry.getDebugMetrics().get("uoeTraceRuleRejectedReasonPreconditionsObserveMode"));
+		assertEquals("1", telemetry.getDebugMetrics().get("uoeTraceCostedPlanEventCount"));
+		assertEquals("1", telemetry.getDebugMetrics().get("uoeTracePrunedEventCount"));
+		assertEquals("1", telemetry.getDebugMetrics().get("uoeTraceChosenEventCount"));
+		assertEquals("1", telemetry.getDebugMetrics().get("uoeTraceTopKCount"));
+		assertEquals("plan-deadbeef", telemetry.getDebugMetrics().get("uoeTraceTopKFirstPlanHash"));
+		assertEquals("1", telemetry.getDebugMetrics().get("uoeTraceTopKFirstRank"));
+		assertEquals("12.5", telemetry.getDebugMetrics().get("uoeTraceTopKFirstPredictedMillis"));
+		assertEquals("0.42", telemetry.getDebugMetrics().get("uoeTraceTopKFirstRisk"));
+		assertEquals(uoeTrace, telemetry.getUoeTrace());
+	}
+
+	@Test
+	void capturesUoeTraceChosenPlanFieldsFromFinalChoiceWithoutChosenPlanNode() {
+		QueryPlanCapture capture = new QueryPlanCapture();
+		String query = "SELECT ?s WHERE { ?s ?p ?o }";
+		String uoeTrace = "{\"uoeTrace\":{\"optimizer\":\"uoe-observe\",\"optimizerVersion\":\"uoe-observe-v1\","
+				+ "\"traceId\":\"trace-direct-final-choice\",\"events\":[{\"phase\":\"SEARCH\","
+				+ "\"event\":\"CANDIDATE_PLAN_GENERATED\"},{\"phase\":\"SELECT\",\"event\":\"CHOSEN\"}],"
+				+ "\"finalChoice\":{\"planHash\":\"plan-direct\",\"strategy\":\"observe-pass\","
+				+ "\"reason\":\"direct-final-choice\",\"risk\":0.25,\"predictedMillis\":8.75,"
+				+ "\"topK\":[{\"rank\":1,\"planHash\":\"plan-direct\",\"predictedMillis\":8.75,\"risk\":0.25}]}}}";
+
+		EnumMap<Explanation.Level, Explanation> explanations = new EnumMap<>(Explanation.Level.class);
+		for (Explanation.Level level : Explanation.Level.values()) {
+			TupleExpr tupleExpr = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			if (level == Explanation.Level.Telemetry) {
+				tupleExpr.setRuntimeTelemetryEnabled(true);
+				tupleExpr.setStringMetricActual("rdf4j.optimizer.uoe.trace", uoeTrace);
+			}
+			explanations.put(level, toExplanation(tupleExpr));
+		}
+
+		TupleQuery tupleQuery = (TupleQuery) Proxy.newProxyInstance(
+				QueryPlanCaptureTest.class.getClassLoader(),
+				new Class<?>[] { TupleQuery.class },
+				(proxy, method, args) -> {
+					if ("explain".equals(method.getName())) {
+						return explanations.get((Explanation.Level) args[0]);
+					}
+					if ("toString".equals(method.getName())) {
+						return "UoeDirectFinalChoiceTraceStubTupleQuery";
+					}
+					if (method.getReturnType().isPrimitive()) {
+						return primitiveDefault(method.getReturnType());
+					}
+					return null;
+				});
+
+		QueryPlanCaptureContext context = QueryPlanCaptureContext.builder()
+				.outputDirectory(tempDir)
+				.queryId("uoe-direct-final-choice")
+				.queryString(query)
+				.benchmark("QueryPlanCaptureTest")
+				.build();
+
+		QueryPlanSnapshot snapshot = capture.capture(context, () -> tupleQuery);
+		QueryPlanExplanation telemetry = snapshot.getExplanations().get("telemetry");
+		assertNotNull(telemetry, "Expected telemetry explanation");
+		assertEquals(uoeTrace, telemetry.getDebugMetrics().get("uoeTrace"));
+		assertEquals("trace-direct-final-choice", telemetry.getDebugMetrics().get("uoeTraceId"));
+		assertEquals("uoe-observe-v1", telemetry.getDebugMetrics().get("uoeTraceOptimizerVersion"));
+		assertEquals("plan-direct", telemetry.getDebugMetrics().get("uoeTraceChosenPlanHash"));
+		assertEquals("observe-pass", telemetry.getDebugMetrics().get("uoeTraceChosenPlanStrategy"));
+		assertEquals("direct-final-choice", telemetry.getDebugMetrics().get("uoeTraceChosenPlanReason"));
+		assertEquals("0.25", telemetry.getDebugMetrics().get("uoeTraceChosenPlanRisk"));
+		assertEquals("8.75", telemetry.getDebugMetrics().get("uoeTraceChosenPlanPredictedMillis"));
+		assertEquals("1", telemetry.getDebugMetrics().get("uoeTraceTopKCount"));
+		assertEquals("plan-direct", telemetry.getDebugMetrics().get("uoeTraceTopKFirstPlanHash"));
+		assertEquals("1", telemetry.getDebugMetrics().get("uoeTraceTopKFirstRank"));
+		assertEquals("8.75", telemetry.getDebugMetrics().get("uoeTraceTopKFirstPredictedMillis"));
+		assertEquals("0.25", telemetry.getDebugMetrics().get("uoeTraceTopKFirstRisk"));
+		assertEquals(uoeTrace, telemetry.getUoeTrace());
+	}
+
+	@Test
 	void capturesGitBranchMetadataWhenConfigured() {
 		String propertyKey = "rdf4j.query.plan.capture.gitBranch";
 		String previousProperty = System.getProperty(propertyKey);

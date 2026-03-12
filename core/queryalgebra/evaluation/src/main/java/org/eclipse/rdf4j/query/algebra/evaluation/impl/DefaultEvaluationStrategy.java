@@ -158,6 +158,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearnedQueryJoinOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.LearnedQueryJoinOptimizer.PlanSelectionSnapshot;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.joinengine.JoinEngineRuntimeFeedback;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -284,7 +287,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		this.dataset = dataset;
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
-		this.pipeline = new org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline(this,
+		this.pipeline = new org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SparqlUoQueryOptimizerPipeline(this,
 				tripleSource, evaluationStatistics);
 		this.trackResultSize = trackResultSize;
 		this.tupleFuncRegistry = tupleFunctionRegistry;
@@ -299,6 +302,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	@Override
 	public FederatedServiceResolver getFederatedServiceResolver() {
 		return serviceResolver;
+	}
+
+	public TripleSource getTripleSource() {
+		return tripleSource;
 	}
 
 	@Override
@@ -422,6 +429,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
 				result = new ResultSizeCountingIterator(result, expr);
 			}
+			result = trackLearnedPlanOutcome(expr, result);
 			return result;
 		} catch (Throwable t) {
 			if (result != null) {
@@ -480,6 +488,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			if (trackResultSize) {
 				ret = trackResultSize(expr, ret);
 			}
+			ret = trackLearnedPlanOutcome(expr, ret);
 			return ret;
 		} else {
 			return QueryEvaluationStep.minimal(this, expr);
@@ -501,6 +510,22 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			initializeTimeTelemetry(expr);
 			return new TimedIterator(qes.evaluate(bindings), expr);
 		};
+	}
+
+	private QueryEvaluationStep trackLearnedPlanOutcome(TupleExpr expr, QueryEvaluationStep qes) {
+		return bindings -> trackLearnedPlanOutcome(expr, qes.evaluate(bindings));
+	}
+
+	private CloseableIteration<BindingSet> trackLearnedPlanOutcome(TupleExpr expr,
+			CloseableIteration<BindingSet> iteration) {
+		if (!(expr instanceof QueryRoot) || iteration == null) {
+			return iteration;
+		}
+		PlanSelectionSnapshot snapshot = LearnedQueryJoinOptimizer.getLastPlanSelectionSnapshot();
+		if (snapshot == null) {
+			return new JoinEnginePlanOutcomeIterator(iteration);
+		}
+		return new LearnedPlanOutcomeIterator(iteration, snapshot);
 	}
 
 	private static void initializeTimeTelemetry(QueryModelNode queryModelNode) {
@@ -1786,6 +1811,110 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				super.handleClose();
 
 			}
+		}
+	}
+
+	private static class LearnedPlanOutcomeIterator extends IterationWrapper<BindingSet> {
+
+		private final PlanSelectionSnapshot snapshot;
+		private final long startedAtNanos = System.nanoTime();
+		private boolean recorded;
+
+		private LearnedPlanOutcomeIterator(CloseableIteration<BindingSet> iterator, PlanSelectionSnapshot snapshot) {
+			super(iterator);
+			this.snapshot = snapshot;
+		}
+
+		@Override
+		public boolean hasNext() throws QueryEvaluationException {
+			try {
+				return super.hasNext();
+			} catch (RuntimeException exception) {
+				recordOutcome(false);
+				throw exception;
+			}
+		}
+
+		@Override
+		public BindingSet next() throws QueryEvaluationException {
+			try {
+				return super.next();
+			} catch (RuntimeException exception) {
+				recordOutcome(false);
+				throw exception;
+			}
+		}
+
+		@Override
+		protected void handleClose() throws QueryEvaluationException {
+			try {
+				recordOutcome(true);
+			} finally {
+				super.handleClose();
+			}
+		}
+
+		private void recordOutcome(boolean successful) {
+			if (recorded) {
+				return;
+			}
+			recorded = true;
+			double observedCost = Math.max(1.0d, (System.nanoTime() - startedAtNanos) / 1_000_000.0d);
+			try {
+				JoinEngineRuntimeFeedback.reportSelectedPlanElapsedMillis(observedCost);
+				LearnedQueryJoinOptimizer.recordPlanOutcome(snapshot.getQueryTemplateHash(),
+						snapshot.getSelectedPlanSignature(), observedCost, successful);
+			} finally {
+				LearnedQueryJoinOptimizer.clearLastPlanSelectionSnapshot();
+			}
+		}
+	}
+
+	private static final class JoinEnginePlanOutcomeIterator extends IterationWrapper<BindingSet> {
+
+		private final long startedAtNanos = System.nanoTime();
+		private boolean recorded;
+
+		private JoinEnginePlanOutcomeIterator(CloseableIteration<BindingSet> iterator) {
+			super(iterator);
+		}
+
+		@Override
+		public boolean hasNext() throws QueryEvaluationException {
+			try {
+				return super.hasNext();
+			} catch (RuntimeException exception) {
+				recordOutcome();
+				throw exception;
+			}
+		}
+
+		@Override
+		public BindingSet next() throws QueryEvaluationException {
+			try {
+				return super.next();
+			} catch (RuntimeException exception) {
+				recordOutcome();
+				throw exception;
+			}
+		}
+
+		@Override
+		protected void handleClose() throws QueryEvaluationException {
+			try {
+				recordOutcome();
+			} finally {
+				super.handleClose();
+			}
+		}
+
+		private void recordOutcome() {
+			if (recorded) {
+				return;
+			}
+			recorded = true;
+			double observedCost = Math.max(1.0d, (System.nanoTime() - startedAtNanos) / 1_000_000.0d);
+			JoinEngineRuntimeFeedback.reportSelectedPlanElapsedMillis(observedCost);
 		}
 	}
 

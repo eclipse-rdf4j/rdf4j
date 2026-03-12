@@ -56,3 +56,4 @@ e2e/test-results
 .serena/
 .vscode
 /.codex/environments/environment.toml
+tmp/

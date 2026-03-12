@@ -16,19 +16,34 @@ Read optimizer/query-plan changes as performance signals without mixing in unrel
 
 1. Baseline:
 
-`./.codex/skills/query-plan-snapshot-cli/scripts/run_query_plan_snapshot.sh --log /tmp/qps-baseline.log -- --store memory --theme MEDICAL_RECORDS --query-index 0 --query-id med-q0`
+`./.codex/skills/query-plan-snapshot-cli/scripts/run_query_plan_snapshot.sh --log tmp/qps-baseline.log -- --store memory --theme MEDICAL_RECORDS --query-index 0 --query-id med-q0`
 
 2. Candidate:
 
-`./.codex/skills/query-plan-snapshot-cli/scripts/run_query_plan_snapshot.sh --log /tmp/qps-candidate.log -- --store memory --theme MEDICAL_RECORDS --query-index 0 --query-id med-q0 --compare-latest --diff-mode structure+estimates`
+`./.codex/skills/query-plan-snapshot-cli/scripts/run_query_plan_snapshot.sh --log tmp/qps-candidate.log -- --store memory --theme MEDICAL_RECORDS --query-index 0 --query-id med-q0 --compare-latest --diff-mode structure+estimates`
 
 3. Explicit compare-existing (stable reproducible diff text):
 
-`mvn -o -Dmaven.repo.local=.m2_repo -pl testsuites/benchmark -DskipTests exec:java@query-plan-snapshot -Dexec.args="--compare-existing --query-id med-q0 --compare-indices 1,0 --no-interactive --diff-mode structure+estimates" | tee /tmp/qps-compare.log`
+`mvn -o -Dmaven.repo.local=.m2_repo -pl testsuites/benchmark -DskipTests exec:java@query-plan-snapshot -Dexec.args="--compare-existing --query-id med-q0 --compare-indices 1,0 --no-interactive --diff-mode structure+estimates" | tee tmp/qps-compare.log`
 
 4. Regression/improvement summary:
 
-`python3 ./.codex/skills/query-plan-snapshot-cli/scripts/interpret_query_plan_regression.py --baseline-log /tmp/qps-baseline.log --candidate-log /tmp/qps-candidate.log --comparison-log /tmp/qps-compare.log`
+`python3 ./.codex/skills/query-plan-snapshot-cli/scripts/interpret_query_plan_regression.py --baseline-log tmp/qps-baseline.log --candidate-log tmp/qps-candidate.log --comparison-log tmp/qps-compare.log`
+
+5. Optional temporary run rooted in repo `tmp/`:
+
+`./.codex/skills/query-plan-snapshot-cli/scripts/run_query_plan_snapshot.sh --tmp-run --log tmp/qps-tmp.log -- --store lmdb --theme LIBRARY --query-index 8 --query-timeout-seconds 5`
+
+6. Optional overwrite of prior runs for a specific themed query:
+
+`./.codex/skills/query-plan-snapshot-cli/scripts/run_query_plan_snapshot.sh --tmp-run --log tmp/qps-overwrite.log -- --store lmdb --theme LIBRARY --query-index 8 --overwrite-theme-query-runs`
+
+7. Retrieve learned plan traces for matching runs:
+
+`./.codex/skills/query-plan-snapshot-cli/scripts/run_query_plan_snapshot.sh --log tmp/qps-learned-trace.log -- --compare-existing --query-id med-q0 --retrieve-learned-plan-trace --no-interactive`
+
+Learned plan trace files are stored beside each snapshot:
+- `<snapshot-base>-learned-plan-trace.jsonl`
 
 ## Reading semantic diff fields
 

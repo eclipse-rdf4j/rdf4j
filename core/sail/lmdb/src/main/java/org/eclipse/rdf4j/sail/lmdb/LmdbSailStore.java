@@ -12,8 +12,11 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -21,9 +24,12 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -47,6 +53,7 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -59,6 +66,11 @@ import org.slf4j.LoggerFactory;
 class LmdbSailStore implements SailStore {
 
 	final Logger logger = LoggerFactory.getLogger(LmdbSailStore.class);
+	private static final String JOIN_ESTIMATOR_FILE_NAME = "join-estimator.rjes";
+	private static final Runtime RUNTIME = Runtime.getRuntime();
+	private static final long MAX_MEMORY = RUNTIME.maxMemory();
+	private static final long LOW_MEM_ABS = 64L * 1024L * 1024L;
+	private static final double LOW_MEM_RATIO = 1.0 / 8.0;
 
 	private final TripleStore tripleStore;
 
@@ -78,12 +90,23 @@ class LmdbSailStore implements SailStore {
 	private PersistentSetFactory<Long> setFactory;
 	private PersistentSet<Long> unusedIds, nextUnusedIds;
 
+	private final SketchBasedJoinEstimator sketchBasedJoinEstimator = new SketchBasedJoinEstimator(this,
+			SketchBasedJoinEstimator.suggestNominalEntries(), Integer.MAX_VALUE, 2);
+	private final ScheduledExecutorService estimatorPersistExec = Executors.newSingleThreadScheduledExecutor(r -> {
+		Thread t = new Thread(r, "LmdbJoinEstimator-Persist");
+		t.setDaemon(true);
+		return t;
+	});
+	private final AtomicBoolean persistScheduled = new AtomicBoolean(false);
+	private volatile ScheduledFuture<?> persistFuture;
+	private volatile long estimatorPersistDelayMillis = 1000L;
+
 	/**
 	 * A fast non-blocking circular buffer backed by an array.
 	 *
 	 * @param <T> Type of elements within this buffer
 	 */
-	static final class CircularBuffer<T> {
+	final class CircularBuffer<T> {
 
 		private final T[] elements;
 		private volatile int head = 0;
@@ -139,6 +162,11 @@ class LmdbSailStore implements SailStore {
 	class AddQuadOperation implements Operation {
 		long s, p, o, c;
 		boolean explicit;
+		Resource subj;
+		IRI pred;
+		Value obj;
+		Resource context;
+		Consumer<Statement> estimatorCallback;
 
 		@Override
 		public void execute() throws IOException {
@@ -152,7 +180,11 @@ class LmdbSailStore implements SailStore {
 				unusedIds.remove(o);
 				unusedIds.remove(c);
 			}
-			tripleStore.storeTriple(s, p, o, c, explicit);
+			boolean added = tripleStore.storeTriple(s, p, o, c, explicit);
+			if (added && explicit && estimatorCallback != null) {
+				Statement st = valueStore.createStatement(subj, pred, obj, context);
+				estimatorCallback.accept(st);
+			}
 		}
 	}
 
@@ -198,6 +230,13 @@ class LmdbSailStore implements SailStore {
 			tripleStore = new TripleStore(new File(dataDir, "triples"), config, valueStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
 			initialized = true;
+			Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
+			boolean snapshotExists = Files.exists(estimatorPath);
+			sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
+			if (!snapshotExists) {
+				sketchBasedJoinEstimator.rebuildOnceSlow();
+			}
+			sketchBasedJoinEstimator.startBackgroundRefresh(3);
 		} finally {
 			if (!initialized) {
 				close();
@@ -208,6 +247,18 @@ class LmdbSailStore implements SailStore {
 	@Override
 	public ValueFactory getValueFactory() {
 		return valueStore;
+	}
+
+	SketchBasedJoinEstimator getSketchBasedJoinEstimator() {
+		return sketchBasedJoinEstimator;
+	}
+
+	private static boolean isLowMemory() {
+		long total = RUNTIME.totalMemory();
+		long free = RUNTIME.freeMemory();
+		long used = total - free;
+		long freeToAllocate = MAX_MEMORY - used;
+		return freeToAllocate < LOW_MEM_ABS || (freeToAllocate + 0.0) / (MAX_MEMORY + 0.0) < LOW_MEM_RATIO;
 	}
 
 	void rollback() throws SailException {
@@ -241,36 +292,45 @@ class LmdbSailStore implements SailStore {
 	public void close() throws SailException {
 		try {
 			try {
-				if (namespaceStore != null) {
-					namespaceStore.close();
+				if (persistFuture != null) {
+					persistFuture.cancel(false);
 				}
+				sketchBasedJoinEstimator.persistIfDirty();
+				sketchBasedJoinEstimator.stop();
 			} finally {
 				try {
-					if (valueStore != null) {
-						valueStore.close();
+					if (namespaceStore != null) {
+						namespaceStore.close();
 					}
 				} finally {
 					try {
-						if (tripleStore != null) {
-							try {
-								running.set(false);
-								tripleStoreExecutor.shutdown();
-								try {
-									while (!tripleStoreExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
-										logger.warn("Waiting for triple store executor to terminate");
-									}
-								} catch (InterruptedException e) {
-									Thread.currentThread().interrupt();
-									throw new InterruptedSailException(e);
-								}
-							} finally {
-								tripleStore.close();
-							}
+						if (valueStore != null) {
+							valueStore.close();
 						}
 					} finally {
-						if (setFactory != null) {
-							setFactory.close();
-							setFactory = null;
+						try {
+							if (tripleStore != null) {
+								try {
+									running.set(false);
+									tripleStoreExecutor.shutdown();
+									try {
+										while (!tripleStoreExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+											logger.warn("Waiting for triple store executor to terminate");
+										}
+									} catch (InterruptedException e) {
+										Thread.currentThread().interrupt();
+										throw new InterruptedSailException(e);
+									}
+								} finally {
+									estimatorPersistExec.shutdownNow();
+									tripleStore.close();
+								}
+							}
+						} finally {
+							if (setFactory != null) {
+								setFactory.close();
+								setFactory = null;
+							}
 						}
 					}
 				}
@@ -288,7 +348,7 @@ class LmdbSailStore implements SailStore {
 
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
-		return new LmdbEvaluationStatistics(valueStore, tripleStore);
+		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator);
 	}
 
 	@Override
@@ -432,7 +492,12 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public LmdbSailDataset dataset(IsolationLevel level) throws SailException {
-			return new LmdbSailDataset(explicit);
+			boolean isEstimatorRefresh = SketchBasedJoinEstimator.REFRESH_THREAD_NAME
+					.equals(Thread.currentThread().getName());
+			// Refresh reader transactions can remain open across write commits and must not
+			// participate in the active txn reset/renew cycle.
+			boolean trackActive = !isEstimatorRefresh;
+			return new LmdbSailDataset(explicit, trackActive);
 		}
 
 	}
@@ -440,9 +505,61 @@ class LmdbSailStore implements SailStore {
 	private final class LmdbSailSink implements SailSink {
 
 		private final boolean explicit;
+		private final List<Runnable> pendingEstimatorUpdates = new ArrayList<>();
 
 		public LmdbSailSink(boolean explicit) throws SailException {
 			this.explicit = explicit;
+		}
+
+		private void queueEstimatorAdd(Statement st) {
+			if (!explicit) {
+				return;
+			}
+			synchronized (pendingEstimatorUpdates) {
+				pendingEstimatorUpdates.add(() -> sketchBasedJoinEstimator.addStatement(st));
+			}
+		}
+
+		private void queueEstimatorRemove(Statement st) {
+			if (!explicit) {
+				return;
+			}
+			synchronized (pendingEstimatorUpdates) {
+				pendingEstimatorUpdates.add(() -> sketchBasedJoinEstimator.deleteStatement(st));
+			}
+		}
+
+		private void applyEstimatorUpdates() {
+			if (!explicit) {
+				return;
+			}
+			List<Runnable> updates;
+			synchronized (pendingEstimatorUpdates) {
+				if (pendingEstimatorUpdates.isEmpty()) {
+					return;
+				}
+				updates = new ArrayList<>(pendingEstimatorUpdates);
+				pendingEstimatorUpdates.clear();
+			}
+			updates.forEach(Runnable::run);
+		}
+
+		private void clearEstimatorUpdates() {
+			synchronized (pendingEstimatorUpdates) {
+				pendingEstimatorUpdates.clear();
+			}
+		}
+
+		private void scheduleEstimatorPersist() {
+			if (persistScheduled.compareAndSet(false, true)) {
+				persistFuture = estimatorPersistExec.schedule(() -> {
+					try {
+						sketchBasedJoinEstimator.persistIfDirty();
+					} finally {
+						persistScheduled.set(false);
+					}
+				}, estimatorPersistDelayMillis, TimeUnit.MILLISECONDS);
+			}
 		}
 
 		@Override
@@ -511,17 +628,24 @@ class LmdbSailStore implements SailStore {
 						}
 						handleRemovedIdsInValueStore();
 						valueStore.commit();
+						applyEstimatorUpdates();
+						scheduleEstimatorPersist();
+						if (isLowMemory()) {
+							sketchBasedJoinEstimator.unload();
+						}
 						// do not set flag to false until _after_ commit is successfully completed.
 						storeTxnStarted.set(false);
 					}
 				}
 			} catch (IOException e) {
 				rollback();
+				clearEstimatorUpdates();
 				running.set(false);
 				logger.error("Encountered an unexpected problem while trying to commit", e);
 				throw new SailException(e);
 			} catch (RuntimeException e) {
 				rollback();
+				clearEstimatorUpdates();
 				running.set(false);
 				logger.error("Encountered an unexpected problem while trying to commit", e);
 				throw e;
@@ -599,7 +723,12 @@ class LmdbSailStore implements SailStore {
 					q.p = valueStore.storeValue(pred);
 					q.o = valueStore.storeValue(obj);
 					q.c = context == null ? 0 : valueStore.storeValue(context);
+					q.context = context;
 					q.explicit = explicit;
+					q.subj = subj;
+					q.pred = pred;
+					q.obj = obj;
+					q.estimatorCallback = this::queueEstimatorAdd;
 
 					if (multiThreadingActive) {
 						while (!opQueue.add(q)) {
@@ -616,6 +745,7 @@ class LmdbSailStore implements SailStore {
 				}
 			} catch (IOException | RuntimeException e) {
 				rollback();
+				clearEstimatorUpdates();
 				if (multiThreadingActive) {
 					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
 				} else {
@@ -742,7 +872,12 @@ class LmdbSailStore implements SailStore {
 				q.p = valueStore.storeValue(pred);
 				q.o = valueStore.storeValue(obj);
 				q.c = context == null ? 0 : valueStore.storeValue(context);
+				q.context = context;
 				q.explicit = explicit;
+				q.subj = subj;
+				q.pred = pred;
+				q.obj = obj;
+				q.estimatorCallback = this::queueEstimatorAdd;
 
 				if (multiThreadingActive) {
 					while (!opQueue.add(q)) {
@@ -757,9 +892,11 @@ class LmdbSailStore implements SailStore {
 				}
 			} catch (IOException e) {
 				rollback();
+				clearEstimatorUpdates();
 				throw new SailException(e);
 			} catch (RuntimeException e) {
 				rollback();
+				clearEstimatorUpdates();
 				logger.error("Encountered an unexpected problem while trying to add a statement", e);
 				throw e;
 			} finally {
@@ -770,15 +907,26 @@ class LmdbSailStore implements SailStore {
 		private long removeStatements(long subj, long pred, long obj, boolean explicit, long[] contexts)
 				throws IOException {
 			long[] removeCount = { 0 };
-			for (long contextId : contexts) {
-				tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit, quad -> {
-					removeCount[0]++;
-					for (long id : quad) {
-						if (id != 0L) {
-							unusedIds.add(id);
+			try {
+				for (long contextId : contexts) {
+					tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit, quad -> {
+						removeCount[0]++;
+						if (explicit) {
+							try {
+								queueEstimatorRemove(quadToStatement(quad));
+							} catch (IOException e) {
+								throw new UncheckedIOException(e);
+							}
 						}
-					}
-				});
+						for (long id : quad) {
+							if (id != 0L) {
+								unusedIds.add(id);
+							}
+						}
+					});
+				}
+			} catch (UncheckedIOException e) {
+				throw e.getCause();
 			}
 			return removeCount[0];
 		}
@@ -870,14 +1018,26 @@ class LmdbSailStore implements SailStore {
 				}
 			} catch (IOException e) {
 				rollback();
+				clearEstimatorUpdates();
 				throw new SailException(e);
 			} catch (RuntimeException e) {
 				rollback();
+				clearEstimatorUpdates();
 				logger.error("Encountered an unexpected problem while trying to remove statements", e);
 				throw e;
 			} finally {
 				sinkStoreAccessLock.unlock();
 			}
+		}
+
+		private Statement quadToStatement(long[] quad) throws IOException {
+			Resource subj = (Resource) valueStore.getValue(quad[0]);
+			IRI pred = (IRI) valueStore.getValue(quad[1]);
+			Value obj = valueStore.getValue(quad[2]);
+			long ctxId = quad[3];
+			Resource ctx = (ctxId == 0L || ctxId == LmdbValue.UNKNOWN_ID) ? null
+					: (Resource) valueStore.getValue(ctxId);
+			return valueStore.createStatement(subj, pred, obj, ctx);
 		}
 
 		@Override
@@ -897,9 +1057,15 @@ class LmdbSailStore implements SailStore {
 		private final Txn txn;
 
 		public LmdbSailDataset(boolean explicit) throws SailException {
+			this(explicit, true);
+		}
+
+		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
 			this.explicit = explicit;
 			try {
-				this.txn = tripleStore.getTxnManager().createReadTxn();
+				TxnManager txnManager = tripleStore.getTxnManager();
+				this.txn = trackActiveTxn ? txnManager.createReadTxn()
+						: txnManager.createReadTxnUntracked();
 			} catch (IOException e) {
 				throw new SailException(e);
 			}
