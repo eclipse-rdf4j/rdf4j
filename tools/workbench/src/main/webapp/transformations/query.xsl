@@ -491,10 +491,11 @@
 				}
 
 				.query-compare-action__icon--refresh {
-					width:1rem;
-					height:1rem;
-					font-size:0.95rem;
-					transform-origin:center;
+					width: 100%;
+					height: 100%;
+					font-size: 2rem;
+					margin-top: -0.5rem;
+					margin-left: 0.2rem;
 				}
 
 				.query-compare-action__svg--diff {
@@ -550,8 +551,8 @@
 				}
 
 					.query-diff-modal__body {
-						display:grid;
-						grid-template-columns:minmax(0, 1fr);
+						display:flex;
+						flex-direction:column;
 						gap:1rem;
 						padding:1rem 1.25rem 1.25rem 1.25rem;
 						flex:1 1 auto;
@@ -564,6 +565,16 @@
 						flex-direction:column;
 						gap:0.5rem;
 						min-height:0;
+						overflow:hidden;
+					}
+
+					.query-diff-section--query {
+						flex:1 1 auto;
+					}
+
+					.query-diff-section--explanation {
+						flex:0 1 auto;
+						max-height:70%;
 					}
 
 				.query-diff-section__title {
@@ -581,7 +592,7 @@
 						flex:1 1 auto;
 						min-height:0;
 						overflow:auto;
-						max-height:30vh;
+						max-height:none;
 					}
 
 				.query-diff-row {
@@ -917,13 +928,13 @@
 							onclick="workbench.query.closeDiffModal()" />
 					</div>
 					<div class="query-diff-modal__body">
-						<div class="query-diff-section">
+						<div class="query-diff-section query-diff-section--query">
 							<div class="query-diff-section__title">
 								<xsl:value-of select="$query-diff.title" />
 							</div>
 							<div id="query-diff-query" class="query-diff-view"></div>
 						</div>
-						<div class="query-diff-section">
+						<div class="query-diff-section query-diff-section--explanation">
 							<div class="query-diff-section__title">
 								<xsl:value-of select="$explanation-diff.title" />
 							</div>

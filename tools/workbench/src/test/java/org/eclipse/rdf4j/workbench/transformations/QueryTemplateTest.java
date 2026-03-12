@@ -366,6 +366,20 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void queryTemplateShouldLetExplanationDiffUseMostOfModalHeight() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.containsPattern("\\.query-diff-modal__body\\s*\\{[^}]*display:flex;[^}]*flex-direction:column;")
+				.containsPattern("\\.query-diff-section--query\\s*\\{[^}]*flex:1 1 auto;")
+				.containsPattern("\\.query-diff-section--explanation\\s*\\{[^}]*max-height:70%;")
+				.contains("class=\"query-diff-section query-diff-section--query\"")
+				.contains("class=\"query-diff-section query-diff-section--explanation\"")
+				.doesNotContain("max-height:30vh;");
+	}
+
+	@Test
 	void pagingDownloadShouldPostQueryParametersInsteadOfShowingSavedQueryAlert() throws IOException {
 		String pagingScript = Files.readString(Path.of("src/main/webapp/scripts/ts/paging.ts"), StandardCharsets.UTF_8);
 
