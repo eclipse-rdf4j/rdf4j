@@ -213,11 +213,17 @@ public class LmdbIRI implements LmdbResource, IRI {
 		return stringValue().equals(((IRI) o).stringValue());
 	}
 
+	int hashCode = 0;
+
 	@Override
 	public int hashCode() {
+		if(hashCode != 0) {
+			return hashCode;
+		}
 		if (internalID != UNKNOWN_ID) {
 			int cachedHash = revision.getStoredHash(internalID);
 			if (cachedHash != 0) {
+				this.hashCode = cachedHash;
 				return cachedHash;
 			}
 		}
@@ -233,6 +239,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 		if (internalID != UNKNOWN_ID) {
 			revision.storeHash(internalID, hash);
 		}
+		this.hashCode = hash;
 		return hash;
 	}
 

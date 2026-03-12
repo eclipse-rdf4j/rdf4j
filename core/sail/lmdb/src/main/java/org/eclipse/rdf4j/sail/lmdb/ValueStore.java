@@ -20,7 +20,6 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NORDAHEAD;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
@@ -202,7 +201,10 @@ class ValueStore extends AbstractValueFactory {
 	private long nextId = 1;
 	private boolean freeIdsAvailable;
 	private ValueStoreHashFile hashFile;
+	private ValueStoreDataFiles dataFiles;
 	private final Map<Long, Integer> pendingHashUpdates = new HashMap<>();
+	private final Map<Long, byte[]> pendingValueDataUpdates = new HashMap<>();
+	private final Set<Long> pendingClearedValueDataIds = new HashSet<>();
 
 	private volatile long nextValueEvictionTime = 0;
 
@@ -316,6 +318,7 @@ class ValueStore extends AbstractValueFactory {
 		// create directory if it not exists
 		dir.mkdirs();
 		hashFile = new ValueStoreHashFile(dir);
+		dataFiles = new ValueStoreDataFiles(dir);
 
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
@@ -325,7 +328,6 @@ class ValueStore extends AbstractValueFactory {
 
 		E(mdb_env_set_maxdbs(env, 6));
 		E(mdb_env_set_maxreaders(env, 256));
-
 
 		// Open environment
 		int flags = MDB_NOTLS;
@@ -507,6 +509,55 @@ class ValueStore extends AbstractValueFactory {
 		writeHashNow(id, 0);
 	}
 
+	byte[] getStoredData(long id) {
+		synchronized (pendingValueDataUpdates) {
+			if (pendingClearedValueDataIds.contains(id)) {
+				return null;
+			}
+			byte[] pendingData = pendingValueDataUpdates.get(id);
+			if (pendingData != null) {
+				return pendingData;
+			}
+		}
+		if (dataFiles == null) {
+			return null;
+		}
+		try {
+			return dataFiles.get(id);
+		} catch (IOException e) {
+			resetValueDataFilesQuietly("read", e);
+			return null;
+		}
+	}
+
+	void storeData(long id, byte[] data) {
+		if (id == LmdbValue.UNKNOWN_ID || data == null || data.length == 0) {
+			return;
+		}
+		if (writeTxn != 0) {
+			synchronized (pendingValueDataUpdates) {
+				pendingClearedValueDataIds.remove(id);
+				pendingValueDataUpdates.put(id, data);
+			}
+			return;
+		}
+		writeDataNow(id, data);
+	}
+
+	void clearStoredData(long id) {
+		if (id == LmdbValue.UNKNOWN_ID) {
+			return;
+		}
+		if (writeTxn != 0) {
+			synchronized (pendingValueDataUpdates) {
+				pendingValueDataUpdates.remove(id);
+				pendingClearedValueDataIds.add(id);
+			}
+			return;
+		}
+		clearDataNow(id);
+	}
+
 	protected byte[] getData(long id) throws IOException {
 		return readTransaction(env, (stack, txn) -> {
 			MDBVal keyData = MDBVal.calloc(stack);
@@ -603,8 +654,12 @@ class ValueStore extends AbstractValueFactory {
 			LmdbValue resultValue = cachedValue(id);
 
 			if (resultValue == null) {
-				// Value not in cache, fetch it from file
-				byte[] data = getData(id);
+				// Value not in cache, fetch it from the persistent cache or LMDB
+				byte[] data = getStoredData(id);
+				if (data == null) {
+					data = getData(id);
+					storeDataIfAbsent(id, data);
+				}
 
 				if (data != null) {
 					resultValue = data2value(id, data, null);
@@ -634,7 +689,11 @@ class ValueStore extends AbstractValueFactory {
 			return true;
 		}
 		try {
-			byte[] data = getData(id);
+			byte[] data = getStoredData(id);
+			if (data == null) {
+				data = getData(id);
+				storeDataIfAbsent(id, data);
+			}
 			if (data != null) {
 //				System.out.println(id);
 				data2value(id, data, value);
@@ -1011,6 +1070,7 @@ class ValueStore extends AbstractValueFactory {
 						valueIDCache.put(nv, id);
 					}
 					storeHashIfAbsent(id, value);
+					storeDataIfAbsent(id, data);
 				}
 
 				return id;
@@ -1223,6 +1283,7 @@ class ValueStore extends AbstractValueFactory {
 							// delete id -> value association
 							E(mdb_del(txn, dbi, idVal, null));
 							clearStoredHash(data2id(idVal.mv_data().duplicate()));
+							clearStoredData(data2id(idVal.mv_data().duplicate()));
 							// delete id and value from unused list
 							E(mdb_cursor_del(unusedIdsCursor, 0));
 
@@ -1278,6 +1339,7 @@ class ValueStore extends AbstractValueFactory {
 					try {
 						E(mdb_txn_commit(writeTxn));
 						flushPendingHashUpdates();
+						flushPendingValueDataUpdates();
 						long revisionId = lazyRevision.getRevisionId();
 						cleaner.register(lazyRevision, () -> {
 							synchronized (unusedRevisionIds) {
@@ -1295,10 +1357,12 @@ class ValueStore extends AbstractValueFactory {
 				} else {
 					E(mdb_txn_commit(writeTxn));
 					flushPendingHashUpdates();
+					flushPendingValueDataUpdates();
 				}
 			} else {
 				mdb_txn_abort(writeTxn);
 				clearPendingHashUpdates();
+				clearPendingValueDataUpdates();
 			}
 			writeTxn = 0;
 			invalidateRevisionOnCommit = false;
@@ -1351,6 +1415,8 @@ class ValueStore extends AbstractValueFactory {
 		new File(dir, "data.mdb").delete();
 		new File(dir, "lock.mdb").delete();
 		new File(dir, ValueStoreHashFile.FILE_NAME).delete();
+		new File(dir, ValueStoreDataFiles.INDEX_FILE_NAME).delete();
+		new File(dir, ValueStoreDataFiles.DATA_FILE_NAME).delete();
 
 		clearCaches();
 		open();
@@ -1389,6 +1455,7 @@ class ValueStore extends AbstractValueFactory {
 
 		if (env != 0) {
 			clearPendingHashUpdates();
+			clearPendingValueDataUpdates();
 			closeReadTransactions();
 			endTransaction(false);
 			mdb_env_close(env);
@@ -1398,11 +1465,21 @@ class ValueStore extends AbstractValueFactory {
 			hashFile.close();
 			hashFile = null;
 		}
+		if (dataFiles != null) {
+			dataFiles.close();
+			dataFiles = null;
+		}
 	}
 
 	private void storeHashIfAbsent(long id, Value value) {
 		if (getStoredHash(id) == 0) {
 			storeHash(id, value.hashCode());
+		}
+	}
+
+	private void storeDataIfAbsent(long id, byte[] data) {
+		if (data != null && getStoredData(id) == null) {
+			storeData(id, data);
 		}
 	}
 
@@ -1414,6 +1491,28 @@ class ValueStore extends AbstractValueFactory {
 			hashFile.put(id, hash);
 		} catch (IOException e) {
 			resetHashFileQuietly("write", e);
+		}
+	}
+
+	private void writeDataNow(long id, byte[] data) {
+		if (dataFiles == null) {
+			return;
+		}
+		try {
+			dataFiles.put(id, data);
+		} catch (IOException e) {
+			resetValueDataFilesQuietly("write", e);
+		}
+	}
+
+	private void clearDataNow(long id) {
+		if (dataFiles == null) {
+			return;
+		}
+		try {
+			dataFiles.clear(id);
+		} catch (IOException e) {
+			resetValueDataFilesQuietly("clear", e);
 		}
 	}
 
@@ -1438,6 +1537,34 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
+	private void flushPendingValueDataUpdates() {
+		Map<Long, byte[]> updates;
+		Set<Long> clearedIds;
+		synchronized (pendingValueDataUpdates) {
+			if (pendingValueDataUpdates.isEmpty() && pendingClearedValueDataIds.isEmpty()) {
+				return;
+			}
+			updates = new HashMap<>(pendingValueDataUpdates);
+			clearedIds = new HashSet<>(pendingClearedValueDataIds);
+			pendingValueDataUpdates.clear();
+			pendingClearedValueDataIds.clear();
+		}
+
+		for (Long clearedId : clearedIds) {
+			clearDataNow(clearedId);
+		}
+		for (Map.Entry<Long, byte[]> entry : updates.entrySet()) {
+			writeDataNow(entry.getKey(), entry.getValue());
+		}
+	}
+
+	private void clearPendingValueDataUpdates() {
+		synchronized (pendingValueDataUpdates) {
+			pendingValueDataUpdates.clear();
+			pendingClearedValueDataIds.clear();
+		}
+	}
+
 	private void resetHashFileQuietly(String operation, IOException cause) {
 		logger.warn("Resetting LMDB hash cache after {} failure", operation, cause);
 		clearPendingHashUpdates();
@@ -1455,6 +1582,26 @@ class ValueStore extends AbstractValueFactory {
 				logger.warn("Could not close LMDB hash cache after reset failure", closeFailure);
 			}
 			hashFile = null;
+		}
+	}
+
+	private void resetValueDataFilesQuietly(String operation, IOException cause) {
+		logger.warn("Resetting LMDB value cache after {} failure", operation, cause);
+		clearPendingValueDataUpdates();
+		if (dataFiles == null) {
+			return;
+		}
+		try {
+			dataFiles.delete();
+			dataFiles = new ValueStoreDataFiles(dir);
+		} catch (IOException resetFailure) {
+			logger.warn("Could not recreate LMDB value cache", resetFailure);
+			try {
+				dataFiles.close();
+			} catch (IOException closeFailure) {
+				logger.warn("Could not close LMDB value cache after reset failure", closeFailure);
+			}
+			dataFiles = null;
 		}
 	}
 
@@ -1816,6 +1963,7 @@ class ValueStore extends AbstractValueFactory {
 		long id = findId(namespaceData, create);
 		if (id != LmdbValue.UNKNOWN_ID) {
 			namespaceIDCache.put(namespace, id);
+			storeDataIfAbsent(id, namespaceData);
 		}
 
 		return id;
@@ -1835,7 +1983,11 @@ class ValueStore extends AbstractValueFactory {
 		String namespace = namespaceCache.get(cacheID);
 
 		if (namespace == null) {
-			byte[] namespaceData = getData(id);
+			byte[] namespaceData = getStoredData(id);
+			if (namespaceData == null) {
+				namespaceData = getData(id);
+				storeDataIfAbsent(id, namespaceData);
+			}
 			if (namespaceData != null) {
 				namespace = data2namespace(namespaceData);
 				namespaceCache.put(cacheID, namespace);

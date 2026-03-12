@@ -62,10 +62,10 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 30, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
+@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 30)
 @BenchmarkMode(Mode.AverageTime)
 @Fork(1)
-@Measurement(iterations = 30, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
+@Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ShardedLmdbFederationBenchmark {
 
@@ -74,7 +74,8 @@ public class ShardedLmdbFederationBenchmark {
 	private static final String TRIPLE_INDEXES = "spoc,ospc,psoc";
 
 	@Param({ "0",
-//			"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"
+			"1", "2", "3", "4", "5", "6", "7", "8", "9"
+//			, "10"
 	})
 	public int z_queryIndex;
 
@@ -147,7 +148,7 @@ public class ShardedLmdbFederationBenchmark {
 		return executeQuery(multiRepoRepository);
 	}
 
-//	@Benchmark
+	@Benchmark
 	public long executeFedXQuery() {
 		return executeQuery(fedXRepository);
 	}

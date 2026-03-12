@@ -354,11 +354,61 @@ public class ValueStoreTest {
 		assertFalse("hashCode should not initialize recycled lazy bnodes after restart", isInitialized(lazyValue));
 	}
 
-	private long storeValueAndReopen(Value value) throws Exception {
+	@Test
+	public void testGetValueUsesPersistentDataCacheAfterRestart() throws Exception {
+		IRI iri = Values.iri("urn:data-cache:iri");
+		long id = storeValue(iri);
+
+		reopenThrowingValueStore();
+
+		assertEquals(iri, valueStore.getValue(id));
+		assertEquals(0, ((ThrowingValueStore) valueStore).getGetDataCalls());
+	}
+
+	@Test
+	public void testLazyValueUsesPersistentDataCacheAfterRestart() throws Exception {
+		IRI iri = Values.iri("urn:data-cache:lazy");
+		long id = storeValue(iri);
+
+		reopenThrowingValueStore();
+
+		LmdbIRI lazyValue = (LmdbIRI) valueStore.getLazyValue(id);
+		assertFalse(isInitialized(lazyValue));
+		assertEquals(iri.stringValue(), lazyValue.stringValue());
+		assertEquals(0, ((ThrowingValueStore) valueStore).getGetDataCalls());
+	}
+
+	@Test
+	public void testRecycledIdsClearPersistentDataCache() throws Exception {
+		LmdbBNode first = valueStore.createBNode("data-first");
+		long firstId = storeValue(first);
+
+		valueStore.startTransaction(true);
+		valueStore.gcIds(Collections.singleton(firstId), new HashSet<>());
+		valueStore.commit();
+
+		reopenValueStore();
+
+		LmdbBNode second = valueStore.createBNode("data-second");
+		long secondId = storeValue(second);
+		assertEquals("ID should have been recycled", firstId, secondId);
+
+		reopenThrowingValueStore();
+
+		assertEquals(second, valueStore.getValue(secondId));
+		assertEquals(0, ((ThrowingValueStore) valueStore).getGetDataCalls());
+	}
+
+	private long storeValue(Value value) throws Exception {
 		long id;
 		valueStore.startTransaction(true);
 		id = valueStore.storeValue(value);
 		valueStore.commit();
+		return id;
+	}
+
+	private long storeValueAndReopen(Value value) throws Exception {
+		long id = storeValue(value);
 		reopenValueStore();
 		return id;
 	}
@@ -368,10 +418,34 @@ public class ValueStoreTest {
 		valueStore = createValueStore();
 	}
 
+	private void reopenThrowingValueStore() throws Exception {
+		valueStore.close();
+		valueStore = new ThrowingValueStore(new File(dataDir, "values"));
+	}
+
 	private boolean isInitialized(Object value) throws Exception {
 		Field initializedField = value.getClass().getDeclaredField("initialized");
 		initializedField.setAccessible(true);
 		return initializedField.getBoolean(value);
+	}
+
+	private static final class ThrowingValueStore extends ValueStore {
+
+		private int getDataCalls;
+
+		private ThrowingValueStore(File dir) throws IOException {
+			super(dir, new LmdbStoreConfig());
+		}
+
+		@Override
+		protected byte[] getData(long id) throws IOException {
+			getDataCalls++;
+			throw new AssertionError("old LMDB ID->value path used for id " + id);
+		}
+
+		private int getGetDataCalls() {
+			return getDataCalls;
+		}
 	}
 
 	@AfterEach
