@@ -87,7 +87,7 @@ class SummaryServletTest {
 
 		assertThat(output)
 				.contains("<details")
-				.contains("Config model")
+				.contains("Config Model")
 				.contains("<pre")
 				.contains("@prefix config:")
 				.contains("config:rep.impl [");

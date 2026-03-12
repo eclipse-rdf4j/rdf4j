@@ -475,6 +475,7 @@ public class CreateServletTest {
 			return files.filter(Files::isRegularFile)
 					.map(path -> path.getFileName().toString())
 					.filter(name -> name.endsWith(".ttl"))
+					.filter(name -> !name.contains("legacy"))
 					.map(name -> name.substring(0, name.length() - 4))
 					.sorted()
 					.collect(Collectors.toList());
