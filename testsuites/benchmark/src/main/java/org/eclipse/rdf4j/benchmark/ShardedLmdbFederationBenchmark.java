@@ -73,8 +73,11 @@ public class ShardedLmdbFederationBenchmark {
 	private static final long SHARD_SEED = 20260311L;
 	private static final String TRIPLE_INDEXES = "spoc,ospc,psoc";
 
-	@Param({ "0",
-			"1", "2", "3", "4", "5", "6", "7", "8", "9"
+	@Param({
+//			"0",
+//			"1",
+			"2",
+//			"3", "4", "5", "6", "7", "8", "9"
 //			, "10"
 	})
 	public int z_queryIndex;
