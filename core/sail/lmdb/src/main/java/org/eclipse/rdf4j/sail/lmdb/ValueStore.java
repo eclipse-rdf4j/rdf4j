@@ -59,7 +59,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -200,6 +202,8 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	private long nextId = 1;
 	private boolean freeIdsAvailable;
+	private ValueStoreHashFile hashFile;
+	private final Map<Long, Integer> pendingHashUpdates = new HashMap<>();
 
 	private volatile long nextValueEvictionTime = 0;
 
@@ -313,6 +317,7 @@ class ValueStore extends AbstractValueFactory {
 	private void open() throws IOException {
 		// create directory if it not exists
 		dir.mkdirs();
+		hashFile = new ValueStoreHashFile(dir);
 
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
@@ -322,6 +327,7 @@ class ValueStore extends AbstractValueFactory {
 
 		E(mdb_env_set_maxdbs(env, 6));
 		E(mdb_env_set_maxreaders(env, 256));
+
 
 		// Open environment
 		int flags = MDB_NOTLS;
@@ -461,6 +467,51 @@ class ValueStore extends AbstractValueFactory {
 		return revision;
 	}
 
+	int getStoredHash(long id) {
+		Integer pendingHash;
+		synchronized (pendingHashUpdates) {
+			pendingHash = pendingHashUpdates.get(id);
+		}
+		if (pendingHash != null) {
+			return pendingHash;
+		}
+		if (hashFile == null) {
+			return 0;
+		}
+		try {
+			return hashFile.get(id);
+		} catch (IOException e) {
+			resetHashFileQuietly("read", e);
+			return 0;
+		}
+	}
+
+	void storeHash(long id, int hash) {
+		if (id == LmdbValue.UNKNOWN_ID) {
+			return;
+		}
+		if (writeTxn != 0) {
+			synchronized (pendingHashUpdates) {
+				pendingHashUpdates.put(id, hash);
+			}
+			return;
+		}
+		writeHashNow(id, hash);
+	}
+
+	void clearStoredHash(long id) {
+		if (id == LmdbValue.UNKNOWN_ID) {
+			return;
+		}
+		if (writeTxn != 0) {
+			synchronized (pendingHashUpdates) {
+				pendingHashUpdates.put(id, 0);
+			}
+			return;
+		}
+		writeHashNow(id, 0);
+	}
+
 	protected byte[] getData(long id) throws IOException {
 		return readTransaction(env, (stack, txn) -> {
 			MDBVal keyData = MDBVal.calloc(stack);
@@ -590,6 +641,7 @@ class ValueStore extends AbstractValueFactory {
 		try {
 			byte[] data = getData(id);
 			if (data != null) {
+//				System.out.println(id);
 				data2value(id, data, value);
 				cacheValue(id, value);
 				return true;
@@ -963,6 +1015,7 @@ class ValueStore extends AbstractValueFactory {
 
 						valueIDCache.put(nv, id);
 					}
+					storeHashIfAbsent(id, value);
 				}
 
 				return id;
@@ -1174,6 +1227,7 @@ class ValueStore extends AbstractValueFactory {
 							E(mdb_put(txn, freeDbi, idVal, emptyVal, 0));
 							// delete id -> value association
 							E(mdb_del(txn, dbi, idVal, null));
+							clearStoredHash(data2id(idVal.mv_data().duplicate()));
 							// delete id and value from unused list
 							E(mdb_cursor_del(unusedIdsCursor, 0));
 
@@ -1228,6 +1282,7 @@ class ValueStore extends AbstractValueFactory {
 					long stamp = revisionLock.writeLock();
 					try {
 						E(mdb_txn_commit(writeTxn));
+						flushPendingHashUpdates();
 						long revisionId = lazyRevision.getRevisionId();
 						cleaner.register(lazyRevision, () -> {
 							synchronized (unusedRevisionIds) {
@@ -1244,9 +1299,11 @@ class ValueStore extends AbstractValueFactory {
 					}
 				} else {
 					E(mdb_txn_commit(writeTxn));
+					flushPendingHashUpdates();
 				}
 			} else {
 				mdb_txn_abort(writeTxn);
+				clearPendingHashUpdates();
 			}
 			writeTxn = 0;
 			invalidateRevisionOnCommit = false;
@@ -1298,6 +1355,7 @@ class ValueStore extends AbstractValueFactory {
 
 		new File(dir, "data.mdb").delete();
 		new File(dir, "lock.mdb").delete();
+		new File(dir, ValueStoreHashFile.FILE_NAME).delete();
 
 		clearCaches();
 		open();
@@ -1335,10 +1393,73 @@ class ValueStore extends AbstractValueFactory {
 	public void close() throws IOException {
 
 		if (env != 0) {
+			clearPendingHashUpdates();
 			closeReadTransactions();
 			endTransaction(false);
 			mdb_env_close(env);
 			env = 0;
+		}
+		if (hashFile != null) {
+			hashFile.close();
+			hashFile = null;
+		}
+	}
+
+	private void storeHashIfAbsent(long id, Value value) {
+		if (getStoredHash(id) == 0) {
+			storeHash(id, value.hashCode());
+		}
+	}
+
+	private void writeHashNow(long id, int hash) {
+		if (hashFile == null) {
+			return;
+		}
+		try {
+			hashFile.put(id, hash);
+		} catch (IOException e) {
+			resetHashFileQuietly("write", e);
+		}
+	}
+
+	private void flushPendingHashUpdates() {
+		Map<Long, Integer> updates;
+		synchronized (pendingHashUpdates) {
+			if (pendingHashUpdates.isEmpty()) {
+				return;
+			}
+			updates = new HashMap<>(pendingHashUpdates);
+			pendingHashUpdates.clear();
+		}
+
+		for (Map.Entry<Long, Integer> entry : updates.entrySet()) {
+			writeHashNow(entry.getKey(), entry.getValue());
+		}
+	}
+
+	private void clearPendingHashUpdates() {
+		synchronized (pendingHashUpdates) {
+			pendingHashUpdates.clear();
+		}
+	}
+
+	private void resetHashFileQuietly(String operation, IOException cause) {
+		logger.warn("Resetting LMDB hash cache after {} failure", operation, cause);
+		clearPendingHashUpdates();
+		if (hashFile == null) {
+			return;
+		}
+		try {
+			hashFile.delete();
+			hashFile = new ValueStoreHashFile(dir);
+		} catch (IOException resetFailure) {
+			logger.warn("Could not recreate LMDB hash cache", resetFailure);
+			try {
+				hashFile.close();
+			} catch (IOException closeFailure) {
+				logger.warn("Could not close LMDB hash cache after reset failure", closeFailure);
+			}
+			hashFile = null;
 		}
 	}
 
