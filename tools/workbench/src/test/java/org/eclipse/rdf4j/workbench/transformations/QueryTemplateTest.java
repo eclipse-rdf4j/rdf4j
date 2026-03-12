@@ -372,7 +372,7 @@ class QueryTemplateTest {
 
 		assertThat(queryTemplate)
 				.containsPattern("\\.query-diff-modal__body\\s*\\{[^}]*display:flex;[^}]*flex-direction:column;")
-				.containsPattern("\\.query-diff-section--query\\s*\\{[^}]*flex:1 1 auto;")
+				.containsPattern("\\.query-diff-section--query\\s*\\{[^}]*flex:0 1 auto;")
 				.containsPattern("\\.query-diff-section--explanation\\s*\\{[^}]*max-height:70%;")
 				.contains("class=\"query-diff-section query-diff-section--query\"")
 				.contains("class=\"query-diff-section query-diff-section--explanation\"")

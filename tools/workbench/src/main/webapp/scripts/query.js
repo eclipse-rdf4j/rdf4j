@@ -205,7 +205,7 @@ var workbench;
             }
             navigationTransform = compareSidebarOpen ? 'translateX(0)' : 'translateX(-220px)';
             queryWorkspaceTransform = compareSidebarOpen ? 'translateX(184px)' : 'translateX(0)';
-            sidebarToggleTransform = compareSidebarOpen ? 'translateX(200px)' : 'translateX(0)';
+            sidebarToggleTransform = compareSidebarOpen ? 'translateX(192px)' : 'translateX(0)';
             $('#navigation').css('transform', navigationTransform);
             $('#title_heading, #noscript-message, .query-form').css('transform', queryWorkspaceTransform);
             sidebarToggle.css('transform', sidebarToggleTransform);
