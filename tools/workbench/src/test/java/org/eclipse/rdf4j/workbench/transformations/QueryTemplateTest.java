@@ -331,6 +331,41 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void queryScriptShouldRefreshCompareEditorsAndAutoExplainLowCostLevelsOnOpen() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.contains("function refreshVisibleQueryEditors()")
+				.contains("window.requestAnimationFrame(function() {")
+				.contains("compareYasqe.refresh();")
+				.contains("function shouldAutoExplainComparePaneOnOpen()")
+				.contains("return selectedLevel === 'Unoptimized' || selectedLevel === 'Optimized';")
+				.contains("function requestComparePaneExplanation(level: string)")
+				.contains("refreshVisibleQueryEditors();")
+				.contains("requestComparePaneExplanation(selectedExplainLevel);");
+	}
+
+	@Test
+	void queryScriptShouldKeepPrimaryExplainButtonsVisibleInCompareMode() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.contains("$('#primary-explain-repeat-controls').toggle(primaryExplanationAvailable);")
+				.doesNotContain(
+						"$('#primary-explain-repeat-controls').toggle(primaryExplanationAvailable && !compareModeEnabled);");
+	}
+
+	@Test
+	void queryTemplateShouldSpaceQueryEditorsFromExplanationBlocks() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.containsPattern(
+						"#query-explanation-row,\\s*#query-explanation-row-compare\\s*\\{[^}]*margin-top:0.75em;");
+	}
+
+	@Test
 	void pagingDownloadShouldPostQueryParametersInsteadOfShowingSavedQueryAlert() throws IOException {
 		String pagingScript = Files.readString(Path.of("src/main/webapp/scripts/ts/paging.ts"), StandardCharsets.UTF_8);
 

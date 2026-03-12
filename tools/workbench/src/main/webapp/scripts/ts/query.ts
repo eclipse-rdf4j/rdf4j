@@ -238,7 +238,7 @@ module workbench {
             var primaryControlsVisible = primaryExplanationAvailable || compareModeEnabled;
             $('#query-explanation-controls-row').toggle(primaryControlsVisible);
             $('#primary-explain-settings').toggle(primaryControlsVisible);
-            $('#primary-explain-repeat-controls').toggle(primaryExplanationAvailable && !compareModeEnabled);
+            $('#primary-explain-repeat-controls').toggle(primaryExplanationAvailable);
             $('#download-explanation').toggle(primaryControlsVisible);
             $('#compare-toggle').toggle(primaryExplanationAvailable || compareModeEnabled);
         }
@@ -1002,6 +1002,25 @@ module workbench {
             $('#query-diff-trigger').prop('disabled', !bothQueriesAvailable || activeComparePendingRequests > 0);
         }
 
+        function refreshVisibleQueryEditors() {
+            window.requestAnimationFrame(function() {
+                if (yasqe) {
+                    yasqe.refresh();
+                }
+                if (compareModeEnabled && compareYasqe) {
+                    compareYasqe.refresh();
+                }
+            });
+        }
+
+        function shouldAutoExplainComparePaneOnOpen(): boolean {
+            if (!compareModeEnabled || !hasPrimaryExplanation()) {
+                return false;
+            }
+            var selectedLevel = <string>$('#explain-level').val() || 'Optimized';
+            return selectedLevel === 'Unoptimized' || selectedLevel === 'Optimized';
+        }
+
         function syncCompareModeVisibility() {
             $('#query-compare-layout').toggleClass('query-compare-layout--active', compareModeEnabled);
             $('#query-compare-controls').toggle(compareModeEnabled);
@@ -1012,6 +1031,7 @@ module workbench {
             syncPrimaryExplanationControls();
             syncCompareSidebarState();
             updateCompareActionState();
+            refreshVisibleQueryEditors();
         }
 
         function splitDiffLines(text: string): string[] {
@@ -1095,9 +1115,9 @@ module workbench {
             }
         }
 
-        function beginCompareExplainRequest(): number {
+        function beginCompareExplainRequest(pendingRequests?: number): number {
             activeCompareRequestId += 1;
-            activeComparePendingRequests = 2;
+            activeComparePendingRequests = pendingRequests || 2;
             hideCompareExplainSpinner();
             setCompareExplainButtonsDisabled(true);
             $('#query-diff-trigger').prop('disabled', true);
@@ -1118,6 +1138,30 @@ module workbench {
             hideCompareExplainSpinner();
             setCompareExplainButtonsDisabled(false);
             updateCompareActionState();
+        }
+
+        function enqueueCompareExplanationRequest(paneKey: string, level: string, selectedFormat: string, requestId: number) {
+            var compareRequest = $.ajax({
+                url: 'query',
+                type: 'POST',
+                dataType: 'json',
+                data: serializeExplainFormData(getPaneRawQueryValue(paneKey), level, selectedFormat),
+                error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
+                    if (textStatus !== 'abort' && requestId === activeCompareRequestId) {
+                        showExplainError(paneKey, getExplainErrorMessage(jqXHR, textStatus, errorThrown));
+                    }
+                },
+                success: function(response: AjaxExplainResponse) {
+                    if (requestId !== activeCompareRequestId) {
+                        return;
+                    }
+                    applyExplainResponseToPane(paneKey, response, selectedFormat);
+                },
+                complete: function() {
+                    finishCompareExplainRequest(requestId);
+                }
+            });
+            activeCompareExplainJqXHRs.push(compareRequest);
         }
 
         /**
@@ -1273,30 +1317,20 @@ module workbench {
             var requestId = beginCompareExplainRequest();
             var paneKeys = ['primary', 'compare'];
             for (var i = 0; i < paneKeys.length; i++) {
-                (function(paneKey: string) {
-                    var compareRequest = $.ajax({
-                        url: 'query',
-                        type: 'POST',
-                        dataType: 'json',
-                        data: serializeExplainFormData(getPaneRawQueryValue(paneKey), effectiveLevel, selectedFormat),
-                        error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
-                            if (textStatus !== 'abort' && requestId === activeCompareRequestId) {
-                                showExplainError(paneKey, getExplainErrorMessage(jqXHR, textStatus, errorThrown));
-                            }
-                        },
-                        success: function(response: AjaxExplainResponse) {
-                            if (requestId !== activeCompareRequestId) {
-                                return;
-                            }
-                            applyExplainResponseToPane(paneKey, response, selectedFormat);
-                        },
-                        complete: function() {
-                            finishCompareExplainRequest(requestId);
-                        }
-                    });
-                    activeCompareExplainJqXHRs.push(compareRequest);
-                })(paneKeys[i]);
+                enqueueCompareExplanationRequest(paneKeys[i], effectiveLevel, selectedFormat, requestId);
             }
+        }
+
+        function requestComparePaneExplanation(level: string) {
+            if (!compareModeEnabled) {
+                return;
+            }
+            savePaneQuery('compare');
+            var selectedFormat = (<string>$('#explain-format').val() || 'text').toLowerCase();
+            $('#' + comparePaneState.errorId).text('');
+            clearRenderedExplanation('compare', selectedFormat);
+            var requestId = beginCompareExplainRequest(1);
+            enqueueCompareExplanationRequest('compare', level, selectedFormat, requestId);
         }
 
         export function cancelCompareExplain() {
@@ -1444,6 +1478,10 @@ module workbench {
                 closeDiffModal();
             }
             syncCompareModeVisibility();
+            if (compareModeEnabled && shouldAutoExplainComparePaneOnOpen()) {
+                var selectedExplainLevel = <string>$('#explain-level').val() || 'Optimized';
+                requestComparePaneExplanation(selectedExplainLevel);
+            }
         }
 
         export function toggleCompareSidebar() {

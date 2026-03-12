@@ -154,12 +154,21 @@ test('Query compare mode diffs query and explanation', async ({page}) => {
     await expect(page.locator('#navigation')).toBeHidden();
     await expect(page.locator('#query-sidebar-toggle')).toBeVisible();
     await expect(page.locator('#explain-trigger')).toBeVisible();
+    await expect(page.locator('#rerun-explanation')).toBeVisible();
     await expect(page.locator('#compare-explain-format')).toHaveCount(0);
     await expect(page.locator('#compare-explain-level')).toHaveCount(0);
     await expect(page.locator('#explain-compare-trigger')).toHaveAttribute('aria-label', /Refresh/i);
     await expect(page.locator('#query-diff-trigger')).toHaveAttribute('aria-label', /Diff/i);
     await expect(page.locator('#explain-compare-spinner')).toBeHidden();
     await expect(page.locator('#explain-compare-cancel')).toBeHidden();
+    await expect.poll(async () => page.evaluate(() => {
+        const compareCode = document.querySelectorAll('.CodeMirror-code')[1];
+        return compareCode ? compareCode.textContent.replace(/\s+/g, ' ').trim() : '';
+    })).toContain('SELECT * WHERE { ?s ?p ?o } LIMIT 10');
+    await page.waitForFunction(() => {
+        const compareExplanation = document.getElementById('query-explanation-compare');
+        return compareExplanation && compareExplanation.textContent.trim().length > 0;
+    });
 
     const collapsedLayout = await page.evaluate(() => {
         const queryForm = document.querySelector('.query-form');

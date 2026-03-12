@@ -181,7 +181,7 @@ var workbench;
             var primaryControlsVisible = primaryExplanationAvailable || compareModeEnabled;
             $('#query-explanation-controls-row').toggle(primaryControlsVisible);
             $('#primary-explain-settings').toggle(primaryControlsVisible);
-            $('#primary-explain-repeat-controls').toggle(primaryExplanationAvailable && !compareModeEnabled);
+            $('#primary-explain-repeat-controls').toggle(primaryExplanationAvailable);
             $('#download-explanation').toggle(primaryControlsVisible);
             $('#compare-toggle').toggle(primaryExplanationAvailable || compareModeEnabled);
         }
@@ -887,6 +887,23 @@ var workbench;
                 && getPaneQueryValue('compare').length > 0;
             $('#query-diff-trigger').prop('disabled', !bothQueriesAvailable || activeComparePendingRequests > 0);
         }
+        function refreshVisibleQueryEditors() {
+            window.requestAnimationFrame(function () {
+                if (yasqe) {
+                    yasqe.refresh();
+                }
+                if (compareModeEnabled && compareYasqe) {
+                    compareYasqe.refresh();
+                }
+            });
+        }
+        function shouldAutoExplainComparePaneOnOpen() {
+            if (!compareModeEnabled || !hasPrimaryExplanation()) {
+                return false;
+            }
+            var selectedLevel = $('#explain-level').val() || 'Optimized';
+            return selectedLevel === 'Unoptimized' || selectedLevel === 'Optimized';
+        }
         function syncCompareModeVisibility() {
             $('#query-compare-layout').toggleClass('query-compare-layout--active', compareModeEnabled);
             $('#query-compare-controls').toggle(compareModeEnabled);
@@ -897,6 +914,7 @@ var workbench;
             syncPrimaryExplanationControls();
             syncCompareSidebarState();
             updateCompareActionState();
+            refreshVisibleQueryEditors();
         }
         function splitDiffLines(text) {
             if (!text) {
@@ -975,9 +993,9 @@ var workbench;
                 target.append(rowElement);
             }
         }
-        function beginCompareExplainRequest() {
+        function beginCompareExplainRequest(pendingRequests) {
             activeCompareRequestId += 1;
-            activeComparePendingRequests = 2;
+            activeComparePendingRequests = pendingRequests || 2;
             hideCompareExplainSpinner();
             setCompareExplainButtonsDisabled(true);
             $('#query-diff-trigger').prop('disabled', true);
@@ -997,6 +1015,29 @@ var workbench;
             hideCompareExplainSpinner();
             setCompareExplainButtonsDisabled(false);
             updateCompareActionState();
+        }
+        function enqueueCompareExplanationRequest(paneKey, level, selectedFormat, requestId) {
+            var compareRequest = $.ajax({
+                url: 'query',
+                type: 'POST',
+                dataType: 'json',
+                data: serializeExplainFormData(getPaneRawQueryValue(paneKey), level, selectedFormat),
+                error: function (jqXHR, textStatus, errorThrown) {
+                    if (textStatus !== 'abort' && requestId === activeCompareRequestId) {
+                        showExplainError(paneKey, getExplainErrorMessage(jqXHR, textStatus, errorThrown));
+                    }
+                },
+                success: function (response) {
+                    if (requestId !== activeCompareRequestId) {
+                        return;
+                    }
+                    applyExplainResponseToPane(paneKey, response, selectedFormat);
+                },
+                complete: function () {
+                    finishCompareExplainRequest(requestId);
+                }
+            });
+            activeCompareExplainJqXHRs.push(compareRequest);
         }
         /**
          * Send a background HTTP request to save the query, and handle the
@@ -1156,32 +1197,21 @@ var workbench;
             var requestId = beginCompareExplainRequest();
             var paneKeys = ['primary', 'compare'];
             for (var i = 0; i < paneKeys.length; i++) {
-                (function (paneKey) {
-                    var compareRequest = $.ajax({
-                        url: 'query',
-                        type: 'POST',
-                        dataType: 'json',
-                        data: serializeExplainFormData(getPaneRawQueryValue(paneKey), effectiveLevel, selectedFormat),
-                        error: function (jqXHR, textStatus, errorThrown) {
-                            if (textStatus !== 'abort' && requestId === activeCompareRequestId) {
-                                showExplainError(paneKey, getExplainErrorMessage(jqXHR, textStatus, errorThrown));
-                            }
-                        },
-                        success: function (response) {
-                            if (requestId !== activeCompareRequestId) {
-                                return;
-                            }
-                            applyExplainResponseToPane(paneKey, response, selectedFormat);
-                        },
-                        complete: function () {
-                            finishCompareExplainRequest(requestId);
-                        }
-                    });
-                    activeCompareExplainJqXHRs.push(compareRequest);
-                })(paneKeys[i]);
+                enqueueCompareExplanationRequest(paneKeys[i], effectiveLevel, selectedFormat, requestId);
             }
         }
         query_1.runCompareExplain = runCompareExplain;
+        function requestComparePaneExplanation(level) {
+            if (!compareModeEnabled) {
+                return;
+            }
+            savePaneQuery('compare');
+            var selectedFormat = ($('#explain-format').val() || 'text').toLowerCase();
+            $('#' + comparePaneState.errorId).text('');
+            clearRenderedExplanation('compare', selectedFormat);
+            var requestId = beginCompareExplainRequest(1);
+            enqueueCompareExplanationRequest('compare', level, selectedFormat, requestId);
+        }
         function cancelCompareExplain() {
             activeCompareRequestId += 1;
             activeComparePendingRequests = 0;
@@ -1326,6 +1356,10 @@ var workbench;
                 closeDiffModal();
             }
             syncCompareModeVisibility();
+            if (compareModeEnabled && shouldAutoExplainComparePaneOnOpen()) {
+                var selectedExplainLevel = $('#explain-level').val() || 'Optimized';
+                requestComparePaneExplanation(selectedExplainLevel);
+            }
         }
         query_1.toggleCompareMode = toggleCompareMode;
         function toggleCompareSidebar() {

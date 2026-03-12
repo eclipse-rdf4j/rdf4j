@@ -51,12 +51,18 @@
 					grid-template-columns:minmax(0, 1fr);
 				}
 
+				#query-explanation-row,
+				#query-explanation-row-compare {
+					margin-top:1.2em;
+				}
+
 				.query-form__label {
 					font-family: Roboto, Libre Franklin, Helvetica Neue, Helvetica, Arial, sans-serif;
 					font-weight:bold;
 					white-space:nowrap;
 					margin-top: auto;
 					margin-bottom: auto;
+					padding-left: 1px;
 				}
 
 				.query-form__label:after {
@@ -196,6 +202,11 @@
 
 				.query-form__field--actions #query-name {
 					min-width:14em;
+				}
+
+				.query-explanation-controls-row-class {
+					margin-top: 0.5em;
+					margin-left: -0.1em;
 				}
 
 				.query-explain-spinner {
@@ -719,7 +730,7 @@
 								<div id="query-explanation-json-view"></div>
 							</div>
 						</div>
-						<div id="query-explanation-controls-row" class="">
+						<div id="query-explanation-controls-row" class="query-explanation-controls-row-class">
 							<xsl:if test="string-length(normalize-space($explanation)) = 0">
 								<xsl:attribute name="style">display:none;</xsl:attribute>
 							</xsl:if>
