@@ -93,6 +93,23 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void queryScriptShouldDefineHierarchicalQueryPageStateMachine() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.contains("type LayoutState =")
+				.contains("type PaneState =")
+				.contains("interface StableExplanation")
+				.contains("interface RequestSignature")
+				.contains("type DiffModalState =")
+				.contains("interface QueryPageState")
+				.contains("type QueryPageEvent =")
+				.contains("function dispatchQueryPageEvent(event: QueryPageEvent)")
+				.contains("function reducePaneState(")
+				.contains("function renderQueryPageState()");
+	}
+
+	@Test
 	void queryTemplateShouldUseSingleExplainButtonAndPostExplanationControlsRow() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
@@ -156,12 +173,12 @@ class QueryTemplateTest {
 
 		assertThat(queryTemplate)
 				.contains("svg-pan-zoom")
-				.contains("font-size:1em")
-				.contains("width:100%")
-				.contains("padding:0;")
-				.contains("height:75vh")
+				.containsPattern("font-size:\\s*1em")
+				.containsPattern("width:\\s*100%")
+				.containsPattern("padding:\\s*0;")
+				.containsPattern("height:\\s*75vh")
 				.containsPattern(
-						"#query-explanation-dot-view,\\s*#query-explanation-dot-view-compare\\s*\\{[^}]*height:75vh")
+						"#query-explanation-dot-view,\\s*#query-explanation-dot-view-compare\\s*\\{[^}]*height:\\s*75vh")
 				.doesNotContainPattern(
 						"#query-explanation-dot-view,\\s*#query-explanation-dot-view-compare\\s*\\{[^}]*max-height");
 
@@ -224,10 +241,10 @@ class QueryTemplateTest {
 				.contains("id=\"query-explanation-row\" class=\"query-form__row query-form__row--stacked\"")
 				.contains("class=\"query-form__label\"")
 				.contains("class=\"query-form__field\"")
-				.contains("width:100%;")
-				.contains("white-space:pre;")
-				.contains("overflow:auto;")
-				.contains("max-width:100%;")
+				.containsPattern("width:\\s*100%;")
+				.containsPattern("white-space:\\s*pre;")
+				.containsPattern("overflow:\\s*auto;")
+				.containsPattern("max-width:\\s*100%;")
 				.doesNotContain("white-space:pre-wrap;")
 				.doesNotContain("word-break:break-word;")
 				.doesNotContain("<table class=\"dataentry\"");
@@ -259,7 +276,7 @@ class QueryTemplateTest {
 				.contains("data-hide-label=\"{$hide-menu.label}\"")
 				.contains("body.query-compare-mode #navigation")
 				.contains("body.query-compare-mode #content")
-				.containsPattern("body\\.query-compare-mode #navigation\\s*\\{[^}]*z-index:1002;")
+				.containsPattern("body\\.query-compare-mode #navigation\\s*\\{[^}]*z-index:\\s*1002;")
 				.contains("body.query-compare-mode.query-compare-nav-open #navigation")
 				.contains("id=\"query-compare-layout\"")
 				.contains("id=\"query-compare\"")
@@ -275,10 +292,10 @@ class QueryTemplateTest {
 				.contains("class=\"query-compare-action__icon\"")
 				.contains("class=\"query-compare-action__svg query-compare-action__svg--diff\"")
 				.contains("class=\"query-compare-action__stroke\"")
-				.contains("<path class=\"query-compare-action__stroke\" d=\"M4 8H16\"></path>")
+				.contains("<path class=\"query-compare-action__stroke\" d=\"M2 8H16\"></path>")
 				.contains("<path class=\"query-compare-action__stroke\" d=\"M12.5 4.5L16 8L12.5 11.5\"></path>")
-				.contains("<path class=\"query-compare-action__stroke\" d=\"M20 16H8\"></path>")
-				.contains("<path class=\"query-compare-action__stroke\" d=\"M11.5 12.5L8 16L11.5 19.5\"></path>")
+				.contains("<path class=\"query-compare-action__stroke\" d=\"M22 20H8\"></path>")
+				.contains("<path class=\"query-compare-action__stroke\" d=\"M11.5 16.5L8 20L11.5 23.5\"></path>")
 				.doesNotContain("query-diff-glyph__divider")
 				.doesNotContain("query-diff-glyph__edge--left")
 				.doesNotContain("query-diff-glyph__edge--right")
@@ -287,12 +304,13 @@ class QueryTemplateTest {
 				.contains(".query-compare-layout")
 				.contains(".query-compare-action__svg--diff")
 				.contains(".query-diff-modal")
-				.contains("--query-diff-modal-padding:clamp(1rem, 3vw, 2rem);")
-				.contains("padding:var(--query-diff-modal-padding);")
-				.contains("height:calc(100vh - (var(--query-diff-modal-padding) * 2));")
-				.contains("max-height:calc(100vh - (var(--query-diff-modal-padding) * 2));")
+				.containsPattern("--query-diff-modal-padding:\\s*clamp\\(1rem, 3vw, 2rem\\);")
+				.containsPattern("padding:\\s*var\\(--query-diff-modal-padding\\);")
+				.containsPattern("height:\\s*calc\\(100vh - \\(var\\(--query-diff-modal-padding\\) \\* 2\\)\\);")
+				.containsPattern("max-height:\\s*calc\\(100vh - \\(var\\(--query-diff-modal-padding\\) \\* 2\\)\\);")
 				.contains("grid-template-columns:minmax(0, 1fr);")
-				.contains("grid-template-rows:repeat(2, minmax(0, 1fr));")
+				.containsPattern(
+						"\\.query-diff-modal__body\\s*\\{[^}]*display:\\s*flex;[^}]*flex-direction:\\s*column;")
 				.contains(".query-diff-view")
 				.doesNotContain("max-height:32vh;")
 				.doesNotContain("grid-template-columns:repeat(2, minmax(0, 1fr));")
@@ -346,13 +364,87 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void queryScriptShouldResetComparePaneOnDisableAndInitialize() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.contains("function resetComparePaneState()")
+				.contains("queryPageState.compareQuerySeeded = false;")
+				.contains("cancelCompareExplain();")
+				.contains("setPaneQueryValue('compare', '');")
+				.contains("type: 'CLEAR_PANE'")
+				.containsPattern(
+						"} else \\{\\s*closeDiffModal\\(\\);\\s*resetComparePaneState\\(\\);\\s*dispatchQueryPageEvent\\(\\{ type: 'TOGGLE_COMPARE' \\}\\);")
+				.contains("function initializeCompareUi()")
+				.contains("diffNotReadyLabel = $.trim($('#query-diff-explanation').text());")
+				.contains("resetComparePaneState();\n            syncCompareModeVisibility();");
+	}
+
+	@Test
 	void queryScriptShouldKeepPrimaryExplainButtonsVisibleInCompareMode() throws IOException {
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 
 		assertThat(queryScript)
-				.contains("$('#primary-explain-repeat-controls').toggle(primaryExplanationAvailable);")
+				.containsPattern(
+						"\\$\\('#primary-explain-repeat-controls'\\)\\.toggle\\(\\s*primaryPaneMachineState\\.kind !== 'empty'\\s*\\);")
 				.doesNotContain(
 						"$('#primary-explain-repeat-controls').toggle(primaryExplanationAvailable && !compareModeEnabled);");
+	}
+
+	@Test
+	void queryScriptShouldKeepPrimaryExplainControlsVisibleOnError() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.contains("var primaryPaneMachineState = queryPageState.primaryPane;")
+				.containsPattern(
+						"var primaryControlsVisible = compareModeEnabled\\s*\\|\\| primaryPaneMachineState\\.kind !== 'empty';")
+				.containsPattern(
+						"\\$\\('#primary-explain-repeat-controls'\\)\\.toggle\\(\\s*primaryPaneMachineState\\.kind !== 'empty'\\s*\\);")
+				.contains(
+						"$('#compare-toggle').toggle(compareModeEnabled || primaryPaneMachineState.kind !== 'empty');");
+	}
+
+	@Test
+	void queryScriptShouldKeepPrimaryExplainControlsVisibleWhileRequestIsPending() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.contains("var primaryExplanationPending = false;")
+				.contains(
+						"var primaryActionsDisabled = primaryPaneMachineState.kind === 'loading' || activeComparePendingRequests > 0;")
+				.containsPattern(
+						"var primaryControlsVisible = compareModeEnabled\\s*\\|\\| primaryPaneMachineState\\.kind !== 'empty';")
+				.containsPattern(
+						"\\$\\('#primary-explain-repeat-controls'\\)\\.toggle\\(\\s*primaryPaneMachineState\\.kind !== 'empty'\\s*\\);")
+				.contains("primaryExplanationPending = true;")
+				.contains("primaryExplanationPending = false;");
+	}
+
+	@Test
+	void queryScriptShouldFinishPrimaryExplainCleanupBeforeInvalidatingRequestIdentity() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.containsPattern(
+						"export function cancelExplain\\(\\) \\{[\\s\\S]*activeExplainJqXHR = null;\\s*finishExplainRequest\\(cancelledSignature\\.requestId\\);\\s*activeExplainRequestId \\+= 1;")
+				.doesNotContainPattern(
+						"export function cancelExplain\\(\\) \\{[\\s\\S]*activeExplainRequestId \\+= 1;[\\s\\S]*finishExplainRequest\\(cancelledSignature\\.requestId\\);");
+	}
+
+	@Test
+	void queryTemplateShouldKeepExplainLevelSelectionInSyncWithRenderedExplanation() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains("<xsl:variable name=\"explanationLevel\"")
+				.containsPattern(
+						"<select id=\"explain-level\">[\\s\\S]*<xsl:if test=\"normalize-space\\(\\$explanationLevel\\) = 'Unoptimized'\">")
+				.containsPattern(
+						"<option value=\"Optimized\">[\\s\\S]*<xsl:if test=\"normalize-space\\(\\$explanationLevel\\) = '' or normalize-space\\(\\$explanationLevel\\) = 'Optimized'\">")
+				.containsPattern(
+						"<option value=\"Timed\">[\\s\\S]*<xsl:if test=\"normalize-space\\(\\$explanationLevel\\) = 'Timed'\">");
 	}
 
 	@Test
@@ -399,7 +491,7 @@ class QueryTemplateTest {
 
 		assertThat(queryTemplate)
 				.containsPattern(
-						"#query-explanation-row,\\s*#query-explanation-row-compare\\s*\\{[^}]*margin-top:0.75em;");
+						"#query-explanation-row,\\s*#query-explanation-row-compare\\s*\\{[^}]*margin-top:\\s*1.2em;");
 	}
 
 	@Test
@@ -408,9 +500,10 @@ class QueryTemplateTest {
 				StandardCharsets.UTF_8);
 
 		assertThat(queryTemplate)
-				.containsPattern("\\.query-diff-modal__body\\s*\\{[^}]*display:flex;[^}]*flex-direction:column;")
-				.containsPattern("\\.query-diff-section--query\\s*\\{[^}]*flex:0 1 auto;")
-				.containsPattern("\\.query-diff-section--explanation\\s*\\{[^}]*max-height:70%;")
+				.containsPattern(
+						"\\.query-diff-modal__body\\s*\\{[^}]*display:\\s*flex;[^}]*flex-direction:\\s*column;")
+				.containsPattern("\\.query-diff-section--query\\s*\\{[^}]*flex:\\s*0 1 auto;")
+				.containsPattern("\\.query-diff-section--explanation\\s*\\{[^}]*max-height:\\s*70%;")
 				.contains("class=\"query-diff-section query-diff-section--query\"")
 				.contains("class=\"query-diff-section query-diff-section--explanation\"")
 				.doesNotContain("max-height:30vh;");

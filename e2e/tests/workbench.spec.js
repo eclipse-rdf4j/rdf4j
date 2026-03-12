@@ -212,3 +212,78 @@ test('Query compare mode diffs query and explanation', async ({page}) => {
     await page.keyboard.press('Escape');
     await expect(page.locator('#query-diff-modal')).not.toHaveClass(/query-diff-modal--open/);
 });
+
+test('Query compare mode resets secondary query on disable and reload', async ({page}) => {
+    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    page.on('dialog', dialog => {
+        console.log(dialog.message());
+        dialog.dismiss();
+    });
+
+    await createRepo(page);
+    await page.goto('http://localhost:8080/rdf4j-workbench/repositories/testrepo1/query');
+    await page.waitForSelector('.CodeMirror');
+
+    const primaryQuery = 'SELECT * WHERE { ?s ?p ?o } LIMIT 10';
+    const compareQuery = 'ASK { ?s ?p ?o }';
+
+    await page.evaluate(query => {
+        document.querySelectorAll('.CodeMirror')[0].CodeMirror.setValue(query);
+    }, primaryQuery);
+
+    await page.locator('#explain-trigger').click();
+    await page.waitForFunction(() => {
+        const explanation = document.getElementById('query-explanation');
+        return explanation && explanation.textContent.trim().length > 0;
+    });
+
+    await page.locator('#compare-toggle').click();
+    await page.waitForFunction(() => document.querySelectorAll('.CodeMirror').length === 2);
+    await page.evaluate(query => {
+        document.querySelectorAll('.CodeMirror')[1].CodeMirror.setValue(query);
+    }, compareQuery);
+
+    await page.locator('#compare-toggle').click();
+    await page.locator('#compare-toggle').click();
+    await page.waitForFunction(() => document.querySelectorAll('.CodeMirror').length === 2);
+    await expect.poll(async () => page.evaluate(() => {
+        return document.querySelectorAll('.CodeMirror')[1].CodeMirror.getValue();
+    })).toBe(primaryQuery);
+
+    await page.evaluate(query => {
+        document.querySelectorAll('.CodeMirror')[1].CodeMirror.setValue(query);
+    }, compareQuery);
+
+    await page.reload();
+    await page.waitForSelector('.CodeMirror');
+    await page.evaluate(query => {
+        document.querySelectorAll('.CodeMirror')[0].CodeMirror.setValue(query);
+    }, primaryQuery);
+
+    await page.locator('#explain-trigger').click();
+    await page.waitForFunction(() => {
+        const explanation = document.getElementById('query-explanation');
+        return explanation && explanation.textContent.trim().length > 0;
+    });
+
+    await page.locator('#compare-toggle').click();
+    await page.waitForFunction(() => document.querySelectorAll('.CodeMirror').length === 2);
+    await expect.poll(async () => page.evaluate(() => {
+        return document.querySelectorAll('.CodeMirror')[1].CodeMirror.getValue();
+    })).toBe(primaryQuery);
+});
+
+test('Query page keeps explanation panes hidden until explain runs', async ({page}) => {
+    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    page.on('dialog', dialog => {
+        console.log(dialog.message());
+        dialog.dismiss();
+    });
+
+    await createRepo(page);
+    await page.goto('http://localhost:8080/rdf4j-workbench/repositories/testrepo1/query');
+    await page.waitForSelector('.CodeMirror');
+
+    await expect(page.locator('#query-explanation-row')).toBeHidden();
+    await expect(page.locator('#query-explanation-row-compare')).toBeHidden();
+});

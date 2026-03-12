@@ -24,6 +24,8 @@
                       select="sparql:results/sparql:result/sparql:binding[@name='explanation']/sparql:literal"/>
         <xsl:variable name="explanationFormat"
                       select="sparql:results/sparql:result/sparql:binding[@name='explanation-format']/sparql:literal"/>
+        <xsl:variable name="explanationLevel"
+                      select="sparql:results/sparql:result/sparql:binding[@name='explanation-level']/sparql:literal"/>
         <form action="query" method="post" onsubmit="return workbench.query.doSubmit()">
             <input type="hidden" name="action" id="action"/>
             <input type="hidden" name="explain" id="explain"/>
@@ -206,6 +208,61 @@
                 .query-explanation-controls-row-class {
                     margin-top: 0.5em;
                     margin-left: -0.1em;
+                }
+
+                .query-explanation-status {
+                    display: none;
+                    margin: 0 0 0.55em 0;
+                    padding: 0.45em 0.7em;
+                    border-radius: 0.35em;
+                    border: 1px solid transparent;
+                    font-size: 0.92em;
+                    line-height: 1.35;
+                }
+
+                .query-explanation-status--visible {
+                    display: block;
+                }
+
+                .query-explanation-status--loading {
+                    background: #eef5fb;
+                    border-color: #c7d8ea;
+                    color: #234e73;
+                }
+
+                .query-explanation-status--stale {
+                    background: #fff7dc;
+                    border-color: #e6d28d;
+                    color: #715400;
+                }
+
+                .query-explanation-status--error {
+                    background: #fdeaea;
+                    border-color: #efc2c2;
+                    color: #8d1f1f;
+                }
+
+                .query-explanation-surface {
+                    position: relative;
+                }
+
+                .query-explanation-overlay {
+                    display: none;
+                    position: absolute;
+                    inset: 0;
+                    z-index: 2;
+                    padding: 0.75em;
+                    box-sizing: border-box;
+                    background: rgba(255, 255, 255, 0.72);
+                    color: #234e73;
+                    font-weight: bold;
+                    align-items: flex-start;
+                    justify-content: flex-end;
+                    pointer-events: none;
+                }
+
+                .query-explanation-overlay--visible {
+                    display: flex;
                 }
 
                 .query-explain-spinner {
@@ -747,13 +804,18 @@
                                 <xsl:value-of select="$query-explanation.label"/>
                             </span>
                             <div class="query-form__field">
-                                <pre id="query-explanation"
-                                     style="margin-top:0; margin-bottom: 0; max-height:75vh; overflow:scroll;"
-                                     data-format="{normalize-space($explanationFormat)}">
-                                    <xsl:value-of select="$explanation"/>
-                                </pre>
-                                <div id="query-explanation-dot-view"></div>
-                                <div id="query-explanation-json-view"></div>
+                                <div id="query-explanation-status" class="query-explanation-status" aria-live="polite"></div>
+                                <div class="query-explanation-surface">
+                                    <div id="query-explanation-overlay" class="query-explanation-overlay"
+                                         aria-hidden="true"></div>
+                                    <pre id="query-explanation"
+                                         style="margin-top:0; margin-bottom: 0; max-height:75vh; overflow:scroll;"
+                                         data-format="{normalize-space($explanationFormat)}">
+                                        <xsl:value-of select="$explanation"/>
+                                    </pre>
+                                    <div id="query-explanation-dot-view"></div>
+                                    <div id="query-explanation-json-view"></div>
+                                </div>
                             </div>
                         </div>
                         <div id="query-explanation-controls-row" class="query-explanation-controls-row-class">
@@ -783,11 +845,36 @@
                                         </option>
                                     </select>
                                     <select id="explain-level">
-                                        <option value="Unoptimized">Unoptimized</option>
-                                        <option value="Optimized" selected="selected">Optimized</option>
-                                        <option value="Executed">Executed</option>
-                                        <option value="Telemetry">Telemetry</option>
-                                        <option value="Timed">Timed</option>
+                                        <option value="Unoptimized">
+                                            <xsl:if test="normalize-space($explanationLevel) = 'Unoptimized'">
+                                                <xsl:attribute name="selected">selected</xsl:attribute>
+                                            </xsl:if>
+                                            Unoptimized
+                                        </option>
+                                        <option value="Optimized">
+                                            <xsl:if test="normalize-space($explanationLevel) = '' or normalize-space($explanationLevel) = 'Optimized'">
+                                                <xsl:attribute name="selected">selected</xsl:attribute>
+                                            </xsl:if>
+                                            Optimized
+                                        </option>
+                                        <option value="Executed">
+                                            <xsl:if test="normalize-space($explanationLevel) = 'Executed'">
+                                                <xsl:attribute name="selected">selected</xsl:attribute>
+                                            </xsl:if>
+                                            Executed
+                                        </option>
+                                        <option value="Telemetry">
+                                            <xsl:if test="normalize-space($explanationLevel) = 'Telemetry'">
+                                                <xsl:attribute name="selected">selected</xsl:attribute>
+                                            </xsl:if>
+                                            Telemetry
+                                        </option>
+                                        <option value="Timed">
+                                            <xsl:if test="normalize-space($explanationLevel) = 'Timed'">
+                                                <xsl:attribute name="selected">selected</xsl:attribute>
+                                            </xsl:if>
+                                            Timed
+                                        </option>
                                     </select>
                                 </span>
                                 <span id="primary-explain-repeat-controls" class="query-form__field--controls-group">
@@ -867,11 +954,17 @@
                                 <xsl:value-of select="$query-explanation.label"/>
                             </span>
                             <div class="query-form__field">
-                                <pre id="query-explanation-compare"
-                                     style="margin-top:0; margin-bottom: 0; max-height:75vh; overflow:scroll;"
-                                     data-format="text"></pre>
-                                <div id="query-explanation-dot-view-compare"></div>
-                                <div id="query-explanation-json-view-compare"></div>
+                                <div id="query-explanation-status-compare" class="query-explanation-status"
+                                     aria-live="polite"></div>
+                                <div class="query-explanation-surface">
+                                    <div id="query-explanation-overlay-compare" class="query-explanation-overlay"
+                                         aria-hidden="true"></div>
+                                    <pre id="query-explanation-compare"
+                                         style="margin-top:0; margin-bottom: 0; max-height:75vh; overflow:scroll;"
+                                         data-format="text"></pre>
+                                    <div id="query-explanation-dot-view-compare"></div>
+                                    <div id="query-explanation-json-view-compare"></div>
+                                </div>
                             </div>
                         </div>
                     </div>

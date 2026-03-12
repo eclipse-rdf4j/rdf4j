@@ -59,6 +59,8 @@ public final class QueryEvaluator {
 
 	private static final String EXPLANATION_FORMAT = "explanation-format";
 
+	private static final String EXPLANATION_LEVEL = "explanation-level";
+
 	private static final String METADATA_QUERY_TEXT = "query-text";
 
 	private static final String METADATA_INFER = "infer";
@@ -72,10 +74,12 @@ public final class QueryEvaluator {
 	public static final class ExplainQueryResult {
 		private final String content;
 		private final String format;
+		private final String level;
 
-		private ExplainQueryResult(String content, String format) {
+		private ExplainQueryResult(String content, String format, String level) {
 			this.content = content;
 			this.format = format;
+			this.level = level;
 		}
 
 		public String getContent() {
@@ -84,6 +88,10 @@ public final class QueryEvaluator {
 
 		public String getFormat() {
 			return format;
+		}
+
+		public String getLevel() {
+			return level;
 		}
 	}
 
@@ -178,15 +186,15 @@ public final class QueryEvaluator {
 		} catch (UnsupportedOperationException e) {
 			throw new BadRequestException("Explain is not supported for this query or repository.", e);
 		}
-		return new ExplainQueryResult(formatExplanation(explanation, format), format.getValue());
+		return new ExplainQueryResult(formatExplanation(explanation, format), format.getValue(), level.name());
 	}
 
 	private void explainQuery(final TupleResultBuilder builder, final String xslPath,
 			final ExplainQueryResult explainQueryResult) throws QueryResultHandlerException {
 		builder.transform(xslPath, "query.xsl");
-		builder.start(EXPLANATION, EXPLANATION_FORMAT);
+		builder.start(EXPLANATION, EXPLANATION_FORMAT, EXPLANATION_LEVEL);
 		builder.link(List.of(INFO, "namespaces"));
-		builder.result(explainQueryResult.getContent(), explainQueryResult.getFormat());
+		builder.result(explainQueryResult.getContent(), explainQueryResult.getFormat(), explainQueryResult.getLevel());
 		builder.end();
 	}
 

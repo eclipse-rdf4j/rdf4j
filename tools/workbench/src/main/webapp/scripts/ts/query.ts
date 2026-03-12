@@ -25,12 +25,21 @@ module workbench {
         var yasqe: YASQE_Instance = null;
         var compareYasqe: YASQE_Instance = null;
         var vizRenderer: any = null;
+        var queryPageState: QueryPageState = null;
+        var lastRenderedExplanationKeys: { [key: string]: string } = {};
+        var pendingDotRenderKeys: { [key: string]: string } = {};
+        var activePrimaryRequestSignature: RequestSignature = null;
+        var activeCompareRequestSignatures: { [key: string]: RequestSignature } = {};
         var explainSpinnerVisibleSince = 0;
         var explainSpinnerTargetId = '';
         var explainSpinnerDelayTimeoutId: number = null;
         var explainSpinnerHideTimeoutId: number = null;
+        var compareExplainSpinnerVisibleSince = 0;
+        var compareExplainSpinnerDelayTimeoutId: number = null;
+        var compareExplainSpinnerHideTimeoutId: number = null;
         var activeExplainRequestId = 0;
         var activeExplainJqXHR: JQueryXHR = null;
+        var primaryExplanationPending = false;
         var activeCompareRequestId = 0;
         var activeComparePendingRequests = 0;
         var activeCompareExplainJqXHRs: JQueryXHR[] = [];
@@ -40,12 +49,108 @@ module workbench {
         var diffNotReadyLabel = '';
         var lastDiffTriggerElement: HTMLElement = null;
 
+        type ExplainLevel = 'Unoptimized' | 'Optimized' | 'Executed' | 'Telemetry' | 'Timed';
+        type ExplainFormat = 'text' | 'dot' | 'json';
+        type StaleReason = 'query' | 'level' | 'format';
+        type ExplanationView = 'text' | 'jsonTree' | 'jsonRawFallback' | 'dotRendering' | 'dotReady' | 'dotRenderError';
+        type PaneKey = 'primary' | 'compare';
+
+        type LayoutState =
+            | { mode: 'single' }
+            | { mode: 'compare'; sidebar: 'closed' | 'open' };
+
+        interface StableExplanation {
+            queryHash: string;
+            level: ExplainLevel;
+            requestedFormat: ExplainFormat;
+            responseFormat: 'text' | 'json' | 'dot';
+            view: ExplanationView;
+            rawContent: string;
+        }
+
+        interface RequestSignature {
+            requestId: number;
+            pane: PaneKey;
+            source: 'primary-explain' | 'primary-rerun' | 'compare-auto' | 'compare-refresh-both' | 'compare-refresh-right';
+            queryHash: string;
+            level: ExplainLevel;
+            format: ExplainFormat;
+            groupId?: number;
+        }
+
+        type PaneState =
+            | { kind: 'inactive' }
+            | { kind: 'empty' }
+            | {
+                kind: 'loading';
+                phase: 'delay' | 'spinner';
+                mode: 'initial' | 'refresh';
+                request: RequestSignature;
+                previous?: StableExplanation;
+            }
+            | {
+                kind: 'ready';
+                freshness: 'current' | 'stale';
+                staleReasons: StaleReason[];
+                explanation: StableExplanation;
+            }
+            | {
+                kind: 'error';
+                mode: 'initial' | 'refresh';
+                message: string;
+                previous?: StableExplanation;
+                freshness: 'current' | 'stale';
+                staleReasons: StaleReason[];
+            };
+
+        type DiffModalState =
+            | { kind: 'closed' }
+            | { kind: 'open'; explanation: 'placeholder' | 'ready' };
+
+        interface QueryPageInputs {
+            primaryQueryHash: string;
+            compareQueryHash: string;
+            explainLevel: ExplainLevel;
+            explainFormat: ExplainFormat;
+        }
+
+        interface QueryPageState {
+            lifecycle: 'bootstrapping' | 'ready';
+            layout: LayoutState;
+            primaryPane: PaneState;
+            comparePane: PaneState;
+            diffModal: DiffModalState;
+            inputs: QueryPageInputs;
+            compareQuerySeeded: boolean;
+        }
+
+        type QueryPageEvent =
+            | { type: 'HYDRATE'; primaryExplanation?: StableExplanation }
+            | { type: 'PRIMARY_QUERY_CHANGED' }
+            | { type: 'COMPARE_QUERY_CHANGED' }
+            | { type: 'EXPLAIN_LEVEL_CHANGED' }
+            | { type: 'EXPLAIN_FORMAT_CHANGED' }
+            | { type: 'REQUEST_EXPLAIN'; signature: RequestSignature }
+            | { type: 'SPINNER_DELAY_ELAPSED'; signature: RequestSignature }
+            | { type: 'EXPLAIN_SUCCESS'; signature: RequestSignature; explanation: StableExplanation }
+            | { type: 'EXPLAIN_ERROR'; signature: RequestSignature; message: string }
+            | { type: 'DOT_RENDER_OK'; pane: PaneKey; explanationKey: string }
+            | { type: 'DOT_RENDER_FAIL'; pane: PaneKey; explanationKey: string }
+            | { type: 'CANCEL_EXPLAIN'; pane: PaneKey; signature?: RequestSignature }
+            | { type: 'CLEAR_PANE'; pane: PaneKey; next: 'inactive' | 'empty' }
+            | { type: 'TOGGLE_COMPARE' }
+            | { type: 'TOGGLE_SIDEBAR' }
+            | { type: 'OPEN_DIFF' }
+            | { type: 'CLOSE_DIFF' };
+
         interface ExplanationPaneState {
             key: string;
             queryId: string;
             errorId: string;
             explanationRowId: string;
             explanationControlsRowId?: string;
+            statusId: string;
+            overlayId: string;
             explanationId: string;
             dotViewId: string;
             jsonViewId: string;
@@ -62,6 +167,8 @@ module workbench {
             errorId: 'queryString.errors',
             explanationRowId: 'query-explanation-row',
             explanationControlsRowId: 'query-explanation-controls-row',
+            statusId: 'query-explanation-status',
+            overlayId: 'query-explanation-overlay',
             explanationId: 'query-explanation',
             dotViewId: 'query-explanation-dot-view',
             jsonViewId: 'query-explanation-json-view',
@@ -76,6 +183,8 @@ module workbench {
             queryId: 'query-compare',
             errorId: 'queryString.errors-compare',
             explanationRowId: 'query-explanation-row-compare',
+            statusId: 'query-explanation-status-compare',
+            overlayId: 'query-explanation-overlay-compare',
             explanationId: 'query-explanation-compare',
             dotViewId: 'query-explanation-dot-view-compare',
             jsonViewId: 'query-explanation-json-view-compare',
@@ -85,6 +194,493 @@ module workbench {
             explainButtonViewportTopBeforeRequest: null,
             explainButtonIdBeforeRequest: ''
         };
+
+        function getNormalizedExplainLevel(level?: string): ExplainLevel {
+            switch (level) {
+                case 'Unoptimized':
+                case 'Executed':
+                case 'Telemetry':
+                case 'Timed':
+                    return <ExplainLevel>level;
+                case 'Optimized':
+                default:
+                    return 'Optimized';
+            }
+        }
+
+        function getNormalizedExplainFormat(format?: string): ExplainFormat {
+            switch ((format || '').toLowerCase()) {
+                case 'dot':
+                    return 'dot';
+                case 'json':
+                    return 'json';
+                case 'text':
+                default:
+                    return 'text';
+            }
+        }
+
+        function buildQueryHash(queryValue: string): string {
+            return queryValue || '';
+        }
+
+        function createEmptyQueryPageInputs(): QueryPageInputs {
+            return {
+                primaryQueryHash: '',
+                compareQueryHash: '',
+                explainLevel: 'Optimized',
+                explainFormat: 'text'
+            };
+        }
+
+        function collectCurrentInputs(): QueryPageInputs {
+            return {
+                primaryQueryHash: buildQueryHash(getPaneRawQueryValue('primary')),
+                compareQueryHash: buildQueryHash(getPaneRawQueryValue('compare')),
+                explainLevel: getNormalizedExplainLevel(<string>$('#explain-level').val()),
+                explainFormat: getNormalizedExplainFormat(<string>$('#explain-format').val())
+            };
+        }
+
+        function createRequestSignature(
+            paneKey: PaneKey,
+            source: 'primary-explain' | 'primary-rerun' | 'compare-auto' | 'compare-refresh-both' | 'compare-refresh-right',
+            requestId: number,
+            groupId?: number
+        ): RequestSignature {
+            var currentInputs = collectCurrentInputs();
+            return {
+                requestId: requestId,
+                pane: paneKey,
+                source: source,
+                queryHash: getPaneQueryHashFromInputs(paneKey, currentInputs),
+                level: currentInputs.explainLevel,
+                format: currentInputs.explainFormat,
+                groupId: groupId
+            };
+        }
+
+        function createInitialQueryPageState(): QueryPageState {
+            return {
+                lifecycle: 'bootstrapping',
+                layout: { mode: 'single' },
+                primaryPane: { kind: 'empty' },
+                comparePane: { kind: 'inactive' },
+                diffModal: { kind: 'closed' },
+                inputs: createEmptyQueryPageInputs(),
+                compareQuerySeeded: false
+            };
+        }
+
+        queryPageState = createInitialQueryPageState();
+
+        function isCompareLayout(layout: LayoutState): boolean {
+            return layout.mode === 'compare';
+        }
+
+        function getPaneMachineState(paneKey: PaneKey): PaneState {
+            return paneKey === 'compare' ? queryPageState.comparePane : queryPageState.primaryPane;
+        }
+
+        function setPaneMachineState(paneKey: PaneKey, paneState: PaneState) {
+            if (paneKey === 'compare') {
+                queryPageState.comparePane = paneState;
+                return;
+            }
+            queryPageState.primaryPane = paneState;
+        }
+
+        function cloneStableExplanation(explanation: StableExplanation): StableExplanation {
+            if (!explanation) {
+                return null;
+            }
+            return {
+                queryHash: explanation.queryHash,
+                level: explanation.level,
+                requestedFormat: explanation.requestedFormat,
+                responseFormat: explanation.responseFormat,
+                view: explanation.view,
+                rawContent: explanation.rawContent
+            };
+        }
+
+        function getStableExplanationKey(explanation: StableExplanation): string {
+            if (!explanation) {
+                return '';
+            }
+            return [
+                explanation.queryHash,
+                explanation.level,
+                explanation.requestedFormat,
+                explanation.responseFormat,
+                explanation.view,
+                explanation.rawContent
+            ].join('||');
+        }
+
+        function getStableExplanationContentKey(explanation: StableExplanation): string {
+            if (!explanation) {
+                return '';
+            }
+            return [
+                explanation.queryHash,
+                explanation.level,
+                explanation.requestedFormat,
+                explanation.responseFormat,
+                explanation.rawContent
+            ].join('||');
+        }
+
+        function getPaneSnapshot(paneState: PaneState): StableExplanation {
+            if (!paneState) {
+                return null;
+            }
+            if (paneState.kind === 'ready') {
+                return cloneStableExplanation(paneState.explanation);
+            }
+            if (paneState.kind === 'loading' || paneState.kind === 'error') {
+                return cloneStableExplanation(paneState.previous);
+            }
+            return null;
+        }
+
+        function getPaneQueryHashFromInputs(paneKey: PaneKey, inputs: QueryPageInputs): string {
+            return paneKey === 'compare' ? inputs.compareQueryHash : inputs.primaryQueryHash;
+        }
+
+        function getStaleReasons(explanation: StableExplanation, paneKey: PaneKey, inputs: QueryPageInputs): StaleReason[] {
+            var staleReasons: StaleReason[] = [];
+            if (!explanation) {
+                return staleReasons;
+            }
+            if (explanation.queryHash !== getPaneQueryHashFromInputs(paneKey, inputs)) {
+                staleReasons.push('query');
+            }
+            if (explanation.level !== inputs.explainLevel) {
+                staleReasons.push('level');
+            }
+            if (explanation.requestedFormat !== inputs.explainFormat) {
+                staleReasons.push('format');
+            }
+            return staleReasons;
+        }
+
+        function createReadyPaneState(explanation: StableExplanation, paneKey: PaneKey, inputs: QueryPageInputs): PaneState {
+            var staleReasons = getStaleReasons(explanation, paneKey, inputs);
+            return {
+                kind: 'ready',
+                freshness: staleReasons.length ? 'stale' : 'current',
+                staleReasons: staleReasons,
+                explanation: cloneStableExplanation(explanation)
+            };
+        }
+
+        function createErrorPaneState(
+            message: string,
+            mode: 'initial' | 'refresh',
+            previous: StableExplanation,
+            paneKey: PaneKey,
+            inputs: QueryPageInputs
+        ): PaneState {
+            var staleReasons = previous ? getStaleReasons(previous, paneKey, inputs) : [];
+            return {
+                kind: 'error',
+                mode: mode,
+                message: message,
+                previous: previous ? cloneStableExplanation(previous) : undefined,
+                freshness: staleReasons.length ? 'stale' : 'current',
+                staleReasons: staleReasons
+            };
+        }
+
+        function restorePaneStateFromPrevious(
+            paneState: PaneState,
+            paneKey: PaneKey,
+            inputs: QueryPageInputs,
+            layout: LayoutState
+        ): PaneState {
+            var previousExplanation = getPaneSnapshot(paneState);
+            if (previousExplanation) {
+                return createReadyPaneState(previousExplanation, paneKey, inputs);
+            }
+            if (paneKey === 'compare' && !isCompareLayout(layout)) {
+                return { kind: 'inactive' };
+            }
+            return { kind: 'empty' };
+        }
+
+        function isPaneReadyCurrent(paneState: PaneState): boolean {
+            return paneState.kind === 'ready' && paneState.freshness === 'current';
+        }
+
+        function signaturesMatch(left: RequestSignature, right: RequestSignature): boolean {
+            return !!left
+                && !!right
+                && left.requestId === right.requestId
+                && left.pane === right.pane
+                && left.source === right.source
+                && left.queryHash === right.queryHash
+                && left.level === right.level
+                && left.format === right.format
+                && left.groupId === right.groupId;
+        }
+
+        function getEventSignatureForPane(event: QueryPageEvent, paneKey: PaneKey): RequestSignature {
+            switch (event.type) {
+                case 'REQUEST_EXPLAIN':
+                case 'SPINNER_DELAY_ELAPSED':
+                case 'EXPLAIN_SUCCESS':
+                case 'EXPLAIN_ERROR':
+                    return event.signature.pane === paneKey ? event.signature : null;
+                case 'CANCEL_EXPLAIN':
+                    return event.pane === paneKey ? event.signature : null;
+                default:
+                    return null;
+            }
+        }
+
+        function createDiffModalState(kind: 'closed' | 'open', primaryPane: PaneState, comparePane: PaneState): DiffModalState {
+            if (kind === 'closed') {
+                return { kind: 'closed' };
+            }
+            return {
+                kind: 'open',
+                explanation: isPaneReadyCurrent(primaryPane) && isPaneReadyCurrent(comparePane) ? 'ready' : 'placeholder'
+            };
+        }
+
+        function reducePaneState(
+            paneState: PaneState,
+            paneKey: PaneKey,
+            event: QueryPageEvent,
+            inputs: QueryPageInputs,
+            layout: LayoutState
+        ): PaneState {
+            var eventSignature = getEventSignatureForPane(event, paneKey);
+            var paneSnapshot = getPaneSnapshot(paneState);
+            switch (event.type) {
+                case 'REQUEST_EXPLAIN':
+                    if (!eventSignature) {
+                        return paneState;
+                    }
+                    return {
+                        kind: 'loading',
+                        phase: 'delay',
+                        mode: paneSnapshot ? 'refresh' : 'initial',
+                        request: eventSignature,
+                        previous: paneSnapshot || undefined
+                    };
+                case 'SPINNER_DELAY_ELAPSED':
+                    if (paneState.kind !== 'loading' || !eventSignature || !signaturesMatch(paneState.request, eventSignature)) {
+                        return paneState;
+                    }
+                    return {
+                        kind: 'loading',
+                        phase: 'spinner',
+                        mode: paneState.mode,
+                        request: paneState.request,
+                        previous: paneState.previous
+                    };
+                case 'EXPLAIN_SUCCESS':
+                    if (paneState.kind !== 'loading' || !eventSignature || !signaturesMatch(paneState.request, eventSignature)) {
+                        return paneState;
+                    }
+                    return createReadyPaneState(event.explanation, paneKey, inputs);
+                case 'EXPLAIN_ERROR':
+                    if (paneState.kind !== 'loading' || !eventSignature || !signaturesMatch(paneState.request, eventSignature)) {
+                        return paneState;
+                    }
+                    return createErrorPaneState(
+                        event.message,
+                        paneState.previous ? 'refresh' : 'initial',
+                        paneState.previous,
+                        paneKey,
+                        inputs
+                    );
+                case 'CANCEL_EXPLAIN':
+                    if (event.pane !== paneKey) {
+                        return paneState;
+                    }
+                    return restorePaneStateFromPrevious(paneState, paneKey, inputs, layout);
+                case 'PRIMARY_QUERY_CHANGED':
+                    if (paneKey !== 'primary') {
+                        return paneState.kind === 'loading'
+                            ? restorePaneStateFromPrevious(paneState, paneKey, inputs, layout)
+                            : paneState;
+                    }
+                    return restorePaneStateFromPrevious(paneState, paneKey, inputs, layout);
+                case 'COMPARE_QUERY_CHANGED':
+                    if (paneKey !== 'compare') {
+                        return paneState.kind === 'loading'
+                            ? restorePaneStateFromPrevious(paneState, paneKey, inputs, layout)
+                            : paneState;
+                    }
+                    return restorePaneStateFromPrevious(paneState, paneKey, inputs, layout);
+                case 'EXPLAIN_LEVEL_CHANGED':
+                case 'EXPLAIN_FORMAT_CHANGED':
+                    return restorePaneStateFromPrevious(paneState, paneKey, inputs, layout);
+                case 'DOT_RENDER_OK':
+                    if (paneState.kind !== 'ready'
+                            || paneState.explanation.view !== 'dotRendering'
+                            || event.pane !== paneKey
+                            || getStableExplanationKey(paneState.explanation) !== event.explanationKey) {
+                        return paneState;
+                    }
+                    paneState.explanation.view = 'dotReady';
+                    return createReadyPaneState(paneState.explanation, paneKey, inputs);
+                case 'DOT_RENDER_FAIL':
+                    if (paneState.kind !== 'ready'
+                            || paneState.explanation.view !== 'dotRendering'
+                            || event.pane !== paneKey
+                            || getStableExplanationKey(paneState.explanation) !== event.explanationKey) {
+                        return paneState;
+                    }
+                    paneState.explanation.view = 'dotRenderError';
+                    return createReadyPaneState(paneState.explanation, paneKey, inputs);
+                case 'CLEAR_PANE':
+                    if (event.pane !== paneKey) {
+                        return paneState;
+                    }
+                    return event.next === 'inactive' ? { kind: 'inactive' } : { kind: 'empty' };
+                default:
+                    if (paneState.kind === 'ready') {
+                        return createReadyPaneState(paneState.explanation, paneKey, inputs);
+                    }
+                    if (paneState.kind === 'error' && paneState.previous) {
+                        return createErrorPaneState(paneState.message, paneState.mode, paneState.previous, paneKey, inputs);
+                    }
+                    return paneState;
+            }
+        }
+
+        function reduceDiffModalState(
+            diffModalState: DiffModalState,
+            event: QueryPageEvent,
+            primaryPane: PaneState,
+            comparePane: PaneState,
+            layout: LayoutState,
+            inputs: QueryPageInputs
+        ): DiffModalState {
+            switch (event.type) {
+                case 'OPEN_DIFF':
+                    if (!isCompareLayout(layout) || !inputs.primaryQueryHash.length || !inputs.compareQueryHash.length) {
+                        return { kind: 'closed' };
+                    }
+                    return createDiffModalState('open', primaryPane, comparePane);
+                case 'CLOSE_DIFF':
+                case 'TOGGLE_COMPARE':
+                    if (!isCompareLayout(layout)) {
+                        return { kind: 'closed' };
+                    }
+                    return event.type === 'CLOSE_DIFF'
+                        ? { kind: 'closed' }
+                        : diffModalState.kind === 'open'
+                            ? createDiffModalState('open', primaryPane, comparePane)
+                            : { kind: 'closed' };
+                default:
+                    if (diffModalState.kind !== 'open') {
+                        return diffModalState;
+                    }
+                    return createDiffModalState('open', primaryPane, comparePane);
+            }
+        }
+
+        function syncLegacyMachineFlags() {
+            compareModeEnabled = isCompareLayout(queryPageState.layout);
+            compareSidebarOpen = compareModeEnabled
+                && queryPageState.layout.mode === 'compare'
+                && queryPageState.layout.sidebar === 'open';
+            compareQuerySeeded = queryPageState.compareQuerySeeded;
+            primaryExplanationPending = queryPageState.primaryPane.kind === 'loading';
+        }
+
+        function syncLegacyExplanationCache(paneKey: PaneKey) {
+            var paneState = getPaneState(paneKey);
+            var paneSnapshot = getPaneSnapshot(getPaneMachineState(paneKey));
+            paneState.latestExplanation = paneSnapshot ? paneSnapshot.rawContent : '';
+            paneState.latestExplanationFormat = paneSnapshot ? paneSnapshot.responseFormat : 'text';
+        }
+
+        function dispatchQueryPageEvent(event: QueryPageEvent) {
+            var currentInputs = collectCurrentInputs();
+            if (!queryPageState) {
+                queryPageState = createInitialQueryPageState();
+            }
+            if (event.type === 'HYDRATE') {
+                queryPageState = {
+                    lifecycle: 'ready',
+                    layout: { mode: 'single' },
+                    primaryPane: event.primaryExplanation
+                        ? createReadyPaneState(event.primaryExplanation, 'primary', currentInputs)
+                        : <PaneState>{ kind: 'empty' },
+                    comparePane: { kind: 'inactive' },
+                    diffModal: { kind: 'closed' },
+                    inputs: currentInputs,
+                    compareQuerySeeded: false
+                };
+            } else if (event.type === 'TOGGLE_COMPARE') {
+                var compareEnabled = isCompareLayout(queryPageState.layout);
+                var nextLayout: LayoutState = compareEnabled ? { mode: 'single' } : { mode: 'compare', sidebar: 'closed' };
+                var nextComparePane: PaneState = compareEnabled ? { kind: 'inactive' } : queryPageState.comparePane;
+                if (!compareEnabled && nextComparePane.kind === 'inactive') {
+                    nextComparePane = { kind: 'empty' };
+                }
+                queryPageState = {
+                    lifecycle: 'ready',
+                    layout: nextLayout,
+                    primaryPane: reducePaneState(queryPageState.primaryPane, 'primary', event, currentInputs, nextLayout),
+                    comparePane: nextComparePane,
+                    diffModal: compareEnabled ? { kind: 'closed' } : queryPageState.diffModal,
+                    inputs: currentInputs,
+                    compareQuerySeeded: compareEnabled ? false : queryPageState.compareQuerySeeded
+                };
+            } else if (event.type === 'TOGGLE_SIDEBAR') {
+                queryPageState = {
+                    lifecycle: 'ready',
+                    layout: queryPageState.layout.mode === 'compare'
+                        ? {
+                            mode: 'compare',
+                            sidebar: queryPageState.layout.sidebar === 'open' ? 'closed' : 'open'
+                        }
+                        : queryPageState.layout,
+                    primaryPane: reducePaneState(queryPageState.primaryPane, 'primary', event, currentInputs, queryPageState.layout),
+                    comparePane: reducePaneState(queryPageState.comparePane, 'compare', event, currentInputs, queryPageState.layout),
+                    diffModal: reduceDiffModalState(
+                        queryPageState.diffModal,
+                        event,
+                        queryPageState.primaryPane,
+                        queryPageState.comparePane,
+                        queryPageState.layout,
+                        currentInputs
+                    ),
+                    inputs: currentInputs,
+                    compareQuerySeeded: queryPageState.compareQuerySeeded
+                };
+            } else {
+                var nextPrimaryPane = reducePaneState(queryPageState.primaryPane, 'primary', event, currentInputs, queryPageState.layout);
+                var nextComparePaneForEvent = reducePaneState(queryPageState.comparePane, 'compare', event, currentInputs, queryPageState.layout);
+                queryPageState = {
+                    lifecycle: 'ready',
+                    layout: queryPageState.layout,
+                    primaryPane: nextPrimaryPane,
+                    comparePane: nextComparePaneForEvent,
+                    diffModal: reduceDiffModalState(
+                        queryPageState.diffModal,
+                        event,
+                        nextPrimaryPane,
+                        nextComparePaneForEvent,
+                        queryPageState.layout,
+                        currentInputs
+                    ),
+                    inputs: currentInputs,
+                    compareQuerySeeded: queryPageState.compareQuerySeeded
+                };
+            }
+            syncLegacyMachineFlags();
+            syncLegacyExplanationCache('primary');
+            syncLegacyExplanationCache('compare');
+            renderQueryPageState();
+        }
 
         /**
          * Populate reasonable default name space declarations into the query text area.
@@ -225,22 +821,82 @@ module workbench {
             $('#explain-level').val('Optimized');
         }
 
+        function getPaneDisplayExplanation(paneState: PaneState): StableExplanation {
+            if (!paneState) {
+                return null;
+            }
+            if (paneState.kind === 'ready') {
+                return paneState.explanation;
+            }
+            if (paneState.kind === 'loading' || paneState.kind === 'error') {
+                return paneState.previous || null;
+            }
+            return null;
+        }
+
+        function getPaneStatusMessage(paneState: PaneState): string {
+            if (!paneState) {
+                return '';
+            }
+            if (paneState.kind === 'loading' && paneState.mode === 'initial') {
+                return 'Loading explanation...';
+            }
+            if (paneState.kind === 'ready' && paneState.freshness === 'stale') {
+                return 'Explanation is stale. Re-run to refresh.';
+            }
+            if (paneState.kind === 'error') {
+                return paneState.message;
+            }
+            return '';
+        }
+
+        function getPaneStatusClassName(paneState: PaneState): string {
+            if (!paneState) {
+                return '';
+            }
+            if (paneState.kind === 'loading' && paneState.mode === 'initial') {
+                return 'query-explanation-status--loading';
+            }
+            if (paneState.kind === 'ready' && paneState.freshness === 'stale') {
+                return 'query-explanation-status--stale';
+            }
+            if (paneState.kind === 'error') {
+                return 'query-explanation-status--error';
+            }
+            return '';
+        }
+
+        function getPaneOverlayMessage(paneState: PaneState): string {
+            if (paneState && paneState.kind === 'loading' && paneState.mode === 'refresh') {
+                return 'Refreshing explanation...';
+            }
+            return '';
+        }
+
         function hasPrimaryExplanation(): boolean {
-            return primaryPaneState.latestExplanation.length > 0;
+            return !!getPaneDisplayExplanation(queryPageState.primaryPane);
         }
 
         function updateDownloadButtonState() {
-            $('#download-explanation').prop('disabled', !primaryPaneState.latestExplanation);
+            $('#download-explanation').prop(
+                'disabled',
+                !(queryPageState.primaryPane.kind === 'ready' && queryPageState.primaryPane.freshness === 'current')
+            );
         }
 
         function syncPrimaryExplanationControls() {
-            var primaryExplanationAvailable = hasPrimaryExplanation();
-            var primaryControlsVisible = primaryExplanationAvailable || compareModeEnabled;
+            var primaryPaneMachineState = queryPageState.primaryPane;
+            var primaryControlsVisible = compareModeEnabled || primaryPaneMachineState.kind !== 'empty';
+            var primaryActionsDisabled = primaryPaneMachineState.kind === 'loading' || activeComparePendingRequests > 0;
             $('#query-explanation-controls-row').toggle(primaryControlsVisible);
             $('#primary-explain-settings').toggle(primaryControlsVisible);
-            $('#primary-explain-repeat-controls').toggle(primaryExplanationAvailable);
+            $('#primary-explain-repeat-controls').toggle(
+                primaryPaneMachineState.kind !== 'empty'
+            );
             $('#download-explanation').toggle(primaryControlsVisible);
-            $('#compare-toggle').toggle(primaryExplanationAvailable || compareModeEnabled);
+            $('#compare-toggle').toggle(compareModeEnabled || primaryPaneMachineState.kind !== 'empty');
+            $('#rerun-explanation').prop('disabled', primaryActionsDisabled);
+            $('#explain-trigger').prop('disabled', primaryActionsDisabled);
         }
 
         function syncCompareSidebarState() {
@@ -385,9 +1041,10 @@ module workbench {
             }
         }
 
-        function beginExplainRequest(buttonId: string): number {
-            activeExplainRequestId += 1;
-            var requestId = activeExplainRequestId;
+        function beginExplainRequest(buttonId: string, signature: RequestSignature): number {
+            activeExplainRequestId = signature.requestId;
+            activePrimaryRequestSignature = signature;
+            primaryExplanationPending = true;
             explainSpinnerTargetId = buttonId;
             clearExplainSpinnerDelayTimeout();
             clearExplainSpinnerHideTimeout();
@@ -395,19 +1052,22 @@ module workbench {
             hideExplainCancelButtons();
             setExplainButtonsDisabled(true);
             explainSpinnerDelayTimeoutId = window.setTimeout(function() {
-                if (requestId !== activeExplainRequestId) {
+                if (!activePrimaryRequestSignature || !signaturesMatch(activePrimaryRequestSignature, signature)) {
                     return;
                 }
                 explainSpinnerDelayTimeoutId = null;
+                dispatchQueryPageEvent({ type: 'SPINNER_DELAY_ELAPSED', signature: signature });
                 showExplainSpinner(buttonId);
             }, 1000);
-            return requestId;
+            return signature.requestId;
         }
 
         function finishExplainRequest(requestId: number) {
             if (requestId !== activeExplainRequestId) {
                 return;
             }
+            primaryExplanationPending = false;
+            syncPrimaryExplanationControls();
             setExplainButtonsDisabled(false);
             hideExplainCancelButtons();
             clearExplainSpinnerDelayTimeout();
@@ -521,10 +1181,6 @@ module workbench {
 
         function clearRenderedExplanation(paneKey: string, pendingFormat?: string) {
             var paneState = getPaneState(paneKey);
-            $('#' + paneState.explanationRowId).show();
-            if (paneState.explanationControlsRowId) {
-                $('#' + paneState.explanationControlsRowId).show();
-            }
             lockExplanationDimensions(paneKey);
             var explanation = $('#' + paneState.explanationId);
             explanation.text('');
@@ -562,21 +1218,41 @@ module workbench {
             var paneState = getPaneState(paneKey);
             var dotView = $('#' + paneState.dotViewId);
             if (format === 'dot') {
+                var paneMachineState = getPaneMachineState(<PaneKey>paneKey);
+                var displayExplanation = getPaneDisplayExplanation(paneMachineState);
+                var explanationContentKey = getStableExplanationContentKey(displayExplanation);
+                var explanationKey = getStableExplanationKey(displayExplanation);
                 setExplanationDisplayMode(paneKey, 'dot');
                 if (!explanationText) {
                     dotView.empty().show();
+                    pendingDotRenderKeys[paneKey] = '';
                     restoreExplainButtonViewportTopIfNeeded(paneKey);
                     return;
                 }
+                if (explanationContentKey && pendingDotRenderKeys[paneKey] === explanationContentKey) {
+                    dotView.show();
+                    return;
+                }
+                pendingDotRenderKeys[paneKey] = explanationContentKey;
                 dotView.html('<div>Rendering DOT graph...</div>').show();
                 if (typeof Viz === 'undefined') {
                     dotView.html('<div class="error">Graphviz visualizer script not loaded.</div>');
+                    if (displayExplanation) {
+                        dispatchQueryPageEvent({
+                            type: 'DOT_RENDER_FAIL',
+                            pane: <PaneKey>paneKey,
+                            explanationKey: explanationKey
+                        });
+                    }
                     return;
                 }
                 if (!vizRenderer) {
                     vizRenderer = new Viz();
                 }
                 vizRenderer.renderSVGElement(explanationText).then(function(svgElement: SVGElement) {
+                    if (pendingDotRenderKeys[paneKey] !== explanationContentKey) {
+                        return;
+                    }
                     $(svgElement).css({
                         width: '100%',
                         height: '100%',
@@ -586,16 +1262,34 @@ module workbench {
                     });
                     dotView.empty().append(svgElement).show();
                     applyDotPanZoom(paneKey, svgElement);
+                    if (displayExplanation) {
+                        dispatchQueryPageEvent({
+                            type: 'DOT_RENDER_OK',
+                            pane: <PaneKey>paneKey,
+                            explanationKey: explanationKey
+                        });
+                    }
                     restoreExplainButtonViewportTopIfNeeded(paneKey);
                 }).catch(function() {
+                    if (pendingDotRenderKeys[paneKey] !== explanationContentKey) {
+                        return;
+                    }
                     vizRenderer = new Viz();
                     destroyDotPanZoom(paneKey);
                     dotView.html('<div class="error">Unable to render DOT graph.</div>');
+                    if (displayExplanation) {
+                        dispatchQueryPageEvent({
+                            type: 'DOT_RENDER_FAIL',
+                            pane: <PaneKey>paneKey,
+                            explanationKey: explanationKey
+                        });
+                    }
                     restoreExplainButtonViewportTopIfNeeded(paneKey);
                 });
                 return;
             }
             destroyDotPanZoom(paneKey);
+            pendingDotRenderKeys[paneKey] = '';
             dotView.hide().empty();
         }
 
@@ -857,6 +1551,126 @@ module workbench {
             clearExplanationDimensionLock(paneKey);
         }
 
+        function renderPanePresentation(paneKey: PaneKey) {
+            var paneMachineState = getPaneMachineState(paneKey);
+            var paneState = getPaneState(paneKey);
+            var paneStatus = $('#' + paneState.statusId);
+            var paneOverlay = $('#' + paneState.overlayId);
+            var paneDisplayExplanation = getPaneDisplayExplanation(paneMachineState);
+            var paneStatusMessage = getPaneStatusMessage(paneMachineState);
+            var paneStatusClassName = getPaneStatusClassName(paneMachineState);
+            var paneOverlayMessage = getPaneOverlayMessage(paneMachineState);
+            var rowVisible = paneMachineState.kind !== 'inactive' && paneMachineState.kind !== 'empty';
+            var renderContentKey = getStableExplanationContentKey(paneDisplayExplanation);
+
+            $('#' + paneState.explanationRowId).toggle(rowVisible);
+            if (!rowVisible) {
+                paneStatus
+                    .removeClass('query-explanation-status--visible query-explanation-status--loading query-explanation-status--stale query-explanation-status--error')
+                    .text('');
+                paneOverlay
+                    .removeClass('query-explanation-overlay--visible')
+                    .attr('aria-hidden', 'true')
+                    .text('');
+                $('#' + paneState.errorId).text('');
+                clearRenderedExplanation(paneKey, queryPageState.inputs.explainFormat);
+                lastRenderedExplanationKeys[paneKey] = '';
+                clearExplanationDimensionLock(paneKey);
+                return;
+            }
+
+            paneStatus
+                .removeClass('query-explanation-status--visible query-explanation-status--loading query-explanation-status--stale query-explanation-status--error')
+                .text('');
+            if (paneStatusMessage) {
+                paneStatus
+                    .addClass('query-explanation-status--visible')
+                    .addClass(paneStatusClassName)
+                    .text(paneStatusMessage);
+            }
+
+            paneOverlay
+                .toggleClass('query-explanation-overlay--visible', !!paneOverlayMessage)
+                .attr('aria-hidden', paneOverlayMessage ? 'false' : 'true')
+                .text(paneOverlayMessage);
+
+            $('#' + paneState.errorId).text(paneMachineState.kind === 'error' ? paneMachineState.message : '');
+
+            if (paneMachineState.kind === 'loading' && paneMachineState.mode === 'initial') {
+                lastRenderedExplanationKeys[paneKey] = '';
+                clearRenderedExplanation(paneKey, queryPageState.inputs.explainFormat);
+                $('#' + paneState.explanationId)
+                    .show()
+                    .text('Loading explanation...')
+                    .attr('data-format', 'text');
+                setExplanationDisplayMode(paneKey, 'text');
+                clearExplanationDimensionLock(paneKey);
+                return;
+            }
+
+            if (paneMachineState.kind === 'error' && !paneDisplayExplanation) {
+                lastRenderedExplanationKeys[paneKey] = '';
+                clearRenderedExplanation(paneKey, 'text');
+                $('#' + paneState.explanationId)
+                    .show()
+                    .text(paneMachineState.message)
+                    .attr('data-format', 'text');
+                setExplanationDisplayMode(paneKey, 'text');
+                clearExplanationDimensionLock(paneKey);
+                return;
+            }
+
+            if (!paneDisplayExplanation) {
+                lastRenderedExplanationKeys[paneKey] = '';
+                clearRenderedExplanation(paneKey, queryPageState.inputs.explainFormat);
+                clearExplanationDimensionLock(paneKey);
+                return;
+            }
+
+            if (lastRenderedExplanationKeys[paneKey] !== renderContentKey) {
+                lastRenderedExplanationKeys[paneKey] = renderContentKey;
+                renderExplanation(paneKey, paneDisplayExplanation.rawContent, paneDisplayExplanation.responseFormat);
+            }
+        }
+
+        function renderQueryPageState() {
+            if (!queryPageState) {
+                return;
+            }
+
+            syncLegacyMachineFlags();
+
+            $('#query-compare-layout').toggleClass('query-compare-layout--active', compareModeEnabled);
+            $('#query-compare-controls').toggle(compareModeEnabled);
+            $('#query-diff-modal')
+                .toggleClass('query-diff-modal--open', queryPageState.diffModal.kind === 'open')
+                .attr('aria-hidden', queryPageState.diffModal.kind === 'open' ? 'false' : 'true');
+
+            renderPanePresentation('primary');
+            renderPanePresentation('compare');
+
+            updateDownloadButtonState();
+            syncPrimaryExplanationControls();
+            syncCompareSidebarState();
+            updateCompareActionState();
+
+            if (queryPageState.diffModal.kind === 'open') {
+                renderDiffView('#query-diff-query', getPaneRawQueryValue('primary'), getPaneRawQueryValue('compare'));
+                if (queryPageState.diffModal.explanation === 'ready'
+                        && queryPageState.primaryPane.kind === 'ready'
+                        && queryPageState.comparePane.kind === 'ready') {
+                    renderDiffView(
+                        '#query-diff-explanation',
+                        queryPageState.primaryPane.explanation.rawContent,
+                        queryPageState.comparePane.explanation.rawContent,
+                        diffNotReadyLabel
+                    );
+                } else {
+                    $('#query-diff-explanation').text(diffNotReadyLabel);
+                }
+            }
+        }
+
         function getExplainErrorMessage(jqXHR: JQueryXHR, textStatus: string, errorThrown: string): string {
             var response: any = (<any>jqXHR).responseJSON;
             if (response && response.error) {
@@ -919,39 +1733,80 @@ module workbench {
             return $.param(serializedForm);
         }
 
-        function applyExplainResponseToPane(paneKey: string, response: AjaxExplainResponse, fallbackFormat: string) {
-            var responseFormat = response.format || fallbackFormat || 'text';
-            if (response.error) {
-                showExplainError(paneKey, response.error);
-                return;
+        function createStableExplanationFromResponse(
+            signature: RequestSignature,
+            response: AjaxExplainResponse,
+            fallbackFormat: string
+        ): StableExplanation {
+            var responseFormat = getNormalizedExplainFormat(response.format || fallbackFormat || 'text');
+            var explanationText = response.content || '';
+            var explanationView: ExplanationView = 'text';
+            if (responseFormat === 'json') {
+                explanationView = 'jsonTree';
+                if (explanationText) {
+                    try {
+                        JSON.parse(explanationText);
+                    } catch (parseError) {
+                        explanationView = 'jsonRawFallback';
+                    }
+                }
+            } else if (responseFormat === 'dot') {
+                explanationView = 'dotRendering';
             }
-            $('#' + getPaneState(paneKey).errorId).text('');
-            renderExplanation(paneKey, response.content || '', responseFormat);
+            return {
+                queryHash: signature.queryHash,
+                level: signature.level,
+                requestedFormat: signature.format,
+                responseFormat: responseFormat,
+                view: explanationView,
+                rawContent: explanationText
+            };
         }
 
-        function ajaxExplain(level: string, requestId: number) {
-            var selectedFormat = (<string>$('#explain-format').val() || 'text').toLowerCase();
-            $('#' + primaryPaneState.errorId).text('');
-            clearRenderedExplanation('primary', selectedFormat);
+        function applyExplainResponseToPane(paneKey: string, signature: RequestSignature, response: AjaxExplainResponse, fallbackFormat: string) {
+            if (response.error) {
+                dispatchQueryPageEvent({
+                    type: 'EXPLAIN_ERROR',
+                    signature: signature,
+                    message: response.error
+                });
+                return;
+            }
+            dispatchQueryPageEvent({
+                type: 'EXPLAIN_SUCCESS',
+                signature: signature,
+                explanation: createStableExplanationFromResponse(signature, response, fallbackFormat)
+            });
+        }
+
+        function ajaxExplain(signature: RequestSignature) {
             activeExplainJqXHR = $.ajax({
                 url: 'query',
                 type: 'POST',
                 dataType: 'json',
-                data: serializeExplainFormData(getPaneRawQueryValue('primary'), level, selectedFormat),
+                data: serializeExplainFormData(getPaneRawQueryValue('primary'), signature.level, signature.format),
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
-                    if (textStatus !== 'abort') {
-                        showExplainError('primary', getExplainErrorMessage(jqXHR, textStatus, errorThrown));
+                    if (textStatus !== 'abort' && activePrimaryRequestSignature && signaturesMatch(activePrimaryRequestSignature, signature)) {
+                        dispatchQueryPageEvent({
+                            type: 'EXPLAIN_ERROR',
+                            signature: signature,
+                            message: getExplainErrorMessage(jqXHR, textStatus, errorThrown)
+                        });
                     }
                 },
                 success: function(response: AjaxExplainResponse) {
-                    if (requestId !== activeExplainRequestId) {
+                    if (!activePrimaryRequestSignature || !signaturesMatch(activePrimaryRequestSignature, signature)) {
                         return;
                     }
-                    applyExplainResponseToPane('primary', response, selectedFormat);
+                    applyExplainResponseToPane('primary', signature, response, signature.format);
                 },
                 complete: function() {
+                    if (!activePrimaryRequestSignature || !signaturesMatch(activePrimaryRequestSignature, signature)) {
+                        return;
+                    }
+                    activePrimaryRequestSignature = null;
                     activeExplainJqXHR = null;
-                    finishExplainRequest(requestId);
+                    finishExplainRequest(signature.requestId);
                 }
             });
         }
@@ -982,6 +1837,7 @@ module workbench {
             $('#explain-compare-trigger-icon')
                 .removeClass('query-compare-action__icon--spinning');
             hideCompareExplainCancelButton();
+            compareExplainSpinnerVisibleSince = 0;
         }
 
         function showCompareExplainSpinner() {
@@ -990,6 +1846,7 @@ module workbench {
             $('#explain-compare-trigger-icon')
                 .addClass('query-compare-action__icon--spinning');
             showCompareExplainCancelButton();
+            compareExplainSpinnerVisibleSince = Date.now();
         }
 
         function hideCompareExplainCancelButton() {
@@ -1006,9 +1863,24 @@ module workbench {
                 .prop('disabled', false);
         }
 
+        function clearCompareExplainSpinnerDelayTimeout() {
+            if (compareExplainSpinnerDelayTimeoutId !== null) {
+                window.clearTimeout(compareExplainSpinnerDelayTimeoutId);
+                compareExplainSpinnerDelayTimeoutId = null;
+            }
+        }
+
+        function clearCompareExplainSpinnerHideTimeout() {
+            if (compareExplainSpinnerHideTimeoutId !== null) {
+                window.clearTimeout(compareExplainSpinnerHideTimeoutId);
+                compareExplainSpinnerHideTimeoutId = null;
+            }
+        }
+
         function setCompareExplainButtonsDisabled(disabled: boolean) {
             $('#explain-compare-trigger').prop('disabled', disabled);
             $('#explain-trigger').prop('disabled', disabled);
+            $('#rerun-explanation').prop('disabled', disabled);
         }
 
         function updateCompareActionState() {
@@ -1029,25 +1901,58 @@ module workbench {
             });
         }
 
+        function resetComparePaneState() {
+            cancelCompareExplain();
+            if (queryPageState) {
+                queryPageState.compareQuerySeeded = false;
+            }
+            setPaneQueryValue('compare', '');
+            dispatchQueryPageEvent({
+                type: 'CLEAR_PANE',
+                pane: 'compare',
+                next: compareModeEnabled ? 'empty' : 'inactive'
+            });
+        }
+
         function shouldAutoExplainComparePaneOnOpen(): boolean {
-            if (!compareModeEnabled || !hasPrimaryExplanation()) {
+            if (!compareModeEnabled || !isPaneReadyCurrent(queryPageState.primaryPane)) {
                 return false;
             }
-            var selectedLevel = <string>$('#explain-level').val() || 'Optimized';
+            var selectedLevel = getNormalizedExplainLevel(<string>$('#explain-level').val() || 'Optimized');
             return selectedLevel === 'Unoptimized' || selectedLevel === 'Optimized';
         }
 
         function syncCompareModeVisibility() {
-            $('#query-compare-layout').toggleClass('query-compare-layout--active', compareModeEnabled);
-            $('#query-compare-controls').toggle(compareModeEnabled);
             $('#explain-trigger').show();
             if (!compareModeEnabled) {
                 hideCompareExplainSpinner();
             }
-            syncPrimaryExplanationControls();
-            syncCompareSidebarState();
-            updateCompareActionState();
+            renderQueryPageState();
             refreshVisibleQueryEditors();
+        }
+
+        function handleQueryPageInputChange(
+            eventType: 'PRIMARY_QUERY_CHANGED' | 'COMPARE_QUERY_CHANGED' | 'EXPLAIN_LEVEL_CHANGED' | 'EXPLAIN_FORMAT_CHANGED'
+        ) {
+            if (activeComparePendingRequests > 0) {
+                cancelCompareExplain();
+            }
+            if (activePrimaryRequestSignature) {
+                cancelExplain();
+            }
+            if (eventType === 'COMPARE_QUERY_CHANGED' && queryPageState) {
+                queryPageState.compareQuerySeeded = false;
+            }
+            dispatchQueryPageEvent({ type: eventType });
+        }
+
+        export function notifyQueryPageInputChange(eventType: string) {
+            if (eventType === 'PRIMARY_QUERY_CHANGED'
+                    || eventType === 'COMPARE_QUERY_CHANGED'
+                    || eventType === 'EXPLAIN_LEVEL_CHANGED'
+                    || eventType === 'EXPLAIN_FORMAT_CHANGED') {
+                handleQueryPageInputChange(<any>eventType);
+            }
         }
 
         function splitDiffLines(text: string): string[] {
@@ -1131,13 +2036,37 @@ module workbench {
             }
         }
 
-        function beginCompareExplainRequest(pendingRequests?: number): number {
+        function beginCompareExplainRequest(requestSignatures: RequestSignature[]): number {
             activeCompareRequestId += 1;
-            activeComparePendingRequests = pendingRequests || 2;
+            activeComparePendingRequests = requestSignatures.length;
+            activeCompareRequestSignatures = {};
+            for (var i = 0; i < requestSignatures.length; i++) {
+                activeCompareRequestSignatures[requestSignatures[i].pane] = requestSignatures[i];
+                dispatchQueryPageEvent({
+                    type: 'REQUEST_EXPLAIN',
+                    signature: requestSignatures[i]
+                });
+            }
             hideCompareExplainSpinner();
+            clearCompareExplainSpinnerDelayTimeout();
+            clearCompareExplainSpinnerHideTimeout();
             setCompareExplainButtonsDisabled(true);
             $('#query-diff-trigger').prop('disabled', true);
-            showCompareExplainSpinner();
+            compareExplainSpinnerDelayTimeoutId = window.setTimeout(function() {
+                if (activeComparePendingRequests <= 0 || !activeCompareRequestId) {
+                    return;
+                }
+                compareExplainSpinnerDelayTimeoutId = null;
+                for (var signatureKey in activeCompareRequestSignatures) {
+                    if (activeCompareRequestSignatures.hasOwnProperty(signatureKey)) {
+                        dispatchQueryPageEvent({
+                            type: 'SPINNER_DELAY_ELAPSED',
+                            signature: activeCompareRequestSignatures[signatureKey]
+                        });
+                    }
+                }
+                showCompareExplainSpinner();
+            }, 1000);
             return activeCompareRequestId;
         }
 
@@ -1151,30 +2080,61 @@ module workbench {
             }
             activeComparePendingRequests = 0;
             activeCompareExplainJqXHRs = [];
-            hideCompareExplainSpinner();
+            activeCompareRequestSignatures = {};
             setCompareExplainButtonsDisabled(false);
+            clearCompareExplainSpinnerDelayTimeout();
+            clearCompareExplainSpinnerHideTimeout();
+            if (!compareExplainSpinnerVisibleSince) {
+                hideCompareExplainSpinner();
+                updateCompareActionState();
+                return;
+            }
+            var remainingSpinnerTime = 1000 - (Date.now() - compareExplainSpinnerVisibleSince);
+            if (remainingSpinnerTime > 0) {
+                compareExplainSpinnerHideTimeoutId = window.setTimeout(function() {
+                    if (requestId !== activeCompareRequestId) {
+                        return;
+                    }
+                    compareExplainSpinnerHideTimeoutId = null;
+                    hideCompareExplainSpinner();
+                    updateCompareActionState();
+                }, remainingSpinnerTime);
+                return;
+            }
+            hideCompareExplainSpinner();
             updateCompareActionState();
         }
 
-        function enqueueCompareExplanationRequest(paneKey: string, level: string, selectedFormat: string, requestId: number) {
+        function enqueueCompareExplanationRequest(signature: RequestSignature) {
             var compareRequest = $.ajax({
                 url: 'query',
                 type: 'POST',
                 dataType: 'json',
-                data: serializeExplainFormData(getPaneRawQueryValue(paneKey), level, selectedFormat),
+                data: serializeExplainFormData(getPaneRawQueryValue(signature.pane), signature.level, signature.format),
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
-                    if (textStatus !== 'abort' && requestId === activeCompareRequestId) {
-                        showExplainError(paneKey, getExplainErrorMessage(jqXHR, textStatus, errorThrown));
+                    if (textStatus !== 'abort'
+                            && activeCompareRequestSignatures[signature.pane]
+                            && signaturesMatch(activeCompareRequestSignatures[signature.pane], signature)) {
+                        dispatchQueryPageEvent({
+                            type: 'EXPLAIN_ERROR',
+                            signature: signature,
+                            message: getExplainErrorMessage(jqXHR, textStatus, errorThrown)
+                        });
                     }
                 },
                 success: function(response: AjaxExplainResponse) {
-                    if (requestId !== activeCompareRequestId) {
+                    if (!activeCompareRequestSignatures[signature.pane]
+                            || !signaturesMatch(activeCompareRequestSignatures[signature.pane], signature)) {
                         return;
                     }
-                    applyExplainResponseToPane(paneKey, response, selectedFormat);
+                    applyExplainResponseToPane(signature.pane, signature, response, signature.format);
                 },
                 complete: function() {
-                    finishCompareExplainRequest(requestId);
+                    if (activeCompareRequestSignatures[signature.pane]
+                            && signaturesMatch(activeCompareRequestSignatures[signature.pane], signature)) {
+                        delete activeCompareRequestSignatures[signature.pane];
+                    }
+                    finishCompareExplainRequest(signature.groupId || signature.requestId);
                 }
             });
             activeCompareExplainJqXHRs.push(compareRequest);
@@ -1297,7 +2257,7 @@ module workbench {
                 runCompareExplain(buttonId || 'explain-trigger');
                 return;
             }
-            var effectiveLevel = level || <string>$('#explain-level').val() || 'Optimized';
+            var effectiveLevel = getNormalizedExplainLevel(level || <string>$('#explain-level').val() || 'Optimized');
             var explainButton = getExplainTriggerButtonElement(buttonId);
             if (explainButton && explainButton.disabled) {
                 return;
@@ -1305,14 +2265,34 @@ module workbench {
             $('#explain-level').val(effectiveLevel);
             captureExplainButtonViewportTop('primary', buttonId);
             savePaneQuery('primary');
-            var requestId = beginExplainRequest(explainButton ? explainButton.id : 'explain-trigger');
-            ajaxExplain(effectiveLevel, requestId);
+            activeExplainRequestId += 1;
+            var signature = createRequestSignature(
+                'primary',
+                explainButton && explainButton.id === 'rerun-explanation' ? 'primary-rerun' : 'primary-explain',
+                activeExplainRequestId
+            );
+            dispatchQueryPageEvent({ type: 'REQUEST_EXPLAIN', signature: signature });
+            beginExplainRequest(explainButton ? explainButton.id : 'explain-trigger', signature);
+            ajaxExplain(signature);
         }
 
         export function cancelExplain() {
+            var cancelledSignature = activePrimaryRequestSignature;
+            if (!cancelledSignature) {
+                return;
+            }
+            dispatchQueryPageEvent({
+                type: 'CANCEL_EXPLAIN',
+                pane: 'primary',
+                signature: cancelledSignature
+            });
+            activePrimaryRequestSignature = null;
             if (activeExplainJqXHR) {
                 activeExplainJqXHR.abort();
             }
+            activeExplainJqXHR = null;
+            finishExplainRequest(cancelledSignature.requestId);
+            activeExplainRequestId += 1;
         }
 
         export function runCompareExplain(buttonId?: string) {
@@ -1321,19 +2301,17 @@ module workbench {
             }
             savePaneQuery('primary');
             savePaneQuery('compare');
-            var effectiveLevel = <string>$('#explain-level').val() || 'Optimized';
-            var selectedFormat = (<string>$('#explain-format').val() || 'text').toLowerCase();
             var triggerButtonId = buttonId || 'explain-compare-trigger';
             captureExplainButtonViewportTop('primary', triggerButtonId);
             captureExplainButtonViewportTop('compare', triggerButtonId);
-            $('#' + primaryPaneState.errorId).text('');
-            $('#' + comparePaneState.errorId).text('');
-            clearRenderedExplanation('primary', selectedFormat);
-            clearRenderedExplanation('compare', selectedFormat);
-            var requestId = beginCompareExplainRequest();
-            var paneKeys = ['primary', 'compare'];
-            for (var i = 0; i < paneKeys.length; i++) {
-                enqueueCompareExplanationRequest(paneKeys[i], effectiveLevel, selectedFormat, requestId);
+            var nextGroupId = activeCompareRequestId + 1;
+            var requestSignatures = [
+                createRequestSignature('primary', 'compare-refresh-both', nextGroupId, nextGroupId),
+                createRequestSignature('compare', 'compare-refresh-both', nextGroupId, nextGroupId)
+            ];
+            beginCompareExplainRequest(requestSignatures);
+            for (var i = 0; i < requestSignatures.length; i++) {
+                enqueueCompareExplanationRequest(requestSignatures[i]);
             }
         }
 
@@ -1342,33 +2320,50 @@ module workbench {
                 return;
             }
             savePaneQuery('compare');
-            var selectedFormat = (<string>$('#explain-format').val() || 'text').toLowerCase();
-            $('#' + comparePaneState.errorId).text('');
-            clearRenderedExplanation('compare', selectedFormat);
-            var requestId = beginCompareExplainRequest(1);
-            enqueueCompareExplanationRequest('compare', level, selectedFormat, requestId);
+            $('#explain-level').val(getNormalizedExplainLevel(level));
+            var nextGroupId = activeCompareRequestId + 1;
+            var compareSignature = createRequestSignature('compare', 'compare-auto', nextGroupId, nextGroupId);
+            beginCompareExplainRequest([compareSignature]);
+            enqueueCompareExplanationRequest(compareSignature);
         }
 
         export function cancelCompareExplain() {
+            var cancelledSignatures: RequestSignature[] = [];
+            for (var paneKey in activeCompareRequestSignatures) {
+                if (activeCompareRequestSignatures.hasOwnProperty(paneKey) && activeCompareRequestSignatures[paneKey]) {
+                    cancelledSignatures.push(activeCompareRequestSignatures[paneKey]);
+                }
+            }
             activeCompareRequestId += 1;
             activeComparePendingRequests = 0;
             for (var i = 0; i < activeCompareExplainJqXHRs.length; i++) {
                 activeCompareExplainJqXHRs[i].abort();
             }
             activeCompareExplainJqXHRs = [];
+            activeCompareRequestSignatures = {};
+            clearCompareExplainSpinnerDelayTimeout();
+            clearCompareExplainSpinnerHideTimeout();
             hideCompareExplainSpinner();
             setCompareExplainButtonsDisabled(false);
+            for (var j = 0; j < cancelledSignatures.length; j++) {
+                dispatchQueryPageEvent({
+                    type: 'CANCEL_EXPLAIN',
+                    pane: cancelledSignatures[j].pane,
+                    signature: cancelledSignatures[j]
+                });
+            }
             updateCompareActionState();
         }
 
         export function downloadExplanation() {
-            if (!primaryPaneState.latestExplanation) {
+            if (queryPageState.primaryPane.kind !== 'ready' || queryPageState.primaryPane.freshness !== 'current') {
                 return;
             }
-            var format = primaryPaneState.latestExplanationFormat || <string>$('#explain-format').val() || 'text';
+            var primaryExplanation = queryPageState.primaryPane.explanation;
+            var format = primaryExplanation.responseFormat || <string>$('#explain-format').val() || 'text';
             var extension = getExplanationDownloadExtension(format);
             var mimeType = getExplanationDownloadMimeType(format);
-            var blob = new Blob([primaryPaneState.latestExplanation], { type: mimeType + ';charset=utf-8' });
+            var blob = new Blob([primaryExplanation.rawContent], { type: mimeType + ';charset=utf-8' });
             var link = document.createElement('a');
             var selectedLevel = <string>$('#explain-level').val() || 'query';
             link.download = 'query-explanation-' + selectedLevel.toLowerCase() + '.' + extension;
@@ -1381,23 +2376,28 @@ module workbench {
 
         export function initializeExplanationView() {
             var initialExplanation = $('#query-explanation').text();
-            var initialFormat = <string>$('#query-explanation').attr('data-format')
-                || <string>$('#explain-format').val() || 'text';
+            var initialFormat = getNormalizedExplainFormat(
+                <string>$('#query-explanation').attr('data-format') || <string>$('#explain-format').val() || 'text'
+            );
+            var hydratedExplanation: StableExplanation = null;
             if (initialExplanation) {
-                renderExplanation('primary', initialExplanation, initialFormat);
-            } else {
-                primaryPaneState.latestExplanation = '';
-                primaryPaneState.latestExplanationFormat = initialFormat.toLowerCase();
-                updateDownloadButtonState();
-                renderDotView('primary', '', primaryPaneState.latestExplanationFormat);
-                renderJsonView('primary', '', primaryPaneState.latestExplanationFormat);
-                $('#query-explanation-controls-row').hide();
+                hydratedExplanation = createStableExplanationFromResponse({
+                    requestId: 0,
+                    pane: 'primary',
+                    source: 'primary-explain',
+                    queryHash: buildQueryHash(getPaneRawQueryValue('primary')),
+                    level: getNormalizedExplainLevel(<string>$('#explain-level').val()),
+                    format: initialFormat
+                }, {
+                    content: initialExplanation,
+                    format: initialFormat,
+                    error: ''
+                }, initialFormat);
             }
-            comparePaneState.latestExplanation = '';
-            comparePaneState.latestExplanationFormat = 'text';
-            $('#query-explanation-row-compare').hide();
-            renderDotView('compare', '', comparePaneState.latestExplanationFormat);
-            renderJsonView('compare', '', comparePaneState.latestExplanationFormat);
+            dispatchQueryPageEvent({
+                type: 'HYDRATE',
+                primaryExplanation: hydratedExplanation
+            });
         }
 
         export function setQueryValue(queryString: string): void {
@@ -1436,14 +2436,10 @@ module workbench {
                 "maxWidth": "100%",
                 "boxSizing": "border-box"
             });
-            if (clearFeedbackOnChange) {
-                paneEditor.on('change', function() {
-                    workbench.query.clearFeedback();
-                    updateCompareActionState();
-                });
-            } else {
-                paneEditor.on('change', updateCompareActionState);
-            }
+            paneEditor.on('change', function() {
+                workbench.query.clearFeedback();
+                handleQueryPageInputChange(paneKey === 'compare' ? 'COMPARE_QUERY_CHANGED' : 'PRIMARY_QUERY_CHANGED');
+            });
             paneEditor.refresh();
             setPaneQueryEditor(paneKey, paneEditor);
             return paneEditor;
@@ -1479,19 +2475,19 @@ module workbench {
         }
 
         export function toggleCompareMode() {
-            compareModeEnabled = !compareModeEnabled;
-            if (compareModeEnabled) {
-                compareSidebarOpen = false;
-                if (!compareQuerySeeded && !getPaneQueryValue('compare')) {
+            if (!compareModeEnabled) {
+                if (!queryPageState.compareQuerySeeded && !getPaneQueryValue('compare')) {
                     setPaneQueryValue('compare', getPaneRawQueryValue('primary'));
-                    compareQuerySeeded = true;
+                    queryPageState.compareQuerySeeded = true;
                 }
+                dispatchQueryPageEvent({ type: 'TOGGLE_COMPARE' });
                 if ($("#queryLn").val() == "SPARQL") {
                     ensureCompareYasqe();
                 }
             } else {
-                compareSidebarOpen = false;
                 closeDiffModal();
+                resetComparePaneState();
+                dispatchQueryPageEvent({ type: 'TOGGLE_COMPARE' });
             }
             syncCompareModeVisibility();
             if (compareModeEnabled && shouldAutoExplainComparePaneOnOpen()) {
@@ -1504,8 +2500,7 @@ module workbench {
             if (!compareModeEnabled) {
                 return;
             }
-            compareSidebarOpen = !compareSidebarOpen;
-            syncCompareSidebarState();
+            dispatchQueryPageEvent({ type: 'TOGGLE_SIDEBAR' });
         }
 
         export function openDiffModal() {
@@ -1513,37 +2508,20 @@ module workbench {
                 return;
             }
             lastDiffTriggerElement = <HTMLElement>document.getElementById('query-diff-trigger');
-            renderDiffView('#query-diff-query', getPaneRawQueryValue('primary'), getPaneRawQueryValue('compare'));
-            if (!primaryPaneState.latestExplanation || !comparePaneState.latestExplanation) {
-                $('#query-diff-explanation').text(diffNotReadyLabel);
-            } else {
-                renderDiffView(
-                    '#query-diff-explanation',
-                    primaryPaneState.latestExplanation,
-                    comparePaneState.latestExplanation,
-                    diffNotReadyLabel
-                );
-            }
-            $('#query-diff-modal')
-                .addClass('query-diff-modal--open')
-                .attr('aria-hidden', 'false');
+            dispatchQueryPageEvent({ type: 'OPEN_DIFF' });
             (<HTMLElement>document.getElementById('query-diff-close')).focus();
         }
 
         export function closeDiffModal() {
-            $('#query-diff-modal')
-                .removeClass('query-diff-modal--open')
-                .attr('aria-hidden', 'true');
+            dispatchQueryPageEvent({ type: 'CLOSE_DIFF' });
             if (lastDiffTriggerElement) {
                 lastDiffTriggerElement.focus();
             }
         }
 
         export function initializeCompareUi() {
-            compareSidebarOpen = false;
-            $('#query-compare-controls').hide();
-            $('#query-diff-modal').attr('aria-hidden', 'true');
             diffNotReadyLabel = $.trim($('#query-diff-explanation').text());
+            resetComparePaneState();
             syncCompareModeVisibility();
         }
 
@@ -1647,13 +2625,24 @@ workbench.addLoad(function queryPageLoaded() {
     $('#query-name').bind('keydown cut paste', workbench.query.handleNameChange);
 
     // Add event handlers to the query text area to react to changes in it.
-    $('#query').bind('keydown cut paste', function() {
+    function deferInputChange(handler: () => void) {
+        return function() {
+            window.setTimeout(handler, 0);
+        };
+    }
+    $('#query').bind('keydown cut paste change', deferInputChange(function() {
         workbench.query.clearFeedback();
-        workbench.query.refreshCompareActionState();
+        workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
+    }));
+    $('#query-compare').bind('keydown cut paste change', deferInputChange(function() {
+        workbench.query.clearFeedback();
+        workbench.query.notifyQueryPageInputChange('COMPARE_QUERY_CHANGED');
+    }));
+    $('#explain-level').change(function() {
+        workbench.query.notifyQueryPageInputChange('EXPLAIN_LEVEL_CHANGED');
     });
-    $('#query-compare').bind('keydown cut paste', function() {
-        workbench.query.clearFeedback();
-        workbench.query.refreshCompareActionState();
+    $('#explain-format').change(function() {
+        workbench.query.notifyQueryPageInputChange('EXPLAIN_FORMAT_CHANGED');
     });
     $('#query-diff-modal').click(function(event) {
         if (event.target && (<HTMLElement>event.target).id === 'query-diff-modal') {

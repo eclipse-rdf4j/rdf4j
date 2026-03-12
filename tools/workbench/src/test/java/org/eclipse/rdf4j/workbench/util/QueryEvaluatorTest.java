@@ -62,8 +62,8 @@ class QueryEvaluatorTest {
 		verify(tupleQuery).explain(Explanation.Level.Optimized);
 		verify(tupleQuery, never()).evaluate();
 		verify(builder).transform(xslPath, "query.xsl");
-		verify(builder).start("explanation", "explanation-format");
-		verify(builder).result("optimized plan", "text");
+		verify(builder).start("explanation", "explanation-format", "explanation-level");
+		verify(builder).result("optimized plan", "text", "Optimized");
 		verify(builder).end();
 	}
 
@@ -90,7 +90,7 @@ class QueryEvaluatorTest {
 		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
 				queryText, req, cookies, null);
 
-		verify(builder).result("digraph Explanation {}", "dot");
+		verify(builder).result("digraph Explanation {}", "dot", "Optimized");
 		verify(explanation).toDot();
 	}
 
@@ -117,7 +117,7 @@ class QueryEvaluatorTest {
 		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
 				queryText, req, cookies, null);
 
-		verify(builder).result("{\"plan\":\"value\"}", "json");
+		verify(builder).result("{\"plan\":\"value\"}", "json", "Optimized");
 		verify(explanation).toJson();
 	}
 
