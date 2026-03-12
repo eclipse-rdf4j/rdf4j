@@ -870,12 +870,26 @@ var workbench;
                 .attr('aria-busy', 'false');
             $('#explain-compare-trigger-icon')
                 .removeClass('query-compare-action__icon--spinning');
+            hideCompareExplainCancelButton();
         }
         function showCompareExplainSpinner() {
             $('#explain-compare-trigger')
                 .attr('aria-busy', 'true');
             $('#explain-compare-trigger-icon')
                 .addClass('query-compare-action__icon--spinning');
+            showCompareExplainCancelButton();
+        }
+        function hideCompareExplainCancelButton() {
+            $('#explain-compare-cancel')
+                .removeClass('query-explain-cancel--visible')
+                .attr('aria-hidden', 'true')
+                .prop('disabled', true);
+        }
+        function showCompareExplainCancelButton() {
+            $('#explain-compare-cancel')
+                .addClass('query-explain-cancel--visible')
+                .attr('aria-hidden', 'false')
+                .prop('disabled', false);
         }
         function setCompareExplainButtonsDisabled(disabled) {
             $('#explain-compare-trigger').prop('disabled', disabled);

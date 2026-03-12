@@ -232,6 +232,10 @@
                     display: inline-block;
                 }
 
+                .query-compare-action.query-explain-cancel--visible {
+                    display: inline-flex;
+                }
+
                 @keyframes query-explain-spinner-spin {
                     from {
                         transform: rotate(0deg);
@@ -486,16 +490,24 @@
                     vector-effect: non-scaling-stroke;
                 }
 
-                .query-compare-action__icon--spinning {
-                    animation: query-explain-spinner-spin 0.8s linear infinite;
+                .query-compare-action__fill {
+                    fill: currentColor;
                 }
 
-                .query-compare-action__icon--refresh {
-                    width: 100%;
-                    height: 100%;
-                    font-size: 2rem;
-                    margin-top: -0.5rem;
-                    margin-left: 0.2rem;
+                .query-compare-action__icon--spinning {
+                    animation: query-explain-spinner-spin 0.8s linear infinite;
+                    transform-origin: center;
+                    transform-box: fill-box;
+                }
+
+                .query-compare-action__svg--refresh {
+                    width: 1.35rem;
+                    height: 1.35rem;
+                }
+
+                .query-compare-action__icon--cancel {
+                    font-size: 1.45rem;
+                    line-height: 1;
                 }
 
                 .query-compare-action__svg--diff {
@@ -803,10 +815,19 @@
                         <button id="explain-compare-trigger" class="query-compare-action" type="button"
                                 aria-label="{$refresh-explanations.label}" title="{$refresh-explanations.label}"
                                 onclick="workbench.query.runCompareExplain()">
-                            <span id="explain-compare-trigger-icon"
-                                  class="query-compare-action__icon query-compare-action__icon--refresh"
-                                  aria-hidden="true">&#10227;
-                            </span>
+                            <svg id="explain-compare-trigger-icon"
+                                 class="query-compare-action__svg query-compare-action__svg--refresh"
+                                 focusable="false" aria-hidden="true" viewBox="0 0 118.04 122.88">
+                                <path class="query-compare-action__fill"
+                                      d="M16.08,59.26A8,8,0,0,1,0,59.26a59,59,0,0,1,97.13-45V8a8,8,0,1,1,16.08,0V33.35a8,8,0,0,1-8,8L80.82,43.62a8,8,0,1,1-1.44-15.95l8-.73A43,43,0,0,0,16.08,59.26Zm22.77,19.6a8,8,0,0,1,1.44,16l-10.08.91A42.95,42.95,0,0,0,102,63.86a8,8,0,0,1,16.08,0A59,59,0,0,1,22.3,110v4.18a8,8,0,0,1-16.08,0V89.14h0a8,8,0,0,1,7.29-8l25.31-2.3Z"></path>
+                            </svg>
+                        </button>
+                        <button id="explain-compare-cancel" class="query-compare-action query-explain-cancel"
+                                type="button" aria-label="{$cancel.label}" title="{$cancel.label}"
+                                onclick="workbench.query.cancelCompareExplain()" aria-hidden="true"
+                                disabled="disabled">
+                            <span class="query-compare-action__icon query-compare-action__icon--cancel"
+                                  aria-hidden="true">&#x2715;</span>
                         </button>
                         <button id="query-diff-trigger" class="query-compare-action" type="button"
                                 aria-label="{$diff.label}" title="{$diff.label}"

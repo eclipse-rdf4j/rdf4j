@@ -356,6 +356,43 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void queryCompareExplainShouldExposeCancelButton() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains("id=\"explain-compare-cancel\"")
+				.contains("onclick=\"workbench.query.cancelCompareExplain()\"")
+				.contains("class=\"query-compare-action query-explain-cancel\"");
+
+		assertThat(queryScript)
+				.contains("function hideCompareExplainCancelButton()")
+				.contains("function showCompareExplainCancelButton()")
+				.contains("$('#explain-compare-cancel')")
+				.contains("showCompareExplainCancelButton();")
+				.contains("hideCompareExplainCancelButton();");
+	}
+
+	@Test
+	void queryCompareExplainRefreshActionShouldUseSvgIcon() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains("id=\"explain-compare-trigger-icon\"")
+				.contains("class=\"query-compare-action__svg query-compare-action__svg--refresh\"")
+				.contains("viewBox=\"0 0 118.04 122.88\"")
+				.contains("class=\"query-compare-action__fill\"")
+				.contains(
+						"d=\"M16.08,59.26A8,8,0,0,1,0,59.26a59,59,0,0,1,97.13-45V8a8,8,0,1,1,16.08,0V33.35a8,8,0,0,1-8,8L80.82,43.62a8,8,0,1,1-1.44-15.95l8-.73A43,43,0,0,0,16.08,59.26Zm22.77,19.6a8,8,0,0,1,1.44,16l-10.08.91A42.95,42.95,0,0,0,102,63.86a8,8,0,0,1,16.08,0A59,59,0,0,1,22.3,110v4.18a8,8,0,0,1-16.08,0V89.14h0a8,8,0,0,1,7.29-8l25.31-2.3Z\"")
+				.contains(".query-compare-action__svg--refresh")
+				.doesNotContain("<path class=\"query-compare-action__stroke\" d=\"M18 7V3L22 7\"></path>")
+				.doesNotContain("query-compare-action__icon--refresh")
+				.doesNotContain("&#10227;");
+	}
+
+	@Test
 	void queryTemplateShouldSpaceQueryEditorsFromExplanationBlocks() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
