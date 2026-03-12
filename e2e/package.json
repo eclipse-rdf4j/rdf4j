@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "scripts": {},
+  "scripts": {
+    "test:unit": "node --test tests-unit/*.test.js"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",

@@ -289,7 +289,7 @@
                     display: inline-block;
                 }
 
-                .query-compare-action.query-explain-cancel--visible {
+                .query-compare-action.query-explain-cancel.query-explain-cancel--visible {
                     display: inline-flex;
                 }
 
@@ -507,9 +507,12 @@
                     transition: transform 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
                 }
 
+                .query-compare-action.query-explain-cancel {
+                    display: none;
+                }
+
                 .query-compare-action:hover {
                     background: #eef5fb;
-                    transform: translateY(-1px);
                 }
 
                 .query-compare-action:focus {
@@ -552,6 +555,12 @@
                 }
 
                 .query-compare-action__icon--spinning {
+                    animation: query-explain-spinner-spin 0.8s linear infinite;
+                    transform-origin: center;
+                    transform-box: fill-box;
+                }
+
+                .query-compare-action--spinning .query-compare-action__svg--refresh {
                     animation: query-explain-spinner-spin 0.8s linear infinite;
                     transform-origin: center;
                     transform-box: fill-box;
@@ -1080,6 +1089,7 @@
         <script src="../../scripts/codemirror.4.5.0.min.js" type="text/javascript"></script>
         <script src="../../scripts/yasqe.min.js" type="text/javascript"></script>
         <script src="../../scripts/yasqeHelper.js" type="text/javascript"></script>
+        <script src="../../scripts/queryCancelPolicy.js" type="text/javascript"></script>
         <script src="../../scripts/viz/viz.js" type="text/javascript"></script>
         <script src="../../scripts/viz/full.render.js" type="text/javascript"></script>
         <script src="../../scripts/svg-pan-zoom.min.js" type="text/javascript"></script>

@@ -1,5 +1,6 @@
 /// <reference path="template.ts" />
 /// <reference path="jquery.d.ts" />
+/// <reference path="queryCancelPolicy.ts" />
 /// <reference path="yasqe.d.ts" />
 /// <reference path="yasqeHelper.ts" />
 // WARNING: Do not edit the *.js version of this file. Instead, always edit the
@@ -795,11 +796,12 @@ var workbench;
                 .prop('disabled', true);
         }
         function showExplainCancelButton(buttonId) {
-            var cancelButtonId = buttonId === 'rerun-explanation'
-                ? '#rerun-explanation-cancel'
-                : '#explain-trigger-cancel';
+            var controlIds = workbench.queryCancelPolicy.getExplainControlIds(buttonId);
             hideExplainCancelButtons();
-            $(cancelButtonId)
+            if (!controlIds.cancelId) {
+                return;
+            }
+            $('#' + controlIds.cancelId)
                 .addClass('query-explain-cancel--visible')
                 .attr('aria-hidden', 'false')
                 .prop('disabled', false);
@@ -808,15 +810,18 @@ var workbench;
             $('.query-explain-spinner')
                 .removeClass('query-explain-spinner--visible')
                 .attr('aria-hidden', 'true');
+            hideExplainCancelButtons();
             explainSpinnerVisibleSince = 0;
         }
         function showExplainSpinner(buttonId) {
-            var spinnerId = buttonId === 'rerun-explanation'
-                ? '#rerun-explanation-spinner'
-                : '#explain-trigger-spinner';
+            var controlIds = workbench.queryCancelPolicy.getExplainControlIds(buttonId);
             hideExplainSpinners();
+            if (!controlIds.spinnerId) {
+                explainSpinnerTargetId = '';
+                return;
+            }
             explainSpinnerTargetId = buttonId;
-            $(spinnerId)
+            $('#' + controlIds.spinnerId)
                 .addClass('query-explain-spinner--visible')
                 .attr('aria-hidden', 'false');
             showExplainCancelButton(buttonId);
@@ -833,6 +838,49 @@ var workbench;
                 window.clearTimeout(explainSpinnerHideTimeoutId);
                 explainSpinnerHideTimeoutId = null;
             }
+        }
+        function beginComparePrimaryExplainWaitState(buttonId) {
+            var targetButtonId = buttonId || '';
+            clearExplainSpinnerDelayTimeout();
+            clearExplainSpinnerHideTimeout();
+            hideExplainSpinners();
+            hideExplainCancelButtons();
+            explainSpinnerTargetId = '';
+            if (!workbench.queryCancelPolicy.getExplainControlIds(targetButtonId).buttonId) {
+                return;
+            }
+            explainSpinnerTargetId = targetButtonId;
+            explainSpinnerDelayTimeoutId = window.setTimeout(function () {
+                if (!workbench.queryCancelPolicy.shouldShowComparePrimaryWaitState(targetButtonId, activeComparePendingRequests, !!activeCompareRequestId, explainSpinnerTargetId)) {
+                    return;
+                }
+                explainSpinnerDelayTimeoutId = null;
+                showExplainSpinner(targetButtonId);
+            }, 1000);
+        }
+        function finishComparePrimaryExplainWaitState(requestId) {
+            clearExplainSpinnerDelayTimeout();
+            clearExplainSpinnerHideTimeout();
+            if (!explainSpinnerVisibleSince) {
+                hideExplainSpinners();
+                explainSpinnerTargetId = '';
+                return;
+            }
+            var spinnerTargetId = explainSpinnerTargetId;
+            var remainingSpinnerTime = 1000 - (Date.now() - explainSpinnerVisibleSince);
+            if (remainingSpinnerTime > 0) {
+                explainSpinnerHideTimeoutId = window.setTimeout(function () {
+                    if (requestId !== activeCompareRequestId || spinnerTargetId !== explainSpinnerTargetId) {
+                        return;
+                    }
+                    explainSpinnerHideTimeoutId = null;
+                    hideExplainSpinners();
+                    explainSpinnerTargetId = '';
+                }, remainingSpinnerTime);
+                return;
+            }
+            hideExplainSpinners();
+            explainSpinnerTargetId = '';
         }
         function beginExplainRequest(buttonId, signature) {
             activeExplainRequestId = signature.requestId;
@@ -861,7 +909,6 @@ var workbench;
             primaryExplanationPending = false;
             syncPrimaryExplanationControls();
             setExplainButtonsDisabled(false);
-            hideExplainCancelButtons();
             clearExplainSpinnerDelayTimeout();
             clearExplainSpinnerHideTimeout();
             if (!explainSpinnerVisibleSince) {
@@ -1566,17 +1613,15 @@ var workbench;
         }
         function hideCompareExplainSpinner() {
             $('#explain-compare-trigger')
-                .attr('aria-busy', 'false');
-            $('#explain-compare-trigger-icon')
-                .removeClass('query-compare-action__icon--spinning');
+                .attr('aria-busy', 'false')
+                .removeClass('query-compare-action--spinning');
             hideCompareExplainCancelButton();
             compareExplainSpinnerVisibleSince = 0;
         }
         function showCompareExplainSpinner() {
             $('#explain-compare-trigger')
-                .attr('aria-busy', 'true');
-            $('#explain-compare-trigger-icon')
-                .addClass('query-compare-action__icon--spinning');
+                .attr('aria-busy', 'true')
+                .addClass('query-compare-action--spinning');
             showCompareExplainCancelButton();
             compareExplainSpinnerVisibleSince = Date.now();
         }
@@ -1753,7 +1798,7 @@ var workbench;
                 target.append(rowElement);
             }
         }
-        function beginCompareExplainRequest(requestSignatures) {
+        function beginCompareExplainRequest(requestSignatures, triggerButtonId) {
             activeCompareRequestId += 1;
             activeComparePendingRequests = requestSignatures.length;
             activeCompareRequestSignatures = {};
@@ -1767,6 +1812,7 @@ var workbench;
             hideCompareExplainSpinner();
             clearCompareExplainSpinnerDelayTimeout();
             clearCompareExplainSpinnerHideTimeout();
+            beginComparePrimaryExplainWaitState(triggerButtonId);
             setCompareExplainButtonsDisabled(true);
             $('#query-diff-trigger').prop('disabled', true);
             compareExplainSpinnerDelayTimeoutId = window.setTimeout(function () {
@@ -1800,6 +1846,7 @@ var workbench;
             setCompareExplainButtonsDisabled(false);
             clearCompareExplainSpinnerDelayTimeout();
             clearCompareExplainSpinnerHideTimeout();
+            finishComparePrimaryExplainWaitState(requestId);
             if (!compareExplainSpinnerVisibleSince) {
                 hideCompareExplainSpinner();
                 updateCompareActionState();
@@ -1992,6 +2039,11 @@ var workbench;
         }
         query_1.runExplain = runExplain;
         function cancelExplain() {
+            var cancelAction = workbench.queryCancelPolicy.getExplainCancelAction(activeComparePendingRequests, !!activePrimaryRequestSignature);
+            if (cancelAction === 'compare') {
+                cancelCompareExplain();
+                return;
+            }
             var cancelledSignature = activePrimaryRequestSignature;
             if (!cancelledSignature) {
                 return;
@@ -2024,7 +2076,7 @@ var workbench;
                 createRequestSignature('primary', 'compare-refresh-both', nextGroupId, nextGroupId),
                 createRequestSignature('compare', 'compare-refresh-both', nextGroupId, nextGroupId)
             ];
-            beginCompareExplainRequest(requestSignatures);
+            beginCompareExplainRequest(requestSignatures, triggerButtonId);
             for (var i = 0; i < requestSignatures.length; i++) {
                 enqueueCompareExplanationRequest(requestSignatures[i]);
             }
@@ -2038,7 +2090,7 @@ var workbench;
             $('#explain-level').val(getNormalizedExplainLevel(level));
             var nextGroupId = activeCompareRequestId + 1;
             var compareSignature = createRequestSignature('compare', 'compare-auto', nextGroupId, nextGroupId);
-            beginCompareExplainRequest([compareSignature]);
+            beginCompareExplainRequest([compareSignature], 'explain-compare-trigger');
             enqueueCompareExplanationRequest(compareSignature);
         }
         function cancelCompareExplain() {
@@ -2057,6 +2109,10 @@ var workbench;
             activeCompareRequestSignatures = {};
             clearCompareExplainSpinnerDelayTimeout();
             clearCompareExplainSpinnerHideTimeout();
+            clearExplainSpinnerDelayTimeout();
+            clearExplainSpinnerHideTimeout();
+            hideExplainSpinners();
+            explainSpinnerTargetId = '';
             hideCompareExplainSpinner();
             setCompareExplainButtonsDisabled(false);
             for (var j = 0; j < cancelledSignatures.length; j++) {

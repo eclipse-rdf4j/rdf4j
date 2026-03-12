@@ -43,6 +43,16 @@ async function typeIntoCodeMirror(page, index, value) {
     }, index)).toBe(value);
 }
 
+async function delayExplainRequests(page, delayMs = 2200) {
+    await page.route('**/rdf4j-workbench/repositories/testrepo1/query', async route => {
+        const request = route.request();
+        if (request.method() === 'POST' && request.postData()?.includes('action=explain')) {
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+        await route.continue();
+    });
+}
+
 test('Create repo', async ({page}) => {
     await page.goto('http://localhost:8080/rdf4j-workbench/');
     page.on('dialog', dialog => {
@@ -169,8 +179,6 @@ test('Query compare mode diffs query and explanation', async ({page}) => {
     await expect(page.locator('#compare-explain-level')).toHaveCount(0);
     await expect(page.locator('#explain-compare-trigger')).toHaveAttribute('aria-label', /Refresh/i);
     await expect(page.locator('#query-diff-trigger')).toHaveAttribute('aria-label', /Diff/i);
-    await expect(page.locator('#explain-compare-spinner')).toBeHidden();
-    await expect(page.locator('#explain-compare-cancel')).toBeHidden();
     await expect.poll(async () => page.evaluate(() => {
         const compareCode = document.querySelectorAll('.CodeMirror-code')[1];
         return compareCode ? compareCode.textContent.replace(/\s+/g, ' ').trim() : '';
@@ -221,6 +229,122 @@ test('Query compare mode diffs query and explanation', async ({page}) => {
 
     await page.keyboard.press('Escape');
     await expect(page.locator('#query-diff-modal')).not.toHaveClass(/query-diff-modal--open/);
+});
+
+test('Explain wait state shows spinner and cancel for primary and compare actions', async ({page}) => {
+    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    page.on('dialog', dialog => {
+        console.log(dialog.message());
+        dialog.dismiss();
+    });
+
+    await createRepo(page);
+    await page.goto('http://localhost:8080/rdf4j-workbench/repositories/testrepo1/query');
+    await page.waitForSelector('.CodeMirror');
+    await delayExplainRequests(page);
+
+    await typeIntoCodeMirror(page, 0, 'SELECT * WHERE { ?s ?p ?o } LIMIT 10');
+
+    await page.locator('#explain-trigger').click();
+    await expect(page.locator('#explain-trigger-spinner')).toBeVisible();
+    await expect(page.locator('#explain-trigger-cancel')).toBeVisible();
+    await page.waitForFunction(() => {
+        const explanation = document.getElementById('query-explanation');
+        return explanation && explanation.textContent.trim().length > 0;
+    });
+
+    await page.locator('#rerun-explanation').click();
+    await expect(page.locator('#rerun-explanation-spinner')).toBeVisible();
+    await expect(page.locator('#rerun-explanation-cancel')).toBeVisible();
+    await page.waitForFunction(() => {
+        const explanation = document.getElementById('query-explanation');
+        return explanation && explanation.textContent.trim().length > 0;
+    });
+
+    await page.locator('#compare-toggle').click();
+    await page.waitForFunction(() => document.querySelectorAll('.CodeMirror').length === 2);
+    await typeIntoCodeMirror(page, 1, 'ASK { ?s ?p ?o }');
+    await page.locator('#explain-trigger').click();
+    await expect(page.locator('#explain-trigger-spinner')).toBeVisible();
+    await expect(page.locator('#explain-trigger-cancel')).toBeVisible();
+    await expect(page.locator('#explain-compare-cancel')).toBeVisible();
+    await expect(page.locator('#explain-compare-trigger')).toHaveClass(/query-compare-action--spinning/);
+    await page.waitForFunction(() => {
+        const explanation = document.getElementById('query-explanation-compare');
+        return explanation && explanation.textContent.trim().length > 0;
+    });
+
+    await page.locator('#rerun-explanation').click();
+    await expect(page.locator('#rerun-explanation-spinner')).toBeVisible();
+    await expect(page.locator('#rerun-explanation-cancel')).toBeVisible();
+    await expect(page.locator('#explain-compare-cancel')).toBeVisible();
+    await expect(page.locator('#explain-compare-trigger')).toHaveClass(/query-compare-action--spinning/);
+    await page.waitForFunction(() => {
+        const explanation = document.getElementById('query-explanation-compare');
+        return explanation && explanation.textContent.trim().length > 0;
+    });
+});
+
+test('Compare-mode left cancel buttons abort explanation refresh', async ({page}) => {
+    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    page.on('dialog', dialog => {
+        console.log(dialog.message());
+        dialog.dismiss();
+    });
+
+    await createRepo(page);
+    await page.goto('http://localhost:8080/rdf4j-workbench/repositories/testrepo1/query');
+    await page.waitForSelector('.CodeMirror');
+
+    await typeIntoCodeMirror(page, 0, 'SELECT * WHERE { ?s ?p ?o } LIMIT 10');
+    await page.locator('#explain-trigger').click();
+    await page.waitForFunction(() => {
+        const explanation = document.getElementById('query-explanation');
+        return explanation && explanation.textContent.trim().length > 0;
+    });
+
+    await page.locator('#compare-toggle').click();
+    await page.waitForFunction(() => document.querySelectorAll('.CodeMirror').length === 2);
+    await typeIntoCodeMirror(page, 1, 'ASK { ?s ?p ?o }');
+    const initialCompareExplanation = await page.evaluate(() => {
+        return document.getElementById('query-explanation-compare').textContent.trim();
+    });
+
+    await delayExplainRequests(page);
+    await page.locator('#explain-trigger').click();
+    await expect(page.locator('#explain-trigger-cancel')).toBeVisible();
+    await expect(page.locator('#explain-compare-cancel')).toBeVisible();
+    await page.locator('#explain-trigger-cancel').click();
+    await expect(page.locator('#explain-trigger-cancel')).toBeHidden();
+    await expect(page.locator('#explain-compare-cancel')).toBeHidden();
+    await page.waitForTimeout(2500);
+    await expect.poll(async () => page.evaluate(() => {
+        return document.getElementById('query-explanation-compare').textContent.trim();
+    })).toBe(initialCompareExplanation);
+
+    await page.locator('#explain-compare-trigger').click();
+    await page.waitForFunction(previousExplanation => {
+        const explanation = document.getElementById('query-explanation-compare');
+        const text = explanation && explanation.textContent.trim();
+        return text && text.length > 0
+            && text !== 'Loading explanation...'
+            && text !== previousExplanation;
+    }, initialCompareExplanation);
+
+    const refreshedCompareExplanation = await page.evaluate(() => {
+        return document.getElementById('query-explanation-compare').textContent.trim();
+    });
+
+    await page.locator('#rerun-explanation').click();
+    await expect(page.locator('#rerun-explanation-cancel')).toBeVisible();
+    await expect(page.locator('#explain-compare-cancel')).toBeVisible();
+    await page.locator('#rerun-explanation-cancel').click();
+    await expect(page.locator('#rerun-explanation-cancel')).toBeHidden();
+    await expect(page.locator('#explain-compare-cancel')).toBeHidden();
+    await page.waitForTimeout(2500);
+    await expect.poll(async () => page.evaluate(() => {
+        return document.getElementById('query-explanation-compare').textContent.trim();
+    })).toBe(refreshedCompareExplanation);
 });
 
 test('Query compare mode keeps primary query on reload without persisting secondary query', async ({page}) => {
