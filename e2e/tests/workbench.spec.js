@@ -53,6 +53,44 @@ async function delayExplainRequests(page, delayMs = 2200) {
     });
 }
 
+async function trackExplainTraffic(page, delayMs = 2200) {
+    const explainRequests = [];
+    const cancelRequests = [];
+
+    await page.route('**/rdf4j-workbench/repositories/testrepo1/query', async route => {
+        const request = route.request();
+        if (request.method() !== 'POST') {
+            await route.continue();
+            return;
+        }
+
+        const params = new URLSearchParams(request.postData() || '');
+        const action = params.get('action');
+
+        if (action === 'explain') {
+            explainRequests.push({
+                requestId: params.get('explain-request-id'),
+                query: params.get('query'),
+                level: params.get('explain'),
+                format: params.get('explain-format')
+            });
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        } else if (action === 'cancel-explain') {
+            cancelRequests.push({
+                requestId: params.get('explain-request-id')
+            });
+        }
+
+        await route.continue();
+    });
+
+    return { explainRequests, cancelRequests };
+}
+
+function getTrackedRequestIds(requests) {
+    return [...new Set(requests.map(request => request.requestId).filter(Boolean))].sort();
+}
+
 test('Create repo', async ({page}) => {
     await page.goto('http://localhost:8080/rdf4j-workbench/');
     page.on('dialog', dialog => {
@@ -285,6 +323,46 @@ test('Explain wait state shows spinner and cancel for primary and compare action
     });
 });
 
+test('Primary cancel posts matching request id and stale responses do not repaint', async ({page}) => {
+    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    page.on('dialog', dialog => {
+        console.log(dialog.message());
+        dialog.dismiss();
+    });
+
+    await createRepo(page);
+    await page.goto('http://localhost:8080/rdf4j-workbench/repositories/testrepo1/query');
+    await page.waitForSelector('.CodeMirror');
+
+    await typeIntoCodeMirror(page, 0, 'SELECT * WHERE { ?s ?p ?o } LIMIT 10');
+    await page.locator('#explain-trigger').click();
+    await page.waitForFunction(() => {
+        const explanation = document.getElementById('query-explanation');
+        return explanation && explanation.textContent.trim().length > 0;
+    });
+
+    const initialExplanation = await page.evaluate(() => {
+        return document.getElementById('query-explanation').textContent.trim();
+    });
+
+    const traffic = await trackExplainTraffic(page);
+    await page.locator('#explain-format').selectOption('json');
+    await page.locator('#explain-trigger').click();
+
+    await expect(page.locator('#explain-trigger-cancel')).toBeVisible();
+    await expect.poll(() => getTrackedRequestIds(traffic.explainRequests).length).toBe(1);
+
+    await page.locator('#explain-trigger-cancel').click();
+
+    await expect.poll(() => getTrackedRequestIds(traffic.cancelRequests).length).toBe(1);
+    await expect(getTrackedRequestIds(traffic.cancelRequests)).toEqual(getTrackedRequestIds(traffic.explainRequests));
+
+    await page.waitForTimeout(2500);
+    await expect.poll(async () => page.evaluate(() => {
+        return document.getElementById('query-explanation').textContent.trim();
+    })).toBe(initialExplanation);
+});
+
 test('Compare-mode left cancel buttons abort explanation refresh', async ({page}) => {
     await page.goto('http://localhost:8080/rdf4j-workbench/');
     page.on('dialog', dialog => {
@@ -310,11 +388,14 @@ test('Compare-mode left cancel buttons abort explanation refresh', async ({page}
         return document.getElementById('query-explanation-compare').textContent.trim();
     });
 
-    await delayExplainRequests(page);
+    const traffic = await trackExplainTraffic(page);
     await page.locator('#explain-trigger').click();
     await expect(page.locator('#explain-trigger-cancel')).toBeVisible();
     await expect(page.locator('#explain-compare-cancel')).toBeVisible();
+    await expect.poll(() => getTrackedRequestIds(traffic.explainRequests).length).toBe(2);
     await page.locator('#explain-trigger-cancel').click();
+    await expect.poll(() => getTrackedRequestIds(traffic.cancelRequests).length).toBe(2);
+    await expect(getTrackedRequestIds(traffic.cancelRequests)).toEqual(getTrackedRequestIds(traffic.explainRequests));
     await expect(page.locator('#explain-trigger-cancel')).toBeHidden();
     await expect(page.locator('#explain-compare-cancel')).toBeHidden();
     await page.waitForTimeout(2500);
@@ -345,6 +426,47 @@ test('Compare-mode left cancel buttons abort explanation refresh', async ({page}
     await expect.poll(async () => page.evaluate(() => {
         return document.getElementById('query-explanation-compare').textContent.trim();
     })).toBe(refreshedCompareExplanation);
+});
+
+test('Changing explain level implicitly cancels pending explain with matching request id', async ({page}) => {
+    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    page.on('dialog', dialog => {
+        console.log(dialog.message());
+        dialog.dismiss();
+    });
+
+    await createRepo(page);
+    await page.goto('http://localhost:8080/rdf4j-workbench/repositories/testrepo1/query');
+    await page.waitForSelector('.CodeMirror');
+
+    await typeIntoCodeMirror(page, 0, 'SELECT * WHERE { ?s ?p ?o } LIMIT 10');
+    await page.locator('#explain-trigger').click();
+    await page.waitForFunction(() => {
+        const explanation = document.getElementById('query-explanation');
+        return explanation && explanation.textContent.trim().length > 0;
+    });
+
+    const initialExplanation = await page.evaluate(() => {
+        return document.getElementById('query-explanation').textContent.trim();
+    });
+
+    const traffic = await trackExplainTraffic(page);
+    await page.locator('#explain-format').selectOption('json');
+    await page.locator('#explain-trigger').click();
+
+    await expect(page.locator('#explain-trigger-cancel')).toBeVisible();
+    await expect.poll(() => getTrackedRequestIds(traffic.explainRequests).length).toBe(1);
+
+    await page.locator('#explain-level').selectOption('Executed');
+
+    await expect.poll(() => getTrackedRequestIds(traffic.cancelRequests).length).toBe(1);
+    await expect(getTrackedRequestIds(traffic.cancelRequests)).toEqual(getTrackedRequestIds(traffic.explainRequests));
+    await expect(page.locator('#explain-trigger-cancel')).toBeHidden();
+
+    await page.waitForTimeout(2500);
+    await expect.poll(async () => page.evaluate(() => {
+        return document.getElementById('query-explanation').textContent.trim();
+    })).toBe(initialExplanation);
 });
 
 test('Query compare mode keeps primary query on reload without persisting secondary query', async ({page}) => {

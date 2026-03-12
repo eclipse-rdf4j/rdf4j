@@ -18,6 +18,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
+import javax.servlet.AsyncContext;
+import javax.servlet.AsyncEvent;
+import javax.servlet.AsyncListener;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
@@ -51,8 +54,29 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 
 	private final RepositoryResolver repositoryResolver;
 
+	private final AsyncExplainRegistry asyncExplainRegistry = new AsyncExplainRegistry();
+
 	public AbstractQueryRequestHandler(RepositoryResolver repositoryResolver) {
 		this.repositoryResolver = repositoryResolver;
+	}
+
+	@Override
+	public boolean handleCancelExplain(HttpServletRequest request, HttpServletResponse response) throws IOException {
+		if (!RequestMethod.POST.name().equals(request.getMethod())
+				|| request.getParameter(Protocol.CANCEL_EXPLAIN_PARAM_NAME) == null) {
+			return false;
+		}
+
+		String explainRequestId = request.getParameter(Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME);
+		if (explainRequestId == null || explainRequestId.trim().isEmpty()) {
+			response.sendError(HttpServletResponse.SC_BAD_REQUEST,
+					"Missing parameter: " + Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME);
+			return true;
+		}
+
+		asyncExplainRegistry.cancel(explainRequestId.trim());
+		response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+		return true;
 	}
 
 	@Override
@@ -79,6 +103,12 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			long offset = getOffset(request);
 			boolean distinct = isDistinct(request);
 			final Optional<Explanation.Level> explainLevel = getExplain(request);
+			final Optional<String> explainRequestId = getExplainRequestId(request);
+
+			if (!headersOnly && explainLevel.isPresent() && explainRequestId.isPresent()) {
+				return handleAsyncExplainRequest(request, response, repositoryCon, query, explainLevel.get(),
+						explainRequestId.get());
+			}
 
 			try {
 				if (!headersOnly) {
@@ -153,6 +183,112 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		throw new ServerHTTPException("unimplemented explainQuery feature");
 	}
 
+	private ModelAndView handleAsyncExplainRequest(HttpServletRequest request, HttpServletResponse response,
+			RepositoryConnection repositoryCon, Query query, Explanation.Level explainLevel, String explainRequestId)
+			throws IOException {
+		AsyncContext asyncContext = request.startAsync();
+		final AsyncExplainRegistry.Handle handle;
+		try {
+			handle = asyncExplainRegistry.register(explainRequestId, asyncContext);
+		} catch (IllegalStateException e) {
+			response.sendError(HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+			asyncContext.complete();
+			return null;
+		}
+
+		addAsyncExplainCleanupListener(explainRequestId, asyncContext, handle);
+		asyncExplainRegistry.execute(() -> executeAsyncExplain(handle, query, explainLevel, repositoryCon));
+		return null;
+	}
+
+	private void executeAsyncExplain(AsyncExplainRegistry.Handle handle, Query query, Explanation.Level explainLevel,
+			RepositoryConnection repositoryCon) {
+		try (RepositoryConnection connection = repositoryCon) {
+			handle.attach(Thread.currentThread(), connection);
+			if (!handle.isActive()) {
+				return;
+			}
+
+			Explanation explanation = explainQuery(query, explainLevel);
+			if (handle.isActive()) {
+				renderAsyncExplainResponse(handle, explanation);
+			}
+		} catch (QueryInterruptedException e) {
+			logger.info("Query interrupted", e);
+			sendAsyncError(handle, SC_SERVICE_UNAVAILABLE, "Query evaluation took too long");
+		} catch (QueryEvaluationException e) {
+			logger.info("Query evaluation error", e);
+			if (e.getCause() instanceof HTTPException) {
+				sendAsyncHttpError(handle, (HTTPException) e.getCause());
+			} else {
+				sendAsyncError(handle, HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
+						"Query evaluation error: " + e.getMessage());
+			}
+		} catch (HTTPException e) {
+			sendAsyncHttpError(handle, e);
+		} catch (Exception e) {
+			logger.info("Async explain error", e);
+			sendAsyncError(handle, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, e.getMessage());
+		} finally {
+			asyncExplainRegistry.complete(handle);
+		}
+	}
+
+	private void renderAsyncExplainResponse(AsyncExplainRegistry.Handle handle, Explanation explanation)
+			throws Exception {
+		HttpServletRequest request = (HttpServletRequest) handle.getAsyncContext().getRequest();
+		HttpServletResponse response = (HttpServletResponse) handle.getAsyncContext().getResponse();
+		ModelAndView modelAndView = getExplainQueryResponse(request, response, explanation);
+		if (modelAndView == null) {
+			return;
+		}
+		View view = modelAndView.getView();
+		if (view == null) {
+			return;
+		}
+		view.render(modelAndView.getModel(), request, response);
+	}
+
+	private void sendAsyncHttpError(AsyncExplainRegistry.Handle handle, HTTPException exception) {
+		sendAsyncError(handle, exception.getStatusCode(), exception.getMessage());
+	}
+
+	private void sendAsyncError(AsyncExplainRegistry.Handle handle, int statusCode, String message) {
+		if (!handle.isActive()) {
+			return;
+		}
+		try {
+			((HttpServletResponse) handle.getAsyncContext().getResponse()).sendError(statusCode, message);
+		} catch (IOException e) {
+			logger.debug("Unable to write async explain error for request {}", handle.getExplainRequestId(), e);
+		}
+	}
+
+	private void addAsyncExplainCleanupListener(String explainRequestId, AsyncContext asyncContext,
+			AsyncExplainRegistry.Handle handle) {
+		asyncContext.addListener(new AsyncListener() {
+			@Override
+			public void onComplete(AsyncEvent event) {
+				asyncExplainRegistry.forget(handle);
+			}
+
+			@Override
+			public void onTimeout(AsyncEvent event) {
+				asyncExplainRegistry.cancel(explainRequestId);
+			}
+
+			@Override
+			public void onError(AsyncEvent event) {
+				asyncExplainRegistry.cancel(explainRequestId);
+			}
+
+			@Override
+			public void onStartAsync(AsyncEvent event) {
+				// no-op
+			}
+		});
+	}
+
 	protected abstract ModelAndView getExplainQueryResponse(
 			final HttpServletRequest request, final HttpServletResponse response, final Explanation explanation);
 
@@ -207,6 +343,18 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		} catch (final IllegalArgumentException e) {
 			throw new ClientHTTPException("Invalid explanation level: " + explainString, e);
 		}
+	}
+
+	protected Optional<String> getExplainRequestId(HttpServletRequest request) {
+		String explainRequestId = request.getParameter(Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME);
+		if (explainRequestId == null) {
+			return Optional.empty();
+		}
+		String normalizedExplainRequestId = explainRequestId.trim();
+		if (normalizedExplainRequestId.isEmpty()) {
+			return Optional.empty();
+		}
+		return Optional.of(normalizedExplainRequestId);
 	}
 
 	<T> T getParam(HttpServletRequest request, String distinctParamName, T defaultValue, Class<T> clazz)

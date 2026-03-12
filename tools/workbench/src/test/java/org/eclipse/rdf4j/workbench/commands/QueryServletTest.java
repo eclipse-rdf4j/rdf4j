@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -32,7 +33,12 @@ import java.nio.file.Path;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import javax.servlet.AsyncContext;
 import javax.servlet.ServletException;
 import javax.servlet.ServletOutputStream;
 import javax.servlet.WriteListener;
@@ -42,11 +48,13 @@ import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.ResourceUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -325,6 +333,165 @@ public class QueryServletTest {
 
 		verify(storage).canRead(queryId, "current-user");
 		verify(repository, never()).getConnection();
+	}
+
+	@Test
+	public void testExplainWithoutRequestIdShouldUseLegacySyncFlow() throws Exception {
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		Explanation explanation = mock(Explanation.class);
+		servlet.setRepository(repository);
+
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("action")).thenReturn("explain");
+		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
+		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
+		when(request.isParameterPresent("explain-request-id")).thenReturn(false);
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.getParameter("explain")).thenReturn("Optimized");
+		when(request.getParameter("explain-format")).thenReturn("text");
+		when(request.isParameterPresent("infer")).thenReturn(false);
+		when(request.getInt("query-timeout")).thenReturn(0);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("plan");
+
+		StringWriter body = new StringWriter();
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+
+		servlet.service(request, response, "/transformations");
+
+		verify(request, never()).startAsync(any(), any());
+		assertThat(body.toString()).contains("\"content\":\"plan\"");
+	}
+
+	@Test
+	public void testAsyncExplainShouldRejectBlankRequestId() throws Exception {
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		Explanation explanation = mock(Explanation.class);
+		servlet.setRepository(repository);
+
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("action")).thenReturn("explain");
+		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
+		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
+		when(request.isParameterPresent("explain-request-id")).thenReturn(true);
+		when(request.getParameter("explain-request-id")).thenReturn("   ");
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.getParameter("explain")).thenReturn("Optimized");
+		when(request.getParameter("explain-format")).thenReturn("text");
+		when(request.isParameterPresent("infer")).thenReturn(false);
+		when(request.getInt("query-timeout")).thenReturn(0);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("plan");
+
+		StringWriter body = new StringWriter();
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+		AsyncContext asyncContext = mock(AsyncContext.class);
+		when(request.startAsync(request, response)).thenReturn(asyncContext);
+		when(asyncContext.getRequest()).thenReturn(request);
+		when(asyncContext.getResponse()).thenReturn(response);
+
+		servlet.service(request, response, "/transformations");
+
+		verify(request, never()).startAsync(any(), any());
+		assertThat(body.toString()).contains("\"error\":\"Missing parameter: explain-request-id\"");
+	}
+
+	@Test
+	public void testCancelExplainShouldRejectBlankRequestId() throws Exception {
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("action")).thenReturn("cancel-explain");
+		when(request.isParameterPresent("explain-request-id")).thenReturn(true);
+		when(request.getParameter("explain-request-id")).thenReturn("   ");
+
+		HttpServletResponse response = mock(HttpServletResponse.class);
+
+		servlet.doPost(request, response, "/transformations");
+
+		verify(response).sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: explain-request-id");
+	}
+
+	@Test
+	public void testCancelExplainShouldInterruptWorkerAndPropagateRemoteCancel() throws Exception {
+		HTTPRepository repository = mock(HTTPRepository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		AsyncExplainRegistry asyncExplainRegistry = new AsyncExplainRegistry(Executors.newSingleThreadExecutor());
+		servlet.setRepository(repository);
+		servlet.substituteAsyncExplainRegistry(asyncExplainRegistry);
+
+		CountDownLatch explainStarted = new CountDownLatch(1);
+		CountDownLatch explainInterrupted = new CountDownLatch(1);
+		AtomicBoolean interrupted = new AtomicBoolean(false);
+
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized)).thenAnswer(invocation -> {
+			explainStarted.countDown();
+			try {
+				new CountDownLatch(1).await();
+				return mock(Explanation.class);
+			} catch (InterruptedException e) {
+				interrupted.set(true);
+				explainInterrupted.countDown();
+				throw new QueryInterruptedException("interrupted", e);
+			}
+		});
+
+		WorkbenchRequest explainRequest = mock(WorkbenchRequest.class);
+		when(explainRequest.getParameter("action")).thenReturn("explain");
+		when(explainRequest.isParameterPresent(QueryServlet.REF)).thenReturn(false);
+		when(explainRequest.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(explainRequest.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
+		when(explainRequest.isParameterPresent("explain-request-id")).thenReturn(true);
+		when(explainRequest.getParameter("explain-request-id")).thenReturn("req-123");
+		when(explainRequest.getParameter("queryLn")).thenReturn("SPARQL");
+		when(explainRequest.getParameter("explain")).thenReturn("Optimized");
+		when(explainRequest.getParameter("explain-format")).thenReturn("text");
+		when(explainRequest.isParameterPresent("infer")).thenReturn(false);
+		when(explainRequest.getInt("query-timeout")).thenReturn(0);
+
+		HttpServletResponse explainResponse = mock(HttpServletResponse.class);
+		when(explainResponse.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
+		AsyncContext asyncContext = mock(AsyncContext.class);
+		when(explainRequest.startAsync(explainRequest, explainResponse)).thenReturn(asyncContext);
+		when(asyncContext.getRequest()).thenReturn(explainRequest);
+		when(asyncContext.getResponse()).thenReturn(explainResponse);
+
+		WorkbenchRequest cancelRequest = mock(WorkbenchRequest.class);
+		when(cancelRequest.getParameter("action")).thenReturn("cancel-explain");
+		when(cancelRequest.isParameterPresent("explain-request-id")).thenReturn(true);
+		when(cancelRequest.getParameter("explain-request-id")).thenReturn("req-123");
+
+		HttpServletResponse cancelResponse = mock(HttpServletResponse.class);
+
+		try {
+			servlet.service(explainRequest, explainResponse, "/transformations");
+
+			assertThat(explainStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+			servlet.doPost(cancelRequest, cancelResponse, "/transformations");
+
+			verify(cancelResponse).setStatus(HttpServletResponse.SC_NO_CONTENT);
+			assertThat(explainInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(interrupted).isTrue();
+			verify(connection, atLeastOnce()).close();
+			verify(repository).cancelQueryExplanation("req-123");
+			verify(asyncContext, atLeastOnce()).complete();
+		} finally {
+			asyncExplainRegistry.shutdown();
+		}
 	}
 
 	@Test

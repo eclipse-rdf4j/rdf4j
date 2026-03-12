@@ -42,18 +42,23 @@ import org.eclipse.rdf4j.sail.inferencer.fc.config.SchemaCachingRDFSInferencerCo
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
 import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
+import org.eclipse.rdf4j.workbench.proxy.CacheFilter;
+import org.eclipse.rdf4j.workbench.proxy.RedirectFilter;
 import org.eclipse.rdf4j.workbench.proxy.WorkbenchGateway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.web.server.LocalServerPort;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.DispatcherServlet;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -71,6 +76,22 @@ class Rdf4jServerWorkbenchApplicationTest {
 
 	@Autowired
 	private ServletRegistrationBean<WorkbenchGateway> rdf4jWorkbenchServlet;
+
+	@Autowired
+	@Qualifier("rdf4jServerServlet")
+	private ServletRegistrationBean<DispatcherServlet> rdf4jServerServlet;
+
+	@Autowired
+	@Qualifier("serverPrefixForwardFilter")
+	private FilterRegistrationBean<ServerPrefixForwardFilter> serverPrefixForwardFilter;
+
+	@Autowired
+	@Qualifier("workbenchRedirectFilter")
+	private FilterRegistrationBean<RedirectFilter> workbenchRedirectFilter;
+
+	@Autowired
+	@Qualifier("cacheFilter")
+	private FilterRegistrationBean<CacheFilter> cacheFilter;
 
 	private ListAppender<ILoggingEvent> loggingAppender;
 	private Logger loggingFilterLogger;
@@ -145,6 +166,15 @@ class Rdf4jServerWorkbenchApplicationTest {
 		assertThat(rdf4jWorkbenchServlet.getMultipartConfig())
 				.as("Workbench servlet must be configured for multipart requests")
 				.isNotNull();
+	}
+
+	@Test
+	void queryServletChainIsAsyncSupported() {
+		assertThat(rdf4jServerServlet.isAsyncSupported()).isTrue();
+		assertThat(rdf4jWorkbenchServlet.isAsyncSupported()).isTrue();
+		assertThat(serverPrefixForwardFilter.isAsyncSupported()).isTrue();
+		assertThat(workbenchRedirectFilter.isAsyncSupported()).isTrue();
+		assertThat(cacheFilter.isAsyncSupported()).isTrue();
 	}
 
 	@Test

@@ -95,6 +95,51 @@ public final class QueryEvaluator {
 		}
 	}
 
+	public static final class ExplainRequest {
+		private final QueryLanguage queryLanguage;
+		private final Boolean includeInferred;
+		private final int queryTimeoutSeconds;
+		private final Explanation.Level explainLevel;
+		private final ExplainFormat explainFormat;
+
+		private ExplainRequest(QueryLanguage queryLanguage, Boolean includeInferred, int queryTimeoutSeconds,
+				Explanation.Level explainLevel, ExplainFormat explainFormat) {
+			this.queryLanguage = queryLanguage;
+			this.includeInferred = includeInferred;
+			this.queryTimeoutSeconds = queryTimeoutSeconds;
+			this.explainLevel = explainLevel;
+			this.explainFormat = explainFormat;
+		}
+
+		public QueryLanguage getQueryLanguage() {
+			return queryLanguage;
+		}
+
+		public Boolean getIncludeInferred() {
+			return includeInferred;
+		}
+
+		public int getQueryTimeoutSeconds() {
+			return queryTimeoutSeconds;
+		}
+
+		public Explanation.Level getExplainLevel() {
+			return explainLevel;
+		}
+
+		public String getExplainLevelName() {
+			return explainLevel.name();
+		}
+
+		public String getExplainFormatValue() {
+			return explainFormat.getValue();
+		}
+
+		private ExplainFormat getExplainFormat() {
+			return explainFormat;
+		}
+	}
+
 	/**
 	 * Evaluates the query submitted with the given request.
 	 *
@@ -151,19 +196,48 @@ public final class QueryEvaluator {
 	public ExplainQueryResult explain(final RepositoryConnection con, final String queryText,
 			final WorkbenchRequest req)
 			throws BadRequestException, RDF4JException {
-		Query query = prepareQuery(con, queryText, req);
-		return explain(query, req);
+		return explain(con, queryText, extractExplainRequest(req));
+	}
+
+	public ExplainRequest extractExplainRequest(final WorkbenchRequest req) throws BadRequestException {
+		Boolean includeInferred = req.isParameterPresent("infer") ? Boolean.parseBoolean(req.getParameter("infer"))
+				: null;
+		return new ExplainRequest(
+				QueryLanguage.valueOf(req.getParameter("queryLn")),
+				includeInferred,
+				req.getInt("query-timeout"),
+				getExplainLevel(req.getParameter(EXPLAIN)),
+				getExplainFormat(req.getParameter(EXPLAIN_FORMAT)));
+	}
+
+	public ExplainQueryResult explain(final RepositoryConnection con, final String queryText,
+			final ExplainRequest explainRequest)
+			throws RDF4JException, BadRequestException {
+		Query query = prepareQuery(con, queryText, explainRequest);
+		return explain(query, explainRequest);
 	}
 
 	private Query prepareQuery(final RepositoryConnection con, final String queryText, final WorkbenchRequest req)
 			throws BadRequestException, RDF4JException {
-		final QueryLanguage queryLn = QueryLanguage.valueOf(req.getParameter("queryLn"));
-		Query query = QueryFactory.prepareQuery(con, queryLn, queryText);
-		if (req.isParameterPresent("infer")) {
-			final boolean infer = Boolean.parseBoolean(req.getParameter("infer"));
-			query.setIncludeInferred(infer);
+		Boolean includeInferred = req.isParameterPresent("infer") ? Boolean.parseBoolean(req.getParameter("infer"))
+				: null;
+		return prepareQuery(con, queryText, QueryLanguage.valueOf(req.getParameter("queryLn")), includeInferred,
+				req.getInt("query-timeout"));
+	}
+
+	private Query prepareQuery(final RepositoryConnection con, final String queryText, final ExplainRequest req)
+			throws RDF4JException {
+		return prepareQuery(con, queryText, req.getQueryLanguage(), req.getIncludeInferred(),
+				req.getQueryTimeoutSeconds());
+	}
+
+	private Query prepareQuery(final RepositoryConnection con, final String queryText,
+			final QueryLanguage queryLanguage,
+			final Boolean includeInferred, final int queryTimeoutSeconds) throws RDF4JException {
+		Query query = QueryFactory.prepareQuery(con, queryLanguage, queryText);
+		if (includeInferred != null) {
+			query.setIncludeInferred(includeInferred);
 		}
-		int queryTimeoutSeconds = req.getInt("query-timeout");
 		if (queryTimeoutSeconds > 0) {
 			query.setMaxExecutionTime(queryTimeoutSeconds);
 		}
@@ -178,15 +252,18 @@ public final class QueryEvaluator {
 	}
 
 	private ExplainQueryResult explain(final Query query, final WorkbenchRequest req) throws BadRequestException {
-		Explanation.Level level = getExplainLevel(req.getParameter(EXPLAIN));
-		ExplainFormat format = getExplainFormat(req.getParameter(EXPLAIN_FORMAT));
+		return explain(query, extractExplainRequest(req));
+	}
+
+	private ExplainQueryResult explain(final Query query, final ExplainRequest req) throws BadRequestException {
 		Explanation explanation;
 		try {
-			explanation = query.explain(level);
+			explanation = query.explain(req.getExplainLevel());
 		} catch (UnsupportedOperationException e) {
 			throw new BadRequestException("Explain is not supported for this query or repository.", e);
 		}
-		return new ExplainQueryResult(formatExplanation(explanation, format), format.getValue(), level.name());
+		return new ExplainQueryResult(formatExplanation(explanation, req.getExplainFormat()),
+				req.getExplainFormatValue(), req.getExplainLevelName());
 	}
 
 	private void explainQuery(final TupleResultBuilder builder, final String xslPath,

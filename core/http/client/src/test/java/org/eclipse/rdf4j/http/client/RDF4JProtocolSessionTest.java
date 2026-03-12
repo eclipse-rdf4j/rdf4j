@@ -311,6 +311,61 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 	}
 
 	@Test
+	public void testSendQueryExplanationIncludesExplainRequestId(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("explain", "Optimized")
+						.withQueryStringParameter("explain-request-id", "req-123"),
+				Times.once())
+				.respond(
+						response()
+								.withBody("{\"type\":\"Projection\"}")
+								.withContentType(MediaType.APPLICATION_JSON)
+				);
+
+		try (QueryExplanationRequestContext.Activation ignored = QueryExplanationRequestContext.activate("req-123")) {
+			Explanation explanation = getRDF4JSession().sendQueryExplanation(QueryLanguage.SPARQL,
+					"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0, Explanation.Level.Optimized);
+			assertThat(explanation.toGenericPlanNode().getType()).isEqualTo("Projection");
+		}
+
+		client.verify(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("explain", "Optimized")
+						.withQueryStringParameter("explain-request-id", "req-123")
+						.withHeader(testHeader, testValue)
+						.withHeader("Accept", "application/json")
+		);
+	}
+
+	@Test
+	public void testCancelQueryExplanation(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("cancel-explain", "true")
+						.withQueryStringParameter("explain-request-id", "req-456"),
+				Times.once())
+				.respond(response().withStatusCode(204));
+
+		getRDF4JSession().cancelQueryExplanation("req-456");
+
+		client.verify(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("cancel-explain", "true")
+						.withQueryStringParameter("explain-request-id", "req-456")
+						.withHeader(testHeader, testValue)
+		);
+	}
+
+	@Test
 	public void testSendQueryExplanationAcceptsSelfTimeActualField(MockServerClient client) throws Exception {
 		client.when(
 				request()

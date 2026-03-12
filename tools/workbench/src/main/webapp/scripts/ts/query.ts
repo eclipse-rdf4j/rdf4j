@@ -31,6 +31,7 @@ module workbench {
         var pendingDotRenderKeys: { [key: string]: string } = {};
         var activePrimaryRequestSignature: RequestSignature = null;
         var activeCompareRequestSignatures: { [key: string]: RequestSignature } = {};
+        var explainServerRequestIdCounter = 0;
         var explainSpinnerVisibleSince = 0;
         var explainSpinnerTargetId = '';
         var explainSpinnerDelayTimeoutId: number = null;
@@ -71,6 +72,7 @@ module workbench {
 
         interface RequestSignature {
             requestId: number;
+            serverRequestId: string;
             pane: PaneKey;
             source: 'primary-explain' | 'primary-rerun' | 'compare-auto' | 'compare-refresh-both' | 'compare-refresh-right';
             queryHash: string;
@@ -252,6 +254,7 @@ module workbench {
             var currentInputs = collectCurrentInputs();
             return {
                 requestId: requestId,
+                serverRequestId: generateExplainServerRequestId(),
                 pane: paneKey,
                 source: source,
                 queryHash: getPaneQueryHashFromInputs(paneKey, currentInputs),
@@ -259,6 +262,40 @@ module workbench {
                 format: currentInputs.explainFormat,
                 groupId: groupId
             };
+        }
+
+        function createFallbackExplainServerRequestId(): string {
+            explainServerRequestIdCounter += 1;
+
+            var timestampPart = ('000000000000' + Date.now().toString(16)).slice(-12);
+            var counterPart = ('00000000' + explainServerRequestIdCounter.toString(16)).slice(-8);
+            var randomPart = '';
+            var cryptoObject: any = (<any>window).crypto || (<any>window).msCrypto;
+
+            if (cryptoObject && cryptoObject.getRandomValues) {
+                var buffer = new Uint16Array(4);
+                cryptoObject.getRandomValues(buffer);
+                for (var i = 0; i < buffer.length; i++) {
+                    randomPart += ('0000' + buffer[i].toString(16)).slice(-4);
+                }
+            } else {
+                while (randomPart.length < 16) {
+                    randomPart += ('00000000' + Math.floor(Math.random() * 0xffffffff).toString(16)).slice(-8);
+                }
+                randomPart = randomPart.substring(0, 16);
+            }
+
+            return timestampPart + '-' + randomPart.substring(0, 4) + '-4'
+                + randomPart.substring(4, 7) + '-a' + randomPart.substring(7, 10)
+                + '-' + randomPart.substring(10, 16) + counterPart.substring(0, 6);
+        }
+
+        function generateExplainServerRequestId(): string {
+            var cryptoObject: any = (<any>window).crypto || (<any>window).msCrypto;
+            if (cryptoObject && cryptoObject.randomUUID) {
+                return cryptoObject.randomUUID();
+            }
+            return createFallbackExplainServerRequestId();
         }
 
         function createInitialQueryPageState(): QueryPageState {
@@ -418,6 +455,7 @@ module workbench {
             return !!left
                 && !!right
                 && left.requestId === right.requestId
+                && left.serverRequestId === right.serverRequestId
                 && left.pane === right.pane
                 && left.source === right.source
                 && left.queryHash === right.queryHash
@@ -1186,7 +1224,8 @@ module workbench {
             var remainingSpinnerTime = 1000 - (Date.now() - explainSpinnerVisibleSince);
             if (remainingSpinnerTime > 0) {
                 explainSpinnerHideTimeoutId = window.setTimeout(function() {
-                    if (requestId !== activeExplainRequestId || spinnerTargetId !== explainSpinnerTargetId) {
+                    if ((activePrimaryRequestSignature && requestId !== activeExplainRequestId)
+                            || spinnerTargetId !== explainSpinnerTargetId) {
                         return;
                     }
                     explainSpinnerHideTimeoutId = null;
@@ -1802,12 +1841,13 @@ module workbench {
             return 'Explain request failed.';
         }
 
-        function serializeExplainFormData(queryValue: string, level: string, format: string): string {
+        function serializeExplainFormData(queryValue: string, level: string, format: string, serverRequestId: string): string {
             var serializedForm: any[] = <any[]>$('form[action="query"]').serializeArray();
             var seenAction = false;
             var seenExplain = false;
             var seenFormat = false;
             var seenQuery = false;
+            var seenExplainRequestId = false;
             for (var i = 0; i < serializedForm.length; i++) {
                 if (serializedForm[i].name === 'action') {
                     serializedForm[i].value = 'explain';
@@ -1821,6 +1861,9 @@ module workbench {
                 } else if (serializedForm[i].name === 'query') {
                     serializedForm[i].value = queryValue;
                     seenQuery = true;
+                } else if (serializedForm[i].name === 'explain-request-id') {
+                    serializedForm[i].value = serverRequestId;
+                    seenExplainRequestId = true;
                 }
             }
             if (!seenAction) {
@@ -1835,7 +1878,28 @@ module workbench {
             if (!seenQuery) {
                 serializedForm.push({ name: 'query', value: queryValue });
             }
+            if (!seenExplainRequestId) {
+                serializedForm.push({ name: 'explain-request-id', value: serverRequestId });
+            }
             return $.param(serializedForm);
+        }
+
+        function serializeCancelExplainFormData(serverRequestId: string): string {
+            return $.param([
+                { name: 'action', value: 'cancel-explain' },
+                { name: 'explain-request-id', value: serverRequestId }
+            ]);
+        }
+
+        function postCancelExplain(serverRequestId: string) {
+            if (!serverRequestId) {
+                return;
+            }
+            $.ajax({
+                url: 'query',
+                type: 'POST',
+                data: serializeCancelExplainFormData(serverRequestId)
+            });
         }
 
         function createStableExplanationFromResponse(
@@ -1889,7 +1953,12 @@ module workbench {
                 url: 'query',
                 type: 'POST',
                 dataType: 'json',
-                data: serializeExplainFormData(getPaneRawQueryValue('primary'), signature.level, signature.format),
+                data: serializeExplainFormData(
+                    getPaneRawQueryValue('primary'),
+                    signature.level,
+                    signature.format,
+                    signature.serverRequestId
+                ),
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
                     if (textStatus !== 'abort' && activePrimaryRequestSignature && signaturesMatch(activePrimaryRequestSignature, signature)) {
                         dispatchQueryPageEvent({
@@ -2218,7 +2287,12 @@ module workbench {
                 url: 'query',
                 type: 'POST',
                 dataType: 'json',
-                data: serializeExplainFormData(getPaneRawQueryValue(signature.pane), signature.level, signature.format),
+                data: serializeExplainFormData(
+                    getPaneRawQueryValue(signature.pane),
+                    signature.level,
+                    signature.format,
+                    signature.serverRequestId
+                ),
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
                     if (textStatus !== 'abort'
                             && activeCompareRequestSignatures[signature.pane]
@@ -2402,6 +2476,7 @@ module workbench {
                 pane: 'primary',
                 signature: cancelledSignature
             });
+            postCancelExplain(cancelledSignature.serverRequestId);
             activePrimaryRequestSignature = null;
             if (activeExplainJqXHR) {
                 activeExplainJqXHR.abort();
@@ -2450,10 +2525,13 @@ module workbench {
                     cancelledSignatures.push(activeCompareRequestSignatures[paneKey]);
                 }
             }
+            for (var i = 0; i < cancelledSignatures.length; i++) {
+                postCancelExplain(cancelledSignatures[i].serverRequestId);
+            }
             activeCompareRequestId += 1;
             activeComparePendingRequests = 0;
-            for (var i = 0; i < activeCompareExplainJqXHRs.length; i++) {
-                activeCompareExplainJqXHRs[i].abort();
+            for (var j = 0; j < activeCompareExplainJqXHRs.length; j++) {
+                activeCompareExplainJqXHRs[j].abort();
             }
             activeCompareExplainJqXHRs = [];
             activeCompareRequestSignatures = {};
@@ -2465,11 +2543,11 @@ module workbench {
             explainSpinnerTargetId = '';
             hideCompareExplainSpinner();
             setCompareExplainButtonsDisabled(false);
-            for (var j = 0; j < cancelledSignatures.length; j++) {
+            for (var k = 0; k < cancelledSignatures.length; k++) {
                 dispatchQueryPageEvent({
                     type: 'CANCEL_EXPLAIN',
-                    pane: cancelledSignatures[j].pane,
-                    signature: cancelledSignatures[j]
+                    pane: cancelledSignatures[k].pane,
+                    signature: cancelledSignatures[k]
                 });
             }
             updateCompareActionState();
@@ -2503,6 +2581,7 @@ module workbench {
             if (initialExplanation) {
                 hydratedExplanation = createStableExplanationFromResponse({
                     requestId: 0,
+                    serverRequestId: 'initial-primary-explanation',
                     pane: 'primary',
                     source: 'primary-explain',
                     queryHash: buildQueryHash(getPaneRawQueryValue('primary')),

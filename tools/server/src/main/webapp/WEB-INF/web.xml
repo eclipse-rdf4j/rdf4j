@@ -14,6 +14,7 @@
 	<filter>
 		<filter-name>CompressingFilter</filter-name>
 		<filter-class>com.github.ziplet.filter.compression.CompressingFilter</filter-class>
+		<async-supported>true</async-supported>
 		<init-param>
 			<param-name>excludeContentTypes</param-name>
 			<param-value>application/x-binary-rdf,application/x-binary-rdf-results-table</param-value>
@@ -22,10 +23,12 @@
 	<filter>
 		<filter-name>PathFilter</filter-name>
 		<filter-class>org.eclipse.rdf4j.common.webapp.filters.PathFilter</filter-class>
+		<async-supported>true</async-supported>
 	</filter>
 	<filter>
 		<filter-name>UrlRewriteFilter</filter-name>
 		<filter-class>org.tuckey.web.filters.urlrewrite.UrlRewriteFilter</filter-class>
+		<async-supported>true</async-supported>
 		<init-param>
 			<param-name>logLevel</param-name>
 			<param-value>commons</param-value>
@@ -57,6 +60,7 @@
 	<servlet>
 		<servlet-name>rdf4j-http-server</servlet-name>
 		<servlet-class>org.springframework.web.servlet.DispatcherServlet</servlet-class>
+		<async-supported>true</async-supported>
 		<init-param>
 			<param-name>contextConfigLocation</param-name>
 			<param-value>/WEB-INF/common-webapp-servlet.xml, /WEB-INF/common-webapp-system-servlet.xml, /WEB-INF/rdf4j-http-server-servlet.xml</param-value>

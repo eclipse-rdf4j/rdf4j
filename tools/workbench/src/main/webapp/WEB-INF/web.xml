@@ -5,6 +5,7 @@
 	<filter>
 		<filter-name>redirect</filter-name>
 		<filter-class>org.eclipse.rdf4j.workbench.proxy.RedirectFilter</filter-class>
+		<async-supported>true</async-supported>
 		<init-param>
 			<param-name>/</param-name>
 			<param-value>/repositories</param-value>
@@ -13,10 +14,12 @@
 	<filter>
 		<filter-name>cache</filter-name>
 		<filter-class>org.eclipse.rdf4j.workbench.proxy.CookieCacheControlFilter</filter-class>
+		<async-supported>true</async-supported>
 	</filter>
 	<filter>
 		<filter-name>CacheFilter</filter-name>
 		<filter-class>org.eclipse.rdf4j.workbench.proxy.CacheFilter</filter-class>
+		<async-supported>true</async-supported>
 		<init-param>
 			<param-name>Cache-Control</param-name>
 			<param-value>600</param-value>
@@ -37,6 +40,7 @@
 	<servlet>
 		<servlet-name>workbench</servlet-name>
 		<servlet-class>org.eclipse.rdf4j.workbench.proxy.WorkbenchGateway</servlet-class>
+		<async-supported>true</async-supported>
 		<init-param>
 			<param-name>transformations</param-name>
 			<param-value>/transformations</param-value>

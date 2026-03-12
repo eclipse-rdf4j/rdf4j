@@ -14,10 +14,12 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.http.client.HttpClient;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
@@ -233,6 +235,24 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 		}
 
 		return isWritable;
+	}
+
+	public void cancelQueryExplanation(String explainRequestId) throws RepositoryException {
+		String normalizedExplainRequestId = Objects.requireNonNull(explainRequestId, "Explain request id was null")
+				.trim();
+		if (normalizedExplainRequestId.isEmpty()) {
+			throw new IllegalArgumentException("Explain request id was blank");
+		}
+		if (!isInitialized()) {
+			init();
+		}
+		try (RDF4JProtocolSession client = createHTTPClient()) {
+			client.cancelQueryExplanation(normalizedExplainRequestId);
+		} catch (RepositoryException e) {
+			throw e;
+		} catch (RDF4JException | IOException e) {
+			throw new RepositoryException(e);
+		}
 	}
 
 	/**

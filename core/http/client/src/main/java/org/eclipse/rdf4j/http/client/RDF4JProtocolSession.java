@@ -980,7 +980,26 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		HttpUriRequest queryMethod = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime,
 				bindings);
 		HttpUriRequest explainMethod = addQueryParameter(queryMethod, Protocol.EXPLAIN_PARAM_NAME, level.name());
+		String explainRequestId = QueryExplanationRequestContext.getExplainRequestId();
+		if (explainRequestId != null) {
+			explainMethod = addQueryParameter(explainMethod, Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME, explainRequestId);
+		}
 		return getQueryExplanation(explainMethod);
+	}
+
+	public void cancelQueryExplanation(String explainRequestId)
+			throws IOException, RepositoryException, UnauthorizedException {
+		String normalizedExplainRequestId = Objects.requireNonNull(explainRequestId, "Explain request id was null")
+				.trim();
+		if (normalizedExplainRequestId.isEmpty()) {
+			throw new IllegalArgumentException("Explain request id was blank");
+		}
+
+		HttpUriRequest cancelMethod = applyAdditionalHeaders(new HttpPost(getQueryURL()));
+		cancelMethod = addQueryParameter(cancelMethod, Protocol.CANCEL_EXPLAIN_PARAM_NAME, Boolean.TRUE.toString());
+		cancelMethod = addQueryParameter(cancelMethod, Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME,
+				normalizedExplainRequestId);
+		executeNoContent(cancelMethod);
 	}
 
 	@Override
