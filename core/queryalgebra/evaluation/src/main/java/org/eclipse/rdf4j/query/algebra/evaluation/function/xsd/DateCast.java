@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.function.xsd;
 
 import static javax.xml.datatype.DatatypeConstants.FIELD_UNDEFINED;
+
 import static org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil.isValidDate;
 
 import javax.xml.datatype.XMLGregorianCalendar;

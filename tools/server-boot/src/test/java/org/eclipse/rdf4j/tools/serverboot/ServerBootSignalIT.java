@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.tools.serverboot;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.queryrender;
 
 import static java.util.Spliterator.ORDERED;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
