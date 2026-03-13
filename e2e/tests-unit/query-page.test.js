@@ -94,8 +94,10 @@ test('query explain flow covers success, error, download, and legacy change noti
 
     harness.context.workbench.query.downloadExplanation();
 
+    harness.document.cookie = 'ref=hash';
     harness.context.workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
-    assert.match(harness.document.cookie, /ref=;/);
+    assert.equal(harness.context.workbench.getCookie('query'), 'SELECT * WHERE {?s ?p ?o}');
+    assert.equal(harness.context.workbench.getCookie('ref'), '');
 
     harness.context.workbench.query.runExplain('Optimized', 'rerun-explanation');
     const failingRequest = harness.pendingExplainRequests[1];
@@ -104,6 +106,36 @@ test('query explain flow covers success, error, download, and legacy change noti
         harness.getText('query-explanation-status'),
         'Timed out waiting for explanation response.'
     );
+});
+
+test('large primary query edits preserve existing hash-backed cookie state', () => {
+    const longQuery = 'x'.repeat(3000);
+    const harness = createQueryBrowserHarness({
+        query: longQuery
+    });
+
+    harness.runPageLoad();
+    harness.document.cookie = 'query=123456';
+    harness.document.cookie = 'ref=hash';
+
+    harness.context.workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
+
+    assert.equal(harness.context.workbench.getCookie('query'), '123456');
+    assert.equal(harness.context.workbench.getCookie('ref'), 'hash');
+});
+
+test('large primary query edits do not create raw query cookies from empty state', () => {
+    const longQuery = 'x'.repeat(3000);
+    const harness = createQueryBrowserHarness({
+        query: longQuery
+    });
+
+    harness.runPageLoad();
+
+    harness.context.workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
+
+    assert.equal(harness.context.workbench.getCookie('query'), '');
+    assert.equal(harness.context.workbench.getCookie('ref'), '');
 });
 
 test('query compare flow covers auto-explain, compare refresh, diff modal, and compare cancellation', () => {

@@ -649,8 +649,15 @@ var workbench;
         function clearWorkbenchCookie(name) {
             document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=' + getWorkbenchCookiePath();
         }
+        function shouldPersistPrimaryQueryCookieValue(queryValue) {
+            return !queryValue || queryValue.length <= 2048;
+        }
         function persistPrimaryQueryValue() {
-            setWorkbenchCookie('query', getPaneRawQueryValue('primary'));
+            var queryValue = getPaneRawQueryValue('primary');
+            if (!shouldPersistPrimaryQueryCookieValue(queryValue)) {
+                return;
+            }
+            setWorkbenchCookie('query', queryValue);
             clearWorkbenchCookie('ref');
         }
         function getPaneRawQueryValue(paneKey) {

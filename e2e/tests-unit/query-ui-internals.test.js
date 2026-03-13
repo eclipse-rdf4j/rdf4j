@@ -101,11 +101,13 @@ test('query ui helpers cover editors, cookies, buttons, spinners, and dot render
 
     assert.equal(testing.getWorkbenchCookiePath(), '/rdf4j-workbench');
     testing.setWorkbenchCookie('query', 'ASK {}');
-    assert.match(harness.document.cookie, /query=ASK/);
+    assert.equal(harness.context.workbench.getCookie('query'), 'ASK {}');
     testing.clearWorkbenchCookie('query');
-    assert.match(harness.document.cookie, /expires=Thu, 01 Jan 1970/);
+    assert.equal(harness.context.workbench.getCookie('query'), '');
+    testing.setWorkbenchCookie('ref', 'hash');
     testing.persistPrimaryQueryValue();
-    assert.match(harness.document.cookie, /ref=;/);
+    assert.equal(harness.context.workbench.getCookie('query'), 'ASK {}');
+    assert.equal(harness.context.workbench.getCookie('ref'), '');
 
     testing.clearExplainSelection();
     assert.equal(harness.getProperty('explain', 'value'), '');

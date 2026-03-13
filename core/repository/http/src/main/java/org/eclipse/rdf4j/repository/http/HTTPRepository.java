@@ -15,6 +15,8 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -89,6 +91,8 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	private volatile Boolean compatibleMode = null;
 
 	private volatile Map<String, String> additionalHttpHeaders = Collections.emptyMap();
+
+	private final ConcurrentMap<String, RDF4JProtocolSession> activeExplainSessions = new ConcurrentHashMap<>();
 
 	private HTTPRepository() {
 		super();
@@ -243,6 +247,17 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 		if (normalizedExplainRequestId.isEmpty()) {
 			throw new IllegalArgumentException("Explain request id was blank");
 		}
+		RDF4JProtocolSession activeSession = activeExplainSessions.get(normalizedExplainRequestId);
+		if (activeSession != null) {
+			try {
+				activeSession.cancelQueryExplanation(normalizedExplainRequestId);
+				return;
+			} catch (RepositoryException e) {
+				throw e;
+			} catch (RDF4JException | IOException e) {
+				throw new RepositoryException(e);
+			}
+		}
 		if (!isInitialized()) {
 			init();
 		}
@@ -253,6 +268,24 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 		} catch (RDF4JException | IOException e) {
 			throw new RepositoryException(e);
 		}
+	}
+
+	void registerActiveQueryExplanationSession(String explainRequestId, RDF4JProtocolSession session) {
+		String normalizedExplainRequestId = Objects.requireNonNull(explainRequestId, "Explain request id was null")
+				.trim();
+		if (normalizedExplainRequestId.isEmpty()) {
+			throw new IllegalArgumentException("Explain request id was blank");
+		}
+		activeExplainSessions.put(normalizedExplainRequestId, Objects.requireNonNull(session, "Session was null"));
+	}
+
+	void unregisterActiveQueryExplanationSession(String explainRequestId, RDF4JProtocolSession session) {
+		String normalizedExplainRequestId = Objects.requireNonNull(explainRequestId, "Explain request id was null")
+				.trim();
+		if (normalizedExplainRequestId.isEmpty()) {
+			throw new IllegalArgumentException("Explain request id was blank");
+		}
+		activeExplainSessions.remove(normalizedExplainRequestId, Objects.requireNonNull(session, "Session was null"));
 	}
 
 	/**

@@ -106,6 +106,45 @@ public class QueryServletTest {
 	}
 
 	@Test
+	public void testExecShouldCacheLongQueryReferenceInCookies() throws Exception {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try {
+			CookieHandler cookieHandler = mock(CookieHandler.class);
+			servlet.setCookieHandler(cookieHandler);
+			servlet.setRepository(repository);
+			servlet.writeQueryCookie = false;
+
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.getParameter("action")).thenReturn("exec");
+			when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+			when(request.getParameter(QueryServlet.QUERY)).thenReturn(longQuery);
+			when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
+			when(request.getParameter("queryLn")).thenReturn("SPARQL");
+			when(request.isParameterPresent("infer")).thenReturn(false);
+			when(request.isParameterPresent("Accept")).thenReturn(false);
+			when(request.isParameterPresent("explain")).thenReturn(false);
+			when(request.getInt("offset")).thenReturn(0);
+			when(request.getInt("limit_query")).thenReturn(0);
+			when(request.getInt("know_total")).thenReturn(0);
+			when(request.getInt("query-timeout")).thenReturn(0);
+			when(request.getHeader("Accept-Encoding")).thenReturn(null);
+			when(request.getContextPath()).thenReturn("");
+
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
+
+			servlet.service(request, response, "/transformations");
+
+			verify(cookieHandler).addCookie(request, response, QueryServlet.REF, "hash");
+			verify(cookieHandler).addCookie(request, response, QueryServlet.QUERY,
+					String.valueOf(longQuery.hashCode()));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	public void testGetQueryTextRefText() throws BadRequestException, RDF4JException {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);

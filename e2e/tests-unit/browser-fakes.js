@@ -353,7 +353,7 @@ class FakeDocument {
         this.elements = [];
         this.elementsById = new Map();
         this.activeElement = null;
-        this.cookie = '';
+        this.cookies = new Map();
         this.all = false;
         this.eventHandlers = new Map();
         this.location = createLocation(initialHref);
@@ -366,6 +366,74 @@ class FakeDocument {
                 }) || null;
             }
         };
+        Object.defineProperty(this, 'cookie', {
+            configurable: true,
+            enumerable: true,
+            get: () => Array.from(this.cookies.entries())
+                .map(([name, value]) => `${name}=${value}`)
+                .join('; '),
+            set: (value) => this.setCookieString(value)
+        });
+    }
+
+    setCookieString(rawValue) {
+        const segments = String(rawValue || '')
+            .split(';')
+            .map((segment) => segment.trim())
+            .filter(Boolean);
+        if (!segments.length) {
+            return;
+        }
+
+        const attributeNames = new Set(['domain', 'expires', 'httponly', 'max-age', 'path', 'samesite', 'secure']);
+        const assignments = [];
+        let currentAssignment = null;
+
+        for (const segment of segments) {
+            const separatorIndex = segment.indexOf('=');
+            const name = (separatorIndex >= 0 ? segment.substring(0, separatorIndex) : segment).trim().toLowerCase();
+            const isAttribute = currentAssignment && attributeNames.has(name);
+            if (isAttribute) {
+                currentAssignment.attributes.push(segment);
+                continue;
+            }
+            if (currentAssignment) {
+                assignments.push(currentAssignment);
+            }
+            currentAssignment = {
+                cookie: segment,
+                attributes: []
+            };
+        }
+
+        if (currentAssignment) {
+            assignments.push(currentAssignment);
+        }
+
+        assignments.forEach((assignment) => this.applyCookieAssignment(assignment.cookie, assignment.attributes));
+    }
+
+    applyCookieAssignment(cookiePair, attributes) {
+        const separatorIndex = cookiePair.indexOf('=');
+        if (separatorIndex < 0) {
+            return;
+        }
+
+        const name = cookiePair.substring(0, separatorIndex).trim();
+        const value = cookiePair.substring(separatorIndex + 1);
+        const expiresAttribute = attributes.find((attribute) => attribute.toLowerCase().startsWith('expires='));
+        const maxAgeAttribute = attributes.find((attribute) => attribute.toLowerCase().startsWith('max-age='));
+        const expiresAt = expiresAttribute ? Date.parse(expiresAttribute.substring('expires='.length)) : NaN;
+        const maxAge = maxAgeAttribute ? Number(maxAgeAttribute.substring('max-age='.length)) : NaN;
+        const isExpired = (!Number.isNaN(expiresAt) && expiresAt <= Date.now())
+            || (!Number.isNaN(maxAge) && maxAge <= 0);
+
+        if (isExpired) {
+            this.cookies.delete(name);
+            return;
+        }
+
+        this.cookies.set(name, value);
     }
 
     track(node) {
