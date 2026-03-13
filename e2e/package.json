@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test:unit": "node --test tests-unit/*.test.js"
+    "test:unit": "node --test tests-unit/*.test.js",
+    "test:unit:coverage": "node tests-unit/run-workbench-unit-coverage.js"
   },
   "keywords": [],
   "author": "",

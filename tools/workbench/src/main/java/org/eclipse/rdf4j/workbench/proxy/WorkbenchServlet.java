@@ -185,17 +185,6 @@ public class WorkbenchServlet extends AbstractServlet {
 		builder.end();
 	}
 
-	private RepositoryManager createRepositoryManager(final String param) throws IOException, RepositoryException {
-		RepositoryManager manager;
-		if (param.startsWith("file:")) {
-			manager = new LocalRepositoryManager(asLocalFile(new URL(param)));
-		} else {
-			manager = new RemoteRepositoryManager(param);
-		}
-		manager.init();
-		return manager;
-	}
-
 	private File asLocalFile(final URL rdf) {
 		return new File(URLDecoder.decode(rdf.getFile(), StandardCharsets.UTF_8));
 	}
@@ -221,14 +210,14 @@ public class WorkbenchServlet extends AbstractServlet {
 					throw new BadRequestException("No such repository: " + repoID);
 				}
 			}
-			final ProxyRepositoryServlet servlet = new ProxyRepositoryServlet();
-			servlet.setRepositoryManager(manager);
+			final ProxyRepositoryServlet createdServlet = createProxyRepositoryServlet();
+			createdServlet.setRepositoryManager(manager);
 			if (repository != null) {
-				servlet.setRepositoryInfo(manager.getRepositoryInfo(repoID));
-				servlet.setRepository(repository);
+				createdServlet.setRepositoryInfo(manager.getRepositoryInfo(repoID));
+				createdServlet.setRepository(repository);
 			}
-			servlet.init(new BasicServletConfig(repoID, config));
-			repositories.putIfAbsent(repoID, servlet);
+			createdServlet.init(new BasicServletConfig(repoID, config));
+			repositories.putIfAbsent(repoID, createdServlet);
 			repositories.get(repoID).service(http, resp);
 		}
 	}
@@ -250,7 +239,7 @@ public class WorkbenchServlet extends AbstractServlet {
 		if (manager instanceof RemoteRepositoryManager) {
 			final RemoteRepositoryManager rrm = (RemoteRepositoryManager) manager;
 			LOGGER.info("RemoteRepositoryManager URL: {}", rrm.getLocation());
-			final CookieHandler cookies = new CookieHandler(config);
+			final CookieHandler cookies = createCookieHandler();
 			final String user_password = cookies.getCookieNullIfEmpty(req, resp, WorkbenchGateway.SERVER_USER_PASSWORD);
 			if (user_password == null) {
 				rrm.setUsernameAndPassword(null, null);
@@ -270,5 +259,24 @@ public class WorkbenchServlet extends AbstractServlet {
 			// client.
 			rrm.init();
 		}
+	}
+
+	protected RepositoryManager createRepositoryManager(final String param) throws IOException, RepositoryException {
+		RepositoryManager manager;
+		if (param.startsWith("file:")) {
+			manager = new LocalRepositoryManager(asLocalFile(new URL(param)));
+		} else {
+			manager = new RemoteRepositoryManager(param);
+		}
+		manager.init();
+		return manager;
+	}
+
+	protected ProxyRepositoryServlet createProxyRepositoryServlet() {
+		return new ProxyRepositoryServlet();
+	}
+
+	protected CookieHandler createCookieHandler() {
+		return new CookieHandler(config);
 	}
 }

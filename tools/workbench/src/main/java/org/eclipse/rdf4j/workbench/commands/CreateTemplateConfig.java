@@ -315,19 +315,25 @@ final class CreateTemplateConfig {
 
 	private static List<String> discoverBuiltinTemplateTypes() throws IOException {
 		Class<RepositoryConfig> repositoryConfigClass = RepositoryConfig.class;
+		String packagePath = repositoryConfigClass.getPackage().getName().replace('.', '/');
+		String classLocation = repositoryConfigClass.getResource(repositoryConfigClass.getSimpleName() + ".class")
+				.toString();
+		return discoverBuiltinTemplateTypes(classLocation, packagePath);
+	}
+
+	private static List<String> discoverBuiltinTemplateTypes(String classLocation, String packagePath)
+			throws IOException {
 		try {
-			URI classLocation = repositoryConfigClass.getResource(repositoryConfigClass.getSimpleName() + ".class")
-					.toURI();
-			String packagePath = repositoryConfigClass.getPackage().getName().replace('.', '/');
-			if ("jar".equals(classLocation.getScheme())) {
-				try (FileSystem fileSystem = FileSystems.newFileSystem(classLocation, Collections.emptyMap())) {
+			URI classUri = new URI(classLocation);
+			if ("jar".equals(classUri.getScheme())) {
+				try (FileSystem fileSystem = FileSystems.newFileSystem(classUri, Collections.emptyMap())) {
 					return listTemplates(fileSystem.getPath(packagePath));
 				}
 			}
-			if ("file".equals(classLocation.getScheme())) {
-				return listTemplates(Path.of(classLocation).getParent());
+			if ("file".equals(classUri.getScheme())) {
+				return listTemplates(Path.of(classUri).getParent());
 			}
-			throw new IOException("Unsupported RepositoryConfig resource URI: " + classLocation);
+			throw new IOException("Unsupported RepositoryConfig resource URI: " + classUri);
 		} catch (URISyntaxException e) {
 			throw new IOException("Could not resolve RepositoryConfig resources", e);
 		}
@@ -447,9 +453,7 @@ final class CreateTemplateConfig {
 
 		private static FieldName parse(String rawName) {
 			Matcher matcher = INLINE_HINT_PATTERN.matcher(rawName.trim());
-			if (!matcher.matches()) {
-				return new FieldName(rawName.trim(), InlineHints.empty());
-			}
+			matcher.matches();
 			String displayName = matcher.group(1).trim();
 			String hints = matcher.group(2);
 			return new FieldName(displayName.isEmpty() ? rawName.trim() : displayName, InlineHints.parse(hints));

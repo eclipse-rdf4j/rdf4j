@@ -369,7 +369,7 @@ public final class QueryEvaluator {
 			// Only in this case do we have paged results, but were given the full
 			// query. Just-in-case parameter massaging below to avoid array index
 			// issues.
-			int fromIndex = Math.min(0, offset);
+			int fromIndex = Math.max(0, offset);
 			bindings = bindings.subList(fromIndex, Math.max(fromIndex, Math.min(offset + limit, bindings.size())));
 		}
 		for (BindingSet set : bindings) {
@@ -439,7 +439,7 @@ public final class QueryEvaluator {
 			// Only in this case do we have paged results, but were given the full
 			// query. Just-in-case parameter massaging below to avoid array index
 			// issues.
-			int fromIndex = Math.min(0, offset);
+			int fromIndex = Math.max(0, offset);
 			statements = statements.subList(fromIndex,
 					Math.max(fromIndex, Math.min(offset + limit, statements.size())));
 		}

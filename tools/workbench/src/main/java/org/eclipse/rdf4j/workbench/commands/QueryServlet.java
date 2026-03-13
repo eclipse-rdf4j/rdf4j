@@ -281,19 +281,28 @@ public class QueryServlet extends TransformationServlet {
 
 	private void executeAsyncExplain(AsyncExplainRegistry.Handle handle, String queryText,
 			QueryEvaluator.ExplainRequest explainRequest) {
-		try (QueryExplanationRequestContext.Activation ignored = QueryExplanationRequestContext
+		QueryExplanationRequestContext.Activation ignored = QueryExplanationRequestContext
 				.activate(handle.getExplainRequestId());
-				RepositoryConnection con = repository.getConnection()) {
-			con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
-			handle.attach(Thread.currentThread(), con);
-			if (!handle.isActive()) {
-				return;
-			}
+		try {
+			RepositoryConnection con = repository.getConnection();
+			Throwable connectionFailure = null;
+			try {
+				con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
+				handle.attach(Thread.currentThread(), con);
+				if (!handle.isActive()) {
+					return;
+				}
 
-			QueryEvaluator.ExplainQueryResult explainQueryResult = EVAL.explain(con, queryText, explainRequest);
-			if (handle.isActive()) {
-				writeExplainSuccessResponse((HttpServletResponse) handle.getAsyncContext().getResponse(),
-						explainQueryResult);
+				QueryEvaluator.ExplainQueryResult explainQueryResult = EVAL.explain(con, queryText, explainRequest);
+				if (handle.isActive()) {
+					writeExplainSuccessResponse((HttpServletResponse) handle.getAsyncContext().getResponse(),
+							explainQueryResult);
+				}
+			} catch (Throwable t) {
+				connectionFailure = t;
+				throw t;
+			} finally {
+				closeConnection(con, connectionFailure);
 			}
 		} catch (BadRequestException e) {
 			writeAsyncExplainError(handle, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
@@ -307,7 +316,24 @@ public class QueryServlet extends TransformationServlet {
 		} catch (IOException e) {
 			LOGGER.debug("Explain response write failed for request {}", handle.getExplainRequestId(), e);
 		} finally {
-			asyncExplainRegistry.complete(handle);
+			try {
+				ignored.close();
+			} finally {
+				asyncExplainRegistry.complete(handle);
+			}
+		}
+	}
+
+	private void closeConnection(RepositoryConnection con, Throwable failure) {
+		if (failure == null) {
+			con.close();
+			return;
+		}
+
+		try {
+			con.close();
+		} catch (Throwable closeFailure) {
+			failure.addSuppressed(closeFailure);
 		}
 	}
 

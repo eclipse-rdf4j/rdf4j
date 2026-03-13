@@ -2369,6 +2369,225 @@ var workbench;
             updateCompareActionState();
         }
         query_1.refreshCompareActionState = refreshCompareActionState;
+        query_1.testing = {
+            applyDotPanZoom: applyDotPanZoom,
+            ajaxSave: ajaxSave,
+            applyExplainResponseToPane: applyExplainResponseToPane,
+            buildDiffRows: buildDiffRows,
+            buildQueryHash: buildQueryHash,
+            beginComparePrimaryExplainWaitState: beginComparePrimaryExplainWaitState,
+            beginExplainRequest: beginExplainRequest,
+            cancelCompareExplain: cancelCompareExplain,
+            captureExplainButtonViewportTop: captureExplainButtonViewportTop,
+            clearExplainButtonViewportRestoreState: clearExplainButtonViewportRestoreState,
+            clearExplainSelection: clearExplainSelection,
+            clearExplainSpinnerDelayTimeout: clearExplainSpinnerDelayTimeout,
+            clearExplainSpinnerHideTimeout: clearExplainSpinnerHideTimeout,
+            clearExplanationDimensionLock: clearExplanationDimensionLock,
+            clearRenderedExplanation: clearRenderedExplanation,
+            clearWorkbenchCookie: clearWorkbenchCookie,
+            clearPanePersistedQuery: clearPanePersistedQuery,
+            cloneStableExplanation: cloneStableExplanation,
+            collectCurrentInputs: collectCurrentInputs,
+            computePlanEntryPercentages: computePlanEntryPercentages,
+            createDiffModalState: createDiffModalState,
+            createEmptyQueryPageInputs: createEmptyQueryPageInputs,
+            createErrorPaneState: createErrorPaneState,
+            createFallbackExplainServerRequestId: createFallbackExplainServerRequestId,
+            createInitialQueryPageState: createInitialQueryPageState,
+            createJsonScalarElement: createJsonScalarElement,
+            createJsonTreeNode: createJsonTreeNode,
+            createReadyPaneState: createReadyPaneState,
+            createRequestSignature: createRequestSignature,
+            createStableExplanationFromResponse: createStableExplanationFromResponse,
+            dispatchQueryPageEvent: dispatchQueryPageEvent,
+            destroyDotPanZoom: destroyDotPanZoom,
+            formatJsonArrayEntryKey: formatJsonArrayEntryKey,
+            formatJsonKey: formatJsonKey,
+            formatPercentage: formatPercentage,
+            finishCompareExplainRequest: finishCompareExplainRequest,
+            finishComparePrimaryExplainWaitState: finishComparePrimaryExplainWaitState,
+            finishExplainRequest: finishExplainRequest,
+            generateExplainServerRequestId: generateExplainServerRequestId,
+            getEventSignatureForPane: getEventSignatureForPane,
+            getExplainErrorMessage: getExplainErrorMessage,
+            getExplainTriggerButtonElement: getExplainTriggerButtonElement,
+            getExplanationDownloadExtension: getExplanationDownloadExtension,
+            getExplanationDownloadMimeType: getExplanationDownloadMimeType,
+            getJsonSummary: getJsonSummary,
+            getNormalizedExplainFormat: getNormalizedExplainFormat,
+            getNormalizedExplainLevel: getNormalizedExplainLevel,
+            getPaneQueryValue: getPaneQueryValue,
+            getPaneRawQueryValue: getPaneRawQueryValue,
+            getPanePersistedQueryStorageKey: getPanePersistedQueryStorageKey,
+            getPaneQuerySelector: getPaneQuerySelector,
+            getPaneState: getPaneState,
+            getPaneDisplayExplanation: getPaneDisplayExplanation,
+            getPaneMachineState: getPaneMachineState,
+            getPaneQueryHashFromInputs: getPaneQueryHashFromInputs,
+            getPaneSnapshot: getPaneSnapshot,
+            getPaneStatusClassName: getPaneStatusClassName,
+            getPaneStatusMessage: getPaneStatusMessage,
+            getPaneOverlayMessage: getPaneOverlayMessage,
+            getStableExplanationContentKey: getStableExplanationContentKey,
+            getStableExplanationKey: getStableExplanationKey,
+            getStaleReasons: getStaleReasons,
+            getWorkbenchCookiePath: getWorkbenchCookiePath,
+            handleQueryPageInputChange: handleQueryPageInputChange,
+            hideCompareExplainCancelButton: hideCompareExplainCancelButton,
+            hideCompareExplainSpinner: hideCompareExplainSpinner,
+            hideExplainCancelButtons: hideExplainCancelButtons,
+            hideExplainSpinners: hideExplainSpinners,
+            lockExplanationDimensions: lockExplanationDimensions,
+            isJsonExpandable: isJsonExpandable,
+            isPaneReadyCurrent: isPaneReadyCurrent,
+            parseNumericJsonValue: parseNumericJsonValue,
+            persistPrimaryQueryEditorValue: persistPrimaryQueryEditorValue,
+            persistPrimaryQueryValue: persistPrimaryQueryValue,
+            postCancelExplain: postCancelExplain,
+            refreshVisibleQueryEditors: refreshVisibleQueryEditors,
+            reduceDiffModalState: reduceDiffModalState,
+            reducePaneState: reducePaneState,
+            renderDotView: renderDotView,
+            renderDiffView: renderDiffView,
+            renderExplanation: renderExplanation,
+            renderJsonExplanationTree: renderJsonExplanationTree,
+            renderJsonView: renderJsonView,
+            renderQueryPageState: renderQueryPageState,
+            resetComparePaneState: resetComparePaneState,
+            restorePaneStateFromPrevious: restorePaneStateFromPrevious,
+            restoreExplainButtonViewportTopIfNeeded: restoreExplainButtonViewportTopIfNeeded,
+            savePaneQuery: savePaneQuery,
+            serializeCancelExplainFormData: serializeCancelExplainFormData,
+            serializeExplainFormData: serializeExplainFormData,
+            setCompareExplainButtonsDisabled: setCompareExplainButtonsDisabled,
+            setExplainButtonsDisabled: setExplainButtonsDisabled,
+            setExplanationDisplayMode: setExplanationDisplayMode,
+            setPaneQueryEditor: setPaneQueryEditor,
+            setPaneQueryValue: setPaneQueryValue,
+            setPaneMachineState: setPaneMachineState,
+            setWorkbenchCookie: setWorkbenchCookie,
+            showCompareExplainCancelButton: showCompareExplainCancelButton,
+            showCompareExplainSpinner: showCompareExplainSpinner,
+            showExplainCancelButton: showExplainCancelButton,
+            showExplainError: showExplainError,
+            showExplainSpinner: showExplainSpinner,
+            shouldAutoExplainComparePaneOnOpen: shouldAutoExplainComparePaneOnOpen,
+            signaturesMatch: signaturesMatch,
+            splitDiffLines: splitDiffLines,
+            syncCompareSidebarState: syncCompareSidebarState,
+            syncLegacyExplanationCache: syncLegacyExplanationCache,
+            syncLegacyMachineFlags: syncLegacyMachineFlags,
+            syncPrimaryExplanationControls: syncPrimaryExplanationControls,
+            updateCompareActionState: updateCompareActionState,
+            updateDownloadButtonState: updateDownloadButtonState,
+            getInternalState: function () {
+                return {
+                    activeComparePendingRequests: activeComparePendingRequests,
+                    activeCompareRequestId: activeCompareRequestId,
+                    activeCompareRequestSignatures: activeCompareRequestSignatures,
+                    activePrimaryRequestSignature: activePrimaryRequestSignature,
+                    compareModeEnabled: compareModeEnabled,
+                    comparePaneState: comparePaneState,
+                    compareQuerySeeded: compareQuerySeeded,
+                    compareSidebarOpen: compareSidebarOpen,
+                    currentQueryLn: currentQueryLn,
+                    diffNotReadyLabel: diffNotReadyLabel,
+                    explainServerRequestIdCounter: explainServerRequestIdCounter,
+                    lastRenderedExplanationKeys: lastRenderedExplanationKeys,
+                    pendingDotRenderKeys: pendingDotRenderKeys,
+                    primaryPaneState: primaryPaneState,
+                    queryPageState: queryPageState
+                };
+            },
+            resetInternalState: function () {
+                currentQueryLn = '';
+                yasqe = null;
+                compareYasqe = null;
+                vizRenderer = null;
+                queryPageState = createInitialQueryPageState();
+                lastRenderedExplanationKeys = {};
+                pendingDotRenderKeys = {};
+                activePrimaryRequestSignature = null;
+                activeCompareRequestSignatures = {};
+                explainServerRequestIdCounter = 0;
+                explainSpinnerVisibleSince = 0;
+                explainSpinnerTargetId = '';
+                explainSpinnerDelayTimeoutId = null;
+                explainSpinnerHideTimeoutId = null;
+                compareExplainSpinnerVisibleSince = 0;
+                compareExplainSpinnerDelayTimeoutId = null;
+                compareExplainSpinnerHideTimeoutId = null;
+                activeExplainRequestId = 0;
+                activeExplainJqXHR = null;
+                primaryExplanationPending = false;
+                activeCompareRequestId = 0;
+                activeComparePendingRequests = 0;
+                activeCompareExplainJqXHRs = [];
+                compareModeEnabled = false;
+                compareSidebarOpen = false;
+                compareQuerySeeded = false;
+                diffNotReadyLabel = '';
+                lastDiffTriggerElement = null;
+                primaryPaneState.latestExplanation = '';
+                primaryPaneState.latestExplanationFormat = 'text';
+                primaryPaneState.dotPanZoomInstance = null;
+                primaryPaneState.explainButtonViewportTopBeforeRequest = null;
+                primaryPaneState.explainButtonIdBeforeRequest = '';
+                comparePaneState.latestExplanation = '';
+                comparePaneState.latestExplanationFormat = 'text';
+                comparePaneState.dotPanZoomInstance = null;
+                comparePaneState.explainButtonViewportTopBeforeRequest = null;
+                comparePaneState.explainButtonIdBeforeRequest = '';
+            },
+            setInternalState: function (state) {
+                if ('activeComparePendingRequests' in state) {
+                    activeComparePendingRequests = state.activeComparePendingRequests;
+                }
+                if ('activeCompareRequestId' in state) {
+                    activeCompareRequestId = state.activeCompareRequestId;
+                }
+                if ('activeCompareRequestSignatures' in state) {
+                    activeCompareRequestSignatures = state.activeCompareRequestSignatures;
+                }
+                if ('activePrimaryRequestSignature' in state) {
+                    activePrimaryRequestSignature = state.activePrimaryRequestSignature;
+                }
+                if ('compareModeEnabled' in state) {
+                    compareModeEnabled = state.compareModeEnabled;
+                }
+                if ('compareQuerySeeded' in state) {
+                    compareQuerySeeded = state.compareQuerySeeded;
+                }
+                if ('compareSidebarOpen' in state) {
+                    compareSidebarOpen = state.compareSidebarOpen;
+                }
+                if ('currentQueryLn' in state) {
+                    currentQueryLn = state.currentQueryLn;
+                }
+                if ('diffNotReadyLabel' in state) {
+                    diffNotReadyLabel = state.diffNotReadyLabel;
+                }
+                if ('explainServerRequestIdCounter' in state) {
+                    explainServerRequestIdCounter = state.explainServerRequestIdCounter;
+                }
+                if ('lastRenderedExplanationKeys' in state) {
+                    lastRenderedExplanationKeys = state.lastRenderedExplanationKeys;
+                }
+                if ('pendingDotRenderKeys' in state) {
+                    pendingDotRenderKeys = state.pendingDotRenderKeys;
+                }
+                if ('primaryPaneState' in state) {
+                    primaryPaneState = state.primaryPaneState;
+                }
+                if ('comparePaneState' in state) {
+                    comparePaneState = state.comparePaneState;
+                }
+                if ('queryPageState' in state) {
+                    queryPageState = state.queryPageState;
+                }
+            }
+        };
     })(query = workbench.query || (workbench.query = {}));
 })(workbench || (workbench = {}));
 workbench.addLoad(function queryPageLoaded() {
