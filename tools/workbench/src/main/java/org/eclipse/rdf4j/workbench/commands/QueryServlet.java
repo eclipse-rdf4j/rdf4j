@@ -129,15 +129,21 @@ public class QueryServlet extends TransformationServlet {
 	 */
 	@Override
 	public String[] getCookieNames() {
-		String[] result;
-		if (writeQueryCookie) {
-			result = new String[] { QUERY, REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, "total_result_count",
-					"show-datatypes" };
-		} else {
-			result = new String[] { REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, "total_result_count",
+		return getCookieNames(writeQueryCookie);
+	}
+
+	@Override
+	public String[] getCookieNames(WorkbenchRequest req) {
+		return getCookieNames(shouldWriteQueryCookie(req.getParameter(QUERY)));
+	}
+
+	private String[] getCookieNames(boolean shouldWriteQueryCookie) {
+		if (shouldWriteQueryCookie) {
+			return new String[] { QUERY, REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, "total_result_count",
 					"show-datatypes" };
 		}
-		return result;
+		return new String[] { REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, "total_result_count",
+				"show-datatypes" };
 	}
 
 	/**
@@ -389,7 +395,8 @@ public class QueryServlet extends TransformationServlet {
 
 	private void handleStandardBrowserRequest(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
 			throws IOException, RDF4JException, QueryResultHandlerException {
-		cacheLongQueryReferenceIfNeeded(req, resp);
+		boolean shouldWriteQueryCookie = shouldWriteQueryCookie(req.getParameter(QUERY));
+		cacheLongQueryReferenceIfNeeded(req, resp, shouldWriteQueryCookie);
 		boolean downloadResponse = setContentType(req, resp);
 		OutputStream out = getResponseOutputStream(req, resp, downloadResponse);
 		try {
@@ -701,8 +708,9 @@ public class QueryServlet extends TransformationServlet {
 		}
 	}
 
-	private void cacheLongQueryReferenceIfNeeded(WorkbenchRequest req, HttpServletResponse resp) {
-		if (!writeQueryCookie) {
+	private void cacheLongQueryReferenceIfNeeded(WorkbenchRequest req, HttpServletResponse resp,
+			boolean shouldWriteQueryCookie) {
+		if (!shouldWriteQueryCookie) {
 			// If we suppressed putting the query text into the cookies before.
 			cookies.addCookie(req, resp, REF, "hash");
 			String queryValue = req.getParameter(QUERY);

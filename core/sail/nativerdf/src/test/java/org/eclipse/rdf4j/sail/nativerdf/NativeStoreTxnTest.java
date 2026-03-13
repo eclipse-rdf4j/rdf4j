@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.sail.nativerdf;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;

@@ -17,7 +17,12 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 final class TransactionAsyncExplainRegistry {
+
+	private static final Logger LOGGER = LoggerFactory.getLogger(TransactionAsyncExplainRegistry.class);
 
 	private final ConcurrentMap<String, Handle> handles = new ConcurrentHashMap<>();
 
@@ -49,6 +54,7 @@ final class TransactionAsyncExplainRegistry {
 		private final AtomicBoolean active = new AtomicBoolean(true);
 
 		private volatile Future<?> future;
+		private volatile Runnable cancellationAction;
 
 		private Handle(String explainRequestId) {
 			this.explainRequestId = Objects.requireNonNull(explainRequestId, "Explain request id was null");
@@ -58,10 +64,11 @@ final class TransactionAsyncExplainRegistry {
 			return explainRequestId;
 		}
 
-		void attach(Future<?> future) {
+		void attach(Future<?> future, Runnable cancellationAction) {
 			this.future = future;
+			this.cancellationAction = cancellationAction;
 			if (!active.get()) {
-				future.cancel(true);
+				cancelAttached(future, cancellationAction);
 			}
 		}
 
@@ -75,13 +82,27 @@ final class TransactionAsyncExplainRegistry {
 			}
 
 			Future<?> activeFuture = future;
-			if (activeFuture != null) {
-				activeFuture.cancel(true);
-			}
+			Runnable activeCancellationAction = cancellationAction;
+			cancelAttached(activeFuture, activeCancellationAction);
 		}
 
 		void finish() {
 			active.set(false);
+			future = null;
+			cancellationAction = null;
+		}
+
+		private void cancelAttached(Future<?> activeFuture, Runnable activeCancellationAction) {
+			if (activeFuture != null) {
+				activeFuture.cancel(true);
+			}
+			if (activeCancellationAction != null) {
+				try {
+					activeCancellationAction.run();
+				} catch (RuntimeException e) {
+					LOGGER.debug("Error while aborting transaction explain request {}", explainRequestId, e);
+				}
+			}
 		}
 	}
 }

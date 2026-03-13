@@ -14,26 +14,37 @@ package org.eclipse.rdf4j.workbench.commands;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.groups.Tuple.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.reflect.Field;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import javax.servlet.ServletException;
 import javax.servlet.ServletOutputStream;
 import javax.servlet.WriteListener;
+import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -108,6 +119,54 @@ class QueryServletCoverageTest {
 			assertThat(servlet.lastWriteQueryCookie).isTrue();
 			assertThat(servlet.lastXslPath).isEqualTo("/ctx/transform");
 		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void concurrentRequestsShouldNotLeakLongQueryTextIntoCookies() throws Exception {
+		CookieAwareQueryServlet servlet = newInitializedCookieServlet();
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+
+		String longQuery = "select * where { ?s ?p ?o }\n#" + "x".repeat(2050);
+		String shortQuery = SHORT_QUERY;
+		CountDownLatch longRequestEnteredCookies = new CountDownLatch(1);
+		CountDownLatch releaseLongRequest = new CountDownLatch(1);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+
+		try {
+			servlet.setRepository(repository);
+			servlet.installBlockingCookieHandler(longQuery, shortQuery, longRequestEnteredCookies, releaseLongRequest);
+
+			MockHttpServletRequest longRequest = newQueryRequest(longQuery);
+			List<Cookie> longCookies = new CopyOnWriteArrayList<>();
+			HttpServletResponse longResponse = mockResponse(longCookies);
+			MockHttpServletRequest shortRequest = newQueryRequest(shortQuery);
+			HttpServletResponse shortResponse = mockResponse(new CopyOnWriteArrayList<>());
+
+			Future<?> longResult = executor.submit(() -> {
+				servlet.service(longRequest, longResponse);
+				return null;
+			});
+
+			assertThat(longRequestEnteredCookies.await(5, TimeUnit.SECONDS)).isTrue();
+
+			Future<?> shortResult = executor.submit(() -> {
+				servlet.service(shortRequest, shortResponse);
+				return null;
+			});
+
+			shortResult.get(5, TimeUnit.SECONDS);
+			longResult.get(5, TimeUnit.SECONDS);
+
+			String encodedLongQuery = URLEncoder.encode(longQuery, StandardCharsets.UTF_8);
+			assertThat(longCookies)
+					.extracting(Cookie::getName, Cookie::getValue)
+					.doesNotContain(tuple(QueryServlet.QUERY, encodedLongQuery));
+		} finally {
+			executor.shutdownNow();
+			repository.shutDown();
 			servlet.destroy();
 		}
 	}
@@ -298,8 +357,15 @@ class QueryServletCoverageTest {
 			throw new ServletException(e);
 		}
 		RecordingQueryServlet servlet = new RecordingQueryServlet();
-		servlet.setRepositoryManager(mock(RepositoryManager.class));
-		servlet.init(TestServletConfig.withParams("query", "transformations", "/transform", "cookie-max-age", "60"));
+		servlet.initializeForTests(
+				TestServletConfig.withParams("query", "transformations", "/transform", "cookie-max-age", "60"));
+		return servlet;
+	}
+
+	private static CookieAwareQueryServlet newInitializedCookieServlet() throws ServletException {
+		CookieAwareQueryServlet servlet = new CookieAwareQueryServlet();
+		servlet.initializeForCookieTests(
+				TestServletConfig.withParams("query", "transformations", "/transform", "cookie-max-age", "60"));
 		return servlet;
 	}
 
@@ -348,6 +414,24 @@ class QueryServletCoverageTest {
 		return new RepositoryResult<>(new CloseableIteratorIteration<>(List.<Namespace>of().iterator()));
 	}
 
+	private static MockHttpServletRequest newQueryRequest(String query) {
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/query");
+		request.setContextPath("/ctx");
+		request.addParameter(QueryServlet.QUERY, query);
+		request.addParameter("queryLn", "SPARQL");
+		return request;
+	}
+
+	private static HttpServletResponse mockResponse(List<Cookie> cookies) throws IOException {
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
+		doAnswer(invocation -> {
+			cookies.add(invocation.getArgument(0));
+			return null;
+		}).when(response).addCookie(any(Cookie.class));
+		return response;
+	}
+
 	private static void verifyDownloadEncoding(SailRepository repository, String acceptEncoding, boolean gzipped)
 			throws Exception {
 		CookieAwareQueryServlet servlet = new CookieAwareQueryServlet();
@@ -379,6 +463,13 @@ class QueryServletCoverageTest {
 		private Boolean lastWriteQueryCookie;
 		private String lastXslPath;
 
+		private void initializeForTests(TestServletConfig servletConfig) {
+			this.config = servletConfig;
+			this.cookies = new CookieHandler(servletConfig, this);
+			this.manager = mock(RepositoryManager.class);
+			substituteQueryStorage(mock(QueryStorage.class));
+		}
+
 		@Override
 		protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath) {
 			lastDispatch = "GET";
@@ -395,8 +486,70 @@ class QueryServletCoverageTest {
 	}
 
 	private static final class CookieAwareQueryServlet extends QueryServlet {
+		private void initializeForCookieTests(TestServletConfig servletConfig) {
+			this.config = servletConfig;
+			this.cookies = new CookieHandler(servletConfig, this);
+			this.manager = mock(RepositoryManager.class);
+			substituteQueryStorage(mock(QueryStorage.class));
+		}
+
 		private void setCookieHandler(CookieHandler cookieHandler) {
 			this.cookies = cookieHandler;
+		}
+
+		private void installBlockingCookieHandler(String longQuery, String shortQuery,
+				CountDownLatch longRequestEnteredCookies, CountDownLatch releaseLongRequest) {
+			setCookieHandler(new BlockingCookieHandler(config, this, longQuery, shortQuery, longRequestEnteredCookies,
+					releaseLongRequest));
+		}
+	}
+
+	private static final class BlockingCookieHandler extends CookieHandler {
+		private final String longQuery;
+		private final String shortQuery;
+		private final CountDownLatch longRequestEnteredCookies;
+		private final CountDownLatch releaseLongRequest;
+
+		private BlockingCookieHandler(javax.servlet.ServletConfig config, QueryServlet servlet, String longQuery,
+				String shortQuery, CountDownLatch longRequestEnteredCookies, CountDownLatch releaseLongRequest) {
+			super(config, servlet);
+			this.longQuery = longQuery;
+			this.shortQuery = shortQuery;
+			this.longRequestEnteredCookies = longRequestEnteredCookies;
+			this.releaseLongRequest = releaseLongRequest;
+		}
+
+		@Override
+		public void updateCookies(WorkbenchRequest req, HttpServletResponse resp) {
+			coordinateRequests(req);
+			super.updateCookies(req, resp);
+		}
+
+		@Override
+		public void updateCookies(WorkbenchRequest req, HttpServletResponse resp, String[] cookieNames) {
+			coordinateRequests(req);
+			super.updateCookies(req, resp, cookieNames);
+		}
+
+		private void coordinateRequests(WorkbenchRequest req) {
+			String query = req.getParameter(QueryServlet.QUERY);
+			if (longQuery.equals(query)) {
+				longRequestEnteredCookies.countDown();
+				awaitRelease();
+			} else if (shortQuery.equals(query)) {
+				releaseLongRequest.countDown();
+			}
+		}
+
+		private void awaitRelease() {
+			try {
+				if (!releaseLongRequest.await(5, TimeUnit.SECONDS)) {
+					throw new AssertionError("Timed out waiting for short request to update shared cookie state");
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError("Interrupted while coordinating cookie update race", e);
+			}
 		}
 	}
 

@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.UUID;
 
 import javax.servlet.ServletException;
@@ -34,6 +35,7 @@ import javax.servlet.WriteListener;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpServletResponseWrapper;
 
+import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
@@ -47,6 +49,7 @@ import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 class SavedQueriesServletTest {
@@ -229,7 +232,7 @@ class SavedQueriesServletTest {
 	}
 
 	@Test
-	void postDeletesSavedQueryForAnonymousUsersAndSuperFactoryCanBuildStorage() throws Exception {
+	void postDeletesSavedQueryForAnonymousUsersAndSuperFactoryCanBuildStorage(@TempDir Path dataDir) throws Exception {
 		QueryStorage storage = mock(QueryStorage.class);
 		Repository repository = accessibleRepository();
 		when(storage.checkAccess(repository)).thenReturn(true);
@@ -250,7 +253,7 @@ class SavedQueriesServletTest {
 		ExposedSavedQueriesServlet realServlet = new ExposedSavedQueriesServlet();
 		realServlet.setRepositoryManager(mock(RepositoryManager.class));
 		realServlet.init(TestServletConfig.withParams("saved", "transformations", "/transform"));
-		QueryStorage created = realServlet.callSuperCreateQueryStorage();
+		QueryStorage created = realServlet.callSuperCreateQueryStorage(dataDir);
 		assertThat(created).isNotNull();
 		created.shutdown();
 	}
@@ -327,7 +330,10 @@ class SavedQueriesServletTest {
 			return mock(QueryStorage.class);
 		}
 
-		private QueryStorage callSuperCreateQueryStorage() throws RepositoryException {
+		private QueryStorage callSuperCreateQueryStorage(Path dataDir) throws RepositoryException {
+			AppConfiguration isolatedConfig = mock(AppConfiguration.class);
+			when(isolatedConfig.getDataDir()).thenReturn(dataDir.toFile());
+			this.appConfig = isolatedConfig;
 			return super.createQueryStorage();
 		}
 	}

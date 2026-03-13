@@ -76,6 +76,10 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 		return new String[0];
 	}
 
+	public String[] getCookieNames(WorkbenchRequest req) {
+		return getCookieNames();
+	}
+
 	@Override
 	public void service(final HttpServletRequest req, final HttpServletResponse resp)
 			throws ServletException, IOException {
@@ -92,7 +96,7 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 		try {
 			final WorkbenchRequest wreq = new WorkbenchRequest(repository, req, defaults);
 
-			cookies.updateCookies(wreq, resp);
+			cookies.updateCookies(wreq, resp, getCookieNames(wreq));
 			if ("POST".equals(req.getMethod())) {
 				doPost(wreq, resp, xslPath);
 			} else {

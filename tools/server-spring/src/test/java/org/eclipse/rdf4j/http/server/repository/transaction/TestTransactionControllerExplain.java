@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -42,6 +43,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -218,11 +220,81 @@ class TestTransactionControllerExplain {
 			verify(connection, atLeastOnce()).prepareQuery(QueryLanguage.SPARQL, SELECT_ALL_QUERY, null);
 		} finally {
 			executor.shutdownNow();
-			try {
-				txn.close();
-			} finally {
-				ActiveTransactionRegistry.INSTANCE.deregister(txn);
+			closeQuietly(txn);
+			deregisterQuietly(txn);
+		}
+	}
+
+	@Test
+	void shouldCloseTransactionWhenCancelledExplainIgnoresInterrupts() throws Exception {
+		Repository explainRepository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery explainQuery = mock(TupleQuery.class);
+		CountDownLatch explainStarted = new CountDownLatch(1);
+		CountDownLatch interruptObserved = new CountDownLatch(1);
+		CountDownLatch connectionClosed = new CountDownLatch(1);
+		AtomicBoolean interrupted = new AtomicBoolean(false);
+		ExecutorService executor = Executors.newFixedThreadPool(3);
+
+		when(explainRepository.getConnection()).thenReturn(connection);
+		when(connection.getParserConfig()).thenReturn(new ParserConfig());
+		doAnswer(invocation -> {
+			connectionClosed.countDown();
+			return null;
+		}).when(connection).close();
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SELECT_ALL_QUERY, null)).thenReturn(explainQuery);
+		when(explainQuery.explain(Explanation.Level.Optimized)).thenAnswer(invocation -> {
+			explainStarted.countDown();
+			while (connectionClosed.getCount() > 0) {
+				try {
+					TimeUnit.MILLISECONDS.sleep(25);
+				} catch (InterruptedException e) {
+					interrupted.set(true);
+					interruptObserved.countDown();
+				}
 			}
+			return mock(Explanation.class);
+		});
+
+		Transaction txn = new Transaction(explainRepository);
+		ActiveTransactionRegistry.INSTANCE.register(txn);
+
+		try {
+			TransactionController transactionController = new TransactionController();
+			MockHttpServletRequest explainRequest = newExplainRequest(txn.getID(), "req-456");
+			explainRequest.addHeader("Accept", "application/json");
+			MockHttpServletResponse explainResponse = new MockHttpServletResponse();
+
+			Future<ModelAndView> explainFuture = executor
+					.submit(() -> transactionController.handleRequestInternal(explainRequest, explainResponse));
+
+			assertThat(explainStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+			MockHttpServletRequest cancelRequest = newCancelExplainRequest(txn.getID(), "req-456");
+			MockHttpServletResponse cancelResponse = new MockHttpServletResponse();
+			Future<ModelAndView> cancelFuture = executor
+					.submit(() -> transactionController.handleRequestInternal(cancelRequest, cancelResponse));
+
+			assertThat(cancelFuture.get(5, TimeUnit.SECONDS)).isNull();
+			assertThat(cancelResponse.getStatus()).isEqualTo(204);
+			assertThat(interruptObserved.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(interrupted).isTrue();
+			assertThat(connectionClosed.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(explainFuture.get(5, TimeUnit.SECONDS)).isNull();
+			verify(connection, atLeastOnce()).close();
+
+			MockHttpServletRequest followUpRequest = newExplainRequest(txn.getID(), null);
+			followUpRequest.addHeader("Accept", "application/json");
+			MockHttpServletResponse followUpResponse = new MockHttpServletResponse();
+			Future<ModelAndView> followUpFuture = executor
+					.submit(() -> transactionController.handleRequestInternal(followUpRequest, followUpResponse));
+
+			assertThatThrownBy(() -> followUpFuture.get(5, TimeUnit.SECONDS))
+					.hasCauseInstanceOf(RepositoryException.class);
+		} finally {
+			executor.shutdownNow();
+			closeQuietly(txn);
+			deregisterQuietly(txn);
 		}
 	}
 
@@ -263,6 +335,22 @@ class TestTransactionControllerExplain {
 		cancelRequest.setParameter(Protocol.CANCEL_EXPLAIN_PARAM_NAME, Boolean.TRUE.toString());
 		cancelRequest.setParameter(Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME, explainRequestId);
 		return cancelRequest;
+	}
+
+	private static void closeQuietly(Transaction txn) {
+		try {
+			txn.close();
+		} catch (Exception ignored) {
+			// cleanup only
+		}
+	}
+
+	private static void deregisterQuietly(Transaction txn) {
+		try {
+			ActiveTransactionRegistry.INSTANCE.deregister(txn);
+		} catch (RepositoryException ignored) {
+			// cleanup only
+		}
 	}
 
 	private static final class UnsupportedExplainQuery implements Query {

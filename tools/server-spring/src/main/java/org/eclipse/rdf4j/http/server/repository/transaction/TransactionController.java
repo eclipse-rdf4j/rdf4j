@@ -15,7 +15,6 @@ import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 import static javax.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
 import static javax.servlet.http.HttpServletResponse.SC_NOT_ACCEPTABLE;
 import static javax.servlet.http.HttpServletResponse.SC_SERVICE_UNAVAILABLE;
-
 import static org.eclipse.rdf4j.http.protocol.Protocol.BINDING_PREFIX;
 import static org.eclipse.rdf4j.http.protocol.Protocol.CONTEXT_PARAM_NAME;
 import static org.eclipse.rdf4j.http.protocol.Protocol.DEFAULT_GRAPH_PARAM_NAME;
@@ -472,9 +471,20 @@ public class TransactionController extends AbstractController implements Disposa
 			return null;
 		}
 
-		txn.cancelExplain(explainRequestId.get());
+		boolean cancelled = txn.cancelExplain(explainRequestId.get());
+		if (cancelled && (txn.isClosed() || txn.isComplete())) {
+			deregisterQuietly(txn);
+		}
 		response.setStatus(HttpServletResponse.SC_NO_CONTENT);
 		return null;
+	}
+
+	private void deregisterQuietly(Transaction transaction) {
+		try {
+			ActiveTransactionRegistry.INSTANCE.deregister(transaction);
+		} catch (RepositoryException e) {
+			logger.debug("Transaction {} was already deregistered", transaction.getID(), e);
+		}
 	}
 
 	private ModelAndView getExplainQueryResponse(Explanation explanation) {

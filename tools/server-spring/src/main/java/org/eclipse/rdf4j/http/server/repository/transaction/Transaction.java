@@ -242,7 +242,7 @@ class Transaction implements AutoCloseable {
 
 		try {
 			Future<Explanation> result = submit(() -> query.explain(level));
-			handle.attach(result);
+			handle.attach(result, this::abortExplainTransaction);
 
 			if (!handle.isActive()) {
 				return null;
@@ -259,6 +259,17 @@ class Transaction implements AutoCloseable {
 
 	boolean cancelExplain(String explainRequestId) {
 		return asyncExplainRegistry.cancel(explainRequestId);
+	}
+
+	private void abortExplainTransaction() {
+		try {
+			close();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			logger.debug("Interrupted while aborting canceled transaction explain {}", id, e);
+		} catch (ExecutionException e) {
+			logger.debug("Failed to abort canceled transaction explain {}", id, e);
+		}
 	}
 
 	/**
