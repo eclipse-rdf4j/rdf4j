@@ -174,6 +174,17 @@ class CreateTemplateConfigTest {
 				.hasMessageContaining("Could not resolve RepositoryConfig resources");
 	}
 
+	@Test
+	void discoverBuiltinTemplateTypesFallsBackForNestedJarUris() {
+		String nestedJarClassLocation = "jar:" + tempDir.resolve("rdf4j-server-boot.jar").toUri()
+				+ "!/BOOT-INF/lib/rdf4j-repository-api.jar!/org/eclipse/rdf4j/repository/config/RepositoryConfig.class";
+
+		assertThat(invokeList("discoverBuiltinTemplateTypes",
+				new Class<?>[] { String.class, String.class },
+				nestedJarClassLocation,
+				"org/eclipse/rdf4j/repository/config")).contains("memory", "native", "sparql");
+	}
+
 	private static CreateTemplateConfig parse(String type, String templateText) {
 		return (CreateTemplateConfig) invoke("parse", new Class<?>[] { String.class, String.class }, type,
 				templateText);

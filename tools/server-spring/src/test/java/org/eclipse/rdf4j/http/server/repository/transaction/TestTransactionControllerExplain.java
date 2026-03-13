@@ -13,11 +13,19 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
@@ -27,7 +35,9 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.Repository;
@@ -155,15 +165,104 @@ class TestTransactionControllerExplain {
 		}
 	}
 
+	@Test
+	void shouldCancelExplainRequestsOnTransactionEndpoint() throws Exception {
+		Repository explainRepository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery explainQuery = mock(TupleQuery.class);
+		CountDownLatch explainStarted = new CountDownLatch(1);
+		CountDownLatch explainInterrupted = new CountDownLatch(1);
+		AtomicBoolean interrupted = new AtomicBoolean(false);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+
+		when(explainRepository.getConnection()).thenReturn(connection);
+		when(connection.getParserConfig()).thenReturn(new ParserConfig());
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SELECT_ALL_QUERY, null)).thenReturn(explainQuery);
+		when(explainQuery.explain(Explanation.Level.Optimized)).thenAnswer(invocation -> {
+			explainStarted.countDown();
+			try {
+				new CountDownLatch(1).await();
+				return mock(Explanation.class);
+			} catch (InterruptedException e) {
+				interrupted.set(true);
+				explainInterrupted.countDown();
+				throw new QueryInterruptedException("interrupted", e);
+			}
+		});
+
+		Transaction txn = new Transaction(explainRepository);
+		ActiveTransactionRegistry.INSTANCE.register(txn);
+
+		try {
+			TransactionController transactionController = new TransactionController();
+			MockHttpServletRequest explainRequest = newExplainRequest(txn.getID(), "req-123");
+			explainRequest.addHeader("Accept", "application/json");
+			MockHttpServletResponse explainResponse = new MockHttpServletResponse();
+
+			Future<ModelAndView> explainFuture = executor
+					.submit(() -> transactionController.handleRequestInternal(explainRequest, explainResponse));
+
+			assertThat(explainStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(explainFuture.isDone()).isFalse();
+
+			MockHttpServletRequest cancelRequest = newCancelExplainRequest(txn.getID(), "req-123");
+			MockHttpServletResponse cancelResponse = new MockHttpServletResponse();
+			Future<ModelAndView> cancelFuture = executor
+					.submit(() -> transactionController.handleRequestInternal(cancelRequest, cancelResponse));
+
+			assertThat(cancelFuture.get(5, TimeUnit.SECONDS)).isNull();
+			assertThat(cancelResponse.getStatus()).isEqualTo(204);
+			assertThat(explainInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(interrupted).isTrue();
+			assertThat(explainFuture.get(5, TimeUnit.SECONDS)).isNull();
+			verify(connection, atLeastOnce()).prepareQuery(QueryLanguage.SPARQL, SELECT_ALL_QUERY, null);
+		} finally {
+			executor.shutdownNow();
+			try {
+				txn.close();
+			} finally {
+				ActiveTransactionRegistry.INSTANCE.deregister(txn);
+			}
+		}
+	}
+
 	private void configureExplainRequest(UUID transactionId) {
-		request.setRequestURI("/repositories/" + repositoryID + "/transactions/" + transactionId);
-		request.setPathInfo(repositoryID + "/transactions/" + transactionId);
-		request.setMethod(HttpMethod.PUT.name());
-		request.setCharacterEncoding(StandardCharsets.UTF_8.name());
-		request.setContentType("application/sparql-query; charset=utf-8");
-		request.setContent(SELECT_ALL_QUERY.getBytes(StandardCharsets.UTF_8));
+		MockHttpServletRequest explainRequest = newExplainRequest(transactionId, null);
+		request.setRequestURI(explainRequest.getRequestURI());
+		request.setPathInfo(explainRequest.getPathInfo());
+		request.setMethod(explainRequest.getMethod());
+		request.setCharacterEncoding(explainRequest.getCharacterEncoding());
+		request.setContentType(explainRequest.getContentType());
+		request.setContent(explainRequest.getContentAsByteArray());
 		request.setParameter(Protocol.ACTION_PARAM_NAME, Protocol.Action.QUERY.toString());
 		request.setParameter(Protocol.EXPLAIN_PARAM_NAME, Explanation.Level.Optimized.name());
+	}
+
+	private MockHttpServletRequest newExplainRequest(UUID transactionId, String explainRequestId) {
+		MockHttpServletRequest explainRequest = new MockHttpServletRequest();
+		explainRequest.setRequestURI("/repositories/" + repositoryID + "/transactions/" + transactionId);
+		explainRequest.setPathInfo(repositoryID + "/transactions/" + transactionId);
+		explainRequest.setMethod(HttpMethod.PUT.name());
+		explainRequest.setCharacterEncoding(StandardCharsets.UTF_8.name());
+		explainRequest.setContentType("application/sparql-query; charset=utf-8");
+		explainRequest.setContent(SELECT_ALL_QUERY.getBytes(StandardCharsets.UTF_8));
+		explainRequest.setParameter(Protocol.ACTION_PARAM_NAME, Protocol.Action.QUERY.toString());
+		explainRequest.setParameter(Protocol.EXPLAIN_PARAM_NAME, Explanation.Level.Optimized.name());
+		if (explainRequestId != null) {
+			explainRequest.setParameter(Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME, explainRequestId);
+		}
+		return explainRequest;
+	}
+
+	private MockHttpServletRequest newCancelExplainRequest(UUID transactionId, String explainRequestId) {
+		MockHttpServletRequest cancelRequest = new MockHttpServletRequest();
+		cancelRequest.setRequestURI("/repositories/" + repositoryID + "/transactions/" + transactionId);
+		cancelRequest.setPathInfo(repositoryID + "/transactions/" + transactionId);
+		cancelRequest.setMethod(HttpMethod.PUT.name());
+		cancelRequest.setParameter(Protocol.ACTION_PARAM_NAME, Protocol.Action.QUERY.toString());
+		cancelRequest.setParameter(Protocol.CANCEL_EXPLAIN_PARAM_NAME, Boolean.TRUE.toString());
+		cancelRequest.setParameter(Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME, explainRequestId);
+		return cancelRequest;
 	}
 
 	private static final class UnsupportedExplainQuery implements Query {

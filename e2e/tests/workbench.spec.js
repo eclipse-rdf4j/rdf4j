@@ -1,5 +1,6 @@
 // @ts-check
 const {test, expect} = require('@playwright/test');
+const { typeIntoCodeMirror } = require('./workbench-test-helpers');
 
 test.beforeEach(async ({page}, testInfo) => {
     await page.goto('http://localhost:8080/rdf4j-workbench/');
@@ -31,16 +32,6 @@ async function createRepo(page) {
     let titleHeading = await page.getByText('Repository Location');
     await expect(titleHeading).toHaveText('Repository Location')
 
-}
-
-async function typeIntoCodeMirror(page, index, value) {
-    await page.locator('.CodeMirror').nth(index).click();
-    await page.keyboard.press('Meta+A');
-    await page.keyboard.press('Backspace');
-    await page.keyboard.type(value);
-    await expect.poll(async () => page.evaluate(editorIndex => {
-        return document.querySelectorAll('.CodeMirror')[editorIndex].CodeMirror.getValue();
-    }, index)).toBe(value);
 }
 
 async function delayExplainRequests(page, delayMs = 2200) {

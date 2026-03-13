@@ -366,6 +366,40 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 	}
 
 	@Test
+	public void testCancelQueryExplanationUsesTransactionEndpoint(MockServerClient client) throws Exception {
+		String transactionStartUrl = Protocol.getTransactionsLocation(getRDF4JSession().getRepositoryURL());
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test/transactions"),
+				Times.once())
+				.respond(response().withStatusCode(201).withHeader("Location", transactionStartUrl + "/1"));
+
+		client.when(
+				request()
+						.withMethod("PUT")
+						.withPath("/rdf4j-server/repositories/test/transactions/1")
+						.withQueryStringParameter("action", "QUERY")
+						.withQueryStringParameter("cancel-explain", "true")
+						.withQueryStringParameter("explain-request-id", "req-456"),
+				Times.once())
+				.respond(response().withStatusCode(204));
+
+		getRDF4JSession().beginTransaction(IsolationLevels.SERIALIZABLE);
+		getRDF4JSession().cancelQueryExplanation("req-456");
+
+		client.verify(
+				request()
+						.withMethod("PUT")
+						.withPath("/rdf4j-server/repositories/test/transactions/1")
+						.withQueryStringParameter("action", "QUERY")
+						.withQueryStringParameter("cancel-explain", "true")
+						.withQueryStringParameter("explain-request-id", "req-456")
+						.withHeader(testHeader, testValue)
+		);
+	}
+
+	@Test
 	public void testSendQueryExplanationAcceptsSelfTimeActualField(MockServerClient client) throws Exception {
 		client.when(
 				request()

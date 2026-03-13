@@ -362,6 +362,10 @@ public class TransactionController extends AbstractController implements Disposa
 			queryStr = request.getParameter(QUERY_PARAM_NAME);
 		}
 
+		if (request.getParameter(Protocol.CANCEL_EXPLAIN_PARAM_NAME) != null) {
+			return handleCancelExplain(txn, request, response);
+		}
+
 		View view;
 		Object queryResult;
 		FileFormatServiceRegistry<? extends FileFormat, ?> registry;
@@ -369,10 +373,16 @@ public class TransactionController extends AbstractController implements Disposa
 		try {
 			Query query = getQuery(txn, queryStr, request, response);
 			Optional<Explanation.Level> explainLevel = getExplain(request);
+			Optional<String> explainRequestId = getExplainRequestId(request);
 
 			if (explainLevel.isPresent()) {
 				try {
-					return getExplainQueryResponse(txn.explain(query, explainLevel.get()));
+					Explanation explanation = explainRequestId.isPresent()
+							? txn.explain(query, explainLevel.get(), explainRequestId.get())
+							: txn.explain(query, explainLevel.get());
+					return explanation == null ? null : getExplainQueryResponse(explanation);
+				} catch (IllegalStateException e) {
+					throw new ClientHTTPException(SC_BAD_REQUEST, e.getMessage(), e);
 				} catch (ExecutionException e) {
 					handleExplainExecutionException(query, e);
 				}
@@ -438,6 +448,32 @@ public class TransactionController extends AbstractController implements Disposa
 		} catch (IllegalArgumentException e) {
 			throw new ClientHTTPException("Invalid explanation level: " + explainString, e);
 		}
+	}
+
+	private Optional<String> getExplainRequestId(HttpServletRequest request) {
+		String explainRequestId = request.getParameter(Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME);
+		if (explainRequestId == null) {
+			return Optional.empty();
+		}
+
+		String normalizedExplainRequestId = explainRequestId.trim();
+		if (normalizedExplainRequestId.isEmpty()) {
+			return Optional.empty();
+		}
+		return Optional.of(normalizedExplainRequestId);
+	}
+
+	private ModelAndView handleCancelExplain(Transaction txn, HttpServletRequest request, HttpServletResponse response)
+			throws IOException {
+		Optional<String> explainRequestId = getExplainRequestId(request);
+		if (explainRequestId.isEmpty()) {
+			response.sendError(SC_BAD_REQUEST, "Missing parameter: " + Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME);
+			return null;
+		}
+
+		txn.cancelExplain(explainRequestId.get());
+		response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+		return null;
 	}
 
 	private ModelAndView getExplainQueryResponse(Explanation explanation) {
