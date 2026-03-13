@@ -34,11 +34,12 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import javax.servlet.AsyncContext;
 import javax.servlet.ServletException;
 import javax.servlet.ServletOutputStream;
 import javax.servlet.WriteListener;
@@ -397,10 +398,6 @@ public class QueryServletTest {
 		StringWriter body = new StringWriter();
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
-		AsyncContext asyncContext = mock(AsyncContext.class);
-		when(request.startAsync(request, response)).thenReturn(asyncContext);
-		when(asyncContext.getRequest()).thenReturn(request);
-		when(asyncContext.getResponse()).thenReturn(response);
 
 		servlet.service(request, response, "/transformations");
 
@@ -423,11 +420,12 @@ public class QueryServletTest {
 	}
 
 	@Test
-	public void testCancelExplainShouldInterruptWorkerAndPropagateRemoteCancel() throws Exception {
+	public void testExplainRequestIdShouldRunInlineAndPropagateRemoteCancel() throws Exception {
 		HTTPRepository repository = mock(HTTPRepository.class);
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		TupleQuery tupleQuery = mock(TupleQuery.class);
-		AsyncExplainRegistry asyncExplainRegistry = new AsyncExplainRegistry(Executors.newSingleThreadExecutor());
+		AsyncExplainRegistry asyncExplainRegistry = new AsyncExplainRegistry();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
 		servlet.setRepository(repository);
 		servlet.substituteAsyncExplainRegistry(asyncExplainRegistry);
 
@@ -464,10 +462,6 @@ public class QueryServletTest {
 
 		HttpServletResponse explainResponse = mock(HttpServletResponse.class);
 		when(explainResponse.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
-		AsyncContext asyncContext = mock(AsyncContext.class);
-		when(explainRequest.startAsync(explainRequest, explainResponse)).thenReturn(asyncContext);
-		when(asyncContext.getRequest()).thenReturn(explainRequest);
-		when(asyncContext.getResponse()).thenReturn(explainResponse);
 
 		WorkbenchRequest cancelRequest = mock(WorkbenchRequest.class);
 		when(cancelRequest.getParameter("action")).thenReturn("cancel-explain");
@@ -477,19 +471,26 @@ public class QueryServletTest {
 		HttpServletResponse cancelResponse = mock(HttpServletResponse.class);
 
 		try {
-			servlet.service(explainRequest, explainResponse, "/transformations");
+			Future<?> explainFuture = executor
+					.submit(() -> {
+						servlet.service(explainRequest, explainResponse, "/transformations");
+						return null;
+					});
 
 			assertThat(explainStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(explainFuture.isDone()).isFalse();
+			verify(explainRequest, never()).startAsync(any(), any());
 
 			servlet.doPost(cancelRequest, cancelResponse, "/transformations");
 
 			verify(cancelResponse).setStatus(HttpServletResponse.SC_NO_CONTENT);
 			assertThat(explainInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
 			assertThat(interrupted).isTrue();
+			assertThatCode(() -> explainFuture.get(5, TimeUnit.SECONDS)).doesNotThrowAnyException();
 			verify(connection, atLeastOnce()).close();
 			verify(repository).cancelQueryExplanation("req-123");
-			verify(asyncContext, atLeastOnce()).complete();
 		} finally {
+			executor.shutdownNow();
 			asyncExplainRegistry.shutdown();
 		}
 	}

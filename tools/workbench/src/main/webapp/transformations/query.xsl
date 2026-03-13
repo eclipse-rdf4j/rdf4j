@@ -16,6 +16,8 @@
                       select="sparql:results/sparql:result/sparql:binding[@name='queryLn']"/>
         <xsl:variable name="query"
                       select="sparql:results/sparql:result/sparql:binding[@name='query']"/>
+        <xsl:variable name="queryTimeout"
+                      select="sparql:results/sparql:result/sparql:binding[@name='query-timeout']/sparql:literal/text()"/>
         <xsl:variable name="hideQueryLanguageRow"
                       select="count($info//sparql:binding[@name='query-format']) = 1 and substring-before(normalize-space($info//sparql:binding[@name='query-format'][1]/sparql:literal), ' ') = 'SPARQL'"/>
         <xsl:variable name="defaultQueryTimeout"
@@ -998,6 +1000,9 @@
                         <input id="query-timeout" name="query-timeout" type="number" min="0" step="1">
                             <xsl:attribute name="value">
                                 <xsl:choose>
+                                    <xsl:when test="string-length(normalize-space($queryTimeout)) &gt; 0">
+                                        <xsl:value-of select="$queryTimeout"/>
+                                    </xsl:when>
                                     <xsl:when test="string-length(normalize-space($defaultQueryTimeout)) &gt; 0">
                                         <xsl:value-of select="$defaultQueryTimeout"/>
                                     </xsl:when>

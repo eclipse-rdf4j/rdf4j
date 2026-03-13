@@ -13,32 +13,18 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.doThrow;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.AbstractExecutorService;
-import java.util.concurrent.TimeUnit;
 
-import javax.servlet.AsyncContext;
-import javax.servlet.ServletOutputStream;
-import javax.servlet.WriteListener;
 import javax.servlet.http.HttpServletResponse;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -46,14 +32,6 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.repository.RepositoryResult;
-import org.eclipse.rdf4j.repository.http.HTTPQueryEvaluationException;
-import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
-import org.eclipse.rdf4j.workbench.util.CookieHandler;
-import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
 
@@ -62,57 +40,45 @@ class QueryServletEdgeCoverageTest {
 	private static final String SHORT_QUERY = "select * {?s ?p ?o .}";
 
 	@Test
-	void asyncExplainWritesSuccessResponsesAndSkipsCompletedHandles() throws Exception {
+	void trackedExplainWritesSuccessResponsesAndSkipsCancelledWrites() throws Exception {
 		QueryServlet successServlet = new QueryServlet();
 		Repository successRepository = mock(Repository.class);
 		RepositoryConnection successConnection = mock(RepositoryConnection.class);
 		TupleQuery successQuery = mock(TupleQuery.class);
 		Explanation successExplanation = mock(Explanation.class);
-		AsyncExplainRegistry successRegistry = new AsyncExplainRegistry(new DirectExecutorService());
-		WorkbenchRequest successRequest = mockExplainRequest(true, "async-success", null);
+		WorkbenchRequest successRequest = mockExplainRequest("tracked-success");
 		HttpServletResponse successResponse = mock(HttpServletResponse.class);
-		AsyncContext successAsyncContext = mock(AsyncContext.class);
 		StringWriter successBody = new StringWriter();
 
 		when(successRepository.getConnection()).thenReturn(successConnection);
 		when(successConnection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(successQuery);
 		when(successQuery.explain(Explanation.Level.Optimized)).thenReturn(successExplanation);
-		when(successExplanation.toString()).thenReturn("async-plan");
+		when(successExplanation.toString()).thenReturn("tracked-plan");
 		when(successResponse.getWriter()).thenReturn(new PrintWriter(successBody));
-		when(successRequest.startAsync(successRequest, successResponse)).thenReturn(successAsyncContext);
-		when(successAsyncContext.getResponse()).thenReturn(successResponse);
 		successServlet.setRepository(successRepository);
-		successServlet.substituteAsyncExplainRegistry(successRegistry);
 
-		try {
-			successServlet.service(successRequest, successResponse, "/transform");
+		successServlet.service(successRequest, successResponse, "/transform");
 
-			assertThat(successBody.toString()).contains("\"content\":\"async-plan\"");
-			verify(successAsyncContext).complete();
-		} finally {
-			successRegistry.shutdown();
-		}
+		assertThat(successBody.toString()).contains("\"content\":\"tracked-plan\"");
+		verify(successRequest, never()).startAsync(any(), any());
 
 		QueryServlet cancelledServlet = new QueryServlet();
 		Repository cancelledRepository = mock(Repository.class);
 		RepositoryConnection cancelledConnection = mock(RepositoryConnection.class);
 		TupleQuery cancelledQuery = mock(TupleQuery.class);
 		Explanation cancelledExplanation = mock(Explanation.class);
-		AsyncExplainRegistry cancelledRegistry = new AsyncExplainRegistry(new DirectExecutorService());
-		WorkbenchRequest cancelledRequest = mockExplainRequest(true, "async-cancel-after-explain", null);
+		AsyncExplainRegistry cancelledRegistry = new AsyncExplainRegistry();
+		WorkbenchRequest cancelledRequest = mockExplainRequest("tracked-cancel-after-explain");
 		HttpServletResponse cancelledResponse = mock(HttpServletResponse.class);
-		AsyncContext cancelledAsyncContext = mock(AsyncContext.class);
 		StringWriter cancelledBody = new StringWriter();
 
 		when(cancelledRepository.getConnection()).thenReturn(cancelledConnection);
 		when(cancelledConnection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(cancelledQuery);
 		when(cancelledQuery.explain(Explanation.Level.Optimized)).thenAnswer(invocation -> {
-			cancelledRegistry.cancel("async-cancel-after-explain");
+			cancelledRegistry.cancel("tracked-cancel-after-explain");
 			return cancelledExplanation;
 		});
 		when(cancelledResponse.getWriter()).thenReturn(new PrintWriter(cancelledBody));
-		when(cancelledRequest.startAsync(cancelledRequest, cancelledResponse)).thenReturn(cancelledAsyncContext);
-		when(cancelledAsyncContext.getResponse()).thenReturn(cancelledResponse);
 		cancelledServlet.setRepository(cancelledRepository);
 		cancelledServlet.substituteAsyncExplainRegistry(cancelledRegistry);
 
@@ -120,310 +86,74 @@ class QueryServletEdgeCoverageTest {
 			cancelledServlet.service(cancelledRequest, cancelledResponse, "/transform");
 
 			assertThat(cancelledBody.toString()).isEmpty();
-			verify(cancelledAsyncContext, atLeastOnce()).complete();
+			verify(cancelledResponse, never()).setStatus(HttpServletResponse.SC_OK);
 		} finally {
 			cancelledRegistry.shutdown();
 		}
 	}
 
 	@Test
-	void asyncExplainHandlesUnsupportedMalformedRepositoryAndWriterFailures() throws Exception {
-		QueryServlet unsupportedServlet = new QueryServlet();
-		Repository unsupportedRepository = mock(Repository.class);
-		RepositoryConnection unsupportedConnection = mock(RepositoryConnection.class);
-		TupleQuery unsupportedQuery = mock(TupleQuery.class);
-		AsyncExplainRegistry unsupportedRegistry = new AsyncExplainRegistry(new DirectExecutorService());
-		WorkbenchRequest unsupportedRequest = mockExplainRequest(true, "async-unsupported", null);
-		HttpServletResponse unsupportedResponse = mock(HttpServletResponse.class);
-		AsyncContext unsupportedAsyncContext = mock(AsyncContext.class);
-		StringWriter unsupportedBody = new StringWriter();
-
-		when(unsupportedRepository.getConnection()).thenReturn(unsupportedConnection);
-		when(unsupportedConnection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(unsupportedQuery);
-		when(unsupportedQuery.explain(Explanation.Level.Optimized))
-				.thenThrow(new UnsupportedOperationException("nope"));
-		doThrow(new RepositoryException("close")).when(unsupportedConnection).close();
-		when(unsupportedResponse.getWriter()).thenReturn(new PrintWriter(unsupportedBody));
-		when(unsupportedRequest.startAsync(unsupportedRequest, unsupportedResponse))
-				.thenReturn(unsupportedAsyncContext);
-		when(unsupportedAsyncContext.getResponse()).thenReturn(unsupportedResponse);
-		unsupportedServlet.setRepository(unsupportedRepository);
-		unsupportedServlet.substituteAsyncExplainRegistry(unsupportedRegistry);
-
-		try {
-			unsupportedServlet.service(unsupportedRequest, unsupportedResponse, "/transform");
-
-			assertThat(unsupportedBody.toString()).contains("Explain is not supported");
-			verify(unsupportedAsyncContext).complete();
-		} finally {
-			unsupportedRegistry.shutdown();
-		}
-
+	void trackedExplainHandlesMalformedRepositoryAndWriterFailures() throws Exception {
 		QueryServlet malformedServlet = new QueryServlet();
 		Repository malformedRepository = mock(Repository.class);
 		RepositoryConnection malformedConnection = mock(RepositoryConnection.class);
-		AsyncExplainRegistry malformedRegistry = new AsyncExplainRegistry(new DirectExecutorService());
-		WorkbenchRequest malformedRequest = mockExplainRequest(true, "async-malformed", null);
+		WorkbenchRequest malformedRequest = mockExplainRequest("tracked-malformed");
 		HttpServletResponse malformedResponse = mock(HttpServletResponse.class);
-		AsyncContext malformedAsyncContext = mock(AsyncContext.class);
 		StringWriter malformedBody = new StringWriter();
 
 		when(malformedRepository.getConnection()).thenReturn(malformedConnection);
 		when(malformedConnection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY))
-				.thenThrow(new MalformedQueryException("async bad syntax"));
+				.thenThrow(new MalformedQueryException("tracked bad syntax"));
 		when(malformedResponse.getWriter()).thenReturn(new PrintWriter(malformedBody));
-		when(malformedRequest.startAsync(malformedRequest, malformedResponse)).thenReturn(malformedAsyncContext);
-		when(malformedAsyncContext.getResponse()).thenReturn(malformedResponse);
 		malformedServlet.setRepository(malformedRepository);
-		malformedServlet.substituteAsyncExplainRegistry(malformedRegistry);
 
-		try {
-			malformedServlet.service(malformedRequest, malformedResponse, "/transform");
+		malformedServlet.service(malformedRequest, malformedResponse, "/transform");
 
-			assertThat(malformedBody.toString()).contains("\"error\":\"async bad syntax\"");
-			verify(malformedAsyncContext).complete();
-		} finally {
-			malformedRegistry.shutdown();
-		}
+		assertThat(malformedBody.toString()).contains("\"error\":\"tracked bad syntax\"");
+		verify(malformedRequest, never()).startAsync(any(), any());
 
 		QueryServlet failingServlet = new QueryServlet();
 		Repository failingRepository = mock(Repository.class);
-		AsyncExplainRegistry failingRegistry = new AsyncExplainRegistry(new DirectExecutorService());
-		WorkbenchRequest failingRequest = mockExplainRequest(true, "async-repository", null);
+		WorkbenchRequest failingRequest = mockExplainRequest("tracked-repository");
 		HttpServletResponse failingResponse = mock(HttpServletResponse.class);
-		AsyncContext failingAsyncContext = mock(AsyncContext.class);
 		StringWriter failingBody = new StringWriter();
 
-		when(failingRepository.getConnection()).thenThrow(new RepositoryException("async repository boom"));
+		when(failingRepository.getConnection()).thenThrow(new RepositoryException("tracked repository boom"));
 		when(failingResponse.getWriter()).thenReturn(new PrintWriter(failingBody));
-		when(failingRequest.startAsync(failingRequest, failingResponse)).thenReturn(failingAsyncContext);
-		when(failingAsyncContext.getResponse()).thenReturn(failingResponse);
 		failingServlet.setRepository(failingRepository);
-		failingServlet.substituteAsyncExplainRegistry(failingRegistry);
 
-		try {
-			failingServlet.service(failingRequest, failingResponse, "/transform");
+		failingServlet.service(failingRequest, failingResponse, "/transform");
 
-			assertThat(failingBody.toString()).contains("\"error\":\"async repository boom\"");
-			verify(failingAsyncContext).complete();
-		} finally {
-			failingRegistry.shutdown();
-		}
+		assertThat(failingBody.toString()).contains("\"error\":\"tracked repository boom\"");
+		verify(failingRequest, never()).startAsync(any(), any());
 
 		QueryServlet writerServlet = new QueryServlet();
 		Repository writerRepository = mock(Repository.class);
 		RepositoryConnection writerConnection = mock(RepositoryConnection.class);
 		TupleQuery writerQuery = mock(TupleQuery.class);
 		Explanation writerExplanation = mock(Explanation.class);
-		AsyncExplainRegistry writerRegistry = new AsyncExplainRegistry(new DirectExecutorService());
-		WorkbenchRequest writerRequest = mockExplainRequest(true, "async-writer-success", null);
+		WorkbenchRequest writerRequest = mockExplainRequest("tracked-writer-success");
 		HttpServletResponse writerResponse = mock(HttpServletResponse.class);
-		AsyncContext writerAsyncContext = mock(AsyncContext.class);
 
 		when(writerRepository.getConnection()).thenReturn(writerConnection);
 		when(writerConnection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(writerQuery);
 		when(writerQuery.explain(Explanation.Level.Optimized)).thenReturn(writerExplanation);
 		when(writerExplanation.toString()).thenReturn("ignored");
 		when(writerResponse.getWriter()).thenThrow(new IOException("writer offline"));
-		when(writerRequest.startAsync(writerRequest, writerResponse)).thenReturn(writerAsyncContext);
-		when(writerAsyncContext.getResponse()).thenReturn(writerResponse);
 		writerServlet.setRepository(writerRepository);
-		writerServlet.substituteAsyncExplainRegistry(writerRegistry);
 
-		try {
-			assertThatCode(() -> writerServlet.service(writerRequest, writerResponse, "/transform"))
-					.doesNotThrowAnyException();
-			verify(writerAsyncContext).complete();
-		} finally {
-			writerRegistry.shutdown();
-		}
+		assertThatCode(() -> writerServlet.service(writerRequest, writerResponse, "/transform"))
+				.doesNotThrowAnyException();
+		verify(writerRequest, never()).startAsync(any(), any());
 	}
 
-	@Test
-	void downloadFallbacksHandleInvalidQValuesAndUnknownAcceptTypes() throws Exception {
-		SailRepository repository = new SailRepository(new MemoryStore());
-		repository.init();
-		try {
-			assertUnknownDownloadFallback(repository, null);
-			assertInvalidGzipQualityDoesNotCompress(repository, "gzip;q=2");
-			assertInvalidGzipQualityDoesNotCompress(repository, "gzip;q=-1");
-			assertInvalidGzipQualityDoesNotCompress(repository, "gzip;q=oops");
-		} finally {
-			repository.shutDown();
-		}
-	}
-
-	@Test
-	void saveQueryFallsBackToRepositoryClassNameWhenRepositoryInfoIsBlank() throws Exception {
-		SailRepository repository = new SailRepository(new MemoryStore());
-		repository.init();
-		try {
-			QueryServlet servlet = new QueryServlet();
-			QueryStorage storage = mock(QueryStorage.class);
-			WorkbenchRequest request = mockSaveRequest("blank-info");
-			HttpServletResponse response = mock(HttpServletResponse.class);
-			StringWriter body = new StringWriter();
-			RepositoryInfo info = new RepositoryInfo();
-			info.setId("   ");
-
-			String expectedReference = "urn:rdf4j:repository:" + UUID.nameUUIDFromBytes(
-					repository.getClass().getName().getBytes(StandardCharsets.UTF_8));
-
-			when(storage.checkAccess(repository)).thenReturn(true);
-			when(storage.askExists(expectedReference, "blank-info", "")).thenReturn(false);
-			when(response.getWriter()).thenReturn(new PrintWriter(body));
-			servlet.setRepository(repository);
-			servlet.setRepositoryInfo(info);
-			servlet.substituteQueryStorage(storage);
-
-			servlet.doPost(request, response, "/transform");
-
-			verify(storage).saveQuery(expectedReference, "blank-info", "", true, QueryLanguage.SPARQL,
-					SHORT_QUERY, false, 20, 0);
-			assertThat(body.toString()).contains("\"written\":true");
-		} finally {
-			repository.shutDown();
-		}
-	}
-
-	@Test
-	void serviceWrapsMalformedQueriesAndPropagatesRawRemoteErrors() throws Exception {
-		CookieAwareQueryServlet malformedServlet = new CookieAwareQueryServlet();
-		Repository malformedRepository = mock(Repository.class);
-		RepositoryConnection malformedConnection = mock(RepositoryConnection.class);
-		WorkbenchRequest malformedRequest = execRequest(SHORT_QUERY, null, null);
-		HttpServletResponse malformedResponse = mock(HttpServletResponse.class);
-		ByteArrayServletOutputStream malformedOut = new ByteArrayServletOutputStream();
-
-		when(malformedRepository.getConnection()).thenReturn(malformedConnection);
-		when(malformedConnection.getNamespaces()).thenReturn(repositoryResultOf());
-		when(malformedConnection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY))
-				.thenThrow(new MalformedQueryException("direct malformed"));
-		when(malformedResponse.getOutputStream()).thenReturn(malformedOut);
-		malformedServlet.setRepository(malformedRepository);
-		malformedServlet.writeQueryCookie = true;
-		malformedServlet.setCookieHandler(mock(CookieHandler.class));
-
-		malformedServlet.service(malformedRequest, malformedResponse, "/transform");
-		assertThat(malformedOut.asString()).contains("direct malformed");
-
-		CookieAwareQueryServlet rawServlet = new CookieAwareQueryServlet();
-		Repository rawRepository = mock(Repository.class);
-		RepositoryConnection rawConnection = mock(RepositoryConnection.class);
-		WorkbenchRequest rawRequest = execRequest(SHORT_QUERY, null, null);
-		HttpServletResponse rawResponse = mock(HttpServletResponse.class);
-		ByteArrayServletOutputStream rawOut = new ByteArrayServletOutputStream();
-
-		when(rawRepository.getConnection()).thenReturn(rawConnection);
-		when(rawConnection.getNamespaces()).thenReturn(repositoryResultOf());
-		when(rawConnection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY))
-				.thenThrow(new HTTPQueryEvaluationException("raw remote failure"));
-		when(rawResponse.getOutputStream()).thenReturn(rawOut);
-		rawServlet.setRepository(rawRepository);
-		rawServlet.writeQueryCookie = true;
-		rawServlet.setCookieHandler(mock(CookieHandler.class));
-
-		rawServlet.service(rawRequest, rawResponse, "/transform");
-		assertThat(rawOut.asString()).contains("raw remote failure");
-	}
-
-	@Test
-	void explainTextRefsBypassSavedQueryChecksAndExecWithoutRefFails() throws Exception {
-		QueryServlet noRefServlet = new QueryServlet();
-		WorkbenchRequest noRefRequest = mock(WorkbenchRequest.class);
-
-		when(noRefRequest.getParameter("action")).thenReturn("exec");
-		when(noRefRequest.isParameterPresent(QueryServlet.REF)).thenReturn(false);
-
-		assertThatThrownBy(() -> noRefServlet.doPost(noRefRequest, mock(HttpServletResponse.class), "/transform"))
-				.isInstanceOf(BadRequestException.class)
-				.hasMessage("Expected 'ref' parameter in request.");
-
-		QueryServlet explainServlet = new QueryServlet();
-		QueryStorage storage = mock(QueryStorage.class);
-		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
-		TupleQuery tupleQuery = mock(TupleQuery.class);
-		Explanation explanation = mock(Explanation.class);
-		WorkbenchRequest explainRequest = mockExplainRequest(false, "sync-text-ref", "text");
-		HttpServletResponse explainResponse = mock(HttpServletResponse.class);
-		StringWriter explainBody = new StringWriter();
-
-		when(repository.getConnection()).thenReturn(connection);
-		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
-		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
-		when(explanation.toString()).thenReturn("text-ref-plan");
-		when(explainResponse.getWriter()).thenReturn(new PrintWriter(explainBody));
-		explainServlet.setRepository(repository);
-		explainServlet.substituteQueryStorage(storage);
-
-		explainServlet.service(explainRequest, explainResponse, "/transform");
-
-		assertThat(explainBody.toString()).contains("\"content\":\"text-ref-plan\"");
-		verifyNoInteractions(storage);
-	}
-
-	private static void assertUnknownDownloadFallback(SailRepository repository, String acceptEncoding)
-			throws Exception {
-		CookieAwareQueryServlet servlet = new CookieAwareQueryServlet();
-		WorkbenchRequest request = execRequest(null, "application/not-known", acceptEncoding);
-		HttpServletResponse response = mock(HttpServletResponse.class);
-
-		when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
-		servlet.setRepository(repository);
-		servlet.writeQueryCookie = true;
-		servlet.setCookieHandler(mock(CookieHandler.class));
-
-		servlet.service(request, response, "/transform");
-
-		verify(response).setContentType("application/xml");
-		verify(response, never()).setHeader("Content-disposition", "attachment; filename=query.xml");
-		verify(response, never()).setHeader("Content-Encoding", "gzip");
-	}
-
-	private static void assertInvalidGzipQualityDoesNotCompress(SailRepository repository, String acceptEncoding)
-			throws Exception {
-		CookieAwareQueryServlet servlet = new CookieAwareQueryServlet();
-		WorkbenchRequest request = execRequest(null, "text/csv", acceptEncoding);
-		HttpServletResponse response = mock(HttpServletResponse.class);
-
-		when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
-		servlet.setRepository(repository);
-		servlet.writeQueryCookie = true;
-		servlet.setCookieHandler(mock(CookieHandler.class));
-
-		servlet.service(request, response, "/transform");
-
-		verify(response, never()).setHeader("Content-Encoding", "gzip");
-	}
-
-	private static WorkbenchRequest execRequest(String query, String accept, String acceptEncoding) throws Exception {
-		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("exec");
-		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
-		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(query != null);
-		when(request.getParameter(QueryServlet.QUERY)).thenReturn(query);
-		when(request.getParameter("queryLn")).thenReturn("SPARQL");
-		when(request.isParameterPresent("infer")).thenReturn(false);
-		when(request.isParameterPresent("Accept")).thenReturn(accept != null);
-		when(request.getParameter("Accept")).thenReturn(accept);
-		when(request.getHeader("Accept")).thenReturn("application/sparql-results+xml");
-		when(request.getHeader("Accept-Encoding")).thenReturn(acceptEncoding);
-		when(request.getInt("offset")).thenReturn(0);
-		when(request.getInt("limit_query")).thenReturn(0);
-		when(request.getInt("know_total")).thenReturn(0);
-		when(request.getInt("query-timeout")).thenReturn(0);
-		return request;
-	}
-
-	private static WorkbenchRequest mockExplainRequest(boolean async, String requestId, String ref) throws Exception {
+	private static WorkbenchRequest mockExplainRequest(String requestId) throws Exception {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.getParameter("action")).thenReturn("explain");
-		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(ref != null);
-		when(request.getParameter(QueryServlet.REF)).thenReturn(ref);
+		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
-		when(request.isParameterPresent("explain-request-id")).thenReturn(async);
+		when(request.isParameterPresent("explain-request-id")).thenReturn(true);
 		when(request.getParameter("explain-request-id")).thenReturn(requestId);
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("explain")).thenReturn("Optimized");
@@ -431,91 +161,5 @@ class QueryServletEdgeCoverageTest {
 		when(request.isParameterPresent("infer")).thenReturn(false);
 		when(request.getInt("query-timeout")).thenReturn(0);
 		return request;
-	}
-
-	private static RepositoryResult<Namespace> repositoryResultOf(Namespace... namespaces) {
-		return new RepositoryResult<>(new CloseableIteratorIteration<>(List.of(namespaces).iterator()));
-	}
-
-	private static WorkbenchRequest mockSaveRequest(String queryName) throws Exception {
-		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("save");
-		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
-		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
-		when(request.getParameter("query-name")).thenReturn(queryName);
-		when(request.getParameter("queryLn")).thenReturn("SPARQL");
-		when(request.getParameter("limit_query")).thenReturn("20");
-		when(request.getInt("query-timeout")).thenReturn(0);
-		when(request.getParameter("query-timeout")).thenReturn("0");
-		when(request.getParameter("overwrite")).thenReturn("false");
-		when(request.getParameter("save-private")).thenReturn("false");
-		when(request.getParameter("server-user")).thenReturn(null);
-		when(request.isParameterPresent("infer")).thenReturn(false);
-		return request;
-	}
-
-	private static final class CookieAwareQueryServlet extends QueryServlet {
-		private void setCookieHandler(CookieHandler cookieHandler) {
-			this.cookies = cookieHandler;
-		}
-	}
-
-	private static final class ByteArrayServletOutputStream extends ServletOutputStream {
-		private final ByteArrayOutputStream delegate = new ByteArrayOutputStream();
-
-		@Override
-		public void write(int b) {
-			delegate.write(b);
-		}
-
-		@Override
-		public boolean isReady() {
-			return true;
-		}
-
-		@Override
-		public void setWriteListener(WriteListener writeListener) {
-			// not needed for unit tests
-		}
-
-		@SuppressWarnings("unused")
-		String asString() {
-			return delegate.toString(StandardCharsets.UTF_8);
-		}
-	}
-
-	private static final class DirectExecutorService extends AbstractExecutorService {
-		private boolean shutdown;
-
-		@Override
-		public void shutdown() {
-			shutdown = true;
-		}
-
-		@Override
-		public List<Runnable> shutdownNow() {
-			shutdown = true;
-			return List.of();
-		}
-
-		@Override
-		public boolean isShutdown() {
-			return shutdown;
-		}
-
-		@Override
-		public boolean isTerminated() {
-			return shutdown;
-		}
-
-		@Override
-		public boolean awaitTermination(long timeout, TimeUnit unit) {
-			return true;
-		}
-
-		@Override
-		public void execute(Runnable command) {
-			command.run();
-		}
 	}
 }

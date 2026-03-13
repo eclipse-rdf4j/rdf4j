@@ -16,9 +16,6 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -27,14 +24,7 @@ import static org.mockito.Mockito.when;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.util.List;
-import java.util.concurrent.AbstractExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 
-import javax.servlet.AsyncContext;
-import javax.servlet.AsyncEvent;
-import javax.servlet.AsyncListener;
 import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -46,7 +36,6 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.http.HTTPQueryEvaluationException;
-import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
@@ -79,114 +68,31 @@ class QueryServletExplainCoverageTest {
 	}
 
 	@Test
-	void syncExplainRejectsUnsupportedOperations() throws Exception {
+	void trackedExplainRejectsDuplicateRequestIds() throws Exception {
 		QueryServlet servlet = new QueryServlet();
-		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
-		TupleQuery tupleQuery = mock(TupleQuery.class);
-		WorkbenchRequest request = mockExplainRequest(false, "sync-unsupported");
+		AsyncExplainRegistry registry = new AsyncExplainRegistry();
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		StringWriter body = new StringWriter();
-
-		when(repository.getConnection()).thenReturn(connection);
-		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
-		when(tupleQuery.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Optimized))
-				.thenThrow(new UnsupportedOperationException("no explain"));
-		when(response.getWriter()).thenReturn(new PrintWriter(body));
-		servlet.setRepository(repository);
-
-		servlet.service(request, response, "/transform");
-
-		verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
-		assertThat(body.toString()).contains("Explain is not supported");
-	}
-
-	@Test
-	void syncExplainHandlesMalformedQueriesAndRepositoryFailures() throws Exception {
-		QueryServlet malformedServlet = new QueryServlet();
-		Repository malformedRepository = mock(Repository.class);
-		RepositoryConnection malformedConnection = mock(RepositoryConnection.class);
-		WorkbenchRequest request = mockExplainRequest(false, "sync-malformed");
-		HttpServletResponse malformedResponse = mock(HttpServletResponse.class);
-		StringWriter malformedBody = new StringWriter();
-
-		when(malformedRepository.getConnection()).thenReturn(malformedConnection);
-		when(malformedConnection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY))
-				.thenThrow(new MalformedQueryException("broken query"));
-		when(malformedResponse.getWriter()).thenReturn(new PrintWriter(malformedBody));
-		malformedServlet.setRepository(malformedRepository);
-
-		malformedServlet.service(request, malformedResponse, "/transform");
-
-		verify(malformedResponse).setStatus(HttpServletResponse.SC_BAD_REQUEST);
-		assertThat(malformedBody.toString()).contains("\"error\":\"broken query\"");
-
-		QueryServlet failingServlet = new QueryServlet();
-		Repository failingRepository = mock(Repository.class);
-		HttpServletResponse failingResponse = mock(HttpServletResponse.class);
-		StringWriter failingBody = new StringWriter();
-
-		when(failingRepository.getConnection()).thenThrow(new RepositoryException("repository boom"));
-		when(failingResponse.getWriter()).thenReturn(new PrintWriter(failingBody));
-		failingServlet.setRepository(failingRepository);
-
-		failingServlet.service(request, failingResponse, "/transform");
-
-		verify(failingResponse).setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-		assertThat(failingBody.toString()).contains("\"error\":\"repository boom\"");
-	}
-
-	@Test
-	void asyncExplainRejectsDuplicateRequestIds() throws Exception {
-		QueryServlet servlet = new QueryServlet();
-		AsyncExplainRegistry registry = new AsyncExplainRegistry(new DirectExecutorService());
-		HttpServletResponse response = mock(HttpServletResponse.class);
-		StringWriter body = new StringWriter();
-		AsyncContext asyncContext = mock(AsyncContext.class);
 		WorkbenchRequest request = mockExplainRequest(true, "duplicate-request");
 
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
-		when(request.startAsync(request, response)).thenReturn(asyncContext);
-		when(asyncContext.getResponse()).thenReturn(response);
-		registry.register("duplicate-request", asyncContext, null);
+		registry.register("duplicate-request", null);
 		servlet.substituteAsyncExplainRegistry(registry);
 
 		try {
 			servlet.service(request, response, "/transform");
 
 			assertThat(body.toString()).contains("\"error\":\"Explain request already active: duplicate-request\"");
-			verify(asyncContext).complete();
+			verify(request, never()).startAsync(any(), any());
 		} finally {
 			registry.shutdown();
 		}
 	}
 
 	@Test
-	void asyncExplainDisablesServletAsyncTimeout() throws Exception {
+	void trackedExplainRejectsInvalidExplainParameters() throws Exception {
 		QueryServlet servlet = new QueryServlet();
-		DeferredExecutorService executor = new DeferredExecutorService();
-		AsyncExplainRegistry registry = new AsyncExplainRegistry(executor);
-		HttpServletResponse response = mock(HttpServletResponse.class);
-		AsyncContext asyncContext = mock(AsyncContext.class);
-		WorkbenchRequest request = mockExplainRequest(true, "async-timeout");
-
-		when(request.startAsync(request, response)).thenReturn(asyncContext);
-		servlet.substituteAsyncExplainRegistry(registry);
-
-		try {
-			servlet.service(request, response, "/transform");
-
-			verify(asyncContext).setTimeout(0L);
-		} finally {
-			registry.cancel("async-timeout");
-			registry.shutdown();
-		}
-	}
-
-	@Test
-	void asyncExplainRejectsInvalidExplainParameters() throws Exception {
-		QueryServlet servlet = new QueryServlet();
-		WorkbenchRequest request = mockExplainRequest(true, "async-invalid");
+		WorkbenchRequest request = mockExplainRequest(true, "tracked-invalid");
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		StringWriter body = new StringWriter();
 
@@ -200,10 +106,10 @@ class QueryServletExplainCoverageTest {
 	}
 
 	@Test
-	void asyncExplainHandlesSavedQueryStorageFailures() throws Exception {
+	void trackedExplainHandlesSavedQueryStorageFailures() throws Exception {
 		QueryServlet servlet = new QueryServlet();
 		QueryStorage storage = mock(QueryStorage.class);
-		WorkbenchRequest request = mockExplainRequest(true, "async-storage");
+		WorkbenchRequest request = mockExplainRequest(true, "tracked-storage");
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		StringWriter body = new StringWriter();
 		IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:saved");
@@ -228,238 +134,96 @@ class QueryServletExplainCoverageTest {
 	}
 
 	@Test
-	void asyncExplainReturnsWrappedRemoteErrorMessages() throws Exception {
-		QueryServlet servlet = new QueryServlet();
-		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
-		TupleQuery tupleQuery = mock(TupleQuery.class);
-		AsyncExplainRegistry registry = new AsyncExplainRegistry(new DirectExecutorService());
-		HttpServletResponse response = mock(HttpServletResponse.class);
-		StringWriter body = new StringWriter();
-		AsyncContext asyncContext = mock(AsyncContext.class);
-		WorkbenchRequest request = mockExplainRequest(true, "async-1");
+	void trackedExplainReturnsWrappedRemoteErrorMessagesAndUnsupportedOperations() throws Exception {
+		QueryServlet remoteServlet = new QueryServlet();
+		Repository remoteRepository = mock(Repository.class);
+		RepositoryConnection remoteConnection = mock(RepositoryConnection.class);
+		TupleQuery remoteQuery = mock(TupleQuery.class);
+		WorkbenchRequest remoteRequest = mockExplainRequest(true, "tracked-remote");
+		HttpServletResponse remoteResponse = mock(HttpServletResponse.class);
+		StringWriter remoteBody = new StringWriter();
 
-		when(repository.getConnection()).thenReturn(connection);
-		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
-		when(tupleQuery.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Optimized))
+		when(remoteRepository.getConnection()).thenReturn(remoteConnection);
+		when(remoteConnection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(remoteQuery);
+		when(remoteQuery.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Optimized))
 				.thenThrow(new HTTPQueryEvaluationException("remote boom"));
-		when(response.getWriter()).thenReturn(new PrintWriter(body));
-		when(request.startAsync(request, response)).thenReturn(asyncContext);
-		when(asyncContext.getResponse()).thenReturn(response);
-		servlet.setRepository(repository);
-		servlet.substituteAsyncExplainRegistry(registry);
+		when(remoteResponse.getWriter()).thenReturn(new PrintWriter(remoteBody));
+		remoteServlet.setRepository(remoteRepository);
 
-		try {
-			servlet.service(request, response, "/transform");
+		remoteServlet.service(remoteRequest, remoteResponse, "/transform");
 
-			verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
-			assertThat(body.toString()).contains("\"error\":\"remote boom\"");
-			verify(asyncContext).complete();
-		} finally {
-			registry.shutdown();
-		}
-	}
+		verify(remoteResponse).setStatus(HttpServletResponse.SC_BAD_REQUEST);
+		assertThat(remoteBody.toString()).contains("\"error\":\"remote boom\"");
+		verify(remoteRequest, never()).startAsync(any(), any());
 
-	@Test
-	void asyncExplainRejectsUnsupportedOperations() throws Exception {
-		QueryServlet servlet = new QueryServlet();
-		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
-		TupleQuery tupleQuery = mock(TupleQuery.class);
-		AsyncExplainRegistry registry = new AsyncExplainRegistry(new DirectExecutorService());
-		HttpServletResponse response = mock(HttpServletResponse.class);
-		StringWriter body = new StringWriter();
-		AsyncContext asyncContext = mock(AsyncContext.class);
-		WorkbenchRequest request = mockExplainRequest(true, "async-unsupported");
+		QueryServlet unsupportedServlet = new QueryServlet();
+		Repository unsupportedRepository = mock(Repository.class);
+		RepositoryConnection unsupportedConnection = mock(RepositoryConnection.class);
+		TupleQuery unsupportedQuery = mock(TupleQuery.class);
+		WorkbenchRequest unsupportedRequest = mockExplainRequest(true, "tracked-unsupported");
+		HttpServletResponse unsupportedResponse = mock(HttpServletResponse.class);
+		StringWriter unsupportedBody = new StringWriter();
 
-		when(repository.getConnection()).thenReturn(connection);
-		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
-		when(tupleQuery.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Optimized))
+		when(unsupportedRepository.getConnection()).thenReturn(unsupportedConnection);
+		when(unsupportedConnection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(unsupportedQuery);
+		when(unsupportedQuery.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Optimized))
 				.thenThrow(new UnsupportedOperationException("no explain"));
-		when(response.getWriter()).thenReturn(new PrintWriter(body));
-		when(request.startAsync(request, response)).thenReturn(asyncContext);
-		when(asyncContext.getResponse()).thenReturn(response);
-		servlet.setRepository(repository);
-		servlet.substituteAsyncExplainRegistry(registry);
+		when(unsupportedResponse.getWriter()).thenReturn(new PrintWriter(unsupportedBody));
+		unsupportedServlet.setRepository(unsupportedRepository);
 
-		try {
-			servlet.service(request, response, "/transform");
+		unsupportedServlet.service(unsupportedRequest, unsupportedResponse, "/transform");
 
-			verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
-			assertThat(body.toString()).contains("Explain is not supported");
-			verify(asyncContext).complete();
-		} finally {
-			registry.shutdown();
-		}
+		verify(unsupportedResponse).setStatus(HttpServletResponse.SC_BAD_REQUEST);
+		assertThat(unsupportedBody.toString()).contains("Explain is not supported");
+		verify(unsupportedRequest, never()).startAsync(any(), any());
 	}
 
 	@Test
-	void asyncExplainHandlesBadRequestsBeforeConnectionAttachment() throws Exception {
-		QueryServlet servlet = new QueryServlet();
-		Repository repository = mock(Repository.class);
-		AsyncExplainRegistry registry = new AsyncExplainRegistry(new DirectExecutorService());
-		HttpServletResponse response = mock(HttpServletResponse.class);
-		StringWriter body = new StringWriter();
-		AsyncContext asyncContext = mock(AsyncContext.class);
-		WorkbenchRequest request = mockExplainRequest(true, "async-pre-attach");
+	void trackedExplainHandlesBadRequestsBeforeConnectionAttachmentAndWriterFailures() throws Exception {
+		QueryServlet badRequestServlet = new QueryServlet();
+		Repository badRequestRepository = mock(Repository.class);
+		WorkbenchRequest badRequest = mockExplainRequest(true, "tracked-pre-attach");
+		HttpServletResponse badRequestResponse = mock(HttpServletResponse.class);
+		StringWriter badRequestBody = new StringWriter();
 
-		when(repository.getConnection()).thenAnswer(invocation -> sneakyThrow(
-				new org.eclipse.rdf4j.workbench.exceptions.BadRequestException("pre-attach bad request")));
-		when(response.getWriter()).thenReturn(new PrintWriter(body));
-		when(request.startAsync(request, response)).thenReturn(asyncContext);
-		when(asyncContext.getResponse()).thenReturn(response);
-		servlet.setRepository(repository);
-		servlet.substituteAsyncExplainRegistry(registry);
+		when(badRequestRepository.getConnection())
+				.thenAnswer(invocation -> sneakyThrow(new org.eclipse.rdf4j.workbench.exceptions.BadRequestException(
+						"pre-attach bad request")));
+		when(badRequestResponse.getWriter()).thenReturn(new PrintWriter(badRequestBody));
+		badRequestServlet.setRepository(badRequestRepository);
 
-		try {
-			servlet.service(request, response, "/transform");
+		badRequestServlet.service(badRequest, badRequestResponse, "/transform");
 
-			verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
-			assertThat(body.toString()).contains("pre-attach bad request");
-			verify(asyncContext).complete();
-		} finally {
-			registry.shutdown();
-		}
-	}
+		verify(badRequestResponse).setStatus(HttpServletResponse.SC_BAD_REQUEST);
+		assertThat(badRequestBody.toString()).contains("pre-attach bad request");
+		verify(badRequest, never()).startAsync(any(), any());
 
-	@Test
-	void asyncExplainShortCircuitsCancelledHandles() throws Exception {
-		QueryServlet servlet = new QueryServlet();
-		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
-		DeferredExecutorService executor = new DeferredExecutorService();
-		AsyncExplainRegistry registry = new AsyncExplainRegistry(executor);
-		HttpServletResponse response = mock(HttpServletResponse.class);
-		AsyncContext asyncContext = mock(AsyncContext.class);
-		WorkbenchRequest request = mockExplainRequest(true, "async-cancelled");
+		QueryServlet writerServlet = new QueryServlet();
+		Repository writerRepository = mock(Repository.class);
+		RepositoryConnection writerConnection = mock(RepositoryConnection.class);
+		TupleQuery writerQuery = mock(TupleQuery.class);
+		WorkbenchRequest writerRequest = mockExplainRequest(true, "tracked-writer");
+		HttpServletResponse writerResponse = mock(HttpServletResponse.class);
 
-		when(repository.getConnection()).thenReturn(connection);
-		when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
-		when(request.startAsync(request, response)).thenReturn(asyncContext);
-		when(asyncContext.getResponse()).thenReturn(response);
-		servlet.setRepository(repository);
-		servlet.substituteAsyncExplainRegistry(registry);
-
-		try {
-			servlet.service(request, response, "/transform");
-			registry.cancel("async-cancelled");
-			executor.runPending();
-
-			verify(connection, never()).prepareQuery(any(QueryLanguage.class), anyString());
-			verify(asyncContext, atLeastOnce()).complete();
-		} finally {
-			registry.shutdown();
-		}
-	}
-
-	@Test
-	void asyncExplainSwallowsWriterFailuresWhenReportingErrors() throws Exception {
-		QueryServlet servlet = new QueryServlet();
-		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
-		TupleQuery tupleQuery = mock(TupleQuery.class);
-		AsyncExplainRegistry registry = new AsyncExplainRegistry(new DirectExecutorService());
-		HttpServletResponse response = mock(HttpServletResponse.class);
-		AsyncContext asyncContext = mock(AsyncContext.class);
-		WorkbenchRequest request = mockExplainRequest(true, "async-writer");
-
-		when(repository.getConnection()).thenReturn(connection);
-		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
-		when(tupleQuery.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Optimized))
+		when(writerRepository.getConnection()).thenReturn(writerConnection);
+		when(writerConnection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(writerQuery);
+		when(writerQuery.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Optimized))
 				.thenThrow(new HTTPQueryEvaluationException("remote boom"));
-		when(response.getWriter()).thenThrow(new IOException("writer down"));
-		when(request.startAsync(request, response)).thenReturn(asyncContext);
-		when(asyncContext.getResponse()).thenReturn(response);
-		servlet.setRepository(repository);
-		servlet.substituteAsyncExplainRegistry(registry);
+		when(writerResponse.getWriter()).thenThrow(new IOException("writer down"));
+		writerServlet.setRepository(writerRepository);
 
-		try {
-			assertThatCode(() -> servlet.service(request, response, "/transform")).doesNotThrowAnyException();
-			verify(asyncContext).complete();
-		} finally {
-			registry.shutdown();
-		}
+		assertThatCode(() -> writerServlet.service(writerRequest, writerResponse, "/transform"))
+				.doesNotThrowAnyException();
+		verify(writerRequest, never()).startAsync(any(), any());
 	}
 
-	@Test
-	void asyncExplainListenerCallbacksCancelAndForgetRequests() throws Exception {
-		QueryServlet servlet = new QueryServlet();
-		DeferredExecutorService executor = new DeferredExecutorService();
-		AsyncExplainRegistry registry = new AsyncExplainRegistry(executor);
-		HttpServletResponse response = mock(HttpServletResponse.class);
-		AsyncContext asyncContext = mock(AsyncContext.class);
-		WorkbenchRequest request = mockExplainRequest(true, "async-listener");
-		AtomicReference<AsyncListener> listenerRef = new AtomicReference<>();
-
-		when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
-		when(request.startAsync(request, response)).thenReturn(asyncContext);
-		when(asyncContext.getResponse()).thenReturn(response);
-		doAnswer(invocation -> {
-			listenerRef.set(invocation.getArgument(0));
-			return null;
-		}).when(asyncContext).addListener(any(AsyncListener.class));
-		servlet.substituteAsyncExplainRegistry(registry);
-
-		try {
-			servlet.service(request, response, "/transform");
-
-			AsyncListener listener = listenerRef.get();
-			assertThat(listener).isNotNull();
-			listener.onStartAsync(new AsyncEvent(asyncContext));
-			listener.onTimeout(new AsyncEvent(asyncContext));
-			listener.onError(new AsyncEvent(asyncContext));
-			listener.onComplete(new AsyncEvent(asyncContext));
-
-			verify(asyncContext, atLeastOnce()).complete();
-		} finally {
-			registry.shutdown();
-		}
-	}
-
-	@Test
-	void cancelExplainIgnoresRemoteCancelFailures() throws Exception {
-		QueryServlet servlet = new QueryServlet();
-		HTTPRepository repository = mock(HTTPRepository.class);
-		DeferredExecutorService executor = new DeferredExecutorService();
-		AsyncExplainRegistry registry = new AsyncExplainRegistry(executor);
-		HttpServletResponse response = mock(HttpServletResponse.class);
-		AsyncContext asyncContext = mock(AsyncContext.class);
-		WorkbenchRequest explainRequest = mockExplainRequest(true, "async-remote-cancel");
-		WorkbenchRequest cancelRequest = mock(WorkbenchRequest.class);
-		HttpServletResponse cancelResponse = mock(HttpServletResponse.class);
-
-		when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
-		when(explainRequest.startAsync(explainRequest, response)).thenReturn(asyncContext);
-		when(asyncContext.getResponse()).thenReturn(response);
-		when(cancelRequest.getParameter("action")).thenReturn("cancel-explain");
-		when(cancelRequest.isParameterPresent("explain-request-id")).thenReturn(true);
-		when(cancelRequest.getParameter("explain-request-id")).thenReturn("async-remote-cancel");
-		when(repository.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
-		when(repository.getRepositoryURL()).thenReturn("https://example.org/repositories/test");
-		doThrow(new RepositoryException("cancel boom")).when(repository)
-				.cancelQueryExplanation("async-remote-cancel");
-		servlet.setRepository(repository);
-		servlet.substituteAsyncExplainRegistry(registry);
-
-		try {
-			servlet.service(explainRequest, response, "/transform");
-			servlet.doPost(cancelRequest, cancelResponse, "/transform");
-
-			verify(cancelResponse).setStatus(HttpServletResponse.SC_NO_CONTENT);
-			verify(repository).cancelQueryExplanation("async-remote-cancel");
-			verify(asyncContext, atLeastOnce()).complete();
-		} finally {
-			registry.shutdown();
-		}
-	}
-
-	private static WorkbenchRequest mockExplainRequest(boolean async, String requestId) throws Exception {
+	private static WorkbenchRequest mockExplainRequest(boolean tracked, String requestId) throws Exception {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.getParameter("action")).thenReturn("explain");
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
-		when(request.isParameterPresent("explain-request-id")).thenReturn(async);
+		when(request.isParameterPresent("explain-request-id")).thenReturn(tracked);
 		when(request.getParameter("explain-request-id")).thenReturn(requestId);
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("explain")).thenReturn("Optimized");
@@ -472,84 +236,5 @@ class QueryServletExplainCoverageTest {
 	@SuppressWarnings("unchecked")
 	private static <T extends Throwable, R> R sneakyThrow(Throwable throwable) throws T {
 		throw (T) throwable;
-	}
-
-	private static final class DirectExecutorService extends AbstractExecutorService {
-		private boolean shutdown;
-
-		@Override
-		public void shutdown() {
-			shutdown = true;
-		}
-
-		@Override
-		public List<Runnable> shutdownNow() {
-			shutdown = true;
-			return List.of();
-		}
-
-		@Override
-		public boolean isShutdown() {
-			return shutdown;
-		}
-
-		@Override
-		public boolean isTerminated() {
-			return shutdown;
-		}
-
-		@Override
-		public boolean awaitTermination(long timeout, TimeUnit unit) {
-			return true;
-		}
-
-		@Override
-		public void execute(Runnable command) {
-			command.run();
-		}
-	}
-
-	private static final class DeferredExecutorService extends AbstractExecutorService {
-		private boolean shutdown;
-		private Runnable pending;
-
-		@Override
-		public void shutdown() {
-			shutdown = true;
-		}
-
-		@Override
-		public List<Runnable> shutdownNow() {
-			shutdown = true;
-			return pending == null ? List.of() : List.of(pending);
-		}
-
-		@Override
-		public boolean isShutdown() {
-			return shutdown;
-		}
-
-		@Override
-		public boolean isTerminated() {
-			return shutdown;
-		}
-
-		@Override
-		public boolean awaitTermination(long timeout, TimeUnit unit) {
-			return true;
-		}
-
-		@Override
-		public void execute(Runnable command) {
-			pending = command;
-		}
-
-		private void runPending() {
-			Runnable command = pending;
-			pending = null;
-			if (command != null) {
-				command.run();
-			}
-		}
 	}
 }

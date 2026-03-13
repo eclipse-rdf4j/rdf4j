@@ -18,6 +18,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -41,12 +44,13 @@ class DefaultQueryRequestHandlerTest {
 	private static final String SELECT_ALL_QUERY = "select * where { ?s ?p ?o }";
 
 	@Test
-	void asyncExplainRequestShouldInterruptWorkerAndCloseConnectionOnCancel() throws Exception {
+	void explainRequestIdShouldRunInlineAndCloseConnectionOnCancel() throws Exception {
 		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
 		Repository repository = mock(Repository.class);
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
 
 		CountDownLatch explainStarted = new CountDownLatch(1);
 		CountDownLatch explainInterrupted = new CountDownLatch(1);
@@ -76,67 +80,29 @@ class DefaultQueryRequestHandlerTest {
 			}
 		});
 
-		ModelAndView asyncResult = handler.handleQueryRequest(explainRequest, RequestMethod.POST, explainResponse);
+		try {
+			Future<ModelAndView> explainFuture = executor
+					.submit(() -> handler.handleQueryRequest(explainRequest, RequestMethod.POST, explainResponse));
 
-		assertThat(asyncResult).isNull();
-		assertThat(explainRequest.isAsyncStarted()).isTrue();
-		assertThat(explainStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(explainStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(explainFuture.isDone()).isFalse();
+			assertThat(explainRequest.isAsyncStarted()).isFalse();
 
-		MockHttpServletRequest cancelRequest = new MockHttpServletRequest();
-		cancelRequest.setMethod(RequestMethod.POST.name());
-		cancelRequest.setParameter(Protocol.CANCEL_EXPLAIN_PARAM_NAME, "true");
-		cancelRequest.setParameter(Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME, "req-123");
-		MockHttpServletResponse cancelResponse = new MockHttpServletResponse();
+			MockHttpServletRequest cancelRequest = new MockHttpServletRequest();
+			cancelRequest.setMethod(RequestMethod.POST.name());
+			cancelRequest.setParameter(Protocol.CANCEL_EXPLAIN_PARAM_NAME, "true");
+			cancelRequest.setParameter(Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME, "req-123");
+			MockHttpServletResponse cancelResponse = new MockHttpServletResponse();
 
-		assertThat(handler.handleCancelExplain(cancelRequest, cancelResponse)).isTrue();
-		assertThat(cancelResponse.getStatus()).isEqualTo(MockHttpServletResponse.SC_NO_CONTENT);
-		assertThat(explainInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
-		assertThat(interrupted).isTrue();
-		verify(connection, atLeastOnce()).close();
-	}
-
-	@Test
-	void asyncExplainRequestShouldDisableServletAsyncTimeout() throws Exception {
-		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
-		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
-		TupleQuery tupleQuery = mock(TupleQuery.class);
-		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
-
-		CountDownLatch explainStarted = new CountDownLatch(1);
-		CountDownLatch explainInterrupted = new CountDownLatch(1);
-
-		MockHttpServletRequest explainRequest = newAsyncExplainRequest("req-timeout");
-		MockHttpServletResponse explainResponse = new MockHttpServletResponse();
-
-		when(repositoryResolver.getRepository(explainRequest)).thenReturn(repository);
-		when(repositoryResolver.getRepositoryConnection(explainRequest, repository)).thenReturn(connection);
-		when(connection.prepareQuery(QueryLanguage.SPARQL, SELECT_ALL_QUERY, null)).thenReturn(tupleQuery);
-		when(tupleQuery.explain(Explanation.Level.Optimized)).thenAnswer(invocation -> {
-			explainStarted.countDown();
-			try {
-				new CountDownLatch(1).await();
-				return mock(Explanation.class);
-			} catch (InterruptedException e) {
-				explainInterrupted.countDown();
-				throw new QueryInterruptedException("interrupted", e);
-			}
-		});
-
-		ModelAndView asyncResult = handler.handleQueryRequest(explainRequest, RequestMethod.POST, explainResponse);
-
-		assertThat(asyncResult).isNull();
-		assertThat(explainRequest.isAsyncStarted()).isTrue();
-		assertThat(explainStarted.await(5, TimeUnit.SECONDS)).isTrue();
-		assertThat(explainRequest.getAsyncContext().getTimeout()).isZero();
-
-		MockHttpServletRequest cancelRequest = newCancelExplainRequest("req-timeout");
-		MockHttpServletResponse cancelResponse = new MockHttpServletResponse();
-
-		assertThat(handler.handleCancelExplain(cancelRequest, cancelResponse)).isTrue();
-		assertThat(cancelResponse.getStatus()).isEqualTo(MockHttpServletResponse.SC_NO_CONTENT);
-		assertThat(explainInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
-		verify(connection, atLeastOnce()).close();
+			assertThat(handler.handleCancelExplain(cancelRequest, cancelResponse)).isTrue();
+			assertThat(cancelResponse.getStatus()).isEqualTo(MockHttpServletResponse.SC_NO_CONTENT);
+			assertThat(explainInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(interrupted).isTrue();
+			assertThat(explainFuture.get(5, TimeUnit.SECONDS)).isNull();
+			verify(connection, atLeastOnce()).close();
+		} finally {
+			executor.shutdownNow();
+		}
 	}
 
 	@Test
@@ -148,6 +114,7 @@ class DefaultQueryRequestHandlerTest {
 		TupleQuery firstQuery = mock(TupleQuery.class);
 		TupleQuery secondQuery = mock(TupleQuery.class);
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
 
 		CountDownLatch explainStarted = new CountDownLatch(1);
 		CountDownLatch explainInterrupted = new CountDownLatch(1);
@@ -174,27 +141,33 @@ class DefaultQueryRequestHandlerTest {
 			}
 		});
 
-		ModelAndView firstResult = handler.handleQueryRequest(firstRequest, RequestMethod.POST, firstResponse);
+		try {
+			Future<ModelAndView> firstResult = executor
+					.submit(() -> handler.handleQueryRequest(firstRequest, RequestMethod.POST, firstResponse));
 
-		assertThat(firstResult).isNull();
-		assertThat(firstRequest.isAsyncStarted()).isTrue();
-		assertThat(explainStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(explainStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(firstResult.isDone()).isFalse();
+			assertThat(firstRequest.isAsyncStarted()).isFalse();
 
-		ModelAndView secondResult = handler.handleQueryRequest(secondRequest, RequestMethod.POST, secondResponse);
+			ModelAndView secondResult = handler.handleQueryRequest(secondRequest, RequestMethod.POST, secondResponse);
 
-		assertThat(secondResult).isNull();
-		assertThat(secondResponse.getStatus()).isEqualTo(MockHttpServletResponse.SC_BAD_REQUEST);
-		assertThat(secondResponse.getErrorMessage())
-				.isEqualTo("Explain request already active: duplicate-request");
-		verify(secondConnection).close();
+			assertThat(secondResult).isNull();
+			assertThat(secondResponse.getStatus()).isEqualTo(MockHttpServletResponse.SC_BAD_REQUEST);
+			assertThat(secondResponse.getErrorMessage())
+					.isEqualTo("Explain request already active: duplicate-request");
+			verify(secondConnection).close();
 
-		MockHttpServletRequest cancelRequest = newCancelExplainRequest("duplicate-request");
-		MockHttpServletResponse cancelResponse = new MockHttpServletResponse();
+			MockHttpServletRequest cancelRequest = newCancelExplainRequest("duplicate-request");
+			MockHttpServletResponse cancelResponse = new MockHttpServletResponse();
 
-		assertThat(handler.handleCancelExplain(cancelRequest, cancelResponse)).isTrue();
-		assertThat(cancelResponse.getStatus()).isEqualTo(MockHttpServletResponse.SC_NO_CONTENT);
-		assertThat(explainInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
-		verify(firstConnection, atLeastOnce()).close();
+			assertThat(handler.handleCancelExplain(cancelRequest, cancelResponse)).isTrue();
+			assertThat(cancelResponse.getStatus()).isEqualTo(MockHttpServletResponse.SC_NO_CONTENT);
+			assertThat(explainInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(firstResult.get(5, TimeUnit.SECONDS)).isNull();
+			verify(firstConnection, atLeastOnce()).close();
+		} finally {
+			executor.shutdownNow();
+		}
 	}
 
 	@Test

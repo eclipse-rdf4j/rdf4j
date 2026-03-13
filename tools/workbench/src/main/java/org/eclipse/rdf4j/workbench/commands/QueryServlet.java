@@ -26,9 +26,6 @@ import java.util.UUID;
 import java.util.WeakHashMap;
 import java.util.zip.GZIPOutputStream;
 
-import javax.servlet.AsyncContext;
-import javax.servlet.AsyncEvent;
-import javax.servlet.AsyncListener;
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
@@ -92,7 +89,7 @@ public class QueryServlet extends TransformationServlet {
 
 	private static final String EXPLAIN_REQUEST_ID = "explain-request-id";
 
-	private static final String[] EDIT_PARAMS = new String[] { QUERY_LN, QUERY, INFER, LIMIT };
+	private static final String[] EDIT_PARAMS = new String[] { QUERY_LN, QUERY, INFER, LIMIT, QUERY_TIMEOUT };
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(QueryServlet.class);
 
@@ -263,25 +260,14 @@ public class QueryServlet extends TransformationServlet {
 			return;
 		}
 
-		AsyncContext asyncContext = req.startAsync(req, resp);
-		asyncContext.setTimeout(0L);
 		final AsyncExplainRegistry.Handle handle;
 		try {
-			handle = asyncExplainRegistry.register(explainRequestId, asyncContext,
-					createRemoteCancelAction(explainRequestId));
+			handle = asyncExplainRegistry.register(explainRequestId, createRemoteCancelAction(explainRequestId));
 		} catch (IllegalStateException e) {
-			writeExplainErrorResponse((HttpServletResponse) asyncContext.getResponse(),
-					HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
-			asyncContext.complete();
+			writeExplainErrorResponse(resp, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
 			return;
 		}
 
-		addAsyncExplainCleanupListener(explainRequestId, asyncContext, handle);
-		asyncExplainRegistry.execute(() -> executeAsyncExplain(handle, queryText, explainRequest));
-	}
-
-	private void executeAsyncExplain(AsyncExplainRegistry.Handle handle, String queryText,
-			QueryEvaluator.ExplainRequest explainRequest) {
 		QueryExplanationRequestContext.Activation ignored = QueryExplanationRequestContext
 				.activate(handle.getExplainRequestId());
 		try {
@@ -296,8 +282,7 @@ public class QueryServlet extends TransformationServlet {
 
 				QueryEvaluator.ExplainQueryResult explainQueryResult = EVAL.explain(con, queryText, explainRequest);
 				if (handle.isActive()) {
-					writeExplainSuccessResponse((HttpServletResponse) handle.getAsyncContext().getResponse(),
-							explainQueryResult);
+					writeExplainSuccessResponse(resp, explainQueryResult);
 				}
 			} catch (Throwable t) {
 				connectionFailure = t;
@@ -306,22 +291,37 @@ public class QueryServlet extends TransformationServlet {
 				closeConnection(con, connectionFailure);
 			}
 		} catch (BadRequestException e) {
-			writeAsyncExplainError(handle, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+			writeTrackedExplainError(resp, handle, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
 		} catch (MalformedQueryException e) {
-			writeAsyncExplainError(handle, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+			writeTrackedExplainError(resp, handle, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
 		} catch (HTTPQueryEvaluationException e) {
-			writeAsyncExplainError(handle, HttpServletResponse.SC_BAD_REQUEST, getExplainErrorMessage(e));
+			writeTrackedExplainError(resp, handle, HttpServletResponse.SC_BAD_REQUEST, getExplainErrorMessage(e));
 		} catch (RDF4JException e) {
 			LOGGER.warn(e.toString(), e);
-			writeAsyncExplainError(handle, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, e.getMessage());
+			writeTrackedExplainError(resp, handle, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, e.getMessage());
 		} catch (IOException e) {
-			LOGGER.debug("Explain response write failed for request {}", handle.getExplainRequestId(), e);
+			if (handle.isActive()) {
+				LOGGER.debug("Explain response write failed for request {}", handle.getExplainRequestId(), e);
+			}
 		} finally {
 			try {
 				ignored.close();
 			} finally {
 				asyncExplainRegistry.complete(handle);
 			}
+		}
+	}
+
+	private void writeTrackedExplainError(HttpServletResponse response, AsyncExplainRegistry.Handle handle,
+			int statusCode,
+			String message) {
+		if (!handle.isActive()) {
+			return;
+		}
+		try {
+			writeExplainErrorResponse(response, statusCode, message);
+		} catch (IOException e) {
+			LOGGER.debug("Explain error response write failed for request {}", handle.getExplainRequestId(), e);
 		}
 	}
 
@@ -338,18 +338,6 @@ public class QueryServlet extends TransformationServlet {
 		}
 	}
 
-	private void writeAsyncExplainError(AsyncExplainRegistry.Handle handle, int statusCode, String message) {
-		if (!handle.isActive()) {
-			return;
-		}
-		try {
-			writeExplainErrorResponse((HttpServletResponse) handle.getAsyncContext().getResponse(), statusCode,
-					message);
-		} catch (IOException e) {
-			LOGGER.debug("Explain error response write failed for request {}", handle.getExplainRequestId(), e);
-		}
-	}
-
 	private Runnable createRemoteCancelAction(String explainRequestId) {
 		if (!(repository instanceof HTTPRepository)) {
 			return null;
@@ -363,31 +351,6 @@ public class QueryServlet extends TransformationServlet {
 				LOGGER.debug("Remote explain cancellation failed for request {}", explainRequestId, e);
 			}
 		};
-	}
-
-	private void addAsyncExplainCleanupListener(String explainRequestId, AsyncContext asyncContext,
-			AsyncExplainRegistry.Handle handle) {
-		asyncContext.addListener(new AsyncListener() {
-			@Override
-			public void onComplete(AsyncEvent event) {
-				asyncExplainRegistry.forget(handle);
-			}
-
-			@Override
-			public void onTimeout(AsyncEvent event) {
-				asyncExplainRegistry.cancel(explainRequestId);
-			}
-
-			@Override
-			public void onError(AsyncEvent event) {
-				asyncExplainRegistry.cancel(explainRequestId);
-			}
-
-			@Override
-			public void onStartAsync(AsyncEvent event) {
-				// no-op
-			}
-		});
 	}
 
 	private void writeExplainSuccessResponse(final HttpServletResponse resp,
@@ -547,7 +510,8 @@ public class QueryServlet extends TransformationServlet {
 				final Boolean infer = Boolean.valueOf(req.getParameter(EDIT_PARAMS[2]));
 				final Literal limit = SimpleValueFactory.getInstance()
 						.createLiteral(req.getParameter(EDIT_PARAMS[3]), CoreDatatype.XSD.INTEGER);
-				builder.result(queryLn, query, infer, limit);
+				final Literal queryTimeout = createOptionalIntegerLiteral(req.getParameter(EDIT_PARAMS[4]));
+				builder.result(queryLn, query, infer, limit, queryTimeout);
 				builder.end();
 			} else {
 				throw new BadRequestException("Current user may not read the given query.");
@@ -618,6 +582,17 @@ public class QueryServlet extends TransformationServlet {
 		final PrintWriter writer = new PrintWriter(new BufferedWriter(resp.getWriter()));
 		writer.write(mapper.writeValueAsString(jsonObject));
 		writer.flush();
+	}
+
+	private Literal createOptionalIntegerLiteral(String value) {
+		if (value == null) {
+			return null;
+		}
+		String normalizedValue = value.trim();
+		if (normalizedValue.isEmpty()) {
+			return null;
+		}
+		return SimpleValueFactory.getInstance().createLiteral(normalizedValue, CoreDatatype.XSD.INTEGER);
 	}
 
 	private String getUserNameFromParameter(WorkbenchRequest req, String parameter) {

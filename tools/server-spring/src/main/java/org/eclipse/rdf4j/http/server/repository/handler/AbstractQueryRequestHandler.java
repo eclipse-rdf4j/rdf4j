@@ -18,9 +18,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
-import javax.servlet.AsyncContext;
-import javax.servlet.AsyncEvent;
-import javax.servlet.AsyncListener;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
@@ -106,7 +103,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			final Optional<String> explainRequestId = getExplainRequestId(request);
 
 			if (!headersOnly && explainLevel.isPresent() && explainRequestId.isPresent()) {
-				return handleAsyncExplainRequest(request, response, repositoryCon, query, explainLevel.get(),
+				return handleRegisteredExplainRequest(request, response, repositoryCon, query, explainLevel.get(),
 						explainRequestId.get());
 			}
 
@@ -183,116 +180,62 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		throw new ServerHTTPException("unimplemented explainQuery feature");
 	}
 
-	private ModelAndView handleAsyncExplainRequest(HttpServletRequest request, HttpServletResponse response,
+	private ModelAndView handleRegisteredExplainRequest(HttpServletRequest request, HttpServletResponse response,
 			RepositoryConnection repositoryCon, Query query, Explanation.Level explainLevel, String explainRequestId)
-			throws IOException {
-		AsyncContext asyncContext = request.startAsync();
-		asyncContext.setTimeout(0L);
+			throws IOException, HTTPException {
 		final AsyncExplainRegistry.Handle handle;
 		try {
-			handle = asyncExplainRegistry.register(explainRequestId, asyncContext);
+			handle = asyncExplainRegistry.register(explainRequestId);
 		} catch (IllegalStateException e) {
-			try {
-				repositoryCon.close();
-			} catch (Exception qre) {
-				logger.warn("Connection closing error", qre);
-			}
+			closeConnection(repositoryCon);
 			response.sendError(HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
-			asyncContext.complete();
 			return null;
 		}
 
-		addAsyncExplainCleanupListener(explainRequestId, asyncContext, handle);
-		asyncExplainRegistry.execute(() -> executeAsyncExplain(handle, query, explainLevel, repositoryCon));
-		return null;
-	}
-
-	private void executeAsyncExplain(AsyncExplainRegistry.Handle handle, Query query, Explanation.Level explainLevel,
-			RepositoryConnection repositoryCon) {
-		try (RepositoryConnection connection = repositoryCon) {
-			handle.attach(Thread.currentThread(), connection);
+		try {
+			handle.attach(Thread.currentThread(), repositoryCon);
 			if (!handle.isActive()) {
-				return;
+				return null;
 			}
 
 			Explanation explanation = explainQuery(query, explainLevel);
-			if (handle.isActive()) {
-				renderAsyncExplainResponse(handle, explanation);
+			if (!handle.isActive()) {
+				return null;
 			}
+
+			return getExplainQueryResponse(request, response, explanation);
 		} catch (QueryInterruptedException e) {
 			logger.info("Query interrupted", e);
-			sendAsyncError(handle, SC_SERVICE_UNAVAILABLE, "Query evaluation took too long");
+			if (!handle.isActive()) {
+				return null;
+			}
+			throw new ServerHTTPException(SC_SERVICE_UNAVAILABLE, "Query evaluation took too long");
 		} catch (QueryEvaluationException e) {
 			logger.info("Query evaluation error", e);
-			if (e.getCause() instanceof HTTPException) {
-				sendAsyncHttpError(handle, (HTTPException) e.getCause());
-			} else {
-				sendAsyncError(handle, HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
-						"Query evaluation error: " + e.getMessage());
+			if (!handle.isActive()) {
+				return null;
 			}
+			if (e.getCause() instanceof HTTPException) {
+				throw (HTTPException) e.getCause();
+			}
+			throw new ServerHTTPException("Query evaluation error: " + e.getMessage());
 		} catch (HTTPException e) {
-			sendAsyncHttpError(handle, e);
-		} catch (Exception e) {
-			logger.info("Async explain error", e);
-			sendAsyncError(handle, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, e.getMessage());
+			if (!handle.isActive()) {
+				return null;
+			}
+			throw e;
 		} finally {
 			asyncExplainRegistry.complete(handle);
+			closeConnection(repositoryCon);
 		}
 	}
 
-	private void renderAsyncExplainResponse(AsyncExplainRegistry.Handle handle, Explanation explanation)
-			throws Exception {
-		HttpServletRequest request = (HttpServletRequest) handle.getAsyncContext().getRequest();
-		HttpServletResponse response = (HttpServletResponse) handle.getAsyncContext().getResponse();
-		ModelAndView modelAndView = getExplainQueryResponse(request, response, explanation);
-		if (modelAndView == null) {
-			return;
-		}
-		View view = modelAndView.getView();
-		if (view == null) {
-			return;
-		}
-		view.render(modelAndView.getModel(), request, response);
-	}
-
-	private void sendAsyncHttpError(AsyncExplainRegistry.Handle handle, HTTPException exception) {
-		sendAsyncError(handle, exception.getStatusCode(), exception.getMessage());
-	}
-
-	private void sendAsyncError(AsyncExplainRegistry.Handle handle, int statusCode, String message) {
-		if (!handle.isActive()) {
-			return;
-		}
+	private void closeConnection(RepositoryConnection repositoryCon) {
 		try {
-			((HttpServletResponse) handle.getAsyncContext().getResponse()).sendError(statusCode, message);
-		} catch (IOException e) {
-			logger.debug("Unable to write async explain error for request {}", handle.getExplainRequestId(), e);
+			repositoryCon.close();
+		} catch (Exception qre) {
+			logger.warn("Connection closing error", qre);
 		}
-	}
-
-	private void addAsyncExplainCleanupListener(String explainRequestId, AsyncContext asyncContext,
-			AsyncExplainRegistry.Handle handle) {
-		asyncContext.addListener(new AsyncListener() {
-			@Override
-			public void onComplete(AsyncEvent event) {
-				asyncExplainRegistry.forget(handle);
-			}
-
-			@Override
-			public void onTimeout(AsyncEvent event) {
-				asyncExplainRegistry.cancel(explainRequestId);
-			}
-
-			@Override
-			public void onError(AsyncEvent event) {
-				asyncExplainRegistry.cancel(explainRequestId);
-			}
-
-			@Override
-			public void onStartAsync(AsyncEvent event) {
-				// no-op
-			}
-		});
 	}
 
 	protected abstract ModelAndView getExplainQueryResponse(

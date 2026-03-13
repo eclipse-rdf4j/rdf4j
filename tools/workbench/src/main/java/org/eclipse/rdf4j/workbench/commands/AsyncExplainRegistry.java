@@ -14,12 +14,7 @@ package org.eclipse.rdf4j.workbench.commands;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
-
-import javax.servlet.AsyncContext;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.slf4j.Logger;
@@ -29,36 +24,15 @@ final class AsyncExplainRegistry {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(AsyncExplainRegistry.class);
 
-	private static final AtomicLong THREAD_COUNTER = new AtomicLong();
-
 	private final ConcurrentMap<String, Handle> handles = new ConcurrentHashMap<>();
 
-	private final ExecutorService executorService;
-
-	AsyncExplainRegistry() {
-		this(Executors.newCachedThreadPool(runnable -> {
-			Thread thread = Executors.defaultThreadFactory().newThread(runnable);
-			thread.setName("rdf4j-workbench-explain-" + THREAD_COUNTER.incrementAndGet());
-			thread.setDaemon(true);
-			return thread;
-		}));
-	}
-
-	AsyncExplainRegistry(ExecutorService executorService) {
-		this.executorService = Objects.requireNonNull(executorService, "Executor service was null");
-	}
-
-	Handle register(String explainRequestId, AsyncContext asyncContext, Runnable remoteCancel) {
-		Handle handle = new Handle(explainRequestId, asyncContext, remoteCancel);
+	Handle register(String explainRequestId, Runnable remoteCancel) {
+		Handle handle = new Handle(explainRequestId, remoteCancel);
 		Handle previous = handles.putIfAbsent(explainRequestId, handle);
 		if (previous != null) {
 			throw new IllegalStateException("Explain request already active: " + explainRequestId);
 		}
 		return handle;
-	}
-
-	void execute(Runnable runnable) {
-		executorService.execute(runnable);
 	}
 
 	boolean cancel(String explainRequestId) {
@@ -75,38 +49,27 @@ final class AsyncExplainRegistry {
 		handle.finish();
 	}
 
-	void forget(Handle handle) {
-		handles.remove(handle.getExplainRequestId(), handle);
-	}
-
 	void shutdown() {
 		for (Handle handle : handles.values()) {
-			complete(handle);
+			cancel(handle.getExplainRequestId());
 		}
-		executorService.shutdownNow();
 	}
 
 	static final class Handle {
 		private final String explainRequestId;
-		private final AsyncContext asyncContext;
 		private final Runnable remoteCancel;
 		private final AtomicBoolean active = new AtomicBoolean(true);
 
 		private volatile Thread workerThread;
 		private volatile RepositoryConnection repositoryConnection;
 
-		private Handle(String explainRequestId, AsyncContext asyncContext, Runnable remoteCancel) {
+		private Handle(String explainRequestId, Runnable remoteCancel) {
 			this.explainRequestId = Objects.requireNonNull(explainRequestId, "Explain request id was null");
-			this.asyncContext = Objects.requireNonNull(asyncContext, "Async context was null");
 			this.remoteCancel = remoteCancel;
 		}
 
 		String getExplainRequestId() {
 			return explainRequestId;
-		}
-
-		AsyncContext getAsyncContext() {
-			return asyncContext;
 		}
 
 		void attach(Thread workerThread, RepositoryConnection repositoryConnection) {
@@ -120,7 +83,6 @@ final class AsyncExplainRegistry {
 
 		void cancel() {
 			if (!active.getAndSet(false)) {
-				completeAsync();
 				return;
 			}
 
@@ -131,12 +93,10 @@ final class AsyncExplainRegistry {
 
 			closeConnection();
 			runRemoteCancel();
-			completeAsync();
 		}
 
 		void finish() {
 			active.set(false);
-			completeAsync();
 		}
 
 		private void closeConnection() {
@@ -159,14 +119,6 @@ final class AsyncExplainRegistry {
 				remoteCancel.run();
 			} catch (Exception e) {
 				LOGGER.debug("Error while forwarding explain cancellation", e);
-			}
-		}
-
-		private void completeAsync() {
-			try {
-				asyncContext.complete();
-			} catch (IllegalStateException e) {
-				LOGGER.debug("Async context already completed for explain request {}", explainRequestId, e);
 			}
 		}
 	}

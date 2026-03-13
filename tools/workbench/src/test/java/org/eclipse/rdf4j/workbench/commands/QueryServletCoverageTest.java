@@ -25,6 +25,7 @@ import static org.mockito.Mockito.when;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.reflect.Field;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -35,7 +36,6 @@ import javax.servlet.ServletOutputStream;
 import javax.servlet.WriteListener;
 import javax.servlet.http.HttpServletResponse;
 
-import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -204,6 +204,7 @@ class QueryServletCoverageTest {
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("infer")).thenReturn("false");
 		when(request.getParameter("limit_query")).thenReturn("20");
+		when(request.getParameter("query-timeout")).thenReturn("17");
 		servlet.substituteQueryStorage(storage);
 
 		servlet.doPost(request, response, "/transform");
@@ -211,7 +212,9 @@ class QueryServletCoverageTest {
 		assertThat(outputStream.asString())
 				.contains(SHORT_QUERY)
 				.contains("SPARQL")
-				.contains("20");
+				.contains("20")
+				.contains("name='query-timeout'")
+				.contains(">17</literal>");
 	}
 
 	@Test
@@ -301,9 +304,13 @@ class QueryServletCoverageTest {
 	}
 
 	private static void shutdownDefaultQueryStorage() throws Exception {
-		AppConfiguration appConfiguration = new AppConfiguration("Workbench", "RDF4J Workbench");
-		appConfiguration.init(false);
-		QueryStorage.getSingletonInstance(appConfiguration).shutdown();
+		Field instanceField = QueryStorage.class.getDeclaredField("instance");
+		instanceField.setAccessible(true);
+		QueryStorage queryStorage = (QueryStorage) instanceField.get(null);
+		if (queryStorage != null) {
+			queryStorage.shutdown();
+			instanceField.set(null, null);
+		}
 	}
 
 	private static WorkbenchRequest mockSaveRequest(String queryName) throws Exception {
