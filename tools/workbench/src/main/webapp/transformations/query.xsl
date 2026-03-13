@@ -480,6 +480,8 @@
 
                 .query-compare-layout--active #query-compare-controls {
                     display: flex;
+                    position: static;
+                    top: 10px;
                 }
 
                 #query-compare-controls {
