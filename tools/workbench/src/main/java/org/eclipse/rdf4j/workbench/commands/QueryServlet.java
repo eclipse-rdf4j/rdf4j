@@ -264,6 +264,7 @@ public class QueryServlet extends TransformationServlet {
 		}
 
 		AsyncContext asyncContext = req.startAsync(req, resp);
+		asyncContext.setTimeout(0L);
 		final AsyncExplainRegistry.Handle handle;
 		try {
 			handle = asyncExplainRegistry.register(explainRequestId, asyncContext,

@@ -162,6 +162,28 @@ class QueryServletExplainCoverageTest {
 	}
 
 	@Test
+	void asyncExplainDisablesServletAsyncTimeout() throws Exception {
+		QueryServlet servlet = new QueryServlet();
+		DeferredExecutorService executor = new DeferredExecutorService();
+		AsyncExplainRegistry registry = new AsyncExplainRegistry(executor);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		AsyncContext asyncContext = mock(AsyncContext.class);
+		WorkbenchRequest request = mockExplainRequest(true, "async-timeout");
+
+		when(request.startAsync(request, response)).thenReturn(asyncContext);
+		servlet.substituteAsyncExplainRegistry(registry);
+
+		try {
+			servlet.service(request, response, "/transform");
+
+			verify(asyncContext).setTimeout(0L);
+		} finally {
+			registry.cancel("async-timeout");
+			registry.shutdown();
+		}
+	}
+
+	@Test
 	void asyncExplainRejectsInvalidExplainParameters() throws Exception {
 		QueryServlet servlet = new QueryServlet();
 		WorkbenchRequest request = mockExplainRequest(true, "async-invalid");

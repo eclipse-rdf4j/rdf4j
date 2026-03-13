@@ -187,10 +187,16 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			RepositoryConnection repositoryCon, Query query, Explanation.Level explainLevel, String explainRequestId)
 			throws IOException {
 		AsyncContext asyncContext = request.startAsync();
+		asyncContext.setTimeout(0L);
 		final AsyncExplainRegistry.Handle handle;
 		try {
 			handle = asyncExplainRegistry.register(explainRequestId, asyncContext);
 		} catch (IllegalStateException e) {
+			try {
+				repositoryCon.close();
+			} catch (Exception qre) {
+				logger.warn("Connection closing error", qre);
+			}
 			response.sendError(HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
 			asyncContext.complete();
 			return null;
