@@ -50,3 +50,25 @@ test('cancels the active slow explain request after level change and explicit ca
     assert.equal(harness.getAttribute('explain-trigger-cancel', 'aria-hidden'), 'true');
     assert.equal(harness.getProperty('explain-trigger-cancel', 'disabled'), true);
 });
+
+test('cancels the in-flight primary explain before compare refresh starts', () => {
+    const harness = createQueryBrowserHarness({
+        serverRequestIds: ['request-1', 'request-2', 'request-3']
+    });
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+
+    const primaryExplainRequest = harness.requestsByAction('explain')[0];
+    assert.ok(primaryExplainRequest);
+    assert.equal(primaryExplainRequest.params.get('explain-request-id'), 'request-1');
+
+    harness.context.workbench.query.toggleCompareMode();
+    harness.context.workbench.query.runCompareExplain('explain-compare-trigger');
+
+    const cancelRequests = harness.requestsByAction('cancel-explain');
+    assert.equal(cancelRequests.length, 1);
+    assert.equal(cancelRequests[0].params.get('explain-request-id'), 'request-1');
+    assert.equal(primaryExplainRequest.aborted, true);
+    assert.equal(harness.requestsByAction('explain').length, 3);
+});

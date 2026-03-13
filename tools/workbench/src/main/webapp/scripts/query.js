@@ -273,6 +273,13 @@ var workbench;
                 staleReasons: staleReasons
             };
         }
+        function cloneExplanationWithQueryHash(explanation, queryHash) {
+            var nextExplanation = cloneStableExplanation(explanation);
+            if (nextExplanation) {
+                nextExplanation.queryHash = queryHash;
+            }
+            return nextExplanation;
+        }
         function restorePaneStateFromPrevious(paneState, paneKey, inputs, layout) {
             var previousExplanation = getPaneSnapshot(paneState);
             if (previousExplanation) {
@@ -725,6 +732,60 @@ var workbench;
         }
         function hasPrimaryExplanation() {
             return !!getPaneDisplayExplanation(queryPageState.primaryPane);
+        }
+        function refreshPaneStateWithInputs(paneState, paneKey, inputs) {
+            if (paneState.kind === 'ready') {
+                return createReadyPaneState(paneState.explanation, paneKey, inputs);
+            }
+            if (paneState.kind === 'error' && paneState.previous) {
+                return createErrorPaneState(paneState.message, paneState.mode, paneState.previous, paneKey, inputs);
+            }
+            return paneState;
+        }
+        function syncStateAfterAsyncPrimaryQueryLoad() {
+            if (!queryPageState || queryPageState.lifecycle !== 'ready') {
+                return;
+            }
+            var currentInputs = collectCurrentInputs();
+            var nextPrimaryPane = queryPageState.primaryPane;
+            var primarySnapshot = getPaneSnapshot(queryPageState.primaryPane);
+            if (primarySnapshot) {
+                var reboundPrimaryExplanation = cloneExplanationWithQueryHash(primarySnapshot, currentInputs.primaryQueryHash);
+                if (queryPageState.primaryPane.kind === 'error') {
+                    nextPrimaryPane = createErrorPaneState(queryPageState.primaryPane.message, queryPageState.primaryPane.mode, reboundPrimaryExplanation, 'primary', currentInputs);
+                }
+                else if (queryPageState.primaryPane.kind === 'loading') {
+                    nextPrimaryPane = {
+                        kind: 'loading',
+                        phase: queryPageState.primaryPane.phase,
+                        mode: queryPageState.primaryPane.mode,
+                        request: queryPageState.primaryPane.request,
+                        previous: reboundPrimaryExplanation || undefined
+                    };
+                }
+                else {
+                    nextPrimaryPane = createReadyPaneState(reboundPrimaryExplanation, 'primary', currentInputs);
+                }
+            }
+            var nextComparePane = refreshPaneStateWithInputs(queryPageState.comparePane, 'compare', currentInputs);
+            queryPageState = {
+                lifecycle: 'ready',
+                layout: queryPageState.layout,
+                primaryPane: nextPrimaryPane,
+                comparePane: nextComparePane,
+                diffModal: queryPageState.diffModal.kind === 'open'
+                    && isCompareLayout(queryPageState.layout)
+                    && currentInputs.primaryQueryHash.length
+                    && currentInputs.compareQueryHash.length
+                    ? createDiffModalState('open', nextPrimaryPane, nextComparePane)
+                    : { kind: 'closed' },
+                inputs: currentInputs,
+                compareQuerySeeded: queryPageState.compareQuerySeeded
+            };
+            syncLegacyMachineFlags();
+            syncLegacyExplanationCache('primary');
+            syncLegacyExplanationCache('compare');
+            renderQueryPageState();
         }
         function updateDownloadButtonState() {
             $('#download-explanation').prop('disabled', !(queryPageState.primaryPane.kind === 'ready' && queryPageState.primaryPane.freshness === 'current'));
@@ -2125,6 +2186,9 @@ var workbench;
             if (!compareModeEnabled) {
                 return;
             }
+            if (activePrimaryRequestSignature) {
+                cancelExplain();
+            }
             savePaneQuery('primary');
             savePaneQuery('compare');
             var triggerButtonId = buttonId || 'explain-compare-trigger';
@@ -2235,6 +2299,26 @@ var workbench;
             setPaneQueryValue('primary', $.trim(queryString));
         }
         query_1.setQueryValue = setQueryValue;
+        function applyLoadedPrimaryQuery(queryString) {
+            var normalizedQuery = $.trim(queryString || '');
+            var previousPrimaryQuery = getPaneRawQueryValue('primary');
+            if (activeComparePendingRequests > 0) {
+                cancelCompareExplain();
+            }
+            if (activePrimaryRequestSignature) {
+                cancelExplain();
+            }
+            setPaneQueryValue('primary', normalizedQuery);
+            if (compareModeEnabled
+                && queryPageState
+                && queryPageState.compareQuerySeeded
+                && getPaneRawQueryValue('compare') === previousPrimaryQuery) {
+                setPaneQueryValue('compare', normalizedQuery);
+            }
+            persistPrimaryQueryValue();
+            syncStateAfterAsyncPrimaryQueryLoad();
+        }
+        query_1.applyLoadedPrimaryQuery = applyLoadedPrimaryQuery;
         function getQueryValue() {
             return getPaneQueryValue('primary');
         }
@@ -2623,7 +2707,7 @@ workbench.addLoad(function queryPageLoaded() {
             ref: refParam
         }, function (response) {
             if (response.queryText) {
-                workbench.query.setQueryValue(response.queryText);
+                workbench.query.applyLoadedPrimaryQuery(response.queryText);
             }
         });
     }

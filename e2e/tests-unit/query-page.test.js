@@ -152,3 +152,42 @@ test('query compare flow covers auto-explain, compare refresh, diff modal, and c
     harness.context.workbench.query.cancelCompareExplain();
     assert.equal(harness.requestsByAction('cancel-explain').length >= 2, true);
 });
+
+test('saved query load keeps initial explanation current after async fetch', () => {
+    const harness = createQueryBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/query?query=saved-query&ref=id',
+        query: '',
+        getJSONResponses: [{ queryText: ' ASK {} ' }],
+        initialExplanation: 'Initial plan',
+        initialExplanationFormat: 'text',
+        deferGetJSON: true
+    });
+
+    harness.runPageLoad();
+    harness.resolveNextGetJSON();
+
+    harness.context.workbench.query.toggleCompareMode();
+
+    assert.equal(harness.context.workbench.query.getQueryValue(), 'ASK {}');
+    assert.equal(harness.getProperty('query-compare', 'value'), 'ASK {}');
+    assert.equal(harness.pendingExplainRequests.length, 1);
+});
+
+test('saved query load backfills compare seed when compare opens before fetch returns', () => {
+    const harness = createQueryBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/query?query=saved-query&ref=id',
+        query: '',
+        getJSONResponses: [{ queryText: ' ASK {} ' }],
+        initialExplanation: 'Initial plan',
+        initialExplanationFormat: 'text',
+        deferGetJSON: true
+    });
+
+    harness.runPageLoad();
+    harness.context.workbench.query.toggleCompareMode();
+
+    harness.resolveNextGetJSON();
+
+    assert.equal(harness.context.workbench.query.getQueryValue(), 'ASK {}');
+    assert.equal(harness.getProperty('query-compare', 'value'), 'ASK {}');
+});

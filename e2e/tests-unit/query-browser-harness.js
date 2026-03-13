@@ -90,6 +90,7 @@ function createYasqeStub(registerElement) {
 
 function createQueryBrowserHarness(options = {}) {
     const getJSONRequests = [];
+    const pendingGetJSONRequests = [];
     const pendingExplainRequests = [];
     const getJSONResponses = Array.from(options.getJSONResponses || []);
     const harness = createScriptHarness(Object.assign({}, options, {
@@ -132,10 +133,19 @@ function createQueryBrowserHarness(options = {}) {
     context.window.URL = context.URL;
 
     $.getJSON = (url, data, callback) => {
-        const response = getJSONResponses.length ? getJSONResponses.shift() : {};
-        getJSONRequests.push({ url, data, response });
+        const request = {
+            url,
+            data,
+            response: getJSONResponses.length ? getJSONResponses.shift() : {},
+            callback
+        };
+        getJSONRequests.push(request);
+        if (options.deferGetJSON) {
+            pendingGetJSONRequests.push(request);
+            return;
+        }
         if (typeof callback === 'function') {
-            callback(response);
+            callback(request.response);
         }
     };
 
@@ -176,9 +186,14 @@ function createQueryBrowserHarness(options = {}) {
     const queryInput = registerElement('textarea', {
         id: 'query',
         name: 'query',
-        value: options.query || 'SELECT * WHERE {?s ?p ?o}'
+        value: Object.prototype.hasOwnProperty.call(options, 'query')
+            ? options.query
+            : 'SELECT * WHERE {?s ?p ?o}'
     });
-    const compareQueryInput = registerElement('textarea', { id: 'query-compare', value: options.compareQuery || '' });
+    const compareQueryInput = registerElement('textarea', {
+        id: 'query-compare',
+        value: Object.prototype.hasOwnProperty.call(options, 'compareQuery') ? options.compareQuery : ''
+    });
     const queryLn = registerElement('select', { id: 'queryLn', name: 'queryLn', value: options.queryLn || 'SPARQL' });
     appendOption(registerElement, queryLn, 'SPARQL', 'SPARQL', (options.queryLn || 'SPARQL') === 'SPARQL');
     appendOption(registerElement, queryLn, 'SERQL', 'SERQL', options.queryLn === 'SERQL');
@@ -369,10 +384,23 @@ function createQueryBrowserHarness(options = {}) {
 
     return Object.assign({}, harness, {
         getJSONRequests,
+        pendingGetJSONRequests,
         pendingExplainRequests,
         yasqeState: yasqe.state,
         requestsByAction(action) {
             return harness.ajaxRequests.filter((request) => request.action === action);
+        },
+        resolveNextGetJSON(response) {
+            const request = pendingGetJSONRequests.shift();
+            if (!request) {
+                throw new Error('No pending getJSON request to resolve');
+            }
+            if (typeof response !== 'undefined') {
+                request.response = response;
+            }
+            if (typeof request.callback === 'function') {
+                request.callback(request.response);
+            }
         },
         runPageLoad() {
             harness.runLoadHandlers();
