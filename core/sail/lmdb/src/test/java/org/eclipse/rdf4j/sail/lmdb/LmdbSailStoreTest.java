@@ -19,6 +19,7 @@ import java.io.File;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -206,6 +208,50 @@ public class LmdbSailStoreTest {
 				CloseableIteration<? extends Statement> iteration = dataset.getStatements(null, null, null)) {
 			assertTrue(iteration instanceof EmptyIteration);
 			assertFalse(iteration.hasNext());
+		}
+	}
+
+	@Test
+	public void testExplainExecutedShowsIndexName() {
+		try (RepositoryConnection conn = repo.getConnection()) {
+			String actual = conn.prepareTupleQuery("select * { ?s <" + RDFS.LABEL + "> ?o }")
+					.explain(Explanation.Level.Executed)
+					.toString();
+
+			assertTrue(actual, actual.contains("indexName="));
+		}
+	}
+
+	@Test
+	public void testExplainExecutedHidesEstimateStabilityStats() {
+		IRI a1 = F.createIRI("urn:a1");
+		IRI a2 = F.createIRI("urn:a2");
+		IRI c1 = F.createIRI("urn:c1");
+		IRI c2 = F.createIRI("urn:c2");
+		IRI b = F.createIRI("urn:b");
+		IRI d = F.createIRI("urn:d");
+		IRI f1 = F.createIRI("urn:f1");
+		IRI f2 = F.createIRI("urn:f2");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			for (int i = 0; i < 10000; i++) {
+				BNode c = F.createBNode();
+				BNode f = F.createBNode();
+				conn.add(a1, b, c);
+				conn.add(c, b, f);
+				conn.add(f, d, f1);
+				conn.add(F.createBNode(), b, F.createBNode());
+			}
+
+			String actual = conn.prepareTupleQuery(
+					"select ?b where { ?a ?b ?c. ?c ?d ?f. }")
+					.explain(Explanation.Level.Executed)
+					.toString();
+
+			assertFalse(actual, actual.contains("sampleCountActual="));
+			assertFalse(actual, actual.contains("varianceActual="));
+			assertFalse(actual, actual.contains("stddevActual="));
+			assertFalse(actual, actual.contains("confidenceScoreActual="));
 		}
 	}
 
