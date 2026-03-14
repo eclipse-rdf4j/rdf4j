@@ -20,7 +20,6 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NORDAHEAD;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
@@ -327,7 +326,6 @@ class ValueStore extends AbstractValueFactory {
 
 		E(mdb_env_set_maxdbs(env, 6));
 		E(mdb_env_set_maxreaders(env, 256));
-
 
 		// Open environment
 		int flags = MDB_NOTLS;
