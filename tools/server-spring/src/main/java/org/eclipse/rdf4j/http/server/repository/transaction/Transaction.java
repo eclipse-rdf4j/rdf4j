@@ -15,7 +15,6 @@ import java.io.InputStream;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -86,7 +85,6 @@ class Transaction implements AutoCloseable {
 	private final Repository rep;
 
 	private final RepositoryConnection txnConnection;
-	private final TransactionAsyncExplainRegistry asyncExplainRegistry = new TransactionAsyncExplainRegistry();
 
 	/**
 	 * The {@link ExecutorService} that performs all of the operations related to this Transaction.
@@ -234,42 +232,6 @@ class Transaction implements AutoCloseable {
 	Explanation explain(Query query, Explanation.Level level) throws InterruptedException, ExecutionException {
 		Future<Explanation> result = submit(() -> query.explain(level));
 		return getFromFuture(result);
-	}
-
-	Explanation explain(Query query, Explanation.Level level, String explainRequestId)
-			throws InterruptedException, ExecutionException {
-		TransactionAsyncExplainRegistry.Handle handle = asyncExplainRegistry.register(explainRequestId);
-
-		try {
-			Future<Explanation> result = submit(() -> query.explain(level));
-			handle.attach(result, this::abortExplainTransaction);
-
-			if (!handle.isActive()) {
-				return null;
-			}
-
-			Explanation explanation = getFromFuture(result);
-			return handle.isActive() ? explanation : null;
-		} catch (CancellationException e) {
-			return null;
-		} finally {
-			asyncExplainRegistry.complete(handle);
-		}
-	}
-
-	boolean cancelExplain(String explainRequestId) {
-		return asyncExplainRegistry.cancel(explainRequestId);
-	}
-
-	private void abortExplainTransaction() {
-		try {
-			close();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			logger.debug("Interrupted while aborting canceled transaction explain {}", id, e);
-		} catch (ExecutionException e) {
-			logger.debug("Failed to abort canceled transaction explain {}", id, e);
-		}
 	}
 
 	/**

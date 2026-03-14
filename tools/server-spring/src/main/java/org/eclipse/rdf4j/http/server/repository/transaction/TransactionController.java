@@ -363,7 +363,8 @@ public class TransactionController extends AbstractController implements Disposa
 		}
 
 		if (request.getParameter(Protocol.CANCEL_EXPLAIN_PARAM_NAME) != null) {
-			return handleCancelExplain(txn, request, response);
+			throw new ClientHTTPException(SC_BAD_REQUEST,
+					"Canceling query explanations is not supported for transaction requests.");
 		}
 
 		View view;
@@ -373,16 +374,15 @@ public class TransactionController extends AbstractController implements Disposa
 		try {
 			Query query = getQuery(txn, queryStr, request, response);
 			Optional<Explanation.Level> explainLevel = getExplain(request);
-			Optional<String> explainRequestId = getExplainRequestId(request);
 
 			if (explainLevel.isPresent()) {
+				if (hasExplainRequestId(request)) {
+					throw new ClientHTTPException(SC_BAD_REQUEST,
+							"Tracked query explanations are only supported through the workbench UI.");
+				}
 				try {
-					Explanation explanation = explainRequestId.isPresent()
-							? txn.explain(query, explainLevel.get(), explainRequestId.get())
-							: txn.explain(query, explainLevel.get());
+					Explanation explanation = txn.explain(query, explainLevel.get());
 					return explanation == null ? null : getExplainQueryResponse(explanation);
-				} catch (IllegalStateException e) {
-					throw new ClientHTTPException(SC_BAD_REQUEST, e.getMessage(), e);
 				} catch (ExecutionException e) {
 					handleExplainExecutionException(query, e);
 				}
@@ -450,41 +450,9 @@ public class TransactionController extends AbstractController implements Disposa
 		}
 	}
 
-	private Optional<String> getExplainRequestId(HttpServletRequest request) {
+	private boolean hasExplainRequestId(HttpServletRequest request) {
 		String explainRequestId = request.getParameter(Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME);
-		if (explainRequestId == null) {
-			return Optional.empty();
-		}
-
-		String normalizedExplainRequestId = explainRequestId.trim();
-		if (normalizedExplainRequestId.isEmpty()) {
-			return Optional.empty();
-		}
-		return Optional.of(normalizedExplainRequestId);
-	}
-
-	private ModelAndView handleCancelExplain(Transaction txn, HttpServletRequest request, HttpServletResponse response)
-			throws IOException {
-		Optional<String> explainRequestId = getExplainRequestId(request);
-		if (explainRequestId.isEmpty()) {
-			response.sendError(SC_BAD_REQUEST, "Missing parameter: " + Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME);
-			return null;
-		}
-
-		boolean cancelled = txn.cancelExplain(explainRequestId.get());
-		if (cancelled && (txn.isClosed() || txn.isComplete())) {
-			deregisterQuietly(txn);
-		}
-		response.setStatus(HttpServletResponse.SC_NO_CONTENT);
-		return null;
-	}
-
-	private void deregisterQuietly(Transaction transaction) {
-		try {
-			ActiveTransactionRegistry.INSTANCE.deregister(transaction);
-		} catch (RepositoryException e) {
-			logger.debug("Transaction {} was already deregistered", transaction.getID(), e);
-		}
+		return explainRequestId != null && !explainRequestId.trim().isEmpty();
 	}
 
 	private ModelAndView getExplainQueryResponse(Explanation explanation) {
