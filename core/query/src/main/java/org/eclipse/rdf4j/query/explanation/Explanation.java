@@ -41,7 +41,7 @@ public interface Explanation {
 		}
 
 		public boolean includesRuntimeTelemetry() {
-			return this == Telemetry || this == Timed;
+			return this == Telemetry;
 		}
 
 		public boolean includesEstimateStabilityMetrics() {

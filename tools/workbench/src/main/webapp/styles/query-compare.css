@@ -321,6 +321,8 @@ body.query-compare-mode.query-compare-nav-open #query-sidebar-toggle {
     grid-template-columns:auto 1fr;
     gap: 0.75rem;
     padding: 0.15rem 0.75rem;
+    width: max-content;
+    min-width: 100%;
     white-space: pre;
 }
 
@@ -328,14 +330,31 @@ body.query-compare-mode.query-compare-nav-open #query-sidebar-toggle {
     font-weight: 700;
 }
 
+.query-diff-row__content {
+    min-width: 0;
+}
+
+.query-diff-row__segment--changed {
+    border-radius: 0.2rem;
+    padding: 0 0.12rem;
+}
+
 .query-diff-row--added {
     background: #ecfdf3;
     color: #116329;
 }
 
+.query-diff-row--added .query-diff-row__segment--changed {
+    background: #bbf7d0;
+}
+
 .query-diff-row--removed {
     background: #fff1f0;
     color: #9f1d1d;
+}
+
+.query-diff-row--removed .query-diff-row__segment--changed {
+    background: #fecaca;
 }
 
 .query-diff-row--context {

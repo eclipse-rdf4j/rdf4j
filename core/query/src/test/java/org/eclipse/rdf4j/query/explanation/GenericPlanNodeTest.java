@@ -335,12 +335,31 @@ class GenericPlanNodeTest {
 		assertFalse(Explanation.Level.Executed.includesEstimateStabilityMetrics());
 
 		assertTrue(Explanation.Level.Timed.includesEvaluationAnnotations());
-		assertTrue(Explanation.Level.Timed.includesRuntimeTelemetry());
+		assertFalse(Explanation.Level.Timed.includesRuntimeTelemetry());
 		assertFalse(Explanation.Level.Timed.includesEstimateStabilityMetrics());
 
 		assertTrue(Explanation.Level.Telemetry.includesEvaluationAnnotations());
 		assertTrue(Explanation.Level.Telemetry.includesRuntimeTelemetry());
 		assertTrue(Explanation.Level.Telemetry.includesEstimateStabilityMetrics());
+	}
+
+	@Test
+	void timedExplanationLevelKeepsTimingButHidesRuntimeTelemetry() {
+		GenericPlanNode node = new GenericPlanNode("StatementPattern");
+		node.setTotalTimeActual(12.5);
+		node.setSourceRowsScannedActual(7L);
+		node.setLongMetricActual(TelemetryMetricNames.SAMPLE_COUNT_ACTUAL, 2L);
+		node.setStringMetricActual("bindingState", "bound");
+
+		node.applyExplanationLevel(Explanation.Level.Timed);
+
+		assertNull(node.getSourceRowsScannedActual());
+		assertNull(node.getLongMetricActual(TelemetryMetricNames.SAMPLE_COUNT_ACTUAL));
+		assertNotNull(node.getStringMetricsActual());
+		String actual = new ExplanationImpl(node, false, null).toJson();
+		assertTrue(actual.contains("\"totalTimeActual\""), actual);
+		assertFalse(actual.contains("sourceRowsScannedActual"), actual);
+		assertFalse(actual.contains("sampleCountActual"), actual);
 	}
 
 	@Test

@@ -157,8 +157,18 @@ test('query testing helpers cover serialization, explanation parsing, diff rende
         JSON.parse(JSON.stringify(testing.buildDiffRows('a\nb', 'a\nc'))),
         [
             { marker: ' ', text: 'a', type: 'context' },
-            { marker: '-', text: 'b', type: 'removed' },
-            { marker: '+', text: 'c', type: 'added' }
+            {
+                marker: '-',
+                text: 'b',
+                type: 'removed',
+                segments: [{ text: 'b', changed: true }]
+            },
+            {
+                marker: '+',
+                text: 'c',
+                type: 'added',
+                segments: [{ text: 'c', changed: true }]
+            }
         ]
     );
 
@@ -232,13 +242,66 @@ test('query diff rendering delegates line diffing to the shared diff library', (
         JSON.parse(JSON.stringify(testing.buildDiffRows('a\nb', 'a\nc'))),
         [
             { marker: ' ', text: 'a', type: 'context' },
-            { marker: '-', text: 'b', type: 'removed' },
-            { marker: '+', text: 'c', type: 'added' }
+            {
+                marker: '-',
+                text: 'b',
+                type: 'removed',
+                segments: [{ text: 'b', changed: false }]
+            },
+            {
+                marker: '+',
+                text: 'c',
+                type: 'added',
+                segments: [{ text: 'c', changed: false }]
+            }
         ]
     );
     assert.equal(diffCalls.length, 1);
     assert.equal(diffCalls[0].leftText, 'a\nb');
     assert.equal(diffCalls[0].rightText, 'a\nc');
+});
+
+test('query diff rows retain intraline word changes for replaced lines', () => {
+    const harness = createQueryBrowserHarness();
+    const testing = harness.context.workbench.query.testing;
+
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(testing.buildDiffRows('cat sat', 'cat slept'))),
+        [
+            {
+                marker: '-',
+                text: 'cat sat',
+                type: 'removed',
+                segments: [
+                    { text: 'cat ', changed: false },
+                    { text: 'sat', changed: true }
+                ]
+            },
+            {
+                marker: '+',
+                text: 'cat slept',
+                type: 'added',
+                segments: [
+                    { text: 'cat ', changed: false },
+                    { text: 'slept', changed: true }
+                ]
+            }
+        ]
+    );
+});
+
+test('query diff view renders nested spans for changed words', () => {
+    const harness = createQueryBrowserHarness();
+    const testing = harness.context.workbench.query.testing;
+
+    testing.renderDiffView('#query-diff-query', 'cat sat', 'cat slept');
+
+    const diffRows = harness.document.getElementById('query-diff-query').children;
+    assert.equal(diffRows.length, 2);
+    assert.equal(diffRows[0].children[1].children[1].textContent, 'sat');
+    assert.equal(diffRows[0].children[1].children[1].classList.contains('query-diff-row__segment--changed'), true);
+    assert.equal(diffRows[1].children[1].children[1].textContent, 'slept');
+    assert.equal(diffRows[1].children[1].children[1].classList.contains('query-diff-row__segment--changed'), true);
 });
 
 test('query testing helpers cover save error and overwrite branches', () => {

@@ -1095,6 +1095,12 @@ module workbench {
             marker: string;
             text: string;
             type: string;
+            segments?: DiffSegment[];
+        }
+
+        interface DiffSegment {
+            text: string;
+            changed: boolean;
         }
 
         function getPaneState(paneKey?: string): ExplanationPaneState {
@@ -2447,6 +2453,68 @@ module workbench {
             return lines;
         }
 
+        function createDiffSegments(leftText: string, rightText: string, rowType: string): DiffSegment[] {
+            var rowText = rowType === 'added' ? rightText : leftText;
+            if (!Diff || typeof Diff.diffWordsWithSpace !== 'function') {
+                return rowText ? [{ text: rowText, changed: false }] : [];
+            }
+            var wordChunks = Diff.diffWordsWithSpace(leftText || '', rightText || '');
+            var diffSegments: DiffSegment[] = [];
+            for (var i = 0; i < wordChunks.length; i++) {
+                var wordChunk = wordChunks[i];
+                var includeChunk = rowType === 'added' ? !wordChunk.removed : !wordChunk.added;
+                if (!includeChunk || !wordChunk.value) {
+                    continue;
+                }
+                diffSegments.push({
+                    text: wordChunk.value,
+                    changed: rowType === 'added' ? !!wordChunk.added : !!wordChunk.removed
+                });
+            }
+            if (!diffSegments.length && rowText) {
+                diffSegments.push({ text: rowText, changed: true });
+            }
+            return diffSegments;
+        }
+
+        function createDiffRow(marker: string, text: string, rowType: string, segments?: DiffSegment[]): DiffRow {
+            var diffRow: DiffRow = {
+                marker: marker,
+                text: text,
+                type: rowType
+            };
+            if (segments && segments.length) {
+                diffRow.segments = segments;
+            }
+            return diffRow;
+        }
+
+        function appendPairedDiffRows(diffRows: DiffRow[], removedLines: string[], addedLines: string[]) {
+            var pairCount = Math.max(removedLines.length, addedLines.length);
+            for (var lineIndex = 0; lineIndex < pairCount; lineIndex++) {
+                var removedLine = removedLines[lineIndex];
+                var addedLine = addedLines[lineIndex];
+                if (typeof removedLine === 'string' && typeof addedLine === 'string') {
+                    diffRows.push(createDiffRow(
+                        '-',
+                        removedLine,
+                        'removed',
+                        createDiffSegments(removedLine, addedLine, 'removed')
+                    ));
+                    diffRows.push(createDiffRow(
+                        '+',
+                        addedLine,
+                        'added',
+                        createDiffSegments(removedLine, addedLine, 'added')
+                    ));
+                } else if (typeof removedLine === 'string') {
+                    diffRows.push(createDiffRow('-', removedLine, 'removed', [{ text: removedLine, changed: true }]));
+                } else if (typeof addedLine === 'string') {
+                    diffRows.push(createDiffRow('+', addedLine, 'added', [{ text: addedLine, changed: true }]));
+                }
+            }
+        }
+
         function buildDiffRows(leftText: string, rightText: string): DiffRow[] {
             if (!Diff || typeof Diff.diffLines !== 'function') {
                 return [];
@@ -2455,15 +2523,30 @@ module workbench {
             var diffChunks = Diff.diffLines(leftText || '', rightText || '');
             for (var i = 0; i < diffChunks.length; i++) {
                 var diffChunk = diffChunks[i];
+                var nextDiffChunk = diffChunks[i + 1];
+                if (diffChunk.removed && nextDiffChunk && nextDiffChunk.added) {
+                    appendPairedDiffRows(
+                        diffRows,
+                        splitDiffChunkLines(diffChunk.value || ''),
+                        splitDiffChunkLines(nextDiffChunk.value || '')
+                    );
+                    i += 1;
+                    continue;
+                }
+                if (diffChunk.added && nextDiffChunk && nextDiffChunk.removed) {
+                    appendPairedDiffRows(
+                        diffRows,
+                        splitDiffChunkLines(nextDiffChunk.value || ''),
+                        splitDiffChunkLines(diffChunk.value || '')
+                    );
+                    i += 1;
+                    continue;
+                }
                 var type = diffChunk.added ? 'added' : (diffChunk.removed ? 'removed' : 'context');
                 var marker = diffChunk.added ? '+' : (diffChunk.removed ? '-' : ' ');
                 var lines = splitDiffChunkLines(diffChunk.value || '');
                 for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-                    diffRows.push({
-                        marker: marker,
-                        text: lines[lineIndex],
-                        type: type
-                    });
+                    diffRows.push(createDiffRow(marker, lines[lineIndex], type));
                 }
             }
             return diffRows;
@@ -2485,8 +2568,21 @@ module workbench {
                 var diffRow = diffRows[i];
                 var rowElement = $('<div class="query-diff-row"></div>')
                     .addClass('query-diff-row--' + diffRow.type);
+                var contentElement = $('<span class="query-diff-row__content"></span>');
                 rowElement.append($('<span class="query-diff-row__marker"></span>').text(diffRow.marker));
-                rowElement.append($('<span></span>').text(diffRow.text));
+                if (diffRow.segments && diffRow.segments.length) {
+                    for (var segmentIndex = 0; segmentIndex < diffRow.segments.length; segmentIndex++) {
+                        var diffSegment = diffRow.segments[segmentIndex];
+                        var segmentElement = $('<span class="query-diff-row__segment"></span>').text(diffSegment.text);
+                        if (diffSegment.changed) {
+                            segmentElement.addClass('query-diff-row__segment--changed');
+                        }
+                        contentElement.append(segmentElement);
+                    }
+                } else {
+                    contentElement.text(diffRow.text);
+                }
+                rowElement.append(contentElement);
                 target.append(rowElement);
             }
         }
