@@ -370,6 +370,9 @@ function createQueryBrowserHarness(options = {}) {
         document.body.appendChild(element);
     });
 
+    if (!context.Diff) {
+        harness.runScript('tools/workbench/src/main/webapp/scripts/diff.min.js');
+    }
     harness.runScript('tools/workbench/src/main/webapp/scripts/queryCancelPolicy.js');
     harness.runScript('tools/workbench/src/main/webapp/scripts/query.js');
 

@@ -1989,53 +1989,35 @@ var workbench;
             }
             return text.replace(/\r\n/g, '\n').split('\n');
         }
-        function buildDiffRows(leftText, rightText) {
-            var leftLines = splitDiffLines(leftText);
-            var rightLines = splitDiffLines(rightText);
-            var matrix = [];
-            var leftLength = leftLines.length;
-            var rightLength = rightLines.length;
-            for (var rowIndex = 0; rowIndex <= leftLength; rowIndex++) {
-                matrix[rowIndex] = [];
-                for (var columnIndex = 0; columnIndex <= rightLength; columnIndex++) {
-                    matrix[rowIndex][columnIndex] = 0;
-                }
+        function splitDiffChunkLines(text) {
+            if (!text) {
+                return [];
             }
-            for (var leftIndex = leftLength - 1; leftIndex >= 0; leftIndex--) {
-                for (var rightIndex = rightLength - 1; rightIndex >= 0; rightIndex--) {
-                    if (leftLines[leftIndex] === rightLines[rightIndex]) {
-                        matrix[leftIndex][rightIndex] = matrix[leftIndex + 1][rightIndex + 1] + 1;
-                    }
-                    else {
-                        matrix[leftIndex][rightIndex] = Math.max(matrix[leftIndex + 1][rightIndex], matrix[leftIndex][rightIndex + 1]);
-                    }
-                }
+            var normalizedText = text.replace(/\r\n/g, '\n');
+            var lines = normalizedText.split('\n');
+            if (normalizedText.charAt(normalizedText.length - 1) === '\n') {
+                lines.pop();
+            }
+            return lines;
+        }
+        function buildDiffRows(leftText, rightText) {
+            if (!Diff || typeof Diff.diffLines !== 'function') {
+                return [];
             }
             var diffRows = [];
-            var leftPointer = 0;
-            var rightPointer = 0;
-            while (leftPointer < leftLength && rightPointer < rightLength) {
-                if (leftLines[leftPointer] === rightLines[rightPointer]) {
-                    diffRows.push({ marker: ' ', text: leftLines[leftPointer], type: 'context' });
-                    leftPointer += 1;
-                    rightPointer += 1;
+            var diffChunks = Diff.diffLines(leftText || '', rightText || '');
+            for (var i = 0; i < diffChunks.length; i++) {
+                var diffChunk = diffChunks[i];
+                var type = diffChunk.added ? 'added' : (diffChunk.removed ? 'removed' : 'context');
+                var marker = diffChunk.added ? '+' : (diffChunk.removed ? '-' : ' ');
+                var lines = splitDiffChunkLines(diffChunk.value || '');
+                for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+                    diffRows.push({
+                        marker: marker,
+                        text: lines[lineIndex],
+                        type: type
+                    });
                 }
-                else if (matrix[leftPointer + 1][rightPointer] >= matrix[leftPointer][rightPointer + 1]) {
-                    diffRows.push({ marker: '-', text: leftLines[leftPointer], type: 'removed' });
-                    leftPointer += 1;
-                }
-                else {
-                    diffRows.push({ marker: '+', text: rightLines[rightPointer], type: 'added' });
-                    rightPointer += 1;
-                }
-            }
-            while (leftPointer < leftLength) {
-                diffRows.push({ marker: '-', text: leftLines[leftPointer], type: 'removed' });
-                leftPointer += 1;
-            }
-            while (rightPointer < rightLength) {
-                diffRows.push({ marker: '+', text: rightLines[rightPointer], type: 'added' });
-                rightPointer += 1;
             }
             return diffRows;
         }

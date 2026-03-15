@@ -418,6 +418,7 @@
         <script src="../../scripts/yasqe.min.js" type="text/javascript"></script>
         <script src="../../scripts/yasqeHelper.js" type="text/javascript"></script>
         <script src="../../scripts/queryCancelPolicy.js" type="text/javascript"></script>
+        <script src="../../scripts/diff.min.js" type="text/javascript"></script>
         <script src="../../scripts/viz/viz.js" type="text/javascript"></script>
         <script src="../../scripts/viz/full.render.js" type="text/javascript"></script>
         <script src="../../scripts/svg-pan-zoom.min.js" type="text/javascript"></script>

@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
@@ -89,6 +90,8 @@ public class QueryServlet extends TransformationServlet {
 	private static final String ACTION_CANCEL_EXPLAIN = "cancel-explain";
 
 	private static final String EXPLAIN_REQUEST_ID = "explain-request-id";
+
+	private static final String EXPLAIN_TIMEOUT_MESSAGE = "Query explanation took too long";
 
 	private static final String[] EDIT_PARAMS = new String[] { QUERY_LN, QUERY, INFER, LIMIT, QUERY_TIMEOUT };
 
@@ -237,11 +240,21 @@ public class QueryServlet extends TransformationServlet {
 			writeExplainErrorResponse(resp, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
 		} catch (MalformedQueryException e) {
 			writeExplainErrorResponse(resp, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+		} catch (QueryInterruptedException e) {
+			writeExplainTimeoutResponse(resp);
 		} catch (HTTPQueryEvaluationException e) {
-			writeExplainErrorResponse(resp, HttpServletResponse.SC_BAD_REQUEST, getExplainErrorMessage(e));
+			if (isExplainTimeout(e)) {
+				writeExplainTimeoutResponse(resp);
+			} else {
+				writeExplainErrorResponse(resp, HttpServletResponse.SC_BAD_REQUEST, getExplainErrorMessage(e));
+			}
 		} catch (RDF4JException e) {
-			LOGGER.warn(e.toString(), e);
-			writeExplainErrorResponse(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, e.getMessage());
+			if (isExplainTimeout(e)) {
+				writeExplainTimeoutResponse(resp);
+			} else {
+				LOGGER.warn(e.toString(), e);
+				writeExplainErrorResponse(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, e.getMessage());
+			}
 		}
 	}
 
@@ -297,11 +310,21 @@ public class QueryServlet extends TransformationServlet {
 			writeTrackedExplainError(resp, handle, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
 		} catch (MalformedQueryException e) {
 			writeTrackedExplainError(resp, handle, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+		} catch (QueryInterruptedException e) {
+			writeTrackedExplainTimeout(resp, handle);
 		} catch (HTTPQueryEvaluationException e) {
-			writeTrackedExplainError(resp, handle, HttpServletResponse.SC_BAD_REQUEST, getExplainErrorMessage(e));
+			if (isExplainTimeout(e)) {
+				writeTrackedExplainTimeout(resp, handle);
+			} else {
+				writeTrackedExplainError(resp, handle, HttpServletResponse.SC_BAD_REQUEST, getExplainErrorMessage(e));
+			}
 		} catch (RDF4JException e) {
-			LOGGER.warn(e.toString(), e);
-			writeTrackedExplainError(resp, handle, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, e.getMessage());
+			if (isExplainTimeout(e)) {
+				writeTrackedExplainTimeout(resp, handle);
+			} else {
+				LOGGER.warn(e.toString(), e);
+				writeTrackedExplainError(resp, handle, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, e.getMessage());
+			}
 		} catch (IOException e) {
 			if (handle.isActive()) {
 				LOGGER.debug("Explain response write failed for request {}", handle.getExplainRequestId(), e);
@@ -322,6 +345,14 @@ public class QueryServlet extends TransformationServlet {
 		} catch (IOException e) {
 			LOGGER.debug("Explain error response write failed for request {}", handle.getExplainRequestId(), e);
 		}
+	}
+
+	private void writeExplainTimeoutResponse(HttpServletResponse response) throws IOException {
+		writeExplainErrorResponse(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, EXPLAIN_TIMEOUT_MESSAGE);
+	}
+
+	private void writeTrackedExplainTimeout(HttpServletResponse response, AsyncExplainCoordinator.Handle handle) {
+		writeTrackedExplainError(response, handle, HttpServletResponse.SC_SERVICE_UNAVAILABLE, EXPLAIN_TIMEOUT_MESSAGE);
 	}
 
 	private void closeConnection(RepositoryConnection con, Throwable failure) {
@@ -384,6 +415,16 @@ public class QueryServlet extends TransformationServlet {
 			return e.getCause().getMessage();
 		}
 		return e.getMessage();
+	}
+
+	private boolean isExplainTimeout(Throwable throwable) {
+		if (throwable == null) {
+			return false;
+		}
+		if (throwable instanceof QueryInterruptedException) {
+			return true;
+		}
+		return isExplainTimeout(throwable.getCause());
 	}
 
 	private void handleStandardBrowserRequest(WorkbenchRequest req, HttpServletResponse resp, String xslPath)

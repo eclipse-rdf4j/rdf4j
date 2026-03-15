@@ -210,6 +210,37 @@ test('query testing helpers cover serialization, explanation parsing, diff rende
     assert.equal(harness.getProperty('query-diff-trigger', 'disabled'), false);
 });
 
+test('query diff rendering delegates line diffing to the shared diff library', () => {
+    const diffCalls = [];
+    const harness = createQueryBrowserHarness({
+        globals: {
+            Diff: {
+                diffLines(leftText, rightText, options) {
+                    diffCalls.push({ leftText, rightText, options });
+                    return [
+                        { value: 'a\n' },
+                        { removed: true, value: 'b\n' },
+                        { added: true, value: 'c\n' }
+                    ];
+                }
+            }
+        }
+    });
+    const testing = harness.context.workbench.query.testing;
+
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(testing.buildDiffRows('a\nb', 'a\nc'))),
+        [
+            { marker: ' ', text: 'a', type: 'context' },
+            { marker: '-', text: 'b', type: 'removed' },
+            { marker: '+', text: 'c', type: 'added' }
+        ]
+    );
+    assert.equal(diffCalls.length, 1);
+    assert.equal(diffCalls[0].leftText, 'a\nb');
+    assert.equal(diffCalls[0].rightText, 'a\nc');
+});
+
 test('query testing helpers cover save error and overwrite branches', () => {
     const harness = createQueryBrowserHarness({
         confirmResponses: [true, false]

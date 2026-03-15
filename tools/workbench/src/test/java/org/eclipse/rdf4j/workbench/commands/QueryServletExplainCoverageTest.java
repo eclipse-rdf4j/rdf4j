@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.repository.Repository;
@@ -66,6 +67,29 @@ class QueryServletExplainCoverageTest {
 
 		verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
 		assertThat(body.toString()).contains("\"error\":\"bad syntax\"");
+	}
+
+	@Test
+	void syncExplainReturnsTimeoutMessageForInterruptedExplanations() throws Exception {
+		QueryServlet servlet = new QueryServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		WorkbenchRequest request = mockExplainRequest(false, "sync-timeout");
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		StringWriter body = new StringWriter();
+
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Optimized))
+				.thenThrow(new QueryInterruptedException("query timed out"));
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+		servlet.setRepository(repository);
+
+		servlet.service(request, response, "/transform");
+
+		verify(response).setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+		assertThat(body.toString()).contains("\"error\":\"Query explanation took too long\"");
 	}
 
 	@Test
@@ -177,6 +201,30 @@ class QueryServletExplainCoverageTest {
 		verify(unsupportedResponse).setStatus(HttpServletResponse.SC_BAD_REQUEST);
 		assertThat(unsupportedBody.toString()).contains("Explain is not supported");
 		verify(unsupportedRequest, never()).startAsync(any(), any());
+	}
+
+	@Test
+	void trackedExplainReturnsTimeoutMessageForInterruptedExplanations() throws Exception {
+		QueryServlet servlet = new QueryServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		WorkbenchRequest request = mockExplainRequest(true, "tracked-timeout");
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		StringWriter body = new StringWriter();
+
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Optimized))
+				.thenThrow(new QueryInterruptedException("query timed out"));
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+		servlet.setRepository(repository);
+
+		servlet.service(request, response, "/transform");
+
+		verify(response).setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+		assertThat(body.toString()).contains("\"error\":\"Query explanation took too long\"");
+		verify(request, never()).startAsync(any(), any());
 	}
 
 	@Test
