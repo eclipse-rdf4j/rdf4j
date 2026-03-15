@@ -996,18 +996,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throw new IllegalArgumentException("Explain request id was blank");
 		}
 
-		HttpUriRequest cancelMethod;
-		String transactionURL = getTransactionURL();
-		if (transactionURL != null) {
-			RequestBuilder builder = RequestBuilder.put(transactionURL);
-			for (Map.Entry<String, String> additionalHeader : getAdditionalHttpHeaders().entrySet()) {
-				builder.addHeader(additionalHeader.getKey(), additionalHeader.getValue());
-			}
-			cancelMethod = builder.build();
-			cancelMethod = addQueryParameter(cancelMethod, Protocol.ACTION_PARAM_NAME, Action.QUERY.toString());
-		} else {
-			cancelMethod = applyAdditionalHeaders(new HttpPost(getQueryURL()));
-		}
+		HttpUriRequest cancelMethod = applyAdditionalHeaders(new HttpPost(getQueryURL()));
 		cancelMethod = addQueryParameter(cancelMethod, Protocol.CANCEL_EXPLAIN_PARAM_NAME, Boolean.TRUE.toString());
 		cancelMethod = addQueryParameter(cancelMethod, Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME,
 				normalizedExplainRequestId);

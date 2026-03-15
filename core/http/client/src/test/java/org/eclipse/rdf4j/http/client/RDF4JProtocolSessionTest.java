@@ -397,7 +397,7 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 	}
 
 	@Test
-	public void testCancelQueryExplanationUsesTransactionEndpoint(MockServerClient client) throws Exception {
+	public void testCancelQueryExplanationIgnoresTransactionEndpoint(MockServerClient client) throws Exception {
 		String transactionStartUrl = Protocol.getTransactionsLocation(getRDF4JSession().getRepositoryURL());
 		client.when(
 				request()
@@ -408,9 +408,8 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 
 		client.when(
 				request()
-						.withMethod("PUT")
-						.withPath("/rdf4j-server/repositories/test/transactions/1")
-						.withQueryStringParameter("action", "QUERY")
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
 						.withQueryStringParameter("cancel-explain", "true")
 						.withQueryStringParameter("explain-request-id", "req-456"),
 				Times.once())
@@ -421,13 +420,19 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 
 		client.verify(
 				request()
-						.withMethod("PUT")
-						.withPath("/rdf4j-server/repositories/test/transactions/1")
-						.withQueryStringParameter("action", "QUERY")
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
 						.withQueryStringParameter("cancel-explain", "true")
 						.withQueryStringParameter("explain-request-id", "req-456")
 						.withHeader(testHeader, testValue)
 		);
+		client.verify(
+				request()
+						.withMethod("PUT")
+						.withPath("/rdf4j-server/repositories/test/transactions/1")
+						.withQueryStringParameter("cancel-explain", "true")
+						.withQueryStringParameter("explain-request-id", "req-456"),
+				VerificationTimes.exactly(0));
 	}
 
 	@Test
