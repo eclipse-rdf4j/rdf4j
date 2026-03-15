@@ -47,6 +47,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.ResourceUtil;
+import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
@@ -463,10 +464,10 @@ public class QueryServletTest {
 		HTTPRepository repository = mock(HTTPRepository.class);
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		TupleQuery tupleQuery = mock(TupleQuery.class);
-		AsyncExplainRegistry asyncExplainRegistry = new AsyncExplainRegistry();
+		AsyncExplainCoordinator asyncExplainCoordinator = new AsyncExplainCoordinator();
 		ExecutorService executor = Executors.newSingleThreadExecutor();
 		servlet.setRepository(repository);
-		servlet.substituteAsyncExplainRegistry(asyncExplainRegistry);
+		servlet.substituteAsyncExplainCoordinator(asyncExplainCoordinator);
 
 		CountDownLatch explainStarted = new CountDownLatch(1);
 		CountDownLatch explainInterrupted = new CountDownLatch(1);
@@ -530,7 +531,7 @@ public class QueryServletTest {
 			verify(repository).cancelQueryExplanation("req-123");
 		} finally {
 			executor.shutdownNow();
-			asyncExplainRegistry.shutdown();
+			asyncExplainCoordinator.shutdown();
 		}
 	}
 

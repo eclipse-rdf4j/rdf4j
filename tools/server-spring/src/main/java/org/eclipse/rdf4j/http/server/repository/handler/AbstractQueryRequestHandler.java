@@ -23,6 +23,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
+import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.HTTPException;
@@ -51,7 +52,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 
 	private final RepositoryResolver repositoryResolver;
 
-	private final AsyncExplainRegistry asyncExplainRegistry = new AsyncExplainRegistry();
+	private final AsyncExplainCoordinator asyncExplainCoordinator = new AsyncExplainCoordinator();
 
 	public AbstractQueryRequestHandler(RepositoryResolver repositoryResolver) {
 		this.repositoryResolver = repositoryResolver;
@@ -71,7 +72,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			return true;
 		}
 
-		asyncExplainRegistry.cancel(explainRequestId.trim());
+		asyncExplainCoordinator.cancel(explainRequestId.trim());
 		response.setStatus(HttpServletResponse.SC_NO_CONTENT);
 		return true;
 	}
@@ -183,9 +184,9 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 	private ModelAndView handleRegisteredExplainRequest(HttpServletRequest request, HttpServletResponse response,
 			RepositoryConnection repositoryCon, Query query, Explanation.Level explainLevel, String explainRequestId)
 			throws IOException, HTTPException {
-		final AsyncExplainRegistry.Handle handle;
+		final AsyncExplainCoordinator.Handle handle;
 		try {
-			handle = asyncExplainRegistry.register(explainRequestId);
+			handle = asyncExplainCoordinator.register(explainRequestId);
 		} catch (IllegalStateException e) {
 			closeConnection(repositoryCon);
 			response.sendError(HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
@@ -193,13 +194,9 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		}
 
 		try {
-			handle.attach(Thread.currentThread(), repositoryCon);
-			if (!handle.isActive()) {
-				return null;
-			}
-
-			Explanation explanation = explainQuery(query, explainLevel);
-			if (!handle.isActive()) {
+			Explanation explanation = asyncExplainCoordinator.execute(handle, repositoryCon,
+					() -> explainQuery(query, explainLevel));
+			if (explanation == null) {
 				return null;
 			}
 
@@ -225,8 +222,11 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			}
 			throw e;
 		} finally {
-			asyncExplainRegistry.complete(handle);
-			closeConnection(repositoryCon);
+			try {
+				closeConnection(repositoryCon);
+			} finally {
+				asyncExplainCoordinator.complete(handle);
+			}
 		}
 	}
 

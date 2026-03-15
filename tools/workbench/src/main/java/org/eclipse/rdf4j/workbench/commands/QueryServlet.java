@@ -33,6 +33,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
 import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -99,7 +100,7 @@ public class QueryServlet extends TransformationServlet {
 
 	private QueryStorage storage;
 
-	private AsyncExplainRegistry asyncExplainRegistry = new AsyncExplainRegistry();
+	private AsyncExplainCoordinator asyncExplainCoordinator = new AsyncExplainCoordinator();
 
 	protected boolean writeQueryCookie;
 
@@ -120,8 +121,8 @@ public class QueryServlet extends TransformationServlet {
 		this.storage = storage;
 	}
 
-	protected void substituteAsyncExplainRegistry(AsyncExplainRegistry asyncExplainRegistry) {
-		this.asyncExplainRegistry = asyncExplainRegistry;
+	protected void substituteAsyncExplainCoordinator(AsyncExplainCoordinator asyncExplainCoordinator) {
+		this.asyncExplainCoordinator = asyncExplainCoordinator;
 	}
 
 	/**
@@ -163,7 +164,7 @@ public class QueryServlet extends TransformationServlet {
 
 	@Override
 	public void destroy() {
-		this.asyncExplainRegistry.shutdown();
+		this.asyncExplainCoordinator.shutdown();
 		this.storage.shutdown();
 		super.destroy();
 	}
@@ -266,28 +267,24 @@ public class QueryServlet extends TransformationServlet {
 			return;
 		}
 
-		final AsyncExplainRegistry.Handle handle;
+		final AsyncExplainCoordinator.Handle handle;
 		try {
-			handle = asyncExplainRegistry.register(explainRequestId, createRemoteCancelAction(explainRequestId));
+			handle = asyncExplainCoordinator.register(explainRequestId, createRemoteCancelAction(explainRequestId));
 		} catch (IllegalStateException e) {
 			writeExplainErrorResponse(resp, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
 			return;
 		}
 
-		QueryExplanationRequestContext.Activation ignored = QueryExplanationRequestContext
-				.activate(handle.getExplainRequestId());
 		try {
 			RepositoryConnection con = repository.getConnection();
 			Throwable connectionFailure = null;
 			try {
 				con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
-				handle.attach(Thread.currentThread(), con);
-				if (!handle.isActive()) {
-					return;
-				}
-
-				QueryEvaluator.ExplainQueryResult explainQueryResult = EVAL.explain(con, queryText, explainRequest);
-				if (handle.isActive()) {
+				QueryEvaluator.ExplainQueryResult explainQueryResult = asyncExplainCoordinator.execute(handle, con,
+						currentHandle -> QueryExplanationRequestContext
+								.activate(currentHandle.getExplainRequestId())::close,
+						() -> EVAL.explain(con, queryText, explainRequest));
+				if (explainQueryResult != null && handle.isActive()) {
 					writeExplainSuccessResponse(resp, explainQueryResult);
 				}
 			} catch (Throwable t) {
@@ -310,15 +307,11 @@ public class QueryServlet extends TransformationServlet {
 				LOGGER.debug("Explain response write failed for request {}", handle.getExplainRequestId(), e);
 			}
 		} finally {
-			try {
-				ignored.close();
-			} finally {
-				asyncExplainRegistry.complete(handle);
-			}
+			asyncExplainCoordinator.complete(handle);
 		}
 	}
 
-	private void writeTrackedExplainError(HttpServletResponse response, AsyncExplainRegistry.Handle handle,
+	private void writeTrackedExplainError(HttpServletResponse response, AsyncExplainCoordinator.Handle handle,
 			int statusCode,
 			String message) {
 		if (!handle.isActive()) {
@@ -545,7 +538,7 @@ public class QueryServlet extends TransformationServlet {
 				resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: " + EXPLAIN_REQUEST_ID);
 				return;
 			} else {
-				asyncExplainRegistry.cancel(explainRequestId);
+				asyncExplainCoordinator.cancel(explainRequestId);
 				resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
 			}
 		} else {

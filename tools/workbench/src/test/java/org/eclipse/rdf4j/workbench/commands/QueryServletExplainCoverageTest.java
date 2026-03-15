@@ -27,6 +27,7 @@ import java.io.StringWriter;
 
 import javax.servlet.http.HttpServletResponse;
 
+import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -70,14 +71,14 @@ class QueryServletExplainCoverageTest {
 	@Test
 	void trackedExplainRejectsDuplicateRequestIds() throws Exception {
 		QueryServlet servlet = new QueryServlet();
-		AsyncExplainRegistry registry = new AsyncExplainRegistry();
+		AsyncExplainCoordinator coordinator = new AsyncExplainCoordinator();
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		StringWriter body = new StringWriter();
 		WorkbenchRequest request = mockExplainRequest(true, "duplicate-request");
 
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
-		registry.register("duplicate-request", null);
-		servlet.substituteAsyncExplainRegistry(registry);
+		coordinator.register("duplicate-request", null);
+		servlet.substituteAsyncExplainCoordinator(coordinator);
 
 		try {
 			servlet.service(request, response, "/transform");
@@ -85,7 +86,7 @@ class QueryServletExplainCoverageTest {
 			assertThat(body.toString()).contains("\"error\":\"Explain request already active: duplicate-request\"");
 			verify(request, never()).startAsync(any(), any());
 		} finally {
-			registry.shutdown();
+			coordinator.shutdown();
 		}
 	}
 

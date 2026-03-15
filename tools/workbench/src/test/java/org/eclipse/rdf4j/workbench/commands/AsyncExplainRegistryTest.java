@@ -17,8 +17,14 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.Test;
 
@@ -26,62 +32,101 @@ class AsyncExplainRegistryTest {
 
 	@Test
 	void registerRejectsDuplicateIdsAndCompleteRemovesHandle() {
-		AsyncExplainRegistry registry = new AsyncExplainRegistry();
-		AsyncExplainRegistry.Handle handle = registry.register("req-1", null);
+		AsyncExplainCoordinator coordinator = new AsyncExplainCoordinator();
+		AsyncExplainCoordinator.Handle handle = coordinator.register("req-1", null);
 
-		assertThatThrownBy(() -> registry.register("req-1", null))
+		assertThatThrownBy(() -> coordinator.register("req-1", null))
 				.isInstanceOf(IllegalStateException.class)
 				.hasMessage("Explain request already active: req-1");
 
-		registry.complete(handle);
+		coordinator.complete(handle);
 
-		assertThat(registry.cancel("req-1")).isFalse();
+		assertThat(coordinator.cancel("req-1")).isFalse();
 	}
 
 	@Test
-	void cancelInterruptsWorkerClosesConnectionAndRunsRemoteCancel() {
-		AsyncExplainRegistry registry = new AsyncExplainRegistry();
+	void cancelInterruptsWorkerClosesConnectionAndRunsRemoteCancel() throws Exception {
+		AsyncExplainCoordinator coordinator = new AsyncExplainCoordinator();
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		AtomicBoolean remoteCancelled = new AtomicBoolean(false);
-		RecordingThread worker = new RecordingThread();
-		AsyncExplainRegistry.Handle handle = registry.register("req-2", () -> remoteCancelled.set(true));
-		handle.attach(worker, connection);
+		AsyncExplainCoordinator.Handle handle = coordinator.register("req-2", () -> remoteCancelled.set(true));
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		CountDownLatch started = new CountDownLatch(1);
+		AtomicBoolean interrupted = new AtomicBoolean(false);
 
-		assertThat(handle.isActive()).isTrue();
-		assertThat(registry.cancel("req-2")).isTrue();
+		try {
+			Future<?> future = executor.submit(() -> {
+				try {
+					coordinator.execute(handle, connection, () -> {
+						started.countDown();
+						try {
+							new CountDownLatch(1).await();
+						} catch (InterruptedException e) {
+							interrupted.set(true);
+						}
+						return null;
+					});
+				} finally {
+					coordinator.complete(handle);
+				}
+				return null;
+			});
 
-		assertThat(worker.interrupted).isTrue();
-		assertThat(handle.isActive()).isFalse();
-		assertThat(remoteCancelled.get()).isTrue();
-		verify(connection).close();
+			assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(handle.isActive()).isTrue();
+			assertThat(coordinator.cancel("req-2")).isTrue();
+
+			future.get(5, TimeUnit.SECONDS);
+			assertThat(interrupted.get()).isTrue();
+			assertThat(handle.isActive()).isFalse();
+			assertThat(remoteCancelled.get()).isTrue();
+			verify(connection).close();
+		} finally {
+			executor.shutdownNow();
+		}
 	}
 
 	@Test
-	void cancelSwallowsSecondaryFailuresAndShutdownCancelsActiveHandles() {
-		AsyncExplainRegistry registry = new AsyncExplainRegistry();
+	void cancelSwallowsSecondaryFailuresAndShutdownCancelsActiveHandles() throws Exception {
+		AsyncExplainCoordinator coordinator = new AsyncExplainCoordinator();
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		doThrow(new RuntimeException("close")).when(connection).close();
-		AsyncExplainRegistry.Handle handle = registry.register("req-3", () -> {
+		AsyncExplainCoordinator.Handle handle = coordinator.register("req-3", () -> {
 			throw new RuntimeException("remote");
 		});
-		handle.attach(new RecordingThread(), connection);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		CountDownLatch started = new CountDownLatch(1);
 
-		handle.cancel();
-		assertThat(handle.isActive()).isFalse();
+		try {
+			Future<?> future = executor.submit(() -> {
+				try {
+					coordinator.execute(handle, connection, () -> {
+						started.countDown();
+						try {
+							new CountDownLatch(1).await();
+						} catch (InterruptedException e) {
+							// cancellation path under test
+						}
+						return null;
+					});
+				} finally {
+					coordinator.complete(handle);
+				}
+				return null;
+			});
 
-		AtomicBoolean shutdownCancelled = new AtomicBoolean(false);
-		registry.register("req-4", () -> shutdownCancelled.set(true));
-		registry.shutdown();
-		assertThat(shutdownCancelled.get()).isTrue();
-		assertThat(registry.cancel("req-4")).isFalse();
-	}
+			assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(coordinator.cancel("req-3")).isTrue();
+			future.get(5, TimeUnit.SECONDS);
+			assertThat(handle.isActive()).isFalse();
 
-	private static final class RecordingThread extends Thread {
-		private boolean interrupted;
-
-		@Override
-		public void interrupt() {
-			interrupted = true;
+			AtomicBoolean shutdownCancelled = new AtomicBoolean(false);
+			coordinator.register("req-4", () -> shutdownCancelled.set(true));
+			coordinator.shutdown();
+			assertThat(shutdownCancelled.get()).isTrue();
+			assertThat(coordinator.cancel("req-4")).isFalse();
+		} finally {
+			executor.shutdownNow();
 		}
 	}
 }

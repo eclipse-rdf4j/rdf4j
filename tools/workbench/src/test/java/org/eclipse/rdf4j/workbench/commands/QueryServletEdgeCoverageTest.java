@@ -25,6 +25,7 @@ import java.io.StringWriter;
 
 import javax.servlet.http.HttpServletResponse;
 
+import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -67,7 +68,7 @@ class QueryServletEdgeCoverageTest {
 		RepositoryConnection cancelledConnection = mock(RepositoryConnection.class);
 		TupleQuery cancelledQuery = mock(TupleQuery.class);
 		Explanation cancelledExplanation = mock(Explanation.class);
-		AsyncExplainRegistry cancelledRegistry = new AsyncExplainRegistry();
+		AsyncExplainCoordinator cancelledCoordinator = new AsyncExplainCoordinator();
 		WorkbenchRequest cancelledRequest = mockExplainRequest("tracked-cancel-after-explain");
 		HttpServletResponse cancelledResponse = mock(HttpServletResponse.class);
 		StringWriter cancelledBody = new StringWriter();
@@ -75,12 +76,12 @@ class QueryServletEdgeCoverageTest {
 		when(cancelledRepository.getConnection()).thenReturn(cancelledConnection);
 		when(cancelledConnection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(cancelledQuery);
 		when(cancelledQuery.explain(Explanation.Level.Optimized)).thenAnswer(invocation -> {
-			cancelledRegistry.cancel("tracked-cancel-after-explain");
+			cancelledCoordinator.cancel("tracked-cancel-after-explain");
 			return cancelledExplanation;
 		});
 		when(cancelledResponse.getWriter()).thenReturn(new PrintWriter(cancelledBody));
 		cancelledServlet.setRepository(cancelledRepository);
-		cancelledServlet.substituteAsyncExplainRegistry(cancelledRegistry);
+		cancelledServlet.substituteAsyncExplainCoordinator(cancelledCoordinator);
 
 		try {
 			cancelledServlet.service(cancelledRequest, cancelledResponse, "/transform");
@@ -88,7 +89,7 @@ class QueryServletEdgeCoverageTest {
 			assertThat(cancelledBody.toString()).isEmpty();
 			verify(cancelledResponse, never()).setStatus(HttpServletResponse.SC_OK);
 		} finally {
-			cancelledRegistry.shutdown();
+			cancelledCoordinator.shutdown();
 		}
 	}
 
