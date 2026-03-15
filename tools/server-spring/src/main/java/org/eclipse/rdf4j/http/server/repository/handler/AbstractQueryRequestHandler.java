@@ -24,6 +24,7 @@ import javax.servlet.http.HttpServletResponse;
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
+import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.HTTPException;
@@ -37,6 +38,8 @@ import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMethod;
@@ -104,7 +107,8 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			final Optional<String> explainRequestId = getExplainRequestId(request);
 
 			if (!headersOnly && explainLevel.isPresent() && explainRequestId.isPresent()) {
-				return handleRegisteredExplainRequest(request, response, repositoryCon, query, explainLevel.get(),
+				return handleRegisteredExplainRequest(request, response, repository, repositoryCon, query,
+						explainLevel.get(),
 						explainRequestId.get());
 			}
 
@@ -182,11 +186,13 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 	}
 
 	private ModelAndView handleRegisteredExplainRequest(HttpServletRequest request, HttpServletResponse response,
-			RepositoryConnection repositoryCon, Query query, Explanation.Level explainLevel, String explainRequestId)
+			Repository repository, RepositoryConnection repositoryCon, Query query, Explanation.Level explainLevel,
+			String explainRequestId)
 			throws IOException, HTTPException {
 		final AsyncExplainCoordinator.Handle handle;
 		try {
-			handle = asyncExplainCoordinator.register(explainRequestId);
+			handle = asyncExplainCoordinator.register(explainRequestId, createRemoteCancelAction(repository,
+					explainRequestId));
 		} catch (IllegalStateException e) {
 			closeConnection(repositoryCon);
 			response.sendError(HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
@@ -195,6 +201,8 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 
 		try {
 			Explanation explanation = asyncExplainCoordinator.execute(handle, repositoryCon,
+					currentHandle -> QueryExplanationRequestContext
+							.activate(currentHandle.getExplainRequestId())::close,
 					() -> explainQuery(query, explainLevel));
 			if (explanation == null) {
 				return null;
@@ -236,6 +244,21 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		} catch (Exception qre) {
 			logger.warn("Connection closing error", qre);
 		}
+	}
+
+	private Runnable createRemoteCancelAction(Repository repository, String explainRequestId) {
+		if (!(repository instanceof HTTPRepository)) {
+			return null;
+		}
+
+		HTTPRepository httpRepository = (HTTPRepository) repository;
+		return () -> {
+			try {
+				httpRepository.cancelQueryExplanation(explainRequestId);
+			} catch (RepositoryException e) {
+				logger.debug("Remote explain cancellation failed for request {}", explainRequestId, e);
+			}
+		};
 	}
 
 	protected abstract ModelAndView getExplainQueryResponse(

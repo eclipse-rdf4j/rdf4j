@@ -65,11 +65,12 @@ class SavedQueriesServletTest {
 	}
 
 	@Test
-	void serviceUsesRepositoryLocationReferenceAndWritesResults() throws Exception {
+	void serviceUsesRepositoryIdReferenceAndWritesResults() throws Exception {
 		QueryStorage storage = mock(QueryStorage.class);
 		Repository repository = accessibleRepository();
 		RepositoryInfo info = new RepositoryInfo();
 		URL location = new URL("https://example.org/rdf4j-server/repositories/test");
+		info.setId("test-id");
 		info.setLocation(location);
 		when(storage.checkAccess(repository)).thenReturn(true);
 		doAnswer(invocation -> {
@@ -87,7 +88,7 @@ class SavedQueriesServletTest {
 
 		servlet.service(request, response);
 
-		verify(storage).selectSavedQueries(eq(expectedReference(location.toExternalForm())), eq("alice"), any());
+		verify(storage).selectSavedQueries(eq(expectedReference("test-id")), eq("alice"), any());
 		assertThat(response.getBody()).contains("team-query").contains("saved-queries.xsl");
 	}
 

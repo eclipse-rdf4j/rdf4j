@@ -113,10 +113,10 @@ public class SavedQueriesServlet extends TransformationServlet {
 		}
 		String source = null;
 		if (info != null) {
-			if (info.getLocation() != null) {
-				source = info.getLocation().toExternalForm();
-			} else {
+			if (info.getId() != null && !info.getId().isBlank()) {
 				source = info.getId();
+			} else if (info.getLocation() != null) {
+				source = info.getLocation().toExternalForm();
 			}
 		}
 		if (source == null || source.isBlank()) {

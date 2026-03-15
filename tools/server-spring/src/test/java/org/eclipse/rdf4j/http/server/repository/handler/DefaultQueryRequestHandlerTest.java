@@ -23,7 +23,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.repository.ExplainQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.resolver.RepositoryResolver;
@@ -33,6 +35,7 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -215,6 +218,57 @@ class DefaultQueryRequestHandlerTest {
 		assertThat(result.getView()).isInstanceOf(ExplainQueryResultView.class);
 		assertThat(request.isAsyncStarted()).isFalse();
 		verify(connection).close();
+	}
+
+	@Test
+	void explainRequestIdShouldPropagateToProxyRepositoriesAndForwardCancel() throws Exception {
+		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
+		HTTPRepository repository = mock(HTTPRepository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+
+		CountDownLatch explainStarted = new CountDownLatch(1);
+		CountDownLatch explainInterrupted = new CountDownLatch(1);
+		AtomicReference<String> explainRequestId = new AtomicReference<>();
+
+		MockHttpServletRequest explainRequest = newAsyncExplainRequest("req-http");
+		MockHttpServletResponse explainResponse = new MockHttpServletResponse();
+
+		when(repositoryResolver.getRepository(explainRequest)).thenReturn(repository);
+		when(repositoryResolver.getRepositoryConnection(explainRequest, repository)).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SELECT_ALL_QUERY, null)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized)).thenAnswer(invocation -> {
+			explainRequestId.set(QueryExplanationRequestContext.getExplainRequestId());
+			explainStarted.countDown();
+			try {
+				new CountDownLatch(1).await();
+				return mock(Explanation.class);
+			} catch (InterruptedException e) {
+				explainInterrupted.countDown();
+				throw new QueryInterruptedException("interrupted", e);
+			}
+		});
+
+		try {
+			Future<ModelAndView> explainFuture = executor
+					.submit(() -> handler.handleQueryRequest(explainRequest, RequestMethod.POST, explainResponse));
+
+			assertThat(explainStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(explainRequestId).hasValue("req-http");
+
+			MockHttpServletRequest cancelRequest = newCancelExplainRequest("req-http");
+			MockHttpServletResponse cancelResponse = new MockHttpServletResponse();
+
+			assertThat(handler.handleCancelExplain(cancelRequest, cancelResponse)).isTrue();
+			assertThat(cancelResponse.getStatus()).isEqualTo(MockHttpServletResponse.SC_NO_CONTENT);
+			assertThat(explainInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(explainFuture.get(5, TimeUnit.SECONDS)).isNull();
+			verify(repository).cancelQueryExplanation("req-http");
+		} finally {
+			executor.shutdownNow();
+		}
 	}
 
 	private static MockHttpServletRequest newAsyncExplainRequest(String explainRequestId) {

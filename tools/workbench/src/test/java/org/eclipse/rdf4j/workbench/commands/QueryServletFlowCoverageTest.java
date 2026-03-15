@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.http.HTTPQueryEvaluationException;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
+import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -203,6 +204,33 @@ class QueryServletFlowCoverageTest {
 		servlet.doPost(request, response, "/transform");
 
 		verify(storage).saveQuery("https://example.org/repositories/http", "http-query", "", true,
+				QueryLanguage.SPARQL, SHORT_QUERY, false, 20, 0);
+		assertThat(body.toString()).contains("\"written\":true");
+	}
+
+	@Test
+	void saveQueryUsesRepositoryInfoIdReferenceForLocalRepositories() throws Exception {
+		QueryServlet servlet = new QueryServlet();
+		QueryStorage storage = mock(QueryStorage.class);
+		Repository repository = mock(Repository.class);
+		RepositoryInfo info = new RepositoryInfo();
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		StringWriter body = new StringWriter();
+		WorkbenchRequest request = mockSaveRequest("local-query");
+
+		info.setId("test-id");
+		info.setLocation(new java.net.URL("https://example.org/rdf4j-server/repositories/test"));
+		when(repository.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+		when(storage.checkAccess(repository)).thenReturn(true);
+		when(storage.askExists(localRepositoryReference("test-id"), "local-query", "")).thenReturn(false);
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+		servlet.setRepository(repository);
+		servlet.setRepositoryInfo(info);
+		servlet.substituteQueryStorage(storage);
+
+		servlet.doPost(request, response, "/transform");
+
+		verify(storage).saveQuery(localRepositoryReference("test-id"), "local-query", "", true,
 				QueryLanguage.SPARQL, SHORT_QUERY, false, 20, 0);
 		assertThat(body.toString()).contains("\"written\":true");
 	}
@@ -387,6 +415,10 @@ class QueryServletFlowCoverageTest {
 
 	private static RepositoryResult<Namespace> repositoryResultOf(Namespace... namespaces) {
 		return new RepositoryResult<>(new CloseableIteratorIteration<>(java.util.List.of(namespaces).iterator()));
+	}
+
+	private static String localRepositoryReference(String source) {
+		return "urn:rdf4j:repository:" + java.util.UUID.nameUUIDFromBytes(source.getBytes(StandardCharsets.UTF_8));
 	}
 
 	private static final class CookieAwareQueryServlet extends QueryServlet {
