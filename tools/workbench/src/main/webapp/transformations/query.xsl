@@ -11,6 +11,155 @@
 
     <xsl:include href="template.xsl"/>
 
+    <xsl:template name="query-pane">
+        <xsl:param name="paneId"/>
+        <xsl:param name="paneClass"/>
+        <xsl:param name="queryId"/>
+        <xsl:param name="queryName"/>
+        <xsl:param name="queryLabel"/>
+        <xsl:param name="queryValue"/>
+        <xsl:param name="errorId"/>
+        <xsl:param name="errorValue"/>
+        <xsl:param name="explanationRowId"/>
+        <xsl:param name="explanationVisible" select="true()"/>
+        <xsl:param name="statusId"/>
+        <xsl:param name="overlayId"/>
+        <xsl:param name="explanationId"/>
+        <xsl:param name="explanationFormat"/>
+        <xsl:param name="explanationLevel"/>
+        <xsl:param name="explanationValue"/>
+        <xsl:param name="dotViewId"/>
+        <xsl:param name="jsonViewId"/>
+        <xsl:param name="showControls" select="false()"/>
+        <xsl:param name="controlsRowId"/>
+
+        <div id="{$paneId}" class="{$paneClass}">
+            <div class="query-form__row query-form__row--stacked">
+                <label class="query-form__label" for="{$queryId}">
+                    <xsl:value-of select="$queryLabel"/>
+                </label>
+                <div class="query-form__field">
+                    <textarea id="{$queryId}" rows="16" cols="80" wrap="soft">
+                        <xsl:if test="string-length($queryName) &gt; 0">
+                            <xsl:attribute name="name">
+                                <xsl:value-of select="$queryName"/>
+                            </xsl:attribute>
+                        </xsl:if>
+                        <xsl:value-of select="$queryValue"/>
+                    </textarea>
+                </div>
+            </div>
+            <div class="query-form__row">
+                <span class="query-form__label query-form__label--blank"></span>
+                <div class="query-form__field">
+                    <span id="{$errorId}" class="error">
+                        <xsl:value-of select="$errorValue"/>
+                    </span>
+                </div>
+            </div>
+            <div id="{$explanationRowId}" class="query-form__row query-form__row--stacked">
+                <xsl:if test="not($explanationVisible)">
+                    <xsl:attribute name="style">display:none;</xsl:attribute>
+                </xsl:if>
+                <span class="query-form__label">
+                    <xsl:value-of select="$query-explanation.label"/>
+                </span>
+                <div class="query-form__field">
+                    <div id="{$statusId}" class="query-explanation-status" aria-live="polite"></div>
+                    <div class="query-explanation-surface">
+                        <div id="{$overlayId}" class="query-explanation-overlay" aria-hidden="true"></div>
+                        <pre id="{$explanationId}" data-format="{$explanationFormat}">
+                            <xsl:value-of select="$explanationValue"/>
+                        </pre>
+                        <div id="{$dotViewId}"></div>
+                        <div id="{$jsonViewId}"></div>
+                    </div>
+                </div>
+            </div>
+            <xsl:if test="$showControls">
+                <div id="{$controlsRowId}" class="query-explanation-controls-row-class">
+                    <xsl:if test="not($explanationVisible)">
+                        <xsl:attribute name="style">display:none;</xsl:attribute>
+                    </xsl:if>
+                    <div class="query-form__field query-form__field--controls">
+                        <span id="primary-explain-settings" class="query-form__field--controls-group">
+                            <select id="explain-format" name="explain-format">
+                                <option value="text">
+                                    <xsl:if test="normalize-space($explanationFormat) = '' or normalize-space($explanationFormat) = 'text'">
+                                        <xsl:attribute name="selected">selected</xsl:attribute>
+                                    </xsl:if>
+                                    Text
+                                </option>
+                                <option value="dot">
+                                    <xsl:if test="normalize-space($explanationFormat) = 'dot'">
+                                        <xsl:attribute name="selected">selected</xsl:attribute>
+                                    </xsl:if>
+                                    DOT
+                                </option>
+                                <option value="json">
+                                    <xsl:if test="normalize-space($explanationFormat) = 'json'">
+                                        <xsl:attribute name="selected">selected</xsl:attribute>
+                                    </xsl:if>
+                                    JSON
+                                </option>
+                            </select>
+                            <select id="explain-level">
+                                <option value="Unoptimized">
+                                    <xsl:if test="normalize-space($explanationLevel) = 'Unoptimized'">
+                                        <xsl:attribute name="selected">selected</xsl:attribute>
+                                    </xsl:if>
+                                    Unoptimized
+                                </option>
+                                <option value="Optimized">
+                                    <xsl:if test="normalize-space($explanationLevel) = '' or normalize-space($explanationLevel) = 'Optimized'">
+                                        <xsl:attribute name="selected">selected</xsl:attribute>
+                                    </xsl:if>
+                                    Optimized
+                                </option>
+                                <option value="Executed">
+                                    <xsl:if test="normalize-space($explanationLevel) = 'Executed'">
+                                        <xsl:attribute name="selected">selected</xsl:attribute>
+                                    </xsl:if>
+                                    Executed
+                                </option>
+                                <option value="Telemetry">
+                                    <xsl:if test="normalize-space($explanationLevel) = 'Telemetry'">
+                                        <xsl:attribute name="selected">selected</xsl:attribute>
+                                    </xsl:if>
+                                    Telemetry
+                                </option>
+                                <option value="Timed">
+                                    <xsl:if test="normalize-space($explanationLevel) = 'Timed'">
+                                        <xsl:attribute name="selected">selected</xsl:attribute>
+                                    </xsl:if>
+                                    Timed
+                                </option>
+                            </select>
+                        </span>
+                        <span id="primary-explain-repeat-controls" class="query-form__field--controls-group">
+                            <input id="rerun-explanation" type="button"
+                                   value="{$explain-query.label}"
+                                   onclick="workbench.query.runExplain(null, 'rerun-explanation')"/>
+                            <span id="rerun-explanation-spinner" class="query-explain-spinner"
+                                  aria-hidden="true"></span>
+                            <input id="rerun-explanation-cancel" class="query-explain-cancel"
+                                   type="button" value="{$cancel.label}" onclick="workbench.query.cancelExplain()"
+                                   aria-hidden="true" disabled="disabled"/>
+                        </span>
+                        <input id="download-explanation" type="button"
+                               value="{$download-explanation.label}">
+                            <xsl:if test="not($explanationVisible)">
+                                <xsl:attribute name="disabled">disabled</xsl:attribute>
+                            </xsl:if>
+                        </input>
+                        <input id="compare-toggle" type="button"
+                               value="{$compare.label}" onclick="workbench.query.toggleCompareMode()"/>
+                    </div>
+                </div>
+            </xsl:if>
+        </div>
+    </xsl:template>
+
     <xsl:template match="sparql:sparql">
         <xsl:variable name="queryLn"
                       select="sparql:results/sparql:result/sparql:binding[@name='queryLn']"/>
@@ -28,726 +177,12 @@
                       select="sparql:results/sparql:result/sparql:binding[@name='explanation-format']/sparql:literal"/>
         <xsl:variable name="explanationLevel"
                       select="sparql:results/sparql:result/sparql:binding[@name='explanation-level']/sparql:literal"/>
+        <link rel="stylesheet" type="text/css" href="../../styles/query.css"/>
         <form action="query" method="post" onsubmit="return workbench.query.doSubmit()">
             <input type="hidden" name="action" id="action"/>
             <input type="hidden" name="explain" id="explain"/>
             <input type="hidden" name="ref" value="text"/>
             <input type="hidden" name="include-query-text" id="include-query-text" value="false"/>
-            <style type="text/css">
-                .query-form {
-                    --query-form-label-width: 12rem;
-                    width: 100%;
-                    display: flex;
-                    flex-direction: column;
-                    gap: 0.75em;
-                }
-
-                .query-form__row {
-                    display: grid;
-                    grid-template-columns:max-content minmax(0, 1fr);
-                    grid-template-columns:var(--query-form-label-width) minmax(0, 1fr);
-                    align-items: start;
-                    column-gap: 1em;
-                    row-gap: 0.5em;
-                }
-
-                .query-form__row--stacked {
-                    grid-template-columns:minmax(0, 1fr);
-                }
-
-                #query-explanation-row,
-                #query-explanation-row-compare {
-                    margin-top: 1.2em;
-                }
-
-                .query-form__label {
-                    font-family: Roboto, Libre Franklin, Helvetica Neue, Helvetica, Arial, sans-serif;
-                    font-weight: bold;
-                    white-space: nowrap;
-                    margin-top: auto;
-                    margin-bottom: auto;
-                    padding-left: 1px;
-                }
-
-                .query-form__label:after {
-                    content: ':';
-                }
-
-                .query-form__label--blank:after {
-                    content: '';
-                }
-
-                .query-form__row--stacked .query-form__label {
-                    padding-top: 0;
-                }
-
-                .query-form__row--stacked .query-form__label:after {
-                    content: '';
-                }
-
-                .query-form__field {
-                    min-width: 0;
-                }
-
-                .query-form__field input[type='text'],
-                .query-form__field textarea,
-                .query-form__field select {
-                    box-sizing: border-box;
-                    max-width: 100%;
-                }
-
-                .query-form__field--controls,
-                .query-form__field--options,
-                .query-form__field--actions {
-                    display: flex;
-                    flex-wrap: wrap;
-                    align-items: center;
-                    gap: 0.1em;
-                }
-
-                .query-form__field--controls-group {
-                    display: flex;
-                    flex-wrap: wrap;
-                    align-items: center;
-                    gap: 0.1em;
-                }
-
-                #query-sidebar-toggle {
-                    display: none;
-                    position: fixed;
-                    top: 6.75rem;
-                    left: 0.2rem;
-                    z-index: 1001;
-                    width: 1.5rem;
-                    height: 1.5rem;
-                    padding: 0;
-                    border: none;
-                    border-radius: 0.9rem;
-                    background-color: rgba(255, 255, 255, 0);
-                    color: #234e73;
-                    cursor: pointer;
-                    transform: translateX(0);
-                    transition: transform 0.22s ease, background 0.16s ease, box-shadow 0.16s ease;
-                }
-
-                #query-sidebar-toggle:hover {
-                    background: #eef5fb;
-                }
-
-                body.query-compare-mode #query-sidebar-toggle {
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                }
-
-                .query-sidebar-toggle__icon {
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    width: 1.1rem;
-                    height: 1.1rem;
-                }
-
-                .query-sidebar-toggle__svg {
-                    display: block;
-                    width: 100%;
-                    height: 100%;
-                }
-
-                .query-sidebar-toggle__stroke {
-                    fill: none;
-                    stroke: currentColor;
-                    stroke-width: 2.25;
-                    stroke-linecap: round;
-                    stroke-linejoin: round;
-                    vector-effect: non-scaling-stroke;
-                }
-
-                body.query-compare-mode #navigation {
-                    transform: translateX(-220px);
-                    z-index: 1002;
-                    opacity: 0;
-                    visibility: hidden;
-                    pointer-events: none;
-                    transition: transform 0.22s ease, opacity 0.22s ease, visibility 0s linear 0.22s;
-                }
-
-                body.query-compare-mode #content {
-                    margin-left: 1rem;
-                    transition: margin-left 0.22s ease;
-                }
-
-                body.query-compare-mode #title_heading,
-                body.query-compare-mode #noscript-message,
-                body.query-compare-mode .query-form {
-                    transform: translateX(0);
-                    transition: transform 0.22s ease;
-                }
-
-                body.query-compare-mode.query-compare-nav-open #navigation {
-                    transform: translateX(0);
-                    opacity: 1;
-                    visibility: visible;
-                    pointer-events: auto;
-                    transition-delay: 0s;
-                    box-shadow: 0 14px 30px rgba(12, 25, 36, 0.2);
-                }
-
-                body.query-compare-mode.query-compare-nav-open #title_heading,
-                body.query-compare-mode.query-compare-nav-open #noscript-message,
-                body.query-compare-mode.query-compare-nav-open .query-form {
-                    transform: translateX(184px);
-                }
-
-                body.query-compare-mode.query-compare-nav-open #query-sidebar-toggle {
-                    transform: translateX(192px);
-                }
-
-                .query-form__field--actions #query-name {
-                    min-width: 14em;
-                }
-
-                .query-explanation-controls-row-class {
-                    margin-top: 0.5em;
-                    margin-left: -0.1em;
-                }
-
-                .query-explanation-status {
-                    display: none;
-                    margin: 0 0 0.55em 0;
-                    padding: 0.45em 0.7em;
-                    border-radius: 0.35em;
-                    border: 1px solid transparent;
-                    font-size: 0.92em;
-                    line-height: 1.35;
-                }
-
-                .query-explanation-status--visible {
-                    display: block;
-                }
-
-                .query-explanation-status--loading {
-                    background: #eef5fb;
-                    border-color: #c7d8ea;
-                    color: #234e73;
-                }
-
-                .query-explanation-status--stale {
-                    background: #fff7dc;
-                    border-color: #e6d28d;
-                    color: #715400;
-                }
-
-                .query-explanation-status--error {
-                    background: #fdeaea;
-                    border-color: #efc2c2;
-                    color: #8d1f1f;
-                }
-
-                .query-explanation-surface {
-                    position: relative;
-                }
-
-                .query-explanation-overlay {
-                    display: none;
-                    position: absolute;
-                    inset: 0;
-                    z-index: 2;
-                    padding: 0.75em;
-                    box-sizing: border-box;
-                    background: rgba(255, 255, 255, 0.72);
-                    color: #234e73;
-                    font-weight: bold;
-                    align-items: flex-start;
-                    justify-content: flex-end;
-                    pointer-events: none;
-                }
-
-                .query-explanation-overlay--visible {
-                    display: flex;
-                }
-
-                .query-explain-spinner {
-                    display: none;
-                    width: 0.95em;
-                    height: 0.95em;
-                    box-sizing: border-box;
-                    border: 2px solid #c8d1db;
-                    border-top-color: #356893;
-                    border-radius: 50%;
-                    vertical-align: middle;
-                }
-
-                .query-explain-spinner--visible {
-                    display: inline-block;
-                    animation: query-explain-spinner-spin 0.8s linear infinite;
-                }
-
-                .query-explain-cancel {
-                    display: none;
-                }
-
-                .query-explain-cancel--visible {
-                    display: inline-block;
-                }
-
-                .query-compare-action.query-explain-cancel.query-explain-cancel--visible {
-                    display: inline-flex;
-                }
-
-                @keyframes query-explain-spinner-spin {
-                    from {
-                        transform: rotate(0deg);
-                    }
-
-                    to {
-                        transform: rotate(360deg);
-                    }
-                }
-
-                #query {
-                    width: 100%;
-                    max-width: 100%;
-                }
-
-                #query-compare {
-                    width: 100%;
-                    max-width: 100%;
-                }
-
-                #query-explanation,
-                #query-explanation-compare {
-                    max-height: none;
-                    width: 100%;
-                    max-width: 100%;
-                    overflow: auto;
-                    white-space: pre;
-                    word-break: normal;
-                    overflow-wrap: normal;
-                    background: #ffffff;
-                    color: #000000;
-                    border: 1px solid #d0d0d0;
-                    padding: 0.75em;
-                    box-sizing: border-box;
-                }
-
-                #query-explanation-dot-view,
-                #query-explanation-dot-view-compare {
-                    display: none;
-                    background: #ffffff;
-                    border: 1px solid #d0d0d0;
-                    padding: 0;
-                    font-size: 1em;
-                    width: 100%;
-                    box-sizing: border-box;
-                    overflow: auto;
-                    height: 75vh;
-                }
-
-                #query-explanation-json-view,
-                #query-explanation-json-view-compare {
-                    display: none;
-                    background: #ffffff;
-                    border: 1px solid #d0d0d0;
-                    padding: 0.75em;
-                    width: 100%;
-                    box-sizing: border-box;
-                    overflow: auto;
-                    max-height: 75vh;
-                    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-                    line-height: 1.45;
-                }
-
-                .query-json-view__raw {
-                    margin: 0.6em 0 0 0;
-                    padding: 0.6em;
-                    background: #f8f8f8;
-                    border: 1px solid #e0e0e0;
-                    white-space: pre;
-                    overflow: auto;
-                }
-
-                .query-json-tree {
-                    font-size: 0.95em;
-                    color: #1f2328;
-                }
-
-                .query-json-node {
-                    margin: 0.15em 0;
-                }
-
-                .query-json-node__line {
-                    display: flex;
-                    align-items: flex-start;
-                    gap: 0.35em;
-                    white-space: nowrap;
-                }
-
-                .query-json-node__toggle {
-                    border: 1px solid #c5d1de;
-                    background: #f3f7fb;
-                    color: #285d8f;
-                    border-radius: 3px;
-                    font-size: 0.72em;
-                    line-height: 1;
-                    width: 1.5em;
-                    height: 1.5em;
-                    padding: 0;
-                    cursor: pointer;
-                    flex: 0 0 auto;
-                }
-
-                .query-json-node__toggle:hover {
-                    background: #e6f1fa;
-                }
-
-                .query-json-node__toggle:focus {
-                    outline: 2px solid #5a9ad6;
-                    outline-offset: 1px;
-                }
-
-                .query-json-node__toggle--spacer {
-                    border: none;
-                    background: transparent;
-                    cursor: default;
-                }
-
-                .query-json-node__children {
-                    margin-left: 1.15em;
-                    padding-left: 0.75em;
-                    border-left: 1px dotted #c7d0d9;
-                }
-
-                .query-json-node--collapsed > .query-json-node__children {
-                    display: none;
-                }
-
-                .query-json-node__key {
-                    color: #0b5da8;
-                }
-
-                .query-json-node__label {
-                    color: #5a6775;
-                }
-
-                .query-json-node__summary {
-                    color: #6e7781;
-                }
-
-                .query-json-node__percentage {
-                    color: #7a3e0a;
-                    font-weight: 600;
-                }
-
-                .query-json-node__value--string {
-                    color: #0a7a36;
-                }
-
-                .query-json-node__value--number {
-                    color: #7a3e0a;
-                }
-
-                .query-json-node__value--boolean {
-                    color: #8a2a8c;
-                }
-
-                .query-json-node__value--null {
-                    color: #6e7781;
-                    font-style: italic;
-                }
-
-                .query-compare-layout {
-                    display: grid;
-                    grid-template-columns:minmax(0, 1fr);
-                    gap: 1rem;
-                    align-items: start;
-                }
-
-                .query-compare-pane {
-                    min-width: 0;
-                }
-
-                .query-compare-pane--secondary,
-                #query-compare-controls {
-                    display: none;
-                }
-
-                .query-compare-layout--active {
-                    grid-template-columns:minmax(0, 1fr) auto minmax(0, 1fr);
-                }
-
-                .query-compare-layout--active .query-compare-pane--secondary {
-                    display: block;
-                }
-
-                .query-compare-layout--active #query-compare-controls {
-                    display: flex;
-                    position: sticky;
-                    top: 10px;
-                }
-
-                #query-compare-controls {
-                    flex-direction: column;
-                    gap: 0.45rem;
-                    align-items: center;
-                    justify-content: center;
-                    width: 2.6rem;
-                    margin-top: 1.5rem;
-                }
-
-                .query-compare-action {
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    width: 2.3rem;
-                    height: 2.3rem;
-                    padding: 0;
-                    border: 1px solid #c7d3df;
-                    border-radius: 0.75rem;
-                    background: #ffffff;
-                    color: #234e73;
-                    box-shadow: 0 8px 18px rgba(12, 25, 36, 0.12);
-                    cursor: pointer;
-                    transition: transform 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
-                }
-
-                .query-compare-action.query-explain-cancel {
-                    display: none;
-                }
-
-                .query-compare-action:hover {
-                    background: #eef5fb;
-                }
-
-                .query-compare-action:focus {
-                    outline: 2px solid #5a9ad6;
-                    outline-offset: 2px;
-                }
-
-                .query-compare-action[disabled] {
-                    opacity: 0.45;
-                    cursor: not-allowed;
-                    box-shadow: none;
-                    transform: none;
-                }
-
-                .query-compare-action__icon {
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    line-height: 1;
-                    color: currentColor;
-                }
-
-                .query-compare-action__svg {
-                    display: block;
-                    width: 1.2rem;
-                    height: 1.2rem;
-                }
-
-                .query-compare-action__stroke {
-                    fill: none;
-                    stroke: currentColor;
-                    stroke-width: 2.1;
-                    stroke-linecap: round;
-                    stroke-linejoin: round;
-                    vector-effect: non-scaling-stroke;
-                }
-
-                .query-compare-action__fill {
-                    fill: currentColor;
-                }
-
-                .query-compare-action__icon--spinning {
-                    animation: query-explain-spinner-spin 0.8s linear infinite;
-                    transform-origin: center;
-                    transform-box: fill-box;
-                }
-
-                .query-compare-action--spinning .query-compare-action__svg--refresh {
-                    animation: query-explain-spinner-spin 0.8s linear infinite;
-                    transform-origin: center;
-                    transform-box: fill-box;
-                }
-
-                .query-compare-action__svg--refresh {
-                    width: 1.35rem;
-                    height: 1.35rem;
-                }
-
-                .query-compare-action__icon--cancel {
-                    font-size: 1.45rem;
-                    line-height: 1;
-                }
-
-                .query-compare-action__svg--diff {
-                    width: 1.5rem;
-                    height: 1.7rem;
-                    margin-top: -0.25rem;
-                    padding-left: 0.05rem;
-                }
-
-
-                .query-diff-modal {
-                    --query-diff-modal-padding: clamp(1rem, 3vw, 2rem);
-                    display: none;
-                    position: fixed;
-                    inset: 0;
-                    z-index: 999;
-                    background: rgba(12, 25, 36, 0.7);
-                    align-items: stretch;
-                    justify-content: center;
-                    padding: var(--query-diff-modal-padding);
-                    box-sizing: border-box;
-                }
-
-                .query-diff-modal--open {
-                    display: flex;
-                }
-
-                .query-diff-modal__dialog {
-                    background: #ffffff;
-                    color: #1f2328;
-                    width: calc(100vw - (var(--query-diff-modal-padding) * 2));
-                    height: calc(100vh - (var(--query-diff-modal-padding) * 2));
-                    max-width: 1400px;
-                    max-height: calc(100vh - (var(--query-diff-modal-padding) * 2));
-                    margin: 0 auto;
-                    border-radius: 12px;
-                    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.35);
-                    display: flex;
-                    flex-direction: column;
-                    overflow: hidden;
-                    box-sizing: border-box;
-                }
-
-                .query-diff-modal__header {
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    gap: 1rem;
-                    padding: 1rem 1.25rem;
-                    border-bottom: 1px solid #d0d7de;
-                }
-
-                .query-diff-modal__title {
-                    font-size: 1.15rem;
-                    font-weight: 700;
-                }
-
-                .query-diff-modal__body {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 1rem;
-                    padding: 1rem 1.25rem 1.25rem 1.25rem;
-                    flex: 1 1 auto;
-                    min-height: 0;
-                    overflow: hidden;
-                }
-
-                .query-diff-section {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 0.5rem;
-                    min-height: 0;
-                    overflow: hidden;
-                }
-
-                .query-diff-section--query {
-                    flex: 0 1 auto;
-                }
-
-                .query-diff-section--explanation {
-                    flex: 0 1 auto;
-                    max-height: 70%;
-                }
-
-                .query-diff-section__title {
-                    font-weight: 700;
-                    color: #234e73;
-                }
-
-                .query-diff-view {
-                    border: 1px solid #d0d7de;
-                    border-radius: 8px;
-                    background: #f8fafc;
-                    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-                    font-size: 0.9rem;
-                    line-height: 1.45;
-                    flex: 1 1 auto;
-                    min-height: 0;
-                    overflow: auto;
-                    max-height: none;
-                }
-
-                .query-diff-row {
-                    display: grid;
-                    grid-template-columns:auto 1fr;
-                    gap: 0.75rem;
-                    padding: 0.15rem 0.75rem;
-                    white-space: pre;
-                }
-
-                .query-diff-row__marker {
-                    font-weight: 700;
-                }
-
-                .query-diff-row--added {
-                    background: #ecfdf3;
-                    color: #116329;
-                }
-
-                .query-diff-row--removed {
-                    background: #fff1f0;
-                    color: #9f1d1d;
-                }
-
-                .query-diff-row--context {
-                    color: #334155;
-                }
-
-                @media (max-width: 900px) {
-                    .query-form__row {
-                        grid-template-columns:minmax(0, 1fr);
-                    }
-
-                    .query-form__label {
-                        padding-top: 0;
-                    }
-
-                    .query-form__label:after {
-                        content: '';
-                    }
-
-                    #query-sidebar-toggle {
-                        top: 5.75rem;
-                        left: 0.75rem;
-                    }
-
-                    .query-compare-layout--active {
-                        grid-template-columns:minmax(0, 1fr);
-                    }
-
-                    #query-compare-controls {
-                        flex-direction: row;
-                        justify-content: flex-start;
-                        width: auto;
-                    }
-
-                }
-
-                .yasqe .CodeMirror {
-                    height: auto;
-                }
-
-                .yasqe .CodeMirror-scroll {
-                    height: auto;
-                    min-height: 300px;
-                    max-height: 55vh;
-                    overflow-y: auto;
-                    overflow-x: auto;
-                }
-            </style>
             <button id="query-sidebar-toggle" type="button"
                     aria-hidden="true" tabindex="-1"
                     data-show-label="{$show-menu.label}"
@@ -790,127 +225,29 @@
                     </div>
                 </div>
                 <div id="query-compare-layout" class="query-compare-layout">
-                    <div id="query-primary-pane" class="query-compare-pane query-compare-pane--primary">
-                        <div class="query-form__row query-form__row--stacked">
-                            <label class="query-form__label" for="query">
-                                <xsl:value-of select="$query-string.label"/>
-                            </label>
-                            <div class="query-form__field">
-                                <textarea id="query" name="query" rows="16" cols="80" wrap="soft">
-                                    <xsl:value-of select="$query"/>
-                                </textarea>
-                            </div>
-                        </div>
-                        <div class="query-form__row">
-                            <span class="query-form__label query-form__label--blank"></span>
-                            <div class="query-form__field">
-                                <span id="queryString.errors" class="error">
-                                    <xsl:value-of select="//sparql:binding[@name='error-message']"/>
-                                </span>
-                            </div>
-                        </div>
-                        <div id="query-explanation-row" class="query-form__row query-form__row--stacked">
-                            <xsl:if test="string-length(normalize-space($explanation)) = 0">
-                                <xsl:attribute name="style">display:none;</xsl:attribute>
-                            </xsl:if>
-                            <span class="query-form__label">
-                                <xsl:value-of select="$query-explanation.label"/>
-                            </span>
-                            <div class="query-form__field">
-                                <div id="query-explanation-status" class="query-explanation-status" aria-live="polite"></div>
-                                <div class="query-explanation-surface">
-                                    <div id="query-explanation-overlay" class="query-explanation-overlay"
-                                         aria-hidden="true"></div>
-                                    <pre id="query-explanation"
-                                         style="margin-top:0; margin-bottom: 0; max-height:75vh; overflow:scroll;"
-                                         data-format="{normalize-space($explanationFormat)}">
-                                        <xsl:value-of select="$explanation"/>
-                                    </pre>
-                                    <div id="query-explanation-dot-view"></div>
-                                    <div id="query-explanation-json-view"></div>
-                                </div>
-                            </div>
-                        </div>
-                        <div id="query-explanation-controls-row" class="query-explanation-controls-row-class">
-                            <xsl:if test="string-length(normalize-space($explanation)) = 0">
-                                <xsl:attribute name="style">display:none;</xsl:attribute>
-                            </xsl:if>
-                            <div class="query-form__field query-form__field--controls">
-                                <span id="primary-explain-settings" class="query-form__field--controls-group">
-                                    <select id="explain-format" name="explain-format">
-                                        <option value="text">
-                                            <xsl:if test="normalize-space($explanationFormat) = '' or normalize-space($explanationFormat) = 'text'">
-                                                <xsl:attribute name="selected">selected</xsl:attribute>
-                                            </xsl:if>
-                                            Text
-                                        </option>
-                                        <option value="dot">
-                                            <xsl:if test="normalize-space($explanationFormat) = 'dot'">
-                                                <xsl:attribute name="selected">selected</xsl:attribute>
-                                            </xsl:if>
-                                            DOT
-                                        </option>
-                                        <option value="json">
-                                            <xsl:if test="normalize-space($explanationFormat) = 'json'">
-                                                <xsl:attribute name="selected">selected</xsl:attribute>
-                                            </xsl:if>
-                                            JSON
-                                        </option>
-                                    </select>
-                                    <select id="explain-level">
-                                        <option value="Unoptimized">
-                                            <xsl:if test="normalize-space($explanationLevel) = 'Unoptimized'">
-                                                <xsl:attribute name="selected">selected</xsl:attribute>
-                                            </xsl:if>
-                                            Unoptimized
-                                        </option>
-                                        <option value="Optimized">
-                                            <xsl:if test="normalize-space($explanationLevel) = '' or normalize-space($explanationLevel) = 'Optimized'">
-                                                <xsl:attribute name="selected">selected</xsl:attribute>
-                                            </xsl:if>
-                                            Optimized
-                                        </option>
-                                        <option value="Executed">
-                                            <xsl:if test="normalize-space($explanationLevel) = 'Executed'">
-                                                <xsl:attribute name="selected">selected</xsl:attribute>
-                                            </xsl:if>
-                                            Executed
-                                        </option>
-                                        <option value="Telemetry">
-                                            <xsl:if test="normalize-space($explanationLevel) = 'Telemetry'">
-                                                <xsl:attribute name="selected">selected</xsl:attribute>
-                                            </xsl:if>
-                                            Telemetry
-                                        </option>
-                                        <option value="Timed">
-                                            <xsl:if test="normalize-space($explanationLevel) = 'Timed'">
-                                                <xsl:attribute name="selected">selected</xsl:attribute>
-                                            </xsl:if>
-                                            Timed
-                                        </option>
-                                    </select>
-                                </span>
-                                <span id="primary-explain-repeat-controls" class="query-form__field--controls-group">
-                                    <input id="rerun-explanation" type="button"
-                                           value="{$explain-query.label}"
-                                           onclick="workbench.query.runExplain(null, 'rerun-explanation')"/>
-                                    <span id="rerun-explanation-spinner" class="query-explain-spinner"
-                                          aria-hidden="true"></span>
-                                    <input id="rerun-explanation-cancel" class="query-explain-cancel"
-                                           type="button" value="{$cancel.label}" onclick="workbench.query.cancelExplain()"
-                                           aria-hidden="true" disabled="disabled"/>
-                                </span>
-                                <input id="download-explanation" type="button"
-                                       value="{$download-explanation.label}">
-                                    <xsl:if test="string-length(normalize-space($explanation)) = 0">
-                                        <xsl:attribute name="disabled">disabled</xsl:attribute>
-                                    </xsl:if>
-                                </input>
-                                <input id="compare-toggle" type="button"
-                                       value="{$compare.label}" onclick="workbench.query.toggleCompareMode()"/>
-                            </div>
-                        </div>
-                    </div>
+                    <xsl:call-template name="query-pane">
+                        <xsl:with-param name="paneId">query-primary-pane</xsl:with-param>
+                        <xsl:with-param name="paneClass">query-compare-pane query-compare-pane--primary</xsl:with-param>
+                        <xsl:with-param name="queryId">query</xsl:with-param>
+                        <xsl:with-param name="queryName">query</xsl:with-param>
+                        <xsl:with-param name="queryLabel" select="$query-string.label"/>
+                        <xsl:with-param name="queryValue" select="$query"/>
+                        <xsl:with-param name="errorId">queryString.errors</xsl:with-param>
+                        <xsl:with-param name="errorValue" select="//sparql:binding[@name='error-message']"/>
+                        <xsl:with-param name="explanationRowId">query-explanation-row</xsl:with-param>
+                        <xsl:with-param name="explanationVisible"
+                                        select="string-length(normalize-space($explanation)) &gt; 0"/>
+                        <xsl:with-param name="statusId">query-explanation-status</xsl:with-param>
+                        <xsl:with-param name="overlayId">query-explanation-overlay</xsl:with-param>
+                        <xsl:with-param name="explanationId">query-explanation</xsl:with-param>
+                        <xsl:with-param name="explanationFormat" select="normalize-space($explanationFormat)"/>
+                        <xsl:with-param name="explanationLevel" select="$explanationLevel"/>
+                        <xsl:with-param name="explanationValue" select="$explanation"/>
+                        <xsl:with-param name="dotViewId">query-explanation-dot-view</xsl:with-param>
+                        <xsl:with-param name="jsonViewId">query-explanation-json-view</xsl:with-param>
+                        <xsl:with-param name="showControls" select="true()"/>
+                        <xsl:with-param name="controlsRowId">query-explanation-controls-row</xsl:with-param>
+                    </xsl:call-template>
                     <div id="query-compare-controls">
                         <button id="explain-compare-trigger" class="query-compare-action" type="button"
                                 aria-label="{$refresh-explanations.label}" title="{$refresh-explanations.label}"
@@ -947,40 +284,24 @@
                             </span>
                         </button>
                     </div>
-                    <div id="query-compare-pane" class="query-compare-pane query-compare-pane--secondary">
-                        <div class="query-form__row query-form__row--stacked">
-                            <label class="query-form__label" for="query-compare">
-                                <xsl:value-of select="$compare-query.label"/>
-                            </label>
-                            <div class="query-form__field">
-                                <textarea id="query-compare" rows="16" cols="80" wrap="soft"></textarea>
-                            </div>
-                        </div>
-                        <div class="query-form__row">
-                            <span class="query-form__label query-form__label--blank"></span>
-                            <div class="query-form__field">
-                                <span id="queryString.errors-compare" class="error"></span>
-                            </div>
-                        </div>
-                        <div id="query-explanation-row-compare" class="query-form__row query-form__row--stacked">
-                            <span class="query-form__label">
-                                <xsl:value-of select="$query-explanation.label"/>
-                            </span>
-                            <div class="query-form__field">
-                                <div id="query-explanation-status-compare" class="query-explanation-status"
-                                     aria-live="polite"></div>
-                                <div class="query-explanation-surface">
-                                    <div id="query-explanation-overlay-compare" class="query-explanation-overlay"
-                                         aria-hidden="true"></div>
-                                    <pre id="query-explanation-compare"
-                                         style="margin-top:0; margin-bottom: 0; max-height:75vh; overflow:scroll;"
-                                         data-format="text"></pre>
-                                    <div id="query-explanation-dot-view-compare"></div>
-                                    <div id="query-explanation-json-view-compare"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    <xsl:call-template name="query-pane">
+                        <xsl:with-param name="paneId">query-compare-pane</xsl:with-param>
+                        <xsl:with-param name="paneClass">query-compare-pane query-compare-pane--secondary</xsl:with-param>
+                        <xsl:with-param name="queryId">query-compare</xsl:with-param>
+                        <xsl:with-param name="queryLabel" select="$compare-query.label"/>
+                        <xsl:with-param name="queryValue" select="''"/>
+                        <xsl:with-param name="errorId">queryString.errors-compare</xsl:with-param>
+                        <xsl:with-param name="errorValue" select="''"/>
+                        <xsl:with-param name="explanationRowId">query-explanation-row-compare</xsl:with-param>
+                        <xsl:with-param name="statusId">query-explanation-status-compare</xsl:with-param>
+                        <xsl:with-param name="overlayId">query-explanation-overlay-compare</xsl:with-param>
+                        <xsl:with-param name="explanationId">query-explanation-compare</xsl:with-param>
+                        <xsl:with-param name="explanationFormat" select="'text'"/>
+                        <xsl:with-param name="explanationLevel" select="''"/>
+                        <xsl:with-param name="explanationValue" select="''"/>
+                        <xsl:with-param name="dotViewId">query-explanation-dot-view-compare</xsl:with-param>
+                        <xsl:with-param name="jsonViewId">query-explanation-json-view-compare</xsl:with-param>
+                    </xsl:call-template>
                 </div>
                 <div class="query-form__row">
                     <span class="query-form__label">

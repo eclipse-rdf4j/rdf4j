@@ -117,30 +117,47 @@ class QueryTemplateTest {
 		assertThat(queryTemplate)
 				.contains("id=\"explain-trigger\"")
 				.contains("onclick=\"workbench.query.runExplain(null, 'explain-trigger')\"")
-				.contains("id=\"query-explanation-controls-row\"")
+				.contains("name=\"controlsRowId\">query-explanation-controls-row</xsl:with-param>")
 				.contains("id=\"rerun-explanation\"");
+	}
+
+	@Test
+	void queryTemplateShouldUseSharedPaneTemplateAndDedicatedStylesheet() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains("href=\"../../styles/query.css\"")
+				.doesNotContain("<style type=\"text/css\">")
+				.contains("<xsl:template name=\"query-pane\">")
+				.containsPattern(
+						"<div id=\"query-compare-layout\"[\\s\\S]*<xsl:call-template name=\"query-pane\">[\\s\\S]*query-primary-pane[\\s\\S]*<xsl:call-template name=\"query-pane\">[\\s\\S]*query-compare-pane");
 	}
 
 	@Test
 	void explainUiShouldDisableButtonsAndShowDelayedSpinnerForSlowResponses() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 
-		assertThat(queryTemplate)
+		assertThat(queryStyles)
 				.contains(".query-explain-spinner")
 				.contains("@keyframes query-explain-spinner-spin")
+				.contains(".query-explain-spinner--visible");
+
+		assertThat(queryTemplate)
 				.contains("id=\"explain-trigger-spinner\"")
 				.contains("id=\"rerun-explanation-spinner\"");
 
 		assertThat(queryScript)
-				.contains("function setExplainButtonsDisabled")
-				.contains("setExplainButtonsDisabled(true);")
-				.contains("setExplainButtonsDisabled(false);")
-				.contains("function showExplainSpinner")
-				.contains("function hideExplainSpinners")
+				.contains("function setExplainButtonsDisabled(disabled: boolean)")
+				.contains("function beginExplainRequestUiWaitState(")
+				.contains("function finishExplainRequestUiWaitState(")
+				.contains("showExplainRequestSpinner(controllerKey, targetButtonId);")
+				.contains("hideExplainRequestSpinner(controllerKey);")
 				.contains("window.setTimeout(function()")
-				.contains("1000 - (Date.now() - explainSpinnerVisibleSince)");
+				.contains("explainRequestSpinnerMinVisibleMs - (Date.now() - uiState.spinnerVisibleSince)");
 	}
 
 	@Test
@@ -160,7 +177,8 @@ class QueryTemplateTest {
 				.contains("var activeExplainJqXHR: JQueryXHR = null;")
 				.contains("function showExplainCancelButton")
 				.contains("function hideExplainCancelButtons")
-				.contains("showExplainCancelButton(buttonId);")
+				.contains("showPrimaryExplainCancelButton(controlIds.buttonId);")
+				.contains("hidePrimaryExplainCancelButtons();")
 				.contains("activeExplainJqXHR.abort();")
 				.contains("textStatus !== 'abort'");
 	}
@@ -169,10 +187,15 @@ class QueryTemplateTest {
 	void dotExplanationShouldUsePanZoomAndHideRawText() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 
-		assertThat(queryTemplate)
-				.contains("svg-pan-zoom")
+		assertThat(queryTemplate).contains("svg-pan-zoom")
+				.contains("<div id=\"{$dotViewId}\"></div>")
+				.contains("name=\"dotViewId\">query-explanation-dot-view</xsl:with-param>")
+				.contains("name=\"dotViewId\">query-explanation-dot-view-compare</xsl:with-param>");
+
+		assertThat(queryStyles)
 				.containsPattern("font-size:\\s*1em")
 				.containsPattern("width:\\s*100%")
 				.containsPattern("padding:\\s*0;")
@@ -199,10 +222,15 @@ class QueryTemplateTest {
 	void jsonExplanationShouldRenderAsInteractiveTree() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 
 		assertThat(queryTemplate)
-				.contains("id=\"query-explanation-json-view\"")
+				.contains("<div id=\"{$jsonViewId}\"></div>")
+				.contains("name=\"jsonViewId\">query-explanation-json-view</xsl:with-param>")
+				.contains("name=\"jsonViewId\">query-explanation-json-view-compare</xsl:with-param>");
+
+		assertThat(queryStyles)
 				.contains("#query-explanation-json-view")
 				.contains(".query-json-node__toggle")
 				.contains(".query-json-node__children")
@@ -226,28 +254,34 @@ class QueryTemplateTest {
 	void queryAndTextExplanationShouldUseModernResponsiveLayout() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 
 		assertThat(queryTemplate)
+				.contains("class=\"query-form\"")
+				.contains("class=\"query-form__row\"")
+				.contains("class=\"query-form__row query-form__row--stacked\"")
+				.contains("<div id=\"{$explanationRowId}\" class=\"query-form__row query-form__row--stacked\">")
+				.contains("name=\"explanationRowId\">query-explanation-row</xsl:with-param>")
+				.contains("class=\"query-form__label\"")
+				.contains("class=\"query-form__field\"")
+				.contains("href=\"../../styles/query.css\"")
+				.doesNotContain("<style type=\"text/css\">")
+				.doesNotContain("<table class=\"dataentry\"");
+
+		assertThat(queryStyles)
 				.contains(".query-form")
 				.contains("--query-form-label-width")
 				.contains("grid-template-columns:var(--query-form-label-width) minmax(0, 1fr);")
 				.contains("grid-template-columns:max-content minmax(0, 1fr);")
 				.contains(".query-form__row--stacked")
 				.contains("grid-template-columns:minmax(0, 1fr);")
-				.contains("class=\"query-form\"")
-				.contains("class=\"query-form__row\"")
-				.contains("class=\"query-form__row query-form__row--stacked\"")
-				.contains("id=\"query-explanation-row\" class=\"query-form__row query-form__row--stacked\"")
-				.contains("class=\"query-form__label\"")
-				.contains("class=\"query-form__field\"")
 				.containsPattern("width:\\s*100%;")
 				.containsPattern("white-space:\\s*pre;")
-				.containsPattern("overflow:\\s*auto;")
+				.containsPattern("overflow:\\s*(auto|scroll);")
 				.containsPattern("max-width:\\s*100%;")
 				.doesNotContain("white-space:pre-wrap;")
-				.doesNotContain("word-break:break-word;")
-				.doesNotContain("<table class=\"dataentry\"");
+				.doesNotContain("word-break:break-word;");
 
 		assertThat(queryScript)
 				.contains("\"width\": \"100%\"")
@@ -258,6 +292,7 @@ class QueryTemplateTest {
 	void queryTemplateShouldExposeCompareModeRailAndDiffModal() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
 
 		assertThat(queryTemplate)
 				.contains("id=\"compare-toggle\"")
@@ -274,13 +309,9 @@ class QueryTemplateTest {
 				.doesNotContain("<path class=\"query-sidebar-toggle__stroke\" d=\"M11.5 4L8 7.5L11.5 11\"></path>")
 				.contains("data-show-label=\"{$show-menu.label}\"")
 				.contains("data-hide-label=\"{$hide-menu.label}\"")
-				.contains("body.query-compare-mode #navigation")
-				.contains("body.query-compare-mode #content")
-				.containsPattern("body\\.query-compare-mode #navigation\\s*\\{[^}]*z-index:\\s*1002;")
-				.contains("body.query-compare-mode.query-compare-nav-open #navigation")
 				.contains("id=\"query-compare-layout\"")
-				.contains("id=\"query-compare\"")
-				.contains("id=\"query-explanation-compare\"")
+				.contains("name=\"queryId\">query-compare</xsl:with-param>")
+				.contains("name=\"explanationId\">query-explanation-compare</xsl:with-param>")
 				.contains("id=\"query-compare-controls\"")
 				.contains("id=\"explain-compare-trigger\"")
 				.contains("id=\"query-diff-trigger\"")
@@ -301,6 +332,18 @@ class QueryTemplateTest {
 				.doesNotContain("query-diff-glyph__edge--right")
 				.contains("aria-label=\"{$refresh-explanations.label}\"")
 				.contains("aria-label=\"{$diff.label}\"")
+				.containsPattern(
+						"class=\"query-explanation-controls-row-class\"[\\s\\S]*id=\"download-explanation\"[\\s\\S]*id=\"compare-toggle\"")
+				.containsPattern("</form>\\s*<div id=\"query-diff-modal\"")
+				.doesNotContainPattern("id=\"save\"[\\s\\S]*id=\"compare-toggle\"[\\s\\S]*id=\"query-name\"")
+				.doesNotContain("id=\"compare-explain-format\"")
+				.doesNotContain("id=\"compare-explain-level\"");
+
+		assertThat(queryStyles)
+				.contains("body.query-compare-mode #navigation")
+				.contains("body.query-compare-mode #content")
+				.containsPattern("body\\.query-compare-mode #navigation\\s*\\{[^}]*z-index:\\s*1002;")
+				.contains("body.query-compare-mode.query-compare-nav-open #navigation")
 				.contains(".query-compare-layout")
 				.contains(".query-compare-action__svg--diff")
 				.contains(".query-diff-modal")
@@ -313,13 +356,7 @@ class QueryTemplateTest {
 						"\\.query-diff-modal__body\\s*\\{[^}]*display:\\s*flex;[^}]*flex-direction:\\s*column;")
 				.contains(".query-diff-view")
 				.doesNotContain("max-height:32vh;")
-				.doesNotContain("grid-template-columns:repeat(2, minmax(0, 1fr));")
-				.containsPattern(
-						"id=\"query-explanation-controls-row\"[\\s\\S]*id=\"download-explanation\"[\\s\\S]*id=\"compare-toggle\"")
-				.containsPattern("</form>\\s*<div id=\"query-diff-modal\"")
-				.doesNotContainPattern("id=\"save\"[\\s\\S]*id=\"compare-toggle\"[\\s\\S]*id=\"query-name\"")
-				.doesNotContain("id=\"compare-explain-format\"")
-				.doesNotContain("id=\"compare-explain-level\"");
+				.doesNotContain("grid-template-columns:repeat(2, minmax(0, 1fr));");
 	}
 
 	@Test
@@ -462,14 +499,15 @@ class QueryTemplateTest {
 				.contains("function hideCompareExplainCancelButton()")
 				.contains("function showCompareExplainCancelButton()")
 				.contains("$('#explain-compare-cancel')")
-				.contains("showCompareExplainCancelButton();")
-				.contains("hideCompareExplainCancelButton();");
+				.contains("showExplainRequestCancelButton('compare', 'explain-compare-trigger');")
+				.contains("hideExplainRequestCancelButtons('compare');");
 	}
 
 	@Test
 	void queryCompareExplainRefreshActionShouldUseSvgIcon() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
 
 		assertThat(queryTemplate)
 				.contains("id=\"explain-compare-trigger-icon\"")
@@ -478,18 +516,18 @@ class QueryTemplateTest {
 				.contains("class=\"query-compare-action__fill\"")
 				.contains(
 						"d=\"M16.08,59.26A8,8,0,0,1,0,59.26a59,59,0,0,1,97.13-45V8a8,8,0,1,1,16.08,0V33.35a8,8,0,0,1-8,8L80.82,43.62a8,8,0,1,1-1.44-15.95l8-.73A43,43,0,0,0,16.08,59.26Zm22.77,19.6a8,8,0,0,1,1.44,16l-10.08.91A42.95,42.95,0,0,0,102,63.86a8,8,0,0,1,16.08,0A59,59,0,0,1,22.3,110v4.18a8,8,0,0,1-16.08,0V89.14h0a8,8,0,0,1,7.29-8l25.31-2.3Z\"")
-				.contains(".query-compare-action__svg--refresh")
 				.doesNotContain("<path class=\"query-compare-action__stroke\" d=\"M18 7V3L22 7\"></path>")
 				.doesNotContain("query-compare-action__icon--refresh")
 				.doesNotContain("&#10227;");
+
+		assertThat(queryStyles).contains(".query-compare-action__svg--refresh");
 	}
 
 	@Test
 	void queryTemplateShouldSpaceQueryEditorsFromExplanationBlocks() throws IOException {
-		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
-				StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
 
-		assertThat(queryTemplate)
+		assertThat(queryStyles)
 				.containsPattern(
 						"#query-explanation-row,\\s*#query-explanation-row-compare\\s*\\{[^}]*margin-top:\\s*1.2em;");
 	}
@@ -498,15 +536,18 @@ class QueryTemplateTest {
 	void queryTemplateShouldLetExplanationDiffUseMostOfModalHeight() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
 
-		assertThat(queryTemplate)
+		assertThat(queryStyles)
 				.containsPattern(
 						"\\.query-diff-modal__body\\s*\\{[^}]*display:\\s*flex;[^}]*flex-direction:\\s*column;")
 				.containsPattern("\\.query-diff-section--query\\s*\\{[^}]*flex:\\s*0 1 auto;")
 				.containsPattern("\\.query-diff-section--explanation\\s*\\{[^}]*max-height:\\s*70%;")
-				.contains("class=\"query-diff-section query-diff-section--query\"")
-				.contains("class=\"query-diff-section query-diff-section--explanation\"")
 				.doesNotContain("max-height:30vh;");
+
+		assertThat(queryTemplate)
+				.contains("class=\"query-diff-section query-diff-section--query\"")
+				.contains("class=\"query-diff-section query-diff-section--explanation\"");
 	}
 
 	@Test
@@ -861,6 +902,12 @@ class QueryTemplateTest {
 
 	private static List<String> templateOptions(ConfigTemplate template, String name) {
 		return template.getVariableMap().get(name);
+	}
+
+	private static String readQueryStyles() throws IOException {
+		return Files.readString(Path.of("src/main/webapp/styles/query.css"), StandardCharsets.UTF_8)
+				+ Files.readString(Path.of("src/main/webapp/styles/query-explanation.css"), StandardCharsets.UTF_8)
+				+ Files.readString(Path.of("src/main/webapp/styles/query-compare.css"), StandardCharsets.UTF_8);
 	}
 
 	private static String templateDefault(ConfigTemplate template, String name) {
