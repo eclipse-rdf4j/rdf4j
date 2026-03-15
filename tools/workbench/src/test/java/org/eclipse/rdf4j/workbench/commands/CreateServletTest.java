@@ -104,11 +104,8 @@ public class CreateServletTest {
 			assertThat(template.getOrder()).isLessThan(Integer.MAX_VALUE);
 			assertThat(template.getFields())
 					.extracting(CreateTemplateConfig.Field::getName)
-					.containsExactlyElementsOf(configTemplate.getVariableMap()
-							.keySet()
-							.stream()
-							.map(CreateServletTest::displayFieldName)
-							.collect(Collectors.toList()));
+					.containsExactlyElementsOf(
+							configTemplate.getVariableMap().keySet().stream().collect(Collectors.toList()));
 			assertThat(template.getFields())
 					.extracting(CreateTemplateConfig.Field::getId)
 					.doesNotContainNull()
@@ -175,10 +172,16 @@ public class CreateServletTest {
 		assertThat(CreateServlet.getCreateTemplate("remote").getFields())
 				.extracting(CreateTemplateConfig.Field::getName)
 				.contains("RDF4J Server location", "Remote repository ID");
+		assertThat(field(CreateServlet.getCreateTemplate("sparql"), "SPARQL query endpoint").getPlaceholder())
+				.isEqualTo("http://example.org/sparql");
+		assertThat(field(CreateServlet.getCreateTemplate("memory-customrule"), "Rule query").getDefaultValue())
+				.isEqualTo("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o FILTER(false) }");
+		assertThat(field(CreateServlet.getCreateTemplate("memory-customrule"), "Rule query").getRows()).isEqualTo(8);
+		assertThat(field(CreateServlet.getCreateTemplate("memory-customrule"), "Rule query").getCols()).isEqualTo(80);
 	}
 
 	@Test
-	public void testLmdbTemplateShouldNormalizeInlineLengthHintsForFieldsAndRenderValues() throws Exception {
+	public void testLmdbTemplateShouldExposeCommentBackedFieldSizesAndRenderValues() throws Exception {
 		CreateTemplateConfig template = CreateServlet.getCreateTemplate("lmdb");
 		CreateTemplateConfig.Field tripleDbSize = template.getFields()
 				.stream()
@@ -230,8 +233,10 @@ public class CreateServletTest {
 		CreateTemplateConfig template = parseTemplate("synthetic", String.join("\n",
 				"# @workbench.template label=\"Synthetic\" order=1",
 				"@prefix config: <tag:rdf4j.org,2023:config/> .",
-				"[] config:rep.id \"{%Repository ID[len=16]|synthetic%}\" ;",
-				"   config:sail.iterationCacheSyncThreshold \"{%Query Iteration Cache sync threshold[len=16]|10000%}\" ;",
+				"[] config:rep.id \"{%Repository ID|synthetic%}\" ;",
+				"# @workbench.field len=16",
+				"   config:sail.iterationCacheSyncThreshold \"{%Query Iteration Cache sync threshold|10000%}\" ;",
+				"# @workbench.field len=16",
 				"   config:mem.persist {%Persist|true|false%} ."));
 
 		assertThat(field(template, "Repository ID").getId()).isEqualTo("config_rep-id");
@@ -241,24 +246,29 @@ public class CreateServletTest {
 	}
 
 	@Test
-	public void testTemplateParserShouldIgnoreInlineIdHintsAndUsePropertyDerivedIds() throws Exception {
+	public void testTemplateParserShouldUsePropertyDerivedIdsForNamedFieldComments() throws Exception {
 		CreateTemplateConfig template = parseTemplate("synthetic", String.join("\n",
 				"# @workbench.template label=\"Synthetic\" order=1",
 				"@prefix config: <tag:rdf4j.org,2023:config/> .",
-				"[] config:http.url <{%RDF4J Server location[len=48 id=server-field]|http://localhost:8080/rdf4j-server%}/repositories/{%Remote repository ID[len=16 id=repository-field]|SYSTEM%}> ."));
+				"[] config:http.url <{%RDF4J Server location|http://localhost:8080/rdf4j-server%}/repositories/{%Remote repository ID|SYSTEM%}> .",
+				"# @workbench.field name=\"RDF4J Server location\" len=48",
+				"# @workbench.field name=\"Remote repository ID\" len=16"));
 
 		assertThat(field(template, "RDF4J Server location").getId()).isEqualTo("config_http-url");
 		assertThat(field(template, "Remote repository ID").getId()).isEqualTo("config_http-url-2");
 	}
 
 	@Test
-	public void testInlineHintsShouldCarryRemainingUiMetadataWithoutFieldComments() throws Exception {
+	public void testFieldCommentsShouldCarryUiMetadata() throws Exception {
 		CreateTemplateConfig template = parseTemplate("synthetic", String.join("\n",
 				"# @workbench.template label=\"Synthetic\" order=1",
 				"@prefix ex: <urn:test:> .",
-				"[] ex:queryLanguage \"{%Query Language[control=select]|SPARQL%}\" ;",
-				"   ex:ruleQuery '''{%Rule query[rows=7 cols=60]|%}''' ;",
-				"   ex:endpoint <{%SPARQL query endpoint[len=48 placeholder=\"http://example.org/sparql\"]|%}> ."));
+				"[] ex:queryLanguage \"{%Query Language|SPARQL%}\" ;",
+				"# @workbench.field control=select",
+				"   ex:ruleQuery '''{%Rule query|%}''' ;",
+				"# @workbench.field rows=7 cols=60",
+				"   ex:endpoint <{%SPARQL query endpoint|%}> .",
+				"# @workbench.field len=48 placeholder=\"http://example.org/sparql\""));
 
 		assertThat(field(template, "Query Language").getControl()).isEqualTo(CreateTemplateConfig.FieldControl.SELECT);
 		assertThat(field(template, "Rule query").getControl()).isEqualTo(CreateTemplateConfig.FieldControl.TEXTAREA);
@@ -577,10 +587,6 @@ public class CreateServletTest {
 
 	private static String templateDefault(ConfigTemplate template, String name) {
 		return template.getVariableMap().get(name).get(0);
-	}
-
-	private static String displayFieldName(String rawName) {
-		return rawName.replaceFirst("\\[[^\\]]+]$", "");
 	}
 
 	private static Map<String, String> defaultTemplateValues(CreateTemplateConfig template) {

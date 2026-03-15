@@ -8,7 +8,11 @@
 [] a config:Repository ;
     config:rep.impl [
         config:rep.type "openrdf:HTTPRepository" ;
-        config:http.url <{%RDF4J Server location[len=48]|http://localhost:8080/rdf4j-server%}/repositories/{%Remote repository ID[len=16]|SYSTEM%}>
+        config:http.url <{%RDF4J Server location|http://localhost:8080/rdf4j-server%}/repositories/{%Remote repository ID|SYSTEM%}>
+        # @workbench.field name="RDF4J Server location" len=48
+        # @workbench.field name="Remote repository ID" len=16
     ];
-    config:rep.id "{%Local repository ID[len=16]|SYSTEM@localhost%}" ;
-    rdfs:label "{%Repository title[len=48]|SYSTEM repository @localhost%}" .
+    config:rep.id "{%Local repository ID|SYSTEM@localhost%}" ;
+    # @workbench.field len=16
+    rdfs:label "{%Repository title|SYSTEM repository @localhost%}" .
+    # @workbench.field len=48

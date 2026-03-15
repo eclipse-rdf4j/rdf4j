@@ -7,16 +7,20 @@
 @prefix config: <tag:rdf4j.org,2023:config/>.
 
 [] a config:Repository ;
-    config:rep.id "{%Repository ID[len=16]|native-rdfs%}" ;
-    rdfs:label "{%Repository title[len=48]|Native store with RDF Schema inferencing%}" ;
+    config:rep.id "{%Repository ID|native-rdfs%}" ;
+    # @workbench.field len=16
+    rdfs:label "{%Repository title|Native store with RDF Schema inferencing%}" ;
+    # @workbench.field len=48
     config:rep.impl [
         config:rep.type "openrdf:SailRepository" ;
         config:sail.impl [
             config:sail.type "rdf4j:SchemaCachingRDFSInferencer" ;
             config:delegate [
                 config:sail.type "openrdf:NativeStore" ;
-                config:sail.iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold[len=16]|10000%}";
-                config:native.tripleIndexes "{%Triple indexes[len=16]|spoc,posc%}";
+                config:sail.iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold|10000%}";
+                # @workbench.field len=16
+                config:native.tripleIndexes "{%Triple indexes|spoc,posc%}";
+                # @workbench.field len=16
                 config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
             ]
         ]

@@ -15,8 +15,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
@@ -45,6 +43,32 @@ class CreateTemplateConfigTest {
 	}
 
 	@Test
+	void parseUsesStandaloneFieldCommentsForUiHints() {
+		CreateTemplateConfig template = parse("synthetic", String.join("\n",
+				"# @workbench.template label=\"Synthetic\" order=5",
+				"[] config:http.url <{%RDF4J Server location|http://localhost:8080/rdf4j-server%}/repositories/{%Remote repository ID|SYSTEM%}> ;",
+				"# @workbench.field name=\"RDF4J Server location\" len=48 placeholder=\"http://example.org/rdf4j-server\"",
+				"# @workbench.field name=\"Remote repository ID\" len=16",
+				"   config:rep.id \"{%Local repository ID|SYSTEM@localhost%}\" .",
+				"# @workbench.field len=16"));
+
+		assertThat(field(template, "RDF4J Server location").getSize()).isEqualTo(48);
+		assertThat(field(template, "RDF4J Server location").getPlaceholder())
+				.isEqualTo("http://example.org/rdf4j-server");
+		assertThat(field(template, "Remote repository ID").getSize()).isEqualTo(16);
+		assertThat(field(template, "Local repository ID").getSize()).isEqualTo(16);
+	}
+
+	@Test
+	void parseRejectsLegacyInlineFieldHints() {
+		assertThatThrownBy(() -> parse("synthetic", String.join("\n",
+				"# @workbench.template label=\"Synthetic\" order=5",
+				"[] config:rep.id \"{%Repository ID[len=16]|synthetic%}\" .")))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("# @workbench.field");
+	}
+
+	@Test
 	void propertyAndDefaultHelpersCoverFallbackBranches() {
 		assertThat(invokeString("propertyToId", new Class<?>[] { String.class }, "not-a-prefixed-name"))
 				.isEqualTo("not-a-prefixed-name");
@@ -62,11 +86,14 @@ class CreateTemplateConfigTest {
 	}
 
 	@Test
-	void parseCoversInlineControlsFallbackMetadataAndBooleanHelpers() {
+	void parseCoversFieldCommentsFallbackMetadataAndBooleanHelpers() {
 		CreateTemplateConfig template = parse("fallback-template", String.join("\n",
-				"[] config:rep.id \"{%Identifier[control=radio]%}\" ;",
-				"   rdfs:label \"{%Title[len=12]%}\" ;",
-				"   config:description \"{%Description[rows=2,cols=9]%}\" ;",
+				"[] config:rep.id \"{%Identifier%}\" ;",
+				"# @workbench.field control=radio",
+				"   rdfs:label \"{%Title%}\" ;",
+				"# @workbench.field len=12",
+				"   config:description \"{%Description%}\" ;",
+				"# @workbench.field rows=2 cols=9",
 				"   config:enabled \"{%Enabled|true|false%}\" ;",
 				"   config:enabled-label \"{%Enabled%}\" ."));
 
@@ -104,37 +131,33 @@ class CreateTemplateConfigTest {
 	}
 
 	@Test
-	void reflectiveHelpersCoverNullNormalizationAndHiddenMetadataBranches() {
+	void helperBranchesCoverNullNormalizationAndHiddenMetadata() {
 		CreateTemplateConfig template = parse("hidden-template", String.join("\n",
 				"# @workbench.template label=\"Hidden\" order=9 hidden=true",
 				"[] config:rep.id \"{%Repo Id%}\" ;",
-				"   config:title \"{%Title[len=4,placeholder=hint]%}\" ."));
+				"   config:title \"{%Title%}\" .",
+				"   # @workbench.field len=4 placeholder=hint"));
 
 		assertThat(template.getLabel()).isEqualTo("Hidden");
 		assertThat(template.getOrder()).isEqualTo(9);
 		assertThat(template.isHidden()).isTrue();
 
-		Object field = constructNested("Field", new Class<?>[] { String.class, String.class, String.class, String.class,
-				CreateTemplateConfig.FieldControl.class, List.class, String.class, int.class, int.class, int.class,
-				String.class }, "Name", "field-id", null, null, CreateTemplateConfig.FieldControl.TEXT, List.of("one"),
-				null, 1, 2, 3, null);
-		assertThat(readString(field, "property")).isEmpty();
-		assertThat(readString(field, "role")).isEmpty();
-		assertThat(readString(field, "defaultValue")).isEmpty();
-		assertThat(readString(field, "placeholder")).isEmpty();
+		CreateTemplateConfig.Field field = new CreateTemplateConfig.Field("Name", "field-id", null, null,
+				CreateTemplateConfig.FieldControl.TEXT, List.of("one"), null, 1, 2, 3, null);
+		assertThat(field.getProperty()).isEmpty();
+		assertThat(field.getRole()).isEmpty();
+		assertThat(field.getDefaultValue()).isEmpty();
+		assertThat(field.getPlaceholder()).isEmpty();
 
-		Object hints = invokeNested("InlineHints", "parse", new Class<?>[] { String.class }, " ");
-		assertThat(readString(hints, "placeholder")).isEmpty();
-
-		Object fieldSpec = constructNested("FieldSpec",
-				new Class<?>[] { String.class, hints.getClass(), String.class }, "Display", hints, null);
-		assertThat(readString(fieldSpec, "property")).isEmpty();
-
-		Object fieldName = invokeNested("FieldName", "parse", new Class<?>[] { String.class }, "[len=4]");
-		assertThat(readString(fieldName, "displayName")).isEqualTo("[len=4]");
-
-		assertThat(invoke("parseInteger", nestedClass("Metadata"), new Class<?>[] { String.class }, "")).isNull();
-		assertThat(invoke("parseBoolean", nestedClass("Metadata"), new Class<?>[] { String.class }, "")).isNull();
+		assertThat(WorkbenchTemplateDsl.parseAttributes("label=\"Synthetic template\" order=5 hidden=true"))
+				.containsEntry("label", "Synthetic template")
+				.containsEntry("order", "5")
+				.containsEntry("hidden", "true");
+		assertThat(WorkbenchTemplateDsl.parseAttributes("rows=2,cols=9 placeholder=hint"))
+				.containsEntry("rows", "2")
+				.containsEntry("cols", "9")
+				.containsEntry("placeholder", "hint");
+		assertThat(WorkbenchTemplateDsl.FieldSpec.defaultFor("Display").property()).isEmpty();
 	}
 
 	@Test
@@ -190,16 +213,6 @@ class CreateTemplateConfigTest {
 				templateText);
 	}
 
-	private static Object constructNested(String nestedClassName, Class<?>[] parameterTypes, Object... args) {
-		try {
-			Constructor<?> constructor = nestedClass(nestedClassName).getDeclaredConstructor(parameterTypes);
-			constructor.setAccessible(true);
-			return constructor.newInstance(args);
-		} catch (ReflectiveOperationException e) {
-			throw new AssertionError("Could not construct " + nestedClassName, e);
-		}
-	}
-
 	@SuppressWarnings("unchecked")
 	private static List<String> invokeList(String methodName) {
 		return (List<String>) invoke(methodName, new Class<?>[0]);
@@ -245,30 +258,6 @@ class CreateTemplateConfigTest {
 			throw new AssertionError("Invocation failed for " + methodName, e.getCause());
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Could not invoke " + methodName, e);
-		}
-	}
-
-	private static Object invokeNested(String nestedClassName, String methodName, Class<?>[] parameterTypes,
-			Object... args) {
-		return invoke(methodName, nestedClass(nestedClassName), parameterTypes, args);
-	}
-
-	private static Class<?> nestedClass(String simpleName) {
-		for (Class<?> nested : CreateTemplateConfig.class.getDeclaredClasses()) {
-			if (nested.getSimpleName().equals(simpleName)) {
-				return nested;
-			}
-		}
-		throw new AssertionError("Missing nested class " + simpleName);
-	}
-
-	private static String readString(Object target, String fieldName) {
-		try {
-			Field field = target.getClass().getDeclaredField(fieldName);
-			field.setAccessible(true);
-			return (String) field.get(target);
-		} catch (ReflectiveOperationException e) {
-			throw new AssertionError("Could not read " + fieldName, e);
 		}
 	}
 

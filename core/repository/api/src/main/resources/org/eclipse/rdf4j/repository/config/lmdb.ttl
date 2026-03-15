@@ -7,23 +7,34 @@
 @prefix lmdb: <http://rdf4j.org/config/sail/lmdb#>.
 
 [] a config:Repository ;
-   config:rep.id "{%Repository ID[len=16]|lmdb%}" ;
-   rdfs:label "{%Repository title[len=48]|LMDB Store%}" ;
+   config:rep.id "{%Repository ID|lmdb%}" ;
+   # @workbench.field len=16
+   rdfs:label "{%Repository title|LMDB Store%}" ;
+   # @workbench.field len=48
    config:rep.impl [
       config:rep.type "openrdf:SailRepository" ;
       config:sail.impl [
          config:sail.type "rdf4j:LmdbStore" ;
-         config:sail.iterationCacheSyncThreshold {%Query Iteration Cache sync threshold[len=16]|2097152%} ; # If each value is 128 bytes, this is 256 MB
-         lmdb:tripleIndexes "{%Triple indexes[len=16]|spoc,posc,ospc%}" ;
-         lmdb:tripleDBSize {%Triple DB size[len=16]|1099511627776%} ; # 1 TB
-         lmdb:valueDBSize {%Value DB size[len=16]|1099511627776%} ; # 1 TB
-         lmdb:valueCacheSize {%Value cache size[len=16]|4096%} ;
-         lmdb:valueIDCacheSize {%Value ID cache size[len=16]|4096%} ;
-         lmdb:namespaceCacheSize {%Namespace cache size[len=16]|128%} ;
-         lmdb:namespaceIDCacheSize {%Namespace ID cache size[len=16]|128%} ;
+         config:sail.iterationCacheSyncThreshold {%Query Iteration Cache sync threshold|2097152%} ; # If each value is 128 bytes, this is 256 MB
+         # @workbench.field len=16
+         lmdb:tripleIndexes "{%Triple indexes|spoc,posc,ospc%}" ;
+         # @workbench.field len=16
+         lmdb:tripleDBSize {%Triple DB size|1099511627776%} ; # 1 TB
+         # @workbench.field len=16
+         lmdb:valueDBSize {%Value DB size|1099511627776%} ; # 1 TB
+         # @workbench.field len=16
+         lmdb:valueCacheSize {%Value cache size|4096%} ;
+         # @workbench.field len=16
+         lmdb:valueIDCacheSize {%Value ID cache size|4096%} ;
+         # @workbench.field len=16
+         lmdb:namespaceCacheSize {%Namespace cache size|128%} ;
+         # @workbench.field len=16
+         lmdb:namespaceIDCacheSize {%Namespace ID cache size|128%} ;
+         # @workbench.field len=16
          lmdb:autoGrow {%Auto grow|true|false%} ;
          lmdb:pageCardinalityEstimator {%Page cardinality estimator|true|false%} ;
-         lmdb:valueEvictionInterval {%Value eviction interval[len=16]|300000%} ;
+         lmdb:valueEvictionInterval {%Value eviction interval|300000%} ;
+         # @workbench.field len=16
          lmdb:forceSync {%Force sync|false|true%} ;
          lmdb:noReadahead {%No readahead|false|true%} ;
          config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STANDARD|STRICT%}";

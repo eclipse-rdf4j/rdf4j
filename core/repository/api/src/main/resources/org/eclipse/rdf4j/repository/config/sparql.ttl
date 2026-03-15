@@ -8,8 +8,12 @@
 [] a config:Repository ;
     config:rep.impl [
         config:rep.type "openrdf:SPARQLRepository" ;
-        config:sparql.queryEndpoint <{%SPARQL query endpoint[len=48 placeholder="http://example.org/sparql"]|%}> ;
-        config:sparql.updateEndpoint <{%SPARQL update endpoint[len=48 placeholder="http://example.org/update"]|%}> ;
+        config:sparql.queryEndpoint <{%SPARQL query endpoint|%}> ;
+        # @workbench.field len=48 placeholder="http://example.org/sparql"
+        config:sparql.updateEndpoint <{%SPARQL update endpoint|%}> ;
+        # @workbench.field len=48 placeholder="http://example.org/update"
     ];
-    config:rep.id "{%Local repository ID[len=16]|endpoint@localhost%}" ;
-    rdfs:label "{%Repository title[len=48]|SPARQL endpoint proxy @localhost%}" .
+    config:rep.id "{%Local repository ID|endpoint@localhost%}" ;
+    # @workbench.field len=16
+    rdfs:label "{%Repository title|SPARQL endpoint proxy @localhost%}" .
+    # @workbench.field len=48

@@ -48,10 +48,6 @@ final class CreateTemplateConfig {
 	private static final Pattern TEMPLATE_METADATA_PATTERN = Pattern
 			.compile("^\\s*#\\s*@workbench\\.template\\s+(.*)$");
 
-	private static final Pattern PROPERTY_PATTERN = Pattern
-			.compile(
-					"^\\s*(?:(?:\\[\\]|<[^>]+>|[A-Za-z][\\w-]*:[A-Za-z0-9._-]+)\\s+)?([A-Za-z][\\w-]*:[A-Za-z0-9._-]+)\\b");
-
 	private static final String REPOSITORY_ID_PROPERTY = "config:rep.id";
 
 	private static final String REPOSITORY_TITLE_PROPERTY = "rdfs:label";
@@ -210,21 +206,22 @@ final class CreateTemplateConfig {
 	private static CreateTemplateConfig parse(String type, String templateText) {
 		ConfigTemplate configTemplate = new ConfigTemplate(templateText);
 		Metadata metadata = Metadata.parse(templateText);
-		Map<String, FieldSpec> fieldSpecs = parseFieldSpecs(templateText);
+		Map<String, WorkbenchTemplateDsl.FieldSpec> fieldSpecs = WorkbenchTemplateDsl.parseFieldSpecs(templateText);
 		List<Field> fields = new ArrayList<>();
 		Map<String, Integer> idCounts = new LinkedHashMap<>();
 
 		for (Map.Entry<String, List<String>> entry : configTemplate.getVariableMap().entrySet()) {
 			String fieldKey = entry.getKey();
 			List<String> values = entry.getValue();
-			FieldSpec fieldSpec = fieldSpecs.getOrDefault(fieldKey, FieldSpec.defaultFor(fieldKey));
-			FieldControl control = fieldSpec.inlineHints.control != null ? fieldSpec.inlineHints.control
+			WorkbenchTemplateDsl.FieldSpec fieldSpec = fieldSpecs.getOrDefault(fieldKey,
+					WorkbenchTemplateDsl.FieldSpec.defaultFor(fieldKey));
+			FieldControl control = fieldSpec.uiHints().control() != null ? fieldSpec.uiHints().control()
 					: defaultControl(configTemplate, fieldKey, values);
-			fields.add(new Field(fieldSpec.displayName,
-					uniqueId(defaultId(fieldSpec.property, fieldSpec.displayName), idCounts),
-					fieldSpec.property, inferRole(fieldSpec.property), control, values, defaultValue(values),
-					fieldSpec.inlineHints.defaultSize(control), fieldSpec.inlineHints.defaultRows(control),
-					fieldSpec.inlineHints.defaultCols(control), fieldSpec.inlineHints.placeholder));
+			fields.add(new Field(fieldSpec.displayName(),
+					uniqueId(defaultId(fieldSpec.property(), fieldSpec.displayName()), idCounts),
+					fieldSpec.property(), inferRole(fieldSpec.property()), control, values, defaultValue(values),
+					fieldSpec.uiHints().defaultSize(control), fieldSpec.uiHints().defaultRows(control),
+					fieldSpec.uiHints().defaultCols(control), fieldSpec.uiHints().placeholder()));
 		}
 
 		return new CreateTemplateConfig(type, metadata.label != null ? metadata.label : type,
@@ -290,15 +287,15 @@ final class CreateTemplateConfig {
 		return count == 1 ? baseId : baseId + "-" + count;
 	}
 
-	private static int defaultSize(FieldControl control) {
+	static int defaultSize(FieldControl control) {
 		return control == FieldControl.TEXT ? 32 : 0;
 	}
 
-	private static int defaultRows(FieldControl control) {
+	static int defaultRows(FieldControl control) {
 		return control == FieldControl.TEXTAREA ? 8 : 0;
 	}
 
-	private static int defaultCols(FieldControl control) {
+	static int defaultCols(FieldControl control) {
 		return control == FieldControl.TEXTAREA ? 80 : 0;
 	}
 
@@ -399,24 +396,6 @@ final class CreateTemplateConfig {
 		return normalized.isEmpty() ? "field" : normalized;
 	}
 
-	private static Map<String, FieldSpec> parseFieldSpecs(String templateText) {
-		Map<String, FieldSpec> fieldSpecs = new LinkedHashMap<>();
-		for (String line : templateText.split("\\R")) {
-			String property = parseProperty(line);
-			for (ConfigTemplate.Token token : ConfigTemplate.parseTokens(line)) {
-				FieldName fieldName = FieldName.from(token);
-				fieldSpecs.putIfAbsent(fieldName.displayName,
-						new FieldSpec(fieldName.displayName, fieldName.inlineHints, property));
-			}
-		}
-		return fieldSpecs;
-	}
-
-	private static String parseProperty(String line) {
-		Matcher matcher = PROPERTY_PATTERN.matcher(line);
-		return matcher.find() ? matcher.group(1) : "";
-	}
-
 	private static final class Metadata {
 		private final String label;
 		private final Integer order;
@@ -436,7 +415,7 @@ final class CreateTemplateConfig {
 			for (String line : templateText.split("\\R")) {
 				Matcher templateMatcher = TEMPLATE_METADATA_PATTERN.matcher(line);
 				if (templateMatcher.matches()) {
-					Map<String, String> attributes = ConfigTemplate.parseAttributes(templateMatcher.group(1));
+					Map<String, String> attributes = WorkbenchTemplateDsl.parseAttributes(templateMatcher.group(1));
 					label = attributes.get("label");
 					order = parseInteger(attributes.get("order"));
 					hidden = parseBoolean(attributes.get("hidden"));
@@ -471,86 +450,6 @@ final class CreateTemplateConfig {
 			if (closeFileSystem) {
 				fileSystem.close();
 			}
-		}
-	}
-
-	private static final class FieldSpec {
-		private final String displayName;
-		private final InlineHints inlineHints;
-		private final String property;
-
-		private FieldSpec(String displayName, InlineHints inlineHints, String property) {
-			this.displayName = displayName;
-			this.inlineHints = inlineHints;
-			this.property = property == null ? "" : property;
-		}
-
-		private static FieldSpec defaultFor(String displayName) {
-			return new FieldSpec(displayName, InlineHints.empty(), "");
-		}
-	}
-
-	private static final class FieldName {
-		private final String displayName;
-		private final InlineHints inlineHints;
-
-		private FieldName(String displayName, InlineHints inlineHints) {
-			this.displayName = displayName;
-			this.inlineHints = inlineHints;
-		}
-
-		private static FieldName parse(String rawName) {
-			return from(ConfigTemplate.parseTokens("{%" + rawName + "%}").get(0));
-		}
-
-		private static FieldName from(ConfigTemplate.Token token) {
-			return new FieldName(token.getName(), InlineHints.parse(token.getAttributes()));
-		}
-	}
-
-	private static final class InlineHints {
-		private final Integer len;
-		private final Integer rows;
-		private final Integer cols;
-		private final String placeholder;
-		private final FieldControl control;
-
-		private InlineHints(Integer len, Integer rows, Integer cols, String placeholder, FieldControl control) {
-			this.len = len;
-			this.rows = rows;
-			this.cols = cols;
-			this.placeholder = placeholder == null ? "" : placeholder;
-			this.control = control;
-		}
-
-		private static InlineHints parse(String hintText) {
-			return parse(ConfigTemplate.parseAttributes(hintText));
-		}
-
-		private static InlineHints parse(Map<String, String> attributes) {
-			if (attributes.isEmpty()) {
-				return empty();
-			}
-			return new InlineHints(Metadata.parseInteger(attributes.get("len")),
-					Metadata.parseInteger(attributes.get("rows")), Metadata.parseInteger(attributes.get("cols")),
-					attributes.get("placeholder"),
-					attributes.containsKey("control") ? FieldControl.parse(attributes.get("control")) : null);
-		}
-
-		private static InlineHints empty() {
-			return new InlineHints(null, null, null, null, null);
-		}
-
-		private int defaultSize(FieldControl control) {
-			return len != null ? len : CreateTemplateConfig.defaultSize(control);
-		}
-
-		private int defaultRows(FieldControl control) {
-			return rows != null ? rows : CreateTemplateConfig.defaultRows(control);
-		}
-
-		private int defaultCols(FieldControl control) {
-			return cols != null ? cols : CreateTemplateConfig.defaultCols(control);
 		}
 	}
 }

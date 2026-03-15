@@ -7,17 +7,21 @@
 @prefix config: <tag:rdf4j.org,2023:config/>.
 
 [] a config:Repository ;
-   config:rep.id "{%Repository ID[len=16]|memory-rdfs-legacy%}" ;
-   rdfs:label "{%Repository title[len=48]|Memory store with RDFS inferencing (legacy)%}" ;
+   config:rep.id "{%Repository ID|memory-rdfs-legacy%}" ;
+   # @workbench.field len=16
+   rdfs:label "{%Repository title|Memory store with RDFS inferencing (legacy)%}" ;
+   # @workbench.field len=48
    config:rep.impl [
       config:rep.type "openrdf:SailRepository" ;
       config:sail.impl [
          config:sail.type "openrdf:ForwardChainingRDFSInferencer" ;
          config:delegate [
             config:sail.type "openrdf:MemoryStore" ;
-            config:sail.iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold[len=16]|10000%}";
+            config:sail.iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold|10000%}";
+            # @workbench.field len=16
             config:mem.persist {%Persist|true|false%} ;
-            config:mem.syncDelay {%Sync delay[len=4]|0%};
+            config:mem.syncDelay {%Sync delay|0%};
+            # @workbench.field len=4
             config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
          ]
       ]
