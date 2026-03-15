@@ -13,8 +13,6 @@
 
 	<xsl:template match="sparql:sparql/sparql:results">
 		<xsl:for-each select="sparql:result">
-			<xsl:variable name="defaultQueryTimeout"
-				select="$info//sparql:binding[@name='default-query-timeout']/sparql:literal/text()" />
 			<xsl:variable name="queryLn"
 				select="normalize-space(sparql:binding[@name='queryLn'])" />
 			<xsl:variable name="queryText" select="sparql:binding[@name='queryText']" />
@@ -31,9 +29,6 @@
 				<xsl:choose>
 					<xsl:when test="string-length(normalize-space(sparql:binding[@name='queryTimeout'])) &gt; 0">
 						<xsl:value-of select="normalize-space(sparql:binding[@name='queryTimeout'])" />
-					</xsl:when>
-					<xsl:when test="string-length(normalize-space($defaultQueryTimeout)) &gt; 0">
-						<xsl:value-of select="$defaultQueryTimeout" />
 					</xsl:when>
 					<xsl:otherwise>0</xsl:otherwise>
 				</xsl:choose>

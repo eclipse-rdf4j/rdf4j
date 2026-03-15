@@ -58,6 +58,15 @@ class QueryResultTemplateTest {
 		assertThat(html).contains("query-timeout=17");
 	}
 
+	@Test
+	void savedQueriesPageShouldKeepLegacyQueriesAtZeroTimeout() throws Exception {
+		String html = transform("saved-queries.xsl", legacySavedQueriesXml(), infoXml("23"));
+
+		assertThat(countOccurrences(html, "name=\"query-timeout\" value=\"0\"")).isEqualTo(2);
+		assertThat(html).contains("query-timeout=0");
+		assertThat(html).doesNotContain("query-timeout=23");
+	}
+
 	private String transform(String stylesheetName, String xml, String infoXml) throws Exception {
 		Files.writeString(tempDir.resolve("info"), infoXml, StandardCharsets.UTF_8);
 		Path xmlPath = tempDir.resolve(stylesheetName + ".xml");
@@ -125,6 +134,29 @@ class QueryResultTemplateTest {
 		return xml.toString();
 	}
 
+	private static String legacySavedQueriesXml() {
+		StringBuilder xml = new StringBuilder();
+		xml.append("<?xml version=\"1.0\"?>\n");
+		xml.append("<sparql:sparql xmlns:sparql=\"http://www.w3.org/2005/sparql-results#\">\n");
+		xml.append("  <sparql:head>\n");
+		xml.append("    <sparql:link href=\"info\"/>\n");
+		xml.append("  </sparql:head>\n");
+		xml.append("  <sparql:results>\n");
+		xml.append("    <sparql:result>\n");
+		appendBinding(xml, "queryLn", "SPARQL");
+		appendBinding(xml, "queryText", QUERY_TEXT);
+		appendBinding(xml, "infer", "true");
+		appendBinding(xml, "rowsPerPage", "100");
+		appendBinding(xml, "query", "urn:query:legacy");
+		appendBinding(xml, "user", "");
+		appendBinding(xml, "queryName", "legacy-query");
+		appendBinding(xml, "shared", "false");
+		xml.append("    </sparql:result>\n");
+		xml.append("  </sparql:results>\n");
+		xml.append("</sparql:sparql>\n");
+		return xml.toString();
+	}
+
 	private static void appendBinding(StringBuilder xml, String name, String value) {
 		xml.append("      <sparql:binding name=\"")
 				.append(name)
@@ -134,13 +166,18 @@ class QueryResultTemplateTest {
 	}
 
 	private static String infoXml() {
+		return infoXml("0");
+	}
+
+	private static String infoXml(String defaultQueryTimeout) {
 		return "<?xml version=\"1.0\"?>\n"
 				+ "<sparql:sparql xmlns:sparql=\"http://www.w3.org/2005/sparql-results#\">\n"
 				+ "  <sparql:head/>\n"
 				+ "  <sparql:results>\n"
 				+ "    <sparql:result>\n"
 				+ "      <sparql:binding name=\"default-limit\"><sparql:literal>100</sparql:literal></sparql:binding>\n"
-				+ "      <sparql:binding name=\"default-query-timeout\"><sparql:literal>0</sparql:literal></sparql:binding>\n"
+				+ "      <sparql:binding name=\"default-query-timeout\"><sparql:literal>" + defaultQueryTimeout
+				+ "</sparql:literal></sparql:binding>\n"
 				+ "      <sparql:binding name=\"tuple-download-format\"><sparql:literal>text/csv CSV</sparql:literal></sparql:binding>\n"
 				+ "      <sparql:binding name=\"graph-download-format\"><sparql:literal>text/turtle Turtle</sparql:literal></sparql:binding>\n"
 				+ "    </sparql:result>\n"
