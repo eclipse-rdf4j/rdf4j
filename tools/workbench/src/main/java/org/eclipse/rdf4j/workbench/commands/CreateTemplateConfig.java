@@ -48,12 +48,6 @@ final class CreateTemplateConfig {
 	private static final Pattern TEMPLATE_METADATA_PATTERN = Pattern
 			.compile("^\\s*#\\s*@workbench\\.template\\s+(.*)$");
 
-	private static final Pattern ATTRIBUTE_PATTERN = Pattern.compile("(\\w+)=(?:\"([^\"]*)\"|(\\S+))");
-
-	private static final Pattern INLINE_HINT_PATTERN = Pattern.compile("^(.*?)(?:\\[([^\\]]+)\\])?$");
-
-	private static final Pattern TOKEN_PATTERN = Pattern.compile("\\{%.*?%\\}");
-
 	private static final Pattern PROPERTY_PATTERN = Pattern
 			.compile(
 					"^\\s*(?:(?:\\[\\]|<[^>]+>|[A-Za-z][\\w-]*:[A-Za-z0-9._-]+)\\s+)?([A-Za-z][\\w-]*:[A-Za-z0-9._-]+)\\b");
@@ -409,10 +403,8 @@ final class CreateTemplateConfig {
 		Map<String, FieldSpec> fieldSpecs = new LinkedHashMap<>();
 		for (String line : templateText.split("\\R")) {
 			String property = parseProperty(line);
-			Matcher matcher = TOKEN_PATTERN.matcher(line);
-			while (matcher.find()) {
-				String[] tokensArray = matcher.group().substring(2, matcher.group().length() - 2).split("\\|");
-				FieldName fieldName = FieldName.parse(tokensArray[0]);
+			for (ConfigTemplate.Token token : ConfigTemplate.parseTokens(line)) {
+				FieldName fieldName = FieldName.from(token);
 				fieldSpecs.putIfAbsent(fieldName.displayName,
 						new FieldSpec(fieldName.displayName, fieldName.inlineHints, property));
 			}
@@ -444,7 +436,7 @@ final class CreateTemplateConfig {
 			for (String line : templateText.split("\\R")) {
 				Matcher templateMatcher = TEMPLATE_METADATA_PATTERN.matcher(line);
 				if (templateMatcher.matches()) {
-					Map<String, String> attributes = parseAttributes(templateMatcher.group(1));
+					Map<String, String> attributes = ConfigTemplate.parseAttributes(templateMatcher.group(1));
 					label = attributes.get("label");
 					order = parseInteger(attributes.get("order"));
 					hidden = parseBoolean(attributes.get("hidden"));
@@ -452,16 +444,6 @@ final class CreateTemplateConfig {
 			}
 
 			return new Metadata(label, order, hidden);
-		}
-
-		private static Map<String, String> parseAttributes(String text) {
-			Map<String, String> attributes = new LinkedHashMap<>();
-			Matcher matcher = ATTRIBUTE_PATTERN.matcher(text);
-			while (matcher.find()) {
-				String value = matcher.group(2) != null ? matcher.group(2) : matcher.group(3);
-				attributes.put(matcher.group(1), value);
-			}
-			return attributes;
 		}
 
 		private static Integer parseInteger(String value) {
@@ -518,11 +500,11 @@ final class CreateTemplateConfig {
 		}
 
 		private static FieldName parse(String rawName) {
-			Matcher matcher = INLINE_HINT_PATTERN.matcher(rawName.trim());
-			matcher.matches();
-			String displayName = matcher.group(1).trim();
-			String hints = matcher.group(2);
-			return new FieldName(displayName.isEmpty() ? rawName.trim() : displayName, InlineHints.parse(hints));
+			return from(ConfigTemplate.parseTokens("{%" + rawName + "%}").get(0));
+		}
+
+		private static FieldName from(ConfigTemplate.Token token) {
+			return new FieldName(token.getName(), InlineHints.parse(token.getAttributes()));
 		}
 	}
 
@@ -542,10 +524,13 @@ final class CreateTemplateConfig {
 		}
 
 		private static InlineHints parse(String hintText) {
-			if (hintText == null || hintText.isBlank()) {
+			return parse(ConfigTemplate.parseAttributes(hintText));
+		}
+
+		private static InlineHints parse(Map<String, String> attributes) {
+			if (attributes.isEmpty()) {
 				return empty();
 			}
-			Map<String, String> attributes = Metadata.parseAttributes(hintText.replace(',', ' '));
 			return new InlineHints(Metadata.parseInteger(attributes.get("len")),
 					Metadata.parseInteger(attributes.get("rows")), Metadata.parseInteger(attributes.get("cols")),
 					attributes.get("placeholder"),

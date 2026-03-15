@@ -15,7 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Method;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -108,5 +110,35 @@ public class TestConfigTemplate {
 		assertEquals("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o FILTER(false) }",
 				temp.getVariableMap().get("Rule query").get(0));
 		assertEquals("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o FILTER(false) }", temp.render(Map.of()));
+	}
+
+	@Test
+	public final void testParseTokensExposesSharedInlineHintContract() throws Exception {
+		Method parseTokens = ConfigTemplate.class.getDeclaredMethod("parseTokens", String.class);
+		@SuppressWarnings("unchecked")
+		List<Object> tokens = (List<Object>) parseTokens.invoke(null,
+				"config:p \"{%Rule query[rows=8,cols=80 placeholder=\"http://example.org\"]|ASK {}%}\" .");
+
+		assertEquals(1, tokens.size());
+
+		Object token = tokens.get(0);
+		Method getName = token.getClass().getDeclaredMethod("getName");
+		Method getValues = token.getClass().getDeclaredMethod("getValues");
+		Method getAttributes = token.getClass().getDeclaredMethod("getAttributes");
+
+		assertEquals("Rule query", getName.invoke(token));
+		assertEquals(List.of("ASK {}"), getValues.invoke(token));
+		assertEquals(Map.of("rows", "8", "cols", "80", "placeholder", "http://example.org"),
+				getAttributes.invoke(token));
+	}
+
+	@Test
+	public final void testParseAttributesSupportsQuotedAndCommaSeparatedValues() throws Exception {
+		Method parseAttributes = ConfigTemplate.class.getDeclaredMethod("parseAttributes", String.class);
+
+		assertEquals(Map.of("label", "Synthetic template", "order", "5", "hidden", "true"),
+				parseAttributes.invoke(null, "label=\"Synthetic template\" order=5 hidden=true"));
+		assertEquals(Map.of("rows", "2", "cols", "9", "placeholder", "hint"),
+				parseAttributes.invoke(null, "rows=2,cols=9 placeholder=hint"));
 	}
 }
