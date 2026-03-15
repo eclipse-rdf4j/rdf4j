@@ -163,6 +163,47 @@ test('Add Turtle data to repository', async ({page}) => {
     await expect(type).toHaveText('ex:Person');
 });
 
+test('Query page keeps separate drafts per browser page on refresh', async ({page}) => {
+    const queryUrl = 'http://localhost:8080/rdf4j-workbench/repositories/testrepo1/query';
+    const queryA = 'SELECT * WHERE { ?s ?p ?o } LIMIT 1';
+    const queryB = 'ASK { ?s ?p ?o }';
+
+    page.on('dialog', dialog => {
+        dialog.dismiss();
+    });
+
+    await createRepo(page);
+
+    const page2 = await page.context().newPage();
+    page2.on('dialog', dialog => {
+        dialog.dismiss();
+    });
+
+    try {
+        await page.goto(queryUrl);
+        await page2.goto(queryUrl);
+        await page.waitForSelector('.CodeMirror');
+        await page2.waitForSelector('.CodeMirror');
+
+        await typeIntoCodeMirror(page, 0, queryA);
+        await typeIntoCodeMirror(page2, 0, queryB);
+
+        await page.reload();
+        await page.waitForSelector('.CodeMirror');
+        await expect.poll(async () => page.evaluate(() => {
+            return document.querySelector('.CodeMirror').CodeMirror.getValue();
+        })).toBe(queryA);
+
+        await page2.reload();
+        await page2.waitForSelector('.CodeMirror');
+        await expect.poll(async () => page2.evaluate(() => {
+            return document.querySelector('.CodeMirror').CodeMirror.getValue();
+        })).toBe(queryB);
+    } finally {
+        await page2.close();
+    }
+});
+
 test('Query compare mode diffs query and explanation', async ({page}) => {
     await page.goto('http://localhost:8080/rdf4j-workbench/');
     page.on('dialog', dialog => {

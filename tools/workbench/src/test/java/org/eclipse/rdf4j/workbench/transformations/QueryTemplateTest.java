@@ -598,6 +598,20 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void queryPageShouldPersistPrimaryDraftPerBrowserTab() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.contains("function getPrimaryQueryDraftSessionStorageKey()")
+				.contains("window.sessionStorage.setItem(storageKey, queryValue);")
+				.contains("window.sessionStorage.getItem(storageKey) || '';")
+				.contains("persistent: null")
+				.contains("var sessionDraft = workbench.query.getPrimaryQueryDraftSessionValue();")
+				.containsPattern(
+						"var query = getParameterFromUrl\\('query'\\);[\\s\\S]*if \\(query\\) \\{[\\s\\S]*\\} else \\{[\\s\\S]*var sessionDraft = workbench\\.query\\.getPrimaryQueryDraftSessionValue\\(\\);[\\s\\S]*if \\(sessionDraft\\) \\{[\\s\\S]*setQueryValue\\(sessionDraft\\);");
+	}
+
+	@Test
 	void resultPagesShouldStoreEmbeddedQueryTextAndHideMetadataBindings() throws IOException {
 		String tupleTemplate = Files.readString(Path.of("src/main/webapp/transformations/tuple.xsl"),
 				StandardCharsets.UTF_8);

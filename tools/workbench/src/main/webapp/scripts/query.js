@@ -851,9 +851,31 @@ var workbench;
                 return;
             }
             queryEditor.save();
-            document.getElementById(primaryPaneState.queryId).value = queryEditor.getValue();
-            if (YASQE.storeQuery) {
-                YASQE.storeQuery(queryEditor);
+            var queryValue = queryEditor.getValue();
+            document.getElementById(primaryPaneState.queryId).value = queryValue;
+            setPrimaryQueryDraftSessionValue(queryValue);
+        }
+        function getPrimaryQueryDraftSessionStorageKey() {
+            return 'workbench:query-draft:' + window.location.pathname;
+        }
+        function getPrimaryQueryDraftSessionValue() {
+            var storageKey = getPrimaryQueryDraftSessionStorageKey();
+            try {
+                return window.sessionStorage.getItem(storageKey) || '';
+            }
+            catch (e) {
+                // Ignore browsers where storage access is unavailable.
+                return '';
+            }
+        }
+        query_1.getPrimaryQueryDraftSessionValue = getPrimaryQueryDraftSessionValue;
+        function setPrimaryQueryDraftSessionValue(queryValue) {
+            var storageKey = getPrimaryQueryDraftSessionStorageKey();
+            try {
+                window.sessionStorage.setItem(storageKey, queryValue);
+            }
+            catch (e) {
+                // Ignore browsers where storage access is unavailable.
             }
         }
         function getWorkbenchCookiePath() {
@@ -873,12 +895,14 @@ var workbench;
         }
         function persistPrimaryQueryValue() {
             var queryValue = getPaneRawQueryValue('primary');
+            setPrimaryQueryDraftSessionValue(queryValue);
             if (!shouldPersistPrimaryQueryCookieValue(queryValue)) {
                 return;
             }
             setWorkbenchCookie('query', queryValue);
             clearWorkbenchCookie('ref');
         }
+        query_1.persistPrimaryQueryValue = persistPrimaryQueryValue;
         function getPaneRawQueryValue(paneKey) {
             var queryEditor = getPaneQueryEditor(paneKey);
             if (queryEditor) {
@@ -2448,11 +2472,9 @@ var workbench;
             workbench.yasqeHelper.setupCompleters(sparqlNamespaces);
             var paneEditor = YASQE.fromTextArea(document.getElementById(getPaneState(paneKey).queryId), {
                 consumeShareLink: null, //don't try to parse the url args. this is already done by the addLoad function below
-                persistent: paneKey === 'compare' ? null : getPanePersistedQueryStorageKey(paneKey)
+                persistent: null
             });
-            if (paneKey === 'compare') {
-                clearPanePersistedQuery('compare');
-            }
+            clearPanePersistedQuery(paneKey);
             $(paneEditor.getWrapperElement()).css({
                 "fontSize": "14px",
                 "width": "100%",
@@ -2604,6 +2626,7 @@ var workbench;
             getJsonSummary: getJsonSummary,
             getNormalizedExplainFormat: getNormalizedExplainFormat,
             getNormalizedExplainLevel: getNormalizedExplainLevel,
+            getPrimaryQueryDraftSessionValue: getPrimaryQueryDraftSessionValue,
             getPaneQueryValue: getPaneQueryValue,
             getPaneRawQueryValue: getPaneRawQueryValue,
             getPanePersistedQueryStorageKey: getPanePersistedQueryStorageKey,
@@ -2782,7 +2805,7 @@ workbench.addLoad(function queryPageLoaded() {
      * @returns the value of the given parameter, or something that evaluates
                   as false, if the parameter was not found
      */
-    function getParameterFromUrlOrCookie(param) {
+    function getParameterFromUrl(param) {
         var href = document.location.href;
         var elements = href.substring(href.indexOf('?') + 1).substring(href.indexOf(';') + 1).split(decodeURIComponent('%26'));
         var result = '';
@@ -2793,6 +2816,10 @@ workbench.addLoad(function queryPageLoaded() {
                 result = value;
             }
         }
+        return result;
+    }
+    function getParameterFromUrlOrCookie(param) {
+        var result = getParameterFromUrl(param);
         if (!result) {
             result = workbench.getCookie(param);
         }
@@ -2817,14 +2844,34 @@ workbench.addLoad(function queryPageLoaded() {
     // looks for the 'query' cookie, and sets it from that. (The cookie
     // enables re-populating the text field with the previous query when the
     // user returns via the browser back button.)
-    var query = getParameterFromUrlOrCookie('query');
+    var query = getParameterFromUrl('query');
     if (query) {
-        var ref = getParameterFromUrlOrCookie('ref');
+        var ref = getParameterFromUrl('ref');
         if (ref == 'id' || ref == 'hash') {
             getQueryTextFromServer(query, ref);
         }
         else {
             workbench.query.setQueryValue(query);
+            workbench.query.persistPrimaryQueryValue();
+        }
+    }
+    else {
+        var sessionDraft = workbench.query.getPrimaryQueryDraftSessionValue();
+        if (sessionDraft) {
+            workbench.query.setQueryValue(sessionDraft);
+        }
+        else {
+            query = getParameterFromUrlOrCookie('query');
+            if (query) {
+                var fallbackRef = getParameterFromUrlOrCookie('ref');
+                if (fallbackRef == 'id' || fallbackRef == 'hash') {
+                    getQueryTextFromServer(query, fallbackRef);
+                }
+                else {
+                    workbench.query.setQueryValue(query);
+                    workbench.query.persistPrimaryQueryValue();
+                }
+            }
         }
     }
     workbench.query.loadNamespaces();
