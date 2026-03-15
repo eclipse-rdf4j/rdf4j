@@ -344,6 +344,54 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 	}
 
 	@Test
+	public void testSendQueryExplanationOmitsExplainRequestIdInsideTransaction(MockServerClient client)
+			throws Exception {
+		String transactionStartUrl = Protocol.getTransactionsLocation(getRDF4JSession().getRepositoryURL());
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test/transactions"),
+				Times.once())
+				.respond(response().withStatusCode(201).withHeader("Location", transactionStartUrl + "/1"));
+
+		client.when(
+				request()
+						.withMethod("PUT")
+						.withPath("/rdf4j-server/repositories/test/transactions/1")
+						.withQueryStringParameter("action", "QUERY")
+						.withQueryStringParameter("explain", "Optimized"),
+				Times.once())
+				.respond(
+						response()
+								.withBody("{\"type\":\"Projection\"}")
+								.withContentType(MediaType.APPLICATION_JSON)
+				);
+
+		getRDF4JSession().beginTransaction(IsolationLevels.SERIALIZABLE);
+		try (QueryExplanationRequestContext.Activation ignored = QueryExplanationRequestContext.activate("req-123")) {
+			Explanation explanation = getRDF4JSession().sendQueryExplanation(QueryLanguage.SPARQL,
+					"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0, Explanation.Level.Optimized);
+			assertThat(explanation.toGenericPlanNode().getType()).isEqualTo("Projection");
+		}
+
+		client.verify(
+				request()
+						.withMethod("PUT")
+						.withPath("/rdf4j-server/repositories/test/transactions/1")
+						.withQueryStringParameter("action", "QUERY")
+						.withQueryStringParameter("explain", "Optimized")
+						.withHeader(testHeader, testValue)
+						.withHeader("Accept", "application/json")
+		);
+		client.verify(
+				request()
+						.withMethod("PUT")
+						.withPath("/rdf4j-server/repositories/test/transactions/1")
+						.withQueryStringParameter("explain-request-id", "req-123"),
+				VerificationTimes.exactly(0));
+	}
+
+	@Test
 	public void testSendQueryExplanationReappliesExplainLevelVisibility(MockServerClient client) throws Exception {
 		client.when(
 				request()

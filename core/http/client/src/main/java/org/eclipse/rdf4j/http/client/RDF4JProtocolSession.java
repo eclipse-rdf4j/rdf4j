@@ -981,7 +981,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		HttpUriRequest queryMethod = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime,
 				bindings);
 		HttpUriRequest explainMethod = addQueryParameter(queryMethod, Protocol.EXPLAIN_PARAM_NAME, level.name());
-		String explainRequestId = QueryExplanationRequestContext.getExplainRequestId();
+		String explainRequestId = getTransactionURL() == null ? QueryExplanationRequestContext.getExplainRequestId()
+				: null;
 		if (explainRequestId != null) {
 			explainMethod = addQueryParameter(explainMethod, Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME, explainRequestId);
 		}
