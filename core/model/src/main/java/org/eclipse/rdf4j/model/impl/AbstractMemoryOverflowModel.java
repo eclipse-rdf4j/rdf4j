@@ -535,9 +535,8 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 
 	@Override
 	public void close() {
-		Model memoryToRecycle = null;
+		Model memoryToRecycle;
 		boolean wasClosed = false;
-		boolean shouldClose = false;
 		boolean interrupted = false;
 		try {
 			interrupted = Thread.interrupted();
