@@ -15,7 +15,11 @@ import static org.assertj.core.api.Assertions.fail;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -113,6 +117,70 @@ public class CreateServletTest {
 			assertThat(config.getTitle()).isEqualTo("Legacy Test Repository");
 		} catch (RDF4JException | IOException e) {
 			fail(e.getMessage());
+		}
+	}
+
+	@Test
+	public void testShaclTemplatesExposeAllOptions() throws IOException {
+		String memoryTemplate = readConfigTemplate("memory-shacl.ttl");
+		String nativeTemplate = readConfigTemplate("native-shacl.ttl");
+
+		for (String option : SHACL_OPTION_NAMES) {
+			assertThat(memoryTemplate).contains("{%" + option + "|");
+			assertThat(nativeTemplate).contains("{%" + option + "|");
+		}
+
+		assertShaclDefaultsMatchConfig(memoryTemplate);
+		assertShaclDefaultsMatchConfig(nativeTemplate);
+
+		assertShaclInputsPresent(Paths.get("src/main/webapp/transformations/create-memory-shacl.xsl"));
+		assertShaclInputsPresent(Paths.get("src/main/webapp/transformations/create-native-shacl.xsl"));
+	}
+
+	private static final String[] SHACL_OPTION_NAMES = {
+			"Parallel validation",
+			"Log validation plans",
+			"Log validation violations",
+			"Validation enabled",
+			"Cache select nodes",
+			"Global log validation execution",
+			"RDFS subclass reasoning",
+			"Performance logging",
+			"Serializable validation",
+			"Eclipse RDF4J SHACL extensions",
+			"DASH data shapes",
+			"Validation results limit total",
+			"Validation results limit per constraint",
+			"Transactional validation limit",
+			"Shapes graphs"
+	};
+
+	private static final String[] SHACL_FALSE_DEFAULTS = {
+			"Log validation plans",
+			"Log validation violations",
+			"Global log validation execution",
+			"Performance logging",
+			"Eclipse RDF4J SHACL extensions",
+			"DASH data shapes"
+	};
+
+	private static String readConfigTemplate(String resource) throws IOException {
+		try (InputStream input = RepositoryConfig.class.getResourceAsStream(resource)) {
+			assertThat(input).as(resource).isNotNull();
+			return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+		}
+	}
+
+	private static void assertShaclInputsPresent(Path path) throws IOException {
+		String xsl = Files.readString(path, StandardCharsets.UTF_8);
+		for (String option : SHACL_OPTION_NAMES) {
+			assertThat(xsl).contains("name=\"" + option + "\"");
+		}
+	}
+
+	private static void assertShaclDefaultsMatchConfig(String template) {
+		for (String option : SHACL_FALSE_DEFAULTS) {
+			assertThat(template).contains("{%" + option + "|false|true%}");
 		}
 	}
 }
