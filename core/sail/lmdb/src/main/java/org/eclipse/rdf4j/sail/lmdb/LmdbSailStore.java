@@ -620,25 +620,23 @@ class LmdbSailStore implements SailStore {
 						previousSubjectId = q.s;
 					}
 
-					q.p = predicateCache.computeIfAbsent(pred, p -> {
-						try {
-							return valueStore.storeValue(p);
-						} catch (IOException e) {
-							throw new RuntimeException(e);
-						}
-					});
+					Long predicateId = predicateCache.get(pred);
+					if (predicateId == null) {
+						predicateId = valueStore.storeValue(pred);
+						predicateCache.put(pred, predicateId);
+					}
+					q.p = predicateId;
 
 					q.o = valueStore.storeValue(obj);
 					if (context == null) {
 						q.c = 0;
 					} else {
-						q.c = contextCache.computeIfAbsent(context, c -> {
-							try {
-								return valueStore.storeValue(c);
-							} catch (IOException e) {
-								throw new RuntimeException(e);
-							}
-						});
+						Long contextId = contextCache.get(context);
+						if (contextId == null) {
+							contextId = valueStore.storeValue(context);
+							contextCache.put(context, contextId);
+						}
+						q.c = contextId;
 					}
 					q.explicit = explicit;
 

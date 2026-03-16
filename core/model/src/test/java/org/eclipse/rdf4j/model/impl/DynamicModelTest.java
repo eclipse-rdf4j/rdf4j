@@ -240,6 +240,21 @@ public class DynamicModelTest {
 	}
 
 	@Test
+	void removeAllAgainstSelfClearsModelWithoutUpgrade() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+
+		model.add(valueFactory.createIRI("urn:subject:1"), valueFactory.createIRI("urn:predicate"),
+				valueFactory.createLiteral("value:1"));
+		model.add(valueFactory.createIRI("urn:subject:2"), valueFactory.createIRI("urn:predicate"),
+				valueFactory.createLiteral("value:2"));
+
+		assertThat(model.removeAll(model)).isTrue();
+		assertThat(model).isEmpty();
+		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
 	void removeTermIterationRemovesAllStatementsForSubjectWithoutUpgrade() throws Exception {
 		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
 		ValueFactory valueFactory = SimpleValueFactory.getInstance();
