@@ -15,6 +15,7 @@ import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
 import java.io.ByteArrayInputStream;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 
@@ -182,6 +183,52 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 						.withQueryStringParameter("action", "DELETE")
 						.withHeader(testHeader, testValue)
 		);
+	}
+
+	@Test
+	public void testAddDataTransactionUsesPlainBaseURI(MockServerClient client) throws Exception {
+		RDF4JProtocolSession session = getRDF4JSession();
+
+		String transactionsLocation = Protocol.getTransactionsLocation(session.getRepositoryURL());
+		URI transactionsURI = URI.create(transactionsLocation);
+		String transactionLocation = transactionsLocation + "/1";
+		URI transactionURI = URI.create(transactionLocation);
+
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath(transactionsURI.getPath()),
+				Times.once())
+				.respond(response().withStatusCode(201).withHeader("Location", transactionLocation));
+
+		client.when(
+				request()
+						.withMethod("PUT")
+						.withPath(transactionURI.getPath())
+						.withQueryStringParameter("action", "ADD"),
+				Times.once())
+				.respond(response().withStatusCode(204));
+
+		session.beginTransaction(IsolationLevels.SERIALIZABLE);
+
+		String baseIRI = "http://example.com/";
+		ByteArrayInputStream data = new ByteArrayInputStream("<foo> <bar> <baz> ."
+				.getBytes(StandardCharsets.UTF_8));
+		session.addData(data, baseIRI, RDFFormat.TURTLE);
+
+		client.verify(
+				request()
+						.withMethod("PUT")
+						.withPath(transactionURI.getPath())
+						.withQueryStringParameter("baseURI", baseIRI),
+				VerificationTimes.once());
+
+		HttpRequest[] recordedRequests = client.retrieveRecordedRequests(
+				request().withMethod("PUT")
+						.withPath(transactionURI.getPath())
+						.withQueryStringParameter("action", "ADD"));
+		assertThat(recordedRequests).hasSize(1);
+		assertThat(recordedRequests[0].getFirstQueryStringParameter("baseURI")).isEqualTo(baseIRI);
 	}
 
 	@Test
