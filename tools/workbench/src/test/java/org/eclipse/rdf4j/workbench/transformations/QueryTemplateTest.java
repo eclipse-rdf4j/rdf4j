@@ -93,6 +93,17 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void explainSerializationShouldPreserveExplicitInferFalseSelections() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.contains("var seenInfer = false;")
+				.contains("serializedForm[i].name === 'infer'")
+				.contains("seenInfer = true;")
+				.contains("serializedForm.push({ name: 'infer', value: 'false' });");
+	}
+
+	@Test
 	void queryScriptShouldDefineHierarchicalQueryPageStateMachine() throws IOException {
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 

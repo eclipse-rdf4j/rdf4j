@@ -2172,6 +2172,7 @@ module workbench {
             var seenAction = false;
             var seenExplain = false;
             var seenFormat = false;
+            var seenInfer = false;
             var seenQuery = false;
             var seenExplainRequestId = false;
             for (var i = 0; i < serializedForm.length; i++) {
@@ -2184,6 +2185,8 @@ module workbench {
                 } else if (serializedForm[i].name === 'explain-format') {
                     serializedForm[i].value = format;
                     seenFormat = true;
+                } else if (serializedForm[i].name === 'infer') {
+                    seenInfer = true;
                 } else if (serializedForm[i].name === 'query') {
                     serializedForm[i].value = queryValue;
                     seenQuery = true;
@@ -2200,6 +2203,9 @@ module workbench {
             }
             if (!seenFormat) {
                 serializedForm.push({ name: 'explain-format', value: format });
+            }
+            if (!seenInfer) {
+                serializedForm.push({ name: 'infer', value: 'false' });
             }
             if (!seenQuery) {
                 serializedForm.push({ name: 'query', value: queryValue });
