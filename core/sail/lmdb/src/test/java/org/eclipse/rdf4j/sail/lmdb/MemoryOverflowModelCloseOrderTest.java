@@ -12,16 +12,28 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.impl.AbstractMemoryOverflowModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class MemoryOverflowModelCloseOrderTest {
+
+	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 
 	@Test
 	void closePublishesClosedStateBeforeOverflowTeardown() {
@@ -34,30 +46,134 @@ class MemoryOverflowModelCloseOrderTest {
 		assertThat(model.wasDiskCleared()).isTrue();
 	}
 
+	@Test
+	void containsAfterCloseStartsFailsFast() throws Exception {
+		RecordingMemoryOverflowModel model = new RecordingMemoryOverflowModel(true);
+
+		assertFreshAccessFailsAfterCloseStarts(model,
+				() -> model.contains(VF.createIRI("urn:s"), VF.createIRI("urn:p"), VF.createLiteral("o")));
+	}
+
+	@Test
+	void addAfterCloseStartsFailsFast() throws Exception {
+		RecordingMemoryOverflowModel model = new RecordingMemoryOverflowModel(true);
+
+		assertFreshAccessFailsAfterCloseStarts(model,
+				() -> model.add(VF.createIRI("urn:s"), VF.createIRI("urn:p"), VF.createLiteral("o")));
+	}
+
+	@Test
+	void iteratorAfterCloseStartsFailsFast() throws Exception {
+		RecordingMemoryOverflowModel model = new RecordingMemoryOverflowModel(true);
+
+		assertFreshAccessFailsAfterCloseStarts(model, model::iterator);
+	}
+
+	@Test
+	void overflowedModelContainsAfterCloseStartsFailsFast(@TempDir File tempDir) throws Exception {
+		RecordingMemoryOverflowModel model = new RecordingMemoryOverflowModel(true);
+
+		invokeOverflowToDisk(model);
+		model.add(VF.createIRI("urn:overflow:s"), VF.createIRI("urn:overflow:p"), VF.createLiteral("overflow:o"));
+
+		assertFreshAccessFailsAfterCloseStarts(model, () -> model.contains(VF.createIRI("urn:overflow:s"),
+				VF.createIRI("urn:overflow:p"), VF.createLiteral("overflow:o")));
+	}
+
+	@Test
+	void concurrentCloseInvokesInnerCloseOnlyOnce() throws Exception {
+		RecordingMemoryOverflowModel model = new RecordingMemoryOverflowModel(true);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+
+		try {
+			Future<?> firstClose = executor.submit(model::close);
+			assertThat(model.awaitInnerCloseStarted()).isTrue();
+
+			Future<?> secondClose = executor.submit(model::close);
+			secondClose.get(5, TimeUnit.SECONDS);
+
+			assertThat(model.getCloseOverflowInvocations()).isEqualTo(1);
+
+			model.releaseInnerClose();
+			firstClose.get(5, TimeUnit.SECONDS);
+		} finally {
+			model.releaseInnerClose();
+			executor.shutdownNow();
+		}
+	}
+
+	private static void assertFreshAccessFailsAfterCloseStarts(RecordingMemoryOverflowModel model,
+			ThrowingRunnable access) throws Exception {
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+
+		try {
+			Future<?> closeFuture = executor.submit(model::close);
+			assertThat(model.awaitInnerCloseStarted()).isTrue();
+
+			assertThatThrownBy(access::run)
+					.isInstanceOf(IllegalStateException.class)
+					.hasMessage("MemoryOverflowModel is closed");
+
+			model.releaseInnerClose();
+			closeFuture.get(5, TimeUnit.SECONDS);
+		} finally {
+			model.releaseInnerClose();
+			executor.shutdownNow();
+		}
+	}
+
+	private static void invokeOverflowToDisk(RecordingMemoryOverflowModel model) {
+		try {
+			Method overflowToDisk = AbstractMemoryOverflowModel.class.getDeclaredMethod("overflowToDisk");
+			overflowToDisk.setAccessible(true);
+			overflowToDisk.invoke(model);
+		} catch (ReflectiveOperationException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
 	private static final class RecordingMemoryOverflowModel extends MemoryOverflowModel {
 
 		private static final long serialVersionUID = 1L;
 		private static final Field CLOSED_FIELD = field("closed");
 		private static final Field DISK_FIELD = field("disk");
 
+		private final boolean blockInnerClose;
+		private final CountDownLatch innerCloseStarted = new CountDownLatch(1);
+		private final CountDownLatch releaseInnerClose = new CountDownLatch(1);
 		private int closeOverflowInvocations;
 		private boolean closedFlagVisible = true;
 		private boolean diskCleared = true;
 
 		RecordingMemoryOverflowModel() {
+			this(false);
+		}
+
+		RecordingMemoryOverflowModel(boolean blockInnerClose) {
 			super(false);
+			this.blockInnerClose = blockInnerClose;
 		}
 
 		@Override
 		protected LmdbSailStore createSailStore(File dataDir) throws IOException, SailException {
-			throw new UnsupportedOperationException("Not used in this test");
+			return new LmdbSailStore(dataDir, new LmdbStoreConfig("spoc"));
 		}
 
 		@Override
-		protected synchronized void innerClose() {
+		protected void innerClose() {
 			closeOverflowInvocations++;
 			closedFlagVisible &= readField(CLOSED_FIELD, this, Boolean.class);
 			diskCleared &= readField(DISK_FIELD, this, Object.class) == null;
+			innerCloseStarted.countDown();
+			if (blockInnerClose) {
+				try {
+					releaseInnerClose.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new RuntimeException(e);
+				}
+			}
+			super.innerClose();
 		}
 
 		int getCloseOverflowInvocations() {
@@ -70,6 +186,14 @@ class MemoryOverflowModelCloseOrderTest {
 
 		boolean wasDiskCleared() {
 			return diskCleared;
+		}
+
+		boolean awaitInnerCloseStarted() throws InterruptedException {
+			return innerCloseStarted.await(5, TimeUnit.SECONDS);
+		}
+
+		void releaseInnerClose() {
+			releaseInnerClose.countDown();
 		}
 
 		private static Field field(String fieldName) {
@@ -90,5 +214,10 @@ class MemoryOverflowModelCloseOrderTest {
 				throw new RuntimeException(e);
 			}
 		}
+	}
+
+	@FunctionalInterface
+	private interface ThrowingRunnable {
+		void run() throws Exception;
 	}
 }
