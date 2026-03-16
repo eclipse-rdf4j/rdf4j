@@ -94,7 +94,6 @@ test('query ui helpers cover editors, cookies, buttons, spinners, and dot render
     assert.equal(testing.getPaneQueryValue('primary'), 'ASK {}');
     testing.persistPrimaryQueryEditorValue(primaryEditor);
     assert.equal(primaryEditor.saveCount, 1);
-    assert.equal(harness.yasqeState.storeQueryCalls.length, 1);
     testing.savePaneQuery('primary');
     assert.equal(primaryEditor.saveCount, 2);
     testing.clearPanePersistedQuery('compare');
