@@ -538,7 +538,9 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 		Model memoryToRecycle = null;
 		boolean wasClosed = false;
 		boolean shouldClose = false;
+		boolean interrupted = false;
 		try {
+			interrupted = Thread.interrupted();
 			lock.lockInterruptibly();
 			try {
 				if (closed) {
@@ -556,12 +558,21 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 			Thread.currentThread().interrupt();
 			throw new RuntimeException(e);
 		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+
+			// even if we were interrupted we want to make sure we don't leave the model in an inconsistent state and
+			// that we free up any resources as soon as possible, so we null out the references to the memory and disk
+			// models and close the disk model if it was not already closed by another thread
 			memory = null;
 			disk = null;
 			if (!wasClosed) {
 				innerClose();
 			}
 		}
+
+		// only recycle the memory model if there were no issues during closing
 		recycleDynamicModel(memoryToRecycle);
 
 	}
