@@ -162,14 +162,48 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		if (closed) {
 			return;
 		}
-		closed = true;
-
 		Model approvedModel = approved;
 		Model deprecatedModel = deprecated == approvedModel ? null : deprecated;
 		SailException closeException = null;
-		closeException = closeAutoCloseableModel(approvedModel, closeException);
-		closeException = closeAutoCloseableModel(deprecatedModel, closeException);
+		boolean approvedClosed = approvedModel == null || approvedModel == deprecatedModel;
+		boolean deprecatedClosed = deprecatedModel == null;
 
+		SailException approvedCloseException = closeAutoCloseableModel(approvedModel);
+		if (approvedCloseException == null) {
+			approvedClosed = true;
+		} else {
+			closeException = approvedCloseException;
+		}
+
+		SailException deprecatedCloseException = closeAutoCloseableModel(deprecatedModel);
+		if (deprecatedCloseException == null) {
+			deprecatedClosed = true;
+		} else if (closeException == null) {
+			closeException = deprecatedCloseException;
+		} else {
+			closeException.addSuppressed(deprecatedCloseException);
+		}
+
+		if (approvedClosed) {
+			approved = null;
+			approvedEmpty = true;
+			approvedContexts = null;
+			if (approvedModel != null && approvedModel == deprecated) {
+				deprecated = null;
+				deprecatedEmpty = true;
+			}
+		}
+
+		if (deprecatedClosed) {
+			deprecated = null;
+			deprecatedEmpty = true;
+		}
+
+		if (closeException != null) {
+			throw closeException;
+		}
+
+		closed = true;
 		refbacks = null;
 		prepend = null;
 		observed = null;
@@ -179,10 +213,6 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		deprecatedContexts = null;
 		addedNamespaces = null;
 		removedPrefixes = null;
-
-		if (closeException != null) {
-			throw closeException;
-		}
 	}
 
 	void detachStatementModels() {
@@ -193,21 +223,16 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		approvedContexts = null;
 	}
 
-	private SailException closeAutoCloseableModel(Model model, SailException existingException) {
+	private SailException closeAutoCloseableModel(Model model) {
 		if (!(model instanceof AutoCloseable)) {
-			return existingException;
+			return null;
 		}
 
 		try {
 			((AutoCloseable) model).close();
-			return existingException;
+			return null;
 		} catch (Exception e) {
-			SailException sailException = new SailException("Failed to close transaction isolation model", e);
-			if (existingException != null) {
-				existingException.addSuppressed(sailException);
-				return existingException;
-			}
-			return sailException;
+			return new SailException("Failed to close transaction isolation model", e);
 		}
 	}
 
