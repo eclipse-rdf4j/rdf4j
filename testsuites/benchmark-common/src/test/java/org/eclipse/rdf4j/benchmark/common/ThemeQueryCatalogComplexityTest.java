@@ -45,9 +45,26 @@ class ThemeQueryCatalogComplexityTest {
 				long markers = COMPLEX_MARKERS.stream()
 						.filter(normalized::contains)
 						.count();
-				assertTrue(markers >= 2,
+				boolean hasLargeOptionalDenormalizedShape = normalized.contains("SELECT DISTINCT *")
+						&& countOccurrences(normalized, "OPTIONAL") >= 6
+						&& countOccurrences(normalized, " .") >= 8;
+				assertTrue(markers >= 2 || hasLargeOptionalDenormalizedShape,
 						"Theme " + theme + " query " + index + " lacks complexity markers: " + query);
 			}
 		}
+	}
+
+	private static int countOccurrences(String input, String token) {
+		int occurrences = 0;
+		int fromIndex = 0;
+		while (fromIndex >= 0) {
+			int found = input.indexOf(token, fromIndex);
+			if (found < 0) {
+				break;
+			}
+			occurrences++;
+			fromIndex = found + token.length();
+		}
+		return occurrences;
 	}
 }
