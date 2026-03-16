@@ -165,6 +165,22 @@ public class DynamicModelTest {
 	}
 
 	@Test
+	void nullableContextArraySupportsWildcardContainsWithoutUpgrade() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		Resource namedContext = valueFactory.createIRI("urn:context:named");
+
+		model.add(subject, valueFactory.createIRI("urn:predicate:1"), valueFactory.createLiteral("object:1"));
+		model.add(subject, valueFactory.createIRI("urn:predicate:2"), valueFactory.createLiteral("object:2"),
+				namedContext);
+
+		assertThat(model.contains(subject, null, null, (Resource[]) null)).isTrue();
+		assertThat(model.contains(valueFactory.createIRI("urn:missing"), null, null, (Resource[]) null)).isFalse();
+		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
 	void nullableContextArrayOnlyRemovesNullContextWithoutUpgrade() {
 		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
 		ValueFactory valueFactory = SimpleValueFactory.getInstance();

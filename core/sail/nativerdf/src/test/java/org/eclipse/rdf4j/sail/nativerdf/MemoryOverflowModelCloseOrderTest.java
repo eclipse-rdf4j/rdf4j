@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.nativerdf;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -32,6 +33,13 @@ import org.eclipse.rdf4j.sail.base.SailStore;
 import org.junit.jupiter.api.Test;
 
 class MemoryOverflowModelCloseOrderTest {
+
+	@Test
+	void closeWithoutOverflowDoesNotRequireCleanerRegistration() {
+		NativeStore.MemoryOverflowIntoNativeStore model = new NativeStore.MemoryOverflowIntoNativeStore();
+
+		assertDoesNotThrow(model::close);
+	}
 
 	@Test
 	void closePublishesClosedStateBeforeOverflowTeardown() {
