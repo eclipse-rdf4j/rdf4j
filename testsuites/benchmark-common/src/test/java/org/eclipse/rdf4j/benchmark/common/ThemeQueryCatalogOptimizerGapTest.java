@@ -38,9 +38,26 @@ class ThemeQueryCatalogOptimizerGapTest {
 				boolean hasGapMarker = normalized.contains(OPTIONAL_FILTER_MARKER)
 						|| normalized.contains(DISJUNCTIVE_MARKER)
 						|| normalized.contains(IN_LIST_MARKER);
-				assertTrue(hasGapMarker, "Theme " + theme + " query " + index
+				boolean hasLargeOptionalDenormalizedShape = normalized.contains("SELECT DISTINCT *")
+						&& !normalized.contains("UNION")
+						&& countOccurrences(normalized, "OPTIONAL") >= 6;
+				assertTrue(hasGapMarker || hasLargeOptionalDenormalizedShape, "Theme " + theme + " query " + index
 						+ " lacks optimizer-gap markers: " + query);
 			}
 		}
+	}
+
+	private static int countOccurrences(String input, String token) {
+		int occurrences = 0;
+		int fromIndex = 0;
+		while (fromIndex >= 0) {
+			int found = input.indexOf(token, fromIndex);
+			if (found < 0) {
+				break;
+			}
+			occurrences++;
+			fromIndex = found + token.length();
+		}
+		return occurrences;
 	}
 }

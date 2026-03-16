@@ -23,14 +23,14 @@ class ThemeQueryCatalogExpectedCountTest {
 	@Test
 	void expectedCountsMatchCatalogValues() {
 		Map<Theme, long[]> expectedCounts = Map.of(
-				Theme.MEDICAL_RECORDS, new long[] { 1, 1, 135, 1, 1, 1, 8335, 1, 8335, 1, 1 },
-				Theme.SOCIAL_MEDIA, new long[] { 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1 },
-				Theme.LIBRARY, new long[] { 1, 1, 3, 1, 1, 1, 5081, 1, 10, 1, 1 },
-				Theme.ENGINEERING, new long[] { 1, 1, 3, 1, 1, 1, 520, 1, 520, 1, 1 },
-				Theme.HIGHLY_CONNECTED, new long[] { 1, 1, 36767, 1, 1, 1, 40251, 1, 1, 40251, 1 },
-				Theme.TRAIN, new long[] { 1, 1, 3, 1, 1, 1, 7836, 1, 1, 67388, 1 },
-				Theme.ELECTRICAL_GRID, new long[] { 1, 1, 10, 1, 1, 1, 9364, 1, 0, 1, 1 },
-				Theme.PHARMA, new long[] { 1, 80, 0, 2216, 1, 1, 1, 1, 1635, 1, 51 }
+				Theme.MEDICAL_RECORDS, new long[] { 1, 1, 135, 1, 1, 1, 8335, 1, 8335, 1, 1, 1, 1 },
+				Theme.SOCIAL_MEDIA, new long[] { 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1 },
+				Theme.LIBRARY, new long[] { 1, 1, 3, 1, 1, 1, 5081, 1, 10, 1, 1, 1, 1 },
+				Theme.ENGINEERING, new long[] { 1, 1, 3, 1, 1, 1, 520, 1, 520, 1, 1, 1, 1 },
+				Theme.HIGHLY_CONNECTED, new long[] { 1, 1, 36767, 1, 1, 1, 40251, 1, 1, 40251, 1, 1, 1 },
+				Theme.TRAIN, new long[] { 1, 1, 3, 1, 1, 1, 7836, 1, 1, 67388, 1, 1, 1 },
+				Theme.ELECTRICAL_GRID, new long[] { 1, 1, 10, 1, 1, 1, 9364, 1, 0, 1, 1, 1, 1 },
+				Theme.PHARMA, new long[] { 1, 80, 0, 2216, 1, 1, 1, 1, 1635, 1, 51, 1, 1 }
 		);
 
 		for (Map.Entry<Theme, long[]> entry : expectedCounts.entrySet()) {

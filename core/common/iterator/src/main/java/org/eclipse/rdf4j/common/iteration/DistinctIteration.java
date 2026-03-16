@@ -76,13 +76,7 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 	 */
 	@Override
 	protected boolean accept(E object) {
-		if (inExcludeSet(object)) {
-			// object has already been returned
-			return false;
-		} else {
-			add(object);
-			return true;
-		}
+		return add(object);
 	}
 
 	@Override
