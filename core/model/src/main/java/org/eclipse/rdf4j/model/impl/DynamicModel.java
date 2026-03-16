@@ -413,12 +413,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public boolean removeAll(Collection<?> c) {
 		if (model == null) {
-			boolean changed = c
-					.stream()
-					.map(statements::remove)
-					.map(Objects::nonNull)
-					.reduce((a, b) -> a || b)
-					.orElse(false);
+			boolean changed = false;
+			for (Object statement : new ArrayList<>(c)) {
+				changed = changed | statements.remove(statement) != null;
+			}
 			if (changed) {
 				invalidateAddedContexts();
 			}
