@@ -3424,18 +3424,23 @@ workbench.addLoad(function queryPageLoaded() {
             workbench.query.persistPrimaryQueryValue();
         }
     } else {
-        var sessionDraft = workbench.query.getPrimaryQueryDraftSessionValue();
-        if (sessionDraft) {
-            workbench.query.setQueryValue(sessionDraft);
+        var initialQueryValue = workbench.query.getQueryValue();
+        if (initialQueryValue) {
+            workbench.query.persistPrimaryQueryValue();
         } else {
-            query = getParameterFromUrlOrCookie('query');
-            if (query) {
-                var fallbackRef = getParameterFromUrlOrCookie('ref');
-                if (fallbackRef == 'id' || fallbackRef == 'hash') {
-                    getQueryTextFromServer(query, fallbackRef);
-                } else {
-                    workbench.query.setQueryValue(query);
-                    workbench.query.persistPrimaryQueryValue();
+            var sessionDraft = workbench.query.getPrimaryQueryDraftSessionValue();
+            if (sessionDraft) {
+                workbench.query.setQueryValue(sessionDraft);
+            } else {
+                query = getParameterFromUrlOrCookie('query');
+                if (query) {
+                    var fallbackRef = getParameterFromUrlOrCookie('ref');
+                    if (fallbackRef == 'id' || fallbackRef == 'hash') {
+                        getQueryTextFromServer(query, fallbackRef);
+                    } else {
+                        workbench.query.setQueryValue(query);
+                        workbench.query.persistPrimaryQueryValue();
+                    }
                 }
             }
         }

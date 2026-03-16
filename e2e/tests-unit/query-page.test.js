@@ -223,3 +223,34 @@ test('saved query load backfills compare seed when compare opens before fetch re
     assert.equal(harness.context.workbench.query.getQueryValue(), 'ASK {}');
     assert.equal(harness.getProperty('query-compare', 'value'), 'ASK {}');
 });
+
+test('saved query edit takes precedence over stale tab draft', () => {
+    const sessionValues = new Map([
+        ['workbench:query-draft:/rdf4j-workbench/repositories/test/query', 'SELECT * WHERE {?stale ?p ?o}']
+    ]);
+    const harness = createQueryBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/query',
+        query: ' ASK {} ',
+        window: {
+            sessionStorage: {
+                getItem(key) {
+                    return sessionValues.has(key) ? sessionValues.get(key) : null;
+                },
+                setItem(key, value) {
+                    sessionValues.set(key, String(value));
+                },
+                removeItem(key) {
+                    sessionValues.delete(key);
+                }
+            }
+        }
+    });
+
+    harness.document.cookie = 'query=saved-query';
+    harness.document.cookie = 'ref=id';
+    harness.document.cookie = 'owner=alice';
+
+    harness.runPageLoad();
+
+    assert.equal(harness.context.workbench.query.getQueryValue(), 'ASK {}');
+});
