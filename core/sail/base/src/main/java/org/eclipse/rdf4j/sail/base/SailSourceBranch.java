@@ -60,6 +60,11 @@ class SailSourceBranch implements SailSource {
 	private final Set<Changeset> deferredClose = Collections.newSetFromMap(new IdentityHashMap<>());
 
 	/**
+	 * Detached changesets whose close failure has already been reported to the caller.
+	 */
+	private final Set<Changeset> reportedCloseFailures = Collections.newSetFromMap(new IdentityHashMap<>());
+
+	/**
 	 * {@link SailSink} that have been created, but not yet {@link SailSink#flush()}ed to this {@link SailSource}.
 	 */
 	private final Set<Changeset> pending = Collections
@@ -164,7 +169,7 @@ class SailSourceBranch implements SailSource {
 					}
 					deferredClose.addAll(changes);
 					changes.clear();
-					closeDeferredChangesetsIfPossible();
+					closeDeferredChangesetsIfPossible(true);
 				} catch (SailException e) {
 					if (closeException == null) {
 						closeException = e;
@@ -313,7 +318,7 @@ class SailSourceBranch implements SailSource {
 					semaphore.lock();
 					observers.remove(this);
 					compressChanges();
-					closeDeferredChangesetsIfPossible();
+					closeDeferredChangesetsAfterStateChange();
 					autoFlush();
 				} finally {
 					semaphore.unlock();
@@ -420,7 +425,7 @@ class SailSourceBranch implements SailSource {
 					c.prepend(merged);
 				}
 				try {
-					closeDeferredChangesetsIfPossible();
+					closeDeferredChangesetsIfPossible(true);
 				} catch (SailException e) {
 					if (failure == null) {
 						failure = e;
@@ -486,7 +491,7 @@ class SailSourceBranch implements SailSource {
 
 	void closeChangeset(Changeset changeset) {
 		try {
-			closeDeferredChangesetsIfPossible();
+			closeDeferredChangesetsAfterStateChange();
 		} finally {
 			semaphore.unlock();
 		}
@@ -613,9 +618,8 @@ class SailSourceBranch implements SailSource {
 			deferredClose.add(changeset);
 			return;
 		}
-		deferredClose.remove(changeset);
 		assertDetachedChangesetCanClose(changeset);
-		changeset.close();
+		closeTrackedChangeset(changeset, true);
 	}
 
 	private void discardQueuedChangesAfterFailedFlush(Throwable cause) {
@@ -651,26 +655,49 @@ class SailSourceBranch implements SailSource {
 	private void closeDeferredChangesetsAfterStateChange() throws SailException {
 		try {
 			semaphore.lock();
-			closeDeferredChangesetsIfPossible();
+			closeDeferredChangesetsIfPossible(false);
 		} finally {
 			semaphore.unlock();
 		}
 	}
 
-	private void closeDeferredChangesetsIfPossible() throws SailException {
+	private void closeDeferredChangesetsIfPossible(boolean reportFailure) throws SailException {
 		if (deferredClose.isEmpty()) {
 			return;
 		}
 
-		Iterator<Changeset> iter = deferredClose.iterator();
-		while (iter.hasNext()) {
-			Changeset changeset = iter.next();
+		SailException closeException = null;
+		for (Changeset changeset : new ArrayList<>(deferredClose)) {
 			if (changeset.isRefback() || isReferencedByPendingChangeset(changeset)) {
 				continue;
 			}
-			iter.remove();
 			assertDetachedChangesetCanClose(changeset);
+			try {
+				closeTrackedChangeset(changeset, reportFailure);
+			} catch (SailException e) {
+				if (closeException == null) {
+					closeException = e;
+				} else {
+					closeException.addSuppressed(e);
+				}
+			}
+		}
+		if (closeException != null) {
+			throw closeException;
+		}
+	}
+
+	private void closeTrackedChangeset(Changeset changeset, boolean reportFailure) throws SailException {
+		deferredClose.add(changeset);
+		try {
 			changeset.close();
+			deferredClose.remove(changeset);
+			reportedCloseFailures.remove(changeset);
+		} catch (SailException e) {
+			if (reportFailure && reportedCloseFailures.add(changeset)) {
+				throw e;
+			}
+			logger.debug("Could not close detached changeset yet", e);
 		}
 	}
 

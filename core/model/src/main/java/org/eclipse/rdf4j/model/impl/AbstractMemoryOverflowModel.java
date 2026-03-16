@@ -536,8 +536,8 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	@Override
 	public void close() {
 		Model memoryToRecycle = null;
-		T overflowModelToClose = null;
 		boolean wasClosed = false;
+		boolean shouldClose = false;
 		try {
 			lock.lockInterruptibly();
 			try {
@@ -548,7 +548,6 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 				closed = true;
 				memoryToRecycle = memory;
 				memory = null;
-				overflowModelToClose = disk;
 				disk = null;
 			} finally {
 				lock.unlock();
@@ -557,6 +556,8 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 			Thread.currentThread().interrupt();
 			throw new RuntimeException(e);
 		} finally {
+			memory = null;
+			disk = null;
 			if (!wasClosed) {
 				innerClose();
 			}
