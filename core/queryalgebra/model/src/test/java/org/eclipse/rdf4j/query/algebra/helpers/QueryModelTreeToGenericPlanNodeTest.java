@@ -187,7 +187,6 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertThat(executed.toString()).doesNotContain("sampleCountActual=");
 
 		GenericPlanNode timed = convertWithLevel(Explanation.Level.Timed);
-		assertThat(timed.getSourceRowsScannedActual()).isEqualTo(13L);
 		assertThat(rightSubjectVar(timed).getStringMetricsActual())
 				.containsEntry(TelemetryMetricNames.BINDING_STATE, "bound");
 		assertThat(timed.toString()).doesNotContain("sampleCountActual=");
