@@ -257,6 +257,49 @@ class SailSourceBranchTest {
 	}
 
 	@Test
+	void closeDefersQueuedChangesetModelUntilSerializableDatasetCloses() throws SailException {
+		TrackingModelFactory modelFactory = new TrackingModelFactory();
+		SailSourceBranch branch = new SailSourceBranch(createBackingSource(), modelFactory::create);
+		SailSink writer = branch.sink(IsolationLevels.NONE);
+		SailDataset serializableReader = null;
+		Statement approved = vf.createStatement(vf.createIRI("urn:approved:s"), vf.createIRI("urn:approved:p"),
+				vf.createLiteral("approved:o"));
+
+		try {
+			writer.approve(approved);
+			writer.flush();
+			writer.close();
+			writer = null;
+
+			CloseAwareModel model = modelFactory.onlyModel();
+			serializableReader = branch.dataset(IsolationLevels.SERIALIZABLE);
+
+			try (CloseableIteration<? extends Statement> statements = serializableReader.getStatements(
+					approved.getSubject(), approved.getPredicate(), approved.getObject(), approved.getContext())) {
+				assertTrue(statements.hasNext());
+				assertEquals(approved, statements.next());
+
+				branch.close();
+				assertFalse(model.isClosed());
+			}
+
+			assertFalse(model.isClosed());
+
+			serializableReader.close();
+			serializableReader = null;
+			assertTrue(model.isClosed());
+		} finally {
+			if (writer != null) {
+				writer.close();
+			}
+			if (serializableReader != null) {
+				serializableReader.close();
+			}
+			branch.close();
+		}
+	}
+
+	@Test
 	void flushFailureClosesQueuedChangesetModels() throws SailException {
 		TrackingModelFactory modelFactory = new TrackingModelFactory();
 		SailSourceBranch branch = new SailSourceBranch(createApproveFailingBackingSource(), modelFactory::create);

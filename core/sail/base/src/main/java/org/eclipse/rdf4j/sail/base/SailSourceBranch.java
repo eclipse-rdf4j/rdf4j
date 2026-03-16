@@ -614,6 +614,7 @@ class SailSourceBranch implements SailSource {
 			return;
 		}
 		deferredClose.remove(changeset);
+		assertDetachedChangesetCanClose(changeset);
 		changeset.close();
 	}
 
@@ -668,8 +669,16 @@ class SailSourceBranch implements SailSource {
 				continue;
 			}
 			iter.remove();
+			assertDetachedChangesetCanClose(changeset);
 			changeset.close();
 		}
+	}
+
+	private void assertDetachedChangesetCanClose(Changeset changeset) {
+		assert !changeset.isRefback()
+				: "Detached changeset model closed while still referenced by an open reader";
+		assert !isReferencedByPendingChangeset(changeset)
+				: "Detached changeset model closed while still referenced by a pending writer";
 	}
 
 	private boolean isReferencedByPendingChangeset(Changeset detachedChangeset) {
