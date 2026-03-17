@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
+import org.eclipse.rdf4j.common.transaction.DataImportMetrics;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
@@ -101,7 +102,7 @@ public class DatagovLoadIsolationBenchmark {
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 				Iterator<Statement> iterator = data.iterator();
 				while (iterator.hasNext()) {
-					connection.begin(isolationLevel);
+					connection.begin(isolationLevel, DataImportMetrics.ENABLED);
 					for (int i = 0; i < 10000 && iterator.hasNext(); i++) {
 						connection.add(iterator.next());
 					}
