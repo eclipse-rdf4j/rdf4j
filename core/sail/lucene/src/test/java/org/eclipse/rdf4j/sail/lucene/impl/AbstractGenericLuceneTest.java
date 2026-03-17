@@ -137,6 +137,10 @@ public abstract class AbstractGenericLuceneTest {
 				Thread.currentThread().interrupt();
 			}
 		}
+		afterCommitWait();
+	}
+
+	protected void afterCommitWait() {
 	}
 
 	@BeforeEach

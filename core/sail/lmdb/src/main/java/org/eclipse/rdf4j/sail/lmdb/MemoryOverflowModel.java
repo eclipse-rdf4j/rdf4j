@@ -18,15 +18,14 @@ import java.nio.file.Files;
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.AbstractMemoryOverflowModel;
-import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Model implementation that stores in a {@link LinkedHashModel} until more than 10KB statements are added and the
- * estimated memory usage is more than the amount of free memory available. Once the threshold is cross this
- * implementation seamlessly changes to a disk based {@link SailSourceModel}.
+ * Model implementation that stores in a {@link org.eclipse.rdf4j.model.impl.DynamicModel} until more than 10KB
+ * statements are added and the estimated memory usage is more than the amount of free memory available. Once the
+ * threshold is cross this implementation seamlessly changes to a disk based {@link SailSourceModel}.
  */
 abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourceModel> {
 
@@ -56,7 +55,11 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 					logger.debug("finalizing {}", dataDir);
 					if (disk == this) {
 						try {
-							store.close();
+							var localStore = store;
+							store = null;
+							if (localStore != null) {
+								localStore.close();
+							}
 						} catch (SailException e) {
 							logger.error(e.toString(), e);
 						} finally {
@@ -75,4 +78,26 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 		}
 	}
 
+	@Override
+	protected synchronized void innerClose() {
+		try {
+			var localStore = store;
+			store = null;
+			if (localStore != null) {
+				localStore.close();
+			}
+		} catch (SailException e) {
+			logger.error(e.toString(), e);
+		} finally {
+			if (dataDir != null) {
+				try {
+					FileUtil.deleteDir(dataDir);
+				} catch (IOException e) {
+					logger.error("Could not remove overflow directory {}", dataDir, e);
+				}
+			}
+			dataDir = null;
+			store = null;
+		}
+	}
 }
