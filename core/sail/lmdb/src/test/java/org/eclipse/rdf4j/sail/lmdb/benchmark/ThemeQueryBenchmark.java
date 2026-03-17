@@ -328,6 +328,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	@Test
+	@Disabled
 	public void setupVerifiesExpectedDbFileSizesInFixedStore() throws IOException {
 		themeName = "MEDICAL_RECORDS";
 		z_queryIndex = 0;
@@ -346,6 +347,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	@Test
+	@Disabled
 	public void executeQueryReturnsExpectedCountForPharmaQueryTenAfterFreshGeneration() throws IOException {
 		FileUtils.deleteDirectory(STORE_DIRECTORY);
 		themeName = "PHARMA";

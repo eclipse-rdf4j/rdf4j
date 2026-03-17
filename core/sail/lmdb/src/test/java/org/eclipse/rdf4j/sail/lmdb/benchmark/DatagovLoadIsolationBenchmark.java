@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Iterator;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -22,6 +23,7 @@ import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -88,6 +90,36 @@ public class DatagovLoadIsolationBenchmark {
 	@Benchmark
 	public boolean loadDatagovFileSingleTransaction() throws IOException {
 		return loadOnce();
+	}
+
+	@Benchmark
+	public boolean loadDatagovFileInBatches() throws IOException {
+		File temporaryFolder = Files.newTemporaryFolder();
+		SailRepository sailRepository = null;
+		try {
+			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, ConfigUtil.createConfig()));
+			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+				Iterator<Statement> iterator = data.iterator();
+				while (iterator.hasNext()) {
+					connection.begin(isolationLevel);
+					for (int i = 0; i < 10000 && iterator.hasNext(); i++) {
+						connection.add(iterator.next());
+					}
+					connection.commit();
+				}
+
+				return connection.hasStatement(null, null, null, true);
+			}
+		} finally {
+			try {
+				if (sailRepository != null) {
+					sailRepository.shutDown();
+				}
+			} finally {
+				FileUtils.deleteDirectory(temporaryFolder);
+			}
+		}
+
 	}
 
 	boolean loadOnce() throws IOException {

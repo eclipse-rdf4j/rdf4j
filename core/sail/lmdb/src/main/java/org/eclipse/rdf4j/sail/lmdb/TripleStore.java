@@ -882,6 +882,10 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	static LongAdder statementsAdded = new LongAdder();
+	static long lastLogTime = System.currentTimeMillis();
+	int localCount = 0;
+
 	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.get(0);
 		boolean stAdded;
@@ -916,7 +920,9 @@ class TripleStore implements Closeable {
 			if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
 				throw new IOException(mdb_strerror(rc));
 			}
+
 			stAdded = rc == MDB_SUCCESS;
+
 			boolean foundImplicit = false;
 			if (explicit && stAdded) {
 				foundImplicit = mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS;
@@ -939,8 +945,18 @@ class TripleStore implements Closeable {
 					E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
 				}
 
-				if (stAdded) {
-					incrementContext(stack, context);
+				incrementContext(stack, context);
+			}
+		}
+
+		if (stAdded) {
+			statementsAdded.increment();
+			if (localCount++ % 100000 == 0) {
+				long now = System.currentTimeMillis();
+				if (now - lastLogTime > 1000) {
+					logger.info("LMDB import speed: {} statements/s",
+							(int) Math.floor(statementsAdded.sumThenReset() / ((now - lastLogTime) / 1000.0)));
+					lastLogTime = now;
 				}
 			}
 		}

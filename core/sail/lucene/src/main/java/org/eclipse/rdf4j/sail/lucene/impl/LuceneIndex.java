@@ -315,10 +315,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		this.fsyncScheduler.scheduleAtFixedRate(
 				() -> {
 					try {
-						if (this.getIndexWriter().hasUncommittedChanges()) {
-							this.getIndexWriter().commit();
-							invalidateReaders();
-						}
+						syncNow();
 					} catch (Throwable e) {
 						// We just log errors here, there's not much else we can do.
 						// Rethrowing exceptions on the next commit would be confusing, especially if
@@ -330,6 +327,19 @@ public class LuceneIndex extends AbstractLuceneIndex {
 				this.fsyncIntervalMillis,
 				TimeUnit.MILLISECONDS
 		);
+	}
+
+	@VisibleForTesting
+	synchronized void syncNow() throws IOException {
+		if (closed.get()) {
+			return;
+		}
+
+		IndexWriter writer = getIndexWriter();
+		if (writer.hasUncommittedChanges()) {
+			writer.commit();
+			invalidateReaders();
+		}
 	}
 
 	protected Function<String, ? extends SpatialStrategy> createSpatialStrategyMapper(Map<String, String> parameters) {
