@@ -126,7 +126,8 @@ class ServerBootSignalIT {
 		processBuilder.redirectErrorStream(true);
 
 		Process process = processBuilder.start();
-		cleanupActions.add(() -> process.destroyForcibly());
+		Thread.sleep(1000);
+		cleanupActions.add(process::destroyForcibly);
 
 		CountDownLatch started = new CountDownLatch(1);
 		StringBuilder outputBuffer = new StringBuilder();
