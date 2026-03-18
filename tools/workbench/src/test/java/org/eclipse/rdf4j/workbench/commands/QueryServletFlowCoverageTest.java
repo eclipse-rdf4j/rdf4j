@@ -35,6 +35,7 @@ import javax.servlet.WriteListener;
 import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.platform.PlatformFactory;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -67,7 +68,7 @@ class QueryServletFlowCoverageTest {
 	void initWrapsQueryStorageInitializationFailures(@TempDir Path tempDir) throws Exception {
 		String key = "org.eclipse.rdf4j.appdata.basedir";
 		String previous = System.getProperty(key);
-		Path workbenchDir = tempDir.resolve("Workbench");
+		Path workbenchDir = tempDir.resolve(PlatformFactory.getPlatform().getRelativeApplicationDataDir("Workbench"));
 		Files.createDirectories(workbenchDir);
 		Files.writeString(workbenchDir.resolve("queries"), "not-a-directory");
 

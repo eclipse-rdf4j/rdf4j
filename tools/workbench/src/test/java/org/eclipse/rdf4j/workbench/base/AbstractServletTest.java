@@ -32,6 +32,7 @@ import javax.servlet.http.HttpServletResponseWrapper;
 
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.common.platform.Platform;
+import org.eclipse.rdf4j.common.platform.PlatformFactory;
 import org.eclipse.rdf4j.query.resultio.BasicQueryWriterSettings;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
@@ -62,7 +63,10 @@ class AbstractServletTest {
 	@Test
 	void initWrapsIoFailuresInServletException() throws Exception {
 		Path tempDir = Files.createTempDirectory("abstract-servlet-init");
-		Files.createDirectories(tempDir.resolve("Workbench").resolve("conf").resolve("application.properties"));
+		Files.createDirectories(
+				tempDir.resolve(PlatformFactory.getPlatform().getRelativeApplicationDataDir("Workbench"))
+						.resolve("conf")
+						.resolve("application.properties"));
 		String previous = System.getProperty(Platform.APPDATA_BASEDIR_PROPERTY);
 		System.setProperty(Platform.APPDATA_BASEDIR_PROPERTY, tempDir.toString());
 
