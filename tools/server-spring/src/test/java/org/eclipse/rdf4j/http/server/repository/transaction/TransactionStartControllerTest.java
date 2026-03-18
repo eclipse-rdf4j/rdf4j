@@ -25,6 +25,8 @@ import java.util.UUID;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.JoinReadAheadDepth;
+import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -164,6 +166,21 @@ class TransactionStartControllerTest {
 		when(tx.getID()).thenReturn(UUID.randomUUID());
 
 		assertThatIllegalArgumentException().isThrownBy(() -> controller.handleRequest(request, response));
+	}
+
+	@Test
+	void createTransactionLocation_withJoinReadAheadDepthTransactionSetting() throws Exception {
+		TransactionStartController controller = spy(TransactionStartController.class);
+		Transaction tx = mock(Transaction.class);
+
+		request.addParameter(Protocol.TRANSACTION_SETTINGS_PREFIX + JoinReadAheadDepth.NAME, "5");
+		Repository repository = RepositoryInterceptor.getRepository(request);
+
+		when(controller.createTransaction(repository)).thenReturn(tx);
+		when(tx.getID()).thenReturn(UUID.randomUUID());
+
+		controller.handleRequest(request, response);
+		verify(tx).begin(JoinReadAheadDepth.of(5));
 	}
 
 }

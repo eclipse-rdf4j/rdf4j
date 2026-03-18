@@ -74,6 +74,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptim
 	}
 
 	@Override
+	public void setJoinReadAheadDepth(int joinReadAheadDepth) {
+		delegate.setJoinReadAheadDepth(joinReadAheadDepth);
+	}
+
+	@Override
+	public int getJoinReadAheadDepth() {
+		return delegate.getJoinReadAheadDepth();
+	}
+
+	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
 		EvaluationStrategy delegateStrategy = delegate.createEvaluationStrategy(dataset, tripleSource,
@@ -171,6 +181,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptim
 		@Override
 		public void setQueryEvaluationMode(QueryEvaluationMode queryEvaluationMode) {
 			delegate.setQueryEvaluationMode(queryEvaluationMode);
+		}
+
+		@Override
+		public void setJoinReadAheadDepth(int joinReadAheadDepth) {
+			delegate.setJoinReadAheadDepth(joinReadAheadDepth);
+		}
+
+		@Override
+		public int getJoinReadAheadDepth() {
+			return delegate.getJoinReadAheadDepth();
 		}
 	}
 }

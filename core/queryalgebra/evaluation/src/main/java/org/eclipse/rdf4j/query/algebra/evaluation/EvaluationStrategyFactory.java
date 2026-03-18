@@ -88,6 +88,23 @@ public interface EvaluationStrategyFactory {
 	}
 
 	/**
+	 * Configure left-side join read-ahead depth for join iterator algorithms. A value of {@code 0} disables the
+	 * feature.
+	 *
+	 * @param joinReadAheadDepth the number of left-side bindings to read ahead.
+	 */
+	default void setJoinReadAheadDepth(int joinReadAheadDepth) {
+		// no-op for backwards compatibility
+	}
+
+	/**
+	 * @return configured left-side join read-ahead depth, or {@code 0} when disabled.
+	 */
+	default int getJoinReadAheadDepth() {
+		return 0;
+	}
+
+	/**
 	 * Set the collection factory to use.
 	 *
 	 * @param collectionFactory

@@ -14,6 +14,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.concurrent.ExecutorService;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -196,5 +197,20 @@ public interface QueryEvaluationContext {
 
 	default MutableBindingSet createBindingSet(BindingSet bindings) {
 		return new QueryBindingSet(bindings);
+	}
+
+	@Experimental
+	default int getJoinReadAheadDepth() {
+		return 0;
+	}
+
+	@Experimental
+	default ExecutorService getJoinReadAheadExecutorService() {
+		return null;
+	}
+
+	@Experimental
+	default JoinReadAheadBatchPool getJoinReadAheadBatchPool() {
+		return null;
 	}
 }

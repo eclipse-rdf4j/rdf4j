@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -21,6 +22,7 @@ import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
@@ -164,6 +166,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
@@ -210,6 +214,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	private QueryEvaluationMode queryEvaluationMode;
 
 	private Supplier<CollectionFactory> collectionFactory = DefaultCollectionFactory::new;
+
+	private int joinReadAheadDepth;
 
 	protected static CloseableIteration<BindingSet> evaluate(TupleFunction func,
 			final List<Var> resultVars, final BindingSet bindings, ValueFactory valueFactory, Value... argValues)
@@ -433,14 +439,154 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr) {
-		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory(),
+		QueryEvaluationContext context;
+		JoinReadAheadBatchPoolHolder joinReadAheadBatchPoolHolder = null;
+		QueryEvaluationContext initialContext = new QueryEvaluationContext.Minimal(dataset,
+				tripleSource.getValueFactory(),
 				tripleSource.getComparator());
+		int eligibleJoinCount = countLeftSideReadAheadEligibleJoins(expr, initialContext);
+		if (joinReadAheadDepth > 0 && eligibleJoinCount > 0) {
+			joinReadAheadBatchPoolHolder = new JoinReadAheadBatchPoolHolder(joinReadAheadDepth);
+			JoinReadAheadBatchPoolHolder finalJoinReadAheadBatchPoolHolder = joinReadAheadBatchPoolHolder;
+			context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory(),
+					tripleSource.getComparator()) {
+				@Override
+				public int getJoinReadAheadDepth() {
+					return DefaultEvaluationStrategy.this.joinReadAheadDepth;
+				}
+
+				@Override
+				public JoinReadAheadBatchPool getJoinReadAheadBatchPool() {
+					return finalJoinReadAheadBatchPoolHolder.getActivePool();
+				}
+			};
+		} else {
+			context = initialContext;
+		}
 		if (expr instanceof QueryRoot) {
 			String[] allVariables = ArrayBindingBasedQueryEvaluationContext
 					.findAllVariablesUsedInQuery((QueryRoot) expr);
 			context = new ArrayBindingBasedQueryEvaluationContext(context, allVariables, tripleSource.getComparator());
 		}
-		return precompile(expr, context);
+		QueryEvaluationStep queryEvaluationStep = precompile(expr, context);
+		if (joinReadAheadBatchPoolHolder != null) {
+			return wrapWithJoinReadAheadBatchPoolLifecycle(queryEvaluationStep, joinReadAheadBatchPoolHolder);
+		}
+		return queryEvaluationStep;
+	}
+
+	private QueryEvaluationStep wrapWithJoinReadAheadBatchPoolLifecycle(QueryEvaluationStep queryEvaluationStep,
+			JoinReadAheadBatchPoolHolder joinReadAheadBatchPoolHolder) {
+		return bindings -> {
+			CloseableIteration<BindingSet> iteration = null;
+			boolean success = false;
+			joinReadAheadBatchPoolHolder.beginEvaluation();
+			try {
+				iteration = queryEvaluationStep.evaluate(bindings);
+				success = true;
+				if (iteration == QueryEvaluationStep.EMPTY_ITERATION) {
+					joinReadAheadBatchPoolHolder.endEvaluation();
+					return iteration;
+				}
+				return new IterationWrapper<>(iteration) {
+					@Override
+					protected void handleClose() throws QueryEvaluationException {
+						try {
+							super.handleClose();
+						} finally {
+							joinReadAheadBatchPoolHolder.endEvaluation();
+						}
+					}
+				};
+			} finally {
+				if (!success) {
+					try {
+						if (iteration != null) {
+							iteration.close();
+						}
+					} finally {
+						joinReadAheadBatchPoolHolder.endEvaluation();
+					}
+				}
+			}
+		};
+	}
+
+	private int countLeftSideReadAheadEligibleJoins(TupleExpr expr, QueryEvaluationContext context) {
+		int[] count = { 0 };
+		expr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Join node) throws RuntimeException {
+				if (isLeftSideReadAheadEligible(node, context)) {
+					count[0]++;
+				}
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(LeftJoin node) throws RuntimeException {
+				if (isLeftSideReadAheadEligible(node)) {
+					count[0]++;
+				}
+				super.meet(node);
+			}
+		});
+		return count[0];
+	}
+
+	private static boolean isLeftSideReadAheadEligible(Join join, QueryEvaluationContext context) {
+		if (join.getRightArg() instanceof Service) {
+			return false;
+		}
+		if (TupleExprs.isVariableScopeChange(join.getRightArg()) || TupleExprs.containsSubquery(join.getRightArg())) {
+			return false;
+		}
+		return !(join.isMergeJoin() && context.getComparator() != null);
+	}
+
+	private static boolean isLeftSideReadAheadEligible(LeftJoin leftJoin) {
+		return !TupleExprs.containsSubquery(leftJoin.getRightArg());
+	}
+
+	private static final class JoinReadAheadBatchPoolHolder {
+
+		private final int batchSize;
+		private final ThreadLocal<ArrayDeque<JoinReadAheadBatchPool>> activePools = ThreadLocal
+				.withInitial(ArrayDeque::new);
+		private final ThreadLocal<ArrayDeque<JoinReadAheadBatchPool>> retiredPools = ThreadLocal
+				.withInitial(ArrayDeque::new);
+
+		private JoinReadAheadBatchPoolHolder(int batchSize) {
+			this.batchSize = batchSize;
+		}
+
+		private void beginEvaluation() {
+			ArrayDeque<JoinReadAheadBatchPool> retired = retiredPools.get();
+			JoinReadAheadBatchPool pool = retired.pollFirst();
+			if (pool == null) {
+				pool = new JoinReadAheadBatchPool(batchSize);
+			}
+			activePools.get().addFirst(pool);
+		}
+
+		private JoinReadAheadBatchPool getActivePool() {
+			return activePools.get().peekFirst();
+		}
+
+		private void endEvaluation() {
+			ArrayDeque<JoinReadAheadBatchPool> active = activePools.get();
+			JoinReadAheadBatchPool pool = active.pollFirst();
+			if (pool != null) {
+				retiredPools.get().addFirst(pool);
+			}
+			if (active.isEmpty()) {
+				activePools.remove();
+			}
+			ArrayDeque<JoinReadAheadBatchPool> retired = retiredPools.get();
+			if (retired.isEmpty()) {
+				retiredPools.remove();
+			}
+		}
 	}
 
 	@Override
@@ -1884,6 +2030,21 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	public void setQueryEvaluationMode(QueryEvaluationMode queryEvaluationMode) {
 		this.queryEvaluationMode = Objects.requireNonNull(queryEvaluationMode);
+	}
+
+	@Override
+	@Experimental
+	public void setJoinReadAheadDepth(int joinReadAheadDepth) {
+		if (joinReadAheadDepth < 0) {
+			throw new IllegalArgumentException("joinReadAheadDepth must be >= 0");
+		}
+		this.joinReadAheadDepth = joinReadAheadDepth;
+	}
+
+	@Override
+	@Experimental
+	public int getJoinReadAheadDepth() {
+		return joinReadAheadDepth;
 	}
 
 	@Override

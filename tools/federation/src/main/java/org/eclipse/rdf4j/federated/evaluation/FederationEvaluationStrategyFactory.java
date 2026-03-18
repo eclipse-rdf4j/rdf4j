@@ -74,6 +74,7 @@ public class FederationEvaluationStrategyFactory extends StrictEvaluationStrateg
 		case LOCAL: {
 			SailFederationEvalStrategy evalStrategy = new SailFederationEvalStrategy(federationContext);
 			evalStrategy.setCollectionFactory(collectionFactorySupplier);
+			evalStrategy.setJoinReadAheadDepth(getJoinReadAheadDepth());
 			return evalStrategy;
 		}
 		case REMOTE:
@@ -81,6 +82,7 @@ public class FederationEvaluationStrategyFactory extends StrictEvaluationStrateg
 		default: {
 			SparqlFederationEvalStrategy evalStrategy = new SparqlFederationEvalStrategy(federationContext);
 			evalStrategy.setCollectionFactory(collectionFactorySupplier);
+			evalStrategy.setJoinReadAheadDepth(getJoinReadAheadDepth());
 			return evalStrategy;
 		}
 		}

@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.JoinReadAheadBatchPool;
 
 /**
  * Interleaved join iterator.
@@ -32,27 +33,54 @@ public class JoinIterator extends LookAheadIteration<BindingSet> {
 	private CloseableIteration<BindingSet> rightIter;
 
 	private final QueryEvaluationStep preparedRight;
+	private final JoinReadAheadBatchPool joinReadAheadBatchPool;
+	private BindingSet[] leftBatch;
+	private int leftBatchIndex;
+	private int leftBatchSize;
 
 	public JoinIterator(QueryEvaluationStep leftPrepared,
 			QueryEvaluationStep preparedRight, BindingSet bindings) throws QueryEvaluationException {
-		leftIter = leftPrepared.evaluate(bindings);
-		this.preparedRight = preparedRight;
+		this(leftPrepared, preparedRight, bindings, 0, null);
 	}
 
 	private JoinIterator(CloseableIteration<BindingSet> leftIter, QueryEvaluationStep preparedRight)
 			throws QueryEvaluationException {
+		this(leftIter, preparedRight, 0, null);
+	}
+
+	private JoinIterator(CloseableIteration<BindingSet> leftIter, QueryEvaluationStep preparedRight,
+			int joinReadAheadDepth,
+			JoinReadAheadBatchPool joinReadAheadBatchPool)
+			throws QueryEvaluationException {
 		this.leftIter = leftIter;
 		this.preparedRight = preparedRight;
+		this.joinReadAheadBatchPool = joinReadAheadBatchPool;
+		if (joinReadAheadDepth > 0) {
+			leftBatch = joinReadAheadBatchPool != null ? joinReadAheadBatchPool.borrowBatch()
+					: new BindingSet[joinReadAheadDepth];
+		}
+	}
+
+	public JoinIterator(QueryEvaluationStep leftPrepared,
+			QueryEvaluationStep preparedRight, BindingSet bindings, int joinReadAheadDepth,
+			JoinReadAheadBatchPool joinReadAheadBatchPool) throws QueryEvaluationException {
+		this(leftPrepared.evaluate(bindings), preparedRight, joinReadAheadDepth, joinReadAheadBatchPool);
 	}
 
 	public static CloseableIteration<BindingSet> getInstance(QueryEvaluationStep leftPrepared,
 			QueryEvaluationStep preparedRight, BindingSet bindings) {
+		return getInstance(leftPrepared, preparedRight, bindings, 0, null);
+	}
+
+	public static CloseableIteration<BindingSet> getInstance(QueryEvaluationStep leftPrepared,
+			QueryEvaluationStep preparedRight, BindingSet bindings, int joinReadAheadDepth,
+			JoinReadAheadBatchPool joinReadAheadBatchPool) {
 		CloseableIteration<BindingSet> leftIter = leftPrepared.evaluate(bindings);
 		if (leftIter == QueryEvaluationStep.EMPTY_ITERATION) {
 			return leftIter;
 		}
 
-		return new JoinIterator(leftIter, preparedRight);
+		return new JoinIterator(leftIter, preparedRight, joinReadAheadDepth, joinReadAheadBatchPool);
 	}
 
 	/*---------*
@@ -69,8 +97,9 @@ public class JoinIterator extends LookAheadIteration<BindingSet> {
 			}
 		}
 
-		while (leftIter.hasNext()) {
-			rightIter = preparedRight.evaluate(leftIter.next());
+		BindingSet leftBindings;
+		while ((leftBindings = nextLeftBinding()) != null) {
+			rightIter = preparedRight.evaluate(leftBindings);
 			if (rightIter.hasNext()) {
 				return rightIter.next();
 			} else {
@@ -86,9 +115,50 @@ public class JoinIterator extends LookAheadIteration<BindingSet> {
 		try {
 			leftIter.close();
 		} finally {
-			if (rightIter != null) {
-				rightIter.close();
+			try {
+				if (rightIter != null) {
+					rightIter.close();
+				}
+			} finally {
+				releaseLeftBatch();
 			}
 		}
+	}
+
+	private BindingSet nextLeftBinding() {
+		if (leftBatch == null) {
+			if (leftIter.hasNext()) {
+				return leftIter.next();
+			}
+			return null;
+		}
+
+		if (leftBatchIndex >= leftBatchSize) {
+			leftBatchIndex = 0;
+			leftBatchSize = 0;
+			while (leftBatchSize < leftBatch.length && leftIter.hasNext()) {
+				leftBatch[leftBatchSize] = leftIter.next();
+				leftBatchSize++;
+			}
+			if (leftBatchSize == 0) {
+				return null;
+			}
+		}
+
+		return leftBatch[leftBatchIndex++];
+	}
+
+	private void releaseLeftBatch() {
+		if (leftBatch == null) {
+			return;
+		}
+
+		if (joinReadAheadBatchPool != null) {
+			joinReadAheadBatchPool.releaseBatch(leftBatch);
+		}
+
+		leftBatch = null;
+		leftBatchIndex = 0;
+		leftBatchSize = 0;
 	}
 }

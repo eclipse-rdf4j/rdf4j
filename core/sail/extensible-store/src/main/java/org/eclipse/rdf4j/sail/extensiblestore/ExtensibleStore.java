@@ -136,6 +136,7 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		}
 		evalStratFactory.setQuerySolutionCacheThreshold(getIterationCacheSyncThreshold());
 		evalStratFactory.setTrackResultSize(isTrackResultSize());
+		evalStratFactory.setJoinReadAheadDepth(getJoinReadAheadDepth());
 		return evalStratFactory;
 	}
 

@@ -11,11 +11,8 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
-import java.util.ArrayDeque;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.Objects;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -31,120 +28,92 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 @Experimental
 public class AsyncIteratorReadAhead extends LookAheadIteration<BindingSet> {
 
-	private final int READ_AHEAD_LIMIT = 1024 * 1024 * 16;
+	private final int readAheadDepth;
+	private final Supplier<CloseableIteration<BindingSet>> iterationSupplier;
+	private final BindingSet[] batch;
+	private CloseableIteration<BindingSet> iteration;
+	private int batchIndex;
+	private int batchSize;
 
-	private final ExecutorService executorService;
-	private int readAhead = 4;
-
-	private final CloseableIteration<BindingSet> iteration;
-
-	private Future<ArrayDeque<BindingSet>> future;
-
-	public AsyncIteratorReadAhead(CloseableIteration<BindingSet> iteration)
+	public AsyncIteratorReadAhead(CloseableIteration<BindingSet> iteration, int readAheadDepth)
 			throws QueryEvaluationException {
-		this.iteration = iteration;
-		this.executorService = Executors.newSingleThreadExecutor();
+		this(() -> Objects.requireNonNull(iteration, "iteration"), readAheadDepth);
+	}
 
+	private AsyncIteratorReadAhead(Supplier<CloseableIteration<BindingSet>> iterationSupplier, int readAheadDepth)
+			throws QueryEvaluationException {
+		if (readAheadDepth <= 0) {
+			throw new IllegalArgumentException("readAheadDepth must be > 0");
+		}
+		this.iterationSupplier = Objects.requireNonNull(iterationSupplier, "iterationSupplier");
+		this.readAheadDepth = readAheadDepth;
+		this.batch = new BindingSet[readAheadDepth];
 	}
 
 	public static CloseableIteration<BindingSet> getInstance(QueryEvaluationStep iterationPrepared, BindingSet bindings,
 			QueryEvaluationContext context) {
-		CloseableIteration<BindingSet> iter = iterationPrepared.evaluate(bindings);
-		if (iter == QueryEvaluationStep.EMPTY_ITERATION) {
-			return iter;
+		int readAheadDepth = context.getJoinReadAheadDepth();
+		if (readAheadDepth <= 0) {
+			return iterationPrepared.evaluate(bindings);
 		}
-
-		return new AsyncIteratorReadAhead(iter);
+		return new AsyncIteratorReadAhead(() -> iterationPrepared.evaluate(bindings), readAheadDepth);
 	}
 
-	ArrayDeque<BindingSet> nextBuffer;
-	BindingSet next;
-
-	void calculateNext() {
-		if (next != null) {
-			return;
+	static CloseableIteration<BindingSet> getInstance(CloseableIteration<BindingSet> iteration, int readAheadDepth) {
+		if (iteration == QueryEvaluationStep.EMPTY_ITERATION || readAheadDepth <= 0) {
+			return iteration;
 		}
-
-		if (nextBuffer != null && !nextBuffer.isEmpty()) {
-			next = nextBuffer.removeFirst();
-			return;
-		}
-		try {
-			nextBuffer = async();
-			if (nextBuffer != null && !nextBuffer.isEmpty()) {
-				next = nextBuffer.removeFirst();
-				return;
-			}
-		} catch (ExecutionException | InterruptedException e) {
-			throw new RuntimeException(e);
-		}
-	}
-
-	private ArrayDeque<BindingSet> async() throws ExecutionException, InterruptedException {
-		ArrayDeque<BindingSet> ret = null;
-
-		if (future != null) {
-			ret = future.get();
-			future = null;
-		} else {
-			if (iteration.hasNext()) {
-				ret = new ArrayDeque<>(1);
-				ret.add(iteration.next());
-			} else {
-				return null;
-			}
-		}
-
-		if (readAhead < READ_AHEAD_LIMIT) {
-			readAhead *= 2;
-		}
-
-		ArrayDeque<BindingSet> buffer;
-		if (nextBuffer != null) {
-			nextBuffer.clear();
-			buffer = nextBuffer;
-		} else {
-			buffer = new ArrayDeque<>();
-		}
-
-		future = executorService.submit(() -> {
-			int currentReadAhead = readAhead;
-
-			for (int i = 0; i < currentReadAhead && iteration.hasNext(); i++) {
-				buffer.addLast(iteration.next());
-			}
-
-			if (buffer.isEmpty()) {
-				return null;
-			}
-			return buffer;
-		});
-
-		return ret;
+		return new AsyncIteratorReadAhead(iteration, readAheadDepth);
 	}
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
-		calculateNext();
-		BindingSet temp = next;
-		next = null;
-		return temp;
+		if (batchIndex < batchSize) {
+			return batch[batchIndex++];
+		}
+		if (!readNextBatch()) {
+			return null;
+		}
+		return batch[batchIndex++];
+	}
+
+	private boolean readNextBatch() {
+		batchIndex = 0;
+		batchSize = 0;
+		if (isClosed()) {
+			return false;
+		}
+		CloseableIteration<BindingSet> currentIteration = getOrCreateIteration();
+		if (currentIteration == QueryEvaluationStep.EMPTY_ITERATION) {
+			return false;
+		}
+		while (batchSize < readAheadDepth && !isClosed() && currentIteration.hasNext()) {
+			batch[batchSize] = currentIteration.next();
+			batchSize++;
+		}
+		return batchSize > 0;
+	}
+
+	private CloseableIteration<BindingSet> getOrCreateIteration() {
+		CloseableIteration<BindingSet> currentIteration = iteration;
+		if (currentIteration == null) {
+			currentIteration = Objects.requireNonNull(iterationSupplier.get(), "iteration");
+			iteration = currentIteration;
+		}
+		return currentIteration;
 	}
 
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
+		batchIndex = 0;
+		batchSize = 0;
 		try {
-			if (future != null) {
-				future.cancel(true);
-			}
-		} finally {
-			try {
-				executorService.shutdownNow();
-			} finally {
+			if (iteration != null && iteration != QueryEvaluationStep.EMPTY_ITERATION) {
 				iteration.close();
 			}
+		} finally {
+			iteration = null;
 		}
-
 	}
 
 }

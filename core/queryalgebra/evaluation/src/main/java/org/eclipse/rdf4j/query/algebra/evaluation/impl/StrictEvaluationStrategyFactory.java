@@ -58,6 +58,7 @@ public class StrictEvaluationStrategyFactory extends AbstractEvaluationStrategyF
 				getQuerySolutionCacheThreshold(), evaluationStatistics, isTrackResultSize());
 		getOptimizerPipeline().ifPresent(strategy::setOptimizerPipeline);
 		strategy.setCollectionFactory(collectionFactorySupplier);
+		strategy.setJoinReadAheadDepth(getJoinReadAheadDepth());
 		return strategy;
 	}
 

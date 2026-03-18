@@ -58,6 +58,7 @@ public class ExtendedEvaluationStrategyFactory extends AbstractEvaluationStrateg
 				serviceResolver, getQuerySolutionCacheThreshold(),
 				evaluationStatistics);
 		extendedEvaluationStrategy.setCollectionFactory(collectionFactorySupplier);
+		extendedEvaluationStrategy.setJoinReadAheadDepth(getJoinReadAheadDepth());
 		return extendedEvaluationStrategy;
 	}
 

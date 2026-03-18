@@ -114,6 +114,9 @@ public abstract class AbstractSail implements Sail {
 	// track the results size that each node in the query plan produces during execution
 	private boolean trackResultSize;
 
+	// default join left-side read-ahead depth. 0 disables read-ahead.
+	private int joinReadAheadDepth;
+
 	/**
 	 * Map used to track active connections and where these were acquired. The Throwable value may be null in case
 	 * debugging was disable at the time the connection was acquired.
@@ -455,5 +458,22 @@ public abstract class AbstractSail implements Sail {
 	 */
 	public void setDefaultQueryEvaluationMode(QueryEvaluationMode defaultQueryEvaluationMode) {
 		this.defaultQueryEvaluationMode = Objects.requireNonNull(defaultQueryEvaluationMode);
+	}
+
+	/**
+	 * @return join left-side read-ahead depth. 0 disables read-ahead.
+	 */
+	public int getJoinReadAheadDepth() {
+		return joinReadAheadDepth;
+	}
+
+	/**
+	 * @param joinReadAheadDepth join left-side read-ahead depth. 0 disables read-ahead.
+	 */
+	public void setJoinReadAheadDepth(int joinReadAheadDepth) {
+		if (joinReadAheadDepth < 0) {
+			throw new IllegalArgumentException("joinReadAheadDepth must be >= 0");
+		}
+		this.joinReadAheadDepth = joinReadAheadDepth;
 	}
 }

@@ -17,6 +17,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -111,6 +112,21 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	@Override
 	public Dataset getDataset() {
 		return context.getDataset();
+	}
+
+	@Override
+	public int getJoinReadAheadDepth() {
+		return context.getJoinReadAheadDepth();
+	}
+
+	@Override
+	public ExecutorService getJoinReadAheadExecutorService() {
+		return context.getJoinReadAheadExecutorService();
+	}
+
+	@Override
+	public JoinReadAheadBatchPool getJoinReadAheadBatchPool() {
+		return context.getJoinReadAheadBatchPool();
 	}
 
 	@Override

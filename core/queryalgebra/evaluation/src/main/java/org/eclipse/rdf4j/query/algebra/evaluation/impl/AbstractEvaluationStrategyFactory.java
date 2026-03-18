@@ -27,6 +27,8 @@ public abstract class AbstractEvaluationStrategyFactory implements EvaluationStr
 	// track the results size that each node in the query plan produces during execution
 	private boolean trackResultSize;
 
+	private int joinReadAheadDepth;
+
 	private QueryOptimizerPipeline pipeline;
 
 	@Override
@@ -57,5 +59,18 @@ public abstract class AbstractEvaluationStrategyFactory implements EvaluationStr
 	@Override
 	public void setTrackResultSize(boolean trackResultSize) {
 		this.trackResultSize = trackResultSize;
+	}
+
+	@Override
+	public void setJoinReadAheadDepth(int joinReadAheadDepth) {
+		if (joinReadAheadDepth < 0) {
+			throw new IllegalArgumentException("joinReadAheadDepth must be >= 0");
+		}
+		this.joinReadAheadDepth = joinReadAheadDepth;
+	}
+
+	@Override
+	public int getJoinReadAheadDepth() {
+		return joinReadAheadDepth;
 	}
 }

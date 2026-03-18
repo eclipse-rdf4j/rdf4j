@@ -53,7 +53,12 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 					context.getComparator(), context.getValue(join.getOrder().getName()), context);
 			join.setAlgorithm(InnerMergeJoinIterator.class.getSimpleName());
 		} else {
-			eval = bindings -> JoinIterator.getInstance(leftPrepared, rightPrepared, bindings);
+			if (context.getJoinReadAheadDepth() > 0) {
+				eval = bindings -> JoinIterator.getInstance(leftPrepared, rightPrepared, bindings,
+						context.getJoinReadAheadDepth(), context.getJoinReadAheadBatchPool());
+			} else {
+				eval = bindings -> JoinIterator.getInstance(leftPrepared, rightPrepared, bindings);
+			}
 			join.setAlgorithm(JoinIterator.class.getSimpleName());
 		}
 	}

@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.JoinReadAheadBatchPool;
 
 /**
  * @author Arjohn Kampman
@@ -43,10 +44,21 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 			BindingSet inputBindings,
 			Set<String> problemVars,
 			QueryEvaluationStep rightEvaluationStep) throws QueryEvaluationException {
-		super(strategy, join, getFilteredBindings(inputBindings, problemVars), rightEvaluationStep);
+		this(strategy, join, inputBindings, problemVars, rightEvaluationStep, 0, null);
+	}
+
+	public BadlyDesignedLeftJoinIterator(
+			EvaluationStrategy strategy,
+			LeftJoin join,
+			BindingSet inputBindings,
+			Set<String> problemVars,
+			QueryEvaluationStep rightEvaluationStep,
+			int joinReadAheadDepth,
+			JoinReadAheadBatchPool joinReadAheadBatchPool) throws QueryEvaluationException {
+		super(strategy, join, getFilteredBindings(inputBindings, problemVars), rightEvaluationStep, joinReadAheadDepth,
+				joinReadAheadBatchPool);
 		this.inputBindings = inputBindings;
 		this.problemVars = problemVars;
-
 	}
 
 	/*---------*
@@ -58,7 +70,18 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 			Set<String> problemVars,
 			QueryEvaluationStep rightEvaluationStep)
 			throws QueryEvaluationException {
-		super(left, getFilteredBindings(inputBindings, problemVars), rightEvaluationStep);
+		this(left, inputBindings, problemVars, rightEvaluationStep, 0, null);
+	}
+
+	public BadlyDesignedLeftJoinIterator(QueryEvaluationStep left,
+			BindingSet inputBindings,
+			Set<String> problemVars,
+			QueryEvaluationStep rightEvaluationStep,
+			int joinReadAheadDepth,
+			JoinReadAheadBatchPool joinReadAheadBatchPool)
+			throws QueryEvaluationException {
+		super(left, getFilteredBindings(inputBindings, problemVars), rightEvaluationStep, joinReadAheadDepth,
+				joinReadAheadBatchPool);
 		this.inputBindings = inputBindings;
 		this.problemVars = problemVars;
 	}

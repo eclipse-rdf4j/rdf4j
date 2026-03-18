@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCaptureContext;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.JoinReadAheadDepth;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -94,12 +95,35 @@ public class ThemeQueryBenchmark {
 	private String query;
 	private long expected;
 
-	public static void main(String[] args) throws RunnerException {
+	public static void main(String[] args) throws RunnerException, InterruptedException {
 		var opt = new OptionsBuilder()
 				.include("ThemeQueryBenchmark")
-				.forks(1)
+				.forks(0)
 				.build();
 		new Runner(opt).run();
+		Thread.sleep(1000); // Sleep to allow async JMH output to complete before JVM exits
+	}
+
+	@Test
+	public void testBenchmarks() throws RunnerException, InterruptedException, IOException {
+		ThemeQueryBenchmark themeQueryBenchmark = new ThemeQueryBenchmark();
+		themeQueryBenchmark.z_queryIndex = 0;
+		themeQueryBenchmark.themeName = "MEDICAL_RECORDS";
+		themeQueryBenchmark.setup();
+		for (int i = 0; i <= 1000; i++) {
+			themeQueryBenchmark.executeQuery();
+		}
+		themeQueryBenchmark.tearDown();
+		themeQueryBenchmark.z_queryIndex = 1;
+		themeQueryBenchmark.themeName = "MEDICAL_RECORDS";
+		themeQueryBenchmark.setup();
+		for (int i = 0; i <= 1000; i++) {
+			themeQueryBenchmark.executeQuery();
+		}
+		themeQueryBenchmark.tearDown();
+
+		Thread.sleep(1000); // Sleep to allow async JMH output to complete before JVM exits
+
 	}
 
 	@Setup(Level.Trial)
@@ -285,15 +309,37 @@ public class ThemeQueryBenchmark {
 		storeConfig = null;
 	}
 
-	@Benchmark
+//	@Benchmark
 	public long executeQuery() {
 		try (var connection = repository.getConnection()) {
+			connection.begin();
 			long count;
 			try (var evaluate = connection.prepareTupleQuery(query).evaluate()) {
 				count = evaluate
 						.stream()
 						.count();
 			}
+			connection.commit();
+
+			if (count != expected) {
+				throw new IllegalStateException("Unexpected count: expected " + expected + " but got " + count);
+			}
+
+			return count;
+		}
+	}
+
+	@Benchmark
+	public long executeQueryReadAhead() {
+		try (var connection = repository.getConnection()) {
+			connection.begin(JoinReadAheadDepth.of(8*1024));
+			long count;
+			try (var evaluate = connection.prepareTupleQuery(query).evaluate()) {
+				count = evaluate
+						.stream()
+						.count();
+			}
+			connection.commit();
 
 			if (count != expected) {
 				throw new IllegalStateException("Unexpected count: expected " + expected + " but got " + count);

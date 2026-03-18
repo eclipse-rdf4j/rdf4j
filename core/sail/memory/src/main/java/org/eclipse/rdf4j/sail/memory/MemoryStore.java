@@ -212,6 +212,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 		}
 		evalStratFactory.setQuerySolutionCacheThreshold(getIterationCacheSyncThreshold());
 		evalStratFactory.setTrackResultSize(isTrackResultSize());
+		evalStratFactory.setJoinReadAheadDepth(getJoinReadAheadDepth());
 		return evalStratFactory;
 	}
 

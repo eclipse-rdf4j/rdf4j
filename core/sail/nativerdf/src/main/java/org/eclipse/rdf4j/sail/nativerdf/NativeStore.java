@@ -388,6 +388,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 		}
 		evalStratFactory.setQuerySolutionCacheThreshold(getIterationCacheSyncThreshold());
 		evalStratFactory.setTrackResultSize(isTrackResultSize());
+		evalStratFactory.setJoinReadAheadDepth(getJoinReadAheadDepth());
 		return evalStratFactory;
 	}
 

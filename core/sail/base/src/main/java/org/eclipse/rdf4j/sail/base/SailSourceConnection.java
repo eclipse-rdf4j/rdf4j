@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.JoinReadAheadDepth;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
@@ -153,6 +154,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	// current query evaluation mode
 	private QueryEvaluationMode queryEvaluationMode;
 
+	// transaction-local override; null means use factory/store default
+	private Integer transactionJoinReadAheadDepth;
+
 	/**
 	 * Creates a new {@link SailConnection}, using the given {@link SailStore} to manage the state.
 	 *
@@ -184,7 +188,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				? ((FederatedServiceResolverClient) evalStratFactory).getFederatedServiceResolver()
 				: null;
 		this.queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
+		this.transactionJoinReadAheadDepth = null;
 		this.evalStratFactory.setCollectionFactory(sail.getCollectionFactory());
+		this.evalStratFactory.setJoinReadAheadDepth(sail.getJoinReadAheadDepth());
 	}
 
 	/**
@@ -207,12 +213,16 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
+		int effectiveJoinReadAheadDepth = transactionJoinReadAheadDepth != null ? transactionJoinReadAheadDepth
+				: getSailBase().getJoinReadAheadDepth();
+		evalStratFactory.setJoinReadAheadDepth(effectiveJoinReadAheadDepth);
 		EvaluationStrategy evalStrat = evalStratFactory.createEvaluationStrategy(dataset, tripleSource,
 				store.getEvaluationStatistics());
 		if (federatedServiceResolver != null && evalStrat instanceof FederatedServiceResolverClient) {
 			((FederatedServiceResolverClient) evalStrat).setFederatedServiceResolver(federatedServiceResolver);
 		}
 		evalStrat.setQueryEvaluationMode(queryEvaluationMode);
+		evalStrat.setJoinReadAheadDepth(effectiveJoinReadAheadDepth);
 		return evalStrat;
 	}
 
@@ -487,9 +497,12 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	public void setTransactionSettings(TransactionSetting... settings) {
 		this.queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
+		this.transactionJoinReadAheadDepth = null;
 		for (TransactionSetting setting : settings) {
 			if (setting instanceof QueryEvaluationMode) {
 				this.queryEvaluationMode = ((QueryEvaluationMode) setting);
+			} else if (setting instanceof JoinReadAheadDepth) {
+				this.transactionJoinReadAheadDepth = ((JoinReadAheadDepth) setting).getDepth();
 			}
 		}
 		super.setTransactionSettings(settings);
@@ -525,6 +538,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		includeInferredBranch = null;
 
 		queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
+		transactionJoinReadAheadDepth = null;
 		try {
 			if (toCloseInferredBranch != null) {
 				toCloseInferredBranch.flush();
@@ -553,6 +567,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			inferredOnlyBranch = null;
 
 			queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
+			transactionJoinReadAheadDepth = null;
 
 			try {
 				if (datasets.containsKey(null)) {

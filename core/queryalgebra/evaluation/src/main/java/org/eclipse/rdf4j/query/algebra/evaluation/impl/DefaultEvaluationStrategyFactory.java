@@ -54,6 +54,7 @@ public class DefaultEvaluationStrategyFactory extends AbstractEvaluationStrategy
 				getQuerySolutionCacheThreshold(), evaluationStatistics, isTrackResultSize());
 		getOptimizerPipeline().ifPresent(strategy::setOptimizerPipeline);
 		strategy.setCollectionFactory(collectionFactorySupplier);
+		strategy.setJoinReadAheadDepth(getJoinReadAheadDepth());
 		return strategy;
 	}
 

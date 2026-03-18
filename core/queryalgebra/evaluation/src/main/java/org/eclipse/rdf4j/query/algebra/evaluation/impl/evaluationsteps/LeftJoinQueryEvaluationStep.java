@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -19,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.JoinReadAheadBatchPool;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ScopedQueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
@@ -30,10 +32,11 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep right;
 	private final QueryValueEvaluationStep condition;
-	private final QueryEvaluationStep left;
 	private final LeftJoin leftJoin;
 	private final Set<String> optionalVars;
 	private final QueryEvaluationStep wellDesignedRightEvaluationStep;
+	private final int joinReadAheadDepth;
+	private final Supplier<JoinReadAheadBatchPool> joinReadAheadBatchPoolSupplier;
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context) {
@@ -64,15 +67,18 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		} else {
 			condition = null;
 		}
-		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector.getVarNames());
+		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector.getVarNames(),
+				context);
 	}
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
-			QueryEvaluationStep left, LeftJoin leftJoin, Set<String> optionalVars) {
+			QueryEvaluationStep left, LeftJoin leftJoin, Set<String> optionalVars, QueryEvaluationContext context) {
 		this.right = right;
 		this.condition = condition;
-		this.left = left;
 		this.leftJoin = leftJoin;
+		this.leftInput = left;
+		this.joinReadAheadDepth = context.getJoinReadAheadDepth();
+		this.joinReadAheadBatchPoolSupplier = context::getJoinReadAheadBatchPool;
 		// This is used to determine if the left join is well designed.
 
 		Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
@@ -99,6 +105,8 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 				leftJoin.getBindingNames());
 	}
 
+	private final QueryEvaluationStep leftInput;
+
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 
@@ -114,14 +122,16 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		if (containsNone) {
 			// left join is "well designed"
 			leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
-			return LeftJoinIterator.getInstance(left, bindings, wellDesignedRightEvaluationStep);
+			return LeftJoinIterator.getInstance(leftInput, bindings, wellDesignedRightEvaluationStep,
+					joinReadAheadDepth, joinReadAheadBatchPoolSupplier.get());
 		} else {
 			Set<String> problemVars = new HashSet<>(optionalVars);
 			problemVars.retainAll(bindings.getBindingNames());
 
 			leftJoin.setAlgorithm(BadlyDesignedLeftJoinIterator.class.getSimpleName());
 			var rightEvaluationStep = determineRightEvaluationStep(leftJoin, right, condition, problemVars);
-			return new BadlyDesignedLeftJoinIterator(left, bindings, problemVars, rightEvaluationStep);
+			return new BadlyDesignedLeftJoinIterator(leftInput, bindings, problemVars, rightEvaluationStep,
+					joinReadAheadDepth, joinReadAheadBatchPoolSupplier.get());
 		}
 	}
 

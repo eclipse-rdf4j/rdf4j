@@ -173,6 +173,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		}
 		evalStratFactory.setQuerySolutionCacheThreshold(getIterationCacheSyncThreshold());
 		evalStratFactory.setTrackResultSize(isTrackResultSize());
+		evalStratFactory.setJoinReadAheadDepth(getJoinReadAheadDepth());
 		evalStratFactory.setCollectionFactory(getCollectionFactory());
 		return evalStratFactory;
 	}
