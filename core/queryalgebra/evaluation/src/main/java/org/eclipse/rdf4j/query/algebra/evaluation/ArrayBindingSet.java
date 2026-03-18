@@ -46,6 +46,11 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	private static final long serialVersionUID = -1L;
 
+	@FunctionalInterface
+	public interface SortedBindingNamesCache {
+		List<String> get(long activeBindingMask);
+	}
+
 	private static final Logger logger = LoggerFactory.getLogger(ArrayBindingSet.class);
 	private static final Value NULL_VALUE = Values
 			.iri("urn:null:d57c56f3-41a9-468e-8dce-5706ebdef84c_e88d9e52-27cb-4056-a889-1ea353fa6f0c");
@@ -67,6 +72,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	private boolean empty;
 
 	private final Value[] values;
+	private final SortedBindingNamesCache sharedSortedBindingNamesCache;
+	private long activeBindingMask;
 	private int cachedSize = -1;
 	private int cachedHashCode;
 
@@ -78,17 +85,28 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	 * @param names The binding names.
 	 */
 	public ArrayBindingSet(String... names) {
+		this(names, null);
+	}
+
+	public ArrayBindingSet(String[] names, SortedBindingNamesCache sharedSortedBindingNamesCache) {
 		this.bindingNames = names;
 		this.values = new Value[names.length];
+		this.sharedSortedBindingNamesCache = sharedSortedBindingNamesCache;
 		this.empty = true;
 		this.cachedSize = 0;
 	}
 
 	public ArrayBindingSet(BindingSet toCopy, Set<String> names, String[] namesArray) {
+		this(toCopy, names, namesArray, null);
+	}
+
+	public ArrayBindingSet(BindingSet toCopy, Set<String> names, String[] namesArray,
+			SortedBindingNamesCache sharedSortedBindingNamesCache) {
 		assert !(toCopy instanceof ArrayBindingSet);
 
 		this.bindingNames = namesArray;
 		this.values = new Value[this.bindingNames.length];
+		this.sharedSortedBindingNamesCache = sharedSortedBindingNamesCache;
 		int size = 0;
 		for (int i = 0; i < this.bindingNames.length; i++) {
 			Binding binding = toCopy.getBinding(this.bindingNames[i]);
@@ -106,16 +124,28 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 		this.empty = toCopy.isEmpty();
 		this.cachedSize = this.empty ? 0 : size;
+		if (sharedSortedBindingNamesCache != null) {
+			this.activeBindingMask = calculateActiveBindingMask();
+		}
 		assert !this.empty || size() == 0;
 
 	}
 
 	public ArrayBindingSet(ArrayBindingSet toCopy, String... names) {
+		this(toCopy, names, null);
+	}
+
+	public ArrayBindingSet(ArrayBindingSet toCopy, String[] names,
+			SortedBindingNamesCache sharedSortedBindingNamesCache) {
 		this.bindingNames = names;
 
 		this.values = Arrays.copyOf(toCopy.values, toCopy.values.length);
+		this.sharedSortedBindingNamesCache = sharedSortedBindingNamesCache;
 		this.empty = toCopy.empty;
 		this.cachedSize = toCopy.cachedSize;
+		if (sharedSortedBindingNamesCache != null) {
+			this.activeBindingMask = calculateActiveBindingMask();
+		}
 		assert !this.empty || size() == 0;
 	}
 
@@ -137,6 +167,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		return (v, a) -> {
 			a.values[index] = v == null ? NULL_VALUE : v;
 			a.empty = false;
+			a.updateActiveBindingMask(index, true);
 			a.clearCache();
 		};
 	}
@@ -152,6 +183,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			assert a.values[index] == null;
 			a.values[index] = v == null ? NULL_VALUE : v;
 			a.empty = false;
+			a.updateActiveBindingMask(index, true);
 			a.clearCache();
 		};
 
@@ -380,23 +412,28 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	public List<String> getSortedBindingNames() {
 
 		if (sortedBindingNames == null) {
-			int size = size();
-
-			if (size == 1) {
-				for (int i = 0; i < bindingNames.length; i++) {
-					if (values[i] != null) {
-						sortedBindingNames = Collections.singletonList(bindingNames[i]);
-					}
-				}
+			if (sharedSortedBindingNamesCache != null) {
+				sortedBindingNames = sharedSortedBindingNamesCache.get(activeBindingMask);
 			} else {
-				ArrayList<String> names = new ArrayList<>(size);
-				for (int i = 0; i < bindingNames.length; i++) {
-					if (values[i] != null) {
-						names.add(bindingNames[i]);
+				int size = size();
+
+				if (size == 1) {
+					for (int i = 0; i < bindingNames.length; i++) {
+						if (values[i] != null) {
+							sortedBindingNames = Collections.singletonList(bindingNames[i]);
+							break;
+						}
 					}
+				} else {
+					ArrayList<String> names = new ArrayList<>(size);
+					for (int i = 0; i < bindingNames.length; i++) {
+						if (values[i] != null) {
+							names.add(bindingNames[i]);
+						}
+					}
+					names.sort(String::compareTo);
+					sortedBindingNames = names;
 				}
-				names.sort(String::compareTo);
-				sortedBindingNames = names;
 			}
 		}
 
@@ -418,6 +455,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		assert this.values[index] == null;
 		this.values[index] = value == null ? NULL_VALUE : value;
 		empty = false;
+		updateActiveBindingMask(index, true);
 		clearCache();
 	}
 
@@ -430,6 +468,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		Value value = binding.getValue();
 		this.values[index] = value == null ? NULL_VALUE : value;
 		empty = false;
+		updateActiveBindingMask(index, true);
 		clearCache();
 	}
 
@@ -441,6 +480,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 
 		this.values[index] = value;
+		updateActiveBindingMask(index, value != null);
 		if (value == null) {
 			this.empty = true;
 			for (Value value1 : this.values) {
@@ -462,6 +502,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	private void clearCache() {
 		bindingNamesSetCache = null;
+		sortedBindingNames = null;
 		cachedSize = -1;
 		cachedHashCode = 0;
 	}
@@ -485,7 +526,33 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 
 		clearCache();
+		if (sharedSortedBindingNamesCache != null) {
+			activeBindingMask = calculateActiveBindingMask();
+		}
 
+	}
+
+	private void updateActiveBindingMask(int index, boolean hasValue) {
+		if (sharedSortedBindingNamesCache == null) {
+			return;
+		}
+
+		long maskBit = 1L << index;
+		if (hasValue) {
+			activeBindingMask |= maskBit;
+		} else {
+			activeBindingMask &= ~maskBit;
+		}
+	}
+
+	private long calculateActiveBindingMask() {
+		long mask = 0L;
+		for (int i = 0; i < values.length; i++) {
+			if (values[i] != null) {
+				mask |= 1L << i;
+			}
+		}
+		return mask;
 	}
 
 	@Override
