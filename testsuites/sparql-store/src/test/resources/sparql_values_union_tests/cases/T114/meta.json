@@ -4,5 +4,7 @@
   "category": "undef_and_empty_values",
   "title": "empty multi-column VALUES",
   "classification": "empty-values",
-  "note": "Same check for a row table."
+  "note": "Same check for a row table.",
+  "oracle_winner": "jena",
+  "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215"
 }

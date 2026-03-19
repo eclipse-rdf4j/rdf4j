@@ -5,5 +5,7 @@
   "title": "HAVING depends on bag cardinality",
   "classification": "bag-cardinality",
   "note": "If duplicate handling is wrong, HAVING flips.",
+  "oracle_winner": "rdf4j",
+  "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
   "rdflib_rowcount": 2
 }

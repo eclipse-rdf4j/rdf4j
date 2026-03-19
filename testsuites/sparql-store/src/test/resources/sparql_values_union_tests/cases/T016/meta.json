@@ -5,5 +5,7 @@
   "title": "mixed duplicates and UNDEF rows",
   "classification": "bag-cardinality",
   "note": "Tests duplicate preservation together with unbound columns.",
+  "oracle_winner": "jena",
+  "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
   "rdflib_rowcount": 3
 }

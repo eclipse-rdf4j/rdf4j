@@ -15,6 +15,8 @@
     "title": "both arms ignore VALUES variable",
     "classification": "unsafe-drop-values",
     "note": "Dropping VALUES because no arm mentions ?x is wrong: late join creates a cross-product.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": 2
   },
   {
@@ -87,6 +89,8 @@
     "title": "duplicate VALUES rows preserve bag cardinality",
     "classification": "bag-cardinality",
     "note": "Duplicate VALUES rows must duplicate results; deduplication is incorrect.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": 2
   },
   {
@@ -141,6 +145,8 @@
     "title": "mixed duplicates and UNDEF rows",
     "classification": "bag-cardinality",
     "note": "Tests duplicate preservation together with unbound columns.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": 3
   },
   {
@@ -294,6 +300,8 @@
     "title": "EXISTS with pushed variable in pattern",
     "classification": "unsafe-prebind",
     "note": "Without prebinding, ?x is not fixed inside EXISTS and any check value can match.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1",
     "rdflib_rowcount": 4
   },
   {
@@ -348,6 +356,8 @@
     "title": "nested EXISTS with inner pattern on pushed variable",
     "classification": "unsafe-prebind",
     "note": "Nested EXISTS amplifies substitution mistakes.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1",
     "rdflib_rowcount": 4
   },
   {
@@ -357,6 +367,8 @@
     "title": "mixed EXISTS and NOT EXISTS across two arms",
     "classification": "unsafe-prebind",
     "note": "Each arm observes early binding in a different way.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1",
     "rdflib_rowcount": 3
   },
   {
@@ -429,6 +441,8 @@
     "title": "duplicate VALUES rows over OPTIONAL expose bag counts",
     "classification": "bag-cardinality",
     "note": "Duplicate VALUES rows should duplicate surviving optional solutions.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": 2
   },
   {
@@ -438,6 +452,8 @@
     "title": "MINUS with pushed variable on right pattern",
     "classification": "unsafe-prebind",
     "note": "Originally any :p value removes the row; prebinding restricts the right side to :p 1.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1",
     "rdflib_rowcount": 2
   },
   {
@@ -456,6 +472,8 @@
     "title": "MINUS with no shared vars until early binding creates one",
     "classification": "unsafe-prebind",
     "note": "Without early binding dom(\u03bc) and dom(\u03bc') are disjoint, so MINUS does nothing.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1",
     "rdflib_rowcount": 4
   },
   {
@@ -474,6 +492,8 @@
     "title": "MINUS after an OPTIONAL on the left",
     "classification": "unsafe-prebind",
     "note": "The left side remains free of ?x in the original query, but not after early pushdown.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1",
     "rdflib_rowcount": 4
   },
   {
@@ -492,6 +512,8 @@
     "title": "two-column VALUES around MINUS",
     "classification": "row-correlation",
     "note": "Row correlation must be preserved even when one arm contains MINUS.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1",
     "rdflib_rowcount": 7
   },
   {
@@ -501,6 +523,8 @@
     "title": "duplicate VALUES rows over MINUS expose bag counts",
     "classification": "bag-cardinality",
     "note": "Duplicate rows must duplicate results that survive MINUS.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": 2
   },
   {
@@ -654,6 +678,8 @@
     "title": "COUNT(*) exposes duplicate VALUES rows",
     "classification": "bag-cardinality",
     "note": "Duplicate VALUES rows must duplicate solutions before COUNT(*).",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": 2
   },
   {
@@ -663,6 +689,8 @@
     "title": "GROUP BY x after correlated VALUES",
     "classification": "row-correlation",
     "note": "If x/z are de-correlated, group counts change.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": 2
   },
   {
@@ -672,6 +700,8 @@
     "title": "GROUP BY subject after correlated VALUES",
     "classification": "row-correlation",
     "note": "Per-subject multiplicities expose duplicated or missing rows.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": 12
   },
   {
@@ -681,6 +711,8 @@
     "title": "COUNT(DISTINCT ?s) with mixed arm bindings",
     "classification": "row-correlation",
     "note": "This catches optimizers that invent extra subject/value combinations.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": 2
   },
   {
@@ -690,6 +722,8 @@
     "title": "HAVING depends on bag cardinality",
     "classification": "bag-cardinality",
     "note": "If duplicate handling is wrong, HAVING flips.",
+    "oracle_winner": "rdf4j",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": 2
   },
   {
@@ -789,6 +823,8 @@
     "title": "nested union with duplicate VALUES rows",
     "classification": "bag-cardinality",
     "note": "Duplicates must be preserved through the whole nested UNION tree.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": 2
   },
   {
@@ -852,6 +888,8 @@
     "title": "inner duplicate VALUES crossed with outer duplicate VALUES",
     "classification": "bag-cardinality",
     "note": "Both inner and outer duplicate rows contribute multiplicatively.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": 1
   },
   {
@@ -1014,6 +1052,8 @@
     "title": "empty single-column VALUES",
     "classification": "empty-values",
     "note": "An empty VALUES table should annihilate the join.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": ""
   },
   {
@@ -1023,6 +1063,8 @@
     "title": "empty multi-column VALUES",
     "classification": "empty-values",
     "note": "Same check for a row table.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": ""
   },
   {
@@ -1068,6 +1110,8 @@
     "title": "empty VALUES across a nested union and subquery",
     "classification": "empty-values",
     "note": "Even complex patterns should still be annihilated by an empty VALUES join.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": ""
   },
   {
@@ -1077,6 +1121,8 @@
     "title": "duplicate UNDEF rows preserve bag counts",
     "classification": "bag-cardinality",
     "note": "Two UNDEF rows and one bound row are three distinct rows in the VALUES table.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": 3
   },
   {
@@ -1104,6 +1150,8 @@
     "title": "nested union + multi-column duplicate VALUES",
     "classification": "row-correlation",
     "note": "This mixes duplicates, correlation, OPTIONAL, and FILTER over a nested UNION.",
+    "oracle_winner": "jena",
+    "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
     "rdflib_rowcount": 3
   },
   {

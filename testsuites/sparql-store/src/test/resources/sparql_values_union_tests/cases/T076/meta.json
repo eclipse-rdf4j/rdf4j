@@ -5,5 +5,7 @@
   "title": "COUNT(DISTINCT ?s) with mixed arm bindings",
   "classification": "row-correlation",
   "note": "This catches optimizers that invent extra subject/value combinations.",
+  "oracle_winner": "jena",
+  "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
   "rdflib_rowcount": 2
 }

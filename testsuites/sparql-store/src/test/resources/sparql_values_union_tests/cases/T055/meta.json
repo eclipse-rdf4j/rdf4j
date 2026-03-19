@@ -5,5 +5,7 @@
   "title": "two-column VALUES around MINUS",
   "classification": "row-correlation",
   "note": "Row correlation must be preserved even when one arm contains MINUS.",
+  "oracle_winner": "jena",
+  "oracle_basis": "w3c-sparql-1.1",
   "rdflib_rowcount": 7
 }

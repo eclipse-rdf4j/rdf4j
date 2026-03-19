@@ -5,5 +5,7 @@
   "title": "duplicate UNDEF rows preserve bag counts",
   "classification": "bag-cardinality",
   "note": "Two UNDEF rows and one bound row are three distinct rows in the VALUES table.",
+  "oracle_winner": "jena",
+  "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
   "rdflib_rowcount": 3
 }

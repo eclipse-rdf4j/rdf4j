@@ -5,5 +5,7 @@
   "title": "nested union + multi-column duplicate VALUES",
   "classification": "row-correlation",
   "note": "This mixes duplicates, correlation, OPTIONAL, and FILTER over a nested UNION.",
+  "oracle_winner": "jena",
+  "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
   "rdflib_rowcount": 3
 }

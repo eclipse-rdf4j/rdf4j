@@ -5,5 +5,7 @@
   "title": "EXISTS with pushed variable in pattern",
   "classification": "unsafe-prebind",
   "note": "Without prebinding, ?x is not fixed inside EXISTS and any check value can match.",
+  "oracle_winner": "jena",
+  "oracle_basis": "w3c-sparql-1.1",
   "rdflib_rowcount": 4
 }

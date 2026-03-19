@@ -4,5 +4,7 @@
   "category": "undef_and_empty_values",
   "title": "empty VALUES across a nested union and subquery",
   "classification": "empty-values",
-  "note": "Even complex patterns should still be annihilated by an empty VALUES join."
+  "note": "Even complex patterns should still be annihilated by an empty VALUES join.",
+  "oracle_winner": "jena",
+  "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215"
 }

@@ -5,5 +5,7 @@
   "title": "COUNT(*) exposes duplicate VALUES rows",
   "classification": "bag-cardinality",
   "note": "Duplicate VALUES rows must duplicate solutions before COUNT(*).",
+  "oracle_winner": "jena",
+  "oracle_basis": "w3c-sparql-1.1 + confirmed erratum #215",
   "rdflib_rowcount": 2
 }

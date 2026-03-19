@@ -8,6 +8,10 @@ Each test case has:
 - `query.rq` — the SPARQL query
 - `meta.json` — machine-readable metadata for the case
 
+Some disputed cases also carry oracle metadata:
+- `oracle_winner` — `jena` or `rdf4j`
+- `oracle_basis` — spec basis for the ruling, including confirmed erratum `#215` where relevant
+
 ## Intended use
 
 Run each query twice against the same `data.ttl`:
@@ -55,6 +59,10 @@ VALUES clause through UNION and then potentially deeper into each union arm:
 
 Tests `T113`, `T114`, and `T119` use an empty VALUES table.
 They are intentional edge cases.
+
+Oracle metadata is currently recorded for the 24 known Jena/RDF4J disagreement
+cases. Aggregate/modifier disputes that depend on the trailing-VALUES ordering
+fix are marked with confirmed erratum `#215`.
 
 Because each test is defined as a Turtle default-graph input plus a single query,
 this suite focuses on the relevant default-graph semantics rather than named-graph,

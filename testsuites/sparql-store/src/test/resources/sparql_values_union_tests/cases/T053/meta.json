@@ -5,5 +5,7 @@
   "title": "MINUS after an OPTIONAL on the left",
   "classification": "unsafe-prebind",
   "note": "The left side remains free of ?x in the original query, but not after early pushdown.",
+  "oracle_winner": "jena",
+  "oracle_basis": "w3c-sparql-1.1",
   "rdflib_rowcount": 4
 }

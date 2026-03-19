@@ -5,5 +5,7 @@
   "title": "MINUS with no shared vars until early binding creates one",
   "classification": "unsafe-prebind",
   "note": "Without early binding dom(\u03bc) and dom(\u03bc') are disjoint, so MINUS does nothing.",
+  "oracle_winner": "jena",
+  "oracle_basis": "w3c-sparql-1.1",
   "rdflib_rowcount": 4
 }

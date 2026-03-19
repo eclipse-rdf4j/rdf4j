@@ -5,5 +5,7 @@
   "title": "MINUS with pushed variable on right pattern",
   "classification": "unsafe-prebind",
   "note": "Originally any :p value removes the row; prebinding restricts the right side to :p 1.",
+  "oracle_winner": "jena",
+  "oracle_basis": "w3c-sparql-1.1",
   "rdflib_rowcount": 2
 }
